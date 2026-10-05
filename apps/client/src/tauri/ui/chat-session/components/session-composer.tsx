@@ -313,7 +313,7 @@ export const SessionComposer = ({
   isPromptEnhancementActive = false,
 }: SessionComposerProps): JSX.Element => {
   const goalId = useId();
-  const [goalOpen, setGoalOpen] = useState(Boolean(activeSession.goal));
+  const [goalOpen, setGoalOpen] = useState(false);
   const showGoalControl =
     !isQuickVoiceSession(activeSession) &&
     activeSession.specialSession !== "pose";
@@ -325,8 +325,8 @@ export const SessionComposer = ({
   );
 
   useEffect(() => {
-    setGoalOpen(Boolean(activeSession.goal));
-  }, [activeSession.id, activeSession.goal?.id]);
+    setGoalOpen(false);
+  }, [activeSession.id]);
 
   const [memoryScope, setMemoryScope] = useState<
     "session" | "workspace" | "global" | null

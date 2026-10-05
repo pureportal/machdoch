@@ -1,4 +1,8 @@
-import type { ProductSession, ProductShell } from "@machdoch/fleet-protocol";
+import type {
+  ProductGoal,
+  ProductSession,
+  ProductShell,
+} from "@machdoch/fleet-protocol";
 import {
   act,
   cleanup,
@@ -104,6 +108,7 @@ function harness(
     canSend?: boolean;
     runningTaskId?: string;
     canCancel?: boolean;
+    goal?: ProductGoal;
     availableParallelAgentModes?: NonNullable<
       ProductShell["composer"]
     >["availableParallelAgentModes"];
@@ -121,6 +126,7 @@ function harness(
       composer={{
         ...composer(id, draft),
         canSend: options.canSend ?? true,
+        ...(options.goal ? { goal: options.goal } : {}),
         ...(options.availableParallelAgentModes
           ? { availableParallelAgentModes: options.availableParallelAgentModes }
           : {}),
@@ -157,6 +163,63 @@ afterEach(() => {
 });
 
 describe("composer submission guards", () => {
+  it.each(["active", "paused", "blocked"] as const)(
+    "requires enabling a saved %s goal before attaching it to a message",
+    async (status) => {
+      const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
+      const view = harness(onCommand, "Fix auth", {
+        goal: {
+          id: "saved-goal",
+          objective: "All auth tests pass",
+          mode: "machdoch",
+          status,
+          turns: 1,
+          tokensUsed: 10,
+          elapsedMs: 1,
+          reason: "",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      });
+      expect(
+        screen
+          .getByRole("button", { name: "Goal" })
+          .getAttribute("aria-pressed"),
+      ).toBe("false");
+      expect(
+        screen.queryByRole("textbox", { name: "Goal objective" }),
+      ).toBeNull();
+      await send();
+      expect(onCommand).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "submit-message", prompt: "Fix auth" }),
+      );
+      expect(onCommand.mock.calls[0]![0]).not.toHaveProperty("goalObjective");
+      type("Verify the fix");
+      fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+      expect(
+        screen
+          .getByRole("button", { name: "Goal" })
+          .getAttribute("data-active"),
+      ).toBe("true");
+      await send();
+      expect(onCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "submit-message",
+          prompt: "Verify the fix",
+          goalObjective: "All auth tests pass",
+        }),
+      );
+      view.show("B", "Review auth");
+      expect(
+        screen.queryByRole("textbox", { name: "Goal objective" }),
+      ).toBeNull();
+      await send();
+      expect(onCommand.mock.calls.at(-1)![0]).not.toHaveProperty(
+        "goalObjective",
+      );
+    },
+  );
+
   it.each(["button", "keyboard"])(
     "submits the task and goal together by %s",
     async (method) => {

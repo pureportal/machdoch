@@ -480,16 +480,35 @@ describe("goal lifecycle", () => {
     expect(execute).toHaveBeenCalledTimes(1);
     expect((await read()).goal).toBeNull();
   });
-  it("runs ordinary messages once while a goal is paused", async () => {
-    await run(
-      "/goal Fix auth",
-      vi.fn(async () => result()),
-    );
-    const execute = vi.fn(async () => result());
-    await run("Explain the failure", execute);
-    expect(execute).toHaveBeenCalledTimes(1);
-    expect((await read()).goal?.status).toBe("paused");
-  });
+  it.each([
+    "active",
+    "paused",
+    "blocked",
+    "complete",
+    "budget-limited",
+  ] as const)(
+    "runs an ordinary message once without activating a saved %s goal",
+    async (status) => {
+      await run("/goal Fix auth");
+      const path = getGoalPath(
+        directory,
+        options.conversationContext!.sessionId!,
+      );
+      await updateGoalRecord(path, (record) => ({
+        ...record,
+        goal: { ...record.goal!, status },
+      }));
+      const savedGoal = (await read()).goal;
+      const execute = vi.fn(async () => result());
+      await run("Explain the failure", execute);
+      expect(execute).toHaveBeenCalledExactlyOnceWith(
+        "Explain the failure",
+        config,
+        options,
+      );
+      expect((await read()).goal).toEqual(savedGoal);
+    },
+  );
   it("keeps goals isolated between sessions", async () => {
     await run("/goal Fix auth");
     options.conversationContext!.sessionId = randomUUID();
@@ -635,7 +654,9 @@ describe("goal interruption and limits", () => {
       status: "active",
       turns: 1,
     });
+    options.conversationContext!.goalObjective = "Fix auth";
     await expect(run("Continue")).rejects.toThrow();
+    delete options.conversationContext!.goalObjective;
     expect((await read()).goal?.status).toBe("active");
     await expect(run("/goal Another objective")).rejects.toThrow("active");
     await run("/goal clear");
@@ -679,6 +700,7 @@ describe("goal interruption and limits", () => {
       ...record,
       goal: { ...record.goal!, status: "active" },
     }));
+    options.conversationContext!.goalObjective = "Fix auth";
     const execute = vi.fn(
       async (
         _task: string,

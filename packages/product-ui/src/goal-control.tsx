@@ -23,8 +23,9 @@ export function GoalTrigger({
       className="m-goal-trigger app-composer-toolbar-control"
       aria-label="Goal"
       aria-expanded={open}
+      aria-pressed={open || active}
       aria-controls={controls}
-      data-active={active}
+      data-active={open || active}
       disabled={disabled}
       onClick={onClick}
     >
