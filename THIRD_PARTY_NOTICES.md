@@ -5,7 +5,7 @@ The Apache licence in the repository root applies to Machdoch-owned material. It
 | Material | Licence and attribution |
 | --- | --- |
 | UI components derived from [shadcn/ui](https://github.com/shadcn-ui/ui) | MIT; Copyright (c) 2023 shadcn. The complete notice is in [legal/third-party/shadcn-ui/LICENSE.txt](legal/third-party/shadcn-ui/LICENSE.txt). |
-| Bundled [Fizgig](https://github.com/shootthesound/Fizgig) Python modules | Retain [LICENSE-fizgig.txt](apps/client/src-tauri/python/LICENSE-fizgig.txt) and [THIRD_PARTY_NOTICES-fizgig.md](apps/client/src-tauri/python/THIRD_PARTY_NOTICES-fizgig.md). The ComfyUI-derived MiniMax portions have unresolved GPL provenance; see [legal/README.md](legal/README.md). |
+| Bundled [Fizgig](https://github.com/shootthesound/Fizgig) Python modules | Retain [LICENSE-fizgig.txt](apps/client/src-tauri/python/LICENSE-fizgig.txt) and [THIRD_PARTY_NOTICES-fizgig.md](apps/client/src-tauri/python/THIRD_PARTY_NOTICES-fizgig.md). The ComfyUI-derived MiniMax portions have unresolved GPL provenance; the checked [ComfyUI licence](legal/third-party/ComfyUI/COPYING) is included. See [legal/README.md](legal/README.md). |
 | Code adapted from [MuseTalk](https://github.com/TMElyralab/MuseTalk) | Retain [LICENSE-MuseTalk.txt](apps/client/src-tauri/python/LICENSE-MuseTalk.txt). |
 | Diffusers-derived training code | Retain [LICENSE-diffusers-training.txt](apps/client/src-tauri/python/LICENSE-diffusers-training.txt) and source copyright notices. |
 | Whisper.cpp and the bundled Whisper model | Retain [LICENSE-whisper.cpp.txt](apps/client/src-tauri/resources/whisper/LICENSE-whisper.cpp.txt) and [LICENSE-whisper-model.txt](apps/client/src-tauri/resources/whisper/LICENSE-whisper-model.txt). |
