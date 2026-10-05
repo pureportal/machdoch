@@ -1,4 +1,10 @@
-import { Check, CircleDashed, Search, Sparkles } from "lucide-react";
+import { Check } from "lucide-react";
+import {
+  OffIcon,
+  SearchIcon,
+  PromptEnhancementIcon,
+  type ComposerIconProps,
+} from "@machdoch/product-ui";
 import { useMemo, type JSX } from "react";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import type {
@@ -29,23 +35,23 @@ export interface SessionPromptEnhancementPickerProps {
 const PROMPT_ENHANCEMENT_OPTIONS: ReadonlyArray<{
   mode: PromptEnhancementMode;
   description: string;
-  icon: typeof Sparkles;
+  icon: (props: ComposerIconProps) => JSX.Element;
 }> = [
   {
     mode: "off",
     description: "Send the request exactly as written.",
-    icon: CircleDashed,
+    icon: OffIcon,
   },
   {
     mode: "simple",
     description: "Rewrite the request for clarity before the task starts.",
-    icon: Sparkles,
+    icon: PromptEnhancementIcon,
   },
   {
     mode: "web-search",
     description:
       "Research current external context before rewriting when it matters.",
-    icon: Search,
+    icon: SearchIcon,
   },
 ];
 
@@ -117,9 +123,9 @@ export const SessionPromptEnhancementPicker = ({
               mode === "web-search" ? "w-10" : "w-8",
             )}
           >
-            <Sparkles className="h-3.5 w-3.5" />
+            <PromptEnhancementIcon className="h-3.5 w-3.5" />
             {mode === "web-search" ? (
-              <Search
+              <SearchIcon
                 aria-hidden="true"
                 className="app-composer-mode-icon h-3 w-3"
               />

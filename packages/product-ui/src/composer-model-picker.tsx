@@ -1,4 +1,5 @@
-import { Bot, Check, ChevronDown, Search } from "lucide-react";
+import { Check, Search } from "lucide-react";
+import { ModelIcon, DropdownIcon } from "./composer-icons";
 import {
   useEffect,
   useId,
@@ -204,11 +205,11 @@ export function ComposerModelPicker({
             aria-haspopup="dialog"
             disabled={disabled || providers.length === 0}
           >
-            <Bot aria-hidden="true" />
+            <ModelIcon aria-hidden="true" />
             <span>
               {activeProviderLabel} / {activeModelLabel}
             </span>
-            <ChevronDown aria-hidden="true" />
+            <DropdownIcon aria-hidden="true" />
           </button>
         </Popover.Trigger>
         <Popover.Portal>

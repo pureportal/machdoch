@@ -1,11 +1,5 @@
-import {
-  Check,
-  FolderOpen,
-  FolderPlus,
-  LockKeyhole,
-  Search,
-  X,
-} from "lucide-react";
+import { LockedWorkspaceIcon, WorkspaceIcon } from "@machdoch/product-ui";
+import { Check, FolderPlus, Search, X } from "lucide-react";
 import { useMemo, useRef, useState, type JSX, type KeyboardEvent } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
@@ -175,9 +169,9 @@ const WorkspaceSelectButtonContent = ({
 >): JSX.Element => (
   <>
     {workspaceLocked ? (
-      <LockKeyhole className="h-3.5 w-3.5 text-slate-500" />
+      <LockedWorkspaceIcon className="h-3.5 w-3.5 text-slate-500" />
     ) : (
-      <FolderOpen
+      <WorkspaceIcon
         className={cn(
           "h-3.5 w-3.5",
           !iconOnly && (active ? "text-sky-300" : "text-slate-500"),
@@ -423,7 +417,7 @@ export const WorkspaceSelect = ({
             {rankedOptions.map((option) => {
               const selected = selectedOptionId === option.id;
               const removable = Boolean(option.removable && onRemoveOption);
-              const OptionIcon = option.icon === "not-set" ? X : FolderOpen;
+              const OptionIcon = option.icon === "not-set" ? X : WorkspaceIcon;
 
               return (
                 <div

@@ -1,31 +1,25 @@
+import {
+  AskIcon,
+  ExecuteIcon,
+  GlobalMemoryIcon,
+  InterviewIcon,
+  FullAccessIcon,
+  ModelIcon,
+  OffIcon,
+  ParallelAgentsIcon,
+  PromptEnhancementIcon,
+  ReadOnlyIcon,
+  SearchIcon,
+  SessionMemoryIcon,
+  StopIcon,
+  UiControlIcon,
+  WorkspaceMemoryIcon,
+} from "./composer-icons";
+import { ReasoningIcons } from "./reasoning-icons";
 import { GoalControl, GoalTrigger } from "./goal-control";
 import { useGoalDraft } from "./use-goal-draft";
 import type { ProductSession, ProductShell } from "@machdoch/fleet-protocol";
-import {
-  ArrowUp,
-  Brain,
-  BrainCircuit,
-  ChevronsUp,
-  CircleDashed,
-  CircleOff,
-  FolderHeart,
-  GitFork,
-  Infinity as InfinityIcon,
-  MessageSquare,
-  Monitor,
-  Paperclip,
-  Search,
-  SignalHigh,
-  SignalLow,
-  SignalMedium,
-  SignalZero,
-  SlidersHorizontal,
-  Sparkles,
-  Square,
-  Tally5,
-  WandSparkles,
-  X,
-} from "lucide-react";
+import { ArrowUp, Paperclip, SlidersHorizontal, X } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -61,61 +55,61 @@ const REASONING_OPTIONS: Record<
   default: {
     label: "Provider default",
     description: "Use the model's default reasoning effort.",
-    icon: CircleDashed,
+    icon: ReasoningIcons.default,
     tone: "neutral",
   },
   none: {
     label: "None",
     description: "Use the lowest available reasoning setting.",
-    icon: CircleOff,
+    icon: ReasoningIcons.none,
     tone: "neutral",
   },
   minimal: {
     label: "Minimal",
     description: "Prefer minimal reasoning where supported.",
-    icon: SignalZero,
+    icon: ReasoningIcons.minimal,
     tone: "teal",
   },
   low: {
     label: "Low",
     description: "Favor speed and lower token use.",
-    icon: SignalLow,
+    icon: ReasoningIcons.low,
     tone: "cyan",
   },
   medium: {
     label: "Medium",
     description: "Balance quality, cost, and latency.",
-    icon: SignalMedium,
+    icon: ReasoningIcons.medium,
     tone: "sky",
   },
   high: {
     label: "High",
     description: "Spend more effort on complex tasks.",
-    icon: SignalHigh,
+    icon: ReasoningIcons.high,
     tone: "amber",
   },
   xhigh: {
     label: "XHigh",
     description: "Use extended effort for long-horizon tasks.",
-    icon: ChevronsUp,
+    icon: ReasoningIcons.xhigh,
     tone: "fuchsia",
   },
   max: {
     label: "Max",
     description: "Use the highest mapped reasoning effort.",
-    icon: Tally5,
+    icon: ReasoningIcons.max,
     tone: "rose",
   },
   ultra: {
     label: "Ultra",
     description: "Use maximum reasoning effort.",
-    icon: Sparkles,
+    icon: ReasoningIcons.ultra,
     tone: "violet",
   },
   aeon: {
     label: "Aeon",
     description: "Keep working until stopped.",
-    icon: InfinityIcon,
+    icon: ReasoningIcons.aeon,
     tone: "violet",
   },
 };
@@ -125,14 +119,14 @@ const MODE_OPTION_BY_VALUE: Record<"ask" | "machdoch", OptionMenuItem> = {
     value: "machdoch",
     label: "Machdoch",
     description: "Use all available tools and verify the work.",
-    icon: WandSparkles,
+    icon: ExecuteIcon,
     tone: "violet",
   },
   ask: {
     value: "ask",
     label: "Ask mode",
     description: "Use read-only tools.",
-    icon: MessageSquare,
+    icon: AskIcon,
     tone: "amber",
   },
 };
@@ -254,7 +248,7 @@ export function Composer({
     value: "off",
     label: "Off",
     description: "Send the request as written.",
-    icon: CircleDashed,
+    icon: OffIcon,
     tone: "neutral",
   };
   const enhancementOptions: OptionMenuItem[] = [
@@ -263,7 +257,7 @@ export function Composer({
       value: "simple",
       label: "Enhance",
       description: "Rewrite the request for clarity.",
-      icon: Sparkles,
+      icon: PromptEnhancementIcon,
       tone: "fuchsia",
     },
     {
@@ -272,7 +266,7 @@ export function Composer({
       description: webSearchAvailable
         ? "Research current context before rewriting."
         : "Web search is unavailable.",
-      icon: Search,
+      icon: SearchIcon,
       tone: "fuchsia",
       disabled: !webSearchAvailable,
     },
@@ -387,7 +381,7 @@ export function Composer({
                 value: WORKSPACE_DEFAULT_VALUE,
                 label: "Workspace default",
                 description: `Currently ${MODE_OPTION_BY_VALUE[composer.defaultMode].label}.`,
-                icon: CircleDashed,
+                icon: MODE_OPTION_BY_VALUE[composer.defaultMode].icon,
                 tone: "neutral",
               },
               ...MODE_OPTIONS,
@@ -418,7 +412,7 @@ export function Composer({
                 native: "Native",
               }[parallelAgentMode]
             }
-            activeIcon={GitFork}
+            activeIcon={ParallelAgentsIcon}
             activeTone="violet"
             options={(
               [
@@ -426,28 +420,28 @@ export function Composer({
                   value: "disabled",
                   label: "Disabled",
                   description: "",
-                  icon: CircleOff,
+                  icon: OffIcon,
                   tone: "neutral",
                 },
                 {
                   value: "read-only",
                   label: "Read Only",
                   description: "",
-                  icon: Search,
+                  icon: ReadOnlyIcon,
                   tone: "neutral",
                 },
                 {
                   value: "machdoch",
                   label: "Full Mode",
                   description: "",
-                  icon: GitFork,
+                  icon: FullAccessIcon,
                   tone: "violet",
                 },
                 {
                   value: "native",
                   label: "Native",
                   description: "",
-                  icon: GitFork,
+                  icon: ModelIcon,
                   tone: "violet",
                 },
               ] satisfies OptionMenuItem[]
@@ -484,7 +478,7 @@ export function Composer({
             label="Prompt enhancement"
             activeValue={composer.promptEnhancementMode}
             activeLabel={enhancement.label}
-            activeIcon={Sparkles}
+            activeIcon={PromptEnhancementIcon}
             activeTone={
               composer.promptEnhancementMode === "off" ? "neutral" : "fuchsia"
             }
@@ -513,7 +507,7 @@ export function Composer({
           <div className="m-product-composer-toolbar-spacer" />
           <Toggle
             label="Session memory"
-            icon={<Brain />}
+            icon={<SessionMemoryIcon />}
             pressed={composer.sessionMemoryEnabled}
             onManage={() => setSessionMemoryOpen(true)}
             onClick={() =>
@@ -526,7 +520,7 @@ export function Composer({
           />
           <Toggle
             label="Workspace memory"
-            icon={<FolderHeart />}
+            icon={<WorkspaceMemoryIcon />}
             pressed={composer.workspaceMemoryEnabled === true}
             disabled={composer.workspaceMemoryAvailable !== true}
             onClick={() =>
@@ -539,7 +533,7 @@ export function Composer({
           />
           <Toggle
             label="Global memory"
-            icon={<BrainCircuit />}
+            icon={<GlobalMemoryIcon />}
             pressed={composer.globalMemoryEnabled}
             disabled={!composer.globalMemoryAvailable}
             onClick={() =>
@@ -552,7 +546,7 @@ export function Composer({
           />
           <Toggle
             label="Interview"
-            icon={<MessageSquare />}
+            icon={<InterviewIcon />}
             pressed={composer.interviewEnabled}
             disabled={!composer.interviewAvailable}
             onClick={() =>
@@ -566,7 +560,7 @@ export function Composer({
           <Toggle
             label="UI control"
             title={composer.uiControlDescription}
-            icon={<Monitor />}
+            icon={<UiControlIcon />}
             pressed={composer.uiControlEnabled}
             disabled={!composer.uiControlAvailable}
             onClick={() =>
@@ -674,7 +668,7 @@ export function Composer({
                 })
               }
             >
-              <Square aria-hidden="true" />
+              <StopIcon aria-hidden="true" />
             </button>
           ) : null}
           <button

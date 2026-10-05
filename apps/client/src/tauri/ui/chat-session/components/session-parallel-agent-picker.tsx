@@ -1,12 +1,12 @@
+import { Check } from "lucide-react";
 import {
-  Check,
-  CircleOff,
-  Cpu,
-  Eye,
-  GitFork,
-  ShieldCheck,
-  type LucideIcon,
-} from "lucide-react";
+  FullAccessIcon,
+  ModelIcon,
+  OffIcon,
+  ParallelAgentsIcon,
+  ReadOnlyIcon,
+  type ComposerIconProps,
+} from "@machdoch/product-ui";
 import { useMemo, useState, type JSX } from "react";
 import type { ParallelAgentMode } from "../../../../core/types.js";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
@@ -23,11 +23,14 @@ import {
   PARALLEL_AGENT_OPTIONS,
 } from "../_helpers/session-toolbar-commands";
 
-const MODE_ICONS: Record<ParallelAgentMode, LucideIcon> = {
-  disabled: CircleOff,
-  "read-only": Eye,
-  machdoch: ShieldCheck,
-  native: Cpu,
+const MODE_ICONS: Record<
+  ParallelAgentMode,
+  (props: ComposerIconProps) => JSX.Element
+> = {
+  disabled: OffIcon,
+  "read-only": ReadOnlyIcon,
+  machdoch: FullAccessIcon,
+  native: ModelIcon,
 };
 
 export const SessionParallelAgentPicker = ({
@@ -70,11 +73,11 @@ export const SessionParallelAgentPicker = ({
             disabled={!available}
             data-active={mode !== "disabled"}
             className={cn(
-              "app-parallel-agent-button app-composer-toolbar-control h-8 gap-0.5 rounded-full p-0 shadow-none",
-              ActiveModeIcon ? "w-10" : "w-8",
+              "app-parallel-agent-button app-composer-toolbar-control h-8 gap-1 rounded-full p-0 shadow-none",
+              ActiveModeIcon ? "w-12" : "w-8",
             )}
           >
-            <GitFork className="h-3.5 w-3.5" />
+            <ParallelAgentsIcon className="h-3.5 w-3.5" />
             {ActiveModeIcon ? (
               <ActiveModeIcon
                 aria-hidden="true"

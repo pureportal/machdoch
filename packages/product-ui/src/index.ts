@@ -1,3 +1,30 @@
+export {
+  AdaptiveControlIcon,
+  AskIcon,
+  ContextPacksIcon,
+  DropdownIcon,
+  ExecuteIcon,
+  FullAccessIcon,
+  GlobalMemoryIcon,
+  GoalIcon,
+  InterviewIcon,
+  LockedWorkspaceIcon,
+  ModelIcon,
+  OffIcon,
+  ParallelAgentsIcon,
+  PromptEnhancementIcon,
+  ReadOnlyIcon,
+  SearchIcon,
+  SessionMemoryIcon,
+  SteerIcon,
+  StopIcon,
+  UiControlIcon,
+  WorkspaceDefaultIcon,
+  WorkspaceIcon,
+  WorkspaceMemoryIcon,
+  type ComposerIconProps,
+} from "./composer-icons";
+export { ReasoningIcons } from "./reasoning-icons";
 export { RemoteProductApp } from "./remote-product-app";
 export { GoalControl, GoalTrigger } from "./goal-control";
 export { useGoalDraft } from "./use-goal-draft";

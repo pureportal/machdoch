@@ -1,5 +1,6 @@
 import type { ProductGoal } from "@machdoch/fleet-protocol";
-import { Target, X } from "lucide-react";
+import { X } from "lucide-react";
+import { GoalIcon } from "./composer-icons";
 import { useEffect, useId, useRef, type ReactElement } from "react";
 
 export function GoalTrigger({
@@ -27,7 +28,7 @@ export function GoalTrigger({
       disabled={disabled}
       onClick={onClick}
     >
-      <Target aria-hidden="true" />
+      <GoalIcon aria-hidden="true" />
     </button>
   );
 }
@@ -133,7 +134,7 @@ export function GoalControl({
       <div className="m-goal-field">
         <div className="m-goal-heading">
           <label htmlFor={objectiveId}>
-            <Target aria-hidden="true" />
+            <GoalIcon aria-hidden="true" />
             Goal
           </label>
           {status ? (

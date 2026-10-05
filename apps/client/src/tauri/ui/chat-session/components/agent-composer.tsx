@@ -1,12 +1,17 @@
 import {
-  CornerDownRight,
-  ListOrdered,
-  Repeat2,
-  SendHorizonal,
-  Square,
-  X,
-} from "lucide-react";
-import type { ClipboardEvent, JSX, KeyboardEvent, ReactNode, Ref } from "react";
+  SteerIcon,
+  StopIcon,
+  type ComposerIconProps,
+} from "@machdoch/product-ui";
+import { ListOrdered, Repeat2, SendHorizonal, X } from "lucide-react";
+import type {
+  ClipboardEvent,
+  ComponentType,
+  JSX,
+  KeyboardEvent,
+  ReactNode,
+  Ref,
+} from "react";
 import {
   Fragment,
   startTransition,
@@ -263,13 +268,13 @@ const RUNNING_TASK_MESSAGE_ACTIONS = [
     id: "steer",
     label: "Steer",
     sendLabel: "Steer running task",
-    icon: CornerDownRight,
+    icon: SteerIcon,
   },
   {
     id: "stop-and-send",
     label: "Stop & Send",
     sendLabel: "Stop task and send message",
-    icon: Square,
+    icon: StopIcon,
   },
   {
     id: "queue",
@@ -281,7 +286,7 @@ const RUNNING_TASK_MESSAGE_ACTIONS = [
   id: RunningTaskMessageAction;
   label: string;
   sendLabel: string;
-  icon: typeof SendHorizonal;
+  icon: ComponentType<ComposerIconProps>;
 }>;
 
 const getRunningTaskMessageActionMeta = (
@@ -1376,7 +1381,7 @@ export const AgentComposer = ({
       onClick={onCancel}
       className={styles.cancelButton}
     >
-      <Square className={cn(styles.iconClassName, "fill-current")} />
+      <StopIcon className={cn(styles.iconClassName, "fill-current")} />
     </Button>
   ) : (
     <Button

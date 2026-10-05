@@ -1,16 +1,17 @@
 import type { ProductSession, ProductShell } from "@machdoch/fleet-protocol";
+import { Check } from "lucide-react";
 import {
-  Check,
-  ChevronDown,
-  Folder,
-  Layers3,
-  type LucideIcon,
-} from "lucide-react";
+  ContextPacksIcon,
+  DropdownIcon,
+  WorkspaceIcon,
+  type ComposerIconProps,
+} from "./composer-icons";
 import { DropdownMenu } from "radix-ui";
 import {
   useCallback,
   useEffect,
   useState,
+  type ComponentType,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -31,7 +32,7 @@ export interface OptionMenuItem {
   value: string;
   label: string;
   description: string;
-  icon: LucideIcon;
+  icon: ComponentType<ComposerIconProps>;
   tone: ControlTone;
   disabled?: boolean;
 }
@@ -97,7 +98,7 @@ export function OptionMenu({
   label: string;
   activeValue: string;
   activeLabel: string;
-  activeIcon: LucideIcon;
+  activeIcon: ComponentType<ComposerIconProps>;
   activeTone: ControlTone;
   options: OptionMenuItem[];
   disabled: boolean;
@@ -145,7 +146,9 @@ export function OptionMenu({
                 </span>
                 <span>
                   <strong>{option.label}</strong>
-                  {option.description ? <small>{option.description}</small> : null}
+                  {option.description ? (
+                    <small>{option.description}</small>
+                  ) : null}
                 </span>
                 <DropdownMenu.ItemIndicator>
                   <Check aria-hidden="true" />
@@ -220,9 +223,9 @@ export function WorkspaceMenu({
             aria-label={`Workspace: ${label}`}
             title={session.workspace}
           >
-            <Folder aria-hidden="true" />
+            <WorkspaceIcon aria-hidden="true" />
             <span>{label}</span>
-            <ChevronDown aria-hidden="true" />
+            <DropdownIcon aria-hidden="true" />
           </button>
         }
       >
@@ -343,9 +346,9 @@ export function ContextPackMenu({
       disabled={disabled}
       trigger={
         <button type="button" aria-label="Context packs">
-          <Layers3 aria-hidden="true" />
+          <ContextPacksIcon aria-hidden="true" />
           <span>Packs</span>
-          <ChevronDown aria-hidden="true" />
+          <DropdownIcon aria-hidden="true" />
         </button>
       }
     >

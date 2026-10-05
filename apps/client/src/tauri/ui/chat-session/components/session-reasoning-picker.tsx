@@ -1,17 +1,5 @@
-import {
-  Check,
-  ChevronsUp,
-  CircleDashed,
-  CircleOff,
-  Infinity as InfinityIcon,
-  SignalHigh,
-  SignalLow,
-  SignalMedium,
-  SignalZero,
-  Sparkles,
-  Tally5,
-  type LucideIcon,
-} from "lucide-react";
+import { Check } from "lucide-react";
+import { ReasoningIcons, type ComposerIconProps } from "@machdoch/product-ui";
 import { useCallback, useMemo, useState, type JSX } from "react";
 import type { ReasoningMode } from "../../runtime";
 import { isReasoningMode } from "../../../../core/runtime-contract.generated.js";
@@ -44,63 +32,63 @@ const REASONING_META: Record<
   {
     label: string;
     description: string;
-    icon: LucideIcon;
+    icon: (props: ComposerIconProps) => JSX.Element;
   }
 > = {
   default: {
     label: "Provider default",
     description:
       "Use the provider or selected model's default reasoning effort.",
-    icon: CircleDashed,
+    icon: ReasoningIcons.default,
   },
   none: {
     label: "None",
     description:
       "Use the lowest available reasoning setting for latency-sensitive work.",
-    icon: CircleOff,
+    icon: ReasoningIcons.none,
   },
   minimal: {
     label: "Minimal",
     description:
       "Prefer minimal internal thinking where the provider supports it.",
-    icon: SignalZero,
+    icon: ReasoningIcons.minimal,
   },
   low: {
     label: "Low",
     description: "Favor speed and lower token use for simple tasks.",
-    icon: SignalLow,
+    icon: ReasoningIcons.low,
   },
   medium: {
     label: "Medium",
     description: "Balance quality, cost, and latency for everyday agent work.",
-    icon: SignalMedium,
+    icon: ReasoningIcons.medium,
   },
   high: {
     label: "High",
     description:
       "Spend more effort on planning, coding, and multi-step reasoning.",
-    icon: SignalHigh,
+    icon: ReasoningIcons.high,
   },
   xhigh: {
     label: "XHigh",
     description: "Use extended effort for long-horizon or complex agent tasks.",
-    icon: ChevronsUp,
+    icon: ReasoningIcons.xhigh,
   },
   max: {
     label: "Max",
     description:
       "Use the highest mapped effort where the provider supports it.",
-    icon: Tally5,
+    icon: ReasoningIcons.max,
   },
   ultra: {
     label: "Ultra",
     description: "Use maximum reasoning effort.",
-    icon: Sparkles,
+    icon: ReasoningIcons.ultra,
   },
   aeon: {
     label: "Aeon",
     description: "Keep working until stopped.",
-    icon: InfinityIcon,
+    icon: ReasoningIcons.aeon,
   },
 };
 

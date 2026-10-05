@@ -1232,8 +1232,8 @@
 }
 
 .m-product-option-menu > button > svg {
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
 }
 
 .m-product-option-menu > button[data-tone="teal"] {
@@ -1542,8 +1542,8 @@
 }
 
 .m-product-toggle-button > svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
 }
 
 .m-product-composer-attachments {

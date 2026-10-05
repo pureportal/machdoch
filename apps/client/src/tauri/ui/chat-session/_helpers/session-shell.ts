@@ -1,4 +1,10 @@
 import {
+  AskIcon,
+  ExecuteIcon,
+  type ComposerIconProps,
+} from "@machdoch/product-ui";
+import type { ComponentType } from "react";
+import {
   Archive,
   Ban,
   BellDot,
@@ -13,7 +19,6 @@ import {
   MessageSquare,
   ServerCrash,
   XCircle,
-  WandSparkles,
 } from "lucide-react";
 import type {
   TaskConversationContext,
@@ -294,7 +299,7 @@ export const RUN_MODE_META = {
   ask: {
     label: "Ask mode",
     description: "Use only read-only function calls.",
-    icon: MessageSquare,
+    icon: AskIcon,
     selectedClassName: "border-sky-500/30 bg-sky-500/10 text-sky-100",
     iconClassName: "text-sky-200",
     badgeClassName: "border-amber-500/20 bg-amber-500/10 text-amber-200",
@@ -302,7 +307,7 @@ export const RUN_MODE_META = {
   machdoch: {
     label: "Machdoch",
     description: "Let machdoch use all function calls and verify its work.",
-    icon: WandSparkles,
+    icon: ExecuteIcon,
     selectedClassName: "border-sky-500/30 bg-sky-500/10 text-sky-100",
     iconClassName: "text-sky-200",
     badgeClassName: "border-violet-500/20 bg-violet-500/10 text-violet-200",
@@ -312,7 +317,7 @@ export const RUN_MODE_META = {
   {
     label: string;
     description: string;
-    icon: typeof MessageSquare;
+    icon: ComponentType<ComposerIconProps>;
     selectedClassName: string;
     iconClassName: string;
     badgeClassName: string;
