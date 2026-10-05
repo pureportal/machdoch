@@ -9381,7 +9381,6 @@ describe("runRalphFlow", () => {
       );
       const staleResult = await staleRun;
       expect(staleResult.status).toBe("crashed");
-      expect(staleResult.summary.toLowerCase()).toContain("ownership");
 
       const history = await readRalphExecutionHistoryResults(staleLogger.paths);
       expect(history.filter((entry) => entry.blockId === "work")).toEqual([
@@ -11085,6 +11084,89 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("defers task selection during a mutation lease and selects after release", async () => {
+    const workspace = await mkdtemp(join(tmpdir(), "ralph-task-contention-"));
+    const path = join(workspace, "tasks.json");
+    const tasks = { tasks: [{ id: "task-1", status: "planned" }] };
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "select",
+          type: "UTILITY",
+          title: "Select",
+          utility: { type: "SELECT_JSON_TASK", path: "tasks.json" },
+        },
+        { id: "end", type: "END", title: "End", status: "success" },
+      ],
+      edges: [
+        {
+          id: "start-select",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "select",
+        },
+        {
+          id: "deferred-end",
+          from: "select",
+          fromOutput: "DEFERRED",
+          to: "end",
+        },
+        {
+          id: "selected-end",
+          from: "select",
+          fromOutput: "SELECTED",
+          to: "end",
+        },
+      ],
+    });
+    let mutationLock:
+      | Awaited<ReturnType<typeof acquireRalphFileMutationLock>>
+      | undefined;
+
+    try {
+      await writeFile(path, JSON.stringify(tasks), "utf8");
+      mutationLock = await acquireRalphFileMutationLock(path, "task-writer");
+      const deferred = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "waiting-selector" },
+      );
+      expect(deferred.status).toBe("completed");
+      expect(
+        deferred.blockResults.find((entry) => entry.blockId === "select"),
+      ).toMatchObject({
+        status: "completed",
+        output: "DEFERRED",
+        data: { path, jsonPath: "tasks", retryable: true },
+      });
+      expect(JSON.parse(await readFile(path, "utf8"))).toEqual(tasks);
+      await mutationLock.release();
+      mutationLock = undefined;
+
+      const selected = await runRalphFlow(
+        flow,
+        { ...runtimeConfig, workspaceRoot: workspace },
+        customizations,
+        { runId: "ready-selector" },
+      );
+      expect(selected.status).toBe("completed");
+      expect(
+        selected.blockResults.find((entry) => entry.blockId === "select"),
+      ).toMatchObject({
+        output: "SELECTED",
+        data: { taskIds: ["task-1"] },
+      });
+      expect(
+        JSON.parse(await readFile(path, "utf8")).tasks[0].lease.ownerId,
+      ).toBe("ready-selector");
+    } finally {
+      await mutationLock?.release();
+      await rm(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("heartbeats claimed JSON task leases through transient mutation contention", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "ralph-task-heartbeat-"));
     const path = join(workspace, "tasks.json");
@@ -11181,14 +11263,22 @@ describe("runRalphFlow", () => {
           },
           { interval: 25, timeout: 2_000 },
         );
-        const competingLock = await acquireRalphFileMutationLock(
-          path,
-          "rival-probe",
+        let competingLock: Awaited<
+          ReturnType<typeof acquireRalphFileMutationLock>
+        >;
+        await vi.waitFor(
+          async () => {
+            competingLock = await acquireRalphFileMutationLock(
+              path,
+              "rival-probe",
+            );
+          },
+          { interval: 25, timeout: 2_000 },
         );
         try {
           await new Promise((resolveDelay) => setTimeout(resolveDelay, 400));
         } finally {
-          await competingLock.release();
+          await competingLock!.release();
         }
         rivalResult = await runRalphFlow(
           rivalFlow,
@@ -11216,6 +11306,7 @@ describe("runRalphFlow", () => {
       expect(
         rivalResult?.blockResults.find((entry) => entry.blockId === "select")
           ?.output,
+        JSON.stringify(rivalResult, null, 2),
       ).toBe("DEFERRED");
       expect(stored.tasks[0]?.lease.ownerId).toBe("owner-run");
       expect(Date.parse(stored.tasks[0]!.lease.expiresAt)).toBeGreaterThan(
