@@ -159,10 +159,33 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  localStorage.clear();
   vi.unstubAllGlobals();
 });
 
 describe("composer submission guards", () => {
+  it("restores an unstarted goal after reopening without attaching it to a message", async () => {
+    const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
+    const view = harness(onCommand, "Fix auth");
+    fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Goal objective" }), {
+      target: { value: "Verify auth\nCheck sign-out" },
+    });
+    view.hide();
+    view.show("A", "Fix auth");
+    expect(
+      screen.getByRole("button", { name: "Goal" }).getAttribute("aria-pressed"),
+    ).toBe("false");
+    await send();
+    expect(onCommand.mock.calls[0]![0]).not.toHaveProperty("goalObjective");
+    fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+    expect(
+      screen.getByRole<HTMLTextAreaElement>("textbox", {
+        name: "Goal objective",
+      }).value,
+    ).toBe("Verify auth\nCheck sign-out");
+  });
+
   it.each(["active", "paused", "blocked"] as const)(
     "requires enabling a saved %s goal before attaching it to a message",
     async (status) => {

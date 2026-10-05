@@ -747,6 +747,7 @@ export const SessionComposer = ({
               modes={getAvailableGoalModes(activeSession.provider)}
               goal={activeSession.goal}
               objective={goalDraft.objective}
+              error={goalDraft.error}
               onObjectiveChange={goalDraft.setObjective}
               running={isExecuting}
               disabled={Boolean(editingMessageId)}

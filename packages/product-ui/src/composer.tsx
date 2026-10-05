@@ -606,6 +606,7 @@ export function Composer({
               modes={composer.availableGoalModes ?? ["machdoch"]}
               goal={composer.goal}
               objective={goalDraft.objective}
+              error={goalDraft.error}
               onObjectiveChange={goalDraft.setObjective}
               running={composer.isExecuting}
               disabled={pending}
