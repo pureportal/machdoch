@@ -26,7 +26,10 @@ const EDIT_DRAFT = "Original edited request";
 const noop = (): void => {};
 const noopAsync = async (): Promise<void> => {};
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 beforeAll(() => {
   Object.defineProperties(HTMLDialogElement.prototype, {
@@ -150,6 +153,34 @@ const createProps = (
 });
 
 describe("SessionComposer goal", () => {
+  it("restores an unstarted goal after reopening with the goal disabled", () => {
+    const onSend = vi.fn();
+    const props = createProps({
+      editingMessageId: null,
+      canSendMessage: true,
+      isExecuting: false,
+      onSend,
+    });
+    const view = render(createElement(SessionComposer, props));
+    fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Goal objective" }), {
+      target: { value: "Verify auth\nCheck sign-out" },
+    });
+    view.unmount();
+    render(createElement(SessionComposer, props));
+    expect(
+      screen.getByRole("button", { name: "Goal" }).getAttribute("aria-pressed"),
+    ).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    expect(onSend).toHaveBeenCalledExactlyOnceWith(EDIT_DRAFT, 1, "continue");
+    fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+    expect(
+      screen.getByRole<HTMLTextAreaElement>("textbox", {
+        name: "Goal objective",
+      }).value,
+    ).toBe("Verify auth\nCheck sign-out");
+  });
+
   it.each([
     "active",
     "paused",

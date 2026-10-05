@@ -42,6 +42,7 @@ export function GoalControl({
   modes,
   goal,
   objective,
+  error,
   running,
   disabled = false,
   onClose,
@@ -56,6 +57,7 @@ export function GoalControl({
   modes: readonly ("machdoch" | "native")[];
   goal?: ProductGoal | null | undefined;
   objective: string;
+  error?: string | null;
   running: boolean;
   disabled?: boolean;
   onClose: () => void;
@@ -213,6 +215,11 @@ export function GoalControl({
           disabled={disabled}
           onChange={(event) => onObjectiveChange(event.target.value)}
         />
+        {error ? (
+          <p className="m-goal-reason" role="alert">
+            {error}
+          </p>
+        ) : null}
         {goal?.reason && !changed ? (
           <p className="m-goal-reason">{goal.reason}</p>
         ) : null}

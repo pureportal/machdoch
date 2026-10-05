@@ -1,4 +1,10 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import {
   afterAll,
   afterEach,
@@ -23,12 +29,17 @@ function GoalControl(
     <GoalControlView
       {...props}
       objective={draft.objective}
+      error={draft.error}
       onObjectiveChange={draft.setObjective}
     />
   );
 }
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  localStorage.clear();
+});
 
 beforeAll(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
@@ -42,6 +53,40 @@ afterAll(() => {
 });
 
 describe("goal control", () => {
+  it("shows a save failure beside the goal without losing the typed text", () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage full", "QuotaExceededError");
+    });
+    render(
+      <GoalControl
+        id="goal-input"
+        open
+        mode="machdoch"
+        modes={["machdoch"]}
+        running={false}
+        onClose={vi.fn()}
+        onModeChange={vi.fn()}
+        onCommand={vi.fn()}
+        onPause={vi.fn()}
+      />,
+    );
+    const input = screen.getByRole<HTMLTextAreaElement>("textbox", {
+      name: "Goal objective",
+    });
+    fireEvent.change(input, { target: { value: "Fix auth" } });
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+    expect(input.value).toBe("Fix auth");
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Could not save the goal draft; edit it to retry.",
+    );
+    expect(consoleError).toHaveBeenCalledOnce();
+  });
+
   it("shows native availability for a provider with only managed goals", () => {
     render(
       <GoalControl
