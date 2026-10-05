@@ -251,7 +251,10 @@ import { useFleetManagedSettings } from "./use-fleet-managed-settings";
 import { useFleetControl } from "./use-fleet-control";
 import { useSessionComposerState } from "./use-session-composer-state";
 import { useSessionFileDrops } from "./use-session-file-drops";
-import { useSessionLifecycle } from "./use-session-lifecycle";
+import {
+  useSessionLifecycle,
+  type CreateNewSessionOptions,
+} from "./use-session-lifecycle";
 import { useSessionSettingsActions } from "./use-session-settings";
 import {
   useSessionTaskSubmission,
@@ -1033,16 +1036,19 @@ export const useChatSessionController = (
     state,
     providerChooserState,
   });
-  const handleCreateSession = useCallback((): void => {
-    const sessionId = activeSessionIdRef.current;
-    composerState.resetDraftHistoryState();
-    invalidateAttachmentMutation(`session:${sessionId}`);
-    lifecycleActions.createNewSession();
-  }, [
-    composerState.resetDraftHistoryState,
-    invalidateAttachmentMutation,
-    lifecycleActions,
-  ]);
+  const handleCreateSession = useCallback(
+    (newSessionOptions: CreateNewSessionOptions = {}): void => {
+      const sessionId = activeSessionIdRef.current;
+      composerState.resetDraftHistoryState();
+      invalidateAttachmentMutation(`session:${sessionId}`);
+      lifecycleActions.createNewSession(newSessionOptions);
+    },
+    [
+      composerState.resetDraftHistoryState,
+      invalidateAttachmentMutation,
+      lifecycleActions,
+    ],
+  );
   const createPoseChat = useCallback(
     (
       poseScene:
@@ -7143,7 +7149,11 @@ export const useChatSessionController = (
     },
     onRetryTask: taskSubmission.handleRetryTask,
     onContinueTask: taskSubmission.handleContinueTask,
-    onCreateSession: handleCreateSession,
+    onCreateSession: (workspace, sessionId) =>
+      handleCreateSession({
+        ...(workspace ? { workspace } : {}),
+        ...(sessionId ? { id: sessionId } : {}),
+      }),
     onActivateSession: state.setActiveSessionId,
     onArchiveSession: lifecycleActions.archiveSession,
     onTogglePinnedSession: lifecycleActions.togglePinnedSession,
@@ -8542,7 +8552,7 @@ export const useChatSessionController = (
       onSessionSearchQueryChange: state.setSessionSearchQuery,
       onSessionProjectFilterChange: state.setSessionProjectFilter,
       onSessionTagFilterToggle: lifecycleActions.toggleSessionTagFilter,
-      onCreateSession: handleCreateSession,
+      onCreateSession: () => handleCreateSession(),
       onActivateSession: state.setActiveSessionId,
       onArchiveSession: lifecycleActions.archiveSession,
       onDeleteSession: lifecycleActions.deleteSession,
@@ -8587,7 +8597,7 @@ export const useChatSessionController = (
       onRenameCommit: handleRenameCommit,
       onRenameCancel: handleRenameCancel,
       onSelectFolder: handleSelectFolder,
-      onCreateSession: handleCreateSession,
+      onCreateSession: () => handleCreateSession(),
       onStartRename: () => {
         state.setRenameValue(currentSessionTitle);
         state.setIsRenamingSession(true);

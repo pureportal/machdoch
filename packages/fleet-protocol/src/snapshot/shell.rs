@@ -593,6 +593,7 @@ fn media() -> Shape {
 
 pub(super) fn shape() -> Shape {
     object(vec![
+        optional("sessionRoutingAvailable", Shape::Bool),
         optional("projectLibrary", project_library()),
         optional("poseSceneSvg", string(64_000)),
         required("version", Shape::Version),

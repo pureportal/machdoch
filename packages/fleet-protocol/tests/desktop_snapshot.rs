@@ -5,6 +5,19 @@ use machdoch_fleet_protocol::{
 use serde_json::Value;
 
 #[test]
+fn session_routing_capability_is_an_optional_boolean() {
+    let mut payload: Value =
+        serde_json::from_str(include_str!("../fixtures/desktop-snapshot.json")).unwrap();
+    for capability in [serde_json::json!(true), serde_json::json!(false)] {
+        payload["response"]["snapshot"]["shell"]["sessionRoutingAvailable"] = capability;
+        let message = deserialize_host_message(serde_json::to_vec(&payload).unwrap()).unwrap();
+        serialize_host_message(&message).unwrap();
+    }
+    payload["response"]["snapshot"]["shell"]["sessionRoutingAvailable"] = serde_json::json!("true");
+    assert!(deserialize_host_message(serde_json::to_vec(&payload).unwrap()).is_err());
+}
+
+#[test]
 fn telemetry_has_bounded_values_in_both_gateway_directions() {
     let mut payload: Value =
         serde_json::from_str(include_str!("../fixtures/desktop-snapshot.json")).unwrap();

@@ -40,6 +40,7 @@ export function productFixture(): ProductSnapshot {
     },
   ];
   snapshot.shell.activeSessionId = "session-1";
+  snapshot.shell.sessionRoutingAvailable = true;
   snapshot.shell.workspaces = [
     { root: "/projects/example", label: "Example", sessionCount: 1 },
   ];

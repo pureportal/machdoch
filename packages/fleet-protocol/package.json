@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./media": "./src/media.ts",
-    "./telemetry": "./src/telemetry.ts"
+    "./telemetry": "./src/telemetry.ts",
+    "./session-routing": "./src/session-routing.ts"
   },
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",

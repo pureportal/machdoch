@@ -1,7 +1,10 @@
 ﻿import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { productSnapshotSchema } from "@machdoch/fleet-protocol";
+import {
+  createFleetSessionId,
+  productSnapshotSchema,
+} from "@machdoch/fleet-protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadRuntimeConfig } from "../../core/config.js";
 import { createTaskExecutionController } from "../../core/execution.js";
@@ -21,6 +24,56 @@ afterEach(async () => {
 });
 
 describe.sequential("Fleet CLI product runtime", () => {
+  it("persists the correlated session identity and workspace across a service restart", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-session-route-"));
+    roots.push(root);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", join(root, "config"));
+    const workspace = join(root, "workspace");
+    const runtime = await FleetCliProductRuntime.create(workspace);
+    const command = {
+      kind: "create-session",
+      commandId: crypto.randomUUID(),
+      workspace,
+    } as const;
+    try {
+      expect(
+        await runtime.handleRequest({ type: "executeProductCommand", command }),
+      ).toMatchObject({
+        type: "commandAccepted",
+        receipt: { duplicate: false },
+      });
+    } finally {
+      await runtime.shutdown();
+    }
+    const restored = await FleetCliProductRuntime.create(workspace);
+    try {
+      expect(
+        await restored.handleRequest({
+          type: "executeProductCommand",
+          command,
+        }),
+      ).toMatchObject({
+        type: "commandAccepted",
+        receipt: { duplicate: true },
+      });
+      const snapshot = await restored.handleRequest({
+        type: "getProductSnapshot",
+      });
+      if (snapshot.type !== "productSnapshot")
+        throw new Error("Session snapshot is missing.");
+      const sessionId = await createFleetSessionId(command.commandId);
+      expect(snapshot.snapshot.shell?.sessionRoutingAvailable).toBe(true);
+      expect(snapshot.snapshot.shell?.activeSessionId).toBe(sessionId);
+      expect(
+        snapshot.snapshot.shell?.sessions.filter(
+          (entry) => entry.id === sessionId,
+        ),
+      ).toEqual([expect.objectContaining({ id: sessionId, workspace })]);
+    } finally {
+      await restored.shutdown();
+    }
+  });
+
   it("submits a task and goal together through the Fleet CLI service", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-goal-submit-"));
     roots.push(root);

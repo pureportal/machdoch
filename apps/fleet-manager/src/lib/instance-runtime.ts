@@ -15,6 +15,7 @@ export function createInstanceRuntime(
   const basePath = `/api/instances/${encodeURIComponent(instanceId)}/product`;
   const selectionCommandId = crypto.randomUUID();
   let sessionSelected = false;
+  let selectionRequested = false;
   const readSnapshot = async (
     signal?: AbortSignal,
   ): Promise<ProductSnapshot> => {
@@ -44,17 +45,45 @@ export function createInstanceRuntime(
         return snapshot;
       }
       signal?.throwIfAborted();
-      await runtime.execute(
-        {
-          kind: "activate-session",
-          sessionId: initialSessionId,
-          commandId: selectionCommandId,
-        },
-        signal,
+      const selectionSignal = AbortSignal.any(
+        signal
+          ? [signal, AbortSignal.timeout(8_000)]
+          : [AbortSignal.timeout(8_000)],
       );
-      signal?.throwIfAborted();
+      if (!selectionRequested) {
+        await runtime.execute(
+          {
+            kind: "activate-session",
+            sessionId: initialSessionId,
+            commandId: selectionCommandId,
+          },
+          selectionSignal,
+        );
+        selectionRequested = true;
+      }
+      const confirmationDeadline = Date.now() + 8_000;
+      let selectedSnapshot = await readSnapshot(selectionSignal);
+      while (selectedSnapshot.shell?.activeSessionId !== initialSessionId) {
+        selectionSignal.throwIfAborted();
+        if (
+          !selectedSnapshot.shell?.sessions.some(
+            (session) => session.id === initialSessionId,
+          )
+        )
+          throw new Error(
+            "This session is no longer on the device. Open the device from Overview.",
+          );
+        if (Date.now() >= confirmationDeadline)
+          throw new Error(
+            "Session could not be selected. Retry or open the device.",
+          );
+        await new Promise<void>((resolve) => setTimeout(resolve, 150));
+        selectionSignal.throwIfAborted();
+        selectedSnapshot = await readSnapshot(selectionSignal);
+      }
+      selectionSignal.throwIfAborted();
       sessionSelected = true;
-      return readSnapshot(signal);
+      return selectedSnapshot;
     },
     async execute(command, signal) {
       const validatedCommand = productCommandSchema.parse({

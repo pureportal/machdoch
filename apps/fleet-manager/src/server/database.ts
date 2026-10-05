@@ -110,6 +110,7 @@ export class FleetDatabase {
       "002-settings-application-status.sql",
       "003-settings-sync-status.sql",
       "004-enrollment-settings.sql",
+      "005-fleet-session-routes.sql",
     ];
     const appliedVersions = this.all(
       "SELECT version FROM schema_migrations ORDER BY version",

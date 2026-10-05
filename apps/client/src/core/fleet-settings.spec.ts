@@ -560,13 +560,17 @@ describe.sequential("Headless managed settings", () => {
     const local = delivery().profile!.document;
     const captureLocalSettings = vi.fn(async () => local);
     const requests: string[] = [];
+    let captureRequired = true;
     const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
       const path = new URL(String(url)).pathname;
       requests.push(`${init?.method ?? "GET"} ${path}`);
-      if (path.endsWith("/enrollment"))
-        return init?.method === "PUT"
-          ? new Response(null, { status: 204 })
-          : Response.json({ captureRequired: true });
+      if (path.endsWith("/enrollment")) {
+        if (init?.method === "PUT") {
+          captureRequired = false;
+          return new Response(null, { status: 204 });
+        }
+        return Response.json({ captureRequired });
+      }
       return init?.method === "PUT"
         ? new Response(null, { status: 204 })
         : Response.json(delivery());
@@ -614,6 +618,46 @@ describe.sequential("Headless managed settings", () => {
       captureLocalSettings,
     });
     expect(captureLocalSettings).not.toHaveBeenCalled();
+    expect(await loadFleetManagedProfile()).toMatchObject({ revision: 1 });
+  });
+
+  it("captures settings when the manager enables capture after a delivery was cached", async () => {
+    await setup();
+    const local = delivery().profile!.document;
+    const captureLocalSettings = vi.fn(async () => local);
+    let captureRequired = false;
+    let managed: FleetManagedSettingsDelivery = {
+      ...delivery(),
+      profile: null,
+    };
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+      if (String(url).endsWith("/enrollment")) {
+        if (init?.method === "PUT") {
+          expect(JSON.parse(String(init.body))).toEqual(local);
+          captureRequired = false;
+          return new Response(null, { status: 204 });
+        }
+        return Response.json({ captureRequired });
+      }
+      return init?.method === "PUT"
+        ? new Response(null, { status: 204 })
+        : Response.json(managed);
+    });
+    const synchronize = () =>
+      synchronizeFleetSettings({
+        config,
+        signal: controller().signal,
+        fetch,
+        captureLocalSettings,
+      });
+    await synchronize();
+    expect(captureLocalSettings).not.toHaveBeenCalled();
+    expect(await loadFleetManagedProfile()).toBeNull();
+    captureRequired = true;
+    managed = delivery();
+    await synchronize();
+    await synchronize();
+    expect(captureLocalSettings).toHaveBeenCalledTimes(1);
     expect(await loadFleetManagedProfile()).toMatchObject({ revision: 1 });
   });
 });

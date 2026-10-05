@@ -18,7 +18,9 @@ const clientEntry = bundledClient
   : ["--import", "@oxc-node/core/register", "src/cli/main.ts"];
 const fixtureRoot = join(
   managerRoot,
-  ".next",
+  "..",
+  "..",
+  ".tmp",
   "fleet-verification",
   String(Date.now()),
 );
@@ -474,6 +476,58 @@ async function main() {
     "Revision conflicts returned 409. The merge screen rendered at 390px without horizontal page overflow.",
   );
   process.stdout.write("Desktop and mobile merge checks passed.\n");
+  await small.goto(`${origin}/copilot`);
+  await small.getByRole("checkbox").first().waitFor();
+  const choices = await small.getByRole("checkbox").all();
+  assert.ok(choices.length >= 2);
+  await choices[0].check();
+  await choices[1].check();
+  assert.ok(
+    await small.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  );
+  await small.screenshot({
+    path: join(fixtureRoot, "copilot-mobile.png"),
+    fullPage: true,
+  });
+  const routedResponse = small.waitForResponse(
+    (response) =>
+      response.url() === `${origin}/api/fleet/sessions` &&
+      response.request().method() === "POST",
+  );
+  await small
+    .getByRole("button", { name: "Open on least-busy device", exact: true })
+    .click();
+  const routed = await routedResponse;
+  assert.equal(routed.status(), 201, await routed.text());
+  const sessionRoute = await routed.json();
+  const routingRequest = routed.request().postDataJSON();
+  await small.waitForURL(
+    `${origin}/instances/${sessionRoute.instanceId}?session=${sessionRoute.sessionId}`,
+  );
+  await small
+    .getByRole("textbox", { name: "Task composer", exact: true })
+    .waitFor();
+  await small.locator('.m-product-layout[data-view="chat"]').waitFor();
+  const selectedProduct = await api(
+    `/instances/${sessionRoute.instanceId}/product/snapshot`,
+  );
+  assert.equal(selectedProduct.shell.activeSessionId, sessionRoute.sessionId);
+  assert.ok(
+    await small.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  );
+  await small.screenshot({
+    path: join(fixtureRoot, "copilot-chat-mobile.png"),
+    fullPage: true,
+  });
+  const firstRoute = await api("/fleet/sessions", "POST", routingRequest);
+  assert.deepEqual(firstRoute, sessionRoute);
+  evidence.push(
+    "The mobile Copilot selected workspaces, routed one session to a selected device, and opened the shared Chat. Repeated requests returned the same session.",
+  );
   if (process.env.FLEET_VERIFY_ANDROID_SERIAL) {
     evidence.push(
       await verifyAndroidController({
@@ -522,6 +576,13 @@ async function main() {
   }, "Devices did not reconnect after the manager restart.");
   evidence.push(
     "Both devices retained the last managed revision through a manager outage and reconnected after its restart.",
+  );
+  assert.deepEqual(
+    await api("/fleet/sessions", "POST", routingRequest),
+    sessionRoute,
+  );
+  evidence.push(
+    "The Copilot route survived the production manager restart without creating another session.",
   );
   await api(`/instances/${devices[1].connection.instanceId}`, "DELETE");
   await eventually(
