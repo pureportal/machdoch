@@ -415,6 +415,7 @@ fn quick_task() -> Shape {
 
 fn ralph() -> Shape {
     object(vec![
+        optional("editorAvailable", Shape::Bool),
         optional("workspaceRoot", workspace()),
         required("loading", Shape::Bool),
         optional("error", text()),

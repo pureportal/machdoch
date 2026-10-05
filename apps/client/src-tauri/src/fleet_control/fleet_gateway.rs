@@ -12,8 +12,11 @@ pub(crate) fn handle_fleet_request(
     request: HostRequest,
 ) -> HostResponse {
     match request {
+        HostRequest::Ralph { request } => HostResponse::Ralph {
+            response: crate::fleet_operations::handle(app_handle, request, true),
+        },
         HostRequest::Media { request } => HostResponse::Media {
-            response: crate::media::fleet::handle(app_handle, request),
+            response: crate::fleet_operations::handle(app_handle, request, false),
         },
         HostRequest::GetProductSnapshot => product_snapshot(app_handle),
         HostRequest::ExecuteProductCommand { command } => {
@@ -28,7 +31,7 @@ pub(crate) fn handle_fleet_request(
     }
 }
 
-fn product_snapshot(app_handle: &tauri::AppHandle) -> HostResponse {
+pub(super) fn product_snapshot(app_handle: &tauri::AppHandle) -> HostResponse {
     let state = app_handle.state::<FleetControlState>();
     if state.ensure_state_loaded().is_err() {
         return HostResponse::Error {
@@ -47,7 +50,12 @@ fn product_snapshot(app_handle: &tauri::AppHandle) -> HostResponse {
     };
 
     match serde_json::to_value(snapshot) {
-        Ok(snapshot) => HostResponse::ProductSnapshot { snapshot },
+        Ok(mut snapshot) => {
+            if snapshot["shell"]["ralph"].is_object() {
+                snapshot["shell"]["ralph"]["editorAvailable"] = serde_json::json!(true);
+            }
+            HostResponse::ProductSnapshot { snapshot }
+        }
         Err(_) => HostResponse::Error {
             code: HostErrorCode::Internal,
             message: "Product state is unavailable.".to_string(),

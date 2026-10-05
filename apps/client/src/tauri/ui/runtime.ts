@@ -1,3 +1,8 @@
+import type {
+  ActiveDesktopTaskSummary,
+  RecentDesktopTaskResult,
+} from "../../shared/task-run-state.js";
+import { getRemoteRalphPlatform } from "./ralph/ralph-platform";
 import * as tauriCore from "@tauri-apps/api/core";
 import { VALID_SPEECH_TO_TEXT_PROVIDERS } from "../../core/runtime-contract.generated.js";
 import type {
@@ -29,10 +34,7 @@ import type {
 import type { ReasoningLesson } from "../../core/reasoning-bank.js";
 import { validateTaskDeterministicAction } from "../../core/_helpers/deterministic-action-validation.js";
 import { replaceDiscoveredModelCapabilities } from "../../core/model-capabilities.js";
-import {
-  normalizeDesktopTaskRunError,
-  type DesktopTaskRunFailure,
-} from "./desktop-task-error.js";
+import { normalizeDesktopTaskRunError } from "./desktop-task-error.js";
 import { normalizeMcpConfigSaveError } from "./mcp-config-error.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
 import type { InstructionTagRule } from "../../core/instruction-system/types.js";
@@ -1351,39 +1353,11 @@ export interface RalphRunDetailResult {
 
 export type RalphRunLogResult = RalphRunLogReadResult;
 
-export interface ActiveDesktopTaskSummary {
-  progressEvents?: Array<{
-    timestamp: number;
-    progress: TaskExecutionProgress;
-  }>;
-  id: string;
-  kind: string;
-  workspaceRoot: string;
-  arguments: string[];
-  startedAt: number;
-  sessionId?: string;
-}
-
-export type RecentDesktopTaskOutcome =
-  | {
-      status: "succeeded";
-      response: unknown;
-    }
-  | {
-      status: "failed";
-      failure: DesktopTaskRunFailure;
-    };
-
-export interface RecentDesktopTaskResult {
-  id: string;
-  kind: string;
-  sessionId?: string;
-  workspaceRoot: string;
-  arguments: string[];
-  startedAt: number;
-  finishedAt: number;
-  outcome: RecentDesktopTaskOutcome;
-}
+export type {
+  ActiveDesktopTaskSummary,
+  RecentDesktopTaskOutcome,
+  RecentDesktopTaskResult,
+} from "../../shared/task-run-state.js";
 
 const DEFAULT_MOCK_WORKSPACE_ROOT = "/mock/home/path";
 const DESKTOP_TASK_PROGRESS_EVENT = "desktop-task-progress";
@@ -3209,6 +3183,9 @@ const loadTauriValueOrFallback = async <T>(
 export const loadGlobalProviderAvailability = async (): Promise<
   RuntimeProviderAvailability[]
 > => {
+  const remote = getRemoteRalphPlatform();
+  if (remote) return remote.providers;
+
   return loadTauriValueOrFallback(
     "get_global_provider_availability",
     createUnavailableProviderAvailability,
@@ -3219,6 +3196,9 @@ export const loadGlobalProviderAvailability = async (): Promise<
 
 export const loadProviderModelCatalog =
   async (): Promise<ProviderModelCatalogSnapshot> => {
+    const remote = getRemoteRalphPlatform();
+    if (remote) return remote.catalog;
+
     const snapshot = await loadTauriValueOrFallback(
       "get_provider_model_catalog",
       createUnavailableProviderModelCatalog,
@@ -3494,6 +3474,9 @@ export const loadUserReviewModelSettings =
 
 export const loadUserInternalTaskModelSettings =
   async (): Promise<UserInternalTaskModelSettings> => {
+    const remote = getRemoteRalphPlatform();
+    if (remote) return remote.internalTaskModel;
+
     return loadTauriValueOrFallback(
       "get_user_internal_task_model_settings",
       createDefaultUserInternalTaskModelSettings,
@@ -3528,6 +3511,9 @@ export const loadActiveDesktopTaskIds = async (): Promise<string[] | null> => {
 export const loadActiveDesktopTasks = async (): Promise<
   ActiveDesktopTaskSummary[] | null
 > => {
+  const remote = getRemoteRalphPlatform();
+  if (remote) return remote.invoke("get_active_desktop_tasks");
+
   if (!canInvokeTauriCommands()) {
     return null;
   }
@@ -3545,6 +3531,12 @@ export const loadActiveDesktopTasks = async (): Promise<
 export const loadRecentDesktopTaskResults = async (
   taskIds: readonly string[],
 ): Promise<RecentDesktopTaskResult[] | null> => {
+  const remote = getRemoteRalphPlatform();
+  if (remote)
+    return remote.invoke("get_recent_desktop_task_results", {
+      taskIds: [...taskIds],
+    });
+
   if (!canInvokeTauriCommands()) {
     return null;
   }
@@ -4388,6 +4380,9 @@ export const loadWorkspaceRuntimeSnapshot = async (
 };
 
 export const cancelDesktopTask = async (taskId: string): Promise<void> => {
+  const remote = getRemoteRalphPlatform();
+  if (remote) return remote.invoke("cancel_desktop_task", { taskId });
+
   if (canInvokeTauriCommands()) {
     return await tauriCore.invoke("cancel_desktop_task", { taskId });
   }
@@ -5750,6 +5745,16 @@ const runRalphCommand = async <Result>(
   fallback: () => Result,
   options?: { taskId?: string },
 ): Promise<Result> => {
+  const remote = getRemoteRalphPlatform();
+  if (remote)
+    return remote.invoke<Result>("run_ralph_command", {
+      request: {
+        workspaceRoot: normalizeRalphCommandWorkspace(workspaceRoot),
+        arguments: argumentsList,
+        ...(options?.taskId ? { taskId: options.taskId } : {}),
+      },
+    });
+
   if (!canInvokeTauriCommands()) {
     return fallback();
   }
@@ -7317,6 +7322,12 @@ export const runDesktopTask = async (
 export const subscribeToDesktopTaskProgress = async (
   onProgress: (event: DesktopTaskProgressEvent) => void,
 ): Promise<() => void> => {
+  const remote = getRemoteRalphPlatform();
+  if (remote)
+    return remote.listen<unknown>(DESKTOP_TASK_PROGRESS_EVENT, (event) => {
+      if (isDesktopTaskProgressEvent(event.payload)) onProgress(event.payload);
+    });
+
   if (!canListenToDesktopTaskProgress()) {
     return () => {};
   }

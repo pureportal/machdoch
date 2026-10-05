@@ -6,6 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./media": "./src/media.ts",
+    "./ralph": "./src/ralph.ts",
+    "./operation": "./src/operation.ts",
     "./telemetry": "./src/telemetry.ts",
     "./session-routing": "./src/session-routing.ts"
   },

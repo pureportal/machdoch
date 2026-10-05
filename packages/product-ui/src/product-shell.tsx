@@ -35,6 +35,7 @@ export function ProductShell({
   initialView = "projects",
   instanceName,
   mediaHref,
+  ralphHref,
   servicesHref,
   settingsHref,
   snapshot,
@@ -49,6 +50,7 @@ export function ProductShell({
   initialView?: ProductView;
   instanceName: string;
   mediaHref?: string | undefined;
+  ralphHref?: string | undefined;
   servicesHref?: string | undefined;
   settingsHref?: string | undefined;
   snapshot: ProductSnapshot | null;
@@ -62,6 +64,7 @@ export function ProductShell({
 }): React.ReactElement {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [mediaOpened, setMediaOpened] = useState(false);
+  const [ralphOpened, setRalphOpened] = useState(initialView === "ralph");
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [requestedView, setRequestedView] = useState<ProductView>(initialView);
   const [pendingPoseChat, setPendingPoseChat] = useState<{
@@ -77,6 +80,7 @@ export function ProductShell({
   const selectView = (view: ProductView): void => {
     setRequestedView(view);
     if (view === "media") setMediaOpened(true);
+    if (view === "ralph") setRalphOpened(true);
     setSessionsOpen(false);
     setInspectorOpen(false);
   };
@@ -465,7 +469,23 @@ export function ProductShell({
               />
             </main>
           ) : null}
-          {activeView === "ralph" && shell.ralph ? (
+          {ralphHref && shell.ralph?.editorAvailable && ralphOpened ? (
+            <main
+              className="m-product-feature-main"
+              hidden={activeView !== "ralph"}
+              style={activeView !== "ralph" ? { display: "none" } : undefined}
+            >
+              <iframe
+                src={ralphHref}
+                title="RALPH"
+                className="m-product-media-frame"
+                allow="clipboard-read; clipboard-write"
+              />
+            </main>
+          ) : null}
+          {activeView === "ralph" &&
+          shell.ralph &&
+          !(ralphHref && shell.ralph.editorAvailable) ? (
             <main className="m-product-feature-main">
               <Ralph
                 ralph={shell.ralph}

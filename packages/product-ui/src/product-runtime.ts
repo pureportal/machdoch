@@ -6,6 +6,7 @@ import type {
 
 export interface ProductRuntime {
   mediaHref?: string;
+  ralphHref?: string;
   servicesHref?: string;
   settingsHref?: string;
   getSnapshot(signal?: AbortSignal): Promise<ProductSnapshot>;

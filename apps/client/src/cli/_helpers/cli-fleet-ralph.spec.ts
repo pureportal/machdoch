@@ -13,6 +13,7 @@ it("runs a stored RALPH flow through the CLI Fleet host and reports its durable 
       schemaVersion: 1,
       id: "fleet-test",
       name: "Fleet test",
+      description: "Long editor description ".repeat(1000),
       blocks: [
         { id: "start", type: "START", title: "Start" },
         { id: "end", type: "END", title: "End", status: "success" },

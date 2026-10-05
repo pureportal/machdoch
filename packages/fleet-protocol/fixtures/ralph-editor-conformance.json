@@ -1,0 +1,322 @@
+[
+  {
+    "name": "list workspace flows",
+    "accepted": true,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "C:\\Projects\\demo",
+          "arguments": ["list", "--scope", "workspace"]
+        }
+      }
+    }
+  },
+  {
+    "name": "save with conflict check",
+    "accepted": true,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "save",
+            "flow-1",
+            "--flow-json",
+            "{}",
+            "--expected-fingerprint",
+            "abc"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "resume with input",
+    "accepted": true,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["resume", "run-1", "--input-json", "{}"],
+          "taskId": "ralph:run:1"
+        }
+      }
+    }
+  },
+  {
+    "name": "active tasks",
+    "accepted": true,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "get_active_desktop_tasks",
+      "args": {}
+    }
+  },
+  {
+    "name": "recent tasks",
+    "accepted": true,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "get_recent_desktop_task_results",
+      "args": { "taskIds": ["ralph:run:1"] }
+    }
+  },
+  {
+    "name": "internal model",
+    "accepted": true,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "get_user_internal_task_model_settings",
+      "args": {}
+    }
+  },
+  {
+    "name": "cancel task",
+    "accepted": true,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "cancel_desktop_task",
+      "args": { "taskId": "ralph:run:1" }
+    }
+  },
+  {
+    "name": "chunk read",
+    "accepted": true,
+    "request": {
+      "kind": "read",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "offset": 0
+    }
+  },
+  {
+    "name": "release",
+    "accepted": true,
+    "request": {
+      "kind": "release",
+      "id": "123e4567-e89b-42d3-a456-426614174000"
+    }
+  },
+  {
+    "name": "progress events",
+    "accepted": true,
+    "request": { "kind": "events", "after": 0 }
+  },
+  {
+    "name": "unknown command",
+    "accepted": false,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "run_shell_command",
+      "args": {}
+    }
+  },
+  {
+    "name": "file read override",
+    "accepted": false,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["save", "flow-1", "--flow-json-file", "/private/secret"]
+        }
+      }
+    }
+  },
+  {
+    "name": "workspace override",
+    "accepted": false,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["list", "--workspace", "/private"]
+        }
+      }
+    }
+  },
+  {
+    "name": "unknown action",
+    "accepted": false,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["watch", "service"]
+        }
+      }
+    }
+  },
+  {
+    "name": "extra subject",
+    "accepted": false,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["show", "flow-1", "flow-2"]
+        }
+      }
+    }
+  },
+  {
+    "name": "missing option value",
+    "accepted": false,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["list", "--scope"]
+        }
+      }
+    }
+  },
+  {
+    "name": "unknown nested argument",
+    "accepted": false,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["list"],
+          "environment": { "TOKEN": "value" }
+        }
+      }
+    }
+  },
+  {
+    "name": "unexpected task argument",
+    "accepted": false,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "get_active_desktop_tasks",
+      "args": { "workspace": "/private" }
+    }
+  },
+  {
+    "name": "nul workspace",
+    "accepted": false,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/\u0000demo",
+          "arguments": ["list"]
+        }
+      }
+    }
+  },
+  {
+    "name": "negative offset",
+    "accepted": false,
+    "request": {
+      "kind": "read",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "offset": -1
+    }
+  },
+  {
+    "name": "oversized offset",
+    "accepted": false,
+    "request": {
+      "kind": "read",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "offset": 67108865
+    }
+  },
+  {
+    "name": "invalid uuid",
+    "accepted": false,
+    "request": { "kind": "release", "id": "test" }
+  },
+  {
+    "name": "unknown field",
+    "accepted": false,
+    "request": { "kind": "events", "after": 0, "command": "list" }
+  },
+  {
+    "name": "nil uuid",
+    "accepted": true,
+    "request": {
+      "kind": "release",
+      "id": "00000000-0000-0000-0000-000000000000"
+    }
+  },
+  {
+    "name": "maximum uuid",
+    "accepted": true,
+    "request": {
+      "kind": "read",
+      "id": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+      "offset": 1.0
+    }
+  },
+  {
+    "name": "integral event cursor",
+    "accepted": true,
+    "request": { "kind": "events", "after": 1.0 }
+  },
+  {
+    "name": "fractional offset",
+    "accepted": false,
+    "request": {
+      "kind": "read",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "offset": 1.5
+    }
+  },
+  {
+    "name": "fractional event cursor",
+    "accepted": false,
+    "request": { "kind": "events", "after": 1.5 }
+  },
+  {
+    "name": "unsafe event cursor",
+    "accepted": false,
+    "request": { "kind": "events", "after": 9007199254740992 }
+  },
+  {
+    "name": "nul task id",
+    "accepted": false,
+    "request": {
+      "kind": "invoke",
+      "id": "123e4567-e89b-42d3-a456-426614174000",
+      "command": "cancel_desktop_task",
+      "args": { "taskId": "task\u0000" }
+    }
+  }
+]

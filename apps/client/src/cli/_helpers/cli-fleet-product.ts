@@ -11,6 +11,7 @@ import {
   resolveGoalMode,
 } from "../../shared/goals.js";
 import { FleetRalphRuntime } from "./cli-fleet-ralph.js";
+import { FleetRalphEditor } from "./cli-fleet-ralph-editor.js";
 import { FleetMediaWorker } from "./cli-fleet-media.js";
 import {
   isMediaPoseMap,
@@ -345,6 +346,9 @@ const cloneState = (state: FleetCliState): FleetCliState =>
 export class FleetCliProductRuntime {
   private readonly media = new FleetMediaWorker();
   private readonly ralph = new FleetRalphRuntime();
+  private readonly ralphEditor = new FleetRalphEditor((workspace) =>
+    this.assertWorkspace(workspace),
+  );
   private readonly runs = new FleetRunManager((workspace) =>
     this.assertWorkspace(workspace),
   );
@@ -410,6 +414,11 @@ export class FleetCliProductRuntime {
       };
     try {
       switch (request.type) {
+        case "ralph":
+          return {
+            type: "ralph",
+            response: await this.ralphEditor.request(request.request),
+          };
         case "media":
           return {
             type: "media",
@@ -453,9 +462,11 @@ export class FleetCliProductRuntime {
     this.stopping = true;
     this.media.close();
     this.previewTunnels.close();
+    const ralphEditorStopped = this.ralphEditor.shutdown();
     const runsStopped = this.runs.shutdown();
     const projectsStopped = this.projects.shutdown();
     await this.mutationTail;
+    await ralphEditorStopped;
     for (const task of this.activeTasks.values()) {
       task.controller.cancel(reason);
     }
@@ -543,7 +554,7 @@ export class FleetCliProductRuntime {
               "taskId" | "sessionId" | "title" | "targetPreview"
             >
           >;
-          afterCommit?: () => void;
+          afterCommit?: () => void | Promise<void>;
         }>
       | {
           record?: Partial<
@@ -552,7 +563,7 @@ export class FleetCliProductRuntime {
               "taskId" | "sessionId" | "title" | "targetPreview"
             >
           >;
-          afterCommit?: () => void;
+          afterCommit?: () => void | Promise<void>;
         },
   ): Promise<HostResponse> {
     return await this.serializeMutation(async () => {
@@ -574,7 +585,7 @@ export class FleetCliProductRuntime {
       await this.dependencies.saveState(nextState);
       this.state = nextState;
       this.eventId += 1;
-      outcome.afterCommit?.();
+      await outcome.afterCommit?.();
       return {
         type: "commandAccepted",
         receipt: { commandId, duplicate: false },
@@ -1207,7 +1218,8 @@ export class FleetCliProductRuntime {
       const currentSession = this.getSession(this.state, sessionId);
       if (
         currentSession.pendingTask ||
-        this.ralph.isWorkspaceBusy(currentSession.workspace)
+        this.ralph.isWorkspaceBusy(currentSession.workspace) ||
+        this.ralphEditor.isWorkspaceBusy(currentSession.workspace)
       ) {
         throw new FleetProductError(
           "conflict",
@@ -1443,6 +1455,16 @@ export class FleetCliProductRuntime {
   private async cancelTask(
     command: Extract<ProductCommand, { kind: "cancel" }>,
   ): Promise<HostResponse> {
+    if (
+      this.ralphEditor
+        .getActiveTasks()
+        .some((task) => task.id === command.taskId)
+    ) {
+      return await this.commitCommand(command, () => ({
+        record: { taskId: command.taskId },
+        afterCommit: () => this.ralphEditor.cancel(command.taskId),
+      }));
+    }
     if (this.ralph.hasTask(command.taskId)) {
       return await this.commitCommand(command, () => ({
         record: { taskId: command.taskId },
@@ -1528,12 +1550,14 @@ export class FleetCliProductRuntime {
       (entry) => entry.provider === activeSession.provider && entry.configured,
     );
     const running = Boolean(activeSession.pendingTask);
-    const workspaceBusy = state.sessions.some(
-      (session) =>
-        session.id !== activeSession.id &&
-        session.workspace === activeSession.workspace &&
-        session.pendingTask,
-    );
+    const workspaceBusy =
+      this.ralphEditor.isWorkspaceBusy(activeSession.workspace) ||
+      state.sessions.some(
+        (session) =>
+          session.id !== activeSession.id &&
+          session.workspace === activeSession.workspace &&
+          session.pendingTask,
+      );
     const timestamp = this.dependencies.now();
     const projectLibrary = this.projects.getSnapshot();
     const poseScene = await readPoseScene(activeSession);
@@ -1542,7 +1566,10 @@ export class FleetCliProductRuntime {
       enabled: true,
       serverTime: timestamp,
       eventId: this.eventId,
-      sessions: [...this.taskSessions.values()]
+      sessions: [
+        ...this.taskSessions.values(),
+        ...this.ralphEditor.getTaskSnapshots(),
+      ]
         .sort((left, right) => right.updatedAt - left.updatedAt)
         .slice(0, MAX_RETAINED_FLEET_TASK_SESSIONS),
       commands: state.commands.map(

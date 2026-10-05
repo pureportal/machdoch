@@ -33,7 +33,7 @@ fn binary_value(response: tauri::ipc::Response) -> Result<Value, Value> {
     }
 }
 
-pub(super) async fn invoke(
+pub(crate) async fn invoke(
     app: tauri::AppHandle,
     command: String,
     args: Value,

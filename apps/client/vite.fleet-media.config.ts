@@ -16,5 +16,6 @@ export default defineConfig({
     emptyOutDir: true,
     target: "es2022",
     chunkSizeWarningLimit: 1500,
+    rolldownOptions: { input: { media: path.resolve(directory, "src/tauri/fleet-media/index.html"), ralph: path.resolve(directory, "src/tauri/fleet-media/ralph.html") } },
   },
 });

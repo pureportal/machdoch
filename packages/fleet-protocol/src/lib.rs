@@ -5,6 +5,7 @@ use serde_json::Value;
 use std::{error::Error, fmt};
 
 mod media;
+pub mod ralph;
 mod snapshot;
 
 pub const GATEWAY_PROTOCOL_VERSION: u32 = 4;
@@ -709,6 +710,10 @@ pub fn deserialize_host_message(
     deny_unknown_fields
 )]
 pub enum HostRequest {
+    Ralph {
+        #[serde(deserialize_with = "ralph::deserialize_ralph_request")]
+        request: Value,
+    },
     Media {
         #[serde(deserialize_with = "media::deserialize_media_request")]
         request: Value,
@@ -741,6 +746,10 @@ pub enum HostRequest {
     deny_unknown_fields
 )]
 pub enum HostResponse {
+    Ralph {
+        #[serde(deserialize_with = "media::deserialize_media_response")]
+        response: Value,
+    },
     Media {
         #[serde(deserialize_with = "media::deserialize_media_response")]
         response: Value,

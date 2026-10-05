@@ -28,6 +28,85 @@ afterEach(() => {
 });
 
 describe("Fleet Manager API", () => {
+  it("protects RALPH editing with authentication, CSRF, capability checks, and closed arguments", async () => {
+    runtime = testRuntime();
+    setRuntimeForTests(runtime);
+    const { cookie, csrf } = await authenticateTestOwner();
+    const instance = enrollTestInstance(runtime);
+    const path = `/api/instances/${instance.instanceId}/product/ralph`;
+    const request = {
+      kind: "invoke",
+      id: crypto.randomUUID(),
+      command: "run_ralph_command",
+      args: {
+        request: { workspaceRoot: "/projects/demo", arguments: ["list"] },
+      },
+    };
+    const relay = vi
+      .spyOn(runtime.gateways, "relay")
+      .mockResolvedValue({ type: "ralph", response: { state: "pending" } });
+    expect((await apiRequest(path, "POST", request)).status).toBe(401);
+    expect((await apiRequest(path, "POST", request, cookie)).status).toBe(403);
+    expect(
+      (
+        await apiRequest(
+          path,
+          "POST",
+          { ...request, command: "execute_shell" },
+          cookie,
+          csrf,
+        )
+      ).status,
+    ).toBe(400);
+    expect((await apiRequest(path, "POST", request, cookie, csrf)).status).toBe(
+      409,
+    );
+    expect(relay).not.toHaveBeenCalled();
+    vi.spyOn(runtime.gateways, "supportsCapability").mockReturnValue(true);
+    expect((await apiRequest(path, "POST", request, cookie, csrf)).status).toBe(
+      200,
+    );
+    expect(relay).toHaveBeenCalledWith(
+      instance.instanceId,
+      { type: "ralph", request },
+      expect.any(AbortSignal),
+    );
+  });
+
+  it.each(["owner", "device"])(
+    "withholds RALPH results after %s revocation during dispatch",
+    async (revocation) => {
+      runtime = testRuntime();
+      setRuntimeForTests(runtime);
+      const { cookie, csrf } = await authenticateTestOwner();
+      const instance = enrollTestInstance(runtime);
+      vi.spyOn(runtime.gateways, "supportsCapability").mockReturnValue(true);
+      vi.spyOn(runtime.gateways, "relay").mockImplementation(async () => {
+        if (revocation === "owner")
+          runtime!.authStore.changeOwnerPassword(
+            "owner",
+            "a changed secure test password",
+            nowSeconds(),
+          );
+        else
+          runtime!.fleetStore.revokeInstance(instance.instanceId, nowSeconds());
+        return {
+          type: "ralph",
+          response: { state: "failed", error: "private-result" },
+        };
+      });
+      const response = await apiRequest(
+        `/api/instances/${instance.instanceId}/product/ralph`,
+        "POST",
+        { kind: "read", id: crypto.randomUUID(), offset: 0 },
+        cookie,
+        csrf,
+      );
+      expect(response.status).toBe(revocation === "owner" ? 401 : 404);
+      expect(await response.text()).not.toContain("private-result");
+    },
+  );
+
   it("protects fleet session routing with authentication, CSRF, and payload validation", async () => {
     runtime = testRuntime();
     setRuntimeForTests(runtime);

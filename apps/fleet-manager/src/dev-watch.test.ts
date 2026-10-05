@@ -52,7 +52,10 @@ console.log("fleet-watch-fixture:" + process.argv[2]);
     }),
   );
 
-  const watcherCommand = packageJson.scripts.dev.split(" && ").at(-1)!.split(" ");
+  const watcherCommand = packageJson.scripts.dev
+    .split(" && ")
+    .at(-1)!
+    .split(" ");
   expect(watcherCommand.shift()).toBe("nodemon");
   const monitor = spawn(
     process.execPath,
@@ -75,7 +78,14 @@ console.log("fleet-watch-fixture:" + process.argv[2]);
     0;
 
   try {
-    await expect.poll(completedRuns, { timeout: 10_000 }).toBe(1);
+    try {
+      await expect.poll(completedRuns, { timeout: 10_000 }).toBe(1);
+    } catch (cause) {
+      throw new Error(
+        `Fleet watcher did not complete its first run.\n${output}`,
+        { cause },
+      );
+    }
     expect(output).toContain("fleet-watch-fixture:dev");
 
     for (const path of sourcePaths) {

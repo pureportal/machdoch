@@ -155,6 +155,7 @@ export class FleetRalphRuntime {
     const { scopes } = await loadRalphSnapshot(workspace);
     const error = this.errors.get(workspace);
     return {
+      editorAvailable: true,
       workspaceRoot: workspace,
       loading: false,
       updatedAt: Date.now(),
@@ -169,7 +170,7 @@ export class FleetRalphRuntime {
             edgeCount: flow.edgeCount,
             variables: flow.variables,
             ...(flow.alias ? { alias: flow.alias } : {}),
-            ...(flow.description ? { description: flow.description } : {}),
+            ...(flow.description ? { description: flow.description.slice(0, 12_000) } : {}),
             ...(flow.maxTransitions
               ? { maxTransitions: flow.maxTransitions }
               : {}),

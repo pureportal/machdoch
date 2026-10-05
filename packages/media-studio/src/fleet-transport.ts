@@ -1,8 +1,7 @@
+import { createFleetOperationTransport } from "@machdoch/product-ui";
 import {
   mediaRequestSchema,
-  mediaResponseSchema,
   type MediaRequest,
-  type MediaResponse,
 } from "@machdoch/fleet-protocol";
 import type { MediaPlatform } from "./tauri/ui/media/media-platform";
 
@@ -20,108 +19,17 @@ export function createFleetMediaTransport(
   storageKey: string,
   send: (request: MediaRequest) => Promise<unknown>,
 ): MediaPlatform {
-  const listeners = new Map<
-    string,
-    Set<(event: { payload: unknown }) => void>
-  >();
   const transfers = new Map<
     string,
     { id: string; name: string; download: boolean }
   >();
-  let cursor = 0;
-  let eventTimer: ReturnType<typeof setTimeout> | undefined;
-  let polling = false;
   let activePreviews = 0;
   const previewWaiters: Array<() => void> = [];
-  const exchange = async (request: MediaRequest): Promise<MediaResponse> =>
-    mediaResponseSchema.parse(await send(mediaRequestSchema.parse(request)));
-
-  const call = async <T>(
-    command: string,
-    args: Record<string, unknown> = {},
-  ): Promise<T> => {
-    const request = mediaRequestSchema.parse({
-      kind: "invoke",
-      id: crypto.randomUUID(),
-      command,
-      args: JSON.parse(JSON.stringify(args)),
-    });
-    if (request.kind !== "invoke") throw new Error("Invalid media request.");
-    const started = await exchange(request);
-    if (started.state === "failed") throw started.error;
-    let content = "";
-    let complete = false;
-    try {
-      for (;;) {
-        const response = await exchange({
-          kind: "read",
-          id: request.id,
-          offset: content.length,
-        });
-        if (response.state === "failed") {
-          complete = true;
-          throw response.error;
-        }
-        if (response.state === "pending") {
-          await delay(250);
-          continue;
-        }
-        if (
-          response.state !== "complete" ||
-          response.offset !== content.length ||
-          response.total > 64 * 1024 * 1024
-        )
-          throw new Error("Invalid media response.");
-        content += response.chunk;
-        if (content.length > response.total)
-          throw new Error("Invalid media response size.");
-        if (content.length === response.total) {
-          complete = true;
-          break;
-        }
-        if (!response.chunk.length)
-          throw new Error("Incomplete media response.");
-      }
-      const value: unknown = JSON.parse(
-        new TextDecoder("utf-8", { fatal: true }).decode(decode(content)),
-      );
-      if (
-        command === "media_read_asset_preview" &&
-        value &&
-        typeof value === "object" &&
-        "binary" in value &&
-        typeof value.binary === "string"
-      )
-        return decode(value.binary).buffer as T;
-      return value as T;
-    } finally {
-      if (complete) {
-        try {
-          await exchange({ kind: "release", id: request.id });
-        } catch (error) {
-          console.error("Could not release completed media operation", error);
-        }
-      }
-    }
-  };
-
-  const pollEvents = async (): Promise<void> => {
-    if (polling || !listeners.size) return;
-    polling = true;
-    try {
-      const response = await exchange({ kind: "events", after: cursor });
-      if (response.state !== "events")
-        throw new Error("Media progress is unavailable.");
-      cursor = response.cursor;
-      for (const event of response.events)
-        for (const listener of listeners.get(event.name) ?? [])
-          listener({ payload: event.payload });
-    } catch (error) {
-      console.error("Could not refresh media progress", error);
-    } finally {
-      polling = false;
-      if (listeners.size) eventTimer = setTimeout(() => void pollEvents(), 750);
-    }
+  const transport = createFleetOperationTransport((request) => send(mediaRequestSchema.parse(request)));
+  const call = async <T>(command: string, args: Record<string, unknown> = {}): Promise<T> => {
+    const value = await transport.invoke<unknown>(command, args);
+    if (command === "media_read_asset_preview" && value && typeof value === "object" && "binary" in value && typeof value.binary === "string") return decode(value.binary).buffer as T;
+    return value as T;
   };
 
   const removeTransfer = async (path: string): Promise<void> => {
@@ -233,28 +141,7 @@ export function createFleetMediaTransport(
       }
       return result;
     },
-    async listen<T>(
-      name: string,
-      handler: (event: { payload: T }) => void,
-    ): Promise<() => void> {
-      if (
-        !["media-import-progress", "media-civitai-download-progress"].includes(
-          name,
-        )
-      )
-        throw new Error("Unsupported media event.");
-      const listener = handler as (event: { payload: unknown }) => void;
-      const subscriptions = listeners.get(name) ?? new Set();
-      subscriptions.add(listener);
-      listeners.set(name, subscriptions);
-      clearTimeout(eventTimer);
-      void pollEvents();
-      return () => {
-        subscriptions.delete(listener);
-        if (!subscriptions.size) listeners.delete(name);
-        if (!listeners.size) clearTimeout(eventTimer);
-      };
-    },
+    listen: transport.listen,
     async open(options) {
       if (options?.directory)
         throw new Error("Enter a folder path on the connected host.");

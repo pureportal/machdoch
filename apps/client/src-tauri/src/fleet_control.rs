@@ -14,6 +14,7 @@ mod command_tests;
 mod commands;
 mod dispatch;
 mod fleet_gateway;
+pub(crate) mod ralph;
 mod sanitize;
 mod shell;
 mod snapshot;

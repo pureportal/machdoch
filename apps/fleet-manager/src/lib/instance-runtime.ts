@@ -27,6 +27,7 @@ export function createInstanceRuntime(
   };
   const runtime: ProductRuntime = {
     mediaHref: `/media-studio/index.html?instance=${encodeURIComponent(instanceId)}`,
+    ralphHref: `/media-studio/ralph.html?instance=${encodeURIComponent(instanceId)}`,
     servicesHref: `/instances/${encodeURIComponent(instanceId)}/runs`,
     ...(settingsEnabled ? { settingsHref: "/settings" } : {}),
     async getSnapshot(signal) {

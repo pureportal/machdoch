@@ -1,0 +1,86 @@
+# Fleet remote RALPH verification — 2026-10-05
+
+Fleet now opens the actual desktop RALPH editor and executes its commands on the selected device. Desktop and mobile browser editing, conflict protection, execution, input/resume, cancellation, and draft retention passed against a real bundled CLI host. Final browser replays after the last small UI changes stalled and remain unresolved. The complete Fleet Manager goal remains unfinished.
+
+## Changes
+
+- Fleet builds `RalphApp`, its overview, canvas, inspector, generation controls, and run views from the desktop source. The iframe remains mounted when switching views, preserving unsaved edits. Device workspaces, model catalogs, provider status, and internal model settings come from the connected host. Browser views omit the native Explorer action.
+- The new `ralph-editor.v1` capability gates editing. Hosts without it retain their existing RALPH controls. The manager rejects editor requests to hosts that do not advertise the capability. This is capability negotiation, not proof that every historical executable works.
+- A closed protocol allows only the RALPH commands and options used by the editor. File, environment, configuration, and workspace overrides cannot be supplied through arbitrary CLI options. The host checks the requested workspace against its device inventory.
+- Native hosts invoke the existing desktop command bridge. Headless hosts invoke the real CLI with generated payload files inside the selected workspace, avoiding Windows command-line limits. Split UTF-8 output is decoded correctly. Operations reject changed arguments under a reused identity; pending work cannot be released. Queue, progress, response, and retained-result budgets are bounded, with reserved capacity for cancellation and status requests.
+- RALPH editor tasks appear in global Fleet status and accept the ordinary task cancellation command. Completion removes active tasks and retains bounded recent results. Shared operation transport now serves Media Studio and RALPH; Media Studio's wire format remains unchanged.
+- The first remote preference save preserves its initial workspace and model settings. Concurrent saves rebase changed fields instead of resetting remote defaults. Compact device snapshots bound flow descriptions while the complete flow remains stored on the device.
+- The manager endpoint applies owner/device access checks, CSRF, origin validation, body limits, and access rechecks after asynchronous delivery. Revocation during an editor operation is covered by API tests.
+
+## Failed-run diagnosis
+
+Verification started from `adca921d` with existing uncommitted RALPH heartbeat changes. Those files were preserved, as was an unrelated README edit that appeared during final verification. Results describe this working tree; they do not establish that the unchanged commit passes independently. This continuation did not commit or push its changes.
+
+The watcher initially timed out before any fixture completion during heavy verification activity. The same standalone nodemon fixture completed in approximately 1.2 seconds. The isolated watcher subsequently passed, and the final manager campaign passed all 174 tests, including the watcher. Its ten-second deadline was retained; only failure diagnostics changed. The exact original startup stall remains unproven.
+
+The broad RALPH fork campaign stalled without completed file results and was stopped. A single-worker thread campaign completed: 162 tests across the run, worktree, integration, and worktree-Git suites passed in approximately 838 seconds. The heartbeat helper's two tests also passed, though that isolated invocation reported a Vitest close timeout. These results resolve the missing completed RALPH campaign, not every possible parallel-run or shutdown stall.
+
+The native check first encountered stale CMake generator state, then compiler path-length errors under a longer fresh target directory. A fresh short target, the repository's Visual Studio/Vulkan environment helpers, and one build worker allowed the full native library check to pass. Compilation also exposed a shared media dispatcher visibility error, which was corrected. The remaining `recovered_runs` warning predates this change. No existing cache was deleted. Default Windows build-path reliability and a fresh release package remain separate concerns.
+
+Live testing found and corrected the remote CLI's workspace argument and the preference initialization problem. The expanded navigation test also required reopening the inspector before reading its fields. The final navigation test exercises the actual controls without forced clicks.
+
+## Live evidence
+
+The [full production scenario](../.tmp/fleet-verification/1791204857435/result.json) passed using an isolated HTTPS manager, a locally trusted test certificate, and two real bundled CLI services. No development server was started.
+
+The RALPH portion independently checked:
+
+- A large multilingual flow saved and returned intact, exceeding Windows command-line limits.
+- The shared desktop canvas opened the flow, changed its name, and persisted the change on the remote device.
+- A stale fingerprint was rejected and the saved flow remained unchanged.
+- At 390px, an unsaved edit survived Chat navigation and a device refresh. The mobile editor then saved and ran the flow. Both the outer page and iframe fit the viewport.
+- The result file, stored run, block results, flow name, revisions, and active-task retirement matched the browser actions.
+- An `ASK_USER` flow waited for input, resumed through the remote API, and wrote the supplied value.
+- A waiting task appeared in device and global status. Replaying its invocation did not start another task. Ordinary Fleet cancellation interrupted it and retained its recent result.
+- An unlisted workspace was rejected.
+
+The full scenario also proved real enrollment, settings capture and merge on both clients, revision conflicts, mobile Copilot-to-Chat, repeated session identity, retained settings during a manager outage, reconnect, route persistence after restart, and device revocation.
+
+After the final production rebuild, a [targeted enrollment/RALPH run](../.tmp/fleet-verification/1791205273620/result.json) passed the same editor assertions and additionally required progress events from the running remote task to reach the controller.
+
+Subsequent changes hide the native Explorer action in the browser and register the remote catalog with the shared model-capability registry. Their type checks, scoped lint, and shared-editor production build passed. The first expanded menu assertions exposed ambiguous test selectors, which were corrected. Later replays timed out at overview loading or RALPH navigation, without captured JavaScript errors; navigation failure screenshots also exceeded their existing five-second deadline. During diagnosis, Windows reported 100% CPU and ordinary shell reads also stalled. That is evidence of host saturation, not proof of the failure's exact cause. The final [failed replay](../.tmp/fleet-verification/1791206667461/result.json) remains unresolved. The final menu assertion and a complete browser flow after those last changes are not counted as passes. No timeout was increased and no unrelated process was stopped.
+
+Screenshots: [desktop editor](../.tmp/fleet-verification/1791204857435/ralph-desktop.png), [mobile editor](../.tmp/fleet-verification/1791204857435/ralph-mobile.png), [mobile inspector](../.tmp/fleet-verification/1791204857435/ralph-mobile-edit.png). Artifacts are ignored by Git and use isolated test workspaces. Utility-only RALPH flows were used; no paid model or generated-media result is counted as verified.
+
+The reusable harness is [verify-ralph.mjs](../apps/fleet-manager/scripts/verify-ralph.mjs), called by [verify-live.mjs](../apps/fleet-manager/scripts/verify-live.mjs). Set `FLEET_VERIFY_CLIENT_BUNDLE=1` after building the CLI. `FLEET_VERIFY_RALPH_ONLY=1` selects enrollment and RALPH checks without the broader settings/Copilot scenario.
+
+## Verification
+
+| Check                                                               | Result                                                                                                                                      |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Manager production build, including shared Media/RALPH assets       | Passed                                                                                                                                      |
+| Desktop UI production build and CLI bundle                          | Passed                                                                                                                                      |
+| Client lint and core/UI/test type checks                            | Passed                                                                                                                                      |
+| Manager lint, type checks, and full test campaign                   | 174 tests passed across 25 files, including watcher and editor authorization checks                                                         |
+| TypeScript Fleet protocol lint, type checks, and tests              | 440 tests passed; 31 exercise RALPH conformance and bounds                                                                                  |
+| Rust Fleet protocol tests                                           | 34 passed, including the same RALPH request fixtures                                                                                        |
+| Broad RALPH run/worktree/integration campaign                       | 162 passed across four files with a single thread worker                                                                                    |
+| RALPH application, concurrency, and progress DOM checks             | 10 passed across three files                                                                                                                |
+| Remote CLI editor, operation store, and durable CLI RALPH checks    | Five passed, including every-byte UTF-8 splitting and recent-result byte-budget eviction                                                    |
+| Shared product UI                                                   | 137 DOM tests passed                                                                                                                        |
+| Media operation transport                                           | Six tests passed, including Unicode chunk assembly and release                                                                              |
+| Native desktop library                                              | `cargo check --manifest-path apps/client/src-tauri/Cargo.toml --lib` passed with prepared toolchain, short target directory, and one worker |
+| Full HTTPS manager/two-client/browser scenario                      | Passed                                                                                                                                      |
+| Earlier production RALPH replay, including actual progress delivery | Passed                                                                                                                                      |
+
+Test groups overlap; the rows are separate campaigns, not a combined total. Scoped Oxlint invocations on isolated client tests reported missing Node types; the real test type checks and complete client lint campaign passed. No compiler or lint rule was weakened. The complete repository test command was not rerun, and the earlier parallel startup/shutdown failures are not counted as passes.
+
+## Full-goal status
+
+| Requirement                                                  | Evidence                                                                                                                                                                | Remaining work or verification                                                                                                                                                                                                                              |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared settings, conflict handling, enrollment merge         | Two real headless clients applied merged revisions, rejected revision conflicts, retained settings through an outage, and reconnected. Desktop application code exists. | Actual desktop/headless combinations, re-enrollment, and prolonged simultaneous editing are not fully exercised.                                                                                                                                            |
+| Chat, GOAL, model selection, RALPH, Media Studio parity      | Shared Chat commands and controls exist; the real RALPH editor now edits and runs remotely; Media Studio reuses its real UI and shared transport tests pass.            | Complete Chat/media/provider workflows remain unverified. The headless Chat service still rejects prompt enhancement and interviews. RALPH model generation, interview generation, isolated provider runs, and every editor action were not exercised here. |
+| Reuse and matching interaction                               | Fleet compiles the same `RalphApp` and flow editor used by desktop. Desktop/Fleet production builds and editor DOM checks pass.                                         | Remote native desktop command delivery was compiled but not run through a newly built native GUI. The whole desktop Chat shell has not been unified with Fleet.                                                                                             |
+| Different versions and outdated-device warnings              | Existing version warnings plus the new explicit capability gate, strict protocol fixtures, and optional editor flag.                                                    | The older reported version came from the current binary. Actual historical executables and a complete compatibility matrix remain untested.                                                                                                                 |
+| Dashboard, Copilot, sessions, workspaces, hardware, failures | Existing telemetry and global inventory; real mobile Copilot placement and restart recovery; remote RALPH global task visibility and cancellation.                      | Broader cross-device task orchestration and long-duration crash recovery remain unfinished.                                                                                                                                                                 |
+| Android remote control                                       | The Android app loads the shared Fleet UI; earlier emulator checks verified origin/certificate rejection and recovery. Browser mobile RALPH now passes.                 | No authenticated Android session, Android file/export workflow, or physical-phone run was performed here. A trusted HTTPS test connection is still needed. Release signing remains outstanding.                                                             |
+| Endpoint protection                                          | Closed RPC schemas, workspace checks, replay protection, budgets, auth/CSRF/origin checks, asynchronous revocation tests, and real TLS gateway revocation.              | Production TLS/proxy deployment, compromised-device scenarios, and an independent security review remain unverified. These checks do not establish immunity to attack.                                                                                      |
+| Easy self-hosted enrollment                                  | A fresh production test manager enrolled two real CLI services over HTTPS; the UI reviewed and merged captured settings.                                                | Fresh public deployment, desktop/Android enrollment, and testing with beginners remain unverified.                                                                                                                                                          |
+
+The full outcome cannot be certified from browser fixtures and passing builds. Authenticated Android testing remains blocked by the trusted-certificate setup described in the [previous continuation report](fleet-manager-continuation-2026-10-05.md). Historical binaries, a production deployment, and a physical-phone test environment were not supplied or established in this run. The feature gaps above require further implementation as well as verification.

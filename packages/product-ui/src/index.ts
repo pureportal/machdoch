@@ -66,3 +66,4 @@ export {
   type ComposerModelProvider,
 } from "./composer-model-picker";
 export type { ProductRuntime } from "./product-runtime";
+export { createFleetOperationTransport, type FleetOperationTransport } from "./fleet-operation-transport";
