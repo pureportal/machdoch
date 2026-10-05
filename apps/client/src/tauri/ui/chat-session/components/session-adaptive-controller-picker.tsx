@@ -1,4 +1,4 @@
-import { BrainCircuit } from "lucide-react";
+import { AdaptiveControlIcon } from "@machdoch/product-ui";
 import { useMemo, useState, type JSX } from "react";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
@@ -51,7 +51,7 @@ export const SessionAdaptiveControllerPicker = ({
             data-active={enabled === true}
             className="app-composer-toolbar-icon-button app-composer-toolbar-control relative h-8 w-8 rounded-full p-0 shadow-none"
           >
-            <BrainCircuit className="h-3.5 w-3.5" />
+            <AdaptiveControlIcon className="h-3.5 w-3.5" />
             {override === null ? <WorkspaceDefaultIndicator /> : null}
           </Button>
         </PopoverTrigger>

@@ -1,8 +1,8 @@
+import { ContextPacksIcon } from "@machdoch/product-ui";
 import {
   Download,
   Folder,
   Globe2,
-  Layers,
   Pencil,
   Play,
   Plus,
@@ -835,7 +835,7 @@ const SmartContextPackEditorDialog = ({
             <div className="grid min-h-0 gap-4 overflow-y-auto bg-slate-950/60 px-4 py-4 sm:px-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(15rem,0.65fr)_minmax(21rem,0.9fr)] lg:items-start">
               <section className="grid gap-4 rounded-2xl border border-slate-800/90 bg-slate-900/35 p-4">
                 <PackSectionHeading
-                  icon={<Layers className="h-4 w-4" />}
+                  icon={<ContextPacksIcon className="h-4 w-4" />}
                   title="Pack content"
                   description="The reusable prompt, instructions, and context added to the composer."
                 />
@@ -1979,7 +1979,7 @@ export const SmartContextPackPicker = ({
               aria-label={triggerLabel}
               className="app-context-pack-trigger app-composer-toolbar-icon-button app-composer-toolbar-control h-8 w-8 rounded-full p-0 shadow-none"
             >
-              <Layers className="h-3.5 w-3.5" />
+              <ContextPacksIcon className="h-3.5 w-3.5" />
             </Button>
           </PopoverTrigger>
         </ControlTooltip>
