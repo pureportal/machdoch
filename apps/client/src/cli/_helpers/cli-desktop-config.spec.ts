@@ -7,6 +7,10 @@ import {
   loadDesktopConfigEntries,
   requestDesktopSettings,
 } from "./cli-desktop-config.js";
+import {
+  clearConfigSetting,
+  saveConfigSetting,
+} from "./cli-config-commands.js";
 
 let root: string;
 let server: Server | undefined;
@@ -95,5 +99,36 @@ describe("desktop settings bridge", () => {
     await expect(
       requestDesktopSettings("set", "defaults.mode", null),
     ).resolves.toBeDefined();
+    expect(
+      await saveConfigSetting(root, " DEFAULTS.MODEL ", "  raw model  "),
+    ).toEqual({
+      setting: "defaults.model",
+      scope: "user",
+      configPath: "desktop",
+      status: "configured",
+      value: "  raw model  ",
+    });
+    expect(
+      await saveConfigSetting(root, "civitai.key", "private-key"),
+    ).not.toHaveProperty("value");
+    expect(await clearConfigSetting(root, "appearance.theme")).toEqual({
+      setting: "appearance.theme",
+      scope: "user",
+      configPath: "desktop",
+      status: "reset",
+    });
+    expect(requests.at(-1)).toEqual({
+      token: "a".repeat(64),
+      action: "set",
+      setting: "appearance.theme",
+      value: "dark",
+    });
+    await clearConfigSetting(root, "spoken-reply.enabled");
+    expect(requests.at(-1)).toEqual({
+      token: "a".repeat(64),
+      action: "set",
+      setting: "spoken-reply.autoSpeakResponses",
+      value: false,
+    });
   });
 });

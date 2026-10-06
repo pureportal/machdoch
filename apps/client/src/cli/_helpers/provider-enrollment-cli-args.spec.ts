@@ -20,3 +20,11 @@ describe("provider enrollment CLI arguments", () => {
     })).toMatchObject({ command: "mcp", mcp: { action: "broker" } });
   });
 });
+
+it.each([
+  [["fleet", "enroll", "--manager-url=", "--enrollment-key=", "--display-name="], "Expected --manager-url for `machdoch fleet enroll`."],
+  [["fleet", "status", "--manager-url="], "Fleet enrollment options are only valid for `machdoch fleet enroll`."],
+  [["mcp", "--manager-url=", "--mode=invalid", "--help"], "Fleet enrollment options require `machdoch fleet enroll`."],
+])("preserves enrollment validation precedence for %j", (argv, message) => {
+  expect(() => parseCliArgs(argv)).toThrow(message);
+});

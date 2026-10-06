@@ -1,5 +1,6 @@
 import { getHelpText, parseCliArgs } from "./cli-args.ts";
 import { describe, expect, it } from "vitest";
+import { CliUsageError } from "./cli-error.js";
 
 describe("cli args public parser", () => {
   it("routes Media Studio assistant input without accepting task arguments", () => {
@@ -753,5 +754,151 @@ describe("cli args public parser", () => {
         },
       ),
     ).toThrow("followed by user");
+  });
+});
+
+describe("parser stage boundaries", () => {
+  const options = { currentWorkingDirectory: "C:/workspace" };
+
+  it.each([
+    [["fleet"], { fleet: { action: "status" } }],
+    [
+      ["fleet", "service"],
+      { fleet: { action: "service", serviceAction: "run" } },
+    ],
+    [["mcp"], { mcp: { action: "servers" } }],
+    [["ralph"], { ralph: { action: "list" } }],
+    [
+      ["instructions"],
+      { instructions: { action: "profile-list", group: "profiles" } },
+    ],
+  ])("preserves complete defaults for %j", (argv, family) => {
+    expect(parseCliArgs(argv, options)).toEqual({
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+      command: argv[0],
+      ...family,
+    });
+  });
+
+  it.each([
+    [
+      ["ralph", "run", "--mode=invalid", "--flow-scope=invalid", "--help"],
+      "Expected --mode to be followed by ask or machdoch.",
+    ],
+    [
+      ["instructions", "--flow-scope=invalid", "--provider=invalid", "--help"],
+      "Expected --flow-scope to be followed by user or workspace.",
+    ],
+    [
+      ["fleet", "service", "bad", "extra"],
+      "Expected `fleet service` action to be run, install, uninstall, start, stop, restart, status, or unit.",
+    ],
+    [
+      ["mcp", "call-tool", "", "", "extra"],
+      "Command `mcp call-tool` does not accept positional arguments: extra",
+    ],
+    [
+      [
+        "ralph",
+        "resume",
+        "id",
+        "--retry-current",
+        "--input-json={}",
+        "--max-transitions=0",
+      ],
+      "Use either --retry-current or an input response for `machdoch ralph resume`, not both.",
+    ],
+    [
+      ["instructions", "profiles", "list", "--name="],
+      "Expected --name to contain a non-empty name.",
+    ],
+    [
+      ["instructions", "profiles", "list", "--profile="],
+      "Expected --profile to contain a profile UUID.",
+    ],
+  ])("preserves the first error for %j", (argv, message) => {
+    expect(() => parseCliArgs(argv, options)).toThrow(
+      new CliUsageError(message),
+    );
+  });
+
+  it.each([
+    ["ralph", "run", "--max-transitions=0", "--scope=invalid"],
+    ["mcp", "call-tool", "--scope=workspace", "--apply"],
+    ["instructions", "profiles", "list", "--name=", "--apply"],
+    ["fleet", "enroll", "--manager-url="],
+  ])("handles help before family validation for %j", (...argv) => {
+    expect(parseCliArgs([...argv, "--help"], options)).toEqual({
+      command: "help",
+      helpTopic: argv[0],
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+    });
+  });
+
+  it("preserves repeated and overloaded values", () => {
+    expect(
+      parseCliArgs(
+        [
+          "instructions",
+          "profiles",
+          "create",
+          "--name=first",
+          "--name=last",
+          "--prompt=",
+        ],
+        options,
+      ),
+    ).toEqual({
+      command: "instructions",
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+      instructions: {
+        action: "profile-create",
+        group: "profiles",
+        name: "last",
+        prompt: "",
+      },
+    });
+    expect(
+      parseCliArgs(["mcp", "proxy", "server", "--scope="], options),
+    ).toEqual({
+      command: "mcp",
+      json: false,
+      verbose: false,
+      workspaceRoot: "C:/workspace",
+      mcp: { action: "proxy", serverId: "server" },
+    });
+    expect(
+      parseCliArgs(
+        [
+          "instructions",
+          "assignments",
+          "set",
+          "id",
+          "--path=src",
+          "--profile=a",
+          "--profile=",
+          "--profile=b",
+        ],
+        options,
+      ).instructions,
+    ).toEqual({
+      action: "assignment-set",
+      group: "assignments",
+      subject: "id",
+      path: "src",
+      profileIds: ["a", "b"],
+    });
+    expect(
+      parseCliArgs(
+        ["interview", "--prompt=x", "--input-json={}", "--max-rounds=2"],
+        options,
+      ).interview,
+    ).toEqual({ prompt: "x", inputJson: "{}", maxRounds: 2 });
   });
 });
