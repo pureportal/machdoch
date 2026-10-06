@@ -12,9 +12,11 @@ import {
 } from "../../core/runtime-contract.generated.js";
 import { CliUsageError } from "./cli-error.js";
 import type {
+  CliConfigFamily,
+  ConfigSetResult,
   CliConfigEntry,
   CliConfigSettingDefinition,
-} from "./cli-config-commands.js";
+} from "./cli-config-types.js";
 import { DEFAULT_PROVIDER_ENROLLMENT_CONFIG } from "../../core/provider-enrollment/config.js";
 
 interface AdditionalSetting extends CliConfigSettingDefinition {
@@ -383,11 +385,11 @@ export const loadAdditionalConfigEntries = async (
   });
 };
 
-export const writeAdditionalConfigSetting = async (
+const writeAdditionalConfigSetting = async (
   workspaceRoot: string,
   definition: AdditionalSetting,
   text?: string,
-): Promise<string> => {
+): Promise<ConfigSetResult> => {
   const value =
     text === undefined ? undefined : parseValue(definition, text.trim());
   const path =
@@ -415,5 +417,30 @@ export const writeAdditionalConfigSetting = async (
       };
     await writeJsonAtomically(path, updated);
   });
-  return path;
+  return {
+    setting: definition.setting,
+    scope: definition.scope,
+    configPath: path,
+    status: text === undefined ? "reset" : "configured",
+    ...(text !== undefined && !definition.secret ? { value: text } : {}),
+  };
+};
+
+export const additionalConfigFamily: CliConfigFamily = {
+  definitions: ADDITIONAL_CONFIG_SETTINGS,
+  save: async (workspaceRoot, setting, value) =>
+    await writeAdditionalConfigSetting(
+      workspaceRoot,
+      ADDITIONAL_CONFIG_SETTINGS.find(
+        (definition) => definition.setting === setting.trim().toLowerCase(),
+      )!,
+      value,
+    ),
+  reset: async (workspaceRoot, setting) =>
+    await writeAdditionalConfigSetting(
+      workspaceRoot,
+      ADDITIONAL_CONFIG_SETTINGS.find(
+        (definition) => definition.setting === setting.trim().toLowerCase(),
+      )!,
+    ),
 };

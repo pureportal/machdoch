@@ -9,7 +9,7 @@ import {
 import type {
   CliConfigEntry,
   CliConfigSettingDefinition,
-} from "./cli-config-commands.js";
+} from "./cli-config-types.js";
 import { createTerminalPrompter } from "./cli-prompter.js";
 import type {
   InteractiveMenuChoice,

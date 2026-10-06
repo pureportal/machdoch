@@ -4,7 +4,7 @@ import {
   runInteractiveConfig,
 } from "./cli-config-interactive.ts";
 import { CLI_CONFIG_SETTING_DEFINITIONS } from "./cli-config-commands.ts";
-import type { CliConfigEntry } from "./cli-config-commands.ts";
+import type { CliConfigEntry } from "./cli-config-types.ts";
 import type { InteractiveConfigPrompter } from "./cli-config-interactive.ts";
 
 describe("moveMenuSelection", () => {
