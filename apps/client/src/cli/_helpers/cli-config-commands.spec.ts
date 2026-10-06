@@ -157,13 +157,23 @@ describe("CLI configuration catalog", () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();
     const setting = "speech-to-text.provider";
+    const speechToTextProviders = [
+      "none",
+      "openai",
+      "google",
+      "whisper",
+      "whisper-tiny",
+      "whistle",
+      "whistle-tiny",
+      "phonon2",
+    ];
     const initialEntries = await loadCliConfigEntries(workspaceRoot);
     expect(
       initialEntries.find((entry) => entry.setting === setting),
     ).toMatchObject({
       value: "whisper",
       source: "default",
-      choices: ["none", "openai", "google", "whisper"],
+      choices: speechToTextProviders,
     });
     expect(
       initialEntries.find((entry) => entry.setting === "voice.provider"),
@@ -171,7 +181,7 @@ describe("CLI configuration catalog", () => {
       value: "none",
     });
 
-    for (const provider of ["none", "openai", "google", "whisper"]) {
+    for (const provider of speechToTextProviders) {
       await expect(
         saveConfigSetting(workspaceRoot, setting, provider),
       ).resolves.toMatchObject({

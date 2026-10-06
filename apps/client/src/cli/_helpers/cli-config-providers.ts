@@ -221,7 +221,7 @@ const saveProvidersConfigSetting = async (
       )
     ) {
       fail(
-        "Expected speech-to-text.provider to be one of none, openai, google, or whisper.",
+        `Expected speech-to-text.provider to be one of ${VALID_SPEECH_TO_TEXT_PROVIDERS.join(", ")}.`,
       );
     }
     return {
