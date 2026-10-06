@@ -8,9 +8,11 @@ import { withCooperativeFileLock } from "../../core/_helpers/with-cooperative-fi
 import { writeJsonAtomically } from "../../core/_helpers/write-file-atomically.helper.js";
 import { CliUsageError } from "./cli-error.js";
 import type {
+  CliConfigFamily,
+  ConfigSetResult,
   CliConfigEntry,
   CliConfigSettingDefinition,
-} from "./cli-config-commands.js";
+} from "./cli-config-types.js";
 
 export const CONFIG_DOCUMENT_DEFINITIONS: readonly CliConfigSettingDefinition[] =
   [
@@ -92,7 +94,7 @@ export const saveConfigDocument = async (
   setting: string,
   raw: string,
   expected?: { storedRaw: string | undefined },
-): Promise<string> => {
+): Promise<ConfigSetResult> => {
   const document = parseDocument(raw);
   const loaded = await loadConfigDocument(workspaceRoot, setting);
   await withCooperativeFileLock(loaded.path, async () => {
@@ -103,7 +105,27 @@ export const saveConfigDocument = async (
       );
     await writeJsonAtomically(loaded.path, document);
   });
-  return loaded.path;
+  return {
+    setting,
+    scope: setting.startsWith("workspace.") ? "workspace" : "user",
+    configPath: loaded.path,
+    status: "configured",
+  };
+};
+
+export const documentConfigFamily: CliConfigFamily = {
+  definitions: CONFIG_DOCUMENT_DEFINITIONS,
+  save: async (workspaceRoot, setting, value) =>
+    await saveConfigDocument(
+      workspaceRoot,
+      setting.trim().toLowerCase(),
+      value,
+    ),
+  reset: () => {
+    throw new CliUsageError(
+      "Edit this configuration to remove or reset individual connections.",
+    );
+  },
 };
 
 export const loadConfigDocumentEntries = async (

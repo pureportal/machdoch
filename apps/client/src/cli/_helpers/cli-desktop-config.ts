@@ -9,9 +9,11 @@ import {
 import { CliUsageError } from "./cli-error.js";
 import { getObjectValue } from "./cli-config-additional.js";
 import type {
+  CliConfigFamily,
+  ConfigSetResult,
   CliConfigEntry,
   CliConfigSettingDefinition,
-} from "./cli-config-commands.js";
+} from "./cli-config-types.js";
 
 interface DesktopConfigDefinition extends CliConfigSettingDefinition {
   nativeSetting: string;
@@ -362,10 +364,10 @@ export const loadDesktopConfigEntries = async (): Promise<CliConfigEntry[]> => {
   });
 };
 
-export const writeDesktopConfigSetting = async (
+const writeDesktopConfigSetting = async (
   definition: DesktopConfigDefinition,
   text?: string,
-): Promise<string> => {
+): Promise<ConfigSetResult> => {
   const raw = text ?? String(definition.defaultValue);
   let value: unknown = raw;
   if (definition.nullable && raw === "inherit") value = null;
@@ -380,5 +382,28 @@ export const writeDesktopConfigSetting = async (
   } else if (definition.choices && !definition.choices.includes(raw))
     throw new CliUsageError(`Choose ${definition.choices.join(", ")}.`);
   await requestDesktopSettings("set", definition.nativeSetting, value);
-  return "desktop";
+  return {
+    setting: definition.setting,
+    scope: "user",
+    configPath: "desktop",
+    status: text === undefined ? "reset" : "configured",
+    ...(text !== undefined && !definition.secret ? { value: text } : {}),
+  };
+};
+
+export const desktopConfigFamily: CliConfigFamily = {
+  definitions: DESKTOP_CONFIG_DEFINITIONS,
+  save: async (_workspaceRoot, setting, value) =>
+    await writeDesktopConfigSetting(
+      DESKTOP_CONFIG_DEFINITIONS.find(
+        (definition) => definition.setting === setting.trim().toLowerCase(),
+      )!,
+      value,
+    ),
+  reset: async (_workspaceRoot, setting) =>
+    await writeDesktopConfigSetting(
+      DESKTOP_CONFIG_DEFINITIONS.find(
+        (definition) => definition.setting === setting.trim().toLowerCase(),
+      )!,
+    ),
 };

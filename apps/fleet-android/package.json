@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/gradle.mjs assembleDebug assembleRelease",
-    "test": "node --test scripts/downloads.test.mjs && node scripts/gradle.mjs testDebugUnitTest lintDebug"
+    "test": "node --test scripts/*.test.mjs && node scripts/gradle.mjs testDebugUnitTest lintDebug"
   },
   "devDependencies": {
     "jsdom": "^26.1.0"
