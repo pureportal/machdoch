@@ -109,6 +109,8 @@ export const readMediaVideoRecipeSettings = (
   if (!node) return null;
   const config = node.config;
   return {
+    refMods: readRefMods(config.refMods),
+    refModMaxTokens: typeof config.refModMaxTokens === "number" ? config.refModMaxTokens : 65536,
     modelAddons: readModelAddonSelections(config.modelAddons ?? []) ?? [],
     modelId:
       typeof config.modelId === "string"
@@ -208,3 +210,4 @@ export const readMediaFlowImageSettings = (
     referenceImages: references,
   };
 };
+import { readRefMods } from "../../../core/media/refmods.js";

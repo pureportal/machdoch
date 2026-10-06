@@ -147,6 +147,8 @@ export function RemoteProductApp({
       drafts={drafts}
       mediaHref={runtime.mediaHref}
       ralphHref={runtime.ralphHref}
+      schedulerHref={runtime.schedulerHref}
+      instructionsHref={runtime.instructionsHref}
       servicesHref={runtime.servicesHref}
       settingsHref={runtime.settingsHref}
       instanceName={instanceName}

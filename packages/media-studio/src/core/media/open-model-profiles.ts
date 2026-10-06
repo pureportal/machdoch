@@ -20,6 +20,21 @@ export interface OpenMediaModelProfile {
   prompt?: boolean;
   spatialMultiple?: number;
   video?: { minimum: number; maximum: number; stride: number; fps: number };
+  license: {
+    name: string;
+    spdxId: string | null;
+    commercialUse: "allowed" | "review-required";
+    sourceUrl?: string;
+  };
+  distillation?: {
+    method: "dmad" | "pdmd";
+    sampler: "renoise" | "euler";
+    videoShift: number;
+    audioShift: number;
+    checkpointFile: string;
+    checkpointSha256: string;
+    checkpointByteSize: number;
+  };
 }
 
 export const OPEN_MEDIA_MODEL_PROFILES: readonly OpenMediaModelProfile[] =
@@ -66,7 +81,7 @@ export const createOpenMediaModels = (
         commercialUse: profile.license.commercialUse as
           | "allowed"
           | "review-required",
-        sourceUrl: source,
+        sourceUrl: profile.license.sourceUrl ?? source,
         requiresAcceptance: profile.license.commercialUse !== "allowed",
       },
       recommended: false,

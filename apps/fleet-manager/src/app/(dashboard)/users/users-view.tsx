@@ -12,6 +12,7 @@ import { formatTime } from "@/lib/format";
 
 import { OwnerAccountCard, type OwnerAccount } from "./owner-account";
 import { PageHeader } from "@/components/page-header";
+import { AppearancePreferences } from "@/components/fleet-appearance";
 
 interface OwnerSession {
   sessionId: string;
@@ -65,6 +66,7 @@ export function UsersView(): React.ReactElement {
   return (
     <section className="grid gap-6">
       <PageHeader title="Users" />
+      <AppearancePreferences />
       {loadError ? (
         <div
           role="alert"

@@ -8,9 +8,17 @@
     ".": "./src/index.ts",
     "./media": "./src/media.ts",
     "./ralph": "./src/ralph.ts",
+    "./scheduler": "./src/scheduler.ts",
+    "./scheduler-contract": "./src/scheduler-contract.ts",
     "./operation": "./src/operation.ts",
     "./telemetry": "./src/telemetry.ts",
-    "./session-routing": "./src/session-routing.ts"
+    "./session-routing": "./src/session-routing.ts",
+    "./instruction-contract": "./src/instruction-contract.ts",
+    "./instruction-limits": "./src/instruction-limits.ts",
+    "./instruction-tags": "./src/instruction-tags.ts",
+    "./unicode": "./src/unicode.ts",
+    "./instructions": "./src/instructions.ts",
+    "./instruction-command": "./src/instruction-command.ts"
   },
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",

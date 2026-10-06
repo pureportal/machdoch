@@ -4,8 +4,11 @@ use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::{error::Error, fmt};
 
+pub mod instructions;
 mod media;
+mod operation;
 pub mod ralph;
+pub mod scheduler;
 mod snapshot;
 
 pub const GATEWAY_PROTOCOL_VERSION: u32 = 4;
@@ -710,6 +713,14 @@ pub fn deserialize_host_message(
     deny_unknown_fields
 )]
 pub enum HostRequest {
+    Instructions {
+        #[serde(deserialize_with = "instructions::deserialize_instruction_request")]
+        request: Value,
+    },
+    Scheduler {
+        #[serde(deserialize_with = "scheduler::deserialize_scheduler_request")]
+        request: Value,
+    },
     Ralph {
         #[serde(deserialize_with = "ralph::deserialize_ralph_request")]
         request: Value,
@@ -746,6 +757,14 @@ pub enum HostRequest {
     deny_unknown_fields
 )]
 pub enum HostResponse {
+    Instructions {
+        #[serde(deserialize_with = "media::deserialize_media_response")]
+        response: Value,
+    },
+    Scheduler {
+        #[serde(deserialize_with = "media::deserialize_media_response")]
+        response: Value,
+    },
     Ralph {
         #[serde(deserialize_with = "media::deserialize_media_response")]
         response: Value,
@@ -851,8 +870,6 @@ pub struct ProductCommand {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub job_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flow_id: Option<String>,
@@ -924,12 +941,6 @@ pub enum ProductCommandKind {
     SaveMessageContextPack,
     SpeakMessage,
     StopSpeaking,
-    SchedulerTrigger,
-    SchedulerPause,
-    SchedulerResume,
-    SchedulerDelete,
-    SchedulerRetryRun,
-    SchedulerCancelRun,
     RalphRun,
     RalphResumeRun,
     GenerateMedia,
@@ -996,8 +1007,6 @@ struct RawProductCommand {
     context_pack_id: Option<String>,
     #[serde(default)]
     message_id: Option<String>,
-    #[serde(default)]
-    job_id: Option<String>,
     #[serde(default)]
     run_id: Option<String>,
     #[serde(default)]
@@ -1071,7 +1080,6 @@ impl<'de> Deserialize<'de> for ProductCommand {
             attachment_id: raw.attachment_id,
             context_pack_id: raw.context_pack_id,
             message_id: raw.message_id,
-            job_id: raw.job_id,
             run_id: raw.run_id,
             flow_id: raw.flow_id,
             scope: raw.scope,
@@ -1131,7 +1139,6 @@ impl ProductCommand {
             &mut self.attachment_id,
             &mut self.context_pack_id,
             &mut self.message_id,
-            &mut self.job_id,
             &mut self.run_id,
             &mut self.flow_id,
         ] {
@@ -1274,19 +1281,6 @@ impl ProductCommand {
                 required.extend([
                     ("sessionId", self.session_id.is_some()),
                     ("messageId", self.message_id.is_some()),
-                ])
-            }
-            ProductCommandKind::SchedulerTrigger
-            | ProductCommandKind::SchedulerPause
-            | ProductCommandKind::SchedulerResume
-            | ProductCommandKind::SchedulerDelete => required.extend([
-                ("workspace", self.workspace.is_some()),
-                ("jobId", self.job_id.is_some()),
-            ]),
-            ProductCommandKind::SchedulerRetryRun | ProductCommandKind::SchedulerCancelRun => {
-                required.extend([
-                    ("workspace", self.workspace.is_some()),
-                    ("runId", self.run_id.is_some()),
                 ])
             }
             ProductCommandKind::RalphRun => required.extend([
@@ -1452,17 +1446,6 @@ impl ProductCommand {
                     && valid_identifier(self.message_id.as_deref())
             }
             ProductCommandKind::StopSpeaking => true,
-            ProductCommandKind::SchedulerTrigger
-            | ProductCommandKind::SchedulerPause
-            | ProductCommandKind::SchedulerResume
-            | ProductCommandKind::SchedulerDelete => {
-                valid_workspace(self.workspace.as_deref().unwrap())
-                    && valid_identifier(self.job_id.as_deref())
-            }
-            ProductCommandKind::SchedulerRetryRun | ProductCommandKind::SchedulerCancelRun => {
-                valid_workspace(self.workspace.as_deref().unwrap())
-                    && valid_identifier(self.run_id.as_deref())
-            }
             ProductCommandKind::RalphRun => {
                 self.valid_ralph_runtime()
                     && valid_identifier(self.flow_id.as_deref())
@@ -1786,13 +1769,6 @@ impl ProductCommandKind {
                 &["kind", "commandId", "sessionId", "messageId"]
             }
             Self::StopSpeaking => &["kind", "commandId"],
-            Self::SchedulerTrigger
-            | Self::SchedulerPause
-            | Self::SchedulerResume
-            | Self::SchedulerDelete => &["kind", "commandId", "workspace", "jobId"],
-            Self::SchedulerRetryRun | Self::SchedulerCancelRun => {
-                &["kind", "commandId", "workspace", "runId"]
-            }
             Self::RalphRun => &[
                 "kind",
                 "commandId",
@@ -1879,12 +1855,6 @@ impl ProductCommandKind {
             Self::SaveMessageContextPack => "save-message-context-pack",
             Self::SpeakMessage => "speak-message",
             Self::StopSpeaking => "stop-speaking",
-            Self::SchedulerTrigger => "scheduler-trigger",
-            Self::SchedulerPause => "scheduler-pause",
-            Self::SchedulerResume => "scheduler-resume",
-            Self::SchedulerDelete => "scheduler-delete",
-            Self::SchedulerRetryRun => "scheduler-retry-run",
-            Self::SchedulerCancelRun => "scheduler-cancel-run",
             Self::RalphRun => "ralph-run",
             Self::RalphResumeRun => "ralph-resume-run",
             Self::GenerateMedia => "generate-media",
@@ -2046,7 +2016,6 @@ mod tests {
             attachment_id: None,
             context_pack_id: None,
             message_id: None,
-            job_id: None,
             run_id: None,
             flow_id: None,
             scope: None,
@@ -2099,7 +2068,6 @@ mod tests {
             "attachmentId": "attachment-1",
             "contextPackId": "pack-1",
             "messageId": "message-1",
-            "jobId": "job-1",
             "runId": "run-1",
             "flowId": "flow-1",
             "scope": "workspace",
@@ -2292,16 +2260,6 @@ mod tests {
             Some(vec!["priority".to_string(), "release".to_string()])
         );
 
-        let scheduler_run = serde_json::from_value::<ProductCommand>(serde_json::json!({
-            "kind": "scheduler-retry-run",
-            "workspace": " C:\\workspace ",
-            "runId": " run-1 "
-        }))
-        .expect("padded scheduler command should decode");
-
-        assert_eq!(scheduler_run.workspace.as_deref(), Some("C:\\workspace"));
-        assert_eq!(scheduler_run.run_id.as_deref(), Some("run-1"));
-
         let media_run = serde_json::from_value::<ProductCommand>(serde_json::json!({
             "kind": "generate-media",
             "prompt": " Create a geometric owl ",
@@ -2411,12 +2369,6 @@ mod tests {
             ("delete-context-pack", &["contextPackId"][..]),
             ("save-message-context-pack", &["sessionId", "messageId"][..]),
             ("speak-message", &["sessionId", "messageId"][..]),
-            ("scheduler-trigger", &["workspace", "jobId"][..]),
-            ("scheduler-pause", &["workspace", "jobId"][..]),
-            ("scheduler-resume", &["workspace", "jobId"][..]),
-            ("scheduler-delete", &["workspace", "jobId"][..]),
-            ("scheduler-retry-run", &["workspace", "runId"][..]),
-            ("scheduler-cancel-run", &["workspace", "runId"][..]),
             (
                 "ralph-run",
                 &[
@@ -2500,12 +2452,6 @@ mod tests {
             "save-message-context-pack",
             "speak-message",
             "stop-speaking",
-            "scheduler-trigger",
-            "scheduler-pause",
-            "scheduler-resume",
-            "scheduler-delete",
-            "scheduler-retry-run",
-            "scheduler-cancel-run",
             "ralph-run",
             "ralph-resume-run",
             "generate-media",
@@ -2572,8 +2518,6 @@ mod tests {
                 "workspace",
                 serde_json::json!("\t"),
             ),
-            ("scheduler-trigger", "workspace", serde_json::json!("  ")),
-            ("scheduler-trigger", "jobId", serde_json::json!("")),
         ] {
             let mut command = command_payload(kind);
             command[field] = value;

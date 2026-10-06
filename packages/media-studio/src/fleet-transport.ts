@@ -46,6 +46,7 @@ export function createFleetMediaTransport(
     const { path } = await call<{ path: string }>("media_create_transfer", {
       id,
       name,
+      direction: "upload",
     });
     transfers.set(path, { id, name, download: false });
     try {
@@ -121,6 +122,15 @@ export function createFleetMediaTransport(
       }
       const result = await call<T>(command, args);
       const request = args.request as Record<string, unknown> | undefined;
+      if (command === "media_refmod_operation" && request?.operation === "import" && typeof request.path === "string")
+        await removeTransfer(request.path);
+      if (command === "media_refmod_operation" && ["save", "create"].includes(String(request?.operation)) && typeof request?.outputPath === "string")
+        await download(request.outputPath);
+      if (command === "media_refmod_operation" && request?.operation === "create" && Array.isArray(request.sources))
+        for (const source of request.sources as Array<{ path?: string; maskPath?: string }>) {
+          if (typeof source.path === "string") await removeTransfer(source.path);
+          if (typeof source.maskPath === "string") await removeTransfer(source.maskPath);
+        }
       if (
         ["media_export_asset", "media_export_flow_revision"].includes(
           command,
@@ -165,7 +175,12 @@ export function createFleetMediaTransport(
       });
       if (!files.length) return null;
       const paths: string[] = [];
-      for (const file of files) paths.push(await upload(file, file.name));
+      try {
+        for (const file of files) paths.push(await upload(file, file.name));
+      } catch (failure) {
+        await Promise.all(paths.map(removeTransfer));
+        throw failure;
+      }
       return options?.multiple ? paths : paths[0]!;
     },
     async save(options) {
@@ -175,6 +190,7 @@ export function createFleetMediaTransport(
       const { path } = await call<{ path: string }>("media_create_transfer", {
         id,
         name,
+        direction: "download",
       });
       transfers.set(path, { id, name, download: true });
       return path;

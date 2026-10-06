@@ -9,9 +9,119 @@ const encodeJson = (value: unknown): string =>
     ).join(""),
   );
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("Fleet media transport", () => {
+  it("reserves a new RefMod export destination and keeps the permanent result after downloading", async () => {
+    vi.useFakeTimers();
+    const click = vi.fn();
+    vi.stubGlobal("document", { createElement: () => ({ click }) });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:refmod");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const invoked: Array<{ command: string; args: Record<string, unknown> }> =
+      [];
+    const operations = new Map<
+      string,
+      { command: string; args: Record<string, unknown> }
+    >();
+    const transport = createFleetMediaTransport("host", async (request) => {
+      if (request.kind === "invoke") {
+        const operation = { command: request.command, args: request.args };
+        invoked.push(operation);
+        operations.set(request.id, operation);
+        return { state: "pending" };
+      }
+      if (request.kind !== "read") return { state: "pending" };
+      const operation = operations.get(request.id)!;
+      const value =
+        operation.command === "media_create_transfer"
+          ? { path: `C:/transfers/${operation.args.id}-${operation.args.name}` }
+          : operation.command === "media_write_transfer"
+            ? { offset: 1 }
+            : operation.command === "media_read_transfer"
+              ? { data: "AA==", total: 1 }
+              : operation.command === "media_refmod_operation"
+                ? { path: "C:/models/refmods/permanent.safetensors", tokens: 4 }
+                : null;
+      const chunk = encodeJson(value);
+      return { state: "complete", chunk, offset: 0, total: chunk.length };
+    });
+    const source = await transport.upload(
+      new Blob([new Uint8Array([0])]),
+      "source.png",
+    );
+    const outputPath = await transport.save({
+      defaultPath: "hero.safetensors",
+    });
+    const created = transport.invoke("media_refmod_operation", {
+      workspaceRoot: "C:/work",
+      request: {
+        operation: "create",
+        sources: [{ path: source }],
+        outputPath,
+        keepInLibrary: true,
+      },
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(created).resolves.toMatchObject({
+      path: "C:/models/refmods/permanent.safetensors",
+    });
+    expect(
+      invoked
+        .filter((operation) => operation.command === "media_create_transfer")
+        .map((operation) => operation.args.direction),
+    ).toEqual(["upload", "download"]);
+    expect(click).toHaveBeenCalledOnce();
+    expect(
+      invoked.filter(
+        (operation) => operation.command === "media_remove_transfer",
+      ),
+    ).toHaveLength(2);
+    expect(
+      invoked.some((operation) =>
+        JSON.stringify(operation.args).includes(
+          "C:/models/refmods/permanent.safetensors",
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it("removes an uploaded RefMod after importing it into the permanent library", async () => {
+    const commands = new Map<string, string>();
+    const invoked: string[] = [];
+    const transport = createFleetMediaTransport("host", async (request) => {
+      if (request.kind === "invoke") {
+        commands.set(request.id, request.command);
+        invoked.push(request.command);
+        return { state: "pending" };
+      }
+      if (request.kind !== "read") return { state: "pending" };
+      const command = commands.get(request.id);
+      const chunk = encodeJson(
+        command === "media_create_transfer"
+          ? { path: "C:/transfers/upload.safetensors" }
+          : command === "media_write_transfer"
+            ? { offset: 1 }
+            : { path: "C:/models/refmods/permanent.safetensors" },
+      );
+      return { state: "complete", chunk, offset: 0, total: chunk.length };
+    });
+    const path = await transport.upload(
+      new Blob([new Uint8Array([0])]),
+      "hero.safetensors",
+    );
+    await expect(
+      transport.invoke("media_refmod_operation", {
+        request: { operation: "import", path },
+      }),
+    ).resolves.toEqual({ path: "C:/models/refmods/permanent.safetensors" });
+    expect(invoked.at(-1)).toBe("media_remove_transfer");
+  });
+
   it("routes Advanced flow assistant requests through the connected host", async () => {
     const requests: MediaRequest[] = [];
     const value = { message: "Flow updated", flow: null };

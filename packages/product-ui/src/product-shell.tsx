@@ -1,20 +1,16 @@
+import { ApplicationShell } from "./application-shell";
 import {
   productCommandSchema,
   type ProductSnapshot,
 } from "@machdoch/fleet-protocol";
 import {
-  Aperture,
-  FolderKanban,
   ArrowLeft,
-  CalendarClock,
   LoaderCircle,
   PanelLeft,
   PanelRight,
   RefreshCw,
   TerminalSquare,
-  MessageSquareText,
   WifiOff,
-  Workflow,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Composer } from "./composer";
@@ -23,7 +19,6 @@ import { Inspector } from "./inspector";
 import type { ProductCommandHandler } from "./product-runtime";
 import { ProductRail, type ProductView } from "./product-rail";
 import { Ralph } from "./ralph";
-import { Scheduler } from "./scheduler";
 import { SessionHeader } from "./session-header";
 import { SessionSidebar } from "./session-sidebar";
 import { ProductPanel } from "./product-panel";
@@ -36,6 +31,8 @@ export function ProductShell({
   instanceName,
   mediaHref,
   ralphHref,
+  schedulerHref,
+  instructionsHref,
   servicesHref,
   settingsHref,
   snapshot,
@@ -51,6 +48,8 @@ export function ProductShell({
   instanceName: string;
   mediaHref?: string | undefined;
   ralphHref?: string | undefined;
+  schedulerHref?: string | undefined;
+  instructionsHref?: string | undefined;
   servicesHref?: string | undefined;
   settingsHref?: string | undefined;
   snapshot: ProductSnapshot | null;
@@ -65,13 +64,20 @@ export function ProductShell({
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [mediaOpened, setMediaOpened] = useState(false);
   const [ralphOpened, setRalphOpened] = useState(initialView === "ralph");
+  const [schedulerOpened, setSchedulerOpened] = useState(
+    initialView === "scheduler",
+  );
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [instructionsOpened, setInstructionsOpened] = useState(
+    initialView === "instructions",
+  );
   const [requestedView, setRequestedView] = useState<ProductView>(initialView);
   const [pendingPoseChat, setPendingPoseChat] = useState<{
     previousSessionId: string | null;
     hasScene: boolean;
   } | null>(null);
   const mediaFrameRef = useRef<HTMLIFrameElement>(null);
+  const instructionsFrameRef = useRef<HTMLIFrameElement>(null);
   const compact = useMediaQuery("(max-width: 900px)");
   const viewportRef = useProductViewport();
   useEffect(() => {
@@ -81,6 +87,8 @@ export function ProductShell({
     setRequestedView(view);
     if (view === "media") setMediaOpened(true);
     if (view === "ralph") setRalphOpened(true);
+    if (view === "scheduler") setSchedulerOpened(true);
+    if (view === "instructions") setInstructionsOpened(true);
     setSessionsOpen(false);
     setInspectorOpen(false);
   };
@@ -91,12 +99,18 @@ export function ProductShell({
     (session) => session.id === shell.activeSessionId,
   );
   const workspace = activeSession?.workspace ?? shell?.composer?.workspace;
+  useEffect(() => {
+    instructionsFrameRef.current?.contentWindow?.postMessage(
+      { type: "machdoch:instruction-workspace", workspace: workspace ?? null },
+      window.location.origin,
+    );
+  }, [workspace]);
   const activeView: ProductView =
     requestedView === "projects" && !shell?.projectLibrary
       ? "chat"
       : requestedView === "media" && !mediaHref
         ? "chat"
-        : requestedView === "scheduler" && !shell?.scheduler
+        : requestedView === "scheduler" && !schedulerHref
           ? "chat"
           : requestedView === "ralph" && !shell?.ralph
             ? "chat"
@@ -162,154 +176,121 @@ export function ProductShell({
   }, [pendingPoseChat, snapshot?.shell?.activeSessionId, onCommand]);
 
   return (
-    <div ref={viewportRef} className="machdoch-product">
-      <header className="m-product-topbar">
-        <a href="/instances" className="m-product-back" aria-label="Instances">
-          <ArrowLeft aria-hidden="true" />
-        </a>
-        <div className="m-product-brand" aria-label="Machdoch">
-          <TerminalSquare aria-hidden="true" />
-          <span>Machdoch</span>
-        </div>
-        <div className="m-product-topbar-divider" />
-        <div className="m-product-instance">
-          <strong title={instanceName}>{instanceName}</strong>
-          <span
-            data-connected={snapshot !== null && error === null}
-            role="status"
+    <ApplicationShell
+      viewportRef={viewportRef}
+      className="machdoch-product"
+      topbar={
+        <header className="m-product-topbar">
+          <a
+            href="/instances"
+            className="m-product-back"
+            aria-label="Instances"
           >
-            {error ? "Disconnected" : snapshot ? "Connected" : "Connecting"}
-          </span>
-        </div>
-        {shell ? (
-          <nav className="m-product-mobile-nav" aria-label="Product view">
-            {shell.projectLibrary ? (
-              <button
-                type="button"
-                data-active={activeView === "projects"}
-                aria-label="Projects"
-                aria-pressed={activeView === "projects"}
-                onClick={() => selectView("projects")}
+            <ArrowLeft aria-hidden="true" />
+          </a>
+          <div className="m-product-brand" aria-label="Machdoch">
+            <TerminalSquare aria-hidden="true" />
+            <span>Machdoch</span>
+          </div>
+          <div className="m-product-topbar-divider" />
+          <div className="m-product-instance">
+            <strong title={instanceName}>{instanceName}</strong>
+            <span
+              data-connected={snapshot !== null && error === null}
+              role="status"
+            >
+              {error ? "Disconnected" : snapshot ? "Connected" : "Connecting"}
+            </span>
+          </div>
+          <div className="m-product-topbar-actions">
+            {servicesHref ? (
+              <a
+                href={servicesHref}
+                className="m-product-icon-button"
+                aria-label="Services and previews"
+                title="Services and previews"
               >
-                <FolderKanban aria-hidden="true" />
-                <span>Projects</span>
-              </button>
+                <TerminalSquare aria-hidden="true" />
+              </a>
+            ) : null}
+            {pendingCommands > 0 ? (
+              <LoaderCircle className="m-product-spin" aria-label="Updating" />
             ) : null}
             <button
               type="button"
-              data-active={activeView === "chat"}
-              aria-label="Chat"
-              aria-pressed={activeView === "chat"}
-              onClick={() => selectView("chat")}
-            >
-              <MessageSquareText aria-hidden="true" />
-              <span>Chat</span>
-            </button>
-            {mediaHref ? (
-              <button
-                type="button"
-                data-active={activeView === "media"}
-                aria-label="Media Studio"
-                aria-pressed={activeView === "media"}
-                onClick={() => selectView("media")}
-              >
-                <Aperture aria-hidden="true" />
-                <span>Media</span>
-              </button>
-            ) : null}
-            {shell.scheduler ? (
-              <button
-                type="button"
-                data-active={activeView === "scheduler"}
-                aria-label="Smart Scheduler"
-                aria-pressed={activeView === "scheduler"}
-                onClick={() => selectView("scheduler")}
-              >
-                <CalendarClock aria-hidden="true" />
-                <span>Scheduler</span>
-              </button>
-            ) : null}
-            {shell.ralph ? (
-              <button
-                type="button"
-                data-active={activeView === "ralph"}
-                aria-label="RALPH"
-                aria-pressed={activeView === "ralph"}
-                onClick={() => selectView("ralph")}
-              >
-                <Workflow aria-hidden="true" />
-                <span>RALPH</span>
-              </button>
-            ) : null}
-          </nav>
-        ) : null}
-        <div className="m-product-topbar-actions">
-          {servicesHref ? (
-            <a
-              href={servicesHref}
               className="m-product-icon-button"
-              aria-label="Services and previews"
-              title="Services and previews"
+              aria-label="Refresh"
+              onClick={() => void onRefresh()}
             >
-              <TerminalSquare aria-hidden="true" />
-            </a>
-          ) : null}
-          {pendingCommands > 0 ? (
-            <LoaderCircle className="m-product-spin" aria-label="Updating" />
-          ) : null}
-          <button
-            type="button"
-            className="m-product-icon-button"
-            aria-label="Refresh"
-            onClick={() => void onRefresh()}
-          >
-            <RefreshCw aria-hidden="true" />
-          </button>
-          {shell && activeView === "chat" ? (
-            <button
-              type="button"
-              className="m-product-icon-button m-product-sidebar-toggle"
-              data-active={sessionsOpen}
-              aria-label="Sessions"
-              aria-expanded={sessionsOpen}
-              aria-haspopup="dialog"
-              onClick={() => setSessionsOpen((current) => !current)}
-            >
-              <PanelLeft aria-hidden="true" />
+              <RefreshCw aria-hidden="true" />
             </button>
+            {shell && activeView === "chat" ? (
+              <button
+                type="button"
+                className="m-product-icon-button m-product-sidebar-toggle"
+                data-active={sessionsOpen}
+                aria-label="Sessions"
+                aria-expanded={sessionsOpen}
+                aria-haspopup="dialog"
+                onClick={() => setSessionsOpen((current) => !current)}
+              >
+                <PanelLeft aria-hidden="true" />
+              </button>
+            ) : null}
+            {shell ? (
+              <button
+                type="button"
+                className="m-product-icon-button m-product-inspector-toggle"
+                data-active={inspectorOpen}
+                aria-label="Activity"
+                aria-expanded={inspectorOpen}
+                aria-haspopup="dialog"
+                onClick={() => setInspectorOpen((current) => !current)}
+              >
+                <PanelRight aria-hidden="true" />
+              </button>
+            ) : null}
+          </div>
+        </header>
+      }
+      navigation={
+        shell ? (
+          <ProductRail
+            settingsHref={settingsHref}
+            inspectorOpen={inspectorOpen}
+            activeView={activeView}
+            mediaAvailable={Boolean(mediaHref)}
+            schedulerAvailable={Boolean(schedulerHref)}
+            instructionsAvailable={Boolean(instructionsHref)}
+            ralphAvailable={shell.ralph !== undefined}
+            projectsAvailable={shell.projectLibrary !== undefined}
+            onSelectView={selectView}
+            onToggleInspector={() => setInspectorOpen((current) => !current)}
+          />
+        ) : null
+      }
+      notices={
+        <>
+          {error && snapshot ? (
+            <div className="m-product-connection-error" role="alert">
+              <WifiOff aria-hidden="true" />
+              <span>{error}</span>
+              <button type="button" onClick={() => void onRefresh()}>
+                Retry
+              </button>
+            </div>
           ) : null}
-          {shell ? (
-            <button
-              type="button"
-              className="m-product-icon-button m-product-inspector-toggle"
-              data-active={inspectorOpen}
-              aria-label="Activity"
-              aria-expanded={inspectorOpen}
-              aria-haspopup="dialog"
-              onClick={() => setInspectorOpen((current) => !current)}
-            >
-              <PanelRight aria-hidden="true" />
-            </button>
+          {commandError ? (
+            <div className="m-product-connection-error" role="alert">
+              <span>{commandError}</span>
+              <button type="button" onClick={onDismissCommandError}>
+                Dismiss
+              </button>
+            </div>
           ) : null}
-        </div>
-      </header>
-      {error && snapshot ? (
-        <div className="m-product-connection-error" role="alert">
-          <WifiOff aria-hidden="true" />
-          <span>{error}</span>
-          <button type="button" onClick={() => void onRefresh()}>
-            Retry
-          </button>
-        </div>
-      ) : null}
-      {commandError ? (
-        <div className="m-product-connection-error" role="alert">
-          <span>{commandError}</span>
-          <button type="button" onClick={onDismissCommandError}>
-            Dismiss
-          </button>
-        </div>
-      ) : null}
+        </>
+      }
+    >
       {!snapshot ? (
         <main className="m-product-loading" role={error ? "alert" : "status"}>
           {error ? (
@@ -331,17 +312,6 @@ export function ProductShell({
           data-sessions-open={sessionsOpen}
           data-view={activeView}
         >
-          <ProductRail
-            settingsHref={settingsHref}
-            inspectorOpen={inspectorOpen}
-            activeView={activeView}
-            mediaAvailable={Boolean(mediaHref)}
-            schedulerAvailable={shell.scheduler !== undefined}
-            ralphAvailable={shell.ralph !== undefined}
-            projectsAvailable={shell.projectLibrary !== undefined}
-            onSelectView={selectView}
-            onToggleInspector={() => setInspectorOpen((current) => !current)}
-          />
           {activeView === "chat" ? (
             <>
               {compact ? (
@@ -460,12 +430,48 @@ export function ProductShell({
               />
             </main>
           ) : null}
-          {activeView === "scheduler" && shell.scheduler ? (
-            <main className="m-product-feature-main">
-              <Scheduler
-                scheduler={shell.scheduler}
-                pending={commandsBlocked}
-                onCommand={onCommand}
+          {instructionsHref && instructionsOpened ? (
+            <main
+              className="m-product-feature-main"
+              hidden={activeView !== "instructions"}
+              style={
+                activeView !== "instructions" ? { display: "none" } : undefined
+              }
+            >
+              <iframe
+                ref={instructionsFrameRef}
+                src={instructionsHref}
+                onLoad={(event) =>
+                  event.currentTarget.contentWindow?.postMessage(
+                    {
+                      type: "machdoch:instruction-workspace",
+                      workspace: workspace ?? null,
+                    },
+                    window.location.origin,
+                  )
+                }
+                title="Instructions"
+                className="m-product-media-frame"
+                allow="clipboard-read; clipboard-write"
+              />
+            </main>
+          ) : null}
+          {schedulerHref && schedulerOpened ? (
+            <main
+              className="m-product-feature-main"
+              hidden={activeView !== "scheduler"}
+              style={
+                activeView !== "scheduler" ? { display: "none" } : undefined
+              }
+            >
+              <iframe
+                src={
+                  workspace
+                    ? `${schedulerHref}${schedulerHref.includes("?") ? "&" : "?"}workspace=${encodeURIComponent(workspace)}`
+                    : schedulerHref
+                }
+                title="Smart Scheduler"
+                className="m-product-media-frame"
               />
             </main>
           ) : null}
@@ -516,7 +522,6 @@ export function ProductShell({
                   selectView("chat");
                 return accepted;
               }}
-              onRefresh={onRefresh}
             />
           </ProductPanel>
         </div>
@@ -528,6 +533,6 @@ export function ProductShell({
           </button>
         </div>
       )}
-    </div>
+    </ApplicationShell>
   );
 }

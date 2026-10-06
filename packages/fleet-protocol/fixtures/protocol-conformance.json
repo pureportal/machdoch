@@ -1682,7 +1682,9 @@
       "payload": {
         "kind": "tag-session",
         "sessionId": "session-1",
-        "tags": ["review"]
+        "tags": [
+          "review"
+        ]
       }
     },
     {
@@ -1691,7 +1693,9 @@
       "accepted": false,
       "payload": {
         "kind": "tag-session",
-        "tags": ["review"]
+        "tags": [
+          "review"
+        ]
       }
     },
     {
@@ -1710,7 +1714,9 @@
       "payload": {
         "kind": "tag-session",
         "sessionId": "session-1",
-        "tags": ["review"],
+        "tags": [
+          "review"
+        ],
         "unexpected": true
       }
     },
@@ -3105,240 +3111,6 @@
       }
     },
     {
-      "id": "command/scheduler-trigger/accepted",
-      "target": "command",
-      "accepted": true,
-      "payload": {
-        "kind": "scheduler-trigger",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-trigger/missing-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-trigger",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-trigger/missing-jobId",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-trigger",
-        "workspace": "C:\\workspace"
-      }
-    },
-    {
-      "id": "command/scheduler-trigger/unknown-field",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-trigger",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1",
-        "unexpected": true
-      }
-    },
-    {
-      "id": "command/scheduler-pause/accepted",
-      "target": "command",
-      "accepted": true,
-      "payload": {
-        "kind": "scheduler-pause",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-pause/missing-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-pause",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-pause/missing-jobId",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-pause",
-        "workspace": "C:\\workspace"
-      }
-    },
-    {
-      "id": "command/scheduler-pause/unknown-field",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-pause",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1",
-        "unexpected": true
-      }
-    },
-    {
-      "id": "command/scheduler-resume/accepted",
-      "target": "command",
-      "accepted": true,
-      "payload": {
-        "kind": "scheduler-resume",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-resume/missing-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-resume",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-resume/missing-jobId",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-resume",
-        "workspace": "C:\\workspace"
-      }
-    },
-    {
-      "id": "command/scheduler-resume/unknown-field",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-resume",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1",
-        "unexpected": true
-      }
-    },
-    {
-      "id": "command/scheduler-delete/accepted",
-      "target": "command",
-      "accepted": true,
-      "payload": {
-        "kind": "scheduler-delete",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-delete/missing-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-delete",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-delete/missing-jobId",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-delete",
-        "workspace": "C:\\workspace"
-      }
-    },
-    {
-      "id": "command/scheduler-delete/unknown-field",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-delete",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1",
-        "unexpected": true
-      }
-    },
-    {
-      "id": "command/scheduler-retry-run/accepted",
-      "target": "command",
-      "accepted": true,
-      "payload": {
-        "kind": "scheduler-retry-run",
-        "workspace": "C:\\workspace",
-        "runId": "run-1"
-      }
-    },
-    {
-      "id": "command/scheduler-retry-run/missing-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-retry-run",
-        "runId": "run-1"
-      }
-    },
-    {
-      "id": "command/scheduler-retry-run/missing-runId",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-retry-run",
-        "workspace": "C:\\workspace"
-      }
-    },
-    {
-      "id": "command/scheduler-retry-run/unknown-field",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-retry-run",
-        "workspace": "C:\\workspace",
-        "runId": "run-1",
-        "unexpected": true
-      }
-    },
-    {
-      "id": "command/scheduler-cancel-run/accepted",
-      "target": "command",
-      "accepted": true,
-      "payload": {
-        "kind": "scheduler-cancel-run",
-        "workspace": "C:\\workspace",
-        "runId": "run-1"
-      }
-    },
-    {
-      "id": "command/scheduler-cancel-run/missing-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-cancel-run",
-        "runId": "run-1"
-      }
-    },
-    {
-      "id": "command/scheduler-cancel-run/missing-runId",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-cancel-run",
-        "workspace": "C:\\workspace"
-      }
-    },
-    {
-      "id": "command/scheduler-cancel-run/unknown-field",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-cancel-run",
-        "workspace": "C:\\workspace",
-        "runId": "run-1",
-        "unexpected": true
-      }
-    },
-    {
       "id": "command/ralph-run/user-scope",
       "target": "command",
       "accepted": true,
@@ -3664,16 +3436,6 @@
       }
     },
     {
-      "id": "command/scheduler-trigger/blank-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-trigger",
-        "workspace": " ",
-        "jobId": "job-1"
-      }
-    },
-    {
       "id": "command/unknown-kind",
       "target": "command",
       "accepted": false,
@@ -3727,7 +3489,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -3746,8 +3510,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -3812,7 +3580,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -3831,8 +3601,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -3887,7 +3661,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -3906,8 +3682,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -3972,7 +3752,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -3991,8 +3773,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4048,7 +3834,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4067,8 +3855,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4124,7 +3916,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4143,8 +3937,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4200,7 +3998,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4219,8 +4019,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4276,7 +4080,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4295,8 +4101,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4352,7 +4162,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4371,8 +4183,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4428,7 +4244,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4447,8 +4265,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4504,7 +4326,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4523,8 +4347,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4580,7 +4408,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4599,8 +4429,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4656,7 +4490,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4675,8 +4511,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4733,7 +4573,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               },
               {
                 "id": "123e4567-e89b-42d3-a456-426614174000",
@@ -4741,7 +4583,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4760,8 +4604,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4817,7 +4665,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4836,8 +4686,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -5277,7 +5131,7 @@
             "sessions": [],
             "commands": [],
             "shell": {
-              "version": 5.0,
+              "version": 5,
               "capturedAt": 0,
               "sessions": [],
               "workspaces": [],
@@ -5290,7 +5144,7 @@
                   "prompt": "",
                   "target": "image",
                   "aspectRatio": "1:1",
-                  "outputCount": 1.0,
+                  "outputCount": 1,
                   "outputFormat": "png",
                   "transparentBackground": false,
                   "available": false
@@ -6067,7 +5921,9 @@
             "shell": {
               "version": 5,
               "capturedAt": 0,
-              "sessions": [{}],
+              "sessions": [
+                {}
+              ],
               "workspaces": [],
               "visibleMessages": [],
               "contextPacks": [],
@@ -6097,7 +5953,9 @@
               "capturedAt": 0,
               "sessions": [],
               "workspaces": [],
-              "visibleMessages": [{}],
+              "visibleMessages": [
+                {}
+              ],
               "contextPacks": [],
               "promptHistory": []
             }
@@ -6126,7 +5984,9 @@
               "sessions": [],
               "workspaces": [],
               "visibleMessages": [],
-              "contextPacks": [{}],
+              "contextPacks": [
+                {}
+              ],
               "promptHistory": []
             }
           }

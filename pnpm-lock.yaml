@@ -59,6 +59,9 @@ importers:
       '@google/genai':
         specifier: ^2.8.0
         version: 2.17.1(@modelcontextprotocol/sdk@1.30.0(supports-color@5.5.0))
+      '@machdoch/client-ui':
+        specifier: workspace:*
+        version: link:../../packages/client-ui
       '@machdoch/fleet-protocol':
         specifier: workspace:*
         version: link:../../packages/fleet-protocol
@@ -209,7 +212,7 @@ importers:
         version: 8.1.5(@types/node@25.9.3)(jiti@2.7.0)
       vitest:
         specifier: ^4.1.10
-        version: 4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.9.3)(jiti@2.7.0))
+        version: 4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jiti@2.7.0)(jsdom@26.1.0)
 
   apps/fleet-android:
     devDependencies:
@@ -282,13 +285,53 @@ importers:
         version: 4.3.3
       vitest:
         specifier: ^4.1.10
-        version: 4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.9.3)(jiti@2.7.0))
+        version: 4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jiti@2.7.0)(jsdom@26.1.0)
 
   apps/landing:
     devDependencies:
       vite:
         specifier: ^8.1.5
         version: 8.1.5(@types/node@25.9.3)(jiti@2.7.0)
+
+  packages/client-ui:
+    dependencies:
+      '@machdoch/fleet-protocol':
+        specifier: workspace:*
+        version: link:../fleet-protocol
+      '@machdoch/media-studio':
+        specifier: workspace:*
+        version: link:../media-studio
+      lucide-react:
+        specifier: ^1.18.0
+        version: 1.31.0(react@19.2.8)
+    devDependencies:
+      '@testing-library/dom':
+        specifier: ^10.4.1
+        version: 10.4.1
+      '@testing-library/react':
+        specifier: ^16.3.2
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@types/react':
+        specifier: ^19.2.18
+        version: 19.2.18
+      '@types/react-dom':
+        specifier: ^19.2.5
+        version: 19.2.5(@types/react@19.2.18)
+      jsdom:
+        specifier: ^26.1.0
+        version: 26.1.0
+      react:
+        specifier: ^19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.2.8
+        version: 19.2.8(react@19.2.8)
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jiti@2.7.0)(jsdom@26.1.0)
 
   packages/fleet-protocol:
     dependencies:
@@ -374,7 +417,7 @@ importers:
         version: 7.0.2
       vitest:
         specifier: ^4.1.10
-        version: 4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.9.3)(jiti@2.7.0))
+        version: 4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jiti@2.7.0)(jsdom@26.1.0)
 
   packages/product-ui:
     dependencies:
@@ -4644,7 +4687,6 @@ packages:
       '@vitest/ui': 4.1.10
       happy-dom: '*'
       jsdom: '*'
-      vite: ^6.0.0 || ^7.0.0 || ^8.0.0
     peerDependenciesMeta:
       '@edge-runtime/vm':
         optional: true
@@ -7018,7 +7060,7 @@ snapshots:
       obug: 2.1.4
       std-env: 4.2.0
       tinyrainbow: 3.1.1
-      vitest: 4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.9.3)(jiti@2.7.0))
+      vitest: 4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jiti@2.7.0)(jsdom@26.1.0)
 
   '@vitest/expect@4.1.10':
     dependencies:
@@ -9248,7 +9290,7 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.7.0
 
-  vitest@4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jsdom@26.1.0)(vite@8.1.5(@types/node@25.9.3)(jiti@2.7.0)):
+  vitest@4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jiti@2.7.0)(jsdom@26.1.0):
     dependencies:
       '@vitest/expect': 4.1.10
       '@vitest/mocker': 4.1.10(vite@8.1.5(@types/node@25.9.3)(jiti@2.7.0))
@@ -9275,7 +9317,18 @@ snapshots:
       '@vitest/coverage-v8': 4.1.10(vitest@4.1.10)
       jsdom: 26.1.0
     transitivePeerDependencies:
+      - '@vitejs/devtools'
+      - esbuild
+      - jiti
+      - less
       - msw
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - terser
+      - tsx
+      - yaml
 
   w3c-keyname@2.2.8: {}
 

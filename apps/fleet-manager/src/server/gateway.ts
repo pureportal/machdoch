@@ -41,6 +41,17 @@ const presenceUpdateIntervalMilliseconds = 30_000;
 const gatewayPingIntervalMilliseconds = 15_000;
 const gatewayCloseTimeoutMilliseconds = 5_000;
 const maximumGatewayBufferedBytes = 2 * maximumGatewayMessageBytes;
+const responseTypes = {
+  getProductSnapshot: "productSnapshot",
+  getWorkspaceRuns: "workspaceRuns",
+  executeProductCommand: "commandAccepted",
+  executeWorkspaceRun: "commandAccepted",
+  openPreviewTunnel: "previewTunnelReady",
+  media: "media",
+  ralph: "ralph",
+  scheduler: "scheduler",
+  instructions: "instructions",
+} satisfies Record<HostRequest["type"], HostResponse["type"]>;
 
 interface PendingRequest {
   resolve: (response: HostResponse) => void;
@@ -176,7 +187,12 @@ export class GatewayHub {
   }
 
   supportsCapability(instanceId: string, capability: string): boolean {
-    return this.isOnline(instanceId) && Boolean(this.connections.get(instanceId)?.capabilities.includes(capability));
+    return (
+      this.isOnline(instanceId) &&
+      Boolean(
+        this.connections.get(instanceId)?.capabilities.includes(capability),
+      )
+    );
   }
 
   generation(instanceId: string): string | null {
@@ -238,16 +254,7 @@ export class GatewayHub {
           clearTimeout(timeout);
           signal?.removeEventListener("abort", abort);
         },
-        responseType:
-          request.type === "media" || request.type === "ralph"
-            ? request.type
-            : request.type === "getProductSnapshot"
-            ? "productSnapshot"
-            : request.type === "getWorkspaceRuns"
-              ? "workspaceRuns"
-              : request.type === "openPreviewTunnel"
-                ? "previewTunnelReady"
-                : "commandAccepted",
+        responseType: responseTypes[request.type],
         commandId:
           request.type === "executeProductCommand" ||
           request.type === "executeWorkspaceRun"
