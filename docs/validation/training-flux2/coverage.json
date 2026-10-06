@@ -1,0 +1,840 @@
+{
+  "auditedAt": "2026-10-06T21:12:53.574126+00:00",
+  "sources": [
+    {
+      "path": "apps\\client\\src-tauri\\python\\open_media_models.json",
+      "sha256": "70110537166ec263563588f910ef376ecac843adc9014cdb00c7b44b266c6fbb"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_diffusers_worker.py",
+      "sha256": "2a354ada744a64936233a2eb6711e3e9ebf817d2a00a63737ec9e26990b988e5"
+    },
+    {
+      "path": "packages\\media-studio\\src\\tauri\\ui\\media\\media-training.ts",
+      "sha256": "1299dd21a474ee6cbb2226c9faed7c19bd34d6f623936905f9b4fca181a2a7a0"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\src\\media\\training.rs",
+      "sha256": "18e1510ae62f81f4bea1684b202b49acf73209eca8c3feaf4be7661fe82a3a74"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_diffusion_training.py",
+      "sha256": "835d36a8a66976255b129af0005cbac6cdf6fd83471cdd4d2e8a227d1db7c183"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_flow_training.py",
+      "sha256": "51cbd688ff7020b04284333fff7db94282762a308becc836edfb3ed3841fdad6"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_cogvideo_training.py",
+      "sha256": "4c95d3179094c29cb8dccf048be6fc007654395fdb0adbb47f9d6a2f865d039f"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_cogvideo_training_data.py",
+      "sha256": "be265601fed34a841ba08b83b15fe9675dca7ec6db31b28505b6d248ef5e3c18"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_cogvideo_conditioning.py",
+      "sha256": "a6bde7c9c312b5403b83f8e687d1a5bbada19b4b66a50aafa9ee738ffca24f01"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_training_video_data.py",
+      "sha256": "72537e62154b321c6e744b3ead5513122ddbd2627767d6ac8ba163af2f06504d"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_open_video.py",
+      "sha256": "ec96c668cfbbf7ba38026ef87e128e5ad9ee78cc0b40c86fb1cfc6b372ec133d"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\test_media_cogvideo_training.py",
+      "sha256": "cf20932eea925d4d123e8abfe42d31f40eb29072999ec1f4ee57456dbc6925d8"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\src\\media\\training_dataset.rs",
+      "sha256": "19a713c7becbb516801f54fe98d23878df2b325363792c3f6bb074691d18cc68"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_training_embeddings.py",
+      "sha256": "39997a34c4dcdf52185b2597527f0cba32c1b11ba107da66ba87a81cd9cc37b4"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_sana_conditioning.py",
+      "sha256": "1d7fd4dd58b187994df5269add5d7c197c128ce3cd80ed745fd4fd5e976f92f3"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_sd3_conditioning.py",
+      "sha256": "2a0738f1b2b59ce914a6d4fd3c4ac162faf2dec6faf7aa57fdd0c869ea26874c"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_z_image_conditioning.py",
+      "sha256": "e7389584bdfaee2cca9b6707e963809df2f4d0ea8c2c9857a7308003674f9a16"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_flux2_conditioning.py",
+      "sha256": "5b09ea562eba4ad89105356747db1df5b3a5593cfbf352c0cbbef47f630ec47f"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_embedding_prompts.py",
+      "sha256": "08c6a625cb7ce05b4e63658a4130c06eb479e523726b935c89197f4332528eb4"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_training_exports.py",
+      "sha256": "1866ef9bf6bc1c81bf45324aed2e978e47c2da7644adf2d9f05c11bba4dbf5a0"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_training_optimizer.py",
+      "sha256": "ff189a79bc3ae6501ef1cafddd1952bb8b5ce0a4f015ccf3f4dd45f264fd564b"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_training_loop.py",
+      "sha256": "492cee6b3a06c84bbcda6d972796a15301378370ae72e79eead446a05f4e2f44"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_training_options.py",
+      "sha256": "a263c7e33adc742d6e0b7765a084f6a910f5c30694e357e76ba90443ca1280d0"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\media_training.py",
+      "sha256": "980142822b45ec3f30972dcc3858dd5940f0452de68dcb916075dbe9bc8c1b83"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\src\\media\\model_addon.rs",
+      "sha256": "8f88cd372c3992388f817c5510d2eb284072e3eec9eabc75f708d3aad2617caa"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\src\\media\\model_package_import.rs",
+      "sha256": "df1456291a4d8792d35187f5f0d7d574ec76d6729a4ec07b4b9f10adfadcc401"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\src\\media\\model_package_import_tests.rs",
+      "sha256": "10496bd7be9a1c6a2f987c0e94cf732e70a1f1bdaa30b762eb482070947bbb93"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\src\\media\\provider_local_diffusers.rs",
+      "sha256": "fca1a48a2d3e0da475ae1d4ca8a9f0147e905b85fef7df6618837a4a4c524872"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\src\\media\\provider_local_diffusers_external_tests.rs",
+      "sha256": "c1824a5cc30e6c9f04bb596f064e6b7cd9689190e578c0f6a9b1beb3b2e6e53b"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\src\\media\\model_memory.rs",
+      "sha256": "0f86b7fd4c0842dd081a5c17bc21654fb087612783593d16648faab7e728116a"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\src\\media\\model_worker.rs",
+      "sha256": "68073e3632e247f06513071be121a32149761c0493b59adb95e7efe14a0d5f3f"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\test_media_flux2_training.py",
+      "sha256": "a87df314a1894f5a8f6ea0b5788c2be690d388b21807171be92637c49c6bc1a3"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\test_media_z_image_embeddings.py",
+      "sha256": "ab0b2bb7b95896ebfd0f9d599258da0bfbd8f2c13dd8865de6447e67343f7273"
+    },
+    {
+      "path": "apps\\client\\src-tauri\\tauri.conf.json",
+      "sha256": "bcf1fc6ce093f26a0c1392e03f21e174a5f3ead05ded3815690f15d841f5f3ba"
+    }
+  ],
+  "generationArchitectureCount": 52,
+  "integratedArchitectureCount": 20,
+  "missingTrainingArchitectureCount": 32,
+  "eligibility": "No missing trainer is classified as ineligible; exact recipes and model terms require review.",
+  "scopeComplete": false,
+  "architectures": [
+    {
+      "architecture": "audioldm-2",
+      "catalogEntries": [
+        "local:audioldm2"
+      ],
+      "pipelineClasses": [
+        "AudioLDM2Pipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "cogvideox-1.5-5b",
+      "catalogEntries": [
+        "local:cogvideox-1.5-5b"
+      ],
+      "pipelineClasses": [
+        "CogVideoXPipeline"
+      ],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_cogvideo_training.py",
+      "trainingSelector": "cogvideox-1.5-5b",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "cogvideox-1.5-5b-i2v",
+      "catalogEntries": [
+        "local:cogvideox-1.5-5b-i2v"
+      ],
+      "pipelineClasses": [
+        "CogVideoXImageToVideoPipeline"
+      ],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_cogvideo_training.py",
+      "trainingSelector": "cogvideox-1.5-5b-i2v",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "cogvideox-2b",
+      "catalogEntries": [
+        "local:cogvideox-2b"
+      ],
+      "pipelineClasses": [
+        "CogVideoXPipeline"
+      ],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_cogvideo_training.py",
+      "trainingSelector": "cogvideox-2b",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "flux-1",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_flow_training.py",
+      "trainingSelector": "flux-1",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "flux-1-dev",
+      "catalogEntries": [
+        "local:flux-1-dev"
+      ],
+      "pipelineClasses": [
+        "FluxPipeline"
+      ],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_flow_training.py",
+      "trainingSelector": "flux-1-dev",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "flux-1-schnell",
+      "catalogEntries": [
+        "local:flux-1-schnell"
+      ],
+      "pipelineClasses": [
+        "FluxPipeline"
+      ],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_flow_training.py",
+      "trainingSelector": "flux-1-schnell",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "flux-2",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_flow_training.py",
+      "trainingSelector": "flux-2",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "flux-2-dev",
+      "catalogEntries": [
+        "local:flux-2-dev"
+      ],
+      "pipelineClasses": [
+        "Flux2Pipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "flux-2-klein-9b",
+      "catalogEntries": [
+        "local:flux-2-klein-9b"
+      ],
+      "pipelineClasses": [
+        "Flux2KleinPipeline"
+      ],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_flow_training.py",
+      "trainingSelector": "flux-2-klein-9b",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "flux-2-klein-base-4b",
+      "catalogEntries": [
+        "local:flux-2-klein-base-4b"
+      ],
+      "pipelineClasses": [
+        "Flux2KleinPipeline"
+      ],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_flow_training.py",
+      "trainingSelector": "flux-2-klein-base-4b",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "flux-2-klein-base-9b",
+      "catalogEntries": [
+        "local:flux-2-klein-base-9b"
+      ],
+      "pipelineClasses": [
+        "Flux2KleinPipeline"
+      ],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_flow_training.py",
+      "trainingSelector": "flux-2-klein-base-9b",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "framepack-i2v",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "glm-image",
+      "catalogEntries": [
+        "local:glm-image"
+      ],
+      "pipelineClasses": [
+        "GlmImagePipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "helios",
+      "catalogEntries": [
+        "local:helios"
+      ],
+      "pipelineClasses": [
+        "HeliosPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "hidream-i1-full",
+      "catalogEntries": [
+        "local:hidream-i1-full"
+      ],
+      "pipelineClasses": [
+        "HiDreamImagePipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "hunyuan-video-1.5-i2v",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "hunyuan-video-1.5-t2v",
+      "catalogEntries": [
+        "local:hunyuan-video-1.5-t2v"
+      ],
+      "pipelineClasses": [
+        "HunyuanVideo15Pipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "ideogram-4",
+      "catalogEntries": [
+        "local:ideogram-4"
+      ],
+      "pipelineClasses": [
+        "Ideogram4Pipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "intro-svg",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "krea-2",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [
+        "lora"
+      ],
+      "trainer": "train_dreambooth_lora_krea2.py",
+      "trainingSelector": "krea-2",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "krea-2-raw",
+      "catalogEntries": [
+        "local:krea-2-raw"
+      ],
+      "pipelineClasses": [
+        "Krea2Pipeline"
+      ],
+      "integratedMethods": [
+        "lora"
+      ],
+      "trainer": "train_dreambooth_lora_krea2.py",
+      "trainingSelector": "krea-2",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "ltx-2.3",
+      "catalogEntries": [
+        "local:ltx-2.3"
+      ],
+      "pipelineClasses": [
+        "LTX2Pipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "ltx-2.5",
+      "catalogEntries": [
+        "local:ltx-2.5"
+      ],
+      "pipelineClasses": [
+        "LTX2Pipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "ltx-video",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "minimax-h3-dmad-4step",
+      "catalogEntries": [
+        "local:minimax-h3-dmad-4step"
+      ],
+      "pipelineClasses": [
+        "MiniMaxH3ModularPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "minimax-h3-dmad-full-4step",
+      "catalogEntries": [
+        "local:minimax-h3-dmad-full-4step"
+      ],
+      "pipelineClasses": [
+        "MiniMaxH3ModularPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "minimax-h3-pdmd-2step",
+      "catalogEntries": [
+        "local:minimax-h3-pdmd-2step"
+      ],
+      "pipelineClasses": [
+        "MiniMaxH3ModularPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "minimax-h3-pdmd-4step",
+      "catalogEntries": [
+        "local:minimax-h3-pdmd-4step"
+      ],
+      "pipelineClasses": [
+        "MiniMaxH3ModularPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "minimax-h3-ref2va",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "mochi-1",
+      "catalogEntries": [
+        "local:mochi-1"
+      ],
+      "pipelineClasses": [
+        "MochiPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "pony",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_diffusion_training.py",
+      "trainingSelector": "pony",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "qwen-image",
+      "catalogEntries": [
+        "local:qwen-image"
+      ],
+      "pipelineClasses": [
+        "QwenImagePipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "qwen-image-2.1",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "qwen-image-2512",
+      "catalogEntries": [
+        "local:qwen-image-2512"
+      ],
+      "pipelineClasses": [
+        "QwenImagePipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "qwen-image-edit-2511",
+      "catalogEntries": [
+        "local:qwen-image-edit-2511"
+      ],
+      "pipelineClasses": [
+        "QwenImageEditPlusPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "sana",
+      "catalogEntries": [
+        "local:sana"
+      ],
+      "pipelineClasses": [
+        "SanaPipeline"
+      ],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_flow_training.py",
+      "trainingSelector": "sana",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "sana-sprint",
+      "catalogEntries": [
+        "local:sana-sprint"
+      ],
+      "pipelineClasses": [
+        "SanaSprintPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "stable-diffusion-1",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_diffusion_training.py",
+      "trainingSelector": "stable-diffusion-1",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "stable-diffusion-2",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_diffusion_training.py",
+      "trainingSelector": "stable-diffusion-2",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "stable-diffusion-3",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_flow_training.py",
+      "trainingSelector": "stable-diffusion-3",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "stable-diffusion-xl",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_diffusion_training.py",
+      "trainingSelector": "stable-diffusion-xl",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "stable-diffusion-xl-dmad-1step",
+      "catalogEntries": [
+        "local:stable-diffusion-xl-dmad-1step"
+      ],
+      "pipelineClasses": [
+        "StableDiffusionXLPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "stable-diffusion-xl-dmad-4step",
+      "catalogEntries": [
+        "local:stable-diffusion-xl-dmad-4step"
+      ],
+      "pipelineClasses": [
+        "StableDiffusionXLPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "stable-video-diffusion",
+      "catalogEntries": [
+        "local:stable-video-diffusion"
+      ],
+      "pipelineClasses": [
+        "StableVideoDiffusionPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "sulphur-2-dev",
+      "catalogEntries": [
+        "local:sulphur-2-dev"
+      ],
+      "pipelineClasses": [
+        "LTX2Pipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "wan-2.1-t2v-1.3b",
+      "catalogEntries": [
+        "local:wan-2.1-t2v-1.3b"
+      ],
+      "pipelineClasses": [
+        "WanPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "wan-2.2-i2v-a14b",
+      "catalogEntries": [
+        "local:wan-2.2-i2v-a14b"
+      ],
+      "pipelineClasses": [
+        "WanImageToVideoPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "wan-2.2-t2v-a14b",
+      "catalogEntries": [
+        "local:wan-2.2-t2v-a14b"
+      ],
+      "pipelineClasses": [
+        "WanPipeline"
+      ],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "wan-2.2-ti2v",
+      "catalogEntries": [],
+      "pipelineClasses": [],
+      "integratedMethods": [],
+      "trainer": null,
+      "trainingSelector": null,
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "z-image",
+      "catalogEntries": [
+        "local:z-image"
+      ],
+      "pipelineClasses": [
+        "ZImagePipeline"
+      ],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_flow_training.py",
+      "trainingSelector": "z-image",
+      "pretrainedQualityVerified": false
+    },
+    {
+      "architecture": "z-image-turbo",
+      "catalogEntries": [
+        "local:z-image-turbo"
+      ],
+      "pipelineClasses": [
+        "ZImagePipeline"
+      ],
+      "integratedMethods": [
+        "lora",
+        "finetune",
+        "embedding"
+      ],
+      "trainer": "media_flow_training.py",
+      "trainingSelector": "z-image-turbo",
+      "pretrainedQualityVerified": false
+    }
+  ]
+}

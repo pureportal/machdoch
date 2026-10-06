@@ -66,10 +66,6 @@ export const getExecutionMessageContent = (
   );
 };
 
-export const getRelatedFileButtonLabel = (path: string): string => {
-  return path.length <= 42 ? path : `…${path.slice(path.length - 39)}`;
-};
-
 export const getRenderedMessageContent = (
   message: ChatSessionMessage,
 ): string => {

@@ -39,6 +39,27 @@ pub(crate) async fn invoke(
     args: Value,
 ) -> Result<Value, Value> {
     Ok(match command.as_str() {
+        "media_get_asset_storage" | "media_resume_asset_storage" => {
+            check_arguments(&args, &[])?;
+            serde_json::to_value(
+                if command == "media_get_asset_storage" {
+                    super::storage::media_get_asset_storage(app.clone())
+                } else {
+                    super::storage::media_resume_asset_storage(app.clone())
+                }
+                .map_err(error_value)?,
+            )
+            .map_err(|error| json!(error.to_string()))?
+        }
+        "media_move_asset_storage" => {
+            check_arguments(&args, &["folder"])?;
+            serde_json::to_value(
+                super::storage::media_move_asset_storage(app.clone(), argument(&args, "folder")?)
+                    .await
+                    .map_err(error_value)?,
+            )
+            .map_err(|error| json!(error.to_string()))?
+        }
         "run_media_flow_agent" => {
             check_arguments(&args, &["workspaceRoot", "request"])?;
             crate::desktop_task::media_flow_agent::run_media_flow_agent(
@@ -66,7 +87,7 @@ pub(crate) async fn invoke(
             check_arguments(
                 &args,
                 match command.as_str() {
-                    "media_create_transfer" => &["id", "name"],
+                    "media_create_transfer" => &["id", "name", "direction"],
                     "media_write_transfer" => &["id", "offset", "data"],
                     "media_read_transfer" => &["id", "offset"],
                     _ => &["id"],
@@ -258,6 +279,16 @@ pub(crate) async fn invoke(
                     .map_err(error_value)?,
             )
             .map_err(|error| json!(error.to_string()))?
+        }
+        "media_refmod_operation" => {
+            check_arguments(&args, &["workspaceRoot", "request"])?;
+            super::refmods::media_refmod_operation(
+                app.clone(),
+                argument(&args, "workspaceRoot")?,
+                argument(&args, "request")?,
+            )
+            .await
+            .map_err(error_value)?
         }
         "media_inspect_civitai_model_addon" => {
             check_arguments(&args, &["source"])?;

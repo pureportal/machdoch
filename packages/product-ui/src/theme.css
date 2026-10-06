@@ -1,4 +1,18 @@
 :root {
+  color-scheme: dark;
+  --background: var(--app-bg);
+  --foreground: var(--app-text);
+  --card: var(--app-surface);
+  --primary: var(--app-sky-600);
+  --primary-foreground: white;
+  --secondary: var(--app-surface-muted);
+  --secondary-foreground: var(--app-text-soft);
+  --muted: var(--app-surface-muted);
+  --muted-foreground: var(--app-text-muted);
+  --border: var(--app-border);
+  --input: var(--app-border-strong);
+  --ring: var(--app-sky-500);
+  --destructive: var(--app-rose-300);
   --app-slate-50: hsl(220 28% 98%);
   --app-slate-100: hsl(220 24% 95%);
   --app-slate-200: hsl(220 18% 88%);
@@ -99,6 +113,7 @@
 }
 
 :root[data-theme="light"] {
+  --destructive: var(--app-red-500);
   color-scheme: light;
   --sidebar: hsl(210 38% 98%);
   --sidebar-foreground: hsl(218 24% 22%);

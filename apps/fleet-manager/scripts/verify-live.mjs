@@ -10,6 +10,9 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { verifyAndroidController } from "./verify-android.mjs";
 import { verifyRalphEditor } from "./verify-ralph.mjs";
+import { verifyProductUi } from "./verify-product-ui.mjs";
+import { verifyScheduler } from "./verify-scheduler.mjs";
+import { verifyInstructions } from "./verify-instructions.mjs";
 
 const managerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const clientRoot = resolve(managerRoot, "../client");
@@ -393,6 +396,80 @@ async function main() {
   );
   process.stdout.write("Both clients enrolled and synchronized.\n");
   const page = await context.newPage();
+  const uiMobile = await context.newPage();
+  await uiMobile.setViewportSize({ width: 390, height: 844 });
+  const uiErrors = [];
+  page.on("pageerror", (error) => uiErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") uiErrors.push(message.text());
+  });
+  try {
+    evidence.push(
+      await verifyInstructions({
+        page,
+        small: uiMobile,
+        api,
+        origin,
+        fixtureRoot,
+        device: devices[0],
+      }),
+    );
+    process.stdout.write("Shared Instructions checks passed.\n");
+    evidence.push(
+      await verifyScheduler({
+        page,
+        small: uiMobile,
+        origin,
+        fixtureRoot,
+        device: devices[0],
+      }),
+    );
+    process.stdout.write("Shared Scheduler checks passed.\n");
+    evidence.push(
+      await verifyProductUi({
+        page,
+        small: uiMobile,
+        api,
+        origin,
+        fixtureRoot,
+        device: devices[0],
+      }),
+    );
+  } catch (error) {
+    await writeFile(
+      join(fixtureRoot, "product-ui-errors.json"),
+      JSON.stringify({ error: error.stack, browser: uiErrors }, null, 2),
+    );
+    try {
+      await page.screenshot({
+        path: join(fixtureRoot, "product-ui-failure.png"),
+        fullPage: true,
+        timeout: 5000,
+      });
+    } catch (captureError) {
+      process.stderr.write(`${captureError.message}\n`);
+    }
+    throw error;
+  }
+  await uiMobile.close();
+  process.stdout.write("Shared product UI checks passed.\n");
+  if (process.env.FLEET_VERIFY_PRODUCT_UI_ONLY === "1") {
+    const result = {
+      passed: true,
+      verifiedAt: new Date().toISOString(),
+      evidence,
+      scope: "product-ui",
+      limits: ["Offline CLI hosts and browser mobile viewports."],
+    };
+    await writeFile(
+      join(fixtureRoot, "result.json"),
+      JSON.stringify(result, null, 2),
+    );
+    process.stdout.write(
+      `${JSON.stringify({ ...result, fixtureRoot }, null, 2)}\n`,
+    );
+    return;
+  }
   if (process.env.FLEET_VERIFY_RALPH_ONLY === "1") {
     const small = await context.newPage();
     await small.setViewportSize({ width: 390, height: 844 });

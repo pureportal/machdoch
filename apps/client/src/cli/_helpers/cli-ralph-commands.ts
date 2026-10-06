@@ -57,6 +57,7 @@ import type {
 } from "../../core/types.js";
 import type { RuntimeConfig } from "../../core/runtime-contract.generated.js";
 import { createSchedulerExecutor } from "./cli-scheduler-commands.js";
+import { consumeRalphSupervisedRunId } from "./consume-ralph-supervised-run-id.helper.js";
 import { createDiscoveryOptions } from "./cli-output.js";
 import {
   attachCancellationHandlers,
@@ -1635,6 +1636,7 @@ export const printRalphSummary = async (args: ParsedCliArgs): Promise<void> => {
       const subject =
         options.subject ??
         fail("Expected a flow id or alias after `machdoch ralph run`.");
+      const supervisedRunId = consumeRalphSupervisedRunId();
       const config = await loadRuntimeConfig(
         args.workspaceRoot,
         "machdoch",
@@ -1660,6 +1662,7 @@ export const printRalphSummary = async (args: ParsedCliArgs): Promise<void> => {
         ...fileParams,
       ]);
       const logger = await createRalphRunLogger(args.workspaceRoot, flow, {
+        ...(supervisedRunId ? { runId: supervisedRunId } : {}),
         variableValues,
         scope,
       });

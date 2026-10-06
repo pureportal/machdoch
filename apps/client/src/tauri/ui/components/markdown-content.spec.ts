@@ -1,7 +1,7 @@
 import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { MarkdownContent } from "./markdown-content.tsx";
+import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
 
 const renderMarkdown = (
   content: string,

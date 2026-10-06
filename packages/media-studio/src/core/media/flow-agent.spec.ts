@@ -41,7 +41,13 @@ describe("Media Studio assistant graph validation", () => {
       request.models.find((model) => model.id === "local:flux-2-klein-4b"),
     ).toMatchObject({
       samplingConstraints: { fixedSteps: 4, manualGuidance: false },
-      addonCapabilities: [expect.objectContaining({ kind: "lora" })],
+      addonCapabilities: [
+        expect.objectContaining({ kind: "lora" }),
+        expect.objectContaining({
+          kind: "textual-inversion",
+          targetComponents: ["text-encoder"],
+        }),
+      ],
     });
     expect(
       request.models.find((model) => model.target === "remote"),

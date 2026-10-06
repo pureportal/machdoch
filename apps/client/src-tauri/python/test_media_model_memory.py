@@ -13,7 +13,7 @@ import weakref
 from PIL import Image
 
 import media_diffusers_worker as worker
-from media_model_memory import ImagePipelineCache, GPU_MEMORY_ERROR, is_gpu_out_of_memory, memory_snapshot, retention_seconds
+from media_model_memory import ModelPipelineCache, GPU_MEMORY_ERROR, is_gpu_out_of_memory, memory_snapshot, retention_seconds
 from media_model_server import serve
 
 
@@ -46,7 +46,7 @@ class ModelMemoryTests(unittest.TestCase):
 
     def test_reuses_identical_configuration_and_drops_replaced_model_references(self):
         torch = fake_torch()
-        cache = ImagePipelineCache(torch, "cuda")
+        cache = ModelPipelineCache(torch, "cuda")
         self.assertIsNone(cache.acquire({"model": "first"}))
         pipeline = Pipeline()
         reference = weakref.ref(pipeline)
@@ -60,7 +60,7 @@ class ModelMemoryTests(unittest.TestCase):
 
     def test_memory_pressure_releases_cached_model_before_admission(self):
         torch = fake_torch()
-        cache = ImagePipelineCache(torch, "cuda")
+        cache = ModelPipelineCache(torch, "cuda")
         cache.acquire({"model": "first"})
         pipeline = Pipeline()
         reference = weakref.ref(pipeline)
@@ -74,7 +74,7 @@ class ModelMemoryTests(unittest.TestCase):
 
     def test_pressure_recovery_allows_new_load_without_retrying_inference(self):
         torch = fake_torch()
-        cache = ImagePipelineCache(torch, "cuda")
+        cache = ModelPipelineCache(torch, "cuda")
         cache.acquire({"model": "first"})
         cache.store({"pipeline": Pipeline()})
         torch.cuda.mem_get_info.side_effect = [(0, 16 * 1024**3), (8 * 1024**3, 16 * 1024**3)]
@@ -86,13 +86,13 @@ class ModelMemoryTests(unittest.TestCase):
         torch.mps.driver_allocated_memory.return_value = 8 * 1024**3
         torch.mps.current_allocated_memory.return_value = 4 * 1024**3
         self.assertTrue(memory_snapshot(torch, "mps")["pressure"])
-        ImagePipelineCache(torch, "mps").clear()
+        ModelPipelineCache(torch, "mps").clear()
         torch.mps.synchronize.assert_called_once()
         torch.mps.empty_cache.assert_called_once()
 
     def test_repeated_generation_loads_once_without_reusing_prompt_or_output(self):
         torch = fake_torch()
-        cache = ImagePipelineCache(torch, "cuda")
+        cache = ModelPipelineCache(torch, "cuda")
         pipeline = Pipeline()
         request = {
             "schemaVersion": worker.SCHEMA_VERSION, "model": {"architecture": "stable-diffusion-1", "digest": "first"},
@@ -125,8 +125,9 @@ class ModelMemoryTests(unittest.TestCase):
             cache.clear()
 
     def test_server_releases_models_on_error_and_end_of_input(self):
-        for failure in (None, RuntimeError("HIP out of memory"), ValueError("broken generation")):
-            with self.subTest(failure=failure):
+        for command, failure in ((command, failure) for command in ("generate", "generate-video")
+                                 for failure in (None, RuntimeError("HIP out of memory"), ValueError("broken generation"))):
+            with self.subTest(command=command, failure=failure):
                 torch = fake_torch()
                 references = []
 
@@ -139,8 +140,9 @@ class ModelMemoryTests(unittest.TestCase):
                         raise failure
                     return {"schemaVersion": worker.SCHEMA_VERSION}
 
-                runtime = SimpleNamespace(_runtime=lambda: (torch, None), _device=lambda torch: ("cuda", "GPU", 16 * 1024**3), generate=generate, PROCESS_STARTED_AT=0)
-                stdin = SimpleNamespace(buffer=io.BytesIO(b'{"command":"generate","request":{}}\n'))
+                runtime = SimpleNamespace(_runtime=lambda: (torch, None), _device=lambda torch: ("cuda", "GPU", 16 * 1024**3),
+                                          generate=generate, generate_video=generate, PROCESS_STARTED_AT=0)
+                stdin = SimpleNamespace(buffer=io.BytesIO((json.dumps({"command": command, "request": {}}) + "\n").encode()))
                 stdout = io.StringIO()
                 with mock.patch("sys.stdin", stdin), mock.patch("sys.stdout", stdout), mock.patch("sys.stderr", io.StringIO()):
                     code = serve(runtime)

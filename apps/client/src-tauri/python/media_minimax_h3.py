@@ -14,44 +14,21 @@ import torch
 from PIL import Image
 from safetensors import safe_open
 
-from fizgig.minimax.audio_vae import load_minimax_h3_audio_vae_decoder, unpack_audio
-from fizgig.minimax.embedder import _add_h3_special_tokens, build_image_processor, build_numbered_reference_tokens
+from media_refmods import load_references, reference_map, token_count
+from media_refmod_conditioning import prepare_saved_references, reference_step_schedule
+
+from fizgig.minimax.audio_vae import audio_latents_from_rows, load_audio_vae
+from fizgig.minimax.embedder import _add_h3_special_tokens, build_numbered_reference_tokens
 from fizgig.minimax.loader import load_minimax_h3_dit
 from fizgig.minimax.reference import reference_to_tensor, resize_reference
 from fizgig.minimax.sampling import sample_image
 from fizgig.minimax.trainer import load_preview_turbo, turbo_adaln_patch
-from fizgig.minimax.vae import IMAGENET_MEAN, IMAGENET_STD, MiniMaxH3VideoVAEDecoder, MiniMaxH3VideoVAEEncoder
+from fizgig.minimax.video_vae_checkpoint import load_video_vae, verify_video_vae_checkpoint
 
 
 def release():
     gc.collect()
     torch.cuda.empty_cache()
-
-
-def verify_video_vae_checkpoint(path):
-    with safe_open(str(path), framework="pt", device="cpu") as checkpoint:
-        for name in ("encoder.conv_in.weight", "post_quant_conv.weight", "decoder.x_embedder.weight"):
-            if name not in checkpoint.keys() or not torch.count_nonzero(checkpoint.get_tensor(name)):
-                raise ValueError("MiniMax H3 video VAE is damaged. Redownload the video VAE.")
-
-
-def load_video_vae(path, model_type):
-    with torch.device("meta"):
-        model = model_type()
-    model.to_empty(device="cpu")
-    wanted = set(model.state_dict())
-    with safe_open(str(path), framework="pt", device="cpu") as checkpoint:
-        state = {key: checkpoint.get_tensor(key) for key in checkpoint.keys() if key in wanted}
-    missing, _ = model.load_state_dict(state, strict=False, assign=True)
-    if missing:
-        raise RuntimeError(f"Video VAE is missing weights: {missing[:5]}")
-    model.register_buffer("pixel_mean", torch.tensor(IMAGENET_MEAN).view(1, 3, 1, 1, 1), persistent=False)
-    model.register_buffer("pixel_std", torch.tensor(IMAGENET_STD).view(1, 3, 1, 1, 1), persistent=False)
-    if isinstance(model, MiniMaxH3VideoVAEDecoder):
-        count = model.decoder.pos_embed.inv_freq.numel()
-        inverse_frequency = 100.0 ** (-torch.arange(count, dtype=torch.float32) / count)
-        model.decoder.pos_embed.register_buffer("inv_freq", inverse_frequency, persistent=False)
-    return model.to(device="cuda", dtype=torch.float16).eval()
 
 
 def save_audio(path, samples, rate):
@@ -98,13 +75,42 @@ def render(args, progress=None):
     if args.width % 32 or args.height % 32 or args.frames < 124 or (args.frames - 5) % 17:
         raise ValueError("H3 requires dimensions divisible by 32 and frames on its 17n+5 grid")
     verify_video_vae_checkpoint(video_vae_path)
-    print("Encoding reference image", flush=True)
-    image = resize_reference(Image.open(args.image), args.width, args.height)
-    video_encoder = load_video_vae(video_vae_path, MiniMaxH3VideoVAEEncoder)
-    with torch.no_grad(), torch.autocast("cuda", dtype=torch.float16):
-        reference_latent = video_encoder.encode(reference_to_tensor(image).to("cuda", torch.float16)).float().cpu()
-    del video_encoder
-    release()
+    references, evidence = load_references(args.ref_mods, args.ref_mod_max_tokens)
+    if len(references) + int(args.image is not None) > 256:
+        raise ValueError("Image and RefMods exceed 256 active reference blocks")
+    image = None
+    if args.image is not None:
+        with Image.open(args.image) as source_image:
+            image = resize_reference(source_image, args.width, args.height)
+    image_tokens = (image.width // 32) * (image.height // 32) if image is not None else 0
+    if args.ref_mod_max_tokens and evidence["tokens"] + image_tokens > args.ref_mod_max_tokens:
+        raise ValueError("Image and RefMods exceed the token limit; reduce references or raise the token limit")
+    references.sort(key=lambda reference: reference.kind == "audio")
+    reference_latents, reference_items = [], []
+    if args.image is not None:
+        print("Encoding reference image", flush=True)
+        video_encoder = load_video_vae(video_vae_path, "encode")
+        with torch.no_grad(), torch.autocast("cuda", dtype=torch.float16):
+            reference_latents.append(video_encoder.encode(reference_to_tensor(image).to("cuda", torch.float16)).float().cpu())
+        reference_items.append({"type": "image", "data": image})
+        del video_encoder
+        release()
+    if any(reference.kind != "audio" for reference in references):
+        print("Decoding saved references for the text encoder", flush=True)
+        reference_decoder = load_video_vae(video_vae_path, "decode")
+        saved_items, saved_latents = prepare_saved_references(references, reference_decoder)
+        del reference_decoder
+        release()
+    else:
+        saved_items, saved_latents = prepare_saved_references(references, None)
+    reference_items.extend(saved_items)
+    ref_schedule = reference_step_schedule(references, reference_latents)
+    reference_latents.extend(saved_latents)
+    if not reference_latents:
+        raise ValueError("Choose an image or enable a RefMod")
+    evidence["totalConditioningTokens"] = sum(token_count("audio" if latent.ndim == 4 else "video", latent.shape) for latent in reference_latents)
+    evidence["referenceMap"] = reference_map(references, image_count=int(args.image is not None))
+    args.ref_mod_evidence = evidence
 
     print("Encoding prompt and image", flush=True)
     from transformers import AutoTokenizer, Qwen3VLForConditionalGeneration
@@ -112,17 +118,20 @@ def render(args, progress=None):
     tokenizer = AutoTokenizer.from_pretrained(args.small_te)
     _add_h3_special_tokens(tokenizer)
     ids, token_tags, pixel_values, image_grid = build_numbered_reference_tokens(
-        tokenizer, args.prompt, [{"type": "image", "data": image}]
+        tokenizer, args.prompt, reference_items
     )
     text_encoder = Qwen3VLForConditionalGeneration.from_pretrained(
         args.small_te, dtype=torch.bfloat16, low_cpu_mem_usage=True
     ).to("cuda").eval()
     with torch.no_grad():
+        vision_kwargs = {} if pixel_values is None else {
+            "pixel_values": pixel_values.to("cuda", torch.bfloat16),
+            "image_grid_thw": image_grid.to("cuda"),
+        }
         hidden = text_encoder.model(
             input_ids=ids.to("cuda"),
             attention_mask=torch.ones_like(ids).to("cuda"),
-            pixel_values=pixel_values.to("cuda", torch.bfloat16),
-            image_grid_thw=image_grid.to("cuda"),
+            **vision_kwargs,
             mm_token_type_ids=(ids == text_encoder.config.image_token_id).long().to("cuda"),
             output_hidden_states=True,
         ).hidden_states[25]
@@ -162,26 +171,26 @@ def render(args, progress=None):
             model, text_embeddings.to("cuda", torch.bfloat16),
             width=args.width, height=args.height, num_frames=args.frames,
             steps=args.steps, shift=6.0, schedule_mode="reference", sampler="euler",
-            cfg_scale=1.0, seed=args.seed, dtype=torch.bfloat16, ref_latents=[reference_latent],
+            cfg_scale=1.0, seed=args.seed, dtype=torch.bfloat16, ref_latents=reference_latents, ref_schedule=ref_schedule,
             text_token_tags=token_tags, return_audio=True, log_steps=True,
             on_denoised=(lambda step, total, _: progress(step, total)) if progress else None,
         )
     video_latent = video_latent.cpu()
     audio_latent = audio_latent.cpu()
-    del model, lora_network, style_network, adaln_pairs, text_embeddings, token_tags, reference_latent
+    del model, lora_network, style_network, adaln_pairs, text_embeddings, token_tags, reference_latents, references, reference_items
     release()
 
     print("Decoding video", flush=True)
-    video_decoder = load_video_vae(video_vae_path, MiniMaxH3VideoVAEDecoder)
+    video_decoder = load_video_vae(video_vae_path, "decode")
     with torch.no_grad(), torch.autocast("cuda", dtype=torch.float16):
         frames = video_decoder.decode_clip(video_latent.to("cuda").float())[0].cpu()
     del video_decoder, video_latent
     release()
 
     print("Decoding audio", flush=True)
-    audio_decoder = load_minimax_h3_audio_vae_decoder(str(audio_vae_path), device="cuda")
+    audio_decoder = load_audio_vae(audio_vae_path, "decode", device="cuda")
     with torch.no_grad():
-        audio = audio_decoder.decode(unpack_audio(audio_latent).to("cuda", torch.float32))[0].cpu()
+        audio = audio_decoder.decode(audio_latents_from_rows(audio_latent).to("cuda", torch.float32))[0].cpu()
     rate = audio_decoder.sample_rate
     del audio_decoder, audio_latent
     release()
@@ -191,7 +200,9 @@ def render(args, progress=None):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image", type=Path, required=True)
+    parser.add_argument("--image", type=Path)
+    parser.add_argument("--ref-mod", action="append", default=[])
+    parser.add_argument("--ref-mod-max-tokens", type=int, default=65536)
     parser.add_argument("--prompt", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--models", type=Path, required=True)
@@ -206,6 +217,7 @@ def main():
     parser.add_argument("--seed", type=int, default=57)
     parser.add_argument("--swap-blocks", type=int, default=44)
     args = parser.parse_args()
+    args.ref_mods = [{"path": str(Path(path).resolve())} for path in args.ref_mod]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     frames, audio, rate = render(args)
 

@@ -155,13 +155,13 @@ import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/to
 import {
   ContextAttachmentMenuButton,
   ContextAttachmentsList,
-} from "../chat-session/components/context-attachments";
+} from "@machdoch/client-ui/composer/context-attachments";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
+} from "@machdoch/client-ui/dropdown-menu";
 import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
   Popover,

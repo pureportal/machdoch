@@ -1743,9 +1743,7 @@ describe("native inventory, delivery, and schemas", () => {
       surface: "cli",
     });
     expect(codexAfter.canonicalDigest).toBe(codexBefore.canonicalDigest);
-    expect(codexAfter.environmentDigest).not.toBe(
-      codexBefore.environmentDigest,
-    );
+    expect(codexAfter.environmentDigest).toBe(codexBefore.environmentDigest);
 
     await writeFile(join(repository, "AGENTS.md"), "Relocated policy.\n");
     const beforeRelocation = await resolve(

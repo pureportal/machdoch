@@ -1,3 +1,13 @@
+export {
+  DEFAULT_APPEARANCE_SETTINGS,
+  normalizeAppearanceSettings,
+} from "@machdoch/product-ui";
+export type {
+  AppearanceSettings,
+  AppearanceTheme,
+  AppearanceDensity,
+  AppearanceAccent,
+} from "@machdoch/product-ui";
 import { REASONING_MODES } from "../../../../core/runtime-contract.generated.js";
 import type { ReasoningMode } from "../../../../core/runtime-contract.generated.js";
 import { normalizeOptionalString } from "../../../../helpers/normalize-optional-string.helper.js";
@@ -43,29 +53,11 @@ export interface RalphSettings {
 
 export type RalphFlowLibraryMode = "workspace" | "user" | "all";
 
-export type AppearanceTheme = "dark" | "light";
-export type AppearanceDensity = "comfortable" | "compact";
-export type AppearanceAccent = "sky" | "emerald" | "violet" | "amber";
-
-export interface AppearanceSettings {
-  version: 1;
-  theme: AppearanceTheme;
-  density: AppearanceDensity;
-  accent: AppearanceAccent;
-}
-
 export interface TerminalProfileSettings {
   version: 1;
   visibleShellIds: string[] | null;
   defaultShellId: string | null;
 }
-
-export const DEFAULT_APPEARANCE_SETTINGS = {
-  version: 1,
-  theme: "dark",
-  density: "comfortable",
-  accent: "sky",
-} as const satisfies AppearanceSettings;
 
 export const DEFAULT_TERMINAL_PROFILE_SETTINGS = {
   version: 1,
@@ -267,33 +259,6 @@ export const normalizeRalphSettings = (value: unknown): RalphSettings => {
       ? { runReasoning: value.runReasoning }
       : {}),
     ...(defaultMaxTransitions ? { defaultMaxTransitions } : {}),
-  };
-};
-
-export const normalizeAppearanceSettings = (
-  value: unknown,
-): AppearanceSettings => {
-  if (!isRecord(value) || value.version !== 1) {
-    return DEFAULT_APPEARANCE_SETTINGS;
-  }
-
-  return {
-    version: 1,
-    theme: normalizeOneOf(
-      value.theme,
-      ["dark", "light"],
-      DEFAULT_APPEARANCE_SETTINGS.theme,
-    ),
-    density: normalizeOneOf(
-      value.density,
-      ["comfortable", "compact"],
-      DEFAULT_APPEARANCE_SETTINGS.density,
-    ),
-    accent: normalizeOneOf(
-      value.accent,
-      ["sky", "emerald", "violet", "amber"],
-      DEFAULT_APPEARANCE_SETTINGS.accent,
-    ),
   };
 };
 

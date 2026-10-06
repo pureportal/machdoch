@@ -1,0 +1,25 @@
+{
+  "category": "internal",
+  "code": "INTERNAL_ERROR",
+  "context": {
+    "assetId": null,
+    "modelId": null,
+    "nodeId": null,
+    "operation": "media_refmod_operation",
+    "providerId": null,
+    "runId": null,
+    "runtimeId": null
+  },
+  "message": "Media Studio could not complete the operation.",
+  "partialOutputsExist": false,
+  "retryability": "retry-safe",
+  "schemaVersion": 1,
+  "suggestedActions": [
+    {
+      "description": "Reload the durable Media Studio state before trying again.",
+      "id": "refresh",
+      "label": "Refresh"
+    }
+  ],
+  "technicalDiagnostic": "Local Diffusers worker failed: ValueError: MiniMax H3 video VAE is incomplete or damaged. Replace \\\\?\\D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\workspace\\models\\minimax-h3-ref2va\\vae\\minimax_h3_video_vae_fp16.safetensors with a complete checkpoint."
+}

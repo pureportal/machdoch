@@ -7,8 +7,10 @@ import {
   realpath,
   rm,
   stat,
+  unlink,
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { setTimeout } from "node:timers/promises";
 import { assertRalphWorkspaceBoundary } from "./assert-ralph-workspace-boundary.helper.js";
 import { writeJsonAtomically } from "./write-file-atomically.helper.js";
 import {
@@ -148,12 +150,107 @@ const assertWorktreeMatchesSource = async (
   }
 };
 
-export const prepareRalphRunWorktree = async (
+class RalphWorktreePreparationTimeout extends Error {}
+
+const removeOwnedPreparation = async (
+  worktree: RalphRunWorktree,
+): Promise<void> => {
+  const branchHead = await runGit(worktree.repositoryRoot, [
+    "for-each-ref",
+    "--format=%(objectname)",
+    `refs/heads/${worktree.branch}`,
+  ]);
+  if (branchHead && branchHead !== worktree.baseCommit) {
+    throw new Error("RALPH preparation branch changed; refusing to remove it.");
+  }
+  const registeredWorktrees = await runGit(worktree.repositoryRoot, [
+    "worktree",
+    "list",
+    "--porcelain",
+    "-z",
+  ]);
+  const registered = registeredWorktrees
+    .split("\0")
+    .some(
+      (field) =>
+        field.startsWith("worktree ") &&
+        resolve(field.slice("worktree ".length)) === worktree.worktreeRoot,
+    );
+  if (
+    !registered &&
+    (await stat(worktree.worktreeRoot).then(
+      () => true,
+      (error: NodeJS.ErrnoException) => {
+        if (error.code === "ENOENT") return false;
+        throw error;
+      },
+    ))
+  ) {
+    throw new Error(
+      "RALPH run worktree already exists without ownership metadata in Git.",
+    );
+  }
+  if (registered) {
+    if (
+      (await runGit(worktree.worktreeRoot, ["branch", "--show-current"])) !==
+        worktree.branch ||
+      (await getCommonGitDirectory(worktree.worktreeRoot)) !==
+        (await getCommonGitDirectory(worktree.repositoryRoot))
+    )
+      throw new Error("RALPH cannot remove a worktree it does not own.");
+    await runGit(worktree.repositoryRoot, [
+      "worktree",
+      "remove",
+      "--force",
+      "--force",
+      worktree.worktreeRoot,
+    ]);
+  }
+  if (branchHead) {
+    await runGit(worktree.repositoryRoot, ["branch", "-D", worktree.branch]);
+  }
+  await runGit(worktree.repositoryRoot, [
+    "update-ref",
+    "-d",
+    `refs/machdoch/${worktree.branch}/integration`,
+  ]);
+};
+
+const failPreparation = async (
+  worktree: RalphRunWorktree,
+  preparationPath: string,
+  failure: unknown,
+): Promise<never> => {
+  try {
+    await removeOwnedPreparation(worktree);
+    await unlink(preparationPath);
+  } catch (cleanupError) {
+    const preparationReason =
+      failure instanceof Error ? failure.message : String(failure);
+    const cleanupReason =
+      cleanupError instanceof Error
+        ? cleanupError.message
+        : String(cleanupError);
+    throw new AggregateError(
+      [failure, cleanupError],
+      `RALPH could not prepare or remove its run worktree: ${preparationReason}\nWorktree cleanup failed: ${cleanupReason}`,
+    );
+  }
+  if (failure instanceof Error && /timed out/iu.test(failure.message)) {
+    throw new RalphWorktreePreparationTimeout(failure.message, {
+      cause: failure,
+    });
+  }
+  throw failure;
+};
+
+const prepareRalphRunWorktreeAttempt = async (
   workspaceRoot: string,
   runDirectory: string,
 ): Promise<RalphRunWorktree> => {
   const sourceWorkspaceRoot = await realpath(resolve(workspaceRoot));
   const metadataPath = join(runDirectory, "workspace-isolation.json");
+  const preparationPath = join(runDirectory, "workspace-preparation.json");
   let stored: unknown;
   try {
     stored = JSON.parse(await readFile(metadataPath, "utf8")) as unknown;
@@ -216,10 +313,46 @@ export const prepareRalphRunWorktree = async (
       throw new Error("RALPH run worktree metadata does not match this run.");
     }
     await assertWorktreeMatchesSource(existing, sourceWorkspaceRoot);
+    await unlink(preparationPath).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== "ENOENT") throw error;
+    });
     return existing;
   }
 
   const head = await runGit(repositoryRoot, ["rev-parse", "HEAD"]);
+  const sourceBranch = await runGit(repositoryRoot, [
+    "branch",
+    "--show-current",
+  ]);
+  let interrupted: unknown;
+  try {
+    interrupted = JSON.parse(
+      await readFile(preparationPath, "utf8"),
+    ) as unknown;
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
+      throw error;
+  }
+  if (interrupted !== undefined) {
+    const candidate = interrupted as RalphRunWorktree;
+    if (
+      typeof interrupted !== "object" ||
+      interrupted === null ||
+      candidate.sourceWorkspaceRoot !== sourceWorkspaceRoot ||
+      candidate.executionWorkspaceRoot !== executionWorkspaceRoot ||
+      candidate.repositoryRoot !== repositoryRoot ||
+      candidate.worktreeRoot !== worktreeRoot ||
+      candidate.branch !== branch ||
+      candidate.sourceBranch !== sourceBranch ||
+      typeof candidate.baseCommit !== "string" ||
+      !/^[a-f0-9]{40,64}$/u.test(candidate.baseCommit)
+    )
+      throw new Error(
+        "RALPH interrupted preparation metadata does not match this run.",
+      );
+    await removeOwnedPreparation(candidate);
+    await unlink(preparationPath);
+  }
   if (
     await stat(worktreeRoot).then(
       () => true,
@@ -239,10 +372,41 @@ export const prepareRalphRunWorktree = async (
     repositoryRoot,
     worktreeRoot,
     branch,
-    sourceBranch: await runGit(repositoryRoot, ["branch", "--show-current"]),
+    sourceBranch,
     baseCommit: "",
   };
-  await runGit(repositoryRoot, ["branch", branch, head]);
+  if (
+    await runGit(repositoryRoot, [
+      "for-each-ref",
+      "--format=%(refname)",
+      `refs/heads/${branch}`,
+    ])
+  ) {
+    throw new Error(
+      "RALPH preparation branch already exists without ownership metadata.",
+    );
+  }
+  await writeJsonAtomically(preparationPath, { ...worktree, baseCommit: head });
+  try {
+    await runGit(repositoryRoot, ["branch", branch, head]);
+  } catch (error) {
+    if (!(error instanceof Error && /timed out/iu.test(error.message))) {
+      try {
+        await unlink(preparationPath);
+      } catch (cleanupError) {
+        throw new AggregateError(
+          [error, cleanupError],
+          `RALPH branch allocation failed: ${error instanceof Error ? error.message : String(error)}\nPreparation metadata cleanup failed: ${cleanupError instanceof Error ? cleanupError.message : String(cleanupError)}`,
+        );
+      }
+      throw error;
+    }
+    await failPreparation(
+      { ...worktree, baseCommit: head },
+      preparationPath,
+      error,
+    );
+  }
   try {
     await runGit(repositoryRoot, ["worktree", "add", worktreeRoot, branch]);
     await snapshotWorkspaceChanges(repositoryRoot, worktreeRoot, head);
@@ -258,51 +422,28 @@ export const prepareRalphRunWorktree = async (
     ]);
     await writeJsonAtomically(metadataPath, worktree);
   } catch (error) {
-    try {
-      const registeredWorktrees = await runGit(repositoryRoot, [
-        "worktree",
-        "list",
-        "--porcelain",
-        "-z",
-      ]);
-      if (
-        registeredWorktrees
-          .split("\0")
-          .some(
-            (field) =>
-              field.startsWith("worktree ") &&
-              resolve(field.slice("worktree ".length)) === worktreeRoot,
-          )
-      ) {
-        if (
-          (await runGit(worktreeRoot, ["branch", "--show-current"])) !==
-            branch ||
-          (await getCommonGitDirectory(worktreeRoot)) !==
-            (await getCommonGitDirectory(repositoryRoot))
-        ) {
-          throw new Error("RALPH cannot remove a worktree it does not own.");
-        }
-        await runGit(repositoryRoot, [
-          "worktree",
-          "remove",
-          "--force",
-          "--force",
-          worktreeRoot,
-        ]);
-      }
-      await runGit(repositoryRoot, ["branch", "-D", branch]);
-      await runGit(repositoryRoot, [
-        "update-ref",
-        "-d",
-        `refs/machdoch/${branch}/integration`,
-      ]);
-    } catch (cleanupError) {
-      throw new AggregateError(
-        [error, cleanupError],
-        "RALPH could not prepare or remove its run worktree.",
-      );
-    }
-    throw error;
+    await failPreparation(
+      { ...worktree, baseCommit: head },
+      preparationPath,
+      error,
+    );
   }
+  await unlink(preparationPath);
   return worktree;
+};
+
+export const prepareRalphRunWorktree = async (
+  workspaceRoot: string,
+  runDirectory: string,
+): Promise<RalphRunWorktree> => {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await prepareRalphRunWorktreeAttempt(workspaceRoot, runDirectory);
+    } catch (error) {
+      if (!(error instanceof RalphWorktreePreparationTimeout) || attempt >= 3) {
+        throw error;
+      }
+      await setTimeout(attempt * 1_000 + Math.floor(Math.random() * 250));
+    }
+  }
 };

@@ -1,0 +1,139 @@
+{
+  "date": "2026-10-06T21:41:49.275Z",
+  "fullOutcomeVerified": false,
+  "devServerStarted": false,
+  "pretrainedWeightsUsed": false,
+  "changes": [
+    "Progress callback failures stop sampling instead of being swallowed",
+    "Cancellation callback failures and exceptions stop sampling instead of being swallowed",
+    "Working callbacks preserve seeded joint video/audio results",
+    "Sampler modifications are attributed in the source and both legal bundles"
+  ],
+  "checks": {
+    "reproducedBeforeFix": {
+      "testCount": 7,
+      "failedTests": 4,
+      "log": "sampler-callback-before.txt"
+    },
+    "python": {
+      "passed": true,
+      "testCount": 53,
+      "log": "sampler-callback-python-tests.txt"
+    },
+    "gpu": {
+      "date": "2026-10-06T21:35:36.472200+00:00",
+      "passed": true,
+      "testCount": 6,
+      "pretrainedWeightsUsed": false,
+      "randomTinyDiT": true,
+      "device": "AMD Radeon RX 9070 (cuda:1)",
+      "dtype": "bfloat16",
+      "packageRoot": "D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\sampler-callback-worker-1791322130517",
+      "samplerSha256": "044fb4f486c73945509bb0a5748628cba5f81e7f5f8ef908bf4171cedb43f75b",
+      "packagedSamplerMatchesSource": true,
+      "peakAllocatedBytes": 34850816,
+      "testLog": "test_cancel_poll_exception_uses_the_normal_abort_contract (__main__.GPUSamplingCallbacks.test_cancel_poll_exception_uses_the_normal_abort_contract) ... ok\ntest_cancel_poll_failure_stops_before_another_forward (__main__.GPUSamplingCallbacks.test_cancel_poll_failure_stops_before_another_forward) ... ok\ntest_cancel_poll_return_value_still_stops_sampling (__main__.GPUSamplingCallbacks.test_cancel_poll_return_value_still_stops_sampling) ... ok\ntest_progress_cancellation_stops_before_another_forward (__main__.GPUSamplingCallbacks.test_progress_cancellation_stops_before_another_forward) ... ok\ntest_progress_transport_failure_stops_before_another_forward (__main__.GPUSamplingCallbacks.test_progress_transport_failure_stops_before_another_forward) ... ok\ntest_successful_callbacks_preserve_joint_outputs_and_step_numbers (__main__.GPUSamplingCallbacks.test_successful_callbacks_preserve_joint_outputs_and_step_numbers) ... ok\n\n----------------------------------------------------------------------\nRan 6 tests in 13.386s\n\nOK\n"
+    },
+    "licensing": {
+      "passed": true,
+      "testCount": 3,
+      "log": "sampler-callback-licence-tests.txt"
+    },
+    "legalBundles": {
+      "headless": {
+        "verified": true,
+        "dependencyNoticeSets": 504,
+        "modificationNoticeMatchesSource": true,
+        "modificationNoticeSha256": "0f3df65e6135cf4c9a697cf730ed1915559e2822f3a0b1559784a5c6f17c111d"
+      },
+      "desktop": {
+        "verified": true,
+        "dependencyNoticeSets": 1047,
+        "modificationNoticeMatchesSource": true,
+        "modificationNoticeSha256": "0f3df65e6135cf4c9a697cf730ed1915559e2822f3a0b1559784a5c6f17c111d"
+      }
+    },
+    "pythonCompilation": {
+      "passed": true
+    },
+    "scopedDiffCheck": {
+      "passed": true
+    },
+    "desktopResourceMapping": {
+      "passed": true,
+      "assembledDesktopRebuiltThisTurn": false
+    }
+  },
+  "sourceFiles": {
+    "fizgig/minimax/sampling.py": {
+      "sha256": "044fb4f486c73945509bb0a5748628cba5f81e7f5f8ef908bf4171cedb43f75b",
+      "packagedMatchesSource": true
+    },
+    "test_media_minimax_h3_sampling.py": {
+      "sha256": "db7f364edf0dc8e3dccee6f68064d58869b5570c4e657b18d4f65cd18a01d2cf",
+      "packagedMatchesSource": true
+    },
+    "NOTICE-RefMod.txt": {
+      "sha256": "0f3df65e6135cf4c9a697cf730ed1915559e2822f3a0b1559784a5c6f17c111d",
+      "packagedMatchesSource": true
+    }
+  },
+  "modelEvidence": {
+    "videoVae": {
+      "path": "D:/Models/machdoch/worker-staging/minimax-h3/minimax_h3_video_vae_fp16.safetensors",
+      "sizeBytes": 3774476288,
+      "requiredBytes": 5207808496,
+      "incomplete": true,
+      "headerOnly": true,
+      "tensorValuesRead": false
+    },
+    "missingRequiredFilesInSearchedModelLocations": [
+      "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "mmh3-4b-ClipProj-v3.1.safetensors"
+    ],
+    "stagedFL2VAGGUFDoesNotMeetRef2VARequirements": true,
+    "supportedRuntime": "local:minimax-h3-ref2va",
+    "fileSearchEvidenceSource": "ui-workflow-verification.json",
+    "recentFilenameRecheck": {
+      "date": "2026-10-06T21:17:07.983Z",
+      "stagedRoot": "D:\\Models\\machdoch\\worker-staging\\minimax-h3",
+      "stagedRootScanComplete": true,
+      "stagedFiles": [
+        "minimax_h3_video_vae_fp16.safetensors",
+        "minimax_h3_audio_vae_fp32.safetensors"
+      ],
+      "requiredRef2vaFilesFound": false,
+      "broaderDModelsRecheckCompleted": false,
+      "broaderDModelsRecheckStoppedAfterVerificationWindow": true
+    }
+  },
+  "licensing": {
+    "modelLicenceSha256": "59b99642b95ea21630e311198ddbfffbfe05aadba0c2f5d884cbdf4efcc90f44",
+    "matchesPrimary": true,
+    "primarySource": "https://huggingface.co/MiniMaxAI/MiniMax-H3/raw/main/LICENSE",
+    "modelUseAuthorizationVerified": false,
+    "transformerAndSamplerGPLDistributionResolved": false
+  },
+  "limitations": [
+    "Complete pretrained video creation, preview and Ref2VA generation remain unverified",
+    "Fixed-seed image/video/audio/mixed quality comparisons remain unverified",
+    "Complete-checkpoint peak GPU memory and model-use authorization remain unverified",
+    "Transformer/sampler code-distribution provenance remains unresolved",
+    "An earlier fleet missing-audio preview returned HTTP 502; the instrumented rerun passed, but the earlier transport failure was not explained",
+    "The first ownership browser attempt timed out before its first upload while the host/workflow was initializing; the host recovered without a restart, but the cause of the delay remains unexplained",
+    "This follow-up verifies the packaged Python sampler directly; a complete pretrained desktop or fleet generation remains unverified"
+  ],
+  "priorUIEvidence": "transfer-ownership-verification.json",
+  "research": [
+    {
+      "source": "https://github.com/huggingface/diffusers/blob/main/src/diffusers/schedulers/scheduling_minimax_h3.py",
+      "finding": "Native H3 has a distinct clean-time/data-ward Euler convention and counts the terminal sigma inside the requested grid; replacing the pruned runtime still requires checkpoint compatibility and verification"
+    },
+    {
+      "source": "https://huggingface.co/docs/diffusers/main/en/api/pipelines/minimax_h3",
+      "finding": "The native Ref2VA partition and full Qwen3-VL conditioner differ from this runtime's pruned transformer and smaller projected conditioner"
+    }
+  ],
+  "goalStatus": "active",
+  "previousGoalTurnClassification": "progress"
+}

@@ -99,7 +99,11 @@ const captureCommand = async (
   executable: string,
   args: string[],
   timeoutMs = PROVIDER_PROBE_TIMEOUT_MS,
-): Promise<{ output: string; exitCode: number | null }> => {
+): Promise<{
+  output: string;
+  exitCode: number | null;
+  failureReason?: string;
+}> => {
   const shell = shouldUseShell(executable);
   if (
     shell &&
@@ -145,6 +149,15 @@ const captureCommand = async (
         .trim()
         .slice(-64_000),
       exitCode: typeof failure.code === "number" ? failure.code : null,
+      failureReason: [
+        (error instanceof Error ? error.message : String(error)).slice(
+          0,
+          1_000,
+        ),
+        failure.stderr?.trim().slice(-1_000),
+      ]
+        .filter(Boolean)
+        .join("\n"),
     };
   } finally {
     const next = waitingProbeCommands.shift();
@@ -232,6 +245,11 @@ export const probeProviderCli = async (
       );
     }
 
+    if (versionResult.failureReason) {
+      warnings.push(
+        `Provider version probe failed: ${versionResult.failureReason}`,
+      );
+    }
     let helpResult = await captureCommand(executable, ["--help"]);
 
     if (helpResult.exitCode !== 0) {
@@ -245,6 +263,9 @@ export const probeProviderCli = async (
       );
     }
 
+    if (helpResult.failureReason) {
+      warnings.push(`Provider help probe failed: ${helpResult.failureReason}`);
+    }
     if (provider === "codex-cli") {
       let execHelpResult = await captureCommand(executable, ["exec", "--help"]);
       if (execHelpResult.exitCode !== 0) {
@@ -255,6 +276,11 @@ export const probeProviderCli = async (
         );
         warnings.push(
           "Codex exec help probe did not complete successfully on the first attempt and was retried.",
+        );
+      }
+      if (execHelpResult.failureReason) {
+        warnings.push(
+          `Codex exec help probe failed: ${execHelpResult.failureReason}`,
         );
       }
       helpResult = {

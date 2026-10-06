@@ -10,6 +10,7 @@ import { pipeline, type Duplex } from "node:stream";
 import { WebSocketServer, createWebSocketStream, type WebSocket } from "ws";
 import {
   previewTargetSchema,
+  workspacePreviewsCapability,
   type PreviewTarget,
 } from "@machdoch/fleet-protocol";
 import { z } from "zod";
@@ -22,6 +23,24 @@ import type { FleetRuntime } from "./runtime";
 export const previewOpenSchema = z
   .strictObject({
     target: previewTargetSchema,
+    path: z
+      .string()
+      .max(2048)
+      .refine((value) => {
+        if (
+          !value.startsWith("/") ||
+          value.startsWith("//") ||
+          ["\\", "\r", "\n"].some((character) => value.includes(character))
+        )
+          return false;
+        const url = new URL(value, "https://preview.invalid");
+        return (
+          url.origin === "https://preview.invalid" &&
+          !url.pathname.startsWith("/.machdoch/") &&
+          !url.hash
+        );
+      }, "Use a path within the preview.")
+      .default("/"),
     routes: z
       .array(
         z.strictObject({
@@ -54,6 +73,7 @@ interface Grant {
   generation: string;
   sessionHash: string;
   target: PreviewTarget;
+  path: string;
   routes: PreviewOpen["routes"];
   expiresAt: number;
   ticketHash: string | null;
@@ -182,36 +202,30 @@ export class FleetPreviewHub {
         "Close an existing preview before opening another.",
       );
     const generation = this.runtime.gateways.generation(instanceId);
-    if (!generation || !this.runtime.gateways.supportsRuns(instanceId))
-      throw new HttpError(
-        503,
-        "This host needs a connected headless Fleet service with preview support.",
-      );
-    const result = await this.runtime.gateways.relay(
-      instanceId,
-      { type: "getWorkspaceRuns", workspace: input.target.workspace },
-      signal,
-    );
-    if (result.type === "error") throw new HttpError(409, result.message);
-    if (result.type !== "workspaceRuns")
-      throw new HttpError(502, "Invalid service status.");
-    for (const target of [input.target, ...input.routes]) {
-      const config = result.snapshot.document.configurations.find(
-        (c) => c.id === target.configurationId,
-      );
-      const status = result.snapshot.statuses.find(
-        (s) => s.id === target.configurationId,
-      );
-      if (
-        config?.kind !== "task" ||
-        !config.ports.includes(target.port) ||
-        !status?.pid ||
-        !["running", "unhealthy"].includes(status.state)
+    if (
+      !generation ||
+      !this.runtime.gateways.supportsCapability(
+        instanceId,
+        workspacePreviewsCapability,
       )
-        throw new HttpError(
-          409,
-          "Start each selected service before opening its preview.",
-        );
+    )
+      throw new HttpError(503, "Connect a device with preview support.");
+    for (const target of [input.target, ...input.routes]) {
+      const result = await this.runtime.gateways.relay(
+        instanceId,
+        {
+          type: "validatePreviewTarget",
+          target: {
+            workspace: input.target.workspace,
+            configurationId: target.configurationId,
+            port: target.port,
+          },
+        },
+        signal,
+      );
+      if (result.type === "error") throw new HttpError(409, result.message);
+      if (result.type !== "previewTargetReady")
+        throw new HttpError(502, "Invalid preview target response.");
     }
     if (
       signal.aborted ||
@@ -231,6 +245,7 @@ export class FleetPreviewHub {
       generation,
       sessionHash: session.sessionHash,
       target: input.target,
+      path: input.path,
       routes: input.routes.toSorted(
         (a, b) => b.prefix.length - a.prefix.length,
       ),
@@ -339,7 +354,7 @@ export class FleetPreviewHub {
         const token = secret();
         grant.cookieHash = hash(token);
         response.writeHead(303, {
-          Location: "/",
+          Location: grant.path,
           "Set-Cookie": `${cookieName}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=3600`,
           "Cache-Control": "no-store",
           "Referrer-Policy": "no-referrer",

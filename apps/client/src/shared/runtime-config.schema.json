@@ -126,7 +126,7 @@
     },
     "SpeechToTextProvider": {
       "type": "string",
-      "enum": ["none", "openai", "google", "whisper"]
+      "enum": ["none", "openai", "google", "whisper", "whisper-tiny", "whistle", "whistle-tiny", "phonon2"]
     },
     "RuntimeMemoryScope": {
       "type": "string",

@@ -15,6 +15,16 @@ const MAX_ACTIVE: usize = 8;
 const MAX_RESULT_BYTES: usize = 64 * 1024 * 1024;
 const CHUNK_BYTES: usize = 262_144;
 
+#[derive(Clone, Copy, serde::Serialize)]
+pub(crate) enum OperationDomain {
+    Media,
+    Ralph,
+    Scheduler,
+    Instructions,
+    Workspace,
+    DeviceSettings,
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 enum Request {
@@ -52,10 +62,14 @@ struct Inner {
 pub(crate) struct FleetOperationState(Arc<Mutex<Inner>>);
 
 pub(crate) fn initialize(app: &tauri::AppHandle) {
+    crate::fleet_control::workspace_terminal::initialize(app);
     for name in [
         "media-import-progress",
         "media-civitai-download-progress",
         "desktop-task-progress",
+        "machdoch://user-settings-changed",
+        "machdoch://desktop-settings-changed",
+        "machdoch://settings-imported",
     ] {
         let state = app.state::<FleetOperationState>().inner().clone();
         app.listen(name, move |event| {
@@ -78,14 +92,18 @@ pub(crate) fn initialize(app: &tauri::AppHandle) {
     }
 }
 
-pub(crate) fn handle(app: &tauri::AppHandle, request: Value, ralph: bool) -> Value {
-    match handle_request(app, request, ralph) {
+pub(crate) fn handle(app: &tauri::AppHandle, request: Value, domain: OperationDomain) -> Value {
+    match handle_request(app, request, domain) {
         Ok(response) => response,
         Err(error) => json!({ "state": "failed", "error": error }),
     }
 }
 
-fn handle_request(app: &tauri::AppHandle, request: Value, ralph: bool) -> Result<Value, Value> {
+fn handle_request(
+    app: &tauri::AppHandle,
+    request: Value,
+    domain: OperationDomain,
+) -> Result<Value, Value> {
     let request: Request =
         serde_json::from_value(request).map_err(|error| json!(error.to_string()))?;
     let state = app.state::<FleetOperationState>();
@@ -120,14 +138,25 @@ fn handle_request(app: &tauri::AppHandle, request: Value, ralph: bool) -> Result
             {
                 return Err(json!("Invalid remote operation ID."));
             }
-            let encoded = serde_json::to_vec(&json!([ralph, command, args]))
+            let encoded = serde_json::to_vec(&json!([domain, command, args]))
                 .map_err(|error| json!(error.to_string()))?;
-            let max_request_bytes =
-                if command == "run_media_flow_agent" || command == "run_ralph_command" {
-                    2_200_000
-                } else {
-                    1_048_576
-                };
+            let max_request_bytes = if matches!(
+                command.as_str(),
+                "save_workspace_mcp_config_document" | "save_user_mcp_config_document"
+            ) {
+                3_000_000
+            } else if command == "run_media_flow_agent"
+                || command == "run_ralph_command"
+                || command == "run_scheduler_command"
+                || command == "run_instruction_command"
+                || command == "save_workspace_file"
+                || command == "save_workspace_run_configuration_document"
+                || command == "precheck_workspace_run_configuration_json"
+            {
+                2_200_000
+            } else {
+                1_048_576
+            };
             if encoded.len() > max_request_bytes {
                 return Err(json!("Remote request is too large."));
             }
@@ -141,7 +170,18 @@ fn handle_request(app: &tauri::AppHandle, request: Value, ralph: bool) -> Result
                 operation.touched = Instant::now();
                 return Ok(json!({ "state": "pending" }));
             }
-            let control = ralph && command != "run_ralph_command"
+            let control = matches!(
+                domain,
+                OperationDomain::Instructions
+                    | OperationDomain::Workspace
+                    | OperationDomain::DeviceSettings
+            ) || matches!(domain, OperationDomain::Ralph)
+                && command != "run_ralph_command"
+                || matches!(domain, OperationDomain::Scheduler)
+                    && !matches!(
+                        args.pointer("/request/arguments/0").and_then(Value::as_str),
+                        Some("trigger" | "retry" | "run-due")
+                    )
                 || ["media_cancel_", "media_get_", "media_list_", "media_read_"]
                     .iter()
                     .any(|prefix| command.starts_with(prefix));
@@ -168,12 +208,35 @@ fn handle_request(app: &tauri::AppHandle, request: Value, ralph: bool) -> Result
             );
             let shared = state.0.clone();
             let app = app.clone();
+            let operation_id = id.clone();
             tauri::async_runtime::spawn(async move {
                 let worker = tauri::async_runtime::spawn(async move {
-                    if ralph {
-                        crate::fleet_control::ralph::invoke(app, command, args).await
-                    } else {
-                        crate::media::fleet_dispatch::invoke(app, command, args).await
+                    match domain {
+                        OperationDomain::DeviceSettings => {
+                            crate::fleet_control::device_settings::invoke(&app, &command, &args)
+                                .await
+                        }
+                        OperationDomain::Workspace => {
+                            crate::fleet_control::workspace_tools::invoke(app, command, args).await
+                        }
+                        OperationDomain::Instructions => {
+                            crate::fleet_control::instructions::invoke(app, command, args).await
+                        }
+                        OperationDomain::Ralph => {
+                            crate::fleet_control::ralph::invoke(app, command, args).await
+                        }
+                        OperationDomain::Scheduler => {
+                            crate::fleet_control::scheduler::invoke(
+                                app,
+                                command,
+                                args,
+                                operation_id,
+                            )
+                            .await
+                        }
+                        OperationDomain::Media => {
+                            crate::media::fleet_dispatch::invoke(app, command, args).await
+                        }
                     }
                 });
                 let result = match worker.await {
@@ -237,7 +300,12 @@ fn handle_request(app: &tauri::AppHandle, request: Value, ralph: bool) -> Result
         }
         Request::Events { after } => Ok(json!({
             "state": "events", "cursor": inner.cursor,
-            "events": inner.events.iter().filter(|(cursor, name, _)| *cursor > after && (name == "desktop-task-progress") == ralph).map(|(_, name, payload)| json!({ "name": name, "payload": payload })).collect::<Vec<_>>()
+            "events": inner.events.iter().filter(|(cursor, name, _)| *cursor > after && match domain {
+                OperationDomain::Media => name.starts_with("media-"),
+                OperationDomain::Ralph | OperationDomain::Scheduler => name == "desktop-task-progress",
+                OperationDomain::DeviceSettings => matches!(name.as_str(), "machdoch://user-settings-changed" | "machdoch://desktop-settings-changed" | "machdoch://settings-imported"),
+                OperationDomain::Workspace | OperationDomain::Instructions => false,
+            }).map(|(_, name, payload)| json!({ "name": name, "payload": payload })).collect::<Vec<_>>()
         })),
     }
 }

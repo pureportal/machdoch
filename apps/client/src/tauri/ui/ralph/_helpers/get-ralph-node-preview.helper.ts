@@ -3,7 +3,7 @@ import type {
   RalphFlowBlock,
   RalphUtilityConfig,
 } from "../../../../core/ralph.js";
-import { getProviderLabel } from "../../model-catalog";
+import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import { REASONING_LABELS } from "../../reasoning-options";
 import {
   compactPreviewText,

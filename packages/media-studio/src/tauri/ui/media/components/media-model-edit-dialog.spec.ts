@@ -10,6 +10,7 @@ import {
 import { createElement, useState, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMediaModelCatalogSnapshot } from "../../../../core/media/catalog.js";
+import { createOpenMediaModels } from "../../../../core/media/open-model-profiles.js";
 import { createEmptyMediaGenerationAssetMetadata } from "../../../../core/media/asset-metadata.js";
 import type { MediaModelAddonDescriptor } from "../../../../core/media/contracts.js";
 import { MediaModelEditDialog } from "./media-model-edit-dialog";
@@ -55,6 +56,42 @@ afterEach(() => {
 });
 
 describe("model edit dialog", () => {
+  it.each(
+    createOpenMediaModels("test").filter(
+      (model) =>
+        model.architecture?.startsWith("minimax-h3-dmad") ||
+        model.architecture?.startsWith("minimax-h3-pdmd"),
+    ),
+  )("retains the base model terms when editing $displayName", async (model) => {
+    const options = props({
+      resource: { ...model, id: "local:user:student", userImported: true },
+    });
+    render(createElement(MediaModelEditDialog, options));
+    const license = screen.getByLabelText("License") as HTMLInputElement;
+    const commercialUse = screen.getByLabelText(
+      "Commercial use",
+    ) as HTMLSelectElement;
+    expect(license.readOnly).toBe(true);
+    expect(license.value).toBe(model.license.name);
+    expect(commercialUse.disabled).toBe(true);
+    expect(commercialUse.value).toBe("review-required");
+    expect(
+      (screen.getByLabelText("Model type") as HTMLSelectElement).disabled,
+    ).toBe(true);
+    fireEvent.change(screen.getByLabelText("Name"), {
+      target: { value: "My student model" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(options.onSave).toHaveBeenCalledOnce());
+    expect(options.onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        licenseName: model.license.name,
+        commercialUse: "review-required",
+      }),
+      expect.anything(),
+    );
+  });
+
   it("saves with the standard keyboard shortcut", async () => {
     const options = props();
     render(createElement(MediaModelEditDialog, options));

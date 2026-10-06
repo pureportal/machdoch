@@ -23,7 +23,7 @@ const runtime = vi.hoisted(() => ({
   listenWorkspaceRunState: vi.fn(),
   loadWorkspaceRunConfigurationDocument: vi.fn(),
   loadWorkspaceRunSnapshot: vi.fn(),
-  openExternalUrl: vi.fn(),
+  openWorkspaceRunUrl: vi.fn(),
   precheckWorkspaceRunConfigurationJson: vi.fn(),
   restartWorkspaceRunConfiguration: vi.fn(),
   runDesktopTask: vi.fn(),
@@ -80,12 +80,51 @@ beforeEach(() => {
   vi.clearAllMocks();
   runtime.listenWorkspaceRunLogs.mockResolvedValue(() => undefined);
   runtime.listenWorkspaceRunState.mockResolvedValue(() => undefined);
-  runtime.openExternalUrl.mockResolvedValue(undefined);
+  runtime.openWorkspaceRunUrl.mockResolvedValue(undefined);
 });
 
 afterEach(() => cleanup());
 
 describe("WorkspaceRunPanel", () => {
+  it("opens a composite child URL with its actual workspace and configuration", async () => {
+    const child = taskStatus("web", "running");
+    if (child.configuration.kind !== "task")
+      throw new Error("Expected a task.");
+    const url = "http://localhost:4173/dashboard?tab=runs";
+    child.configuration.primary = false;
+    child.configuration.ports = [4173];
+    child.configuration.urls = [url];
+    const composite = {
+      ...taskStatus("workspace", "running"),
+      configuration: {
+        id: "workspace",
+        name: "Workspace",
+        kind: "composite" as const,
+        primary: true,
+        children: ["web"],
+        startOrder: "parallel" as const,
+      },
+      children: [child],
+    };
+    const snapshot: WorkspaceRunSnapshot = {
+      workspaceRoot: "C:/workspace",
+      primaryConfigurationId: "workspace",
+      configurations: [composite, child],
+    };
+    runtime.loadWorkspaceRunSnapshot.mockResolvedValue(snapshot);
+    runtime.loadWorkspaceRunConfigurationDocument.mockResolvedValue(
+      documentFromSnapshot(snapshot),
+    );
+    render(createElement(WorkspaceRunPanel, { workspaceRoot: "C:/workspace", view: "all" }));
+    fireEvent.click(await screen.findByRole("button", { name: url }));
+    await waitFor(() =>
+      expect(runtime.openWorkspaceRunUrl).toHaveBeenCalledWith(
+        "C:/workspace",
+        "web",
+        url,
+      ),
+    );
+  });
   it("shows only the selected workspace detail section", async () => {
     const running = taskStatus("Server", "running");
     running.logs = [

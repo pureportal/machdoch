@@ -5,21 +5,8 @@ import {
 } from "../../../../core/memory.js";
 import { isSessionGoal } from "../../../../shared/goals.js";
 import type { RunMode } from "../../../../core/runtime-contract.generated.js";
-import {
-  isQuickVoiceSession,
-  isSessionArchived,
-  createTaskOutcomeFromExecution,
-  getSessionOverviewStatus,
-  type ChatSessionContextAttachment,
-  type ChatSessionMessage,
-  type ChatSessionMessagePromptEnhancement,
-  type ChatSessionMessageSettings,
-  type ChatSessionQueuedMessage,
-  type ChatSessionQueuedPromptEnhancementRequest,
-  type ChatSessionRecord,
-  type ChatSessionTaskAction,
-  type ChatSessionTaskOutcome,
-} from "../../chat-session.model";
+import { isQuickVoiceSession, isSessionArchived, createTaskOutcomeFromExecution, getSessionOverviewStatus, type ChatSessionMessage, type ChatSessionMessagePromptEnhancement, type ChatSessionMessageSettings, type ChatSessionQueuedMessage, type ChatSessionQueuedPromptEnhancementRequest, type ChatSessionRecord, type ChatSessionTaskAction, type ChatSessionTaskOutcome } from "../../chat-session.model";
+import { type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import type {
   TaskExecutionProgress,
   TaskExecutionResult,

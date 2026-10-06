@@ -3,13 +3,14 @@ import {
   createOpenMediaModels,
   OPEN_MEDIA_MODEL_PROFILES,
 } from "./open-model-profiles.js";
-import { compileMediaFlow, createImageToVideoFlow } from "./compiler.js";
+import { compileMediaFlow, createImageRecipeFlow, createImageToVideoFlow } from "./compiler.js";
 import {
   resolveMediaVideoDimensions,
   resolveMediaVideoQualityPresetSettings,
   MEDIA_VIDEO_QUALITY_PRESETS,
 } from "./video-quality.js";
 import manifests from "../../../../../apps/client/src-tauri/src/media/open_model_manifests.json" with { type: "json" };
+import { DEFAULT_MEDIA_STUDIO_STATE } from "../../tauri/ui/media/media-studio-store.js";
 
 const readyModel = (architecture: string) => {
   const model = createOpenMediaModels("test").find(
@@ -26,6 +27,101 @@ const readyModel = (architecture: string) => {
 };
 
 describe("open media generation contracts", () => {
+  it.each(OPEN_MEDIA_MODEL_PROFILES.filter((profile) => profile.distillation?.sampler === "lcm"))(
+    "compiles the SDXL student and rejects manual overrides for $displayName",
+    (profile) => {
+      const model = readyModel(profile.architecture);
+      expect(model.license.sourceUrl).toBe(profile.license.sourceUrl);
+      expect(model.addonCapabilities).toEqual([]);
+      const flow = createImageRecipeFlow({
+        id: "sdxl-student", createdAt: "2026-10-06T10:00:00Z",
+        settings: { ...DEFAULT_MEDIA_STUDIO_STATE.recipe, prompt: "a photo of a cat", modelId: model.id, transparentBackground: false, qualityGateEnabled: false },
+      });
+      const task = flow.nodes.find((node) => node.type === "task.generate-image")!;
+      const compile = () => compileMediaFlow({ flow, models: [model], compiledAt: "2026-10-06T10:00:01Z" });
+      expect(compile().diagnostics.filter((diagnostic) => diagnostic.severity === "error")).toEqual([]);
+      for (const [field, value, message] of [
+        ["numInferenceSteps", 8, "sampling steps"],
+        ["guidanceScale", 5, "guidance"],
+      ] as const) {
+        task.config[field] = value;
+        expect(compile().diagnostics.some((diagnostic) => diagnostic.severity === "error" && diagnostic.message.includes(message))).toBe(true);
+        task.config[field] = null;
+      }
+      task.config.negativePrompt = "blur";
+      expect(compile().diagnostics.some((diagnostic) => diagnostic.severity === "error" && diagnostic.message.includes("negative prompts"))).toBe(true);
+    },
+  );
+  it.each(OPEN_MEDIA_MODEL_PROFILES.filter((profile) => profile.distillation && profile.video))(
+    "uses the published student contract for $displayName",
+    (profile) => {
+      const model = createOpenMediaModels("test").find(
+        (entry) => entry.id === profile.id,
+      )!;
+      expect(model.license).toMatchObject({
+        spdxId: null,
+        commercialUse: "review-required",
+        requiresAcceptance: true,
+        sourceUrl:
+          "https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE",
+      });
+      expect(model.addonCapabilities).toEqual([]);
+      expect(model.management.acquisition).toBe("file-import");
+      for (const preset of MEDIA_VIDEO_QUALITY_PRESETS) {
+        const settings = resolveMediaVideoQualityPresetSettings(
+          preset,
+          profile.architecture,
+        );
+        expect(settings.numInferenceSteps).toBe(profile.steps);
+        expect(settings.guidanceScale).toBe(1);
+        expect(settings.fps).toBe(24);
+        expect((settings.numFrames - 124) % 17).toBe(0);
+      }
+    },
+  );
+
+  it.each(OPEN_MEDIA_MODEL_PROFILES.filter((profile) => profile.distillation && profile.video))(
+    "rejects unsupported student settings for $displayName before execution",
+    (profile) => {
+      const model = readyModel(profile.architecture);
+      const settings = resolveMediaVideoQualityPresetSettings(
+        MEDIA_VIDEO_QUALITY_PRESETS[1]!,
+        profile.architecture,
+      );
+      const flow = createImageToVideoFlow({
+        id: "student-video",
+        createdAt: "2026-10-06T10:00:00Z",
+        prompt: "A bird flies",
+        settings: { ...settings, modelId: model.id },
+      });
+      const task = flow.nodes.find(
+        (node) => node.type === "task.generate-video",
+      )!;
+      const validConfig = task.config;
+      for (const [key, value, message] of [
+        ["fps", 30, "24 fps"],
+        ["negativePrompt", "blur", "negative prompt"],
+        ["numInferenceSteps", 8, "sampling steps"],
+        ["guidanceScale", 5, "guidance"],
+        ["numFrames", 362, "frame count"],
+      ] as const) {
+        task.config = { ...validConfig, [key]: value };
+        const plan = compileMediaFlow({
+          flow,
+          models: [model],
+          compiledAt: "2026-10-06T10:00:01Z",
+        });
+        expect(
+          plan.diagnostics.some(
+            (diagnostic) =>
+              diagnostic.severity === "error" &&
+              diagnostic.message.includes(message),
+          ),
+        ).toBe(true);
+      }
+    },
+  );
+
   it.each(
     OPEN_MEDIA_MODEL_PROFILES.filter((profile) =>
       profile.capabilities.includes("text-to-video"),

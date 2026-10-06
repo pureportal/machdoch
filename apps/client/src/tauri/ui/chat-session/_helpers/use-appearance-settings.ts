@@ -1,3 +1,5 @@
+import { applyAppearanceSettings } from "@machdoch/product-ui";
+import { useFleetAppearanceSettings } from "./use-fleet-appearance-settings";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DEFAULT_APPEARANCE_SETTINGS,
@@ -7,19 +9,6 @@ import {
   subscribeToAppearanceSettingsChanged,
   type AppearanceSettings,
 } from "../../lib/shell-store";
-
-const applyAppearanceSettings = (settings: AppearanceSettings): void => {
-  if (typeof document === "undefined") {
-    return;
-  }
-
-  const root = document.documentElement;
-  root.dataset.theme = settings.theme;
-  root.dataset.density = settings.density;
-  root.dataset.accent = settings.accent;
-  root.classList.toggle("dark", settings.theme === "dark");
-  root.style.colorScheme = settings.theme;
-};
 
 export interface AppearanceSettingsController {
   settings: AppearanceSettings;
@@ -196,9 +185,7 @@ export const useAppearanceSettings = (): AppearanceSettingsController => {
     }
   }, []);
 
-  return {
-    settings,
-    saving,
-    onSave,
-  };
+  const controller = { settings, saving, onSave };
+  useFleetAppearanceSettings(controller);
+  return controller;
 };

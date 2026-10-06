@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import {
   canArchiveSession,
   canDeleteSession,
@@ -38,6 +38,7 @@ export interface SessionLifecycleActions {
   toggleSessionTagFilter: (tag: string) => void;
   exportSessions: () => void;
   importSessions: (file: File) => void;
+  importSessionPayload: (payload: unknown) => number;
 }
 
 export interface CreateNewSessionOptions {
@@ -124,6 +125,18 @@ export const useSessionLifecycle = (options: {
   const { providerChooserState, state } = options;
   const defaultNewSessionWorkspace =
     state.shellState.recentWorkspaces[0] ?? state.activeSession.workspace;
+  const importSessionPayload = useCallback((payload: unknown): number => {
+    let importedCount = 0;
+    let nextActiveSessionId = state.activeSessionId;
+    state.applyShellState((previous) => {
+      const next = importSessionsIntoShellState(previous, payload);
+      importedCount = next.sessions.length - previous.sessions.length;
+      nextActiveSessionId = next.activeSessionId;
+      return next;
+    });
+    state.setActiveSessionId(nextActiveSessionId);
+    return importedCount;
+  }, [state.activeSessionId, state.applyShellState, state.setActiveSessionId]);
 
   return useMemo(
     () => ({
@@ -394,15 +407,14 @@ export const useSessionLifecycle = (options: {
           .text()
           .then((text) => JSON.parse(text) as unknown)
           .then((payload) => {
-            state.applyShellState((prev) =>
-              importSessionsIntoShellState(prev, payload),
-            );
+            importSessionPayload(payload);
           })
           .catch((error) => {
             console.error("Failed to import sessions:", error);
           });
       },
+      importSessionPayload,
     }),
-    [defaultNewSessionWorkspace, providerChooserState.chooserProviders, state],
+    [defaultNewSessionWorkspace, providerChooserState.chooserProviders, state, importSessionPayload],
   );
 };

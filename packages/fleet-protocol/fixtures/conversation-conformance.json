@@ -1,0 +1,64 @@
+[
+  {
+    "name": "message preserves raw content and original prompt",
+    "accepted": true,
+    "message": {
+      "id": "message",
+      "role": "user",
+      "content": "Enhanced request",
+      "rawContent": "  Raw request\n\tline\n",
+      "originalPrompt": "Original request 🌿",
+      "presentation": "message",
+      "attachments": [],
+      "actions": {
+        "canRetry": false,
+        "canContinue": false,
+        "canSaveAsContextPack": true,
+        "canSpeak": false,
+        "isSpeaking": false,
+        "canEdit": true,
+        "canReplay": false
+      }
+    }
+  },
+  {
+    "name": "reject message raw content with wrong type",
+    "accepted": false,
+    "message": {
+      "id": "message",
+      "role": "user",
+      "content": "Enhanced request",
+      "rawContent": false,
+      "originalPrompt": "Original request 🌿",
+      "presentation": "message",
+      "attachments": [],
+      "actions": {
+        "canRetry": false,
+        "canContinue": false,
+        "canSaveAsContextPack": true,
+        "canSpeak": false,
+        "isSpeaking": false
+      }
+    }
+  },
+  {
+    "name": "reject message original prompt with wrong type",
+    "accepted": false,
+    "message": {
+      "id": "message",
+      "role": "user",
+      "content": "Enhanced request",
+      "rawContent": "  Raw request\n\tline\n",
+      "originalPrompt": null,
+      "presentation": "message",
+      "attachments": [],
+      "actions": {
+        "canRetry": false,
+        "canContinue": false,
+        "canSaveAsContextPack": true,
+        "canSpeak": false,
+        "isSpeaking": false
+      }
+    }
+  }
+]

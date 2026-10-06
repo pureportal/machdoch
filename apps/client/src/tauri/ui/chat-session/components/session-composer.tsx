@@ -34,7 +34,9 @@ import {
 import type {
   ReasoningMode,
   RunMode,
+  SpeechToTextProvider,
 } from "../../../../core/runtime-contract.generated.js";
+import { isLocalSpeechProvider } from "../../../../shared/local-speech.js";
 import type {
   ConversationMemoryEntry,
   ParallelAgentMode,
@@ -50,36 +52,32 @@ import {
   createMemoryManagementEntries,
   type MemorySourceSession,
 } from "../../components/memory-management-entries";
-import {
-  isQuickVoiceSession,
-  type ChatSessionContextAttachment,
-  type ChatSessionRecord,
-  type SmartContextPack,
-} from "../../chat-session.model";
+import { isQuickVoiceSession, type ChatSessionRecord } from "../../chat-session.model";
+import { type SmartContextPack } from "@machdoch/client-ui/context-packs/model";
+import type { AttachmentSelectionKind, ChatSessionContextAttachment, RequestIterationMode } from "@machdoch/client-ui/composer/model";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import type { RuntimeProvider } from "../../model-catalog";
-import type { PromptEnhancementMode } from "../_helpers/prompt-enhancement";
-import type { RequestIterationMode } from "../_helpers/request-iterations";
-import type { AttachmentSelectionKind } from "../_helpers/session-context-attachments";
-import type {
-  SaveSmartContextPackInput,
-  SmartContextPackScope,
-  SmartContextPackScopeFilter,
-} from "../_helpers/smart-context-packs";
+import { type PromptEnhancementMode } from "@machdoch/client-ui/composer/prompt-enhancement-options";
+import { type SaveSmartContextPackInput, type SmartContextPackScope, type SmartContextPackScopeFilter } from "@machdoch/client-ui/context-packs/model";
 import type { RUN_MODE_META } from "../_helpers/session-shell";
 import {
   AgentComposer,
   type AgentComposerAction,
   type AgentComposerQueuedMessage,
   type AgentComposerToggle,
-} from "./agent-composer";
+} from "@machdoch/client-ui/composer/agent-composer";
+import { SessionModelPicker } from "./session-model-picker";
 import { SessionModePicker } from "./session-mode-picker";
 import { SessionParallelAgentPicker } from "./session-parallel-agent-picker";
-import { SessionAdaptiveControllerPicker } from "./session-adaptive-controller-picker";
-import { SessionPromptEnhancementPicker } from "./session-prompt-enhancement-picker";
+import { SessionAdaptiveControllerPicker } from "@machdoch/client-ui/composer/adaptive-controller-picker";
+import { SessionPromptEnhancementPicker } from "@machdoch/client-ui/composer/prompt-enhancement-picker";
 import { SessionReasoningPicker } from "./session-reasoning-picker";
-import { SmartContextPackPicker } from "./smart-context-packs";
+import { SmartContextPackPicker } from "@machdoch/client-ui/context-packs/picker";
+import { loadRalphContextPackUsage } from "@machdoch/client-ui/context-packs/ralph-usage";
+import { listRalphFlows, showRalphFlow } from "../../runtime";
+
+const loadContextPackUsage = (workspaceRoot: string) => loadRalphContextPackUsage(workspaceRoot, listRalphFlows, showRalphFlow);
 import { WorkspacePicker } from "./workspace-picker";
 
 export interface SessionComposerProps {
@@ -128,6 +126,7 @@ export interface SessionComposerProps {
   imageInputSupported: boolean;
   imageInputDisabledReason: string | null;
   speechInput: {
+    provider: SpeechToTextProvider;
     browserSupported: boolean;
     enabled: boolean;
     recording: boolean;
@@ -483,6 +482,7 @@ export const SessionComposer = ({
       />
 
       <SmartContextPackPicker
+        loadRalphPackUsage={loadContextPackUsage}
         contextPacks={contextPacks}
         workspaceRoot={activeSession.workspace}
         activeDraft={activeSession.draft}
@@ -591,9 +591,18 @@ export const SessionComposer = ({
   ]);
 
   const actions = useMemo<AgentComposerAction[]>(() => {
+    const canTranslate =
+      speechInput.provider !== "none" &&
+      (!isLocalSpeechProvider(speechInput.provider) ||
+        speechInput.provider === "whisper" ||
+        speechInput.provider === "whisper-tiny");
+    const canFormat =
+      speechInput.provider === "openai" || speechInput.provider === "google";
+    const translateEnabled = canTranslate && speechInput.autoTranslateToEnglish;
+    const formatEnabled = canFormat && speechInput.autoFormat;
     const enabledProcessing = [
-      speechInput.autoTranslateToEnglish ? "translate to English" : null,
-      speechInput.autoFormat ? "format and improve text" : null,
+      translateEnabled ? "translate to English" : null,
+      formatEnabled ? "format and improve text" : null,
     ].filter((option): option is string => option !== null);
     const actionLabel = enabledProcessing.length
       ? `${speechInputActionLabel} (${enabledProcessing.join(", ")})`
@@ -608,7 +617,7 @@ export const SessionComposer = ({
     const icon = (
       <>
         {glyph}
-        {speechInput.autoTranslateToEnglish ? (
+        {translateEnabled ? (
           <span
             aria-hidden="true"
             className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-sky-400 text-slate-950"
@@ -616,7 +625,7 @@ export const SessionComposer = ({
             <Languages className="size-3" />
           </span>
         ) : null}
-        {speechInput.autoFormat ? (
+        {formatEnabled ? (
           <span
             aria-hidden="true"
             className="absolute -bottom-1 -right-1 flex size-4 items-center justify-center rounded-full bg-amber-400 text-slate-950"
@@ -635,24 +644,34 @@ export const SessionComposer = ({
         disabled: !speechInput.browserSupported || speechInput.transcribing,
         onClick: speechInput.onAction,
         contextActions: [
-          {
-            label: "Translate to English",
-            checked: speechInput.autoTranslateToEnglish,
-            onSelect: () =>
-              speechInput.onProcessingChange({
-                autoTranslateToEnglish: !speechInput.autoTranslateToEnglish,
-                autoFormat: speechInput.autoFormat,
-              }),
-          },
-          {
-            label: "Format and improve text",
-            checked: speechInput.autoFormat,
-            onSelect: () =>
-              speechInput.onProcessingChange({
-                autoTranslateToEnglish: speechInput.autoTranslateToEnglish,
-                autoFormat: !speechInput.autoFormat,
-              }),
-          },
+          ...(canTranslate
+            ? [
+                {
+                  label: "Translate to English",
+                  checked: speechInput.autoTranslateToEnglish,
+                  onSelect: () =>
+                    speechInput.onProcessingChange({
+                      autoTranslateToEnglish:
+                        !speechInput.autoTranslateToEnglish,
+                      autoFormat: speechInput.autoFormat,
+                    }),
+                },
+              ]
+            : []),
+          ...(canFormat
+            ? [
+                {
+                  label: "Format and improve text",
+                  checked: speechInput.autoFormat,
+                  onSelect: () =>
+                    speechInput.onProcessingChange({
+                      autoTranslateToEnglish:
+                        speechInput.autoTranslateToEnglish,
+                      autoFormat: !speechInput.autoFormat,
+                    }),
+                },
+              ]
+            : []),
         ],
         className: cn(
           "relative",
@@ -674,6 +693,7 @@ export const SessionComposer = ({
     speechInput.enabled,
     speechInput.onAction,
     speechInput.onProcessingChange,
+    speechInput.provider,
     speechInput.recording,
     speechInput.transcribing,
     speechInputActionLabel,
@@ -715,9 +735,7 @@ export const SessionComposer = ({
             ? "Update the message and its options"
             : "What should machdoch do next?"
         }
-        chooserProviders={chooserProviders}
-        activeProvider={activeSession.provider}
-        activeModel={activeSession.model}
+        modelPicker={<SessionModelPicker chooserProviders={chooserProviders} activeProvider={activeSession.provider} activeModel={activeSession.model} onSessionModelSelection={onSessionModelSelection} />}
         contextAttachments={contextAttachments}
         imageInputSupported={imageInputSupported}
         imageInputDisabledReason={imageInputDisabledReason}
@@ -767,7 +785,6 @@ export const SessionComposer = ({
           !interviewEnabled &&
           !goalDraft.submissionObjective
         }
-        onModelSelection={onSessionModelSelection}
         onSelectContextFiles={onSelectContextFiles}
         onSelectContextFolders={onSelectContextFolders}
         onSelectContextImages={onSelectContextImages}

@@ -1,8 +1,5 @@
-import {
-  getSessionOverviewStatus,
-  type ChatSessionContextAttachment,
-  type ChatSessionRecord,
-} from "../../chat-session.model";
+import { getSessionOverviewStatus, type ChatSessionRecord } from "../../chat-session.model";
+import { type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import { areContextAttachmentRecordsEqual } from "./session-context-attachments";
 

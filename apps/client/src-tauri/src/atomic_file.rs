@@ -151,12 +151,20 @@ fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
         value.encode_wide().chain(std::iter::once(0)).collect()
     }
 
-    let source = to_wide(source.as_os_str());
-    let destination = to_wide(destination.as_os_str());
+    let parent = destination
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let parent = fs::canonicalize(parent)?;
+    let source_name = source
+        .file_name()
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "source must name a file"))?;
+    let destination_name = destination.file_name().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "destination must name a file")
+    })?;
+    let source = to_wide(parent.join(source_name).as_os_str());
+    let destination = to_wide(parent.join(destination_name).as_os_str());
 
-    // `std::fs::rename` does not replace an existing destination on Windows.
-    // MoveFileEx keeps the atomic sibling-file replacement guarantee used by
-    // every persisted config while also flushing the rename before returning.
     unsafe {
         MoveFileExW(
             PCWSTR(source.as_ptr()),
@@ -594,5 +602,33 @@ mod tests {
                 .kind(),
             io::ErrorKind::InvalidInput
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn atomic_replacement_supports_long_windows_paths() {
+        let directory = temp_test_directory("long-path");
+        let parent = directory
+            .join("first".repeat(16))
+            .join("second".repeat(14))
+            .join("third".repeat(16));
+        fs::create_dir_all(&parent).expect("long test directory should be created");
+        let destination = parent.join("config.json");
+        assert!(destination.as_os_str().encode_wide().count() > 300);
+
+        write_file_atomic(&destination, b"first", AtomicWriteOptions::default())
+            .expect("atomic creation should support long paths");
+        write_file_atomic(&destination, b"second", AtomicWriteOptions::default())
+            .expect("atomic replacement should support long paths");
+        assert_eq!(fs::read(&destination).unwrap(), b"second");
+
+        let retired = parent.join("retired.json");
+        fs::write(&retired, b"previous").unwrap();
+        rename_file_atomic(&destination, &retired)
+            .expect("atomic rename should support long paths");
+        assert!(!destination.exists());
+        assert_eq!(fs::read(&retired).unwrap(), b"second");
+        assert!(temporary_artifacts(&parent).is_empty());
+        cleanup(&directory);
     }
 }

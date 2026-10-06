@@ -43,7 +43,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
+} from "@machdoch/client-ui/dropdown-menu";
 import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
 import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";

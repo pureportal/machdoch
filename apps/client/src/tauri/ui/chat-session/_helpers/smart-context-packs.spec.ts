@@ -1,24 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  createInitialShellState,
-  type SmartContextPack,
-} from "../../chat-session.model";
-import {
-  applySmartContextPackToComposer,
-  applySmartContextPackSettingsToComposer,
-  applySmartContextPackSettingsToSession,
-  applySmartContextPackSettingsToShellDefaults,
-  createSmartContextPackExportPayload,
-  doesSmartContextPackMatchComposer,
-  extractSmartContextPackVariables,
-  filterSmartContextPacksByScope,
-  getSmartContextPackModelSelection,
-  getSmartContextPackMissingVariableNames,
-  getSmartContextPacksForWorkspace,
-  importSmartContextPacksIntoShellState,
-  parseSmartContextPackListInput,
-  parseSmartContextPackVariableInput,
-} from "./smart-context-packs";
+import { createInitialShellState } from "../../chat-session.model";
+import { type SmartContextPack } from "@machdoch/client-ui/context-packs/model";
+import { applySmartContextPackToComposer, applySmartContextPackSettingsToComposer, applySmartContextPackSettingsToSession, applySmartContextPackSettingsToShellDefaults, doesSmartContextPackMatchComposer, getSmartContextPackModelSelection, importSmartContextPacksIntoShellState } from "./smart-context-packs";
+import { createSmartContextPackExportPayload, extractSmartContextPackVariables, filterSmartContextPacksByScope, getSmartContextPackMissingVariableNames, getSmartContextPacksForWorkspace, parseSmartContextPackListInput, parseSmartContextPackVariableInput } from "@machdoch/client-ui/context-packs/helpers";
 
 const createPack = (
   overrides: Partial<SmartContextPack> = {},

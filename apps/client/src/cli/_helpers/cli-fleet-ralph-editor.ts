@@ -89,25 +89,29 @@ export class FleetRalphEditor {
     const request = ralphRequestSchema.parse(input);
     if (this.stopped)
       return { state: "failed", error: "Fleet service is stopping." };
-    return this.operations.handle(request, async () => {
-      if (request.kind !== "invoke")
-        throw new Error("Expected RALPH operation.");
-      switch (request.command) {
-        case "get_active_desktop_tasks":
-          return this.getActiveTasks();
-        case "get_user_internal_task_model_settings":
-          return loadUserInternalTaskModelSettings();
-        case "get_recent_desktop_task_results":
-          return request.args.taskIds.flatMap((id) =>
-            this.completed.has(id) ? [this.completed.get(id)!.result] : [],
-          );
-        case "cancel_desktop_task":
-          await this.cancel(request.args.taskId);
-          return null;
-        case "run_ralph_command":
-          return this.execute(request.args.request);
-      }
-    });
+    return this.operations.handle(
+      request,
+      async () => {
+        if (request.kind !== "invoke")
+          throw new Error("Expected RALPH operation.");
+        switch (request.command) {
+          case "get_active_desktop_tasks":
+            return this.getActiveTasks();
+          case "get_user_internal_task_model_settings":
+            return loadUserInternalTaskModelSettings();
+          case "get_recent_desktop_task_results":
+            return request.args.taskIds.flatMap((id) =>
+              this.completed.has(id) ? [this.completed.get(id)!.result] : [],
+            );
+          case "cancel_desktop_task":
+            await this.cancel(request.args.taskId);
+            return null;
+          case "run_ralph_command":
+            return this.execute(request.args.request);
+        }
+      },
+      request.kind === "invoke" && request.command !== "run_ralph_command",
+    );
   }
 
   async shutdown(): Promise<void> {

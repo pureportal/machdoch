@@ -1,6 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
-import type { ChatSessionPathContextAttachment } from "../../chat-session.model";
-import { getFilePreviewRenderKind } from "./file-preview-language";
+import type { ChatSessionPathContextAttachment } from "@machdoch/client-ui/composer/model";
+import { getFilePreviewRenderKind } from "@machdoch/client-ui/file-preview/file-preview-language";
 
 export type FilePreviewTarget =
   | { kind: "local"; path: string; line?: number }

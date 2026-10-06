@@ -1,23 +1,15 @@
 import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
-  ArrowDownToLine,
   Check,
   CircleDot,
-  ExternalLink,
-  CloudDownload,
   FolderGit2,
   FolderPlus,
-  GitBranch,
-  GitFork,
-  GitPullRequest,
   LoaderCircle,
-  Network,
   Plus,
   RefreshCw,
   Save,
   Trash2,
-  Unplug,
   X,
 } from "lucide-react";
 import {
@@ -29,13 +21,12 @@ import {
   useState,
   type JSX,
 } from "react";
-import { MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH } from "../../../core/instruction-system/limits.js";
-import { hasUnpairedUtf16Surrogate } from "../../../shared/unicode.js";
+import { MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH } from "@machdoch/fleet-protocol/instruction-limits";
+import { hasUnpairedUtf16Surrogate } from "@machdoch/fleet-protocol/unicode";
 import {
   instructionTagKey,
   instructionTagRuleMatches,
-} from "../../../core/instruction-system/tag-rules.js";
-import { Badge } from "@machdoch/media-studio/tauri/ui/components/ui/badge.js";
+} from "@machdoch/fleet-protocol/instruction-tags";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
 import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
@@ -53,22 +44,14 @@ import {
 } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
-  loadWorkspaceGitOverview,
-  loadWorkspaceGitRepositories,
-  loadWorkspacePullRequests,
   openExternalUrl,
-  runWorkspaceGitAction,
   type InstructionMutationInput,
   type InstructionProfileView,
   type InstructionWorkspaceView,
-  type WorkspaceGitAction,
-  type WorkspaceGitOverview,
-  type WorkspaceGitRepositoryDiscovery,
-  type WorkspacePullRequestOverview,
 } from "../runtime";
-import type { InstructionManagementControls } from "../instruction-management/types";
-import { hasAsciiControlCharacter } from "../instruction-management/instruction-form";
-import { TagEditor } from "../instruction-management/tag-editor";
+import type { InstructionManagementControls } from "@machdoch/client-ui/instructions";
+import { hasAsciiControlCharacter } from "@machdoch/client-ui/instructions";
+import { TagEditor } from "@machdoch/client-ui/instructions";
 import {
   createManagedWorkspaceViews,
   createWorkspaceRootKey,
@@ -81,26 +64,16 @@ import {
   workspaceDetailPanelId,
   workspaceDetailTabId,
 } from "./workspace-detail-navigation";
-import { WorkspaceGitStatus } from "./workspace-git-status";
+import { WorkspaceGitPanel } from "./workspace-git-panel";
+import { useWorkspaceGit } from "./use-workspace-git";
 import { WorkspaceMemoryPanel } from "./workspace-memory-panel";
 import { WorkspaceReasoningBankPanel } from "./workspace-reasoning-bank-panel";
 import type { WorkspaceManagementControls } from "./types";
-import {
-  selectWorkspaceGitRepository,
-  workspaceGitActionChangesFiles,
-  workspaceGitOverviewForSelection,
-  workspaceGitRepositoryLabel,
-} from "./workspace-git-model";
-import {
-  startExclusiveWorkspaceOperation,
-  type WorkspaceOperationLock,
-} from "./workspace-operation-lock";
+import { workspaceGitRepositoryLabel } from "./workspace-git-model";
 import { WorkspaceTools } from "./workspace-tools";
 import { WorkspaceRunPanel } from "./workspace-run-panel";
 import { WorkspaceConfigurationSettings } from "./workspace-configuration-settings";
 import { WorkspaceMcpSettings } from "./workspace-mcp-settings";
-
-type GitSection = "status" | "branches" | "remotes" | "pull-requests";
 
 const profileIsEnabled = (profile: InstructionProfileView): boolean =>
   profile.enabled;
@@ -125,11 +98,15 @@ export const WorkspaceManager = ({
   workspaceSetup,
   activeWorkspaceRoot,
   onDirtyChange,
+  onChooseDirectory,
+  onSelectedWorkspaceChange,
 }: {
   setup: InstructionManagementControls;
   workspaceSetup: WorkspaceManagementControls;
   activeWorkspaceRoot: string | null;
   onDirtyChange?: (dirty: boolean) => void;
+  onChooseDirectory?: () => Promise<string | null>;
+  onSelectedWorkspaceChange?: (workspaceRoot: string | null) => void;
 }): JSX.Element => {
   const registry = setup.registry;
   const workspaces = useMemo(
@@ -150,31 +127,6 @@ export const WorkspaceManager = ({
   const [tagDraftPending, setTagDraftPending] = useState(false);
   const [workspaceSection, setWorkspaceSection] =
     useState<WorkspaceDetailSection>("output");
-  const [gitSection, setGitSection] = useState<GitSection>("status");
-  const [gitOverview, setGitOverview] = useState<WorkspaceGitOverview | null>(
-    null,
-  );
-  const [gitRepositories, setGitRepositories] =
-    useState<WorkspaceGitRepositoryDiscovery | null>(null);
-  const [gitRepositoriesLoading, setGitRepositoriesLoading] = useState(false);
-  const [gitRepositoriesError, setGitRepositoriesError] = useState<
-    string | null
-  >(null);
-  const [selectedGitRepositoryRoot, setSelectedGitRepositoryRoot] = useState<
-    string | null
-  >(null);
-  const [gitLoading, setGitLoading] = useState(false);
-  const [gitError, setGitError] = useState<string | null>(null);
-  const [gitAction, setGitAction] = useState<WorkspaceGitAction | null>(null);
-  const [pullRequests, setPullRequests] =
-    useState<WorkspacePullRequestOverview | null>(null);
-  const [pullRequestsLoading, setPullRequestsLoading] = useState(false);
-  const [pullRequestsError, setPullRequestsError] = useState<string | null>(
-    null,
-  );
-  const [branchName, setBranchName] = useState("");
-  const [remoteName, setRemoteName] = useState("");
-  const [remoteUrl, setRemoteUrl] = useState("");
   const [workspaceToolsDirty, setWorkspaceToolsDirty] = useState(false);
   const [workspaceRunDirty, setWorkspaceRunDirty] = useState(false);
   const [workspaceConfigurationBusy, setWorkspaceConfigurationBusy] =
@@ -196,17 +148,26 @@ export const WorkspaceManager = ({
   >(null);
   const [workspaceMemoryForgetting, setWorkspaceMemoryForgetting] =
     useState(false);
+  const [workspaceActionError, setWorkspaceActionError] = useState<
+    string | null
+  >(null);
+
+  const runWorkspaceAction = async (
+    action: () => Promise<void>,
+  ): Promise<void> => {
+    setWorkspaceActionError(null);
+    try {
+      await action();
+    } catch (error) {
+      setWorkspaceActionError(
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  };
   const displayNameErrorId = useId();
   const pendingTagMessageId = useId();
   const selectedRootRef = useRef<string | null>(null);
   const previousActiveWorkspaceKeyRef = useRef<string | null>(null);
-  const selectedGitRepositoryRootRef = useRef<string | null>(null);
-  const gitOverviewWorkspaceRootRef = useRef<string | null>(null);
-  const gitRepositoriesRequestRef = useRef(0);
-  const gitOverviewRequestRef = useRef(0);
-  const gitActionRequestRef = useRef(0);
-  const pullRequestRef = useRef(0);
-  const gitActionLockRef = useRef<WorkspaceOperationLock>({ pending: false });
   const hydratedWorkspaceKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -241,6 +202,9 @@ export const WorkspaceManager = ({
   const selectedWorkspace =
     workspaces.find((workspace) => workspace.key === selectedWorkspaceKey) ??
     null;
+  useEffect(() => {
+    onSelectedWorkspaceChange?.(selectedWorkspace?.root ?? null);
+  }, [onSelectedWorkspaceChange, selectedWorkspace?.root]);
   const selectedInstructionWorkspace =
     selectedWorkspace?.instructionWorkspace ?? null;
   const savedDisplayName = selectedWorkspace
@@ -293,8 +257,32 @@ export const WorkspaceManager = ({
 
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
+  const gitControls = useWorkspaceGit(
+    selectedWorkspace?.root ?? null,
+    workspaceToolsDirty,
+    () => setWorkspaceToolsRefreshToken((current) => current + 1),
+  );
+  const {
+    gitSection,
+    setGitSection,
+    gitRepositories,
+    selectedGitRepositoryRoot,
+    selectedGitOverview,
+    gitAction,
+    gitBusy,
+    pullRequests,
+    branchName,
+    remoteName,
+    remoteUrl,
+    refreshGitOverview,
+    refreshGit,
+    refreshPullRequests,
+    runGitAction,
+    selectGitRepository,
+    removeRemote,
+  } = gitControls;
+
   selectedRootRef.current = selectedWorkspace?.root ?? null;
-  selectedGitRepositoryRootRef.current = selectedGitRepositoryRoot;
 
   useEffect(() => {
     if (workspaceSection !== "memory") return;
@@ -374,355 +362,21 @@ export const WorkspaceManager = ({
     setTagDraftPending(false);
   }, [registry?.revision, selectedWorkspace?.key]);
 
-  const refreshGitOverview = useCallback(
-    async (
-      repositoryRoot = selectedGitRepositoryRootRef.current,
-    ): Promise<void> => {
-      const workspaceRoot = selectedRootRef.current;
-      if (!workspaceRoot || !repositoryRoot) {
-        gitOverviewRequestRef.current += 1;
-        gitOverviewWorkspaceRootRef.current = null;
-        setGitOverview(null);
-        setGitError(null);
-        setGitLoading(false);
-        return;
-      }
-      const requestId = ++gitOverviewRequestRef.current;
-      setGitLoading(true);
-      setGitError(null);
-      try {
-        const overview = await loadWorkspaceGitOverview(
-          workspaceRoot,
-          repositoryRoot,
-        );
-        if (
-          requestId === gitOverviewRequestRef.current &&
-          selectedRootRef.current === workspaceRoot &&
-          selectedGitRepositoryRootRef.current === repositoryRoot
-        ) {
-          gitOverviewWorkspaceRootRef.current = workspaceRoot;
-          setGitOverview(overview);
-        }
-      } catch (error) {
-        if (
-          requestId === gitOverviewRequestRef.current &&
-          selectedRootRef.current === workspaceRoot &&
-          selectedGitRepositoryRootRef.current === repositoryRoot
-        ) {
-          gitOverviewWorkspaceRootRef.current = null;
-          setGitOverview(null);
-          setGitError(error instanceof Error ? error.message : String(error));
-        }
-      } finally {
-        if (
-          requestId === gitOverviewRequestRef.current &&
-          selectedRootRef.current === workspaceRoot &&
-          selectedGitRepositoryRootRef.current === repositoryRoot
-        ) {
-          setGitLoading(false);
-        }
-      }
-    },
-    [],
-  );
-
-  const refreshGitRepositories = useCallback(async (): Promise<
-    string | null
-  > => {
-    const workspaceRoot = selectedRootRef.current;
-    if (!workspaceRoot) {
-      gitRepositoriesRequestRef.current += 1;
-      gitOverviewRequestRef.current += 1;
-      selectedGitRepositoryRootRef.current = null;
-      setGitRepositories(null);
-      setSelectedGitRepositoryRoot(null);
-      gitOverviewWorkspaceRootRef.current = null;
-      setGitOverview(null);
-      setGitError(null);
-      setGitLoading(false);
-      return null;
-    }
-    const requestId = ++gitRepositoriesRequestRef.current;
-    setGitRepositoriesLoading(true);
-    setGitRepositoriesError(null);
-    const rootOverview = selectedGitRepositoryRootRef.current
-      ? null
-      : loadWorkspaceGitOverview(workspaceRoot, workspaceRoot)
-          .then((overview) => {
-            if (
-              requestId === gitRepositoriesRequestRef.current &&
-              selectedRootRef.current === workspaceRoot &&
-              !selectedGitRepositoryRootRef.current
-            ) {
-              selectedGitRepositoryRootRef.current = overview.repositoryRoot;
-              setSelectedGitRepositoryRoot(overview.repositoryRoot);
-              gitOverviewWorkspaceRootRef.current = workspaceRoot;
-              setGitOverview(overview);
-            }
-            return overview;
-          })
-          .catch(() => null);
-    try {
-      const discovery = await loadWorkspaceGitRepositories(workspaceRoot);
-      if (
-        requestId !== gitRepositoriesRequestRef.current ||
-        selectedRootRef.current !== workspaceRoot
-      ) {
-        return null;
-      }
-      const selectedRepository = selectWorkspaceGitRepository(
-        discovery.repositories,
-        selectedGitRepositoryRootRef.current,
-      );
-      const nextRepositoryRoot = selectedRepository?.repositoryRoot ?? null;
-      const repositoryChanged =
-        nextRepositoryRoot !== selectedGitRepositoryRootRef.current;
-      setGitRepositories(discovery);
-      selectedGitRepositoryRootRef.current = nextRepositoryRoot;
-      setSelectedGitRepositoryRoot(nextRepositoryRoot);
-      if (repositoryChanged) {
-        gitOverviewRequestRef.current += 1;
-        gitOverviewWorkspaceRootRef.current = null;
-        setGitOverview(null);
-        setGitLoading(false);
-        setGitError(null);
-        pullRequestRef.current += 1;
-        setPullRequests(null);
-        setPullRequestsLoading(false);
-        setPullRequestsError(null);
-      }
-      if (!nextRepositoryRoot) {
-        gitOverviewRequestRef.current += 1;
-        gitOverviewWorkspaceRootRef.current = null;
-        setGitOverview(null);
-        setGitError(null);
-        setGitLoading(false);
-        return null;
-      }
-      if (rootOverview && nextRepositoryRoot === discovery.workspaceRoot) {
-        const overview = await rootOverview;
-        if (overview?.repositoryRoot === nextRepositoryRoot) {
-          if (
-            requestId === gitRepositoriesRequestRef.current &&
-            selectedRootRef.current === workspaceRoot &&
-            selectedGitRepositoryRootRef.current === nextRepositoryRoot
-          ) {
-            gitOverviewWorkspaceRootRef.current = workspaceRoot;
-            setGitOverview(overview);
-          }
-          return nextRepositoryRoot;
-        }
-      }
-      await refreshGitOverview(nextRepositoryRoot);
-      return nextRepositoryRoot;
-    } catch (error) {
-      if (
-        requestId === gitRepositoriesRequestRef.current &&
-        selectedRootRef.current === workspaceRoot
-      ) {
-        setGitRepositoriesError(
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-      return null;
-    } finally {
-      if (
-        requestId === gitRepositoriesRequestRef.current &&
-        selectedRootRef.current === workspaceRoot
-      ) {
-        setGitRepositoriesLoading(false);
-      }
-    }
-  }, [refreshGitOverview]);
-
-  useEffect(() => {
-    gitRepositoriesRequestRef.current += 1;
-    gitOverviewRequestRef.current += 1;
-    gitActionRequestRef.current += 1;
-    pullRequestRef.current += 1;
-    selectedGitRepositoryRootRef.current = null;
-    gitOverviewWorkspaceRootRef.current = null;
-    setGitRepositories(null);
-    setGitRepositoriesLoading(false);
-    setGitRepositoriesError(null);
-    setSelectedGitRepositoryRoot(null);
-    setGitAction(null);
-    setGitOverview(null);
-    setGitLoading(false);
-    setGitError(null);
-    setPullRequests(null);
-    setPullRequestsLoading(false);
-    setPullRequestsError(null);
-    void refreshGitRepositories();
-  }, [refreshGitRepositories, selectedWorkspace?.root]);
-
-  const refreshPullRequests = useCallback(
-    async (
-      repositoryRoot = selectedGitRepositoryRootRef.current,
-    ): Promise<void> => {
-      const workspaceRoot = selectedRootRef.current;
-      if (!workspaceRoot || !repositoryRoot) return;
-      const requestId = ++pullRequestRef.current;
-      setPullRequestsLoading(true);
-      setPullRequestsError(null);
-      try {
-        const overview = await loadWorkspacePullRequests(
-          workspaceRoot,
-          repositoryRoot,
-        );
-        if (
-          requestId === pullRequestRef.current &&
-          selectedRootRef.current === workspaceRoot &&
-          selectedGitRepositoryRootRef.current === repositoryRoot
-        ) {
-          setPullRequests(overview);
-        }
-      } catch (error) {
-        if (
-          requestId === pullRequestRef.current &&
-          selectedRootRef.current === workspaceRoot &&
-          selectedGitRepositoryRootRef.current === repositoryRoot
-        ) {
-          setPullRequests(null);
-          setPullRequestsError(
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      } finally {
-        if (
-          requestId === pullRequestRef.current &&
-          selectedRootRef.current === workspaceRoot &&
-          selectedGitRepositoryRootRef.current === repositoryRoot
-        ) {
-          setPullRequestsLoading(false);
-        }
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (
-      gitSection === "pull-requests" &&
-      gitOverview &&
-      !pullRequests &&
-      !pullRequestsLoading &&
-      !pullRequestsError
-    ) {
-      void refreshPullRequests();
-    }
-  }, [
-    gitOverview,
-    gitSection,
-    pullRequests,
-    pullRequestsError,
-    pullRequestsLoading,
-    refreshPullRequests,
-  ]);
-
   const mutate = async (input: InstructionMutationInput): Promise<boolean> =>
     (await setup.onSave(input)) !== false;
 
   const chooseDirectory = async (): Promise<string | null> => {
+    if (onChooseDirectory) return await onChooseDirectory();
     const result = await open({ directory: true, multiple: false });
     return typeof result === "string" ? result : null;
   };
 
-  const addWorkspace = async (root?: string): Promise<void> => {
-    const selectedRoot = root ?? (await chooseDirectory());
-    if (!selectedRoot) return;
-    workspaceSetup.onAdd(selectedRoot);
-  };
-
-  const runGitAction = async (
-    action: WorkspaceGitAction,
-    options: {
-      branchName?: string;
-      remoteName?: string;
-      remoteUrl?: string;
-    } = {},
-  ): Promise<void> => {
-    const repositoryRoot = selectedGitRepositoryRootRef.current;
-    if (
-      !selectedWorkspace ||
-      !repositoryRoot ||
-      gitOverviewWorkspaceRootRef.current !== selectedWorkspace.root ||
-      gitOverview?.repositoryRoot !== repositoryRoot ||
-      gitActionLockRef.current.pending
-    )
-      return;
-    const operation = startExclusiveWorkspaceOperation(
-      gitActionLockRef.current,
-      async () => {
-        const changesFiles = workspaceGitActionChangesFiles(action);
-        if (
-          changesFiles &&
-          workspaceToolsDirty &&
-          !window.confirm(
-            "Run this Git action with unsaved changes? Your draft will be kept.",
-          )
-        ) {
-          return;
-        }
-        const workspaceRoot = selectedWorkspace.root;
-        const actionRequestId = ++gitActionRequestRef.current;
-        gitOverviewRequestRef.current += 1;
-        setGitAction(action);
-        setGitError(null);
-        try {
-          const overview = await runWorkspaceGitAction(
-            workspaceRoot,
-            repositoryRoot,
-            action,
-            options,
-          );
-          if (
-            actionRequestId === gitActionRequestRef.current &&
-            selectedRootRef.current === workspaceRoot &&
-            selectedGitRepositoryRootRef.current === repositoryRoot
-          ) {
-            gitOverviewRequestRef.current += 1;
-            gitOverviewWorkspaceRootRef.current = workspaceRoot;
-            setGitOverview(overview);
-            if (changesFiles) {
-              setWorkspaceToolsRefreshToken((current) => current + 1);
-            }
-            setBranchName("");
-            setRemoteName("");
-            setRemoteUrl("");
-            if (
-              action === "fetch" ||
-              action === "pull" ||
-              action === "add-remote" ||
-              action === "remove-remote"
-            ) {
-              pullRequestRef.current += 1;
-              setPullRequests(null);
-              setPullRequestsLoading(false);
-              setPullRequestsError(null);
-            }
-          }
-        } catch (error) {
-          if (
-            actionRequestId === gitActionRequestRef.current &&
-            selectedRootRef.current === workspaceRoot &&
-            selectedGitRepositoryRootRef.current === repositoryRoot
-          ) {
-            setGitError(error instanceof Error ? error.message : String(error));
-          }
-        } finally {
-          if (
-            actionRequestId === gitActionRequestRef.current &&
-            selectedRootRef.current === workspaceRoot &&
-            selectedGitRepositoryRootRef.current === repositoryRoot
-          ) {
-            setGitAction(null);
-          }
-        }
-      },
-    );
-    if (operation) await operation;
-  };
+  const addWorkspace = (root?: string): Promise<void> =>
+    runWorkspaceAction(async () => {
+      const selectedRoot = root ?? (await chooseDirectory());
+      if (!selectedRoot) return;
+      await workspaceSetup.onAdd(selectedRoot);
+    });
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const filteredWorkspaces = useMemo(
@@ -767,21 +421,6 @@ export const WorkspaceManager = ({
       profileIsAutomaticForWorkspace(profile, selectedInstructionWorkspace)
     );
   }).length;
-  const selectedGitRepository = selectWorkspaceGitRepository(
-    gitRepositories?.repositories ?? [],
-    selectedGitRepositoryRoot,
-  );
-  const selectedGitOverview = workspaceGitOverviewForSelection(
-    gitOverview,
-    gitOverviewWorkspaceRootRef.current,
-    selectedWorkspace?.root ?? null,
-    selectedGitRepositoryRoot,
-  );
-  const gitBusy = gitRepositoriesLoading || gitLoading;
-  const gitDiscoveryNotice = gitRepositories?.scanLimited
-    ? "Repository scan limit reached. Some repositories may be missing."
-    : (gitRepositories?.issues[0] ?? null);
-
   const confirmDiscardWorkspaceDraft = (action: string): boolean =>
     !workspaceDraftDirty ||
     window.confirm(`Discard unsaved changes and ${action}?`);
@@ -813,25 +452,6 @@ export const WorkspaceManager = ({
     void setup.onRefresh();
   };
 
-  const selectGitRepository = (repositoryRoot: string): void => {
-    if (repositoryRoot === selectedGitRepositoryRootRef.current) return;
-    gitOverviewRequestRef.current += 1;
-    pullRequestRef.current += 1;
-    selectedGitRepositoryRootRef.current = repositoryRoot;
-    setSelectedGitRepositoryRoot(repositoryRoot);
-    gitOverviewWorkspaceRootRef.current = null;
-    setGitOverview(null);
-    setGitLoading(false);
-    setGitError(null);
-    setPullRequests(null);
-    setPullRequestsLoading(false);
-    setPullRequestsError(null);
-    setBranchName("");
-    setRemoteName("");
-    setRemoteUrl("");
-    void refreshGitOverview(repositoryRoot);
-  };
-
   const refreshWorkspaceState = useCallback((): void => {
     void refreshGitOverview();
   }, [refreshGitOverview]);
@@ -856,88 +476,78 @@ export const WorkspaceManager = ({
     });
   };
 
-  const relinkWorkspace = async (): Promise<void> => {
-    if (
-      !selectedWorkspace ||
-      setup.saving ||
-      workspaceSetup.loading ||
-      workspaceConfigurationBusy ||
-      !instructionLibraryAvailable ||
-      !confirmDiscardWorkspaceDraft("relink this workspace")
-    )
-      return;
-    const root = await chooseDirectory();
-    if (!root) return;
-    if (selectedInstructionWorkspace && registry) {
-      const saved = await mutate({
-        operation: "workspace-relink",
-        workspaceId: selectedInstructionWorkspace.id,
-        root,
-        expectedRevision: registry.revision,
-      });
-      if (!saved) return;
-    } else {
-      await workspaceSetup.onRelink(selectedWorkspace.root, root);
-    }
-    setWorkspaceToolsDirty(false);
-    setWorkspaceRunDirty(false);
-    setWorkspaceConfigurationBusy(false);
-    setWorkspaceMcpDirty(false);
-    setWorkspaceSettingsResetToken((current) => current + 1);
-    setTagDraftPending(false);
-  };
-
-  const removeWorkspace = async (): Promise<void> => {
-    if (
-      !selectedWorkspace ||
-      setup.saving ||
-      workspaceSetup.loading ||
-      workspaceConfigurationBusy ||
-      !instructionLibraryAvailable
-    )
-      return;
-    const hasAssignments =
-      selectedInstructionWorkspace?.scopes.some(
-        (scope) => scope.profiles.length > 0,
-      ) ?? false;
-    if (
-      !window.confirm(
-        hasAssignments && workspaceDraftDirty
-          ? "Remove this workspace from Machdoch? Unsaved changes and manual instruction assignments will be discarded. Files on disk will not be deleted."
-          : hasAssignments
-            ? "Remove this workspace and its manual instruction assignments from Machdoch? Files on disk will not be deleted."
-            : workspaceDraftDirty
-              ? "Remove this workspace from Machdoch? Unsaved changes will be discarded. Files on disk will not be deleted."
-              : "Remove this workspace from Machdoch? Files on disk will not be deleted.",
+  const relinkWorkspace = (): Promise<void> =>
+    runWorkspaceAction(async () => {
+      if (
+        !selectedWorkspace ||
+        setup.saving ||
+        workspaceSetup.loading ||
+        workspaceConfigurationBusy ||
+        !instructionLibraryAvailable ||
+        !confirmDiscardWorkspaceDraft("relink this workspace")
       )
-    )
-      return;
-    if (selectedInstructionWorkspace && registry) {
-      const saved = await mutate({
-        operation: "workspace-remove",
-        workspaceId: selectedInstructionWorkspace.id,
-        confirmAssignedRemoval: hasAssignments,
-        expectedRevision: registry.revision,
-      });
-      if (!saved) return;
-    }
-    setWorkspaceToolsDirty(false);
-    setWorkspaceRunDirty(false);
-    setTagDraftPending(false);
-    await workspaceSetup.onRemove(selectedWorkspace.root);
-  };
+        return;
+      const root = await chooseDirectory();
+      if (!root) return;
+      if (selectedInstructionWorkspace && registry) {
+        const saved = await mutate({
+          operation: "workspace-relink",
+          workspaceId: selectedInstructionWorkspace.id,
+          root,
+          expectedRevision: registry.revision,
+        });
+        if (!saved) return;
+      } else {
+        await workspaceSetup.onRelink(selectedWorkspace.root, root);
+      }
+      setWorkspaceToolsDirty(false);
+      setWorkspaceRunDirty(false);
+      setWorkspaceConfigurationBusy(false);
+      setWorkspaceMcpDirty(false);
+      setWorkspaceSettingsResetToken((current) => current + 1);
+      setTagDraftPending(false);
+    });
 
-  const refreshGit = async (): Promise<void> => {
-    const repositoryRoot = await refreshGitRepositories();
-    if (gitSection === "pull-requests" && repositoryRoot) {
-      await refreshPullRequests(repositoryRoot);
-    }
-  };
-
-  const removeRemote = (name: string): void => {
-    if (!window.confirm(`Remove Git remote ${name}?`)) return;
-    void runGitAction("remove-remote", { remoteName: name });
-  };
+  const removeWorkspace = (): Promise<void> =>
+    runWorkspaceAction(async () => {
+      if (
+        !selectedWorkspace ||
+        setup.saving ||
+        workspaceSetup.loading ||
+        workspaceConfigurationBusy ||
+        !instructionLibraryAvailable
+      )
+        return;
+      const hasAssignments =
+        selectedInstructionWorkspace?.scopes.some(
+          (scope) => scope.profiles.length > 0,
+        ) ?? false;
+      if (
+        !window.confirm(
+          hasAssignments && workspaceDraftDirty
+            ? "Remove this workspace from Machdoch? Unsaved changes and manual instruction assignments will be discarded. Files on disk will not be deleted."
+            : hasAssignments
+              ? "Remove this workspace and its manual instruction assignments from Machdoch? Files on disk will not be deleted."
+              : workspaceDraftDirty
+                ? "Remove this workspace from Machdoch? Unsaved changes will be discarded. Files on disk will not be deleted."
+                : "Remove this workspace from Machdoch? Files on disk will not be deleted.",
+        )
+      )
+        return;
+      if (selectedInstructionWorkspace && registry) {
+        const saved = await mutate({
+          operation: "workspace-remove",
+          workspaceId: selectedInstructionWorkspace.id,
+          confirmAssignedRemoval: hasAssignments,
+          expectedRevision: registry.revision,
+        });
+        if (!saved) return;
+      }
+      await workspaceSetup.onRemove(selectedWorkspace.root);
+      setWorkspaceToolsDirty(false);
+      setWorkspaceRunDirty(false);
+      setTagDraftPending(false);
+    });
 
   const setRootProfileAssignment = (
     profileId: string,
@@ -1100,7 +710,7 @@ export const WorkspaceManager = ({
         shortcuts: [
           {
             chord: getDefaultCommandShortcut("workspaces.add"),
-            runtimes: ["tauri"],
+            runtimes: ["tauri", "browser"],
             allowIn: [
               "document",
               "text-entry",
@@ -1182,7 +792,7 @@ export const WorkspaceManager = ({
         shortcuts: [
           {
             chord: getDefaultCommandShortcut("workspaces.settings.save"),
-            runtimes: ["tauri"],
+            runtimes: ["tauri", "browser"],
             allowIn: [
               "document",
               "text-entry",
@@ -1617,6 +1227,14 @@ export const WorkspaceManager = ({
         </div>
       </header>
 
+      {workspaceActionError ? (
+        <div
+          role="alert"
+          className="shrink-0 border-b border-red-950 bg-red-950/30 px-6 py-2 text-sm text-red-200"
+        >
+          {workspaceActionError}
+        </div>
+      ) : null}
       {setup.message ? (
         <div
           role={setup.message.tone === "error" ? "alert" : "status"}
@@ -1968,568 +1586,10 @@ export const WorkspaceManager = ({
                 </div>
 
                 {workspaceSection === "git" ? (
-                  <section className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20">
-                    <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 px-4 py-3">
-                      <GitBranch className="size-4 text-sky-300" />
-                      <div className="min-w-0 basis-48 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {(gitRepositories?.repositories.length ?? 0) > 1 ? (
-                            <select
-                              aria-label="Git repository"
-                              value={selectedGitRepositoryRoot ?? ""}
-                              disabled={gitBusy || gitAction !== null}
-                              onChange={(event) =>
-                                selectGitRepository(event.currentTarget.value)
-                              }
-                              className="h-8 min-w-0 max-w-full rounded-md border border-slate-700 bg-slate-950 px-2 font-mono text-xs text-slate-200 outline-none focus-visible:border-sky-500 focus-visible:ring-1 focus-visible:ring-sky-500/50 disabled:opacity-50"
-                            >
-                              {gitRepositories?.repositories.map(
-                                (repository) => (
-                                  <option
-                                    key={repository.repositoryRoot}
-                                    value={repository.repositoryRoot}
-                                  >
-                                    {workspaceGitRepositoryLabel(repository)}
-                                  </option>
-                                ),
-                              )}
-                            </select>
-                          ) : (
-                            <h3 className="truncate text-sm font-medium text-slate-100">
-                              {selectedGitRepository
-                                ? workspaceGitRepositoryLabel(
-                                    selectedGitRepository,
-                                  )
-                                : "Git"}
-                            </h3>
-                          )}
-                          {selectedGitOverview ? (
-                            <Badge
-                              variant={
-                                selectedGitOverview.clean
-                                  ? "outline"
-                                  : "secondary"
-                              }
-                            >
-                              {selectedGitOverview.clean
-                                ? "Clean"
-                                : `${selectedGitOverview.totalChanges} changed`}
-                            </Badge>
-                          ) : null}
-                          {selectedGitOverview?.ahead ? (
-                            <Badge variant="outline">
-                              ↑ {selectedGitOverview.ahead}
-                            </Badge>
-                          ) : null}
-                          {selectedGitOverview?.behind ? (
-                            <Badge variant="outline">
-                              ↓ {selectedGitOverview.behind}
-                            </Badge>
-                          ) : null}
-                        </div>
-                        {selectedGitOverview ? (
-                          <p className="mt-1 truncate text-xs text-slate-500">
-                            {selectedGitOverview.branch}
-                            {selectedGitOverview.upstream
-                              ? ` · ${selectedGitOverview.upstream}`
-                              : ""}
-                          </p>
-                        ) : null}
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={
-                          gitBusy ||
-                          gitAction !== null ||
-                          selectedGitOverview === null
-                        }
-                        onClick={() => void runGitAction("fetch")}
-                      >
-                        {gitAction === "fetch" ? (
-                          <LoaderCircle className="size-4 animate-spin" />
-                        ) : (
-                          <CloudDownload className="size-4" />
-                        )}
-                        Fetch
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={
-                          gitBusy ||
-                          gitAction !== null ||
-                          !selectedGitOverview?.upstream
-                        }
-                        onClick={() => void runGitAction("pull")}
-                      >
-                        {gitAction === "pull" ? (
-                          <LoaderCircle className="size-4 animate-spin" />
-                        ) : (
-                          <ArrowDownToLine className="size-4" />
-                        )}
-                        Pull
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        disabled={gitBusy || gitAction !== null}
-                        aria-label="Refresh Git"
-                        onClick={() => void refreshGit()}
-                      >
-                        <RefreshCw
-                          className={cn("size-4", gitBusy && "animate-spin")}
-                        />
-                      </Button>
-                    </div>
-
-                    <div
-                      role="tablist"
-                      aria-label="Git workspace views"
-                      className="flex overflow-x-auto border-b border-slate-800 px-2"
-                    >
-                      {(
-                        [
-                          ["status", "Status", GitFork],
-                          ["branches", "Branches", GitBranch],
-                          ["remotes", "Remotes", Network],
-                          ["pull-requests", "Pull requests", GitPullRequest],
-                        ] as const
-                      ).map(([value, label, Icon]) => (
-                        <button
-                          key={value}
-                          type="button"
-                          role="tab"
-                          id={`workspace-git-tab-${value}`}
-                          aria-controls={`workspace-git-panel-${value}`}
-                          aria-selected={gitSection === value}
-                          tabIndex={gitSection === value ? 0 : -1}
-                          onClick={() => setGitSection(value)}
-                          onKeyDown={(event) => {
-                            if (
-                              ![
-                                "ArrowLeft",
-                                "ArrowRight",
-                                "Home",
-                                "End",
-                              ].includes(event.key)
-                            ) {
-                              return;
-                            }
-                            event.preventDefault();
-                            const tabs = Array.from(
-                              event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
-                                '[role="tab"]',
-                              ) ?? [],
-                            );
-                            const currentIndex = tabs.indexOf(
-                              event.currentTarget,
-                            );
-                            const nextIndex =
-                              event.key === "Home"
-                                ? 0
-                                : event.key === "End"
-                                  ? tabs.length - 1
-                                  : event.key === "ArrowRight"
-                                    ? (currentIndex + 1) % tabs.length
-                                    : (currentIndex - 1 + tabs.length) %
-                                      tabs.length;
-                            tabs[nextIndex]?.focus();
-                            tabs[nextIndex]?.click();
-                          }}
-                          className={cn(
-                            "flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-xs",
-                            gitSection === value
-                              ? "border-sky-400 text-sky-200"
-                              : "border-transparent text-slate-500 hover:text-slate-200",
-                          )}
-                        >
-                          <Icon className="size-3.5" />
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-
-                    <div
-                      id={`workspace-git-panel-${gitSection}`}
-                      role="tabpanel"
-                      aria-labelledby={`workspace-git-tab-${gitSection}`}
-                      className="p-4"
-                    >
-                      {gitRepositoriesLoading &&
-                      !gitRepositories &&
-                      !selectedGitOverview ? (
-                        <div className="grid h-40 place-items-center">
-                          <LoaderCircle className="size-5 animate-spin text-slate-500" />
-                        </div>
-                      ) : gitRepositoriesError &&
-                        !gitRepositories &&
-                        !selectedGitOverview ? (
-                        <EmptyState
-                          icon={Unplug}
-                          title="Git unavailable"
-                          description={gitRepositoriesError}
-                        />
-                      ) : gitRepositories?.repositories.length === 0 ? (
-                        <EmptyState
-                          icon={
-                            gitRepositories.issues.length > 0
-                              ? Unplug
-                              : FolderGit2
-                          }
-                          title={
-                            gitRepositories.issues.length > 0
-                              ? "Repositories unavailable"
-                              : "No Git repositories"
-                          }
-                          description={gitDiscoveryNotice ?? undefined}
-                        />
-                      ) : gitLoading && !selectedGitOverview ? (
-                        <div className="grid h-40 place-items-center">
-                          <LoaderCircle className="size-5 animate-spin text-slate-500" />
-                        </div>
-                      ) : gitError && !selectedGitOverview ? (
-                        <EmptyState
-                          icon={Unplug}
-                          title="Repository unavailable"
-                          description={gitError}
-                        />
-                      ) : selectedGitOverview ? (
-                        <>
-                          {gitRepositoriesError ? (
-                            <p
-                              role="alert"
-                              className="mb-4 rounded-lg border border-red-900/60 bg-red-950/25 px-3 py-2 text-sm text-red-200"
-                            >
-                              {gitRepositoriesError}
-                            </p>
-                          ) : gitDiscoveryNotice ? (
-                            <p
-                              role="status"
-                              className="mb-4 rounded-lg border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-sm text-amber-200"
-                            >
-                              {gitDiscoveryNotice}
-                            </p>
-                          ) : null}
-                          {gitError ? (
-                            <p
-                              role="alert"
-                              className="mb-4 rounded-lg border border-red-900/60 bg-red-950/25 px-3 py-2 text-sm text-red-200"
-                            >
-                              {gitError}
-                            </p>
-                          ) : null}
-                          {gitSection === "status" ? (
-                            <WorkspaceGitStatus
-                              workspaceRoot={selectedWorkspace.root}
-                              repositoryRoot={
-                                selectedGitRepository?.repositoryRoot ??
-                                selectedGitOverview.repositoryRoot
-                              }
-                              overview={selectedGitOverview}
-                            />
-                          ) : null}
-                          {gitSection === "branches" ? (
-                            <div className="grid gap-4 xl:grid-cols-2">
-                              <div className="space-y-2">
-                                <SubmitShortcut asChild>
-                                  <div className="flex gap-2">
-                                    <Input
-                                      value={branchName}
-                                      onChange={(event) =>
-                                        setBranchName(event.target.value)
-                                      }
-                                      placeholder="New branch"
-                                      className="h-9 min-w-0 border-slate-800 bg-slate-950"
-                                    />
-                                    <Button
-                                      size="sm"
-                                      disabled={
-                                        gitAction !== null || !branchName.trim()
-                                      }
-                                      onClick={() =>
-                                        void runGitAction("create-branch", {
-                                          branchName,
-                                        })
-                                      }
-                                      {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                                    >
-                                      <Plus className="size-4" />
-                                      Create
-                                    </Button>
-                                  </div>
-                                </SubmitShortcut>
-                                {selectedGitOverview.localBranches.map(
-                                  (branch) => (
-                                    <div
-                                      key={branch.name}
-                                      className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
-                                    >
-                                      <GitBranch className="size-3.5 shrink-0 text-slate-500" />
-                                      <CopyContextMenu
-                                        values={[
-                                          {
-                                            label: "Copy branch name",
-                                            value: branch.name,
-                                          },
-                                        ]}
-                                      >
-                                        <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
-                                          {branch.name}
-                                        </span>
-                                      </CopyContextMenu>
-                                      <CopyContextMenu
-                                        values={[
-                                          {
-                                            label: "Copy commit",
-                                            value: branch.commit,
-                                          },
-                                        ]}
-                                      >
-                                        <code className="text-[11px] text-slate-600">
-                                          {branch.commit}
-                                        </code>
-                                      </CopyContextMenu>
-                                      {branch.current ? (
-                                        <Badge variant="outline">Current</Badge>
-                                      ) : (
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          disabled={gitAction !== null}
-                                          onClick={() =>
-                                            void runGitAction("checkout", {
-                                              branchName: branch.name,
-                                            })
-                                          }
-                                        >
-                                          Switch
-                                        </Button>
-                                      )}
-                                    </div>
-                                  ),
-                                )}
-                              </div>
-                              <div className="space-y-2">
-                                {selectedGitOverview.remoteBranches.length ===
-                                0 ? (
-                                  <EmptyState
-                                    icon={GitBranch}
-                                    title="No remote branches"
-                                    size="compact"
-                                  />
-                                ) : (
-                                  selectedGitOverview.remoteBranches.map(
-                                    (branch) => (
-                                      <div
-                                        key={branch.name}
-                                        className="flex min-w-0 items-center gap-2 rounded-lg border border-slate-800 px-3 py-2"
-                                      >
-                                        <Network className="size-3.5 shrink-0 text-slate-500" />
-                                        <CopyContextMenu
-                                          values={[
-                                            {
-                                              label: "Copy branch name",
-                                              value: branch.name,
-                                            },
-                                          ]}
-                                        >
-                                          <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
-                                            {branch.name}
-                                          </span>
-                                        </CopyContextMenu>
-                                        <CopyContextMenu
-                                          values={[
-                                            {
-                                              label: "Copy commit",
-                                              value: branch.commit,
-                                            },
-                                          ]}
-                                        >
-                                          <code className="text-[11px] text-slate-600">
-                                            {branch.commit}
-                                          </code>
-                                        </CopyContextMenu>
-                                        <Button
-                                          size="sm"
-                                          variant="ghost"
-                                          disabled={gitAction !== null}
-                                          onClick={() =>
-                                            void runGitAction(
-                                              "checkout-remote",
-                                              {
-                                                branchName: branch.name,
-                                              },
-                                            )
-                                          }
-                                        >
-                                          Track
-                                        </Button>
-                                      </div>
-                                    ),
-                                  )
-                                )}
-                              </div>
-                            </div>
-                          ) : null}
-                          {gitSection === "remotes" ? (
-                            <div className="space-y-3">
-                              <SubmitShortcut asChild>
-                                <div className="grid gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto]">
-                                  <Input
-                                    value={remoteName}
-                                    onChange={(event) =>
-                                      setRemoteName(event.target.value)
-                                    }
-                                    placeholder="Name"
-                                    className="h-9 border-slate-800 bg-slate-950"
-                                  />
-                                  <Input
-                                    value={remoteUrl}
-                                    onChange={(event) =>
-                                      setRemoteUrl(event.target.value)
-                                    }
-                                    placeholder="Remote URL"
-                                    className="h-9 border-slate-800 bg-slate-950"
-                                  />
-                                  <Button
-                                    size="sm"
-                                    disabled={
-                                      gitAction !== null ||
-                                      !remoteName.trim() ||
-                                      !remoteUrl.trim()
-                                    }
-                                    onClick={() =>
-                                      void runGitAction("add-remote", {
-                                        remoteName,
-                                        remoteUrl,
-                                      })
-                                    }
-                                    {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                                  >
-                                    <Plus className="size-4" />
-                                    Add
-                                  </Button>
-                                </div>
-                              </SubmitShortcut>
-                              {selectedGitOverview.remotes.length === 0 ? (
-                                <EmptyState
-                                  icon={Network}
-                                  title="No remotes"
-                                  size="compact"
-                                />
-                              ) : (
-                                selectedGitOverview.remotes.map((remote) => (
-                                  <div
-                                    key={remote.name}
-                                    className="flex min-w-0 items-start gap-3 rounded-lg border border-slate-800 p-3"
-                                  >
-                                    <Network className="mt-0.5 size-4 shrink-0 text-slate-500" />
-                                    <div className="min-w-0 flex-1">
-                                      <p className="text-sm font-medium text-slate-200">
-                                        {remote.name}
-                                      </p>
-                                      <CopyContextMenu
-                                        values={[
-                                          {
-                                            label: "Copy fetch URL",
-                                            value: remote.fetchUrl ?? "",
-                                          },
-                                          {
-                                            label: "Copy push URL",
-                                            value: remote.pushUrl ?? "",
-                                          },
-                                        ]}
-                                      >
-                                        <p className="mt-1 break-all font-mono text-xs text-slate-500">
-                                          {remote.fetchUrl ?? remote.pushUrl}
-                                        </p>
-                                      </CopyContextMenu>
-                                    </div>
-                                    <Button
-                                      size="icon"
-                                      variant="ghost"
-                                      disabled={gitAction !== null}
-                                      aria-label={`Remove ${remote.name}`}
-                                      onClick={() => removeRemote(remote.name)}
-                                    >
-                                      <Trash2 className="size-4 text-red-300" />
-                                    </Button>
-                                  </div>
-                                ))
-                              )}
-                            </div>
-                          ) : null}
-                          {gitSection === "pull-requests" ? (
-                            pullRequestsLoading && !pullRequests ? (
-                              <div className="grid h-36 place-items-center">
-                                <LoaderCircle className="size-5 animate-spin text-slate-500" />
-                              </div>
-                            ) : pullRequestsError ? (
-                              <EmptyState
-                                icon={GitPullRequest}
-                                title="Pull requests unavailable"
-                                description={pullRequestsError}
-                                size="compact"
-                                action={
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => void refreshPullRequests()}
-                                  >
-                                    <RefreshCw className="size-3.5" />
-                                    Retry
-                                  </Button>
-                                }
-                              />
-                            ) : pullRequests && !pullRequests.available ? (
-                              <EmptyState
-                                icon={GitPullRequest}
-                                title="Pull requests unavailable"
-                                description={pullRequests.reason}
-                                size="compact"
-                              />
-                            ) : pullRequests?.items.length === 0 ? (
-                              <EmptyState
-                                icon={GitPullRequest}
-                                title="No open pull requests"
-                                size="compact"
-                              />
-                            ) : (
-                              <div className="space-y-2">
-                                {pullRequests?.items.map((pullRequest) => (
-                                  <button
-                                    key={pullRequest.number}
-                                    type="button"
-                                    onClick={() =>
-                                      void openExternalUrl(pullRequest.url)
-                                    }
-                                    className="flex w-full min-w-0 items-start gap-3 rounded-lg border border-slate-800 p-3 text-left hover:border-slate-700 hover:bg-slate-950/50"
-                                  >
-                                    <GitPullRequest className="mt-0.5 size-4 shrink-0 text-emerald-300" />
-                                    <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm text-slate-200">
-                                        #{pullRequest.number}{" "}
-                                        {pullRequest.title}
-                                      </p>
-                                      <p className="mt-1 truncate text-xs text-slate-500">
-                                        {pullRequest.headBranch} →{" "}
-                                        {pullRequest.baseBranch}
-                                      </p>
-                                    </div>
-                                    {pullRequest.draft ? (
-                                      <Badge variant="outline">Draft</Badge>
-                                    ) : null}
-                                    <ExternalLink className="size-3.5 text-slate-600" />
-                                  </button>
-                                ))}
-                              </div>
-                            )
-                          ) : null}
-                        </>
-                      ) : null}
-                    </div>
-                  </section>
+                  <WorkspaceGitPanel
+                    workspaceRoot={selectedWorkspace.root}
+                    controls={gitControls}
+                  />
                 ) : null}
 
                 {workspaceSection === "settings" ? (

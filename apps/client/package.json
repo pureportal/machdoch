@@ -31,7 +31,7 @@
     "tauri": "node scripts/run-tauri.mjs",
     "tauri:build": "node scripts/run-tauri.mjs build",
     "tauri:dev": "node scripts/run-tauri.mjs dev",
-    "test": "node --test scripts/windows-native-toolchain.test.mjs scripts/windows-vulkan-toolchain.test.mjs scripts/browser-runtime-archive.test.mjs && vitest run",
+    "test": "node --test scripts/windows-native-toolchain.test.mjs scripts/windows-vulkan-toolchain.test.mjs scripts/browser-runtime-archive.test.mjs scripts/download-verified-asset.test.mjs scripts/windows-speech-runtime.test.mjs && vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "build:fleet-media": "vite build --config vite.fleet-media.config.ts"
@@ -66,6 +66,7 @@
     "@codemirror/theme-one-dark": "^6.1.3",
     "@codemirror/view": "^6.43.7",
     "@google/genai": "^2.8.0",
+    "@machdoch/client-ui": "workspace:*",
     "@machdoch/fleet-protocol": "workspace:*",
     "@machdoch/product-ui": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",

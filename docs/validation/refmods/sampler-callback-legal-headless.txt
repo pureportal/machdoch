@@ -1,0 +1,2 @@
+Collected 504 dependency notice sets in apps/client/dist/legal-headless.
+Verified headless licence bundle (504 dependencies).

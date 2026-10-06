@@ -17,7 +17,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+} from "@machdoch/client-ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,

@@ -107,7 +107,7 @@ export const getElementFocusSnapshot = (
 };
 
 export const getActiveFocusSnapshot = (): CommandFocusSnapshot => {
-  let active = document.activeElement;
+  let active = typeof document === "undefined" ? null : document.activeElement;
   while (active?.shadowRoot?.activeElement) {
     active = active.shadowRoot.activeElement;
   }

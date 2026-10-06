@@ -1,0 +1,148 @@
+.app-thinking-panel,
+.app-thinking-panel :where(*) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.app-thinking-panel :where(button, button *, summary, summary *) {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+:root[data-density="compact"] .app-thinking-wrapper {
+  padding-top: 0 !important;
+}
+
+:root[data-density="compact"] .app-thinking-card {
+  border-radius: 0.85rem !important;
+  box-shadow: none !important;
+}
+
+:root[data-density="compact"] .app-thinking-header {
+  gap: 0.45rem !important;
+  padding: 0.5rem 0.65rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-main-icon {
+  width: 1.65rem !important;
+  height: 1.65rem !important;
+  border-radius: 0.65rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-main-icon svg {
+  width: 0.8rem !important;
+  height: 0.8rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-toggle {
+  height: 1.5rem !important;
+  padding-right: 0.55rem !important;
+  padding-left: 0.55rem !important;
+  font-size: 0.625rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-scroll {
+  height: auto !important;
+  max-height: 12rem !important;
+  padding: 0.65rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-code {
+  padding: 0.45rem 0.6rem !important;
+  line-height: 1.15rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-entries {
+  gap: 0.55rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-entry {
+  gap: 0.55rem !important;
+}
+
+:root[data-density="compact"] .app-thinking-entry-detail {
+  font-size: 0.75rem !important;
+  line-height: 1.2rem !important;
+}
+
+:root[data-theme="light"] .app-thinking-card {
+  background: linear-gradient(
+    180deg,
+    hsl(204 68% 97%),
+    hsl(213 44% 96%)
+  ) !important;
+  border-color: hsl(202 42% 78%) !important;
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="light"] .app-thinking-card[class~="shadow-xl"] {
+  box-shadow: 0 14px 30px hsl(214 28% 38% / 0.16) !important;
+}
+
+:root[data-theme="light"] .app-thinking-main-icon {
+  background: hsl(197 76% 93%) !important;
+  border-color: hsl(197 52% 74%) !important;
+  color: var(--app-sky-700) !important;
+}
+
+:root[data-theme="light"] .app-thinking-main-icon[data-tone="success"] {
+  background: hsl(164 44% 94%) !important;
+  border-color: hsl(165 34% 76%) !important;
+  color: hsl(173 42% 25%) !important;
+}
+
+:root[data-theme="light"] .app-thinking-main-icon[data-tone="warning"] {
+  background: hsl(42 92% 94%) !important;
+  border-color: hsl(40 72% 72%) !important;
+  color: hsl(36 82% 31%) !important;
+}
+
+:root[data-theme="light"] .app-thinking-main-icon[data-tone="danger"] {
+  background: hsl(352 88% 95%) !important;
+  border-color: hsl(352 64% 78%) !important;
+  color: hsl(348 68% 36%) !important;
+}
+
+:root[data-theme="light"] .app-thinking-toggle {
+  background: white !important;
+  border-color: hsl(212 28% 84%) !important;
+  color: var(--app-text-soft) !important;
+}
+
+:root[data-theme="light"] .app-thinking-code {
+  background: hsl(215 40% 96%) !important;
+  color: var(--app-text-soft) !important;
+}
+
+:root[data-density="compact"] .app-execution-insight-row,
+:root[data-density="compact"] .app-message-actions {
+  max-width: 86% !important;
+  gap: 0.35rem !important;
+}
+
+:root[data-density="compact"] .app-execution-metadata {
+  height: 1.35rem !important;
+  padding-right: 0.35rem !important;
+  padding-left: 0.35rem !important;
+  font-size: 0.625rem !important;
+}
+
+:root[data-density="compact"] .app-execution-action,
+:root[data-density="compact"] .app-related-file-button,
+:root[data-density="compact"] .app-message-actions button {
+  height: 1.75rem !important;
+  border-radius: 0.65rem !important;
+  padding-right: 0.6rem !important;
+  padding-left: 0.6rem !important;
+  font-size: 0.6875rem !important;
+}
+
+:root[data-theme="light"] .app-execution-metadata {
+  color: var(--app-text-muted) !important;
+}
+
+:root[data-theme="light"] .app-related-file-button {
+  background: white !important;
+  border-color: var(--app-border) !important;
+  color: var(--app-text-soft) !important;
+}

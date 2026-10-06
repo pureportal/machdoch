@@ -1,0 +1,6 @@
+{
+  "desktopCheck": "passed",
+  "helper": "python/media_refmod_models.py",
+  "packagedSourceMatch": true,
+  "sha256": "17133c0b58121b8f36bc701ae6a1ff847646f5ca93da2bdc36a309354911b705"
+}

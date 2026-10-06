@@ -1,0 +1,14 @@
+Initialized sampler on AMD Radeon RX 9070 (cuda:1)
+test_cancel_poll_exception_uses_the_normal_abort_contract (__main__.GPUSamplingCallbacks.test_cancel_poll_exception_uses_the_normal_abort_contract) ... ok
+test_cancel_poll_failure_stops_before_another_forward (__main__.GPUSamplingCallbacks.test_cancel_poll_failure_stops_before_another_forward) ... ok
+test_cancel_poll_return_value_still_stops_sampling (__main__.GPUSamplingCallbacks.test_cancel_poll_return_value_still_stops_sampling) ... ok
+test_progress_cancellation_stops_before_another_forward (__main__.GPUSamplingCallbacks.test_progress_cancellation_stops_before_another_forward) ... ok
+test_progress_transport_failure_stops_before_another_forward (__main__.GPUSamplingCallbacks.test_progress_transport_failure_stops_before_another_forward) ... ok
+test_successful_callbacks_preserve_joint_outputs_and_step_numbers (__main__.GPUSamplingCallbacks.test_successful_callbacks_preserve_joint_outputs_and_step_numbers) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 13.386s
+
+OK
+
+{"gpuCallbackChecksPassed": 6, "pretrainedWeightsUsed": false}

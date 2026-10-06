@@ -64,7 +64,11 @@ describe("Fleet operation store", () => {
       expect(
         (
           await store.handle(
-            { kind: "invoke", id: `operation-${index}` },
+            {
+              kind: "invoke",
+              id: `operation-${index}`,
+              command: "run_scheduler_command",
+            },
             invoke,
           )
         ).state,
@@ -77,6 +81,7 @@ describe("Fleet operation store", () => {
         await store.handle(
           { kind: "invoke", id: "cancel", command: "cancel_desktop_task" },
           async () => null,
+          true,
         )
       ).state,
     ).toBe("pending");

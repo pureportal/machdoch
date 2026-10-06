@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-06T17:59:09.031Z",
+  "pretrainedWeightsUsed": false,
+  "frame": {
+    "value": "9",
+    "max": "9"
+  },
+  "failedCreationOutputAbsent": true,
+  "maskPickerPassed": true,
+  "controlsRestored": true,
+  "visibleChecks": [
+    "damaged-video-preview",
+    "missing-audio-preview",
+    "preview-cancellation",
+    "damaged-video-creation"
+  ],
+  "nativeErrorContractEvidence": "native-ui-error-tests.txt",
+  "nativeErrorContractTestsPassed": 15
+}

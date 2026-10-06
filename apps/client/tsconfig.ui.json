@@ -18,11 +18,10 @@
   },
   "include": [
     "src/core/types.ts",
+    "src/tauri/fleet-media/**/*.ts",
     "src/tauri/fleet-media/**/*.tsx",
     "src/tauri/ui/**/*.ts",
     "src/tauri/ui/**/*.tsx"
   ],
-  "exclude": [
-    "src/tauri/ui/**/*.spec.ts"
-  ]
+  "exclude": ["src/tauri/ui/**/*.spec.ts"]
 }

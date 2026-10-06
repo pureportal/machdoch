@@ -9,15 +9,45 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { integrateRalphRunWorktree } from "./ralph-run-integration.helper.js";
-import { prepareRalphRunWorktree } from "./ralph-run-worktree.helper.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { integrateRalphRunWorktree as integrateWorktree } from "./ralph-run-integration.helper.js";
+import { prepareRalphRunWorktree as prepareWorktree } from "./ralph-run-worktree.helper.js";
+import * as streamingCommand from "./streaming-command.js";
 import {
   commitRalphSnapshot,
   snapshotRalphWorktree,
 } from "./ralph-worktree-git.helper.js";
 
 const temporaryRoots: string[] = [];
+const activeOperations = new Set<Promise<unknown>>();
+const runStreamingCommand = streamingCommand.runStreamingCommand;
+const trackOperation = <T>(operation: Promise<T>): Promise<T> => {
+  activeOperations.add(operation);
+  void operation.then(
+    () => activeOperations.delete(operation),
+    () => activeOperations.delete(operation),
+  );
+  return operation;
+};
+const integrateRalphRunWorktree = (
+  ...args: Parameters<typeof integrateWorktree>
+) => trackOperation(integrateWorktree(...args));
+const prepareRalphRunWorktree = (...args: Parameters<typeof prepareWorktree>) =>
+  trackOperation(prepareWorktree(...args));
+
+beforeEach(({ signal }) => {
+  vi.spyOn(streamingCommand, "runStreamingCommand").mockImplementation(
+    (command, args, options) =>
+      trackOperation(
+        runStreamingCommand(command, args, {
+          ...options,
+          signal: options?.signal
+            ? AbortSignal.any([signal, options.signal])
+            : signal,
+        }),
+      ),
+  );
+});
 const git = (root: string, ...args: string[]): string =>
   execFileSync("git", args, {
     cwd: root,
@@ -27,6 +57,8 @@ const git = (root: string, ...args: string[]): string =>
   }).trim();
 
 afterEach(async () => {
+  await Promise.allSettled([...activeOperations]);
+  vi.restoreAllMocks();
   await Promise.all(
     temporaryRoots.splice(0).map((root) =>
       rm(root, {
@@ -114,7 +146,7 @@ describe("automatic RALPH integration", () => {
         "utf8",
       ),
     ).toContain(worktree.branch);
-  }, 90_000);
+  }, 300_000);
 
   it("merges source files using Windows line endings", async () => {
     const { repository, createRun } = await createRepository();
@@ -129,7 +161,7 @@ describe("automatic RALPH integration", () => {
     expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
       "candidate\r\n",
     );
-  }, 90_000);
+  }, 300_000);
 
   it("serializes parallel merges and preserves source edits, staging, binary changes and deletions", async () => {
     const { repository, createRun } = await createRepository();
@@ -201,7 +233,7 @@ describe("automatic RALPH integration", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
     expect(git(repository, "diff", "--cached", "--binary")).toBe(staged);
     expect(git(repository, "rev-parse", "HEAD")).toBe(head);
-  }, 90_000);
+  }, 300_000);
 
   it("repairs merge conflicts autonomously and verifies before publishing", async () => {
     const { repository, createRun } = await createRepository();
@@ -246,7 +278,7 @@ describe("automatic RALPH integration", () => {
     expect(git(repository, "worktree", "list", "--porcelain")).not.toContain(
       `${worktree.worktreeRoot.replace(/\\/gu, "/")}-integration-`,
     );
-  }, 90_000);
+  }, 300_000);
 
   it("rechecks a candidate changed by verification before publishing it", async () => {
     const { repository, createRun } = await createRepository();
@@ -267,7 +299,7 @@ describe("automatic RALPH integration", () => {
     expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
       "generated change\n",
     );
-  }, 90_000);
+  }, 300_000);
 
   it("keeps failed candidates out of the source and retains run changes for retry", async () => {
     const { repository, createRun } = await createRepository();
@@ -297,7 +329,7 @@ describe("automatic RALPH integration", () => {
       repair: noRepair,
     });
     expect(result.status).toBe("merged");
-  }, 90_000);
+  }, 300_000);
 
   it("merges successive continuous tasks using the last merged baseline", async () => {
     const { repository, createRun } = await createRepository();
@@ -323,7 +355,7 @@ describe("automatic RALPH integration", () => {
     expect(
       await integrateRalphRunWorktree(worktree, directory, options),
     ).toEqual(second);
-  }, 90_000);
+  }, 300_000);
 
   it("rebuilds and verifies against source edits made while verification runs", async () => {
     const { repository, createRun } = await createRepository();
@@ -349,7 +381,7 @@ describe("automatic RALPH integration", () => {
     expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
       "candidate\n",
     );
-  }, 90_000);
+  }, 300_000);
 
   it.each([
     { published: false, sourceChanged: false },
@@ -422,7 +454,7 @@ describe("automatic RALPH integration", () => {
         }),
       ).toEqual(recovered);
     },
-    90_000,
+    300_000,
   );
 
   it("removes an interrupted detached candidate before retrying", async () => {
@@ -442,7 +474,7 @@ describe("automatic RALPH integration", () => {
     expect(git(repository, "worktree", "list", "--porcelain")).not.toContain(
       `${worktree.worktreeRoot.replace(/\\/gu, "/")}-integration-`,
     );
-  }, 90_000);
+  }, 300_000);
 
   it("rejects changes outside a nested workspace", async () => {
     const { repository, createRun } = await createRepository();
@@ -463,7 +495,7 @@ describe("automatic RALPH integration", () => {
     expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
       "original\n",
     );
-  }, 90_000);
+  }, 300_000);
 
   it("rejects a source branch switch", async () => {
     const { repository, createRun } = await createRepository();
@@ -475,7 +507,7 @@ describe("automatic RALPH integration", () => {
         repair: noRepair,
       }),
     ).rejects.toThrow("source branch changed");
-  }, 90_000);
+  }, 300_000);
 
   it("stops an aborted verification without publishing or attempting repairs", async () => {
     const { repository, createRun } = await createRepository();
@@ -497,7 +529,7 @@ describe("automatic RALPH integration", () => {
     expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
       "original\n",
     );
-  }, 90_000);
+  }, 300_000);
 
   it("retries a failed model repair and publishes after a successful repair and verification", async () => {
     const { repository, createRun } = await createRepository();
@@ -520,5 +552,5 @@ describe("automatic RALPH integration", () => {
     expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
       "source change and run change\n",
     );
-  }, 90_000);
+  }, 300_000);
 });

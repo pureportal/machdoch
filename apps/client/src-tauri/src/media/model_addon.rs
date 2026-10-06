@@ -81,13 +81,59 @@ pub(crate) fn capabilities_for_model(
                 supports_denoising_schedules: false,
             },
         ],
-        Some("stable-diffusion-3" | "flux-2" | "krea-2") => vec![MediaModelAddonCapability {
-            kind: "lora".to_string(),
-            target_components: vec!["denoiser".to_string()],
-            max_active: 8,
-            supports_separate_component_strengths: false,
-            supports_denoising_schedules: true,
-        }],
+        Some("krea-2") => {
+            vec![MediaModelAddonCapability {
+                kind: "lora".to_string(),
+                target_components: vec!["denoiser".to_string()],
+                max_active: 8,
+                supports_separate_component_strengths: false,
+                supports_denoising_schedules: true,
+            }]
+        }
+        Some("stable-diffusion-3") => vec![
+            MediaModelAddonCapability {
+                kind: "lora".to_string(),
+                target_components: vec!["denoiser".to_string()],
+                max_active: 8,
+                supports_separate_component_strengths: false,
+                supports_denoising_schedules: true,
+            },
+            MediaModelAddonCapability {
+                kind: "textual-inversion".to_string(),
+                target_components: vec![
+                    "text-encoder".to_string(),
+                    "text-encoder-2".to_string(),
+                    "text-encoder-3".to_string(),
+                ],
+                max_active: 16,
+                supports_separate_component_strengths: false,
+                supports_denoising_schedules: false,
+            },
+        ],
+        Some(
+            "sana"
+            | "z-image"
+            | "z-image-turbo"
+            | "flux-2"
+            | "flux-2-klein-base-4b"
+            | "flux-2-klein-9b"
+            | "flux-2-klein-base-9b",
+        ) => vec![
+            MediaModelAddonCapability {
+                kind: "lora".to_string(),
+                target_components: vec!["denoiser".to_string()],
+                max_active: 8,
+                supports_separate_component_strengths: false,
+                supports_denoising_schedules: true,
+            },
+            MediaModelAddonCapability {
+                kind: "textual-inversion".to_string(),
+                target_components: vec!["text-encoder".to_string()],
+                max_active: 16,
+                supports_separate_component_strengths: false,
+                supports_denoising_schedules: false,
+            },
+        ],
         Some("minimax-h3-ref2va") => vec![MediaModelAddonCapability {
             kind: "lora".to_string(),
             target_components: vec!["denoiser".to_string()],
@@ -95,7 +141,7 @@ pub(crate) fn capabilities_for_model(
             supports_separate_component_strengths: false,
             supports_denoising_schedules: false,
         }],
-        Some("wan-2.2-ti2v" | "ltx-video" | "framepack-i2v" | "hunyuan-video-1.5-i2v" | "cogvideox-2b" | "cogvideox-1.5-5b" | "cogvideox-1.5-5b-i2v") => {
+        Some("wan-2.2-ti2v" | "ltx-video" | "framepack-i2v" | "hunyuan-video-1.5-i2v") => {
             vec![MediaModelAddonCapability {
                 kind: "lora".to_string(),
                 target_components: vec!["denoiser".to_string()],
@@ -104,7 +150,23 @@ pub(crate) fn capabilities_for_model(
                 supports_denoising_schedules: false,
             }]
         }
-        Some("flux-1") => vec![
+        Some("cogvideox-2b" | "cogvideox-1.5-5b" | "cogvideox-1.5-5b-i2v" | "wan-2.1-t2v-1.3b") => vec![
+            MediaModelAddonCapability {
+                kind: "lora".into(),
+                target_components: vec!["denoiser".into()],
+                max_active: 8,
+                supports_separate_component_strengths: false,
+                supports_denoising_schedules: false,
+            },
+            MediaModelAddonCapability {
+                kind: "textual-inversion".into(),
+                target_components: vec!["text-encoder".into()],
+                max_active: 16,
+                supports_separate_component_strengths: false,
+                supports_denoising_schedules: false,
+            },
+        ],
+        Some("flux-1" | "flux-1-dev" | "flux-1-schnell") => vec![
             MediaModelAddonCapability {
                 kind: "lora".to_string(),
                 target_components: vec!["denoiser".to_string(), "text-encoder".to_string()],
@@ -462,6 +524,11 @@ fn looks_like_textual_inversion(header: &ParsedSafetensorsHeader) -> bool {
                 || key == "clip_l"
                 || key == "clip_g"
                 || key == "t5"
+                || key == "gemma"
+                || key == "z_image_qwen3"
+                || key == "flux2_qwen3"
+                || key == "cogvideox_t5"
+                || key == "wan_umt5"
                 || key.starts_with("string_to_param")
                 || key.starts_with("string_to_token")
         });
@@ -567,12 +634,29 @@ fn embedding_vector_profiles(
     let explicit = [
         ("clip_l", "text-encoder"),
         ("clip_g", "text-encoder-2"),
-        ("t5", "text-encoder-2"),
+        (
+            "t5",
+            if header.tensor_shapes.contains_key("clip_g") {
+                "text-encoder-3"
+            } else {
+                "text-encoder-2"
+            },
+        ),
+        ("gemma", "text-encoder"),
+        ("z_image_qwen3", "text-encoder"),
+        ("flux2_qwen3", "text-encoder"),
+        ("cogvideox_t5", "text-encoder"),
+        ("wan_umt5", "text-encoder"),
     ]
     .into_iter()
     .filter(|(key, _)| header.tensor_shapes.contains_key(*key))
     .collect::<Vec<_>>();
     if !explicit.is_empty() {
+        if explicit.len() != header.tensor_count as usize {
+            return Err(
+                "the embedding contains tensors outside the input-vector encoder profile".into(),
+            );
+        }
         let mut components = HashSet::new();
         let mut profiles = Vec::with_capacity(explicit.len());
         for (tensor_key, component) in explicit {
@@ -611,7 +695,7 @@ fn embedding_vector_profiles(
     };
     if candidate_keys.len() != 1 {
         return Err(
-            "the embedding must contain one unambiguous tensor, or explicit clip_l/clip_g/t5 encoder tensors"
+            "the embedding must contain one unambiguous tensor, or explicit clip_l/clip_g/t5/gemma/z_image_qwen3 encoder tensors"
                 .to_string(),
         );
     }
@@ -635,6 +719,24 @@ fn detect_embedding_architecture(
         .iter()
         .map(|key| key.to_lowercase())
         .collect::<Vec<_>>();
+    if keys.iter().any(|key| key == "gemma") {
+        return (Some("sana".to_string()), "high");
+    }
+    if keys.iter().any(|key| key == "z_image_qwen3") {
+        return (Some("z-image".to_string()), "high");
+    }
+    if keys.iter().any(|key| key == "flux2_qwen3") {
+        return (Some("flux-2".to_string()), "high");
+    }
+    if keys.iter().any(|key| key == "cogvideox_t5") {
+        return (Some("cogvideox-2b".to_string()), "high");
+    }
+    if keys.iter().any(|key| key == "wan_umt5") {
+        return (Some("wan-2.1-t2v-1.3b".to_string()), "high");
+    }
+    if keys.iter().any(|key| key == "t5") && keys.iter().any(|key| key == "clip_g") {
+        return (Some("stable-diffusion-3".to_string()), "high");
+    }
     if keys.iter().any(|key| key == "t5") {
         return (Some("flux-1".to_string()), "high");
     }
@@ -654,11 +756,32 @@ fn detect_embedding_architecture(
 }
 
 fn detect_lora_architecture(header: &ParsedSafetensorsHeader) -> (Option<String>, &'static str) {
+    if has_lora_key_fragment(header, "transformer.noise_refiner.")
+        && has_lora_key_fragment(header, "transformer.context_refiner.")
+        && has_lora_key_fragment(header, ".attention.to_q")
+        && has_lora_key_fragment(header, "transformer.layers.")
+    {
+        return (Some("z-image".to_string()), "high");
+    }
+    if has_lora_key_fragment(header, "transformer.transformer_blocks.")
+        && [1_152, 2_240].iter().any(|width| {
+            lora_pair_dimensions(header, ".attn1.to_q").contains(&(*width, *width))
+                && lora_pair_dimensions(header, ".attn2.to_k").contains(&(*width, *width))
+        })
+    {
+        return (Some("sana".to_string()), "high");
+    }
     if has_lora_key_fragment(header, "transformer.transformer_blocks.")
         && lora_pair_dimensions(header, ".attn1.to_q").contains(&(1_920, 1_920))
         && lora_pair_dimensions(header, ".attn1.to_k").contains(&(1_920, 1_920))
     {
         return (Some("cogvideox-2b".to_string()), "high");
+    }
+    if has_lora_key_fragment(header, "transformer.transformer_blocks.")
+        && lora_pair_dimensions(header, ".attn1.to_q").contains(&(3_072, 3_072))
+        && lora_pair_dimensions(header, ".attn1.to_k").contains(&(3_072, 3_072))
+    {
+        return (Some("cogvideox-1.5-5b".to_string()), "high");
     }
     if header
         .tensor_keys
@@ -686,6 +809,12 @@ fn detect_lora_architecture(header: &ParsedSafetensorsHeader) -> (Option<String>
         return (Some("framepack-i2v".to_string()), "high");
     }
     if has_lora_key_fragment(header, "transformer.blocks.")
+        && lora_pair_dimensions(header, ".attn1.to_q").contains(&(1_536, 1_536))
+        && lora_pair_dimensions(header, ".attn2.to_k").contains(&(1_536, 1_536))
+    {
+        return (Some("wan-2.1-t2v-1.3b".to_string()), "high");
+    }
+    if has_lora_key_fragment(header, "transformer.blocks.")
         && lora_pair_dimensions(header, ".attn1.to_q").contains(&(3_072, 3_072))
         && lora_pair_dimensions(header, ".attn2.to_k").contains(&(3_072, 3_072))
     {
@@ -709,10 +838,13 @@ fn detect_lora_architecture(header: &ParsedSafetensorsHeader) -> (Option<String>
     .any(|fragment| {
         lora_pair_dimensions(header, fragment)
             .iter()
-            .any(|dimensions| matches!(*dimensions, (3_072, 18_432) | (3_072, 3_072)))
+            .any(|&(input, output)| {
+                matches!(input, 3_072 | 4_096) && (output == input * 3 || output == input * 6)
+            })
     });
-    let flux_2_fused_projection =
-        lora_pair_dimensions(header, "to_qkv_mlp_proj").contains(&(3_072, 27_648));
+    let flux_2_fused_projection = lora_pair_dimensions(header, "to_qkv_mlp_proj")
+        .iter()
+        .any(|&(input, output)| matches!(input, 3_072 | 4_096) && output == input * 9);
     if flux_2_modulation || flux_2_fused_projection {
         return (Some("flux-2".to_string()), "high");
     }
@@ -1429,21 +1561,25 @@ fn validate_request(
                 request.architecture, request.kind
             )
         })?;
-    if matches!(
-        request.architecture.as_str(),
-        "wan-2.2-ti2v"
-            | "cogvideox-2b"
-            | "cogvideox-1.5-5b"
-            | "cogvideox-1.5-5b-i2v"
-            | "ltx-video"
-            | "framepack-i2v"
-            | "hunyuan-video-1.5-i2v"
-            | "minimax-h3-ref2va"
-    ) && inspection.lora_profile.as_ref().is_none_or(|profile| {
-        profile.dialect != "diffusers-peft"
-            || profile.algorithm != "lora"
-            || profile.network_alpha_count != 0
-    }) {
+    if request.kind == "lora"
+        && matches!(
+            request.architecture.as_str(),
+            "wan-2.2-ti2v"
+                | "wan-2.1-t2v-1.3b"
+                | "cogvideox-2b"
+                | "cogvideox-1.5-5b"
+                | "cogvideox-1.5-5b-i2v"
+                | "ltx-video"
+                | "framepack-i2v"
+                | "hunyuan-video-1.5-i2v"
+                | "minimax-h3-ref2va"
+        )
+        && inspection.lora_profile.as_ref().is_none_or(|profile| {
+            profile.dialect != "diffusers-peft"
+                || profile.algorithm != "lora"
+                || profile.network_alpha_count != 0
+        })
+    {
         return Err("Choose a video LoRA in Diffusers PEFT Safetensors format".to_string());
     }
     if inspection
@@ -2344,25 +2480,29 @@ mod tests {
 
     #[test]
     fn detects_flux_2_attention_only_lora_from_fused_projection_shape() {
-        let path = temp_path("flux-2-attention-lora");
-        write_safetensors(
-            &path,
-            serde_json::json!({
-                "transformer.single_transformer_blocks.0.attn.to_qkv_mlp_proj.lora_A.weight": {
-                    "dtype": "F32", "shape": [4, 3072], "data_offsets": [0, 49152]
-                },
-                "transformer.single_transformer_blocks.0.attn.to_qkv_mlp_proj.lora_B.weight": {
-                    "dtype": "F32", "shape": [27648, 4], "data_offsets": [49152, 491520]
-                }
-            }),
-            &vec![0; 491520],
-        );
+        for width in [3_072, 4_096] {
+            let path = temp_path("flux-2-attention-lora");
+            let down_bytes = 4 * width * 4;
+            let total_bytes = down_bytes * 10;
+            write_safetensors(
+                &path,
+                serde_json::json!({
+                    "transformer.single_transformer_blocks.0.attn.to_qkv_mlp_proj.lora_A.weight": {
+                        "dtype": "F32", "shape": [4, width], "data_offsets": [0, down_bytes]
+                    },
+                    "transformer.single_transformer_blocks.0.attn.to_qkv_mlp_proj.lora_B.weight": {
+                        "dtype": "F32", "shape": [width * 9, 4], "data_offsets": [down_bytes, total_bytes]
+                    }
+                }),
+                &vec![0; total_bytes],
+            );
 
-        let inspection = inspect(path.to_string_lossy().as_ref())
-            .expect("attention-only FLUX.2 LoRA inspection should pass");
-        assert_eq!(inspection.detected_architecture.as_deref(), Some("flux-2"));
-        assert_eq!(inspection.architecture_confidence, "high");
-        let _ = fs::remove_file(path);
+            let inspection = inspect(path.to_string_lossy().as_ref())
+                .expect("attention-only FLUX.2 LoRA inspection should pass");
+            assert_eq!(inspection.detected_architecture.as_deref(), Some("flux-2"));
+            assert_eq!(inspection.architecture_confidence, "high");
+            fs::remove_file(path).unwrap();
+        }
     }
 
     #[test]
@@ -2373,6 +2513,13 @@ mod tests {
                 vec![
                     ("transformer_blocks.0.attn1.to_q", 1_920, 1_920),
                     ("transformer_blocks.0.attn1.to_k", 1_920, 1_920),
+                ],
+            ),
+            (
+                "cogvideox-1.5-5b",
+                vec![
+                    ("transformer_blocks.0.attn1.to_q", 3_072, 3_072),
+                    ("transformer_blocks.0.attn1.to_k", 3_072, 3_072),
                 ],
             ),
             (
@@ -2433,6 +2580,132 @@ mod tests {
                 "lora"
             );
             fs::remove_file(path).unwrap();
+        }
+    }
+
+    #[test]
+    fn cogvideo_embeddings_import_for_each_matching_t5_pipeline() {
+        let path = temp_path("cogvideo-embedding");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "__metadata__": {"token": "MiXeD"},
+                "cogvideox_t5": {"dtype": "F32", "shape": [1, 4096], "data_offsets": [0, 16384]}
+            }),
+            &vec![0; 16384],
+        );
+        let inspection = inspect(path.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(
+            inspection.detected_architecture.as_deref(),
+            Some("cogvideox-2b")
+        );
+        assert_eq!(inspection.embedding_vectors[0].component, "text-encoder");
+        assert_eq!(inspection.embedding_vectors[0].tensor_key, "cogvideox_t5");
+        for architecture in [
+            "cogvideox-2b",
+            "cogvideox-1.5-5b",
+            "cogvideox-1.5-5b-i2v",
+            "flux-1",
+        ] {
+            let request = ImportMediaModelAddonRequest {
+                source_path: path.to_string_lossy().into(),
+                review_token: inspection.review_token.clone(),
+                display_name: "Motion embedding".into(),
+                kind: "textual-inversion".into(),
+                architecture: architecture.into(),
+                trigger_words: vec!["MiXeD".into()],
+                token: Some("MiXeD".into()),
+                source_url: None,
+                license_name: None,
+                commercial_use: None,
+            };
+            let result = validate_request(&request, &inspection);
+            assert_eq!(
+                result.is_ok(),
+                architecture.starts_with("cogvideox-"),
+                "{architecture}: {result:?}"
+            );
+        }
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn detects_z_image_refiner_loras_and_accepts_base_and_turbo() {
+        for width in [32, 3_840] {
+            let path = temp_path("z-image-lora");
+            let stride = width * 2 * 4;
+            let mut header = serde_json::Map::new();
+            for (index, block) in ["noise_refiner", "context_refiner", "layers"]
+                .iter()
+                .enumerate()
+            {
+                for (matrix_index, (matrix, shape)) in
+                    [("A", vec![2, width]), ("B", vec![width, 2])]
+                        .iter()
+                        .enumerate()
+                {
+                    let offset = (index * 2 + matrix_index) * stride;
+                    header.insert(format!("transformer.{block}.0.attention.to_q.lora_{matrix}.weight"),
+                                  serde_json::json!({"dtype": "F32", "shape": shape, "data_offsets": [offset, offset + stride]}));
+                }
+            }
+            write_safetensors(
+                &path,
+                serde_json::Value::Object(header),
+                &vec![0; stride * 6],
+            );
+            let inspection = inspect(path.to_string_lossy().as_ref()).unwrap();
+            assert_eq!(inspection.detected_architecture.as_deref(), Some("z-image"));
+            assert_eq!(inspection.architecture_confidence, "high");
+            for architecture in ["z-image", "z-image-turbo", "flux-1"] {
+                let request = ImportMediaModelAddonRequest {
+                    source_path: path.to_string_lossy().into(),
+                    review_token: inspection.review_token.clone(),
+                    display_name: "Z-Image adapter".into(),
+                    kind: "lora".into(),
+                    architecture: architecture.into(),
+                    trigger_words: vec!["concept".into()],
+                    token: None,
+                    source_url: None,
+                    license_name: None,
+                    commercial_use: None,
+                };
+                assert_eq!(
+                    validate_request(&request, &inspection).is_ok(),
+                    architecture.starts_with("z-image")
+                );
+            }
+            let _ = fs::remove_file(path);
+        }
+    }
+
+    #[test]
+    fn detects_sana_attention_lora_without_architecture_metadata() {
+        for width in [1_152, 2_240] {
+            let path = temp_path("sana-lora");
+            let stride = width * 2 * 4;
+            write_safetensors(
+                &path,
+                serde_json::json!({
+                    "transformer.transformer_blocks.0.attn1.to_q.lora_A.weight": {
+                        "dtype": "F32", "shape": [2, width], "data_offsets": [0, stride]
+                    },
+                    "transformer.transformer_blocks.0.attn1.to_q.lora_B.weight": {
+                        "dtype": "F32", "shape": [width, 2], "data_offsets": [stride, stride * 2]
+                    },
+                    "transformer.transformer_blocks.0.attn2.to_k.lora_A.weight": {
+                        "dtype": "F32", "shape": [2, width], "data_offsets": [stride * 2, stride * 3]
+                    },
+                    "transformer.transformer_blocks.0.attn2.to_k.lora_B.weight": {
+                        "dtype": "F32", "shape": [width, 2], "data_offsets": [stride * 3, stride * 4]
+                    }
+                }),
+                &vec![0; stride * 4],
+            );
+            let inspection = inspect(path.to_string_lossy().as_ref()).unwrap();
+            assert_eq!(inspection.detected_architecture.as_deref(), Some("sana"));
+            assert_eq!(inspection.architecture_confidence, "high");
+            let _ = fs::remove_file(path);
         }
     }
 
@@ -2719,6 +2992,247 @@ mod tests {
         .expect_err("tensor-derived embedding families must not be overridden");
         assert!(error.contains("tensor dimensions and encoder slots"));
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn flux_embedding_profiles_import_for_dev_and_schnell_and_reject_other_families() {
+        let path = temp_path("flux-embedding-variants");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "clip_l": {"dtype": "F32", "shape": [1, 768], "data_offsets": [0, 3072]},
+                "t5": {"dtype": "F32", "shape": [1, 4096], "data_offsets": [3072, 19456]}
+            }),
+            &vec![0; 19456],
+        );
+        let inspection = inspect(path.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(inspection.detected_architecture.as_deref(), Some("flux-1"));
+        for architecture in [
+            "flux-1",
+            "flux-1-dev",
+            "flux-1-schnell",
+            "stable-diffusion-xl",
+        ] {
+            let request = ImportMediaModelAddonRequest {
+                source_path: path.to_string_lossy().to_string(),
+                review_token: inspection.review_token.clone(),
+                display_name: "Flux embedding".into(),
+                kind: "textual-inversion".into(),
+                architecture: architecture.into(),
+                trigger_words: vec!["mdfluxembed".into()],
+                token: Some("mdfluxembed".into()),
+                source_url: None,
+                license_name: None,
+                commercial_use: None,
+            };
+            assert_eq!(
+                validate_request(&request, &inspection).is_ok(),
+                architecture.starts_with("flux-1")
+            );
+        }
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn sd3_embedding_profiles_keep_three_encoders_and_reject_other_families() {
+        let path = temp_path("sd3-embedding");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "clip_l": {"dtype": "F32", "shape": [1, 768], "data_offsets": [0, 3072]},
+                "clip_g": {"dtype": "F32", "shape": [1, 1280], "data_offsets": [3072, 8192]},
+                "t5": {"dtype": "F32", "shape": [1, 4096], "data_offsets": [8192, 24576]}
+            }),
+            &vec![0; 24576],
+        );
+        let inspection = inspect(path.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(
+            inspection.detected_architecture.as_deref(),
+            Some("stable-diffusion-3")
+        );
+        assert_eq!(
+            inspection.target_components,
+            vec!["text-encoder", "text-encoder-2", "text-encoder-3"]
+        );
+        assert_eq!(inspection.embedding_vectors[2].tensor_key, "t5");
+        assert_eq!(inspection.embedding_vectors[2].component, "text-encoder-3");
+        for architecture in ["stable-diffusion-3", "stable-diffusion-xl", "flux-1"] {
+            let request = ImportMediaModelAddonRequest {
+                source_path: path.to_string_lossy().to_string(),
+                review_token: inspection.review_token.clone(),
+                display_name: "SD3 embedding".into(),
+                kind: "textual-inversion".into(),
+                architecture: architecture.into(),
+                trigger_words: vec!["<MiXeD>".into()],
+                token: Some("<MiXeD>".into()),
+                source_url: None,
+                license_name: None,
+                commercial_use: None,
+            };
+            assert_eq!(
+                validate_request(&request, &inspection).is_ok(),
+                architecture == "stable-diffusion-3"
+            );
+        }
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn sana_embedding_profiles_import_and_reject_output_vectors_and_other_families() {
+        let path = temp_path("sana-embedding");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "gemma": {"dtype": "F32", "shape": [2, 2304], "data_offsets": [0, 18432]}
+            }),
+            &vec![0; 18432],
+        );
+        let inspection = inspect(path.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(inspection.detected_architecture.as_deref(), Some("sana"));
+        assert_eq!(
+            inspection.embedding_vectors,
+            vec![MediaEmbeddingVectorProfile {
+                component: "text-encoder".into(),
+                tensor_key: "gemma".into(),
+                vector_count: 2,
+                dimension: 2304,
+            }]
+        );
+        for architecture in ["sana", "stable-diffusion-xl", "flux-1"] {
+            let request = ImportMediaModelAddonRequest {
+                source_path: path.to_string_lossy().to_string(),
+                review_token: inspection.review_token.clone(),
+                display_name: "Sana embedding".into(),
+                kind: "textual-inversion".into(),
+                architecture: architecture.into(),
+                trigger_words: vec!["<MiXeD>".into()],
+                token: Some("<MiXeD>".into()),
+                source_url: None,
+                license_name: None,
+                commercial_use: None,
+            };
+            assert_eq!(
+                validate_request(&request, &inspection).is_ok(),
+                architecture == "sana"
+            );
+        }
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "gemma": {"dtype": "F32", "shape": [1, 2304], "data_offsets": [0, 9216]},
+                "gemma_out": {"dtype": "F32", "shape": [1, 2304], "data_offsets": [9216, 18432]}
+            }),
+            &vec![0; 18432],
+        );
+        assert!(!inspect(path.to_string_lossy().as_ref()).unwrap().can_import);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn flux2_embedding_profiles_import_for_klein_variants() {
+        let path = temp_path("flux2-embedding");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "flux2_qwen3": {"dtype": "F32", "shape": [2, 2560], "data_offsets": [0, 20480]}
+            }),
+            &vec![0; 20480],
+        );
+        let inspection = inspect(path.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(inspection.detected_architecture.as_deref(), Some("flux-2"));
+        assert_eq!(inspection.embedding_vectors[0].tensor_key, "flux2_qwen3");
+        for architecture in [
+            "flux-2",
+            "flux-2-klein-base-4b",
+            "flux-2-klein-9b",
+            "flux-2-klein-base-9b",
+            "flux-2-dev",
+            "z-image",
+        ] {
+            let request = ImportMediaModelAddonRequest {
+                source_path: path.to_string_lossy().to_string(),
+                review_token: inspection.review_token.clone(),
+                display_name: "FLUX.2 embedding".into(),
+                kind: "textual-inversion".into(),
+                architecture: architecture.into(),
+                trigger_words: vec!["MiXeD".into()],
+                token: Some("MiXeD".into()),
+                source_url: None,
+                license_name: None,
+                commercial_use: None,
+            };
+            assert_eq!(
+                validate_request(&request, &inspection).is_ok(),
+                architecture.starts_with("flux-2") && architecture != "flux-2-dev"
+            );
+        }
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "flux2_qwen3": {"dtype": "F32", "shape": [1, 2560], "data_offsets": [0, 10240]},
+                "flux2_qwen3_out": {"dtype": "F32", "shape": [1, 2560], "data_offsets": [10240, 20480]}
+            }),
+            &vec![0; 20480],
+        );
+        assert!(!inspect(path.to_string_lossy().as_ref()).unwrap().can_import);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn z_image_embedding_profiles_import_for_both_variants_and_reject_other_tensors() {
+        let path = temp_path("z-image-embedding");
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "z_image_qwen3": {"dtype": "F32", "shape": [2, 2560], "data_offsets": [0, 20480]}
+            }),
+            &vec![0; 20480],
+        );
+        let inspection = inspect(path.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(inspection.detected_architecture.as_deref(), Some("z-image"));
+        assert_eq!(
+            inspection.embedding_vectors,
+            vec![MediaEmbeddingVectorProfile {
+                component: "text-encoder".into(),
+                tensor_key: "z_image_qwen3".into(),
+                vector_count: 2,
+                dimension: 2560,
+            }]
+        );
+        for architecture in [
+            "z-image",
+            "z-image-turbo",
+            "sana",
+            "flux-1",
+            "stable-diffusion-xl",
+        ] {
+            let request = ImportMediaModelAddonRequest {
+                source_path: path.to_string_lossy().to_string(),
+                review_token: inspection.review_token.clone(),
+                display_name: "Z-Image embedding".into(),
+                kind: "textual-inversion".into(),
+                architecture: architecture.into(),
+                trigger_words: vec!["<MiXeD>".into()],
+                token: Some("<MiXeD>".into()),
+                source_url: None,
+                license_name: None,
+                commercial_use: None,
+            };
+            assert_eq!(
+                validate_request(&request, &inspection).is_ok(),
+                architecture.starts_with("z-image")
+            );
+        }
+        write_safetensors(
+            &path,
+            serde_json::json!({
+                "z_image_qwen3": {"dtype": "F32", "shape": [1, 2560], "data_offsets": [0, 10240]},
+                "z_image_qwen3_out": {"dtype": "F32", "shape": [1, 2560], "data_offsets": [10240, 20480]}
+            }),
+            &vec![0; 20480],
+        );
+        assert!(!inspect(path.to_string_lossy().as_ref()).unwrap().can_import);
+        fs::remove_file(path).unwrap();
     }
 
     #[test]

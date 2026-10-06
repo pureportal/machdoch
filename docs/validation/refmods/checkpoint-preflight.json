@@ -1,0 +1,18 @@
+{
+  "modelInitialized": false,
+  "tensorsMaterialized": false,
+  "checkpoints": {
+    "audio": {
+      "sizeBytes": 605254808,
+      "requiredBytes": 605254808,
+      "result": "accepted"
+    },
+    "video": {
+      "sizeBytes": 3774476288,
+      "requiredBytes": 5207808496,
+      "result": "rejected",
+      "error": "MiniMax H3 video VAE is incomplete or damaged. Replace <temporary-model-package>\\vae\\minimax_h3_video_vae_fp16.safetensors with a complete checkpoint."
+    }
+  },
+  "sourcesPreserved": true
+}

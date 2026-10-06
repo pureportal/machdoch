@@ -46,10 +46,19 @@ mod tests {
 
     #[test]
     fn desktop_shell_survives_the_rust_bridge_and_gateway_validation() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        let mut fixture: serde_json::Value = serde_json::from_str(include_str!(
             "../../../../../packages/fleet-protocol/fixtures/desktop-snapshot.json"
         ))
         .unwrap();
+        fixture["response"]["snapshot"]["shell"]["voice"] = serde_json::json!({
+            "supported": true,
+            "autoSpeakResponses": true,
+            "speechInputSupported": true,
+            "speechInputEnabled": true,
+            "speechInputRecording": true,
+            "speechInputBusy": true,
+            "speechInputStatus": "Transcribing..."
+        });
         let expected_shell = fixture["response"]["snapshot"]["shell"].clone();
         let shell = serde_json::from_value::<FleetShellSnapshot>(expected_shell.clone()).unwrap();
         let inner = FleetControlInner {
@@ -109,6 +118,7 @@ mod tests {
     fn long_task_progress_remains_a_valid_gateway_snapshot() {
         let shared = crate::fleet_control::FleetControlShared {
             inner: std::sync::Mutex::new(FleetControlInner::default()),
+            command_completed: std::sync::Condvar::new(),
         };
         let long_text = "😀".repeat(8_000);
         crate::fleet_control::state_progress::record_progress_update(

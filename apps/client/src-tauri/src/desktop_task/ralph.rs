@@ -1,7 +1,7 @@
 use std::{
     fs, io,
     path::{Path, PathBuf},
-    process::Stdio,
+    process::{ExitStatus, Stdio},
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
     sync::Arc,
     thread::{self, JoinHandle},
@@ -26,6 +26,10 @@ use super::{
     },
     progress::{create_bridge_progress, emit_progress_event},
     ralph_media_bridge::RalphMediaBridge,
+    ralph_recovery::{
+        recovery_inspection_arguments, supervise_ralph_command, RalphCommandAttempt,
+        RALPH_RUN_ID_ENV,
+    },
     registry::normalize_task_id,
     OpenRalphFlowPathRequest, RalphCommandRequest, DESKTOP_TASK_WAIT_POLL_MS,
     RALPH_COMMAND_TIMEOUT_MS,
@@ -42,7 +46,7 @@ static NEXT_RALPH_CANCEL_REQUEST_ID: AtomicU64 = AtomicU64::new(0);
 fn ralph_command_timeout_ms(action: &str) -> Option<u64> {
     match action {
         "run" | "resume" => None,
-        "snapshot" | "list" | "runs" => Some(60_000),
+        "snapshot" | "list" | "runs" | "run-detail" => Some(60_000),
         _ => Some(RALPH_COMMAND_TIMEOUT_MS),
     }
 }
@@ -135,8 +139,15 @@ fn finish_ralph_command_response(
     }
 }
 
-fn finish_cancelled_ralph_command_response(stdout: &str, stderr: &str) -> Result<Value, String> {
+fn finish_cancelled_ralph_command_response(
+    stdout: &str,
+    stderr: &str,
+    run_id: Option<&str>,
+) -> Result<Value, String> {
     if let Ok(response) = parse_ralph_command_response(stdout) {
+        if let Some(run_id) = run_id {
+            validate_ralph_run_response(&response, run_id)?;
+        }
         return Ok(response);
     }
     let diagnostic = format_command_failure(stderr, "");
@@ -144,6 +155,58 @@ fn finish_cancelled_ralph_command_response(stdout: &str, stderr: &str) -> Result
         return Err("The Ralph CLI command was cancelled.".to_string());
     }
     Err(format!("The Ralph CLI command was cancelled. {diagnostic}"))
+}
+
+fn finish_ralph_command_attempt(
+    status: ExitStatus,
+    output: Result<(String, String), String>,
+    run_id: Option<&str>,
+    interrupted_child: &mut bool,
+) -> Result<Value, String> {
+    let response = output
+        .and_then(|(stdout, stderr)| {
+            finish_ralph_command_response(status.success(), &stdout, &stderr)
+        })
+        .and_then(|response| {
+            if let Some(run_id) = run_id {
+                validate_ralph_run_response(&response, run_id)?;
+            }
+            Ok(response)
+        })
+        .map_err(|reason| format!("{reason} Exit status: {status}."));
+    *interrupted_child = response.is_err() && status.code() != Some(130);
+    response
+}
+
+fn validate_ralph_run_response(response: &Value, run_id: &str) -> Result<(), String> {
+    let run = &response["run"];
+    let valid = run.is_object()
+        && matches!(
+            run["status"].as_str(),
+            Some("running" | "completed" | "crashed" | "blocked" | "stopped" | "waiting-for-input")
+        )
+        && run["flow"].is_string()
+        && run["summary"].is_string()
+        && run["validation"]["valid"].is_boolean()
+        && run["validation"]["errors"].is_array()
+        && run["validation"]["warnings"].is_array()
+        && [
+            "events",
+            "blockResults",
+            "missingVariables",
+            "unknownVariables",
+        ]
+        .iter()
+        .all(|field| run[*field].is_array())
+        && run
+            .get("runId")
+            .is_none_or(|id| id.as_str() == Some(run_id));
+    if !valid {
+        return Err(format!(
+            "The Ralph CLI did not return a valid result for run `{run_id}`."
+        ));
+    }
+    Ok(())
 }
 
 fn normalize_ralph_flow_scope(scope: Option<&str>) -> Result<Option<String>, String> {
@@ -164,19 +227,17 @@ fn stop_ralph_cli_after_wait_error(
     stdout_worker: JoinHandle<Result<String, String>>,
     stderr_worker: JoinHandle<Result<Vec<String>, String>>,
     payload_paths: &[PathBuf],
-    cancellation_path: &Path,
-    allow_graceful_stop: bool,
 ) -> String {
-    request_ralph_cli_stop(
-        child,
-        cancellation_path,
-        "Desktop lost the Ralph child-process wait handle; finalize the run before stopping.",
-        allow_graceful_stop,
-    );
-
+    let child_cleanup = child.terminate_and_reap();
     let cleanup_result = join_cli_output_and_cleanup(stdout_worker, stderr_worker, None);
     cleanup_temporary_files(payload_paths);
     let message = format!("Failed to wait for the Ralph CLI to finish: {error}");
+    let message = match child_cleanup {
+        Ok(_) => message,
+        Err(cleanup_error) => {
+            format!("{message}. Additionally failed to stop the Ralph CLI: {cleanup_error}")
+        }
+    };
 
     match cleanup_result {
         Ok(_) => message,
@@ -191,6 +252,157 @@ pub(super) fn execute_ralph_command(
     window_label: String,
     request: RalphCommandRequest,
     cancel_flag: Arc<AtomicBool>,
+) -> Result<Value, String> {
+    supervise_ralph_command(
+        &request.arguments,
+        || cancel_flag.load(Ordering::SeqCst),
+        |arguments, run_id| {
+            let mut interrupted_child = false;
+            let result = execute_ralph_command_attempt(
+                app_handle.clone(),
+                window_label.clone(),
+                RalphCommandRequest {
+                    workspace_root: request.workspace_root.clone(),
+                    arguments: arguments.to_vec(),
+                    task_id: request.task_id.clone(),
+                },
+                cancel_flag.clone(),
+                run_id,
+                &mut interrupted_child,
+            );
+            let retry_reason = match (&result, run_id) {
+                (Ok(response), Some(id))
+                    if response["run"]["status"] == "crashed"
+                        && response["run"]["runId"] == id
+                        && response["run"]["checkpoint"].is_object() =>
+                {
+                    response["run"]["summary"].as_str().map(str::to_string)
+                }
+                (Err(reason), Some(_)) if interrupted_child => Some(reason.clone()),
+                _ => None,
+            };
+            if let (Some(reason), Some(id)) = (&retry_reason, run_id) {
+                if !cancel_flag.load(Ordering::SeqCst) {
+                    let mut inspection_interrupted = false;
+                    let inspection = execute_ralph_command_attempt(
+                        app_handle.clone(),
+                        window_label.clone(),
+                        RalphCommandRequest {
+                            workspace_root: request.workspace_root.clone(),
+                            arguments: recovery_inspection_arguments(&request.arguments, id),
+                            task_id: request.task_id.clone(),
+                        },
+                        cancel_flag.clone(),
+                        None,
+                        &mut inspection_interrupted,
+                    );
+                    match inspection.and_then(|detail| reconcile_ralph_command_response(&detail, id)) {
+                        Ok(Some(response)) => return RalphCommandAttempt { result: Ok(response), retry_reason: None },
+                        Ok(None) => {},
+                        Err(error) => return RalphCommandAttempt {
+                            result: Err(format!("{reason}\nFailed to inspect the saved Ralph run before recovery: {error}")),
+                            retry_reason: None,
+                        },
+                    }
+                }
+            }
+            RalphCommandAttempt {
+                result,
+                retry_reason,
+            }
+        },
+        || {
+            emit_progress_event(
+                &app_handle,
+                &window_label,
+                request.task_id.as_deref(),
+                create_bridge_progress(
+                    "resume",
+                    Some("machdoch"),
+                    "resolving-context",
+                    "Recovering interrupted Ralph run.",
+                    true,
+                ),
+            );
+        },
+    )
+}
+
+fn reconcile_ralph_command_response(detail: &Value, run_id: &str) -> Result<Option<Value>, String> {
+    let record = &detail["record"];
+    if record["id"] != run_id {
+        return Err("The saved Ralph recovery record belongs to another run.".to_string());
+    }
+    if !matches!(
+        record["status"].as_str(),
+        Some("completed" | "stopped" | "waiting-for-input" | "blocked")
+    ) {
+        return Ok(None);
+    }
+    let mut run = serde_json::Map::new();
+    for key in [
+        "status",
+        "summary",
+        "outcome",
+        "progress",
+        "autonomy",
+        "durability",
+        "runWorktree",
+        "integration",
+        "checkpoint",
+        "events",
+        "validation",
+    ] {
+        run.insert(key.to_string(), record[key].clone());
+    }
+    let blocks = record["blockResults"]
+        .as_array()
+        .ok_or_else(|| "The saved Ralph run has no block results.".to_string())?;
+    run.insert(
+        "blockResults".to_string(),
+        serde_json::json!(blocks
+            .iter()
+            .map(|block| serde_json::json!({
+                "blockId": block["blockId"],
+                "output": block["output"],
+                "status": block["status"],
+                "attempt": block["attempt"],
+                "summary": block["summary"],
+                "error": block["error"],
+                "execution": block["executionStatus"].as_str().map(|status| serde_json::json!({
+                    "status": status,
+                    "summary": block["summary"],
+                    "reason": block["reason"],
+                })),
+            }))
+            .collect::<Vec<_>>()),
+    );
+    run.insert("runId".to_string(), record["id"].clone());
+    run.insert("flow".to_string(), record["flowId"].clone());
+    run.insert("missingVariables".to_string(), serde_json::json!([]));
+    run.insert("unknownVariables".to_string(), serde_json::json!([]));
+    run.insert(
+        "pendingInput".to_string(),
+        record["checkpoint"]["pendingInput"].clone(),
+    );
+    let response = serde_json::json!({
+        "scope": detail["scope"],
+        "run": run,
+        "runRecordPath": detail["path"],
+        "runLogPath": record["logPaths"]["simpleMarkdownPath"],
+        "traceLogPath": record["logPaths"]["traceJsonlPath"],
+    });
+    validate_ralph_run_response(&response, run_id)?;
+    Ok(Some(response))
+}
+
+fn execute_ralph_command_attempt(
+    app_handle: tauri::AppHandle,
+    window_label: String,
+    request: RalphCommandRequest,
+    cancel_flag: Arc<AtomicBool>,
+    run_id: Option<&str>,
+    interrupted_child: &mut bool,
 ) -> Result<Value, String> {
     let workspace_path = resolve_workspace_root_path(&request.workspace_root)?;
     let normalized_workspace_root = workspace_path.display().to_string();
@@ -247,6 +459,11 @@ pub(super) fn execute_ralph_command(
     cli_command
         .command
         .env(RALPH_CANCEL_PATH_ENV, &cancellation_path);
+    if progress_task == "run" {
+        if let Some(run_id) = run_id {
+            cli_command.command.env(RALPH_RUN_ID_ENV, run_id);
+        }
+    }
     if let Some(credentials) = app_handle
         .state::<crate::workspace_run::WorkspaceRunState>()
         .control_credentials()
@@ -321,14 +538,13 @@ pub(super) fn execute_ralph_command(
         match child.try_wait() {
             Ok(Some(status)) => break status,
             Err(error) => {
+                *interrupted_child = true;
                 return Err(stop_ralph_cli_after_wait_error(
                     error,
                     &mut child,
                     stdout_worker,
                     stderr_worker,
                     &payload_paths,
-                    &cancellation_path,
-                    allow_graceful_stop,
                 ));
             }
             Ok(None) => {
@@ -383,7 +599,11 @@ pub(super) fn execute_ralph_command(
                             }
                         };
                     cleanup_temporary_files(&payload_paths);
-                    return finish_cancelled_ralph_command_response(&stdout_text, &stderr_text);
+                    return finish_cancelled_ralph_command_response(
+                        &stdout_text,
+                        &stderr_text,
+                        run_id,
+                    );
                 }
 
                 if let Some(timeout_ms) =
@@ -431,17 +651,10 @@ pub(super) fn execute_ralph_command(
             }
         }
     };
-    let (stdout_text, stderr_text) =
-        match join_cli_output_and_cleanup(stdout_worker, stderr_worker, None) {
-            Ok(output) => output,
-            Err(error) => {
-                cleanup_temporary_files(&payload_paths);
-                return Err(error);
-            }
-        };
+    let output = join_cli_output_and_cleanup(stdout_worker, stderr_worker, None);
     cleanup_temporary_files(&payload_paths);
 
-    finish_ralph_command_response(status.success(), &stdout_text, &stderr_text)
+    finish_ralph_command_attempt(status, output, run_id, interrupted_child)
 }
 
 pub(super) fn resolve_ralph_flow_path_for_open(
@@ -494,19 +707,25 @@ pub(super) fn resolve_ralph_flow_path_for_open(
 mod tests {
     use std::{
         env, fs,
-        io::Cursor,
-        process::Command,
+        io::{self, Cursor},
+        process::{Command, ExitStatus, Stdio},
         thread,
         time::{Duration, Instant},
     };
 
     use serde_json::json;
 
+    #[cfg(unix)]
+    use std::os::unix::process::ExitStatusExt;
+    #[cfg(windows)]
+    use std::os::windows::process::ExitStatusExt;
+
     use super::{
         create_ralph_cancel_path, finish_cancelled_ralph_command_response,
-        finish_ralph_command_response, normalize_ralph_flow_scope, parse_ralph_command_response,
-        ralph_command_timeout_ms, read_ralph_stdout, read_ralph_stdout_with_limit,
-        request_ralph_cli_stop, RALPH_CANCEL_PATH_ENV,
+        finish_ralph_command_attempt, finish_ralph_command_response, normalize_ralph_flow_scope,
+        parse_ralph_command_response, ralph_command_timeout_ms, read_ralph_stdout,
+        read_ralph_stdout_with_limit, reconcile_ralph_command_response, request_ralph_cli_stop,
+        stop_ralph_cli_after_wait_error, RALPH_CANCEL_PATH_ENV,
     };
     use crate::child_process::{ChildCleanupKind, SupervisedChild};
     use crate::desktop_task::process::SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES;
@@ -514,25 +733,71 @@ mod tests {
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_RALPH_LIFECYCLE_TEST_MODE";
 
     #[test]
+    fn recovery_reconciles_saved_terminal_outcomes_without_replaying_them() {
+        for status in ["completed", "stopped", "waiting-for-input", "blocked"] {
+            let detail = json!({
+                "scope": "workspace", "path": "owned/run.json",
+                "record": { "id": "saved-run", "flowId": "flow", "status": status, "summary": "Saved outcome", "events": [], "validation": { "valid": true, "errors": [], "warnings": [] }, "checkpoint": { "pendingInput": { "id": "input" } }, "blockResults": [{ "blockId": "work", "output": "SUCCESS", "status": "success", "attempt": 1, "summary": "Saved work", "executionStatus": "completed", "reason": "Proof", "instructionDelivery": { "canonical": "private-guidance" } }] }
+            });
+            let reconciled = reconcile_ralph_command_response(&detail, "saved-run")
+                .unwrap()
+                .unwrap();
+            assert_eq!(reconciled["run"]["runId"], "saved-run");
+            assert_eq!(reconciled["run"]["status"], status);
+            assert_eq!(reconciled["run"]["pendingInput"]["id"], "input");
+            assert_eq!(reconciled["runRecordPath"], "owned/run.json");
+            assert_eq!(
+                reconciled["run"]["blockResults"][0]["execution"]["status"],
+                "completed"
+            );
+            assert!(reconciled["run"]["blockResults"][0]
+                .get("instructionDelivery")
+                .is_none());
+        }
+        let resumable = json!({ "record": { "id": "saved-run", "status": "crashed" } });
+        assert!(reconcile_ralph_command_response(&resumable, "saved-run")
+            .unwrap()
+            .is_none());
+        assert!(reconcile_ralph_command_response(&resumable, "foreign-run").is_err());
+    }
+
+    #[test]
     fn cancelled_run_retains_its_structured_checkpoint_response() {
         let response =
             json!({ "run": { "status": "stopped", "checkpoint": { "currentBlockId": "write" } } });
         assert_eq!(
-            finish_cancelled_ralph_command_response(&response.to_string(), "").unwrap(),
+            finish_cancelled_ralph_command_response(&response.to_string(), "", None).unwrap(),
             response
         );
     }
 
     #[test]
+    fn recovery_rejects_incomplete_saved_terminal_results() {
+        let detail = json!({"record": {"id": "saved-run", "status": "completed", "blockResults": [], "private": "private-content"}});
+        let error = reconcile_ralph_command_response(&detail, "saved-run")
+            .expect_err("an incomplete saved result should not be returned to the UI");
+        assert!(error.contains("saved-run"));
+        assert!(!error.contains("private-content"));
+    }
+
+    #[test]
     fn cancelled_command_does_not_expose_unparsed_stdout() {
-        let error = finish_cancelled_ralph_command_response("internal partial run payload", "")
-            .unwrap_err();
+        let error =
+            finish_cancelled_ralph_command_response("internal partial run payload", "", None)
+                .unwrap_err();
         assert_eq!(error, "The Ralph CLI command was cancelled.");
     }
 
     #[test]
+    fn cancelled_command_rejects_malformed_run_results() {
+        let error = finish_cancelled_ralph_command_response("null", "", Some("cancelled-run"))
+            .expect_err("cancelled run responses should meet the run result contract");
+        assert!(error.contains("cancelled-run"));
+    }
+
+    #[test]
     fn ralph_status_queries_do_not_share_the_execution_timeout() {
-        for action in ["snapshot", "list", "runs"] {
+        for action in ["snapshot", "list", "runs", "run-detail"] {
             assert_eq!(ralph_command_timeout_ms(action), Some(60_000));
         }
         for action in ["run", "resume"] {
@@ -576,11 +841,12 @@ mod tests {
             .env(RALPH_CANCEL_PATH_ENV, &cancellation_path);
         let mut child =
             SupervisedChild::spawn(&mut command).expect("cooperative Ralph child should start");
-        let started_at = Instant::now();
-
         request_ralph_cli_stop(&mut child, &cancellation_path, "test cancellation", true);
 
-        assert!(started_at.elapsed() < Duration::from_secs(5));
+        assert!(child
+            .try_wait()
+            .expect("cooperatively stopped child should report its exit status")
+            .is_some_and(|status| status.success()));
         assert_eq!(
             child
                 .terminate_and_reap()
@@ -589,6 +855,42 @@ mod tests {
             ChildCleanupKind::AlreadyExited
         );
         fs::remove_file(&cancellation_path).expect("test cancellation file should be removed");
+    }
+
+    #[test]
+    fn wait_error_cleanup_does_not_issue_a_user_cancellation() {
+        let cancellation_path = create_ralph_cancel_path();
+        let mut command = Command::new(env::current_exe().expect("test executable should resolve"));
+        command
+            .arg("--exact")
+            .arg("desktop_task::ralph::tests::ralph_lifecycle_test_entrypoint")
+            .arg("--nocapture")
+            .env(TEST_CHILD_MODE_ENV, "cooperative")
+            .env(RALPH_CANCEL_PATH_ENV, &cancellation_path)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let mut child = SupervisedChild::spawn(&mut command).expect("Ralph child should start");
+        let stdout = child.stdout.take().expect("stdout should be piped");
+        let stderr = child.stderr.take().expect("stderr should be piped");
+        let stdout_worker = thread::spawn(move || read_ralph_stdout(stdout));
+        let stderr_worker = thread::spawn(move || read_ralph_stdout(stderr).map(|text| vec![text]));
+        let error = stop_ralph_cli_after_wait_error(
+            io::Error::other("Lost wait handle"),
+            &mut child,
+            stdout_worker,
+            stderr_worker,
+            &[],
+        );
+
+        assert!(error.contains("Lost wait handle"));
+        assert!(!cancellation_path.exists());
+        assert_eq!(
+            child
+                .terminate_and_reap()
+                .expect("child should be reaped")
+                .kind,
+            ChildCleanupKind::AlreadyExited,
+        );
     }
 
     #[test]
@@ -648,6 +950,78 @@ mod tests {
         assert!(error.contains("too large to display"));
         assert!(error.contains("saved Ralph data is intact"));
         assert!(!error.contains(&"x".repeat(64)));
+    }
+
+    #[test]
+    fn output_capture_failure_after_successful_exit_requires_saved_run_inspection() {
+        let output = read_ralph_stdout_with_limit(Cursor::new(vec![b'x'; 256]), 128)
+            .map(|stdout| (stdout, String::new()));
+        let mut interrupted = false;
+        let error =
+            finish_ralph_command_attempt(ExitStatus::from_raw(0), output, None, &mut interrupted)
+                .unwrap_err();
+
+        assert!(interrupted);
+        assert!(error.contains("saved Ralph data is intact"));
+        assert!(!error.contains(&"x".repeat(64)));
+    }
+
+    #[test]
+    fn cancellation_exit_does_not_retry_an_output_failure() {
+        #[cfg(unix)]
+        let status = ExitStatus::from_raw(130 << 8);
+        #[cfg(windows)]
+        let status = ExitStatus::from_raw(130);
+        let mut interrupted = false;
+        let error = finish_ralph_command_attempt(
+            status,
+            Err("Output stream closed".to_string()),
+            None,
+            &mut interrupted,
+        )
+        .unwrap_err();
+
+        assert!(!interrupted);
+        assert!(error.contains("Output stream closed"));
+    }
+
+    #[test]
+    fn malformed_run_results_require_inspection_without_exposing_the_payload() {
+        for response in [
+            json!(null),
+            json!({"run": {"status": "completed", "private": "private-content"}}),
+            json!({"run": {"runId": "foreign-run", "status": "completed", "flow": "flow", "summary": "private-content", "validation": {"valid": true, "errors": [], "warnings": []}, "events": [], "blockResults": [], "missingVariables": [], "unknownVariables": []}}),
+            json!({"run": {"runId": "saved-run", "status": "completed", "flow": "flow", "summary": "private-content", "validation": {}, "events": [], "blockResults": [], "missingVariables": [], "unknownVariables": []}}),
+        ] {
+            let mut interrupted = false;
+            let error = finish_ralph_command_attempt(
+                ExitStatus::from_raw(0),
+                Ok((response.to_string(), String::new())),
+                Some("saved-run"),
+                &mut interrupted,
+            )
+            .unwrap_err();
+            assert!(interrupted);
+            assert!(error.contains("saved-run"));
+            assert!(!error.contains("private-content"));
+        }
+    }
+
+    #[test]
+    fn pre_execution_validation_results_can_omit_the_run_identity() {
+        let response = json!({"run": {"status": "blocked", "flow": "flow", "summary": "Missing required variable", "validation": {"valid": true, "errors": [], "warnings": []}, "events": [], "blockResults": [], "missingVariables": ["goal"], "unknownVariables": []}});
+        let mut interrupted = false;
+        assert_eq!(
+            finish_ralph_command_attempt(
+                ExitStatus::from_raw(0),
+                Ok((response.to_string(), String::new())),
+                Some("saved-run"),
+                &mut interrupted,
+            )
+            .unwrap(),
+            response,
+        );
+        assert!(!interrupted);
     }
 
     #[test]

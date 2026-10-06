@@ -5,37 +5,20 @@ import {
   FileSliders,
   FolderGit2,
   MessageSquareText,
-  Menu,
   Server,
-  TerminalSquare,
   Workflow,
-  type LucideIcon,
 } from "lucide-react";
-import type { JSX } from "react";
-import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
-import { Separator } from "../components/ui/separator";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
-import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
-import type { MainAppId } from "../lib/shell-store";
+  ApplicationNavigation,
+  type ApplicationActivity,
+  type ApplicationNavigationItem,
+} from "@machdoch/product-ui";
 import { useCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
+import type { MainAppId } from "../lib/shell-store";
 
 declare const __MACHDOCH_VERSION__: string | undefined;
 
-export type AppActivityState =
-  | "idle"
-  | "running"
-  | "completed"
-  | "running-and-completed";
+export type AppActivityState = ApplicationActivity;
 
 interface AppRailProps {
   activeApp: MainAppId;
@@ -49,112 +32,7 @@ interface AppRailProps {
   onOpenSettings: () => void;
 }
 
-interface AppRailButtonProps {
-  label: string;
-  active?: boolean;
-  icon: LucideIcon;
-  activity?: AppActivityState;
-  onClick: () => void;
-  shortcutId?: string;
-}
-
-const appVersion =
-  typeof __MACHDOCH_VERSION__ === "string" &&
-  __MACHDOCH_VERSION__.trim().length > 0
-    ? __MACHDOCH_VERSION__.trim()
-    : "0.0.0";
-
-const getActivityLabel = (activity: AppActivityState | undefined): string => {
-  switch (activity) {
-    case "running":
-      return "running";
-    case "completed":
-      return "completed work";
-    case "running-and-completed":
-      return "running and has completed work";
-    case "idle":
-    case undefined:
-      return "idle";
-  }
-};
-
-const AppActivityIndicator = ({
-  activity = "idle",
-}: {
-  activity?: AppActivityState;
-}): JSX.Element | null => {
-  if (activity === "idle") {
-    return null;
-  }
-
-  const running =
-    activity === "running" || activity === "running-and-completed";
-  const completed =
-    activity === "completed" || activity === "running-and-completed";
-
-  return (
-    <span
-      aria-hidden="true"
-      className={cn(
-        "pointer-events-none absolute right-2 top-2 h-2.5 w-2.5 rounded-full",
-        running
-          ? "border border-cyan-200/80 bg-cyan-400/25 shadow-[0_0_10px_rgba(34,211,238,0.35)]"
-          : "bg-lime-400 shadow-[0_0_8px_rgba(122,154,97,0.32)]",
-        running && "animate-pulse",
-      )}
-    >
-      {completed && running ? (
-        <span className="absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-lime-300" />
-      ) : null}
-    </span>
-  );
-};
-
-const AppRailButton = ({
-  label,
-  active = false,
-  icon: Icon,
-  activity = "idle",
-  onClick,
-  shortcutId,
-}: AppRailButtonProps): JSX.Element => {
-  const shortcut = useCommandShortcut(shortcutId ?? "");
-  const ariaLabel =
-    activity === "idle" ? label : `${label}, ${getActivityLabel(activity)}`;
-
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      aria-label={ariaLabel}
-      aria-current={active ? "page" : undefined}
-      aria-keyshortcuts={shortcut?.ariaKeyShortcuts}
-      tooltip={
-        <>
-          {activity === "idle"
-            ? label
-            : `${label}: ${getActivityLabel(activity)}`}
-          {shortcut ? ` (${shortcut.label})` : null}
-        </>
-      }
-      tooltipProps={{ side: "right" }}
-      onClick={onClick}
-      className={cn(
-        "app-shell-rail-button relative h-12 w-12 rounded-2xl border border-transparent text-slate-400 hover:bg-slate-900 hover:text-slate-100",
-        active &&
-          "border-sky-500/20 bg-slate-900 text-slate-100 shadow-[0_0_18px_rgba(14,165,233,0.08)]",
-      )}
-    >
-      <Icon
-        className={cn("h-5 w-5", active ? "text-sky-300" : "text-slate-400")}
-      />
-      <AppActivityIndicator activity={activity} />
-    </Button>
-  );
-};
-
-export const AppRail = ({
+export function AppRail({
   activeApp,
   chatActivity,
   ralphActivity,
@@ -164,171 +42,91 @@ export const AppRail = ({
   onOpenScheduler,
   onOpenFleetManager,
   onOpenSettings,
-}: AppRailProps): JSX.Element => {
-  const navigation = [
+}: AppRailProps): React.ReactElement {
+  const chatShortcut = useCommandShortcut("app.view.chat");
+  const ralphShortcut = useCommandShortcut("app.view.ralph");
+  const mediaShortcut = useCommandShortcut("app.view.media");
+  const instructionsShortcut = useCommandShortcut("app.view.instructions");
+  const workspacesShortcut = useCommandShortcut("app.view.workspaces");
+  const settingsShortcut = useCommandShortcut("app.settings.open");
+  const items: ApplicationNavigationItem[] = [
     {
       id: "chat",
       label: "Chat",
       icon: MessageSquareText,
       activity: chatActivity,
-      select: () => onSelectApp("chat"),
+      shortcut: chatShortcut,
+      active: activeApp === "chat",
+      onSelect: () => onSelectApp("chat"),
     },
     {
       id: "ralph",
-      label: "Ralph",
+      label: "RALPH",
       icon: Workflow,
       activity: ralphActivity,
-      select: () => onSelectApp("ralph"),
+      shortcut: ralphShortcut,
+      active: activeApp === "ralph",
+      onSelect: () => onSelectApp("ralph"),
     },
     {
       id: "media",
       label: "Media Studio",
       icon: Aperture,
       activity: mediaActivity,
-      select: () => onSelectApp("media"),
+      shortcut: mediaShortcut,
+      active: activeApp === "media",
+      onSelect: () => onSelectApp("media"),
     },
     {
       id: "instructions",
       label: "Instructions",
       icon: FileSliders,
-      select: () => onSelectApp("instructions"),
+      shortcut: instructionsShortcut,
+      active: activeApp === "instructions",
+      onSelect: () => onSelectApp("instructions"),
     },
     {
       id: "workspaces",
       label: "Workspace Management",
       icon: FolderGit2,
-      select: () => onSelectApp("workspaces"),
+      shortcut: workspacesShortcut,
+      active: activeApp === "workspaces",
+      onSelect: () => onSelectApp("workspaces"),
     },
+  ];
+  const actions: ApplicationNavigationItem[] = [
     {
       id: "scheduler",
       label: "Smart Scheduler",
       icon: CalendarClock,
       activity: schedulerActivity,
-      select: onOpenScheduler,
+      onSelect: onOpenScheduler,
     },
     {
       id: "fleet",
       label: "Fleet Manager",
       icon: Server,
-      select: onOpenFleetManager,
+      onSelect: onOpenFleetManager,
     },
-    { id: "settings", label: "Settings", icon: Cog, select: onOpenSettings },
+    {
+      id: "settings",
+      label: "Settings",
+      icon: Cog,
+      shortcut: settingsShortcut,
+      onSelect: onOpenSettings,
+    },
   ];
+  const version =
+    typeof __MACHDOCH_VERSION__ === "string" ? __MACHDOCH_VERSION__ : null;
   return (
-    <>
-      <nav
-        aria-label="App navigation"
-        className="shrink-0 border-b border-slate-900 px-2 md:hidden"
-      >
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              aria-label="Open navigation"
-              className="h-11 max-w-full justify-start"
-            >
-              <Menu className="size-4" />
-              <span className="truncate">
-                {navigation.find((entry) => entry.id === activeApp)?.label}
-              </span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64">
-            {navigation.map(({ id, label, icon: Icon, activity, select }) => (
-              <DropdownMenuItem
-                key={id}
-                onSelect={select}
-                aria-current={id === activeApp ? "page" : undefined}
-                className="relative min-h-11 gap-3 pr-8"
-              >
-                <Icon className="size-4" />
-                {label}
-                <AppActivityIndicator activity={activity} />
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </nav>
-      <aside className="app-shell-rail z-10 hidden min-h-0 w-20 shrink-0 flex-col items-center justify-between overflow-y-auto border-r border-slate-900 bg-slate-950 py-6 md:flex">
-        <div className="app-shell-rail-group flex shrink-0 flex-col items-center gap-4">
-          <div className="app-shell-logo flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-800 bg-slate-900 shadow-lg shadow-sky-500/10">
-            <TerminalSquare className="h-6 w-6 text-sky-400" />
-          </div>
-
-          <Separator className="w-10 bg-slate-900" />
-
-          <div className="flex flex-col items-center gap-2">
-            <AppRailButton
-              label="Chat"
-              icon={MessageSquareText}
-              active={activeApp === "chat"}
-              activity={chatActivity}
-              onClick={() => onSelectApp("chat")}
-              shortcutId="app.view.chat"
-            />
-            <AppRailButton
-              label="Ralph"
-              icon={Workflow}
-              active={activeApp === "ralph"}
-              activity={ralphActivity}
-              onClick={() => onSelectApp("ralph")}
-              shortcutId="app.view.ralph"
-            />
-            <AppRailButton
-              label="Media Studio"
-              icon={Aperture}
-              active={activeApp === "media"}
-              activity={mediaActivity}
-              onClick={() => onSelectApp("media")}
-              shortcutId="app.view.media"
-            />
-            <Separator className="my-1 w-8 bg-slate-900" />
-            <AppRailButton
-              label="Instructions"
-              icon={FileSliders}
-              active={activeApp === "instructions"}
-              onClick={() => onSelectApp("instructions")}
-              shortcutId="app.view.instructions"
-            />
-            <AppRailButton
-              label="Workspace Management"
-              icon={FolderGit2}
-              active={activeApp === "workspaces"}
-              onClick={() => onSelectApp("workspaces")}
-              shortcutId="app.view.workspaces"
-            />
-          </div>
-        </div>
-
-        <div className="app-shell-rail-group flex shrink-0 flex-col items-center gap-3">
-          <AppRailButton
-            label="Smart Scheduler"
-            icon={CalendarClock}
-            activity={schedulerActivity}
-            onClick={onOpenScheduler}
-          />
-          <AppRailButton
-            label="Fleet Manager"
-            icon={Server}
-            onClick={onOpenFleetManager}
-          />
-          <AppRailButton
-            label="Settings"
-            icon={Cog}
-            onClick={onOpenSettings}
-            shortcutId="app.settings.open"
-          />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="app-shell-version mt-1 inline-flex h-5 min-w-12 items-center justify-center rounded-full border border-slate-900/80 bg-slate-950/40 px-1.5 text-[9px] font-medium leading-none text-slate-400 transition-colors hover:text-slate-300">
-                v{appVersion}
-              </span>
-            </TooltipTrigger>
-            <TooltipContent side="right">machdoch {appVersion}</TooltipContent>
-          </Tooltip>
-        </div>
-      </aside>
-    </>
+    <ApplicationNavigation
+      items={items}
+      actions={actions}
+      footer={
+        version ? (
+          <span className="app-shell-version">v{version}</span>
+        ) : undefined
+      }
+    />
   );
-};
+}

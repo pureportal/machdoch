@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   useFilePreviewHighlight,
   useFilePreviewSearch,
-} from "./use-file-preview-processing";
+} from "@machdoch/client-ui/file-preview/use-file-preview-processing";
 
 const workers: WorkerDouble[] = [];
 class WorkerDouble {

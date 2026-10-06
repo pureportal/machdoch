@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   productSnapshotSchema,
@@ -10,6 +10,7 @@ import { MediaStudio } from "@machdoch/media-studio/tauri/ui/media/media-studio.
 import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
+import { useBrowserAppearance } from "@machdoch/product-ui";
 import "../ui/styles.css";
 import "./styles.css";
 
@@ -23,8 +24,54 @@ configureRemoteMediaPlatform(
 );
 
 function FleetMediaStudio(): React.ReactElement {
+  useBrowserAppearance();
   const [snapshot, setSnapshot] = useState<ProductSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [openSection, setOpenSection] = useState<"library" | "generate" | null>(
+    null,
+  );
+  const [draftPrompt, setDraftPrompt] = useState<string | null>(null);
+  const receivedRequest = useRef<string | null>(null);
+  useEffect(() => {
+    const receive = (event: MessageEvent): void => {
+      if (
+        event.origin !== window.location.origin ||
+        event.source !== window.parent
+      )
+        return;
+      const data = event.data as {
+        type?: unknown;
+        id?: unknown;
+        section?: unknown;
+        prompt?: unknown;
+      } | null;
+      if (
+        data?.type !== "machdoch:media-compose" ||
+        typeof data.id !== "string" ||
+        data.id.length > 128 ||
+        !data.id ||
+        (data.section !== "library" && data.section !== "generate") ||
+        (data.prompt !== undefined &&
+          (typeof data.prompt !== "string" || data.prompt.length > 8_000))
+      )
+        return;
+      if (receivedRequest.current !== data.id) {
+        receivedRequest.current = data.id;
+        setOpenSection(data.section);
+        setDraftPrompt(typeof data.prompt === "string" ? data.prompt : null);
+      }
+      window.parent.postMessage(
+        { type: "machdoch:media-compose-received", id: data.id },
+        window.location.origin,
+      );
+    };
+    window.addEventListener("message", receive);
+    window.parent.postMessage(
+      { type: "machdoch:media-ready" },
+      window.location.origin,
+    );
+    return () => window.removeEventListener("message", receive);
+  }, []);
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
@@ -62,8 +109,15 @@ function FleetMediaStudio(): React.ReactElement {
         ) : null}
         {shell ? (
           <MediaStudio
+            openSection={openSection}
+            onOpenSectionHandled={() => setOpenSection(null)}
+            draftPrompt={draftPrompt}
+            onDraftPromptHandled={() => setDraftPrompt(null)}
             onOpenPoseChat={(map) => {
-              window.parent.postMessage({ type: "machdoch:pose-chat", map }, window.location.origin);
+              window.parent.postMessage(
+                { type: "machdoch:pose-chat", map },
+                window.location.origin,
+              );
             }}
             providerStatuses={(shell.runtime?.providerStatuses ?? []).map(
               (provider) => ({
@@ -79,7 +133,10 @@ function FleetMediaStudio(): React.ReactElement {
               null
             }
             onOpenProviderSettings={() => {
-              window.top!.location.href = "/settings";
+              window.parent.postMessage(
+                { type: "machdoch:open-settings" },
+                window.location.origin,
+              );
             }}
           />
         ) : (

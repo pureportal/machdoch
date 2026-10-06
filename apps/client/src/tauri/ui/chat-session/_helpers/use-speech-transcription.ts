@@ -4,6 +4,7 @@ import {
   transcribeUserSpeechAudio,
   type UserSpeechToTextProvider,
 } from "../../runtime";
+import { isLocalSpeechProvider } from "../../../../shared/local-speech";
 import {
   convertBlobToBase64,
   normalizeAudioMimeType,
@@ -70,9 +71,17 @@ export const useSpeechTranscription = (): SpeechTranscriptionController => {
         signal.throwIfAborted();
         window.clearTimeout(preparationTimeout);
         const transcriptionTimeoutMs =
-          options.provider === "whisper"
-            ? Math.min(900, 30 + preparedBlob.size / 16_000) * 1000 + 5_000
-            : 60_000;
+          options.provider === "whisper" || options.provider === "whisper-tiny"
+            ? Math.min(900, 90 + preparedBlob.size / 16_000) * 1000 + 5_000
+            : isLocalSpeechProvider(options.provider)
+              ? Math.min(
+                  900,
+                  (options.provider === "phonon2" ? 300 : 90) +
+                    preparedBlob.size / 8_000,
+                ) *
+                  1000 +
+                5_000
+              : 60_000;
         transcriptionTimeout = window.setTimeout(() => {
           controller.abort(
             new Error("Speech transcription timed out. Try recording again."),
@@ -84,8 +93,13 @@ export const useSpeechTranscription = (): SpeechTranscriptionController => {
             audioBase64,
             mimeType: normalizeAudioMimeType(preparedBlob.type) || "audio/wav",
             keyTerms: options.keyTerms,
-            speechContext: options.speechContext,
-            autoTranslateToEnglish: options.autoTranslateToEnglish,
+            speechContext:
+              options.provider === "openai" ? options.speechContext : "",
+            autoTranslateToEnglish:
+              options.provider === "whisper" ||
+              options.provider === "whisper-tiny"
+                ? options.autoTranslateToEnglish
+                : false,
             signal,
             ...(options.languageCode
               ? { languageCode: options.languageCode }

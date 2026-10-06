@@ -3890,9 +3890,9 @@ def train_minimax(
                            "samples render silent (Preferences → Audio VAE)")
             return None
         try:
-            from fizgig.minimax.audio_vae import load_minimax_h3_audio_vae_decoder
-            _audio_dec_state["dec"] = load_minimax_h3_audio_vae_decoder(
-                audio_vae_path, device="cpu")
+            from fizgig.minimax.audio_vae import load_audio_vae
+            _audio_dec_state["dec"] = load_audio_vae(
+                audio_vae_path, "decode", device="cpu")
             logger.info("[preview] audio decoder loaded — clip samples carry a .wav")
         except Exception as _ae:
             logger.warning(f"[preview] audio decoder failed to load "
@@ -4633,29 +4633,9 @@ def train_minimax(
         try:
             dit.eval()
             if vae_path and _video_dec_state["dec"] is None and not _video_dec_state["tried"]:
-                # Loaded ONCE per run (see _video_dec_state above) — it lives on CPU between
-                # previews and only rides to the GPU for the decode phase.
                 _video_dec_state["tried"] = True
-                from safetensors import safe_open as _safe_open
-                from fizgig.minimax.vae import MiniMaxH3VideoVAEDecoder
-                decoder = MiniMaxH3VideoVAEDecoder()
-                with _safe_open(vae_path, framework="pt", device="cpu") as _f:
-                    decoder.load_state_dict({k: _f.get_tensor(k) for k in _f.keys()}, strict=False)
-                # FP16, not the training dtype and not fp32. ComfyUI allows this VAE exactly
-                # [float16, float32] (sd.py:951) where its class default and every neighbouring
-                # video VAE also list bfloat16 — bf16 was singled out and removed for this
-                # decoder. The weights ship fp16 (minimax_h3_video_vae_fp16.safetensors), so
-                # casting to bf16 threw away 3 mantissa bits at load, and 36 pre-norm residual
-                # blocks feed a proj_out that emits 3072 pixel values per token: the error lands
-                # straight on pixels as softness and gradient banding, with nothing downstream to
-                # smooth it. fp16 costs the same 4.8 GB as bf16 (fp32 would be 9.7), so this is
-                # free. Overflow is covered by the same nan_to_num guard ComfyUI relies on
-                # (vae.py, attention output) — fp16 is the regime that guard was written for.
-                # It also stays on CPU until the DECODE phase: previews used to put it on the GPU
-                # before sampling even started, which cost the sampling forward 4.85 GB of
-                # headroom it never used — harmless for a 256-token still, an OOM for a 124-frame
-                # clip whose forward is ~30x the tokens (real 32 GB-card failure, 8 Aug).
-                decoder = decoder.to(torch.float16).eval()
+                from fizgig.minimax.video_vae_checkpoint import load_video_vae
+                decoder = load_video_vae(vae_path, "decode", device="cpu")
                 _video_dec_state["dec"] = decoder
             elif vae_path:
                 decoder = _video_dec_state["dec"]
@@ -4877,23 +4857,17 @@ def train_minimax(
                 _st[_k] = _st[_k].to(device)
             _opt_parked = []
 
-            # PHASE 2 — decode. Clip decode wants ~6 GB (decoder weights + chunk transients);
-            # if the card cannot offer that next to the resident base, park the base on CPU
-            # for the duration, exactly as the override-encode path does. A ~21 GB round trip
-            # costs seconds once per preview epoch; an OOM used to cost the previews entirely.
             if decoder is not None:
                 gc.collect()
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
                     from fizgig.utils.device import plannable_free_vram as _pfv
-                    _free = _pfv()
+                    _free = _pfv(device)
+                    _decoder_memory_gb = sum(parameter.numel() * parameter.element_size()
+                                             for parameter in decoder.parameters()) / 1e9 + 3.0
                     vram_line("pre-decode")
-                    if _free < 7.5:
-                        # Stills included, not just clips: the decoder does not fit beside
-                        # the resident base on a tight card regardless of frame count — the
-                        # old _frames > 1 guard was a big-card assumption that turned into
-                        # an every-epoch OOM for still previews.
-                        _need = (7.5 - _free) + 1.0
+                    if _free < _decoder_memory_gb:
+                        _need = (_decoder_memory_gb - _free) + 1.0
                         logger.info(f"[preview] {_free:.1f} GB free is too tight for "
                                     f"{'clip ' if _frames > 1 else ''}decode — parking "
                                     f"~{_need:.1f} GB of tail blocks for this decode pass.")
@@ -4912,7 +4886,8 @@ def train_minimax(
                     # .clip dir, and save the MIDDLE frame as the contract PNG — written LAST,
                     # so the gallery/likeness settle guard sees one finished unit. The PNG name
                     # is the gallery/likeness/Visualiser contract; the .clip dir is additive.
-                    px = decoder.decode_clip(lat.float())[0]     # [3, F, H, W] in [0, 1]
+                    with torch.autocast("cuda", dtype=torch.float16, enabled=torch.device(device).type == "cuda"):
+                        px = decoder.decode_clip(lat.float())[0]
                     n_f = px.shape[1]
                     clip_dir = os.path.join(sample_dir, stem + ".clip")
                     os.makedirs(clip_dir, exist_ok=True)
@@ -4931,7 +4906,8 @@ def train_minimax(
                         _px_mp4 = px.cpu()     # every frame, for the playable mp4 below
                     del px
                 elif decoder is not None:
-                    px = decoder.decode(lat.float())[0]          # [3, H, W] in [0, 1]
+                    with torch.autocast("cuda", dtype=torch.float16, enabled=torch.device(device).type == "cuda"):
+                        px = decoder.decode(lat.float())[0]
                     arr = (px.permute(1, 2, 0).clamp(0, 1) * 255).byte().cpu().numpy()
                     img = Image.fromarray(arr)
                     print(f"[preview] decoded {_w}x{_h}", flush=True)
@@ -4948,10 +4924,10 @@ def train_minimax(
                     _adec = _get_audio_decoder()
                     if _adec is not None:
                         try:
-                            from fizgig.minimax.audio_vae import unpack_audio
+                            from fizgig.minimax.audio_vae import audio_latents_from_rows
                             _adec.to(device)
                             _wave = _adec.decode(
-                                unpack_audio(_arows).to(device, torch.float32))
+                                audio_latents_from_rows(_arows).to(device, torch.float32))
                             _wav_path = os.path.join(sample_dir, stem + ".wav")
                             write_wav(_wav_path, _wave[0].cpu())
                             print(f"[preview] wrote sound: {stem}.wav", flush=True)
@@ -4995,8 +4971,8 @@ def train_minimax(
                         f"({sample_steps} steps, seed {_seed}) to {sample_dir}")
         finally:
             if decoder is not None:
-                decoder.to("cpu")                        # park, don't free — reloading 4.85 GB
-                if torch.cuda.is_available():            # per preview is what leaked the heap
+                decoder.to("cpu")
+                if torch.cuda.is_available():
                     torch.cuda.empty_cache()
             if _audio_dec_state["dec"] is not None:
                 _audio_dec_state["dec"].to("cpu")        # idempotent; covers a mid-decode raise

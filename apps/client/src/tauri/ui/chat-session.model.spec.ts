@@ -1,4 +1,6 @@
+import { normalizeTaskExecutionFileChange } from '@machdoch/fleet-protocol/task-file-change-normalization';
 import { describe, expect, it } from "vitest";
+import { contextPackExportSchema } from "@machdoch/fleet-protocol/context-pack-contract";
 import { mediaPoseJoints } from "@machdoch/media-studio/core/media/contracts.js";
 import {
   applySessionRetentionPolicy,
@@ -17,7 +19,6 @@ import {
   isPromptEnhancementPlaceholderMessage,
   isSessionWorkspaceLocked,
   moveSessionToTop,
-  normalizeTaskExecutionFileChange,
   normalizeRecentWorkspaces,
   normalizeShellState,
   recoverInactiveRunningTasks,
@@ -1431,6 +1432,40 @@ describe("normalizeShellState", () => {
     expect(normalized.contextPacks[0]?.useWorkspaceMemory).toBeUndefined();
     expect(normalized.contextPacks[0]?.useGlobalMemory).toBeUndefined();
     expect(normalized.contextPacks[0]?.uiControlEnabled).toBeUndefined();
+  });
+
+  it("preserves a validated Unicode context-pack archive through import and persisted reload", () => {
+    const pack = {
+      id: "unicode-context-pack",
+      workspace: null,
+      name: "Context pack " + "x".repeat(120),
+      instructions: "Instructions\n" + "Grüß 🌿\n".repeat(3000) + "End",
+      prompt: "Prompt\n" + "日本語\n".repeat(3000) + "End",
+      contextAttachments: [],
+      variables: Array.from({ length: 20 }, (_, index) => ({
+        name: "variable_" + "x".repeat(60) + index,
+        defaultValue: "Default\n" + "Grüß 🌿\n".repeat(40) + "End",
+      })),
+      trigger: {
+        phrases: Array.from({ length: 20 }, (_, index) => "phrase " + "x".repeat(120) + index),
+        pathPatterns: Array.from({ length: 20 }, (_, index) => "src/" + "directory/".repeat(20) + index + "/*.md"),
+      },
+      createdAt: 1,
+      updatedAt: 2,
+      useCount: 0,
+    };
+    const archive = contextPackExportSchema.parse({
+      kind: "machdoch.context-packs",
+      version: 1,
+      exportedAt: 3,
+      contextPacks: [pack],
+    });
+    const imported = normalizeShellState({
+      ...createInitialShellState(),
+      contextPacks: archive.contextPacks,
+    });
+    expect(imported.contextPacks).toEqual([pack]);
+    expect(normalizeShellState(JSON.parse(JSON.stringify(imported))).contextPacks).toEqual([pack]);
   });
 
   it("preserves explicit context pack setting overrides", () => {

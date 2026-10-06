@@ -4,7 +4,7 @@ import {
   getConversationMessageNavigationState,
   getVisibleConversationMessageId,
   type ConversationMessageViewportBounds,
-} from "./message-navigation";
+} from "@machdoch/client-ui/conversation/message-navigation";
 
 const getActiveMessageId = (
   messageBounds: ConversationMessageViewportBounds[],

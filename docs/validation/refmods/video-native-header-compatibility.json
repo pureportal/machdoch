@@ -1,0 +1,18 @@
+{
+  "pretrainedWeightsUsed": false,
+  "tensorValuesRead": false,
+  "modes": {
+    "encode": {
+      "sourceWeights": 118,
+      "missing": [],
+      "incompatible": []
+    },
+    "decode": {
+      "sourceWeights": 441,
+      "missing": [],
+      "incompatible": []
+    }
+  },
+  "sourcePreserved": true,
+  "passed": true
+}

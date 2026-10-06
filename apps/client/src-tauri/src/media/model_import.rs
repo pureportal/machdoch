@@ -169,6 +169,10 @@ pub(crate) fn capabilities_for_architecture(architecture: &str) -> &'static [&'s
 pub(super) fn pipeline_architecture(architecture: &str) -> &str {
     match architecture {
         "pony" => "stable-diffusion-xl",
+        "flux-1-dev" | "flux-1-schnell" => "flux-1",
+        "flux-2-klein-base-4b" | "flux-2-klein-9b" | "flux-2-klein-base-9b" => "flux-2",
+        "z-image-turbo" => "z-image",
+        "cogvideox-1.5-5b" | "cogvideox-1.5-5b-i2v" => "cogvideox-2b",
         _ => architecture,
     }
 }
@@ -858,22 +862,35 @@ pub(super) fn persist_import(
     let source_url = validated_source_url(request.source_url.as_deref())?;
     let requested_license_name =
         validated_optional_text("licenseName", request.license_name.as_deref(), 256)?;
-    let license_name = if request.architecture == "qwen-image-2.1" {
+    let student_profile = super::open_models::by_architecture(&request.architecture)
+        .filter(|profile| profile.distillation.is_some());
+    let license_name = if let Some(student) = student_profile {
+        student.license.name.clone()
+    } else if request.architecture == "qwen-image-2.1" {
         "Qwen Research License Agreement".to_string()
     } else {
         requested_license_name
     };
-    let commercial_use = if request.architecture == "qwen-image-2.1" {
+    let commercial_use = if let Some(student) = student_profile {
+        student.license.commercial_use.as_str()
+    } else if request.architecture == "qwen-image-2.1" {
         "review-required"
     } else {
         request.commercial_use.as_deref().unwrap_or("unknown")
     };
-    let license_source_url = if request.architecture == "qwen-image-2.1" {
+    let license_source_url = if let Some(student) = student_profile {
+        student
+            .license
+            .source_url
+            .as_deref()
+            .ok_or("Student model profile has no licence source")?
+    } else if request.architecture == "qwen-image-2.1" {
         "https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE"
     } else {
         source_url.as_deref().unwrap_or("")
     };
-    let license_requires_acceptance = i64::from(request.architecture == "qwen-image-2.1");
+    let license_requires_acceptance =
+        i64::from(student_profile.is_some() || request.architecture == "qwen-image-2.1");
     let display_name = validated_text("displayName", &request.display_name, 120)?;
     let model_id = format!("{USER_MODEL_ID_PREFIX}{digest}");
     let capabilities = serde_json::to_string(capabilities_for_architecture(&request.architecture))
@@ -1017,6 +1034,9 @@ pub(crate) fn import_reviewed(
         return Err("the file changed; select it again before importing".to_string());
     }
     let component_bytes = match request.architecture.as_str() {
+        "stable-diffusion-1" => {
+            super::model_components::manifest_bytes(include_str!("sd15_components.json"))?
+        }
         "wan-2.2-ti2v" => {
             super::model_components::manifest_bytes(include_str!("wan_components.json"))?
         }
@@ -1078,11 +1098,6 @@ pub(crate) fn import_reviewed(
         ));
     }
 
-    if let Err(error) = prepare_model_config(paths, &stage_repository, &request.architecture) {
-        fs::remove_dir_all(&stage_root)
-            .map_err(|cleanup| format!("{error}; failed to clean model import: {cleanup}"))?;
-        return Err(error);
-    }
     let model_id = format!("{USER_MODEL_ID_PREFIX}{digest}");
     let slug = format!("user-{}", &digest[..32]);
     let relative_path = format!("packages/{slug}/revisions/{digest}");
@@ -1093,7 +1108,8 @@ pub(crate) fn import_reviewed(
         .join(&digest);
     let package_root = models_root.join("packages").join(&slug);
     let already_installed = stored_installation_exists(paths, &model_id)?;
-    if revision_root.exists() {
+    let existing_revision = revision_root.exists();
+    if existing_revision {
         let existing = revision_root.join("checkpoint.safetensors");
         let (existing_bytes, existing_digest) = hash_file(&existing)?;
         if existing_bytes != inspection.byte_size || existing_digest != digest {
@@ -1102,6 +1118,18 @@ pub(crate) fn import_reviewed(
                 "the managed model revision conflicts with the imported digest".to_string(),
             );
         }
+    }
+    let config_revision = if existing_revision {
+        &revision_root
+    } else {
+        &stage_repository
+    };
+    if let Err(error) = prepare_model_config(paths, config_revision, &request.architecture) {
+        fs::remove_dir_all(&stage_root)
+            .map_err(|cleanup| format!("{error}; failed to clean model import: {cleanup}"))?;
+        return Err(error);
+    }
+    if existing_revision {
         fs::remove_dir_all(&stage_root)
             .map_err(|error| format!("failed to clean duplicate model staging data: {error}"))?;
     } else {
@@ -1258,6 +1286,109 @@ mod tests {
             capabilities_for_architecture("qwen-image-2.1"),
             QWEN_IMAGE_CAPABILITIES
         );
+    }
+
+    #[test]
+    fn student_imports_and_edits_retain_base_model_terms() {
+        let source = temp_path("student-terms");
+        let (root, paths) = test_paths("student-terms");
+        fs::create_dir_all(&root).unwrap();
+        write_safetensors(
+            &source,
+            serde_json::json!({"weight": {
+                "dtype": "F32", "shape": [1], "data_offsets": [0, 4]
+            }}),
+            &[0, 0, 0, 0],
+        );
+        database::initialize(&paths).unwrap();
+        let inspection = inspect(source.to_str().unwrap()).unwrap();
+        for student in crate::media::open_models::profiles()
+            .iter()
+            .filter(|profile| profile.distillation.is_some())
+        {
+            let digest = format!("{:x}", Sha256::digest(student.architecture.as_bytes()));
+            let request = ImportMediaLocalModelRequest {
+                source_path: inspection.source_path.clone(),
+                review_token: inspection.review_token.clone(),
+                display_name: student.display_name.clone(),
+                architecture: student.architecture.clone(),
+                source_url: Some("https://example.com/student".to_string()),
+                license_name: Some("Apache-2.0".to_string()),
+                commercial_use: Some("allowed".to_string()),
+            };
+            persist_import(
+                &paths,
+                &request,
+                &inspection,
+                &digest,
+                "synthetic",
+                &database::now(),
+                "diffusers",
+            )
+            .unwrap();
+            let model_id = format!("{USER_MODEL_ID_PREFIX}{digest}");
+            for (architecture, expected_error) in [
+                ("stable-diffusion-xl", "type cannot be changed"),
+                ("minimax-h3-ref2va", "supported model type"),
+                ("minimax-h3-pdmd-2step", "type cannot be changed"),
+            ] {
+                if architecture == student.architecture {
+                    continue;
+                }
+                let error = crate::media::model_resource_edit::update(
+                    &paths,
+                    &crate::media::model_resource_edit::UpdateMediaModelResourceRequest {
+                        resource_id: model_id.clone(),
+                        display_name: "Must not save".to_string(),
+                        architecture: architecture.to_string(),
+                        source_url: None,
+                        license_name: Some("Apache-2.0".to_string()),
+                        commercial_use: Some("allowed".to_string()),
+                        trigger_words: Vec::new(),
+                    },
+                )
+                .unwrap_err();
+                assert!(error.contains(expected_error));
+                let stored: (String, String) = database::open(&paths)
+                    .unwrap()
+                    .query_row(
+                        "SELECT architecture, display_name FROM media_models WHERE id = ?1",
+                        [&model_id],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .unwrap();
+                assert_eq!(stored.0, student.architecture);
+                assert_eq!(stored.1, request.display_name);
+            }
+            for edited in [false, true] {
+                if edited {
+                    crate::media::model_resource_edit::update(
+                        &paths,
+                        &crate::media::model_resource_edit::UpdateMediaModelResourceRequest {
+                            resource_id: model_id.clone(),
+                            display_name: "Renamed student".to_string(),
+                            architecture: student.architecture.clone(),
+                            source_url: None,
+                            license_name: Some("MIT".to_string()),
+                            commercial_use: Some("allowed".to_string()),
+                            trigger_words: Vec::new(),
+                        },
+                    )
+                    .unwrap();
+                }
+                let connection = database::open(&paths).unwrap();
+                let terms: (String, String, String, bool) = connection.query_row(
+                    "SELECT license_name, license_source_url, license_commercial_use, license_requires_acceptance FROM media_models WHERE id = ?1",
+                    [&model_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                ).unwrap();
+                assert_eq!(terms.0, student.license.name);
+                assert_eq!(terms.1, student.license.source_url.as_deref().unwrap());
+                assert_eq!(terms.2, "review-required");
+                assert!(terms.3);
+            }
+        }
+        fs::remove_file(source).unwrap();
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -1475,6 +1606,36 @@ mod tests {
         assert_eq!(duplicate.resource_id, result.model_id);
         assert_eq!(duplicate.display_name, "Managed XL");
         assert_eq!(duplicate.kind, "model");
+        let revision_root = paths.models_root().unwrap().join(format!(
+            "packages/user-{}/revisions/{digest}",
+            &digest[..32]
+        ));
+        let config = revision_root.join("config/model_index.json");
+        let config_bytes = fs::read(&config).unwrap();
+        fs::remove_file(&config).unwrap();
+        let inspection = inspect(source.to_string_lossy().as_ref()).unwrap();
+        let repaired = import_reviewed(
+            &paths,
+            &ImportMediaLocalModelRequest {
+                source_path: inspection.source_path,
+                review_token: inspection.review_token,
+                display_name: "Managed XL".to_string(),
+                architecture: "stable-diffusion-xl".to_string(),
+                source_url: Some("https://civitai.com/models/123".to_string()),
+                license_name: None,
+                commercial_use: None,
+            },
+        )
+        .unwrap();
+        assert!(repaired.already_installed);
+        assert_eq!(repaired.model_id, result.model_id);
+        assert_eq!(fs::read(config).unwrap(), config_bytes);
+        assert_eq!(
+            hash_file(&revision_root.join("checkpoint.safetensors"))
+                .unwrap()
+                .1,
+            digest
+        );
         let mut connection = database::open(&paths).expect("database should open");
         connection
             .execute(

@@ -1,0 +1,9 @@
+{
+  "date": "2026-10-06T20:48:32.892Z",
+  "privateProductionApp": true,
+  "appRoot": "D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\production-app-final",
+  "entry": "/media-studio/assets/media-mzxF5M8e.js",
+  "entrySha256": "f76e0fd4cc10ff71b187fcf8b317174930fa81619f06560433e468e4633ee711",
+  "sizeBytes": 603175,
+  "devServerStarted": false
+}

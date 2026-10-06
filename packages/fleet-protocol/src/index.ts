@@ -3,11 +3,56 @@
   mediaResponseSchema,
 } from "@machdoch/fleet-protocol/media";
 export * from "@machdoch/fleet-protocol/media";
-import { ralphRequestSchema, ralphResponseSchema } from "@machdoch/fleet-protocol/ralph";
+import {
+  ralphRequestSchema,
+  ralphResponseSchema,
+} from "@machdoch/fleet-protocol/ralph";
 export * from "@machdoch/fleet-protocol/ralph";
+import {
+  schedulerRequestSchema,
+  schedulerResponseSchema,
+} from "@machdoch/fleet-protocol/scheduler";
+export * from "@machdoch/fleet-protocol/scheduler";
+import {
+  instructionRequestSchema,
+  instructionResponseSchema,
+} from "@machdoch/fleet-protocol/instructions";
+export * from "@machdoch/fleet-protocol/instructions";
 export * from "@machdoch/fleet-protocol/operation";
+import {
+  workspaceRequestSchema,
+  workspaceResponseSchema,
+} from "@machdoch/fleet-protocol/workspace";
+export * from "@machdoch/fleet-protocol/workspace";
+import {
+  deviceSettingsRequestSchema,
+  deviceSettingsResponseSchema,
+} from "@machdoch/fleet-protocol/device-settings";
+export * from "@machdoch/fleet-protocol/device-settings";
 export { createFleetSessionId } from "@machdoch/fleet-protocol/session-routing";
 import { z } from "zod";
+import { taskTimeoutSchema } from "@machdoch/fleet-protocol/task-thinking";
+import {
+  modelProviderSchema,
+  runModeSchema,
+  reasoningModeSchema,
+  promptEnhancementModeSchema,
+} from "@machdoch/fleet-protocol/runtime-options";
+export {
+  reasoningModeSchema,
+  promptEnhancementModeSchema,
+} from "@machdoch/fleet-protocol/runtime-options";
+import {
+  composerCommandSchema,
+  composerSnapshotShape,
+  composerSubmitOptionsShape,
+  contextPackVariableValuesSchema,
+  productAttachmentSchema,
+  maximumComposerTextCharacters,
+} from "@machdoch/fleet-protocol/composer-contract";
+export * from "@machdoch/fleet-protocol/composer-contract";
+import { contextPackCommandSchema } from "@machdoch/fleet-protocol/context-pack-contract";
+export * from "@machdoch/fleet-protocol/context-pack-contract";
 import { hostTelemetrySchema } from "@machdoch/fleet-protocol/telemetry";
 export {
   hostTelemetrySchema,
@@ -15,6 +60,7 @@ export {
 } from "@machdoch/fleet-protocol/telemetry";
 
 export const workspaceRunsCapability = "workspace-runs.v1";
+export const workspacePreviewsCapability = "workspace-previews.v1";
 export const redactedRunValue = "__MACHDOCH_REDACTED__";
 const id = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/);
 const port = z.number().int().min(1024).max(65535);
@@ -323,14 +369,15 @@ const commandId = z.string().trim().min(1).max(128).optional();
 const shortText = z.string().trim().min(1).max(240);
 const text = z.string().max(12_000);
 const commandText = z.string().trim().min(1).max(8_000);
+const composerCommandText = z
+  .string()
+  .trim()
+  .min(1)
+  .max(maximumComposerTextCharacters);
 const workspace = z.string().trim().min(1).max(12_000);
 const baseCommandShape = { commandId };
 const sessionCommandShape = { ...baseCommandShape, sessionId: identifier };
 const taskCommandShape = { ...baseCommandShape, taskId: identifier };
-const schedulerCommandShape = {
-  ...baseCommandShape,
-  workspace,
-};
 
 const taskCommandSchema = z.discriminatedUnion("kind", [
   z.strictObject({ ...taskCommandShape, kind: z.literal("cancel") }),
@@ -339,6 +386,14 @@ const taskCommandSchema = z.discriminatedUnion("kind", [
 ]);
 
 const simpleSessionCommandSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    ...sessionCommandShape,
+    kind: z.literal("reset-session-time"),
+  }),
+  z.strictObject({
+    ...sessionCommandShape,
+    kind: z.literal("move-session-to-top"),
+  }),
   z.strictObject({
     ...sessionCommandShape,
     kind: z.literal("activate-session"),
@@ -381,42 +436,6 @@ const simpleSessionCommandSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 
-const schedulerJobCommandSchema = z.discriminatedUnion("kind", [
-  z.strictObject({
-    ...schedulerCommandShape,
-    kind: z.literal("scheduler-trigger"),
-    jobId: identifier,
-  }),
-  z.strictObject({
-    ...schedulerCommandShape,
-    kind: z.literal("scheduler-pause"),
-    jobId: identifier,
-  }),
-  z.strictObject({
-    ...schedulerCommandShape,
-    kind: z.literal("scheduler-resume"),
-    jobId: identifier,
-  }),
-  z.strictObject({
-    ...schedulerCommandShape,
-    kind: z.literal("scheduler-delete"),
-    jobId: identifier,
-  }),
-]);
-
-const schedulerRunCommandSchema = z.discriminatedUnion("kind", [
-  z.strictObject({
-    ...schedulerCommandShape,
-    kind: z.literal("scheduler-retry-run"),
-    runId: identifier,
-  }),
-  z.strictObject({
-    ...schedulerCommandShape,
-    kind: z.literal("scheduler-cancel-run"),
-    runId: identifier,
-  }),
-]);
-
 export const productMediaTargetSchema = z.enum(["image", "svg"]);
 export const productMediaAspectRatioSchema = z.enum([
   "1:1",
@@ -429,25 +448,6 @@ export const productMediaOutputFormatSchema = z.enum([
   "jpeg",
   "webp",
   "svg",
-]);
-
-export const reasoningModeSchema = z.enum([
-  "default",
-  "none",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-  "max",
-  "ultra",
-  "aeon",
-]);
-
-export const promptEnhancementModeSchema = z.enum([
-  "off",
-  "simple",
-  "web-search",
 ]);
 
 const managedSettingsText = z
@@ -471,16 +471,7 @@ const managedSettingsListValue = z
 const managedSettingsIdentifier = (prefix: "manager" | "profile") =>
   z.string().regex(new RegExp(`^${prefix}_[A-Za-z0-9_-]{24}$`));
 const managedSettingsUuid = z.string().uuid();
-const managedSettingsProviderSchema = z.enum([
-  "openai",
-  "anthropic",
-  "google",
-  "langdock",
-  "codex-cli",
-  "claude-cli",
-  "copilot-cli",
-]);
-const managedSettingsModeSchema = z.enum(["ask", "machdoch"]);
+
 const managedSettingsReasoningSchema = reasoningModeSchema;
 const managedSettingsNullableText = z
   .string()
@@ -491,9 +482,9 @@ const managedSettingsNullableText = z
 
 const managedSettingsDefaultsSchema = z
   .strictObject({
-    provider: managedSettingsProviderSchema.nullable(),
+    provider: modelProviderSchema.nullable(),
     model: managedSettingsNullableText,
-    mode: managedSettingsModeSchema.nullable(),
+    mode: runModeSchema.nullable(),
     reasoning: managedSettingsReasoningSchema.nullable(),
     webSearchProvider: z
       .enum(["none", "perplexity", "tavily", "serper"])
@@ -535,9 +526,9 @@ const managedSettingsContextPackSchema = z
     name: managedSettingsName,
     instructions: managedSettingsText,
     prompt: managedSettingsText,
-    provider: managedSettingsProviderSchema.nullable(),
+    provider: modelProviderSchema.nullable(),
     model: managedSettingsNullableText,
-    mode: managedSettingsModeSchema.nullable(),
+    mode: runModeSchema.nullable(),
     reasoning: managedSettingsReasoningSchema.nullable(),
     variables: z
       .array(
@@ -712,6 +703,18 @@ export const fleetManagedSettingsDeliverySchema = z
 
 export const ralphScopeSchema = z.enum(["workspace", "user"]);
 
+export const composerHistorySelectionSchema = z.strictObject({
+  index: z.number().int().min(0).max(10_000),
+  prompt: z.string().max(maximumComposerTextCharacters),
+  attachmentIds: z.array(identifier).max(64),
+  previousDraft: z.string().max(maximumComposerTextCharacters),
+  previousAttachmentIds: z.array(identifier).max(64),
+});
+
+export type ComposerHistorySelection = z.infer<
+  typeof composerHistorySelectionSchema
+>;
+
 const ralphParameterNameSchema = z.string().refine(
   (name) => {
     const length = name.trim().length;
@@ -808,13 +811,31 @@ export const productCommandSchema = z
   .discriminatedUnion("kind", [
     ...workspaceCommandSchema.options,
     ...taskCommandSchema.options,
+    ...composerCommandSchema.options,
+    ...contextPackCommandSchema.options,
     z.strictObject({
       ...sessionCommandShape,
+      kind: z.literal("edit-message"),
+      messageId: identifier,
+      prompt: composerCommandText,
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("replay-message"),
+      messageId: identifier,
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      ...composerSubmitOptionsShape,
       kind: z.literal("submit-message"),
-      prompt: commandText,
+      prompt: composerCommandText,
       goalObjective: z.string().trim().min(1).max(4_000).optional(),
       promptEnhancementMode: promptEnhancementModeSchema,
       interviewEnabled: z.boolean(),
+    }),
+    z.strictObject({
+      ...baseCommandShape,
+      kind: z.literal("open-quick-chat"),
     }),
     z.strictObject({
       ...baseCommandShape,
@@ -868,7 +889,13 @@ export const productCommandSchema = z
     z.strictObject({
       ...sessionCommandShape,
       kind: z.literal("update-draft"),
-      prompt: z.string().max(8_000),
+      prompt: z.string().max(maximumComposerTextCharacters),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("restore-prompt-history"),
+      prompt: z.string().max(maximumComposerTextCharacters),
+      history: composerHistorySelectionSchema,
     }),
     z.strictObject({
       ...sessionCommandShape,
@@ -880,6 +907,11 @@ export const productCommandSchema = z
       ...sessionCommandShape,
       kind: z.literal("set-session-mode"),
       mode: z.enum(["ask", "machdoch"]),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("set-adaptive-controller"),
+      mode: z.enum(["default", "enabled", "disabled"]),
     }),
     z.strictObject({
       ...sessionCommandShape,
@@ -900,6 +932,22 @@ export const productCommandSchema = z
       ...sessionCommandShape,
       kind: z.literal("set-session-workspace"),
       workspace,
+    }),
+    z.strictObject({
+      ...baseCommandShape,
+      kind: z.literal("add-workspace"),
+      workspace,
+    }),
+    z.strictObject({
+      ...baseCommandShape,
+      kind: z.literal("remove-workspace"),
+      workspace,
+    }),
+    z.strictObject({
+      ...baseCommandShape,
+      kind: z.literal("relink-workspace"),
+      workspace,
+      destinationWorkspace: workspace,
     }),
     z.strictObject({
       ...sessionCommandShape,
@@ -953,6 +1001,7 @@ export const productCommandSchema = z
       ...sessionCommandShape,
       kind: z.literal("apply-context-pack"),
       contextPackId: identifier,
+      variableValues: contextPackVariableValuesSchema.optional(),
     }),
     z.strictObject({
       ...baseCommandShape,
@@ -973,8 +1022,16 @@ export const productCommandSchema = z
       ...baseCommandShape,
       kind: z.literal("stop-speaking"),
     }),
-    ...schedulerJobCommandSchema.options,
-    ...schedulerRunCommandSchema.options,
+    z.strictObject({
+      ...baseCommandShape,
+      kind: z.literal("set-auto-speak"),
+      enabled: z.boolean(),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("set-speech-input-recording"),
+      enabled: z.boolean(),
+    }),
     z.strictObject({
       ...ralphRuntimeCommandShape,
       kind: z.literal("ralph-run"),
@@ -1026,27 +1083,6 @@ export type ProductCommandKind = ProductCommand["kind"];
 
 const timestamp = z.number().int().nonnegative();
 const optionalTimestamp = timestamp.optional();
-
-export const productAttachmentSchema = z.discriminatedUnion("source", [
-  z.strictObject({
-    id: identifier,
-    source: z.literal("path"),
-    kind: shortText,
-    name: text,
-    path: text,
-    parent: text.optional(),
-  }),
-  z.strictObject({
-    id: identifier,
-    source: z.literal("media-asset"),
-    kind: shortText,
-    name: text,
-    workspaceRoot: workspace,
-    assetId: identifier,
-  }),
-]);
-
-export type ProductAttachment = z.infer<typeof productAttachmentSchema>;
 
 export const productMemoryEntrySchema = z.strictObject({
   id: identifier,
@@ -1104,6 +1140,9 @@ export const productSessionSchema = z.strictObject({
   attachmentCount: z.number().int().nonnegative(),
   runningTaskId: identifier.optional(),
   canRename: z.boolean(),
+  canResetTime: z.boolean().optional(),
+  canMoveToTop: z.boolean().optional(),
+  unread: z.boolean().optional(),
   canDelete: z.boolean(),
   canArchive: z.boolean(),
   canPin: z.boolean(),
@@ -1125,6 +1164,9 @@ export const productMessageSchema = z.strictObject({
   id: identifier,
   role: z.string().max(64),
   content: text,
+  rawContent: text.optional(),
+  originalPrompt: text.optional(),
+  workspace: workspace.nullable().optional(),
   createdAt: optionalTimestamp,
   taskId: identifier.optional(),
   taskAction: z
@@ -1144,9 +1186,12 @@ export const productMessageSchema = z.strictObject({
       mode: z.string().max(64).optional(),
       entries: z.array(traceEntrySchema).max(24),
       timeline: z.array(traceEntrySchema).max(40),
+      timeout: taskTimeoutSchema.optional(),
     })
     .optional(),
   actions: z.strictObject({
+    canEdit: z.boolean().optional(),
+    canReplay: z.boolean().optional(),
     canRetry: z.boolean(),
     canContinue: z.boolean(),
     canSaveAsContextPack: z.boolean(),
@@ -1404,8 +1449,19 @@ export const productShellSchema = z.strictObject({
   visibleMessages: z.array(productMessageSchema).max(80),
   composer: z
     .strictObject({
+      ...composerSnapshotShape,
       sessionId: identifier,
       draft: z.string().max(8_000),
+      history: z
+        .array(
+          z.strictObject({
+            index: z.number().int().min(0).max(10_000),
+            prompt: z.string().max(8_000),
+            attachments: z.array(productAttachmentSchema).max(64),
+          }),
+        )
+        .max(30)
+        .optional(),
       provider: z.string().max(240),
       providerLabel: text,
       model: z.string().max(240),
@@ -1414,6 +1470,12 @@ export const productShellSchema = z.strictObject({
       modelCatalog: z.array(productModelProviderSchema).max(32),
       mode: z.enum(["ask", "machdoch"]),
       defaultMode: z.enum(["ask", "machdoch"]),
+      adaptiveController: z
+        .strictObject({
+          override: z.boolean().nullable(),
+          defaultEnabled: z.boolean().nullable(),
+        })
+        .optional(),
       parallelAgentMode: z
         .enum(["disabled", "read-only", "machdoch", "native"])
         .optional(),
@@ -1534,6 +1596,8 @@ export const productShellSchema = z.strictObject({
       speakingMessageId: identifier.optional(),
       speechInputSupported: z.boolean(),
       speechInputEnabled: z.boolean(),
+      speechInputRecording: z.boolean(),
+      speechInputBusy: z.boolean(),
       speechInputStatus: text.optional(),
     })
     .optional(),
@@ -1619,8 +1683,24 @@ export const commandReceiptSchema = z.strictObject({
 export type CommandReceipt = z.infer<typeof commandReceiptSchema>;
 
 export const hostRequestSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    type: z.literal("deviceSettings"),
+    request: deviceSettingsRequestSchema,
+  }),
+  z.strictObject({
+    type: z.literal("workspace"),
+    request: workspaceRequestSchema,
+  }),
+  z.strictObject({
+    type: z.literal("instructions"),
+    request: instructionRequestSchema,
+  }),
   z.strictObject({ type: z.literal("media"), request: mediaRequestSchema }),
   z.strictObject({ type: z.literal("ralph"), request: ralphRequestSchema }),
+  z.strictObject({
+    type: z.literal("scheduler"),
+    request: schedulerRequestSchema,
+  }),
   z.strictObject({
     type: z.literal("getWorkspaceRuns"),
     workspace,
@@ -1630,6 +1710,10 @@ export const hostRequestSchema = z.discriminatedUnion("type", [
     type: z.literal("executeWorkspaceRun"),
     workspace,
     command: runCommandSchema,
+  }),
+  z.strictObject({
+    type: z.literal("validatePreviewTarget"),
+    target: previewTargetSchema,
   }),
   z.strictObject({
     type: z.literal("openPreviewTunnel"),
@@ -1647,13 +1731,30 @@ export const hostRequestSchema = z.discriminatedUnion("type", [
 export type HostRequest = z.infer<typeof hostRequestSchema>;
 
 export const hostResponseSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    type: z.literal("deviceSettings"),
+    response: deviceSettingsResponseSchema,
+  }),
+  z.strictObject({
+    type: z.literal("workspace"),
+    response: workspaceResponseSchema,
+  }),
+  z.strictObject({
+    type: z.literal("instructions"),
+    response: instructionResponseSchema,
+  }),
   z.strictObject({ type: z.literal("media"), response: mediaResponseSchema }),
   z.strictObject({ type: z.literal("ralph"), response: ralphResponseSchema }),
+  z.strictObject({
+    type: z.literal("scheduler"),
+    response: schedulerResponseSchema,
+  }),
   z.strictObject({
     type: z.literal("workspaceRuns"),
     snapshot: runSnapshotSchema,
   }),
   z.strictObject({ type: z.literal("previewTunnelReady") }),
+  z.strictObject({ type: z.literal("previewTargetReady") }),
   z.strictObject({
     type: z.literal("productSnapshot"),
     snapshot: productSnapshotSchema,

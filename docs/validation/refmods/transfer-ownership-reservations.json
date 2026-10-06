@@ -1,0 +1,68 @@
+{
+  "date": "2026-10-06T21:10:24.323Z",
+  "productionHost": true,
+  "onlyFixtureTransferIdsProbed": true,
+  "tensorValuesRead": false,
+  "checks": [
+    {
+      "id": "e1e951bb-737b-46ab-aa0e-ecaa1e54ac4b",
+      "direction": "upload",
+      "name": "picture.png",
+      "reservationAbsent": true
+    },
+    {
+      "id": "25f48253-9a0e-4149-bc68-2e3069e3bb0a",
+      "direction": "upload",
+      "name": "mask.png",
+      "reservationAbsent": true
+    },
+    {
+      "id": "31dc45e7-c312-472e-8300-bc10ecae48e7",
+      "direction": "upload",
+      "name": "mask.png",
+      "reservationAbsent": true
+    },
+    {
+      "id": "801710f0-008e-41df-b828-a4bf8db12565",
+      "direction": "upload",
+      "name": "mask.png",
+      "reservationAbsent": true
+    },
+    {
+      "id": "a08a42de-35f0-46c3-a0ea-672a613e0c84",
+      "direction": "upload",
+      "name": "picture.png",
+      "reservationAbsent": true
+    },
+    {
+      "id": "4b593a32-0ea0-46de-b6d3-a31def814c3c",
+      "direction": "upload",
+      "name": "mask.png",
+      "reservationAbsent": true
+    },
+    {
+      "id": "006367ad-b533-4cdf-bd64-0b0238534e2a",
+      "direction": "download",
+      "name": "Transfer ownership verification.safetensors",
+      "reservationAbsent": true
+    },
+    {
+      "id": "224cace4-db0a-45d3-8638-1641094716ce",
+      "direction": "download",
+      "name": "Transfer ownership verification.safetensors",
+      "reservationAbsent": true
+    },
+    {
+      "id": "b15010c4-2f9b-45bb-8259-7c55afe09e02",
+      "direction": "upload",
+      "name": "invalid-transfer-import.safetensors",
+      "reservationAbsent": true
+    },
+    {
+      "id": "3a0156a6-c1df-46af-9599-a847706b619f",
+      "direction": "upload",
+      "name": "import.safetensors",
+      "reservationAbsent": true
+    }
+  ]
+}

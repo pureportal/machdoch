@@ -50,7 +50,20 @@ const ARCHITECTURE_ADDON_CAPABILITIES: Readonly<
       false,
     ),
   ],
-  "stable-diffusion-3": [capability("lora", ["denoiser"], 8, false, true)],
+  "stable-diffusion-3": [
+    capability("lora", ["denoiser"], 8, false, true),
+    capability(
+      "textual-inversion",
+      ["text-encoder", "text-encoder-2", "text-encoder-3"],
+      16,
+      false,
+      false,
+    ),
+  ],
+  sana: [
+    capability("lora", ["denoiser"], 8, false, true),
+    capability("textual-inversion", ["text-encoder"], 16, false, false),
+  ],
   "flux-1": [
     capability("lora", ["denoiser", "text-encoder"], 8, true, true),
     capability(
@@ -61,13 +74,33 @@ const ARCHITECTURE_ADDON_CAPABILITIES: Readonly<
       false,
     ),
   ],
-  "flux-2": [capability("lora", ["denoiser"], 8, false, true)],
+  "flux-2": [
+    capability("lora", ["denoiser"], 8, false, true),
+    capability("textual-inversion", ["text-encoder"], 16, false, false),
+  ],
   "krea-2": [capability("lora", ["denoiser"], 8, false, true)],
+  "z-image": [
+    capability("lora", ["denoiser"], 8, false, true),
+    capability("textual-inversion", ["text-encoder"], 16, false, false),
+  ],
+  "z-image-turbo": [
+    capability("lora", ["denoiser"], 8, false, true),
+    capability("textual-inversion", ["text-encoder"], 16, false, false),
+  ],
   "wan-2.2-ti2v": [capability("lora", ["denoiser"], 8, false, false)],
   "ltx-video": [capability("lora", ["denoiser"], 8, false, false)],
-  "cogvideox-2b": [capability("lora", ["denoiser"], 8, false, false)],
-  "cogvideox-1.5-5b": [capability("lora", ["denoiser"], 8, false, false)],
-  "cogvideox-1.5-5b-i2v": [capability("lora", ["denoiser"], 8, false, false)],
+  "cogvideox-2b": [
+    capability("lora", ["denoiser"], 8, false, false),
+    capability("textual-inversion", ["text-encoder"], 16, false, false),
+  ],
+  "cogvideox-1.5-5b": [
+    capability("lora", ["denoiser"], 8, false, false),
+    capability("textual-inversion", ["text-encoder"], 16, false, false),
+  ],
+  "cogvideox-1.5-5b-i2v": [
+    capability("lora", ["denoiser"], 8, false, false),
+    capability("textual-inversion", ["text-encoder"], 16, false, false),
+  ],
   "framepack-i2v": [capability("lora", ["denoiser"], 8, false, false)],
   "hunyuan-video-1.5-i2v": [capability("lora", ["denoiser"], 8, false, false)],
   "minimax-h3-ref2va": [capability("lora", ["denoiser"], 1, false, false)],
@@ -84,7 +117,17 @@ export const getMediaModelAddonCapabilities = (
     return [];
   return (
     ARCHITECTURE_ADDON_CAPABILITIES[
-      architecture === "pony" ? "stable-diffusion-xl" : architecture
+      architecture === "pony"
+        ? "stable-diffusion-xl"
+        : ["flux-1-dev", "flux-1-schnell"].includes(architecture)
+          ? "flux-1"
+          : [
+                "flux-2-klein-base-4b",
+                "flux-2-klein-9b",
+                "flux-2-klein-base-9b",
+              ].includes(architecture)
+            ? "flux-2"
+            : architecture
     ] ?? []
   );
 };

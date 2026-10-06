@@ -1,55 +1,25 @@
-import { createHash } from "node:crypto";
-import { createReadStream, createWriteStream } from "node:fs";
-import { mkdir, rename, rm, stat } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
+import { resolve } from "node:path";
+import { downloadVerifiedAsset } from "./download-verified-asset.mjs";
 
-const modelPath = resolve(
-  import.meta.dirname,
-  "../src-tauri/resources/whisper/ggml-base-q5_1.bin",
-);
-const modelUrl =
-  "https://huggingface.co/ggerganov/whisper.cpp/resolve/c521a4b02f422512d734391fdf08bb08c0862f68/ggml-base-q5_1.bin";
-const expectedSize = 59_707_625;
-const expectedSha256 =
-  "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898";
-
-const sha256File = async (path) => {
-  const hash = createHash("sha256");
-  for await (const chunk of createReadStream(path)) {
-    hash.update(chunk);
-  }
-  return hash.digest("hex");
-};
-
-const existing = await stat(modelPath).catch(() => null);
-if (
-  existing?.size === expectedSize &&
-  (await sha256File(modelPath)) === expectedSha256
-) {
-  process.exit(0);
-}
-
-await mkdir(dirname(modelPath), { recursive: true });
-const temporaryPath = `${modelPath}.download-${process.pid}`;
-try {
-  const response = await fetch(modelUrl);
-  if (!response.ok || !response.body) {
-    throw new Error(`Whisper model download failed: HTTP ${response.status}`);
-  }
-  await pipeline(
-    Readable.fromWeb(response.body),
-    createWriteStream(temporaryPath),
+const revision = "c521a4b02f422512d734391fdf08bb08c0862f68";
+for (const model of [
+  {
+    name: "base",
+    size: 59_707_625,
+    sha256: "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898",
+  },
+  {
+    name: "tiny",
+    size: 32_152_673,
+    sha256: "818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7",
+  },
+]) {
+  const filename = `ggml-${model.name}-q5_1.bin`;
+  await downloadVerifiedAsset(
+    {
+      ...model,
+      url: `https://huggingface.co/ggerganov/whisper.cpp/resolve/${revision}/${filename}`,
+    },
+    resolve(import.meta.dirname, "../src-tauri/resources/whisper", filename),
   );
-  const downloaded = await stat(temporaryPath);
-  if (
-    downloaded.size !== expectedSize ||
-    (await sha256File(temporaryPath)) !== expectedSha256
-  ) {
-    throw new Error("Whisper model download failed its integrity check.");
-  }
-  await rename(temporaryPath, modelPath);
-} finally {
-  await rm(temporaryPath, { force: true });
 }

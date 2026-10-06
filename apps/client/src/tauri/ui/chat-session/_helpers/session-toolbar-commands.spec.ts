@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CommandContextSnapshot } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
-import {
-  createAdaptiveControllerCommand,
-  createParallelAgentCommand,
-} from "./session-toolbar-commands";
+import { createParallelAgentCommand } from "./session-toolbar-commands";
+import { createAdaptiveControllerCommand } from "@machdoch/client-ui/composer/adaptive-controller-command";
 
 const context: CommandContextSnapshot = {
   windowKind: "main",

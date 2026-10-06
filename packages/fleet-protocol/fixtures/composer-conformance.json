@@ -1,0 +1,2754 @@
+{
+  "baseSnapshot": {
+    "enabled": true,
+    "serverTime": 0,
+    "eventId": 0,
+    "sessions": [],
+    "commands": [],
+    "shell": {
+      "version": 5,
+      "capturedAt": 0,
+      "sessions": [],
+      "workspaces": [],
+      "visibleMessages": [],
+      "composer": {
+        "sessionId": "session-1",
+        "draft": "",
+        "provider": "openai",
+        "providerLabel": "OpenAI",
+        "model": "model-1",
+        "modelLabel": "Model",
+        "modelCatalogLoading": false,
+        "modelCatalog": [],
+        "mode": "ask",
+        "defaultMode": "ask",
+        "reasoning": "default",
+        "defaultReasoning": "default",
+        "reasoningOptions": [
+          "default"
+        ],
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "interviewAvailable": false,
+        "workspaceLabel": "",
+        "canSend": true,
+        "isExecuting": false,
+        "sessionMemoryEnabled": false,
+        "sessionMemory": [],
+        "globalMemoryAvailable": false,
+        "globalMemoryEnabled": false,
+        "uiControlAvailable": false,
+        "uiControlEnabled": false,
+        "uiControlDescription": "",
+        "attachments": [],
+        "chooserProviders": [],
+        "matchedContextPackIds": []
+      },
+      "contextPacks": [],
+      "promptHistory": []
+    }
+  },
+  "commands": [
+    {
+      "name": "adaptive inherited default",
+      "command": {
+        "kind": "set-adaptive-controller",
+        "sessionId": "session-1",
+        "mode": "default"
+      },
+      "accepted": true
+    },
+    {
+      "name": "adaptive explicit enabled",
+      "command": {
+        "kind": "set-adaptive-controller",
+        "sessionId": "session-1",
+        "mode": "enabled"
+      },
+      "accepted": true
+    },
+    {
+      "name": "adaptive explicit disabled",
+      "command": {
+        "kind": "set-adaptive-controller",
+        "sessionId": "session-1",
+        "mode": "disabled"
+      },
+      "accepted": true
+    },
+    {
+      "name": "adaptive rejects missing mode",
+      "command": {
+        "kind": "set-adaptive-controller",
+        "sessionId": "session-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "adaptive rejects unknown mode",
+      "command": {
+        "kind": "set-adaptive-controller",
+        "sessionId": "session-1",
+        "mode": "ask"
+      },
+      "accepted": false
+    },
+    {
+      "name": "adaptive rejects unrelated enabled",
+      "command": {
+        "kind": "set-adaptive-controller",
+        "sessionId": "session-1",
+        "mode": "enabled",
+        "enabled": true
+      },
+      "accepted": false
+    },
+    {
+      "name": "submit with omitted composer options",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false
+      },
+      "accepted": true
+    },
+    {
+      "name": "submit repeat-prompt with queue",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "iterationCount": 1,
+        "iterationMode": "repeat-prompt",
+        "runningAction": "queue"
+      },
+      "accepted": true
+    },
+    {
+      "name": "submit continue with steer",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "iterationCount": 1,
+        "iterationMode": "continue",
+        "runningAction": "steer"
+      },
+      "accepted": true
+    },
+    {
+      "name": "submit repeat-prompt-and-continue with stop-and-send",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "iterationCount": 20,
+        "iterationMode": "repeat-prompt-and-continue",
+        "runningAction": "stop-and-send"
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject submit iteration count 0",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "iterationCount": 0
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject submit iteration count 21",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "iterationCount": 21
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject submit iteration count 1.5",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "iterationCount": 1.5
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject submit iteration count \"2\"",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "iterationCount": "2"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject submit iteration count null",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "iterationCount": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject submit iterationMode \"repeat\"",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "iterationMode": "repeat"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject submit iterationMode \"\"",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "iterationMode": ""
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject submit iterationMode null",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "iterationMode": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject submit runningAction \"stop\"",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "runningAction": "stop"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject submit runningAction \"\"",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "runningAction": ""
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject submit runningAction null",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "runningAction": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "accept update-queued-message",
+      "command": {
+        "kind": "update-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "prompt": ""
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject update-queued-message missing session",
+      "command": {
+        "kind": "update-queued-message",
+        "messageId": "message-1",
+        "prompt": ""
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject update-queued-message missing messageId",
+      "command": {
+        "kind": "update-queued-message",
+        "sessionId": "session-1",
+        "prompt": ""
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject update-queued-message null messageId",
+      "command": {
+        "kind": "update-queued-message",
+        "sessionId": "session-1",
+        "messageId": null,
+        "prompt": ""
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject update-queued-message unknown field",
+      "command": {
+        "kind": "update-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "prompt": "",
+        "unexpected": true
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject update-queued-message unrelated field",
+      "command": {
+        "kind": "update-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "prompt": "",
+        "iterationMode": "continue"
+      },
+      "accepted": false
+    },
+    {
+      "name": "accept move-queued-message",
+      "command": {
+        "kind": "move-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "direction": -1
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject move-queued-message missing session",
+      "command": {
+        "kind": "move-queued-message",
+        "messageId": "message-1",
+        "direction": -1
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject move-queued-message missing messageId",
+      "command": {
+        "kind": "move-queued-message",
+        "sessionId": "session-1",
+        "direction": -1
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject move-queued-message null messageId",
+      "command": {
+        "kind": "move-queued-message",
+        "sessionId": "session-1",
+        "messageId": null,
+        "direction": -1
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject move-queued-message unknown field",
+      "command": {
+        "kind": "move-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "direction": -1,
+        "unexpected": true
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject move-queued-message unrelated field",
+      "command": {
+        "kind": "move-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "direction": -1,
+        "iterationMode": "continue"
+      },
+      "accepted": false
+    },
+    {
+      "name": "accept reorder-queued-message",
+      "command": {
+        "kind": "reorder-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "targetIndex": 0
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject reorder-queued-message missing session",
+      "command": {
+        "kind": "reorder-queued-message",
+        "messageId": "message-1",
+        "targetIndex": 0
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject reorder-queued-message missing messageId",
+      "command": {
+        "kind": "reorder-queued-message",
+        "sessionId": "session-1",
+        "targetIndex": 0
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject reorder-queued-message null messageId",
+      "command": {
+        "kind": "reorder-queued-message",
+        "sessionId": "session-1",
+        "messageId": null,
+        "targetIndex": 0
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject reorder-queued-message unknown field",
+      "command": {
+        "kind": "reorder-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "targetIndex": 0,
+        "unexpected": true
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject reorder-queued-message unrelated field",
+      "command": {
+        "kind": "reorder-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "targetIndex": 0,
+        "iterationMode": "continue"
+      },
+      "accepted": false
+    },
+    {
+      "name": "accept remove-queued-message",
+      "command": {
+        "kind": "remove-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1"
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject remove-queued-message missing session",
+      "command": {
+        "kind": "remove-queued-message",
+        "messageId": "message-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject remove-queued-message missing messageId",
+      "command": {
+        "kind": "remove-queued-message",
+        "sessionId": "session-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject remove-queued-message null messageId",
+      "command": {
+        "kind": "remove-queued-message",
+        "sessionId": "session-1",
+        "messageId": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject remove-queued-message unknown field",
+      "command": {
+        "kind": "remove-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "unexpected": true
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject remove-queued-message unrelated field",
+      "command": {
+        "kind": "remove-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "iterationMode": "continue"
+      },
+      "accepted": false
+    },
+    {
+      "name": "accept retry-queued-message",
+      "command": {
+        "kind": "retry-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1"
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject retry-queued-message missing session",
+      "command": {
+        "kind": "retry-queued-message",
+        "messageId": "message-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject retry-queued-message missing messageId",
+      "command": {
+        "kind": "retry-queued-message",
+        "sessionId": "session-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject retry-queued-message null messageId",
+      "command": {
+        "kind": "retry-queued-message",
+        "sessionId": "session-1",
+        "messageId": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject retry-queued-message unknown field",
+      "command": {
+        "kind": "retry-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "unexpected": true
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject retry-queued-message unrelated field",
+      "command": {
+        "kind": "retry-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "iterationMode": "continue"
+      },
+      "accepted": false
+    },
+    {
+      "name": "accept remove-queued-attachment",
+      "command": {
+        "kind": "remove-queued-attachment",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "attachmentId": "attachment-1"
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject remove-queued-attachment missing session",
+      "command": {
+        "kind": "remove-queued-attachment",
+        "messageId": "message-1",
+        "attachmentId": "attachment-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject remove-queued-attachment missing messageId",
+      "command": {
+        "kind": "remove-queued-attachment",
+        "sessionId": "session-1",
+        "attachmentId": "attachment-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject remove-queued-attachment null messageId",
+      "command": {
+        "kind": "remove-queued-attachment",
+        "sessionId": "session-1",
+        "messageId": null,
+        "attachmentId": "attachment-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject remove-queued-attachment unknown field",
+      "command": {
+        "kind": "remove-queued-attachment",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "attachmentId": "attachment-1",
+        "unexpected": true
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject remove-queued-attachment unrelated field",
+      "command": {
+        "kind": "remove-queued-attachment",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "attachmentId": "attachment-1",
+        "iterationMode": "continue"
+      },
+      "accepted": false
+    },
+    {
+      "name": "accept clear-queued-attachments",
+      "command": {
+        "kind": "clear-queued-attachments",
+        "sessionId": "session-1",
+        "messageId": "message-1"
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject clear-queued-attachments missing session",
+      "command": {
+        "kind": "clear-queued-attachments",
+        "messageId": "message-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject clear-queued-attachments missing messageId",
+      "command": {
+        "kind": "clear-queued-attachments",
+        "sessionId": "session-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject clear-queued-attachments null messageId",
+      "command": {
+        "kind": "clear-queued-attachments",
+        "sessionId": "session-1",
+        "messageId": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject clear-queued-attachments unknown field",
+      "command": {
+        "kind": "clear-queued-attachments",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "unexpected": true
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject clear-queued-attachments unrelated field",
+      "command": {
+        "kind": "clear-queued-attachments",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "iterationMode": "continue"
+      },
+      "accepted": false
+    },
+    {
+      "name": "accept set-running-message-action",
+      "command": {
+        "kind": "set-running-message-action",
+        "sessionId": "session-1",
+        "runningAction": "queue"
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject set-running-message-action missing session",
+      "command": {
+        "kind": "set-running-message-action",
+        "runningAction": "queue"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject set-running-message-action missing runningAction",
+      "command": {
+        "kind": "set-running-message-action",
+        "sessionId": "session-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject set-running-message-action null runningAction",
+      "command": {
+        "kind": "set-running-message-action",
+        "sessionId": "session-1",
+        "runningAction": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject set-running-message-action unknown field",
+      "command": {
+        "kind": "set-running-message-action",
+        "sessionId": "session-1",
+        "runningAction": "queue",
+        "unexpected": true
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject set-running-message-action unrelated field",
+      "command": {
+        "kind": "set-running-message-action",
+        "sessionId": "session-1",
+        "runningAction": "queue",
+        "iterationMode": "continue"
+      },
+      "accepted": false
+    },
+    {
+      "name": "queue edit preserves whitespace",
+      "command": {
+        "kind": "update-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "prompt": " \n "
+      },
+      "accepted": true
+    },
+    {
+      "name": "queue edit normalizes routing identifiers only",
+      "command": {
+        "kind": "update-queued-message",
+        "commandId": "﻿ command-1 ",
+        "sessionId": " session-1 ",
+        "messageId": "　message-1﻿",
+        "prompt": " \n "
+      },
+      "accepted": true,
+      "expected": {
+        "kind": "update-queued-message",
+        "commandId": "command-1",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "prompt": " \n "
+      }
+    },
+    {
+      "name": "reject queue edit missing prompt",
+      "command": {
+        "kind": "update-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queue edit null prompt",
+      "command": {
+        "kind": "update-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "prompt": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "move toward end",
+      "command": {
+        "kind": "move-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "direction": 1
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject queue direction 0",
+      "command": {
+        "kind": "move-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "direction": 0
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queue direction 2",
+      "command": {
+        "kind": "move-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "direction": 2
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queue direction -2",
+      "command": {
+        "kind": "move-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "direction": -2
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queue direction 0.5",
+      "command": {
+        "kind": "move-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "direction": 0.5
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queue direction \"1\"",
+      "command": {
+        "kind": "move-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "direction": "1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queue direction null",
+      "command": {
+        "kind": "move-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "direction": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reorder last queue slot",
+      "command": {
+        "kind": "reorder-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "targetIndex": 511
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject queue target -1",
+      "command": {
+        "kind": "reorder-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "targetIndex": -1
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queue target 512",
+      "command": {
+        "kind": "reorder-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "targetIndex": 512
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queue target 1.5",
+      "command": {
+        "kind": "reorder-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "targetIndex": 1.5
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queue target \"0\"",
+      "command": {
+        "kind": "reorder-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "targetIndex": "0"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queue target null",
+      "command": {
+        "kind": "reorder-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "targetIndex": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject remove queued attachment missing attachment",
+      "command": {
+        "kind": "remove-queued-attachment",
+        "sessionId": "session-1",
+        "messageId": "message-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject remove queued attachment null attachment",
+      "command": {
+        "kind": "remove-queued-attachment",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "attachmentId": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "set running action steer",
+      "command": {
+        "kind": "set-running-message-action",
+        "sessionId": "session-1",
+        "runningAction": "steer"
+      },
+      "accepted": true
+    },
+    {
+      "name": "set running action stop-and-send",
+      "command": {
+        "kind": "set-running-message-action",
+        "sessionId": "session-1",
+        "runningAction": "stop-and-send"
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject invalid running action",
+      "command": {
+        "kind": "set-running-message-action",
+        "sessionId": "session-1",
+        "runningAction": "cancel"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject null optional command id",
+      "command": {
+        "kind": "update-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "prompt": "",
+        "commandId": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject blank queue message id",
+      "command": {
+        "kind": "update-queued-message",
+        "sessionId": "session-1",
+        "messageId": "﻿　",
+        "prompt": ""
+      },
+      "accepted": false
+    },
+    {
+      "name": "context pack omits variables",
+      "command": {
+        "kind": "apply-context-pack",
+        "sessionId": "session-1",
+        "contextPackId": "pack-1"
+      },
+      "accepted": true
+    },
+    {
+      "name": "context pack has empty variables",
+      "command": {
+        "kind": "apply-context-pack",
+        "sessionId": "session-1",
+        "contextPackId": "pack-1",
+        "variableValues": {}
+      },
+      "accepted": true
+    },
+    {
+      "name": "context variables preserve keys and text",
+      "command": {
+        "kind": "apply-context-pack",
+        "sessionId": "session-1",
+        "contextPackId": "pack-1",
+        "variableValues": {
+          " name ": " \n ",
+          "name": "value",
+          "": ""
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject context variables null",
+      "command": {
+        "kind": "apply-context-pack",
+        "sessionId": "session-1",
+        "contextPackId": "pack-1",
+        "variableValues": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject context variables []",
+      "command": {
+        "kind": "apply-context-pack",
+        "sessionId": "session-1",
+        "contextPackId": "pack-1",
+        "variableValues": []
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject context variables {\"name\":null}",
+      "command": {
+        "kind": "apply-context-pack",
+        "sessionId": "session-1",
+        "contextPackId": "pack-1",
+        "variableValues": {
+          "name": null
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject context variables {\"name\":4}",
+      "command": {
+        "kind": "apply-context-pack",
+        "sessionId": "session-1",
+        "contextPackId": "pack-1",
+        "variableValues": {
+          "name": 4
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject context variables on unrelated command",
+      "command": {
+        "kind": "remove-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "variableValues": {}
+      },
+      "accepted": false
+    },
+    {
+      "name": "submit iteration count independently",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "iterationCount": 20
+      },
+      "accepted": true
+    },
+    {
+      "name": "submit iteration mode independently",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "iterationMode": "continue"
+      },
+      "accepted": true
+    },
+    {
+      "name": "submit running action independently",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Build it",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "runningAction": "steer"
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject missing queue direction",
+      "command": {
+        "kind": "move-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject missing queue target",
+      "command": {
+        "kind": "reorder-queued-message",
+        "sessionId": "session-1",
+        "messageId": "message-1"
+      },
+      "accepted": false
+    },
+    {
+      "name": "workspace attachment paths",
+      "command": {
+        "kind": "add-context-attachments",
+        "sessionId": "session-1",
+        "paths": [
+          "C:\\workspace\\notes 日本語.txt"
+        ]
+      },
+      "accepted": true
+    },
+    {
+      "name": "queued attachment paths",
+      "command": {
+        "kind": "add-context-attachments",
+        "sessionId": "session-1",
+        "paths": [
+          "C:\\workspace\\notes 日本語.txt"
+        ],
+        "messageId": "queued-1"
+      },
+      "accepted": true
+    },
+    {
+      "name": "attachment paths cannot be empty",
+      "command": {
+        "kind": "add-context-attachments",
+        "sessionId": "session-1",
+        "paths": []
+      },
+      "accepted": false
+    },
+    {
+      "name": "attachment paths reject NUL",
+      "command": {
+        "kind": "add-context-attachments",
+        "sessionId": "session-1",
+        "paths": [
+          "bad\u0000path"
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "attachment paths reject extra fields",
+      "command": {
+        "kind": "add-context-attachments",
+        "sessionId": "session-1",
+        "paths": [
+          "C:\\workspace\\notes 日本語.txt"
+        ],
+        "workspace": "C:\\workspace"
+      },
+      "accepted": false
+    },
+    {
+      "name": "attachment paths enforce collection size",
+      "command": {
+        "kind": "add-context-attachments",
+        "sessionId": "session-1",
+        "paths": [
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt",
+          "C:\\workspace\\a.txt"
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "Native message edit uses the session and message with Unicode text",
+      "accepted": true,
+      "command": {
+        "kind": "edit-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "prompt": "Edited request 🌿"
+      }
+    },
+    {
+      "name": "Native reply replay does not need a task identity",
+      "accepted": true,
+      "command": {
+        "kind": "replay-message",
+        "sessionId": "session-1",
+        "messageId": "message-1"
+      }
+    },
+    {
+      "name": "Native message edit rejects an empty request",
+      "accepted": false,
+      "command": {
+        "kind": "edit-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "prompt": " \n "
+      }
+    },
+    {
+      "name": "Native message edit requires the message identity",
+      "accepted": false,
+      "command": {
+        "kind": "edit-message",
+        "sessionId": "session-1",
+        "prompt": "Edited"
+      }
+    },
+    {
+      "name": "Native reply replay requires the session identity",
+      "accepted": false,
+      "command": {
+        "kind": "replay-message",
+        "messageId": "message-1"
+      }
+    },
+    {
+      "name": "Native reply replay rejects fields from other commands",
+      "accepted": false,
+      "command": {
+        "kind": "replay-message",
+        "sessionId": "session-1",
+        "messageId": "message-1",
+        "prompt": "Edited"
+      }
+    },
+    {
+      "name": "History restores exact Unicode whitespace and native attachment identities",
+      "accepted": true,
+      "command": {
+        "kind": "restore-prompt-history",
+        "sessionId": "session-1",
+        "prompt": "  Edited 🌿\n\t",
+        "history": {
+          "index": 4,
+          "prompt": "Historical 🌿\n",
+          "attachmentIds": [
+            "file-old"
+          ],
+          "previousDraft": "Current 🌿\n",
+          "previousAttachmentIds": [
+            "file-current"
+          ]
+        }
+      }
+    },
+    {
+      "name": "History can restore a cleared edited draft",
+      "accepted": true,
+      "command": {
+        "kind": "restore-prompt-history",
+        "sessionId": "session-1",
+        "prompt": "",
+        "history": {
+          "index": 4,
+          "prompt": "Historical 🌿\n",
+          "attachmentIds": [
+            "file-old"
+          ],
+          "previousDraft": "Current 🌿\n",
+          "previousAttachmentIds": [
+            "file-current"
+          ]
+        }
+      }
+    },
+    {
+      "name": "History requires its original selection and composer state",
+      "accepted": false,
+      "command": {
+        "kind": "restore-prompt-history",
+        "sessionId": "session-1",
+        "prompt": "  Edited 🌿\n\t"
+      }
+    },
+    {
+      "name": "History rejects a fractional native index",
+      "accepted": false,
+      "command": {
+        "kind": "restore-prompt-history",
+        "sessionId": "session-1",
+        "prompt": "  Edited 🌿\n\t",
+        "history": {
+          "index": 1.5,
+          "prompt": "Historical 🌿\n",
+          "attachmentIds": [
+            "file-old"
+          ],
+          "previousDraft": "Current 🌿\n",
+          "previousAttachmentIds": [
+            "file-current"
+          ]
+        }
+      }
+    },
+    {
+      "name": "History rejects a negative native index",
+      "accepted": false,
+      "command": {
+        "kind": "restore-prompt-history",
+        "sessionId": "session-1",
+        "prompt": "  Edited 🌿\n\t",
+        "history": {
+          "index": -1,
+          "prompt": "Historical 🌿\n",
+          "attachmentIds": [
+            "file-old"
+          ],
+          "previousDraft": "Current 🌿\n",
+          "previousAttachmentIds": [
+            "file-current"
+          ]
+        }
+      }
+    },
+    {
+      "name": "History preserves prompts beyond the live snapshot limit",
+      "accepted": true,
+      "command": {
+        "kind": "restore-prompt-history",
+        "sessionId": "session-1",
+        "prompt": "  Edited 🌿\n\t",
+        "history": {
+          "index": 4,
+          "prompt": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "attachmentIds": [
+            "file-old"
+          ],
+          "previousDraft": "Current 🌿\n",
+          "previousAttachmentIds": [
+            "file-current"
+          ]
+        }
+      }
+    },
+    {
+      "name": "History rejects extra selection fields",
+      "accepted": false,
+      "command": {
+        "kind": "restore-prompt-history",
+        "sessionId": "session-1",
+        "prompt": "  Edited 🌿\n\t",
+        "history": {
+          "index": 4,
+          "prompt": "Historical 🌿\n",
+          "attachmentIds": [
+            "file-old"
+          ],
+          "previousDraft": "Current 🌿\n",
+          "previousAttachmentIds": [
+            "file-current"
+          ],
+          "hidden": true
+        }
+      }
+    },
+    {
+      "name": "History requires the previous attachment identities",
+      "accepted": false,
+      "command": {
+        "kind": "restore-prompt-history",
+        "sessionId": "session-1",
+        "prompt": "  Edited 🌿\n\t",
+        "history": {
+          "index": 4,
+          "prompt": "Historical 🌿\n",
+          "attachmentIds": [
+            "file-old"
+          ],
+          "previousDraft": "Current 🌿\n"
+        }
+      }
+    },
+    {
+      "name": "History rejects blank attachment identities",
+      "accepted": false,
+      "command": {
+        "kind": "restore-prompt-history",
+        "sessionId": "session-1",
+        "prompt": "  Edited 🌿\n\t",
+        "history": {
+          "index": 4,
+          "prompt": "Historical 🌿\n",
+          "attachmentIds": [
+            "  "
+          ],
+          "previousDraft": "Current 🌿\n",
+          "previousAttachmentIds": [
+            "file-current"
+          ]
+        }
+      }
+    }
+  ],
+  "snapshots": [
+    {
+      "name": "adaptive inherited workspace default",
+      "composer": {
+        "adaptiveController": {
+          "override": null,
+          "defaultEnabled": true
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "adaptive explicit override with unresolved default",
+      "composer": {
+        "adaptiveController": {
+          "override": false,
+          "defaultEnabled": null
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "adaptive rejects incomplete projection",
+      "composer": {
+        "adaptiveController": {
+          "override": true
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "adaptive rejects invalid override",
+      "composer": {
+        "adaptiveController": {
+          "override": "enabled",
+          "defaultEnabled": true
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "adaptive rejects unrelated property",
+      "composer": {
+        "adaptiveController": {
+          "override": null,
+          "defaultEnabled": true,
+          "enabled": true
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "composer options omitted",
+      "composer": {},
+      "accepted": true
+    },
+    {
+      "name": "empty composer queue",
+      "composer": {
+        "queuedMessages": [],
+        "draftRevision": 0,
+        "imageInputSupported": false,
+        "imageInputDisabledReason": "",
+        "runningTaskMessageAction": "queue"
+      },
+      "accepted": true
+    },
+    {
+      "name": "composer iteration repeat-prompt action queue",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": " \n ",
+            "attachments": [
+              {
+                "id": "attachment-1",
+                "source": "path",
+                "kind": "file",
+                "name": "file.txt",
+                "path": "/projects/demo/file.txt"
+              },
+              {
+                "id": "attachment-2",
+                "source": "media-asset",
+                "kind": "image",
+                "name": "Preview",
+                "workspaceRoot": "/projects/demo",
+                "assetId": "asset-1"
+              }
+            ],
+            "status": "enhancing",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 1,
+              "total": 20,
+              "mode": "repeat-prompt"
+            },
+            "waitingForIteration": 20,
+            "promptEnhancementMode": "simple",
+            "failureMessage": "Failure"
+          }
+        ],
+        "runningTaskMessageAction": "queue",
+        "draftRevision": 1,
+        "imageInputSupported": true
+      },
+      "accepted": true
+    },
+    {
+      "name": "composer iteration continue action steer",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": " \n ",
+            "attachments": [
+              {
+                "id": "attachment-1",
+                "source": "path",
+                "kind": "file",
+                "name": "file.txt",
+                "path": "/projects/demo/file.txt"
+              },
+              {
+                "id": "attachment-2",
+                "source": "media-asset",
+                "kind": "image",
+                "name": "Preview",
+                "workspaceRoot": "/projects/demo",
+                "assetId": "asset-1"
+              }
+            ],
+            "status": "dispatching",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 1,
+              "total": 20,
+              "mode": "continue"
+            },
+            "waitingForIteration": 20,
+            "promptEnhancementMode": "web-search",
+            "failureMessage": "Failure"
+          }
+        ],
+        "runningTaskMessageAction": "steer",
+        "draftRevision": 1,
+        "imageInputSupported": true
+      },
+      "accepted": true
+    },
+    {
+      "name": "composer iteration repeat-prompt-and-continue action stop-and-send",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": " \n ",
+            "attachments": [
+              {
+                "id": "attachment-1",
+                "source": "path",
+                "kind": "file",
+                "name": "file.txt",
+                "path": "/projects/demo/file.txt"
+              },
+              {
+                "id": "attachment-2",
+                "source": "media-asset",
+                "kind": "image",
+                "name": "Preview",
+                "workspaceRoot": "/projects/demo",
+                "assetId": "asset-1"
+              }
+            ],
+            "status": "failed",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 20,
+              "total": 20,
+              "mode": "repeat-prompt-and-continue"
+            },
+            "waitingForIteration": 20,
+            "promptEnhancementMode": "web-search",
+            "failureMessage": "Failure"
+          }
+        ],
+        "runningTaskMessageAction": "stop-and-send",
+        "draftRevision": 1,
+        "imageInputSupported": true
+      },
+      "accepted": true
+    },
+    {
+      "name": "queued composer message",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject composer queuedMessages null",
+      "composer": {
+        "queuedMessages": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer queuedMessages {}",
+      "composer": {
+        "queuedMessages": {}
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer runningTaskMessageAction null",
+      "composer": {
+        "runningTaskMessageAction": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer runningTaskMessageAction \"cancel\"",
+      "composer": {
+        "runningTaskMessageAction": "cancel"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer draftRevision null",
+      "composer": {
+        "draftRevision": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer draftRevision -1",
+      "composer": {
+        "draftRevision": -1
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer draftRevision 0.5",
+      "composer": {
+        "draftRevision": 0.5
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer draftRevision 9007199254740992",
+      "composer": {
+        "draftRevision": 9007199254740992
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer imageInputSupported null",
+      "composer": {
+        "imageInputSupported": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer imageInputSupported \"true\"",
+      "composer": {
+        "imageInputSupported": "true"
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer imageInputSupported 0",
+      "composer": {
+        "imageInputSupported": 0
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer imageInputDisabledReason null",
+      "composer": {
+        "imageInputDisabledReason": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer imageInputDisabledReason 1",
+      "composer": {
+        "imageInputDisabledReason": 1
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer unknown field",
+      "composer": {
+        "unexpected": true
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued id null",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": null,
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued id 1",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": 1,
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued content null",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": null,
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued content 1",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": 1,
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued status \"pending\"",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "pending",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued status null",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": null,
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued createdAt -1",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": -1
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued createdAt 0.5",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0.5
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued createdAt null",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": null
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued createdAt 9007199254740992",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 9007199254740992
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued attachments null",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": null,
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued attachments {}",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": {},
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued iteration null",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": null
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued iteration {}",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {}
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued iteration {\"groupId\":\"group-1\",\"index\":1,\"total\":20,\"mode\":\"repeat\"}",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 1,
+              "total": 20,
+              "mode": "repeat"
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued waitingForIteration 0",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "waitingForIteration": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued waitingForIteration 21",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "waitingForIteration": 21
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued waitingForIteration 0.5",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "waitingForIteration": 0.5
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued waitingForIteration null",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "waitingForIteration": null
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued promptEnhancementMode \"off\"",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "promptEnhancementMode": "off"
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued promptEnhancementMode \"search\"",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "promptEnhancementMode": "search"
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued promptEnhancementMode null",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "promptEnhancementMode": null
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued failureMessage null",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "failureMessage": null
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued failureMessage 1",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "failureMessage": 1
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued missing id",
+      "composer": {
+        "queuedMessages": [
+          {
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued missing content",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued missing attachments",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued missing status",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued missing createdAt",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued"
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued unknown field",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "unexpected": true
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration missing groupId",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "index": 1,
+              "total": 20,
+              "mode": "continue"
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration null groupId",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": null,
+              "index": 1,
+              "total": 20,
+              "mode": "continue"
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration missing index",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "total": 20,
+              "mode": "continue"
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration null index",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": null,
+              "total": 20,
+              "mode": "continue"
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration missing total",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 1,
+              "mode": "continue"
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration null total",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 1,
+              "total": null,
+              "mode": "continue"
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration missing mode",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 1,
+              "total": 20
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration null mode",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 1,
+              "total": 20,
+              "mode": null
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration index 0",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 0,
+              "total": 20,
+              "mode": "continue"
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration index 21",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 21,
+              "total": 20,
+              "mode": "continue"
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration index 0.5",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 0.5,
+              "total": 20,
+              "mode": "continue"
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration total 0",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 1,
+              "total": 0,
+              "mode": "continue"
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration total 21",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 1,
+              "total": 21,
+              "mode": "continue"
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration total 0.5",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 1,
+              "total": 0.5,
+              "mode": "continue"
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject iteration unknown field",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "iteration": {
+              "groupId": "group-1",
+              "index": 1,
+              "total": 20,
+              "mode": "continue",
+              "unexpected": true
+            }
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued path attachment unknown field",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [
+              {
+                "id": "attachment-1",
+                "source": "path",
+                "kind": "file",
+                "name": "file.txt",
+                "path": "/projects/demo/file.txt",
+                "unexpected": true
+              }
+            ],
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued media attachment missing asset",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [
+              {
+                "id": "attachment-2",
+                "source": "media-asset",
+                "kind": "image",
+                "name": "Preview",
+                "workspaceRoot": "/projects/demo",
+                "assetId": null
+              }
+            ],
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued attachment unknown source",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [
+              {
+                "id": "attachment-1",
+                "source": "upload",
+                "kind": "file",
+                "name": "file.txt",
+                "path": "/projects/demo/file.txt"
+              }
+            ],
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject queued attachment null optional parent",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [
+              {
+                "id": "attachment-1",
+                "source": "path",
+                "kind": "file",
+                "name": "file.txt",
+                "path": "/projects/demo/file.txt",
+                "parent": null
+              }
+            ],
+            "status": "queued",
+            "createdAt": 0
+          }
+        ]
+      },
+      "accepted": false
+    },
+    {
+      "name": "composer timestamps and revision at safe integer limit",
+      "composer": {
+        "draftRevision": 9007199254740991,
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 9007199254740991
+          }
+        ]
+      },
+      "accepted": true
+    },
+    {
+      "name": "queued waiting iteration at lower limit",
+      "composer": {
+        "queuedMessages": [
+          {
+            "id": "message-1",
+            "content": "",
+            "attachments": [],
+            "status": "queued",
+            "createdAt": 0,
+            "waitingForIteration": 1
+          }
+        ]
+      },
+      "accepted": true
+    },
+    {
+      "name": "History metadata preserves the native index and attachments",
+      "accepted": true,
+      "composer": {
+        "history": [
+          {
+            "index": 4,
+            "prompt": "Historical 🌿\n",
+            "attachments": [
+              {
+                "id": "file-old",
+                "source": "path",
+                "kind": "file",
+                "name": "old.md",
+                "path": "C:/Fixture/old.md"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "History metadata rejects oversized native indices",
+      "accepted": false,
+      "composer": {
+        "history": [
+          {
+            "index": 10001,
+            "prompt": "Historical 🌿\n",
+            "attachments": [
+              {
+                "id": "file-old",
+                "source": "path",
+                "kind": "file",
+                "name": "old.md",
+                "path": "C:/Fixture/old.md"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "Composer marks text requiring a full native read",
+      "composer": {
+        "textTruncated": true
+      },
+      "accepted": true
+    },
+    {
+      "name": "Composer rejects invalid full text marker",
+      "composer": {
+        "textTruncated": "yes"
+      },
+      "accepted": false
+    }
+  ]
+}

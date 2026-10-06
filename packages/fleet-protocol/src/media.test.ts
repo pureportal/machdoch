@@ -41,7 +41,10 @@ for (const fixture of corpus.cases) {
       mediaRequestSchema.safeParse(fixture.request).success,
       fixture.accepted,
     );
-    assert.equal(hostRequestSchema.safeParse(hostRequest).success, fixture.accepted);
+    assert.equal(
+      hostRequestSchema.safeParse(hostRequest).success,
+      fixture.accepted,
+    );
     assert.equal(
       managerMessageSchema.safeParse({
         type: "request",
@@ -60,7 +63,10 @@ void test("all declared media commands are valid invoke requests", () => {
         kind: "invoke",
         id: "123e4567-e89b-42d3-a456-426614174000",
         command,
-        args: {},
+        args:
+          command === "media_move_asset_storage"
+            ? { folder: "C:\\Assets" }
+            : {},
       }).success,
       true,
       command,
@@ -72,9 +78,27 @@ const completeResponseCases = [
   { name: "partial chunk", accepted: true, chunk: "abc", offset: 2, total: 10 },
   { name: "empty result", accepted: true, chunk: "", offset: 0, total: 0 },
   { name: "empty final chunk", accepted: true, chunk: "", offset: 3, total: 3 },
-  { name: "offset beyond total", accepted: false, chunk: "", offset: 11, total: 10 },
-  { name: "chunk overruns total", accepted: false, chunk: "abc", offset: 8, total: 10 },
-  { name: "empty partial chunk", accepted: false, chunk: "", offset: 2, total: 10 },
+  {
+    name: "offset beyond total",
+    accepted: false,
+    chunk: "",
+    offset: 11,
+    total: 10,
+  },
+  {
+    name: "chunk overruns total",
+    accepted: false,
+    chunk: "abc",
+    offset: 8,
+    total: 10,
+  },
+  {
+    name: "empty partial chunk",
+    accepted: false,
+    chunk: "",
+    offset: 2,
+    total: 10,
+  },
   {
     name: "total at maximum",
     accepted: true,
@@ -114,8 +138,14 @@ for (const fixture of completeResponseCases) {
       total: fixture.total,
     };
     const hostResponse = { type: "media", response };
-    assert.equal(mediaResponseSchema.safeParse(response).success, fixture.accepted);
-    assert.equal(hostResponseSchema.safeParse(hostResponse).success, fixture.accepted);
+    assert.equal(
+      mediaResponseSchema.safeParse(response).success,
+      fixture.accepted,
+    );
+    assert.equal(
+      hostResponseSchema.safeParse(hostResponse).success,
+      fixture.accepted,
+    );
     assert.equal(
       hostMessageSchema.safeParse({
         type: "response",

@@ -392,7 +392,7 @@ fn snapshot_global_memory() -> Result<CategorySnapshot, String> {
 pub(crate) fn chat_voice_preferences_from_sources<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<Value, String> {
-    let shell_state = crate::shell_state::load_shell_state_for_settings_transfer(app)
+    let shell_state = crate::shell_state::load_authoritative_shell_state(app)
         .map_err(|_| "Chat and voice preferences are unavailable.".to_string())?;
     let root = shell_state
         .as_object()
@@ -569,7 +569,7 @@ pub(crate) fn replace_global_context_packs(
 fn snapshot_global_context_packs<R: Runtime>(
     app: &AppHandle<R>,
 ) -> Result<CategorySnapshot, String> {
-    let shell_state = crate::shell_state::load_shell_state_for_settings_transfer(app)
+    let shell_state = crate::shell_state::load_authoritative_shell_state(app)
         .map_err(|_| "Global context packs are unavailable.".to_string())?;
     let context_packs = global_context_packs_from_shell_state(&shell_state)?;
     let value = json!({ "contextPacks": context_packs });

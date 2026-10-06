@@ -9,8 +9,8 @@ import { InstructionSystemError } from "./types.js";
 import {
   MAX_INSTRUCTION_PROFILE_NAME_LENGTH,
   MAX_INSTRUCTION_SOURCE_BYTES,
-} from "./limits.js";
-import { hasUnpairedUtf16Surrogate } from "../../shared/unicode.js";
+} from "@machdoch/fleet-protocol/instruction-limits";
+import { hasUnpairedUtf16Surrogate } from "@machdoch/fleet-protocol/unicode";
 
 export {
   INSTRUCTION_ADVISORY_BYTES,
@@ -20,7 +20,7 @@ export {
   MAX_INSTRUCTION_ENVELOPE_BYTES,
   MAX_INSTRUCTION_SOURCE_FILE_BYTES,
   MAX_INSTRUCTION_SOURCE_BYTES,
-} from "./limits.js";
+} from "@machdoch/fleet-protocol/instruction-limits";
 
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 const UTF8_ENCODER = new TextEncoder();

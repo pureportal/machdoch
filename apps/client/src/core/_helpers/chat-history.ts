@@ -2,7 +2,7 @@ import type { ConversationHistoryEntry } from "../types.js";
 import {
   sliceUtf16PrefixAtCodePointBoundary,
   sliceUtf16SuffixAtCodePointBoundary,
-} from "../../shared/unicode.js";
+} from "@machdoch/fleet-protocol/unicode";
 
 const MAX_PAGE_CONTENT_CHARS = 20_000;
 

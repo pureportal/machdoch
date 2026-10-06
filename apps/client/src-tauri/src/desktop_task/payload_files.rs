@@ -196,6 +196,24 @@ pub(super) fn rewrite_instruction_payload_arguments(
             index += 2;
             continue;
         }
+        if matches!(
+            argument.as_str(),
+            "--name"
+                | "--description"
+                | "--metadata-json"
+                | "--expected-revision"
+                | "--path"
+                | "--profile"
+                | "--expected-digest"
+        ) {
+            let Some(value) = arguments.get(index + 1) else {
+                cleanup_temporary_files(&payload_paths);
+                return Err(format!("Expected {argument} to include a value."));
+            };
+            rewritten.push(format!("{argument}={value}"));
+            index += 2;
+            continue;
+        }
         rewritten.push(argument.clone());
         index += 1;
     }

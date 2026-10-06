@@ -16,6 +16,7 @@ import {
   inferMediaVideoAspectRatio,
   isMediaAssetKnownTransparent,
 } from "../../../core/media/video-quality.js";
+import { isActiveRefMod } from "../../../core/media/refmods.js";
 
 export const compileBasicImageOutputBranches = (flow: MediaFlow) => {
   const cutouts = flow.nodes.filter(
@@ -77,7 +78,7 @@ export const createBasicMediaVideoFlow = ({
       (node) => node.type === "task.generate-video",
     )!.config.generateAudio = generateAudio;
   if (sourceAssetId) return flow;
-  if (nativeTextToVideo) {
+  if (nativeTextToVideo || (videoSettings.modelId === "local:minimax-h3-ref2va" && (videoSettings.refMods ?? []).some(isActiveRefMod))) {
     return {
       ...flow,
       nodes: flow.nodes.filter((node) => node.type !== "source.image"),

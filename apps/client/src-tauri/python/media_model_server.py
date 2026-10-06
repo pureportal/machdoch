@@ -6,7 +6,7 @@ import traceback
 
 from media_model_memory import (
     GPU_MEMORY_ERROR,
-    ImagePipelineCache,
+    ModelPipelineCache,
     is_gpu_out_of_memory,
     memory_snapshot,
     release_allocator,
@@ -31,12 +31,13 @@ def serve(worker) -> int:
                 result = worker.probe()
             elif command == "memory":
                 result = memory_snapshot(cache.torch, cache.device) if cache else {"pressure": False}
-            elif command == "generate":
+            elif command in ("generate", "generate-video"):
                 if cache is None:
                     torch, _ = worker._runtime()
                     device, _, _ = worker._device(torch)
-                    cache = ImagePipelineCache(torch, device, worker.PROCESS_STARTED_AT)
-                result = worker.generate(envelope["request"], cache)
+                    cache = ModelPipelineCache(torch, device, worker.PROCESS_STARTED_AT)
+                operation = worker.generate if command == "generate" else worker.generate_video
+                result = operation(envelope["request"], cache)
                 release_allocator(cache.torch, cache.device)
             else:
                 raise ValueError("Unknown model worker command")

@@ -1,0 +1,113 @@
+{
+  "date": "2026-10-06T19:02:01.063Z",
+  "pretrainedWeightsUsed": false,
+  "productionManager": true,
+  "isolatedDatabase": true,
+  "checks": [
+    "damaged-video-preview",
+    "missing-audio-preview",
+    "preview-cancellation",
+    "damaged-video-creation"
+  ],
+  "controlsRestored": true,
+  "failedCreationOutputAbsent": true,
+  "temporaryFiles": [],
+  "failures": [
+    {
+      "category": "configuration",
+      "code": "MODEL_NOT_INSTALLED",
+      "context": {
+        "assetId": null,
+        "modelId": null,
+        "nodeId": null,
+        "operation": "media_refmod_operation",
+        "providerId": null,
+        "runId": null,
+        "runtimeId": null
+      },
+      "message": "MiniMax H3 video VAE is incomplete or damaged. Install a complete video checkpoint.",
+      "partialOutputsExist": false,
+      "retryability": "after-user-action",
+      "schemaVersion": 1,
+      "suggestedActions": [
+        {
+          "description": "Review the download, license, disk, and compatibility plan.",
+          "id": "open-models",
+          "label": "Open Models"
+        }
+      ],
+      "technicalDiagnostic": "Local Diffusers worker failed: ValueError: MiniMax H3 video VAE is incomplete or damaged. Replace \\\\?\\D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\workspace\\models\\minimax-h3-ref2va\\vae\\minimax_h3_video_vae_fp16.safetensors with a complete checkpoint."
+    },
+    {
+      "category": "configuration",
+      "code": "MODEL_NOT_INSTALLED",
+      "context": {
+        "assetId": null,
+        "modelId": null,
+        "nodeId": null,
+        "operation": "media_refmod_operation",
+        "providerId": null,
+        "runId": null,
+        "runtimeId": null
+      },
+      "message": "Install the MiniMax H3 audio VAE to create or preview audio references.",
+      "partialOutputsExist": false,
+      "retryability": "after-user-action",
+      "schemaVersion": 1,
+      "suggestedActions": [
+        {
+          "description": "Review the download, license, disk, and compatibility plan.",
+          "id": "open-models",
+          "label": "Open Models"
+        }
+      ],
+      "technicalDiagnostic": "Local Diffusers worker failed: ValueError: Install the MiniMax H3 audio VAE at \\\\?\\D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\workspace\\models\\minimax-h3-ref2va\\vae\\minimax_h3_audio_vae_fp32.safetensors"
+    },
+    {
+      "category": "cancellation",
+      "code": "CANCELLED_BY_USER",
+      "context": {
+        "assetId": null,
+        "modelId": null,
+        "nodeId": null,
+        "operation": "media_refmod_operation",
+        "providerId": null,
+        "runId": null,
+        "runtimeId": null
+      },
+      "message": "The media operation was canceled.",
+      "partialOutputsExist": false,
+      "retryability": "never",
+      "schemaVersion": 1,
+      "suggestedActions": [],
+      "technicalDiagnostic": "RefMod operation was canceled"
+    },
+    {
+      "category": "configuration",
+      "code": "MODEL_NOT_INSTALLED",
+      "context": {
+        "assetId": null,
+        "modelId": null,
+        "nodeId": null,
+        "operation": "media_refmod_operation",
+        "providerId": null,
+        "runId": null,
+        "runtimeId": null
+      },
+      "message": "MiniMax H3 video VAE is incomplete or damaged. Install a complete video checkpoint.",
+      "partialOutputsExist": false,
+      "retryability": "after-user-action",
+      "schemaVersion": 1,
+      "suggestedActions": [
+        {
+          "description": "Review the download, license, disk, and compatibility plan.",
+          "id": "open-models",
+          "label": "Open Models"
+        }
+      ],
+      "technicalDiagnostic": "Local Diffusers worker failed: ValueError: MiniMax H3 video VAE is incomplete or damaged. Replace \\\\?\\D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\workspace\\models\\minimax-h3-ref2va\\vae\\minimax_h3_video_vae_fp16.safetensors with a complete checkpoint."
+    }
+  ],
+  "responseWarnings": [],
+  "transportFailures": []
+}

@@ -327,15 +327,13 @@ pub(super) fn save_user_voice_active_provider_value(provider: &str) -> Result<Pa
 pub(super) fn save_user_speech_to_text_active_provider_value(
     provider: &str,
 ) -> Result<PathBuf, String> {
-    let normalized_provider = normalize_optional_string(Some(provider)).ok_or_else(|| {
-        "Expected provider to be one of none, openai, google, or whisper.".to_string()
-    })?;
+    let normalized_provider = normalize_optional_string(Some(provider))
+        .ok_or_else(|| "Choose a speech input provider.".to_string())?;
 
-    if !matches!(
-        normalized_provider.as_str(),
-        "none" | "openai" | "google" | "whisper"
-    ) {
-        return Err("Expected provider to be one of none, openai, google, or whisper.".to_string());
+    if !crate::runtime_contract_generated::VALID_SPEECH_TO_TEXT_PROVIDERS
+        .contains(&normalized_provider.as_str())
+    {
+        return Err("Choose a speech input provider.".to_string());
     }
 
     update_user_config_file(|config| {
@@ -366,7 +364,7 @@ pub(super) fn save_user_speech_to_text_key_terms_value(
         if term.chars().count() > 80
             || term
                 .chars()
-                .any(|character| matches!(character, '<' | '>' | '\r' | '\n'))
+                .any(|character| matches!(character, '<' | '>' | '\r' | '\n' | '\0'))
         {
             return Err(
                 "Each key term must be one line of up to 80 characters without angle brackets."

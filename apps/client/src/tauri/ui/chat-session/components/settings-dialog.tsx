@@ -1,5 +1,5 @@
 import { CivitaiSettingsPanel } from "@machdoch/media-studio/tauri/ui/media/components/civitai-settings-panel.js";
-import { isTauri } from "@tauri-apps/api/core";
+import { canUseDeviceSettings } from "../../device-settings-platform";
 import { AlertTriangle, LoaderCircle, X, type LucideIcon } from "lucide-react";
 import {
   useEffect,
@@ -28,11 +28,12 @@ import {
   type CommandDefinition,
   type CommandPageItem,
 } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
-import { getProviderLabel } from "../../model-catalog";
+import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import {
   getUserApiKeyProviderLabel,
   USER_API_KEY_PROVIDER_ORDER,
   USER_SPEECH_TO_TEXT_PROVIDER_ORDER,
+  speechProviderLabel,
   USER_VOICE_AI_PROVIDER_ORDER,
   USER_WEB_SEARCH_PROVIDER_ORDER,
 } from "../../runtime";
@@ -122,6 +123,7 @@ export interface SettingsDialogProps extends SettingsControlsProps {
   onClose: () => Promise<void> | void;
   title?: string;
   description?: string;
+  error?: string | null;
   closeLabel?: string;
   closeText?: string;
   closeDiscardLabel?: string;
@@ -178,7 +180,7 @@ const renderSettingsPanel = ({
       return <VoiceSettingsPanel setup={voiceSetup} />;
 
     case "transfer":
-      return isTauri() ? (
+      return canUseDeviceSettings() ? (
         <SettingsTransferPanel />
       ) : (
         <p role="status" className="text-sm text-slate-400">
@@ -1140,12 +1142,7 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
                   );
                 return {
                   id: provider,
-                  title:
-                    provider === "none"
-                      ? "Disabled"
-                      : provider === "whisper"
-                        ? "Whisper (local)"
-                        : getProviderLabel(provider),
+                  title: speechProviderLabel(provider),
                   current:
                     state().props.voiceSetup.speechToTextProvider === provider,
                   numericKey: numericKey(index),
@@ -1424,9 +1421,9 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
               <DialogDescription className="sr-only">
                 {description}
               </DialogDescription>
-              {actionError ? (
+              {actionError || props.error ? (
                 <p role="alert" className="mt-1 text-xs text-rose-300">
-                  {actionError}
+                  {actionError ?? props.error}
                 </p>
               ) : null}
             </div>

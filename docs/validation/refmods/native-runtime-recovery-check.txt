@@ -1,0 +1,36 @@
+    Checking machdoch-fleet-protocol v0.1.0 (C:\Development\machdoch\packages\fleet-protocol)
+warning: variant `Union` is never constructed
+  --> C:\Development\machdoch\packages\fleet-protocol\src\snapshot.rs:16:5
+   |
+ 5 | enum Shape {
+   |      ----- variant in this enum
+...
+16 |     Union(Vec<Shape>),
+   |     ^^^^^
+   |
+   = note: `Shape` has a derived impl for the trait `Clone`, but this is intentionally ignored during dead code analysis
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `machdoch-fleet-protocol` (lib) generated 1 warning
+    Checking machdoch v29.2.0 (C:\Development\machdoch\apps\client\src-tauri)
+error[E0425]: cannot find type `FleetAdaptiveController` in this scope
+   --> src\fleet_control\shell.rs:196:44
+    |
+196 |     pub(super) adaptive_controller: Option<FleetAdaptiveController>,
+    |                                            ^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: you might be missing a type parameter
+    |
+174 | pub(super) struct FleetShellComposer<FleetAdaptiveController> {
+    |                                     +++++++++++++++++++++++++
+
+error[E0425]: cannot find type `FleetAdaptiveController` in this scope
+   --> src\fleet_control\shell.rs:196:44
+    |
+196 |     pub(super) adaptive_controller: Option<FleetAdaptiveController>,
+    |                                            ^^^^^^^^^^^^^^^^^^^^^^^ not found in this scope
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `machdoch` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `machdoch` (lib test) due to 2 previous errors

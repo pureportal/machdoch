@@ -16,7 +16,8 @@ pub(crate) fn import_video(
             digest: staged.digest.clone(),
             byte_size: staged.byte_size,
         };
-        let metadata = super::super::provider_local_diffusers::inspect_video(app, &decode_path);
+        let metadata =
+            super::super::provider_local_diffusers::inspect_video(app, &decode_path, false);
         let result = metadata.and_then(|metadata| {
             let source_file_name = source_path.file_name().and_then(|name| name.to_str()).unwrap_or("video.webm");
             let operation = serde_json::json!({"kind": "local-import", "mediaType": "video", "sourceFileName": source_file_name, "output": metadata}).to_string();

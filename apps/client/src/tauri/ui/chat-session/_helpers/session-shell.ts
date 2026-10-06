@@ -31,7 +31,7 @@ import {
   type ChatSessionRecord,
   type SessionOverviewStatus,
 } from "../../chat-session.model";
-import { getProviderLabel } from "../../model-catalog";
+import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
 import {
   USER_WEB_SEARCH_PROVIDER_ORDER,

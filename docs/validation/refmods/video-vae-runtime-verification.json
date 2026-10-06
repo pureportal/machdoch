@@ -1,0 +1,392 @@
+{
+  "date": "2026-10-06T15:14:50.558Z",
+  "fullOutcomeVerified": false,
+  "devServerStarted": false,
+  "pretrainedWeightsUsedInThisFollowup": false,
+  "changes": [
+    "Canonical native Diffusers video VAE adapter replaces the former port",
+    "Selected-component checkpoint conversion, fp16 normalization, bounded frame previews and GPU memory preflight",
+    "Checksum-pinned source archive replaces the runtime Git checkout",
+    "Current VAE attribution and release licence bundles refreshed",
+    "Fleet test fixture corrected to construct its snapshot through the existing deserialization pattern"
+  ],
+  "runtimeDependency": {
+    "commit": "4295ee3ec58efa6577bc459e9b84ca3f63aa9a96",
+    "sha256": "b8797a69784b365643a1935b5b82df679873068c8a3077e363a266a8f62f5c8f",
+    "invalidChecksumRejected": true
+  },
+  "checks": {
+    "python": {
+      "count": 42,
+      "log": "python-video-adapter-check.txt"
+    },
+    "nativeVideoAdapter": {
+      "count": 10,
+      "log": "diffusers-video-adapter-tests.txt"
+    },
+    "videoMemoryPreflight": {
+      "count": 1,
+      "log": "video-adapter-memory-tests.txt"
+    },
+    "runtimeInstaller": {
+      "count": 28,
+      "log": "runtime-installer-tests.txt"
+    },
+    "actualManagedInstallation": {
+      "count": 1,
+      "log": "runtime-installer-managed-install.txt"
+    },
+    "desktopCompilation": {
+      "command": "cargo check --tests",
+      "log": "native-runtime-recovery-final-check.txt"
+    },
+    "gpu": {
+      "pretrainedWeightsUsed": false,
+      "device": "AMD Radeon RX 9070 (cuda:1)",
+      "convolutionBackend": "aten-native-hip",
+      "checks": [
+        {
+          "sourceFrames": 1,
+          "latentFrames": 1,
+          "finite": true,
+          "selectedFramesMatchFull": true,
+          "latentPreserved": true
+        },
+        {
+          "sourceFrames": 5,
+          "latentFrames": 2,
+          "finite": true,
+          "selectedFramesMatchFull": true,
+          "latentPreserved": true
+        },
+        {
+          "sourceFrames": 22,
+          "latentFrames": 7,
+          "finite": true,
+          "selectedFramesMatchFull": true,
+          "latentPreserved": true
+        }
+      ],
+      "passed": true
+    },
+    "nativeCheckpointHeader": {
+      "pretrainedWeightsUsed": false,
+      "tensorValuesRead": false,
+      "modes": {
+        "encode": {
+          "sourceWeights": 118,
+          "missing": [],
+          "incompatible": []
+        },
+        "decode": {
+          "sourceWeights": 441,
+          "missing": [],
+          "incompatible": []
+        }
+      },
+      "sourcePreserved": true,
+      "passed": true
+    },
+    "desktopIPC": {
+      "devServerStarted": false,
+      "pretrainedWeightsUsed": false,
+      "checks": [
+        {
+          "operation": "list",
+          "passed": true
+        },
+        {
+          "operation": "inspect",
+          "passed": true
+        },
+        {
+          "operation": "import",
+          "passed": true
+        },
+        {
+          "operation": "inspect",
+          "passed": true
+        },
+        {
+          "operation": "save",
+          "passed": true
+        },
+        {
+          "operation": "inspect",
+          "passed": true
+        }
+      ],
+      "workspace": "C:\\Development\\machdoch\\.tmp\\refmod-live-native-voTC7e",
+      "passed": true
+    },
+    "fleetDispatch": {
+      "devServerStarted": false,
+      "pretrainedWeightsUsed": false,
+      "transport": "fleet",
+      "checks": [
+        {
+          "operation": "list",
+          "passed": true
+        },
+        {
+          "operation": "inspect",
+          "passed": true
+        },
+        {
+          "operation": "import",
+          "passed": true
+        },
+        {
+          "operation": "inspect",
+          "passed": true
+        },
+        {
+          "operation": "save",
+          "passed": true
+        },
+        {
+          "operation": "inspect",
+          "passed": true
+        }
+      ],
+      "strengthChangedStoredLatent": true,
+      "workspace": "C:\\Development\\machdoch\\.tmp\\fleet-native-verification\\com.machdoch.fleetverification.r1791257513352\\workspace\\refmod-fleet-HQrHv2",
+      "passed": true
+    },
+    "liveSetup": {
+      "date": "2026-10-06T14:50:02.979Z",
+      "before": {
+        "diagnostic": null,
+        "downloadPercent": null,
+        "message": "",
+        "phase": "ready"
+      },
+      "result": {
+        "diagnostic": null,
+        "downloadPercent": null,
+        "message": "",
+        "phase": "ready"
+      },
+      "devServerStarted": false,
+      "modelWeightsRequested": false
+    }
+  },
+  "packagedFiles": {
+    "fizgig/minimax/vae.py": {
+      "sha256": "a1c0dc2d0adb5469446c1a34038e88c88876cd7aa705da554b3b2416b348dc01",
+      "matchesSource": true
+    },
+    "fizgig/minimax/video_vae_checkpoint.py": {
+      "sha256": "fc8a630c1c4c51c13621ddccf38dfe1b8b7b0685ad10c4d8b56d38df5a53b205",
+      "matchesSource": true
+    },
+    "fizgig/minimax/audio_vae.py": {
+      "sha256": "ac22cf022d0ed200fc50c81981391acdb804e7bef6c24d7ab5829cf8f563799b",
+      "matchesSource": true
+    },
+    "fizgig/minimax/trainer.py": {
+      "sha256": "6031a5d520cef086be1be2f33e05f7f0d6cc54e32d955f2f19028d5832418ade",
+      "matchesSource": true
+    },
+    "media_refmod_creation.py": {
+      "sha256": "b4d7aa42ff9110d23b6069b88ca356b8ffbb970a8ac863e8e6727b7e3cae606d",
+      "matchesSource": true
+    },
+    "media_refmod_preview.py": {
+      "sha256": "e2aec8744afdcd5ef253c95cadc7917f413c98ed25b8f3e57060a9ed04462106",
+      "matchesSource": true
+    },
+    "media_minimax_h3.py": {
+      "sha256": "a3e16352b31692e3751d62ead2f9101404fb368eb614de1d8fa530a0ee98c56e",
+      "matchesSource": true
+    },
+    "media_diffusers_requirements.txt": {
+      "sha256": "f30ccf6073947c5a677a2baf8a34d7d2f645af31e3c394b10a2b6759c3b4c344",
+      "matchesSource": true
+    },
+    "NOTICE-RefMod.txt": {
+      "sha256": "90735afb783e957d7ff19debfdf076c3186f2b390215864f09f8db0094da4539",
+      "matchesSource": true
+    }
+  },
+  "licenceBundles": {
+    "headless": {
+      "dependencyNoticeSets": 504,
+      "files": {
+        "apps/client/src-tauri/python/LICENSE-RefMod-MIT.txt": "ebcb7e4282e799ab880126d4d7523dfe7b3fa1ec6f457156a2e8ad6fbeea7113",
+        "apps/client/src-tauri/python/LICENSE-H3-PromptBuilder-MIT.txt": "19cb889133b1980bcd71089c0caebbe453602b145ff3bcd3e8cbe623ff1ab0ad",
+        "apps/client/src-tauri/python/NOTICE-RefMod.txt": "90735afb783e957d7ff19debfdf076c3186f2b390215864f09f8db0094da4539",
+        "apps/client/src-tauri/python/THIRD_PARTY_NOTICES-fizgig.md": "0e90a48b54de4c46884170e9c16e8d2361297809dcf2ea8923705766bad6f781",
+        "legal/third-party/MiniMax-H3/LICENSE": "59b99642b95ea21630e311198ddbfffbfe05aadba0c2f5d884cbdf4efcc90f44",
+        "legal/third-party/MiniMax-H3/NOTICE": "154fe7fbdf198395d53c57d6786b2fbf7e63a083ff70843c5ef78c0c7303d91a"
+      },
+      "matchesSource": true
+    },
+    "desktop": {
+      "dependencyNoticeSets": 1047,
+      "files": {
+        "apps/client/src-tauri/python/LICENSE-RefMod-MIT.txt": "ebcb7e4282e799ab880126d4d7523dfe7b3fa1ec6f457156a2e8ad6fbeea7113",
+        "apps/client/src-tauri/python/LICENSE-H3-PromptBuilder-MIT.txt": "19cb889133b1980bcd71089c0caebbe453602b145ff3bcd3e8cbe623ff1ab0ad",
+        "apps/client/src-tauri/python/NOTICE-RefMod.txt": "90735afb783e957d7ff19debfdf076c3186f2b390215864f09f8db0094da4539",
+        "apps/client/src-tauri/python/THIRD_PARTY_NOTICES-fizgig.md": "0e90a48b54de4c46884170e9c16e8d2361297809dcf2ea8923705766bad6f781",
+        "legal/third-party/MiniMax-H3/LICENSE": "59b99642b95ea21630e311198ddbfffbfe05aadba0c2f5d884cbdf4efcc90f44",
+        "legal/third-party/MiniMax-H3/NOTICE": "154fe7fbdf198395d53c57d6786b2fbf7e63a083ff70843c5ef78c0c7303d91a"
+      },
+      "matchesSource": true
+    }
+  },
+  "checkpointHeader": {
+    "sizeBytes": 3774476288,
+    "requiredBytes": 5207808496,
+    "weightsRead": false,
+    "tensorCount": 562,
+    "normalization": {
+      "mean": {
+        "dtype": "F16",
+        "shape": [
+          24
+        ],
+        "data_offsets": [
+          0,
+          48
+        ]
+      },
+      "standardDeviation": {
+        "dtype": "F16",
+        "shape": [
+          24
+        ],
+        "data_offsets": [
+          48,
+          96
+        ]
+      }
+    },
+    "encoderBlocks": [
+      "encoder.down.0.block.0.norm1.weight",
+      "encoder.down.0.block.1.norm1.weight",
+      "encoder.down.1.block.0.norm1.weight",
+      "encoder.down.1.block.1.norm1.weight",
+      "encoder.down.2.block.0.norm1.weight",
+      "encoder.down.2.block.1.norm1.weight",
+      "encoder.down.3.block.0.norm1.weight",
+      "encoder.down.3.block.1.norm1.weight",
+      "encoder.down.4.block.0.norm1.weight",
+      "encoder.down.4.block.1.norm1.weight",
+      "encoder.down.5.block.0.norm1.weight",
+      "encoder.down.5.block.1.norm1.weight"
+    ],
+    "decoderLayers": 36,
+    "representativeWeights": {
+      "encoder.conv_in.weight": {
+        "dtype": "F16",
+        "shape": [
+          128,
+          3,
+          3,
+          3,
+          3
+        ],
+        "data_offsets": [
+          4847065440,
+          4847086176
+        ]
+      },
+      "quant_conv.weight": {
+        "dtype": "F16",
+        "shape": [
+          48,
+          48,
+          1,
+          1,
+          1
+        ],
+        "data_offsets": [
+          5207737552,
+          5207742160
+        ]
+      },
+      "post_quant_conv.weight": {
+        "dtype": "F16",
+        "shape": [
+          24,
+          24,
+          1,
+          1,
+          1
+        ],
+        "data_offsets": [
+          5207736304,
+          5207737456
+        ]
+      },
+      "decoder.x_embedder.weight": {
+        "dtype": "F16",
+        "shape": [
+          2048,
+          24
+        ],
+        "data_offsets": [
+          4846966880,
+          4847065184
+        ]
+      },
+      "decoder.transformer_blocks.0.attn.to_qkv.weight": {
+        "dtype": "F16",
+        "shape": [
+          6144,
+          2048
+        ],
+        "data_offsets": [
+          21022816,
+          46188640
+        ]
+      },
+      "decoder.transformer_blocks.0.attn.to_qkv.bias": {
+        "dtype": "F16",
+        "shape": [
+          6144
+        ],
+        "data_offsets": [
+          21010528,
+          21022816
+        ]
+      },
+      "decoder.transformer_blocks.0.ff.w1.weight": {
+        "dtype": "F16",
+        "shape": [
+          16384,
+          2048
+        ],
+        "data_offsets": [
+          46221408,
+          113330272
+        ]
+      },
+      "decoder.transformer_blocks.0.ff.w1.bias": {
+        "dtype": "F16",
+        "shape": [
+          16384
+        ],
+        "data_offsets": [
+          46188640,
+          46221408
+        ]
+      }
+    }
+  },
+  "videoWeightResidency": {
+    "encoderFloat32Bytes": 721351552,
+    "decoderFloat32Bytes": 9694132576,
+    "peakActivationMemoryVerified": false
+  },
+  "remaining": [
+    "Complete video VAE: staged file has 3774476288 bytes, header requires 5207808496",
+    "Complete current Ref2VA transformer, conditioner and turbo components",
+    "Applicable permission to obtain, test and use pretrained H3 components",
+    "Licensed pretrained quality comparisons across image, video, audio and mixed references",
+    "Full visible desktop and fleet creation, preview and generation acceptance",
+    "Full-size video VAE peak memory and performance measurement",
+    "Remaining transformer/sampler GPL provenance and combined-work release obligations"
+  ]
+}

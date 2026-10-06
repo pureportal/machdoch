@@ -23,6 +23,23 @@ SPEC.loader.exec_module(WORKER)
 
 
 class MediaDiffusersQualityTests(unittest.TestCase):
+    def test_z_image_and_flux2_precision_preserves_publisher_range_on_amd(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            pipeline = SimpleNamespace()
+            for architecture in ("z-image", "z-image-turbo", "flux-2-klein-base-4b",
+                                 "flux-2-klein-9b", "flux-2-klein-base-9b"):
+                model = {"architecture": architecture, "packageKind": "diffusers-directory", "path": temporary}
+                for device, supported, expected in (("cuda", True, "bf16"), ("cuda", False, "float32"), ("cpu", False, "float32")):
+                    torch = SimpleNamespace(bfloat16="bf16", float32="float32",
+                                            cuda=SimpleNamespace(is_bf16_supported=lambda: supported))
+                    with mock.patch.object(WORKER, "_device", return_value=(device, "test device", None)), \
+                            mock.patch.object(WORKER, "_pipeline_dtype", return_value="float16"), \
+                            mock.patch.object(WORKER.media_open_models, "load_pipeline", return_value=pipeline) as loader:
+                        self.assertIs(WORKER._load_pipeline(None, torch, model), pipeline)
+                        self.assertEqual(loader.call_args.args[2], expected)
+                        WORKER._load_pipeline(None, torch, model, torch_dtype="explicit precision")
+                        self.assertEqual(loader.call_args.args[2], "explicit precision")
+
     def test_svg_worker_selects_and_configures_the_gpu_before_loading_the_model(self) -> None:
         torch = object()
         calls = mock.Mock()
@@ -100,6 +117,53 @@ class MediaDiffusersQualityTests(unittest.TestCase):
                 str(components), transformer=transformer_loader.return_value,
                 dtype="float32", local_files_only=True, use_safetensors=True,
             )
+
+    def test_single_file_preserves_declared_safety_checker(self) -> None:
+        for architecture in ("stable-diffusion-1", "stable-diffusion-2"):
+            with self.subTest(architecture=architecture), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                checkpoint = root / "checkpoint.safetensors"
+                checkpoint.write_bytes(b"fixture")
+                config = root / "config"
+                config.mkdir()
+                (config / "model_index.json").write_text(json.dumps({
+                    "safety_checker": ["stable_diffusion", "StableDiffusionSafetyChecker"],
+                }), encoding="utf-8")
+                checker = object()
+                checker_loader = mock.Mock(return_value=checker)
+                pipeline_loader = mock.Mock(return_value=SimpleNamespace())
+                diffusers = SimpleNamespace(
+                    StableDiffusionPipeline=SimpleNamespace(from_single_file=pipeline_loader),
+                    pipelines=SimpleNamespace(stable_diffusion=SimpleNamespace(
+                        StableDiffusionSafetyChecker=SimpleNamespace(from_pretrained=checker_loader),
+                    )),
+                )
+                model = {"architecture": architecture, "packageKind": "single-file",
+                         "path": str(checkpoint), "configPath": str(config)}
+                with mock.patch.object(WORKER, "_device", return_value=("cpu", "CPU", None)):
+                    WORKER._load_pipeline(diffusers, object(), model, torch_dtype="float32")
+                    self.assertIs(pipeline_loader.call_args.kwargs["safety_checker"], checker)
+                    checker_loader.assert_called_once_with(str(config / "safety_checker"), dtype="float32",
+                                                           local_files_only=True, use_safetensors=True)
+                    pipeline_loader.reset_mock()
+                    checker_loader.side_effect = OSError("missing weights")
+                    with self.assertRaisesRegex(WORKER.WorkerError, "safety checker is missing"):
+                        WORKER._load_pipeline(diffusers, object(), model, torch_dtype="float32")
+                    pipeline_loader.assert_not_called()
+                (config / "model_index.json").write_text(json.dumps({
+                    "safety_checker": [None, None],
+                }), encoding="utf-8")
+                with mock.patch.object(WORKER, "_device", return_value=("cpu", "CPU", None)):
+                    WORKER._load_pipeline(diffusers, object(), model, torch_dtype="float32")
+                self.assertNotIn("safety_checker", pipeline_loader.call_args.kwargs)
+                pipeline_loader.reset_mock()
+                (config / "model_index.json").write_text(json.dumps({
+                    "safety_checker": ["custom", "UnknownChecker"],
+                }), encoding="utf-8")
+                with mock.patch.object(WORKER, "_device", return_value=("cpu", "CPU", None)):
+                    with self.assertRaisesRegex(WORKER.WorkerError, "unknown safety checker"):
+                        WORKER._load_pipeline(diffusers, object(), model, torch_dtype="float32")
+                pipeline_loader.assert_not_called()
 
     def test_qwen_image_21_rejects_insufficient_memory_before_loading(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

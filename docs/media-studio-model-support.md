@@ -1,6 +1,6 @@
 # Media Studio model support
 
-The canonical profile file contains 31 models, including AudioLDM 2. Profiles describe exact pipelines and sampling contracts. Installed models with an available runtime can be selected directly; loading and generation errors are reported when a request executes. Catalog coverage does not establish measured inference coverage.
+The canonical profile file contains 37 models, including AudioLDM 2. Profiles describe exact pipelines and sampling contracts. Installed models with an available runtime can be selected directly; loading and generation errors are reported when a request executes. Catalog coverage does not establish measured inference coverage.
 
 | Models                                                                                                               | Acquisition                                                |
 | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -8,7 +8,7 @@ The canonical profile file contains 31 models, including AudioLDM 2. Profiles de
 | Wan 2.2 T2V-A14B / I2V-A14B; Wan 2.1 T2V 1.3B; HunyuanVideo 1.5 T2V; CogVideoX 2B / 1.5 T2V / 1.5 I2V; Mochi; Helios | Managed downloads with pinned revisions and SHA-256 checks |
 | FLUX.1 schnell / dev; FLUX.2 klein Base 4B / distilled 9B / Base 9B / dev; Krea 2 Raw; HiDream Full; Ideogram 4 NF4  | Import a complete Diffusers folder                         |
 | LTX-2.5 distilled; LTX-2.3 dev; Sulphur 2 dev; Stable Video Diffusion XT                                             | Import a complete Diffusers folder                         |
-| AudioLDM 2                                                                                                         | Managed download or native Diffusers folder import        |
+| AudioLDM 2                                                                                                           | Managed download or native Diffusers folder import         |
 
 Existing MiniMax H3, Qwen-Image 2.1, Krea Turbo, FLUX.2 klein 4B, LTX-Video 0.9.8, FramePack, HunyuanVideo I2V, and Stable Diffusion paths remain part of the current catalog.
 
@@ -56,4 +56,6 @@ The canonical profiles are in `apps/client/src-tauri/python/open_media_models.js
 
 ## Training
 
-The Train view now exposes installed SDXL checkpoints and complete Krea 2 RAW folders through one local LoRA job API. SDXL has completed an eight-step GPU smoke job, native addon import, and actual Basic generation with the learned adapter. That short run does not establish custom-concept quality. Krea RAW has integration checks but no real training completion; full-weight finetuning and other families' training are not implemented. See [training routes](media-studio-training-research-2026-10-04.md) and the [continuation report](media-studio-verification-2026-10-04.md).
+The Train view provides LoRA, denoiser finetuning, and input-vector embeddings for SD1/2, SDXL/Pony, SD3, FLUX.1, four FLUX.2 Klein variants, SANA, Z-Image Base/Turbo, and CogVideoX 2B / 1.5 T2V / 1.5 I2V. Krea 2 RAW has a separate LoRA route. Basic selects the base, method, and dataset; Advanced exposes optimizer, precision, batching, scheduling, target layers, aspect buckets, and checkpoints.
+
+Full-size SD1, SDXL, Pony, and SANA have recorded training and artifact reuse. Publisher FLUX.2 Klein Base 4B and Z-Image Base LoRAs trained, passed native import, and generated inspected images. Reduced-model checks cover additional variants and methods. These checks do not establish learned-concept quality or faster generation. The audited 52 generation architecture identifiers include 20 with training routes, counting the Krea RAW alias; 32 still lack trainers. See the [training verification](media-studio-training-verification-2026-10-06.md), [FLUX.2 continuation](media-studio-flux2-training-verification-2026-10-06.md), [CogVideoX continuation](media-studio-cogvideo-training-verification-2026-10-06.md), and [complete coverage inventory](validation/training-flux2/coverage.json).

@@ -25,7 +25,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
+} from "@machdoch/client-ui/dropdown-menu";
 import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
   broadcastShellStateChanged,
@@ -38,15 +38,8 @@ import {
   type RalphSettings,
 } from "../lib/shell-store";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
-import {
-  getCatalogModelsForProvider,
-  getDefaultModelForProvider,
-  getProviderLabel,
-  RUNNABLE_PROVIDER_ORDER,
-  type CatalogModel,
-  type ProviderModelCatalogSnapshot,
-  type RuntimeProvider,
-} from "../model-catalog";
+import { getCatalogModelsForProvider, getDefaultModelForProvider, RUNNABLE_PROVIDER_ORDER, type CatalogModel, type ProviderModelCatalogSnapshot, type RuntimeProvider } from "../model-catalog";
+import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import {
   getReasoningModesForProvider,
   normalizeReasoningModeForProvider,

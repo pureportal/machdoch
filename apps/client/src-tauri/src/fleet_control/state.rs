@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Condvar, Mutex},
+    time::{Duration, Instant},
+};
 
 use serde_json::Value;
 
@@ -36,12 +39,86 @@ impl Default for FleetControlState {
         Self {
             shared: Arc::new(FleetControlShared {
                 inner: Mutex::new(FleetControlInner::default()),
+                command_completed: Condvar::new(),
             }),
         }
     }
 }
 
 impl FleetControlState {
+    pub(super) fn command_is_duplicate(
+        &self,
+        event: &FleetControlCommandEvent,
+    ) -> Result<bool, RecordCommandError> {
+        self.ensure_state_loaded()
+            .map_err(RecordCommandError::from)?;
+        let inner = self.shared.inner.lock().map_err(|_| {
+            RecordCommandError::Unavailable("Unable to inspect the Fleet command.".to_string())
+        })?;
+        check_command_replay(&inner, event)
+    }
+
+    pub(super) fn validate_command_target(
+        &self,
+        event: &FleetControlCommandEvent,
+    ) -> Result<(), RecordCommandError> {
+        self.ensure_state_loaded()?;
+        let inner = self.shared.inner.lock().map_err(|_| {
+            RecordCommandError::Unavailable("Unable to inspect the device.".to_string())
+        })?;
+        super::command_validation::validate_command_target(
+            event,
+            inner.shell.as_ref(),
+            &inner.known_session_ids,
+        )
+        .map_err(RecordCommandError::Unavailable)
+    }
+
+    pub(super) fn wait_for_command_completion(
+        &self,
+        command_id: &str,
+        timeout: Duration,
+    ) -> Result<(), RecordCommandError> {
+        self.ensure_state_loaded()?;
+        let deadline = Instant::now() + timeout;
+        let mut inner = self.shared.inner.lock().map_err(|_| {
+            RecordCommandError::Unavailable("Unable to inspect the Fleet command.".to_string())
+        })?;
+        loop {
+            if let Some(completed) = inner
+                .completed_commands
+                .iter()
+                .find(|entry| entry.command_id == command_id)
+            {
+                return match &completed.error {
+                    Some(message) => Err(RecordCommandError::Unavailable(message.clone())),
+                    None => Ok(()),
+                };
+            }
+            if !inner
+                .pending_commands
+                .iter()
+                .any(|entry| entry.command_id == command_id)
+            {
+                return Err(RecordCommandError::Unavailable("The Fleet command is no longer recorded on this device. Refresh the device before repeating the action.".to_string()));
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(RecordCommandError::Unavailable("The command is queued, but the device has not confirmed it yet. Refresh the device before repeating the action.".to_string()));
+            }
+            let (next, _) = self
+                .shared
+                .command_completed
+                .wait_timeout(inner, remaining)
+                .map_err(|_| {
+                    RecordCommandError::Unavailable(
+                        "Unable to wait for the Fleet command.".to_string(),
+                    )
+                })?;
+            inner = next;
+        }
+    }
+
     pub(super) fn record_progress(&self, task_id: &str, progress: &Value, timestamp: u64) {
         if self.ensure_state_loaded().is_ok() {
             record_progress_update(&self.shared, task_id, progress, timestamp);
@@ -58,28 +135,8 @@ impl FleetControlState {
             RecordCommandError::Unavailable("Unable to record the Fleet command.".to_string())
         })?;
 
-        if let Some(existing) = inner
-            .pending_commands
-            .iter()
-            .find(|command| command.command_id == event.command_id)
-        {
-            return if command_payloads_match(existing, event) {
-                Ok(RecordCommandOutcome::Duplicate)
-            } else {
-                Err(RecordCommandError::CommandIdConflict)
-            };
-        }
-
-        if let Some(existing) = inner
-            .completed_commands
-            .iter()
-            .find(|command| command.command_id == event.command_id)
-        {
-            return if existing.payload_hash == command_payload_hash(event) {
-                Ok(RecordCommandOutcome::Duplicate)
-            } else {
-                Err(RecordCommandError::CommandIdConflict)
-            };
+        if check_command_replay(&inner, event)? {
+            return Ok(RecordCommandOutcome::Duplicate);
         }
 
         if inner.pending_commands.len() >= MAX_PENDING_COMMAND_ENTRIES {
@@ -114,7 +171,11 @@ impl FleetControlState {
         Ok(inner.pending_commands.iter().cloned().collect())
     }
 
-    pub(super) fn acknowledge_command(&self, command_id: &str) -> Result<bool, String> {
+    pub(super) fn acknowledge_command(
+        &self,
+        command_id: &str,
+        error: Option<String>,
+    ) -> Result<bool, String> {
         self.ensure_state_loaded()?;
         let command_id = command_id.trim();
 
@@ -144,6 +205,9 @@ impl FleetControlState {
                 command_id: removed_command.command_id.clone(),
                 payload_hash: command_payload_hash(&removed_command),
                 completed_at: now_millis(),
+                error: error.map(|message| {
+                    super::commands::truncate_chars(&message, super::MAX_FLEET_TEXT_CHARS)
+                }),
             });
         while inner.completed_commands.len() > MAX_COMPLETED_COMMAND_ENTRIES {
             inner.completed_commands.pop_front();
@@ -158,12 +222,18 @@ impl FleetControlState {
         }
 
         inner.event_id = inner.event_id.saturating_add(1);
+        self.shared.command_completed.notify_all();
         Ok(true)
     }
 
-    pub(super) fn update_shell_snapshot(&self, snapshot: FleetShellSnapshot) -> Result<(), String> {
+    pub(super) fn update_shell_snapshot(
+        &self,
+        snapshot: FleetShellSnapshot,
+        session_ids: Vec<String>,
+    ) -> Result<(), String> {
         self.ensure_state_loaded()?;
         let snapshot = sanitize_shell_snapshot(snapshot)?;
+        let session_ids = super::command_validation::validate_session_ids(session_ids, &snapshot)?;
         let mut inner = self
             .shared
             .inner
@@ -179,7 +249,31 @@ impl FleetControlState {
         }
 
         inner.shell = Some(snapshot);
+        inner.known_session_ids = session_ids;
         inner.event_id = inner.event_id.saturating_add(1);
         Ok(())
+    }
+}
+
+fn check_command_replay(
+    inner: &FleetControlInner,
+    event: &FleetControlCommandEvent,
+) -> Result<bool, RecordCommandError> {
+    let matched = inner
+        .pending_commands
+        .iter()
+        .find(|command| command.command_id == event.command_id)
+        .map(|existing| command_payloads_match(existing, event))
+        .or_else(|| {
+            inner
+                .completed_commands
+                .iter()
+                .find(|command| command.command_id == event.command_id)
+                .map(|existing| existing.payload_hash == command_payload_hash(event))
+        });
+    match matched {
+        Some(true) => Ok(true),
+        Some(false) => Err(RecordCommandError::CommandIdConflict),
+        None => Ok(false),
     }
 }

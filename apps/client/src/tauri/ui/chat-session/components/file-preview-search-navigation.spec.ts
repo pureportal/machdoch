@@ -11,7 +11,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
   FilePreviewTextContent,
   type FilePreview,
-} from "./file-preview-dialog";
+} from "@machdoch/client-ui/file-preview/dialog";
 
 afterEach(() => {
   cleanup();

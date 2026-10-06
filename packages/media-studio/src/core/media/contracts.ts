@@ -143,7 +143,8 @@ export type MediaModelAddonKind = "lora" | "textual-inversion";
 export type MediaModelAddonTargetComponent =
   | "denoiser"
   | "text-encoder"
-  | "text-encoder-2";
+  | "text-encoder-2"
+  | "text-encoder-3";
 
 export interface MediaModelAddonCapability {
   kind: MediaModelAddonKind;
@@ -1130,6 +1131,8 @@ export type MediaVideoModelId =
   | `local:user:${string}`;
 
 export interface MediaVideoRecipeSettings {
+  refMods?: MediaRefModSelection[];
+  refModMaxTokens?: number;
   modelAddons: MediaModelAddonSelection[];
   width?: number | null;
   height?: number | null;
@@ -1172,6 +1175,7 @@ export type MediaErrorCode =
   | "DISK_FULL"
   | "PATH_NOT_ALLOWED"
   | "INTERNAL_ERROR"
+  | "RUNTIME_NOT_INSTALLED"
   | "MODEL_NOT_INSTALLED"
   | "MODEL_LICENSE_REQUIRED"
   | "MODEL_ACCESS_DENIED"
@@ -2157,8 +2161,24 @@ export interface MediaLocalAudioGenerationOperation {
     negativePrompt: string;
     numInferenceSteps: number;
     guidanceScale: number;
-    output: { fileName: string; sampleRate: number; channels: number; frames: number; durationSeconds: number; seed: number; digest: string; byteSize: number; peak: number; rms: number; gain: number };
-    performance: { loadSeconds: number; generationSeconds: number; totalSeconds: number };
+    output: {
+      fileName: string;
+      sampleRate: number;
+      channels: number;
+      frames: number;
+      durationSeconds: number;
+      seed: number;
+      digest: string;
+      byteSize: number;
+      peak: number;
+      rms: number;
+      gain: number;
+    };
+    performance: {
+      loadSeconds: number;
+      generationSeconds: number;
+      totalSeconds: number;
+    };
   };
 }
 
@@ -2616,6 +2636,8 @@ export interface GenerateMediaSvgRequest {
 }
 
 export interface GenerateMediaVideoRequest {
+  refMods?: MediaRefModSelection[];
+  refModMaxTokens?: number;
   modelAddons: MediaModelAddonSelection[];
   width?: number | null;
   height?: number | null;
@@ -2649,6 +2671,17 @@ export interface GenerateMediaVideoRequest {
   experimentalLowMemory: true;
   animatedBackground: MediaAnimatedBackgroundConfig | null;
   planSnapshot: MediaRunPlanSnapshot;
+}
+
+export interface MediaRefModSelection {
+  stepCurve?: "constant" | "increase" | "decrease" | "middle" | "ends";
+  frameCurve?: "constant" | "increase" | "decrease" | "middle" | "ends";
+  path: string;
+  enabled: boolean;
+  selection: "all" | "visual" | "audio";
+  visualStrength: number;
+  audioStrength: number;
+  copies: number;
 }
 
 export interface MediaAnimatedBackgroundConfig {

@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NO_SPEECH_DETECTED_MESSAGE, prepareAudioBlob } from "./speech-audio";
+import { LOCAL_SPEECH_PROVIDERS } from "../../../../shared/local-speech";
 
 const samples = new Float32Array(16_000).fill(0.1);
 const decoded = {
@@ -35,13 +36,16 @@ describe("speech audio preparation", () => {
       arrayBuffer: async () => new ArrayBuffer(1024),
     }) as Blob;
 
-  it("validates and converts Whisper audio with a single decode", async () => {
-    const prepared = await prepareAudioBlob(audio(), "whisper");
-    expect(decode).toHaveBeenCalledOnce();
-    expect(close).toHaveBeenCalledOnce();
-    expect(prepared.type).toBe("audio/wav");
-    expect(prepared.size).toBe(44 + 16_000 * 2);
-  });
+  it.each(LOCAL_SPEECH_PROVIDERS)(
+    "converts %s audio with a single decode",
+    async (provider) => {
+      const prepared = await prepareAudioBlob(audio(), provider);
+      expect(decode).toHaveBeenCalledOnce();
+      expect(close).toHaveBeenCalledOnce();
+      expect(prepared.type).toBe("audio/wav");
+      expect(prepared.size).toBe(44 + 16_000 * 2);
+    },
+  );
 
   it("resamples microphone audio to 16 kHz mono PCM", async () => {
     decode.mockResolvedValueOnce({

@@ -56,6 +56,47 @@ class OpenMediaModelTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "does not match"):
                 models.load_pipeline(SimpleNamespace(), {"architecture": "z-image-turbo", "path": directory, "packageKind": "diffusers-directory"}, "bf16")
 
+    def test_cogvideo_preserves_fp32_vae_and_original_2b_encoder_precision(self):
+        torch = SimpleNamespace(float32="fp32", float16="fp16")
+        for architecture in ("cogvideox-2b", "cogvideox-1.5-5b", "cogvideox-1.5-5b-i2v"):
+            with self.subTest(architecture=architecture), tempfile.TemporaryDirectory() as directory:
+                profile = models.PROFILES[architecture]
+                Path(directory, "model_index.json").write_text(json.dumps({"_class_name": profile["pipeline"]}), encoding="utf-8")
+                loader = mock.Mock(return_value=SimpleNamespace())
+                diffusers = SimpleNamespace(**{profile["pipeline"]: SimpleNamespace(from_pretrained=loader)})
+                with mock.patch.dict("sys.modules", {"torch": torch}):
+                    models.load_pipeline(diffusers, {"architecture": architecture, "path": directory, "packageKind": "diffusers-directory"}, "bf16")
+                self.assertEqual(loader.call_args.kwargs["dtype"], {
+                    "transformer": "bf16", "text_encoder": "fp16" if architecture == "cogvideox-2b" else "bf16",
+                    "vae": "fp32", "default": "bf16",
+                })
+
+    def test_sana_keeps_frozen_encoders_in_fp32_and_matches_training_prompt_encoding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "model_index.json").write_text('{"_class_name":"SanaPipeline"}', encoding="utf-8")
+            loader = mock.Mock(return_value=SimpleNamespace())
+            diffusers = SimpleNamespace(SanaPipeline=SimpleNamespace(from_pretrained=loader))
+            with mock.patch.dict("sys.modules", {"torch": SimpleNamespace(float32="fp32", cuda=SimpleNamespace(is_available=lambda: False))}):
+                models.load_pipeline(diffusers, {"architecture": "sana", "path": directory, "packageKind": "diffusers-directory"}, "fp16")
+            self.assertEqual(loader.call_args.kwargs["dtype"], {
+                "transformer": "fp16", "text_encoder": "fp32", "vae": "fp32", "default": "fp16",
+            })
+        arguments = models.image_arguments("sana", {}, [], "")
+        self.assertIsNone(arguments["complex_human_instruction"])
+        self.assertFalse(arguments["use_resolution_binning"])
+
+    def test_sana_uses_supported_bf16_for_frozen_encoder(self):
+        for supported in (True, False):
+            with self.subTest(supported=supported), tempfile.TemporaryDirectory() as directory:
+                Path(directory, "model_index.json").write_text('{"_class_name":"SanaPipeline"}', encoding="utf-8")
+                loader = mock.Mock(return_value=SimpleNamespace())
+                diffusers = SimpleNamespace(SanaPipeline=SimpleNamespace(from_pretrained=loader))
+                cuda = SimpleNamespace(is_available=lambda: True, is_bf16_supported=lambda: supported)
+                torch = SimpleNamespace(float32="fp32", bfloat16="bf16", cuda=cuda)
+                with mock.patch.dict("sys.modules", {"torch": torch}):
+                    models.load_pipeline(diffusers, {"architecture": "sana", "path": directory, "packageKind": "diffusers-directory"}, "fp16")
+                self.assertEqual(loader.call_args.kwargs["dtype"]["text_encoder"], "bf16" if supported else "fp32")
+
     def test_audio_uses_the_current_gpt2_generation_component_without_changing_weights(self):
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, "model_index.json").write_text('{"_class_name":"AudioLDM2Pipeline"}', encoding="utf-8")
@@ -133,6 +174,9 @@ class OpenMediaModelTests(unittest.TestCase):
 
     def test_prompt_only_video_orchestration_publishes_no_source_digests(self):
         pipeline = mock.Mock()
+        pipeline.vae_scale_factor_spatial = 8
+        pipeline.vae.tile_sample_min_height = 240
+        pipeline.vae.tile_sample_min_width = 360
         pipeline.return_value = SimpleNamespace(frames=[[Image.new("RGB", (512, 288)) for _ in range(5)]])
         torch = SimpleNamespace(Generator=mock.Mock(return_value=SimpleNamespace(manual_seed=lambda seed: seed)), inference_mode=nullcontext)
         runtime = SimpleNamespace(SCHEMA_VERSION=1, WORKER_VERSION="test", WorkerError=ValueError,
@@ -151,9 +195,9 @@ class OpenMediaModelTests(unittest.TestCase):
             self.assertNotIn("image", pipeline.call_args.kwargs)
             self.assertEqual(result["output"]["fileName"], "video.webm")
             runtime._enable_sampling_progress.assert_called_once_with(pipeline)
-            request.update(model={"architecture": "cogvideox-2b", "revision": "revision", "digest": "digest"}, numFrames=9, numInferenceSteps=20, guidanceScale=6, addons=[{"addonId": "liquid-art"}])
+            request.update(model={"architecture": "cogvideox-2b", "revision": "revision", "digest": "digest"}, numFrames=9, numInferenceSteps=20, guidanceScale=6, addons=[{"addonId": "liquid-art", "kind": "lora"}])
             pipeline.return_value = SimpleNamespace(frames=[[object()] * 9])
-            runtime._load_video_addons = mock.Mock(return_value=[{"addonId": "liquid-art", "modelStrength": 0.15}])
+            runtime._load_video_addons = mock.Mock(return_value=[{"addonId": "liquid-art", "kind": "lora", "modelStrength": 0.15}])
             runtime._device = lambda _: ("cuda", "GPU", 16 * 1024**3)
             torch.float16 = "fp16"
             torch.cuda = SimpleNamespace(empty_cache=mock.Mock())
@@ -162,9 +206,9 @@ class OpenMediaModelTests(unittest.TestCase):
             self.assertEqual(load.call_args.args[2], "fp16")
             self.assertEqual(result["performance"]["inferenceDtype"], "fp16")
             runtime._load_video_addons.assert_called_once_with(pipeline.transformer, request["addons"])
-            self.assertEqual(result["addons"], [{"addonId": "liquid-art", "modelStrength": 0.15}])
+            self.assertEqual(result["addons"], [{"addonId": "liquid-art", "kind": "lora", "modelStrength": 0.15}])
             request["model"]["architecture"] = "wan-2.2-t2v-a14b"
-            with self.assertRaisesRegex(ValueError, "does not support LoRAs"):
+            with self.assertRaisesRegex(ValueError, "does not support these add-ons"):
                 video.generate(request, runtime)
 
     def test_generated_audio_is_muxed_and_both_tracks_decode(self):

@@ -42,7 +42,6 @@ function harness(
         activeSessionId="session"
         pending={pending}
         onCommand={onCommand}
-        onRefresh={onRefresh}
       />
     </div>
   );
@@ -67,38 +66,6 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("Activity workflows", () => {
-  it.each(["Instructions", "Scheduler"])(
-    "distinguishes loading, error, and empty %s",
-    async (name) => {
-      const state = {
-        loading: true,
-        profiles: [],
-        jobs: [],
-        runs: [],
-        updatedAt: 1,
-      };
-      const key = name === "Instructions" ? "instructions" : "scheduler";
-      const view = harness({ ...emptyShell, [key]: state });
-      tab(name);
-      expect(screen.getByRole("status").textContent).toContain("Loading");
-      view.show({
-        ...emptyShell,
-        [key]: { ...state, loading: false, error: "Load failed" },
-      });
-      expect(screen.getByRole("alert").textContent).toContain("Load failed");
-      expect(
-        screen.queryByText(/^No instructions$|^No scheduled work$/),
-      ).toBeNull();
-      fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-      await act(async () => {});
-      expect(view.onRefresh).toHaveBeenCalledTimes(1);
-      view.show({ ...emptyShell, [key]: { ...state, loading: false } });
-      expect(
-        screen.getByText(/^No instructions$|^No scheduled work$/),
-      ).toBeTruthy();
-    },
-  );
-
   it("shows task progress and logs without dispatching commands and retains expansion during polling", () => {
     const view = harness(
       emptyShell,

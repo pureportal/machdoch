@@ -2,6 +2,8 @@ use serde::Serialize;
 
 use super::MediaResult;
 
+mod refmods;
+
 pub(crate) type MediaCommandResult<T> = Result<T, Box<MediaError>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -14,6 +16,7 @@ pub(crate) enum MediaErrorCode {
     DiskFull,
     PathNotAllowed,
     InternalError,
+    RuntimeNotInstalled,
     ModelNotInstalled,
     ModelLicenseRequired,
     ModelAccessDenied,
@@ -140,13 +143,18 @@ impl MediaError {
             .split("\nworker diagnostics (tail):")
             .next()
             .unwrap_or(&lower);
-        let code = classify(operation, cause);
+        let recovery = refmods::recovery(operation, cause);
+        let code = recovery
+            .map(|(code, _)| code)
+            .unwrap_or_else(|| classify(operation, cause));
         let (category, message, retryability, suggested_actions) = presentation(code);
         Self {
             schema_version: 1,
             code,
             category,
-            message: if operation.contains("training") || operation.contains("civitai") {
+            message: if let Some((_, message)) = recovery {
+                message.to_string()
+            } else if operation.contains("training") || operation.contains("civitai") {
                 sanitize_diagnostic(&diagnostic)
             } else if cause.contains("cannot fit all vectors for") {
                 "Prompt is too long for the selected embeddings. Shorten it or remove an embedding."
@@ -192,6 +200,9 @@ pub(crate) fn command_result<T>(
 }
 
 fn classify(operation: &str, diagnostic: &str) -> MediaErrorCode {
+    if diagnostic.contains("install the media studio python runtime") {
+        return MediaErrorCode::RuntimeNotInstalled;
+    }
     if diagnostic.contains("cannot fit all vectors for")
         || diagnostic.contains("negative embeddings need guidance above 1")
     {
@@ -483,6 +494,16 @@ fn presentation(
                 "Select a user-approved file or export destination.",
             )],
         ),
+        Code::RuntimeNotInstalled => (
+            Category::Configuration,
+            "Install the Media Studio runtime, then try again.",
+            Retry::AfterUserAction,
+            vec![Action::new(
+                "open-models",
+                "Open Models",
+                "Install the Media Studio runtime.",
+            )],
+        ),
         Code::ModelNotInstalled => (
             Category::Configuration,
             "The selected local model is not installed.",
@@ -699,6 +720,30 @@ fn sanitize_diagnostic(diagnostic: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn missing_refmod_runtime_requires_installation_before_retry() {
+        let error = super::MediaError::from_internal(
+            "media_refmod_operation",
+            "Install the Media Studio Python runtime",
+        );
+        assert_eq!(error.code, super::MediaErrorCode::RuntimeNotInstalled);
+        assert_eq!(error.category, super::MediaErrorCategory::Configuration);
+        assert_eq!(
+            error.retryability,
+            super::MediaErrorRetryability::AfterUserAction
+        );
+        assert_eq!(
+            error.message,
+            "Install the Media Studio runtime, then try again."
+        );
+        assert_eq!(error.suggested_actions.len(), 1);
+        assert_eq!(error.suggested_actions[0].id, "open-models");
+        assert_eq!(
+            serde_json::to_value(&error).unwrap()["code"],
+            "RUNTIME_NOT_INSTALLED"
+        );
+    }
+
     #[test]
     fn civitai_download_errors_keep_the_recovery_instruction() {
         let diagnostic = "Civitai denied this download. Save an API key with access to this model in Settings, then try again.";

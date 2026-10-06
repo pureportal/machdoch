@@ -187,6 +187,28 @@ mod tests {
     }
 
     #[test]
+    fn completed_failures_survive_state_file_reload() {
+        let path = test_path();
+        let state_file = FleetControlStateFile {
+            completed_commands: vec![super::super::CompletedFleetCommandReceipt {
+                command_id: "failed-command".to_string(),
+                payload_hash: "payload".to_string(),
+                completed_at: 1,
+                error: Some("Context pack was removed.".to_string()),
+            }],
+            ..FleetControlStateFile::default()
+        };
+        write_state_file_at_path(&state_file, &path).expect("state file should write");
+        let loaded = load_state_file_at_path(&path).expect("state file should load");
+        assert_eq!(
+            loaded.completed_commands[0].error.as_deref(),
+            Some("Context pack was removed.")
+        );
+        fs::remove_dir_all(path.parent().expect("path should have a parent"))
+            .expect("test directory should be removable");
+    }
+
+    #[test]
     fn state_file_rejects_an_unknown_schema() {
         let error = normalize_state_file(FleetControlStateFile {
             schema_version: FLEET_CONTROL_STATE_SCHEMA_VERSION + 1,

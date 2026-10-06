@@ -1,0 +1,14 @@
+SoundFile is distributed under its BSD licence. It loads the unmodified,
+dynamically linked libsndfile distributed in its platform wheel, licensed under
+the GNU Lesser General Public License, Version 2.1.
+
+The full LGPL text is retained in the SoundFile package licence files. The
+corresponding libsndfile 1.2.2 source is included in source/libsndfile-1.2.2.tar.xz
+in this legal bundle. Upstream: https://github.com/libsndfile/libsndfile
+Build instructions are included in the source archive.
+
+You may replace the libsndfile DLL or shared library in the bundled Python
+runtime's site-packages/_soundfile_data directory with a compatible version you
+have modified. Machdoch imposes no restriction on modification or reverse
+engineering for debugging modifications to this LGPL library. The Python
+SoundFile wrapper source is included in the runtime and remains unmodified.

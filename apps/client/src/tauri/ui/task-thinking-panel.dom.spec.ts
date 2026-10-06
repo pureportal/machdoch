@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import { TaskThinkingPanel } from "./task-thinking-panel";
+import { TaskThinkingPanel } from "@machdoch/client-ui/conversation/task-thinking-panel";
 import type { TaskThinkingTrace } from "./task-thinking.model";
 
 const createOutputLines = (): NonNullable<

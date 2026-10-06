@@ -1,0 +1,51 @@
+{
+  "checkpoints": [
+    {
+      "stage": "selection-edited",
+      "date": "2026-10-06T18:18:04.473Z",
+      "slots": [
+        {
+          "label": "Enable RefMod 1",
+          "enabled": true
+        }
+      ],
+      "body": "Basic\nAdvanced\nTrain\nAssets\nActivity\nImage\nVideo\nSVG\nAudio\nAssistant\nConvert to Advanced\nPrompt\nStarting image\nAdd image\nModel\nChoose model\nManage models\nClose RefMods\nMiniMax H3 RefMods\nAdd files\nLibrary\nBrowse folder\nCreate RefMod\nExport bundle\nHost folder\nSecond reference · 56 tokens\nAdd\nClose folder\nSecond reference\n↑\n↓\nRemove\nModality \nAll\nVisual\nAudio\nVisual strength \nAudio strength \nCopies \nCurves\nReference frames \nConstant\nIncrease\nDecrease\nMiddle\nEnds\nInspect reference\n112 tokens\nToken limit \nMore options\n16:9 · Draft\nGenerate video\n\nAdd a prompt\n\nVideo output",
+      "alerts": []
+    },
+    {
+      "stage": "upload-completed",
+      "date": "2026-10-06T18:18:36.818Z",
+      "slots": [
+        {
+          "label": "Enable RefMod 1",
+          "enabled": true
+        },
+        {
+          "label": "Enable RefMod 2",
+          "enabled": true
+        }
+      ],
+      "body": "Basic\nAdvanced\nTrain\nAssets\nActivity\nImage\nVideo\nSVG\nAudio\nAssistant\nConvert to Advanced\nPrompt\nStarting image\nAdd image\nModel\nChoose model\nManage models\nClose RefMods\nMiniMax H3 RefMods\nAdd files\nLibrary\nBrowse folder\nCreate RefMod\nExport bundle\nHost folder\nSecond reference · 56 tokens\nAdd\nClose folder\nSecond reference\n↑\n↓\nRemove\nModality \nAll\nVisual\nAudio\nVisual strength \nAudio strength \nCopies \nCurves\nReference frames \nConstant\nIncrease\nDecrease\nMiddle\nEnds\nInspect reference\n79c2eb225c8443e38e3e0b05524f567e.safetensors\n↑\n↓\nRemove\nModality \nAll\nVisual\nAudio\nCopies \nCurves\n112 tokens\nToken limit \nMore options\n16:9 · Draft\nGenerate video\n\nAdd a prompt\n\nVideo output",
+      "alerts": []
+    },
+    {
+      "stage": "export-completed",
+      "date": "2026-10-06T18:19:07.497Z",
+      "slots": [
+        {
+          "label": "Enable RefMod 1",
+          "enabled": true
+        },
+        {
+          "label": "Enable RefMod 2",
+          "enabled": false
+        }
+      ],
+      "body": "Basic\nAdvanced\nTrain\nAssets\nActivity\nImage\nVideo\nSVG\nAudio\nAssistant\nConvert to Advanced\nPrompt\nStarting image\nAdd image\nModel\nChoose model\nManage models\nClose RefMods\nMiniMax H3 RefMods\nAdd files\nLibrary\nBrowse folder\nCreate RefMod\nExport bundle\nHost folder\nSecond reference\n↑\n↓\nRemove\nModality \nAll\nVisual\nAudio\nVisual strength \nAudio strength \nCopies \nCurves\nInspect reference\n79c2eb225c8443e38e3e0b05524f567e.safetensors\n↑\n↓\nRemove\nModality \nAll\nVisual\nAudio\nCopies \nCurves\n112 tokens\nToken limit \n\nLoading RefMods…\n\nMore options\n16:9 · Draft\nGenerate video\n\nAdd a prompt\n\nVideo output",
+      "alerts": []
+    }
+  ],
+  "failures": [],
+  "pageErrors": [],
+  "networkErrors": []
+}

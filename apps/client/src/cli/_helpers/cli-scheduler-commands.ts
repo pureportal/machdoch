@@ -9,6 +9,7 @@ import {
 } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { loadRuntimeConfig } from "../../core/config.js";
+import { runSchedulerFleetService } from "../../core/scheduler-fleet-service.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import { executeTask } from "../../core/execution.js";
 import {
@@ -42,6 +43,7 @@ import {
   type ScheduledMissedRunPolicy,
   type ScheduledRunEnqueueResult,
   type SchedulerServiceIterationResult,
+  type SchedulerServiceResult,
   type ScheduledTaskExecutor,
   type ScheduledTaskExecutionRequest,
   type ScheduledTriggerFiringMode,
@@ -895,7 +897,6 @@ const summarizeRalphAsTaskResult = (
 };
 
 const SCHEDULER_FLEET_LOCK_STALE_MS = 2 * 60_000;
-const MAX_CONCURRENT_SCHEDULER_FLEET_WORKERS = 2;
 
 export const isSchedulerFleetServiceHeartbeatFresh = async (
   ownerPath: string,
@@ -1434,27 +1435,6 @@ export const pollSchedulerFleetWorkspaces = async (
   };
 };
 
-const waitForSchedulerFleetPoll = async (
-  durationMs: number,
-  signal: AbortSignal,
-): Promise<void> => {
-  if (signal.aborted) {
-    return;
-  }
-
-  await new Promise<void>((resolveWait) => {
-    const timer = setTimeout(resolveWait, durationMs);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolveWait();
-      },
-      { once: true },
-    );
-  });
-};
-
 const formatSchedulerTrigger = (
   trigger: ScheduledJob["triggers"][number],
 ): string => {
@@ -1631,6 +1611,8 @@ const printEnqueueResult = (
 
 export const printSchedulerSummary = async (
   args: ParsedCliArgs,
+  writeJson: (value: unknown) => void = printJson,
+  signal?: AbortSignal,
 ): Promise<void> => {
   const options = args.scheduler ?? fail("No scheduler action was provided.");
   const scheduler = createScheduler(args.workspaceRoot, {
@@ -1646,7 +1628,7 @@ export const printSchedulerSummary = async (
       const jobs = await scheduler.listJobs();
 
       if (args.json) {
-        printJson({
+        writeJson({
           workspaceRoot: args.workspaceRoot,
           jobs: jobs.map(summarizeJob),
         });
@@ -1680,7 +1662,7 @@ export const printSchedulerSummary = async (
       });
 
       if (args.json) {
-        printJson(readiness);
+        writeJson(readiness);
         return;
       }
 
@@ -1702,7 +1684,7 @@ export const printSchedulerSummary = async (
       );
 
       if (args.json) {
-        printJson({ job: summarizeJob(job) });
+        writeJson({ job: summarizeJob(job) });
         return;
       }
 
@@ -1726,7 +1708,7 @@ export const printSchedulerSummary = async (
             : await scheduler.deleteJob(subject, options.requestId);
 
       if (args.json) {
-        printJson({ job: summarizeJob(job) });
+        writeJson({ job: summarizeJob(job) });
         return;
       }
 
@@ -1738,7 +1720,7 @@ export const printSchedulerSummary = async (
       const runs = await scheduler.listRuns(options.subject);
 
       if (args.json) {
-        printJson({
+        writeJson({
           workspaceRoot: args.workspaceRoot,
           runs: runs.map(summarizeRun),
         });
@@ -1752,7 +1734,7 @@ export const printSchedulerSummary = async (
       const events = await scheduler.listEvents();
 
       if (args.json) {
-        printJson({
+        writeJson({
           workspaceRoot: args.workspaceRoot,
           events: events.map(summarizeEvent),
         });
@@ -1768,7 +1750,7 @@ export const printSchedulerSummary = async (
       );
 
       if (args.json) {
-        printJson({
+        writeJson({
           event: summarizeEvent(result.event),
           enqueued: result.enqueued.map((entry) => ({
             handle: entry.handle,
@@ -1785,10 +1767,10 @@ export const printSchedulerSummary = async (
       return;
     }
     case "run-due": {
-      const result = await scheduler.runDueJobs();
+      const result = await scheduler.runDueJobs(signal ? { signal } : {});
 
       if (args.json) {
-        printJson({
+        writeJson({
           queued: result.queued.map(summarizeRun),
           runs: result.runs.map(summarizeRun),
         });
@@ -1804,7 +1786,7 @@ export const printSchedulerSummary = async (
       const result = await runSchedulerFleetIteration();
 
       if (args.json) {
-        printJson(result);
+        writeJson(result);
         return;
       }
 
@@ -1818,7 +1800,7 @@ export const printSchedulerSummary = async (
       const result = await pollSchedulerFleetWorkspaces();
 
       if (args.json) {
-        printJson(result);
+        writeJson(result);
         return;
       }
 
@@ -1897,7 +1879,7 @@ export const printSchedulerSummary = async (
         const result = await scheduler.runService(serviceOptions);
 
         if (args.json) {
-          printJson(result);
+          writeJson(result);
           return;
         }
 
@@ -1913,193 +1895,60 @@ export const printSchedulerSummary = async (
     }
     case "service-all": {
       const controller = new AbortController();
-      const stop = (): void => {
-        if (!controller.signal.aborted) {
-          controller.abort("Scheduler fleet service stopped.");
-        }
-      };
+      const stop = (): void =>
+        controller.abort("Scheduler fleet service stopped.");
       const serviceLock = await acquireSchedulerFleetServiceLock();
-      const pollIntervalMs = options.servicePollMs ?? 30_000;
-      const idleShutdownMs = Math.max(0, options.serviceIdleShutdownMs ?? 0);
-      const maxIterations = options.serviceMaxIterations;
-      let iterations = 0;
-      let recovered = 0;
-      let queued = 0;
-      let runs = 0;
-      let idleSince: number | undefined;
-      const activeWorkspaceWorkers = new Map<string, Promise<void>>();
-
+      let result: SchedulerServiceResult | undefined;
       writeStderrLine(
         `[${new Date().toISOString()}] scheduler fleet service started pid=${process.pid}.`,
       );
-
       process.once("SIGINT", stop);
       process.once("SIGTERM", stop);
-
       try {
-        while (!controller.signal.aborted) {
-          await serviceLock.touch();
-          const workspaceRoots = await listRegisteredSchedulerWorkspaces();
-          const rotationOffset =
-            workspaceRoots.length > 0 ? iterations % workspaceRoots.length : 0;
-          const orderedWorkspaceRoots = [
-            ...workspaceRoots.slice(rotationOffset),
-            ...workspaceRoots.slice(0, rotationOffset),
-          ];
-          const pollResults = await Promise.all(
-            orderedWorkspaceRoots.map(async (workspaceRoot) => {
-              try {
-                const workspaceScheduler = createScheduler(workspaceRoot, {
-                  executor: true,
-                });
-                const jobs = await workspaceScheduler.listJobs();
-
-                if (jobs.length === 0) {
-                  return {
-                    workspaceRoot,
-                    recovered: 0,
-                    queued: 0,
-                    hasJobs: false,
-                  };
-                }
-
-                const recoveredRuns =
-                  await workspaceScheduler.recoverAbandonedRuns(
-                    "Scheduler fleet service recovered an abandoned running run.",
-                  );
-                const enqueued = await workspaceScheduler.enqueueDueRuns();
-
-                if (
-                  !activeWorkspaceWorkers.has(workspaceRoot) &&
-                  activeWorkspaceWorkers.size <
-                    MAX_CONCURRENT_SCHEDULER_FLEET_WORKERS
-                ) {
-                  const worker = workspaceScheduler
-                    .runQueuedRuns(
-                      options.serviceMaxRunsPerTick !== undefined
-                        ? {
-                            maxRuns: options.serviceMaxRunsPerTick,
-                            signal: controller.signal,
-                          }
-                        : { signal: controller.signal },
-                    )
-                    .then((finishedRuns) => {
-                      runs += finishedRuns.length;
-                    })
-                    .catch((error) => {
-                      writeStderrLine(
-                        `[${new Date().toISOString()}] scheduler fleet worker ${workspaceRoot}: ${error instanceof Error ? error.message : String(error)}`,
-                      );
-                    })
-                    .finally(() => {
-                      activeWorkspaceWorkers.delete(workspaceRoot);
-                    });
-                  activeWorkspaceWorkers.set(workspaceRoot, worker);
-                }
-
-                return {
-                  workspaceRoot,
-                  recovered: recoveredRuns.length,
-                  queued: enqueued.length,
-                  hasJobs: true,
-                };
-              } catch (error) {
-                writeStderrLine(
-                  `[${new Date().toISOString()}] scheduler fleet poll ${workspaceRoot}: ${error instanceof Error ? error.message : String(error)}`,
-                );
-                return {
-                  workspaceRoot,
-                  recovered: 0,
-                  queued: 0,
-                  hasJobs: true,
-                };
-              }
-            }),
-          );
-          iterations += 1;
-          const iterationRecovered = pollResults.reduce(
-            (total, workspace) => total + workspace.recovered,
-            0,
-          );
-          const iterationQueued = pollResults.reduce(
-            (total, workspace) => total + workspace.queued,
-            0,
-          );
-          recovered += iterationRecovered;
-          queued += iterationQueued;
-          const hasScheduledJobs = pollResults.some(
-            (workspace) => workspace.hasJobs,
-          );
-
-          if (!hasScheduledJobs && activeWorkspaceWorkers.size === 0) {
-            idleSince ??= Date.now();
-          } else {
-            idleSince = undefined;
-          }
-
-          if (!args.json && (iterationRecovered || iterationQueued)) {
-            writeStdoutLine(
-              `scheduler fleet: workspaces=${workspaceRoots.length} recovered=${iterationRecovered} queued=${iterationQueued} active=${activeWorkspaceWorkers.size}`,
-            );
-          }
-          if (args.json && (iterationRecovered || iterationQueued)) {
+        result = await runSchedulerFleetService({
+          workspaceRoots: listRegisteredSchedulerWorkspaces,
+          executor: createSchedulerExecutor(),
+          signal: controller.signal,
+          ...(options.servicePollMs !== undefined
+            ? { pollIntervalMs: options.servicePollMs }
+            : {}),
+          ...(options.serviceIdleShutdownMs !== undefined
+            ? { idleShutdownMs: options.serviceIdleShutdownMs }
+            : {}),
+          ...(options.serviceMaxIterations !== undefined
+            ? { maxIterations: options.serviceMaxIterations }
+            : {}),
+          ...(options.serviceMaxRunsPerTick !== undefined
+            ? { maxRunsPerTick: options.serviceMaxRunsPerTick }
+            : {}),
+          beforePoll: serviceLock.touch,
+          settleWorkers: (workers) =>
+            awaitSchedulerFleetWorkerSettlement(workers, serviceLock.touch),
+          onError: (error, workspace, phase) =>
             writeStderrLine(
-              `[${new Date().toISOString()}] scheduler fleet status workspaces=${workspaceRoots.length} recovered=${iterationRecovered} queued=${iterationQueued} active=${activeWorkspaceWorkers.size}.`,
-            );
-          }
-
-          if (maxIterations !== undefined && iterations >= maxIterations) {
-            break;
-          }
-
-          if (
-            idleShutdownMs > 0 &&
-            idleSince !== undefined &&
-            Date.now() - idleSince >= idleShutdownMs
-          ) {
-            break;
-          }
-
-          await waitForSchedulerFleetPoll(pollIntervalMs, controller.signal);
-        }
-
-        if (maxIterations !== undefined) {
-          await awaitSchedulerFleetWorkerSettlement(
-            activeWorkspaceWorkers.values(),
-            serviceLock.touch,
-          );
-        }
-
-        if (args.json) {
-          printJson({
-            iterations,
-            recoveredRuns: recovered,
-            queuedRuns: queued,
-            finishedRuns: runs,
-          });
-        }
+              `[${new Date().toISOString()}] scheduler fleet ${phase} ${workspace}: ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          onIteration: ({ workspaces, recovered, queued, active }) => {
+            if (!recovered && !queued) return;
+            if (args.json)
+              writeStderrLine(
+                `[${new Date().toISOString()}] scheduler fleet status workspaces=${workspaces} recovered=${recovered} queued=${queued} active=${active}.`,
+              );
+            else
+              writeStdoutLine(
+                `scheduler fleet: workspaces=${workspaces} recovered=${recovered} queued=${queued} active=${active}`,
+              );
+          },
+        });
+        if (args.json) writeJson(result);
         return;
       } finally {
-        if (activeWorkspaceWorkers.size > 0) {
-          if (!controller.signal.aborted) {
-            controller.abort("Scheduler fleet service is stopping.");
-          }
-        }
-        try {
-          if (activeWorkspaceWorkers.size > 0) {
-            await awaitSchedulerFleetWorkerSettlement(
-              activeWorkspaceWorkers.values(),
-              serviceLock.touch,
-            );
-          }
-        } finally {
-          writeStderrLine(
-            `[${new Date().toISOString()}] scheduler fleet service stopped iterations=${iterations} recovered=${recovered} queued=${queued} finished=${runs}.`,
-          );
-          process.off("SIGINT", stop);
-          process.off("SIGTERM", stop);
-          await serviceLock.release();
-        }
+        writeStderrLine(
+          `[${new Date().toISOString()}] scheduler fleet service stopped${result ? ` iterations=${result.iterations} recovered=${result.recoveredRuns} queued=${result.queuedRuns} finished=${result.finishedRuns}` : ""}.`,
+        );
+        process.off("SIGINT", stop);
+        process.off("SIGTERM", stop);
+        await serviceLock.release();
       }
     }
     case "trigger": {
@@ -2111,11 +1960,14 @@ export const printSchedulerSummary = async (
       );
       const runs =
         queued.run.status === "queued"
-          ? await scheduler.runQueuedRuns({ maxRuns: 1 })
+          ? await scheduler.runQueuedRuns({
+              maxRuns: 1,
+              ...(signal ? { signal } : {}),
+            })
           : [];
 
       if (args.json) {
-        printJson({
+        writeJson({
           queued: {
             handle: queued.handle,
             run: summarizeRun(queued.run),
@@ -2139,11 +1991,14 @@ export const printSchedulerSummary = async (
       );
       const runs =
         handle.status === "queued"
-          ? await scheduler.runQueuedRuns({ maxRuns: 1 })
+          ? await scheduler.runQueuedRuns({
+              maxRuns: 1,
+              ...(signal ? { signal } : {}),
+            })
           : [];
 
       if (args.json) {
-        printJson({ handle, runs: runs.map(summarizeRun) });
+        writeJson({ handle, runs: runs.map(summarizeRun) });
         return;
       }
 
@@ -2161,7 +2016,7 @@ export const printSchedulerSummary = async (
       );
 
       if (args.json) {
-        printJson({ run: summarizeRun(run) });
+        writeJson({ run: summarizeRun(run) });
         return;
       }
 
@@ -2176,7 +2031,7 @@ export const printSchedulerSummary = async (
       );
 
       if (args.json) {
-        printJson({
+        writeJson({
           workspaceRoot: result.workspaceRoot,
           discovered: result.discovered,
           syncedJobs: result.syncedJobs.map(summarizeJob),

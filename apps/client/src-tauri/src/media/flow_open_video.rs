@@ -48,6 +48,14 @@ pub(super) fn validate(
         return Err("Guidance must be between 0 and 20".to_string());
     }
     if let Some(profile) = profile {
+        if profile.distillation.is_some()
+            && profile
+                .video
+                .as_ref()
+                .is_some_and(|video| node.config["fps"].as_u64() != Some(u64::from(video.fps)))
+        {
+            return Err("MiniMax-H3 students require 24 fps".to_string());
+        }
         if let Some(error) = open_models::video_settings_error(
             profile,
             node.config["numFrames"].as_u64().unwrap() as u32,
@@ -77,7 +85,9 @@ pub(super) fn validate(
             && !crate::media::model_addon::capabilities_for_model(
                 "local-diffusers",
                 Some(&profile.architecture),
-            ).iter().any(|capability| capability.kind == "lora")
+            )
+            .iter()
+            .any(|capability| capability.kind == "lora")
         {
             return Err("This video model does not support LoRAs".to_string());
         }
@@ -92,7 +102,7 @@ pub(super) fn validate(
     }
     if node.config.contains_key("negativePrompt") {
         config_multiline_string(node, "negativePrompt", 8_000, true)?;
-        if profile.is_some_and(|profile| !profile.prompt)
+        if profile.is_some_and(|profile| !profile.prompt || !profile.negative_prompt)
             && node.config["negativePrompt"]
                 .as_str()
                 .is_some_and(|prompt| !prompt.is_empty())

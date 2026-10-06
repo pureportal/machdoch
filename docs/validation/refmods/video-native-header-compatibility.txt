@@ -1,0 +1,7 @@
+Read the released checkpoint header without tensor values
+Could not detect ROCm GPU architecture: [WinError 2] The system cannot find the file specified
+
+ROCm GPU architecture detection failed despite ROCm being available.
+                
+W1006 16:46:18.732000 21196 Lib\site-packages\torch\utils\flop_counter.py:29] triton not found; flop counting will not work for triton kernels
+{"pretrainedWeightsUsed": false, "tensorValuesRead": false, "modes": {"encode": {"sourceWeights": 118, "missing": [], "incompatible": []}, "decode": {"sourceWeights": 441, "missing": [], "incompatible": []}}, "sourcePreserved": true, "passed": true}

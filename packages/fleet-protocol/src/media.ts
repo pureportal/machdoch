@@ -1,6 +1,9 @@
 import { z } from "zod";
 
 export const mediaCommands = [
+  "media_get_asset_storage",
+  "media_move_asset_storage",
+  "media_resume_asset_storage",
   "media_read_studio_state",
   "media_write_studio_state",
   "media_create_transfer",
@@ -62,6 +65,7 @@ export const mediaCommands = [
   "media_read_asset_preview",
   "media_read_quality_report",
   "media_refresh_local_diffusers_runtime",
+  "media_refmod_operation",
   "media_remove_model",
   "media_remove_model_addon",
   "media_resolve_human_review",
@@ -78,12 +82,33 @@ export const mediaCommands = [
 
 export const mediaRequestSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("release"), id: z.string().uuid() }),
-  z.strictObject({
-    kind: z.literal("invoke"),
-    id: z.string().uuid(),
-    command: z.enum(mediaCommands),
-    args: z.record(z.string(), z.json()),
-  }),
+  z
+    .strictObject({
+      kind: z.literal("invoke"),
+      id: z.string().uuid(),
+      command: z.enum(mediaCommands),
+      args: z.record(z.string(), z.json()),
+    })
+    .superRefine(({ command, args }, context) => {
+      const schema =
+        command === "media_move_asset_storage"
+          ? z.strictObject({
+              folder: z
+                .string()
+                .min(1)
+                .max(4096)
+                .refine((value) => !value.includes("\0")),
+            })
+          : command === "media_get_asset_storage" ||
+              command === "media_resume_asset_storage"
+            ? z.strictObject({})
+            : null;
+      if (schema && !schema.safeParse(args).success)
+        context.addIssue({
+          code: "custom",
+          message: "Invalid asset storage operation.",
+        });
+    }),
   z.strictObject({
     kind: z.literal("read"),
     id: z.string().uuid(),
@@ -100,17 +125,23 @@ export const mediaRequestSchema = z.discriminatedUnion("kind", [
 ]);
 export const mediaResponseSchema = z.discriminatedUnion("state", [
   z.strictObject({ state: z.literal("pending") }),
-  z.strictObject({
-    state: z.literal("complete"),
-    chunk: z.string().max(262144),
-    offset: z.number().int().nonnegative(),
-    total: z.number().int().nonnegative().max(64 * 1024 * 1024),
-  }).refine(
-    ({ chunk, offset, total }) =>
-      offset <= total &&
-      chunk.length <= total - offset &&
-      (chunk.length > 0 || offset === total),
-  ),
+  z
+    .strictObject({
+      state: z.literal("complete"),
+      chunk: z.string().max(262144),
+      offset: z.number().int().nonnegative(),
+      total: z
+        .number()
+        .int()
+        .nonnegative()
+        .max(64 * 1024 * 1024),
+    })
+    .refine(
+      ({ chunk, offset, total }) =>
+        offset <= total &&
+        chunk.length <= total - offset &&
+        (chunk.length > 0 || offset === total),
+    ),
   z.strictObject({ state: z.literal("failed"), error: z.json() }),
   z.strictObject({
     state: z.literal("events"),

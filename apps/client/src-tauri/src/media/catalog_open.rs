@@ -29,7 +29,7 @@ pub(super) fn models() -> &'static [BuiltinModel] {
                 architecture: Some(&profile.architecture),
                 license_name: &profile.license.name,
                 license_spdx_id: profile.license.spdx_id.as_deref(),
-                license_source_url: source,
+                license_source_url: profile.license.source_url.as_deref().unwrap_or(source),
                 license_commercial_use: &profile.license.commercial_use,
                 license_requires_acceptance: profile.license.commercial_use != "allowed",
                 recommended: false,

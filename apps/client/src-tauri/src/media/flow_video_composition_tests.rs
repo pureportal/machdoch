@@ -53,7 +53,13 @@ fn validates_lip_sync_with_separate_vocals_and_rejects_invalid_settings() {
     flow.edges.remove(2);
     flow.nodes.remove(2);
     assert!(flow.validate().is_ok());
-    for (key, value) in [("batchSize", json!(0)), ("batchSize", json!(1.5)), ("cropShift", json!(-65)), ("seed", json!(-1)), ("audioStartSeconds", json!(-1))] {
+    for (key, value) in [
+        ("batchSize", json!(0)),
+        ("batchSize", json!(1.5)),
+        ("cropShift", json!(-65)),
+        ("seed", json!(-1)),
+        ("audioStartSeconds", json!(-1)),
+    ] {
         let mut invalid = flow.clone();
         invalid.nodes[2].config.insert(key.into(), value);
         assert!(invalid.validate().is_err());

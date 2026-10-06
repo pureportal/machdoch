@@ -13,6 +13,57 @@ afterEach(() => {
 });
 
 describe("fleet session navigation", () => {
+  it("opens a valid historical session outside the bounded live session window", async () => {
+    const initial = snapshot();
+    const historical = { ...initial.shell!.sessions[0]!, id: "historical" };
+    vi.mocked(api).mockImplementation(async (path, init) => {
+      if (path.endsWith("commands")) {
+        initial.shell!.activeSessionId = historical.id;
+        initial.shell!.sessions.push(historical);
+        return {
+          commandId: JSON.parse(init!.body as string).commandId,
+          duplicate: false,
+        };
+      }
+      return structuredClone(initial);
+    });
+    expect(
+      (await createInstanceRuntime("device", historical.id).getSnapshot()).shell
+        ?.activeSessionId,
+    ).toBe(historical.id);
+  });
+
+  it("waits for a matching full native draft without exposing the truncated snapshot", async () => {
+    const initial = snapshot();
+    initial.shell!.composer!.textTruncated = true;
+    initial.shell!.composer!.draft = "Short projection";
+    initial.shell!.composer!.draftRevision = 1;
+    const full = {
+      sessionId: initial.shell!.composer!.sessionId,
+      draft: "🌿".repeat(9_000),
+      draftRevision: 2,
+      history: [],
+      queuedMessages: [],
+    };
+    const read = vi.fn().mockResolvedValue(full);
+    vi.mocked(api)
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValue({
+        ...initial,
+        shell: {
+          ...initial.shell,
+          composer: { ...initial.shell!.composer, draftRevision: 2 },
+        },
+      });
+    const loaded = await createInstanceRuntime(
+      "device",
+      undefined,
+      read,
+    ).getSnapshot();
+    expect(loaded.shell!.composer!.draft).toBe(full.draft);
+    expect(read).toHaveBeenCalledTimes(2);
+  });
+
   it("selects the requested session once through the normal command endpoint", async () => {
     const initial = snapshot();
     const sessionId = initial.shell!.sessions[0]!.id;
@@ -27,7 +78,7 @@ describe("fleet session navigation", () => {
       }
       return initial;
     });
-    const runtime = createInstanceRuntime("device", false, sessionId);
+    const runtime = createInstanceRuntime("device", sessionId);
     expect((await runtime.getSnapshot()).shell?.activeSessionId).toBe(
       sessionId,
     );
@@ -60,7 +111,7 @@ describe("fleet session navigation", () => {
         initial.shell!.activeSessionId = sessionId;
       return structuredClone(initial);
     });
-    const runtime = createInstanceRuntime("device", false, sessionId);
+    const runtime = createInstanceRuntime("device", sessionId);
     const selected = await runtime.getSnapshot();
     expect(selected.shell?.activeSessionId).toBe(sessionId);
     expect(pendingReads).toBe(3);
@@ -86,7 +137,7 @@ describe("fleet session navigation", () => {
       if (queued) vi.setSystemTime(Date.now() + 9_000);
       return initial;
     });
-    const runtime = createInstanceRuntime("device", false, sessionId);
+    const runtime = createInstanceRuntime("device", sessionId);
     await expect(runtime.getSnapshot()).rejects.toThrow(
       "could not be selected",
     );
@@ -100,10 +151,15 @@ describe("fleet session navigation", () => {
   });
 
   it("does not select missing sessions or issue commands after cancellation", async () => {
-    vi.mocked(api).mockResolvedValue(snapshot());
+    vi.mocked(api).mockImplementation(async (path) => {
+      if (path.endsWith("commands"))
+        throw new Error("This session is no longer on the device.");
+      return snapshot();
+    });
     await expect(
-      createInstanceRuntime("device", false, "missing").getSnapshot(),
+      createInstanceRuntime("device", "missing").getSnapshot(),
     ).rejects.toThrow("no longer");
+    vi.mocked(api).mockClear();
     const controller = new AbortController();
     controller.abort();
     const initial = snapshot();
@@ -112,7 +168,6 @@ describe("fleet session navigation", () => {
     await expect(
       createInstanceRuntime(
         "device",
-        false,
         initial.shell!.sessions[0]!.id,
       ).getSnapshot(controller.signal),
     ).rejects.toThrow();
@@ -127,7 +182,7 @@ describe("fleet session navigation", () => {
       duplicate: false,
     });
     await expect(
-      createInstanceRuntime("device", false).execute({
+      createInstanceRuntime("device").execute({
         kind: "cancel",
         taskId: "task",
         commandId: "command",

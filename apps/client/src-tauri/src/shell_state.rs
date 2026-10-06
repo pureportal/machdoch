@@ -792,7 +792,7 @@ fn persist_snapshot_at_paths(
 /// Settings transfer runs its blocking snapshot and transaction work through
 /// `spawn_blocking`, so it can share the same cache mutex and revisioned file as
 /// the asynchronous UI commands without maintaining a second shell-state DTO.
-pub(crate) fn load_shell_state_for_settings_transfer<R: Runtime>(
+pub(crate) fn load_authoritative_shell_state<R: Runtime>(
     app_handle: &AppHandle<R>,
 ) -> Result<Value, String> {
     let state = app_handle.state::<ShellStateStoreLock>();

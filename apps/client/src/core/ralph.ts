@@ -67,6 +67,8 @@ import {
   type RalphRunIntegration,
 } from "./_helpers/ralph-run-integration.helper.js";
 import { getRalphIntegrationChecks } from "./_helpers/ralph-integration-checks.helper.js";
+import { prepareRalphIsolatedRun } from "./_helpers/prepare-ralph-isolated-run.helper.js";
+import { createRalphCheckpointFence } from "./_helpers/create-ralph-checkpoint-fence.helper.js";
 export {
   getRalphArtifactDirectory,
   getRalphFlowDirectory,
@@ -95,10 +97,7 @@ import {
   createRalphValidatorExecutionResult,
 } from "./_helpers/create-ralph-block-execution-result.helper.js";
 import { createRalphFailureSignature } from "./_helpers/create-ralph-failure-signature.helper.js";
-import {
-  canonicalizeRalphValue,
-  createRalphFlowFingerprint,
-} from "./_helpers/create-ralph-flow-fingerprint.helper.js";
+import { createRalphFlowFingerprint } from "./_helpers/create-ralph-flow-fingerprint.helper.js";
 import {
   RALPH_FLOW_SCHEMA_VERSION,
   validateRalphFlow,
@@ -168,6 +167,7 @@ import {
 } from "./_helpers/transition-ralph-work-item-state.helper.js";
 import { collectActiveRalphJsonTaskClaims } from "./_helpers/ralph-json-task-claims.helper.js";
 import { startRalphHeartbeat } from "./_helpers/start-ralph-heartbeat.helper.js";
+import { readLastRalphLogSequence } from "./_helpers/read-ralph-log-sequence.helper.js";
 import {
   createRalphAppendJsonlLedger,
   parseRalphAppendJsonlLedger,
@@ -1548,6 +1548,11 @@ export interface RalphRunCheckpoint {
   };
   durability?: RalphRunDurability;
   runWorktree?: RalphRunWorktree;
+  preparation?: {
+    kind: "isolated-worktree";
+    flowFingerprint: string;
+    workspaceRoot: string;
+  };
 }
 
 export interface RalphRunRecord {
@@ -2372,35 +2377,6 @@ class RalphFileRunLogger implements RalphRunLogger {
   }
 }
 
-const readLastRalphLogSequence = async (
-  paths: RalphRunLogPaths,
-): Promise<number> => {
-  const contents = await Promise.all(
-    [paths.simpleJsonlPath, paths.traceJsonlPath].map((path) =>
-      readFile(path, "utf8").catch(() => ""),
-    ),
-  );
-  let maximum = 0;
-
-  for (const content of contents) {
-    for (const line of content.trim().split(/\r?\n/u)) {
-      if (!line) {
-        continue;
-      }
-      try {
-        const value = JSON.parse(line) as unknown;
-        if (isRecord(value) && typeof value.sequence === "number") {
-          maximum = Math.max(maximum, value.sequence);
-        }
-      } catch {
-        // A partial tail is ignored; subsequent entries continue after the last valid sequence.
-      }
-    }
-  }
-
-  return maximum;
-};
-
 export const pruneRalphRunArtifacts = async (
   workspaceRoot: string,
   options: {
@@ -2688,11 +2664,7 @@ export const acquireRalphFileMutationLock = async (
       }
 
       const metadata = await stat(lockPath).catch(() => undefined);
-      if (
-        attempt === 0 &&
-        metadata &&
-        Date.now() - metadata.mtimeMs >= staleAfterMs
-      ) {
+      if (attempt === 0 && metadata) {
         const staleToken = await readFile(lockPath, "utf8").catch(
           () => undefined,
         );
@@ -2707,10 +2679,17 @@ export const acquireRalphFileMutationLock = async (
               return undefined;
             }
           })();
-          if (
-            options.reapLiveOwner === false &&
-            isRalphMutationLockProcessAlive(staleOwner?.pid)
-          ) {
+          const ownerAlive = isRalphMutationLockProcessAlive(staleOwner?.pid);
+          const knownDeadOwner =
+            Number.isSafeInteger(staleOwner?.pid) &&
+            Number(staleOwner?.pid) > 0 &&
+            typeof staleOwner?.token === "string" &&
+            staleOwner.token.length > 0 &&
+            !ownerAlive;
+          if (Date.now() - metadata.mtimeMs < staleAfterMs && !knownDeadOwner) {
+            throw new RalphMutationLeaseActiveError(targetPath, error);
+          }
+          if (options.reapLiveOwner === false && ownerAlive) {
             throw new RalphMutationLeaseActiveError(targetPath, error);
           }
           const confirmedToken = await readFile(lockPath, "utf8").catch(
@@ -2722,7 +2701,9 @@ export const acquireRalphFileMutationLock = async (
             );
             if (
               confirmedMetadata &&
-              Date.now() - confirmedMetadata.mtimeMs >= staleAfterMs
+              (Date.now() - confirmedMetadata.mtimeMs >= staleAfterMs ||
+                (knownDeadOwner &&
+                  !isRalphMutationLockProcessAlive(staleOwner?.pid)))
             ) {
               const finalToken = await readFile(lockPath, "utf8").catch(
                 () => undefined,
@@ -15031,35 +15012,6 @@ class RalphRunOwnershipLostError extends Error {
   }
 }
 
-const createRalphCheckpointFence = (
-  checkpoint: RalphRunCheckpoint | undefined,
-): string | undefined => {
-  if (!checkpoint) {
-    return undefined;
-  }
-
-  const comparable = {
-    ...checkpoint,
-    ...(checkpoint.lease
-      ? {
-          lease: {
-            ownerId: checkpoint.lease.ownerId,
-            generation: checkpoint.lease.generation,
-            acquiredAt: checkpoint.lease.acquiredAt,
-            ...(checkpoint.lease.releasedAt
-              ? { releasedAt: checkpoint.lease.releasedAt }
-              : {}),
-          },
-        }
-      : {}),
-  };
-  delete comparable.durability;
-
-  return createHash("sha256")
-    .update(JSON.stringify(canonicalizeRalphValue(comparable)))
-    .digest("hex");
-};
-
 const isLiveForeignRalphRunLease = (
   lease: RalphRunLease | undefined,
   ownerId: string,
@@ -15202,9 +15154,11 @@ const runRalphFlowImpl = async (
     }));
   const instructionCanonicalChanged =
     checkpoint !== undefined &&
+    checkpoint.preparation === undefined &&
     checkpoint.instructionCanonicalDigest !== activeInstructionCanonicalDigest;
   const instructionEnvironmentChanged =
     checkpoint !== undefined &&
+    checkpoint.preparation === undefined &&
     !areRalphInstructionEnvironmentDigestsEqual(
       checkpoint.instructionEnvironmentDigests ?? [],
       activeInstructionEnvironmentDigests,
@@ -18327,16 +18281,41 @@ export const runRalphFlow = async (
     `ralph-${flow.id}-${randomUUID()}`;
 
   try {
-    if (options.isolatedWorktree || options.checkpoint?.runWorktree) {
+    if (
+      options.isolatedWorktree ||
+      options.checkpoint?.runWorktree ||
+      options.checkpoint?.preparation
+    ) {
       if (!options.logger?.paths || options.workspaceBoundary) {
         throw new Error(
           "An isolated RALPH run needs saved run paths and its own workspace boundary.",
         );
       }
-      const worktree = await prepareRalphRunWorktree(
-        config.workspaceRoot,
-        options.logger.paths.directory,
-      );
+      let worktree: RalphRunWorktree;
+      if (!options.checkpoint || options.checkpoint.preparation) {
+        const prepared = await prepareRalphIsolatedRun(
+          flow,
+          config.workspaceRoot,
+          options.logger.paths,
+          {
+            runId,
+            startedAt,
+            ownerId: leaseOwnerId,
+            ...(options.checkpoint ? { checkpoint: options.checkpoint } : {}),
+            ...(options.variableValues
+              ? { variableValues: options.variableValues }
+              : {}),
+            ...(options.signal ? { signal: options.signal } : {}),
+          },
+        );
+        worktree = prepared.worktree;
+        options = { ...options, checkpoint: prepared.checkpoint };
+      } else {
+        worktree = await prepareRalphRunWorktree(
+          config.workspaceRoot,
+          options.logger.paths.directory,
+        );
+      }
       if (
         options.checkpoint?.runWorktree &&
         options.checkpoint.runWorktree.worktreeRoot !== worktree.worktreeRoot

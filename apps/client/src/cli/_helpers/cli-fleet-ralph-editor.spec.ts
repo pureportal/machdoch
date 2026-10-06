@@ -1,10 +1,11 @@
-import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { ralphRequestSchema } from "@machdoch/fleet-protocol";
+import { createFleetOperationTransport } from "@machdoch/product-ui/fleet-operation-transport";
 import { FleetRalphEditor } from "./cli-fleet-ralph-editor.js";
 
 const mocks = vi.hoisted(() => ({ spawn: vi.fn() }));
@@ -43,45 +44,16 @@ function respond(value: unknown, splitBytes = false): void {
   });
 }
 
-async function readOperation(id: string): Promise<unknown> {
-  let content = "";
-  try {
-    await vi.waitFor(async () => {
-      const response = await editor.request({ kind: "read", id, offset: 0 });
-      expect(response.state).toBe("complete");
-    });
-    for (;;) {
-      const response = await editor.request({
-        kind: "read",
-        id,
-        offset: content.length,
-      });
-      if (response.state !== "complete")
-        throw new Error("Expected completed RALPH response.");
-      content += response.chunk;
-      if (content.length === response.total)
-        return JSON.parse(Buffer.from(content, "base64").toString("utf8"));
-    }
-  } finally {
-    await editor.request({ kind: "release", id });
-  }
+function client() {
+  return createFleetOperationTransport((request) =>
+    editor.request(ralphRequestSchema.parse(request)),
+  );
 }
 
 async function execute(taskId: string): Promise<unknown> {
-  const id = randomUUID();
-  expect(
-    (
-      await editor.request({
-        kind: "invoke",
-        id,
-        command: "run_ralph_command",
-        args: {
-          request: { workspaceRoot: workspace, arguments: ["list"], taskId },
-        },
-      })
-    ).state,
-  ).toBe("pending");
-  return readOperation(id);
+  return client().invoke("run_ralph_command", {
+    request: { workspaceRoot: workspace, arguments: ["list"], taskId },
+  });
 }
 
 it("preserves Unicode when CLI output splits every UTF-8 byte", async () => {
@@ -97,13 +69,11 @@ it("bounds recent task results by bytes as well as task count", async () => {
     const result = (await execute(taskId)) as { payload: string };
     expect(result.payload.length).toBe(size);
   }
-  const id = randomUUID();
-  await editor.request({
-    kind: "invoke",
-    id,
-    command: "get_recent_desktop_task_results",
-    args: { taskIds: ["first-task", "second-task"] },
-  });
-  const results = (await readOperation(id)) as Array<{ id: string }>;
+  const results = await client().invoke<Array<{ id: string }>>(
+    "get_recent_desktop_task_results",
+    {
+      taskIds: ["first-task", "second-task"],
+    },
+  );
   expect(results.map((result) => result.id)).toEqual(["second-task"]);
 });

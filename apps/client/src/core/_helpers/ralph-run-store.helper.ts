@@ -11,6 +11,12 @@ import { basename, join } from "node:path";
 import type { RalphRunCheckpoint } from "../ralph.js";
 import { writeJsonAtomically } from "./write-file-atomically.helper.js";
 import { isRalphRunOwnerAlive } from "./is-ralph-run-owner-alive.helper.js";
+import {
+  MAX_RALPH_JOURNAL_ENTRY_BYTES,
+  readRalphRunJournal,
+  type RalphJournalReadState,
+} from "./ralph-run-journal.helper.js";
+export { RalphRunStoreCorruptionError } from "./ralph-run-journal.helper.js";
 
 const CHECKPOINT_SCHEMA_VERSION = 1;
 const LEASE_SCHEMA_VERSION = 1;
@@ -86,7 +92,6 @@ const delay = (durationMs: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, durationMs));
 
 export class RalphRunStoreOwnershipError extends Error {}
-export class RalphRunStoreCorruptionError extends Error {}
 
 const retryTransientFileOperation = async <T>(
   operation: () => Promise<T>,
@@ -108,50 +113,6 @@ const retryTransientFileOperation = async <T>(
   }
 };
 
-interface RalphJournalReadState {
-  entries: RalphStoredJournalEntry[];
-  validBytes: number;
-  repair: "none" | "truncate" | "append-newline";
-}
-
-const RALPH_JOURNAL_ENTRY_KINDS = new Set<RalphRunJournalEntry["kind"]>([
-  "checkpoint",
-  "heartbeat",
-  "route",
-  "outcome",
-  "recovery",
-]);
-
-const parseStoredJournalEntry = (
-  line: string,
-  expectedSequence: number,
-): RalphStoredJournalEntry | undefined => {
-  let value: unknown;
-  try {
-    value = JSON.parse(line) as unknown;
-  } catch {
-    return undefined;
-  }
-  if (
-    !isRecord(value) ||
-    value.sequence !== expectedSequence ||
-    typeof value.at !== "string" ||
-    typeof value.kind !== "string" ||
-    !RALPH_JOURNAL_ENTRY_KINDS.has(
-      value.kind as RalphRunJournalEntry["kind"],
-    ) ||
-    typeof value.summary !== "string" ||
-    typeof value.checksum !== "string"
-  ) {
-    return undefined;
-  }
-  const { checksum, ...payload } = value;
-  if (checksum !== hash(JSON.stringify(payload))) {
-    return undefined;
-  }
-  return value as unknown as RalphStoredJournalEntry;
-};
-
 export class RalphRunStore {
   public readonly directory: string;
   public readonly checkpointDirectory: string;
@@ -159,6 +120,7 @@ export class RalphRunStore {
   public readonly journalPath: string;
   private checkpointGeneration = 0;
   private journalSequence = 0;
+  private journalFailure: Error | undefined;
 
   public constructor(directory: string) {
     this.directory = directory;
@@ -179,9 +141,10 @@ export class RalphRunStore {
         ? Math.max(maximum, generation)
         : maximum;
     }, 0);
-    const journal = await this.readJournalState();
+    const journal = await this.readJournalState(false);
     await this.repairJournal(journal);
-    this.journalSequence = journal.entries.at(-1)?.sequence ?? 0;
+    this.journalSequence = journal.lastSequence;
+    this.journalFailure = undefined;
   }
 
   private async listCheckpointFiles(): Promise<string[]> {
@@ -405,6 +368,7 @@ export class RalphRunStore {
     entry: Omit<RalphRunJournalEntry, "sequence" | "at"> &
       Partial<Pick<RalphRunJournalEntry, "sequence" | "at">>,
   ): Promise<RalphStoredJournalEntry> {
+    if (this.journalFailure) throw this.journalFailure;
     const payload: RalphRunJournalEntry = {
       sequence: entry.sequence ?? this.journalSequence + 1,
       at: entry.at ?? new Date().toISOString(),
@@ -416,59 +380,90 @@ export class RalphRunStore {
         : {}),
     };
     const stored = { ...payload, checksum: hash(JSON.stringify(payload)) };
+    const serialized = Buffer.from(`${JSON.stringify(stored)}\n`, "utf8");
+    if (serialized.length - 1 > MAX_RALPH_JOURNAL_ENTRY_BYTES) {
+      throw new Error("RALPH journal entry exceeds its storage limit.");
+    }
     await mkdir(this.directory, { recursive: true });
-    const journal = await retryTransientFileOperation(() =>
-      open(this.journalPath, "a"),
-    );
+    const journal = await retryTransientFileOperation(async () => {
+      try {
+        return await open(this.journalPath, "r+");
+      } catch (error) {
+        if (!isMissingFileError(error)) throw error;
+        return open(this.journalPath, "wx+");
+      }
+    });
     try {
-      await journal.writeFile(`${JSON.stringify(stored)}\n`, "utf8");
-      await journal.sync();
+      const offset = (await journal.stat()).size;
+      let appended = false;
+      try {
+        await retryTransientFileOperation(async () => {
+          if (!appended) {
+            await journal.truncate(offset);
+            let writtenBytes = 0;
+            while (writtenBytes < serialized.length) {
+              const { bytesWritten } = await journal.write(
+                serialized,
+                writtenBytes,
+                serialized.length - writtenBytes,
+                offset + writtenBytes,
+              );
+              if (bytesWritten === 0) {
+                throw new Error("RALPH journal write made no progress.");
+              }
+              writtenBytes += bytesWritten;
+            }
+            appended = true;
+          }
+          await journal.sync();
+        });
+      } catch (error) {
+        try {
+          await journal.truncate(offset);
+          await journal.sync();
+        } catch (rollbackError) {
+          const writeReason =
+            error instanceof Error ? error.message : String(error);
+          const rollbackReason =
+            rollbackError instanceof Error
+              ? rollbackError.message
+              : String(rollbackError);
+          this.journalFailure = new AggregateError(
+            [error, rollbackError],
+            `RALPH journal append failed: ${writeReason}\nIts partial write could not be removed: ${rollbackReason}`,
+          );
+          throw this.journalFailure;
+        }
+        throw error;
+      }
+      this.journalSequence = payload.sequence;
     } finally {
       await journal.close();
     }
-    this.journalSequence = payload.sequence;
     return stored;
   }
 
-  private async readJournalState(): Promise<RalphJournalReadState> {
-    let raw: Buffer;
+  private async readJournalState(
+    collectEntries: boolean,
+  ): Promise<RalphJournalReadState> {
+    let journal: Awaited<ReturnType<typeof open>>;
     try {
-      raw = await retryTransientFileOperation(() => readFile(this.journalPath));
+      journal = await retryTransientFileOperation(() =>
+        open(this.journalPath, "r"),
+      );
     } catch (error) {
       if (isMissingFileError(error)) {
-        return { entries: [], validBytes: 0, repair: "none" };
+        return { entries: [], lastSequence: 0, validBytes: 0, repair: "none" };
       }
       throw error;
     }
-    const entries: RalphStoredJournalEntry[] = [];
-    let offset = 0;
-    let validBytes = 0;
-
-    while (offset < raw.length) {
-      const newline = raw.indexOf(0x0a, offset);
-      const terminated = newline >= 0;
-      const end = terminated ? newline : raw.length;
-      const line = raw.subarray(offset, end).toString("utf8");
-      const entry = parseStoredJournalEntry(line, entries.length + 1);
-
-      if (!entry) {
-        if (!terminated && end === raw.length) {
-          return { entries, validBytes, repair: "truncate" };
-        }
-        throw new RalphRunStoreCorruptionError(
-          `RALPH journal is corrupt after sequence ${entries.at(-1)?.sequence ?? 0}.`,
-        );
-      }
-      entries.push(entry);
-      validBytes = terminated ? end + 1 : end;
-      offset = terminated ? end + 1 : end;
+    try {
+      return await retryTransientFileOperation(() =>
+        readRalphRunJournal(journal, collectEntries),
+      );
+    } finally {
+      await journal.close();
     }
-
-    return {
-      entries,
-      validBytes,
-      repair: raw.length > 0 && raw.at(-1) !== 0x0a ? "append-newline" : "none",
-    };
   }
 
   private async repairJournal(state: RalphJournalReadState): Promise<void> {
@@ -491,6 +486,6 @@ export class RalphRunStore {
   }
 
   public async readJournal(): Promise<RalphStoredJournalEntry[]> {
-    return (await this.readJournalState()).entries;
+    return (await this.readJournalState(true)).entries;
   }
 }

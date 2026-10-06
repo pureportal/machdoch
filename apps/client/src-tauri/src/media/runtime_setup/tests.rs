@@ -11,6 +11,25 @@ use super::*;
 use crate::atomic_file::{rename_file_atomic, write_file_atomic};
 
 #[test]
+#[ignore = "Installs the managed runtime; set MACHDOCH_REFMOD_SETUP_ROOT to an isolated absolute directory"]
+fn refmod_runtime_installation_without_model_weights() {
+    let root = std::path::PathBuf::from(
+        std::env::var_os("MACHDOCH_REFMOD_SETUP_ROOT").expect("Set MACHDOCH_REFMOD_SETUP_ROOT"),
+    );
+    assert!(root.is_absolute());
+    let worker = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("python")
+        .join("media_diffusers_worker.py");
+    let runtime = installer::install(&root, &worker, |status| {
+        println!("{}", serde_json::to_string(&status).unwrap());
+    })
+    .unwrap();
+    assert!(runtime.ready, "{}", runtime.diagnostic);
+    assert!(installer::python_path(&root).is_file());
+    println!("{}", serde_json::to_string(&runtime).unwrap());
+}
+
+#[test]
 fn selects_graphics_bundle_from_hardware() {
     assert_eq!(
         installer::select_accelerator("PCI\\VEN_1002&DEV_7550"),

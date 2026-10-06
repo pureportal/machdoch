@@ -1,73 +1,22 @@
-﻿import { normalizeConversationMemoryEntries } from "../../core/memory.js";
+import { normalizeTaskExecutionFileChanges } from '@machdoch/fleet-protocol/task-file-change-normalization';
+import type { SmartContextPack, SmartContextPackVariable, SmartContextPackTrigger } from "@machdoch/client-ui/context-packs/model";
+import { contextPackLimits } from "@machdoch/fleet-protocol/context-pack-contract";
+import { MAX_REQUEST_ITERATIONS, type ChatSessionContextAttachmentKind, type ChatSessionContextAttachment, type ChatSessionRequestIteration } from "@machdoch/client-ui/composer/model";
+import { normalizeConversationMemoryEntries } from "../../core/memory.js";
 import { resolveParallelAgentMode } from "../../core/parallel-agent-capabilities.js";
-import {
-  isSessionGoal,
-  resolveGoalMode,
-  type GoalMode,
-  type SessionGoal,
-} from "../../shared/goals.js";
-import {
-  MODEL_PROVIDERS,
-  REASONING_MODES,
-  VALID_TOOLS,
-} from "../../core/runtime-contract.generated.js";
-import type {
-  ConversationMemoryEntry,
-  ParallelAgentMode,
-  TaskExecutionChangedLineRange,
-  TaskExecutionFileChange,
-  TaskExecutionFileChangeCompleteness,
-  TaskExecutionFileChangeIssue,
-  TaskExecutionFileChangeOperation,
-  TaskExecutionFileEntryType,
-  TaskExecutionFileLineAnalysis,
-  TaskExecutionFileChanges,
-  TaskExecutionTokenUsage,
-  TaskExecutionNarrative,
-  TaskExecutionResult,
-  TaskExecutionSection,
-  TaskExecutionStatus,
-  TaskExecutionTimeoutState,
-  TaskRunPreview,
-} from "../../core/types.js";
-import type {
-  MediaAssetKind,
-  MediaAssetReference,
-} from "@machdoch/media-studio/core/media/contracts.js";
-import {
-  isMediaPoseMap,
-  type MediaPoseMap,
-  type MediaSavedPoseScene,
-} from "@machdoch/media-studio/core/media/contracts.js";
-import type {
-  ReasoningMode,
-  RunMode,
-  ToolName,
-} from "../../core/runtime-contract.generated.js";
-import {
-  getDefaultModelForProvider,
-  RUNNABLE_PROVIDER_ORDER,
-  type RuntimeProvider,
-} from "./model-catalog";
+import { isSessionGoal, resolveGoalMode, type GoalMode, type SessionGoal } from "../../shared/goals.js";
+import { MODEL_PROVIDERS, REASONING_MODES, VALID_TOOLS } from "../../core/runtime-contract.generated.js";
+import type { ConversationMemoryEntry, ParallelAgentMode, TaskExecutionTokenUsage, TaskExecutionNarrative, TaskExecutionResult, TaskExecutionSection, TaskExecutionStatus, TaskExecutionTimeoutState, TaskRunPreview } from "../../core/types.js";
+import type { MediaAssetKind, MediaAssetReference } from "@machdoch/media-studio/core/media/contracts.js";
+import { isMediaPoseMap, type MediaPoseMap, type MediaSavedPoseScene } from "@machdoch/media-studio/core/media/contracts.js";
+import type { ReasoningMode, RunMode, ToolName } from "../../core/runtime-contract.generated.js";
+import { getDefaultModelForProvider, RUNNABLE_PROVIDER_ORDER, type RuntimeProvider } from "./model-catalog";
 import type { TaskPanelTone } from "./task-panel";
-import {
-  appendTerminalExecutionToThinkingTrace,
-  type TaskThinkingActionOutputLine,
-  type TaskThinkingModelStream,
-  type TaskThinkingSource,
-  type TaskThinkingTimelineEvent,
-  type TaskThinkingTrace,
-} from "./task-thinking.model";
+import { appendTerminalExecutionToThinkingTrace, type TaskThinkingActionOutputLine, type TaskThinkingModelStream, type TaskThinkingSource, type TaskThinkingTimelineEvent, type TaskThinkingTrace } from "./task-thinking.model";
 import { normalizeChatSessionOptionalString } from "./chat-session/_helpers/normalize-chat-session-optional-string.helper";
 import { createWorkspaceRootKey } from "./workspace-management/workspace-management-model";
-import {
-  normalizeExecutionAttempt,
-  type ExecutionAttempt,
-} from "./chat-session/_helpers/execution-attempt";
-import {
-  normalizePromptEnhancementAttempt,
-  type PromptEnhancementAttempt,
-} from "./chat-session/_helpers/prompt-enhancement-attempt";
+import { normalizeExecutionAttempt, type ExecutionAttempt } from "./chat-session/_helpers/execution-attempt";
+import { normalizePromptEnhancementAttempt, type PromptEnhancementAttempt } from "./chat-session/_helpers/prompt-enhancement-attempt";
 
 export type ChatSessionMessageSource =
   | { kind: "preview"; preview: TaskRunPreview }
@@ -86,52 +35,9 @@ export type ChatSessionMessageSource =
 
 export type ChatSessionSpecialKind = "quick-voice" | "pose";
 
-export type ChatSessionContextAttachmentKind =
-  | "file"
-  | "directory"
-  | "image"
-  | "other";
-
-export interface ChatSessionPathContextAttachment {
-  id: string;
-  source: "path";
-  path: string;
-  kind: ChatSessionContextAttachmentKind;
-  name: string;
-  parent?: string;
-}
-
-export interface ChatSessionMediaAssetAttachment extends MediaAssetReference {
-  id: string;
-  name: string;
-}
-
-export type ChatSessionContextAttachment =
-  | ChatSessionPathContextAttachment
-  | ChatSessionMediaAssetAttachment;
-
-export const isPathContextAttachment = (
-  attachment: ChatSessionContextAttachment,
-): attachment is ChatSessionPathContextAttachment =>
-  attachment.source === "path";
-
-export const isMediaAssetContextAttachment = (
-  attachment: ChatSessionContextAttachment,
-): attachment is ChatSessionMediaAssetAttachment =>
-  attachment.source === "media-asset";
-
 export interface ChatSessionMessagePromptEnhancement {
   originalContent: string;
 }
-
-export interface ChatSessionRequestIteration {
-  groupId: string;
-  index: number;
-  total: number;
-  mode?: "repeat-prompt" | "continue" | "repeat-prompt-and-continue";
-}
-
-export const MAX_REQUEST_ITERATIONS = 20;
 
 export type ChatSessionMessagePromptEnhancementMode =
   | "off"
@@ -319,47 +225,6 @@ export interface ShellVoiceSettings {
   rate: number;
 }
 
-export interface SmartContextPackVariable {
-  name: string;
-  defaultValue?: string;
-}
-
-export interface SmartContextPackTrigger {
-  phrases: string[];
-  pathPatterns: string[];
-}
-
-export type SmartContextPackSettingOverrides = Partial<
-  Pick<
-    ChatSessionMessageSettings,
-    | "provider"
-    | "model"
-    | "mode"
-    | "reasoning"
-    | "promptEnhancementMode"
-    | "interviewEnabled"
-    | "sessionMemoryEnabled"
-    | "useWorkspaceMemory"
-    | "useGlobalMemory"
-    | "uiControlEnabled"
-  >
->;
-
-export interface SmartContextPack extends SmartContextPackSettingOverrides {
-  id: string;
-  workspace: string | null;
-  name: string;
-  instructions: string;
-  prompt: string;
-  contextAttachments: ChatSessionContextAttachment[];
-  variables: SmartContextPackVariable[];
-  trigger: SmartContextPackTrigger;
-  createdAt: number;
-  updatedAt: number;
-  lastUsedAt?: number;
-  useCount: number;
-}
-
 export interface ChatSessionQueuedMessage {
   id: string;
   sessionId: string;
@@ -524,12 +389,6 @@ const PROMPT_HISTORY_ENTRY_LENGTH_LIMIT = 8_000;
 const EXECUTION_RESPONSE_MARKDOWN_LIMIT = 32_000;
 const MAX_SESSION_TAGS = 12;
 const MAX_SESSION_TAG_LENGTH = 32;
-const MAX_CONTEXT_PACK_NAME_LENGTH = 72;
-const MAX_CONTEXT_PACK_VARIABLES = 12;
-const MAX_CONTEXT_PACK_VARIABLE_LENGTH = 40;
-const MAX_CONTEXT_PACK_TRIGGERS = 16;
-const MAX_CONTEXT_PACK_TRIGGER_LENGTH = 96;
-const MAX_CONTEXT_PACK_TEXT_LENGTH = 8_000;
 const SESSION_RETENTION_DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_RECENT_WORKSPACES = 10;
 const CONTEXT_ATTACHMENT_KINDS: ChatSessionContextAttachmentKind[] = [
@@ -542,7 +401,7 @@ const MESSAGE_PROMPT_ENHANCEMENT_MODES: ChatSessionMessagePromptEnhancementMode[
   ["off", "simple", "web-search"];
 
 export const QUICK_VOICE_SESSION_KIND: ChatSessionSpecialKind = "quick-voice";
-export const MAX_SMART_CONTEXT_PACKS = 160;
+export const MAX_SMART_CONTEXT_PACKS = contextPackLimits.documents;
 
 const clampVoiceRate = (value: unknown): number => {
   if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -1064,7 +923,7 @@ const normalizePromptContextHistory = (
 
 const normalizeContextPackText = (value: unknown): string => {
   return typeof value === "string"
-    ? value.trim().slice(0, MAX_CONTEXT_PACK_TEXT_LENGTH)
+    ? value.trim().slice(0, contextPackLimits.text)
     : "";
 };
 
@@ -1110,7 +969,7 @@ const normalizeContextPackTokenArray = (
 const normalizeContextPackVariableName = (value: unknown): string => {
   const name = normalizeContextPackToken(
     value,
-    MAX_CONTEXT_PACK_VARIABLE_LENGTH,
+    contextPackLimits.identifier,
   )
     .replace(/^\{|\}$/gu, "")
     .replace(/[^A-Za-z0-9_-]/gu, "_");
@@ -1141,17 +1000,14 @@ const normalizeContextPackVariables = (
 
     seenVariables.add(key);
 
-    const defaultValue = normalizeContextPackToken(
-      candidate.defaultValue,
-      MAX_CONTEXT_PACK_TRIGGER_LENGTH,
-    );
+    const defaultValue = normalizeContextPackText(candidate.defaultValue);
 
     variables.push({
       name,
       ...(defaultValue ? { defaultValue } : {}),
     });
 
-    if (variables.length >= MAX_CONTEXT_PACK_VARIABLES) {
+    if (variables.length >= contextPackLimits.variables) {
       break;
     }
   }
@@ -1166,12 +1022,12 @@ const normalizeContextPackTrigger = (
 
   return {
     phrases: normalizeContextPackTokenArray(candidate.phrases, {
-      limit: MAX_CONTEXT_PACK_TRIGGERS,
-      maxLength: MAX_CONTEXT_PACK_TRIGGER_LENGTH,
+      limit: contextPackLimits.triggers,
+      maxLength: contextPackLimits.identifier,
     }),
     pathPatterns: normalizeContextPackTokenArray(candidate.pathPatterns, {
-      limit: MAX_CONTEXT_PACK_TRIGGERS,
-      maxLength: MAX_CONTEXT_PACK_TRIGGER_LENGTH,
+      limit: contextPackLimits.triggers,
+      maxLength: contextPackLimits.triggerPathPattern,
     }),
   };
 };
@@ -1200,7 +1056,7 @@ const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
 
     const rawName = normalizeString(entry.name).replace(/\s+/gu, " ").trim();
     const name =
-      rawName.slice(0, MAX_CONTEXT_PACK_NAME_LENGTH) ||
+      rawName.slice(0, contextPackLimits.identifier) ||
       `Context pack ${index + 1}`;
     const workspaceCandidate = normalizeString(entry.workspace).trim();
     const provider = isRuntimeProvider(entry.provider)
@@ -1733,336 +1589,6 @@ const normalizeTaskExecutionResponse = (
     followUps: normalizeStringArray(value.followUps)
       .slice(0, 20)
       .map((entry) => entry.slice(0, 1_000)),
-  };
-};
-
-const normalizeNonNegativeInteger = (value: unknown): number | undefined => {
-  const normalized = normalizeOptionalFiniteNumber(value);
-
-  return normalized === undefined
-    ? undefined
-    : Math.max(0, Math.round(normalized));
-};
-
-const isTaskExecutionFileChangeOperation = (
-  value: unknown,
-): value is TaskExecutionFileChangeOperation => {
-  return (
-    value === "added" ||
-    value === "modified" ||
-    value === "deleted" ||
-    value === "renamed" ||
-    value === "type-changed"
-  );
-};
-
-const isTaskExecutionFileEntryType = (
-  value: unknown,
-): value is TaskExecutionFileEntryType => {
-  return (
-    value === "text" ||
-    value === "binary" ||
-    value === "gitlink" ||
-    value === "symlink" ||
-    value === "mode"
-  );
-};
-
-export const normalizeTaskExecutionChangedLineRange = (
-  value: unknown,
-): TaskExecutionChangedLineRange | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  const oldStart = normalizeNonNegativeInteger(value.oldStart);
-  const oldLines = normalizeNonNegativeInteger(value.oldLines);
-  const newStart = normalizeNonNegativeInteger(value.newStart);
-  const newLines = normalizeNonNegativeInteger(value.newLines);
-
-  if (
-    oldStart === undefined ||
-    oldLines === undefined ||
-    newStart === undefined ||
-    newLines === undefined
-  ) {
-    return undefined;
-  }
-
-  return { oldStart, oldLines, newStart, newLines };
-};
-
-const normalizeTaskExecutionFileLineAnalysis = (
-  value: unknown,
-): TaskExecutionFileLineAnalysis | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-
-  if (value.state === "complete") {
-    const additions = normalizeNonNegativeInteger(value.additions);
-    const deletions = normalizeNonNegativeInteger(value.deletions);
-
-    return additions === undefined || deletions === undefined
-      ? undefined
-      : { state: "complete", additions, deletions };
-  }
-
-  if (
-    value.state === "not-applicable" &&
-    (value.reason === "binary" ||
-      value.reason === "gitlink" ||
-      value.reason === "symlink" ||
-      value.reason === "mode-only")
-  ) {
-    return { state: "not-applicable", reason: value.reason };
-  }
-
-  if (value.state === "failed" && value.code === "git-failed") {
-    return {
-      state: "failed",
-      code: value.code,
-      message: normalizeString(value.message, "Line analysis failed.").slice(
-        0,
-        4_000,
-      ),
-    };
-  }
-
-  return undefined;
-};
-
-const normalizeFileChangeStage = (
-  value: unknown,
-): TaskExecutionFileChangeCompleteness["discovery"] | undefined => {
-  if (isRecord(value) && value.state === "complete") {
-    return { state: "complete" };
-  }
-
-  if (isRecord(value) && value.state === "failed") {
-    return {
-      state: "failed",
-      code: normalizeString(value.code, "unknown").slice(0, 100),
-      message: normalizeString(
-        value.message,
-        "File-change stage failed.",
-      ).slice(0, 4_000),
-    };
-  }
-
-  return undefined;
-};
-
-export const normalizeTaskExecutionFileChange = (
-  value: unknown,
-): TaskExecutionFileChange | undefined => {
-  if (
-    !isRecord(value) ||
-    !isTaskExecutionFileChangeOperation(value.operation) ||
-    !isTaskExecutionFileEntryType(value.entryType)
-  ) {
-    return undefined;
-  }
-
-  const path = normalizeString(value.path).trim().slice(0, 4_000);
-  const oldPath = normalizeString(value.oldPath).trim().slice(0, 4_000);
-  const repositoryPath = normalizeString(value.repositoryPath)
-    .trim()
-    .replace(/\\/gu, "/")
-    .slice(0, 4_000);
-  const oldMode = normalizeString(value.oldMode).trim().slice(0, 12);
-  const newMode = normalizeString(value.newMode).trim().slice(0, 12);
-  const lineAnalysis = normalizeTaskExecutionFileLineAnalysis(
-    value.lineAnalysis,
-  );
-  const ranges: TaskExecutionChangedLineRange[] = [];
-
-  if (Array.isArray(value.ranges)) {
-    for (const range of value.ranges) {
-      const normalizedRange = normalizeTaskExecutionChangedLineRange(range);
-
-      if (normalizedRange) {
-        ranges.push(normalizedRange);
-      }
-    }
-  }
-
-  if (!path || !oldMode || !newMode || !lineAnalysis) {
-    return undefined;
-  }
-
-  const oldObjectId = normalizeString(value.oldObjectId).trim().slice(0, 128);
-  const newObjectId = normalizeString(value.newObjectId).trim().slice(0, 128);
-  const oldCommit = normalizeString(value.oldCommit).trim().slice(0, 128);
-  const newCommit = normalizeString(value.newCommit).trim().slice(0, 128);
-  const hunkCount = normalizeNonNegativeInteger(value.hunkCount);
-  const storedId = normalizeNonNegativeInteger(value.storedId);
-
-  return {
-    path,
-    ...(oldPath && oldPath !== path ? { oldPath } : {}),
-    operation: value.operation,
-    entryType: value.entryType,
-    ...(repositoryPath ? { repositoryPath } : {}),
-    oldMode,
-    newMode,
-    ...(oldObjectId ? { oldObjectId } : {}),
-    ...(newObjectId ? { newObjectId } : {}),
-    ...(oldCommit ? { oldCommit } : {}),
-    ...(newCommit ? { newCommit } : {}),
-    lineAnalysis,
-    ...(ranges.length > 0 ? { ranges } : {}),
-    ...(hunkCount !== undefined ? { hunkCount } : {}),
-    ...(storedId !== undefined ? { storedId } : {}),
-  };
-};
-
-export const normalizeTaskExecutionFileChanges = (
-  value: unknown,
-): TaskExecutionFileChanges | undefined => {
-  if (!isRecord(value) || !Array.isArray(value.files)) {
-    return undefined;
-  }
-
-  const normalizedFiles = new Map<string, TaskExecutionFileChange>();
-
-  for (const entry of value.files) {
-    const file = normalizeTaskExecutionFileChange(entry);
-
-    if (!file) {
-      continue;
-    }
-    normalizedFiles.set(
-      `${file.repositoryPath ?? "."}\0${file.oldPath ?? ""}\0${file.path}`,
-      file,
-    );
-  }
-
-  const files = Array.from(normalizedFiles.values());
-  const totalFiles = normalizeNonNegativeInteger(value.totalFiles);
-  const additions = normalizeNonNegativeInteger(value.additions);
-  const deletions = normalizeNonNegativeInteger(value.deletions);
-  const binaryFiles = normalizeNonNegativeInteger(value.binaryFiles);
-  const gitlinkFiles = normalizeNonNegativeInteger(value.gitlinkFiles);
-  const symlinkFiles = normalizeNonNegativeInteger(value.symlinkFiles);
-  const modeOnlyFiles = normalizeNonNegativeInteger(value.modeOnlyFiles);
-  const failedFiles = normalizeNonNegativeInteger(value.failedFiles);
-  const repositoryCount = normalizeNonNegativeInteger(value.repositoryCount);
-
-  if (
-    totalFiles === undefined ||
-    additions === undefined ||
-    deletions === undefined ||
-    binaryFiles === undefined ||
-    gitlinkFiles === undefined ||
-    symlinkFiles === undefined ||
-    modeOnlyFiles === undefined ||
-    failedFiles === undefined ||
-    repositoryCount === undefined ||
-    totalFiles < files.length ||
-    (totalFiles > 0 && repositoryCount === 0) ||
-    (value.status !== "complete" &&
-      value.status !== "partial" &&
-      value.status !== "failed") ||
-    value.attribution !== "workspace-observed"
-  ) {
-    return undefined;
-  }
-
-  const normalizedIssues: TaskExecutionFileChangeIssue[] = [];
-
-  if (Array.isArray(value.issues)) {
-    for (const entry of value.issues) {
-      if (!isRecord(entry)) {
-        continue;
-      }
-
-      const stage = entry.stage;
-      if (
-        stage !== "discovery" &&
-        stage !== "startSnapshots" &&
-        stage !== "finishSnapshots" &&
-        stage !== "renameAnalysis" &&
-        stage !== "lineAnalysis" &&
-        stage !== "persistence"
-      ) {
-        continue;
-      }
-
-      const repositoryPath = normalizeString(entry.repositoryPath)
-        .trim()
-        .slice(0, 4_000);
-      normalizedIssues.push({
-        stage,
-        code: normalizeString(entry.code, "unknown").slice(0, 100),
-        message: normalizeString(
-          entry.message,
-          "File-change tracking failed.",
-        ).slice(0, 4_000),
-        ...(repositoryPath ? { repositoryPath } : {}),
-      });
-    }
-  }
-
-  if (totalFiles === 0 && normalizedIssues.length === 0) {
-    return undefined;
-  }
-
-  if (!isRecord(value.completeness)) {
-    return undefined;
-  }
-
-  const rawCompleteness = value.completeness;
-  const discovery = normalizeFileChangeStage(rawCompleteness.discovery);
-  const startSnapshots = normalizeFileChangeStage(
-    rawCompleteness.startSnapshots,
-  );
-  const finishSnapshots = normalizeFileChangeStage(
-    rawCompleteness.finishSnapshots,
-  );
-  const renameAnalysis = normalizeFileChangeStage(
-    rawCompleteness.renameAnalysis,
-  );
-  const lineAnalysis = normalizeFileChangeStage(rawCompleteness.lineAnalysis);
-  const persistence = normalizeFileChangeStage(rawCompleteness.persistence);
-
-  if (
-    !discovery ||
-    !startSnapshots ||
-    !finishSnapshots ||
-    !renameAnalysis ||
-    !lineAnalysis ||
-    !persistence
-  ) {
-    return undefined;
-  }
-
-  const completeness: TaskExecutionFileChangeCompleteness = {
-    discovery,
-    startSnapshots,
-    finishSnapshots,
-    renameAnalysis,
-    lineAnalysis,
-    persistence,
-  };
-  const changeSetId = normalizeString(value.changeSetId).trim().slice(0, 128);
-
-  return {
-    files,
-    ...(changeSetId ? { changeSetId } : {}),
-    totalFiles,
-    additions,
-    deletions,
-    binaryFiles,
-    gitlinkFiles,
-    symlinkFiles,
-    modeOnlyFiles,
-    failedFiles,
-    status: value.status,
-    completeness,
-    attribution: "workspace-observed",
-    repositoryCount,
-    issues: normalizedIssues,
   };
 };
 

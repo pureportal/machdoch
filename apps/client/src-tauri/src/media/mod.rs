@@ -39,6 +39,8 @@ mod provider_local_diffusers;
 mod provider_mock;
 mod provider_openai;
 mod provider_svg;
+mod refmod_models;
+pub(crate) mod refmods;
 pub(crate) mod runtime_setup;
 pub(crate) mod storage;
 mod storage_migration;
@@ -1424,6 +1426,10 @@ impl MediaAnimatedBackgroundConfig {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct GenerateMediaVideoRequest {
     #[serde(default)]
+    ref_mods: Vec<refmods::RefModSelection>,
+    #[serde(default = "refmods::default_token_budget")]
+    ref_mod_max_tokens: u32,
+    #[serde(default)]
     model_addons: Vec<MediaModelAddonSelection>,
     width: Option<u32>,
     height: Option<u32>,
@@ -2347,6 +2353,8 @@ impl GenerateMediaVideoRequest {
             .starts_with(model_import::USER_MODEL_ID_PREFIX);
         if open_profile.is_none()
             && !imported
+            && !(self.model_id == "local:minimax-h3-ref2va"
+                && self.ref_mods.iter().any(refmods::RefModSelection::active))
             && (self.first_frame_asset_id.is_none() || self.last_frame_asset_id.is_none())
         {
             return Err("Choose both video frame inputs".to_string());
@@ -2371,6 +2379,7 @@ impl GenerateMediaVideoRequest {
         let framepack_video = self.model_id == "local:framepack-i2v-hy-13b";
         let hunyuan_video = self.model_id == "local:hunyuan-video-1.5-i2v-step-distilled";
         let minimax_h3 = self.model_id == "local:minimax-h3-ref2va";
+        refmods::validate(&self.ref_mods, &self.model_id, self.ref_mod_max_tokens)?;
         if open_profile.is_none()
             && !framepack_video
             && !hunyuan_video
@@ -3934,14 +3943,18 @@ pub(crate) async fn media_inspect_model_addon(
 }
 
 #[tauri::command]
-pub(crate) async fn media_inspect_training_images(
+pub(crate) async fn media_inspect_training_samples(
+    app: AppHandle,
     paths: Vec<PathBuf>,
-) -> MediaCommandResult<Vec<training::TrainingImageInspection>> {
-    let result = tauri::async_runtime::spawn_blocking(move || training::inspect_images(paths))
-        .await
-        .map_err(|error| format!("Image inspection failed: {error}"))
-        .and_then(|result| result);
-    command_result("media_inspect_training_images", result)
+    architecture: training::TrainingArchitecture,
+) -> MediaCommandResult<Vec<training::TrainingSampleInspection>> {
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        training::inspect_samples(&app, paths, architecture)
+    })
+    .await
+    .map_err(|error| format!("Dataset inspection failed: {error}"))
+    .and_then(|result| result);
+    command_result("media_inspect_training_samples", result)
 }
 
 #[tauri::command]

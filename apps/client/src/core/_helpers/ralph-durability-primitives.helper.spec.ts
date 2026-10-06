@@ -7,7 +7,10 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { join } from "node:path";
+import { describe, expect, it } from "vitest";
 import {
   acquireRalphFileMutationLock,
   readRalphExecutionHistoryResults,
@@ -25,6 +28,41 @@ const createPaths = (directory: string): RalphRunLogPaths => ({
 });
 
 describe("Ralph durability primitives", () => {
+  it("immediately reclaims a fresh lock after its known owner exits", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "ralph-dead-lock-"));
+    const target = join(directory, "state.json");
+    try {
+      const owner = spawn(process.execPath, ["-e", "process.exit(0)"], {
+        windowsHide: true,
+        stdio: "ignore",
+      });
+      const [code] = await once(owner, "exit");
+      expect(code).toBe(0);
+      await writeFile(
+        `${target}.ralph.lock`,
+        JSON.stringify({
+          token: "dead-owner",
+          ownerId: `${owner.pid}:dead-owner`,
+          pid: owner.pid,
+          acquiredAt: new Date().toISOString(),
+        }),
+      );
+      const lock = await acquireRalphFileMutationLock(
+        target,
+        "replacement",
+        60_000,
+        { reapLiveOwner: false },
+      );
+      await expect(lock.assertOwnership()).resolves.toBeUndefined();
+      await lock.release();
+      await expect(readFile(`${target}.ralph.lock`)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  }, 120_000);
+
   it("allows only one simultaneous mutation-lock acquisition", async () => {
     const directory = await mkdtemp(join(tmpdir(), "ralph-lock-race-"));
     const target = join(directory, "state.json");

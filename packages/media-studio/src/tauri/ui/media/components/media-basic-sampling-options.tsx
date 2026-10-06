@@ -41,7 +41,7 @@ export const MediaBasicSamplingOptions = ({
     onChange({ ...settings, sampling: { ...sampling, ...patch } });
   const imageError =
     target === "image"
-      ? mediaImageSamplingError(sampling)
+      ? mediaImageSamplingError(sampling, architecture)
       : target === "video"
         ? mediaVideoDimensionsError(videoSettings, architecture)
         : null;

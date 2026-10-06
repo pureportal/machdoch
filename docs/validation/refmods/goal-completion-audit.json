@@ -1,0 +1,356 @@
+{
+  "date": "2026-10-06T21:56:28.120Z",
+  "objective": "Full \"RefMod\" support for Minimax H3. Easy to use. Reliable. Full feature richness. Researched online about best practices, get inspired by other code from similar implementation. Covering the correct licence and atribuation if required.",
+  "fullOutcomeVerified": false,
+  "previousGoalTurnClassification": "progress",
+  "sourceChecks": [
+    {
+      "path": "packages/media-studio/src/fleet-transport.ts",
+      "matchesVerifiedSource": true
+    },
+    {
+      "path": "packages/media-studio/src/tauri/ui/media/media-platform.ts",
+      "matchesVerifiedSource": true
+    },
+    {
+      "path": "packages/media-studio/src/tauri/ui/media/components/media-refmod-creator.tsx",
+      "matchesVerifiedSource": true
+    },
+    {
+      "path": "packages/media-studio/src/tauri/ui/media/components/media-refmod-controls.tsx",
+      "matchesVerifiedSource": true
+    },
+    {
+      "path": "packages/media-studio/src/tauri/ui/media/components/use-refmod-sources.ts",
+      "matchesVerifiedSource": true
+    },
+    {
+      "path": "apps/client/src-tauri/src/media/error/refmods.rs",
+      "matchesVerifiedSource": true
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\fizgig\\minimax\\sampling.py",
+      "matchesVerifiedSource": true
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\test_media_minimax_h3_sampling.py",
+      "matchesVerifiedSource": true
+    },
+    {
+      "path": "apps\\client\\src-tauri\\python\\NOTICE-RefMod.txt",
+      "matchesVerifiedSource": true
+    }
+  ],
+  "recordedVerification": {
+    "media": {
+      "passed": true,
+      "testCount": 781,
+      "fileCount": 91,
+      "log": "transfer-ownership-media-suite.txt"
+    },
+    "python": {
+      "passed": true,
+      "testCount": 53,
+      "log": "sampler-callback-python-tests.txt"
+    },
+    "gpu": {
+      "passed": true,
+      "testCount": 6,
+      "device": "AMD Radeon RX 9070 (cuda:1)",
+      "dtype": "bfloat16",
+      "randomTinyDiT": true,
+      "pretrainedWeightsUsed": false
+    },
+    "nativeRecovery": {
+      "passed": true,
+      "testCount": 17,
+      "log": "transfer-ownership-error-tests.txt",
+      "scope": "production error module with its child-module path made explicit in the isolated test harness"
+    },
+    "nativeAndFleetFileRecoveryPassed": true,
+    "transferReservationsVerified": 10,
+    "checksRerunInThisAudit": false,
+    "sourceRecheckScope": "The nine listed files match their recorded verification hashes; this is not a new whole-workspace test run"
+  },
+  "transportInvestigation": {
+    "originalFailureDate": "2026-10-06T18:45:49.139Z",
+    "originalFailureCapturedByAvailableProxyLog": false,
+    "originalFailureRootCauseEstablished": false,
+    "proxyLogRange": {
+      "first": "2026-10-06T19:42:32.093Z",
+      "last": "2026-10-06T20:52:03.857Z"
+    },
+    "healthCheckErrors": 157,
+    "mediaErrors": [
+      {
+        "date": "2026-10-06T19:56:56.267Z",
+        "code": "ECONNRESET",
+        "method": "POST",
+        "reusedSocket": true
+      }
+    ],
+    "coldStartFailureDate": "2026-10-06T19:56:50.016Z",
+    "coldStartRootCauseEstablished": false,
+    "findings": [
+      "The available proxy diagnostics start after the earlier HTTP 502",
+      "The later reused-socket ECONNRESET was recorded after the cold-start check timed out; this ordering does not establish the cause of the delay",
+      "Gateway timeouts map to HTTP 504; HTTP 502 alone does not establish a timeout",
+      "The instrumented recovery rerun and final ownership/recovery runs recorded no transport failures"
+    ],
+    "successfulRecovery": {
+      "date": "2026-10-06T19:02:01.063Z",
+      "checks": [
+        "damaged-video-preview",
+        "missing-audio-preview",
+        "preview-cancellation",
+        "damaged-video-creation"
+      ],
+      "transportFailures": 0
+    },
+    "finalFleetChecks": 8,
+    "finalFleetTransportFailures": 0,
+    "codeReviewed": [
+      "packages/product-ui/src/fleet-operation-transport.ts",
+      "apps/fleet-manager/src/server/api.ts",
+      "apps/fleet-manager/src/server/instance-relay.ts"
+    ],
+    "speculativeRuntimeChangeMade": false
+  },
+  "modelEvidence": {
+    "supportedRuntime": "local:minimax-h3-ref2va",
+    "requiredNames": [
+      "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "mmh3-4b-ClipProj-v3.1.safetensors"
+    ],
+    "scans": [
+      {
+        "root": "D:/Models/machdoch/models/packages",
+        "exists": true,
+        "complete": true,
+        "timedOut": false,
+        "exitCode": 1,
+        "found": [],
+        "errors": ""
+      },
+      {
+        "root": "D:/Models/machdoch/models/components",
+        "exists": true,
+        "complete": true,
+        "timedOut": false,
+        "exitCode": 1,
+        "found": [],
+        "errors": ""
+      },
+      {
+        "root": "D:/Models/machdoch/models/staging",
+        "exists": true,
+        "complete": true,
+        "timedOut": false,
+        "exitCode": 1,
+        "found": [],
+        "errors": ""
+      },
+      {
+        "root": "D:/Models/machdoch/worker-staging/minimax-h3",
+        "exists": true,
+        "complete": true,
+        "timedOut": false,
+        "exitCode": 1,
+        "found": [],
+        "errors": ""
+      }
+    ],
+    "absenceOnlyAssertedForCompletedSearchRoots": true,
+    "videoVae": {
+      "path": "D:/Models/machdoch/worker-staging/minimax-h3/minimax_h3_video_vae_fp16.safetensors",
+      "sizeBytes": 3774476288,
+      "requiredBytes": 5207808496,
+      "incomplete": true,
+      "headerOnly": true,
+      "tensorValuesRead": false
+    }
+  },
+  "licensing": {
+    "matchesPrimary": true,
+    "primarySource": "https://huggingface.co/MiniMaxAI/MiniMax-H3/raw/main/LICENSE",
+    "modelLicenceSha256": "59b99642b95ea21630e311198ddbfffbfe05aadba0c2f5d884cbdf4efcc90f44",
+    "modelUseAuthorizationVerified": false,
+    "GPLProvenanceResolved": false,
+    "legalBundles": [
+      {
+        "profile": "headless",
+        "dependencyNoticeSets": 504,
+        "files": [
+          {
+            "path": "apps/client/src-tauri/python/LICENSE-RefMod-MIT.txt",
+            "matchesCurrentSource": true
+          },
+          {
+            "path": "apps/client/src-tauri/python/NOTICE-RefMod.txt",
+            "matchesCurrentSource": true
+          },
+          {
+            "path": "legal/third-party/ComfyUI/COPYING",
+            "matchesCurrentSource": true
+          },
+          {
+            "path": "legal/third-party/MiniMax-H3/LICENSE",
+            "matchesCurrentSource": true
+          },
+          {
+            "path": "legal/third-party/MiniMax-H3/NOTICE",
+            "matchesCurrentSource": true
+          }
+        ]
+      },
+      {
+        "profile": "desktop",
+        "dependencyNoticeSets": 1047,
+        "files": [
+          {
+            "path": "apps/client/src-tauri/python/LICENSE-RefMod-MIT.txt",
+            "matchesCurrentSource": true
+          },
+          {
+            "path": "apps/client/src-tauri/python/NOTICE-RefMod.txt",
+            "matchesCurrentSource": true
+          },
+          {
+            "path": "legal/third-party/ComfyUI/COPYING",
+            "matchesCurrentSource": true
+          },
+          {
+            "path": "legal/third-party/MiniMax-H3/LICENSE",
+            "matchesCurrentSource": true
+          },
+          {
+            "path": "legal/third-party/MiniMax-H3/NOTICE",
+            "matchesCurrentSource": true
+          }
+        ]
+      }
+    ],
+    "clearanceRoutes": [
+      "Verifiable rights grant or applicable GPL release terms",
+      "Replacement verified against compatible licensed checkpoints"
+    ],
+    "nativeDiffusersAlternative": {
+      "source": "https://huggingface.co/docs/diffusers/main/en/api/pipelines/minimax_h3",
+      "requiresCompatibleLicensedComponents": true,
+      "compatibilityVerified": false,
+      "reason": "The full native transformer/Qwen3-VL conditioning path differs from this runtime's pruned INT8 transformer, projected smaller conditioner and turbo adapters"
+    }
+  },
+  "requirements": [
+    {
+      "requirement": "Full image/video/audio/mixed RefMod support for MiniMax H3",
+      "status": "incomplete",
+      "evidence": [
+        "docs/media-refmods.md",
+        "transfer-ownership-verification.json",
+        "sampler-callback-verification.json"
+      ],
+      "missing": [
+        "Licensed pretrained visual creation and preview",
+        "Successful full Ref2VA generation",
+        "Fixed-seed modality and compression comparisons"
+      ]
+    },
+    {
+      "requirement": "Easy to use",
+      "status": "software_workflows_verified",
+      "evidence": [
+        "ui-workflow-verification.json",
+        "transfer-ownership-verification.json"
+      ],
+      "scope": "Native dialogs and production fleet browser: library, import/export, saved selection, strengths/copies/curves, original filenames and actionable errors; complete pretrained workflow remains unverified"
+    },
+    {
+      "requirement": "Reliable",
+      "status": "partially_verified",
+      "evidence": [
+        "transfer-ownership-verification.json",
+        "sampler-callback-verification.json"
+      ],
+      "missing": [
+        "Complete-checkpoint peak GPU memory",
+        "Pretrained cancellation/error recovery under full model load"
+      ],
+      "risks": [
+        "Earlier HTTP 502 and initial workflow delay were not explained by recorded diagnostics"
+      ]
+    },
+    {
+      "requirement": "Full feature richness",
+      "status": "implementation_verified_real_model_effects_pending",
+      "evidence": [
+        "docs/media-refmods.md",
+        "ui-workflow-verification.json",
+        "sampler-callback-verification.json"
+      ],
+      "scope": "Storage, modalities, bounded creation, masks, compression, strengths, copies, curves, prompt mapping, preview, persistence and fleet transport; no claim of one-to-one ComfyUI widget or legacy-format parity"
+    },
+    {
+      "requirement": "Online research and comparable implementation inspiration",
+      "status": "verified",
+      "evidence": [
+        "docs/media-refmods.md",
+        "apps/client/src-tauri/python/NOTICE-RefMod.txt"
+      ],
+      "primarySources": [
+        "https://github.com/Luisacaotica/ComfyUI-MiniMaxH3Mod",
+        "https://github.com/Adudeguyman/ComfyUI-Fantastic-MiniMaxH3-PromptBuilder",
+        "https://huggingface.co/docs/diffusers/main/en/api/pipelines/minimax_h3"
+      ]
+    },
+    {
+      "requirement": "Correct licensing and attribution",
+      "status": "incomplete",
+      "evidence": [
+        "sampler-callback-verification.json",
+        "legal/README.md",
+        "legal/third-party/MiniMax-H3/LICENSE",
+        "legal/third-party/ComfyUI/COPYING"
+      ],
+      "verified": "Full notices and modification attribution match both verified release bundles; H3 agreement matches publisher",
+      "missing": [
+        "Model-use authorization for the intended deployment",
+        "Resolution of transformer/sampler GPL distribution provenance"
+      ]
+    },
+    {
+      "requirement": "Verify the full outcome",
+      "status": "incomplete",
+      "evidence": [
+        "transfer-ownership-verification.json",
+        "sampler-callback-verification.json"
+      ],
+      "missing": [
+        "Visible successful pretrained desktop and fleet creation/preview/generation",
+        "Independent audiovisual quality evaluation",
+        "Full-size memory measurements"
+      ]
+    }
+  ],
+  "remainingExternalInputs": [
+    "Complete compatible Ref2VA transformer and conditioner checkpoints",
+    "Complete video VAE checkpoint",
+    "Established model-use rights for the intended deployment",
+    "Resolution of the remaining source distribution obligations"
+  ],
+  "devServerStarted": false,
+  "pretrainedWeightsUsed": false,
+  "goalStatusAtAudit": "active",
+  "blockedAudit": {
+    "sameBlockingCondition": "Complete licensed model components and distribution clearance are required for full verified support",
+    "consecutiveGoalTurnsWithCondition": 3,
+    "thresholdMet": true,
+    "meaningfulProgressRequiresExternalInputs": true,
+    "decision": "Mark blocked after completing this audit",
+    "recurrenceEvidence": [
+      "transfer-ownership-verification.json",
+      "sampler-callback-verification.json",
+      "goal-completion-audit.json"
+    ]
+  }
+}

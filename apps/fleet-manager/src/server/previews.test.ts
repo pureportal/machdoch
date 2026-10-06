@@ -14,7 +14,7 @@ import type {
   HostResponse,
   RunSnapshot,
 } from "@machdoch/fleet-protocol";
-import { FleetPreviewHub, previewHeaders } from "./previews";
+import { FleetPreviewHub, previewHeaders, previewOpenSchema } from "./previews";
 import type { FleetRuntime } from "./runtime";
 
 const servers: Server[] = [];
@@ -34,6 +34,25 @@ afterEach(async () => {
       .map((server) => new Promise<void>((done) => server.close(() => done()))),
   );
 });
+describe("preview launch paths", () => {
+  const target = { workspace: "/project", configurationId: "web", port: 4173 };
+  it("preserves paths and queries on the private preview origin", () => {
+    expect(
+      previewOpenSchema.parse({ target, path: "/dashboard?tab=runs" }).path,
+    ).toBe("/dashboard?tab=runs");
+  });
+  it.each([
+    "//evil.test",
+    "/\\\\evil.test",
+    "/.machdoch/launch",
+    "/foo/../.machdoch/launch",
+    "/foo\r\nLocation: https://evil.test",
+    "/page#fragment",
+  ])("rejects a foreign or reserved launch path: %j", (path) => {
+    expect(previewOpenSchema.safeParse({ target, path }).success).toBe(false);
+  });
+});
+
 async function listen(server: Server): Promise<number> {
   servers.push(server);
   server.on("connection", (socket) => {
@@ -144,8 +163,24 @@ async function fixture() {
   } as RunSnapshot;
   const relay = vi.fn(
     async (_id: string, input: HostRequest): Promise<HostResponse> => {
-      if (input.type === "getWorkspaceRuns")
-        return { type: "workspaceRuns", snapshot };
+      if (input.type === "validatePreviewTarget") {
+        const config = snapshot.document.configurations.find(
+          (entry) => entry.id === input.target.configurationId,
+        );
+        const status = snapshot.statuses.find(
+          (entry) => entry.id === input.target.configurationId,
+        );
+        return config?.kind === "task" &&
+          config.ports.includes(input.target.port) &&
+          status?.pid &&
+          status.state === "running"
+          ? { type: "previewTargetReady" }
+          : {
+              type: "error",
+              code: "unavailable",
+              message: "Start the selected service before opening its preview.",
+            };
+      }
       if (input.type !== "openPreviewTunnel")
         throw new Error("Unexpected request");
       const ws = new WebSocket(
@@ -176,7 +211,11 @@ async function fixture() {
       externalBaseUrl: "https://fleet.example.test",
       previews: { baseUrl: "https://previews.example.test" },
     },
-    gateways: { generation: () => generation, supportsRuns: () => true, relay },
+    gateways: {
+      generation: () => generation,
+      supportsCapability: () => true,
+      relay,
+    },
     authStore: { isSessionActive: () => loggedIn },
     database: { audit: vi.fn() },
   } as unknown as FleetRuntime;
@@ -198,6 +237,7 @@ async function fixture() {
     { username: "owner", sessionId: "session", sessionHash: "hash" },
     {
       target: { workspace: "/project", configurationId: "web", port: appPort },
+      path: "/",
       routes: [
         {
           prefix: "/api",
@@ -422,11 +462,12 @@ describe("private preview relay", () => {
         { username: "owner", sessionId: "session", sessionHash: "hash" },
         {
           target: { workspace: "/project", configurationId: "web", port: 2375 },
+          path: "/",
           routes: [],
         },
         new AbortController().signal,
       ),
-    ).rejects.toThrow("Start each selected service");
+    ).rejects.toThrow("Start the selected service");
     f.disconnect();
     expect(
       (

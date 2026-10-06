@@ -224,11 +224,13 @@ def main():
 
         print(json.dumps({"schemaVersion": 1, **lip_sync(request, progress)}))
         return
-    if command in ("video-sequence", "video-audio", "video-inspect"):
+    if command in ("video-sequence", "video-audio", "video-inspect", "training-video-inspect"):
         from media_video_composition import inspect_video, video_audio, video_sequence
 
         video_operations = {"video-sequence": video_sequence, "video-audio": video_audio, "video-inspect": inspect_video}
-        print(json.dumps({"schemaVersion": 1, **video_operations[command](request, progress)}))
+        result = (inspect_video(request, progress, require_webm=False) if command == "training-video-inspect"
+                  else video_operations[command](request, progress))
+        print(json.dumps({"schemaVersion": 1, **result}))
         return
     image_operations = {"prepare-mask": prepare_mask, "image-mask": image_mask, "mask-composite": mask_composite}
     if command in image_operations:

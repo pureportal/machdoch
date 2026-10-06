@@ -146,6 +146,7 @@ export const CommandProvider = ({
   const registrySnapshot = React.useSyncExternalStore(
     registry.subscribe,
     registry.getSnapshot,
+    registry.getSnapshot,
   );
   const platform = platformProp ?? detectCommandPlatform();
   const runtime = runtimeProp ?? (isTauri() ? "tauri" : "browser");
@@ -707,6 +708,7 @@ const useCommandShortcutHint = (
   // stable unless the selected shortcut itself changes.
   return React.useSyncExternalStore(
     registry?.subscribe ?? subscribeToNothing,
+    getSnapshot,
     getSnapshot,
   );
 };

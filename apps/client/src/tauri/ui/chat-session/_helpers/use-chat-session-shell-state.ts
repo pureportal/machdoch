@@ -8,26 +8,9 @@
   type RefCallback,
   type SetStateAction,
 } from "react";
-import {
-  createInitialShellState,
-  createVisibleConversationMessages,
-  getLatestCompletedSessionResponseAt,
-  getLatestRunningTaskId,
-  getSessionTitle,
-  isMediaAssetContextAttachment,
-  isTransientChatOperationMessage,
-  markSessionRead,
-  mergeRecentWorkspacesForPersistence,
-  normalizeShellState,
-  recoverInterruptedTasksForLaunch,
-  sortSessionsByUpdatedAt,
-  type ChatSessionContextAttachment,
-  type ChatSessionMessage,
-  type ChatSessionQueuedMessage,
-  type ChatSessionRecord,
-  type SmartContextPack,
-  type ShellPersistedState,
-} from "../../chat-session.model";
+import { createInitialShellState, createVisibleConversationMessages, getLatestCompletedSessionResponseAt, getLatestRunningTaskId, getSessionTitle, isTransientChatOperationMessage, markSessionRead, mergeRecentWorkspacesForPersistence, normalizeShellState, recoverInterruptedTasksForLaunch, sortSessionsByUpdatedAt, type ChatSessionMessage, type ChatSessionQueuedMessage, type ChatSessionRecord, type ShellPersistedState } from "../../chat-session.model";
+import { type SmartContextPack } from "@machdoch/client-ui/context-packs/model";
+import { isMediaAssetContextAttachment, type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import {
   broadcastShellStateChanged,
   compareAndSwapShellStatePatch,

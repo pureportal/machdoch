@@ -4,7 +4,7 @@ import {
   navigatePromptHistory,
   normalizePromptHistoryEntries,
   type PromptHistoryNavigationState,
-} from "../../_helpers/prompt-history-navigation.helper";
+} from "@machdoch/client-ui/composer/prompt-history-navigation";
 
 export const MAX_RALPH_AI_PROMPT_HISTORY_ENTRIES = 40;
 

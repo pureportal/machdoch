@@ -205,6 +205,8 @@ async function start() {
       storageKey: "fleet:settings-review",
       open: async () => null,
       save: async () => null,
+      release: async () => undefined,
+      fileName: (path) => path,
       upload: async () => {
         throw new Error("Not used");
       },

@@ -7,6 +7,8 @@ use serde::Serialize;
 mod common;
 mod google;
 mod google_response;
+mod local_audio;
+mod local_speech;
 mod openai;
 mod requests;
 mod whisper;
@@ -33,6 +35,10 @@ enum SpeechTranscriptionProvider {
     OpenAi,
     Google,
     Whisper,
+    WhisperTiny,
+    Whistle,
+    WhistleTiny,
+    Phonon2,
 }
 
 impl SpeechTranscriptionProvider {
@@ -41,7 +47,11 @@ impl SpeechTranscriptionProvider {
             "openai" => Ok(Self::OpenAi),
             "google" => Ok(Self::Google),
             "whisper" => Ok(Self::Whisper),
-            _ => Err("Expected provider to be one of openai, google, or whisper.".to_string()),
+            "whisper-tiny" => Ok(Self::WhisperTiny),
+            "whistle" => Ok(Self::Whistle),
+            "whistle-tiny" => Ok(Self::WhistleTiny),
+            "phonon2" => Ok(Self::Phonon2),
+            _ => Err("Choose a speech input provider.".to_string()),
         }
     }
 
@@ -50,6 +60,9 @@ impl SpeechTranscriptionProvider {
             Self::OpenAi => "OpenAI",
             Self::Google => "Google",
             Self::Whisper => "Whisper",
+            Self::WhisperTiny => "Whisper tiny",
+            Self::Whistle | Self::WhistleTiny => "Whistle",
+            Self::Phonon2 => "Phonon-2",
         }
     }
 
@@ -57,7 +70,11 @@ impl SpeechTranscriptionProvider {
         match self {
             Self::OpenAi => openai::OPENAI_MAX_UPLOAD_BYTES,
             Self::Google => google::GOOGLE_MAX_INLINE_AUDIO_BYTES,
-            Self::Whisper => whisper::WHISPER_MAX_AUDIO_BYTES,
+            Self::Whisper
+            | Self::WhisperTiny
+            | Self::Whistle
+            | Self::WhistleTiny
+            | Self::Phonon2 => whisper::WHISPER_MAX_AUDIO_BYTES,
         }
     }
 }
@@ -129,7 +146,7 @@ pub async fn transcribe_user_speech_audio(
                 || term.chars().count() > 80
                 || term
                     .chars()
-                    .any(|character| matches!(character, '<' | '>' | '\r' | '\n'))
+                    .any(|character| matches!(character, '<' | '>' | '\r' | '\n' | '\0'))
         })
     {
         return Err(
@@ -147,6 +164,24 @@ pub async fn transcribe_user_speech_audio(
         transcription_provider.max_upload_bytes(),
     )?;
     let audio_bytes = decode_audio_base64(&audio_base64)?;
+    if matches!(
+        transcription_provider,
+        SpeechTranscriptionProvider::Whistle
+            | SpeechTranscriptionProvider::WhistleTiny
+            | SpeechTranscriptionProvider::Phonon2
+    ) {
+        return local_speech::transcribe(
+            app,
+            &normalized_provider,
+            audio_bytes,
+            &normalized_mime_type,
+            language_code.as_deref(),
+            &key_terms,
+            auto_translate_to_english,
+            request.cancellation.clone(),
+        )
+        .await;
+    }
     let transcription = async {
         match transcription_provider {
             SpeechTranscriptionProvider::OpenAi => {
@@ -176,9 +211,10 @@ pub async fn transcribe_user_speech_audio(
                 )
                 .await
             }
-            SpeechTranscriptionProvider::Whisper => {
+            SpeechTranscriptionProvider::Whisper | SpeechTranscriptionProvider::WhisperTiny => {
                 whisper::transcribe_whisper(
                     app,
+                    &normalized_provider,
                     audio_bytes,
                     &normalized_mime_type,
                     language_code.as_deref(),
@@ -187,6 +223,11 @@ pub async fn transcribe_user_speech_audio(
                     request.cancellation.clone(),
                 )
                 .await
+            }
+            SpeechTranscriptionProvider::Whistle
+            | SpeechTranscriptionProvider::WhistleTiny
+            | SpeechTranscriptionProvider::Phonon2 => {
+                unreachable!("Local speech has already been dispatched")
             }
         }
     };
@@ -205,10 +246,7 @@ mod tests {
     #[test]
     fn transcribe_rejects_unsupported_provider() {
         let result = SpeechTranscriptionProvider::from_normalized("unsupported");
-        assert_eq!(
-            result.unwrap_err(),
-            "Expected provider to be one of openai, google, or whisper."
-        );
+        assert_eq!(result.unwrap_err(), "Choose a speech input provider.");
     }
 
     #[test]

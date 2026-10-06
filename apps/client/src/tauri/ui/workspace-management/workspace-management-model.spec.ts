@@ -72,6 +72,12 @@ describe("workspace management model", () => {
     expect(createWorkspaceRootKey("C:\\Projects\\machdoch\\")).toBe(
       createWorkspaceRootKey("c:/projects/machdoch"),
     );
+    expect(createWorkspaceRootKey("\\\\?\\C:\\Projects\\machdoch")).toBe(
+      createWorkspaceRootKey("C:\\Projects\\machdoch"),
+    );
+    expect(createWorkspaceRootKey("\\\\?\\UNC\\server\\share\\workspace")).toBe(
+      createWorkspaceRootKey("\\\\server\\share\\workspace"),
+    );
 
     expect(
       createManagedWorkspaceViews(["/work/Client", "/work/client"], []),

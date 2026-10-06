@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-06T19:56:50.016Z",
+  "checks": [],
+  "pageErrors": [],
+  "transportFailures": [],
+  "responseWarnings": [],
+  "failures": [],
+  "remainingUploads": [],
+  "body": "Basic\nAdvanced\nTrain\nAssets\nActivity\nImage\nVideo\nSVG\nAudio\nAssistant\nLoading workflow\nPrompt\nStarting image\nAdd image\nModel\nChoose model\nManage models\nClose RefMods\nMiniMax H3 RefMods\nAdd files\nLibrary\nBrowse folder\nCreate RefMod\nHost folder\nCreate RefMod\nAdd images\nAdd videos\nAdd audio\nName\nEncoding settings\nCreating…\nMore options\n16:9 · Draft\nGenerate video\n\nAdd a prompt\n\nVideo output",
+  "failure": "Error: Transfer cleanup did not finish within 30 seconds"
+}

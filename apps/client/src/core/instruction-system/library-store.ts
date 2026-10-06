@@ -28,12 +28,12 @@ import {
 import {
   normalizeInstructionTagRule,
   normalizeInstructionTags,
-} from "./tag-rules.js";
+} from "@machdoch/fleet-protocol/instruction-tags";
 import {
   MAX_INSTRUCTION_PROFILE_DESCRIPTION_LENGTH,
   MAX_INSTRUCTION_PROFILE_NAME_LENGTH,
   MAX_INSTRUCTION_WORKSPACE_DISPLAY_NAME_LENGTH,
-} from "./limits.js";
+} from "@machdoch/fleet-protocol/instruction-limits";
 import {
   canonicalizeExistingWorkspaceRoot,
   canonicalDigest,
@@ -46,7 +46,7 @@ import {
   unicodeCodePointLength,
 } from "./normalization.js";
 import { readOpenedFileExactly } from "../_helpers/read-opened-file-exactly.helper.js";
-import { hasUnpairedUtf16Surrogate } from "../../shared/unicode.js";
+import { hasUnpairedUtf16Surrogate } from "@machdoch/fleet-protocol/unicode";
 
 const MAX_INSTRUCTION_LIBRARY_BYTES = 64 * 1024 * 1024;
 const MAX_INSTRUCTION_AUDIT_READ_BYTES = 2 * 1024 * 1024;

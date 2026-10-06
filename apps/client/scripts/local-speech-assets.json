@@ -1,0 +1,934 @@
+{
+  "version": 1,
+  "platforms": {
+    "win32-x64": {
+      "python": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.12.15%2B20261003-x86_64-pc-windows-msvc-install_only.tar.gz",
+        "sha256": "4b6f0beebbb695a0f3ea237b8c3eaa5bd424f47a7bc25b2fbe3a43390c770f08"
+      },
+      "needle": {
+        "url": "https://huggingface.co/Cactus-Compute/needle3/resolve/2ae11323dc000f5e70c49f7403efa6af12ba9e67/windows-x86_64/needle.exe",
+        "sha256": "e8863ca0c06a47d406777077f1ba728b58e57d77fedff252dbe6827d588acc8c",
+        "size": 1563136,
+        "path": "needle.exe"
+      },
+      "windowsRuntime": {
+        "url": "https://download.visualstudio.microsoft.com/download/pr/ebdab8e5-1d7b-4d9f-a11b-cbb1720c3b12/843068991DAAA1F73AD9F6239BCE4D0F6A07A51F18C37EA2A867E9BECA71295C/VC_redist.x64.exe",
+        "sha256": "843068991daaa1f73ad9f6239bce4d0f6a07a51f18c37ea2a867e9beca71295c",
+        "size": 18731856,
+        "path": "windows-runtime-download/vc_redist.x64.exe",
+        "version": "14.51.36247.0",
+        "containerOffset": 630000,
+        "containerSize": 18091661,
+        "cabinet": "a4",
+        "files": [
+          {
+            "name": "concrt140.dll",
+            "source": "concrt140.dll_amd64",
+            "sha256": "54716f0738af891f283d213b5c8d11b25896bb8ee3097d301eae718560cf974e",
+            "size": 374200
+          },
+          {
+            "name": "msvcp140.dll",
+            "source": "msvcp140.dll_amd64",
+            "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca",
+            "size": 643512
+          },
+          {
+            "name": "msvcp140_1.dll",
+            "source": "msvcp140_1.dll_amd64",
+            "sha256": "206c931bf90fdad8816de3b5e2ef80b2bcaa9406c89ecc05fe6fddffe251e982",
+            "size": 35768
+          },
+          {
+            "name": "msvcp140_2.dll",
+            "source": "msvcp140_2.dll_amd64",
+            "sha256": "d50d7883f20d1dc6191768d3746f52dd9cac89c346ffaed5be1f110c2f34a838",
+            "size": 274872
+          },
+          {
+            "name": "msvcp140_atomic_wait.dll",
+            "source": "msvcp140_atomic_wait.dll_amd64",
+            "sha256": "3d0cbfaa1bf3eecf5a3f4491d2960ee803cb994f30292c6adc4a07c498f60e2b",
+            "size": 57792
+          },
+          {
+            "name": "msvcp140_codecvt_ids.dll",
+            "source": "msvcp140_codecvt_ids.dll_amd64",
+            "sha256": "8a65c7596ef2e6938731f5a1058e7e40145b6d97967cc649231a076b9a608d78",
+            "size": 31160
+          },
+          {
+            "name": "vcomp140.dll",
+            "source": "vcomp140.dll_amd64",
+            "sha256": "95d4ce4a6802d1e18b5e0e1722cc30ea72ca7e033f83828f05c0b7b993fe7cbf",
+            "size": 212920
+          },
+          {
+            "name": "vcruntime140.dll",
+            "source": "vcruntime140.dll_amd64",
+            "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7",
+            "size": 178616
+          },
+          {
+            "name": "vcruntime140_1.dll",
+            "source": "vcruntime140_1.dll_amd64",
+            "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e",
+            "size": 50112
+          },
+          {
+            "name": "vcruntime140_threads.dll",
+            "source": "vcruntime140_threads.dll_amd64",
+            "sha256": "40f39e8cee5f5a531b4010e18b807e8fe265b908dc58f959ecb7ebc6ea6cb11a",
+            "size": 38840
+          }
+        ],
+        "license": {
+          "path": "windows-runtime/LICENSE.docx",
+          "url": "https://visualstudio.microsoft.com/wp-content/uploads/2025/10/Visual-C-V14-License-Redistributable_and_Runtime_ENU.docx",
+          "sha256": "08651651a7602fc7c0e2763de0fde1ff9f868df2780597cd1775ee9d6441c783",
+          "size": 39553
+        },
+        "distributionLicense": {
+          "path": "windows-runtime/LICENSE-VISUAL-STUDIO.docx",
+          "url": "https://visualstudio.microsoft.com/wp-content/uploads/2025/10/Visual_Studio_2026-License-Community_ENU.docx",
+          "sha256": "02ac07637f4a513a807cd3721c7620433fc483bc049d25784b0c10c54b05e1fb",
+          "size": 69066
+        },
+        "distributionList": {
+          "path": "windows-runtime/REDIST.html",
+          "url": "https://learn.microsoft.com/en-us/visualstudio/releases/2026/redistribution",
+          "sha256": "7ceec7e64424154de40134ca7739026de902bd777c5a760cbc8c60c6e5903a96",
+          "size": 48818
+        }
+      }
+    },
+    "linux-x64": {
+      "python": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.12.15%2B20261003-x86_64-unknown-linux-gnu-install_only.tar.gz",
+        "sha256": "f937814031eab4698ca6d07ec606ede1825768f3f3e99af76d9db3900bee03c5"
+      },
+      "needle": {
+        "url": "https://huggingface.co/Cactus-Compute/needle3/resolve/2ae11323dc000f5e70c49f7403efa6af12ba9e67/linux-x86_64/needle",
+        "sha256": "f38dc4b0345d66b4e385734ad0f12af43ac6e2cfa1752d0795af5c137200c8e4",
+        "size": 1541680,
+        "path": "needle"
+      }
+    },
+    "linux-arm64": {
+      "python": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.12.15%2B20261003-aarch64-unknown-linux-gnu-install_only.tar.gz",
+        "sha256": "95c01982c9fcb9d95b0acfdb5eb8a6e0099dd11edf062314a474228d93f2b765"
+      },
+      "needle": {
+        "url": "https://huggingface.co/Cactus-Compute/needle3/resolve/2ae11323dc000f5e70c49f7403efa6af12ba9e67/linux-arm64/needle",
+        "sha256": "6fc25a97def475e1c7d1933a4a219d4e37076be77974e76dd331d9e0cd97f3cb",
+        "size": 1431816,
+        "path": "needle"
+      }
+    },
+    "darwin-arm64": {
+      "python": {
+        "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261003/cpython-3.12.15%2B20261003-aarch64-apple-darwin-install_only.tar.gz",
+        "sha256": "316a463172740e71d8dca1f2730784e325f3f720941137b5d674d5801a632213"
+      },
+      "needle": {
+        "url": "https://huggingface.co/Cactus-Compute/needle3/resolve/2ae11323dc000f5e70c49f7403efa6af12ba9e67/macos-arm64/needle",
+        "sha256": "342fa2c6f140e702354a99c4201c9057535ec908eed35c7382e911a19d1d2724",
+        "size": 1089896,
+        "path": "needle"
+      }
+    }
+  },
+  "models": [
+    {
+      "path": "whistle.cact",
+      "url": "https://huggingface.co/Cactus-Compute/whistle/resolve/b358ddadd89b7a713b5aa131f23032d3cca1b251/whistle.cact",
+      "sha256": "b6e02f048568ac5d01a2042556c658061e699acbc0aa2a1439f52f3d461dffeb",
+      "size": 16919407
+    },
+    {
+      "path": "phonon2/phonon-2.bps.tar.zst",
+      "url": "https://huggingface.co/FermionResearch/Phonon-2/resolve/ca1bef26bcd8ef4a7e16d0636d8a77bb25e298ee/phonon-2.bps.tar.zst",
+      "sha256": "98125795b6dda72f5c6eee9ba33d19815df65dcb18b50a357bf9f73c9935309e",
+      "size": 163515201
+    },
+    {
+      "path": "phonon2/config.json",
+      "url": "https://huggingface.co/FermionResearch/Phonon-2/resolve/ca1bef26bcd8ef4a7e16d0636d8a77bb25e298ee/config.json",
+      "sha256": "422379e411f14dde97174554deead106ec1e4816e14dd78a1bf99517c6dcc663"
+    },
+    {
+      "path": "phonon2/packed_manifest.json",
+      "url": "https://huggingface.co/FermionResearch/Phonon-2/resolve/ca1bef26bcd8ef4a7e16d0636d8a77bb25e298ee/packed_manifest.json",
+      "sha256": "690c6bc43bcbcae8df61cff0b2cace7299d023718b6f2aa9d67157407eadaa07"
+    }
+  ],
+  "licenses": [
+    {
+      "path": "LICENSE-whistle.txt",
+      "url": "https://huggingface.co/Cactus-Compute/whistle/resolve/b358ddadd89b7a713b5aa131f23032d3cca1b251/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "LICENSE-needle.txt",
+      "url": "https://huggingface.co/Cactus-Compute/needle3/resolve/2ae11323dc000f5e70c49f7403efa6af12ba9e67/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "phonon2/LICENSE-WEIGHTS-CC-BY-4.0.txt",
+      "url": "https://huggingface.co/FermionResearch/Phonon-2/resolve/ca1bef26bcd8ef4a7e16d0636d8a77bb25e298ee/LICENSE-WEIGHTS-CC-BY-4.0.txt",
+      "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+    },
+    {
+      "path": "phonon2/LICENSE-CODE-Apache-2.0.txt",
+      "url": "https://huggingface.co/FermionResearch/Phonon-2/resolve/ca1bef26bcd8ef4a7e16d0636d8a77bb25e298ee/LICENSE-CODE-Apache-2.0.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "path": "phonon2/NOTICE",
+      "url": "https://huggingface.co/FermionResearch/Phonon-2/resolve/ca1bef26bcd8ef4a7e16d0636d8a77bb25e298ee/NOTICE",
+      "sha256": "00624a5043e7ce74029317b024132ca5286116d6fbf3191d226374bc8273789f"
+    },
+    {
+      "path": "python-build/LICENSE",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE",
+      "sha256": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5"
+    },
+    {
+      "path": "python-build/LICENSE.bdb.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.bdb.txt",
+      "sha256": "3bdff06e69991c94664f2ef5c5f8096f60b7dbec071756ea6cc26b445e06ec5b"
+    },
+    {
+      "path": "python-build/LICENSE.bzip2.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.bzip2.txt",
+      "sha256": "1f38bbc7caacafd65169276d759c0d88c991b753b643ce35d0e45ea1971dd441"
+    },
+    {
+      "path": "python-build/LICENSE.cpython.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.cpython.txt",
+      "sha256": "86e61415828a8b5b06ec8d024e6f086ce155a8b85fd0c419c0ba4dc004e74fdd"
+    },
+    {
+      "path": "python-build/LICENSE.expat.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.expat.txt",
+      "sha256": "122f2c27000472a201d337b9b31f7eb2b52d091b02857061a8880371612d9534"
+    },
+    {
+      "path": "python-build/LICENSE.libX11.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.libX11.txt",
+      "sha256": "2daec087a88e7c9b8082557cdeebad5bbb8155a4137472f0b22e269cd99d0c1e"
+    },
+    {
+      "path": "python-build/LICENSE.libXau.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.libXau.txt",
+      "sha256": "56abe29bb1d9806a9e04fa9f80fed2c0f18027594df3f098148d814aef6bddfa"
+    },
+    {
+      "path": "python-build/LICENSE.libedit.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.libedit.txt",
+      "sha256": "29cea33c32bbc9785142386377915612a2fa786482c46843383384aded2e09b1"
+    },
+    {
+      "path": "python-build/LICENSE.libffi.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.libffi.txt",
+      "sha256": "deaf3a42effb551a5b140fa9afefed183a27f1341c6d1bf430d106a5e6931fc0"
+    },
+    {
+      "path": "python-build/LICENSE.liblzma.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.liblzma.txt",
+      "sha256": "9a4062de0a2c388a98cf35a35d348b62fa97c838a71c3c28ee1a2d7d0a565b02"
+    },
+    {
+      "path": "python-build/LICENSE.libuuid.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.libuuid.txt",
+      "sha256": "122ee1f7e258f2c3c0e538a75c037684f420454bf3850ddc74ce750bbf5fe86b"
+    },
+    {
+      "path": "python-build/LICENSE.libxcb.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.libxcb.txt",
+      "sha256": "c5ffbfeaa501071ceeb97b7de2c0d703fdaa35de01c0fb6cbac1c28453a3e9fd"
+    },
+    {
+      "path": "python-build/LICENSE.mpdecimal.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.mpdecimal.txt",
+      "sha256": "669512af7219f58be03a398766d7c9da11a3b3df9d3f05cb74c5ceca25c8da3b"
+    },
+    {
+      "path": "python-build/LICENSE.ncurses.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.ncurses.txt",
+      "sha256": "87a4c4442337b8968ef956031c406b74f9cb7149b7ba87311bdaba534816201c"
+    },
+    {
+      "path": "python-build/LICENSE.openssl-1.1.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.openssl-1.1.txt",
+      "sha256": "9c04cce50c4989d5601dd8b07f6ab922c40388b66ac736c9007cb1ed9d9dd560"
+    },
+    {
+      "path": "python-build/LICENSE.openssl-3.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.openssl-3.txt",
+      "sha256": "7d5450cb2d142651b8afa315b5f238efc805dad827d91ba367d8516bc9d49e7a"
+    },
+    {
+      "path": "python-build/LICENSE.sqlite.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.sqlite.txt",
+      "sha256": "38bef3d28b24f145ea293bd3b6eb4b20396982abc8303128fb493986ea5bc719"
+    },
+    {
+      "path": "python-build/LICENSE.tcl.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.tcl.txt",
+      "sha256": "c0a69a2bfd757361ec7e6143973b103c90409316b49e9c88db26ad6388e79f16"
+    },
+    {
+      "path": "python-build/LICENSE.tix.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.tix.txt",
+      "sha256": "3ac5cdd0bef6c43ce34c6a7ced452081d9e5a0bf94082b9f9147d23ec9e214f5"
+    },
+    {
+      "path": "python-build/LICENSE.zlib.txt",
+      "url": "https://raw.githubusercontent.com/astral-sh/python-build-standalone/20261003/LICENSE.zlib.txt",
+      "sha256": "818922b2620f12801a12bf78e399644a30990e66824abd8ca8ec24d451d6f92c"
+    },
+    {
+      "path": "source/libsndfile-1.2.2.tar.xz",
+      "url": "https://github.com/libsndfile/libsndfile/releases/download/1.2.2/libsndfile-1.2.2.tar.xz",
+      "sha256": "3799ca9924d3125038880367bf1468e53a1b7e3686a934f098b7e1d286cdb80e",
+      "size": 730760
+    },
+    {
+      "path": "python-supplemental/tokenizers-0.22.2/LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/huggingface/tokenizers/f383101a26663708484cac0727792aad74f78234/LICENSE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "size": 11357
+    },
+    {
+      "path": "source/python/tokenizers-0.22.2.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/73/6f/f80cfef4a312e1fb34baf7d85c72d4411afde10978d4657f8cdd811d3ccc/tokenizers-0.22.2.tar.gz",
+      "sha256": "473b83b915e547aa366d1eee11806deaf419e17be16310ac0a14077f1e28f917",
+      "size": 372115
+    },
+    {
+      "path": "source/python/safetensors-0.6.2.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/ac/cc/738f3011628920e027a11754d9cae9abec1aed00f7ae860abbf843755233/safetensors-0.6.2.tar.gz",
+      "sha256": "43ff2aa0e6fa2dc3ea5524ac7ad93a9839256b8703761e76e2d0b2a3fa4f15d9",
+      "size": 197968
+    },
+    {
+      "path": "source/python/hf_xet-1.6.0.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/1b/ab/522a2ab67f27971a9d48ca666d4fca85ef7d5282d142e31fd087e27b1bbe/hf_xet-1.6.0.tar.gz",
+      "sha256": "2e58454a340b3556dfa4972d5451aff4fba8dd42a236600ba1a1d2b1514f0fef",
+      "size": 920527
+    },
+    {
+      "path": "source/python/zstandard-0.25.0.tar.gz",
+      "url": "https://files.pythonhosted.org/packages/fd/aa/3e0508d5a5dd96529cdc5a97011299056e14c6505b678fd58938792794b1/zstandard-0.25.0.tar.gz",
+      "sha256": "7713e1179d162cf5c7906da876ec2ccb9c3a9dcbdffef0cc7f70c3667a205f0b",
+      "size": 711513
+    },
+    {
+      "path": "python-native-supplemental/wasip2-1.0.1+wasi-0.2.4/LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/3da562c06214feafc14d37bf290671636caa6718/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "size": 10847
+    },
+    {
+      "path": "python-native-supplemental/wasip2-1.0.1+wasi-0.2.4/LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/3da562c06214feafc14d37bf290671636caa6718/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+      "size": 1023
+    },
+    {
+      "path": "python-native-supplemental/jni-sys-macros-0.4.1/LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/jni-rs/jni-sys/64d77b7a5f119d7b55b4e2c169a4668067ff59e6/LICENSE-MIT",
+      "sha256": "1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1",
+      "size": 1071
+    },
+    {
+      "path": "python-native-supplemental/jni-sys-macros-0.4.1/LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/jni-rs/jni-sys/64d77b7a5f119d7b55b4e2c169a4668067ff59e6/LICENSE-APACHE",
+      "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08",
+      "size": 11358
+    },
+    {
+      "path": "python-native-supplemental/objc2-core-foundation-0.3.2/LICENSE.md",
+      "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md",
+      "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+      "size": 1339
+    },
+    {
+      "path": "python-native-supplemental/objc2-io-kit-0.3.2/LICENSE.md",
+      "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md",
+      "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+      "size": 1339
+    },
+    {
+      "path": "python-native-supplemental/objc2-system-configuration-0.3.2/LICENSE.md",
+      "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md",
+      "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+      "size": 1339
+    },
+    {
+      "path": "python-native-supplemental/prost-0.12.6/LICENSE",
+      "url": "https://raw.githubusercontent.com/tokio-rs/prost/d42c85e790263f78f6c626ceb0dac5fda0edcb41/LICENSE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "size": 10847
+    },
+    {
+      "path": "python-native-supplemental/rustls-platform-verifier-android-0.1.1/LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/rustls/rustls-platform-verifier/da3d9c36f48fb9f8f97e94f132fdab67ab0fc75b/LICENSE-MIT",
+      "sha256": "1c7cf76689c837a68ed8d704994e52a0f2940c087958f860d17f3186afbdcc0c",
+      "size": 1066
+    },
+    {
+      "path": "python-native-supplemental/rustls-platform-verifier-android-0.1.1/LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/rustls/rustls-platform-verifier/da3d9c36f48fb9f8f97e94f132fdab67ab0fc75b/LICENSE-APACHE",
+      "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+      "size": 11357
+    },
+    {
+      "path": "python-native-supplemental/symbolic-common-12.17.3/LICENSE",
+      "url": "https://raw.githubusercontent.com/getsentry/symbolic/7d9a706e6345c77eba8a0562a7bf2e59efad4ee6/LICENSE",
+      "sha256": "989aeccdc0127d426c2509116eff70f21b4552f08ebe9f468acc539cd121a692",
+      "size": 1120
+    },
+    {
+      "path": "python-native-supplemental/tokio_with_wasm-0.8.8/LICENSE",
+      "url": "https://raw.githubusercontent.com/cunarist/tokio-with-wasm/43a612b5145534819e84f7e2da1ba57ed00926a0/LICENSE",
+      "sha256": "06248e0d85bc32964b834ea5fb7f2c049cae0ab499e3d72352ba19578633c3cc",
+      "size": 1131
+    },
+    {
+      "path": "python-native-supplemental/tokio_with_wasm_proc-0.8.8/LICENSE",
+      "url": "https://raw.githubusercontent.com/cunarist/tokio-with-wasm/43a612b5145534819e84f7e2da1ba57ed00926a0/LICENSE",
+      "sha256": "06248e0d85bc32964b834ea5fb7f2c049cae0ab499e3d72352ba19578633c3cc",
+      "size": 1131
+    },
+    {
+      "path": "python-native-supplemental/tonic-prost-0.14.5/LICENSE",
+      "url": "https://raw.githubusercontent.com/hyperium/tonic/21d24942a5a4a1806344beb331d4157d510a210c/LICENSE",
+      "sha256": "e24a56698aa6feaf3a02272b3624f9dc255d982970c5ed97ac4525a95056a5b3",
+      "size": 1056
+    },
+    {
+      "path": "python-native-supplemental/valuable-0.1.1/LICENSE",
+      "url": "https://raw.githubusercontent.com/tokio-rs/valuable/9efc29b6e58cef28f6566a47aa7e142a55fead77/LICENSE",
+      "sha256": "ed60d479b8fd1f64e9cbc3de449a16a53ac1b3d1b6aeb9bf9d190a8e93061b44",
+      "size": 1065
+    },
+    {
+      "path": "python-native-supplemental/wasip2-1.0.0+wasi-0.2.4/LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/e55b3b02fcda2a016f5df14573ff05c5b1e313d6/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+      "size": 1023
+    },
+    {
+      "path": "python-native-supplemental/wasip2-1.0.0+wasi-0.2.4/LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/e55b3b02fcda2a016f5df14573ff05c5b1e313d6/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "size": 10847
+    },
+    {
+      "path": "python-native-supplemental/wasip2-1.0.2+wasi-0.2.9/LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/06ce201370fcde0d1b0d47cac8ecb1b0b312c9f9/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+      "size": 1023
+    },
+    {
+      "path": "python-native-supplemental/wasip2-1.0.2+wasi-0.2.9/LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/06ce201370fcde0d1b0d47cac8ecb1b0b312c9f9/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "size": 10847
+    },
+    {
+      "path": "python-native-supplemental/wasip3-0.4.0+wasi-0.3.0-rc-2026-01-06/LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/06ce201370fcde0d1b0d47cac8ecb1b0b312c9f9/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+      "size": 1023
+    },
+    {
+      "path": "python-native-supplemental/wasip3-0.4.0+wasi-0.3.0-rc-2026-01-06/LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/06ce201370fcde0d1b0d47cac8ecb1b0b312c9f9/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "size": 10847
+    },
+    {
+      "path": "python-native-supplemental/wasite-1.0.2/LICENSE_APACHE_2_0.txt",
+      "url": "https://raw.githubusercontent.com/ardaku/wasite/3f7d6ad926848cd52c8d2142fdb2f43ab01ae8ec/LICENSE_APACHE_2_0.txt",
+      "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+      "size": 9723
+    },
+    {
+      "path": "python-native-supplemental/wasite-1.0.2/LICENSE_BOOST_1_0.txt",
+      "url": "https://raw.githubusercontent.com/ardaku/wasite/3f7d6ad926848cd52c8d2142fdb2f43ab01ae8ec/LICENSE_BOOST_1_0.txt",
+      "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
+      "size": 1338
+    },
+    {
+      "path": "python-native-supplemental/wasite-1.0.2/LICENSE_MIT.txt",
+      "url": "https://raw.githubusercontent.com/ardaku/wasite/3f7d6ad926848cd52c8d2142fdb2f43ab01ae8ec/LICENSE_MIT.txt",
+      "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
+      "size": 1036
+    },
+    {
+      "path": "python-native-supplemental/wasm-encoder-0.244.0/LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+      "size": 1023
+    },
+    {
+      "path": "python-native-supplemental/wasm-encoder-0.244.0/LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "size": 10847
+    },
+    {
+      "path": "python-native-supplemental/wasmparser-0.244.0/LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+      "size": 1023
+    },
+    {
+      "path": "python-native-supplemental/wasmparser-0.244.0/LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "size": 10847
+    },
+    {
+      "path": "python-native-supplemental/winapi-i686-pc-windows-gnu-0.4.0/LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/retep998/winapi-rs/796a8e6c2971dc2ff1bcff166e6671284f9b5b6b/LICENSE-MIT",
+      "sha256": "ce7bc3499fee93d5022ef430d5e4201e79a6d9154f3974e42f41349f0569e09b",
+      "size": 1073
+    },
+    {
+      "path": "python-native-supplemental/winapi-i686-pc-windows-gnu-0.4.0/LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/retep998/winapi-rs/796a8e6c2971dc2ff1bcff166e6671284f9b5b6b/LICENSE-APACHE",
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+      "size": 11357
+    },
+    {
+      "path": "python-native-supplemental/winapi-x86_64-pc-windows-gnu-0.4.0/LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/retep998/winapi-rs/796a8e6c2971dc2ff1bcff166e6671284f9b5b6b/LICENSE-MIT",
+      "sha256": "ce7bc3499fee93d5022ef430d5e4201e79a6d9154f3974e42f41349f0569e09b",
+      "size": 1073
+    },
+    {
+      "path": "python-native-supplemental/winapi-x86_64-pc-windows-gnu-0.4.0/LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/retep998/winapi-rs/796a8e6c2971dc2ff1bcff166e6671284f9b5b6b/LICENSE-APACHE",
+      "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+      "size": 11357
+    },
+    {
+      "path": "python-native-supplemental/wit-component-0.244.0/LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+      "size": 1023
+    },
+    {
+      "path": "python-native-supplemental/wit-component-0.244.0/LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "size": 10847
+    },
+    {
+      "path": "python-native-supplemental/wit-parser-0.244.0/LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+      "size": 1023
+    },
+    {
+      "path": "python-native-supplemental/wit-parser-0.244.0/LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-APACHE",
+      "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+      "size": 10847
+    }
+  ],
+  "pythonNativeSources": [
+    {
+      "name": "tokenizers",
+      "version": "0.22.2",
+      "url": "https://files.pythonhosted.org/packages/73/6f/f80cfef4a312e1fb34baf7d85c72d4411afde10978d4657f8cdd811d3ccc/tokenizers-0.22.2.tar.gz",
+      "sha256": "473b83b915e547aa366d1eee11806deaf419e17be16310ac0a14077f1e28f917",
+      "size": 372115,
+      "path": "source/python/tokenizers-0.22.2.tar.gz",
+      "lock": "bindings/python/Cargo.lock"
+    },
+    {
+      "name": "safetensors",
+      "version": "0.6.2",
+      "url": "https://files.pythonhosted.org/packages/ac/cc/738f3011628920e027a11754d9cae9abec1aed00f7ae860abbf843755233/safetensors-0.6.2.tar.gz",
+      "sha256": "43ff2aa0e6fa2dc3ea5524ac7ad93a9839256b8703761e76e2d0b2a3fa4f15d9",
+      "size": 197968,
+      "path": "source/python/safetensors-0.6.2.tar.gz",
+      "lock": "bindings/python/Cargo.lock"
+    },
+    {
+      "name": "hf-xet",
+      "version": "1.6.0",
+      "url": "https://files.pythonhosted.org/packages/1b/ab/522a2ab67f27971a9d48ca666d4fca85ef7d5282d142e31fd087e27b1bbe/hf_xet-1.6.0.tar.gz",
+      "sha256": "2e58454a340b3556dfa4972d5451aff4fba8dd42a236600ba1a1d2b1514f0fef",
+      "size": 920527,
+      "path": "source/python/hf_xet-1.6.0.tar.gz",
+      "lock": "hf_xet/Cargo.lock"
+    },
+    {
+      "name": "zstandard",
+      "version": "0.25.0",
+      "url": "https://files.pythonhosted.org/packages/fd/aa/3e0508d5a5dd96529cdc5a97011299056e14c6505b678fd58938792794b1/zstandard-0.25.0.tar.gz",
+      "sha256": "7713e1179d162cf5c7906da876ec2ccb9c3a9dcbdffef0cc7f70c3667a205f0b",
+      "size": 711513,
+      "path": "source/python/zstandard-0.25.0.tar.gz",
+      "lock": "Cargo.lock"
+    }
+  ],
+  "nativeSupplementalLicenses": [
+    {
+      "name": "wasip2",
+      "version": "1.0.1+wasi-0.2.4",
+      "files": [
+        {
+          "path": "python-native-supplemental/wasip2-1.0.1+wasi-0.2.4/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/3da562c06214feafc14d37bf290671636caa6718/LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "size": 10847
+        },
+        {
+          "path": "python-native-supplemental/wasip2-1.0.1+wasi-0.2.4/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/3da562c06214feafc14d37bf290671636caa6718/LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "size": 1023
+        }
+      ]
+    },
+    {
+      "name": "jni-sys-macros",
+      "version": "0.4.1",
+      "files": [
+        {
+          "path": "python-native-supplemental/jni-sys-macros-0.4.1/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/jni-rs/jni-sys/64d77b7a5f119d7b55b4e2c169a4668067ff59e6/LICENSE-MIT",
+          "sha256": "1d85bd754b04ceec93e98e890edd1fa3c6a22e81bcb32135806beeccefa51cd1",
+          "size": 1071
+        },
+        {
+          "path": "python-native-supplemental/jni-sys-macros-0.4.1/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/jni-rs/jni-sys/64d77b7a5f119d7b55b4e2c169a4668067ff59e6/LICENSE-APACHE",
+          "sha256": "c6596eb7be8581c18be736c846fb9173b69eccf6ef94c5135893ec56bd92ba08",
+          "size": 11358
+        }
+      ]
+    },
+    {
+      "name": "objc2-core-foundation",
+      "version": "0.3.2",
+      "files": [
+        {
+          "path": "python-native-supplemental/objc2-core-foundation-0.3.2/LICENSE.md",
+          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md",
+          "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+          "size": 1339
+        }
+      ]
+    },
+    {
+      "name": "objc2-io-kit",
+      "version": "0.3.2",
+      "files": [
+        {
+          "path": "python-native-supplemental/objc2-io-kit-0.3.2/LICENSE.md",
+          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md",
+          "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+          "size": 1339
+        }
+      ]
+    },
+    {
+      "name": "objc2-system-configuration",
+      "version": "0.3.2",
+      "files": [
+        {
+          "path": "python-native-supplemental/objc2-system-configuration-0.3.2/LICENSE.md",
+          "url": "https://raw.githubusercontent.com/madsmtm/objc2/7b1abfd750a2cacaea71d6a56ecfb83cb7de560b/LICENSE.md",
+          "sha256": "7f976f7e9cb2d87df7230606feb932c3f21ac0e664045a775b600046ff850c54",
+          "size": 1339
+        }
+      ]
+    },
+    {
+      "name": "prost",
+      "version": "0.12.6",
+      "files": [
+        {
+          "path": "python-native-supplemental/prost-0.12.6/LICENSE",
+          "url": "https://raw.githubusercontent.com/tokio-rs/prost/d42c85e790263f78f6c626ceb0dac5fda0edcb41/LICENSE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "size": 10847
+        }
+      ]
+    },
+    {
+      "name": "rustls-platform-verifier-android",
+      "version": "0.1.1",
+      "files": [
+        {
+          "path": "python-native-supplemental/rustls-platform-verifier-android-0.1.1/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/rustls/rustls-platform-verifier/da3d9c36f48fb9f8f97e94f132fdab67ab0fc75b/LICENSE-MIT",
+          "sha256": "1c7cf76689c837a68ed8d704994e52a0f2940c087958f860d17f3186afbdcc0c",
+          "size": 1066
+        },
+        {
+          "path": "python-native-supplemental/rustls-platform-verifier-android-0.1.1/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/rustls/rustls-platform-verifier/da3d9c36f48fb9f8f97e94f132fdab67ab0fc75b/LICENSE-APACHE",
+          "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+          "size": 11357
+        }
+      ]
+    },
+    {
+      "name": "symbolic-common",
+      "version": "12.17.3",
+      "files": [
+        {
+          "path": "python-native-supplemental/symbolic-common-12.17.3/LICENSE",
+          "url": "https://raw.githubusercontent.com/getsentry/symbolic/7d9a706e6345c77eba8a0562a7bf2e59efad4ee6/LICENSE",
+          "sha256": "989aeccdc0127d426c2509116eff70f21b4552f08ebe9f468acc539cd121a692",
+          "size": 1120
+        }
+      ]
+    },
+    {
+      "name": "tokio_with_wasm",
+      "version": "0.8.8",
+      "files": [
+        {
+          "path": "python-native-supplemental/tokio_with_wasm-0.8.8/LICENSE",
+          "url": "https://raw.githubusercontent.com/cunarist/tokio-with-wasm/43a612b5145534819e84f7e2da1ba57ed00926a0/LICENSE",
+          "sha256": "06248e0d85bc32964b834ea5fb7f2c049cae0ab499e3d72352ba19578633c3cc",
+          "size": 1131
+        }
+      ]
+    },
+    {
+      "name": "tokio_with_wasm_proc",
+      "version": "0.8.8",
+      "files": [
+        {
+          "path": "python-native-supplemental/tokio_with_wasm_proc-0.8.8/LICENSE",
+          "url": "https://raw.githubusercontent.com/cunarist/tokio-with-wasm/43a612b5145534819e84f7e2da1ba57ed00926a0/LICENSE",
+          "sha256": "06248e0d85bc32964b834ea5fb7f2c049cae0ab499e3d72352ba19578633c3cc",
+          "size": 1131
+        }
+      ]
+    },
+    {
+      "name": "tonic-prost",
+      "version": "0.14.5",
+      "files": [
+        {
+          "path": "python-native-supplemental/tonic-prost-0.14.5/LICENSE",
+          "url": "https://raw.githubusercontent.com/hyperium/tonic/21d24942a5a4a1806344beb331d4157d510a210c/LICENSE",
+          "sha256": "e24a56698aa6feaf3a02272b3624f9dc255d982970c5ed97ac4525a95056a5b3",
+          "size": 1056
+        }
+      ]
+    },
+    {
+      "name": "valuable",
+      "version": "0.1.1",
+      "files": [
+        {
+          "path": "python-native-supplemental/valuable-0.1.1/LICENSE",
+          "url": "https://raw.githubusercontent.com/tokio-rs/valuable/9efc29b6e58cef28f6566a47aa7e142a55fead77/LICENSE",
+          "sha256": "ed60d479b8fd1f64e9cbc3de449a16a53ac1b3d1b6aeb9bf9d190a8e93061b44",
+          "size": 1065
+        }
+      ]
+    },
+    {
+      "name": "wasip2",
+      "version": "1.0.0+wasi-0.2.4",
+      "files": [
+        {
+          "path": "python-native-supplemental/wasip2-1.0.0+wasi-0.2.4/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/e55b3b02fcda2a016f5df14573ff05c5b1e313d6/LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "size": 1023
+        },
+        {
+          "path": "python-native-supplemental/wasip2-1.0.0+wasi-0.2.4/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/e55b3b02fcda2a016f5df14573ff05c5b1e313d6/LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "size": 10847
+        }
+      ]
+    },
+    {
+      "name": "wasip2",
+      "version": "1.0.2+wasi-0.2.9",
+      "files": [
+        {
+          "path": "python-native-supplemental/wasip2-1.0.2+wasi-0.2.9/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/06ce201370fcde0d1b0d47cac8ecb1b0b312c9f9/LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "size": 1023
+        },
+        {
+          "path": "python-native-supplemental/wasip2-1.0.2+wasi-0.2.9/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/06ce201370fcde0d1b0d47cac8ecb1b0b312c9f9/LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "size": 10847
+        }
+      ]
+    },
+    {
+      "name": "wasip3",
+      "version": "0.4.0+wasi-0.3.0-rc-2026-01-06",
+      "files": [
+        {
+          "path": "python-native-supplemental/wasip3-0.4.0+wasi-0.3.0-rc-2026-01-06/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/06ce201370fcde0d1b0d47cac8ecb1b0b312c9f9/LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "size": 1023
+        },
+        {
+          "path": "python-native-supplemental/wasip3-0.4.0+wasi-0.3.0-rc-2026-01-06/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasi-rs/06ce201370fcde0d1b0d47cac8ecb1b0b312c9f9/LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "size": 10847
+        }
+      ]
+    },
+    {
+      "name": "wasite",
+      "version": "1.0.2",
+      "files": [
+        {
+          "path": "python-native-supplemental/wasite-1.0.2/LICENSE_APACHE_2_0.txt",
+          "url": "https://raw.githubusercontent.com/ardaku/wasite/3f7d6ad926848cd52c8d2142fdb2f43ab01ae8ec/LICENSE_APACHE_2_0.txt",
+          "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a",
+          "size": 9723
+        },
+        {
+          "path": "python-native-supplemental/wasite-1.0.2/LICENSE_BOOST_1_0.txt",
+          "url": "https://raw.githubusercontent.com/ardaku/wasite/3f7d6ad926848cd52c8d2142fdb2f43ab01ae8ec/LICENSE_BOOST_1_0.txt",
+          "sha256": "c9bff75738922193e67fa726fa225535870d2aa1059f91452c411736284ad566",
+          "size": 1338
+        },
+        {
+          "path": "python-native-supplemental/wasite-1.0.2/LICENSE_MIT.txt",
+          "url": "https://raw.githubusercontent.com/ardaku/wasite/3f7d6ad926848cd52c8d2142fdb2f43ab01ae8ec/LICENSE_MIT.txt",
+          "sha256": "508a77d2e7b51d98adeed32648ad124b7b30241a8e70b2e72c99f92d8e5874d1",
+          "size": 1036
+        }
+      ]
+    },
+    {
+      "name": "wasm-encoder",
+      "version": "0.244.0",
+      "files": [
+        {
+          "path": "python-native-supplemental/wasm-encoder-0.244.0/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "size": 1023
+        },
+        {
+          "path": "python-native-supplemental/wasm-encoder-0.244.0/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "size": 10847
+        }
+      ]
+    },
+    {
+      "name": "wasmparser",
+      "version": "0.244.0",
+      "files": [
+        {
+          "path": "python-native-supplemental/wasmparser-0.244.0/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "size": 1023
+        },
+        {
+          "path": "python-native-supplemental/wasmparser-0.244.0/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "size": 10847
+        }
+      ]
+    },
+    {
+      "name": "winapi-i686-pc-windows-gnu",
+      "version": "0.4.0",
+      "files": [
+        {
+          "path": "python-native-supplemental/winapi-i686-pc-windows-gnu-0.4.0/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/retep998/winapi-rs/796a8e6c2971dc2ff1bcff166e6671284f9b5b6b/LICENSE-MIT",
+          "sha256": "ce7bc3499fee93d5022ef430d5e4201e79a6d9154f3974e42f41349f0569e09b",
+          "size": 1073
+        },
+        {
+          "path": "python-native-supplemental/winapi-i686-pc-windows-gnu-0.4.0/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/retep998/winapi-rs/796a8e6c2971dc2ff1bcff166e6671284f9b5b6b/LICENSE-APACHE",
+          "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+          "size": 11357
+        }
+      ]
+    },
+    {
+      "name": "winapi-x86_64-pc-windows-gnu",
+      "version": "0.4.0",
+      "files": [
+        {
+          "path": "python-native-supplemental/winapi-x86_64-pc-windows-gnu-0.4.0/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/retep998/winapi-rs/796a8e6c2971dc2ff1bcff166e6671284f9b5b6b/LICENSE-MIT",
+          "sha256": "ce7bc3499fee93d5022ef430d5e4201e79a6d9154f3974e42f41349f0569e09b",
+          "size": 1073
+        },
+        {
+          "path": "python-native-supplemental/winapi-x86_64-pc-windows-gnu-0.4.0/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/retep998/winapi-rs/796a8e6c2971dc2ff1bcff166e6671284f9b5b6b/LICENSE-APACHE",
+          "sha256": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+          "size": 11357
+        }
+      ]
+    },
+    {
+      "name": "wit-component",
+      "version": "0.244.0",
+      "files": [
+        {
+          "path": "python-native-supplemental/wit-component-0.244.0/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "size": 1023
+        },
+        {
+          "path": "python-native-supplemental/wit-component-0.244.0/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "size": 10847
+        }
+      ]
+    },
+    {
+      "name": "wit-parser",
+      "version": "0.244.0",
+      "files": [
+        {
+          "path": "python-native-supplemental/wit-parser-0.244.0/LICENSE-MIT",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-MIT",
+          "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3",
+          "size": 1023
+        },
+        {
+          "path": "python-native-supplemental/wit-parser-0.244.0/LICENSE-APACHE",
+          "url": "https://raw.githubusercontent.com/bytecodealliance/wasm-tools/d4e317f22c3bace76cb3205003bcc34b4929037d/LICENSE-APACHE",
+          "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+          "size": 10847
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+Collected 1047 dependency notice sets in apps/client/dist/legal-desktop.
+Verified desktop licence bundle (1047 dependencies).

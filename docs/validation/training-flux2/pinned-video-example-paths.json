@@ -1,0 +1,36 @@
+{
+  "revision": "4295ee3ec58efa6577bc459e9b84ca3f63aa9a96",
+  "url": "https://api.github.com/repos/huggingface/diffusers/git/trees/4295ee3ec58efa6577bc459e9b84ca3f63aa9a96?recursive=1",
+  "tree": "4295ee3ec58efa6577bc459e9b84ca3f63aa9a96",
+  "truncated": false,
+  "files": [
+    {
+      "path": "examples/cogvideo/README.md",
+      "sha": "3d22b2bf9931fc53bd861c807d094214bbcac0d1"
+    },
+    {
+      "path": "examples/cogvideo/requirements.txt",
+      "sha": "c2238804be9f4b41300ac2962fd76afca53f1e71"
+    },
+    {
+      "path": "examples/cogvideo/train_cogvideox_image_to_video_lora.py",
+      "sha": "12ad753eff8b9657241deb6ba198840243b4d648"
+    },
+    {
+      "path": "examples/cogvideo/train_cogvideox_lora.py",
+      "sha": "3fd542173e348e3b4544e3ce171eb1f6b6cb430c"
+    },
+    {
+      "path": "examples/community/cogvideox_ddim_inversion.py",
+      "sha": "36d95901c65fceabcbc5c07375bd7e62d0ba02c7"
+    },
+    {
+      "path": "examples/community/pipeline_stg_cogvideox.py",
+      "sha": "bdb6aecc30c3034f7a1e8cc31aba4683340e5b75"
+    },
+    {
+      "path": "examples/community/pipeline_stg_wan.py",
+      "sha": "0833869bd35ca9015b06bfff7ed51383864f0b6c"
+    }
+  ]
+}

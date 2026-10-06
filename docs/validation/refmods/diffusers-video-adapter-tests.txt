@@ -1,0 +1,22 @@
+Could not detect ROCm GPU architecture: [WinError 2] The system cannot find the file specified
+
+ROCm GPU architecture detection failed despite ROCm being available.
+                
+W1006 16:45:04.955000 23972 Lib\site-packages\torch\utils\flop_counter.py:29] triton not found; flop counting will not work for triton kernels
+D:\Models\machdoch\runtime\environment\Lib\site-packages\torch\jit\_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+test_bad_normalization_fails_before_native_model_initialization (test_media_minimax_h3_video_adapter.H3VideoAdapterTests.test_bad_normalization_fails_before_native_model_initialization) ... ok
+test_checkpoint_conversion_matches_native_parameters_and_materializes_rope (test_media_minimax_h3_video_adapter.H3VideoAdapterTests.test_checkpoint_conversion_matches_native_parameters_and_materializes_rope) ... ok
+test_fp16_checkpoint_statistics_keep_their_values_in_float32 (test_media_minimax_h3_video_adapter.H3VideoAdapterTests.test_fp16_checkpoint_statistics_keep_their_values_in_float32) ... ok
+test_image_and_video_encoding_keep_normalization_and_native_clock (test_media_minimax_h3_video_adapter.H3VideoAdapterTests.test_image_and_video_encoding_keep_normalization_and_native_clock) ... ok
+test_invalid_frames_and_modes_fail_before_native_execution (test_media_minimax_h3_video_adapter.H3VideoAdapterTests.test_invalid_frames_and_modes_fail_before_native_execution) ... ok
+test_missing_and_wrong_shape_weights_fail_before_loading_model_weights (test_media_minimax_h3_video_adapter.H3VideoAdapterTests.test_missing_and_wrong_shape_weights_fail_before_loading_model_weights) ... ok
+test_nonfinite_selected_weight_is_rejected (test_media_minimax_h3_video_adapter.H3VideoAdapterTests.test_nonfinite_selected_weight_is_rejected) ... ok
+test_only_the_selected_component_weights_are_read (test_media_minimax_h3_video_adapter.H3VideoAdapterTests.test_only_the_selected_component_weights_are_read) ... ok
+test_selected_frames_equal_full_decode_and_use_at_most_two_chunks (test_media_minimax_h3_video_adapter.H3VideoAdapterTests.test_selected_frames_equal_full_decode_and_use_at_most_two_chunks) ... ok
+test_still_and_short_video_decode_use_explicit_current_geometry (test_media_minimax_h3_video_adapter.H3VideoAdapterTests.test_still_and_short_video_decode_use_explicit_current_geometry) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 370.153s
+
+OK

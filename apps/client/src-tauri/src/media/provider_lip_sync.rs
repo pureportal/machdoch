@@ -1,5 +1,5 @@
-use super::*;
 use super::video_composition::{media_worker, publish_video_output, stage_media};
+use super::*;
 
 pub(crate) struct LipSyncRequest<'a> {
     pub video_asset_id: &'a str,
@@ -24,11 +24,24 @@ pub(crate) fn lip_sync_video(
     }
     let (script, python) = media_worker(app)?;
     let staging = create_staging_directory(paths)?;
-    let video = stage_media(paths, &staging.0, request.video_asset_id, "video", "input.webm")?;
-    let audio = stage_media(paths, &staging.0, request.audio_asset_id, "audio", "soundtrack.wav")?;
-    let voice = request.voice_asset_id.map(|id| {
-        stage_media(paths, &staging.0, id, "audio", "vocals.wav")
-    }).transpose()?;
+    let video = stage_media(
+        paths,
+        &staging.0,
+        request.video_asset_id,
+        "video",
+        "input.webm",
+    )?;
+    let audio = stage_media(
+        paths,
+        &staging.0,
+        request.audio_asset_id,
+        "audio",
+        "soundtrack.wav",
+    )?;
+    let voice = request
+        .voice_asset_id
+        .map(|id| stage_media(paths, &staging.0, id, "audio", "vocals.wav"))
+        .transpose()?;
     let payload = serde_json::json!({
         "inputPath": video,
         "audioPath": audio,
@@ -49,11 +62,17 @@ pub(crate) fn lip_sync_video(
         Some((paths, run_id)),
     )?;
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|error| {
-        worker_failure_with_diagnostics(format!("Lip sync returned invalid JSON: {error}"), &output.stderr)
+        worker_failure_with_diagnostics(
+            format!("Lip sync returned invalid JSON: {error}"),
+            &output.stderr,
+        )
     })?;
     if !output.status.success() || result.get("error").is_some() {
         return Err(worker_failure_with_diagnostics(
-            result["error"].as_str().unwrap_or("Lip sync failed").to_string(),
+            result["error"]
+                .as_str()
+                .unwrap_or("Lip sync failed")
+                .to_string(),
             &output.stderr,
         ));
     }

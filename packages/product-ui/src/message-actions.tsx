@@ -1,5 +1,13 @@
 import type { ProductMessage } from "@machdoch/fleet-protocol";
-import { Check, Copy, RotateCcw, Save, Square, Volume2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Pencil,
+  RotateCcw,
+  Save,
+  Square,
+  Volume2,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { ProductCommandHandler } from "./product-runtime";
 
@@ -8,16 +16,20 @@ export function MessageActions({
   sessionId,
   pending,
   onCommand,
+  onEdit,
+  showTaskActions = true,
 }: {
   message: ProductMessage;
   sessionId: string;
   pending: boolean;
   onCommand: ProductCommandHandler;
+  onEdit?: () => void;
+  showTaskActions?: boolean;
 }): React.ReactElement | null {
   const hasTaskActions = message.taskId !== undefined;
   const hasActions =
     Boolean(message.content) ||
-    (hasTaskActions &&
+    (showTaskActions && hasTaskActions &&
       (message.actions.canRetry || message.actions.canContinue)) ||
     message.actions.canSaveAsContextPack ||
     message.actions.canSpeak ||
@@ -27,19 +39,30 @@ export function MessageActions({
   return (
     <div className="m-product-message-actions">
       {message.content ? <CopyMessage content={message.content} /> : null}
-      {message.actions.canRetry && message.taskId ? (
+      {message.actions.canEdit && onEdit ? (
+        <button type="button" disabled={pending} onClick={onEdit}>
+          <Pencil aria-hidden="true" /> Edit message
+        </button>
+      ) : null}
+      {showTaskActions &&
+      (message.actions.canReplay ||
+        (message.actions.canRetry && message.taskId)) ? (
         <button
           type="button"
           disabled={pending}
           onClick={() =>
-            void onCommand({ kind: "retry", taskId: message.taskId! })
+            void onCommand(
+              message.actions.canReplay
+                ? { kind: "replay-message", sessionId, messageId: message.id }
+                : { kind: "retry", taskId: message.taskId! },
+            )
           }
         >
           <RotateCcw aria-hidden="true" />
           Retry
         </button>
       ) : null}
-      {message.actions.canContinue && message.taskId ? (
+      {showTaskActions && message.actions.canContinue && message.taskId ? (
         <button
           type="button"
           disabled={pending}

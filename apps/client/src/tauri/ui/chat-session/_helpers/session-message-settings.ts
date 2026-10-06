@@ -3,7 +3,7 @@ import type {
   ChatSessionMessageSettings,
   ChatSessionRecord,
 } from "../../chat-session.model";
-import type { PromptEnhancementMode } from "./prompt-enhancement";
+import { type PromptEnhancementMode } from "@machdoch/client-ui/composer/prompt-enhancement-options";
 
 export const createSessionMessageSettings = (
   session: ChatSessionRecord,

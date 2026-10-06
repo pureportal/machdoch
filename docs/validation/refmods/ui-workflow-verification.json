@@ -1,0 +1,568 @@
+{
+  "date": "2026-10-06T19:02:51.454Z",
+  "fullOutcomeVerified": false,
+  "devServerStarted": false,
+  "pretrainedWeightsUsed": false,
+  "changes": [
+    "Missing and damaged RefMod VAEs retain installation recovery instead of a generic internal error",
+    "VAE weight-memory preflight retains GPU capacity recovery",
+    "Worker paths remain in technical diagnostics"
+  ],
+  "checks": {
+    "desktopCompilation": {
+      "passed": true,
+      "log": "native-ui-disk-build.jsonl",
+      "allApplicationFeatures": true,
+      "artifactSelection": "desktop executable and required rlib; no staticlib/cdylib or debug symbols",
+      "stagedExecutableMatchesCompiled": true,
+      "command": "cargo build --bin machdoch --features tauri/custom-protocol",
+      "binaryFeatures": [],
+      "shippingLibraryArtifactsVerified": false
+    },
+    "nativeErrors": {
+      "passed": true,
+      "count": 15,
+      "log": "native-ui-error-tests.txt"
+    },
+    "desktopUI": {
+      "date": "2026-10-06T17:59:09.031Z",
+      "pretrainedWeightsUsed": false,
+      "frame": {
+        "value": "9",
+        "max": "9"
+      },
+      "failedCreationOutputAbsent": true,
+      "maskPickerPassed": true,
+      "controlsRestored": true,
+      "visibleChecks": [
+        "damaged-video-preview",
+        "missing-audio-preview",
+        "preview-cancellation",
+        "damaged-video-creation"
+      ],
+      "nativeErrorContractEvidence": "native-ui-error-tests.txt",
+      "nativeErrorContractTestsPassed": 15
+    },
+    "fleetUI": {
+      "date": "2026-10-06T18:19:09.341Z",
+      "productionManager": true,
+      "isolatedDatabase": true,
+      "pretrainedWeightsUsed": false,
+      "uploadPassed": true,
+      "downloadPassed": true,
+      "selectionPreserved": true,
+      "checks": [
+        {
+          "width": 1280,
+          "documentWidth": 1280,
+          "bodyWidth": 1280,
+          "referenceControlsVisible": true,
+          "alerts": []
+        },
+        {
+          "width": 390,
+          "documentWidth": 390,
+          "bodyWidth": 390,
+          "referenceControlsVisible": true,
+          "alerts": []
+        }
+      ],
+      "pageErrors": [],
+      "networkErrors": []
+    },
+    "fleetRecovery": {
+      "date": "2026-10-06T19:02:01.063Z",
+      "pretrainedWeightsUsed": false,
+      "productionManager": true,
+      "isolatedDatabase": true,
+      "checks": [
+        "damaged-video-preview",
+        "missing-audio-preview",
+        "preview-cancellation",
+        "damaged-video-creation"
+      ],
+      "controlsRestored": true,
+      "failedCreationOutputAbsent": true,
+      "temporaryFiles": [],
+      "failures": [
+        {
+          "category": "configuration",
+          "code": "MODEL_NOT_INSTALLED",
+          "context": {
+            "assetId": null,
+            "modelId": null,
+            "nodeId": null,
+            "operation": "media_refmod_operation",
+            "providerId": null,
+            "runId": null,
+            "runtimeId": null
+          },
+          "message": "MiniMax H3 video VAE is incomplete or damaged. Install a complete video checkpoint.",
+          "partialOutputsExist": false,
+          "retryability": "after-user-action",
+          "schemaVersion": 1,
+          "suggestedActions": [
+            {
+              "description": "Review the download, license, disk, and compatibility plan.",
+              "id": "open-models",
+              "label": "Open Models"
+            }
+          ],
+          "technicalDiagnostic": "Local Diffusers worker failed: ValueError: MiniMax H3 video VAE is incomplete or damaged. Replace \\\\?\\D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\workspace\\models\\minimax-h3-ref2va\\vae\\minimax_h3_video_vae_fp16.safetensors with a complete checkpoint."
+        },
+        {
+          "category": "configuration",
+          "code": "MODEL_NOT_INSTALLED",
+          "context": {
+            "assetId": null,
+            "modelId": null,
+            "nodeId": null,
+            "operation": "media_refmod_operation",
+            "providerId": null,
+            "runId": null,
+            "runtimeId": null
+          },
+          "message": "Install the MiniMax H3 audio VAE to create or preview audio references.",
+          "partialOutputsExist": false,
+          "retryability": "after-user-action",
+          "schemaVersion": 1,
+          "suggestedActions": [
+            {
+              "description": "Review the download, license, disk, and compatibility plan.",
+              "id": "open-models",
+              "label": "Open Models"
+            }
+          ],
+          "technicalDiagnostic": "Local Diffusers worker failed: ValueError: Install the MiniMax H3 audio VAE at \\\\?\\D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\workspace\\models\\minimax-h3-ref2va\\vae\\minimax_h3_audio_vae_fp32.safetensors"
+        },
+        {
+          "category": "cancellation",
+          "code": "CANCELLED_BY_USER",
+          "context": {
+            "assetId": null,
+            "modelId": null,
+            "nodeId": null,
+            "operation": "media_refmod_operation",
+            "providerId": null,
+            "runId": null,
+            "runtimeId": null
+          },
+          "message": "The media operation was canceled.",
+          "partialOutputsExist": false,
+          "retryability": "never",
+          "schemaVersion": 1,
+          "suggestedActions": [],
+          "technicalDiagnostic": "RefMod operation was canceled"
+        },
+        {
+          "category": "configuration",
+          "code": "MODEL_NOT_INSTALLED",
+          "context": {
+            "assetId": null,
+            "modelId": null,
+            "nodeId": null,
+            "operation": "media_refmod_operation",
+            "providerId": null,
+            "runId": null,
+            "runtimeId": null
+          },
+          "message": "MiniMax H3 video VAE is incomplete or damaged. Install a complete video checkpoint.",
+          "partialOutputsExist": false,
+          "retryability": "after-user-action",
+          "schemaVersion": 1,
+          "suggestedActions": [
+            {
+              "description": "Review the download, license, disk, and compatibility plan.",
+              "id": "open-models",
+              "label": "Open Models"
+            }
+          ],
+          "technicalDiagnostic": "Local Diffusers worker failed: ValueError: MiniMax H3 video VAE is incomplete or damaged. Replace \\\\?\\D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\workspace\\models\\minimax-h3-ref2va\\vae\\minimax_h3_video_vae_fp16.safetensors with a complete checkpoint."
+        }
+      ],
+      "responseWarnings": [],
+      "transportFailures": []
+    },
+    "exports": {
+      "date": "2026-10-06T18:23:23.919Z",
+      "pretrainedWeightsUsed": false,
+      "sourceSha256": "d73621708c71f2e5c9ea8f4d67f5fd0ef39037e77a9d3eb19f39c083eb0c01b5",
+      "exports": [
+        {
+          "file": "desktop-export.safetensors",
+          "sizeBytes": 23792,
+          "sha256": "f601e565a37a517eddad5a5fb8b22b82be3125448f0387de28f889702fedf710",
+          "memberCount": 6,
+          "tokens": 112,
+          "checks": [
+            {
+              "kind": "image",
+              "shape": [
+                1,
+                24,
+                1,
+                4,
+                4
+              ],
+              "tokens": 4,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.3805525036301849
+            },
+            {
+              "kind": "image",
+              "shape": [
+                1,
+                24,
+                1,
+                4,
+                4
+              ],
+              "tokens": 4,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.3805525036301849
+            },
+            {
+              "kind": "video",
+              "shape": [
+                1,
+                24,
+                3,
+                4,
+                4
+              ],
+              "tokens": 12,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.31805570934495714
+            },
+            {
+              "kind": "video",
+              "shape": [
+                1,
+                24,
+                3,
+                4,
+                4
+              ],
+              "tokens": 12,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.31805570934495714
+            },
+            {
+              "kind": "audio",
+              "shape": [
+                1,
+                32,
+                2,
+                20
+              ],
+              "tokens": 40,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.6301315128603039
+            },
+            {
+              "kind": "audio",
+              "shape": [
+                1,
+                32,
+                2,
+                20
+              ],
+              "tokens": 40,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.6301315128603039
+            }
+          ]
+        },
+        {
+          "file": "fleet-export.safetensors",
+          "sizeBytes": 23792,
+          "sha256": "57787aa107fa07eb7524cd243c14b04cca5d068acfdecca6cb544214826f928a",
+          "memberCount": 6,
+          "tokens": 112,
+          "checks": [
+            {
+              "kind": "image",
+              "shape": [
+                1,
+                24,
+                1,
+                4,
+                4
+              ],
+              "tokens": 4,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.3805525036301849
+            },
+            {
+              "kind": "image",
+              "shape": [
+                1,
+                24,
+                1,
+                4,
+                4
+              ],
+              "tokens": 4,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.3805525036301849
+            },
+            {
+              "kind": "video",
+              "shape": [
+                1,
+                24,
+                3,
+                4,
+                4
+              ],
+              "tokens": 12,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.3163222586063801
+            },
+            {
+              "kind": "video",
+              "shape": [
+                1,
+                24,
+                3,
+                4,
+                4
+              ],
+              "tokens": 12,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.3163222586063801
+            },
+            {
+              "kind": "audio",
+              "shape": [
+                1,
+                32,
+                2,
+                20
+              ],
+              "tokens": 40,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.6191240060513719
+            },
+            {
+              "kind": "audio",
+              "shape": [
+                1,
+                32,
+                2,
+                20
+              ],
+              "tokens": 40,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.6191240060513719
+            }
+          ]
+        },
+        {
+          "file": "fleet-export-final.safetensors",
+          "sizeBytes": 23792,
+          "sha256": "57787aa107fa07eb7524cd243c14b04cca5d068acfdecca6cb544214826f928a",
+          "memberCount": 6,
+          "tokens": 112,
+          "checks": [
+            {
+              "kind": "image",
+              "shape": [
+                1,
+                24,
+                1,
+                4,
+                4
+              ],
+              "tokens": 4,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.3805525036301849
+            },
+            {
+              "kind": "image",
+              "shape": [
+                1,
+                24,
+                1,
+                4,
+                4
+              ],
+              "tokens": 4,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.3805525036301849
+            },
+            {
+              "kind": "video",
+              "shape": [
+                1,
+                24,
+                3,
+                4,
+                4
+              ],
+              "tokens": 12,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.3163222586063801
+            },
+            {
+              "kind": "video",
+              "shape": [
+                1,
+                24,
+                3,
+                4,
+                4
+              ],
+              "tokens": 12,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.3163222586063801
+            },
+            {
+              "kind": "audio",
+              "shape": [
+                1,
+                32,
+                2,
+                20
+              ],
+              "tokens": 40,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.6191240060513719
+            },
+            {
+              "kind": "audio",
+              "shape": [
+                1,
+                32,
+                2,
+                20
+              ],
+              "tokens": 40,
+              "finite": true,
+              "changedFromSource": true,
+              "energyRatio": 0.6191240060513719
+            }
+          ]
+        }
+      ]
+    },
+    "fleetEarlierAttempt": {
+      "date": "2026-10-06T18:45:49.139Z",
+      "passedChecks": [
+        "damaged-video-preview"
+      ],
+      "http502DuringMissingAudioPreview": true,
+      "rootCauseEstablished": false,
+      "diagnostic": "fleet-ui-recovery-failure.json",
+      "instrumentedRerunTransportFailures": []
+    }
+  },
+  "packagedFiles": {
+    "media_refmods.py": {
+      "sourceSha256": "89e4dc878018f388f0135d8564d042af892670319628b00f996e2b8899cea8ca",
+      "packagedSha256": "89e4dc878018f388f0135d8564d042af892670319628b00f996e2b8899cea8ca",
+      "matchesSource": true
+    },
+    "media_refmod_preview.py": {
+      "sourceSha256": "e2aec8744afdcd5ef253c95cadc7917f413c98ed25b8f3e57060a9ed04462106",
+      "packagedSha256": "e2aec8744afdcd5ef253c95cadc7917f413c98ed25b8f3e57060a9ed04462106",
+      "matchesSource": true
+    },
+    "media_refmod_creation.py": {
+      "sourceSha256": "b4d7aa42ff9110d23b6069b88ca356b8ffbb970a8ac863e8e6727b7e3cae606d",
+      "packagedSha256": "b4d7aa42ff9110d23b6069b88ca356b8ffbb970a8ac863e8e6727b7e3cae606d",
+      "matchesSource": true
+    },
+    "media_refmod_models.py": {
+      "sourceSha256": "17133c0b58121b8f36bc701ae6a1ff847646f5ca93da2bdc36a309354911b705",
+      "packagedSha256": "17133c0b58121b8f36bc701ae6a1ff847646f5ca93da2bdc36a309354911b705",
+      "matchesSource": true
+    },
+    "media_minimax_h3.py": {
+      "sourceSha256": "a3e16352b31692e3751d62ead2f9101404fb368eb614de1d8fa530a0ee98c56e",
+      "packagedSha256": "a3e16352b31692e3751d62ead2f9101404fb368eb614de1d8fa530a0ee98c56e",
+      "matchesSource": true
+    },
+    "fizgig/minimax/vae.py": {
+      "sourceSha256": "a1c0dc2d0adb5469446c1a34038e88c88876cd7aa705da554b3b2416b348dc01",
+      "packagedSha256": "a1c0dc2d0adb5469446c1a34038e88c88876cd7aa705da554b3b2416b348dc01",
+      "matchesSource": true
+    },
+    "fizgig/minimax/video_vae_checkpoint.py": {
+      "sourceSha256": "fc8a630c1c4c51c13621ddccf38dfe1b8b7b0685ad10c4d8b56d38df5a53b205",
+      "packagedSha256": "fc8a630c1c4c51c13621ddccf38dfe1b8b7b0685ad10c4d8b56d38df5a53b205",
+      "matchesSource": true
+    },
+    "fizgig/minimax/audio_vae.py": {
+      "sourceSha256": "ac22cf022d0ed200fc50c81981391acdb804e7bef6c24d7ab5829cf8f563799b",
+      "packagedSha256": "ac22cf022d0ed200fc50c81981391acdb804e7bef6c24d7ab5829cf8f563799b",
+      "matchesSource": true
+    }
+  },
+  "modelEvidence": {
+    "videoVae": {
+      "path": "D:/Models/machdoch/worker-staging/minimax-h3/minimax_h3_video_vae_fp16.safetensors",
+      "sizeBytes": 3774476288,
+      "requiredBytes": 5207808496,
+      "incomplete": true,
+      "headerOnly": true,
+      "tensorValuesRead": false
+    },
+    "missingRequiredFilesInSearchedModelLocations": [
+      "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "mmh3-4b-ClipProj-v3.1.safetensors"
+    ],
+    "stagedFL2VAGGUFDoesNotMeetRef2VARequirements": true
+  },
+  "licensing": {
+    "modelLicenceSha256": "59b99642b95ea21630e311198ddbfffbfe05aadba0c2f5d884cbdf4efcc90f44",
+    "matchesPrimary": true,
+    "primarySource": "https://huggingface.co/MiniMaxAI/MiniMax-H3/raw/main/LICENSE",
+    "modelUseAuthorizationVerified": false,
+    "transformerAndSamplerGPLDistributionResolved": false,
+    "retainedAttributionEvidence": "video-vae-runtime-verification.json"
+  },
+  "limitations": [
+    "Complete pretrained video creation, preview and Ref2VA generation remain unverified",
+    "Fixed-seed image/video/audio/mixed quality comparisons remain unverified",
+    "Complete-checkpoint peak GPU memory and model-use authorization remain unverified",
+    "Transformer/sampler code-distribution provenance remains unresolved",
+    "An earlier fleet missing-audio preview returned HTTP 502; the instrumented rerun passed, but the earlier transport failure was not explained"
+  ],
+  "fixture": {
+    "scope": "separate desktop identifier, user configuration, workspace and production fleet database",
+    "workspacePreparedThroughNativeStateCAS": true,
+    "workspacePickerVerified": false,
+    "temporaryLibraryFiles": []
+  },
+  "screenshots": [
+    "desktop-ui-recovery.png",
+    "fleet-ui-1280.png",
+    "fleet-ui-390.png",
+    "fleet-ui-recovery.png"
+  ],
+  "cleanup": {
+    "checkedAt": "2026-10-06T19:06:44.2835717+00:00",
+    "isolatedDesktopStopped": true,
+    "isolatedProductionManagerStopped": true,
+    "fixtureFilesRetained": true,
+    "sharedProcessesStopped": false
+  }
+}

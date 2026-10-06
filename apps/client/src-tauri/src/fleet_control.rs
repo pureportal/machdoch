@@ -1,6 +1,6 @@
 use std::{
-    collections::{HashMap, VecDeque},
-    sync::{Arc, Mutex},
+    collections::{HashMap, HashSet, VecDeque},
+    sync::{Arc, Condvar, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -8,20 +8,37 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::Manager;
 
+pub(crate) mod client_requests;
 mod command_kinds;
 #[cfg(test)]
 mod command_tests;
+mod command_validation;
 mod commands;
+mod composer;
+mod context_attachments;
+mod context_packs;
+pub(crate) mod device_settings;
+mod device_settings_transfer;
 mod dispatch;
 mod fleet_gateway;
+pub(crate) mod instructions;
 pub(crate) mod ralph;
 mod sanitize;
+pub(crate) mod scheduler;
+mod session_data;
 mod shell;
 mod snapshot;
 mod state;
+#[cfg(test)]
+mod state_completion_tests;
 mod state_progress;
 mod state_store;
 mod telemetry;
+mod workspace;
+mod workspace_configuration;
+mod workspace_runs;
+pub(crate) mod workspace_terminal;
+pub(crate) mod workspace_tools;
 
 use commands::FleetCommandRecord;
 pub use commands::FleetControlCommandEvent;
@@ -53,7 +70,7 @@ const MAX_FLEET_MEDIA_RUNS: usize = 80;
 const MAX_FLEET_MEDIA_PREVIEW_CHARS: usize = 120_000;
 const MAX_FLEET_TEXT_CHARS: usize = 12_000;
 const MAX_FLEET_SHORT_TEXT_CHARS: usize = 240;
-const FLEET_CONTROL_STATE_SCHEMA_VERSION: u32 = 1;
+const FLEET_CONTROL_STATE_SCHEMA_VERSION: u32 = 2;
 const FLEET_CONTROL_STATE_FILE_NAME: &str = "fleet-control.json";
 
 #[derive(Clone)]
@@ -63,6 +80,7 @@ pub struct FleetControlState {
 
 struct FleetControlShared {
     inner: Mutex<FleetControlInner>,
+    command_completed: Condvar,
 }
 
 #[derive(Default)]
@@ -75,6 +93,7 @@ struct FleetControlInner {
     pending_commands: VecDeque<FleetControlCommandEvent>,
     completed_commands: VecDeque<CompletedFleetCommandReceipt>,
     shell: Option<FleetShellSnapshot>,
+    known_session_ids: HashSet<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,6 +122,8 @@ struct CompletedFleetCommandReceipt {
     command_id: String,
     payload_hash: String,
     completed_at: u64,
+    #[serde(deserialize_with = "Option::deserialize")]
+    error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -157,16 +178,22 @@ pub async fn get_pending_fleet_control_commands(
 pub async fn acknowledge_fleet_control_command(
     state: tauri::State<'_, FleetControlState>,
     command_id: String,
+    error: Option<String>,
 ) -> Result<bool, String> {
-    state.acknowledge_command(&command_id)
+    state.acknowledge_command(&command_id, error)
 }
 
 #[tauri::command]
 pub async fn update_fleet_control_shell_snapshot(
+    window: tauri::WebviewWindow,
     state: tauri::State<'_, FleetControlState>,
     snapshot: FleetShellSnapshot,
+    session_ids: Vec<String>,
 ) -> Result<(), String> {
-    state.update_shell_snapshot(snapshot)
+    if window.label() != "main" {
+        return Err("The main window must publish the session list.".to_string());
+    }
+    state.update_shell_snapshot(snapshot, session_ids)
 }
 
 pub fn initialize(app_handle: &tauri::AppHandle) -> Result<(), String> {

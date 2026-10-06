@@ -21,7 +21,6 @@ export default async function InstanceProductPage({
     <InstanceProduct
       instanceId={instance.instanceId}
       instanceName={instance.displayName}
-      settingsEnabled={getRuntime().settingsCipher !== null}
       {...(typeof session === "string" &&
       session.length > 0 &&
       session.length <= 240

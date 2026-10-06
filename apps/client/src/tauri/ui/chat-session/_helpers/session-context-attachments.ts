@@ -1,27 +1,13 @@
 import { getImageInputMediaTypeForPath } from "../../../../core/model-capabilities.js";
-import {
-  isMediaAssetContextAttachment,
-  isPathContextAttachment,
-  type ChatSessionContextAttachment,
-  type ChatSessionContextAttachmentKind,
-  type ChatSessionRecord,
-} from "../../chat-session.model";
+import { type ChatSessionRecord } from "../../chat-session.model";
+import { isLinkContextAttachment, isMediaAssetContextAttachment, isPathContextAttachment, type ChatSessionContextAttachment, type ChatSessionContextAttachmentKind } from "@machdoch/client-ui/composer/model";
 import type { MediaAssetReference } from "@machdoch/media-studio/core/media/contracts.js";
 import type { DroppedPathEntry } from "../../runtime";
 import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
 
 export type FileDropTarget = "active-session" | "quick-task";
 
-export type AttachmentSelectionKind = "files" | "folders" | "images";
-
 export type DialogSelection = string | string[] | null;
-
-const LINK_ATTACHMENT_PROTOCOLS = new Set([
-  "http:",
-  "https:",
-  "mailto:",
-  "ftp:",
-]);
 
 export const appendTranscriptToDraft = (
   draft: string,
@@ -97,32 +83,6 @@ const formatContextAttachmentKind = (
   }
 };
 
-export const isLinkContextAttachment = (
-  attachment: ChatSessionContextAttachment,
-): boolean => {
-  if (!isPathContextAttachment(attachment) || attachment.kind !== "other") {
-    return false;
-  }
-
-  try {
-    return LINK_ATTACHMENT_PROTOCOLS.has(new URL(attachment.path).protocol);
-  } catch {
-    return false;
-  }
-};
-
-const getLinkAttachmentName = (value: string): string => {
-  try {
-    const url = new URL(value);
-    const path = url.pathname === "/" ? "" : url.pathname;
-    const label = `${url.hostname}${path}`.trim();
-
-    return label || url.protocol.replace(/:$/u, "") || value;
-  } catch {
-    return value.split(/\s+/u).filter(Boolean).at(0) ?? value;
-  }
-};
-
 export const createContextAttachment = (
   entry: DroppedPathEntry,
 ): ChatSessionContextAttachment => {
@@ -135,24 +95,6 @@ export const createContextAttachment = (
     kind: normalizeDroppedPathKind(entry),
     name: entry.name,
     ...(parent ? { parent } : {}),
-  };
-};
-
-export const createContextAttachmentFromReference = (
-  value: string,
-): ChatSessionContextAttachment | null => {
-  const normalizedValue = value.trim();
-
-  if (!normalizedValue) {
-    return null;
-  }
-
-  return {
-    id: crypto.randomUUID(),
-    source: "path",
-    path: normalizedValue,
-    kind: "other",
-    name: getLinkAttachmentName(normalizedValue),
   };
 };
 

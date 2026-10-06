@@ -330,13 +330,15 @@ describe("RALPH durable execution recovery", () => {
     expect((await store.readLease())?.lease.releasedAt).toBeUndefined();
   });
 
-  it("stops before an unpersisted side effect on permanent storage failure", async () => {
+  it("preserves its run through disk exhaustion and resumes without duplicating side effects", async () => {
     const { workspace, flow, logger, config } = await createRun();
     const writeJson = atomicWrites.writeJsonAtomically;
+    let diskFull = true;
     vi.spyOn(atomicWrites, "writeJsonAtomically").mockImplementation(
       async (path, value, options) => {
         const record = value as RalphRunRecord;
         if (
+          diskFull &&
           path === logger.paths!.recordPath &&
           record.status === "running" &&
           record.summary.includes("Persisted operation intent")
@@ -357,6 +359,34 @@ describe("RALPH durable execution recovery", () => {
     await expect(
       readFile(join(workspace, "effects.txt")),
     ).rejects.toMatchObject({ code: "ENOENT" });
+
+    diskFull = false;
+    const retained = await readRalphRunRecord(workspace, logger.runId);
+    expect(retained.record.id).toBe(logger.runId);
+    expect(retained.record.checkpoint).toBeDefined();
+    const resumeLogger = await createRalphRunLogger(workspace, flow, {
+      runId: logger.runId,
+      paths: logger.paths!,
+      append: true,
+    });
+    const resumed = await runRalphFlow(flow, config, customizations, {
+      logger: resumeLogger,
+      checkpoint: retained.record.checkpoint!,
+      maxTransitions: 10,
+    });
+
+    expect(resumed.status, resumed.summary).toBe("completed");
+    expect(resumed.runId).toBe(logger.runId);
+    expect(resumed.durability?.status).toBe("healthy");
+    expect(await readFile(join(workspace, "effects.txt"), "utf8")).toBe(
+      "once\n",
+    );
+    expect(await readFile(join(workspace, "next.txt"), "utf8")).toBe("next");
+    expect(
+      resumed.blockResults.filter(
+        (block) => block.blockId === "append" && block.status === "completed",
+      ),
+    ).toHaveLength(1);
   });
 
   it("repairs a degraded resume boundary before continuing its routed operation", async () => {

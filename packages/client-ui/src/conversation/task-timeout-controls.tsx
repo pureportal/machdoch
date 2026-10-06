@@ -1,0 +1,136 @@
+import { Clock3, RotateCcw } from "lucide-react";
+import { useId, useState, type JSX } from "react";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
+
+export const TaskTimeoutControls = ({
+  idleTimeoutMs,
+  bounds,
+  onReset,
+}: {
+  idleTimeoutMs: number;
+  bounds: { min: number; max: number };
+  onReset: (idleTimeoutMinutes?: number) => Promise<unknown>;
+}): JSX.Element => {
+  const inputId = useId();
+  const [open, setOpen] = useState(false);
+  const [minutes, setMinutes] = useState(String(idleTimeoutMs / 60_000));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const duration = Number(minutes);
+  const valid =
+    Number.isInteger(duration) &&
+    duration >= bounds.min &&
+    duration <= bounds.max;
+  const errorMessage =
+    error ??
+    (valid
+      ? null
+      : `Enter a whole number from ${bounds.min} to ${bounds.max}.`);
+
+  const resetTimeout = async (idleTimeoutMinutes?: number): Promise<void> => {
+    setSaving(true);
+    setError(null);
+    try {
+      await onReset(idleTimeoutMinutes);
+      setOpen(false);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (nextOpen) {
+          setMinutes(String(idleTimeoutMs / 60_000));
+          setError(null);
+        }
+        setOpen(nextOpen);
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-label="Adjust chat timeout"
+          className="h-7 gap-1.5 px-2 text-[11px] hover:bg-(--app-hover) focus-visible:ring-sky-500/35"
+        >
+          <Clock3 className="h-3.5 w-3.5" />
+          Timeout
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" aria-label="Chat timeout" className="w-72">
+        <form
+          className="grid gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (valid && !saving) void resetTimeout(duration);
+          }}
+        >
+          <div className="grid gap-2">
+            <label htmlFor={inputId} className="text-sm font-medium">
+              Inactivity (minutes)
+            </label>
+            <Input
+              id={inputId}
+              type="number"
+              min={bounds.min}
+              max={bounds.max}
+              step="1"
+              required
+              aria-invalid={!valid || undefined}
+              aria-describedby={errorMessage ? `${inputId}-error` : undefined}
+              value={minutes}
+              disabled={saving}
+              onChange={(event) => {
+                setMinutes(event.target.value);
+                setError(null);
+              }}
+              className="border-(--app-border-strong) bg-(--app-bg) text-(--app-text) focus-visible:border-sky-500 focus-visible:ring-sky-500/35 aria-invalid:border-rose-400"
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="submit"
+              size="sm"
+              disabled={saving || !valid}
+              className="bg-sky-500 text-white hover:bg-sky-600 focus-visible:ring-sky-500/35"
+            >
+              Apply and reset
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={saving}
+              onClick={() => void resetTimeout()}
+              className="border-(--app-border-strong) bg-(--app-surface) text-(--app-text) hover:bg-(--app-hover) focus-visible:ring-sky-500/35"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+              Reset timer
+            </Button>
+          </div>
+          {errorMessage ? (
+            <p
+              id={`${inputId}-error`}
+              role="alert"
+              className="text-sm text-rose-400"
+            >
+              {errorMessage}
+            </p>
+          ) : null}
+        </form>
+      </PopoverContent>
+    </Popover>
+  );
+};

@@ -17,33 +17,7 @@ pub(crate) async fn invoke(
             let workspace = args["request"]["workspaceRoot"]
                 .as_str()
                 .ok_or_else(|| json!("Select a workspace."))?;
-            let response = super::fleet_gateway::product_snapshot(&app);
-            let machdoch_fleet_protocol::HostResponse::ProductSnapshot { snapshot } = response
-            else {
-                return Err(json!("Device state is unavailable."));
-            };
-            let shell = &snapshot["shell"];
-            let known = shell["sessions"].as_array().is_some_and(|sessions| {
-                sessions
-                    .iter()
-                    .any(|session| session["workspace"].as_str() == Some(workspace))
-            }) || shell["ralph"]["workspaceRoot"].as_str() == Some(workspace)
-                || shell["workspaces"].as_array().is_some_and(|entries| {
-                    entries
-                        .iter()
-                        .any(|entry| entry["root"].as_str() == Some(workspace))
-                })
-                || shell["projectLibrary"]["projects"]
-                    .as_array()
-                    .is_some_and(|projects| {
-                        projects.iter().any(|project| {
-                            project["status"].as_str() == Some("ready")
-                                && project["workspace"].as_str() == Some(workspace)
-                        })
-                    });
-            if !known {
-                return Err(json!("Choose a workspace listed on this device."));
-            }
+            super::workspace::require_known_workspace(&app, workspace)?;
             let window = app
                 .get_webview_window("main")
                 .ok_or_else(|| json!("Open the desktop client before editing RALPH flows."))?;

@@ -16,6 +16,27 @@ export default defineConfig({
     emptyOutDir: true,
     target: "es2022",
     chunkSizeWarningLimit: 1500,
-    rolldownOptions: { input: { media: path.resolve(directory, "src/tauri/fleet-media/index.html"), ralph: path.resolve(directory, "src/tauri/fleet-media/ralph.html") } },
+    rolldownOptions: {
+      input: {
+        media: path.resolve(directory, "src/tauri/fleet-media/index.html"),
+        settings: path.resolve(
+          directory,
+          "src/tauri/fleet-media/settings.html",
+        ),
+        ralph: path.resolve(directory, "src/tauri/fleet-media/ralph.html"),
+        scheduler: path.resolve(
+          directory,
+          "src/tauri/fleet-media/scheduler.html",
+        ),
+        instructions: path.resolve(
+          directory,
+          "src/tauri/fleet-media/instructions.html",
+        ),
+        workspaces: path.resolve(
+          directory,
+          "src/tauri/fleet-media/workspaces.html",
+        ),
+      },
+    },
   },
 });

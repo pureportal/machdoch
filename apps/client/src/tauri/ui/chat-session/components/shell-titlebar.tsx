@@ -8,10 +8,8 @@ import {
 } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { IS_DEVELOPMENT_BUILD } from "../../build-info";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
-import {
-  getProviderLabel,
-  SUPPORTED_PROVIDER_ORDER,
-} from "../../model-catalog";
+import { SUPPORTED_PROVIDER_ORDER } from "../../model-catalog";
+import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import type { RuntimeProviderAvailability } from "../../runtime";
 
 export interface ShellTitlebarProps {

@@ -1,3 +1,5 @@
+import type { TaskExecutionFileChanges } from '@machdoch/fleet-protocol/task-file-changes';
+export type { TaskExecutionChangedLineRange, TaskExecutionFileChange, TaskExecutionFileChangeCompleteness, TaskExecutionFileChangeIssue, TaskExecutionFileChangeOperation, TaskExecutionFileEntryType, TaskExecutionFileLineAnalysis, TaskExecutionFileChanges, TaskExecutionFileChangeStage } from '@machdoch/fleet-protocol/task-file-changes';
 import type {
   ModelProvider,
   ReasoningMode,
@@ -647,99 +649,6 @@ export interface TaskExecutionNarrative {
   relatedFiles: TaskExecutionFileReference[];
   verification: string[];
   followUps: string[];
-}
-
-export type TaskExecutionFileChangeOperation =
-  | "added"
-  | "modified"
-  | "deleted"
-  | "renamed"
-  | "type-changed";
-
-export type TaskExecutionFileEntryType =
-  | "text"
-  | "binary"
-  | "gitlink"
-  | "symlink"
-  | "mode";
-
-export type TaskExecutionFileLineAnalysis =
-  | {
-      state: "complete";
-      additions: number;
-      deletions: number;
-    }
-  | {
-      state: "not-applicable";
-      reason: "binary" | "gitlink" | "symlink" | "mode-only";
-    }
-  | {
-      state: "failed";
-      code: "git-failed";
-      message: string;
-    };
-
-export type TaskExecutionFileChangeStage =
-  | { state: "complete" }
-  | { state: "failed"; code: string; message: string };
-
-export interface TaskExecutionFileChangeCompleteness {
-  discovery: TaskExecutionFileChangeStage;
-  startSnapshots: TaskExecutionFileChangeStage;
-  finishSnapshots: TaskExecutionFileChangeStage;
-  renameAnalysis: TaskExecutionFileChangeStage;
-  lineAnalysis: TaskExecutionFileChangeStage;
-  persistence: TaskExecutionFileChangeStage;
-}
-
-export interface TaskExecutionFileChangeIssue {
-  stage: keyof TaskExecutionFileChangeCompleteness;
-  code: string;
-  message: string;
-  repositoryPath?: string;
-}
-
-export interface TaskExecutionChangedLineRange {
-  oldStart: number;
-  oldLines: number;
-  newStart: number;
-  newLines: number;
-}
-
-export interface TaskExecutionFileChange {
-  path: string;
-  oldPath?: string;
-  operation: TaskExecutionFileChangeOperation;
-  entryType: TaskExecutionFileEntryType;
-  repositoryPath?: string;
-  oldMode: string;
-  newMode: string;
-  oldObjectId?: string;
-  newObjectId?: string;
-  oldCommit?: string;
-  newCommit?: string;
-  lineAnalysis: TaskExecutionFileLineAnalysis;
-  ranges?: TaskExecutionChangedLineRange[];
-  hunkCount?: number;
-  storedId?: number;
-}
-
-export interface TaskExecutionFileChanges {
-  files: TaskExecutionFileChange[];
-  changeSetId?: string;
-  totalFiles: number;
-  additions: number;
-  deletions: number;
-  binaryFiles: number;
-  gitlinkFiles: number;
-  symlinkFiles: number;
-  modeOnlyFiles: number;
-  failedFiles: number;
-  status: "complete" | "partial" | "failed";
-  completeness: TaskExecutionFileChangeCompleteness;
-  attribution: "workspace-observed";
-  repositoryCount: number;
-  issues: TaskExecutionFileChangeIssue[];
 }
 
 export interface TaskExecutionOptions {

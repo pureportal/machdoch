@@ -601,6 +601,28 @@ describe("cli args public parser", () => {
     ).toThrow("either a positional profile name or --name");
   });
 
+  it("parses the combined instruction registry query", () => {
+    const options = { currentWorkingDirectory: "C:/workspace" };
+    expect(
+      parseCliArgs(
+        ["instructions", "registry", "list", "--include-content", "--json"],
+        options,
+      ),
+    ).toMatchObject({
+      json: true,
+      instructions: { action: "registry-list", includeContent: true },
+    });
+    expect(() =>
+      parseCliArgs(["instructions", "registry", "list", "ignored"], options),
+    ).toThrow(/does not accept positional arguments/);
+    expect(() =>
+      parseCliArgs(
+        ["instructions", "registry", "list", "--expected-revision", "1"],
+        options,
+      ),
+    ).toThrow(/expected-revision/);
+  });
+
   it("parses explicit instruction-library recovery actions", () => {
     expect(
       parseCliArgs(["instructions", "recovery"], {

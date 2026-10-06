@@ -33,6 +33,8 @@
     "node": ">=22.13"
   },
   "dependencies": {
+    "@machdoch/client-ui": "workspace:*",
+    "@machdoch/media-studio": "workspace:*",
     "@machdoch/fleet-protocol": "workspace:*",
     "@machdoch/product-ui": "workspace:*",
     "@oxc-node/cli": "^0.1.0",

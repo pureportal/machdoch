@@ -1,3 +1,4 @@
+import { selectProductView } from "./verify-product-ui.mjs";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -60,6 +61,7 @@ export async function verifyRalphEditor({
   fixtureRoot,
   device,
 }) {
+  await page.bringToFront();
   const browserErrors = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   page.on("console", (message) => {
@@ -328,7 +330,7 @@ export async function verifyRalphEditor({
     waitUntil: "domcontentloaded",
   });
   try {
-    await page.getByRole("button", { name: "RALPH", exact: true }).click();
+    await selectProductView(page, "RALPH");
   } catch (cause) {
     process.stderr.write(
       `RALPH browser errors: ${JSON.stringify(browserErrors)}\n`,
@@ -428,7 +430,7 @@ export async function verifyRalphEditor({
   await small.goto(`${origin}/instances/${instanceId}`, {
     waitUntil: "domcontentloaded",
   });
-  await small.getByRole("button", { name: "RALPH", exact: true }).click();
+  await selectProductView(small, "RALPH");
   const mobile = small.frameLocator('iframe[title="RALPH"]');
   await mobile
     .getByRole("button", { name: /Open Fleet desktop edit in/ })
@@ -446,9 +448,9 @@ export async function verifyRalphEditor({
   await mobile
     .getByRole("button", { name: "Hide block settings", exact: true })
     .click();
-  await small.getByRole("button", { name: "Chat", exact: true }).click();
+  await selectProductView(small, "Chat");
   await delay(6_000);
-  await small.getByRole("button", { name: "RALPH", exact: true }).click();
+  await selectProductView(small, "RALPH");
   await mobile
     .getByRole("button", { name: "Show block settings", exact: true })
     .click();

@@ -4,7 +4,12 @@ import {
   productSnapshotVersion,
   type ProductSnapshot,
 } from "@machdoch/fleet-protocol";
-import { RemoteProductApp, type ProductRuntime } from "@machdoch/product-ui";
+import {
+  RemoteProductApp,
+  type ProductRuntime,
+  type RemoteComposerProps,
+} from "@machdoch/product-ui";
+import { RemoteComposer } from "@machdoch/client-ui/composer/remote-composer";
 import {
   cleanup,
   fireEvent,
@@ -145,6 +150,17 @@ describe("Fleet session memory", () => {
       createElement(RemoteProductApp, {
         instanceName: "Desktop",
         runtime,
+        Conversation: () => null,
+        Composer: (props: RemoteComposerProps) =>
+          createElement(RemoteComposer, {
+            renderContextPackPicker: () => null,
+            ...props,
+            attachments: {
+              select: vi.fn().mockResolvedValue(undefined),
+              upload: vi.fn().mockResolvedValue(undefined),
+              open: vi.fn(),
+            },
+          }),
       }),
     );
 

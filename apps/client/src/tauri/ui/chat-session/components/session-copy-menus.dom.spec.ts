@@ -9,16 +9,14 @@ import {
 } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createSession,
-  type ChatSessionContextAttachment,
-} from "../../chat-session.model";
+import { createSession } from "../../chat-session.model";
+import { type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { SessionsSidebar, type SessionsSidebarProps } from "./sessions-sidebar";
 import {
   ContextAttachmentsList,
   MessageAttachmentsList,
-} from "./context-attachments";
+} from "@machdoch/client-ui/composer/context-attachments";
 
 const writeText = vi.fn();
 const activate = vi.fn();

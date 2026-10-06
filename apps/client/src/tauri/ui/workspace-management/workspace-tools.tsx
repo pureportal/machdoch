@@ -134,7 +134,7 @@ export const WorkspaceTools = ({
           shortcuts: [
             {
               chord: getDefaultCommandShortcut("workspaces.terminal.toggle"),
-              runtimes: ["tauri"],
+              runtimes: ["tauri", "browser"],
               allowIn: [
                 "document",
                 "text-entry",

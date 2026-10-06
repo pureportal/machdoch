@@ -1,0 +1,29 @@
+{
+  "pretrainedWeightsUsed": false,
+  "device": "AMD Radeon RX 9070 (cuda:1)",
+  "convolutionBackend": "aten-native-hip",
+  "checks": [
+    {
+      "sourceFrames": 1,
+      "latentFrames": 1,
+      "finite": true,
+      "selectedFramesMatchFull": true,
+      "latentPreserved": true
+    },
+    {
+      "sourceFrames": 5,
+      "latentFrames": 2,
+      "finite": true,
+      "selectedFramesMatchFull": true,
+      "latentPreserved": true
+    },
+    {
+      "sourceFrames": 22,
+      "latentFrames": 7,
+      "finite": true,
+      "selectedFramesMatchFull": true,
+      "latentPreserved": true
+    }
+  ],
+  "passed": true
+}

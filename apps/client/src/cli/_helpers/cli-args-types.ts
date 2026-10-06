@@ -140,12 +140,14 @@ export interface FleetCliOptions {
 }
 
 export type InstructionCliGroup =
+  | "registry"
   | "profiles"
   | "assignments"
   | "workspaces"
   | "transfer"
   | "recovery";
 export type InstructionCliAction =
+  | "registry-list"
   | "validate"
   | "resolve"
   | "profile-list"

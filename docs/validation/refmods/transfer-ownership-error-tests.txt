@@ -1,0 +1,22 @@
+
+running 17 tests
+test media_error::refmods::tests::damaged_refmod_vaes_preserve_recovery_without_exposing_worker_paths ... ok
+test media_error::refmods::tests::missing_refmod_modality_does_not_report_an_internal_error ... ok
+test media_error::refmods::tests::refmod_recovery_keeps_cancellation_and_other_operations_distinct ... ok
+test media_error::refmods::tests::refmod_vae_memory_preflight_offers_capacity_recovery ... ok
+test media_error::refmods::tests::missing_refmod_vaes_offer_installation_before_retry ... ok
+test media_error::refmods::tests::unreadable_refmod_files_require_another_input_without_exposing_diagnostics ... ok
+test media_error::tests::civitai_download_errors_keep_the_recovery_instruction ... ok
+test media_error::refmods::tests::refmod_file_errors_do_not_replace_model_recovery_or_other_operations ... ok
+test media_error::tests::gpu_memory_errors_offer_recovery_without_matching_unrelated_words ... ok
+test media_error::tests::missing_refmod_runtime_requires_installation_before_retry ... ok
+test media_error::tests::serializes_the_versioned_ipc_error_contract ... ok
+test media_error::tests::startup_safety_notices_do_not_hide_generation_device_errors ... ok
+test media_error::tests::classifies_paid_retry_as_reconcile_first ... ok
+test media_error::tests::classifies_stale_flow_heads_as_reconcile_first ... ok
+test media_error::tests::retains_explicit_run_partial_output_context ... ok
+test media_error::tests::quality_gate_rejection_preserves_measurements_and_requires_review ... ok
+test media_error::tests::strips_signed_url_queries_and_bounds_diagnostics ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

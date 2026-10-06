@@ -1,4 +1,4 @@
-import { isTauri } from "@tauri-apps/api/core";
+import { canUseDeviceSettings } from "../../device-settings-platform";
 import {
   useCallback,
   useEffect,
@@ -7,7 +7,9 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { getProviderLabel, type RuntimeProvider } from "../../model-catalog";
+import { type RuntimeProvider } from "../../model-catalog";
+import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
+import { speechProviderLabel } from "../../../../shared/local-speech";
 import {
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
   DEFAULT_USER_DESKTOP_SETTINGS,
@@ -611,7 +613,7 @@ export const useChatSessionRuntime = (
           keepCurrentSnapshotForRequest();
         }
 
-        if (!snapshot && isTauri()) {
+        if (!snapshot && canUseDeviceSettings()) {
           setRuntimeError(
             "Runtime metadata is unavailable for this workspace right now.",
           );
@@ -1514,7 +1516,7 @@ export const useChatSessionRuntime = (
       const editRevision = providerSetupEditRevisionRef.current;
       const requestId = providerSetupSaveRequestIdRef.current + 1;
 
-      if (!normalizedKey || !isTauri()) {
+      if (!normalizedKey || !canUseDeviceSettings()) {
         return false;
       }
 
@@ -1654,12 +1656,7 @@ export const useChatSessionRuntime = (
 
       try {
         const settings = await saveUserSpeechToTextActiveProvider(provider);
-        const providerLabel =
-          provider === "none"
-            ? "Speak to text"
-            : provider === "whisper"
-              ? "Whisper"
-              : getProviderLabel(provider);
+        const providerLabel = speechProviderLabel(provider);
 
         if (speechMutationRevisionRef.current !== mutationRevision) {
           return;
@@ -1697,7 +1694,7 @@ export const useChatSessionRuntime = (
       const mutationRevision = speechMutationRevisionRef.current + 1;
       speechMutationRevisionRef.current = mutationRevision;
 
-      if (!isTauri()) {
+      if (!canUseDeviceSettings()) {
         applyLoadedUserSpeechToTextSettings({
           ...userSpeechToTextSettings,
           inputDeviceId: normalizedInputDeviceId,
@@ -1879,7 +1876,7 @@ export const useChatSessionRuntime = (
       const editRevision = webSearchSetupEditRevisionRef.current;
       const requestId = webSearchSetupSaveRequestIdRef.current + 1;
 
-      if (!normalizedKey || !isTauri()) {
+      if (!normalizedKey || !canUseDeviceSettings()) {
         return false;
       }
 
@@ -1948,7 +1945,7 @@ export const useChatSessionRuntime = (
 
   const handleDesktopSettingsSave = useCallback(
     async (settings: UserDesktopSettings): Promise<void> => {
-      if (!isTauri()) {
+      if (!canUseDeviceSettings()) {
         applyLoadedUserDesktopSettings(settings);
         setDesktopSetupMessage({
           tone: "success",
@@ -2536,7 +2533,7 @@ export const useChatSessionRuntime = (
 
   const handleGlobalMemoryEnabledSave = useCallback(
     async (enabled: boolean): Promise<void> => {
-      if (!isTauri()) {
+      if (!canUseDeviceSettings()) {
         applyLoadedUserMemorySettings({
           ...userMemorySettings,
           globalEnabled: enabled,
@@ -2574,7 +2571,7 @@ export const useChatSessionRuntime = (
 
   const handleWorkspaceMemoryDefaultEnabledSave = useCallback(
     async (enabled: boolean): Promise<void> => {
-      if (!isTauri()) {
+      if (!canUseDeviceSettings()) {
         applyLoadedUserMemorySettings({
           ...userMemorySettings,
           workspaceDefaultEnabled: enabled,
@@ -2625,7 +2622,7 @@ export const useChatSessionRuntime = (
       setMemorySetupMessage(null);
 
       try {
-        if (isTauri()) {
+        if (canUseDeviceSettings()) {
           applyLoadedUserMemorySettings(await forgetUserGlobalMemoryEntry(id));
         } else {
           applyLoadedUserMemorySettings({

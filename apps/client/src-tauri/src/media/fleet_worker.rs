@@ -31,7 +31,11 @@ pub(crate) fn run() -> Result<(), String> {
                 _ => break,
             }
             let response = match serde_json::from_str::<Value>(&line) {
-                Ok(request) => crate::fleet_operations::handle(&app_handle, request, false),
+                Ok(request) => crate::fleet_operations::handle(
+                    &app_handle,
+                    request,
+                    crate::fleet_operations::OperationDomain::Media,
+                ),
                 Err(error) => json!({ "state": "failed", "error": error.to_string() }),
             };
             if writeln!(output, "{response}")

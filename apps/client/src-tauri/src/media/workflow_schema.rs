@@ -7,7 +7,13 @@ use serde_json::Value;
 pub(crate) fn validate_node(node: &MediaFlowNode) -> MediaResult<()> {
     let keys: &[&str] = match node.r#type.as_str() {
         "operation.video-sequence" | "operation.video-audio" => &["audioStartSeconds"],
-        "operation.lip-sync" => &["modelPath", "audioStartSeconds", "cropShift", "batchSize", "seed"],
+        "operation.lip-sync" => &[
+            "modelPath",
+            "audioStartSeconds",
+            "cropShift",
+            "batchSize",
+            "seed",
+        ],
         "operation.image-mask" => &["channel", "invert"],
         "operation.mask-composite" => &["operation"],
         "operation.canny" => &["lowThreshold", "highThreshold"],

@@ -1,0 +1,8 @@
+{
+  "date": "2026-10-06T20:17:31.8577658+00:00",
+  "ownershipUIReport": "transfer-ownership-ui.json",
+  "executableSha256": "26e4feb8884ab48d9c2d0f88e1f617f427f3f80bfbef30e2a9211be9aea82a11",
+  "validationImprovementPending": true,
+  "nativeUIReport": "transfer-ownership-native-ui.json",
+  "buildLog": "transfer-ownership-ui-native-build.jsonl"
+}

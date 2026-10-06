@@ -1,0 +1,22 @@
+warning: type alias `MediaResult` is never used
+ --> C:\Development\machdoch\.tmp\refmod-error-tests.rs:1:6
+  |
+1 | type MediaResult<T> = Result<T, String>;
+  |      ^^^^^^^^^^^
+  |
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: type alias `MediaCommandResult` is never used
+ --> C:\Development\machdoch\.tmp\..\apps\client\src-tauri\src\media\error.rs:5:17
+  |
+5 | pub(crate) type MediaCommandResult<T> = Result<T, Box<MediaError>>;
+  |                 ^^^^^^^^^^^^^^^^^^
+
+warning: function `command_result` is never used
+   --> C:\Development\machdoch\.tmp\..\apps\client\src-tauri\src\media\error.rs:188:15
+    |
+188 | pub(crate) fn command_result<T>(
+    |               ^^^^^^^^^^^^^^
+
+warning: 3 warnings emitted
+

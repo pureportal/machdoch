@@ -8,6 +8,7 @@ mod config;
 mod gateway;
 mod http;
 mod managed_prompts;
+pub(crate) mod preview;
 mod settings;
 
 pub use machdoch_fleet_protocol::FleetManagedSettingsDelivery;

@@ -3,7 +3,10 @@ use std::{
     fs,
     path::{Component, Path, PathBuf},
     process::{Command, Output},
-    sync::{Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, OnceLock,
+    },
     time::{Duration, SystemTime},
 };
 
@@ -39,8 +42,8 @@ const WORKER_SCHEMA_VERSION: u32 = 5;
 // or Windows is reclaiming memory after generation.
 // Treat that startup delay as expected instead of falling through to an
 // unrelated global Python installation.
-const PROBE_TIMEOUT: Duration = Duration::from_secs(3 * 60);
-const GENERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+const PROBE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+pub(super) const GENERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const VIDEO_GENERATION_TIMEOUT: Duration = Duration::from_secs(4 * 60 * 60);
 const MAX_IMAGE_BYTES: usize = 64 * 1_024 * 1_024;
 const MAX_VIDEO_BYTES: usize = 512 * 1_024 * 1_024;
@@ -217,6 +220,8 @@ struct WorkerReferenceImage<'a> {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkerVideoGenerationRequest<'a> {
+    ref_mods: &'a [super::refmods::RefModSelection],
+    ref_mod_max_tokens: u32,
     addons: Vec<WorkerAddon<'a>>,
     width: Option<u32>,
     height: Option<u32>,
@@ -619,6 +624,19 @@ fn run_worker(
     let _runtime_guard = super::runtime_setup::RUNTIME_USE
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let worker = worker_command(python, script);
+    super::model_memory::run(
+        worker,
+        command,
+        stdin,
+        timeout,
+        cancellation.map(|(paths, run)| {
+            super::model_memory::WorkerCancellation::Generation(paths.clone(), run.to_string())
+        }),
+    )
+}
+
+pub(super) fn worker_command(python: &Path, script: &Path) -> Command {
     let mut worker = Command::new(python);
     worker
         .arg("-I")
@@ -645,7 +663,7 @@ fn run_worker(
             .env("HIP_VISIBLE_DEVICES", index)
             .env("MACHDOCH_MEDIA_CUDA_DEVICE", "0");
     }
-    super::model_memory::run(worker, command, stdin, timeout, cancellation)
+    worker
 }
 
 fn probe_with_python(
@@ -667,12 +685,7 @@ pub(crate) fn probe_python(python: &Path, script: &Path) -> LocalDiffusersRuntim
 }
 
 pub(crate) fn verify_python_runtime(python: &Path, script: &Path) -> LocalDiffusersRuntimeStatus {
-    probe_python_command(
-        python,
-        script,
-        "verify-runtime",
-        Duration::from_secs(10 * 60),
-    )
+    probe_python_command(python, script, "verify-runtime", PROBE_TIMEOUT)
 }
 
 fn probe_python_command(
@@ -2141,6 +2154,26 @@ pub(crate) fn generate(
         || request.pose_image_asset_id.is_some()
         || request.control_net.is_some();
     let open_profile = super::open_models::by_architecture(&model.architecture);
+    if let Some(profile) = open_profile.filter(|profile| profile.distillation.is_some()) {
+        request
+            .sampling
+            .validate_architecture(&model.architecture)?;
+        if !profile.negative_prompt && !request.negative_prompt.trim().is_empty() {
+            return Err(format!(
+                "{} does not use negative prompts",
+                profile.display_name
+            ));
+        }
+        if has_conditioning || request.edit_mask.is_some() || mask_asset_id.is_some() {
+            return Err(format!(
+                "{} generates images from a prompt",
+                profile.display_name
+            ));
+        }
+        if request.model_addons.iter().any(|addon| addon.enabled()) {
+            return Err(format!("{} does not accept add-ons", profile.display_name));
+        }
+    }
     let supported_roles: &[&str] = match model.architecture.as_str() {
         _ if open_profile.is_some_and(|profile| {
             profile
@@ -3017,6 +3050,63 @@ fn resolve_minimax_h3_model(workspace_root: &str) -> MediaResult<(PathBuf, Strin
     Ok((model_root, format!("{:x}", hasher.finalize())))
 }
 
+pub(crate) fn refmod_operation(
+    app: &AppHandle,
+    request: &serde_json::Value,
+    interruption: Option<Arc<AtomicBool>>,
+) -> MediaResult<serde_json::Value> {
+    let script = worker_script(app)?;
+    let python = if matches!(
+        request.get("operation").and_then(serde_json::Value::as_str),
+        Some("create" | "preview")
+    ) {
+        ready_runtime(app, &script)?.1
+    } else {
+        let root = super::runtime_setup::root(app)?;
+        let python = super::runtime_setup::python_path(&root);
+        if !python.is_file() {
+            return Err("Install the Media Studio Python runtime".to_string());
+        }
+        python
+    };
+    if interruption
+        .as_ref()
+        .is_some_and(|flag| flag.load(Ordering::Acquire))
+    {
+        return Err("RefMod operation was canceled".into());
+    }
+    let input = serde_json::to_vec(request).map_err(|error| error.to_string())?;
+    let _runtime_guard = super::runtime_setup::RUNTIME_USE
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let output = super::model_memory::run(
+        worker_command(&python, &script),
+        "refmod",
+        Some(&input),
+        GENERATION_TIMEOUT,
+        interruption.map(super::model_memory::WorkerCancellation::Operation),
+    )?;
+    let response: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("Invalid RefMod worker response: {error}"))?;
+    if let Some(error) = response.get("error").and_then(serde_json::Value::as_str) {
+        return Err(error.to_string());
+    }
+    if !output.status.success() {
+        return Err("RefMod worker failed; check the runtime and source files".to_string());
+    }
+    if response
+        .get("schemaVersion")
+        .and_then(serde_json::Value::as_u64)
+        != Some(u64::from(WORKER_SCHEMA_VERSION))
+    {
+        return Err("RefMod worker returned an unsupported schema".to_string());
+    }
+    response
+        .get("result")
+        .cloned()
+        .ok_or_else(|| "RefMod worker returned no result".to_string())
+}
+
 fn resolve_hunyuan_video_15_model(workspace_root: &str) -> MediaResult<(PathBuf, String)> {
     let workspace = crate::runtime_snapshot::resolve_workspace_root_path(workspace_root)?;
     let models_root = fs::canonicalize(workspace.join("models"))
@@ -3699,6 +3789,17 @@ pub(crate) fn generate_video(
         ) {
             return Err(error);
         }
+        if profile.distillation.is_some()
+            && profile
+                .video
+                .as_ref()
+                .is_some_and(|video| request.fps != video.fps)
+        {
+            return Err("MiniMax H3 requires 24 fps".to_string());
+        }
+        if !profile.negative_prompt && !request.negative_prompt.trim().is_empty() {
+            return Err("This video model does not accept a negative prompt".to_string());
+        }
         let capability = if first_source.is_some() {
             "image-to-video"
         } else {
@@ -3722,7 +3823,13 @@ pub(crate) fn generate_video(
         {
             return Err("Choose opaque shot output for this video model".to_string());
         }
-    } else if first_source.is_none() || last_source.is_none() {
+    } else if (first_source.is_none() || last_source.is_none())
+        && !(architecture == "minimax-h3-ref2va"
+            && request
+                .ref_mods
+                .iter()
+                .any(super::refmods::RefModSelection::active))
+    {
         return Err("Choose both video frame inputs".to_string());
     }
     if matches!(architecture, "hunyuan-video-1.5-i2v" | "minimax-h3-ref2va")
@@ -3754,6 +3861,8 @@ pub(crate) fn generate_video(
         &request.model_addons,
     )?;
     let worker_request = WorkerVideoGenerationRequest {
+        ref_mods: &request.ref_mods,
+        ref_mod_max_tokens: request.ref_mod_max_tokens,
         addons: addons.iter().map(WorkerAddon::from).collect(),
         width: request.width,
         height: request.height,
@@ -3902,7 +4011,9 @@ pub(crate) fn generate_video(
     } else {
         "limited"
     };
-    let expected_conditioning_mode = if open_profile.is_some() {
+    let expected_conditioning_mode = if architecture == "minimax-h3-ref2va" {
+        super::refmods::conditioning_mode(&request.ref_mods)
+    } else if open_profile.is_some() {
         if first_source.is_none() {
             "native-text-to-video"
         } else if last_source.is_some() && first_frame_digest != last_frame_digest {
@@ -4313,7 +4424,6 @@ fn expected_video_conditioning_mode(
         }
         "wan-2.2-ti2v" if same_endpoints => "first-frame",
         "hunyuan-video-1.5-i2v" => "hunyuan-video-1.5-native-first-frame",
-        "minimax-h3-ref2va" => "minimax-h3-reference-image-audio",
         "framepack-i2v" => "framepack-inverted-anti-drifting-first-last",
         "ltx-video" if model_id == LTX_13B_MODEL_ID && resolution != "preview-512" => {
             "ltx-native-first-last-keyframes-multiscale"
@@ -4322,6 +4432,10 @@ fn expected_video_conditioning_mode(
         _ => "first-last-temporal-context-lock-v5",
     }
 }
+
+#[cfg(test)]
+#[path = "provider_local_diffusers_external_tests.rs"]
+mod external_tests;
 
 #[cfg(test)]
 mod tests {
@@ -4748,6 +4862,8 @@ time.sleep(60)
     #[test]
     fn wan_worker_request_carries_quality_transparency_loop_and_memory_controls() {
         let request = WorkerVideoGenerationRequest {
+            ref_mods: &[],
+            ref_mod_max_tokens: 65536,
             addons: Vec::new(),
             width: None,
             height: None,

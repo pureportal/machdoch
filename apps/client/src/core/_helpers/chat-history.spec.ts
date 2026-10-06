@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasUnpairedUtf16Surrogate } from "../../shared/unicode.js";
+import { hasUnpairedUtf16Surrogate } from "@machdoch/fleet-protocol/unicode";
 import { readChatHistory, searchChatHistory } from "./chat-history.js";
 
 const history = Array.from({ length: 250 }, (_, index) => ({

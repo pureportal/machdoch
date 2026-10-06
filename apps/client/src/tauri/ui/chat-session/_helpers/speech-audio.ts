@@ -1,4 +1,7 @@
-import { getProviderLabel } from "../../model-catalog";
+import {
+  isLocalSpeechProvider,
+  speechProviderLabel,
+} from "../../../../shared/local-speech";
 import { awaitSpeechOperation } from "../../speech-operation";
 import type {
   UserSpeechToTextProvider,
@@ -153,16 +156,15 @@ export const getSpeechInputAvailabilityDescription = (
     return "Choose a speech input provider.";
   }
 
-  const providerLabel =
-    settings.activeProvider === "whisper"
-      ? "Whisper"
-      : getProviderLabel(settings.activeProvider);
+  const providerLabel = speechProviderLabel(settings.activeProvider);
 
   if (configuredProvider) {
     return `${providerLabel} is ready for push-to-talk transcription. New recordings are inserted into the current draft as plain text.`;
   }
 
-  return `${providerLabel} is selected for speak-to-text, but it is not configured yet. Add its API key first.`;
+  return isLocalSpeechProvider(settings.activeProvider)
+    ? `${providerLabel} is missing. Reinstall Machdoch.`
+    : `${providerLabel} is selected for speak-to-text, but it is not configured yet. Add its API key first.`;
 };
 
 export const resolveRecorderMimeType = (): string | undefined => {
@@ -283,7 +285,9 @@ const convertBlobToWav = async (
     let wavAudio = decodedAudio;
     if (targetSampleRate && decodedAudio.sampleRate !== targetSampleRate) {
       if (typeof OfflineAudioContext === "undefined") {
-        throw new Error("This WebView cannot prepare audio for Whisper.");
+        throw new Error(
+          "This WebView cannot prepare audio for local speech recognition.",
+        );
       }
       const offlineContext = new OfflineAudioContext(
         1,
@@ -318,7 +322,7 @@ export const prepareAudioBlob = async (
   if (blob.size < MIN_RECORDED_AUDIO_BYTES) {
     throw new Error(NO_SPEECH_DETECTED_MESSAGE);
   }
-  if (provider === "whisper") {
+  if (isLocalSpeechProvider(provider)) {
     return convertBlobToWav(blob, 16_000, signal);
   }
   const mimeType = normalizeAudioMimeType(blob.type);

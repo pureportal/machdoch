@@ -1,4 +1,5 @@
 use machdoch_fleet_protocol::{CommandReceipt, HostErrorCode, ProductCommand};
+use std::time::Duration;
 use tauri::{Emitter, Manager};
 
 use crate::desktop_task::{request_desktop_task_cancel, DesktopTaskCancelMap};
@@ -37,24 +38,55 @@ pub(super) fn dispatch_fleet_command(
                 .to_string(),
         );
     }
-    let event = match normalize_command(request) {
-        Ok(event) => event,
-        Err(error) => return Err(FleetCommandDispatchError::InvalidRequest(error)),
-    };
+    let mut event =
+        normalize_command(request).map_err(FleetCommandDispatchError::InvalidRequest)?;
+    if control_state
+        .command_is_duplicate(&event)
+        .map_err(FleetCommandDispatchError::from)?
+    {
+        control_state
+            .wait_for_command_completion(&event.command_id, Duration::from_secs(30))
+            .map_err(FleetCommandDispatchError::from)?;
+        return Ok(CommandReceipt {
+            command_id: event.command_id,
+            duplicate: true,
+        });
+    }
+    control_state
+        .validate_command_target(&event)
+        .map_err(FleetCommandDispatchError::from)?;
+    if event.kind == "add-workspace" {
+        crate::runtime_snapshot::resolve_workspace_root_path(event.workspace.as_deref().unwrap())
+            .map_err(FleetCommandDispatchError::InvalidRequest)?;
+    }
+    if event.kind == "relink-workspace" {
+        crate::runtime_snapshot::resolve_workspace_root_path(
+            event.destination_workspace.as_deref().unwrap(),
+        )
+        .map_err(FleetCommandDispatchError::InvalidRequest)?;
+    }
 
-    let outcome = match control_state.record_command(&event) {
-        Ok(outcome) => outcome,
-        Err(RecordCommandError::CommandIdConflict) => {
-            return Err(FleetCommandDispatchError::Conflict(
-                "The command id was already used for a different command.".to_string(),
-            ));
-        }
-        Err(RecordCommandError::Unavailable(error)) => {
-            return Err(FleetCommandDispatchError::Unavailable(error));
-        }
-    };
+    if event.kind == "add-context-attachments" {
+        super::context_attachments::validate(app_handle, &event)
+            .map_err(FleetCommandDispatchError::InvalidRequest)?;
+    }
+
+    if matches!(
+        event.kind.as_str(),
+        "save-context-pack" | "import-context-packs"
+    ) {
+        super::context_packs::prepare(app_handle, &mut event)
+            .map_err(FleetCommandDispatchError::InvalidRequest)?;
+    }
+
+    let outcome = control_state
+        .record_command(&event)
+        .map_err(FleetCommandDispatchError::from)?;
 
     if outcome == RecordCommandOutcome::Duplicate {
+        control_state
+            .wait_for_command_completion(&event.command_id, Duration::from_secs(30))
+            .map_err(FleetCommandDispatchError::from)?;
         return Ok(CommandReceipt {
             command_id: event.command_id,
             duplicate: true,
@@ -68,12 +100,26 @@ pub(super) fn dispatch_fleet_command(
         }
     }
 
-    let _ = app_handle.emit(FLEET_CONTROL_COMMAND_EVENT, event.clone());
+    app_handle.emit(FLEET_CONTROL_COMMAND_EVENT, event.clone()).map_err(|error| FleetCommandDispatchError::Unavailable(format!("The command is queued, but the device could not receive its notification: {error}. Refresh the device before repeating the action.")))?;
+    control_state
+        .wait_for_command_completion(&event.command_id, Duration::from_secs(30))
+        .map_err(FleetCommandDispatchError::from)?;
 
     Ok(CommandReceipt {
         command_id: event.command_id,
         duplicate: false,
     })
+}
+
+impl From<RecordCommandError> for FleetCommandDispatchError {
+    fn from(error: RecordCommandError) -> Self {
+        match error {
+            RecordCommandError::CommandIdConflict => Self::Conflict(
+                "The command id was already used for a different command.".to_string(),
+            ),
+            RecordCommandError::Unavailable(message) => Self::Unavailable(message),
+        }
+    }
 }
 
 pub(super) fn dispatch_error_code(error: &FleetCommandDispatchError) -> HostErrorCode {

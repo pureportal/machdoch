@@ -37,11 +37,8 @@ import {
   type UserWebSearchApiKeyProvider,
   type WebSearchProvider,
 } from "../../runtime";
-import {
-  type FleetManagedSettingsState,
-  type ShellPersistedState,
-  type SmartContextPack,
-} from "../../chat-session.model";
+import { type FleetManagedSettingsState, type ShellPersistedState } from "../../chat-session.model";
+import { type SmartContextPack } from "@machdoch/client-ui/context-packs/model";
 import {
   SUPPORTED_PROVIDER_ORDER,
   type RuntimeProvider,

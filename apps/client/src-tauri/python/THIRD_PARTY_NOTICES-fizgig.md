@@ -90,6 +90,24 @@ All rights reserved. Licensed under the Apache License, Version 2.0.
 
 ---
 
+## Machdoch MiniMax H3 VAE adapters — Diffusers dependency
+
+On 2026-10-06, Machdoch replaced the bundled MiniMax H3 audio and video VAE
+ports with independently implemented adapters to Diffusers'
+`AutoencoderKLMiniMaxH3Audio` and `AutoencoderKLMiniMaxH3`. Those architectures
+are provided by the Apache-2.0 dependency, with copyright held by the MiniMax
+and HuggingFace Teams. Checkpoint conversion research used Diffusers'
+`scripts/convert_minimax_h3_to_diffusers.py`.
+
+Upstream: https://github.com/huggingface/diffusers
+
+The remaining ComfyUI-derived MiniMax transformer and sampling code still
+requires GPL provenance and combined-work review. Removing the VAE ports
+does not resolve those distribution obligations. Model weights retain their
+separate terms. See `NOTICE-RefMod.txt`.
+
+---
+
 ## comfyui-rocm — GNU General Public License v3.0
 
 Upstream: https://github.com/patientx/comfyui-rocm

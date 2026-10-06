@@ -83,10 +83,23 @@ pub(super) fn lip_sync(
         batch_size: config_number(node, "batchSize", 4.0) as u32,
         seed: config_number(node, "seed", 42.0) as u64,
     };
-    let (details, asset) = provider_local_diffusers::lip_sync_video(app, paths, &request.run_id, &settings)?;
+    let (details, asset) =
+        provider_local_diffusers::lip_sync_video(app, paths, &request.run_id, &settings)?;
     let inputs = [Some(video.as_str()), Some(audio.as_str()), voice]
-        .into_iter().flatten().map(str::to_string).collect::<Vec<_>>();
-    database::workflow::publish(paths, &request.run_id, &node.id, iteration, &asset, "video", &inputs, details)
+        .into_iter()
+        .flatten()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    database::workflow::publish(
+        paths,
+        &request.run_id,
+        &node.id,
+        iteration,
+        &asset,
+        "video",
+        &inputs,
+        details,
+    )
 }
 
 pub(super) fn generate_audio(

@@ -2,7 +2,11 @@
 
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { UserSpeechToTextSettings } from "../../runtime";
+import type {
+  UserSpeechToTextProvider,
+  UserSpeechToTextSettings,
+} from "../../runtime";
+import { LOCAL_SPEECH_PROVIDERS } from "../../../../shared/local-speech";
 import { useChatSessionSpeechInput } from "./use-chat-session-speech-input";
 
 const mocks = vi.hoisted(() => ({
@@ -70,12 +74,20 @@ afterEach(() => {
 });
 
 describe("speech input cancellation", () => {
-  const setup = (autoFormat = false) => {
+  const setup = (
+    autoFormat = false,
+    provider: UserSpeechToTextProvider = "whisper",
+  ) => {
     const onTranscript = vi.fn();
     const hook = renderHook(() =>
       useChatSessionSpeechInput({
         activeSessionId: "session",
-        settings: { ...settings, autoFormat },
+        settings: {
+          ...settings,
+          activeProvider: provider,
+          providerAvailability: [{ provider, configured: true }],
+          autoFormat,
+        },
         onTranscript,
       }),
     );
@@ -95,6 +107,36 @@ describe("speech input cancellation", () => {
     };
     return { ...hook, start, cancel, onTranscript };
   };
+
+  it("reports a failed remote recording request without claiming recording started", async () => {
+    mocks.recorder.startRecording.mockResolvedValueOnce(false);
+    const hook = setup();
+    await act(async () => {
+      await expect(hook.result.current.setRecording(true)).rejects.toThrow(
+        "could not start",
+      );
+    });
+    expect(hook.result.current.recording).toBe(false);
+    expect(hook.onTranscript).not.toHaveBeenCalled();
+  });
+
+  it("rejects a second recording command while the microphone request is pending", async () => {
+    const pending = deferred<boolean>();
+    mocks.recorder.startRecording.mockReturnValueOnce(pending.promise);
+    const hook = setup();
+    let started!: Promise<void>;
+    act(() => {
+      started = hook.result.current.setRecording(true);
+    });
+    await expect(hook.result.current.setRecording(true)).rejects.toThrow(
+      "busy",
+    );
+    await act(async () => {
+      pending.resolve(true);
+      await started;
+    });
+    expect(mocks.recorder.startRecording).toHaveBeenCalledTimes(1);
+  });
 
   it("cancels a pending microphone request", async () => {
     const pending = deferred<boolean>();
@@ -158,22 +200,30 @@ describe("speech input cancellation", () => {
     expect(hook.onTranscript).not.toHaveBeenCalled();
   });
 
-  it("returns to the normal view when the desktop stops responding", async () => {
-    mocks.transcribe.mockImplementationOnce(() => new Promise(() => {}));
-    const hook = setup();
-    await hook.start();
-    vi.useFakeTimers();
-    await act(async () => hook.result.current.toggleRecording());
-    expect(mocks.transcribe).toHaveBeenCalledOnce();
-    const signal = mocks.transcribe.mock.calls[0]?.[0].signal as AbortSignal;
-    await act(async () => vi.advanceTimersByTimeAsync(40_000));
-    expect(signal.aborted).toBe(true);
-    expect(hook.result.current.transcribing).toBe(false);
-    expect(hook.result.current.statusText).toContain(
-      "Speech transcription timed out",
-    );
-    expect(hook.onTranscript).not.toHaveBeenCalled();
-  });
+  it.each(LOCAL_SPEECH_PROVIDERS)(
+    "returns to the normal view when %s stops responding",
+    async (provider) => {
+      mocks.transcribe.mockImplementationOnce(() => new Promise(() => {}));
+      const hook = setup(false, provider);
+      await hook.start();
+      vi.useFakeTimers();
+      await act(async () => hook.result.current.toggleRecording());
+      expect(mocks.transcribe).toHaveBeenCalledOnce();
+      const signal = mocks.transcribe.mock.calls[0]?.[0].signal as AbortSignal;
+      await act(async () => vi.advanceTimersByTimeAsync(40_000));
+      expect(signal.aborted).toBe(false);
+      expect(hook.result.current.transcribing).toBe(true);
+      await act(async () =>
+        vi.advanceTimersByTimeAsync(provider === "phonon2" ? 266_000 : 56_000),
+      );
+      expect(signal.aborted).toBe(true);
+      expect(hook.result.current.transcribing).toBe(false);
+      expect(hook.result.current.statusText).toContain(
+        "Speech transcription timed out",
+      );
+      expect(hook.onTranscript).not.toHaveBeenCalled();
+    },
+  );
 
   it("aborts inference and permits another recording immediately", async () => {
     const pending = deferred<{ text: string }>();
@@ -200,7 +250,7 @@ describe("speech input cancellation", () => {
   it("discards late text processing results", async () => {
     const processing = deferred<string>();
     mocks.process.mockReturnValueOnce(processing.promise);
-    const hook = setup(true);
+    const hook = setup(true, "google");
     await hook.start();
     act(() => hook.result.current.toggleRecording());
     await waitFor(() => expect(mocks.process).toHaveBeenCalledOnce());
@@ -210,4 +260,81 @@ describe("speech input cancellation", () => {
     await act(async () => processing.resolve("Cancelled edits."));
     expect(hook.onTranscript).not.toHaveBeenCalled();
   });
+
+  it.each([
+    { provider: "phonon2" as const, nextProvider: "whistle" as const },
+    { provider: "whisper" as const, nextProvider: "phonon2" as const },
+  ])(
+    "retains $provider settings when the model changes during recording",
+    async ({ provider, nextProvider }) => {
+      const onTranscript = vi.fn();
+      const initialSpeechSettings: UserSpeechToTextSettings = {
+        ...settings,
+        activeProvider: provider,
+        keyTerms: ["country"],
+        providerAvailability: [{ provider, configured: true }],
+      };
+      const hook = renderHook(
+        ({ speechSettings }: { speechSettings: UserSpeechToTextSettings }) =>
+          useChatSessionSpeechInput({
+            activeSessionId: "session",
+            settings: speechSettings,
+            onTranscript,
+          }),
+        {
+          initialProps: {
+            speechSettings: initialSpeechSettings,
+          },
+        },
+      );
+      act(() => hook.result.current.toggleRecording());
+      await waitFor(() => expect(hook.result.current.starting).toBe(false));
+      mocks.recorder.recording = true;
+      hook.rerender({
+        speechSettings: {
+          ...settings,
+          activeProvider: nextProvider,
+          keyTerms: Array.from({ length: 100 }, (_, index) => `term${index}`),
+          autoTranslateToEnglish: true,
+          autoFormat: true,
+          providerAvailability: [{ provider: nextProvider, configured: true }],
+        },
+      });
+      act(() => hook.result.current.toggleRecording());
+      await waitFor(() =>
+        expect(onTranscript).toHaveBeenCalledWith("session", "Open the file."),
+      );
+      expect(mocks.transcribe).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider,
+          keyTerms: ["country"],
+          autoTranslateToEnglish: false,
+        }),
+      );
+      expect(mocks.process).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(LOCAL_SPEECH_PROVIDERS)(
+    "adds %s transcripts without cloud processing",
+    async (provider) => {
+      const hook = setup(true, provider);
+      await hook.start();
+      act(() => hook.result.current.toggleRecording());
+      await waitFor(() =>
+        expect(hook.onTranscript).toHaveBeenCalledWith(
+          "session",
+          "Open the file.",
+        ),
+      );
+      expect(mocks.process).not.toHaveBeenCalled();
+      expect(mocks.transcribe).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider,
+          speechContext: "",
+          autoTranslateToEnglish: false,
+        }),
+      );
+    },
+  );
 });

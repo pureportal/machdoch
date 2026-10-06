@@ -1,0 +1,15 @@
+{
+  "date": "2026-10-06T21:12:48.663Z",
+  "verified": true,
+  "ownedDesktopStopped": true,
+  "ownedBrowserContextsStopped": true,
+  "ownedProductionManagerStopped": true,
+  "fixturePortsClosed": true,
+  "newUploadsRemaining": 0,
+  "baselineUploadPreserved": true,
+  "temporaryLibraryFiles": [],
+  "sharedProcessesStopped": false,
+  "fixturesRetained": true,
+  "runtimeJunctionRetained": true,
+  "devServerStarted": false
+}

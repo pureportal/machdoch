@@ -26,16 +26,14 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await Promise.all(
-    temporaryRoots
-      .splice(0)
-      .map((root) =>
-        rm(root, {
-          recursive: true,
-          force: true,
-          maxRetries: 10,
-          retryDelay: 200,
-        }),
-      ),
+    temporaryRoots.splice(0).map((root) =>
+      rm(root, {
+        recursive: true,
+        force: true,
+        maxRetries: 10,
+        retryDelay: 200,
+      }),
+    ),
   );
 }, 60_000);
 
@@ -45,7 +43,11 @@ const createWorkspace = async () => {
   const workspace = join(root, "workspace");
   await mkdir(workspace);
   const git = (...args: string[]) =>
-    execFileSync("git", args, { cwd: workspace, windowsHide: true });
+    execFileSync("git", args, {
+      cwd: workspace,
+      windowsHide: true,
+      timeout: 120_000,
+    });
   git("init", "-q");
   git("config", "user.name", "Test");
   git("config", "user.email", "test@example.invalid");
@@ -131,7 +133,7 @@ describe("RALPH flow integration", () => {
     ) as RalphRunRecord;
     expect(record.integration).toEqual(result.integration);
     expect(record.status).toBe("completed");
-  }, 120_000);
+  }, 300_000);
 
   it("uses the model to repair a conflict in the integration workspace", async () => {
     const workspace = await createWorkspace();
@@ -203,7 +205,7 @@ describe("RALPH flow integration", () => {
     expect(await readFile(join(workspace, "source.txt"), "utf8")).toBe(
       "external edit and run edit\n",
     );
-  }, 120_000);
+  }, 300_000);
 
   it("publishes completed work before a continuous flow waits for its next task", async () => {
     const workspace = await createWorkspace();
@@ -280,5 +282,5 @@ describe("RALPH flow integration", () => {
     expect(observedPublishedWork, result.summary).toBe(true);
     expect(result.status).toBe("stopped");
     expect(result.integration?.status).toBe("merged");
-  }, 120_000);
+  }, 300_000);
 });

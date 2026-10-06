@@ -143,6 +143,7 @@ export const FLEET_ACTIONS: ReadonlySet<FleetCliAction> = new Set([
   "service",
 ]);
 export const INSTRUCTION_ACTIONS: ReadonlySet<InstructionCliAction> = new Set([
+  "registry-list",
   "validate",
   "resolve",
   "profile-list",

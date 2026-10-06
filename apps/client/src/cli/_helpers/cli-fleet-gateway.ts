@@ -4,7 +4,10 @@ import {
   maximumGatewayMessageBytes,
   productCapability,
   ralphEditorCapability,
+  schedulerEditorCapability,
+  instructionEditorCapability,
   workspaceRunsCapability,
+  workspacePreviewsCapability,
   type HostMessage,
   type HostRequest,
   type HostResponse,
@@ -236,7 +239,14 @@ export const runFleetGatewayConnection = async (options: {
         instanceId: options.config.instanceId,
         protocolVersion: gatewayProtocolVersion,
         productVersion: options.productVersion,
-        capabilities: [productCapability, ralphEditorCapability, workspaceRunsCapability],
+        capabilities: [
+          productCapability,
+          ralphEditorCapability,
+          schedulerEditorCapability,
+          instructionEditorCapability,
+          workspaceRunsCapability,
+          workspacePreviewsCapability,
+        ],
       })
         .then(() => {
           if (settled) return;

@@ -7,6 +7,7 @@ import {
   CliConfigurationError,
   hasJsonOutputFlag,
   isBrokenPipeError,
+  formatCliErrorMessage,
 } from "./_helpers/cli-error.js";
 import { createCliStyle } from "./_helpers/cli-terminal.js";
 
@@ -39,7 +40,7 @@ runCli(process.argv.slice(2))
     if (process.stdin.isTTY) process.stdin.unref();
   })
   .catch(async (error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = formatCliErrorMessage(error);
     const usageError = error instanceof CliUsageError;
     const exitCode =
       error instanceof CliConfigurationError

@@ -1,5 +1,4 @@
 use std::{
-    io::Cursor,
     path::PathBuf,
     sync::{Arc, OnceLock},
     time::{Duration, Instant},
@@ -12,14 +11,16 @@ use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
 };
 
-use super::TranscribedSpeechText;
+use super::{local_audio, TranscribedSpeechText};
 
 pub(super) const WHISPER_MAX_AUDIO_BYTES: usize = 64 * 1024 * 1024;
-const MODEL_RESOURCE_PATH: &str = "whisper/ggml-base-q5_1.bin";
+const BASE_MODEL_RESOURCE_PATH: &str = "whisper/ggml-base-q5_1.bin";
+const TINY_MODEL_RESOURCE_PATH: &str = "whisper/ggml-tiny-q5_1.bin";
 
 static WHISPER_STATE: OnceLock<Arc<Mutex<Option<WhisperEngine>>>> = OnceLock::new();
 
 struct WhisperEngine {
+    model_path: PathBuf,
     state: WhisperState,
     control: Box<InferenceControl>,
 }
@@ -48,6 +49,7 @@ unsafe extern "C" fn abort_inference(user_data: *mut std::ffi::c_void) -> bool {
 
 pub(super) async fn transcribe_whisper(
     app: tauri::AppHandle,
+    provider: &str,
     audio_bytes: Vec<u8>,
     mime_type: &str,
     language_code: Option<&str>,
@@ -58,9 +60,14 @@ pub(super) async fn transcribe_whisper(
     if mime_type != "audio/wav" && mime_type != "audio/x-wav" {
         return Err("Whisper needs a WAV recording.".to_string());
     }
+    let model_resource = match provider {
+        "whisper" => BASE_MODEL_RESOURCE_PATH,
+        "whisper-tiny" => TINY_MODEL_RESOURCE_PATH,
+        _ => return Err("Choose a Whisper model.".to_string()),
+    };
     let model_path = app
         .path()
-        .resolve(MODEL_RESOURCE_PATH, BaseDirectory::Resource)
+        .resolve(model_resource, BaseDirectory::Resource)
         .map_err(|error| format!("Could not locate the bundled Whisper model: {error}"))?;
     let prompt = key_terms.join(", ").replace('\0', "");
     let language = normalize_whisper_language(language_code)?;
@@ -83,7 +90,7 @@ async fn transcribe_with_model(
     translate_to_english: bool,
     cancellation: CancellationToken,
 ) -> Result<TranscribedSpeechText, String> {
-    let timeout = Duration::from_secs((30 + audio_bytes.len() as u64 / 16_000).clamp(30, 900));
+    let timeout = Duration::from_secs((90 + audio_bytes.len() as u64 / 16_000).clamp(90, 900));
     let control = InferenceControl {
         cancellation: cancellation.clone(),
         deadline: Instant::now() + timeout,
@@ -131,19 +138,34 @@ fn transcribe_whisper_blocking(
 ) -> Result<TranscribedSpeechText, String> {
     control.check()?;
     let audio = decode_wav(&audio_bytes)?;
-    if audio.is_empty() {
-        return Err("No speech was detected in the recording.".to_string());
+    if audio.iter().all(|sample| sample.abs() < 8.0 / 32768.0) {
+        return Ok(TranscribedSpeechText {
+            provider: if model_path.ends_with("ggml-tiny-q5_1.bin") {
+                "whisper-tiny"
+            } else {
+                "whisper"
+            }
+            .to_string(),
+            text: String::new(),
+            mime_type: "audio/wav".to_string(),
+            detected_language: None,
+        });
     }
     if !model_path.is_file() {
         return Err("The bundled Whisper model is missing. Reinstall Machdoch.".to_string());
     }
 
-    if cached_state.is_none() {
+    if cached_state
+        .as_ref()
+        .is_none_or(|engine| engine.model_path != model_path)
+    {
+        *cached_state = None;
         let mut context_params = WhisperContextParameters::default();
         context_params.flash_attn(true);
         let context = WhisperContext::new_with_params(&model_path, context_params)
             .map_err(|error| format!("Could not load the bundled Whisper model: {error}"))?;
         *cached_state = Some(WhisperEngine {
+            model_path: model_path.clone(),
             state: context
                 .create_state()
                 .map_err(|error| format!("Could not start Whisper: {error}"))?,
@@ -159,7 +181,10 @@ fn transcribe_whisper_blocking(
         .expect("Whisper state was initialized");
     *engine.control = control;
     let state = &mut engine.state;
-    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    let mut params = FullParams::new(SamplingStrategy::BeamSearch {
+        beam_size: 5,
+        patience: 1.0,
+    });
     params.set_n_threads(
         std::thread::available_parallelism().map_or(1, |count| count.get().min(4)) as i32,
     );
@@ -169,7 +194,6 @@ fn transcribe_whisper_blocking(
     params.set_no_timestamps(true);
     params.set_suppress_nst(true);
     params.set_temperature_inc(0.0);
-    params.set_audio_ctx(audio_context_for_samples(audio.len()));
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
@@ -198,7 +222,12 @@ fn transcribe_whisper_blocking(
         whisper_rs::get_lang_str(state.full_lang_id_from_state()).map(str::to_string);
 
     Ok(TranscribedSpeechText {
-        provider: "whisper".to_string(),
+        provider: if model_path.ends_with("ggml-tiny-q5_1.bin") {
+            "whisper-tiny"
+        } else {
+            "whisper"
+        }
+        .to_string(),
         text: transcript.trim().to_string(),
         mime_type: "audio/wav".to_string(),
         detected_language,
@@ -232,34 +261,38 @@ fn normalize_whisper_language(language_code: Option<&str>) -> Result<Option<Stri
     Ok(Some(language))
 }
 
-fn audio_context_for_samples(sample_count: usize) -> i32 {
-    ((sample_count / 320 + 128).next_multiple_of(64)).clamp(256, 1500) as i32
-}
-
 fn decode_wav(audio_bytes: &[u8]) -> Result<Vec<f32>, String> {
-    let mut reader = hound::WavReader::new(Cursor::new(audio_bytes))
-        .map_err(|error| format!("Whisper could not read the WAV recording: {error}"))?;
-    let spec = reader.spec();
-    if spec.channels != 1
-        || spec.sample_rate != 16_000
-        || spec.bits_per_sample != 16
-        || spec.sample_format != hound::SampleFormat::Int
-    {
-        return Err("Whisper needs 16 kHz mono PCM WAV audio.".to_string());
-    }
-    reader
-        .samples::<i16>()
-        .map(|sample| {
-            sample
-                .map(|value| value as f32 / 32768.0)
-                .map_err(|error| format!("Whisper could not read the WAV recording: {error}"))
-        })
-        .collect()
+    Ok(local_audio::read_wav(audio_bytes)?
+        .into_iter()
+        .map(|value| value as f32 / 32768.0)
+        .collect())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Cursor;
+
+    #[tokio::test]
+    async fn silence_does_not_load_a_model_or_invent_a_transcript() {
+        for filename in ["ggml-base-q5_1.bin", "ggml-tiny-q5_1.bin"] {
+            let result = transcribe_whisper_blocking(
+                PathBuf::from("missing").join(filename),
+                local_audio::wav_bytes(&vec![0; 16_000]).unwrap(),
+                "",
+                None,
+                false,
+                Arc::new(Mutex::new(None)).lock_owned().await,
+                InferenceControl {
+                    cancellation: CancellationToken::new(),
+                    deadline: Instant::now() + Duration::from_secs(30),
+                },
+            )
+            .unwrap();
+            assert!(result.text.is_empty());
+            assert!(result.detected_language.is_none());
+        }
+    }
 
     #[test]
     fn reads_16_khz_mono_pcm_wav() {
@@ -274,14 +307,6 @@ mod tests {
         writer.write_sample::<i16>(16384).unwrap();
         writer.finalize().unwrap();
         assert_eq!(decode_wav(&bytes.into_inner()).unwrap(), vec![0.5]);
-    }
-
-    #[test]
-    fn sizes_audio_context_for_short_recordings() {
-        assert_eq!(audio_context_for_samples(16_000), 256);
-        assert_eq!(audio_context_for_samples(2 * 16_000), 256);
-        assert_eq!(audio_context_for_samples(10 * 16_000), 640);
-        assert_eq!(audio_context_for_samples(30 * 16_000), 1500);
     }
 
     #[tokio::test]
@@ -375,10 +400,18 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires the bundled model and MACHDOCH_WHISPER_TEST_AUDIO WAV fixture"]
     async fn bundled_model_transcribes_real_speech_and_reuses_state() {
-        let model_path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources/whisper/ggml-base-q5_1.bin");
         let audio = std::fs::read(std::env::var("MACHDOCH_WHISPER_TEST_AUDIO").unwrap()).unwrap();
-        for iteration in 0..2 {
+        for (iteration, (filename, provider)) in [
+            ("ggml-base-q5_1.bin", "whisper"),
+            ("ggml-tiny-q5_1.bin", "whisper-tiny"),
+            ("ggml-base-q5_1.bin", "whisper"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let model_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("resources/whisper")
+                .join(filename);
             if iteration == 1 {
                 let cancellation = CancellationToken::new();
                 let inference = tokio::spawn(transcribe_with_model(
@@ -409,11 +442,12 @@ mod tests {
             .await
             .unwrap();
             eprintln!(
-                "Whisper real speech pass {}: {:?}; {}",
+                "{provider} real speech pass {}: {:?}; {}",
                 iteration + 1,
                 started.elapsed(),
                 result.text
             );
+            assert_eq!(result.provider, provider);
             assert!(result
                 .text
                 .to_lowercase()

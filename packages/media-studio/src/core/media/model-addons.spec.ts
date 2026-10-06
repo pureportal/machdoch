@@ -83,6 +83,35 @@ describe("media model add-on search", () => {
 });
 
 describe("media model add-on selection", () => {
+  it("keeps all three SD3 embedding encoder slots", () => {
+    const capabilities = getMediaModelAddonCapabilities(
+      "local-diffusers",
+      "stable-diffusion-3",
+    );
+    expect(
+      capabilities.find((item) => item.kind === "textual-inversion"),
+    ).toMatchObject({
+      targetComponents: ["text-encoder", "text-encoder-2", "text-encoder-3"],
+      maxActive: 16,
+    });
+  });
+
+  it.each(["sana", "z-image", "z-image-turbo"])(
+    "matches %s input embeddings to the text encoder",
+    (architecture) => {
+      const capabilities = getMediaModelAddonCapabilities(
+        "local-diffusers",
+        architecture,
+      );
+      expect(
+        capabilities.find((item) => item.kind === "textual-inversion"),
+      ).toMatchObject({
+        targetComponents: ["text-encoder"],
+        maxActive: 16,
+      });
+    },
+  );
+
   it("matches complete words, punctuation and escaped trigger phrases", () => {
     const dog = { ...addon, triggerWords: ["sks dog"] };
     expect(
@@ -167,9 +196,6 @@ describe("media model add-on selection", () => {
   it.each([
     ["local-wan", "wan-2.2-ti2v"],
     ["local-video", "ltx-video"],
-    ["local-diffusers", "cogvideox-2b"],
-    ["local-diffusers", "cogvideox-1.5-5b"],
-    ["local-diffusers", "cogvideox-1.5-5b-i2v"],
     ["local-video", "framepack-i2v"],
     ["local-video", "hunyuan-video-1.5-i2v"],
   ] as const)(
@@ -180,6 +206,33 @@ describe("media model add-on selection", () => {
           kind: "lora",
           targetComponents: ["denoiser"],
           maxActive: 8,
+          supportsSeparateComponentStrengths: false,
+          supportsDenoisingSchedules: false,
+        },
+      ]);
+    },
+  );
+  it.each([
+    "cogvideox-2b",
+    "cogvideox-1.5-5b",
+    "cogvideox-1.5-5b-i2v",
+  ] as const)(
+    "exposes denoiser LoRAs and T5 embeddings for %s",
+    (architecture) => {
+      expect(
+        getMediaModelAddonCapabilities("local-diffusers", architecture),
+      ).toEqual([
+        {
+          kind: "lora",
+          targetComponents: ["denoiser"],
+          maxActive: 8,
+          supportsSeparateComponentStrengths: false,
+          supportsDenoisingSchedules: false,
+        },
+        {
+          kind: "textual-inversion",
+          targetComponents: ["text-encoder"],
+          maxActive: 16,
           supportsSeparateComponentStrengths: false,
           supportsDenoisingSchedules: false,
         },

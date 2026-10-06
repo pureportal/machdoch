@@ -28,8 +28,13 @@ struct Work {
     command: String,
     input: Option<Vec<u8>>,
     timeout: Duration,
-    cancellation: Option<(MediaRuntimePaths, String)>,
+    cancellation: Option<WorkerCancellation>,
     result: mpsc::SyncSender<MediaResult<Output>>,
+}
+
+pub(super) enum WorkerCancellation {
+    Generation(MediaRuntimePaths, String),
+    Operation(Arc<AtomicBool>),
 }
 
 enum Request {
@@ -73,7 +78,7 @@ pub(super) fn run(
     command: &str,
     input: Option<&[u8]>,
     timeout: Duration,
-    cancellation: Option<(&MediaRuntimePaths, &str)>,
+    cancellation: Option<WorkerCancellation>,
 ) -> MediaResult<Output> {
     let manager = manager()?;
     if manager.stopping.load(Ordering::Acquire) {
@@ -87,7 +92,7 @@ pub(super) fn run(
             command: command.into(),
             input: input.map(Vec::from),
             timeout,
-            cancellation: cancellation.map(|(paths, run)| (paths.clone(), run.into())),
+            cancellation,
             result,
         }))
         .map_err(|_| "Model memory monitor stopped")?;
@@ -220,15 +225,19 @@ fn execute(
     work: &Work,
     stopping: &AtomicBool,
 ) -> MediaResult<Output> {
-    let _generation_database_connection = work
-        .cancellation
-        .as_ref()
-        .map(|(paths, _)| database::open(paths))
-        .transpose()?;
+    let _generation_database_connection = match &work.cancellation {
+        Some(WorkerCancellation::Generation(paths, _)) => Some(database::open(paths)?),
+        _ => None,
+    };
     let mut next_cancellation_check = Instant::now();
     let mut monitor = |event: Option<worker_output::WorkerProgress>| {
         check_shutdown(stopping)?;
-        if let Some((paths, run)) = &work.cancellation {
+        if let Some(WorkerCancellation::Operation(interruption)) = &work.cancellation {
+            if interruption.load(Ordering::Acquire) {
+                return Err("Local operation was canceled".into());
+            }
+        }
+        if let Some(WorkerCancellation::Generation(paths, run)) = &work.cancellation {
             if Instant::now() >= next_cancellation_check {
                 if database::is_cancellation_requested(paths, run)? {
                     return Err("Local generation was canceled".into());
@@ -258,9 +267,12 @@ fn execute(
     };
     monitor(None)?;
     let identity = format!("{:?}", work.process);
-    let uses_image_worker = matches!(work.command.as_str(), "generate" | "probe");
+    let uses_model_worker = matches!(
+        work.command.as_str(),
+        "generate" | "generate-video" | "probe"
+    );
     if let Some(worker) = resident.as_mut() {
-        if (uses_image_worker && worker.identity != identity)
+        if (uses_model_worker && worker.identity != identity)
             || Instant::now() >= worker.expires_at
             || !worker.alive()?
             || system_memory_pressure()
@@ -268,7 +280,9 @@ fn execute(
             release(resident)?;
         }
     }
-    if work.command == "generate" || (work.command == "probe" && resident.is_some()) {
+    if matches!(work.command.as_str(), "generate" | "generate-video")
+        || (work.command == "probe" && resident.is_some())
+    {
         if resident.is_none() {
             *resident = Some(ResidentWorker::spawn(
                 copy_command(&work.process),

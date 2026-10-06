@@ -151,6 +151,7 @@ pub fn run() {
         .manage(desktop_shell::StartupState::new(launch_context.clone()))
         .manage(fleet::FleetConnectionState::default())
         .manage(fleet_control::FleetControlState::default())
+        .manage(fleet_control::client_requests::FleetClientRequestState::default())
         .manage(media::MediaRuntimeState::default())
         .manage(fleet_operations::FleetOperationState::default())
         .manage(media::fleet_transfer::FleetTransferState::default())
@@ -163,6 +164,7 @@ pub fn run() {
         .manage(runtime_snapshot::McpConfigWriteLock::default())
         .manage(workspace_run::WorkspaceRunState::default())
         .manage(workspace_tools::WorkspaceTerminalState::default())
+        .manage(fleet_control::workspace_terminal::FleetWorkspaceTerminalState::default())
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 idle_shutdown::clear_window_work(window.app_handle(), window.label());
@@ -306,6 +308,7 @@ pub fn run() {
             media::media_enqueue_fixture_run,
             media::media_generate_images,
             media::media_generate_video,
+            media::refmods::media_refmod_operation,
             media::audio::media_generate_audio,
             media::media_generate_svg,
             media::media_execute_remote_image_edit_flow,
@@ -338,7 +341,7 @@ pub fn run() {
             media::media_inspect_local_model,
             media::media_import_local_model,
             media::media_inspect_model_addon,
-            media::media_inspect_training_images,
+            media::media_inspect_training_samples,
             media::media_submit_training,
             media::media_get_training_status,
             media::media_cancel_training,
@@ -389,6 +392,7 @@ pub fn run() {
             fleet::reset_fleet_manager_connection,
             fleet::reconnect_fleet_manager,
             fleet::synchronize_fleet_managed_prompts,
+            fleet_control::client_requests::complete_fleet_client_request,
             fleet_control::get_pending_fleet_control_commands,
             fleet_control::acknowledge_fleet_control_command,
             fleet_control::update_fleet_control_shell_snapshot,

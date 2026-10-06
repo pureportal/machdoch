@@ -1,5 +1,5 @@
 import type { TaskExecutionSection } from "../types.js";
-import { sliceUtf16PrefixAtCodePointBoundary } from "../../shared/unicode.js";
+import { sliceUtf16PrefixAtCodePointBoundary } from "@machdoch/fleet-protocol/unicode";
 
 const DEFAULT_OUTPUT_MAX_CHARS = 12_000;
 const DEFAULT_PREVIEW_LINES = 80;

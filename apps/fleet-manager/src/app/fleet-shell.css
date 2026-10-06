@@ -1,44 +1,23 @@
-.fleet-sidebar {
-  z-index: 30;
-  background: #142b2b;
-  color: #f0f6f4;
+.fleet-dashboard-topbar {
+  position: relative;
+  z-index: 60;
+  display: flex;
+  min-height: 40px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 1px solid var(--app-border);
+  padding: 0 12px;
+  font-size: 12px;
 }
 
 .fleet-mark {
-  background: #b5ebcf;
-  color: #183e34;
+  background: var(--app-sky-600);
+  color: white;
 }
 
 .fleet-wordmark {
   color: var(--muted-foreground);
-}
-
-.fleet-sidebar .fleet-wordmark {
-  color: #9ab7af;
-}
-
-.fleet-sidebar button {
-  color: #b5cbc5;
-}
-
-.fleet-sidebar button:hover {
-  background: #ffffff12;
-  color: white;
-}
-
-.fleet-nav-item {
-  color: #a9c1ba;
-}
-
-.fleet-nav-item:hover {
-  background: #ffffff0c;
-  color: #f0f6f4;
-}
-
-.fleet-nav-active,
-.fleet-nav-active:hover {
-  background: #b5ebcf;
-  color: #183e34;
 }
 
 .fleet-login {
@@ -79,46 +58,6 @@
   z-index: 1;
   background: var(--card);
   padding-bottom: 0.25rem;
-}
-
-@media (max-width: 1023px) {
-  .fleet-sidebar {
-    position: sticky;
-    top: 0;
-    border-bottom: 1px solid #ffffff12;
-  }
-
-  .fleet-navigation {
-    position: fixed;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    z-index: 30;
-    border-top: 1px solid var(--border);
-    background: var(--card);
-    padding-bottom: max(8px, env(safe-area-inset-bottom));
-    padding-right: max(12px, env(safe-area-inset-right));
-    padding-left: max(12px, env(safe-area-inset-left));
-  }
-
-  .fleet-nav-item {
-    color: var(--muted-foreground);
-  }
-
-  .fleet-nav-item:hover {
-    background: var(--muted);
-    color: var(--foreground);
-  }
-
-  .fleet-nav-active,
-  .fleet-nav-active:hover {
-    background: var(--secondary);
-    color: var(--primary);
-  }
-
-  .fleet-dashboard > main {
-    padding-bottom: calc(90px + env(safe-area-inset-bottom));
-  }
 }
 
 @media (max-width: 639px) {
