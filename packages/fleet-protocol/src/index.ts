@@ -3,8 +3,21 @@
   mediaResponseSchema,
 } from "@machdoch/fleet-protocol/media";
 export * from "@machdoch/fleet-protocol/media";
-import { ralphRequestSchema, ralphResponseSchema } from "@machdoch/fleet-protocol/ralph";
+import {
+  ralphRequestSchema,
+  ralphResponseSchema,
+} from "@machdoch/fleet-protocol/ralph";
 export * from "@machdoch/fleet-protocol/ralph";
+import {
+  schedulerRequestSchema,
+  schedulerResponseSchema,
+} from "@machdoch/fleet-protocol/scheduler";
+export * from "@machdoch/fleet-protocol/scheduler";
+import {
+  instructionRequestSchema,
+  instructionResponseSchema,
+} from "@machdoch/fleet-protocol/instructions";
+export * from "@machdoch/fleet-protocol/instructions";
 export * from "@machdoch/fleet-protocol/operation";
 export { createFleetSessionId } from "@machdoch/fleet-protocol/session-routing";
 import { z } from "zod";
@@ -327,10 +340,6 @@ const workspace = z.string().trim().min(1).max(12_000);
 const baseCommandShape = { commandId };
 const sessionCommandShape = { ...baseCommandShape, sessionId: identifier };
 const taskCommandShape = { ...baseCommandShape, taskId: identifier };
-const schedulerCommandShape = {
-  ...baseCommandShape,
-  workspace,
-};
 
 const taskCommandSchema = z.discriminatedUnion("kind", [
   z.strictObject({ ...taskCommandShape, kind: z.literal("cancel") }),
@@ -378,42 +387,6 @@ const simpleSessionCommandSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     ...sessionCommandShape,
     kind: z.literal("clear-attachments"),
-  }),
-]);
-
-const schedulerJobCommandSchema = z.discriminatedUnion("kind", [
-  z.strictObject({
-    ...schedulerCommandShape,
-    kind: z.literal("scheduler-trigger"),
-    jobId: identifier,
-  }),
-  z.strictObject({
-    ...schedulerCommandShape,
-    kind: z.literal("scheduler-pause"),
-    jobId: identifier,
-  }),
-  z.strictObject({
-    ...schedulerCommandShape,
-    kind: z.literal("scheduler-resume"),
-    jobId: identifier,
-  }),
-  z.strictObject({
-    ...schedulerCommandShape,
-    kind: z.literal("scheduler-delete"),
-    jobId: identifier,
-  }),
-]);
-
-const schedulerRunCommandSchema = z.discriminatedUnion("kind", [
-  z.strictObject({
-    ...schedulerCommandShape,
-    kind: z.literal("scheduler-retry-run"),
-    runId: identifier,
-  }),
-  z.strictObject({
-    ...schedulerCommandShape,
-    kind: z.literal("scheduler-cancel-run"),
-    runId: identifier,
   }),
 ]);
 
@@ -973,8 +946,6 @@ export const productCommandSchema = z
       ...baseCommandShape,
       kind: z.literal("stop-speaking"),
     }),
-    ...schedulerJobCommandSchema.options,
-    ...schedulerRunCommandSchema.options,
     z.strictObject({
       ...ralphRuntimeCommandShape,
       kind: z.literal("ralph-run"),
@@ -1619,8 +1590,16 @@ export const commandReceiptSchema = z.strictObject({
 export type CommandReceipt = z.infer<typeof commandReceiptSchema>;
 
 export const hostRequestSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    type: z.literal("instructions"),
+    request: instructionRequestSchema,
+  }),
   z.strictObject({ type: z.literal("media"), request: mediaRequestSchema }),
   z.strictObject({ type: z.literal("ralph"), request: ralphRequestSchema }),
+  z.strictObject({
+    type: z.literal("scheduler"),
+    request: schedulerRequestSchema,
+  }),
   z.strictObject({
     type: z.literal("getWorkspaceRuns"),
     workspace,
@@ -1647,8 +1626,16 @@ export const hostRequestSchema = z.discriminatedUnion("type", [
 export type HostRequest = z.infer<typeof hostRequestSchema>;
 
 export const hostResponseSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    type: z.literal("instructions"),
+    response: instructionResponseSchema,
+  }),
   z.strictObject({ type: z.literal("media"), response: mediaResponseSchema }),
   z.strictObject({ type: z.literal("ralph"), response: ralphResponseSchema }),
+  z.strictObject({
+    type: z.literal("scheduler"),
+    response: schedulerResponseSchema,
+  }),
   z.strictObject({
     type: z.literal("workspaceRuns"),
     snapshot: runSnapshotSchema,

@@ -26,6 +26,23 @@ export {
 } from "./composer-icons";
 export { ReasoningIcons } from "./reasoning-icons";
 export { RemoteProductApp } from "./remote-product-app";
+export { ApplicationShell } from "./application-shell";
+export {
+  applyAppearanceSettings,
+  normalizeAppearanceSettings,
+  DEFAULT_APPEARANCE_SETTINGS,
+  type AppearanceSettings,
+  type AppearanceTheme,
+  type AppearanceDensity,
+  type AppearanceAccent,
+} from "./appearance";
+export { AppearanceOptions } from "./appearance-options";
+export { useBrowserAppearance } from "./use-browser-appearance";
+export {
+  ApplicationNavigation,
+  type ApplicationNavigationItem,
+  type ApplicationActivity,
+} from "./application-navigation";
 export { GoalControl, GoalTrigger } from "./goal-control";
 export { useGoalDraft } from "./use-goal-draft";
 export { Ralph } from "./ralph";
@@ -66,4 +83,7 @@ export {
   type ComposerModelProvider,
 } from "./composer-model-picker";
 export type { ProductRuntime } from "./product-runtime";
-export { createFleetOperationTransport, type FleetOperationTransport } from "./fleet-operation-transport";
+export {
+  createFleetOperationTransport,
+  type FleetOperationTransport,
+} from "./fleet-operation-transport";

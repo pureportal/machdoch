@@ -3,6 +3,7 @@ import {
   openMediaModelProfile,
 } from "../../../core/media/open-model-profiles.js";
 import { useMediaStudioAutosave } from "./use-media-studio-autosave";
+import { selectMediaAddonImageModel } from "./media-addon-model";
 import {
   createAudioRecipeFlow,
   readAudioRecipeSettings,
@@ -1536,7 +1537,9 @@ export const MediaStudio = ({
       const nativeText =
         !firstFrameEdge &&
         !lastFrameEdge &&
-        videoBinding.model.capabilities.includes("text-to-video");
+        (videoBinding.model.capabilities.includes("text-to-video") ||
+         (videoBinding.model.architecture === "minimax-h3-ref2va" &&
+          (readMediaVideoRecipeSettings(resolvedFlow)?.refMods ?? []).some(isActiveRefMod)));
       const generatedFrame =
         !nativeText &&
         (firstFrameNode?.type !== "source.image" ||
@@ -1941,7 +1944,7 @@ export const MediaStudio = ({
     [activeModelCatalog.addons],
   );
   const useAddonInCreate = useCallback(
-    (addonId: string): void => {
+    (addonId: string, baseModelId: string | null = null): void => {
       const addon = activeModelCatalog.addons.find(
         (candidate) => candidate.id === addonId,
       );
@@ -1978,21 +1981,13 @@ export const MediaStudio = ({
             },
           };
         }
-        const selectedImageModel = activeModelCatalog.models.find(
-          (model) => model.id === current.recipe.modelId,
+        const imageModel = selectMediaAddonImageModel(
+          activeModelCatalog.models,
+          addon,
+          runtimeStatus?.directGenerationModelIds ?? [],
+          current.recipe.modelId,
+          baseModelId,
         );
-        const runnableModelIds = runtimeStatus?.directGenerationModelIds ?? [];
-        const imageModel =
-          selectedImageModel?.installed &&
-          runnableModelIds.includes(selectedImageModel.id) &&
-          isMediaModelAddonSelectable(selectedImageModel, addon)
-            ? selectedImageModel
-            : activeModelCatalog.models.find(
-                (model) =>
-                  model.installed &&
-                  runnableModelIds.includes(model.id) &&
-                  isMediaModelAddonSelectable(model, addon),
-              );
         if (!imageModel) return { ...current, activeSection: "library" };
         const modelAddons = reconcileMediaModelAddonSelections(
           imageModel,
@@ -3296,6 +3291,8 @@ export const MediaStudio = ({
                   workspaceRoot: normalizedWorkspaceRoot,
                   firstFrameAssetId,
                   lastFrameAssetId,
+                  refMods: readMediaVideoRecipeSettings(submittedFlow)?.refMods ?? [],
+                  refModMaxTokens: readMediaVideoRecipeSettings(submittedFlow)?.refModMaxTokens ?? 65536,
                   aspectRatio,
                   resolution,
                   width:
@@ -3417,7 +3414,8 @@ export const MediaStudio = ({
                 !submittedExecution.firstFrameAssetId &&
                 !submittedExecution.videoModel.capabilities.includes(
                   "text-to-video",
-                )
+                ) && !(submittedExecution.videoModel.architecture === "minimax-h3-ref2va" &&
+                  (readMediaVideoRecipeSettings(submittedFlow)?.refMods ?? []).some(isActiveRefMod))
               ) {
                 throw new Error(
                   "The video endpoint assets are no longer available.",
@@ -4834,6 +4832,7 @@ export const MediaStudio = ({
           ) : null}
           {loaded && state.activeSection === "generate" ? (
             <MediaGenerateView
+              workspaceRoot={workspaceRoot ?? ""}
               assistant={
                 <MediaBasicAssistant
                   workspaceRoot={workspaceRoot}
@@ -4927,14 +4926,19 @@ export const MediaStudio = ({
               models={activeModelCatalog.models}
               onImported={refreshModelCatalog}
               onUseAddon={useAddonInCreate}
-              canUseAddon={(architecture) =>
+              onUseModel={(id) => {
+                const model = activeModelCatalog.models.find((item) => item.id === id);
+                if (model) useModelInCreate(model);
+              }}
+              canUseAddon={(architecture, method, baseModelId) =>
                 activeModelCatalog.models.some(
                   (model) =>
                     model.target === "local" &&
                     model.installed &&
+                    (baseModelId === null || model.id === baseModelId) &&
                     model.architecture === architecture &&
                     model.addonCapabilities.some(
-                      (capability) => capability.kind === "lora",
+                      (capability) => capability.kind === (method === "embedding" ? "textual-inversion" : "lora"),
                     ) &&
                     (runtimeStatus?.directGenerationModelIds ?? []).includes(
                       model.id,
@@ -5269,3 +5273,4 @@ export const MediaStudio = ({
     </main>
   );
 };
+import { isActiveRefMod } from "../../../core/media/refmods.js";

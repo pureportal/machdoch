@@ -10,17 +10,16 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import java.io.ByteArrayInputStream;
-import java.net.URI;
 import java.util.Map;
 import java.util.function.Consumer;
 
 final class FleetWebClient extends WebViewClient {
-    private final FleetOrigin origin;
+    private final FleetRequestPolicy requestPolicy;
     private final Consumer<Uri> openExternal;
     private final Consumer<String> showError;
 
     FleetWebClient(FleetOrigin origin, Consumer<Uri> openExternal, Consumer<String> showError) {
-        this.origin = origin;
+        this.requestPolicy = new FleetRequestPolicy(origin);
         this.openExternal = openExternal;
         this.showError = showError;
     }
@@ -28,17 +27,27 @@ final class FleetWebClient extends WebViewClient {
     @Override
     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
         String url = request.getUrl().toString();
-        if (origin.allows(url)) return false;
-        try {
-            if (request.isForMainFrame() && request.hasGesture() && FleetOrigin.isHttps(URI.create(url))) openExternal.accept(request.getUrl());
-        } catch (IllegalArgumentException error) { showError.accept("This link is invalid."); }
+        switch (requestPolicy.decideNavigation(url, request.isForMainFrame(), request.hasGesture())) {
+            case ALLOW_IN_WEBVIEW:
+                return false;
+            case OPEN_EXTERNAL:
+                try {
+                    openExternal.accept(request.getUrl());
+                } catch (IllegalArgumentException error) { showError.accept("This link is invalid."); }
+                break;
+            case INVALID_LINK:
+                showError.accept("This link is invalid.");
+                break;
+            case BLOCK:
+                break;
+        }
         return true;
     }
 
     @Override
     public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
         String url = request.getUrl().toString();
-        if (origin.allows(url) || (!request.isForMainFrame() && (origin.allowsDownload(url) || url.startsWith("data:")))) return null;
+        if (requestPolicy.allowsResource(url, request.isForMainFrame())) return null;
         return new WebResourceResponse("text/plain", "UTF-8", 403, "Forbidden", Map.of(), new ByteArrayInputStream(new byte[0]));
     }
 

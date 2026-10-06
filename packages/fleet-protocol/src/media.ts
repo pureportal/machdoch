@@ -62,6 +62,7 @@ export const mediaCommands = [
   "media_read_asset_preview",
   "media_read_quality_report",
   "media_refresh_local_diffusers_runtime",
+  "media_refmod_operation",
   "media_remove_model",
   "media_remove_model_addon",
   "media_resolve_human_review",

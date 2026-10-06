@@ -247,7 +247,9 @@ export const createImageRecipeFlow = ({
       influence: 1,
     });
     nodes.push(pose);
-    edges.push(createEdge("pose-to-generate", pose.id, "image", generate.id, "image"));
+    edges.push(
+      createEdge("pose-to-generate", pose.id, "image", generate.id, "image"),
+    );
   }
   let previousNodeId = generate.id;
 
@@ -622,6 +624,8 @@ export const createImageToVideoFlow = ({
       modelPolicy: "quality",
       modelId: videoModelId,
       modelAddons: settings?.modelAddons ?? [],
+      refMods: settings?.refMods ?? [],
+      refModMaxTokens: settings?.refModMaxTokens ?? 65536,
       aspectRatio,
       resolution: settings?.resolution ?? "quality-640",
       width: settings?.width ?? null,
@@ -826,6 +830,8 @@ export const createGeneratedLoopVideoFlow = ({
       modelPolicy: "quality",
       modelId: settings?.modelId ?? "local:wan2.2-ti2v-5b",
       modelAddons: settings?.modelAddons ?? [],
+      refMods: settings?.refMods ?? [],
+      refModMaxTokens: settings?.refModMaxTokens ?? 65536,
       aspectRatio: settings?.aspectRatio ?? "1:1",
       resolution: settings?.resolution ?? "quality-640",
       width: settings?.width ?? null,
@@ -3538,6 +3544,14 @@ export const compileMediaFlow = ({
   })();
   const videoRequiresTerminalConditioning =
     videoUsesDistinctEndpoints || videoTaskNode?.config.loopMode === "seamless";
+  const videoHasRefMods =
+    videoTaskNode?.config.modelId === "local:minimax-h3-ref2va" &&
+    diagnostics.every(
+      (diagnostic) =>
+        diagnostic.nodeId !== videoTaskNode.id ||
+        diagnostic.code !== "NODE_SCHEMA_INVALID",
+    ) &&
+    readRefMods(videoTaskNode.config.refMods).some(isActiveRefMod);
   const videoModel = videoTaskNode
     ? (() => {
         const configuredId =
@@ -3547,7 +3561,7 @@ export const compileMediaFlow = ({
         const compatible = models.filter(
           (candidate) =>
             candidate.capabilities.includes(
-              videoFrameSources.length === 0
+              videoFrameSources.length === 0 && !videoHasRefMods
                 ? "text-to-video"
                 : "image-to-video",
             ) &&
@@ -3563,7 +3577,8 @@ export const compileMediaFlow = ({
         );
         if (configuredId)
           return (
-            compatible.find((candidate) => candidate.id === configuredId) ?? null
+            compatible.find((candidate) => candidate.id === configuredId) ??
+            null
           );
         const candidates = compatible.filter(isMediaModelReady);
         const modelPolicy =
@@ -3690,6 +3705,7 @@ export const compileMediaFlow = ({
   diagnostics.push(...resolvedAddons.diagnostics);
 
   if (videoTaskNode) {
+    const hasRefMods = videoHasRefMods;
     const firstFrames = videoFrameSources.filter(
       (source) => source.portId === "first-frame",
     );
@@ -3701,7 +3717,8 @@ export const compileMediaFlow = ({
       lastFrames.length > 1 ||
       (firstFrames.length === 0 &&
         (lastFrames.length > 0 ||
-          !videoModel?.capabilities.includes("text-to-video"))) ||
+          (!videoModel?.capabilities.includes("text-to-video") &&
+            !hasRefMods))) ||
       (firstFrames.length === 1 &&
         lastFrames.length === 0 &&
         !openMediaModelProfile(videoModel?.architecture)?.video)
@@ -3753,6 +3770,18 @@ export const compileMediaFlow = ({
       config.generateAudio !== (minimaxH3 || openProfile?.audio === true)
         ? "Audio setting does not match the selected video model."
         : null,
+      openProfile?.negativePrompt === false &&
+      typeof config.negativePrompt === "string" &&
+      config.negativePrompt.trim().length > 0
+        ? "This video model does not accept a negative prompt."
+        : null,
+      openProfile?.fixedSteps && config.numInferenceSteps !== openProfile.steps
+        ? `Choose ${openProfile.steps} sampling steps for this model.`
+        : null,
+      openProfile?.fixedGuidance &&
+      config.guidanceScale !== openProfile.guidance
+        ? `Choose guidance ${openProfile.guidance} for this model.`
+        : null,
       openProfile?.video &&
       (config.transparentBackground ||
         config.loopMode === "seamless" ||
@@ -3765,8 +3794,11 @@ export const compileMediaFlow = ({
         hasVideoComposite)
         ? "MiniMax H3 requires opaque, non-looping video."
         : null,
-      minimaxH3 && !sameEndpointSource
-        ? "MiniMax H3 requires one reference image."
+      minimaxH3 && !sameEndpointSource && !(hasRefMods && firstFrames.length === 0 && lastFrames.length === 0)
+        ? "Choose one reference image or enable a RefMod."
+        : null,
+      !minimaxH3 && Array.isArray(config.refMods) && config.refMods.length > 0
+        ? "RefMods require MiniMax H3."
         : null,
       hasVideoComposite && config.transparentBackground !== true
         ? "Animated background compositing requires transparent foreground extraction."
@@ -3788,7 +3820,9 @@ export const compileMediaFlow = ({
       config.fps > 60
         ? "Playback rate must be an integer from 1 through 60 fps."
         : null,
-      minimaxH3 && config.fps !== 24 ? "MiniMax H3 requires 24 fps." : null,
+      (minimaxH3 || openProfile?.distillation) && config.fps !== 24
+        ? "MiniMax H3 requires 24 fps."
+        : null,
       mediaVideoDimensionsError(config, videoModel?.architecture),
       !["preview-512", "quality-640", "quality-768", "quality-2k"].includes(
         String(config.resolution),
@@ -4060,7 +4094,7 @@ export const compileMediaFlow = ({
             requiredCapabilities: [
               videoRequiresTerminalConditioning
                 ? ("start-end-to-video" as const)
-                : videoFrameSources.length === 0
+                : videoFrameSources.length === 0 && !videoHasRefMods
                   ? ("text-to-video" as const)
                   : ("image-to-video" as const),
             ],
@@ -4164,3 +4198,4 @@ export const compileMediaFlow = ({
     },
   };
 };
+import { isActiveRefMod, readRefMods } from "./refmods.js";

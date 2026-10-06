@@ -1,4 +1,5 @@
 @import "./theme.css";
+@import "./application-shell.css";
 @import "./primitives.css";
 @import "./goal-control.css";
 
@@ -25,7 +26,7 @@
   overflow: hidden;
   background: var(--m-bg);
   color: var(--m-text);
-  color-scheme: dark;
+  color-scheme: inherit;
   font-family: var(
     --font-geist-sans,
     Inter,
@@ -247,92 +248,12 @@
 }
 
 .m-product-layout {
+  min-width: 0;
   position: relative;
   display: grid;
   min-height: 0;
   flex: 1;
-  grid-template-columns: 80px 336px minmax(0, 1fr);
-}
-
-.m-product-rail {
-  z-index: 10;
-  display: flex;
-  min-height: 0;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
-  border-right: 1px solid var(--m-border);
-  background: var(--m-bg);
-  padding: 24px 0;
-}
-
-.m-product-rail-group {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-
-.m-product-rail-logo {
-  display: grid;
-  width: 48px;
-  height: 48px;
-  place-items: center;
-  border: 1px solid var(--m-control-border);
-  border-radius: 16px;
-  background: var(--app-slate-900);
-  color: var(--app-sky-400);
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--app-sky-500) 8%, transparent);
-}
-
-.m-product-rail-logo svg {
-  width: 24px;
-  height: 24px;
-}
-
-.m-product-rail-separator {
-  width: 40px;
-  height: 1px;
-  background: var(--m-border);
-}
-
-.m-product-rail-button {
-  position: relative;
-  display: grid;
-  width: 48px;
-  height: 48px;
-  place-items: center;
-  border: 1px solid transparent;
-  border-radius: 16px;
-  background: transparent;
-  color: var(--m-text-muted);
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.m-product-rail-button:hover {
-  background: var(--app-slate-900);
-  color: var(--m-text);
-}
-
-.m-product-rail-button[data-active="true"] {
-  border-color: color-mix(in srgb, var(--app-sky-500) 20%, transparent);
-  background: var(--app-slate-900);
-  color: var(--app-sky-300);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--app-sky-500) 8%, transparent);
-}
-
-.m-product-rail-button svg {
-  width: 20px;
-  height: 20px;
-}
-
-.m-product-rail-current {
-  cursor: default;
-}
-
-.m-product-rail > .m-product-rail-button {
-  margin-bottom: 48px;
+  grid-template-columns: 336px minmax(0, 1fr);
 }
 
 .m-product-sidebar,
@@ -505,7 +426,7 @@
 }
 
 .m-product-session-filter-group button:hover {
-  background: var(--app-slate-900);
+  background: var(--app-surface-raised);
   color: var(--m-text);
 }
 
@@ -543,7 +464,7 @@
 }
 
 .m-product-session-item:hover {
-  border-color: var(--app-slate-700);
+  border-color: var(--app-border-strong);
   background: var(--m-bg);
   color: var(--m-text);
 }
@@ -573,7 +494,7 @@
   border: 1px solid var(--m-control-border);
   border-radius: 999px;
   background: color-mix(in srgb, var(--m-bg) 80%, transparent);
-  color: var(--app-slate-500);
+  color: var(--app-text-faint);
 }
 
 .m-product-session-status svg {
@@ -613,9 +534,9 @@
 }
 
 .m-product-session-status[data-state="cancelled"] {
-  border-color: var(--app-slate-700);
-  background: var(--app-slate-900);
-  color: var(--app-slate-400);
+  border-color: var(--app-border-strong);
+  background: var(--app-surface-raised);
+  color: var(--app-text-muted);
 }
 
 .m-product-session-status[data-state="unsupported"] {
@@ -628,7 +549,7 @@
   min-width: 0;
   flex: 1;
   overflow: hidden;
-  color: var(--app-slate-100);
+  color: var(--app-text);
   font-size: 13px;
   font-weight: 600;
   line-height: 20px;
@@ -710,7 +631,7 @@
   min-width: 0;
   overflow: hidden;
   margin: 0;
-  color: white;
+  color: var(--m-text);
   font-size: 24px;
   font-weight: 600;
   letter-spacing: -0.025em;
@@ -727,7 +648,7 @@
   border-radius: 16px;
   background: var(--m-bg);
   padding: 0 13px;
-  color: white;
+  color: var(--m-text);
   font-size: 18px;
   font-weight: 600;
 }
@@ -818,7 +739,7 @@
 
 .m-product-empty h2 {
   margin: 0;
-  color: white;
+  color: var(--m-text);
   font-size: 20px;
   font-weight: 500;
 }
@@ -915,7 +836,7 @@
   border-radius: 22px 22px 5px 22px;
   background: var(--app-slate-800);
   padding: 11px 14px;
-  color: var(--app-slate-100);
+  color: var(--app-text);
 }
 
 .m-product-message[data-role="user"] .m-product-message-meta {
@@ -1221,14 +1142,14 @@
   border: 1px solid var(--app-slate-800);
   border-radius: 999px;
   background: color-mix(in srgb, var(--app-slate-950) 70%, transparent);
-  color: var(--app-slate-300);
+  color: var(--app-text-soft);
   cursor: pointer;
   list-style: none;
 }
 
 .m-product-option-menu > button:hover {
   border-color: color-mix(in srgb, currentColor 30%, var(--app-slate-800));
-  background: var(--app-slate-900);
+  background: var(--app-surface-raised);
 }
 
 .m-product-option-menu > button > svg {
@@ -1286,7 +1207,7 @@
 }
 
 .m-product-option-popover > strong {
-  color: var(--app-slate-500);
+  color: var(--app-text-faint);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.16em;
@@ -1308,7 +1229,7 @@
   border-radius: 16px;
   background: color-mix(in srgb, var(--app-slate-900) 70%, transparent);
   padding: 12px;
-  color: var(--app-slate-300);
+  color: var(--app-text-soft);
   cursor: pointer;
   text-align: left;
 }
@@ -1331,7 +1252,7 @@
   place-items: center;
   border: 1px solid var(--app-slate-800);
   border-radius: 12px;
-  background: var(--app-slate-950);
+  background: var(--app-bg);
 }
 
 .m-product-option-popover button > span:first-child > svg,
@@ -1347,12 +1268,12 @@
 }
 
 .m-product-option-popover button > span:nth-child(2) > strong {
-  color: var(--app-slate-100);
+  color: var(--app-text);
   font-size: 14px;
 }
 
 .m-product-option-popover button > span:nth-child(2) > small {
-  color: var(--app-slate-400);
+  color: var(--app-text-muted);
   font-size: 12px;
   line-height: 20px;
 }
@@ -1395,7 +1316,7 @@
   overscroll-behavior: contain;
   border: 1px solid var(--m-border-strong);
   border-radius: 16px;
-  background: var(--app-slate-950);
+  background: var(--app-bg);
   padding: 6px;
   box-shadow: 0 18px 48px rgb(0 0 0 / 48%);
 }
@@ -1587,7 +1508,7 @@
   place-items: center;
   border: 1px solid var(--m-control-border);
   border-radius: 18px;
-  background: var(--app-slate-900);
+  background: var(--app-surface-raised);
   color: var(--m-text-muted);
   cursor: pointer;
 }
@@ -1595,7 +1516,7 @@
 .m-product-send:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--app-sky-500) 35%, transparent);
   background: color-mix(in srgb, var(--app-sky-500) 15%, transparent);
-  color: white;
+  color: var(--m-text);
 }
 
 .m-product-send svg {
@@ -1846,12 +1767,7 @@
 
 @media (max-width: 1180px) {
   .m-product-layout {
-    grid-template-columns: 72px 300px minmax(0, 1fr);
-  }
-
-  .m-product-rail {
-    padding-right: 0;
-    padding-left: 0;
+    grid-template-columns: 300px minmax(0, 1fr);
   }
 
   .m-product-composer-wrap {
@@ -1866,13 +1782,7 @@
 
 @media (max-width: 900px) {
   .m-product-layout {
-    grid-template-columns: 64px 280px minmax(0, 1fr);
-  }
-
-  .m-product-rail-logo,
-  .m-product-rail-button {
-    width: 44px;
-    height: 44px;
+    grid-template-columns: 280px minmax(0, 1fr);
   }
 
   .m-product-sidebar-header,
@@ -1927,10 +1837,6 @@
   .m-product-layout {
     grid-template-columns: minmax(0, 1fr);
     overflow: hidden;
-  }
-
-  .m-product-rail {
-    display: none;
   }
 
   .m-product-sidebar {
@@ -2040,7 +1946,7 @@
 .m-product-layout[data-view="media"],
 .m-product-layout[data-view="scheduler"],
 .m-product-layout[data-view="ralph"] {
-  grid-template-columns: 80px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .m-product-feature-main {
@@ -2072,7 +1978,6 @@
 
 .m-media-create,
 .m-media-collection,
-.m-scheduler,
 .m-ralph {
   display: flex;
   min-width: 0;
@@ -2104,7 +2009,7 @@
 .m-media-header h1,
 .m-feature-header h1 {
   margin: 0;
-  color: var(--app-slate-100);
+  color: var(--app-text);
   font-size: 20px;
   font-weight: 600;
 }
@@ -2212,7 +2117,7 @@
   min-width: 0;
   border: 1px solid var(--m-control-border);
   border-radius: 12px;
-  background: var(--app-slate-900);
+  background: var(--app-surface-raised);
   padding: 0 11px;
   color: var(--m-text);
 }
@@ -2271,7 +2176,7 @@
 }
 
 .m-media-asset:hover {
-  border-color: var(--app-slate-700);
+  border-color: var(--app-border-strong);
   background: var(--m-panel-raised);
 }
 
@@ -2282,8 +2187,8 @@
   place-items: center;
   overflow: hidden;
   border-radius: 11px;
-  background: var(--app-slate-900);
-  color: var(--app-slate-600);
+  background: var(--app-surface-raised);
+  color: var(--app-text-muted);
 }
 
 .m-media-asset-preview img {
@@ -2313,8 +2218,7 @@
   font-size: 10px;
 }
 
-.m-media-run-list,
-.m-scheduler-run-list {
+.m-media-run-list {
   display: grid;
   min-height: 0;
   align-content: start;
@@ -2323,8 +2227,7 @@
   padding: clamp(16px, 3vw, 32px);
 }
 
-.m-media-run,
-.m-scheduler-run {
+.m-media-run {
   display: grid;
   gap: 10px;
   border: 1px solid var(--m-border);
@@ -2334,9 +2237,7 @@
 }
 
 .m-media-run-heading,
-.m-media-run-footer,
-.m-scheduler-run > div,
-.m-scheduler-run footer {
+.m-media-run-footer {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -2344,8 +2245,7 @@
   gap: 10px;
 }
 
-.m-media-run-heading strong,
-.m-scheduler-run strong {
+.m-media-run-heading strong {
   overflow: hidden;
   color: var(--m-text);
   font-size: 12px;
@@ -2353,30 +2253,22 @@
   white-space: nowrap;
 }
 
-.m-media-run-heading span,
-.m-scheduler-run > div > span,
-.m-scheduler-card header span {
+.m-media-run-heading span {
   color: var(--m-text-faint);
   font-size: 9px;
   text-transform: uppercase;
 }
 
 .m-media-run-heading span[data-state="running"],
-.m-media-run-heading span[data-state="completed"],
-.m-scheduler-run span[data-state="running"],
-.m-scheduler-run span[data-state="succeeded"],
-.m-scheduler-card header span[data-state="active"] {
+.m-media-run-heading span[data-state="completed"] {
   color: var(--m-success);
 }
 
-.m-media-run-heading span[data-state="failed"],
-.m-scheduler-run span[data-state="failed"] {
+.m-media-run-heading span[data-state="failed"] {
   color: var(--m-danger);
 }
 
-.m-media-run p,
-.m-scheduler-run p,
-.m-scheduler-card p {
+.m-media-run p {
   overflow: hidden;
   margin: 0;
   color: var(--m-text-muted);
@@ -2407,9 +2299,7 @@
   white-space: nowrap;
 }
 
-.m-media-run-footer button,
-.m-scheduler-run button,
-.m-scheduler-card footer button {
+.m-media-run-footer button {
   display: inline-flex;
   height: 28px;
   align-items: center;
@@ -2423,9 +2313,7 @@
   font-size: 10px;
 }
 
-.m-media-run-footer button svg,
-.m-scheduler-run button svg,
-.m-scheduler-card footer button svg {
+.m-media-run-footer button svg {
   width: 12px;
 }
 
@@ -2561,81 +2449,6 @@
 .m-media-asset-dialog strong {
   color: var(--m-text);
   text-transform: capitalize;
-}
-
-.m-scheduler-body {
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-}
-
-.m-scheduler-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 14px;
-  padding: clamp(16px, 3vw, 32px);
-}
-
-.m-scheduler-card {
-  display: grid;
-  gap: 14px;
-  border: 1px solid var(--m-border);
-  border-radius: 18px;
-  background: var(--m-panel);
-  padding: 16px;
-}
-
-.m-scheduler-card > header,
-.m-scheduler-card > footer {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.m-scheduler-card header strong {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--m-text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.m-scheduler-card dl {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-}
-
-.m-scheduler-card dl > div {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 8px;
-  color: var(--m-text-muted);
-  font-size: 10px;
-}
-
-.m-scheduler-card dt {
-  color: var(--m-text-faint);
-}
-
-.m-scheduler-card dd {
-  overflow: hidden;
-  margin: 0;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.m-scheduler-card > footer {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-}
-
-.m-scheduler-card footer .m-scheduler-danger {
-  margin-left: auto;
-  color: var(--m-danger);
 }
 
 .m-ralph-header {
@@ -2814,7 +2627,7 @@
   min-height: 38px;
   border: 1px solid var(--m-control-border);
   border-radius: 11px;
-  background: var(--app-slate-950);
+  background: var(--app-bg);
   padding: 8px 10px;
   color: var(--m-text);
 }
@@ -2833,15 +2646,11 @@
   font-size: 11px;
 }
 
-.m-product-mobile-nav {
-  display: none;
-}
-
 @media (max-width: 900px) {
   .m-product-layout[data-view="media"],
   .m-product-layout[data-view="scheduler"],
   .m-product-layout[data-view="ralph"] {
-    grid-template-columns: 64px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .m-media-controls {
@@ -2854,29 +2663,6 @@
   .m-product-layout[data-view="scheduler"],
   .m-product-layout[data-view="ralph"] {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .m-product-mobile-nav {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-  }
-
-  .m-product-mobile-nav button {
-    display: grid;
-    width: 32px;
-    height: 32px;
-    place-items: center;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    background: transparent;
-    color: var(--m-text-muted);
-  }
-
-  .m-product-mobile-nav button[data-active="true"] {
-    border-color: color-mix(in srgb, var(--app-sky-500) 25%, transparent);
-    background: var(--m-accent-soft);
-    color: var(--m-accent-strong);
   }
 
   .m-product-mobile-nav svg {
@@ -2928,11 +2714,6 @@
 
   .m-ralph-grid,
   .m-ralph-run-list {
-    grid-template-columns: minmax(0, 1fr);
-    padding: 12px;
-  }
-
-  .m-scheduler-grid {
     grid-template-columns: minmax(0, 1fr);
     padding: 12px;
   }
@@ -3074,14 +2855,14 @@
 
 @media (max-width: 900px) {
   .machdoch-product {
-    --m-topbar-height: calc(101px + env(safe-area-inset-top));
+    --m-topbar-height: calc(53px + env(safe-area-inset-top));
   }
   .m-product-topbar {
     display: grid;
     height: var(--m-topbar-height);
     flex-basis: var(--m-topbar-height);
     grid-template-columns: 44px minmax(0, 1fr) auto;
-    grid-template-rows: 44px 48px;
+    grid-template-rows: 44px;
     gap: 0 4px;
     padding: calc(4px + env(safe-area-inset-top))
       max(8px, env(safe-area-inset-right)) 4px
@@ -3089,9 +2870,6 @@
   }
   .m-product-brand,
   .m-product-topbar-divider,
-  .m-product-rail {
-    display: none;
-  }
   .m-product-back {
     grid-column: 1;
     grid-row: 1;
@@ -3130,38 +2908,6 @@
     bottom: 2px;
     width: 12px;
     pointer-events: none;
-  }
-  .m-product-mobile-nav {
-    display: flex;
-    grid-row: 2;
-    grid-column: 1 / -1;
-    align-items: stretch;
-    gap: 4px;
-  }
-  .m-product-mobile-nav button {
-    display: flex;
-    width: auto;
-    height: 48px;
-    min-width: 0;
-    flex: 1;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    border: 1px solid transparent;
-    border-radius: 10px;
-    background: transparent;
-    color: var(--m-text-muted);
-    font-size: 11px;
-  }
-  .m-product-mobile-nav svg {
-    width: 16px;
-    height: 16px;
-  }
-  .m-product-mobile-nav button[data-active="true"] {
-    background: var(--m-accent-soft);
-    border-color: var(--m-border-strong);
-    color: var(--m-accent-strong);
   }
   .m-product-layout,
   .m-product-layout[data-view="media"],
@@ -3484,7 +3230,7 @@
   margin-top: 20px;
 }
 .m-project-error {
-  color: #fda4af !important;
+  color: var(--destructive) !important;
   overflow-wrap: anywhere;
 }
 .m-project-progress {
@@ -3597,4 +3343,16 @@
   .m-project-card {
     padding: 16px;
   }
+}
+
+:root[data-theme="light"] .machdoch-product {
+  --m-accent-strong: var(--app-sky-700);
+  --m-control-border: var(--app-border-strong);
+  --m-danger: var(--app-red-500);
+}
+:root[data-theme="light"] .m-product-session-heading h1,
+:root[data-theme="light"] .m-product-session-title-input,
+:root[data-theme="light"] .m-project-heading h1,
+:root[data-theme="light"] .m-feature-header h1 {
+  color: var(--app-text);
 }

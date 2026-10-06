@@ -1130,6 +1130,8 @@ export type MediaVideoModelId =
   | `local:user:${string}`;
 
 export interface MediaVideoRecipeSettings {
+  refMods?: MediaRefModSelection[];
+  refModMaxTokens?: number;
   modelAddons: MediaModelAddonSelection[];
   width?: number | null;
   height?: number | null;
@@ -2616,6 +2618,8 @@ export interface GenerateMediaSvgRequest {
 }
 
 export interface GenerateMediaVideoRequest {
+  refMods?: MediaRefModSelection[];
+  refModMaxTokens?: number;
   modelAddons: MediaModelAddonSelection[];
   width?: number | null;
   height?: number | null;
@@ -2649,6 +2653,17 @@ export interface GenerateMediaVideoRequest {
   experimentalLowMemory: true;
   animatedBackground: MediaAnimatedBackgroundConfig | null;
   planSnapshot: MediaRunPlanSnapshot;
+}
+
+export interface MediaRefModSelection {
+  stepCurve?: "constant" | "increase" | "decrease" | "middle" | "ends";
+  frameCurve?: "constant" | "increase" | "decrease" | "middle" | "ends";
+  path: string;
+  enabled: boolean;
+  selection: "all" | "visual" | "audio";
+  visualStrength: number;
+  audioStrength: number;
+  copies: number;
 }
 
 export interface MediaAnimatedBackgroundConfig {

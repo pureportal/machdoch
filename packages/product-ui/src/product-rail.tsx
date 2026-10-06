@@ -2,14 +2,24 @@ import {
   Aperture,
   FolderKanban,
   CalendarClock,
+  BookOpenText,
   MessageSquareText,
   PanelRight,
   Settings2,
-  TerminalSquare,
   Workflow,
 } from "lucide-react";
+import {
+  ApplicationNavigation,
+  type ApplicationNavigationItem,
+} from "./application-navigation";
 
-export type ProductView = "chat" | "media" | "scheduler" | "ralph" | "projects";
+export type ProductView =
+  | "chat"
+  | "media"
+  | "scheduler"
+  | "instructions"
+  | "ralph"
+  | "projects";
 
 export function ProductRail({
   settingsHref,
@@ -17,6 +27,7 @@ export function ProductRail({
   activeView,
   mediaAvailable,
   schedulerAvailable,
+  instructionsAvailable = false,
   ralphAvailable,
   projectsAvailable,
   onSelectView,
@@ -27,98 +38,62 @@ export function ProductRail({
   activeView: ProductView;
   mediaAvailable: boolean;
   schedulerAvailable: boolean;
+  instructionsAvailable?: boolean;
   ralphAvailable: boolean;
   projectsAvailable: boolean;
   onSelectView: (view: ProductView) => void;
   onToggleInspector: () => void;
 }): React.ReactElement {
-  return (
-    <aside className="m-product-rail" aria-label="Product navigation">
-      <div className="m-product-rail-group">
-        <div className="m-product-rail-logo" aria-hidden="true">
-          <TerminalSquare />
-        </div>
-        <div className="m-product-rail-separator" />
-        {projectsAvailable ? (
-          <button
-            type="button"
-            className="m-product-rail-button"
-            data-active={activeView === "projects"}
-            aria-label="Projects"
-            aria-current={activeView === "projects" ? "page" : undefined}
-            onClick={() => onSelectView("projects")}
-          >
-            <FolderKanban aria-hidden="true" />
-          </button>
-        ) : null}
-        <button
-          type="button"
-          className="m-product-rail-button"
-          data-active={activeView === "chat"}
-          aria-label="Chat"
-          aria-current={activeView === "chat" ? "page" : undefined}
-          onClick={() => onSelectView("chat")}
-        >
-          <MessageSquareText aria-hidden="true" />
-        </button>
-        {mediaAvailable ? (
-          <button
-            type="button"
-            className="m-product-rail-button"
-            data-active={activeView === "media"}
-            aria-label="Media Studio"
-            aria-current={activeView === "media" ? "page" : undefined}
-            onClick={() => onSelectView("media")}
-          >
-            <Aperture aria-hidden="true" />
-          </button>
-        ) : null}
-        {schedulerAvailable ? (
-          <button
-            type="button"
-            className="m-product-rail-button"
-            data-active={activeView === "scheduler"}
-            aria-label="Smart Scheduler"
-            aria-current={activeView === "scheduler" ? "page" : undefined}
-            onClick={() => onSelectView("scheduler")}
-          >
-            <CalendarClock aria-hidden="true" />
-          </button>
-        ) : null}
-        {ralphAvailable ? (
-          <button
-            type="button"
-            className="m-product-rail-button"
-            data-active={activeView === "ralph"}
-            aria-label="RALPH"
-            aria-current={activeView === "ralph" ? "page" : undefined}
-            onClick={() => onSelectView("ralph")}
-          >
-            <Workflow aria-hidden="true" />
-          </button>
-        ) : null}
-      </div>
-      <div className="m-product-rail-group">
-        <button
-          type="button"
-          className="m-product-rail-button"
-          data-active={inspectorOpen}
-          aria-label="Activity"
-          aria-pressed={inspectorOpen}
-          onClick={onToggleInspector}
-        >
-          <PanelRight aria-hidden="true" />
-        </button>
-        {settingsHref ? (
-          <a
-            href={settingsHref}
-            className="m-product-rail-button"
-            aria-label="Settings"
-          >
-            <Settings2 aria-hidden="true" />
-          </a>
-        ) : null}
-      </div>
-    </aside>
-  );
+  const views = [
+    {
+      id: "projects",
+      label: "Projects",
+      icon: FolderKanban,
+      available: projectsAvailable,
+    },
+    { id: "chat", label: "Chat", icon: MessageSquareText, available: true },
+    { id: "ralph", label: "RALPH", icon: Workflow, available: ralphAvailable },
+    {
+      id: "media",
+      label: "Media Studio",
+      icon: Aperture,
+      available: mediaAvailable,
+    },
+    {
+      id: "scheduler",
+      label: "Smart Scheduler",
+      icon: CalendarClock,
+      available: schedulerAvailable,
+    },
+    {
+      id: "instructions",
+      label: "Instructions",
+      icon: BookOpenText,
+      available: instructionsAvailable,
+    },
+  ] as const;
+  const items: ApplicationNavigationItem[] = views
+    .filter((view) => view.available)
+    .map((view) => ({
+      ...view,
+      active: view.id === activeView,
+      onSelect: () => onSelectView(view.id),
+    }));
+  const actions: ApplicationNavigationItem[] = [
+    {
+      id: "activity",
+      label: "Activity",
+      icon: PanelRight,
+      pressed: inspectorOpen,
+      onSelect: onToggleInspector,
+    },
+  ];
+  if (settingsHref)
+    actions.push({
+      id: "settings",
+      label: "Settings",
+      icon: Settings2,
+      href: settingsHref,
+    });
+  return <ApplicationNavigation items={items} actions={actions} />;
 }

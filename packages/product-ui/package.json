@@ -6,11 +6,14 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./application-shell": "./src/application-shell.tsx",
     "./styles.css": "./src/styles.css",
     "./theme.css": "./src/theme.css",
+    "./application-shell.css": "./src/application-shell.css",
     "./primitives.css": "./src/primitives.css",
     "./goal-control.css": "./src/goal-control.css",
-    "./fleet-api": "./src/fleet-api.ts"
+    "./fleet-api": "./src/fleet-api.ts",
+    "./fleet-operation-transport": "./src/fleet-operation-transport.ts"
   },
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",

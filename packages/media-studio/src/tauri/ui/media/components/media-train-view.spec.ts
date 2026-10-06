@@ -17,6 +17,7 @@ import type {
   MediaTrainingStatus,
 } from "../media-training";
 import { MediaTrainView } from "./media-train-view";
+import { defaultTrainingOptions } from "../media-training";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -30,6 +31,8 @@ const mocks = vi.hoisted(() => ({
   finishTraining: vi.fn(),
   inspectAddon: vi.fn(),
   importAddon: vi.fn(),
+  inspectModel: vi.fn(),
+  importModel: vi.fn(),
 }));
 
 vi.mock("../media-platform", () => ({
@@ -40,7 +43,8 @@ vi.mock("../media-platform", () => ({
   openUrl: vi.fn(),
 }));
 
-vi.mock("../media-training", () => ({
+vi.mock("../media-training", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../media-training")>()),
   submitTraining: mocks.submitTraining,
   inspectTrainingImages: mocks.inspectImages,
   getTrainingStatus: mocks.getTrainingStatus,
@@ -52,6 +56,8 @@ vi.mock("../media-training", () => ({
 vi.mock("../media-runtime", () => ({
   importMediaModelAddon: mocks.importAddon,
   inspectMediaModelAddon: mocks.inspectAddon,
+  inspectMediaLocalModel: mocks.inspectModel,
+  importMediaLocalModel: mocks.importModel,
 }));
 
 const paths = [
@@ -67,6 +73,7 @@ const startingStatus: MediaTrainingStatus = {
   canResume: false,
   completedSteps: null,
   totalSteps: 1000,
+  progress: null,
 };
 
 const sdxlModel = (
@@ -123,12 +130,13 @@ const trainingRequest: MediaTrainingRequest = {
   modelId: "sdxl-base",
   modelPath: "",
   steps: 1000,
-  learningRate: 0.0003,
+  learningRate: 0.0001,
   resolution: 768,
   rank: 32,
   attentionOnly: true,
   fourBit: false,
   seed: 0,
+  options: defaultTrainingOptions(),
 };
 
 const savedJob = (
@@ -139,6 +147,8 @@ const savedJob = (
   concept: "style",
   triggerPhrase: "test-style",
   architecture,
+  method: "lora",
+  baseModelId: architecture === "krea-2" ? null : "sdxl-base",
 });
 
 const renderTraining = (
@@ -148,6 +158,7 @@ const renderTraining = (
     models: [sdxlModel("sdxl-base"), sdxlModel("sdxl-custom")],
     onImported: vi.fn().mockResolvedValue(undefined),
     onUseAddon: vi.fn(),
+    onUseModel: vi.fn(),
     canUseAddon: vi.fn().mockReturnValue(false),
     onFindModel: vi.fn(),
     ...overrides,
@@ -197,6 +208,8 @@ beforeEach(() => {
       concept: request.concept,
       triggerPhrase: request.triggerPhrase,
       architecture: request.architecture,
+      method: request.options.method,
+      baseModelId: request.modelId,
     }),
   );
   mocks.getTrainingStatus.mockResolvedValue(startingStatus);
@@ -209,6 +222,44 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("MediaTrainView", () => {
+  it.each([
+    "Loading model",
+    "Preparing images",
+    "Preparing model",
+    "Saving checkpoint",
+    "Saving weights",
+  ])("shows %s while keeping training stoppable", async (message) => {
+    localStorage.setItem(
+      jobKey,
+      JSON.stringify(savedJob("stable-diffusion-xl")),
+    );
+    mocks.getTrainingStatus.mockResolvedValue({
+      ...startingStatus,
+      state: "running",
+      message,
+      completedSteps: 10,
+      progress: {
+        completedSteps: 10,
+        totalSteps: 1000,
+        loss: 0.5,
+        learningRate: 0.0001,
+        elapsedSeconds: 120,
+        remainingSeconds: 300,
+      },
+    });
+    renderTraining();
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(message),
+    );
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: "Stop training" })
+        .getAttribute("disabled"),
+    ).toBeNull();
+  });
+
   it("shows dataset and resolution warnings for inspected images", async () => {
     mocks.inspectImages.mockResolvedValue(
       paths.map((path) => ({ path, width: 512, height: 512 })),
@@ -268,7 +319,7 @@ describe("MediaTrainView", () => {
     );
     expect((screen.getByLabelText("Seed") as HTMLInputElement).value).toBe("0");
     expect(screen.queryByLabelText("4-bit model weights")).toBeNull();
-    expect(screen.queryByLabelText("Attention layers only")).toBeNull();
+    expect(screen.getByLabelText("Attention layers only")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Choose folder" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Train locally" }));
@@ -409,7 +460,7 @@ describe("MediaTrainView", () => {
       invalid: ["-1", "1.5", "4294967296"],
       valid: "4294967295",
     },
-    { field: "Learning rate", invalid: ["0.000001", "0.0011"], valid: "0.001" },
+    { field: "Learning rate", invalid: ["0.0000001", "0.011"], valid: "0.001" },
   ])(
     "blocks invalid $field values before submitting",
     async ({ field, invalid, valid }) => {
@@ -442,6 +493,9 @@ describe("MediaTrainView", () => {
 
   it("submits Krea RAW with a folder and its own advanced controls", async () => {
     renderTraining({ models: [] });
+    fireEvent.change(screen.getByLabelText("Architecture"), {
+      target: { value: "krea-2" },
+    });
     mocks.open.mockResolvedValueOnce("D:\\Models\\machdoch\\Krea-2-Raw");
     fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
     await waitFor(() =>
@@ -459,7 +513,7 @@ describe("MediaTrainView", () => {
         architecture: "krea-2",
         modelId: null,
         modelPath: "D:\\Models\\machdoch\\Krea-2-Raw",
-        attentionOnly: false,
+        attentionOnly: true,
         fourBit: true,
       }),
     );
@@ -481,7 +535,7 @@ describe("MediaTrainView", () => {
       target: { value: "stable-diffusion-xl" },
     });
     expect(screen.queryByLabelText("4-bit model weights")).toBeNull();
-    expect(screen.queryByLabelText("Attention layers only")).toBeNull();
+    expect(screen.getByLabelText("Attention layers only")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Train locally" }));
 
     await waitFor(() =>
@@ -513,13 +567,17 @@ describe("MediaTrainView", () => {
       expect(view.props.onImported).toHaveBeenCalledOnce();
       expect(mocks.finishTraining).toHaveBeenCalledWith("training-job");
       expect(localStorage.getItem(jobKey)).toBeNull();
-      expect(view.props.canUseAddon).toHaveBeenCalledWith(architecture);
+      expect(view.props.canUseAddon).toHaveBeenCalledWith(
+        architecture,
+        "lora",
+        savedJob(architecture).baseModelId,
+      );
       fireEvent.click(
         screen.getByRole("button", {
           name:
             architecture === "stable-diffusion-xl"
               ? "Find SDXL model"
-              : "Find KREA 2 model",
+              : "Find KREA 2 RAW model",
         }),
       );
       expect(view.props.onFindModel).toHaveBeenCalledWith(architecture);
@@ -538,7 +596,10 @@ describe("MediaTrainView", () => {
       expect(screen.getByRole("button", { name: "Use in Basic" })).toBeTruthy(),
     );
     fireEvent.click(screen.getByRole("button", { name: "Use in Basic" }));
-    expect(view.props.onUseAddon).toHaveBeenCalledWith("trained-lora");
+    expect(view.props.onUseAddon).toHaveBeenCalledWith(
+      "trained-lora",
+      "sdxl-base",
+    );
     expect(
       screen.queryByRole("button", { name: "Find KREA 2 model" }),
     ).toBeNull();
@@ -554,7 +615,7 @@ describe("MediaTrainView", () => {
     });
     renderTraining();
     await waitFor(() =>
-      expect(screen.getByRole("alert").textContent).toContain("does not match"),
+      expect(screen.getByRole("alert").textContent).toContain("do not match"),
     );
     expect(mocks.importAddon).not.toHaveBeenCalled();
     expect(mocks.finishTraining).not.toHaveBeenCalled();
@@ -616,7 +677,7 @@ describe("MediaTrainView", () => {
     expect(localStorage.getItem(jobKey)).not.toBeNull();
   });
 
-  it("ignores the previous storage key and jobs without an architecture", () => {
+  it("ignores jobs without an architecture", () => {
     localStorage.setItem(
       "media:local-krea-training-job",
       JSON.stringify(savedJob("krea-2")),
@@ -633,6 +694,184 @@ describe("MediaTrainView", () => {
     renderTraining();
     expect(screen.getByLabelText("Name")).toBeTruthy();
     expect(mocks.getTrainingStatus).not.toHaveBeenCalled();
+  });
+
+  it("selects an installed Pony model and submits its identity", async () => {
+    renderTraining({
+      models: [sdxlModel("pony-base", { architecture: "pony" })],
+    });
+    await fillTraining();
+    fireEvent.click(screen.getByRole("button", { name: "Train locally" }));
+    await waitFor(() =>
+      expect(mocks.submitTraining).toHaveBeenCalledWith(
+        expect.objectContaining({ architecture: "pony", modelId: "pony-base" }),
+      ),
+    );
+  });
+
+  it("selects SD3 and submits its flow training settings", async () => {
+    renderTraining({
+      models: [sdxlModel("sd3-base", { architecture: "stable-diffusion-3" })],
+    });
+    await fillTraining();
+    expect(screen.queryByRole("option", { name: "Embedding" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
+    expect(screen.queryByLabelText("Min-SNR gamma")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Train locally" }));
+    await waitFor(() =>
+      expect(mocks.submitTraining).toHaveBeenCalledWith(
+        expect.objectContaining({
+          architecture: "stable-diffusion-3",
+          modelId: "sd3-base",
+          options: expect.objectContaining({ method: "lora", snrGamma: 0 }),
+        }),
+      ),
+    );
+  });
+
+  it("clears embedding and Min-SNR settings when switching to SD3", async () => {
+    renderTraining({
+      models: [
+        sdxlModel("sdxl-base"),
+        sdxlModel("sd3-base", { architecture: "stable-diffusion-3" }),
+      ],
+    });
+    fireEvent.change(screen.getByLabelText("Method"), {
+      target: { value: "embedding" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Advanced settings" }));
+    fireEvent.change(screen.getByLabelText("Min-SNR gamma"), {
+      target: { value: "5" },
+    });
+    fireEvent.change(screen.getByLabelText("Architecture"), {
+      target: { value: "stable-diffusion-3" },
+    });
+    expect((screen.getByLabelText("Method") as HTMLSelectElement).value).toBe(
+      "lora",
+    );
+    expect(
+      (screen.getByLabelText("Learning rate") as HTMLInputElement).value,
+    ).toBe("0.0001");
+    expect(screen.queryByLabelText("Min-SNR gamma")).toBeNull();
+    expect(screen.queryByLabelText("Initializer word")).toBeNull();
+  });
+
+  it("imports an SD3 finetune through the model workflow", async () => {
+    prepareCompletedJob("stable-diffusion-3");
+    localStorage.setItem(
+      jobKey,
+      JSON.stringify({ ...savedJob("stable-diffusion-3"), method: "finetune" }),
+    );
+    mocks.inspectModel.mockResolvedValue({
+      canImport: true,
+      detectedArchitecture: "stable-diffusion-3",
+      reviewToken: "sd3-model-review",
+      blockingReason: null,
+    });
+    mocks.importModel.mockResolvedValue({ modelId: "sd3-trained" });
+    const view = renderTraining();
+    await waitFor(() => expect(screen.getByText("Model ready")).toBeTruthy());
+    expect(mocks.importModel).toHaveBeenCalledWith(
+      expect.objectContaining({ architecture: "stable-diffusion-3" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Use in Basic" }));
+    expect(view.props.onUseModel).toHaveBeenCalledWith("sd3-trained");
+  });
+
+  it("requires an embedding initializer and a token without spaces", async () => {
+    renderTraining();
+    await fillTraining();
+    fireEvent.change(screen.getByLabelText("Method"), {
+      target: { value: "embedding" },
+    });
+    const button = screen.getByRole("button", {
+      name: "Train locally",
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Initializer word"), {
+      target: { value: "style" },
+    });
+    fireEvent.change(screen.getByLabelText("Embedding token"), {
+      target: { value: "two words" },
+    });
+    expect(button.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Embedding token"), {
+      target: { value: "<mdstyle>" },
+    });
+    fireEvent.click(button);
+    await waitFor(() =>
+      expect(mocks.submitTraining).toHaveBeenCalledWith(
+        expect.objectContaining({
+          triggerPhrase: "<mdstyle>",
+          learningRate: 0.0005,
+          options: expect.objectContaining({
+            method: "embedding",
+            initializerToken: "style",
+            weightDecay: 0,
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("imports an embedding with its token and uses its matching base model", async () => {
+    prepareCompletedJob("stable-diffusion-xl");
+    localStorage.setItem(
+      jobKey,
+      JSON.stringify({
+        ...savedJob("stable-diffusion-xl"),
+        method: "embedding",
+      }),
+    );
+    const view = renderTraining({ canUseAddon: vi.fn().mockReturnValue(true) });
+    await waitFor(() =>
+      expect(screen.getByText("Embedding ready")).toBeTruthy(),
+    );
+    expect(mocks.importAddon).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "textual-inversion",
+        token: "test-style",
+      }),
+    );
+    expect(view.props.canUseAddon).toHaveBeenCalledWith(
+      "stable-diffusion-xl",
+      "embedding",
+      "sdxl-base",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Use in Basic" }));
+    expect(view.props.onUseAddon).toHaveBeenCalledWith(
+      "trained-lora",
+      "sdxl-base",
+    );
+  });
+
+  it("imports a finetune as a model and opens it in Basic", async () => {
+    prepareCompletedJob("stable-diffusion-xl");
+    localStorage.setItem(
+      jobKey,
+      JSON.stringify({
+        ...savedJob("stable-diffusion-xl"),
+        method: "finetune",
+      }),
+    );
+    mocks.inspectModel.mockResolvedValue({
+      canImport: true,
+      detectedArchitecture: "stable-diffusion-xl",
+      reviewToken: "model-review",
+      blockingReason: null,
+    });
+    mocks.importModel.mockResolvedValue({ modelId: "trained-model" });
+    const view = renderTraining();
+    await waitFor(() => expect(screen.getByText("Model ready")).toBeTruthy());
+    expect(mocks.importModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        architecture: "stable-diffusion-xl",
+        reviewToken: "model-review",
+      }),
+    );
+    expect(mocks.importAddon).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Use in Basic" }));
+    expect(view.props.onUseModel).toHaveBeenCalledWith("trained-model");
   });
 });
 

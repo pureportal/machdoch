@@ -2,6 +2,10 @@ import {
   mediaRequestSchema,
   ralphRequestSchema,
   ralphEditorCapability,
+  schedulerRequestSchema,
+  schedulerEditorCapability,
+  instructionRequestSchema,
+  instructionEditorCapability,
 } from "@machdoch/fleet-protocol";
 import {
   createFleetManagedSettingsEtag,
@@ -260,12 +264,24 @@ async function routeApi(
     if (method === "GET" && path[3] === "snapshot") {
       return instanceProductSnapshot(runtime, request, path[1]);
     }
-    if (method === "POST" && (path[3] === "media" || path[3] === "ralph")) {
+    if (
+      method === "POST" &&
+      (path[3] === "media" ||
+        path[3] === "ralph" ||
+        path[3] === "scheduler" ||
+        path[3] === "instructions")
+    ) {
       requireMutation(runtime, request);
       requireManagedInstance(runtime, path[1]);
       const input = await parseJson(
         request,
-        path[3] === "ralph" ? ralphRequestSchema : mediaRequestSchema,
+        path[3] === "ralph"
+          ? ralphRequestSchema
+          : path[3] === "scheduler"
+            ? schedulerRequestSchema
+            : path[3] === "instructions"
+              ? instructionRequestSchema
+              : mediaRequestSchema,
         400,
         "Operation request is invalid.",
         maximumMediaRequestBodyBytes,
@@ -277,12 +293,38 @@ async function routeApi(
         !runtime.gateways.supportsCapability(path[1], ralphEditorCapability)
       )
         throw new HttpError(409, "Update this device to edit RALPH flows.");
+      if (
+        path[3] === "scheduler" &&
+        !runtime.gateways.supportsCapability(path[1], schedulerEditorCapability)
+      )
+        throw new HttpError(
+          409,
+          "Update this device to manage scheduled jobs.",
+        );
+      if (
+        path[3] === "instructions" &&
+        !runtime.gateways.supportsCapability(
+          path[1],
+          instructionEditorCapability,
+        )
+      )
+        throw new HttpError(409, "Update this device to edit instructions.");
       const response = await relay(
         runtime,
         path[1],
         path[3] === "ralph"
           ? { type: "ralph", request: ralphRequestSchema.parse(input) }
-          : { type: "media", request: mediaRequestSchema.parse(input) },
+          : path[3] === "scheduler"
+            ? {
+                type: "scheduler",
+                request: schedulerRequestSchema.parse(input),
+              }
+            : path[3] === "instructions"
+              ? {
+                  type: "instructions",
+                  request: instructionRequestSchema.parse(input),
+                }
+              : { type: "media", request: mediaRequestSchema.parse(input) },
         request.signal,
       );
       requireOwner(runtime, request);

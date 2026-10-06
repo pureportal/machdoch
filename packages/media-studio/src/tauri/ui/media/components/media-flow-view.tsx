@@ -1,6 +1,8 @@
 import { MediaFlowAgentPanel } from "./media-flow-agent-panel";
 import { MediaAssetBrowser } from "./media-asset-browser";
 import { MediaNodeAddonField } from "./media-node-addon-field";
+import { MediaRefModControls } from "./media-refmod-controls";
+import { readRefMods, isActiveRefMod } from "../../../../core/media/refmods.js";
 import { MediaGenerationEstimate } from "./media-generation-estimate";
 import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import { countMediaRunOutputs } from "../../../../core/media/run-library.js";
@@ -1076,6 +1078,7 @@ const MediaAssetPicker = ({
 };
 
 const NodeFieldEditor = ({
+  workspaceRoot,
   node,
   nodes,
   field,
@@ -1094,6 +1097,7 @@ const NodeFieldEditor = ({
   onChange,
   onPatch,
 }: {
+  workspaceRoot: string;
   node: MediaFlowNode;
   nodes: readonly MediaFlowNode[];
   field: MediaNodeFieldDefinition;
@@ -1401,6 +1405,12 @@ const NodeFieldEditor = ({
         </button>
       );
       break;
+    case "refmods": {
+      control = <MediaRefModControls workspaceRoot={workspaceRoot}
+        settings={{refMods: readRefMods(value), refModMaxTokens: typeof node.config.refModMaxTokens === "number" ? node.config.refModMaxTokens : 65536}}
+        onChange={(settings) => onPatch?.(settings)} />;
+      break;
+    }
     case "addons": {
       control = (
         <MediaNodeAddonField
@@ -2612,6 +2622,7 @@ const VideoKeyframeReviewPanel = ({
 };
 
 const NodeInspector = ({
+  workspaceRoot,
   onGeneratePoseChat,
   savedPoseScenes,
   onRenamePoseScene,
@@ -2635,6 +2646,7 @@ const NodeInspector = ({
   onNodeRemove,
   onClose,
 }: {
+  workspaceRoot: string;
   onGeneratePoseChat: (map: MediaPoseMap | null) => void | Promise<void>;
   savedPoseScenes: readonly MediaSavedPoseScene[];
   onRenamePoseScene?: (id: string, title: string) => void;
@@ -2855,7 +2867,7 @@ const NodeInspector = ({
       : node.type === "task.generate-video"
         ? videoNeedsTerminalConditioning
           ? ["image-to-video", "start-end-to-video"]
-          : firstFrameEdge || lastFrameEdge
+           : firstFrameEdge || lastFrameEdge || (node.config.modelId === "local:minimax-h3-ref2va" && readRefMods(node.config.refMods).some(isActiveRefMod))
             ? ["image-to-video"]
             : ["text-to-video"]
         : node.type === "task.generate-image" &&
@@ -3115,6 +3127,7 @@ const NodeInspector = ({
             >
               {visibleFields.map((field) => (
                 <NodeFieldEditor
+                  workspaceRoot={workspaceRoot}
                   nodes={flow.nodes}
                   key={field.id}
                   node={node}
@@ -6218,6 +6231,7 @@ export const MediaFlowView = ({
           />
         ) : selectedNode ? (
           <NodeInspector
+            workspaceRoot={workspaceRoot ?? ""}
             onGeneratePoseChat={onGeneratePoseChat}
             savedPoseScenes={savedPoseScenes}
             onRenamePoseScene={onRenamePoseScene}

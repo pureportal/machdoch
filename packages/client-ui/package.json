@@ -1,0 +1,37 @@
+{
+  "name": "@machdoch/client-ui",
+  "version": "6.3.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./scheduler": "./src/scheduler/index.ts",
+    "./instructions": "./src/instructions/index.ts"
+  },
+  "scripts": {
+    "check": "pnpm run lint && pnpm run typecheck",
+    "lint": "oxlint src",
+    "typecheck": "tsc --noEmit --pretty false",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@machdoch/fleet-protocol": "workspace:*",
+    "@machdoch/media-studio": "workspace:*",
+    "lucide-react": "^1.18.0"
+  },
+  "peerDependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^7.0.2",
+    "jsdom": "^26.1.0",
+    "vitest": "^4.1.10"
+  }
+}

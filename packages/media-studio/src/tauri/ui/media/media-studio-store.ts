@@ -1,5 +1,6 @@
 import { invoke, isRemoteMedia } from "./media-platform";
 import { readMediaImageSampling } from "../../../core/media/image-sampling.js";
+import { readRefMods } from "../../../core/media/refmods.js";
 import type {
   ImageRecipeSettings,
   MediaAssetCategory,
@@ -71,6 +72,8 @@ export const DEFAULT_IMAGE_RECIPE_SETTINGS = {
 } as const satisfies ImageRecipeSettings;
 
 export const DEFAULT_VIDEO_RECIPE_SETTINGS = {
+  refMods: [],
+  refModMaxTokens: 65536,
   modelAddons: [],
   ...MEDIA_VIDEO_QUALITY_PRESETS[0]!.settings,
   modelId: null,
@@ -274,6 +277,8 @@ const normalizeVideoRecipeSettings = (
           ? (value.modelId as `local:user:${string}`)
           : modelId
         : null,
+    refMods: readRefMods(value.refMods),
+    refModMaxTokens: Math.round(normalizeBoundedNumber(value.refModMaxTokens, 65536, 0, 1048576)),
     modelAddons: normalizeModelAddons(value.modelAddons),
     aspectRatio: normalizeOneOf(
       value.aspectRatio,
