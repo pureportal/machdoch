@@ -10,14 +10,22 @@ pub(super) fn media_worker(app: &AppHandle) -> MediaResult<(PathBuf, PathBuf)> {
     Ok((script, python))
 }
 
-pub(crate) fn inspect_video(app: &AppHandle, path: &Path) -> MediaResult<serde_json::Value> {
+pub(crate) fn inspect_video(
+    app: &AppHandle,
+    path: &Path,
+    training: bool,
+) -> MediaResult<serde_json::Value> {
     let (script, python) = media_worker(app)?;
     let request = serde_json::to_vec(&serde_json::json!({"inputPath": path}))
         .map_err(|error| error.to_string())?;
     let output = run_worker(
         &python,
         &script,
-        "video-inspect",
+        if training {
+            "training-video-inspect"
+        } else {
+            "video-inspect"
+        },
         Some(&request),
         Duration::from_secs(900),
         None,

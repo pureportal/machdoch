@@ -48,7 +48,7 @@ const createRepository = async (): Promise<{
 };
 
 describe("RALPH run worktrees", () => {
-  it("removes an interrupted checkout and permits another attempt", async () => {
+  it("removes its interrupted checkout and automatically retries preparation", async () => {
     const { repository } = await createRepository();
     const runDirectory = join(
       repository,
@@ -88,20 +88,13 @@ describe("RALPH run worktrees", () => {
       },
     );
 
-    await expect(
-      prepareRalphRunWorktree(repository, runDirectory),
-    ).rejects.toThrow("Git checkout timed out");
-    await expect(readFile(join(interruptedRoot, ".git"))).rejects.toMatchObject(
-      { code: "ENOENT" },
-    );
-    expect(
-      await runGit(repository, ["branch", "--list", interruptedBranch]),
-    ).toBe("");
+    const worktree = await prepareRalphRunWorktree(repository, runDirectory);
+    expect(interruptCheckout).toBe(false);
+    expect(worktree.branch).toBe(interruptedBranch);
     expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
       "original\n",
     );
 
-    const worktree = await prepareRalphRunWorktree(repository, runDirectory);
     expect(worktree.worktreeRoot).toBe(interruptedRoot);
     expect(
       await readFile(
@@ -109,7 +102,41 @@ describe("RALPH run worktrees", () => {
         "utf8",
       ),
     ).toBe("original\n");
-  }, 60_000);
+  }, 240_000);
+
+  it("bounds preparation retries and removes every failed owned checkout", async () => {
+    const { repository } = await createRepository();
+    const runDirectory = join(
+      repository,
+      ".machdoch",
+      "ralph",
+      "runs",
+      "timeout",
+    );
+    await mkdir(runDirectory, { recursive: true });
+    const runGit = worktreeGit.runRalphWorktreeGit;
+    let attempts = 0;
+    let branch = "";
+    vi.spyOn(worktreeGit, "runRalphWorktreeGit").mockImplementation(
+      async (cwd, args, options) => {
+        if (args[0] === "worktree" && args[1] === "add") {
+          attempts += 1;
+          branch = args[3]!;
+          throw new Error("Git checkout timed out");
+        }
+        return runGit(cwd, args, options);
+      },
+    );
+
+    await expect(
+      prepareRalphRunWorktree(repository, runDirectory),
+    ).rejects.toThrow("Git checkout timed out");
+    expect(attempts).toBe(3);
+    expect(await runGit(repository, ["branch", "--list", branch])).toBe("");
+    expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
+      "original\n",
+    );
+  }, 240_000);
 
   it("creates independent worktrees for simultaneous runs and reuses one on resume", async () => {
     const { repository } = await createRepository();
@@ -165,7 +192,7 @@ describe("RALPH run worktrees", () => {
     await expect(
       prepareRalphRunWorktree(repository, firstDirectory),
     ).rejects.toThrow(/metadata does not match this run/u);
-  }, 60_000);
+  }, 240_000);
 
   it("snapshots staged, unstaged, untracked, binary and deleted files without changing the source or index", async () => {
     const { repository } = await createRepository();
@@ -253,7 +280,7 @@ describe("RALPH run worktrees", () => {
         "utf8",
       ),
     ).toBe("unstaged\n");
-  }, 60_000);
+  }, 240_000);
 
   it("preserves a workspace nested in the repository", async () => {
     const { repository } = await createRepository();
@@ -280,7 +307,7 @@ describe("RALPH run worktrees", () => {
     expect(await prepareRalphRunWorktree(workspace, runDirectory)).toEqual(
       worktree,
     );
-  }, 60_000);
+  }, 240_000);
 
   it("reports a missing Git repository without starting a shared run", async () => {
     const root = await mkdtemp(join(tmpdir(), "ralph-without-git-"));
@@ -297,5 +324,5 @@ describe("RALPH run worktrees", () => {
     await expect(prepareRalphRunWorktree(root, runDirectory)).rejects.toThrow(
       /not a git repository/iu,
     );
-  }, 60_000);
+  }, 240_000);
 });

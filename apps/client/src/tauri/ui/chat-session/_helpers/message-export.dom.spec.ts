@@ -7,7 +7,7 @@ import {
   copyMessageText,
   createMessageMarkdownFileName,
   saveMessageMarkdown,
-} from "./message-export";
+} from "@machdoch/client-ui/conversation/message-export";
 
 vi.mock("html-to-image", () => ({ toBlob: vi.fn() }));
 

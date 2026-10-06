@@ -1,0 +1,17 @@
+{
+  "date": "2026-10-06T14:50:02.979Z",
+  "before": {
+    "diagnostic": null,
+    "downloadPercent": null,
+    "message": "",
+    "phase": "ready"
+  },
+  "result": {
+    "diagnostic": null,
+    "downloadPercent": null,
+    "message": "",
+    "phase": "ready"
+  },
+  "devServerStarted": false,
+  "modelWeightsRequested": false
+}

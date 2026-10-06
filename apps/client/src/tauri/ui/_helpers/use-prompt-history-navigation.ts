@@ -8,7 +8,7 @@ import {
 import {
   navigatePromptHistory,
   type PromptHistoryNavigationState,
-} from "./prompt-history-navigation.helper";
+} from "@machdoch/client-ui/composer/prompt-history-navigation";
 
 interface UsePromptHistoryNavigationOptions {
   value: string;

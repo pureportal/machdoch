@@ -41,6 +41,8 @@ export const MediaBasicVideoOptions = ({
     fixedVideo ||
     architecture === "minimax-h3-ref2va" ||
     profile?.fixedGuidance === true;
+  const fixedFrameRate =
+    architecture === "minimax-h3-ref2va" || Boolean(profile?.distillation);
   return (
     <>
       <label className={field}>
@@ -119,14 +121,14 @@ export const MediaBasicVideoOptions = ({
           ))}
         </div>
       ) : null}
-      {architecture !== "minimax-h3-ref2va" || videoSettings.fps !== 24 ? (
+      {!fixedFrameRate || videoSettings.fps !== 24 ? (
         <label className={field}>
           <span>Frame rate</span>
           <input
             className={control}
             type="number"
-            min={architecture === "minimax-h3-ref2va" ? 24 : 1}
-            max={architecture === "minimax-h3-ref2va" ? 24 : 60}
+            min={fixedFrameRate ? 24 : 1}
+            max={fixedFrameRate ? 24 : 60}
             step={1}
             value={videoSettings.fps}
             onChange={(event) =>

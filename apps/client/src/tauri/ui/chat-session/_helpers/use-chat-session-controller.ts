@@ -1,4 +1,14 @@
-﻿import {
+import {
+  createDeviceVoicePreferences,
+  createRuntimeVoiceSettingsControls,
+} from "./voice-settings-controls";
+import { createRuntimeSettingsControls } from "./runtime-settings-controls";
+import { useFleetDeviceUiSettings } from "./use-fleet-device-ui-settings";
+import {
+  createWorkspaceInstructionLifecycle,
+  useInstructionManagement,
+} from "@machdoch/client-ui/instructions";
+import {
   isGoalCommand,
   resolveGoalMode,
   type GoalMode,
@@ -46,8 +56,6 @@ import {
   getSessionOverviewStatus,
   getSavedPoseScenes,
   getSessionTitle,
-  isMediaAssetContextAttachment,
-  isPathContextAttachment,
   isQuickVoiceSession,
   isSessionWorkspaceLocked,
   isTransientChatOperationMessage,
@@ -58,7 +66,6 @@ import {
   rememberRecentWorkspace,
   removeRecentWorkspace,
   trimSessionTaskGroupsToVisibleMessageLimit,
-  type ChatSessionContextAttachment,
   type ChatSessionMessage,
   type ChatSessionMessagePromptEnhancement,
   type ChatSessionMessageSettings,
@@ -66,8 +73,17 @@ import {
   type ChatSessionQueuedPromptEnhancementRequest,
   type ChatSessionRecord,
   type ShellPersistedState,
-  type SmartContextPack,
 } from "../../chat-session.model";
+import { type SmartContextPack } from "@machdoch/client-ui/context-packs/model";
+import {
+  DEFAULT_REQUEST_ITERATION_MODE,
+  isLinkContextAttachment,
+  isMediaAssetContextAttachment,
+  isPathContextAttachment,
+  type AttachmentSelectionKind,
+  type ChatSessionContextAttachment,
+  type RequestIterationMode,
+} from "@machdoch/client-ui/composer/model";
 import {
   beginCrossWindowOperation,
   completeCrossWindowOperation,
@@ -106,10 +122,8 @@ import {
   resolveDroppedPaths,
   saveClipboardImageAttachment,
   mutateInstructions,
+  subscribeToUserSettingsChanged,
   syncChatCompletionIndicator,
-  type InstructionMutationInput,
-  type InstructionMutationResult,
-  type InstructionRegistryResult,
   type FileManagerInvocationRoute,
   type RecentDesktopTaskResult,
   type TaskInterviewResult,
@@ -120,7 +134,6 @@ import {
   createInitialThinkingTrace,
 } from "../../task-thinking.model";
 import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
-import type { SettingsStatusMessage } from "../components/settings-dialog-panels/types";
 import { clampAiContextMessageLimit } from "./ai-context-window";
 import { isChatCompletionIndicatorActive } from "./chat-completion-indicator";
 import {
@@ -154,14 +167,16 @@ import {
   createPromptEnhancementTask,
   createQueuedPromptEnhancementRequest,
   isPromptEnhancementCancellation,
-  PROMPT_ENHANCEMENT_LABELS,
   PromptEnhancementCancellationError,
   resolveImmediatePromptEnhancementPlacement,
   shouldDeferPromptEnhancementUntilQueuedDispatch,
   type ActivePromptEnhancementMode,
   type PromptEnhancementPendingPlacement,
-  type PromptEnhancementMode,
 } from "./prompt-enhancement";
+import {
+  PROMPT_ENHANCEMENT_LABELS,
+  type PromptEnhancementMode,
+} from "@machdoch/client-ui/composer/prompt-enhancement-options";
 import { getExecutionAttemptTaskId } from "./execution-retry-policy";
 import { runPromptEnhancement } from "./run-prompt-enhancement";
 import {
@@ -177,12 +192,10 @@ import {
   isQueuedPromptEnhancementInputCurrent,
 } from "./queued-message-lifecycle";
 import {
-  DEFAULT_REQUEST_ITERATION_MODE,
   applyEnhancedPromptToQueuedRequestIterations,
   createQueuedRequestIterations,
   getBlockingRequestIteration,
   normalizeRequestIterationCount,
-  type RequestIterationMode,
 } from "./request-iterations";
 import {
   appendContextAttachmentsToTask,
@@ -191,15 +204,13 @@ import {
   clampQuickVoiceMessageLimit,
   createContextAttachment,
   createContextAttachmentFromMediaAsset,
-  createContextAttachmentFromReference,
   getImageAttachmentPaths,
-  isLinkContextAttachment,
   mergeContextAttachments,
   normalizeDialogSelection,
-  type AttachmentSelectionKind,
   type DialogSelection,
   type FileDropTarget,
 } from "./session-context-attachments";
+import { createContextAttachmentFromReference } from "@machdoch/client-ui/composer/attachment-reference";
 import { normalizeSessionReasoningOverride } from "./session-reasoning";
 import {
   applySessionMessageSettings,
@@ -226,19 +237,25 @@ import {
   applySmartContextPackSettingsToComposer,
   applySmartContextPackSettingsToSession,
   applySmartContextPackSettingsToShellDefaults,
+  doesSmartContextPackMatchComposer,
+  getSmartContextPackModelSelection,
+  importSmartContextPacksIntoShellState,
+} from "./smart-context-packs";
+import { resolvePromptHistoryRestore } from "@machdoch/client-ui/composer/restore-prompt-history";
+import {
   cloneContextAttachmentsForPack,
   createSmartContextPackExportPayload,
   createSmartContextPackVariables,
-  doesSmartContextPackMatchComposer,
   extractSmartContextPackVariables,
   filterSmartContextPacksByScope,
-  getSmartContextPackModelSelection,
+  getSmartContextPackMissingVariableNames,
   getSmartContextPacksForWorkspace,
-  importSmartContextPacksIntoShellState,
+} from "@machdoch/client-ui/context-packs/helpers";
+import {
   type SaveSmartContextPackInput,
   type SmartContextPackScope,
   type SmartContextPackScopeFilter,
-} from "./smart-context-packs";
+} from "@machdoch/client-ui/context-packs/model";
 import { useChatSessionRuntime } from "./use-chat-session-runtime";
 import { useChatSessionShellState } from "./use-chat-session-shell-state";
 import { useChatSessionSpeechInput } from "./use-chat-session-speech-input";
@@ -636,13 +653,6 @@ type InactiveDesktopTaskRecoveryRoute = {
   expiresAt: number;
 };
 
-const getInstructionCommandErrorMessage = (
-  error: unknown,
-  fallback: string,
-): string => {
-  return error instanceof Error ? error.message : fallback;
-};
-
 const getClipboardImageMediaType = (
   file: File,
 ): AgentModelImageMediaType | null => {
@@ -751,6 +761,9 @@ export const useChatSessionController = (
       promptEnhancementMode: PromptEnhancementMode;
       interviewEnabled: boolean;
       goalObjective?: string;
+      iterationCount?: number;
+      iterationMode?: RequestIterationMode;
+      runningAction?: RunningTaskMessageAction;
     }) => boolean
   >(() => false);
   const inactiveDesktopTaskObservationsRef = useRef<
@@ -1016,16 +1029,53 @@ export const useChatSessionController = (
   const speechInputDevices = useSpeechInputDevices(
     settingsSurfaceOpen && state.settingsSection === "voice",
   );
-  const [instructionRegistry, setInstructionRegistry] =
-    useState<InstructionRegistryResult | null>(null);
-  const [instructionRegistryLoading, setInstructionRegistryLoading] =
-    useState(false);
-  const [instructionRegistrySaving, setInstructionRegistrySaving] =
-    useState(false);
-  const [instructionRegistryMessage, setInstructionRegistryMessage] =
-    useState<SettingsStatusMessage | null>(null);
-  const instructionRegistryRequestIdRef = useRef(0);
-  const instructionRegistrySavingRef = useRef(false);
+  useFleetDeviceUiSettings({
+    voice,
+    speechInput,
+    speechInputDevices,
+    flushPersistence: state.flushPersistence,
+  });
+  const {
+    registry: instructionRegistry,
+    loading: instructionRegistryLoading,
+    saving: instructionRegistrySaving,
+    message: instructionRegistryMessage,
+    onRefresh: refreshInstructionRegistry,
+    onSave: handleInstructionSave,
+  } = useInstructionManagement(state.activeSession.workspace, {
+    loadRegistry: listInstructions,
+    mutate: mutateInstructions,
+    ...createWorkspaceInstructionLifecycle({
+      stopTerminals: async (previousRoot) => {
+        const { disposeWorkspaceTerminals } =
+          await import("../../workspace-management/workspace-terminal-store");
+        await disposeWorkspaceTerminals(previousRoot);
+      },
+      relinkWorkspace: (previousRoot, nextRoot) => {
+        state.applyShellState((previous) => ({
+          ...previous,
+          recentWorkspaces: rememberRecentWorkspace(
+            removeRecentWorkspace(previous.recentWorkspaces, previousRoot),
+            nextRoot,
+          ),
+        }));
+      },
+    }),
+  });
+  useEffect(() => {
+    let disposed = false;
+    let unsubscribe: (() => void) | undefined;
+    void subscribeToUserSettingsChanged((kind) => {
+      if (kind === "instructions") void refreshInstructionRegistry();
+    }).then((unlisten) => {
+      if (disposed) unlisten();
+      else unsubscribe = unlisten;
+    });
+    return () => {
+      disposed = true;
+      unsubscribe?.();
+    };
+  }, [refreshInstructionRegistry]);
   const isDesktop = isTauri();
   const providerChooserState = createProviderChooserState({
     isDesktop,
@@ -1054,11 +1104,15 @@ export const useChatSessionController = (
       poseScene:
         | import("@machdoch/media-studio/core/media/contracts.js").MediaPoseMap
         | null,
+      createdSessionId?: string,
     ): string => {
       const previousSessionId = activeSessionIdRef.current;
       composerState.resetDraftHistoryState();
       invalidateAttachmentMutation(`session:${previousSessionId}`);
-      const sessionId = lifecycleActions.createNewSession({ workspace: null });
+      const sessionId = lifecycleActions.createNewSession({
+        workspace: null,
+        ...(createdSessionId ? { id: createdSessionId } : {}),
+      });
       state.updateSessionById(sessionId, (session) => ({
         ...session,
         draft: poseScene ? "Refine this pose scene" : "Create a pose scene",
@@ -1225,101 +1279,6 @@ export const useChatSessionController = (
       ),
     [activeComposerSession.workspace, state.shellState.contextPacks],
   );
-  const refreshInstructionRegistry = useCallback(async (): Promise<void> => {
-    const requestId = instructionRegistryRequestIdRef.current + 1;
-    instructionRegistryRequestIdRef.current = requestId;
-    setInstructionRegistryLoading(true);
-
-    try {
-      const registry = await listInstructions(state.activeSession.workspace);
-
-      if (instructionRegistryRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      setInstructionRegistry(registry);
-      setInstructionRegistryMessage(null);
-    } catch (error) {
-      if (instructionRegistryRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      setInstructionRegistryMessage({
-        tone: "error",
-        text: getInstructionCommandErrorMessage(
-          error,
-          "Instruction registry could not be loaded.",
-        ),
-      });
-    } finally {
-      if (instructionRegistryRequestIdRef.current === requestId) {
-        setInstructionRegistryLoading(false);
-      }
-    }
-  }, [state.activeSession.workspace]);
-
-  const handleInstructionSave = useCallback(
-    async (
-      input: InstructionMutationInput,
-    ): Promise<InstructionMutationResult | false> => {
-      if (instructionRegistrySavingRef.current) return false;
-      instructionRegistrySavingRef.current = true;
-      setInstructionRegistrySaving(true);
-      setInstructionRegistryMessage(null);
-
-      try {
-        const previousWorkspaceRoot =
-          input.operation === "workspace-relink" ||
-          input.operation === "workspace-remove"
-            ? instructionRegistry?.workspaces.find(
-                (workspace) => workspace.id === input.workspaceId,
-              )?.root
-            : undefined;
-        if (previousWorkspaceRoot) {
-          const { disposeWorkspaceTerminals } =
-            await import("../../workspace-management/workspace-terminal-store");
-          await disposeWorkspaceTerminals(previousWorkspaceRoot);
-        }
-        const result = await mutateInstructions(
-          state.activeSession.workspace,
-          input,
-        );
-        if (input.operation === "workspace-relink" && previousWorkspaceRoot) {
-          state.applyShellState((previous) => ({
-            ...previous,
-            recentWorkspaces: rememberRecentWorkspace(
-              removeRecentWorkspace(
-                previous.recentWorkspaces,
-                previousWorkspaceRoot,
-              ),
-              input.root,
-            ),
-          }));
-        }
-        await refreshInstructionRegistry();
-        return result;
-      } catch (error) {
-        setInstructionRegistryMessage({
-          tone: "error",
-          text: getInstructionCommandErrorMessage(
-            error,
-            "Instruction library could not be updated.",
-          ),
-        });
-        return false;
-      } finally {
-        instructionRegistrySavingRef.current = false;
-        setInstructionRegistrySaving(false);
-      }
-    },
-    [
-      instructionRegistry,
-      refreshInstructionRegistry,
-      state.activeSession.workspace,
-      state.applyShellState,
-    ],
-  );
-
   const matchedContextPackIds = useMemo(() => {
     if (
       !activeComposerSession.draft.trim() &&
@@ -2875,11 +2834,10 @@ export const useChatSessionController = (
           await import("../../workspace-management/workspace-terminal-store");
         await disposeWorkspaceTerminals(workspace);
       } catch (error) {
-        console.error("Failed to stop workspace terminals", error);
-        window.alert(
+        throw new Error(
           "The workspace could not be removed because its terminals could not be stopped. Try again.",
+          { cause: error },
         );
-        return;
       }
       state.applyShellState((prev) => ({
         ...prev,
@@ -2912,14 +2870,10 @@ export const useChatSessionController = (
           await import("../../workspace-management/workspace-terminal-store");
         await disposeWorkspaceTerminals(currentWorkspace);
       } catch (error) {
-        console.error(
-          "Failed to stop terminals for the relinked workspace",
-          error,
-        );
-        window.alert(
+        throw new Error(
           "The workspace could not be relinked because its terminals could not be stopped. Try again.",
+          { cause: error },
         );
-        return;
       }
       state.applyShellState((prev) => ({
         ...prev,
@@ -3549,11 +3503,14 @@ export const useChatSessionController = (
   );
 
   const createQuickTaskSessionSnapshot = useCallback(
-    (existingQuickTaskSession: ChatSessionRecord | null): ChatSessionRecord => {
+    (
+      existingQuickTaskSession: ChatSessionRecord | null,
+      createdSessionId?: string,
+    ): ChatSessionRecord => {
       const baseSession =
         existingQuickTaskSession ??
         createSession({
-          id: crypto.randomUUID(),
+          id: createdSessionId ?? crypto.randomUUID(),
           specialSession: QUICK_VOICE_SESSION_KIND,
           workspace: state.activeSession.workspace,
           provider: state.activeSession.provider,
@@ -3639,6 +3596,31 @@ export const useChatSessionController = (
       });
     },
     [createQuickTaskSessionSnapshot, state.applyShellState],
+  );
+
+  const openQuickChat = useCallback(
+    (createdSessionId: string): void => {
+      let selectedSessionId = createdSessionId;
+      state.applyShellState((previous) => {
+        const existing = previous.sessions.find(isQuickVoiceSession);
+        if (existing) {
+          selectedSessionId = existing.id;
+          return { ...previous, activeSessionId: existing.id };
+        }
+        const session = createQuickTaskSessionSnapshot(null, createdSessionId);
+        return {
+          ...previous,
+          activeSessionId: session.id,
+          sessions: [session, ...previous.sessions],
+        };
+      });
+      state.setActiveSessionId(selectedSessionId);
+    },
+    [
+      createQuickTaskSessionSnapshot,
+      state.applyShellState,
+      state.setActiveSessionId,
+    ],
   );
 
   const setQuickTaskDraft = useCallback(
@@ -4255,7 +4237,10 @@ export const useChatSessionController = (
   );
 
   const handleSaveContextPack = useCallback(
-    (input: SaveSmartContextPackInput): void => {
+    (
+      input: SaveSmartContextPackInput,
+      workspaceRoot = activeComposerSession.workspace,
+    ): void => {
       const name = (input.name ?? "").replace(/\s+/gu, " ").trim();
 
       if (!name) {
@@ -4302,8 +4287,7 @@ export const useChatSessionController = (
           : undefined;
         const pack: SmartContextPack = {
           id: existingPack?.id ?? crypto.randomUUID(),
-          workspace:
-            input.scope === "global" ? null : activeComposerSession.workspace,
+          workspace: input.scope === "global" ? null : workspaceRoot,
           name,
           instructions,
           prompt,
@@ -4615,30 +4599,62 @@ export const useChatSessionController = (
     [workspaceContextPacks],
   );
 
-  const handleImportContextPacks = useCallback(
-    (file: File, scope: SmartContextPackScope): void => {
-      if (scope === "workspace" && !activeComposerSession.workspace) {
-        return;
+  const importContextPackPayload = useCallback(
+    (
+      payload: unknown,
+      workspaceRoot: string | null,
+      scope: SmartContextPackScope,
+    ): void => {
+      if (scope === "workspace" && !workspaceRoot) {
+        throw new Error("Choose a workspace before importing context packs.");
       }
-
-      void file
-        .text()
-        .then((text) => JSON.parse(text) as unknown)
-        .then((payload) => {
-          state.applyShellState((prev) =>
-            importSmartContextPacksIntoShellState(
-              prev,
-              payload,
-              activeComposerSession.workspace,
-              scope,
-            ),
-          );
-        })
-        .catch((error) => {
-          console.error("Failed to import context packs:", error);
-        });
+      importSmartContextPacksIntoShellState(
+        state.shellState,
+        payload,
+        workspaceRoot,
+        scope,
+      );
+      state.applyShellState((prev) =>
+        importSmartContextPacksIntoShellState(
+          prev,
+          payload,
+          workspaceRoot,
+          scope,
+        ),
+      );
     },
-    [activeComposerSession.workspace, state.applyShellState],
+    [state.shellState, state.applyShellState],
+  );
+  const handleImportContextPacks = useCallback(
+    async (file: File, scope: SmartContextPackScope): Promise<void> => {
+      const payload: unknown = JSON.parse(await file.text());
+      importContextPackPayload(payload, activeComposerSession.workspace, scope);
+    },
+    [activeComposerSession.workspace, importContextPackPayload],
+  );
+  const handleRemoteSaveContextPack = useCallback(
+    (sessionId: string, input: SaveSmartContextPackInput): void => {
+      const session = state.shellState.sessions.find(
+        (entry) => entry.id === sessionId,
+      );
+      if (!session) throw new Error("The session no longer exists.");
+      handleSaveContextPack(input, session.workspace);
+    },
+    [state.shellState.sessions, handleSaveContextPack],
+  );
+  const handleRemoteImportContextPacks = useCallback(
+    (
+      sessionId: string,
+      payload: unknown,
+      scope: SmartContextPackScope,
+    ): void => {
+      const session = state.shellState.sessions.find(
+        (entry) => entry.id === sessionId,
+      );
+      if (!session) throw new Error("The session no longer exists.");
+      importContextPackPayload(payload, session.workspace, scope);
+    },
+    [state.shellState.sessions, importContextPackPayload],
   );
 
   const handleSaveMessageAsContextPack = useCallback(
@@ -6959,7 +6975,11 @@ export const useChatSessionController = (
   );
 
   const handleRemoteApplyContextPack = useCallback(
-    (sessionId: string, packId: string): boolean => {
+    (
+      sessionId: string,
+      packId: string,
+      variableValues: Record<string, string> = {},
+    ): boolean => {
       let applied = false;
       let appliedPromptEnhancementMode: PromptEnhancementMode | undefined;
       let appliedInterviewEnabled: boolean | undefined;
@@ -6979,6 +6999,13 @@ export const useChatSessionController = (
         ).find((contextPack) => contextPack.id === packId);
 
         if (!pack) {
+          return prev;
+        }
+
+        if (
+          getSmartContextPackMissingVariableNames(pack, variableValues).length >
+          0
+        ) {
           return prev;
         }
 
@@ -7020,7 +7047,7 @@ export const useChatSessionController = (
               session.draft,
               session.draftContextAttachments,
               pack,
-              {},
+              variableValues,
             );
             return applySmartContextPackSettingsToSession(
               {
@@ -7078,6 +7105,16 @@ export const useChatSessionController = (
     hasHydrated: state.hasHydrated,
     shellState: state.shellState,
     activeSession: state.activeSession,
+    runningTaskMessageAction: activeSessionPromptEnhancementBusy
+      ? "queue"
+      : runningTaskMessageAction,
+    imageInputSupported: activeSessionImageInputSupported,
+    imageInputDisabledReason: activeSessionImageInputSupported
+      ? null
+      : createImageInputUnsupportedModelMessage(
+          state.activeSession.provider,
+          state.activeSession.model,
+        ),
     visibleMessages: state.visibleMessages,
     runtimeSnapshot: runtime.runtimeSnapshot,
     runtimeLoading: runtime.runtimeLoading,
@@ -7086,6 +7123,7 @@ export const useChatSessionController = (
     chooserProviders: providerChooserState.chooserProviders,
     defaultMode: defaultRunMode,
     defaultReasoning: workspaceDefaultReasoning,
+    defaultAdaptiveControllerEnabled,
     activeRunMode,
     activeReasoning,
     composerWorkspaceLabel: memorySummaryState.composerWorkspaceLabel,
@@ -7129,9 +7167,12 @@ export const useChatSessionController = (
     speakingMessageId: voice.speakingMessageId,
     speechInputSupported: speechInput.browserSupported,
     speechInputEnabled: speechInput.enabled,
+    speechInputRecording: speechInput.recording,
+    speechInputBusy: speechInput.starting || speechInput.transcribing,
     speechInputStatus: speechInput.statusText,
     activeDesktopTasksRef,
     flushPersistence: state.flushPersistence,
+    onImportSessionPayload: lifecycleActions.importSessionPayload,
     onMarkFleetCommandHandled: (commandId: string) => {
       state.applyShellState((prev) => {
         if (prev.handledFleetCommandIds.includes(commandId)) {
@@ -7148,6 +7189,10 @@ export const useChatSessionController = (
       });
     },
     onRetryTask: taskSubmission.handleRetryTask,
+    onEditMessage: taskSubmission.handleEditMessage,
+    onReplayMessage: taskSubmission.handleRetryMessage,
+    onCreatePoseChat: createPoseChat,
+    onOpenQuickChat: openQuickChat,
     onContinueTask: taskSubmission.handleContinueTask,
     onCreateSession: (workspace, sessionId) =>
       handleCreateSession({
@@ -7165,9 +7210,37 @@ export const useChatSessionController = (
     onRenameSession: handleRemoteRenameSession,
     onTagSession: handleRemoteTagSession,
     onClearSessionHistory: handleRemoteClearSessionHistory,
+    onResetSessionTime: lifecycleActions.resetSessionTime,
+    onMoveSessionToTop: lifecycleActions.moveSessionToTop,
     onUpdateSessionDraft: handleRemoteUpdateSessionDraft,
+    onRestorePromptHistory: (sessionId, draft, history) => {
+      let restored = false;
+      state.updateSessionById(sessionId, (session) => {
+        const result = resolvePromptHistoryRestore(session, history, draft);
+        if (!result) return session;
+        restored = true;
+        const updatedAt = Date.now();
+        return {
+          ...session,
+          ...result,
+          draftUpdatedAt: updatedAt,
+          draftAttachmentsUpdatedAt: updatedAt,
+          updatedAt,
+        };
+      });
+      if (restored && activeSessionIdRef.current === sessionId)
+        composerState.resetDraftHistoryState();
+      return restored;
+    },
     onSetSessionModel: handleRemoteSetSessionModel,
     onSetSessionMode: handleRemoteSetSessionMode,
+    onSetAdaptiveController: (sessionId, override) => {
+      state.updateSessionById(sessionId, (session) => ({
+        ...session,
+        adaptiveControllerOverride: override,
+        updatedAt: Date.now(),
+      }));
+    },
     onSetGoalMode: (sessionId, mode) => {
       state.updateSessionById(sessionId, (session) => ({
         ...session,
@@ -7178,6 +7251,9 @@ export const useChatSessionController = (
     onSetParallelAgentMode: handleRemoteSetParallelAgentMode,
     onSetSessionReasoning: handleRemoteSetSessionReasoning,
     onSetSessionWorkspace: applyRemoteWorkspaceSelection,
+    onAddWorkspace: addWorkspaceToHistory,
+    onRemoveWorkspace: removeWorkspaceFromHistory,
+    onRelinkWorkspace: relinkWorkspaceInHistory,
     onSetPromptEnhancementMode: handlePromptEnhancementModeChange,
     onSetInterview: handleInterviewEnabledChange,
     onCancelPromptEnhancement: (taskId: string) => {
@@ -7202,11 +7278,38 @@ export const useChatSessionController = (
       handleRemoteSetSessionFlag(sessionId, "uiControlEnabled", enabled),
     onRemoveContextAttachment: handleRemoteRemoveContextAttachment,
     onClearContextAttachments: handleRemoteClearContextAttachments,
+    onAddContextAttachments: async (sessionId, paths, messageId) => {
+      if (messageId) await handleAttachQueuedMessagePaths(messageId, paths);
+      else
+        await handleAttachPaths(paths, "active-session", {
+          targetSessionId: sessionId,
+          updateWorkspaceRoot: false,
+        });
+    },
     onApplyContextPack: handleRemoteApplyContextPack,
+    onSaveContextPack: handleRemoteSaveContextPack,
+    onImportContextPacks: handleRemoteImportContextPacks,
+    onRunningTaskMessageActionChange: setRunningTaskMessageAction,
+    onQueuedMessageChange: handleQueuedMessageChange,
+    onQueuedMessageMove: handleQueuedMessageMove,
+    onQueuedMessageReorder: handleQueuedMessageReorder,
+    onQueuedMessageRemove: handleQueuedMessageRemove,
+    onQueuedMessageRetry: handleQueuedMessageRetry,
+    onQueuedMessageRemoveContextAttachment:
+      handleQueuedMessageRemoveContextAttachment,
+    onQueuedMessageClearContextAttachments:
+      handleQueuedMessageClearContextAttachments,
     onDeleteContextPack: handleDeleteContextPack,
     onSaveMessageAsContextPack: handleSaveMessageAsContextPack,
     onSpeakMessage: voice.speakMessage,
     onStopSpeaking: voice.stopSpeaking,
+    onSetAutoSpeak: voice.setAutoSpeakResponses,
+    onSetSpeechInputRecording: async (sessionId, recording) => {
+      if (sessionId !== state.activeSession.id) {
+        throw new Error("Select this session on the device before recording.");
+      }
+      await speechInput.setRecording(recording);
+    },
   });
 
   const submitQuickVoiceCommand = useCallback(
@@ -8242,6 +8345,9 @@ export const useChatSessionController = (
       promptEnhancementMode: PromptEnhancementMode;
       interviewEnabled: boolean;
       goalObjective?: string;
+      iterationCount?: number;
+      iterationMode?: RequestIterationMode;
+      runningAction?: RunningTaskMessageAction;
     }): boolean => {
       const prompt = input.prompt.trim();
       const session = state.getSessionById(input.sessionId);
@@ -8254,12 +8360,12 @@ export const useChatSessionController = (
           kind: "active-session",
           sessionSnapshot: session,
           task: prompt,
-          contextAttachments: [],
+          contextAttachments: session.draftContextAttachments,
           runningAction: getSessionMessageRunningAction({
             session,
             activeTaskId,
             unsettledTaskId: getUnsettledDesktopTaskIdForSession(session.id),
-            runningAction: "queue",
+            runningAction: input.runningAction ?? runningTaskMessageAction,
           }),
           composerClearGuard: createComposerClearGuard(session),
           messageSettings: createSessionMessageSettings(
@@ -8269,7 +8375,8 @@ export const useChatSessionController = (
             isGoalCommand(prompt) ? undefined : input.goalObjective,
           ),
           promptEnhancementMode: input.promptEnhancementMode,
-          iterationMode: DEFAULT_REQUEST_ITERATION_MODE,
+          iterationCount: input.iterationCount ?? 1,
+          iterationMode: input.iterationMode ?? DEFAULT_REQUEST_ITERATION_MODE,
           interviewEnabled: input.interviewEnabled,
         },
         prompt,
@@ -8277,6 +8384,7 @@ export const useChatSessionController = (
       return true;
     },
     [
+      runningTaskMessageAction,
       getActiveDesktopTaskIdForSession,
       getUnsettledDesktopTaskIdForSession,
       state.getSessionById,
@@ -8729,6 +8837,7 @@ export const useChatSessionController = (
             activeComposerSession.model,
           ),
       speechInput: {
+        provider: runtime.userSpeechToTextSettings.activeProvider,
         browserSupported: speechInput.browserSupported,
         enabled: speechInput.enabled,
         recording: speechInput.recording,
@@ -8926,132 +9035,21 @@ export const useChatSessionController = (
       settingsSection: state.settingsSection,
       onSettingsSectionChange: state.setSettingsSection,
       effectiveWorkspaceMode: defaultRunMode,
-      providerSetup: {
-        provider: runtime.providerSetupProvider,
-        providerAvailability: runtime.globalProviders ?? [],
-        keyValue: runtime.providerSetupKey,
-        loading: runtime.providerSetupLoading,
-        saving: runtime.providerSetupSaving,
-        message: runtime.providerSetupMessage,
-        onProviderChange: runtime.handleProviderSetupProviderChange,
-        onOpenProviderPortal: runtime.handleProviderSetupPortalOpen,
-        onKeyChange: runtime.handleProviderSetupKeyChange,
-        onSave: runtime.handleProviderSetupSave,
-      },
-      webSearchSetup: {
-        activeProvider: runtime.webSearchActiveProvider,
-        providerAvailability: runtime.webSearchProviderAvailability,
-        provider: runtime.webSearchSetupProvider,
-        keyValue: runtime.webSearchSetupKey,
-        loading: runtime.webSearchSetupLoading,
-        saving: runtime.webSearchSetupSaving,
-        message: runtime.webSearchSetupMessage,
-        onActiveProviderChange: runtime.handleWebSearchActiveProviderSave,
-        onProviderChange: runtime.handleWebSearchSetupProviderChange,
-        onKeyChange: runtime.handleWebSearchSetupKeyChange,
-        onSave: runtime.handleWebSearchSetupSave,
-      },
-      mcpSetup: {
-        workspaceRoot: state.activeSession.workspace,
-        document: runtime.mcpConfigDocument,
-        draft: runtime.mcpConfigDraft,
-        presets: runtime.mcpConfigPresets,
-        commandsAvailable: runtime.mcpConfigWorkspaceAvailable,
-        loading: runtime.mcpConfigLoading,
-        saving: runtime.mcpConfigSaving,
-        discoveryServerId: runtime.mcpDiscoveryServerId,
-        discoveryBusy: runtime.mcpDiscoveryBusy,
-        discoveryOutput: runtime.mcpDiscoveryOutput,
-        oauthServerId: runtime.mcpOAuthServerId,
-        oauthCallback: runtime.mcpOAuthCallback,
-        oauthBusy: runtime.mcpOAuthBusy,
-        message: runtime.mcpConfigMessage,
-        onDraftChange: runtime.handleMcpConfigDraftChange,
-        onSave: runtime.handleMcpConfigSave,
-        onPresetInsert: runtime.handleMcpPresetInsert,
-        onDiscoveryServerIdChange: runtime.handleMcpDiscoveryServerIdChange,
-        onDiscoverServer: runtime.handleMcpDiscoverServer,
-        onRefreshDiscoveryCache: runtime.handleMcpRefreshDiscoveryCache,
-        onListDiscoveryCache: runtime.handleMcpListDiscoveryCache,
-        onOAuthServerIdChange: runtime.handleMcpOAuthServerIdChange,
-        onOAuthCallbackChange: runtime.handleMcpOAuthCallbackChange,
-        onStartOAuth: runtime.handleMcpOAuthStart,
-        onFinishOAuth: runtime.handleMcpOAuthFinish,
-      },
-      memorySetup: {
-        settings: runtime.userMemorySettings,
-        sourceSessions: memorySourceSessions,
-        saving: runtime.memorySetupSaving,
-        message: runtime.memorySetupMessage,
-        onGlobalEnabledChange: runtime.handleGlobalMemoryEnabledSave,
-        onWorkspaceDefaultEnabledChange:
-          runtime.handleWorkspaceMemoryDefaultEnabledSave,
-        onForgetGlobal: runtime.handleGlobalMemoryForget,
-      },
-      desktopSetup: {
-        settings: runtime.userDesktopSettings,
-        saving: runtime.desktopSetupSaving,
-        message: runtime.desktopSetupMessage,
-        onSave: runtime.handleDesktopSettingsSave,
-      },
-      workspaceRunSetup: {
-        settings: runtime.userWorkspaceRunSettings,
-        saving: runtime.workspaceRunSetupSaving,
-        message: runtime.workspaceRunSetupMessage,
-        onSave: runtime.handleWorkspaceRunSettingsSave,
-      },
-      agentLimitsSetup: {
-        settings: runtime.userAgentLimitsSettings,
-        reviewModelSettings: runtime.userReviewModelSettings,
-        providerAvailability: runtime.globalProviders ?? [],
-        saving: runtime.agentLimitsSetupSaving,
-        message: runtime.agentLimitsSetupMessage,
-        onSave: runtime.handleAgentLimitsSettingsSave,
-        onReviewModelSave: runtime.handleReviewModelSettingsSave,
-      },
-      voiceSetup: {
-        supported: voice.supported,
-        systemVoicesSupported: voice.systemVoicesSupported,
-        autoSpeakResponses: voice.autoSpeakResponses,
-        availabilityDescription: voice.availabilityDescription,
-        speechToTextAvailabilityDescription:
-          speechInput.availabilityDescription,
-        speechToTextProvider: runtime.userSpeechToTextSettings.activeProvider,
-        speechToTextProviderAvailability:
-          runtime.userSpeechToTextSettings.providerAvailability,
-        speechKeyTerms: runtime.userSpeechToTextSettings.keyTerms,
-        speechContext: runtime.userSpeechToTextSettings.speechContext,
-        speechAutoTranslateToEnglish:
-          runtime.userSpeechToTextSettings.autoTranslateToEnglish,
-        speechAutoFormat: runtime.userSpeechToTextSettings.autoFormat,
-        speechToTextProviderSaving: runtime.speechToTextSetupSaving,
-        speechInputDeviceId: runtime.userSpeechToTextSettings.inputDeviceId,
-        speechInputDevicesSupported: speechInputDevices.supported,
-        speechInputDevicesRefreshing: speechInputDevices.refreshing,
-        speechInputDeviceSaving: runtime.speechInputDeviceSaving,
-        speechInputDevices: speechInputDevices.devices,
-        speechInputDeviceMessage: speechInputDevices.errorText
-          ? { tone: "error" as const, text: speechInputDevices.errorText }
-          : null,
-        speechToTextProviderMessage: runtime.speechToTextSetupMessage,
-        aiProvider: runtime.userVoiceSettings.activeProvider,
-        aiProviderAvailability: runtime.userVoiceSettings.providerAvailability,
-        aiProviderSaving: runtime.voiceSetupSaving,
-        aiProviderMessage: runtime.voiceSetupMessage,
-        preferredVoiceURI: voice.preferredVoiceURI,
-        rate: voice.rate,
-        voiceOptions: voice.voiceOptions,
-        onSpeechToTextProviderChange:
-          runtime.handleSpeechToTextActiveProviderSave,
-        onSpeechInputDeviceChange: runtime.handleSpeechToTextInputDeviceSave,
-        onSpeechKeyTermsSave: runtime.handleSpeechToTextKeyTermsSave,
-        onSpeechContextSave: runtime.handleSpeechToTextContextSave,
-        onRefreshSpeechInputDevices: speechInputDevices.refresh,
-        onAiProviderChange: runtime.handleVoiceActiveProviderSave,
-        onAutoSpeakResponsesChange: voice.setAutoSpeakResponses,
-        onPreferredVoiceChange: voice.setPreferredVoiceURI,
-        onRateChange: voice.setRate,
-      },
+      ...createRuntimeSettingsControls(
+        runtime,
+        state.activeSession.workspace,
+        memorySourceSessions,
+      ),
+      voiceSetup: createRuntimeVoiceSettingsControls(
+        runtime,
+        createDeviceVoicePreferences(voice, speechInput, speechInputDevices),
+        {
+          onRefreshSpeechInputDevices: speechInputDevices.refresh,
+          onAutoSpeakResponsesChange: voice.setAutoSpeakResponses,
+          onPreferredVoiceChange: voice.setPreferredVoiceURI,
+          onRateChange: voice.setRate,
+        },
+      ),
     },
   };
 };

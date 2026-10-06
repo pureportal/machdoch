@@ -23,9 +23,20 @@ pub(super) struct OpenModelProfile {
     pub(super) spatial_multiple: u32,
     #[serde(default = "default_prompt")]
     pub(super) prompt: bool,
+    #[serde(default = "default_prompt")]
+    pub(super) negative_prompt: bool,
     #[serde(default)]
     pub(super) audio: bool,
     pub(super) license: ProfileLicense,
+    pub(super) distillation: Option<StudentCheckpoint>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct StudentCheckpoint {
+    pub(super) checkpoint_file: String,
+    pub(super) checkpoint_sha256: String,
+    pub(super) checkpoint_byte_size: u64,
 }
 
 fn default_prompt() -> bool {
@@ -46,6 +57,7 @@ pub(super) struct ProfileLicense {
     pub(super) name: String,
     pub(super) spdx_id: Option<String>,
     pub(super) commercial_use: String,
+    pub(super) source_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -53,6 +65,7 @@ pub(super) struct VideoContract {
     pub(super) minimum: u32,
     pub(super) maximum: u32,
     pub(super) stride: u32,
+    pub(super) fps: u32,
 }
 
 pub(super) fn profiles() -> &'static [OpenModelProfile] {

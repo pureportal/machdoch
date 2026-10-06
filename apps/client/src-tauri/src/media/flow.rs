@@ -4365,6 +4365,8 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                     "modelPolicy",
                     "modelId",
                     "modelAddons",
+                    "refMods",
+                    "refModMaxTokens",
                     "aspectRatio",
                     "resolution",
                     "width",
@@ -4418,6 +4420,25 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
             config_enum(node, "providerPolicy", &["local"])?;
             config_enum(node, "modelPolicy", &["balanced", "fast", "quality"])?;
             let model_id = config_string(node, "modelId", 256, false)?;
+            let ref_mods: Vec<super::refmods::RefModSelection> = serde_json::from_value(
+                node.config
+                    .get("refMods")
+                    .cloned()
+                    .unwrap_or_else(|| serde_json::json!([])),
+            )
+            .map_err(|error| format!("Invalid RefMods: {error}"))?;
+            let budget = node
+                .config
+                .get("refModMaxTokens")
+                .map(|value| {
+                    value
+                        .as_u64()
+                        .and_then(|number| u32::try_from(number).ok())
+                        .ok_or_else(|| "RefMod token limit must be an integer".to_string())
+                })
+                .transpose()?
+                .unwrap_or(65536);
+            super::refmods::validate(&ref_mods, model_id, budget)?;
             let open_profile =
                 super::open_models::by_id(model_id).filter(|profile| profile.video.is_some());
             if open_profile.is_some()
@@ -5182,7 +5203,10 @@ fn required_output_ports(node_type: &str) -> &'static [&'static str] {
         "source.prompt" => &["prompt"],
         "source.image" => &["image"],
         "source.audio" => &["audio"],
-        "source.video" | "operation.video-sequence" | "operation.video-audio" | "operation.lip-sync" => &["video"],
+        "source.video"
+        | "operation.video-sequence"
+        | "operation.video-audio"
+        | "operation.lip-sync" => &["video"],
         "source.seed" => &[],
         "source.animated-background" => &["video"],
         "task.generate-image"
@@ -6409,7 +6433,7 @@ mod tests {
                     "modelStrength": 0.15, "textEncoderStrength": null, "denoisingSchedule": null
                 }]));
             }
-            if !profile.prompt {
+            if !profile.negative_prompt {
                 config.insert("negativePrompt".into(), json!(""));
             }
             flow.validate()

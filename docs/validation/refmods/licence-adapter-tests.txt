@@ -1,0 +1,10 @@
+✔ packages RefMod workers with complete upstream licences and attribution (27.0117ms)
+✔ retains the full H3 model agreement and required notice (5.9174ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 275.4701

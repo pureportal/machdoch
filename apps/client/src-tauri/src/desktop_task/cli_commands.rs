@@ -86,7 +86,7 @@ const SCHEDULER_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
 };
 
 const SCHEDULER_QUERY_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
-    timeout_ms: 10_000,
+    timeout_ms: 30_000,
     ..SCHEDULER_CLI_SPEC
 };
 
@@ -726,7 +726,7 @@ mod tests {
     #[test]
     fn scheduler_queries_have_a_short_timeout_without_limiting_job_execution() {
         for action in ["list", "runs", "events"] {
-            assert_eq!(scheduler_cli_spec(&[action.to_string()]).timeout_ms, 10_000);
+            assert_eq!(scheduler_cli_spec(&[action.to_string()]).timeout_ms, 30_000);
         }
         for action in ["run-due", "trigger", "retry", "cancel", "create"] {
             assert_eq!(

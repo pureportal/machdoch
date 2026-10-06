@@ -1,0 +1,40 @@
+{
+  "pretrainedWeightsUsed": false,
+  "diffusers": "0.41.0.dev0",
+  "checks": [
+    {
+      "encodeFrames": 1,
+      "latentFrames": 1
+    },
+    {
+      "encodeFrames": 5,
+      "latentFrames": 2
+    },
+    {
+      "encodeFrames": 22,
+      "latentFrames": 7
+    },
+    {
+      "encodeFrames": 39,
+      "latentFrames": 12
+    },
+    {
+      "latentFrames": 7,
+      "decodedFrames": 22,
+      "boundedSelectedFramesEqualFullDecode": true
+    },
+    {
+      "latentFrames": 12,
+      "decodedFrames": 39,
+      "boundedSelectedFramesEqualFullDecode": true
+    },
+    {
+      "latentFrames": 17,
+      "decodedFrames": 56,
+      "boundedSelectedFramesEqualFullDecode": true
+    }
+  ],
+  "fullOutcomeVerified": false,
+  "nativeSingleFrameDecodeError": "torch.cat(): expected a non-empty list of Tensors",
+  "seconds": 146.53099999999995
+}

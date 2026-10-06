@@ -1,0 +1,82 @@
+.m-composer-surface {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--app-slate-800) 80%, transparent);
+  border-radius: 1.75rem;
+  background: color-mix(in srgb, var(--app-slate-950) 75%, transparent);
+  padding: 12px;
+  box-shadow: 0 18px 48px
+    color-mix(in srgb, var(--app-slate-950) 42%, transparent);
+}
+
+.m-composer-surface-toolbar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid
+    color-mix(in srgb, var(--app-slate-900) 80%, transparent);
+  padding-bottom: 12px;
+}
+
+.m-composer-surface-toolbar > fieldset {
+  min-width: 0;
+  width: 100%;
+}
+
+.m-composer-surface-body {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+:where(.m-composer-input) {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  resize: none;
+  overflow-y: auto;
+  border: 1px solid var(--app-slate-800);
+  border-radius: 1.4rem;
+  background: color-mix(in srgb, var(--app-slate-900) 70%, transparent);
+  padding: 16px 20px;
+  color: var(--app-text);
+  font: inherit;
+  outline: none;
+}
+
+:where(.m-composer-input)::placeholder {
+  color: var(--app-slate-500);
+}
+
+:where(.m-composer-input):focus-visible {
+  box-shadow: 0 0 0 1px var(--app-sky-500);
+}
+
+:where(.m-composer-input):disabled {
+  cursor: not-allowed;
+  color: var(--app-slate-500);
+}
+
+@media (max-width: 480px) {
+  .m-composer-surface .app-composer-form {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: end;
+  }
+
+  .m-composer-surface .app-composer-form > .m-composer-input {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .m-composer-surface .app-composer-actions,
+  .m-composer-surface .app-composer-edit-actions {
+    grid-column: 2;
+    grid-row: 2;
+    justify-content: flex-end;
+    flex-direction: row;
+  }
+}

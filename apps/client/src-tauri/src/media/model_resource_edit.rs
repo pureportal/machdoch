@@ -1,4 +1,4 @@
-use rusqlite::params;
+use rusqlite::{params, OptionalExtension};
 use serde::Deserialize;
 
 use super::{database, model_addon, model_import, MediaResult, MediaRuntimePaths};
@@ -41,6 +41,21 @@ pub(crate) fn update(
     }
     let profile = model_import::architecture_profile(&request.architecture)
         .ok_or_else(|| "Choose a supported model type.".to_string())?;
+    let student_profile = super::open_models::by_architecture(&request.architecture)
+        .filter(|profile| profile.distillation.is_some());
+    let license_name = student_profile.map_or(license_name, |student| student.license.name.clone());
+    let commercial_use = student_profile.map_or(commercial_use, |student| {
+        student.license.commercial_use.as_str()
+    });
+    let license_source_url = if let Some(student) = student_profile {
+        student
+            .license
+            .source_url
+            .as_deref()
+            .ok_or("Student model profile has no licence source")?
+    } else {
+        source_url.as_deref().unwrap_or("")
+    };
     let capabilities = serde_json::to_string(model_import::capabilities_for_architecture(
         &request.architecture,
     ))
@@ -54,12 +69,32 @@ pub(crate) fn update(
     let transaction = connection
         .transaction()
         .map_err(|error| format!("failed to begin model update: {error}"))?;
+    let stored_architecture = transaction
+        .query_row(
+            "SELECT architecture FROM media_models WHERE id = ?1",
+            [&request.resource_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map_err(|error| format!("failed to read model: {error}"))?
+        .flatten();
+    if stored_architecture.as_deref().is_some_and(|architecture| {
+        super::open_models::by_architecture(architecture)
+            .is_some_and(|profile| profile.distillation.is_some())
+            && architecture != request.architecture.as_str()
+    }) {
+        return Err(
+            "A student model's type cannot be changed. Import the matching student folder."
+                .to_string(),
+        );
+    }
     let updated = transaction
         .execute(
             "UPDATE media_models SET display_name = ?2, architecture = ?3, family = ?4,
          lifecycle_source_url = ?5, license_name = ?6, license_source_url = ?7,
          license_commercial_use = ?8, capabilities_json = ?9, addon_capabilities_json = ?10,
-         min_vram_gb = ?11, speed_score = ?12, quality_score = ?13, updated_at = ?14 WHERE id = ?1",
+          min_vram_gb = ?11, speed_score = ?12, quality_score = ?13, updated_at = ?14,
+          license_requires_acceptance = CASE WHEN ?15 THEN 1 ELSE license_requires_acceptance END WHERE id = ?1",
             params![
                 request.resource_id,
                 display_name,
@@ -67,14 +102,15 @@ pub(crate) fn update(
                 profile.family,
                 source_url,
                 license_name,
-                source_url.as_deref().unwrap_or(""),
+                license_source_url,
                 commercial_use,
                 capabilities,
                 addon_capabilities,
                 profile.min_vram_gb,
                 profile.speed_score,
                 profile.quality_score,
-                database::now()
+                database::now(),
+                student_profile.is_some()
             ],
         )
         .map_err(|error| format!("failed to save model: {error}"))?;

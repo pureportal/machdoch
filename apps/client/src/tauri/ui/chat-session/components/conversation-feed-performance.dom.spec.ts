@@ -3,12 +3,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import type { ChatSessionContextAttachment } from "../../chat-session.model";
+import type { ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import { ConversationFeed } from "./conversation-feed";
 
 const markdownRendered = vi.hoisted(() => vi.fn());
 
-vi.mock("../../components/markdown-content", () => ({
+vi.mock("@machdoch/client-ui/conversation/markdown-content", () => ({
   MarkdownContent: ({
     onOpenWorkspaceFile,
   }: {

@@ -2,6 +2,165 @@
   "version": 1,
   "cases": [
     {
+      "id": "command/voice/0",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-auto-speak",
+        "enabled": true
+      }
+    },
+    {
+      "id": "command/voice/1",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-auto-speak",
+        "enabled": false
+      }
+    },
+    {
+      "id": "command/voice/2",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-auto-speak"
+      }
+    },
+    {
+      "id": "command/voice/3",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-auto-speak",
+        "enabled": "true"
+      }
+    },
+    {
+      "id": "command/voice/4",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-auto-speak",
+        "enabled": true,
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/voice/5",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-speech-input-recording",
+        "sessionId": "session-1",
+        "enabled": true
+      }
+    },
+    {
+      "id": "command/voice/6",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-speech-input-recording",
+        "sessionId": "session-1",
+        "enabled": false
+      }
+    },
+    {
+      "id": "command/voice/7",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-speech-input-recording",
+        "enabled": true
+      }
+    },
+    {
+      "id": "command/voice/8",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-speech-input-recording",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/voice/9",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-speech-input-recording",
+        "sessionId": "session-1",
+        "enabled": 1
+      }
+    },
+    {
+      "id": "command/add-workspace/path",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "add-workspace",
+        "workspace": "/projects/demo"
+      }
+    },
+    {
+      "id": "command/remove-workspace/path",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "remove-workspace",
+        "workspace": "/projects/demo"
+      }
+    },
+    {
+      "id": "command/relink-workspace/paths",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "relink-workspace",
+        "workspace": "/projects/demo",
+        "destinationWorkspace": "/projects/new"
+      }
+    },
+    {
+      "id": "command/relink-workspace/missing-destination",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "relink-workspace",
+        "workspace": "/projects/demo"
+      }
+    },
+    {
+      "id": "command/relink-workspace/null-destination",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "relink-workspace",
+        "workspace": "/projects/demo",
+        "destinationWorkspace": null
+      }
+    },
+    {
+      "id": "command/remove-workspace/empty-path",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "remove-workspace",
+        "workspace": ""
+      }
+    },
+    {
+      "id": "command/add-workspace/session-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "add-workspace",
+        "workspace": "/projects/demo",
+        "sessionId": "session-1"
+      }
+    },
+    {
       "id": "command/submit-message/goal-objective",
       "target": "command",
       "accepted": true,
@@ -1682,7 +1841,9 @@
       "payload": {
         "kind": "tag-session",
         "sessionId": "session-1",
-        "tags": ["review"]
+        "tags": [
+          "review"
+        ]
       }
     },
     {
@@ -1691,7 +1852,9 @@
       "accepted": false,
       "payload": {
         "kind": "tag-session",
-        "tags": ["review"]
+        "tags": [
+          "review"
+        ]
       }
     },
     {
@@ -1710,7 +1873,9 @@
       "payload": {
         "kind": "tag-session",
         "sessionId": "session-1",
-        "tags": ["review"],
+        "tags": [
+          "review"
+        ],
         "unexpected": true
       }
     },
@@ -3105,240 +3270,6 @@
       }
     },
     {
-      "id": "command/scheduler-trigger/accepted",
-      "target": "command",
-      "accepted": true,
-      "payload": {
-        "kind": "scheduler-trigger",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-trigger/missing-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-trigger",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-trigger/missing-jobId",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-trigger",
-        "workspace": "C:\\workspace"
-      }
-    },
-    {
-      "id": "command/scheduler-trigger/unknown-field",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-trigger",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1",
-        "unexpected": true
-      }
-    },
-    {
-      "id": "command/scheduler-pause/accepted",
-      "target": "command",
-      "accepted": true,
-      "payload": {
-        "kind": "scheduler-pause",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-pause/missing-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-pause",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-pause/missing-jobId",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-pause",
-        "workspace": "C:\\workspace"
-      }
-    },
-    {
-      "id": "command/scheduler-pause/unknown-field",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-pause",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1",
-        "unexpected": true
-      }
-    },
-    {
-      "id": "command/scheduler-resume/accepted",
-      "target": "command",
-      "accepted": true,
-      "payload": {
-        "kind": "scheduler-resume",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-resume/missing-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-resume",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-resume/missing-jobId",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-resume",
-        "workspace": "C:\\workspace"
-      }
-    },
-    {
-      "id": "command/scheduler-resume/unknown-field",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-resume",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1",
-        "unexpected": true
-      }
-    },
-    {
-      "id": "command/scheduler-delete/accepted",
-      "target": "command",
-      "accepted": true,
-      "payload": {
-        "kind": "scheduler-delete",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-delete/missing-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-delete",
-        "jobId": "job-1"
-      }
-    },
-    {
-      "id": "command/scheduler-delete/missing-jobId",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-delete",
-        "workspace": "C:\\workspace"
-      }
-    },
-    {
-      "id": "command/scheduler-delete/unknown-field",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-delete",
-        "workspace": "C:\\workspace",
-        "jobId": "job-1",
-        "unexpected": true
-      }
-    },
-    {
-      "id": "command/scheduler-retry-run/accepted",
-      "target": "command",
-      "accepted": true,
-      "payload": {
-        "kind": "scheduler-retry-run",
-        "workspace": "C:\\workspace",
-        "runId": "run-1"
-      }
-    },
-    {
-      "id": "command/scheduler-retry-run/missing-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-retry-run",
-        "runId": "run-1"
-      }
-    },
-    {
-      "id": "command/scheduler-retry-run/missing-runId",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-retry-run",
-        "workspace": "C:\\workspace"
-      }
-    },
-    {
-      "id": "command/scheduler-retry-run/unknown-field",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-retry-run",
-        "workspace": "C:\\workspace",
-        "runId": "run-1",
-        "unexpected": true
-      }
-    },
-    {
-      "id": "command/scheduler-cancel-run/accepted",
-      "target": "command",
-      "accepted": true,
-      "payload": {
-        "kind": "scheduler-cancel-run",
-        "workspace": "C:\\workspace",
-        "runId": "run-1"
-      }
-    },
-    {
-      "id": "command/scheduler-cancel-run/missing-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-cancel-run",
-        "runId": "run-1"
-      }
-    },
-    {
-      "id": "command/scheduler-cancel-run/missing-runId",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-cancel-run",
-        "workspace": "C:\\workspace"
-      }
-    },
-    {
-      "id": "command/scheduler-cancel-run/unknown-field",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-cancel-run",
-        "workspace": "C:\\workspace",
-        "runId": "run-1",
-        "unexpected": true
-      }
-    },
-    {
       "id": "command/ralph-run/user-scope",
       "target": "command",
       "accepted": true,
@@ -3664,16 +3595,6 @@
       }
     },
     {
-      "id": "command/scheduler-trigger/blank-workspace",
-      "target": "command",
-      "accepted": false,
-      "payload": {
-        "kind": "scheduler-trigger",
-        "workspace": " ",
-        "jobId": "job-1"
-      }
-    },
-    {
       "id": "command/unknown-kind",
       "target": "command",
       "accepted": false,
@@ -3727,7 +3648,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -3746,8 +3669,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -3812,7 +3739,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -3831,8 +3760,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -3887,7 +3820,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -3906,8 +3841,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -3972,7 +3911,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -3991,8 +3932,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4048,7 +3993,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4067,8 +4014,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4124,7 +4075,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4143,8 +4096,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4200,7 +4157,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4219,8 +4178,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4276,7 +4239,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4295,8 +4260,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4352,7 +4321,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4371,8 +4342,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4428,7 +4403,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4447,8 +4424,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4504,7 +4485,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4523,8 +4506,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4580,7 +4567,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4599,8 +4588,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4656,7 +4649,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4675,8 +4670,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4733,7 +4732,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               },
               {
                 "id": "123e4567-e89b-42d3-a456-426614174000",
@@ -4741,7 +4742,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4760,8 +4763,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -4817,7 +4824,9 @@
                 "body": "Review carefully.",
                 "enabled": true,
                 "global": true,
-                "tags": ["review"]
+                "tags": [
+                  "review"
+                ]
               }
             ],
             "contextPacks": [
@@ -4836,8 +4845,12 @@
                     "defaultValue": "src"
                   }
                 ],
-                "triggerPhrases": ["review"],
-                "pathPatterns": ["src/**"],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
                 "promptEnhancementMode": "web-search",
                 "interviewEnabled": true,
                 "sessionMemoryEnabled": false,
@@ -5277,7 +5290,7 @@
             "sessions": [],
             "commands": [],
             "shell": {
-              "version": 5.0,
+              "version": 5,
               "capturedAt": 0,
               "sessions": [],
               "workspaces": [],
@@ -5290,7 +5303,7 @@
                   "prompt": "",
                   "target": "image",
                   "aspectRatio": "1:1",
-                  "outputCount": 1.0,
+                  "outputCount": 1,
                   "outputFormat": "png",
                   "transparentBackground": false,
                   "available": false
@@ -6067,7 +6080,9 @@
             "shell": {
               "version": 5,
               "capturedAt": 0,
-              "sessions": [{}],
+              "sessions": [
+                {}
+              ],
               "workspaces": [],
               "visibleMessages": [],
               "contextPacks": [],
@@ -6097,7 +6112,9 @@
               "capturedAt": 0,
               "sessions": [],
               "workspaces": [],
-              "visibleMessages": [{}],
+              "visibleMessages": [
+                {}
+              ],
               "contextPacks": [],
               "promptHistory": []
             }
@@ -6126,7 +6143,9 @@
               "sessions": [],
               "workspaces": [],
               "visibleMessages": [],
-              "contextPacks": [{}],
+              "contextPacks": [
+                {}
+              ],
               "promptHistory": []
             }
           }
@@ -6383,7 +6402,9 @@
                 "supported": false,
                 "autoSpeakResponses": false,
                 "speechInputSupported": false,
-                "speechInputEnabled": false
+                "speechInputEnabled": false,
+                "speechInputRecording": false,
+                "speechInputBusy": false
               },
               "quickTask": {
                 "status": "idle",
@@ -6504,7 +6525,9 @@
                 "supported": false,
                 "autoSpeakResponses": false,
                 "speechInputSupported": false,
-                "speechInputEnabled": false
+                "speechInputEnabled": false,
+                "speechInputRecording": false,
+                "speechInputBusy": false
               },
               "quickTask": {
                 "status": "idle",
@@ -6625,7 +6648,9 @@
                 "supported": false,
                 "autoSpeakResponses": false,
                 "speechInputSupported": false,
-                "speechInputEnabled": false
+                "speechInputEnabled": false,
+                "speechInputRecording": false,
+                "speechInputBusy": false
               },
               "quickTask": {
                 "status": "idle",
@@ -6736,7 +6761,9 @@
                 "supported": false,
                 "autoSpeakResponses": false,
                 "speechInputSupported": false,
-                "speechInputEnabled": false
+                "speechInputEnabled": false,
+                "speechInputRecording": false,
+                "speechInputBusy": false
               },
               "quickTask": {
                 "status": "idle",
@@ -6847,7 +6874,9 @@
                 "supported": false,
                 "autoSpeakResponses": false,
                 "speechInputSupported": false,
-                "speechInputEnabled": false
+                "speechInputEnabled": false,
+                "speechInputRecording": false,
+                "speechInputBusy": false
               },
               "quickTask": {
                 "status": "idle",
@@ -6985,6 +7014,1417 @@
         }
       },
       "gatewayBytes": 4194305
+    },
+    {
+      "id": "command/reset-session-time/valid",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "reset-session-time",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/reset-session-time/missing-session",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "reset-session-time"
+      }
+    },
+    {
+      "id": "command/reset-session-time/blank-session",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "reset-session-time",
+        "sessionId": "  "
+      }
+    },
+    {
+      "id": "command/reset-session-time/extra-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "reset-session-time",
+        "sessionId": "session-1",
+        "prompt": "unused"
+      }
+    },
+    {
+      "id": "command/move-session-to-top/valid",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "move-session-to-top",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/move-session-to-top/missing-session",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "move-session-to-top"
+      }
+    },
+    {
+      "id": "command/move-session-to-top/blank-session",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "move-session-to-top",
+        "sessionId": "  "
+      }
+    },
+    {
+      "id": "command/move-session-to-top/extra-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "move-session-to-top",
+        "sessionId": "session-1",
+        "prompt": "unused"
+      }
+    },
+    {
+      "id": "snapshot/session-actions/valid",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [
+                {
+                  "id": "session-1",
+                  "title": "Session",
+                  "status": "idle",
+                  "provider": "provider",
+                  "model": "model",
+                  "effectiveMode": "ask",
+                  "createdAt": 0,
+                  "updatedAt": 0,
+                  "tags": [],
+                  "messageCount": 0,
+                  "promptHistoryCount": 0,
+                  "attachmentCount": 0,
+                  "canRename": true,
+                  "canDelete": true,
+                  "canArchive": true,
+                  "canPin": true,
+                  "canDuplicate": true,
+                  "canBranch": true,
+                  "canResetTime": true,
+                  "canMoveToTop": true
+                }
+              ],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/session-actions/wrong-type",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [
+                {
+                  "id": "session-1",
+                  "title": "Session",
+                  "status": "idle",
+                  "provider": "provider",
+                  "model": "model",
+                  "effectiveMode": "ask",
+                  "createdAt": 0,
+                  "updatedAt": 0,
+                  "tags": [],
+                  "messageCount": 0,
+                  "promptHistoryCount": 0,
+                  "attachmentCount": 0,
+                  "canRename": true,
+                  "canDelete": true,
+                  "canArchive": true,
+                  "canPin": true,
+                  "canDuplicate": true,
+                  "canBranch": true,
+                  "canResetTime": "yes",
+                  "canMoveToTop": true
+                }
+              ],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "accepted": true,
+      "payload": {
+        "commandId": "quick-chat-open",
+        "kind": "open-quick-chat"
+      },
+      "target": "command",
+      "id": "quick-chat-open"
+    },
+    {
+      "accepted": false,
+      "payload": {
+        "sessionId": "session",
+        "kind": "open-quick-chat"
+      },
+      "target": "command",
+      "id": "quick-chat-target-rejected"
+    },
+    {
+      "accepted": false,
+      "payload": {
+        "workspace": "C:/workspace",
+        "kind": "open-quick-chat"
+      },
+      "target": "command",
+      "id": "quick-chat-workspace-rejected"
+    },
+    {
+      "id": "snapshot/session-unread/valid",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [
+                {
+                  "id": "session-1",
+                  "title": "Session",
+                  "status": "idle",
+                  "provider": "provider",
+                  "model": "model",
+                  "effectiveMode": "ask",
+                  "createdAt": 0,
+                  "updatedAt": 0,
+                  "tags": [],
+                  "messageCount": 0,
+                  "promptHistoryCount": 0,
+                  "attachmentCount": 0,
+                  "canRename": true,
+                  "canDelete": true,
+                  "canArchive": true,
+                  "canPin": true,
+                  "canDuplicate": true,
+                  "canBranch": true,
+                  "canResetTime": true,
+                  "canMoveToTop": true,
+                  "unread": true
+                }
+              ],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/session-unread/wrong-type",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [
+                {
+                  "id": "session-1",
+                  "title": "Session",
+                  "status": "idle",
+                  "provider": "provider",
+                  "model": "model",
+                  "effectiveMode": "ask",
+                  "createdAt": 0,
+                  "updatedAt": 0,
+                  "tags": [],
+                  "messageCount": 0,
+                  "promptHistoryCount": 0,
+                  "attachmentCount": 0,
+                  "canRename": true,
+                  "canDelete": true,
+                  "canArchive": true,
+                  "canPin": true,
+                  "canDuplicate": true,
+                  "canBranch": true,
+                  "canResetTime": true,
+                  "canMoveToTop": true,
+                  "unread": "yes"
+                }
+              ],
+              "workspaces": [],
+              "visibleMessages": [],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/message-workspace/historical",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [
+                {
+                  "id": "session-1",
+                  "title": "Session",
+                  "status": "idle",
+                  "provider": "provider",
+                  "model": "model",
+                  "effectiveMode": "ask",
+                  "createdAt": 0,
+                  "updatedAt": 0,
+                  "tags": [],
+                  "messageCount": 0,
+                  "promptHistoryCount": 0,
+                  "attachmentCount": 0,
+                  "canRename": true,
+                  "canDelete": true,
+                  "canArchive": true,
+                  "canPin": true,
+                  "canDuplicate": true,
+                  "canBranch": true,
+                  "canResetTime": true,
+                  "canMoveToTop": true
+                }
+              ],
+              "workspaces": [],
+              "visibleMessages": [
+                {
+                  "id": "message",
+                  "role": "user",
+                  "content": "Request",
+                  "presentation": "message",
+                  "attachments": [],
+                  "workspace": "C:/historical",
+                  "actions": {
+                    "canRetry": false,
+                    "canContinue": false,
+                    "canSaveAsContextPack": true,
+                    "canSpeak": false,
+                    "isSpeaking": false
+                  }
+                }
+              ],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/message-workspace/unassigned",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [
+                {
+                  "id": "session-1",
+                  "title": "Session",
+                  "status": "idle",
+                  "provider": "provider",
+                  "model": "model",
+                  "effectiveMode": "ask",
+                  "createdAt": 0,
+                  "updatedAt": 0,
+                  "tags": [],
+                  "messageCount": 0,
+                  "promptHistoryCount": 0,
+                  "attachmentCount": 0,
+                  "canRename": true,
+                  "canDelete": true,
+                  "canArchive": true,
+                  "canPin": true,
+                  "canDuplicate": true,
+                  "canBranch": true,
+                  "canResetTime": true,
+                  "canMoveToTop": true
+                }
+              ],
+              "workspaces": [],
+              "visibleMessages": [
+                {
+                  "id": "message",
+                  "role": "user",
+                  "content": "Request",
+                  "presentation": "message",
+                  "attachments": [],
+                  "workspace": null,
+                  "actions": {
+                    "canRetry": false,
+                    "canContinue": false,
+                    "canSaveAsContextPack": true,
+                    "canSpeak": false,
+                    "isSpeaking": false
+                  }
+                }
+              ],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/message-workspace/wrong-type",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 0,
+            "eventId": 0,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 0,
+              "sessions": [
+                {
+                  "id": "session-1",
+                  "title": "Session",
+                  "status": "idle",
+                  "provider": "provider",
+                  "model": "model",
+                  "effectiveMode": "ask",
+                  "createdAt": 0,
+                  "updatedAt": 0,
+                  "tags": [],
+                  "messageCount": 0,
+                  "promptHistoryCount": 0,
+                  "attachmentCount": 0,
+                  "canRename": true,
+                  "canDelete": true,
+                  "canArchive": true,
+                  "canPin": true,
+                  "canDuplicate": true,
+                  "canBranch": true,
+                  "canResetTime": true,
+                  "canMoveToTop": true
+                }
+              ],
+              "workspaces": [],
+              "visibleMessages": [
+                {
+                  "id": "message",
+                  "role": "user",
+                  "content": "Request",
+                  "presentation": "message",
+                  "attachments": [],
+                  "workspace": true,
+                  "actions": {
+                    "canRetry": false,
+                    "canContinue": false,
+                    "canSaveAsContextPack": true,
+                    "canSpeak": false,
+                    "isSpeaking": false
+                  }
+                }
+              ],
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/timeout/valid",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 1,
+            "eventId": 1,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 1,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [
+                {
+                  "id": "timeout-message",
+                  "role": "agent",
+                  "content": "",
+                  "presentation": "message",
+                  "taskId": "task",
+                  "attachments": [],
+                  "source": {
+                    "kind": "thinking",
+                    "status": "running",
+                    "entries": [],
+                    "timeline": [],
+                    "timeout": {
+                      "startedAt": 1,
+                      "lastActivityAt": 2,
+                      "idleTimeoutMs": 180000,
+                      "absoluteTimeoutMs": null
+                    }
+                  },
+                  "actions": {
+                    "canRetry": false,
+                    "canContinue": false,
+                    "canSaveAsContextPack": false,
+                    "canSpeak": false,
+                    "isSpeaking": false
+                  }
+                }
+              ],
+              "composer": {
+                "sessionId": "session-1",
+                "draft": "",
+                "provider": "codex",
+                "providerLabel": "Codex",
+                "model": "gpt-6",
+                "modelLabel": "GPT-6",
+                "modelCatalogLoading": false,
+                "modelCatalog": [],
+                "mode": "machdoch",
+                "defaultMode": "machdoch",
+                "parallelAgentMode": "native",
+                "availableParallelAgentModes": [
+                  "disabled",
+                  "read-only",
+                  "machdoch",
+                  "native"
+                ],
+                "goalMode": "native",
+                "availableGoalModes": [
+                  "machdoch",
+                  "native"
+                ],
+                "goal": {
+                  "id": "goal-1",
+                  "objective": "Complete the project checks.",
+                  "mode": "native",
+                  "status": "active",
+                  "turns": 2,
+                  "tokensUsed": 200,
+                  "elapsedMs": 1000,
+                  "tokenBudget": 10000,
+                  "turnBudget": 10,
+                  "timeBudgetMs": 60000,
+                  "reason": "",
+                  "createdAt": 1,
+                  "updatedAt": 1
+                },
+                "reasoning": "default",
+                "defaultReasoning": "default",
+                "reasoningOptions": [
+                  "default"
+                ],
+                "promptEnhancementMode": "off",
+                "interviewEnabled": false,
+                "interviewAvailable": true,
+                "workspaceLabel": "Workspace",
+                "canSend": true,
+                "isExecuting": false,
+                "sessionMemoryEnabled": true,
+                "sessionMemory": [
+                  {
+                    "id": "memory-1",
+                    "content": "Use the project conventions.",
+                    "createdAt": 1,
+                    "sourceSession": {
+                      "id": "source-session",
+                      "title": "Project conventions"
+                    }
+                  }
+                ],
+                "workspaceMemoryAvailable": true,
+                "workspaceMemoryEnabled": true,
+                "globalMemoryAvailable": true,
+                "globalMemoryEnabled": false,
+                "uiControlAvailable": false,
+                "uiControlEnabled": false,
+                "uiControlDescription": "",
+                "attachments": [],
+                "chooserProviders": [
+                  "codex"
+                ],
+                "matchedContextPackIds": []
+              },
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/timeout/null-durations",
+      "target": "snapshot",
+      "accepted": true,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 1,
+            "eventId": 1,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 1,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [
+                {
+                  "id": "timeout-message",
+                  "role": "agent",
+                  "content": "",
+                  "presentation": "message",
+                  "taskId": "task",
+                  "attachments": [],
+                  "source": {
+                    "kind": "thinking",
+                    "status": "running",
+                    "entries": [],
+                    "timeline": [],
+                    "timeout": {
+                      "startedAt": 1,
+                      "lastActivityAt": 2,
+                      "idleTimeoutMs": null,
+                      "absoluteTimeoutMs": null
+                    }
+                  },
+                  "actions": {
+                    "canRetry": false,
+                    "canContinue": false,
+                    "canSaveAsContextPack": false,
+                    "canSpeak": false,
+                    "isSpeaking": false
+                  }
+                }
+              ],
+              "composer": {
+                "sessionId": "session-1",
+                "draft": "",
+                "provider": "codex",
+                "providerLabel": "Codex",
+                "model": "gpt-6",
+                "modelLabel": "GPT-6",
+                "modelCatalogLoading": false,
+                "modelCatalog": [],
+                "mode": "machdoch",
+                "defaultMode": "machdoch",
+                "parallelAgentMode": "native",
+                "availableParallelAgentModes": [
+                  "disabled",
+                  "read-only",
+                  "machdoch",
+                  "native"
+                ],
+                "goalMode": "native",
+                "availableGoalModes": [
+                  "machdoch",
+                  "native"
+                ],
+                "goal": {
+                  "id": "goal-1",
+                  "objective": "Complete the project checks.",
+                  "mode": "native",
+                  "status": "active",
+                  "turns": 2,
+                  "tokensUsed": 200,
+                  "elapsedMs": 1000,
+                  "tokenBudget": 10000,
+                  "turnBudget": 10,
+                  "timeBudgetMs": 60000,
+                  "reason": "",
+                  "createdAt": 1,
+                  "updatedAt": 1
+                },
+                "reasoning": "default",
+                "defaultReasoning": "default",
+                "reasoningOptions": [
+                  "default"
+                ],
+                "promptEnhancementMode": "off",
+                "interviewEnabled": false,
+                "interviewAvailable": true,
+                "workspaceLabel": "Workspace",
+                "canSend": true,
+                "isExecuting": false,
+                "sessionMemoryEnabled": true,
+                "sessionMemory": [
+                  {
+                    "id": "memory-1",
+                    "content": "Use the project conventions.",
+                    "createdAt": 1,
+                    "sourceSession": {
+                      "id": "source-session",
+                      "title": "Project conventions"
+                    }
+                  }
+                ],
+                "workspaceMemoryAvailable": true,
+                "workspaceMemoryEnabled": true,
+                "globalMemoryAvailable": true,
+                "globalMemoryEnabled": false,
+                "uiControlAvailable": false,
+                "uiControlEnabled": false,
+                "uiControlDescription": "",
+                "attachments": [],
+                "chooserProviders": [
+                  "codex"
+                ],
+                "matchedContextPackIds": []
+              },
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/timeout/negative",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 1,
+            "eventId": 1,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 1,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [
+                {
+                  "id": "timeout-message",
+                  "role": "agent",
+                  "content": "",
+                  "presentation": "message",
+                  "taskId": "task",
+                  "attachments": [],
+                  "source": {
+                    "kind": "thinking",
+                    "status": "running",
+                    "entries": [],
+                    "timeline": [],
+                    "timeout": {
+                      "startedAt": 1,
+                      "lastActivityAt": -1,
+                      "idleTimeoutMs": 180000,
+                      "absoluteTimeoutMs": null
+                    }
+                  },
+                  "actions": {
+                    "canRetry": false,
+                    "canContinue": false,
+                    "canSaveAsContextPack": false,
+                    "canSpeak": false,
+                    "isSpeaking": false
+                  }
+                }
+              ],
+              "composer": {
+                "sessionId": "session-1",
+                "draft": "",
+                "provider": "codex",
+                "providerLabel": "Codex",
+                "model": "gpt-6",
+                "modelLabel": "GPT-6",
+                "modelCatalogLoading": false,
+                "modelCatalog": [],
+                "mode": "machdoch",
+                "defaultMode": "machdoch",
+                "parallelAgentMode": "native",
+                "availableParallelAgentModes": [
+                  "disabled",
+                  "read-only",
+                  "machdoch",
+                  "native"
+                ],
+                "goalMode": "native",
+                "availableGoalModes": [
+                  "machdoch",
+                  "native"
+                ],
+                "goal": {
+                  "id": "goal-1",
+                  "objective": "Complete the project checks.",
+                  "mode": "native",
+                  "status": "active",
+                  "turns": 2,
+                  "tokensUsed": 200,
+                  "elapsedMs": 1000,
+                  "tokenBudget": 10000,
+                  "turnBudget": 10,
+                  "timeBudgetMs": 60000,
+                  "reason": "",
+                  "createdAt": 1,
+                  "updatedAt": 1
+                },
+                "reasoning": "default",
+                "defaultReasoning": "default",
+                "reasoningOptions": [
+                  "default"
+                ],
+                "promptEnhancementMode": "off",
+                "interviewEnabled": false,
+                "interviewAvailable": true,
+                "workspaceLabel": "Workspace",
+                "canSend": true,
+                "isExecuting": false,
+                "sessionMemoryEnabled": true,
+                "sessionMemory": [
+                  {
+                    "id": "memory-1",
+                    "content": "Use the project conventions.",
+                    "createdAt": 1,
+                    "sourceSession": {
+                      "id": "source-session",
+                      "title": "Project conventions"
+                    }
+                  }
+                ],
+                "workspaceMemoryAvailable": true,
+                "workspaceMemoryEnabled": true,
+                "globalMemoryAvailable": true,
+                "globalMemoryEnabled": false,
+                "uiControlAvailable": false,
+                "uiControlEnabled": false,
+                "uiControlDescription": "",
+                "attachments": [],
+                "chooserProviders": [
+                  "codex"
+                ],
+                "matchedContextPackIds": []
+              },
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/timeout/fractional",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 1,
+            "eventId": 1,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 1,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [
+                {
+                  "id": "timeout-message",
+                  "role": "agent",
+                  "content": "",
+                  "presentation": "message",
+                  "taskId": "task",
+                  "attachments": [],
+                  "source": {
+                    "kind": "thinking",
+                    "status": "running",
+                    "entries": [],
+                    "timeline": [],
+                    "timeout": {
+                      "startedAt": 1,
+                      "lastActivityAt": 2,
+                      "idleTimeoutMs": 1.5,
+                      "absoluteTimeoutMs": null
+                    }
+                  },
+                  "actions": {
+                    "canRetry": false,
+                    "canContinue": false,
+                    "canSaveAsContextPack": false,
+                    "canSpeak": false,
+                    "isSpeaking": false
+                  }
+                }
+              ],
+              "composer": {
+                "sessionId": "session-1",
+                "draft": "",
+                "provider": "codex",
+                "providerLabel": "Codex",
+                "model": "gpt-6",
+                "modelLabel": "GPT-6",
+                "modelCatalogLoading": false,
+                "modelCatalog": [],
+                "mode": "machdoch",
+                "defaultMode": "machdoch",
+                "parallelAgentMode": "native",
+                "availableParallelAgentModes": [
+                  "disabled",
+                  "read-only",
+                  "machdoch",
+                  "native"
+                ],
+                "goalMode": "native",
+                "availableGoalModes": [
+                  "machdoch",
+                  "native"
+                ],
+                "goal": {
+                  "id": "goal-1",
+                  "objective": "Complete the project checks.",
+                  "mode": "native",
+                  "status": "active",
+                  "turns": 2,
+                  "tokensUsed": 200,
+                  "elapsedMs": 1000,
+                  "tokenBudget": 10000,
+                  "turnBudget": 10,
+                  "timeBudgetMs": 60000,
+                  "reason": "",
+                  "createdAt": 1,
+                  "updatedAt": 1
+                },
+                "reasoning": "default",
+                "defaultReasoning": "default",
+                "reasoningOptions": [
+                  "default"
+                ],
+                "promptEnhancementMode": "off",
+                "interviewEnabled": false,
+                "interviewAvailable": true,
+                "workspaceLabel": "Workspace",
+                "canSend": true,
+                "isExecuting": false,
+                "sessionMemoryEnabled": true,
+                "sessionMemory": [
+                  {
+                    "id": "memory-1",
+                    "content": "Use the project conventions.",
+                    "createdAt": 1,
+                    "sourceSession": {
+                      "id": "source-session",
+                      "title": "Project conventions"
+                    }
+                  }
+                ],
+                "workspaceMemoryAvailable": true,
+                "workspaceMemoryEnabled": true,
+                "globalMemoryAvailable": true,
+                "globalMemoryEnabled": false,
+                "uiControlAvailable": false,
+                "uiControlEnabled": false,
+                "uiControlDescription": "",
+                "attachments": [],
+                "chooserProviders": [
+                  "codex"
+                ],
+                "matchedContextPackIds": []
+              },
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/timeout/missing",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 1,
+            "eventId": 1,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 1,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [
+                {
+                  "id": "timeout-message",
+                  "role": "agent",
+                  "content": "",
+                  "presentation": "message",
+                  "taskId": "task",
+                  "attachments": [],
+                  "source": {
+                    "kind": "thinking",
+                    "status": "running",
+                    "entries": [],
+                    "timeline": [],
+                    "timeout": {
+                      "startedAt": 1,
+                      "lastActivityAt": 2,
+                      "idleTimeoutMs": 180000
+                    }
+                  },
+                  "actions": {
+                    "canRetry": false,
+                    "canContinue": false,
+                    "canSaveAsContextPack": false,
+                    "canSpeak": false,
+                    "isSpeaking": false
+                  }
+                }
+              ],
+              "composer": {
+                "sessionId": "session-1",
+                "draft": "",
+                "provider": "codex",
+                "providerLabel": "Codex",
+                "model": "gpt-6",
+                "modelLabel": "GPT-6",
+                "modelCatalogLoading": false,
+                "modelCatalog": [],
+                "mode": "machdoch",
+                "defaultMode": "machdoch",
+                "parallelAgentMode": "native",
+                "availableParallelAgentModes": [
+                  "disabled",
+                  "read-only",
+                  "machdoch",
+                  "native"
+                ],
+                "goalMode": "native",
+                "availableGoalModes": [
+                  "machdoch",
+                  "native"
+                ],
+                "goal": {
+                  "id": "goal-1",
+                  "objective": "Complete the project checks.",
+                  "mode": "native",
+                  "status": "active",
+                  "turns": 2,
+                  "tokensUsed": 200,
+                  "elapsedMs": 1000,
+                  "tokenBudget": 10000,
+                  "turnBudget": 10,
+                  "timeBudgetMs": 60000,
+                  "reason": "",
+                  "createdAt": 1,
+                  "updatedAt": 1
+                },
+                "reasoning": "default",
+                "defaultReasoning": "default",
+                "reasoningOptions": [
+                  "default"
+                ],
+                "promptEnhancementMode": "off",
+                "interviewEnabled": false,
+                "interviewAvailable": true,
+                "workspaceLabel": "Workspace",
+                "canSend": true,
+                "isExecuting": false,
+                "sessionMemoryEnabled": true,
+                "sessionMemory": [
+                  {
+                    "id": "memory-1",
+                    "content": "Use the project conventions.",
+                    "createdAt": 1,
+                    "sourceSession": {
+                      "id": "source-session",
+                      "title": "Project conventions"
+                    }
+                  }
+                ],
+                "workspaceMemoryAvailable": true,
+                "workspaceMemoryEnabled": true,
+                "globalMemoryAvailable": true,
+                "globalMemoryEnabled": false,
+                "uiControlAvailable": false,
+                "uiControlEnabled": false,
+                "uiControlDescription": "",
+                "attachments": [],
+                "chooserProviders": [
+                  "codex"
+                ],
+                "matchedContextPackIds": []
+              },
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/timeout/unknown-key",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 1,
+            "eventId": 1,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 1,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [
+                {
+                  "id": "timeout-message",
+                  "role": "agent",
+                  "content": "",
+                  "presentation": "message",
+                  "taskId": "task",
+                  "attachments": [],
+                  "source": {
+                    "kind": "thinking",
+                    "status": "running",
+                    "entries": [],
+                    "timeline": [],
+                    "timeout": {
+                      "startedAt": 1,
+                      "lastActivityAt": 2,
+                      "idleTimeoutMs": 180000,
+                      "absoluteTimeoutMs": null,
+                      "unexpected": true
+                    }
+                  },
+                  "actions": {
+                    "canRetry": false,
+                    "canContinue": false,
+                    "canSaveAsContextPack": false,
+                    "canSpeak": false,
+                    "isSpeaking": false
+                  }
+                }
+              ],
+              "composer": {
+                "sessionId": "session-1",
+                "draft": "",
+                "provider": "codex",
+                "providerLabel": "Codex",
+                "model": "gpt-6",
+                "modelLabel": "GPT-6",
+                "modelCatalogLoading": false,
+                "modelCatalog": [],
+                "mode": "machdoch",
+                "defaultMode": "machdoch",
+                "parallelAgentMode": "native",
+                "availableParallelAgentModes": [
+                  "disabled",
+                  "read-only",
+                  "machdoch",
+                  "native"
+                ],
+                "goalMode": "native",
+                "availableGoalModes": [
+                  "machdoch",
+                  "native"
+                ],
+                "goal": {
+                  "id": "goal-1",
+                  "objective": "Complete the project checks.",
+                  "mode": "native",
+                  "status": "active",
+                  "turns": 2,
+                  "tokensUsed": 200,
+                  "elapsedMs": 1000,
+                  "tokenBudget": 10000,
+                  "turnBudget": 10,
+                  "timeBudgetMs": 60000,
+                  "reason": "",
+                  "createdAt": 1,
+                  "updatedAt": 1
+                },
+                "reasoning": "default",
+                "defaultReasoning": "default",
+                "reasoningOptions": [
+                  "default"
+                ],
+                "promptEnhancementMode": "off",
+                "interviewEnabled": false,
+                "interviewAvailable": true,
+                "workspaceLabel": "Workspace",
+                "canSend": true,
+                "isExecuting": false,
+                "sessionMemoryEnabled": true,
+                "sessionMemory": [
+                  {
+                    "id": "memory-1",
+                    "content": "Use the project conventions.",
+                    "createdAt": 1,
+                    "sourceSession": {
+                      "id": "source-session",
+                      "title": "Project conventions"
+                    }
+                  }
+                ],
+                "workspaceMemoryAvailable": true,
+                "workspaceMemoryEnabled": true,
+                "globalMemoryAvailable": true,
+                "globalMemoryEnabled": false,
+                "uiControlAvailable": false,
+                "uiControlEnabled": false,
+                "uiControlDescription": "",
+                "attachments": [],
+                "chooserProviders": [
+                  "codex"
+                ],
+                "matchedContextPackIds": []
+              },
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "snapshot/timeout/null-state",
+      "target": "snapshot",
+      "accepted": false,
+      "payload": {
+        "type": "response",
+        "requestId": "request-1",
+        "response": {
+          "type": "productSnapshot",
+          "snapshot": {
+            "enabled": true,
+            "serverTime": 1,
+            "eventId": 1,
+            "sessions": [],
+            "commands": [],
+            "shell": {
+              "version": 5,
+              "capturedAt": 1,
+              "sessions": [],
+              "workspaces": [],
+              "visibleMessages": [
+                {
+                  "id": "timeout-message",
+                  "role": "agent",
+                  "content": "",
+                  "presentation": "message",
+                  "taskId": "task",
+                  "attachments": [],
+                  "source": {
+                    "kind": "thinking",
+                    "status": "running",
+                    "entries": [],
+                    "timeline": [],
+                    "timeout": null
+                  },
+                  "actions": {
+                    "canRetry": false,
+                    "canContinue": false,
+                    "canSaveAsContextPack": false,
+                    "canSpeak": false,
+                    "isSpeaking": false
+                  }
+                }
+              ],
+              "composer": {
+                "sessionId": "session-1",
+                "draft": "",
+                "provider": "codex",
+                "providerLabel": "Codex",
+                "model": "gpt-6",
+                "modelLabel": "GPT-6",
+                "modelCatalogLoading": false,
+                "modelCatalog": [],
+                "mode": "machdoch",
+                "defaultMode": "machdoch",
+                "parallelAgentMode": "native",
+                "availableParallelAgentModes": [
+                  "disabled",
+                  "read-only",
+                  "machdoch",
+                  "native"
+                ],
+                "goalMode": "native",
+                "availableGoalModes": [
+                  "machdoch",
+                  "native"
+                ],
+                "goal": {
+                  "id": "goal-1",
+                  "objective": "Complete the project checks.",
+                  "mode": "native",
+                  "status": "active",
+                  "turns": 2,
+                  "tokensUsed": 200,
+                  "elapsedMs": 1000,
+                  "tokenBudget": 10000,
+                  "turnBudget": 10,
+                  "timeBudgetMs": 60000,
+                  "reason": "",
+                  "createdAt": 1,
+                  "updatedAt": 1
+                },
+                "reasoning": "default",
+                "defaultReasoning": "default",
+                "reasoningOptions": [
+                  "default"
+                ],
+                "promptEnhancementMode": "off",
+                "interviewEnabled": false,
+                "interviewAvailable": true,
+                "workspaceLabel": "Workspace",
+                "canSend": true,
+                "isExecuting": false,
+                "sessionMemoryEnabled": true,
+                "sessionMemory": [
+                  {
+                    "id": "memory-1",
+                    "content": "Use the project conventions.",
+                    "createdAt": 1,
+                    "sourceSession": {
+                      "id": "source-session",
+                      "title": "Project conventions"
+                    }
+                  }
+                ],
+                "workspaceMemoryAvailable": true,
+                "workspaceMemoryEnabled": true,
+                "globalMemoryAvailable": true,
+                "globalMemoryEnabled": false,
+                "uiControlAvailable": false,
+                "uiControlEnabled": false,
+                "uiControlDescription": "",
+                "attachments": [],
+                "chooserProviders": [
+                  "codex"
+                ],
+                "matchedContextPackIds": []
+              },
+              "contextPacks": [],
+              "promptHistory": []
+            }
+          }
+        }
+      }
     }
   ]
 }

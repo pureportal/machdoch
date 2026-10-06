@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isLocalSpeechProvider } from "../../../../shared/local-speech";
 import type {
   SpeechToTextProvider,
   UserSpeechToTextProvider,
@@ -38,6 +39,7 @@ export interface ChatSessionSpeechInputController {
   statusTone: SpeechInputStatusTone | null;
   availabilityDescription: string;
   toggleRecording: () => void;
+  setRecording: (recording: boolean) => Promise<void>;
   cancelSpeechInput: () => void;
   dismissStatus: () => void;
 }
@@ -58,7 +60,10 @@ export const useChatSessionSpeechInput = (
   const [starting, setStarting] = useState(false);
   const operationAbortRef = useRef<AbortController | null>(null);
   const recordingSessionIdRef = useRef<string>(options.activeSessionId);
-  const recordingProviderRef = useRef<UserSpeechToTextProvider | null>(null);
+  const recordingInputRef = useRef<{
+    provider: UserSpeechToTextProvider;
+    settings: UserSpeechToTextSettings;
+  } | null>(null);
   const operationSequenceRef = useRef(0);
   const startInFlightRef = useRef<number | null>(null);
   const finalizingRef = useRef(false);
@@ -74,7 +79,7 @@ export const useChatSessionSpeechInput = (
     operationAbortRef.current = null;
     startInFlightRef.current = null;
     finalizingRef.current = false;
-    recordingProviderRef.current = null;
+    recordingInputRef.current = null;
     recorder.cancelRecording();
     transcription.cancelTranscription();
     setStarting(false);
@@ -106,11 +111,12 @@ export const useChatSessionSpeechInput = (
   }, [configuredProvider, options.settings, recorder.browserSupported]);
 
   const finalizeRecording = useCallback(async (): Promise<void> => {
-    const provider = recordingProviderRef.current;
+    const recordingInput = recordingInputRef.current;
 
-    if (!provider || finalizingRef.current) {
+    if (!recordingInput || finalizingRef.current) {
       return;
     }
+    const { provider, settings: speechSettings } = recordingInput;
 
     const operationSequence = operationSequenceRef.current + 1;
     operationSequenceRef.current = operationSequence;
@@ -131,9 +137,9 @@ export const useChatSessionSpeechInput = (
       const transcriptText = await transcription.transcribeRecording({
         blob: recordedBlob,
         provider,
-        keyTerms: options.settings.keyTerms,
-        speechContext: options.settings.speechContext,
-        autoTranslateToEnglish: options.settings.autoTranslateToEnglish,
+        keyTerms: speechSettings.keyTerms,
+        speechContext: speechSettings.speechContext,
+        autoTranslateToEnglish: speechSettings.autoTranslateToEnglish,
         signal,
       });
 
@@ -144,16 +150,16 @@ export const useChatSessionSpeechInput = (
       let draftText = transcriptText;
       let processingError: string | null = null;
       if (
-        options.settings.autoTranslateToEnglish ||
-        options.settings.autoFormat
+        !isLocalSpeechProvider(provider) &&
+        (speechSettings.autoTranslateToEnglish || speechSettings.autoFormat)
       ) {
         setStatusText("Processing speech...");
         try {
           draftText = await processUserSpeechText({
             provider,
             text: transcriptText,
-            autoTranslateToEnglish: options.settings.autoTranslateToEnglish,
-            autoFormat: options.settings.autoFormat,
+            autoTranslateToEnglish: speechSettings.autoTranslateToEnglish,
+            autoFormat: speechSettings.autoFormat,
             signal,
           });
         } catch (error) {
@@ -185,32 +191,32 @@ export const useChatSessionSpeechInput = (
       );
     } finally {
       if (operationSequenceRef.current === operationSequence) {
-        recordingProviderRef.current = null;
+        recordingInputRef.current = null;
         finalizingRef.current = false;
         setFinalizing(false);
       }
     }
   }, [options, recorder, transcription]);
 
-  const startRecording = useCallback(async (): Promise<void> => {
+  const startRecording = useCallback(async (): Promise<boolean> => {
     if (
       startInFlightRef.current !== null ||
       finalizingRef.current ||
-      recordingProviderRef.current !== null
+      recordingInputRef.current !== null
     ) {
-      return;
+      return false;
     }
 
     if (!recorder.browserSupported) {
       setStatusTone("error");
       setStatusText("This WebView does not expose microphone recording APIs.");
-      return;
+      return false;
     }
 
     if (!configuredProvider) {
       setStatusTone("info");
       setStatusText("Choose and configure a speak-to-text provider first.");
-      return;
+      return false;
     }
 
     const operationSequence = operationSequenceRef.current + 1;
@@ -221,40 +227,44 @@ export const useChatSessionSpeechInput = (
     setStatusTone("info");
     setStatusText("Starting microphone...");
     const recordingSessionId = options.activeSessionId;
+    const speechSettings = {
+      ...options.settings,
+      keyTerms: [...options.settings.keyTerms],
+    };
 
     try {
       const started = await recorder.startRecording({
-        inputDeviceId: options.settings.inputDeviceId,
+        inputDeviceId: speechSettings.inputDeviceId,
       });
 
       if (!started || operationSequenceRef.current !== operationSequence) {
-        return;
+        return false;
       }
 
       recordingSessionIdRef.current = recordingSessionId;
-      recordingProviderRef.current = configuredProvider;
+      recordingInputRef.current = {
+        provider: configuredProvider,
+        settings: speechSettings,
+      };
       setStatusTone("info");
       setStatusText("Listening...");
+      return true;
     } catch (error) {
       if (operationSequenceRef.current !== operationSequence) {
-        return;
+        return false;
       }
       recorder.cancelRecording();
-      recordingProviderRef.current = null;
+      recordingInputRef.current = null;
       setStatusTone("error");
       setStatusText(getRecordingErrorMessage(error));
+      return false;
     } finally {
       if (startInFlightRef.current === operationSequence) {
         startInFlightRef.current = null;
         setStarting(false);
       }
     }
-  }, [
-    configuredProvider,
-    options.activeSessionId,
-    options.settings.inputDeviceId,
-    recorder,
-  ]);
+  }, [configuredProvider, options.activeSessionId, options.settings, recorder]);
 
   const toggleRecording = useCallback((): void => {
     if (
@@ -279,6 +289,34 @@ export const useChatSessionSpeechInput = (
     transcription.transcribing,
   ]);
 
+  const setRecording = useCallback(
+    async (recording: boolean): Promise<void> => {
+      if (
+        finalizingRef.current ||
+        startInFlightRef.current !== null ||
+        transcription.transcribing
+      ) {
+        throw new Error("Speech input is busy. Wait for it to finish.");
+      }
+      if (recording === recorder.recording) return;
+      if (!recording) {
+        await finalizeRecording();
+        return;
+      }
+      if (!(await startRecording())) {
+        throw new Error(
+          "The device microphone could not start. Check speech input settings on the device.",
+        );
+      }
+    },
+    [
+      finalizeRecording,
+      recorder.recording,
+      startRecording,
+      transcription.transcribing,
+    ],
+  );
+
   useEffect(() => {
     return cancelSpeechInput;
   }, [cancelSpeechInput]);
@@ -296,6 +334,7 @@ export const useChatSessionSpeechInput = (
     statusTone,
     availabilityDescription,
     toggleRecording,
+    setRecording,
     cancelSpeechInput,
     dismissStatus,
   };

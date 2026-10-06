@@ -1,3 +1,15 @@
+import { InstructionSystemError } from "@machdoch/fleet-protocol/instruction-contract";
+import type {
+  InstructionTagRule,
+  InstructionDiagnostic,
+  InstructionDiagnosticSeverity,
+} from "@machdoch/fleet-protocol/instruction-contract";
+export { InstructionSystemError };
+export type {
+  InstructionTagRule,
+  InstructionDiagnostic,
+  InstructionDiagnosticSeverity,
+};
 import type { ConfiguredModelProvider } from "../runtime-contract.generated.js";
 import type { McpInitializationInstructionSnapshot } from "../mcp/initialization-instructions.js";
 
@@ -7,16 +19,6 @@ export const INSTRUCTION_DELIVERY_SCHEMA_VERSION = 1 as const;
 
 export type ProfileId = string;
 export type WorkspaceId = string;
-
-export type InstructionTagRule =
-  | {
-      op: "tag";
-      tag: string;
-    }
-  | {
-      op: "and" | "or";
-      rules: InstructionTagRule[];
-    };
 
 export interface InstructionProfile {
   id: ProfileId;
@@ -49,21 +51,6 @@ export interface InstructionLibrary {
   revision: number;
   profiles: InstructionProfile[];
   workspaces: InstructionWorkspaceBinding[];
-}
-
-export type InstructionDiagnosticSeverity =
-  | "info"
-  | "advisory"
-  | "warning"
-  | "error";
-
-export interface InstructionDiagnostic {
-  code: string;
-  severity: InstructionDiagnosticSeverity;
-  message: string;
-  sourceId?: string;
-  relativePath?: string;
-  details?: Record<string, unknown>;
 }
 
 export type InstructionSourceKind =
@@ -402,21 +389,4 @@ export interface InstructionLibraryRecoveryStatus {
   resetSource?: "primary" | "backup";
   errorCode?: string;
   errorMessage?: string;
-}
-
-export class InstructionSystemError extends Error {
-  readonly code: string;
-  readonly diagnostics: readonly InstructionDiagnostic[];
-
-  constructor(
-    code: string,
-    message: string,
-    diagnostics: readonly InstructionDiagnostic[] = [],
-    options?: ErrorOptions,
-  ) {
-    super(message, options);
-    this.name = "InstructionSystemError";
-    this.code = code;
-    this.diagnostics = diagnostics;
-  }
 }

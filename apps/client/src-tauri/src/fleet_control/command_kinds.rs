@@ -2,6 +2,17 @@ const TASK_ID_COMMANDS: &[&str] = &["cancel", "retry", "continue", "cancel-promp
 
 const SESSION_ID_COMMANDS: &[&str] = &[
     "submit-message",
+    "edit-message",
+    "replay-message",
+    "add-context-attachments",
+    "set-running-message-action",
+    "update-queued-message",
+    "move-queued-message",
+    "reorder-queued-message",
+    "remove-queued-message",
+    "retry-queued-message",
+    "remove-queued-attachment",
+    "clear-queued-attachments",
     "activate-session",
     "archive-session",
     "pin-session",
@@ -11,11 +22,15 @@ const SESSION_ID_COMMANDS: &[&str] = &[
     "rename-session",
     "tag-session",
     "clear-session-history",
+    "reset-session-time",
+    "move-session-to-top",
     "clear-session-mode",
     "clear-session-reasoning",
     "update-draft",
+    "restore-prompt-history",
     "set-session-model",
     "set-session-mode",
+    "set-adaptive-controller",
     "set-parallel-agent-mode",
     "set-goal-mode",
     "set-session-reasoning",
@@ -31,18 +46,28 @@ const SESSION_ID_COMMANDS: &[&str] = &[
     "remove-attachment",
     "clear-attachments",
     "apply-context-pack",
+    "save-context-pack",
+    "import-context-packs",
     "save-message-context-pack",
     "speak-message",
+    "set-speech-input-recording",
 ];
 
 const SESSION_MUTATION_COMMANDS: &[&str] = &[
+    "add-workspace",
+    "remove-workspace",
+    "relink-workspace",
     "create-session",
+    "open-quick-chat",
     "stop-speaking",
+    "set-auto-speak",
     "delete-context-pack",
     "generate-media",
 ];
 
 const ENABLED_COMMANDS: &[&str] = &[
+    "set-auto-speak",
+    "set-speech-input-recording",
     "set-session-memory",
     "set-global-memory",
     "set-workspace-memory",
@@ -52,21 +77,21 @@ const ENABLED_COMMANDS: &[&str] = &[
 
 const CONTEXT_PACK_ID_COMMANDS: &[&str] = &["apply-context-pack", "delete-context-pack"];
 const MEMORY_ID_COMMANDS: &[&str] = &["forget-session-memory"];
-const MESSAGE_ID_COMMANDS: &[&str] = &["save-message-context-pack", "speak-message"];
-
-const JOB_ID_COMMANDS: &[&str] = &[
-    "scheduler-trigger",
-    "scheduler-pause",
-    "scheduler-resume",
-    "scheduler-delete",
+const MESSAGE_ID_COMMANDS: &[&str] = &[
+    "save-message-context-pack",
+    "speak-message",
+    "edit-message",
+    "replay-message",
+    "update-queued-message",
+    "move-queued-message",
+    "reorder-queued-message",
+    "remove-queued-message",
+    "retry-queued-message",
+    "remove-queued-attachment",
+    "clear-queued-attachments",
 ];
 
-const RUN_ID_COMMANDS: &[&str] = &[
-    "scheduler-retry-run",
-    "scheduler-cancel-run",
-    "ralph-resume-run",
-    "cancel-media-run",
-];
+const RUN_ID_COMMANDS: &[&str] = &["ralph-resume-run", "cancel-media-run"];
 
 const FLOW_ID_COMMANDS: &[&str] = &["ralph-run"];
 const RALPH_COMMANDS: &[&str] = &["ralph-run", "ralph-resume-run"];
@@ -79,7 +104,6 @@ const SUPPORTED_COMMAND_GROUPS: &[&[&str]] = &[
     TASK_ID_COMMANDS,
     SESSION_ID_COMMANDS,
     SESSION_MUTATION_COMMANDS,
-    JOB_ID_COMMANDS,
     RUN_ID_COMMANDS,
     RALPH_COMMANDS,
 ];
@@ -92,7 +116,6 @@ pub(super) struct CommandRequirements {
     pub(super) memory_id: bool,
     pub(super) context_pack_id: bool,
     pub(super) message_id: bool,
-    pub(super) job_id: bool,
     pub(super) run_id: bool,
     pub(super) flow_id: bool,
 }
@@ -111,7 +134,6 @@ pub(super) fn command_requirements(kind: &str) -> CommandRequirements {
         memory_id: requires_memory_id(kind),
         context_pack_id: requires_context_pack_id(kind),
         message_id: requires_message_id(kind),
-        job_id: requires_job_id(kind),
         run_id: requires_run_id(kind),
         flow_id: requires_flow_id(kind),
     }
@@ -149,10 +171,6 @@ fn requires_message_id(kind: &str) -> bool {
     includes_command(MESSAGE_ID_COMMANDS, kind)
 }
 
-fn requires_job_id(kind: &str) -> bool {
-    includes_command(JOB_ID_COMMANDS, kind)
-}
-
 fn requires_run_id(kind: &str) -> bool {
     includes_command(RUN_ID_COMMANDS, kind)
 }
@@ -169,11 +187,10 @@ fn includes_command(commands: &[&str], kind: &str) -> bool {
 mod tests {
     use super::{
         command_requirements, is_supported_command, is_supported_reasoning,
-        requires_context_pack_id, requires_enabled, requires_flow_id, requires_job_id,
-        requires_memory_id, requires_message_id, requires_run_id, requires_session_id,
-        requires_task_id, supported_reasoning_modes_label, CommandRequirements,
-        CONTEXT_PACK_ID_COMMANDS, JOB_ID_COMMANDS, MEMORY_ID_COMMANDS, MESSAGE_ID_COMMANDS,
-        RUN_ID_COMMANDS,
+        requires_context_pack_id, requires_enabled, requires_flow_id, requires_memory_id,
+        requires_message_id, requires_run_id, requires_session_id, requires_task_id,
+        supported_reasoning_modes_label, CommandRequirements, CONTEXT_PACK_ID_COMMANDS,
+        MEMORY_ID_COMMANDS, MESSAGE_ID_COMMANDS, RUN_ID_COMMANDS,
     };
 
     #[test]
@@ -182,8 +199,8 @@ mod tests {
         assert!(is_supported_command("update-draft"));
         assert!(is_supported_command("set-session-reasoning"));
         assert!(is_supported_command("submit-message"));
-        assert!(is_supported_command("scheduler-trigger"));
-        assert!(is_supported_command("scheduler-cancel-run"));
+        assert!(is_supported_command("ralph-run"));
+        assert!(is_supported_command("ralph-resume-run"));
         assert!(is_supported_command("generate-media"));
         assert!(is_supported_command("cancel-media-run"));
         assert!(!is_supported_command("approval-decision"));
@@ -198,15 +215,12 @@ mod tests {
         assert!(requires_context_pack_id("delete-context-pack"));
         assert!(requires_memory_id("forget-session-memory"));
         assert!(requires_message_id("speak-message"));
-        assert!(requires_job_id("scheduler-pause"));
-        assert!(requires_run_id("scheduler-retry-run"));
         assert!(requires_run_id("ralph-resume-run"));
         assert!(requires_flow_id("ralph-run"));
 
         assert!(!requires_task_id("submit-message"));
         assert!(requires_session_id("submit-message"));
         assert!(!requires_session_id("create-session"));
-        assert!(!requires_job_id("scheduler-retry-run"));
     }
 
     #[test]
@@ -220,7 +234,6 @@ mod tests {
                 memory_id: false,
                 context_pack_id: false,
                 message_id: true,
-                job_id: false,
                 run_id: false,
                 flow_id: false,
             }
@@ -233,7 +246,6 @@ mod tests {
             .iter()
             .chain(MEMORY_ID_COMMANDS)
             .chain(MESSAGE_ID_COMMANDS)
-            .chain(JOB_ID_COMMANDS)
             .chain(RUN_ID_COMMANDS)
         {
             assert!(is_supported_command(kind), "{kind} should be supported");

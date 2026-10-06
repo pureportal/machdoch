@@ -9,7 +9,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { MarkdownContent } from "./markdown-content";
+import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
 
 const mermaidMocks = vi.hoisted(() => ({
   initialize: vi.fn(),

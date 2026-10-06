@@ -46,6 +46,8 @@ pub(super) async fn run(
     let mut reconnect_delay = Duration::from_secs(1);
     loop {
         if !is_current(&state, generation) {
+            crate::fleet_control::workspace_terminal::close_generation(&app_handle, generation)
+                .await;
             return;
         }
         set_phase(&state, generation, FleetConnectionPhase::Connecting, None);
@@ -53,9 +55,13 @@ pub(super) async fn run(
         // Cancellation covers DNS, TLS, blocked writes, and reconnects as well as idle sockets.
         let result = tokio::select! {
             biased;
-            _ = wait_for_generation_change(&state, generation) => return,
+            _ = wait_for_generation_change(&state, generation) => {
+                crate::fleet_control::workspace_terminal::close_generation(&app_handle, generation).await;
+                return;
+            },
             result = connect_once(&app_handle, &state, &config, generation) => result,
         };
+        crate::fleet_control::workspace_terminal::close_generation(&app_handle, generation).await;
         match result {
             ConnectionResult::Reset => return,
             ConnectionResult::Stopped(error) => {
@@ -142,7 +148,15 @@ async fn connect_once(
         instance_id: config.instance_id.clone(),
         protocol_version: GATEWAY_PROTOCOL_VERSION,
         product_version: app_handle.package_info().version.to_string(),
-        capabilities: vec![PRODUCT_CAPABILITY.to_string(), "ralph-editor.v1".to_string()],
+        capabilities: vec![
+            PRODUCT_CAPABILITY.to_string(),
+            "ralph-editor.v1".to_string(),
+            "scheduler-editor.v1".to_string(),
+            "instruction-editor.v1".to_string(),
+            "workspace-tools.v1".to_string(),
+            "workspace-previews.v1".to_string(),
+            "device-settings.v1".to_string(),
+        ],
     };
     if send_host_message(&mut sender, &hello).await.is_err() {
         return ConnectionResult::Reconnect(
@@ -150,6 +164,7 @@ async fn connect_once(
         );
     }
     set_phase(state, generation, FleetConnectionPhase::Connected, None);
+    crate::fleet_control::workspace_terminal::activate_generation(app_handle, generation);
     let mut heartbeat = tokio::time::interval(Duration::from_secs(15));
     heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut last_received = tokio::time::Instant::now();

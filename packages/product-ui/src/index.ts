@@ -24,8 +24,31 @@ export {
   WorkspaceMemoryIcon,
   type ComposerIconProps,
 } from "./composer-icons";
+export { ComposerSurface, type ComposerSurfaceProps } from "./composer-surface";
+export { ComposerInput, type ComposerInputProps } from "./composer-input";
 export { ReasoningIcons } from "./reasoning-icons";
 export { RemoteProductApp } from "./remote-product-app";
+export {
+  Conversation as ProductConversation,
+  type RemoteConversationProps,
+} from "./conversation";
+export { ApplicationShell } from "./application-shell";
+export {
+  applyAppearanceSettings,
+  normalizeAppearanceSettings,
+  DEFAULT_APPEARANCE_SETTINGS,
+  type AppearanceSettings,
+  type AppearanceTheme,
+  type AppearanceDensity,
+  type AppearanceAccent,
+} from "./appearance";
+export { AppearanceOptions } from "./appearance-options";
+export { useBrowserAppearance } from "./use-browser-appearance";
+export {
+  ApplicationNavigation,
+  type ApplicationNavigationItem,
+  type ApplicationActivity,
+} from "./application-navigation";
 export { GoalControl, GoalTrigger } from "./goal-control";
 export { useGoalDraft } from "./use-goal-draft";
 export { Ralph } from "./ralph";
@@ -53,6 +76,19 @@ export {
 } from "./markdown";
 export { PromptEnhancementIndicator } from "./prompt-enhancement";
 export {
+  ALL_SESSION_PROJECTS_FILTER, calculateSessionSearchScore,
+  compareSessionsBySidebarGroup, getSessionProjectId,
+  getUnpinnedSessionDividerIndex, isSessionPinnedInSidebar,
+  normalizeSessionSearchText, tokenizeSessionSearchQuery,
+  type SessionSidebarGroup, type SessionSearchEntry,
+} from "./session-sidebar-model";
+export { useConversationControls, type ConversationControls } from "./conversation-controls";
+export {
+  getOriginalPromptContent,
+  OriginalPromptPanel,
+  OriginalPromptToggle,
+} from "./original-prompt";
+export {
   MemoryManagementTable,
   MemoryDialog,
   type MemoryManagementEntry,
@@ -65,5 +101,13 @@ export {
   type ComposerModelPickerProps,
   type ComposerModelProvider,
 } from "./composer-model-picker";
+export type { RemoteComposerProps } from "./remote-composer-props";
+export type { ProductCommandHandler } from "./product-runtime";
 export type { ProductRuntime } from "./product-runtime";
-export { createFleetOperationTransport, type FleetOperationTransport } from "./fleet-operation-transport";
+export {
+  createFleetOperationTransport,
+  type FleetOperationTransport,
+} from "./fleet-operation-transport";
+export type { SessionDataSource } from "./session-data";
+
+export type { SessionSidebarCommandState, SessionSidebarAction, SessionSidebarStatus } from "./session-sidebar-commands-state";

@@ -16,12 +16,12 @@ import {
   resolveAttachedFilePreviewSource,
   resolveWorkspaceFilePreviewSource,
 } from "../../runtime";
-import type { FilePreview } from "../components/file-preview-dialog";
+import type { FilePreview } from "@machdoch/client-ui/file-preview/dialog";
 import {
   getFilePreviewFileName,
   getFilePreviewRenderKind,
   resolveFilePreviewSyntax,
-} from "./file-preview-language";
+} from "@machdoch/client-ui/file-preview/file-preview-language";
 
 interface FilePreviewState extends FilePreview {
   target: FilePreviewTarget;

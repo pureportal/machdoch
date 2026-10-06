@@ -1,19 +1,29 @@
 use std::{
-    fs::{self, File, OpenOptions},
-    io::{Cursor, Write},
+    fs::{self, File},
+    io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use image::{ImageFormat, ImageReader, Limits};
 use serde::{Deserialize, Serialize};
-use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
-use crate::child_process::{terminate_child_process_tree_by_id, SupervisedChild};
+use crate::child_process::terminate_child_process_tree_by_id;
 
-use super::{provider_local_diffusers, runtime_setup, MediaResult, MediaRuntimePaths};
+use super::{provider_local_diffusers, MediaResult, MediaRuntimePaths};
+
+#[path = "training_process.rs"]
+mod training_process;
+
+#[path = "training_dataset.rs"]
+mod training_dataset;
+
+#[cfg(test)]
+use training_dataset::inspect_images;
+pub(crate) use training_dataset::inspect_samples;
+use training_dataset::{prepare_dataset, validate_settings as validate_dataset_settings};
+
+use training_process::{process_for_job, start_process};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 pub(crate) enum TrainingArchitecture {
@@ -21,6 +31,123 @@ pub(crate) enum TrainingArchitecture {
     Krea2,
     #[serde(rename = "stable-diffusion-xl")]
     StableDiffusionXl,
+    #[serde(rename = "pony")]
+    Pony,
+    #[serde(rename = "stable-diffusion-1")]
+    StableDiffusion1,
+    #[serde(rename = "stable-diffusion-2")]
+    StableDiffusion2,
+    #[serde(rename = "stable-diffusion-3")]
+    StableDiffusion3,
+    #[serde(rename = "flux-1")]
+    Flux1,
+    #[serde(rename = "flux-1-dev")]
+    Flux1Dev,
+    #[serde(rename = "flux-1-schnell")]
+    Flux1Schnell,
+    #[serde(rename = "flux-2")]
+    Flux2,
+    #[serde(rename = "flux-2-klein-base-4b")]
+    Flux2KleinBase4B,
+    #[serde(rename = "flux-2-klein-9b")]
+    Flux2Klein9B,
+    #[serde(rename = "flux-2-klein-base-9b")]
+    Flux2KleinBase9B,
+    #[serde(rename = "sana")]
+    Sana,
+    #[serde(rename = "z-image")]
+    ZImage,
+    #[serde(rename = "z-image-turbo")]
+    ZImageTurbo,
+    #[serde(rename = "cogvideox-2b")]
+    CogVideoX2B,
+    #[serde(rename = "cogvideox-1.5-5b")]
+    CogVideoX15_5B,
+    #[serde(rename = "cogvideox-1.5-5b-i2v")]
+    CogVideoX15_5BI2V,
+    #[serde(rename = "wan-2.1-t2v-1.3b")]
+    Wan21T2V13B,
+}
+
+impl TrainingArchitecture {
+    fn is_video(self) -> bool {
+        matches!(
+            self,
+            Self::CogVideoX2B | Self::CogVideoX15_5B | Self::CogVideoX15_5BI2V | Self::Wan21T2V13B
+        )
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TrainingVideoSettings {
+    width: u32,
+    height: u32,
+    frames: u32,
+    fps: u32,
+    image_dropout: f64,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum TrainingMethod {
+    Lora,
+    Finetune,
+    Embedding,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum TrainingPrecision {
+    Bf16,
+    Fp16,
+    Float32,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum TrainingOptimizer {
+    Adamw,
+    Adafactor,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum TrainingWeightPrecision {
+    Bf16,
+    Float32,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum TrainingLrSchedule {
+    Constant,
+    Linear,
+    Cosine,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct TrainingOptions {
+    pub method: TrainingMethod,
+    pub precision: TrainingPrecision,
+    pub optimizer: TrainingOptimizer,
+    pub trainable_precision: TrainingWeightPrecision,
+    pub batch_size: u32,
+    pub gradient_accumulation: u32,
+    pub lr_scheduler: TrainingLrSchedule,
+    pub warmup_steps: u32,
+    pub weight_decay: f64,
+    pub max_grad_norm: f64,
+    pub snr_gamma: f64,
+    pub noise_offset: f64,
+    pub lora_dropout: f64,
+    pub guidance_scale: f64,
+    pub checkpoint_interval: u32,
+    pub checkpoint_retention: u32,
+    pub gradient_checkpointing: bool,
+    pub preserve_aspect_ratio: bool,
+    pub initializer_token: String,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -34,17 +161,19 @@ pub(crate) enum TrainingConcept {
 
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct TrainingImage {
+pub(crate) struct TrainingSample {
     path: PathBuf,
     caption: String,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) struct TrainingImageInspection {
+pub(crate) struct TrainingSampleInspection {
     path: PathBuf,
     width: u32,
     height: u32,
+    duration_seconds: Option<f64>,
+    fps: Option<f64>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -53,7 +182,7 @@ pub(crate) struct TrainingRequest {
     name: String,
     concept: TrainingConcept,
     trigger_phrase: String,
-    images: Vec<TrainingImage>,
+    samples: Vec<TrainingSample>,
     architecture: TrainingArchitecture,
     model_id: Option<String>,
     model_path: PathBuf,
@@ -64,6 +193,8 @@ pub(crate) struct TrainingRequest {
     attention_only: bool,
     four_bit: bool,
     seed: u32,
+    options: TrainingOptions,
+    video: Option<TrainingVideoSettings>,
 }
 
 #[derive(Clone, Serialize)]
@@ -74,6 +205,8 @@ pub(crate) struct TrainingJob {
     concept: TrainingConcept,
     trigger_phrase: String,
     architecture: TrainingArchitecture,
+    method: TrainingMethod,
+    base_model_id: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -91,6 +224,18 @@ pub(crate) struct TrainingStatus {
     can_resume: bool,
     completed_steps: Option<u32>,
     total_steps: u32,
+    progress: Option<TrainingProgress>,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TrainingProgress {
+    completed_steps: u32,
+    total_steps: u32,
+    loss: f64,
+    learning_rate: f64,
+    elapsed_seconds: f64,
+    remaining_seconds: f64,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -111,16 +256,16 @@ struct JobSpec {
     architecture: TrainingArchitecture,
     model: TrainingModel,
     trigger_phrase: String,
-    precision: String,
     resolution: u32,
     rank: u32,
     learning_rate: f64,
     steps: u32,
-    checkpoint_interval: u32,
     attention_only: bool,
     four_bit: bool,
     resume: bool,
     seed: u32,
+    options: TrainingOptions,
+    video: Option<TrainingVideoSettings>,
 }
 
 impl JobSpec {
@@ -129,21 +274,16 @@ impl JobSpec {
             architecture: request.architecture,
             model,
             trigger_phrase: request.trigger_phrase.trim().into(),
-            precision: if cfg!(target_os = "macos") {
-                "fp16"
-            } else {
-                "bf16"
-            }
-            .into(),
             resolution: request.resolution,
             rank: request.rank,
             learning_rate: request.learning_rate,
             steps: request.steps,
-            checkpoint_interval: (request.steps / 4).clamp(1, 250),
             attention_only: request.attention_only,
             four_bit: request.four_bit,
             resume: false,
             seed: request.seed,
+            options: request.options.clone(),
+            video: request.video.clone(),
         }
     }
 }
@@ -158,28 +298,6 @@ fn job_directory(paths: &MediaRuntimePaths, id: &str) -> MediaResult<PathBuf> {
         return Err("Invalid training job ID.".into());
     }
     Ok(paths.models_root()?.join("training").join(id))
-}
-
-fn runner_script(app: &AppHandle) -> MediaResult<PathBuf> {
-    let resource = app
-        .path()
-        .resource_dir()
-        .map_err(|error| error.to_string())?
-        .join("python")
-        .join("media_training.py");
-    if resource.is_file() {
-        return Ok(resource);
-    }
-    #[cfg(debug_assertions)]
-    {
-        let development = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("python")
-            .join("media_training.py");
-        if development.is_file() {
-            return Ok(development);
-        }
-    }
-    Err("The local trainer is missing. Reinstall Media Studio.".into())
 }
 
 fn validate_raw_model(path: &Path) -> MediaResult<PathBuf> {
@@ -236,52 +354,128 @@ fn validate_request(request: &TrainingRequest) -> MediaResult<()> {
     if request.trigger_phrase.trim().is_empty() || request.trigger_phrase.chars().count() > 120 {
         return Err("Enter a trigger phrase of up to 120 characters.".into());
     }
-    if !(3..=50).contains(&request.images.len()) {
-        return Err("Choose 3 to 50 images.".into());
+    if !(3..=50).contains(&request.samples.len()) {
+        return Err("Choose 3 to 50 training samples.".into());
     }
     if !(1..=10_000).contains(&request.steps)
         || ![4, 8, 16, 32, 64].contains(&request.rank)
         || ![512, 768, 1024].contains(&request.resolution)
         || !request.learning_rate.is_finite()
-        || !(0.00001..=0.001).contains(&request.learning_rate)
+        || !(0.000001..=0.01).contains(&request.learning_rate)
     {
         return Err("Check the advanced training settings.".into());
     }
     if request
-        .images
+        .samples
         .iter()
         .any(|image| image.caption.chars().count() > 2000)
     {
         return Err("Each caption must be under 2000 characters.".into());
     }
-    if request.architecture == TrainingArchitecture::StableDiffusionXl {
+    validate_options(request)?;
+    validate_dataset_settings(request)?;
+    if request.architecture != TrainingArchitecture::Krea2 {
         if request
             .model_id
             .as_deref()
             .is_none_or(|id| id.trim().is_empty())
         {
-            return Err("Choose an installed SDXL model.".into());
+            return Err("Choose an installed base model.".into());
         }
-        if request.four_bit || !request.attention_only {
-            return Err(
-                "SDXL training requires attention-only LoRA without four-bit quantization.".into(),
-            );
+        if request.four_bit {
+            return Err("Training requires unquantized base weights.".into());
         }
     }
     Ok(())
 }
 
-fn installed_sdxl_model(paths: &MediaRuntimePaths, id: &str) -> MediaResult<TrainingModel> {
-    let model = provider_local_diffusers::installed_model(paths, id)?;
-    if model.architecture != "stable-diffusion-xl" {
-        return Err("The selected model is not SDXL.".into());
+fn validate_options(request: &TrainingRequest) -> MediaResult<()> {
+    let options = &request.options;
+    if !(1..=16).contains(&options.batch_size)
+        || !(1..=64).contains(&options.gradient_accumulation)
+        || options.warmup_steps > request.steps
+        || !(1..=10_000).contains(&options.checkpoint_interval)
+        || !(1..=20).contains(&options.checkpoint_retention)
+        || [
+            (options.weight_decay, 0.0, 1.0),
+            (options.max_grad_norm, 0.0, 100.0),
+            (options.snr_gamma, 0.0, 100.0),
+            (options.noise_offset, 0.0, 1.0),
+            (options.lora_dropout, 0.0, 0.5),
+            (options.guidance_scale, 0.0, 20.0),
+        ]
+        .iter()
+        .any(|(value, minimum, maximum)| !value.is_finite() || value < minimum || value > maximum)
+    {
+        return Err("Check the advanced training settings.".into());
     }
+    if options.trainable_precision == TrainingWeightPrecision::Bf16
+        && (options.method != TrainingMethod::Finetune
+            || options.optimizer != TrainingOptimizer::Adafactor
+            || options.precision != TrainingPrecision::Bf16)
+    {
+        return Err(
+            "BF16 trainable weights require finetuning with Adafactor and BF16 precision.".into(),
+        );
+    }
+    if options.optimizer == TrainingOptimizer::Adafactor && options.max_grad_norm != 0.0 {
+        return Err("Disable gradient clipping when using Adafactor.".into());
+    }
+    if options.method == TrainingMethod::Embedding
+        && (request.trigger_phrase.chars().any(char::is_whitespace)
+            || options.initializer_token.trim().is_empty()
+            || options.initializer_token.chars().count() > 120)
+    {
+        return Err("Use an embedding token without spaces and enter an initializer word.".into());
+    }
+    if request.architecture == TrainingArchitecture::Krea2
+        && (options.method != TrainingMethod::Lora
+            || options.optimizer != TrainingOptimizer::Adamw
+            || options.trainable_precision != TrainingWeightPrecision::Float32
+            || options.preserve_aspect_ratio
+            || options.snr_gamma != 0.0
+            || options.noise_offset != 0.0
+            || options.lora_dropout != 0.0)
+    {
+        return Err("These training settings are unavailable for KREA 2 RAW.".into());
+    }
+    if matches!(
+        request.architecture,
+        TrainingArchitecture::StableDiffusion3
+            | TrainingArchitecture::Flux1
+            | TrainingArchitecture::Flux1Dev
+            | TrainingArchitecture::Flux1Schnell
+            | TrainingArchitecture::Flux2
+            | TrainingArchitecture::Flux2KleinBase4B
+            | TrainingArchitecture::Flux2Klein9B
+            | TrainingArchitecture::Flux2KleinBase9B
+            | TrainingArchitecture::Sana
+            | TrainingArchitecture::ZImage
+            | TrainingArchitecture::ZImageTurbo
+    ) && options.snr_gamma != 0.0
+    {
+        return Err("Min-SNR weighting is unavailable for this flow-matching trainer.".into());
+    }
+    Ok(())
+}
+
+fn installed_training_model(paths: &MediaRuntimePaths, id: &str) -> MediaResult<TrainingModel> {
+    let model = provider_local_diffusers::installed_model(paths, id)?;
+    let architecture = match model.architecture.as_str() {
+        "krea-2-raw" => {
+            validate_raw_model(&model.path)?;
+            TrainingArchitecture::Krea2
+        }
+        "krea-2" => return Err("Choose KREA 2 RAW for training, not Turbo.".into()),
+        _ => serde_json::from_value(serde_json::Value::String(model.architecture.clone()))
+            .map_err(|_| "The selected model has no integrated training runtime.".to_string())?,
+    };
     if model.package_kind == "single-file" && model.config_path.is_none() {
-        return Err("The installed SDXL configuration is missing. Reinstall the model.".into());
+        return Err("The base model configuration is missing. Reinstall the model.".into());
     }
     Ok(TrainingModel {
         id: Some(model.id),
-        architecture: TrainingArchitecture::StableDiffusionXl,
+        architecture,
         package_kind: model.package_kind,
         path: model.path,
         config_path: model.config_path,
@@ -294,8 +488,8 @@ fn resolve_model(
     paths: &MediaRuntimePaths,
     request: &TrainingRequest,
 ) -> MediaResult<TrainingModel> {
-    match request.architecture {
-        TrainingArchitecture::Krea2 => Ok(TrainingModel {
+    if request.architecture == TrainingArchitecture::Krea2 && request.model_id.is_none() {
+        return Ok(TrainingModel {
             id: request.model_id.clone(),
             architecture: request.architecture,
             package_kind: "diffusers-directory".into(),
@@ -303,170 +497,50 @@ fn resolve_model(
             config_path: None,
             revision: None,
             digest: None,
-        }),
-        TrainingArchitecture::StableDiffusionXl => {
-            let id = request
-                .model_id
-                .as_deref()
-                .ok_or("Choose an installed SDXL model.")?;
-            let model = installed_sdxl_model(paths, id)?;
-            if !request.model_path.as_os_str().is_empty() {
-                let requested_path = request
-                    .model_path
-                    .canonicalize()
-                    .map_err(|error| format!("Could not open the selected SDXL model: {error}"))?;
-                if requested_path != model.path {
-                    return Err("The selected SDXL path does not match its installed model.".into());
-                }
-            }
-            Ok(model)
+        });
+    }
+    let id = request
+        .model_id
+        .as_deref()
+        .ok_or("Choose an installed base model.")?;
+    let model = installed_training_model(paths, id)?;
+    if model.architecture != request.architecture {
+        return Err("The base model does not match the selected architecture.".into());
+    }
+    if !request.model_path.as_os_str().is_empty() {
+        let requested_path = request
+            .model_path
+            .canonicalize()
+            .map_err(|error| format!("Could not open the selected base model: {error}"))?;
+        if requested_path != model.path {
+            return Err("The selected path does not match its installed model.".into());
         }
     }
+    Ok(model)
 }
 
 fn validate_job_model(paths: &MediaRuntimePaths, spec: &JobSpec) -> MediaResult<()> {
     if spec.architecture != spec.model.architecture {
         return Err("The training architecture does not match the saved model.".into());
     }
-    match spec.architecture {
-        TrainingArchitecture::Krea2 => {
-            validate_raw_model(&spec.model.path)?;
-        }
-        TrainingArchitecture::StableDiffusionXl => {
-            let id = spec
-                .model
-                .id
-                .as_deref()
-                .ok_or("The saved SDXL model ID is missing.")?;
-            if spec.four_bit
-                || !spec.attention_only
-                || installed_sdxl_model(paths, id)? != spec.model
-            {
-                return Err("The installed SDXL model or training settings changed. Create a new training job.".into());
-            }
+    if spec.architecture == TrainingArchitecture::Krea2 && spec.model.id.is_none() {
+        validate_raw_model(&spec.model.path)?;
+    } else {
+        let id = spec
+            .model
+            .id
+            .as_deref()
+            .ok_or("The saved base model ID is missing.")?;
+        if (spec.four_bit && spec.architecture != TrainingArchitecture::Krea2)
+            || installed_training_model(paths, id)? != spec.model
+        {
+            return Err(
+                "The installed base model or training settings changed. Create a new training job."
+                    .into(),
+            );
         }
     }
     Ok(())
-}
-
-fn image_extension(path: &Path, bytes: &[u8]) -> MediaResult<(&'static str, ImageFormat)> {
-    let extension = path
-        .extension()
-        .and_then(|value| value.to_str())
-        .unwrap_or("")
-        .to_ascii_lowercase();
-    match extension.as_str() {
-        "png" if bytes.starts_with(b"\x89PNG\r\n\x1a\n") => Ok(("png", ImageFormat::Png)),
-        "jpg" | "jpeg" if bytes.starts_with(b"\xff\xd8\xff") => Ok(("jpg", ImageFormat::Jpeg)),
-        "webp" if bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(b"WEBP") => {
-            Ok(("webp", ImageFormat::WebP))
-        }
-        _ => Err(format!(
-            "{} must be a PNG, JPEG, or WebP image.",
-            path.display()
-        )),
-    }
-}
-
-fn read_training_image(path: &Path) -> MediaResult<(Vec<u8>, &'static str, u32, u32)> {
-    let size = fs::metadata(path)
-        .map_err(|error| format!("Could not read {}: {error}", path.display()))?
-        .len();
-    if size == 0 || size > 20 * 1024 * 1024 {
-        return Err(format!("{} must be under 20 MB.", path.display()));
-    }
-    let bytes =
-        fs::read(path).map_err(|error| format!("Could not read {}: {error}", path.display()))?;
-    let (extension, format) = image_extension(path, &bytes)?;
-    let mut reader = ImageReader::with_format(Cursor::new(bytes.as_slice()), format);
-    let mut limits = Limits::default();
-    limits.max_image_width = Some(20_000);
-    limits.max_image_height = Some(20_000);
-    limits.max_alloc = Some(512 * 1024 * 1024);
-    reader.limits(limits);
-    let decoded = reader.decode().map_err(|_| {
-        format!(
-            "{} could not be decoded. Choose another image.",
-            path.display()
-        )
-    })?;
-    Ok((bytes, extension, decoded.width(), decoded.height()))
-}
-
-pub(crate) fn inspect_images(paths: Vec<PathBuf>) -> MediaResult<Vec<TrainingImageInspection>> {
-    if paths.len() > 50 {
-        return Err("Choose up to 50 images.".into());
-    }
-    paths
-        .into_iter()
-        .map(|path| {
-            let (_, _, width, height) = read_training_image(&path)?;
-            Ok(TrainingImageInspection {
-                path,
-                width,
-                height,
-            })
-        })
-        .collect()
-}
-
-fn prepare_dataset(request: &TrainingRequest, directory: &Path) -> MediaResult<()> {
-    fs::create_dir_all(directory)
-        .map_err(|error| format!("Could not create training dataset: {error}"))?;
-    let mut metadata = File::create(directory.join("metadata.jsonl"))
-        .map_err(|error| format!("Could not create training captions: {error}"))?;
-    for (index, image) in request.images.iter().enumerate() {
-        let (bytes, extension, _, _) = read_training_image(&image.path)?;
-        let file_name = format!("image-{index:03}.{extension}");
-        fs::write(directory.join(&file_name), bytes)
-            .map_err(|error| format!("Could not copy training image: {error}"))?;
-        let trigger = request.trigger_phrase.trim();
-        let caption = image.caption.trim();
-        let text = if caption.is_empty() {
-            trigger.to_string()
-        } else if caption.to_lowercase().contains(&trigger.to_lowercase()) {
-            caption.to_string()
-        } else {
-            format!("{caption}, {trigger}")
-        };
-        writeln!(
-            metadata,
-            "{}",
-            serde_json::json!({ "file_name": file_name, "text": text })
-        )
-        .map_err(|error| format!("Could not save training captions: {error}"))?;
-    }
-    Ok(())
-}
-
-fn process_for_job(directory: &Path) -> MediaResult<Option<(System, Pid)>> {
-    let pid: u32 = match fs::read_to_string(directory.join("pid")) {
-        Ok(value) => value
-            .trim()
-            .parse()
-            .map_err(|_| "Training process ID is invalid.")?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(format!("Could not read training process ID: {error}")),
-    };
-    let pid = Pid::from_u32(pid);
-    let mut system = System::new();
-    system.refresh_processes_specifics(
-        ProcessesToUpdate::Some(&[pid]),
-        true,
-        ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
-    );
-    let Some(process) = system.process(pid) else {
-        return Ok(None);
-    };
-    let expected = directory.to_string_lossy();
-    if !process
-        .cmd()
-        .iter()
-        .any(|argument| argument.to_string_lossy() == expected)
-    {
-        return Ok(None);
-    }
-    Ok(Some((system, pid)))
 }
 
 pub(super) fn ensure_idle(storage_root: &Path) -> MediaResult<()> {
@@ -485,80 +559,6 @@ pub(super) fn ensure_idle(storage_root: &Path) -> MediaResult<()> {
     Ok(())
 }
 
-fn start_process(app: &AppHandle, paths: &MediaRuntimePaths, directory: &Path) -> MediaResult<()> {
-    let runtime = provider_local_diffusers::probe(app);
-    if !runtime.ready {
-        return Err(format!(
-            "Local training is unavailable: {}",
-            runtime.diagnostic
-        ));
-    }
-    let python = runtime_setup::python_path(&runtime_setup::root(app)?);
-    if !python.is_file() {
-        return Err("Install the Media Studio local model runtime before training.".into());
-    }
-    let script = runner_script(app)?;
-    let log = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(directory.join("training.log"))
-        .map_err(|error| format!("Could not open training log: {error}"))?;
-    let error_log = log.try_clone().map_err(|error| error.to_string())?;
-    let mut command = Command::new(python);
-    command
-        .arg("-I")
-        .arg("-B")
-        .arg("-Xutf8")
-        .arg(script)
-        .arg(directory)
-        .stdin(Stdio::null())
-        .stdout(log)
-        .stderr(error_log)
-        .env("HF_HUB_OFFLINE", "1")
-        .env("TRANSFORMERS_OFFLINE", "1")
-        .env("HF_DATASETS_OFFLINE", "1")
-        .env("HF_HUB_DISABLE_TELEMETRY", "1")
-        .env("WANDB_DISABLED", "true")
-        .env("DO_NOT_TRACK", "1")
-        .env_remove("HF_TOKEN")
-        .env_remove("HUGGING_FACE_HUB_TOKEN")
-        .env_remove("WANDB_API_KEY");
-    provider_local_diffusers::configure_preferred_gpu(&mut command);
-    fs::write(
-        directory.join("status.json"),
-        serde_json::to_vec(&RunnerStatus {
-            state: "starting".into(),
-            message: None,
-        })
-        .map_err(|error| error.to_string())?,
-    )
-    .map_err(|error| format!("Could not save training status: {error}"))?;
-    let (started, receiver) = std::sync::mpsc::sync_channel(1);
-    let storage_lease = paths.clone();
-    std::thread::spawn(move || {
-        let _storage_lease = storage_lease;
-        let mut child = match SupervisedChild::spawn(&mut command) {
-            Ok(child) => child,
-            Err(error) => {
-                let _ = started.send(Err(format!("Could not start local training: {error}")));
-                return;
-            }
-        };
-        if started.send(Ok(child.id())).is_err() {
-            return;
-        }
-        let _ = child.wait();
-    });
-    let pid = receiver
-        .recv()
-        .map_err(|error| format!("Could not start local training: {error}"))??;
-    if let Err(error) = fs::write(directory.join("pid"), pid.to_string()) {
-        terminate_child_process_tree_by_id(pid);
-        return Err(format!("Could not save training process ID: {error}"));
-    }
-    Ok(())
-}
-
 pub(crate) fn submit(
     app: &AppHandle,
     paths: &MediaRuntimePaths,
@@ -566,6 +566,11 @@ pub(crate) fn submit(
 ) -> MediaResult<TrainingJob> {
     validate_request(&request)?;
     let model = resolve_model(paths, &request)?;
+    let base_model_id = if request.architecture == TrainingArchitecture::Krea2 {
+        None
+    } else {
+        model.id.clone()
+    };
     let root = paths.models_root()?.join("training");
     fs::create_dir_all(&root)
         .map_err(|error| format!("Could not create training folder: {error}"))?;
@@ -586,7 +591,7 @@ pub(crate) fn submit(
     fs::create_dir(&directory)
         .map_err(|error| format!("Could not create training job: {error}"))?;
     let result = (|| {
-        prepare_dataset(&request, &directory.join("dataset"))?;
+        prepare_dataset(Some(app), &request, &directory.join("dataset"))?;
         let spec = JobSpec::new(&request, model);
         fs::write(
             directory.join("job.json"),
@@ -594,10 +599,10 @@ pub(crate) fn submit(
         )
         .map_err(|error| format!("Could not save training job: {error}"))?;
         if request.four_bit {
-            let compute_dtype = if spec.precision == "bf16" {
-                "bfloat16"
-            } else {
-                "float16"
+            let compute_dtype = match spec.options.precision {
+                TrainingPrecision::Bf16 => "bfloat16",
+                TrainingPrecision::Fp16 => "float16",
+                TrainingPrecision::Float32 => "float32",
             };
             let quantization = serde_json::json!({
                 "load_in_4bit": true,
@@ -624,6 +629,8 @@ pub(crate) fn submit(
         concept: request.concept,
         trigger_phrase: request.trigger_phrase.trim().into(),
         architecture: request.architecture,
+        method: request.options.method,
+        base_model_id,
     })
 }
 
@@ -632,9 +639,27 @@ fn has_checkpoint(directory: &Path, architecture: TrainingArchitecture) -> bool 
         entries.flatten().any(|entry| {
             let checkpoint = entry.path();
             let complete = match architecture {
-                TrainingArchitecture::StableDiffusionXl => {
+                TrainingArchitecture::StableDiffusionXl
+                | TrainingArchitecture::Pony
+                | TrainingArchitecture::StableDiffusion1
+                | TrainingArchitecture::StableDiffusion2
+                | TrainingArchitecture::StableDiffusion3
+                | TrainingArchitecture::Flux1
+                | TrainingArchitecture::Flux1Dev
+                | TrainingArchitecture::Flux1Schnell
+                | TrainingArchitecture::Flux2
+                | TrainingArchitecture::Flux2KleinBase4B
+                | TrainingArchitecture::Flux2Klein9B
+                | TrainingArchitecture::Flux2KleinBase9B
+                | TrainingArchitecture::Sana
+                | TrainingArchitecture::ZImage
+                | TrainingArchitecture::ZImageTurbo
+                | TrainingArchitecture::CogVideoX2B
+                | TrainingArchitecture::CogVideoX15_5B
+                | TrainingArchitecture::CogVideoX15_5BI2V
+                | TrainingArchitecture::Wan21T2V13B => {
                     checkpoint.join("state.pt").is_file()
-                        && checkpoint.join("adapter.safetensors").is_file()
+                        && checkpoint.join("weights.safetensors").is_file()
                 }
                 TrainingArchitecture::Krea2 => checkpoint
                     .join("pytorch_lora_weights.safetensors")
@@ -652,8 +677,12 @@ fn has_checkpoint(directory: &Path, architecture: TrainingArchitecture) -> bool 
 }
 
 fn completed_steps_from_log(path: &Path) -> Option<u32> {
-    let bytes = fs::read(path).ok()?;
-    let tail = String::from_utf8_lossy(&bytes[bytes.len().saturating_sub(128 * 1024)..]);
+    let mut file = File::open(path).ok()?;
+    let start = file.metadata().ok()?.len().saturating_sub(128 * 1024);
+    file.seek(SeekFrom::Start(start)).ok()?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    let tail = String::from_utf8_lossy(&bytes);
     tail.split("Steps:")
         .skip(1)
         .filter_map(|segment| {
@@ -684,10 +713,17 @@ pub(crate) fn status(paths: &MediaRuntimePaths, id: &str) -> MediaResult<Trainin
         },
         Err(error) => return Err(format!("Could not read training status: {error}")),
     };
-    let output = directory
-        .join("output")
-        .join("pytorch_lora_weights.safetensors");
-    let missing_output = runner.state == "completed" && !output.is_file();
+    let output = directory.join("output").join(match spec.options.method {
+        TrainingMethod::Lora => "pytorch_lora_weights.safetensors",
+        TrainingMethod::Embedding => "learned_embeds.safetensors",
+        TrainingMethod::Finetune => "model",
+    });
+    let output_exists = if spec.options.method == TrainingMethod::Finetune {
+        output.join("model_index.json").is_file()
+    } else {
+        output.is_file()
+    };
+    let missing_output = runner.state == "completed" && !output_exists;
     let state = if missing_output {
         "failed".to_string()
     } else if ["starting", "running"].contains(&runner.state.as_str())
@@ -701,8 +737,8 @@ pub(crate) fn status(paths: &MediaRuntimePaths, id: &str) -> MediaResult<Trainin
         && has_checkpoint(&directory, spec.architecture);
     Ok(TrainingStatus {
         message: if missing_output {
-            Some("Trained LoRA weights are missing. Remove this job and train again.".into())
-        } else if state == "failed" {
+            Some("Trained weights are missing. Remove this job and train again.".into())
+        } else if matches!(state.as_str(), "failed" | "running") {
             runner.message
         } else {
             None
@@ -714,6 +750,17 @@ pub(crate) fn status(paths: &MediaRuntimePaths, id: &str) -> MediaResult<Trainin
             completed_steps_from_log(&directory.join("training.log"))
         },
         total_steps: spec.steps,
+        progress: if directory.join("progress.json").is_file() {
+            Some(
+                serde_json::from_slice(
+                    &fs::read(directory.join("progress.json"))
+                        .map_err(|error| format!("Could not read training progress: {error}"))?,
+                )
+                .map_err(|error| format!("Training progress is invalid: {error}"))?,
+            )
+        } else {
+            None
+        },
         state,
         can_resume,
     })

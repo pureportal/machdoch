@@ -6,7 +6,7 @@ export interface WorkspaceManagementControls {
   memorySourceSessions: MemorySourceSession[];
   workspaceMemoryDefaultEnabled: boolean;
   loading: boolean;
-  onAdd: (workspaceRoot: string) => void;
+  onAdd: (workspaceRoot: string) => void | Promise<void>;
   onRemove: (workspaceRoot: string) => void | Promise<void>;
   onRelink: (
     currentWorkspaceRoot: string,

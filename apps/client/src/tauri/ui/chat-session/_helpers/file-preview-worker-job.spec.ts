@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runFilePreviewWorkerJob } from "./file-preview-worker-job";
+import { runFilePreviewWorkerJob } from "@machdoch/client-ui/file-preview/file-preview-worker-job";
 
 const makeWorker = () => ({
   onmessage: null,

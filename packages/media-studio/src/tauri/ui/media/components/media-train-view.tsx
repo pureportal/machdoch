@@ -4,30 +4,39 @@ import type { MediaModelDescriptor } from "../../../../core/media/contracts.js";
 import type {
   MediaTrainingArchitecture,
   MediaTrainingConcept,
-  MediaTrainingImage,
-  MediaTrainingImageInspection,
+  MediaTrainingSample,
+  MediaTrainingSampleInspection,
   MediaTrainingJob,
   MediaTrainingStatus,
+  MediaTrainingMethod,
 } from "../media-training";
 import {
   cancelTraining,
   finishTraining,
   getTrainingStatus,
-  inspectTrainingImages,
+  inspectTrainingSamples,
   resumeTraining,
   submitTraining,
+  defaultTrainingOptions,
+  TRAINING_ARCHITECTURES,
+  isFlowTrainingArchitecture,
+  isVideoTrainingArchitecture,
+  defaultTrainingVideoSettings,
+  validTrainingVideoSettings,
+  supportsEmbeddingTraining,
 } from "../media-training";
 import { hasMediaHost, isRemoteMedia, open, openUrl } from "../media-platform";
 import {
-  importMediaModelAddon,
-  inspectMediaModelAddon,
-} from "../media-runtime";
+  importTrainingArtifact,
+  type ImportedTrainingArtifact,
+} from "../media-training-import";
 import { Button } from "../../components/ui/button";
 
 import {
   MediaTrainingSettingsFields,
   type MediaTrainingSettings,
 } from "./media-training-settings";
+import { MediaTrainingVideoSettingsFields } from "./media-training-video-settings";
 
 const JOB_KEY = "media:local-training-job";
 const concepts: readonly { id: MediaTrainingConcept; label: string }[] = [
@@ -52,8 +61,13 @@ const readJob = (): MediaTrainingJob | null => {
       "concept" in value &&
       concepts.some((concept) => concept.id === value.concept) &&
       "architecture" in value &&
-      (value.architecture === "krea-2" ||
-        value.architecture === "stable-diffusion-xl")
+      TRAINING_ARCHITECTURES.some(
+        (item) => item.value === value.architecture,
+      ) &&
+      "method" in value &&
+      ["lora", "finetune", "embedding"].includes(String(value.method)) &&
+      "baseModelId" in value &&
+      (value.baseModelId === null || typeof value.baseModelId === "string")
     )
       return value as MediaTrainingJob;
   } catch {
@@ -79,48 +93,76 @@ export function MediaTrainView({
   models,
   onImported,
   onUseAddon,
+  onUseModel,
   canUseAddon,
   onFindModel,
 }: {
   models: readonly MediaModelDescriptor[];
   onImported: () => Promise<unknown>;
-  onUseAddon: (addonId: string) => void;
-  canUseAddon: (architecture: MediaTrainingArchitecture) => boolean;
+  onUseAddon: (addonId: string, baseModelId: string | null) => void;
+  onUseModel: (modelId: string) => void;
+  canUseAddon: (
+    architecture: MediaTrainingArchitecture,
+    method: "lora" | "embedding",
+    baseModelId: string | null,
+  ) => boolean;
   onFindModel: (architecture: MediaTrainingArchitecture) => void;
 }): JSX.Element {
   const localHost = hasMediaHost() && !isRemoteMedia();
-  const sdxlModels = models.filter(
+  const trainingModels = models.filter(
     (model) =>
       model.target === "local" &&
       model.installed &&
-      model.architecture === "stable-diffusion-xl",
+      (model.architecture === "krea-2-raw" ||
+        TRAINING_ARCHITECTURES.some(
+          (item) =>
+            item.value !== "krea-2" && item.value === model.architecture,
+        )),
   );
   const [architecture, setArchitecture] = useState<MediaTrainingArchitecture>(
-    () => (sdxlModels.length > 0 ? "stable-diffusion-xl" : "krea-2"),
+    () =>
+      ((trainingModels[0]?.architecture === "krea-2-raw"
+        ? "krea-2"
+        : trainingModels[0]?.architecture) as
+        | MediaTrainingArchitecture
+        | undefined) ?? "stable-diffusion-xl",
   );
   const [modelId, setModelId] = useState<string | null>(null);
-  const selectedModelId = modelId ?? sdxlModels[0]?.id ?? "";
-  const selectedModel = sdxlModels.find(
+  const matchingModels = trainingModels.filter(
+    (model) =>
+      model.architecture ===
+      (architecture === "krea-2" ? "krea-2-raw" : architecture),
+  );
+  const selectedModelId = modelId ?? matchingModels[0]?.id ?? "";
+  const selectedModel = matchingModels.find(
     (model) => model.id === selectedModelId,
   );
   const [name, setName] = useState("");
   const [concept, setConcept] = useState<MediaTrainingConcept>("style");
   const [triggerPhrase, setTriggerPhrase] = useState("");
   const [modelPath, setModelPath] = useState("");
-  const [images, setImages] = useState<MediaTrainingImage[]>([]);
+  const [images, setImages] = useState<MediaTrainingSample[]>([]);
+  const [video, setVideo] = useState(defaultTrainingVideoSettings);
+  const videoTraining = isVideoTrainingArchitecture(architecture);
   const [imageInspections, setImageInspections] = useState<
-    MediaTrainingImageInspection[]
+    MediaTrainingSampleInspection[]
   >([]);
   const [inspectingImages, setInspectingImages] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [settings, setSettings] = useState<MediaTrainingSettings>(() => ({
     steps: 1000,
-    learningRate: 0.0003,
+    learningRate: 0.0001,
     resolution: 768,
     rank: 32,
     seed: 0,
-    attentionOnly: false,
+    attentionOnly: true,
     fourBit: !/Macintosh|Mac OS X/u.test(navigator.userAgent),
+    options: {
+      ...defaultTrainingOptions(),
+      precision: /Macintosh|Mac OS X/u.test(navigator.userAgent)
+        ? "fp16"
+        : "bf16",
+    },
   }));
   const {
     steps,
@@ -130,13 +172,12 @@ export function MediaTrainView({
     seed,
     attentionOnly,
     fourBit,
+    options,
   } = settings;
   const [job, setJob] = useState<MediaTrainingJob | null>(readJob);
   const [status, setStatus] = useState<MediaTrainingStatus | null>(null);
-  const [importedAddon, setImportedAddon] = useState<{
-    id: string;
-    architecture: MediaTrainingArchitecture;
-  } | null>(null);
+  const [importedAddon, setImportedAddon] =
+    useState<ImportedTrainingArtifact | null>(null);
   const [cleanupJobId, setCleanupJobId] = useState<string | null>(null);
   const [importFailed, setImportFailed] = useState(false);
   const [pending, setPending] = useState(false);
@@ -161,28 +202,7 @@ export function MediaTrainView({
           return;
         importing.current = true;
         setPending(true);
-        const inspection = await inspectMediaModelAddon(next.outputPath);
-        if (
-          !inspection.canImport ||
-          inspection.detectedArchitecture !== job.architecture
-        ) {
-          throw new Error(
-            inspection.blockingReason ??
-              "The trained LoRA does not match its base model.",
-          );
-        }
-        const result = await importMediaModelAddon({
-          sourcePath: next.outputPath,
-          reviewToken: inspection.reviewToken,
-          displayName: job.name,
-          kind: "lora",
-          architecture: job.architecture,
-          triggerWords: [job.triggerPhrase],
-          token: null,
-          sourceUrl: null,
-          licenseName: null,
-          commercialUse: null,
-        });
+        const result = await importTrainingArtifact(job, next.outputPath);
         await onImported();
         if (stopped) return;
         let cleanupError: string | null = null;
@@ -190,13 +210,10 @@ export function MediaTrainView({
           await finishTraining(job.id);
         } catch (failure) {
           setCleanupJobId(job.id);
-          cleanupError = `LoRA imported, but training files remain: ${errorMessage(failure)}`;
+          cleanupError = `Weights imported, but training files remain: ${errorMessage(failure)}`;
         }
         localStorage.removeItem(JOB_KEY);
-        setImportedAddon({
-          id: result.addonId,
-          architecture: job.architecture,
-        });
+        setImportedAddon(result);
         setJob(null);
         setError(cleanupError);
       } catch (failure) {
@@ -225,7 +242,9 @@ export function MediaTrainView({
       const selected = await open({
         multiple: true,
         filters: [
-          { name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] },
+          videoTraining
+            ? { name: "Videos", extensions: ["mp4", "webm", "mov", "mkv"] }
+            : { name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] },
         ],
       });
       if (!selected) return;
@@ -237,8 +256,8 @@ export function MediaTrainView({
         return true;
       });
       if (images.length + added.length > 50)
-        throw new Error("Choose up to 50 images.");
-      const inspected = await inspectTrainingImages(added);
+        throw new Error("Choose up to 50 training samples.");
+      const inspected = await inspectTrainingSamples(added, architecture);
       setImages([...images, ...added.map((path) => ({ path, caption: "" }))]);
       setImageInspections((current) => [...current, ...inspected]);
       setError(null);
@@ -267,18 +286,19 @@ export function MediaTrainView({
         name,
         concept,
         triggerPhrase,
-        images,
+        samples: images,
+        video: isVideoTrainingArchitecture(architecture) ? video : null,
         architecture,
-        modelId:
-          architecture === "stable-diffusion-xl" ? selectedModelId : null,
-        modelPath: architecture === "krea-2" ? modelPath : "",
+        modelId: selectedModel?.id ?? null,
+        modelPath: architecture === "krea-2" && !selectedModel ? modelPath : "",
         steps,
         learningRate,
         resolution,
         rank,
         seed,
-        attentionOnly: architecture === "stable-diffusion-xl" || attentionOnly,
+        attentionOnly,
         fourBit: architecture === "krea-2" && fourBit,
+        options,
       });
       localStorage.setItem(JOB_KEY, JSON.stringify(started));
       setJob(started);
@@ -340,8 +360,15 @@ export function MediaTrainView({
     localHost &&
     !!name.trim() &&
     !!triggerPhrase.trim() &&
-    (architecture === "stable-diffusion-xl" ? !!selectedModel : !!modelPath) &&
+    (!!selectedModel || (architecture === "krea-2" && !!modelPath)) &&
+    (options.method !== "embedding" ||
+      (!/\s/u.test(triggerPhrase) && !!options.initializerToken.trim())) &&
     images.length >= 3 &&
+    (!videoTraining ||
+      (validTrainingVideoSettings(video) &&
+        !imageInspections.some(
+          (sample) => (sample.durationSeconds ?? 0) < video.frames / video.fps,
+        ))) &&
     Number.isInteger(steps) &&
     steps >= 1 &&
     steps <= 10_000 &&
@@ -349,8 +376,8 @@ export function MediaTrainView({
     seed >= 0 &&
     seed <= 4_294_967_295 &&
     Number.isFinite(learningRate) &&
-    learningRate >= 0.00001 &&
-    learningRate <= 0.001 &&
+    learningRate >= 0.000001 &&
+    learningRate <= 0.01 &&
     !pending &&
     !inspectingImages;
   const imageDimensions = new Map(
@@ -366,7 +393,7 @@ export function MediaTrainView({
   return (
     <div className="h-full overflow-y-auto px-5 py-6 text-slate-100 sm:px-8">
       <div className="mx-auto max-w-3xl space-y-6">
-        <h1 className="text-xl font-semibold">Train LoRA</h1>
+        <h1 className="text-xl font-semibold">Train</h1>
         {!localHost ? (
           <p className="text-sm text-slate-400">
             Open Media Studio on this computer to train locally.
@@ -379,11 +406,12 @@ export function MediaTrainView({
               {pending
                 ? "Working…"
                 : status?.state === "running"
-                  ? `Training locally${status.completedSteps === null ? "" : ` · ${status.completedSteps} / ${status.totalSteps} steps`}`
+                  ? (status.message ??
+                    `Training locally${status.completedSteps === null ? "" : ` · ${status.completedSteps} / ${status.totalSteps} steps`}`)
                   : status?.state === "starting"
                     ? "Starting training…"
                     : status?.state === "completed"
-                      ? "Importing LoRA…"
+                      ? "Importing weights…"
                       : status?.state === "failed"
                         ? "Training failed"
                         : status?.state === "cancelled"
@@ -392,7 +420,23 @@ export function MediaTrainView({
                             ? "Training interrupted"
                             : "Checking training…"}
             </p>
-            {status?.message ? (
+            {status?.progress &&
+            !(status.state === "running" && status.message) ? (
+              <div className="mt-3 space-y-2">
+                <progress
+                  aria-label="Training progress"
+                  max={status.totalSteps}
+                  value={status.progress.completedSteps}
+                  className="w-full"
+                />
+                <p className="text-xs text-slate-400">
+                  Loss {status.progress.loss.toFixed(4)} ·{" "}
+                  {Math.ceil(status.progress.remainingSeconds / 60)} min
+                  remaining
+                </p>
+              </div>
+            ) : null}
+            {status?.message && status.state !== "running" ? (
               <p className="mt-2 text-sm text-red-200">{status.message}</p>
             ) : null}
             <div className="mt-4 flex flex-wrap gap-2">
@@ -451,18 +495,38 @@ export function MediaTrainView({
           </section>
         ) : importedAddon ? (
           <section className="rounded-xl border border-sky-700/60 bg-sky-950/20 p-5">
-            <h2 className="font-medium">LoRA ready</h2>
+            <h2 className="font-medium">
+              {importedAddon.method === "finetune"
+                ? "Model"
+                : importedAddon.method === "embedding"
+                  ? "Embedding"
+                  : "LoRA"}{" "}
+              ready
+            </h2>
             <div className="mt-4 flex flex-wrap gap-2">
-              {canUseAddon(importedAddon.architecture) ? (
-                <Button onClick={() => onUseAddon(importedAddon.id)}>
+              {importedAddon.method === "finetune" ||
+              canUseAddon(
+                importedAddon.architecture,
+                importedAddon.method,
+                importedAddon.baseModelId,
+              ) ? (
+                <Button
+                  onClick={() =>
+                    importedAddon.method === "finetune"
+                      ? onUseModel(importedAddon.id)
+                      : onUseAddon(importedAddon.id, importedAddon.baseModelId)
+                  }
+                >
                   Use in Basic <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               ) : (
                 <Button onClick={() => onFindModel(importedAddon.architecture)}>
                   Find{" "}
-                  {importedAddon.architecture === "stable-diffusion-xl"
-                    ? "SDXL"
-                    : "KREA 2"}{" "}
+                  {importedAddon.architecture === "krea-2"
+                    ? "KREA 2 Turbo"
+                    : TRAINING_ARCHITECTURES.find(
+                        (item) => item.value === importedAddon.architecture,
+                      )?.label}{" "}
                   model <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               )}
@@ -518,7 +582,9 @@ export function MediaTrainView({
               </label>
             </div>
             <label className="block space-y-2 text-sm font-medium">
-              Trigger phrase
+              {options.method === "embedding"
+                ? "Embedding token"
+                : "Trigger phrase"}
               <input
                 value={triggerPhrase}
                 maxLength={120}
@@ -527,50 +593,162 @@ export function MediaTrainView({
               />
             </label>
             <label className="block space-y-2 text-sm font-medium">
+              Method
+              <select
+                value={options.method}
+                onChange={(event) => {
+                  const method = event.target.value as MediaTrainingMethod;
+                  setSettings((current) => ({
+                    ...current,
+                    learningRate:
+                      method === "embedding"
+                        ? 0.0005
+                        : method === "finetune"
+                          ? 0.00001
+                          : 0.0001,
+                    options: {
+                      ...current.options,
+                      method,
+                      trainablePrecision:
+                        method === "finetune"
+                          ? current.options.trainablePrecision
+                          : "float32",
+                      weightDecay: method === "embedding" ? 0 : 0.01,
+                    },
+                  }));
+                }}
+                className="block w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 font-normal"
+              >
+                <option value="lora">LoRA</option>
+                {architecture !== "krea-2" ? (
+                  <>
+                    <option value="finetune">Finetune</option>
+                    {supportsEmbeddingTraining(architecture) ? (
+                      <option value="embedding">Embedding</option>
+                    ) : null}
+                  </>
+                ) : null}
+              </select>
+            </label>
+            {options.method === "embedding" ? (
+              <label className="block space-y-2 text-sm font-medium">
+                Initializer word
+                <input
+                  value={options.initializerToken}
+                  maxLength={120}
+                  onChange={(event) =>
+                    setSettings((current) => ({
+                      ...current,
+                      options: {
+                        ...current.options,
+                        initializerToken: event.target.value,
+                      },
+                    }))
+                  }
+                  className="block w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 font-normal"
+                />
+              </label>
+            ) : null}
+            <label className="block space-y-2 text-sm font-medium">
               Architecture
               <select
                 value={architecture}
-                onChange={(event) =>
-                  setArchitecture(
-                    event.target.value as MediaTrainingArchitecture,
+                disabled={inspectingImages}
+                onChange={(event) => {
+                  const next = event.target.value as MediaTrainingArchitecture;
+                  if (isVideoTrainingArchitecture(next) !== videoTraining) {
+                    setImages([]);
+                    setImageInspections([]);
+                  }
+                  if (next !== "cogvideox-1.5-5b-i2v")
+                    setVideo((current) => ({ ...current, image_dropout: 0 }));
+                  setArchitecture(next);
+                  setModelId(null);
+                  if (next === "krea-2")
+                    setSettings((current) => ({
+                      ...current,
+                      options: {
+                        ...defaultTrainingOptions(),
+                        precision: current.options.precision,
+                      },
+                    }));
+                  else if (
+                    isFlowTrainingArchitecture(next) ||
+                    isVideoTrainingArchitecture(next)
                   )
-                }
+                    setSettings((current) => {
+                      const resetEmbedding =
+                        current.options.method === "embedding" &&
+                        !supportsEmbeddingTraining(next);
+                      return {
+                        ...current,
+                        learningRate: resetEmbedding
+                          ? 0.0001
+                          : current.learningRate,
+                        options: {
+                          ...current.options,
+                          method: resetEmbedding
+                            ? "lora"
+                            : current.options.method,
+                          weightDecay: resetEmbedding
+                            ? 0.01
+                            : current.options.weightDecay,
+                          snrGamma: 0,
+                          preserveAspectRatio: isVideoTrainingArchitecture(next)
+                            ? false
+                            : current.options.preserveAspectRatio,
+                        },
+                      };
+                    });
+                }}
                 className="block w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 font-normal"
               >
-                <option value="stable-diffusion-xl">SDXL</option>
-                <option value="krea-2">KREA 2 RAW</option>
+                {TRAINING_ARCHITECTURES.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
               </select>
             </label>
-            {architecture === "stable-diffusion-xl" ? (
+            {architecture !== "krea-2" || matchingModels.length > 0 ? (
               <section className="space-y-2">
                 <label className="block space-y-2 text-sm font-medium">
                   Base model
                   <select
                     value={selectedModel?.id ?? ""}
-                    disabled={!localHost || sdxlModels.length === 0}
+                    disabled={!localHost || matchingModels.length === 0}
                     onChange={(event) => setModelId(event.target.value)}
                     className="block w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 font-normal"
                   >
-                    <option value="" disabled>
-                      Choose model
+                    <option value="" disabled={architecture !== "krea-2"}>
+                      {architecture === "krea-2"
+                        ? "Local folder"
+                        : "Choose model"}
                     </option>
-                    {sdxlModels.map((model) => (
+                    {matchingModels.map((model) => (
                       <option key={model.id} value={model.id}>
                         {model.displayName}
                       </option>
                     ))}
                   </select>
                 </label>
-                {sdxlModels.length === 0 ? (
+                {matchingModels.length === 0 ? (
                   <Button
                     variant="outline"
-                    onClick={() => onFindModel("stable-diffusion-xl")}
+                    onClick={() => onFindModel(architecture)}
                   >
-                    Find SDXL model
+                    Find{" "}
+                    {
+                      TRAINING_ARCHITECTURES.find(
+                        (item) => item.value === architecture,
+                      )?.label
+                    }{" "}
+                    model
                   </Button>
                 ) : null}
               </section>
-            ) : (
+            ) : null}
+            {architecture === "krea-2" && !selectedModel ? (
               <section className="space-y-2">
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="text-sm font-medium">
@@ -600,11 +778,11 @@ export function MediaTrainView({
                   </button>
                 )}
               </section>
-            )}
+            ) : null}
             <section className="space-y-3">
               <div className="flex items-center justify-between gap-3">
                 <h2 className="text-sm font-medium">
-                  Images ({images.length})
+                  {videoTraining ? "Videos" : "Images"} ({images.length})
                 </h2>
                 <Button
                   variant="outline"
@@ -614,7 +792,7 @@ export function MediaTrainView({
                   onClick={() => void addImages()}
                 >
                   <Plus className="mr-2 h-4 w-4" />
-                  Add images
+                  {videoTraining ? "Add videos" : "Add images"}
                 </Button>
               </div>
               {images.length > 0 ? (
@@ -677,20 +855,39 @@ export function MediaTrainView({
                   ))}
                 </div>
               ) : null}
-              {images.length >= 3 && images.length < 10 ? (
+              {videoTraining ? (
+                <MediaTrainingVideoSettingsFields
+                  settings={video}
+                  imageConditioned={architecture === "cogvideox-1.5-5b-i2v"}
+                  onChange={(patch) =>
+                    setVideo((current) => ({ ...current, ...patch }))
+                  }
+                />
+              ) : null}
+              {videoTraining &&
+              imageInspections.some(
+                (sample) =>
+                  (sample.durationSeconds ?? 0) < video.frames / video.fps,
+              ) ? (
+                <p role="alert" className="text-xs text-amber-300">
+                  A clip is too short. Reduce the frame count or add a longer
+                  clip.
+                </p>
+              ) : null}
+              {!videoTraining && images.length >= 3 && images.length < 10 ? (
                 <p className="text-xs text-amber-300">
                   Only {images.length} images. Add varied examples for more
                   reliable results.
                 </p>
               ) : null}
-              {lowResolutionCount > 0 ? (
+              {!videoTraining && lowResolutionCount > 0 ? (
                 <p className="text-xs text-amber-300">
                   {lowResolutionCount}{" "}
                   {lowResolutionCount === 1 ? "image is" : "images are"} smaller
                   than the {resolution}px training size. Use larger originals.
                 </p>
               ) : null}
-              {concept === "style" && images.length > 0 ? (
+              {!videoTraining && concept === "style" && images.length > 0 ? (
                 <p className="text-xs text-slate-400">
                   Describe each image's subject in its caption.
                 </p>

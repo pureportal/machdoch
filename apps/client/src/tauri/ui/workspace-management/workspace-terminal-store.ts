@@ -854,7 +854,7 @@ export class WorkspaceTerminalStore {
     this.initializePromise = (async () => {
       try {
         const [discovery, settingsResult] = await Promise.all([
-          discoverWorkspaceShells(),
+          discoverWorkspaceShells(this.workspaceRoot),
           loadTerminalProfileSettings()
             .then((settings) => ({ settings, error: null }))
             .catch((error: unknown) => ({

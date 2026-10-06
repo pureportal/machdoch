@@ -228,10 +228,20 @@ export const runCli = async (argv: string[]): Promise<CommandName> => {
     return args.command;
   }
 
+  let commandFailure: { error: unknown } | undefined;
   try {
     await runParsedCliCommand(args);
-  } finally {
-    await closeAgentRuntimeResources(args);
+  } catch (error) {
+    commandFailure = { error };
   }
+
+  try {
+    await closeAgentRuntimeResources(args);
+  } catch (error) {
+    if (!commandFailure) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    writeStderrLine(`Agent resource shutdown failed: ${message}`);
+  }
+  if (commandFailure) throw commandFailure.error;
   return args.command;
 };

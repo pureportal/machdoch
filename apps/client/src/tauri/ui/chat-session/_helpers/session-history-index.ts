@@ -5,7 +5,6 @@ import {
   getSessionOverviewStatus,
   getSessionTitle,
   hasUnreadCompletedSessionResponse,
-  isMediaAssetContextAttachment,
   isQuickVoiceSession,
   isSessionArchived,
   normalizeShellState,
@@ -15,6 +14,7 @@ import {
   type ChatSessionRecord,
   type ShellPersistedState,
 } from "../../chat-session.model";
+import { isMediaAssetContextAttachment } from "@machdoch/client-ui/composer/model";
 import {
   getWorkspaceLabel,
   isConcreteSessionStatusFilter,
@@ -23,10 +23,17 @@ import {
   type SessionStatusFilter,
   type SessionStatusFilterSelection,
 } from "./session-shell";
-import { compareSessionsBySidebarGroup } from "./session-sidebar-groups";
+import {
+  compareSessionsBySidebarGroup,
+  ALL_SESSION_PROJECTS_FILTER,
+  calculateSessionSearchScore,
+  getSessionProjectId,
+  normalizeSessionSearchText,
+  tokenizeSessionSearchQuery,
+} from "@machdoch/product-ui";
+import { getSessionSidebarGroup } from "./session-sidebar-group";
 
-export const ALL_SESSION_PROJECTS_FILTER = "__all_projects__";
-const NO_WORKSPACE_PROJECT_KEY = "__no_workspace__";
+export { ALL_SESSION_PROJECTS_FILTER } from "@machdoch/product-ui";
 const SESSION_EXPORT_KIND = "machdoch.sessions";
 const SESSION_EXPORT_VERSION = 1;
 
@@ -93,41 +100,6 @@ export interface SessionExportPayload {
   sessions: ChatSessionRecord[];
 }
 
-const normalizeSearchText = (value: string): string => {
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/gu, " ")
-    .replace(/[^a-z0-9._:/\\-]+/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
-};
-
-const tokenizeSearchQuery = (value: string): string[] => {
-  const normalized = normalizeSearchText(value);
-
-  if (!normalized) {
-    return [];
-  }
-
-  return normalized.split(" ").filter(Boolean);
-};
-
-const normalizeProjectKey = (workspace: string): string => {
-  const trimmedWorkspace = workspace.trim();
-  const normalizedWorkspace = trimmedWorkspace
-    .replace(/\\/gu, "/")
-    .replace(/\/+$/u, "");
-
-  return (normalizedWorkspace || trimmedWorkspace).toLowerCase();
-};
-
-const getProjectId = (workspace: string | null): string => {
-  return workspace?.trim()
-    ? normalizeProjectKey(workspace)
-    : NO_WORKSPACE_PROJECT_KEY;
-};
-
 const getProjectLabel = (workspace: string | null): string => {
   return getWorkspaceLabel(workspace);
 };
@@ -137,43 +109,6 @@ const appendMessageSearchParts = (
   message: ChatSessionMessage,
 ): void => {
   parts.push(message.content);
-};
-
-const calculateSearchScore = (
-  entry: SessionHistoryIndexEntry,
-  queryTokens: string[],
-): number => {
-  if (queryTokens.length === 0) {
-    return 0;
-  }
-
-  let score = 0;
-
-  for (const token of queryTokens) {
-    if (!entry.searchText.includes(token)) {
-      return -1;
-    }
-
-    score += 1;
-
-    if (entry.titleSearchText.includes(token)) {
-      score += 6;
-    }
-
-    if (entry.titleSearchText.startsWith(token)) {
-      score += 4;
-    }
-
-    if (entry.tagSearchText.includes(token)) {
-      score += 5;
-    }
-
-    if (entry.projectSearchText.includes(token)) {
-      score += 2;
-    }
-  }
-
-  return score;
 };
 
 const sortTagFacets = (
@@ -213,7 +148,10 @@ const matchesSessionStatusFilters = (
     return true;
   }
 
-  const sessionStatus = getSessionOverviewStatus(session, queuedSessionMessages);
+  const sessionStatus = getSessionOverviewStatus(
+    session,
+    queuedSessionMessages,
+  );
   const hasUnreadResponse = selectedFilters.includes("unread")
     ? hasUnreadCompletedSessionResponse(session)
     : false;
@@ -244,7 +182,7 @@ export const createSessionHistoryIndex = (
             return [];
           }
 
-          const id = getProjectId(root);
+          const id = getSessionProjectId(root);
           projectsById.set(id, {
             id,
             label: getProjectLabel(root),
@@ -260,7 +198,7 @@ export const createSessionHistoryIndex = (
     : null;
   const entries = sessions.map((session) => {
     const title = getSessionTitle(session);
-    const projectId = getProjectId(session.workspace);
+    const projectId = getSessionProjectId(session.workspace);
     const projectLabel = getProjectLabel(session.workspace);
 
     for (const tag of session.tags) {
@@ -322,15 +260,15 @@ export const createSessionHistoryIndex = (
       }
     }
 
-    const searchText = normalizeSearchText(searchParts.join(" "));
+    const searchText = normalizeSessionSearchText(searchParts.join(" "));
     const entry: SessionHistoryIndexEntry = {
       session,
       contentIndexed: includeContent,
       title,
       searchText,
-      titleSearchText: normalizeSearchText(title),
-      tagSearchText: normalizeSearchText(session.tags.join(" ")),
-      projectSearchText: normalizeSearchText(projectLabel),
+      titleSearchText: normalizeSessionSearchText(title),
+      tagSearchText: normalizeSessionSearchText(session.tags.join(" ")),
+      projectSearchText: normalizeSessionSearchText(projectLabel),
       projectId,
       projectLabel,
       score: 0,
@@ -359,13 +297,16 @@ export const filterSessionHistoryIndex = (
   index: SessionHistoryIndex,
   options: SessionHistoryFilterOptions,
 ): SessionHistoryFilterResult => {
-  const queryTokens = tokenizeSearchQuery(options.searchQuery ?? "");
+  const queryTokens = tokenizeSessionSearchQuery(options.searchQuery ?? "");
   const tagFilters = new Set(
-    normalizeSessionTags(options.tagFilters ?? []).map((tag) => tag.toLowerCase()),
+    normalizeSessionTags(options.tagFilters ?? []).map((tag) =>
+      tag.toLowerCase(),
+    ),
   );
   const hasTagFilters = tagFilters.size > 0;
   const projectFilter =
-    options.projectFilter && options.projectFilter !== ALL_SESSION_PROJECTS_FILTER
+    options.projectFilter &&
+    options.projectFilter !== ALL_SESSION_PROJECTS_FILTER
       ? options.projectFilter
       : null;
   const entries: SessionHistoryIndexEntry[] = [];
@@ -384,7 +325,9 @@ export const filterSessionHistoryIndex = (
       options.status,
       options.queuedSessionMessages ?? [],
     );
-    const matchesProject = projectFilter ? entry.projectId === projectFilter : true;
+    const matchesProject = projectFilter
+      ? entry.projectId === projectFilter
+      : true;
 
     if (
       !isAlwaysVisibleSession &&
@@ -413,7 +356,7 @@ export const filterSessionHistoryIndex = (
 
     const score = isAlwaysVisibleSession
       ? 0
-      : calculateSearchScore(entry, queryTokens);
+      : calculateSessionSearchScore(entry, queryTokens);
 
     if (!isAlwaysVisibleSession && score < 0) {
       continue;
@@ -431,8 +374,8 @@ export const filterSessionHistoryIndex = (
     }
 
     const sidebarGroupDelta = compareSessionsBySidebarGroup(
-      left.session,
-      right.session,
+      getSessionSidebarGroup(left.session),
+      getSessionSidebarGroup(right.session),
     );
 
     if (sidebarGroupDelta !== 0) {
@@ -525,14 +468,18 @@ export const createSessionExportPayload = (
   const selectedSessionIds = sessionIds ? new Set(sessionIds) : null;
   const sessions = state.sessions
     .filter((session) => !isQuickVoiceSession(session))
-    .filter((session) => !selectedSessionIds || selectedSessionIds.has(session.id))
+    .filter(
+      (session) => !selectedSessionIds || selectedSessionIds.has(session.id),
+    )
     .map((session) => cloneJson(session));
 
   return {
     kind: SESSION_EXPORT_KIND,
     version: SESSION_EXPORT_VERSION,
     exportedAt: timestamp,
-    ...(state.activeSessionId ? { activeSessionId: state.activeSessionId } : {}),
+    ...(state.activeSessionId
+      ? { activeSessionId: state.activeSessionId }
+      : {}),
     sessions,
   };
 };
@@ -556,7 +503,9 @@ const parseSessionExportPayload = (value: unknown): SessionExportPayload => {
     kind: SESSION_EXPORT_KIND,
     version: SESSION_EXPORT_VERSION,
     exportedAt:
-      typeof candidate.exportedAt === "number" ? candidate.exportedAt : Date.now(),
+      typeof candidate.exportedAt === "number"
+        ? candidate.exportedAt
+        : Date.now(),
     ...(typeof candidate.activeSessionId === "string"
       ? { activeSessionId: candidate.activeSessionId }
       : {}),
@@ -579,13 +528,17 @@ export const importSessionsIntoShellState = (
   });
 
   if (candidateSessions.length === 0) {
-    throw new Error("Session import file does not contain importable sessions.");
+    throw new Error(
+      "Session import file does not contain importable sessions.",
+    );
   }
 
   const normalizedImportState = normalizeShellState({
     ...state,
     activeSessionId:
-      payload.activeSessionId ?? candidateSessions[0].id ?? state.activeSessionId,
+      payload.activeSessionId ??
+      candidateSessions[0].id ??
+      state.activeSessionId,
     sessions: candidateSessions,
   });
   const importedSessions = normalizedImportState.sessions
@@ -608,7 +561,9 @@ export const importSessionsIntoShellState = (
     });
 
   if (importedSessions.length === 0) {
-    throw new Error("Session import file does not contain importable sessions.");
+    throw new Error(
+      "Session import file does not contain importable sessions.",
+    );
   }
 
   return {

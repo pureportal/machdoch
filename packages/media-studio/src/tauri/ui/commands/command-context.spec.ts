@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import * as React from "react";
+import { renderToString } from "react-dom/server";
 import {
   cleanup,
   fireEvent,
@@ -36,6 +37,29 @@ beforeAll(() => {
 });
 
 afterEach(() => cleanup());
+
+it("renders the command provider and shortcut hints on the server", () => {
+  const browserDocument = document;
+  vi.stubGlobal("document", undefined);
+  const Shortcut = () => {
+    const shortcut = useOptionalCommandShortcut("chat.send");
+    return React.createElement("span", null, shortcut?.label ?? "Compose");
+  };
+  try {
+    expect(() =>
+      renderToString(
+        React.createElement(CommandProvider, {
+          activeView: "chat",
+          platform: "windows",
+          runtime: "browser",
+          children: React.createElement(Shortcut),
+        }),
+      ),
+    ).not.toThrow();
+  } finally {
+    vi.stubGlobal("document", browserDocument);
+  }
+});
 
 const renderProvider = (
   commands: readonly CommandDefinition[] = [],

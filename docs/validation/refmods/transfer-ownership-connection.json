@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-06T20:02:45.858Z",
+  "native": {
+    "enabled": true,
+    "phase": "connected",
+    "instanceId": "instance_EgAZ9O8smoOr9TqpwDD35Mxl"
+  },
+  "pendingCommands": [],
+  "instanceHTTPStatus": 404,
+  "instance": {},
+  "nativeBody": "MACHDOCH\nv29.2.0\nBasic\nAdvanced\nTrain\nAssets\nActivity\nImage\nVideo\nSVG\nAudio\nAssistant\nConvert to Advanced\nPrompt\nStarting image\nAdd image\nModel\nChoose model\nManage models\nClose RefMods\nMiniMax H3 RefMods\nAdd files\nLibrary\nBrowse folder\nCreate RefMod\nMore options\n16:9 · Draft\nGenerate video\n\nAdd a prompt\n\nVideo output"
+}

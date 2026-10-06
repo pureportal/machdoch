@@ -1,7 +1,6 @@
 import type { ProductSession, ProductShell } from "@machdoch/fleet-protocol";
 import { Check } from "lucide-react";
 import {
-  ContextPacksIcon,
   DropdownIcon,
   WorkspaceIcon,
   type ComposerIconProps,
@@ -324,62 +323,5 @@ export function WorkspaceMenu({
         </ProductModal>
       ) : null}
     </>
-  );
-}
-
-export function ContextPackMenu({
-  sessionId,
-  contextPacks,
-  disabled,
-  onCommand,
-}: {
-  sessionId: string;
-  contextPacks: ProductShell["contextPacks"];
-  disabled: boolean;
-  onCommand: ProductCommandHandler;
-}): ReactElement {
-  return (
-    <ComposerMenu
-      label="Context packs"
-      className="m-product-menu"
-      contentClassName="m-product-menu-popover"
-      disabled={disabled}
-      trigger={
-        <button type="button" aria-label="Context packs">
-          <ContextPacksIcon aria-hidden="true" />
-          <span>Packs</span>
-          <DropdownIcon aria-hidden="true" />
-        </button>
-      }
-    >
-      {contextPacks.length ? (
-        contextPacks.map((pack) => (
-          <DropdownMenu.CheckboxItem
-            key={pack.id}
-            checked={pack.matched}
-            disabled={disabled || pack.matched}
-            onSelect={() =>
-              void onCommand({
-                kind: "apply-context-pack",
-                sessionId,
-                contextPackId: pack.id,
-              })
-            }
-            asChild
-          >
-            <button
-              type="button"
-              data-active={pack.matched}
-              disabled={disabled || pack.matched}
-            >
-              <span>{pack.name}</span>
-              {pack.scopeLabel ? <small>{pack.scopeLabel}</small> : null}
-            </button>
-          </DropdownMenu.CheckboxItem>
-        ))
-      ) : (
-        <span className="m-product-menu-empty">No packs</span>
-      )}
-    </ComposerMenu>
   );
 }

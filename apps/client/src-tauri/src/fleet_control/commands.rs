@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use machdoch_fleet_protocol::ProductCommand;
+use machdoch_fleet_protocol::{ComposerHistorySelection, ProductCommand};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -22,9 +22,33 @@ pub struct FleetControlCommandEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) session_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) special_kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) pose_scene: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) prompt: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) history: Option<ComposerHistorySelection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) goal_objective: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) iteration_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) iteration_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) running_action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) direction: Option<i8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) target_index: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) variable_values: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) paths: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) context_pack: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) imported_context_packs: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) title: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -44,6 +68,8 @@ pub struct FleetControlCommandEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) workspace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) destination_workspace: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) memory_id: Option<String>,
@@ -53,8 +79,6 @@ pub struct FleetControlCommandEvent {
     pub(super) context_pack_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) message_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(super) job_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) run_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -99,8 +123,19 @@ pub(super) struct FleetCommandRecord {
 struct NormalizedCommandFields {
     task_id: Option<String>,
     session_id: Option<String>,
+    special_kind: Option<String>,
+    pose_scene: Option<serde_json::Value>,
     prompt: Option<String>,
+    history: Option<ComposerHistorySelection>,
     goal_objective: Option<String>,
+    iteration_count: Option<u32>,
+    iteration_mode: Option<String>,
+    running_action: Option<String>,
+    direction: Option<i8>,
+    target_index: Option<u32>,
+    variable_values: Option<BTreeMap<String, String>>,
+    paths: Option<Vec<String>>,
+    context_pack: Option<serde_json::Value>,
     title: Option<String>,
     tags: Option<Vec<String>>,
     provider: Option<String>,
@@ -110,12 +145,12 @@ struct NormalizedCommandFields {
     reasoning: Option<String>,
     prompt_enhancement_mode: Option<String>,
     workspace: Option<String>,
+    destination_workspace: Option<String>,
     enabled: Option<bool>,
     memory_id: Option<String>,
     attachment_id: Option<String>,
     context_pack_id: Option<String>,
     message_id: Option<String>,
-    job_id: Option<String>,
     run_id: Option<String>,
     flow_id: Option<String>,
     scope: Option<String>,
@@ -152,8 +187,20 @@ pub(super) fn normalize_command(
         kind,
         task_id: fields.task_id,
         session_id: fields.session_id,
+        special_kind: fields.special_kind,
+        pose_scene: fields.pose_scene,
         prompt: fields.prompt,
+        history: fields.history,
         goal_objective: fields.goal_objective,
+        iteration_count: fields.iteration_count,
+        iteration_mode: fields.iteration_mode,
+        running_action: fields.running_action,
+        direction: fields.direction,
+        target_index: fields.target_index,
+        variable_values: fields.variable_values,
+        paths: fields.paths,
+        context_pack: fields.context_pack,
+        imported_context_packs: None,
         title: fields.title,
         tags: fields.tags,
         provider: fields.provider,
@@ -163,12 +210,12 @@ pub(super) fn normalize_command(
         reasoning: fields.reasoning,
         prompt_enhancement_mode: fields.prompt_enhancement_mode,
         workspace: fields.workspace,
+        destination_workspace: fields.destination_workspace,
         enabled: fields.enabled,
         memory_id: fields.memory_id,
         attachment_id: fields.attachment_id,
         context_pack_id: fields.context_pack_id,
         message_id: fields.message_id,
-        job_id: fields.job_id,
         run_id: fields.run_id,
         flow_id: fields.flow_id,
         scope: fields.scope,
@@ -203,7 +250,16 @@ fn normalize_command_fields(
         "This Fleet Manager command requires a sessionId.",
     )?;
 
-    let prompt = optional_truncated_text(request.prompt.as_deref(), MAX_COMMAND_TEXT_CHARS);
+    let prompt = if matches!(
+        kind,
+        "update-queued-message" | "update-draft" | "restore-prompt-history"
+    ) {
+        request.prompt.clone()
+    } else if matches!(kind, "submit-message" | "edit-message") {
+        optional_trimmed_string(request.prompt.as_deref())
+    } else {
+        optional_truncated_text(request.prompt.as_deref(), MAX_COMMAND_TEXT_CHARS)
+    };
     let goal_objective = optional_trimmed_string(request.goal_objective.as_deref());
     if request.goal_objective.is_some()
         && (kind != "submit-message"
@@ -213,7 +269,7 @@ fn normalize_command_fields(
     {
         return Err("Enter a goal between 1 and 4,000 characters.".to_string());
     }
-    if matches!(kind, "submit-message" | "generate-media") && prompt.is_none() {
+    if matches!(kind, "submit-message" | "edit-message" | "generate-media") && prompt.is_none() {
         return Err(if kind == "generate-media" {
             "Media generation requires a prompt.".to_string()
         } else {
@@ -250,10 +306,22 @@ fn normalize_command_fields(
     if kind == "set-goal-mode" && !matches!(mode.as_deref(), Some("machdoch" | "native")) {
         return Err("Goal mode must be machdoch or native.".to_string());
     }
-    if kind == "set-parallel-agent-mode"
-        && !matches!(mode.as_deref(), Some("disabled" | "read-only" | "machdoch"))
+    if kind == "set-adaptive-controller"
+        && !matches!(mode.as_deref(), Some("default" | "enabled" | "disabled"))
     {
-        return Err("Parallel agent mode must be disabled, read-only, or machdoch.".to_string());
+        return Err(
+            "Adaptive context and compute must use default, enabled, or disabled.".to_string(),
+        );
+    }
+    if kind == "set-parallel-agent-mode"
+        && !matches!(
+            mode.as_deref(),
+            Some("disabled" | "read-only" | "machdoch" | "native")
+        )
+    {
+        return Err(
+            "Parallel agent mode must be disabled, read-only, machdoch, or native.".to_string(),
+        );
     }
 
     let reasoning =
@@ -283,6 +351,17 @@ fn normalize_command_fields(
     }
 
     let workspace = optional_truncated_text(request.workspace.as_deref(), MAX_FLEET_TEXT_CHARS);
+    let destination_workspace = optional_trimmed_string(request.destination_workspace.as_deref());
+    if matches!(
+        kind,
+        "add-workspace" | "remove-workspace" | "relink-workspace"
+    ) && workspace.is_none()
+    {
+        return Err("Select a workspace.".to_string());
+    }
+    if kind == "relink-workspace" && destination_workspace.is_none() {
+        return Err("Select the new workspace path.".to_string());
+    }
     if kind == "set-session-workspace" && workspace.is_none() {
         return Err("Workspace selection requires a workspace.".to_string());
     }
@@ -327,13 +406,6 @@ fn normalize_command_fields(
         requirements.message_id,
         &message_id,
         "This Fleet Manager command requires a messageId.",
-    )?;
-
-    let job_id = optional_trimmed_string(request.job_id.as_deref());
-    require_value(
-        requirements.job_id,
-        &job_id,
-        "This Fleet Manager command requires a jobId.",
     )?;
 
     let run_id = optional_trimmed_string(request.run_id.as_deref());
@@ -401,8 +473,19 @@ fn normalize_command_fields(
     Ok(NormalizedCommandFields {
         task_id,
         session_id,
+        special_kind: request.special_kind,
+        pose_scene: request.pose_scene,
         prompt,
+        history: request.history,
         goal_objective,
+        iteration_count: request.iteration_count,
+        iteration_mode: request.iteration_mode,
+        running_action: request.running_action,
+        direction: request.direction,
+        target_index: request.target_index,
+        variable_values: request.variable_values,
+        paths: request.paths,
+        context_pack: request.context_pack,
         title,
         tags,
         provider,
@@ -412,12 +495,12 @@ fn normalize_command_fields(
         reasoning,
         prompt_enhancement_mode,
         workspace,
+        destination_workspace,
         enabled,
         memory_id,
         attachment_id,
         context_pack_id,
         message_id,
-        job_id,
         run_id,
         flow_id,
         scope,
@@ -455,8 +538,19 @@ pub(super) fn command_payloads_match(
         && left.kind == right.kind
         && left.task_id == right.task_id
         && left.session_id == right.session_id
+        && left.special_kind == right.special_kind
+        && left.pose_scene == right.pose_scene
         && left.prompt == right.prompt
+        && left.history == right.history
         && left.goal_objective == right.goal_objective
+        && left.iteration_count == right.iteration_count
+        && left.iteration_mode == right.iteration_mode
+        && left.running_action == right.running_action
+        && left.direction == right.direction
+        && left.target_index == right.target_index
+        && left.variable_values == right.variable_values
+        && left.paths == right.paths
+        && left.context_pack == right.context_pack
         && left.title == right.title
         && left.tags == right.tags
         && left.provider == right.provider
@@ -466,12 +560,12 @@ pub(super) fn command_payloads_match(
         && left.reasoning == right.reasoning
         && left.prompt_enhancement_mode == right.prompt_enhancement_mode
         && left.workspace == right.workspace
+        && left.destination_workspace == right.destination_workspace
         && left.enabled == right.enabled
         && left.memory_id == right.memory_id
         && left.attachment_id == right.attachment_id
         && left.context_pack_id == right.context_pack_id
         && left.message_id == right.message_id
-        && left.job_id == right.job_id
         && left.run_id == right.run_id
         && left.flow_id == right.flow_id
         && left.scope == right.scope
@@ -489,8 +583,19 @@ pub(super) fn command_payload_hash(event: &FleetControlCommandEvent) -> String {
         "kind": event.kind,
         "taskId": event.task_id,
         "sessionId": event.session_id,
+        "specialKind": event.special_kind,
+        "poseScene": event.pose_scene,
         "prompt": event.prompt,
+        "history": event.history,
         "goalObjective": event.goal_objective,
+        "iterationCount": event.iteration_count,
+        "iterationMode": event.iteration_mode,
+        "runningAction": event.running_action,
+        "direction": event.direction,
+        "targetIndex": event.target_index,
+        "variableValues": event.variable_values,
+        "paths": event.paths,
+        "contextPack": event.context_pack,
         "title": event.title,
         "tags": event.tags,
         "provider": event.provider,
@@ -500,12 +605,12 @@ pub(super) fn command_payload_hash(event: &FleetControlCommandEvent) -> String {
         "reasoning": event.reasoning,
         "promptEnhancementMode": event.prompt_enhancement_mode,
         "workspace": event.workspace,
+        "destinationWorkspace": event.destination_workspace,
         "enabled": event.enabled,
         "memoryId": event.memory_id,
         "attachmentId": event.attachment_id,
         "contextPackId": event.context_pack_id,
         "messageId": event.message_id,
-        "jobId": event.job_id,
         "runId": event.run_id,
         "flowId": event.flow_id,
         "scope": event.scope,
@@ -605,7 +710,6 @@ fn create_command_target_preview(event: &FleetControlCommandEvent) -> Option<Str
             .task_id
             .as_deref()
             .map(|value| format!("task:{value}")),
-        event.job_id.as_deref().map(|value| format!("job:{value}")),
         event.run_id.as_deref().map(|value| format!("run:{value}")),
         event
             .flow_id

@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-06T18:45:49.139Z",
+  "checks": [
+    "damaged-video-preview"
+  ],
+  "failures": [
+    {
+      "category": "configuration",
+      "code": "MODEL_NOT_INSTALLED",
+      "context": {
+        "assetId": null,
+        "modelId": null,
+        "nodeId": null,
+        "operation": "media_refmod_operation",
+        "providerId": null,
+        "runId": null,
+        "runtimeId": null
+      },
+      "message": "MiniMax H3 video VAE is incomplete or damaged. Install a complete video checkpoint.",
+      "partialOutputsExist": false,
+      "retryability": "after-user-action",
+      "schemaVersion": 1,
+      "suggestedActions": [
+        {
+          "description": "Review the download, license, disk, and compatibility plan.",
+          "id": "open-models",
+          "label": "Open Models"
+        }
+      ],
+      "technicalDiagnostic": "Local Diffusers worker failed: ValueError: MiniMax H3 video VAE is incomplete or damaged. Replace \\\\?\\D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\workspace\\models\\minimax-h3-ref2va\\vae\\minimax_h3_video_vae_fp16.safetensors with a complete checkpoint."
+    }
+  ],
+  "responseWarnings": [],
+  "body": "Basic\nAdvanced\nTrain\nAssets\nActivity\nMedia Studio could not complete the operation.\nRefresh\nTechnical details\nImage\nVideo\nSVG\nAudio\nAssistant\nConvert to Advanced\nPrompt\nStarting image\nAdd image\nModel\nChoose model\nManage models\nClose RefMods\nMiniMax H3 RefMods\nAdd files\nLibrary\nBrowse folder\nCreate RefMod\nExport bundle\nHost folder\nSecond reference · 56 tokens\nAdd\nClose folder\nSecond reference\n↑\n↓\nRemove\nModality \nAll\nVisual\nAudio\nVisual strength \nAudio strength \nCopies \nCurves\nInspect reference\n\n\\\\?\\D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\workspace\\models\\refmods\\second.safetensors\n\nLook · image · 1 × 24 × 1 × 4 × 4 · 4 tokens\n\nMotion · video · 1 × 24 × 3 × 4 × 4 · 12 tokens\n\nSound · audio · 1 × 32 × 2 × 20 · 40 tokens\n\nMember \nLook (image)\nMotion (video)\nSound (audio)\n Compare strength\nPreview\n\nRequest failed (502).\n\n56 tokens\nToken limit \nMore options\n16:9 · Draft\nGenerate video\n\nAdd a prompt\n\nVideo output",
+  "failure": "TimeoutError: locator.waitFor: Timeout 240000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByText('Install the MiniMax H3 audio VAE to create or preview audio references.', { exact: true }) to be visible\u001b[22m\n"
+}

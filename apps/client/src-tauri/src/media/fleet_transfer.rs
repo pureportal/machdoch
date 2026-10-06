@@ -12,11 +12,34 @@ use tauri::Manager;
 
 struct Transfer {
     path: PathBuf,
+    download: bool,
     touched: Instant,
 }
 
 #[derive(Default)]
 pub(crate) struct FleetTransferState(Mutex<HashMap<String, Transfer>>);
+
+pub(crate) fn require_transfer_path(
+    app: &tauri::AppHandle,
+    path: &str,
+    download: bool,
+) -> Result<(), String> {
+    let state = app.state::<FleetTransferState>();
+    let mut transfers = state
+        .0
+        .lock()
+        .map_err(|_| "Transfer state is unavailable.")?;
+    let transfer = transfers
+        .values_mut()
+        .find(|transfer| {
+            transfer.path == PathBuf::from(path)
+                && transfer.download == download
+                && transfer.touched.elapsed() <= Duration::from_secs(3600)
+        })
+        .ok_or("File transfer expired. Select the file again.")?;
+    transfer.touched = Instant::now();
+    Ok(())
+}
 
 pub(super) fn execute(app: &tauri::AppHandle, command: &str, args: &Value) -> Result<Value, Value> {
     execute_inner(app, command, args).map_err(|error| json!(error))
@@ -52,7 +75,7 @@ fn execute_inner(app: &tauri::AppHandle, command: &str, args: &Value) -> Result<
         }
     }
     if command == "media_create_transfer" {
-        if transfers.len() >= 16 {
+        if transfers.len() >= 1024 {
             return Err("Too many file transfers. Finish an import or download first.".into());
         }
         if transfers.contains_key(id) {
@@ -77,15 +100,23 @@ fn execute_inner(app: &tauri::AppHandle, command: &str, args: &Value) -> Result<
             .join("fleet-transfers");
         fs::create_dir_all(&root).map_err(|error| error.to_string())?;
         let path = root.join(format!("{id}-{name}"));
-        OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&path)
-            .map_err(|error| error.to_string())?;
+        match args.get("direction").and_then(Value::as_str) {
+            Some("upload") => {
+                OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&path)
+                    .map_err(|error| error.to_string())?;
+            }
+            Some("download") if !path.exists() => {}
+            Some("download") => return Err("Transfer destination already exists.".into()),
+            _ => return Err("Choose upload or download for the transfer.".into()),
+        }
         transfers.insert(
             id.to_string(),
             Transfer {
                 path: path.clone(),
+                download: args["direction"] == "download",
                 touched: Instant::now(),
             },
         );
@@ -96,7 +127,9 @@ fn execute_inner(app: &tauri::AppHandle, command: &str, args: &Value) -> Result<
         .ok_or("File transfer expired. Select the file again.")?;
     transfer.touched = Instant::now();
     if command == "media_remove_transfer" {
-        fs::remove_file(&transfer.path).map_err(|error| error.to_string())?;
+        if transfer.path.exists() {
+            fs::remove_file(&transfer.path).map_err(|error| error.to_string())?;
+        }
         transfers.remove(id);
         return Ok(Value::Null);
     }

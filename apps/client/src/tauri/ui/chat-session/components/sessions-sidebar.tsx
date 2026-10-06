@@ -50,7 +50,7 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+} from "@machdoch/client-ui/dropdown-menu";
 import {
   ContextActionMenu,
   openContextMenuFromButton,
@@ -59,8 +59,11 @@ import { copyText } from "@machdoch/media-studio/tauri/ui/lib/clipboard.js";
 import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
 import { ScrollArea } from "../../components/ui/scroll-area";
 import { SearchField } from "@machdoch/media-studio/tauri/ui/components/ui/search-field.js";
-import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
-import type { CommandDefinition } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+import { SessionSidebarCommands } from "@machdoch/client-ui/sessions/sidebar-commands";
+import type {
+  SessionSidebarAction,
+  SessionSidebarCommandState,
+} from "@machdoch/product-ui";
 import {
   Tooltip,
   TooltipContent,
@@ -75,7 +78,8 @@ import {
 import {
   getUnpinnedSessionDividerIndex,
   isSessionPinnedInSidebar,
-} from "../_helpers/session-sidebar-groups";
+} from "@machdoch/product-ui";
+import { getSessionSidebarGroup } from "../_helpers/session-sidebar-group";
 import {
   SESSION_SCOPE_FILTERS,
   SESSION_STATUS_FILTERS,
@@ -273,8 +277,10 @@ export const SessionsSidebar = ({
     filteredSessions.length === totalSessions
       ? `${totalSessions} saved session${totalSessions === 1 ? "" : "s"}`
       : `${filteredSessions.length} of ${totalSessions} saved sessions`;
-  const unpinnedSessionDividerIndex =
-    getUnpinnedSessionDividerIndex(renderedSessions);
+  const unpinnedSessionDividerIndex = getUnpinnedSessionDividerIndex(
+    renderedSessions,
+    getSessionSidebarGroup,
+  );
   const showSessionProjectFilter = sessionProjectFacets.length > 1;
 
   useEffect(() => {
@@ -359,240 +365,51 @@ export const SessionsSidebar = ({
     };
   }, []);
 
-  const sidebarCommands = useMemo<readonly CommandDefinition[]>(
-    () => [
-      {
-        id: "chat.sessions.import",
-        title: "Import sessions",
-        group: "Chat",
-        scope: { kind: "view", ownerId: "chat" },
-        palette: "visible",
-        overlayPolicy: "replace-non-modal",
-        execute: () => importInputRef.current?.click(),
+  const sidebarCommandState = {
+    disabled: false,
+    sessions: filteredSessions.map((session) => ({
+      id: session.id,
+      title: getSessionTitle(session),
+      workspace: session.workspace,
+      tags: session.tags,
+      pinned: isSessionPinnedInSidebar(getSessionSidebarGroup(session)),
+      actions: {
+        pin: canPinSession(session),
+        duplicate: canDuplicateSession(session),
+        archive: canArchiveSession(session),
+        delete:
+          getSessionOverviewStatus(session) === "empty" &&
+          canDeleteSession(session),
       },
-      {
-        id: "chat.sessions.export",
-        title: "Export visible sessions",
-        group: "Chat",
-        scope: { kind: "view", ownerId: "chat" },
-        palette: "visible",
-        execute: () => onExportSessions(),
-      },
-      {
-        id: "chat.sessions.scope-filter.select",
-        title: "Filter sessions by scope",
-        group: "Chat",
-        scope: { kind: "view", ownerId: "chat" },
-        palette: "visible",
-        children: () => ({
-          id: "chat-sessions-scope-filter",
-          title: "Session scope",
-          searchPlaceholder: "Choose scope",
-          numericSelection: true,
-          groups: [
-            {
-              id: "scopes",
-              items: SESSION_SCOPE_FILTERS.map((filter, index) => ({
-                id: filter.id,
-                title: filter.label,
-                current: sessionScopeFilter === filter.id,
-                numericKey: String(index + 1) as
-                  | "1"
-                  | "2"
-                  | "3"
-                  | "4"
-                  | "5"
-                  | "6"
-                  | "7"
-                  | "8"
-                  | "9",
-                execute: () => onSessionScopeFilterChange(filter.id),
-              })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "chat.sessions.status-filter.toggle",
-        title: "Filter sessions by status",
-        group: "Chat",
-        scope: { kind: "view", ownerId: "chat" },
-        palette: "visible",
-        children: () => ({
-          id: "chat-sessions-status-filter",
-          title: "Session status",
-          searchPlaceholder: "Choose status",
-          groups: [
-            {
-              id: "statuses",
-              items: SESSION_STATUS_FILTERS.map((filter) => ({
-                id: filter.id,
-                title: filter.label,
-                current: selectedStatusFilters.includes(filter.id),
-                execute: () => toggleSessionStatusFilter(filter.id),
-              })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "chat.sessions.workspace-filter.select",
-        title: "Filter sessions by workspace",
-        group: "Chat",
-        scope: { kind: "view", ownerId: "chat" },
-        palette: "visible",
-        availability: () =>
-          showSessionProjectFilter
-            ? { state: "enabled" }
-            : { state: "disabled", reason: "Only one workspace is present" },
-        children: () => ({
-          id: "chat-sessions-workspace-filter",
-          title: "Session workspace",
-          searchPlaceholder: "Choose workspace",
-          groups: [
-            {
-              id: "workspaces",
-              items: [
-                {
-                  id: ALL_SESSION_PROJECTS_FILTER,
-                  title: "All workspaces",
-                  current: sessionProjectFilter === ALL_SESSION_PROJECTS_FILTER,
-                  execute: () =>
-                    onSessionProjectFilterChange(ALL_SESSION_PROJECTS_FILTER),
-                },
-                ...sessionProjectFacets.map((project) => ({
-                  id: project.id,
-                  title: project.label,
-                  keywords: project.path ? [project.path] : undefined,
-                  current: sessionProjectFilter === project.id,
-                  execute: () => onSessionProjectFilterChange(project.id),
-                })),
-              ],
-            },
-          ],
-        }),
-      },
-      {
-        id: "chat.sessions.tag-filter.toggle",
-        title: "Filter sessions by tag",
-        group: "Chat",
-        scope: { kind: "view", ownerId: "chat" },
-        palette: "visible",
-        availability: () =>
-          sessionTagFacets.length > 0
-            ? { state: "enabled" }
-            : { state: "disabled", reason: "No session tags" },
-        children: () => ({
-          id: "chat-sessions-tag-filter",
-          title: "Session tags",
-          searchPlaceholder: "Choose tag",
-          groups: [
-            {
-              id: "tags",
-              items: sessionTagFacets.map((tag) => ({
-                id: tag.label,
-                title: tag.label,
-                current: sessionTagFilters.some(
-                  (entry) => entry.toLowerCase() === tag.label.toLowerCase(),
-                ),
-                execute: () => onSessionTagFilterToggle(tag.label),
-              })),
-            },
-          ],
-        }),
-      },
-      ...(
-        [
-          {
-            id: "pin",
-            commandId: "chat.sessions.pin.select",
-            title: "Pin or unpin session",
-            eligible: canPinSession,
-            action: onTogglePinnedSession,
-          },
-          {
-            id: "duplicate",
-            commandId: "chat.sessions.duplicate.select",
-            title: "Duplicate session",
-            eligible: canDuplicateSession,
-            action: onDuplicateSession,
-          },
-          {
-            id: "archive",
-            commandId: "chat.sessions.archive.select",
-            title: "Archive session",
-            eligible: canArchiveSession,
-            action: onArchiveSession,
-          },
-          {
-            id: "delete",
-            commandId: "chat.sessions.delete.select",
-            title: "Delete empty session",
-            eligible: (session: ChatSessionRecord) =>
-              getSessionOverviewStatus(session) === "empty" &&
-              canDeleteSession(session),
-            action: onDeleteSession,
-          },
-        ] as const
-      ).map(
-        ({ id, commandId, title, eligible, action }): CommandDefinition => ({
-          id: commandId,
-          title,
-          group: "Chat",
-          scope: { kind: "view", ownerId: "chat" },
-          palette: "visible",
-          availability: () =>
-            filteredSessions.some(eligible)
-              ? { state: "enabled" }
-              : { state: "disabled", reason: "No eligible visible sessions" },
-          children: () => ({
-            id: `chat-sessions-${id}`,
-            title,
-            searchPlaceholder: "Choose session",
-            groups: [
-              {
-                id: "sessions",
-                items: filteredSessions.filter(eligible).map((session) => ({
-                  id: session.id,
-                  title:
-                    id === "pin"
-                      ? `${isSessionPinnedInSidebar(session) ? "Unpin" : "Pin"} ${getSessionTitle(session)}`
-                      : getSessionTitle(session),
-                  keywords: [session.workspace ?? "", ...session.tags].filter(
-                    Boolean,
-                  ),
-                  execute: () => action(session.id),
-                })),
-              },
-            ],
-          }),
-        }),
-      ),
-    ],
-    [
-      filteredSessions,
-      onArchiveSession,
-      onDeleteSession,
-      onDuplicateSession,
-      onExportSessions,
-      onSessionProjectFilterChange,
-      onSessionScopeFilterChange,
-      onSessionTagFilterToggle,
-      onTogglePinnedSession,
-      selectedStatusFilters,
-      sessionProjectFacets,
-      sessionProjectFilter,
-      sessionScopeFilter,
-      sessionTagFacets,
-      sessionTagFilters,
-      showSessionProjectFilter,
-      toggleSessionStatusFilter,
-    ],
-  );
-  useOptionalRegisterCommands(sidebarCommands);
+    })),
+    scope: sessionScopeFilter,
+    scopeOptions: SESSION_SCOPE_FILTERS,
+    statuses: selectedStatusFilters,
+    statusOptions: SESSION_STATUS_FILTERS,
+    project: sessionProjectFilter,
+    projects: sessionProjectFacets,
+    tags: sessionTagFilters,
+    availableTags: sessionTagFacets.map((tag) => tag.label),
+    importSessions: () => importInputRef.current?.click(),
+    exportSessions: onExportSessions,
+    onScopeChange: onSessionScopeFilterChange,
+    onStatusToggle: toggleSessionStatusFilter,
+    onProjectChange: onSessionProjectFilterChange,
+    onTagToggle: onSessionTagFilterToggle,
+    onSessionAction: (action: SessionSidebarAction, sessionId: string) => {
+      const actions = {
+        pin: onTogglePinnedSession,
+        duplicate: onDuplicateSession,
+        archive: onArchiveSession,
+        delete: onDeleteSession,
+      };
+      actions[action](sessionId);
+    },
+  } satisfies SessionSidebarCommandState;
 
   return (
     <aside className="app-sessions-sidebar flex min-h-0 w-84 shrink-0 flex-col border-r border-slate-900 bg-slate-950/50 backdrop-blur-xl">
+      <SessionSidebarCommands {...sidebarCommandState} />
       <div className="app-sessions-sidebar-header flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-900 px-5 py-2">
         <div>
           <p className="text-xs font-semibold tracking-[0.24em] text-slate-500 uppercase">
@@ -839,7 +656,9 @@ export const SessionsSidebar = ({
                 const SessionStatusIcon = statusMeta.icon;
                 const showArchiveAction = canArchiveSession(session);
                 const isQuickSession = isQuickVoiceSession(session);
-                const isPinned = isSessionPinnedInSidebar(session);
+                const isPinned = isSessionPinnedInSidebar(
+                  getSessionSidebarGroup(session),
+                );
                 const hasUnreadCompletion =
                   !isActive &&
                   !archived &&

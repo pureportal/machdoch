@@ -64,16 +64,6 @@ export const RUNNABLE_PROVIDER_ORDER: RuntimeProvider[] = [
   ...SUPPORTED_PROVIDER_ORDER,
 ];
 
-export const PROVIDER_LABELS: Record<RuntimeProvider, string> = {
-  openai: "OpenAI",
-  anthropic: "Anthropic",
-  google: "Google",
-  langdock: "Langdock",
-  "codex-cli": "Codex CLI",
-  "claude-cli": "Claude CLI",
-  "copilot-cli": "Copilot CLI",
-};
-
 const REVIEW_MODEL_PATTERNS: Record<RuntimeProvider, readonly RegExp[]> = {
   openai: [/(?:^|-)mini$/u, /(?:^|-)nano$/u],
   anthropic: [/haiku/u],
@@ -274,10 +264,6 @@ const getRuntimeCatalogModelsForProvider = (
       return left.id.localeCompare(right.id);
     })
     .map(toCatalogModel);
-};
-
-export const getProviderLabel = (provider: RuntimeProvider): string => {
-  return PROVIDER_LABELS[provider];
 };
 
 export const getCatalogModelsForProvider = (

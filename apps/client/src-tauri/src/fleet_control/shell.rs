@@ -10,6 +10,8 @@ pub struct FleetShellSnapshot {
     pub(super) captured_at: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) active_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) pose_scene_svg: Option<String>,
     #[serde(default)]
     pub(super) sessions: Vec<FleetShellSession>,
     #[serde(default)]
@@ -71,6 +73,12 @@ pub(super) struct FleetShellSession {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) running_task_id: Option<String>,
     pub(super) can_rename: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) can_reset_time: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) can_move_to_top: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) unread: Option<bool>,
     pub(super) can_delete: bool,
     pub(super) can_archive: bool,
     pub(super) can_pin: bool,
@@ -94,6 +102,12 @@ pub(super) struct FleetShellMessage {
     pub(super) id: String,
     pub(super) role: String,
     pub(super) content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) raw_content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) original_prompt: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) workspace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) created_at: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -121,6 +135,17 @@ pub(super) struct FleetShellMessageSource {
     pub(super) mode: Option<String>,
     pub(super) entries: Vec<FleetShellTraceEntry>,
     pub(super) timeline: Vec<FleetShellTraceEntry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) timeout: Option<FleetShellTaskTimeout>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct FleetShellTaskTimeout {
+    pub(super) started_at: u64,
+    pub(super) last_activity_at: u64,
+    pub(super) idle_timeout_ms: Option<u64>,
+    pub(super) absolute_timeout_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -137,6 +162,10 @@ pub(super) struct FleetShellTraceEntry {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct FleetShellMessageActions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) can_edit: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) can_replay: Option<bool>,
     pub(super) can_retry: bool,
     pub(super) can_continue: bool,
     pub(super) can_save_as_context_pack: bool,
@@ -174,6 +203,20 @@ pub(super) enum FleetShellAttachment {
 pub(super) struct FleetShellComposer {
     pub(super) session_id: String,
     pub(super) draft: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) history: Option<Vec<super::composer::FleetPromptHistoryEntry>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) draft_revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) text_truncated: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) queued_messages: Option<Vec<super::composer::FleetQueuedMessage>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) running_task_message_action: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) image_input_supported: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) image_input_disabled_reason: Option<String>,
     pub(super) provider: String,
     pub(super) provider_label: String,
     pub(super) model: String,
@@ -182,6 +225,8 @@ pub(super) struct FleetShellComposer {
     pub(super) model_catalog: Vec<FleetShellModelProvider>,
     pub(super) mode: String,
     pub(super) default_mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) adaptive_controller: Option<FleetAdaptiveController>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) parallel_agent_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -219,6 +264,14 @@ pub(super) struct FleetShellComposer {
     pub(super) attachments: Vec<FleetShellAttachment>,
     pub(super) chooser_providers: Vec<String>,
     pub(super) matched_context_pack_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct FleetAdaptiveController {
+    #[serde(rename = "override")]
+    pub(super) override_: Option<bool>,
+    pub(super) default_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -510,6 +563,8 @@ pub(super) struct FleetShellVoice {
     pub(super) speaking_message_id: Option<String>,
     pub(super) speech_input_supported: bool,
     pub(super) speech_input_enabled: bool,
+    pub(super) speech_input_recording: bool,
+    pub(super) speech_input_busy: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) speech_input_status: Option<String>,
 }

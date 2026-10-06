@@ -1,30 +1,84 @@
-import type { ProductMessage } from "@machdoch/fleet-protocol";
+import type {
+  ProductMessage,
+  ProductSession,
+  ProductAttachment,
+} from "@machdoch/fleet-protocol";
+import { Bot, ChevronDown, User, WandSparkles } from "lucide-react";
 import {
-  Activity,
-  Bot,
-  ChevronDown,
-  LoaderCircle,
-  User,
-  WandSparkles,
-} from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+  useLayoutEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { formatRelativeTime, formatTimestampDateTime } from "./format";
-import { ProductMarkdown } from "./markdown";
 import { MessageActions } from "./message-actions";
 import { PromptEnhancementIndicator } from "./prompt-enhancement";
+import {
+  getOriginalPromptContent,
+  OriginalPromptPanel,
+  OriginalPromptToggle,
+} from "./original-prompt";
 import type { ProductCommandHandler } from "./product-runtime";
+import {
+  useConversationControls,
+  type ConversationControls,
+} from "./conversation-controls";
 
-export function Conversation({
-  messages,
-  sessionId,
-  pending,
-  onCommand,
-}: {
+export interface RemoteConversationProps {
+  messages: ProductMessage[];
+  session: ProductSession;
+  pending: boolean;
+  onCommand: ProductCommandHandler;
+  historyAvailable: boolean;
+}
+
+export interface ConversationProps {
+  renderInsights?: ((message: ProductMessage) => ReactNode) | undefined;
+  renderActivity?: ((message: ProductMessage) => ReactNode) | undefined;
   messages: ProductMessage[];
   sessionId: string;
   pending: boolean;
   onCommand: ProductCommandHandler;
-}): React.ReactElement {
+  renderAttachments: (
+    attachments: ProductAttachment[],
+    isUser: boolean,
+    message?: ProductMessage,
+  ) => ReactNode;
+  renderContent: (
+    content: string,
+    className?: string,
+    message?: ProductMessage,
+  ) => ReactNode;
+  renderEditor: (message: ProductMessage, onClose: () => void) => ReactNode;
+  onOpenContextMenu: (
+    event: MouseEvent<HTMLDivElement>,
+    message: ProductMessage,
+  ) => void;
+  controls?: ConversationControls | undefined;
+  onMessageElementChange?:
+    | ((messageId: string, element: HTMLElement | null) => void)
+    | undefined;
+  onViewportChange?: ((element: HTMLElement) => void) | undefined;
+}
+
+export function Conversation({
+  renderInsights,
+  renderActivity,
+  messages,
+  sessionId,
+  pending,
+  onCommand,
+  renderAttachments,
+  renderContent,
+  renderEditor,
+  onOpenContextMenu,
+  controls: suppliedControls,
+  onMessageElementChange,
+  onViewportChange,
+}: ConversationProps): React.ReactElement {
+  const internalControls = useConversationControls();
+  const controls = suppliedControls ?? internalControls;
   const conversationRef = useRef<HTMLDivElement>(null);
   const followingNewestRef = useRef(true);
   const previousSessionIdRef = useRef(sessionId);
@@ -37,6 +91,7 @@ export function Conversation({
       previousSessionIdRef.current = sessionId;
       followingNewestRef.current = true;
       setShowLatest(false);
+      controls.reset();
     }
     if (followingNewestRef.current) {
       conversation.scrollTop = conversation.scrollHeight;
@@ -57,6 +112,7 @@ export function Conversation({
             conversation.clientHeight;
           followingNewestRef.current = distanceFromNewest <= 64;
           setShowLatest(!followingNewestRef.current);
+          onViewportChange?.(conversation);
         }}
       >
         {messages.length === 0 ? (
@@ -74,6 +130,14 @@ export function Conversation({
               sessionId={sessionId}
               pending={pending}
               onCommand={onCommand}
+              renderAttachments={renderAttachments}
+              renderContent={renderContent}
+              renderEditor={renderEditor}
+              renderActivity={renderActivity}
+              renderInsights={renderInsights}
+              onOpenContextMenu={onOpenContextMenu}
+              controls={controls}
+              onMessageElementChange={onMessageElementChange}
             />
           ))
         )}
@@ -98,21 +162,49 @@ export function Conversation({
 }
 
 function Message({
+  renderInsights,
+  renderActivity,
   message,
   sessionId,
   pending,
   onCommand,
+  renderAttachments,
+  renderContent,
+  renderEditor,
+  onOpenContextMenu,
+  controls,
+  onMessageElementChange,
 }: {
   message: ProductMessage;
+  renderActivity: ConversationProps["renderActivity"];
+  renderInsights: ConversationProps["renderInsights"];
   sessionId: string;
   pending: boolean;
   onCommand: ProductCommandHandler;
+  renderAttachments: ConversationProps["renderAttachments"];
+  renderContent: ConversationProps["renderContent"];
+  renderEditor: ConversationProps["renderEditor"];
+  onOpenContextMenu: ConversationProps["onOpenContextMenu"];
+  controls: ConversationControls;
+  onMessageElementChange: ConversationProps["onMessageElementChange"];
 }): React.ReactElement {
   const isUser = message.role === "user";
   const isPromptEnhancement = message.presentation === "prompt-enhancement";
+  const insights = isPromptEnhancement ? undefined : renderInsights?.(message);
+  const originalExpanded = controls.expandedOriginalPromptIds.has(message.id);
+  const editing = controls.editingMessageId === message.id;
+  const original = isUser
+    ? getOriginalPromptContent(message.content, message.originalPrompt)
+    : null;
+  const originalId = `original-prompt-${message.id}`;
   return (
     <article
+      ref={(element) => onMessageElementChange?.(message.id, element)}
       className="m-product-message"
+      data-message-id={message.id}
+      data-navigation-target={
+        controls.selectedMessageId === message.id || undefined
+      }
       data-role={isUser ? "user" : "agent"}
     >
       <div className="m-product-message-avatar" aria-hidden="true">
@@ -128,13 +220,31 @@ function Message({
           ) : null}
         </div>
         {message.content || isPromptEnhancement ? (
-          <div className="m-product-message-bubble">
-            {message.content ? (
-              <ProductMarkdown
-                className="m-product-message-content"
-                content={message.content}
+          <div
+            className="m-product-message-bubble"
+            style={
+              original
+                ? { position: "relative", paddingRight: "3.5rem" }
+                : undefined
+            }
+            onContextMenu={(event) => onOpenContextMenu(event, message)}
+          >
+            {original && !editing ? (
+              <OriginalPromptToggle
+                expanded={originalExpanded}
+                panelId={originalId}
+                onToggle={() => controls.toggleOriginalPrompt(message.id)}
               />
             ) : null}
+            {editing
+              ? renderEditor(message, controls.cancelEditing)
+              : message.content
+                ? renderContent(
+                    message.content,
+                    "m-product-message-content",
+                    message,
+                  )
+                : null}
             {isPromptEnhancement ? (
               <PromptEnhancementIndicator
                 disabled={pending}
@@ -151,75 +261,23 @@ function Message({
             ) : null}
           </div>
         ) : null}
-        {message.attachments.length > 0 ? (
-          <div className="m-product-chips" aria-label="Attachments">
-            {message.attachments.map((attachment) => (
-              <span key={attachment.id} className="m-product-chip">
-                {attachment.name}
-              </span>
-            ))}
-          </div>
+        {original && originalExpanded && !editing ? (
+          <OriginalPromptPanel id={originalId}>
+            {renderContent(original, undefined, message)}
+          </OriginalPromptPanel>
         ) : null}
-        {message.source && !isPromptEnhancement ? (
-          <ExecutionActivity message={message} />
-        ) : null}
+        {renderAttachments(message.attachments, isUser, message)}
+        {!isPromptEnhancement ? renderActivity?.(message) : null}
+        {insights}
         <MessageActions
+          showTaskActions={insights === undefined}
           message={message}
           sessionId={sessionId}
           pending={pending}
           onCommand={onCommand}
+          onEdit={() => controls.startEditing(message.id)}
         />
       </div>
     </article>
-  );
-}
-
-function ExecutionActivity({
-  message,
-}: {
-  message: ProductMessage;
-}): React.ReactElement | null {
-  const source = message.source;
-  if (!source) return null;
-  const entries = [...source.entries, ...source.timeline].slice(-20);
-  if (!entries.length && !source.summary) return null;
-  const running = ["running", "executing", "starting"].includes(
-    source.status ?? "",
-  );
-  return (
-    <details className="m-product-activity" open={running}>
-      <summary>
-        <span className="m-product-activity-icon" data-running={running}>
-          {running ? (
-            <LoaderCircle aria-hidden="true" />
-          ) : (
-            <Activity aria-hidden="true" />
-          )}
-        </span>
-        <strong>{source.kind === "thinking" ? "Thinking" : "Execution"}</strong>
-        <span>{running ? "Running" : source.status}</span>
-        <ChevronDown
-          className="m-product-activity-chevron"
-          aria-hidden="true"
-        />
-      </summary>
-      <div className="m-product-activity-body">
-        {entries.map((entry, index) => (
-          <div
-            className="m-product-activity-row"
-            key={`${entry.label}-${index}`}
-          >
-            <span className="m-product-activity-node" data-tone={entry.tone} />
-            <div>
-              <strong>{entry.label}</strong>
-              {entry.detail ? <p>{entry.detail}</p> : null}
-            </div>
-          </div>
-        ))}
-        {source.summary && entries.length === 0 ? (
-          <p>{source.summary}</p>
-        ) : null}
-      </div>
-    </details>
   );
 }

@@ -11,7 +11,7 @@ import {
 import { createElement, createRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatSessionMessage } from "../../chat-session.model";
-import * as messageExport from "../_helpers/message-export";
+import * as messageExport from "@machdoch/client-ui/conversation/message-export";
 import { ConversationFeed } from "./conversation-feed";
 
 const writeText = vi.fn<(text: string) => Promise<void>>();

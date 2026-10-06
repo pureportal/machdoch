@@ -14,6 +14,8 @@ use serde_json::Value;
 use tauri::Manager as _;
 
 mod attachment_paths;
+mod context_attachment_storage;
+pub(crate) use context_attachment_storage::persist_context_attachment;
 mod attachments;
 mod cli_commands;
 mod commands;
@@ -31,6 +33,7 @@ mod progress;
 mod ralph;
 mod ralph_media_bridge;
 mod ralph_progress;
+mod ralph_recovery;
 mod registry;
 mod timeout;
 
@@ -304,7 +307,7 @@ pub async fn reset_desktop_task_timeout(
     state: tauri::State<'_, DesktopTaskCancelMap>,
     task_id: String,
     idle_timeout_minutes: Option<u32>,
-) -> Result<(), String> {
+) -> Result<Value, String> {
     let timeout = registry::active_task_timeout(&state, &task_id)?;
     timeout.reset(idle_timeout_minutes, |snapshot| {
         progress::emit_timeout_progress_event(
@@ -690,6 +693,10 @@ pub async fn resolve_attached_image_preview_path(
     }
 
     allow_file_preview_source(&app_handle, &resolved_path)
+}
+
+pub(crate) fn resolve_context_attachment_path(workspace_root: Option<&str>, path: &str) -> Result<PathBuf, String> {
+    resolve_attached_path(&AttachmentPathGrantMap::default(), workspace_root, path)
 }
 
 #[tauri::command]

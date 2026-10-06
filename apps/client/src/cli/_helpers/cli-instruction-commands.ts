@@ -1,4 +1,5 @@
 import { isAbsolute, resolve } from "node:path";
+import type { InstructionRegistryResult } from "@machdoch/fleet-protocol/instruction-contract";
 import { readStableRegularFile } from "../../core/_helpers/read-stable-regular-file.helper.js";
 import { loadRuntimeConfig } from "../../core/config.js";
 import {
@@ -206,7 +207,7 @@ const mutationOptions = (
 const createLibraryOverview = (
   library: InstructionLibrary,
   includeBodies = false,
-): unknown => {
+): InstructionRegistryResult => {
   const manualAssignmentCounts = new Map<string, number>();
   for (const workspace of library.workspaces) {
     for (const scope of workspace.scopes) {
@@ -252,9 +253,7 @@ const createLibraryOverview = (
 };
 
 const printProfileList = (library: InstructionLibrary): void => {
-  const overview = createLibraryOverview(library) as {
-    profiles: Array<Record<string, unknown>>;
-  };
+  const overview = createLibraryOverview(library);
   writeStdoutLine(`instruction files: ${overview.profiles.length}`);
   for (const profile of overview.profiles) {
     writeStdoutLine(
@@ -397,14 +396,35 @@ const validateInstructionSystem = async (
 
 export const printInstructionSummary = async (
   args: ParsedCliArgs,
+  writeJson: (value: unknown) => void = printJson,
 ): Promise<void> => {
   const options =
     args.instructions ?? fail("No instruction command was provided.");
   switch (options.action) {
+    case "registry-list": {
+      const recovery = await inspectInstructionLibraryRecovery();
+      let registry: InstructionRegistryResult;
+      try {
+        registry = createLibraryOverview(
+          await loadInstructionLibrary(),
+          options.includeContent === true,
+        );
+      } catch (error) {
+        registry = {
+          schemaVersion: 2,
+          revision: 0,
+          profiles: [],
+          workspaces: [],
+          libraryError: error instanceof Error ? error.message : String(error),
+        };
+      }
+      writeJson({ ...registry, recovery });
+      return;
+    }
     case "profile-list": {
       const library = await loadInstructionLibrary();
       if (args.json) {
-        printJson(
+        writeJson(
           createLibraryOverview(library, options.includeContent === true),
         );
       } else printProfileList(library);
@@ -416,7 +436,7 @@ export const printInstructionSummary = async (
         library,
         options.subject ?? fail("Profile show requires an id or name."),
       );
-      if (args.json) printJson(profile);
+      if (args.json) writeJson(profile);
       else {
         writeStdoutLine(`${profile.name} (${profile.id})`);
         if (profile.description) writeStdoutLine(profile.description);
@@ -444,7 +464,7 @@ export const printInstructionSummary = async (
         },
         mutationOptions(options),
       );
-      if (args.json) printJson(result);
+      if (args.json) writeJson(result);
       else
         writeStdoutLine(
           `created profile ${result.profile.name} (${result.profile.id}), revision ${result.library.revision}`,
@@ -489,7 +509,7 @@ export const printInstructionSummary = async (
         },
         mutationOptions(options),
       );
-      if (args.json) printJson(result);
+      if (args.json) writeJson(result);
       else
         writeStdoutLine(
           `updated profile ${profile.id}, revision ${result.library.revision}`,
@@ -507,7 +527,7 @@ export const printInstructionSummary = async (
         options.name,
         mutationOptions(options),
       );
-      if (args.json) printJson(result);
+      if (args.json) writeJson(result);
       else
         writeStdoutLine(
           `duplicated profile as ${result.profile.name} (${result.profile.id})`,
@@ -524,7 +544,7 @@ export const printInstructionSummary = async (
         profile.id,
         mutationOptions(options),
       );
-      if (args.json) printJson(result);
+      if (args.json) writeJson(result);
       else
         writeStdoutLine(
           `deleted profile ${profile.id}, revision ${result.library.revision}`,
@@ -537,7 +557,7 @@ export const printInstructionSummary = async (
         revision: library.revision,
         workspaces: library.workspaces,
       };
-      if (args.json) printJson(value);
+      if (args.json) writeJson(value);
       else {
         for (const workspace of library.workspaces) {
           writeStdoutLine(`${workspace.id}: ${workspace.root}`);
@@ -571,7 +591,7 @@ export const printInstructionSummary = async (
           : (options.profileIds as string[]),
         mutationOptions(options),
       );
-      if (args.json) printJson(result);
+      if (args.json) writeJson(result);
       else
         writeStdoutLine(
           `updated ${workspaceId}:${scopePath}, revision ${result.library.revision}`,
@@ -593,7 +613,7 @@ export const printInstructionSummary = async (
         nextPath,
         mutationOptions(options),
       );
-      if (args.json) printJson(result);
+      if (args.json) writeJson(result);
       else {
         writeStdoutLine(
           `relinked ${workspaceId}:${currentPath} to ${nextPath}, revision ${result.library.revision}`,
@@ -604,7 +624,7 @@ export const printInstructionSummary = async (
     case "workspace-list": {
       const library = await loadInstructionLibrary();
       if (args.json)
-        printJson({
+        writeJson({
           revision: library.revision,
           workspaces: library.workspaces,
         });
@@ -627,7 +647,7 @@ export const printInstructionSummary = async (
         },
         mutationOptions(options),
       );
-      if (args.json) printJson(result);
+      if (args.json) writeJson(result);
       else
         writeStdoutLine(
           `configured ${result.workspace.id}: ${result.workspace.root}`,
@@ -641,7 +661,7 @@ export const printInstructionSummary = async (
           fail("Workspace relink requires --path <absolute-root>."),
         mutationOptions(options),
       );
-      if (args.json) printJson(result);
+      if (args.json) writeJson(result);
       else
         writeStdoutLine(
           `relinked workspace, revision ${result.library.revision}`,
@@ -656,7 +676,7 @@ export const printInstructionSummary = async (
           confirmAssignedRemoval: options.confirmAssignmentRemoval === true,
         },
       );
-      if (args.json) printJson(result);
+      if (args.json) writeJson(result);
       else
         writeStdoutLine(
           `removed workspace configuration, revision ${result.library.revision}`,
@@ -664,7 +684,7 @@ export const printInstructionSummary = async (
       return;
     }
     case "recovery-status": {
-      printJson(await inspectInstructionLibraryRecovery());
+      writeJson(await inspectInstructionLibraryRecovery());
       return;
     }
     case "recovery-restore": {
@@ -678,7 +698,7 @@ export const printInstructionSummary = async (
         fail("No validated instruction-library backup is available.");
       }
       const library = await recoverInstructionLibraryFromBackup(expectedDigest);
-      if (args.json) printJson({ recovered: true, library, status });
+      if (args.json) writeJson({ recovered: true, library, status });
       else {
         writeStdoutLine(
           `recovered instruction library revision ${library.revision} from ${status.backupPath}`,
@@ -697,7 +717,7 @@ export const printInstructionSummary = async (
         fail(
           "Instruction recovery export requires --expected-digest from the validated recovery status.",
         );
-      printJson(await exportInstructionLibraryRecoveryBackup(expectedDigest));
+      writeJson(await exportInstructionLibraryRecoveryBackup(expectedDigest));
       return;
     }
     case "recovery-reset": {
@@ -708,7 +728,7 @@ export const printInstructionSummary = async (
         );
       const result = await resetCorruptInstructionLibrary(expectedDigest);
       if (args.json) {
-        printJson({ reset: true, ...result });
+        writeJson({ reset: true, ...result });
       } else {
         writeStdoutLine(
           `reset instruction library to revision ${result.library.revision}; corrupt bytes preserved at ${result.corruptCopy}`,
@@ -752,7 +772,7 @@ export const printInstructionSummary = async (
         }),
         deliveryPlan: plan,
       };
-      if (args.json) printJson(value);
+      if (args.json) writeJson(value);
       else {
         writeStdoutLine(`canonical digest: ${resolution.canonicalDigest}`);
         writeStdoutLine(`environment digest: ${resolution.environmentDigest}`);
@@ -768,13 +788,13 @@ export const printInstructionSummary = async (
     }
     case "validate": {
       const validation = await validateInstructionSystem(args);
-      if (args.json) printJson(validation);
-      else printJson(validation);
+      if (args.json) writeJson(validation);
+      else writeJson(validation);
       return;
     }
     case "transfer-export": {
       const library = await loadInstructionLibrary();
-      printJson(
+      writeJson(
         exportInstructionLibrary(library, options.includeWorkspaces === true),
       );
       return;
@@ -815,7 +835,7 @@ export const printInstructionSummary = async (
         includeWorkspaceBindings: options.includeWorkspaces === true,
         ...(choices === undefined ? {} : { choices }),
       });
-      printJson(result);
+      writeJson(result);
       return;
     }
   }

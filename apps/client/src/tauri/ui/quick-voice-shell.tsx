@@ -1,3 +1,4 @@
+import { isLocalSpeechProvider } from "../../shared/local-speech";
 import { useAssistantDisplayLayout } from "./use-assistant-display-layout";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ArrowUpRight, X } from "lucide-react";
@@ -200,24 +201,22 @@ export const QuickVoiceShell = (): JSX.Element => {
         return;
       }
 
-      if (
-        speechToTextSettings.autoFormat ||
-        (speechToTextSettings.autoTranslateToEnglish && provider !== "whisper")
-      ) {
+      const shouldProcessText =
+        !isLocalSpeechProvider(provider) &&
+        (speechToTextSettings.autoFormat ||
+          speechToTextSettings.autoTranslateToEnglish);
+      if (shouldProcessText) {
         setStatusText("Processing speech...");
       }
-      const commandText =
-        speechToTextSettings.autoTranslateToEnglish ||
-        speechToTextSettings.autoFormat
-          ? await processUserSpeechText({
-              provider,
-              text: transcriptText,
-              autoTranslateToEnglish:
-                speechToTextSettings.autoTranslateToEnglish,
-              autoFormat: speechToTextSettings.autoFormat,
-              signal: operationAbortRef.current?.signal,
-            })
-          : transcriptText;
+      const commandText = shouldProcessText
+        ? await processUserSpeechText({
+            provider,
+            text: transcriptText,
+            autoTranslateToEnglish: speechToTextSettings.autoTranslateToEnglish,
+            autoFormat: speechToTextSettings.autoFormat,
+            signal: operationAbortRef.current?.signal,
+          })
+        : transcriptText;
       if (operationSequenceRef.current !== operationSequence) {
         return;
       }

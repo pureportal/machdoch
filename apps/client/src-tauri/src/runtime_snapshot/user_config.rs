@@ -196,6 +196,7 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
             "autostartToTray",
             "alwaysRunAsAdministrator",
             "aiContextMaxMessages",
+            "adaptiveControllerEnabled",
             "chatIdleTimeoutMinutes",
             "inactiveSessionArchiveDays",
             "archivedSessionRetentionDays",
@@ -209,7 +210,13 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
         &mut target,
         source,
         "agentLimits",
-        &["infinite", "executorTurns", "autopilotExecutorIterations"],
+        &[
+            "automaticRetries",
+            "retryAttempts",
+            "infinite",
+            "executorTurns",
+            "autopilotExecutorIterations",
+        ],
     );
     merge_known_object_members(
         &mut target,
@@ -401,17 +408,42 @@ mod tests {
             .api_keys
             .insert("openai".to_string(), "new".to_string());
         typed.desktop.ai_context_max_messages = Some(80);
+        typed.desktop.adaptive_controller_enabled = Some(false);
         typed.workspace_run.health_check_timeout_ms = Some(3_000);
 
         let merged = merge_typed_user_config(original, &typed).expect("merge should succeed");
 
         assert_eq!(merged["apiKeys"]["openai"], "new");
         assert_eq!(merged["desktop"]["aiContextMaxMessages"], 80);
+        assert_eq!(merged["desktop"]["adaptiveControllerEnabled"], false);
         assert_eq!(merged["desktop"]["futurePortableSetting"], "keep-me");
         assert_eq!(merged["workspaceRun"]["healthCheckTimeoutMs"], 3_000);
         assert_eq!(merged["workspaceRun"]["futureTimingSetting"], "keep-me");
         assert_eq!(merged["providerEnrollment"]["enabled"], true);
         assert_eq!(merged["futureRoot"]["nested"], true);
+    }
+
+    #[test]
+    fn typed_update_persists_retry_settings_when_reloaded() {
+        let original = serde_json::json!({
+            "agentLimits": {
+                "automaticRetries": true,
+                "retryAttempts": 2,
+                "executorTurns": 64
+            }
+        });
+        let mut typed: UserConfigFile =
+            serde_json::from_value(original.clone()).expect("agent settings should parse");
+        typed.agent_limits.automatic_retries = Some(false);
+        typed.agent_limits.retry_attempts = Some(0);
+
+        let merged = merge_typed_user_config(original, &typed).expect("merge should succeed");
+        let reloaded: UserConfigFile =
+            serde_json::from_value(merged).expect("saved agent settings should reload");
+
+        assert_eq!(reloaded.agent_limits.automatic_retries, Some(false));
+        assert_eq!(reloaded.agent_limits.retry_attempts, Some(0));
+        assert_eq!(reloaded.agent_limits.executor_turns, Some(64));
     }
 
     #[test]

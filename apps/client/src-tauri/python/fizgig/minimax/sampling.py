@@ -1,5 +1,8 @@
 """MiniMax H3 — image sampling for in-training previews.
 
+Machdoch modification, 2026-10-06: callback errors stop sampling and cancellation
+exceptions propagate to the caller. See NOTICE-RefMod.txt.
+
 Renders ONE still per prompt. H3's temporal grid is FRAME_PER_TOKEN = (1, 4, 4, 4, 4), so a
 single latent frame decodes to exactly one pixel frame — which is also what the encoder produces
 for a still, and what training uses. So a preview is the training forward run backwards: the DiT
@@ -237,7 +240,7 @@ def _sample_image_impl(model, text_embeds, *, width=512, height=512, steps=8, cf
     on_denoised(step_1based, n_eval, x0_estimate) fires after every evaluation with the
     step's clean-latent estimate (`x + sigma * out`, fp32, the clip's latent shape) — the
     Repair Studio's "show early" hook decodes one of these while the remaining passes run.
-    Video only; exceptions are swallowed like on_slow_step's.
+    Video only; callback errors stop sampling.
 
     on_slow_step(seconds, step, total) fires ONCE if any step exceeds slow_step_s. It exists
     because the interesting failure here is not an exception: when a preview oversubscribes
@@ -380,10 +383,7 @@ def _sample_image_impl(model, text_embeds, *, width=512, height=512, steps=8, cf
         # to_d()/dt form; res_multistep reuses the PREVIOUS denoised for a 2nd-order step.
         denoised = x + s_curr * out
         if on_denoised is not None:
-            try:
-                on_denoised(i + 1, n_eval, denoised)
-            except Exception:       # an early-look decode must never take the render down
-                pass
+            on_denoised(i + 1, n_eval, denoised)
         if a_out is not None:
             # The carried audio variable is an ordinary video-schedule flow latent now, so
             # the SAME update (Euler or second-order) drives both streams below.
@@ -411,11 +411,7 @@ def _sample_image_impl(model, text_embeds, *, width=512, height=512, steps=8, cf
             _elapsed = _t.time() - _step_t0
             if _elapsed > slow_step_s:
                 _slow_fired = True
-                _abort = None
-                try:
-                    _abort = on_slow_step(_elapsed, i + 1, n_eval)
-                except Exception:       # a notice must never take the preview down with it
-                    pass
+                _abort = on_slow_step(_elapsed, i + 1, n_eval)
                 if _abort:
                     # The callback wants out — the sanctioned abort, NOT the swallowed path.
                     raise PreviewAborted(f"step {i + 1}/{n_eval} took {_elapsed:.0f}s")

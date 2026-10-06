@@ -1,0 +1,36 @@
+
+running 31 tests
+test media::runtime_setup::tests::diagnostic_retention_obeys_small_character_budgets ... ok
+test media::runtime_setup::tests::download_failed_restoration_retains_the_previous_executable ... ok
+test media::runtime_setup::tests::download_install_publishes_complete_executable_from_verified_cache ... ok
+test media::runtime_setup::tests::download_preparation_failures_preserve_existing_files ... ok
+test media::runtime_setup::tests::download_publication_errors_before_and_after_rename_restore_both_files ... ok
+test media::runtime_setup::tests::download_publication_replaces_complete_files ... ok
+test media::runtime_setup::tests::failed_backup_cleanup_does_not_block_a_later_repair ... ok
+test media::runtime_setup::tests::failed_recovery_retains_the_backup_and_original_error_for_a_retry ... ok
+test media::runtime_setup::tests::failures_have_recovery_copy_separate_from_diagnostics ... ok
+test media::runtime_setup::tests::fresh_environment_is_verified_after_promotion ... ok
+test media::runtime_setup::tests::fresh_promotion_errors_do_not_leave_an_unverified_environment ... ok
+test media::runtime_setup::tests::interrupted_promoted_environment_is_restored_before_failed_repair ... ok
+test media::runtime_setup::tests::interrupted_promotion_is_restored_before_runtime_probe ... ok
+test media::runtime_setup::tests::interrupted_promotion_restores_backup_before_repair ... ok
+test media::runtime_setup::tests::invalid_download_is_not_published ... ok
+test media::runtime_setup::tests::live_fresh_repair_and_already_configured ... ignored, Downloads and installs the actual runtime into an isolated temporary directory
+test media::runtime_setup::tests::live_repair_and_reuse ... ignored, Repairs an isolated runtime created by the live setup test
+test media::runtime_setup::tests::manifest_bundles_match_the_worker_requirements ... ok
+test media::runtime_setup::tests::missing_or_invalid_managed_python_is_installed ... ok
+test media::runtime_setup::tests::package_repair_reuses_valid_managed_python ... ok
+test media::runtime_setup::tests::preparation_and_staged_verification_failures_preserve_the_previous_environment ... ok
+test media::runtime_setup::tests::promoted_environment_is_verified_and_rolled_back_when_invalid ... ok
+test media::runtime_setup::tests::refmod_runtime_installation_without_model_weights ... ignored, Installs the managed runtime; set MACHDOCH_REFMOD_SETUP_ROOT to an isolated absolute directory
+test media::runtime_setup::tests::rename_errors_before_and_after_moves_preserve_the_previous_environment ... ok
+test media::runtime_setup::tests::runtime_verification_can_acquire_the_use_lock_before_and_after_promotion ... ok
+test media::runtime_setup::tests::selects_graphics_bundle_from_hardware ... ok
+test media::runtime_setup::tests::setup_diagnostics_keep_both_ends_within_character_limit ... ok
+test media::runtime_setup::tests::setup_lock_prevents_concurrent_modification ... ok
+test media::runtime_setup::tests::setup_process_keeps_long_stdout_and_stderr_in_final_diagnostic ... ok
+test media::runtime_setup::tests::setup_process_output_entrypoint ... ok
+test media::runtime_setup::tests::setup_process_returns_successful_stdout_without_diagnostics ... ok
+
+test result: ok. 28 passed; 0 failed; 3 ignored; 0 measured; 1051 filtered out; finished in 2.89s
+

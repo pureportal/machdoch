@@ -15,20 +15,36 @@ const encode = (bytes: Uint8Array): string => {
   return btoa(value);
 };
 
+export interface FleetMediaTransport extends MediaPlatform {
+  download(path: string): Promise<void>;
+}
+
 export function createFleetMediaTransport(
   storageKey: string,
   send: (request: MediaRequest) => Promise<unknown>,
-): MediaPlatform {
+): FleetMediaTransport {
   const transfers = new Map<
     string,
     { id: string; name: string; download: boolean }
   >();
   let activePreviews = 0;
   const previewWaiters: Array<() => void> = [];
-  const transport = createFleetOperationTransport((request) => send(mediaRequestSchema.parse(request)));
-  const call = async <T>(command: string, args: Record<string, unknown> = {}): Promise<T> => {
+  const transport = createFleetOperationTransport((request) =>
+    send(mediaRequestSchema.parse(request)),
+  );
+  const call = async <T>(
+    command: string,
+    args: Record<string, unknown> = {},
+  ): Promise<T> => {
     const value = await transport.invoke<unknown>(command, args);
-    if (command === "media_read_asset_preview" && value && typeof value === "object" && "binary" in value && typeof value.binary === "string") return decode(value.binary).buffer as T;
+    if (
+      command === "media_read_asset_preview" &&
+      value &&
+      typeof value === "object" &&
+      "binary" in value &&
+      typeof value.binary === "string"
+    )
+      return decode(value.binary).buffer as T;
     return value as T;
   };
 
@@ -46,6 +62,7 @@ export function createFleetMediaTransport(
     const { path } = await call<{ path: string }>("media_create_transfer", {
       id,
       name,
+      direction: "upload",
     });
     transfers.set(path, { id, name, download: false });
     try {
@@ -72,7 +89,8 @@ export function createFleetMediaTransport(
 
   const download = async (path: string): Promise<void> => {
     const transfer = transfers.get(path);
-    if (!transfer?.download) return;
+    if (!transfer?.download)
+      throw new Error("The download expired. Export the file again.");
     try {
       const parts: Uint8Array<ArrayBuffer>[] = [];
       let offset = 0;
@@ -103,6 +121,10 @@ export function createFleetMediaTransport(
   return {
     storageKey,
     upload,
+    download,
+    release: removeTransfer,
+    fileName: (path) =>
+      transfers.get(path)?.name ?? path.split(/[\\/]/u).at(-1)!,
     async invoke<T>(
       command: string,
       args: Record<string, unknown> = {},
@@ -119,8 +141,53 @@ export function createFleetMediaTransport(
           else activePreviews--;
         }
       }
-      const result = await call<T>(command, args);
       const request = args.request as Record<string, unknown> | undefined;
+      let result: T;
+      try {
+        result = await call<T>(command, args);
+      } catch (failure) {
+        if (
+          command === "media_refmod_operation" &&
+          ["save", "create"].includes(String(request?.operation)) &&
+          typeof request?.outputPath === "string"
+        ) {
+          try {
+            await removeTransfer(request.outputPath);
+          } catch (cleanupFailure) {
+            console.error(
+              "Could not release the failed RefMod download",
+              cleanupFailure,
+            );
+          }
+        }
+        throw failure;
+      }
+      if (
+        command === "media_refmod_operation" &&
+        request?.operation === "import" &&
+        typeof request.path === "string"
+      )
+        await removeTransfer(request.path);
+      if (
+        command === "media_refmod_operation" &&
+        ["save", "create"].includes(String(request?.operation)) &&
+        typeof request?.outputPath === "string"
+      )
+        await download(request.outputPath);
+      if (
+        command === "media_refmod_operation" &&
+        request?.operation === "create" &&
+        Array.isArray(request.sources)
+      )
+        for (const source of request.sources as Array<{
+          path?: string;
+          maskPath?: string;
+        }>) {
+          if (typeof source.path === "string")
+            await removeTransfer(source.path);
+          if (typeof source.maskPath === "string")
+            await removeTransfer(source.maskPath);
+        }
       if (
         ["media_export_asset", "media_export_flow_revision"].includes(
           command,
@@ -165,7 +232,12 @@ export function createFleetMediaTransport(
       });
       if (!files.length) return null;
       const paths: string[] = [];
-      for (const file of files) paths.push(await upload(file, file.name));
+      try {
+        for (const file of files) paths.push(await upload(file, file.name));
+      } catch (failure) {
+        await Promise.all(paths.map(removeTransfer));
+        throw failure;
+      }
       return options?.multiple ? paths : paths[0]!;
     },
     async save(options) {
@@ -175,6 +247,7 @@ export function createFleetMediaTransport(
       const { path } = await call<{ path: string }>("media_create_transfer", {
         id,
         name,
+        direction: "download",
       });
       transfers.set(path, { id, name, download: true });
       return path;

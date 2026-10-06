@@ -25,6 +25,8 @@
     "src/**/__test__/**/*.ts",
     "src/**/*.spec.ts",
     "src/**/*.test.ts",
+    "src/tauri/fleet-media/**/*.ts",
+    "src/tauri/fleet-media/**/*.tsx",
     "src/tauri/ui/**/*.ts",
     "src/tauri/ui/**/*.tsx"
   ]

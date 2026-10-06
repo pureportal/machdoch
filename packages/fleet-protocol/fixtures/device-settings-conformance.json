@@ -1,0 +1,480 @@
+{
+  "cases": [
+    {
+      "name": "catalog uses no arguments",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "get_provider_model_catalog",
+        "args": {}
+      },
+      "accepted": true
+    },
+    {
+      "name": "catalog cannot request another config directory",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "get_provider_model_catalog",
+        "args": {
+          "userRoot": "/private"
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "unknown native command is rejected",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "execute_shell",
+        "args": {
+          "command": "whoami"
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "key changes remain provider scoped",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_user_provider_api_key",
+        "args": {
+          "provider": "openai",
+          "apiKey": "fixture-key"
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "key changes reject extra paths",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_user_provider_api_key",
+        "args": {
+          "provider": "openai",
+          "apiKey": "fixture-key",
+          "path": "/private"
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "key changes reject empty credentials",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_user_provider_api_key",
+        "args": {
+          "provider": "openai",
+          "apiKey": ""
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "speech selection accepts the system device",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_user_speech_to_text_input_device",
+        "args": {
+          "inputDeviceId": null
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "speech processing requires both flags",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_user_speech_to_text_processing",
+        "args": {
+          "autoTranslateToEnglish": true
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "voice preferences use device choices",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_device_voice_preferences",
+        "args": {
+          "preferredVoiceURI": null,
+          "rate": 1.2,
+          "autoSpeakResponses": false
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "voice preferences reject excessive speed",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_device_voice_preferences",
+        "args": {
+          "preferredVoiceURI": null,
+          "rate": 2,
+          "autoSpeakResponses": false
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "appearance uses the shared palette",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_device_appearance",
+        "args": {
+          "settings": {
+            "version": 1,
+            "theme": "light",
+            "density": "compact",
+            "accent": "violet"
+          }
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "appearance rejects an unknown accent",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_device_appearance",
+        "args": {
+          "settings": {
+            "version": 1,
+            "theme": "dark",
+            "density": "comfortable",
+            "accent": "red"
+          }
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "review model uses the client mode",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_user_review_model_settings",
+        "args": {
+          "settings": {
+            "mode": "dedicated",
+            "provider": "openai",
+            "model": "gpt-5.6"
+          }
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "review model rejects a made up mode",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_user_review_model_settings",
+        "args": {
+          "settings": {
+            "mode": "custom"
+          }
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "MCP saves include reviewed content",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_user_mcp_config_document",
+        "args": {
+          "raw": "{\"mcpServers\":{}}",
+          "expectedRaw": ""
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "MCP saves require reviewed content",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_user_mcp_config_document",
+        "args": {
+          "raw": "{}"
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "MCP saves reject unknown overwrite switches",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "save_user_mcp_config_document",
+        "args": {
+          "raw": "{}",
+          "expectedRaw": "",
+          "force": true
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "LAN send uses selected categories and interfaces",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "start_settings_transfer",
+        "args": {
+          "request": {
+            "categories": [
+              "preferences.agent-provider"
+            ],
+            "displayName": "Device",
+            "interfaceIds": [
+              "ethernet"
+            ]
+          }
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "LAN receive rejects duplicate categories",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "start_settings_receive",
+        "args": {
+          "request": {
+            "categories": [
+              "preferences.agent-provider",
+              "preferences.agent-provider"
+            ],
+            "displayName": "Device",
+            "interfaceIds": []
+          }
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "LAN send rejects unknown categories",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "start_settings_transfer",
+        "args": {
+          "request": {
+            "categories": [
+              "files.all"
+            ],
+            "displayName": "Device",
+            "interfaceIds": []
+          }
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "manual pairing uses one connection target",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "connect_settings_transfer",
+        "args": {
+          "request": {
+            "discoveredId": null,
+            "manualCode": "machdoch-transfer-test"
+          }
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "pairing rejects ambiguous targets",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "connect_settings_transfer",
+        "args": {
+          "request": {
+            "discoveredId": "peer",
+            "manualCode": "machdoch-transfer-test"
+          }
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "pairing rejects missing targets",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "connect_settings_transfer",
+        "args": {
+          "request": {
+            "discoveredId": null,
+            "manualCode": null
+          }
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "encrypted export uses a destination and passphrase",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "export_encrypted_settings_file",
+        "args": {
+          "request": {
+            "categories": [
+              "preferences.agent-provider"
+            ],
+            "destinationPath": "/transfers/export.machdoch-settings",
+            "passphrase": "a fixture passphrase"
+          }
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "encrypted export does not accept an overwrite bypass",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "export_encrypted_settings_file",
+        "args": {
+          "request": {
+            "categories": [
+              "preferences.agent-provider"
+            ],
+            "destinationPath": "/transfers/export.machdoch-settings",
+            "passphrase": "a fixture passphrase",
+            "overwrite": true
+          }
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "encrypted review uses an operation identity",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "inspect_encrypted_settings_file",
+        "args": {
+          "request": {
+            "operationId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "categories": [
+              "preferences.agent-provider"
+            ],
+            "sourcePath": "/transfers/import.machdoch-settings",
+            "passphrase": "a fixture passphrase"
+          }
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "encrypted review rejects a malformed operation identity",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "inspect_encrypted_settings_file",
+        "args": {
+          "request": {
+            "operationId": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+            "categories": [
+              "preferences.agent-provider"
+            ],
+            "sourcePath": "/transfers/import.machdoch-settings",
+            "passphrase": "a fixture passphrase"
+          }
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "import commits only a reviewed token",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "commit_encrypted_settings_file_import",
+        "args": {
+          "request": {
+            "token": "abcdefghijklmnopqrstuvwxyzABCDEF"
+          }
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "import rejects unreviewed category changes",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "commit_encrypted_settings_file_import",
+        "args": {
+          "request": {
+            "token": "abcdefghijklmnopqrstuvwxyzABCDEF",
+            "categories": [
+              "preferences.agent-provider"
+            ]
+          }
+        }
+      },
+      "accepted": false
+    },
+    {
+      "name": "cancel refers to the original inspection",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "cancel_encrypted_settings_file_import",
+        "args": {
+          "request": {
+            "operationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      },
+      "accepted": true
+    },
+    {
+      "name": "chunk reads are bounded",
+      "request": {
+        "kind": "read",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "offset": 67108865
+      },
+      "accepted": false
+    },
+    {
+      "name": "release retains UUID identities",
+      "request": {
+        "kind": "release",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe"
+      },
+      "accepted": true
+    },
+    {
+      "name": "event cursors cannot be negative",
+      "request": {
+        "kind": "events",
+        "after": -1
+      },
+      "accepted": false
+    }
+  ]
+}

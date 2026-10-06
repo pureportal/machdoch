@@ -33,6 +33,7 @@ pub(super) fn sanitize_shell_snapshot(
 
     snapshot.active_session_id =
         sanitize_optional_text(snapshot.active_session_id, MAX_FLEET_SHORT_TEXT_CHARS);
+    snapshot.pose_scene_svg = sanitize_optional_text(snapshot.pose_scene_svg, 64_000);
 
     snapshot.sessions = snapshot
         .sessions
@@ -133,6 +134,11 @@ fn sanitize_shell_message(mut message: FleetShellMessage) -> Option<FleetShellMe
 
     message.role = sanitize_text(message.role, MAX_FLEET_SHORT_TEXT_CHARS);
     message.content = sanitize_text(message.content, MAX_FLEET_TEXT_CHARS);
+    message.raw_content = message
+        .raw_content
+        .map(|content| truncate_chars(&content, MAX_FLEET_TEXT_CHARS));
+    message.original_prompt = sanitize_optional_text(message.original_prompt, MAX_FLEET_TEXT_CHARS);
+    message.workspace = sanitize_optional_text(message.workspace, MAX_FLEET_TEXT_CHARS);
     message.presentation = match message.presentation.as_str() {
         "prompt-enhancement" => "prompt-enhancement".to_string(),
         _ => "message".to_string(),
@@ -238,7 +244,7 @@ fn sanitize_shell_composer(mut composer: FleetShellComposer) -> Option<FleetShel
         return None;
     }
 
-    composer.draft = sanitize_text(composer.draft, MAX_COMMAND_TEXT_CHARS);
+    composer.draft = truncate_chars(&composer.draft, MAX_COMMAND_TEXT_CHARS);
     composer.provider = sanitize_text(composer.provider, MAX_FLEET_SHORT_TEXT_CHARS);
     composer.provider_label = sanitize_text(composer.provider_label, MAX_FLEET_SHORT_TEXT_CHARS);
     composer.model = sanitize_text(composer.model, MAX_FLEET_SHORT_TEXT_CHARS);
@@ -299,6 +305,50 @@ fn sanitize_shell_composer(mut composer: FleetShellComposer) -> Option<FleetShel
             (!entry.id.is_empty()).then_some(entry)
         })
         .collect();
+    composer.image_input_disabled_reason =
+        sanitize_optional_text(composer.image_input_disabled_reason, MAX_FLEET_TEXT_CHARS);
+    composer.history = composer.history.map(|history| {
+        history
+            .into_iter()
+            .take(30)
+            .filter_map(|mut entry| {
+                if entry.index > 10_000
+                    || entry.prompt.encode_utf16().count() > MAX_COMMAND_TEXT_CHARS
+                    || entry.attachments.len() > 64
+                {
+                    return None;
+                }
+                entry.attachments = entry
+                    .attachments
+                    .into_iter()
+                    .filter_map(sanitize_shell_attachment)
+                    .collect();
+                Some(entry)
+            })
+            .collect()
+    });
+    composer.queued_messages = composer.queued_messages.map(|messages| {
+        messages
+            .into_iter()
+            .take(512)
+            .filter_map(|mut message| {
+                message.id = sanitize_text(message.id, MAX_FLEET_SHORT_TEXT_CHARS);
+                if message.id.is_empty() {
+                    return None;
+                }
+                message.content = sanitize_text(message.content, MAX_COMMAND_TEXT_CHARS);
+                message.failure_message =
+                    sanitize_optional_text(message.failure_message, MAX_FLEET_TEXT_CHARS);
+                message.attachments = message
+                    .attachments
+                    .into_iter()
+                    .take(64)
+                    .filter_map(sanitize_shell_attachment)
+                    .collect();
+                Some(message)
+            })
+            .collect()
+    });
     composer.attachments = composer
         .attachments
         .into_iter()
@@ -746,6 +796,86 @@ mod tests {
         FleetShellComposer, FleetShellContextPack, FleetShellRalphRun, FleetShellSnapshot,
         MAX_FLEET_CONTEXT_PACKS, PRODUCT_SNAPSHOT_VERSION,
     };
+
+    #[test]
+    fn prompt_history_projection_preserves_exact_drafts_and_native_indices() {
+        let corpus: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../../../packages/fleet-protocol/fixtures/composer-conformance.json"
+        ))
+        .unwrap();
+        let mut value = corpus["baseSnapshot"]["shell"].clone();
+        value["composer"]["draft"] = serde_json::json!("  Draft 🌿\n\t");
+        value["composer"]["history"] = serde_json::json!([
+            { "index": 7, "prompt": "  Historical 🌿\n", "attachments": [] },
+            { "index": 10001, "prompt": "Invalid index", "attachments": [] }
+        ]);
+        let snapshot: FleetShellSnapshot = serde_json::from_value(value).unwrap();
+        let result = sanitize_shell_snapshot(snapshot).unwrap().composer.unwrap();
+        assert_eq!(result.draft, "  Draft 🌿\n\t");
+        let history = result.history.unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].index, 7);
+        assert_eq!(history[0].prompt, "  Historical 🌿\n");
+    }
+
+    #[test]
+    fn pose_scene_preview_survives_the_native_shell_projection() {
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><title>Pose 🌿</title></svg>";
+        let snapshot: FleetShellSnapshot = serde_json::from_value(serde_json::json!({
+            "version": PRODUCT_SNAPSHOT_VERSION, "poseSceneSvg": svg
+        }))
+        .unwrap();
+        let result = sanitize_shell_snapshot(snapshot).unwrap();
+        assert_eq!(result.pose_scene_svg.as_deref(), Some(svg));
+        assert_eq!(serde_json::to_value(result).unwrap()["poseSceneSvg"], svg);
+    }
+
+    #[test]
+    fn preserves_authoritative_session_unread_state() {
+        let snapshot = super::FleetShellSnapshot {
+            version: PRODUCT_SNAPSHOT_VERSION,
+            sessions: vec![super::FleetShellSession {
+                id: "session".to_string(),
+                title: "Session".to_string(),
+                unread: Some(true),
+                ..Default::default()
+            }],
+            ..serde_json::from_value(serde_json::json!({ "version": PRODUCT_SNAPSHOT_VERSION }))
+                .unwrap()
+        };
+        let result = sanitize_shell_snapshot(snapshot).unwrap();
+        assert_eq!(result.sessions[0].unread, Some(true));
+        assert_eq!(
+            serde_json::to_value(result).unwrap()["sessions"][0]["unread"],
+            true
+        );
+    }
+
+    #[test]
+    fn preserves_raw_message_whitespace_and_original_prompt() {
+        let raw = "  Native raw content\n\tline\n";
+        let snapshot = FleetShellSnapshot {
+            version: PRODUCT_SNAPSHOT_VERSION,
+            visible_messages: vec![super::FleetShellMessage {
+                id: "message".to_owned(),
+                role: "user".to_owned(),
+                content: "Enhanced content".to_owned(),
+                raw_content: Some(raw.to_owned()),
+                original_prompt: Some(" Original request 🌿 ".to_owned()),
+                ..Default::default()
+            }],
+            ..serde_json::from_value(serde_json::json!({
+                "version": PRODUCT_SNAPSHOT_VERSION
+            }))
+            .unwrap()
+        };
+        let result = sanitize_shell_snapshot(snapshot).unwrap();
+        assert_eq!(result.visible_messages[0].raw_content.as_deref(), Some(raw));
+        assert_eq!(
+            result.visible_messages[0].original_prompt.as_deref(),
+            Some("Original request 🌿")
+        );
+    }
 
     #[test]
     fn managed_context_packs_and_variables_remain_visible() {

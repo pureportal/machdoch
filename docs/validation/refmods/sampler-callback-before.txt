@@ -1,0 +1,48 @@
+test_cancel_poll_exception_uses_the_normal_abort_contract (test_media_minimax_h3_sampling.MiniMaxH3SamplingCallbackTests.test_cancel_poll_exception_uses_the_normal_abort_contract) ... FAIL
+test_cancel_poll_failure_stops_before_another_forward (test_media_minimax_h3_sampling.MiniMaxH3SamplingCallbackTests.test_cancel_poll_failure_stops_before_another_forward) ... FAIL
+test_cancel_poll_return_value_still_stops_sampling (test_media_minimax_h3_sampling.MiniMaxH3SamplingCallbackTests.test_cancel_poll_return_value_still_stops_sampling) ... ok
+test_progress_cancellation_stops_before_another_forward (test_media_minimax_h3_sampling.MiniMaxH3SamplingCallbackTests.test_progress_cancellation_stops_before_another_forward) ... FAIL
+test_progress_transport_failure_stops_before_another_forward (test_media_minimax_h3_sampling.MiniMaxH3SamplingCallbackTests.test_progress_transport_failure_stops_before_another_forward) ... FAIL
+test_successful_callbacks_preserve_joint_outputs_and_step_numbers (test_media_minimax_h3_sampling.MiniMaxH3SamplingCallbackTests.test_successful_callbacks_preserve_joint_outputs_and_step_numbers) ... ok
+test_turbo_schedule_matches_eight_evaluation_shifted_grid (test_media_minimax_h3_sampling.MiniMaxH3SamplingTests.test_turbo_schedule_matches_eight_evaluation_shifted_grid) ... ok
+
+======================================================================
+FAIL: test_cancel_poll_exception_uses_the_normal_abort_contract (test_media_minimax_h3_sampling.MiniMaxH3SamplingCallbackTests.test_cancel_poll_exception_uses_the_normal_abort_contract)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Development\machdoch\apps\client\src-tauri\python\test_media_minimax_h3_sampling.py", line 81, in test_cancel_poll_exception_uses_the_normal_abort_contract
+    with self.assertRaises(PreviewAborted) as caught:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: PreviewAborted not raised
+
+======================================================================
+FAIL: test_cancel_poll_failure_stops_before_another_forward (test_media_minimax_h3_sampling.MiniMaxH3SamplingCallbackTests.test_cancel_poll_failure_stops_before_another_forward)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Development\machdoch\apps\client\src-tauri\python\test_media_minimax_h3_sampling.py", line 72, in test_cancel_poll_failure_stops_before_another_forward
+    with self.assertRaises(OSError) as caught:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: OSError not raised
+
+======================================================================
+FAIL: test_progress_cancellation_stops_before_another_forward (test_media_minimax_h3_sampling.MiniMaxH3SamplingCallbackTests.test_progress_cancellation_stops_before_another_forward)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Development\machdoch\apps\client\src-tauri\python\test_media_minimax_h3_sampling.py", line 62, in test_progress_cancellation_stops_before_another_forward
+    with self.assertRaisesRegex(PreviewAborted, "Generation cancelled"):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: PreviewAborted not raised
+
+======================================================================
+FAIL: test_progress_transport_failure_stops_before_another_forward (test_media_minimax_h3_sampling.MiniMaxH3SamplingCallbackTests.test_progress_transport_failure_stops_before_another_forward)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Development\machdoch\apps\client\src-tauri\python\test_media_minimax_h3_sampling.py", line 53, in test_progress_transport_failure_stops_before_another_forward
+    with self.assertRaises(BrokenPipeError) as caught:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: BrokenPipeError not raised
+
+----------------------------------------------------------------------
+Ran 7 tests in 3.270s
+
+FAILED (failures=4)

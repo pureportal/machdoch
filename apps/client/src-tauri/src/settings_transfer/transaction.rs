@@ -682,7 +682,7 @@ fn capture_backup<R: Runtime>(
         .unwrap_or(ConfigFileBackup::Unselected);
     let mut store_values = BTreeMap::new();
     if categories.contains(&SettingsCategoryId::GlobalContextPacks) {
-        let shell_state = crate::shell_state::load_shell_state_for_settings_transfer(app)?;
+        let shell_state = crate::shell_state::load_authoritative_shell_state(app)?;
         let global_context_packs = global_context_packs_from_shell_state(&shell_state)?;
         // Validate both the transferable projection and its coexistence with
         // every preserved workspace pack before relying on it for rollback.
@@ -1440,7 +1440,7 @@ fn apply_global_context_packs<R: Runtime>(
         .get("contextPacks")
         .and_then(Value::as_array)
         .ok_or_else(|| "Imported global context packs are invalid.".to_string())?;
-    let shell_state = crate::shell_state::load_shell_state_for_settings_transfer(app)?;
+    let shell_state = crate::shell_state::load_authoritative_shell_state(app)?;
     let context_packs = replace_global_context_packs(&shell_state, incoming)?;
     let _ = crate::shell_state::replace_context_packs_for_settings_transfer(app, context_packs)?;
     Ok(())
@@ -1661,7 +1661,7 @@ fn restore_backup<R: Runtime>(
     if let Some(Some(Value::Array(global_context_packs))) =
         backup.store_values.get(SHELL_STATE_STORAGE_KEY)
     {
-        let shell_state = crate::shell_state::load_shell_state_for_settings_transfer(app)?;
+        let shell_state = crate::shell_state::load_authoritative_shell_state(app)?;
         let context_packs = replace_global_context_packs(&shell_state, global_context_packs)?;
         let _ =
             crate::shell_state::replace_context_packs_for_settings_transfer(app, context_packs)?;

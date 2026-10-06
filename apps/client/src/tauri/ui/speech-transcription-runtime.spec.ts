@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { transcribeUserSpeechAudio } from "./runtime";
+import { LOCAL_SPEECH_PROVIDERS } from "../../shared/local-speech";
 
 const native = vi.hoisted(() => ({ invoke: vi.fn(), isTauri: () => true }));
 vi.mock("@tauri-apps/api/core", () => native);
@@ -17,17 +18,20 @@ beforeEach(() =>
 );
 
 describe("speech transcription requests", () => {
-  it("registers the request before inference and releases it after completion", async () => {
-    await transcribeUserSpeechAudio(options);
-    expect(native.invoke.mock.calls.map(([command]) => command)).toEqual([
-      "begin_user_speech_transcription",
-      "transcribe_user_speech_audio",
-      "cancel_user_speech_transcription",
-    ]);
-    const requestId = native.invoke.mock.calls[0]?.[1].requestId;
-    expect(native.invoke.mock.calls[1]?.[1].requestId).toBe(requestId);
-    expect(native.invoke.mock.calls[2]?.[1].requestId).toBe(requestId);
-  });
+  it.each(LOCAL_SPEECH_PROVIDERS)(
+    "registers and releases %s requests",
+    async (provider) => {
+      await transcribeUserSpeechAudio({ ...options, provider });
+      expect(native.invoke.mock.calls.map(([command]) => command)).toEqual([
+        "begin_user_speech_transcription",
+        "transcribe_user_speech_audio",
+        "cancel_user_speech_transcription",
+      ]);
+      const requestId = native.invoke.mock.calls[0]?.[1].requestId;
+      expect(native.invoke.mock.calls[1]?.[1].requestId).toBe(requestId);
+      expect(native.invoke.mock.calls[2]?.[1].requestId).toBe(requestId);
+    },
+  );
 
   it("handles cancellation while registration is pending without starting inference", async () => {
     let register!: () => void;

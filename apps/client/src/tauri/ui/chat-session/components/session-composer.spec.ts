@@ -95,6 +95,7 @@ const createProps = (
   imageInputSupported: true,
   imageInputDisabledReason: null,
   speechInput: {
+    provider: "google",
     browserSupported: true,
     enabled: false,
     recording: false,
@@ -388,6 +389,79 @@ describe("SessionComposer goal", () => {
 });
 
 describe("SessionComposer enhancement", () => {
+  it.each(["whistle", "whistle-tiny", "phonon2"] as const)(
+    "omits cloud processing controls for %s",
+    (provider) => {
+      render(
+        createElement(
+          SessionComposer,
+          createProps({
+            editingMessageId: null,
+            isExecuting: false,
+            speechInput: {
+              ...createProps().speechInput,
+              provider,
+              enabled: true,
+              autoTranslateToEnglish: true,
+              autoFormat: true,
+            },
+          }),
+        ),
+      );
+      const microphone = screen.getByRole("button", { name: "Speak to text" });
+      expect(microphone.querySelector(".lucide-languages")).toBeNull();
+      expect(microphone.querySelector(".lucide-wand-sparkles")).toBeNull();
+      fireEvent.contextMenu(microphone);
+      expect(
+        screen.queryByRole("menuitemcheckbox", {
+          name: "Translate to English",
+        }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("menuitemcheckbox", {
+          name: "Format and improve text",
+        }),
+      ).toBeNull();
+    },
+  );
+
+  it.each(["whisper", "whisper-tiny"] as const)(
+    "offers model translation without cloud formatting for %s",
+    async (provider) => {
+      render(
+        createElement(
+          SessionComposer,
+          createProps({
+            editingMessageId: null,
+            isExecuting: false,
+            speechInput: {
+              ...createProps().speechInput,
+              provider,
+              enabled: true,
+              autoTranslateToEnglish: true,
+              autoFormat: true,
+            },
+          }),
+        ),
+      );
+      const microphone = screen.getByRole("button", {
+        name: "Speak to text (translate to English)",
+      });
+      expect(microphone.querySelector(".lucide-wand-sparkles")).toBeNull();
+      fireEvent.contextMenu(microphone);
+      expect(
+        await screen.findByRole("menuitemcheckbox", {
+          name: "Translate to English",
+        }),
+      ).toBeTruthy();
+      expect(
+        screen.queryByRole("menuitemcheckbox", {
+          name: "Format and improve text",
+        }),
+      ).toBeNull();
+    },
+  );
+
   it("shows enabled speech processing and toggles each option from the microphone menu", async () => {
     const onProcessingChange = vi.fn(async () => {});
     render(

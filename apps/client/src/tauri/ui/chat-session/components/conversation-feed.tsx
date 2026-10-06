@@ -1,6 +1,6 @@
+import { MessageEditor } from "@machdoch/client-ui/conversation/message-editor";
 import {
   Bot,
-  Check,
   ChevronDown,
   ChevronUp,
   History,
@@ -11,7 +11,6 @@ import {
   User,
   Volume2,
   WandSparkles,
-  X,
 } from "lucide-react";
 import {
   memo,
@@ -28,24 +27,25 @@ import {
 } from "react";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import {
-  asPaletteCommands,
-  type CommandDefinition,
-  type CommandPageItem,
-} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+  getOriginalPromptContent,
+  OriginalPromptPanel,
+  OriginalPromptToggle,
+} from "@machdoch/product-ui";
+import { createConversationCommands } from "@machdoch/client-ui/conversation/commands";
+import { getRetryableAgentMessageIds } from "@machdoch/client-ui/conversation/retryable-messages";
 import {
   isPromptEnhancementPlaceholderMessage,
-  type ChatSessionContextAttachment,
   type ChatSessionMessage,
 } from "../../chat-session.model";
+import { type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import { Avatar } from "../../components/ui/avatar";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
-import {
-  SUBMIT_SHORTCUT_ACTION_PROPS,
-  SubmitShortcut,
-} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
-import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
-import { TaskThinkingPanel } from "../../task-thinking-panel";
+import { TaskThinkingPanel } from "@machdoch/client-ui/conversation/task-thinking-panel";
+import { TaskTimeoutControls } from "@machdoch/client-ui/conversation/task-timeout-controls";
+import { resetDesktopTaskTimeout } from "../../runtime";
+import { DESKTOP_SETTING_BOUNDS } from "../../../../core/runtime-contract.generated.js";
+import { isTauri } from "@tauri-apps/api/core";
 import {
   clampAiContextMessageLimit,
   DEFAULT_AI_CONTEXT_MESSAGE_LIMIT,
@@ -62,22 +62,23 @@ import {
   getRenderedMessageLimitForTarget,
   getVisibleConversationMessageId,
   isNavigableConversationMessage,
-} from "../_helpers/message-navigation";
+} from "@machdoch/client-ui/conversation/message-navigation";
 import { isRecoveredTaskCrashMessage } from "../_helpers/session-task-continuation";
 import { getMessageWorkspaceRoot } from "../_helpers/message-workspace";
-import { MessageAttachmentsList } from "./context-attachments";
-import { ExecutionInsightRow } from "./execution-insight-row";
-import { MarkdownContent } from "../../components/markdown-content";
+import { MessageAttachmentsList } from "@machdoch/client-ui/composer/context-attachments";
+import { ExecutionInsightRow } from "@machdoch/client-ui/conversation/execution-insight-row";
+import { getTaskFileChangeFiles, getTaskFileChangeHunks } from "../../runtime";
+import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
 import { PromptEnhancementPending } from "./prompt-enhancement-pending";
-import {
-  copyMessageText,
-  createMessageMarkdownFileName,
-  saveMessageMarkdown,
-} from "../_helpers/message-export";
 import {
   MessageContextMenu,
   type MessageContextMenuTarget,
-} from "./message-context-menu";
+} from "@machdoch/client-ui/conversation/message-context-menu";
+
+const taskFileChangeReader = {
+  getFiles: getTaskFileChangeFiles,
+  getHunks: getTaskFileChangeHunks,
+};
 
 export interface ConversationFeedProps {
   visibleMessages: ChatSessionMessage[];
@@ -126,68 +127,6 @@ const INITIAL_RENDERED_MESSAGE_LIMIT = 80;
 const RENDERED_MESSAGE_PAGE_SIZE = 80;
 const MESSAGE_NAVIGATION_HIGHLIGHT_DURATION_MS = 1_800;
 const MESSAGE_NAVIGATION_SCROLL_EDGE_EPSILON_PX = 8;
-
-const getOriginalPromptContent = (
-  visibleContent: string,
-  originalContent: string | undefined,
-): string | null => {
-  const normalizedOriginalContent = originalContent?.trim();
-
-  if (
-    !normalizedOriginalContent ||
-    normalizedOriginalContent === visibleContent.trim()
-  ) {
-    return null;
-  }
-
-  return normalizedOriginalContent;
-};
-
-const getRetryableAgentMessageIds = (
-  messages: readonly ChatSessionMessage[],
-): ReadonlySet<string> => {
-  const userTaskIds = new Set<string>();
-  const retryableAgentMessageIds = new Set<string>();
-  let hasPriorUserMessage = false;
-
-  for (const message of messages) {
-    if (message.role === "user") {
-      hasPriorUserMessage = true;
-      userTaskIds.add(message.taskId ?? message.id);
-      continue;
-    }
-
-    if (
-      message.source?.kind === "thinking" ||
-      message.source?.kind === "preview"
-    ) {
-      continue;
-    }
-
-    if (
-      (message.taskId && userTaskIds.has(message.taskId)) ||
-      (!message.taskId && hasPriorUserMessage)
-    ) {
-      retryableAgentMessageIds.add(message.id);
-    }
-  }
-
-  return retryableAgentMessageIds;
-};
-
-const getMessageCommandTitle = (
-  message: ChatSessionMessage,
-  index: number,
-): string => {
-  const content = getRenderedMessageContent(message)
-    .trim()
-    .replace(/\s+/gu, " ")
-    .slice(0, 96);
-  return (
-    content ||
-    `${message.role === "agent" ? "Assistant" : "User"} message ${index + 1}`
-  );
-};
 
 interface ConversationMessageRowProps {
   aiContextMessageLimit: number;
@@ -400,7 +339,19 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
               <div className="app-thinking-wrapper w-full min-w-0 max-w-full pt-1 lg:max-w-4xl">
                 <TaskThinkingPanel
                   thinking={thinkingTrace}
-                  taskId={message.taskId}
+                  timeoutControls={
+                    isTauri() &&
+                    message.taskId &&
+                    thinkingTrace.timeout?.idleTimeoutMs ? (
+                      <TaskTimeoutControls
+                        idleTimeoutMs={thinkingTrace.timeout.idleTimeoutMs}
+                        bounds={DESKTOP_SETTING_BOUNDS.chatIdleTimeoutMinutes}
+                        onReset={(minutes) =>
+                          resetDesktopTaskTimeout(message.taskId!, minutes)
+                        }
+                      />
+                    ) : null
+                  }
                 />
               </div>
             ) : null}
@@ -477,30 +428,11 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                 {message.role === "user" &&
                 originalPromptContent &&
                 !isEditing ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={
-                      isOriginalPromptExpanded
-                        ? "Hide original prompt"
-                        : "View original prompt"
-                    }
-                    aria-expanded={isOriginalPromptExpanded}
-                    aria-controls={originalPromptPanelId}
-                    tooltip={
-                      isOriginalPromptExpanded
-                        ? "Hide original prompt"
-                        : "View original prompt"
-                    }
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onToggleOriginalPrompt(message.id);
-                    }}
-                    className="app-message-original-prompt-button absolute top-3 right-3 h-7 w-7 rounded-full border border-emerald-500/25 bg-slate-950/55 text-emerald-100 hover:bg-slate-900 hover:text-white"
-                  >
-                    <History className="h-3.5 w-3.5" />
-                  </Button>
+                  <OriginalPromptToggle
+                    expanded={isOriginalPromptExpanded}
+                    panelId={originalPromptPanelId}
+                    onToggle={() => onToggleOriginalPrompt(message.id)}
+                  />
                 ) : null}
 
                 {isActiveEditing && !isEditing ? (
@@ -510,54 +442,12 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                 ) : null}
 
                 {isEditing ? (
-                  <SubmitShortcut asChild>
-                    <form
-                      className="grid gap-3"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        onEditMessage?.(message);
-                      }}
-                    >
-                      <Textarea
-                        autoFocus
-                        aria-label="Edit message"
-                        value={editContent}
-                        onChange={(event) =>
-                          onEditContentChange(event.target.value)
-                        }
-                        onKeyDown={(event) => {
-                          if (event.key === "Escape") {
-                            event.preventDefault();
-                            onCancelEditing();
-                            return;
-                          }
-                        }}
-                        className="max-h-80 min-h-24 resize-none border-slate-600 bg-slate-950/50 text-slate-100 focus-visible:border-sky-400/60 focus-visible:ring-sky-400/20"
-                      />
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={onCancelEditing}
-                          className="h-8 rounded-full px-3 text-xs text-slate-300"
-                        >
-                          <X className="mr-1.5 h-3.5 w-3.5" />
-                          Cancel
-                        </Button>
-                        <Button
-                          type="submit"
-                          size="sm"
-                          disabled={!editContent.trim()}
-                          {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                          className="rounded-full bg-sky-600 text-xs text-white hover:bg-sky-500"
-                        >
-                          <Check className="mr-1.5 h-3.5 w-3.5" />
-                          Save and submit
-                        </Button>
-                      </div>
-                    </form>
-                  </SubmitShortcut>
+                  <MessageEditor
+                    value={editContent}
+                    onChange={onEditContentChange}
+                    onCancel={onCancelEditing}
+                    onSubmit={() => onEditMessage?.(message)}
+                  />
                 ) : (
                   <MarkdownContent
                     content={renderedContent}
@@ -582,20 +472,14 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
             ) : null}
 
             {originalPromptContent && isOriginalPromptExpanded && !isEditing ? (
-              <div
-                id={originalPromptPanelId}
-                className="app-original-prompt-panel max-w-[90%] min-w-0 rounded-2xl border border-emerald-500/20 bg-slate-950/80 px-4 py-3 text-sm leading-6 text-slate-300 shadow-lg shadow-slate-950/20 wrap-break-word"
-              >
-                <div className="mb-2 text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-emerald-200/80">
-                  Original prompt
-                </div>
+              <OriginalPromptPanel id={originalPromptPanelId}>
                 <MarkdownContent
                   content={originalPromptContent}
                   workspaceRoot={workspaceRoot}
                   onOpenWorkspaceFile={openWorkspaceFile}
                   onOpenLocalFile={onOpenLocalFile}
                 />
-              </div>
+              </OriginalPromptPanel>
             ) : null}
 
             {messageAttachments.length > 0 ? (
@@ -641,6 +525,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
 
             {message.source?.kind === "execution" ? (
               <ExecutionInsightRow
+                fileChangeReader={taskFileChangeReader}
                 execution={message.source.execution}
                 onRetryTask={canRetryMessage ? retryMessage : undefined}
                 onContinueTask={
@@ -707,7 +592,7 @@ export const ConversationFeed = ({
   voicePlayback,
 }: ConversationFeedProps): JSX.Element => {
   const [messageContextMenu, setMessageContextMenu] =
-    useState<MessageContextMenuTarget | null>(null);
+    useState<MessageContextMenuTarget<ChatSessionMessage> | null>(null);
   const closeMessageContextMenu = useCallback(
     () => setMessageContextMenu(null),
     [],
@@ -1044,7 +929,11 @@ export const ConversationFeed = ({
 
   const conversationCommandStateRef = useRef({
     visibleMessages,
-    renderedMessageLimit,
+    hasEarlierMessages: visibleMessages.length > renderedMessageLimit,
+    loadEarlierMessages: () =>
+      setRenderedMessageLimit((limit) =>
+        Math.min(visibleMessages.length, limit + RENDERED_MESSAGE_PAGE_SIZE),
+      ),
     navigationState,
     selectedNavigationMessageId,
     isSessionRunning,
@@ -1065,11 +954,14 @@ export const ConversationFeed = ({
     submitEditedMessage,
     cancelEditing,
     toggleOriginalPrompt,
-    setRenderedMessageLimit,
   });
   conversationCommandStateRef.current = {
     visibleMessages,
-    renderedMessageLimit,
+    hasEarlierMessages: visibleMessages.length > renderedMessageLimit,
+    loadEarlierMessages: () =>
+      setRenderedMessageLimit((limit) =>
+        Math.min(visibleMessages.length, limit + RENDERED_MESSAGE_PAGE_SIZE),
+      ),
     navigationState,
     selectedNavigationMessageId,
     isSessionRunning,
@@ -1090,443 +982,32 @@ export const ConversationFeed = ({
     submitEditedMessage,
     cancelEditing,
     toggleOriginalPrompt,
-    setRenderedMessageLimit,
   };
-  const conversationCommands = useMemo<readonly CommandDefinition[]>(() => {
-    const state = () => conversationCommandStateRef.current;
-    const scope = { kind: "view", ownerId: "chat" } as const;
-    const numericKey = (index: number): CommandPageItem["numericKey"] =>
-      index < 9 ? (`${index + 1}` as CommandPageItem["numericKey"]) : undefined;
-    const renderedMessages = () =>
-      state().visibleMessages.filter(
-        (message) => getRenderedMessageContent(message).trim().length > 0,
-      );
-    const retryableMessages = () => {
-      const current = state();
-      const ids = getRetryableAgentMessageIds(current.visibleMessages);
-      return current.visibleMessages.filter((message) => ids.has(message.id));
-    };
-    const continuableMessage = (): ChatSessionMessage | undefined => {
-      const message = retryableMessages().at(-1);
-      return message?.source?.kind === "execution" ||
-        (message && isRecoveredTaskCrashMessage(message))
-        ? message
-        : undefined;
-    };
-    const retry = (message: ChatSessionMessage): void => {
-      const current = state();
-      if (current.onRetryMessage) {
-        void current.onRetryMessage(message);
-        return;
-      }
-      current.onRetryTask(message);
-    };
-    return asPaletteCommands([
-      {
-        id: "chat.messages.navigate",
-        title: "Go to message",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          state().navigationState.messages.length > 0
-            ? { state: "enabled" }
-            : { state: "hidden" },
-        children: () => ({
-          id: "chat.messages.navigate.page",
-          title: "Go to message",
-          searchPlaceholder: "Search messages",
-          numericSelection: true,
-          groups: [
-            {
-              id: "messages",
-              items: state().navigationState.messages.map((message, index) => ({
-                id: message.id,
-                title: getMessageCommandTitle(message, index),
-                current: state().selectedNavigationMessageId === message.id,
-                numericKey: numericKey(index),
-                execute: () => state().navigateToMessage(message),
-              })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "chat.messages.previous",
-        title: "Go to previous message",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          state().navigationState.previousMessage
-            ? { state: "enabled" }
-            : { state: "hidden" },
-        execute: () =>
-          state().navigateToMessage(state().navigationState.previousMessage),
-      },
-      {
-        id: "chat.messages.next",
-        title: "Go to next message",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          state().navigationState.nextMessage
-            ? { state: "enabled" }
-            : { state: "hidden" },
-        execute: () =>
-          state().navigateToMessage(state().navigationState.nextMessage),
-      },
-      {
-        id: "chat.messages.load-earlier",
-        title: "Load earlier messages",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          state().visibleMessages.length > state().renderedMessageLimit
-            ? { state: "enabled" }
-            : { state: "hidden" },
-        execute: () => {
-          const current = state();
-          current.setRenderedMessageLimit((limit) =>
-            Math.min(
-              current.visibleMessages.length,
-              limit + RENDERED_MESSAGE_PAGE_SIZE,
-            ),
-          );
-        },
-      },
-      {
-        id: "chat.message.retry",
-        title: "Retry message",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          state().isSessionRunning
-            ? { state: "disabled", reason: "A task is already running." }
-            : retryableMessages().length > 0
-              ? { state: "enabled" }
-              : { state: "hidden" },
-        children: () => ({
-          id: "chat.message.retry.page",
-          title: "Retry message",
-          searchPlaceholder: "Search messages",
-          groups: [
-            {
-              id: "messages",
-              items: retryableMessages().map((message, index) => ({
-                id: message.id,
-                title: getMessageCommandTitle(message, index),
-                execute: () => retry(message),
-              })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "chat.message.continue",
-        title: "Continue latest recoverable task",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          state().isSessionRunning
-            ? { state: "disabled", reason: "A task is already running." }
-            : continuableMessage()
-              ? { state: "enabled" }
-              : { state: "hidden" },
-        execute: () => {
-          const message = continuableMessage();
-          if (message) state().onContinueTask(message);
-        },
-      },
-      {
-        id: "chat.message.edit",
-        title: "Edit message",
-        group: "Chat messages",
-        scope,
-        availability: () => {
-          const current = state();
-          if (!current.onEditMessage && !current.onStartEditMessage)
-            return { state: "hidden" };
-          return current.isSessionRunning
-            ? { state: "disabled", reason: "A task is already running." }
-            : current.visibleMessages.some(
-                  (message) => message.role === "user" && !message.taskAction,
-                )
-              ? { state: "enabled" }
-              : { state: "hidden" };
-        },
-        children: () => ({
-          id: "chat.message.edit.page",
-          title: "Edit message",
-          searchPlaceholder: "Search messages",
-          groups: [
-            {
-              id: "messages",
-              items: state()
-                .visibleMessages.filter(
-                  (message) => message.role === "user" && !message.taskAction,
-                )
-                .map((message, index) => ({
-                  id: message.id,
-                  title: getMessageCommandTitle(message, index),
-                  current:
-                    state().editingMessageId === message.id ||
-                    state().activeEditingMessageId === message.id,
-                  availability:
-                    state().activeEditingMessageId === message.id
-                      ? {
-                          state: "disabled",
-                          reason: "This message is already being edited.",
-                        }
-                      : { state: "enabled" },
-                  execute: () => state().startEditing(message),
-                })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "chat.message.edit.submit",
-        title: "Save and submit edited message",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          state().editingMessageId
-            ? state().editContent.trim()
-              ? { state: "enabled" }
-              : { state: "disabled", reason: "Enter a message first." }
-            : { state: "hidden" },
-        execute: () => {
-          const current = state();
-          const message = current.visibleMessages.find(
-            (candidate) => candidate.id === current.editingMessageId,
-          );
-          if (message) current.submitEditedMessage(message);
-        },
-      },
-      {
-        id: "chat.message.edit.cancel",
-        title: "Cancel message edit",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          state().editingMessageId ? { state: "enabled" } : { state: "hidden" },
-        execute: () => state().cancelEditing(),
-      },
-      {
-        id: "chat.message.speak",
-        title: "Read message aloud",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          !state().voicePlayback.supported
-            ? { state: "hidden" }
-            : renderedMessages().some((message) => message.role === "agent")
-              ? { state: "enabled" }
-              : { state: "hidden" },
-        children: () => ({
-          id: "chat.message.speak.page",
-          title: "Read message aloud",
-          searchPlaceholder: "Search messages",
-          groups: [
-            {
-              id: "messages",
-              items: renderedMessages()
-                .filter((message) => message.role === "agent")
-                .map((message, index) => ({
-                  id: message.id,
-                  title: getMessageCommandTitle(message, index),
-                  current:
-                    state().voicePlayback.speakingMessageId === message.id,
-                  execute: () => {
-                    const current = state().voicePlayback;
-                    if (current.speakingMessageId === message.id)
-                      current.onStopSpeaking();
-                    else current.onSpeakMessage(message);
-                  },
-                })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "chat.message.speech.stop",
-        title: "Stop reading message aloud",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          state().voicePlayback.speakingMessageId
-            ? { state: "enabled" }
-            : { state: "hidden" },
-        execute: () => state().voicePlayback.onStopSpeaking(),
-      },
-      {
-        id: "chat.message.copy-markdown",
-        title: "Copy message Markdown",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          renderedMessages().length > 0
-            ? { state: "enabled" }
-            : { state: "hidden" },
-        children: () => ({
-          id: "chat.message.copy-markdown.page",
-          title: "Copy message Markdown",
-          searchPlaceholder: "Search messages",
-          groups: [
-            {
-              id: "messages",
-              items: renderedMessages().map((message, index) => ({
-                id: message.id,
-                title: getMessageCommandTitle(message, index),
-                execute: () =>
-                  copyMessageText(getRenderedMessageContent(message)),
-              })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "chat.message.save-markdown",
-        title: "Save message Markdown",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          renderedMessages().length > 0
-            ? { state: "enabled" }
-            : { state: "hidden" },
-        children: () => ({
-          id: "chat.message.save-markdown.page",
-          title: "Save message Markdown",
-          searchPlaceholder: "Search messages",
-          groups: [
-            {
-              id: "messages",
-              items: renderedMessages().map((message, index) => ({
-                id: message.id,
-                title: getMessageCommandTitle(message, index),
-                execute: () =>
-                  saveMessageMarkdown(
-                    getRenderedMessageContent(message),
-                    createMessageMarkdownFileName(message),
-                  ),
-              })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "chat.message.context-pack.save",
-        title: "Save message as context pack",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          state().onSaveMessageAsContextPack &&
-          state().visibleMessages.some((message) => message.role === "user")
-            ? { state: "enabled" }
-            : { state: "hidden" },
-        children: () => ({
-          id: "chat.message.context-pack.save.page",
-          title: "Save message as context pack",
-          searchPlaceholder: "Search messages",
-          groups: [
-            {
-              id: "messages",
-              items: state()
-                .visibleMessages.filter((message) => message.role === "user")
-                .map((message, index) => ({
-                  id: message.id,
-                  title: getMessageCommandTitle(message, index),
-                  execute: () => state().onSaveMessageAsContextPack?.(message),
-                })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "chat.message.original-prompt.toggle",
-        title: "Show or hide original prompt",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          state().visibleMessages.some(
-            (message) =>
-              message.role === "user" &&
-              getOriginalPromptContent(
-                getRenderedMessageContent(message),
-                message.promptEnhancement?.originalContent,
-              ),
-          )
-            ? { state: "enabled" }
-            : { state: "hidden" },
-        children: () => ({
-          id: "chat.message.original-prompt.toggle.page",
-          title: "Show or hide original prompt",
-          searchPlaceholder: "Search messages",
-          groups: [
-            {
-              id: "messages",
-              items: state()
-                .visibleMessages.filter(
-                  (message) =>
-                    message.role === "user" &&
-                    getOriginalPromptContent(
-                      getRenderedMessageContent(message),
-                      message.promptEnhancement?.originalContent,
-                    ),
-                )
-                .map((message, index) => ({
-                  id: message.id,
-                  title: getMessageCommandTitle(message, index),
-                  execute: () => state().toggleOriginalPrompt(message.id),
-                })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "chat.message.attachment.open",
-        title: "Open message attachment",
-        group: "Chat messages",
-        scope,
-        availability: () =>
-          state().onOpenAttachment &&
-          state().visibleMessages.some(
-            (message) => (message.contextAttachments?.length ?? 0) > 0,
-          )
-            ? { state: "enabled" }
-            : { state: "hidden" },
-        children: () => ({
-          id: "chat.message.attachment.open.page",
-          title: "Open message attachment",
-          searchPlaceholder: "Search attachments",
-          groups: [
-            {
-              id: "attachments",
-              items: state().visibleMessages.flatMap((message) =>
-                (message.contextAttachments ?? []).map((attachment) => ({
-                  id: `${message.id}:${attachment.id}`,
-                  title: attachment.name,
-                  keywords: [
-                    "path" in attachment ? attachment.path : attachment.assetId,
-                  ],
-                  execute: () => {
-                    const current = state();
-                    current.onOpenAttachment?.(
-                      attachment,
-                      getMessageWorkspaceRoot(
-                        message,
-                        current.visibleMessages,
-                        current.workspaceRoot,
-                      ),
-                    );
-                  },
-                })),
-              ),
-            },
-          ],
-        }),
-      },
-    ]);
-  }, []);
+  const conversationCommands = useMemo(
+    () =>
+      createConversationCommands({
+        state: () => conversationCommandStateRef.current,
+        getContent: getRenderedMessageContent,
+        getRetryableMessageIds: getRetryableAgentMessageIds,
+        canContinue: (message: ChatSessionMessage) =>
+          message.source?.kind === "execution" ||
+          isRecoveredTaskCrashMessage(message),
+        canEdit: (message: ChatSessionMessage) =>
+          message.role === "user" && !message.taskAction,
+        canSaveAsContextPack: (message: ChatSessionMessage) =>
+          message.role === "user",
+        canSpeak: (message: ChatSessionMessage) => message.role === "agent",
+        getOriginalPrompt: (message: ChatSessionMessage) =>
+          getOriginalPromptContent(
+            getRenderedMessageContent(message),
+            message.promptEnhancement?.originalContent,
+          ),
+        getAttachments: (message: ChatSessionMessage) =>
+          message.contextAttachments ?? [],
+        getWorkspace: getMessageWorkspaceRoot,
+      }),
+    [],
+  );
   useOptionalRegisterCommands(conversationCommands);
 
   if (visibleMessages.length === 0 && !promptEnhancementPreview) {

@@ -4,7 +4,7 @@ import {
   addSearchMatchesToHighlightedHtml,
   findFilePreviewMatches,
   MAX_FILE_PREVIEW_MATCHES,
-} from "./file-preview-search";
+} from "@machdoch/client-ui/file-preview/file-preview-search";
 
 describe("bounded preview search", () => {
   it("caps match retention and marks incomplete results", () => {

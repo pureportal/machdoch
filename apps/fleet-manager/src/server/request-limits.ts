@@ -1,4 +1,8 @@
-import { maximumGatewayMessageBytes } from "@machdoch/fleet-protocol";
+import {
+  maximumGatewayMessageBytes,
+  maximumDeviceSettingsRequestBodyBytes,
+} from "@machdoch/fleet-protocol";
+import { maximumWorkspaceRequestBodyBytes } from "@machdoch/fleet-protocol/workspace";
 import type { FleetManagerConfig } from "./config";
 
 const maximumAuthenticationBodyBytes = 16 * 1024;
@@ -24,7 +28,15 @@ export function maximumRequestBodyBytes(
   if (/^\/api\/instances\/[^/]+\/product\/commands$/u.test(pathname)) {
     return maximumGatewayMessageBytes;
   }
-  if (/^\/api\/instances\/[^/]+\/product\/(?:media|ralph)$/u.test(pathname)) {
+  if (/^\/api\/instances\/[^/]+\/product\/deviceSettings$/u.test(pathname))
+    return maximumDeviceSettingsRequestBodyBytes;
+  if (/^\/api\/instances\/[^/]+\/product\/workspace$/u.test(pathname))
+    return maximumWorkspaceRequestBodyBytes;
+  if (
+    /^\/api\/instances\/[^/]+\/product\/(?:media|ralph|scheduler|instructions)$/u.test(
+      pathname,
+    )
+  ) {
     return maximumMediaRequestBodyBytes;
   }
   if (/^\/api\/instances\/[^/]+\/runs$/u.test(pathname))

@@ -6,7 +6,7 @@ import {
   FilePreviewTextContent,
   FilePreviewVisualContent,
   type FilePreview,
-} from "./file-preview-dialog.tsx";
+} from "@machdoch/client-ui/file-preview/dialog";
 
 const createPreview = (overrides: Partial<FilePreview> = {}): FilePreview => ({
   title: "branch.dto.ts",

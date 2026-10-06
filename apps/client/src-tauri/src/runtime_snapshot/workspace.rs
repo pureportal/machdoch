@@ -281,6 +281,7 @@ mod tests {
 
     use super::{
         save_workspace_memory_override_value, save_workspace_reasoning_bank_enabled_value,
+        save_workspace_reasoning_execution_mode_value, ReasoningExecutionMode,
     };
 
     #[test]
@@ -312,6 +313,37 @@ mod tests {
         assert!(unset["workspaceMemoryEnabled"].is_null());
 
         fs::remove_dir_all(workspace).expect("workspace should be removable");
+    }
+
+    #[test]
+    fn unsupported_reasoning_execution_mode_does_not_change_the_saved_config() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace = std::env::temp_dir().join(format!("machdoch-reasoning-execution-{unique}"));
+        let directory = workspace.join(".machdoch");
+        fs::create_dir_all(&directory).unwrap();
+        let config_path = directory.join("config.json");
+        let original = "{\"provider\":\"google\",\"model\":\"gemini-3.1-pro-preview\",\"reasoningMode\":\"standard\",\"offline\":true}";
+        fs::write(&config_path, original).unwrap();
+        let workspace_root = workspace.to_string_lossy();
+        assert!(save_workspace_reasoning_execution_mode_value(
+            &workspace_root,
+            &ReasoningExecutionMode::Pro
+        )
+        .is_err());
+        assert_eq!(fs::read_to_string(&config_path).unwrap(), original);
+        fs::write(&config_path, original.replace("standard", "pro")).unwrap();
+        save_workspace_reasoning_execution_mode_value(
+            &workspace_root,
+            &ReasoningExecutionMode::Standard,
+        )
+        .unwrap();
+        let saved: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert_eq!(saved["reasoningMode"], "standard");
+        fs::remove_dir_all(workspace).unwrap();
     }
 
     #[test]
@@ -376,6 +408,14 @@ pub(super) fn save_workspace_reasoning_execution_mode_value(
     let workspace_path = resolve_workspace_root_path(workspace_root)?;
     let config_path = workspace_path.join(".machdoch").join("config.json");
     with_cooperative_file_lock(&config_path, || {
+        if matches!(reasoning_mode, ReasoningExecutionMode::Pro) {
+            let snapshot = super::collect::collect_runtime_snapshot(workspace_root)?;
+            super::collect::require_reasoning_execution_mode(
+                reasoning_mode,
+                &snapshot.provider,
+                &snapshot.model,
+            )?;
+        }
         let mut config = load_workspace_config_json(&config_path)?;
         config.insert(
             "reasoningMode".to_string(),

@@ -1,12 +1,6 @@
 import { ImagePlus, Images, Loader2, TriangleAlert } from "lucide-react";
 import { useMemo, useRef, type JSX } from "react";
-import {
-  isMediaAssetContextAttachment,
-  isPathContextAttachment,
-  type ChatSessionContextAttachment,
-  type ChatSessionMediaAssetAttachment,
-  type ChatSessionPathContextAttachment,
-} from "../../chat-session.model";
+import { isMediaAssetContextAttachment, isPathContextAttachment, type ChatSessionContextAttachment, type ChatSessionMediaAssetAttachment, type ChatSessionPathContextAttachment } from "@machdoch/client-ui/composer/model";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Dialog,

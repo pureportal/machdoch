@@ -1,0 +1,1536 @@
+{
+  "evidenceRoot": "D:\\Models\\machdoch\\verification\\2026-10-06-training",
+  "scopeComplete": false,
+  "generationArchitectures": 52,
+  "integratedArchitecturesIncludingRawAlias": 17,
+  "missingTrainerArchitectures": 35,
+  "checks": {
+    "mediaTests": 768,
+    "workerProfileConditioningTests": 99,
+    "otherTrainerTests": 20,
+    "nativeFocusedTests": 90,
+    "nativeMemoryManagerTests": 13,
+    "nativeRuntimeVerificationPassed": true,
+    "nativeReducedPipelineReusePassed": true,
+    "publisherFinetuneNativePipelineReusePassed": true,
+    "zImageTestsAfterConditioningOptimization": 7,
+    "kleinTrainingTests": 5,
+    "kleinArchitectureMethodCombinations": 12,
+    "kleinResumeExact": true,
+    "fusedAttentionOnlyMasking": "passed",
+    "fourBAndNineBAdapterDetection": "passed",
+    "typechecks": "passed",
+    "uiProductionBuild": "passed",
+    "focusedLint": "passed"
+  },
+  "records": {
+    "publisherLoraTraining": {
+      "source": "flux2-base4b-publisher-lora/training-probe.json",
+      "sha256": "a8654238497c49ad994f4455002be0c8241a1f18c7f6a7834d441582f552600b",
+      "result": {
+        "steps": 8,
+        "trainingLoopSeconds": 83.45299999999997,
+        "trainableParameters": 6021120,
+        "trainableParameterTensors": 200,
+        "changedParameterTensors": 200,
+        "baseParameterTensors": 169,
+        "baseParameters": 3875544576,
+        "baseParametersFrozen": true,
+        "sampledBaseWeightsUnchanged": true,
+        "peakAllocatedBytes": 8699574272,
+        "peakReservedBytes": 8975810560
+      }
+    },
+    "publisherLoraGeneration": {
+      "source": "flux2-base4b-publisher-lora/generation-result-bf16.json",
+      "sha256": "e179132f148bddf1febdc435c493016d1fefc1c8a1b4a05e30446251ef57d6f0",
+      "result": {
+        "seconds": 216.125,
+        "digest": "5005bc9470bed8ffa46c84a397d577032a335468480e4883bde6dd12309f2efb",
+        "targetModuleCount": 100,
+        "peakAllocatedBytes": 8457594880,
+        "peakReservedBytes": 8493465600,
+        "transformerDtype": "torch.bfloat16",
+        "textEncoderDtype": "torch.bfloat16",
+        "vaeDtype": "torch.bfloat16",
+        "transformerParameters": 3875544576,
+        "latentShapes": [[1, 1024, 128]],
+        "generation": {
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "numInferenceSteps": 50,
+          "outputs": [
+            {
+              "index": 0,
+              "fileName": "output-0000.png",
+              "seed": 42,
+              "width": 512,
+              "height": 512
+            }
+          ]
+        }
+      }
+    },
+    "publisherLoraManagedGeneration": {
+      "source": "flux2-base4b-publisher-lora/generation-result-managed.json",
+      "sha256": "63166b476a7001494e0e244fb5d1a27acc8d33f39a5f75aa8abdc0c3c86ae3b4",
+      "result": {
+        "seconds": 121.42100000000028,
+        "digest": "5005bc9470bed8ffa46c84a397d577032a335468480e4883bde6dd12309f2efb",
+        "targetModuleCount": 100,
+        "peakAllocatedBytes": 8457594880,
+        "peakReservedBytes": 8493465600,
+        "transformerDtype": "torch.bfloat16",
+        "textEncoderDtype": "torch.bfloat16",
+        "vaeDtype": "torch.bfloat16",
+        "transformerParameters": 3875544576,
+        "latentShapes": [[1, 1024, 128]],
+        "pixelsMatchOriginal": true,
+        "generation": {
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "numInferenceSteps": 50,
+          "outputs": [
+            {
+              "index": 0,
+              "fileName": "output-0000.png",
+              "seed": 42,
+              "width": 512,
+              "height": 512
+            }
+          ]
+        }
+      }
+    },
+    "publisherEmbeddingTraining": {
+      "source": "flux2-base4b-publisher-embedding/training-probe.json",
+      "sha256": "c038943f86741503cfd2e8abba3db2fbd468d0468fb2d5e41025b944a0347a43",
+      "result": {
+        "steps": 2,
+        "trainingLoopSeconds": 138.78200000000015,
+        "trainableParameters": 2560,
+        "changedParameterTensors": 1,
+        "baseParametersFrozen": true,
+        "sampledBaseWeightsUnchanged": true,
+        "frozenParameterTensors": 815,
+        "frozenParameters": 7981377827,
+        "peakAllocatedBytes": 16726698496,
+        "peakReservedBytes": 17087594496
+      }
+    },
+    "publisherEmbeddingGeneration": {
+      "source": "flux2-base4b-publisher-embedding/generation-result-bf16.json",
+      "sha256": "1a2987381ea51d5876ff5f1310d471cc546a9773c83e1b8cbc5f1d2d2a564509",
+      "result": {
+        "seconds": 135.0,
+        "digest": "dcea6a9390f22e17c9351cf50119f1bd78a991e7c3f851554b0569e8ff09fe6a",
+        "vectorCount": 1,
+        "peakAllocatedBytes": 8455809024,
+        "peakReservedBytes": 8493465600,
+        "transformerDtype": "torch.bfloat16",
+        "textEncoderDtype": "torch.bfloat16",
+        "vaeDtype": "torch.bfloat16",
+        "transformerParameters": 3875544576,
+        "latentShapes": [[1, 1024, 128]],
+        "generation": {
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "numInferenceSteps": 50,
+          "outputs": [
+            {
+              "index": 0,
+              "fileName": "output-0000.png",
+              "seed": 42,
+              "width": 512,
+              "height": 512
+            }
+          ]
+        }
+      }
+    },
+    "publisherFinetuneTraining": {
+      "source": "flux2-base4b-publisher-finetune/training-probe.json",
+      "sha256": "7b9aeb693800e68fee558c9b08f842b373e62dd3fc1a23e412de87102082cc83",
+      "result": {
+        "steps": 2,
+        "trainingLoopSeconds": 904.7029999999995,
+        "trainableParameters": 3875544576,
+        "trainableParameterTensors": 169,
+        "changedSampledParameterTensors": 73,
+        "frozenEncoderAndVAE": true,
+        "peakAllocatedBytes": 17188269568,
+        "peakReservedBytes": 19644022784
+      }
+    },
+    "publisherFinetuneInterruption": {
+      "source": "flux2-base4b-publisher-finetune/export-interruption.json",
+      "sha256": "121e15373b21550aaa6cf362367daa6a181bcd49a31a904ae56cd3fe24ac29ee",
+      "result": {
+        "priorStatus": {
+          "state": "running",
+          "message": "Saving weights"
+        },
+        "interruptedAt": "2026-10-06T14:44:35.6647038+00:00",
+        "processId": 18764,
+        "checkpoint": 2,
+        "reason": "Export interrupted after completed training; USB disk observed at 2.2 MB/s with queue depth 17, and SSD had 1.7 GB free."
+      }
+    },
+    "publisher9BAccess": {
+      "source": "flux2-9b-publisher-config-access.json",
+      "sha256": "8f6e09eec244228fbb7cf9a8774aed6c9e28c2c5c82eb4cab7d68ea10a5d0901",
+      "result": {
+        "checkedAt": "2026-10-06T14:23:33.9265764+00:00",
+        "models": [
+          {
+            "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9B/resolve/32773329fbe7e81a90ef971740e8ba4b0364ecf3/transformer/config.json",
+            "repository": "black-forest-labs/FLUX.2-klein-base-9B",
+            "revision": "32773329fbe7e81a90ef971740e8ba4b0364ecf3",
+            "authenticated": false,
+            "configStatus": 401
+          },
+          {
+            "sourceUrl": "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B/resolve/92196c8e11f7b6cf2b7493e037d8c5345c559216/transformer/config.json",
+            "repository": "black-forest-labs/FLUX.2-klein-9B",
+            "revision": "92196c8e11f7b6cf2b7493e037d8c5345c559216",
+            "authenticated": false,
+            "configStatus": 401
+          }
+        ]
+      }
+    },
+    "reducedManagedGeneration": {
+      "source": "flux2-retained-workflows/managed-generation-results.json",
+      "sha256": "109ec5b3f92ae98900d78af25efb7c173d4a67c5028da10e8be124e075593b09",
+      "result": [
+        {
+          "architecture": "flux-2-klein-base-4b",
+          "method": "finetune",
+          "seconds": 82.45399999999972,
+          "matchesExportedOutput": true
+        },
+        {
+          "architecture": "flux-2-klein-base-4b",
+          "method": "embedding",
+          "seconds": 3.063000000000102,
+          "matchesExportedOutput": true
+        }
+      ]
+    },
+    "publisherZImageGeneration": {
+      "source": "z-image-publisher-lora/generation-result-bf16-streamed-28.json",
+      "sha256": "5307e17bdd22f51ed36eecb0821383ac62561a5fbb8684fc7a8f5c80ea6e6eaa",
+      "result": {
+        "seconds": 415.172,
+        "digest": "7a3b9a728a8b4b2cc0df39ca67ea6931d468098f018564d6d1869778eb12bc9e",
+        "targetModuleCount": 238,
+        "peakAllocatedBytes": 1690248704,
+        "peakReservedBytes": 4571791360,
+        "transformerDtype": "torch.bfloat16",
+        "textEncoderDtype": "torch.bfloat16",
+        "vaeDtype": "torch.bfloat16",
+        "transformerParameters": 6154908736,
+        "latentShapes": [
+          [16, 1, 64, 64],
+          [16, 1, 64, 64]
+        ],
+        "generation": {
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "numInferenceSteps": 28,
+          "outputs": [
+            {
+              "index": 0,
+              "fileName": "output-0000.png",
+              "seed": 42,
+              "width": 512,
+              "height": 512
+            }
+          ]
+        }
+      }
+    },
+    "publisherMemoryBounds": {
+      "source": "flux2-base4b-memory-bounds.json",
+      "sha256": "9caefd8c740ad00139a426eb8ce577e9d59fc8ac98d9e676880878f7e1e79533",
+      "result": {
+        "hardwareVRAMBytes": 17095983104,
+        "physicalMemoryBytes": 33618337792,
+        "components": {
+          "transformer": {
+            "parameters": 3875544576,
+            "tensorCount": 169,
+            "adamwLowerBoundBytes": 62008713216,
+            "bf16AdafactorLowerBoundBytes": 16867549184
+          },
+          "text_encoder": {
+            "parameters": 4022468096,
+            "tensorCount": 398
+          },
+          "vae": {
+            "parameters": 84046372,
+            "tensorCount": 251
+          }
+        },
+        "bf16EmbeddingFrozenWeightsBytes": 15796025344,
+        "activationMemoryIncluded": false
+      }
+    },
+    "publisherFinetuneExport": {
+      "source": "flux2-base4b-publisher-finetune/output/training.json",
+      "sha256": "cb94bd8d80255903acd6d4f963f84e5804bbccb8dacf415e8d39fafd70536b27",
+      "result": {
+        "architecture": "flux-2-klein-base-4b",
+        "method": "finetune",
+        "model": {
+          "id": null,
+          "architecture": "flux-2-klein-base-4b",
+          "packageKind": "diffusers-directory",
+          "path": "C:\\Development\\machdoch-verification\\2026-10-06-training\\flux2-klein-base4b-pretrained",
+          "configPath": null,
+          "revision": "a3b4f4849157f664bdbc776fd7453c2783562f4d",
+          "digest": null
+        },
+        "steps": 2,
+        "settings": {
+          "architecture": "flux-2-klein-base-4b",
+          "trigger_phrase": "mdflux2pot",
+          "resolution": 512,
+          "rank": 4,
+          "learning_rate": 5e-6,
+          "steps": 2,
+          "attention_only": false,
+          "four_bit": false,
+          "seed": 42,
+          "method": "finetune",
+          "precision": "bf16",
+          "batch_size": 1,
+          "gradient_accumulation": 1,
+          "lr_scheduler": "constant",
+          "warmup_steps": 0,
+          "weight_decay": 0.01,
+          "max_grad_norm": 0,
+          "snr_gamma": 0,
+          "noise_offset": 0,
+          "lora_dropout": 0,
+          "guidance_scale": 3.5,
+          "checkpoint_interval": 1,
+          "checkpoint_retention": 2,
+          "gradient_checkpointing": true,
+          "preserve_aspect_ratio": false,
+          "initializer_token": "",
+          "optimizer": "adafactor",
+          "trainable_precision": "bf16"
+        },
+        "datasetSignature": "e7bb98d70863bbc1273bc1ed6d5e5b41e92bca5c7daa58352f8e77f08c2b9e85",
+        "trainableParameters": 3875544576,
+        "resumed": true,
+        "seconds": 3077.1719999999987
+      }
+    },
+    "publisherFinetuneNativeImport": {
+      "source": "flux2-base4b-publisher-finetune/native-package-import/results.json",
+      "sha256": "55c4e8ed830962c03dc9190eae39c123f34c1ab25057314e8fcdf5a5f5550efd",
+      "result": [
+        {
+          "architecture": "flux-2-klein-base-4b",
+          "byteSize": 15975695463,
+          "model": {
+            "architecture": "flux-2-klein-base-4b",
+            "configPath": null,
+            "digest": "579b4feae14e224b7fb9c79ccbf5fcad3672ed9a6f56709d3919ed915351e647",
+            "id": "local:user:579b4feae14e224b7fb9c79ccbf5fcad3672ed9a6f56709d3919ed915351e647",
+            "packageKind": "diffusers-directory",
+            "path": "\\\\?\\D:\\Models\\machdoch\\verification\\2026-10-06-training\\flux2-base4b-publisher-finetune\\native-package-import\\models\\packages\\user-579b4feae14e224b7fb9c79ccbf5fcad\\revisions\\579b4feae14e224b7fb9c79ccbf5fcad3672ed9a6f56709d3919ed915351e647",
+            "revision": "579b4feae14e224b7fb9c79ccbf5fcad3672ed9a6f56709d3919ed915351e647"
+          },
+          "tensorCount": 818
+        }
+      ]
+    },
+    "publisherFinetuneGeneration": {
+      "source": "flux2-base4b-publisher-finetune/generation-result-bf16.json",
+      "sha256": "54533454f9d52777315be844ceafc3caf51bee0cffaab5014688d06a42b04971",
+      "result": {
+        "seconds": 3426.1089999999986,
+        "modelDirectory": "D:\\Models\\machdoch\\verification\\2026-10-06-training\\flux2-base4b-publisher-finetune\\output\\model",
+        "peakAllocatedBytes": 8457594880,
+        "peakReservedBytes": 8493465600,
+        "workerResult": {
+          "schemaVersion": 5,
+          "workerVersion": "media-diffusers-worker/1.77.0",
+          "packages": {
+            "transformers": "5.17.0",
+            "sentencepiece": "0.2.2",
+            "protobuf": "7.35.1",
+            "accelerate": "1.14.0",
+            "peft": "0.19.1",
+            "datasets": "5.0.1",
+            "bitsandbytes": "0.50.2",
+            "ftfy": "6.3.1",
+            "safetensors": "0.8.0",
+            "numpy": "2.5.2",
+            "scipy": "1.18.1",
+            "pillow": "12.3.0",
+            "imageio-ffmpeg": "0.6.0",
+            "opencv-python-headless": "4.13.0.92",
+            "spandrel": "0.4.2",
+            "resvg_py": "0.5.0",
+            "diffusers": "0.41.0.dev0",
+            "torch": "2.12.0+rocm7.14.0",
+            "torchvision": "0.27.0+rocm7.14.0"
+          },
+          "device": "cuda",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "deviceMemoryBytes": 17095983104,
+          "prompt": "A red ceramic teapot and porcelain cup, mdflux2pot",
+          "negativePrompt": "",
+          "modelPolicy": "fast",
+          "aspectRatio": "1:1",
+          "numInferenceSteps": 50,
+          "vaeDecode": {
+            "mode": "native-full-frame",
+            "enabled": false,
+            "thresholdPixels": 1024,
+            "postQuantBackend": "native",
+            "device": "pipeline",
+            "convolutionBackend": "native"
+          },
+          "addons": [],
+          "performance": null,
+          "requireChromaBackground": false,
+          "editConditioning": null,
+          "outputs": [
+            {
+              "index": 0,
+              "fileName": "output-0000.png",
+              "seed": 42,
+              "width": 512,
+              "height": 512
+            }
+          ]
+        },
+        "transformerDtype": "torch.bfloat16",
+        "textEncoderDtype": "torch.bfloat16",
+        "vaeDtype": "torch.bfloat16",
+        "transformerParameters": 3875544576,
+        "latentShapes": [[1, 1024, 128]]
+      }
+    },
+    "publisherFinetuneManagedNativeGeneration": {
+      "source": "flux2-base4b-publisher-finetune/generation-result-managed-native.json",
+      "sha256": "5021f77709184751a42de6f7435370741b1714d82a54486ab8213aaf304ef63c",
+      "result": {
+        "sourceImageSha256": "fce8a664fe778cfaec555432ecc2946a822bcb69ab430b7e7cb6eed5b7508ec1",
+        "nativeColdAndRepeatedGeneration": [
+          {
+            "attempt": "cold",
+            "reusedPipeline": false,
+            "seconds": 2103.6853259,
+            "success": true,
+            "workerResult": {
+              "addons": [],
+              "aspectRatio": "1:1",
+              "device": "cuda",
+              "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+              "deviceMemoryBytes": 17095983104,
+              "editConditioning": null,
+              "modelPolicy": "fast",
+              "negativePrompt": "",
+              "numInferenceSteps": 50,
+              "outputs": [
+                {
+                  "fileName": "output-0000.png",
+                  "height": 512,
+                  "index": 0,
+                  "seed": 42,
+                  "width": 512
+                }
+              ],
+              "packages": {
+                "accelerate": "1.14.0",
+                "bitsandbytes": "0.50.2",
+                "datasets": "5.0.1",
+                "diffusers": "0.41.0.dev0",
+                "ftfy": "6.3.1",
+                "imageio-ffmpeg": "0.6.0",
+                "numpy": "2.5.2",
+                "opencv-python-headless": "4.13.0.92",
+                "peft": "0.19.1",
+                "pillow": "12.3.0",
+                "protobuf": "7.35.1",
+                "resvg_py": "0.5.0",
+                "safetensors": "0.8.0",
+                "scipy": "1.18.1",
+                "sentencepiece": "0.2.2",
+                "spandrel": "0.4.2",
+                "torch": "2.12.0+rocm7.14.0",
+                "torchvision": "0.27.0+rocm7.14.0",
+                "transformers": "5.17.0"
+              },
+              "performance": null,
+              "prompt": "A red ceramic teapot and porcelain cup, mdflux2pot",
+              "requireChromaBackground": false,
+              "schemaVersion": 5,
+              "vaeDecode": {
+                "convolutionBackend": "native",
+                "device": "pipeline",
+                "enabled": false,
+                "mode": "native-full-frame",
+                "postQuantBackend": "native",
+                "thresholdPixels": 1024
+              },
+              "workerVersion": "media-diffusers-worker/1.77.0"
+            },
+            "pixelsMatchOriginal": true,
+            "imageSha256": "fce8a664fe778cfaec555432ecc2946a822bcb69ab430b7e7cb6eed5b7508ec1"
+          },
+          {
+            "attempt": "warm",
+            "error": "Model worker crashed\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Starting image runtime\", \"progress\": 0.02}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Loading image model\", \"progress\": 0.08}\r\nCould not detect ROCm GPU architecture: [WinError 2] The system cannot find the file specified\r\n\r\nROCm GPU architecture detection failed despite ROCm being available.\r\n                \r\nW1006 20:53:05.934000 20088 Lib\\site-packages\\torch\\utils\\flop_counter.py:29] triton not found; flop counting will not work for triton kernels\r\n\rLoading pipeline components...:   0%|          | 0/5 [00:00<?, ?it/s]\rLoading pipeline components...:  20%|\u2588\u2588        | 1/5 [00:00<00:02,  1.92it/s]\r\n\rLoading checkpoint shards:   0%|          | 0/9 [00:00<?, ?it/s]\u001b[A\r\n\rLoading checkpoint shards:  11%|\u2588         | 1/9 [00:00<00:02,  2.85it/s]\u001b[A\r\n\rLoading checkpoint shards:  22%|\u2588\u2588\u258f       | 2/9 [00:00<00:02,  3.20it/s]\u001b[A\r\n\rLoading checkpoint shards:  33%|\u2588\u2588\u2588\u258e      | 3/9 [00:01<00:02,  2.28it/s]\u001b[A\r\n\rLoading checkpoint shards:  44%|\u2588\u2588\u2588\u2588\u258d     | 4/9 [00:01<00:01,  2.61it/s]\u001b[A\r\n\rLoading checkpoint shards:  56%|\u2588\u2588\u2588\u2588\u2588\u258c    | 5/9 [00:01<00:01,  2.86it/s]\u001b[A\r\n\rLoading checkpoint shards:  67%|\u2588\u2588\u2588\u2588\u2588\u2588\u258b   | 6/9 [00:02<00:01,  2.60it/s]\u001b[A\r\n\rLoading checkpoint shards:  78%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u258a  | 7/9 [00:02<00:00,  3.07it/s]\u001b[A\r\n\rLoading checkpoint shards:  89%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2589 | 8/9 [00:02<00:00,  3.61it/s]\u001b[A\rLoading checkpoint shards: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 9/9 [00:02<00:00,  3.30it/s]\r\n\rLoading pipeline components...:  40%|\u2588\u2588\u2588\u2588      | 2/5 [00:03<00:05,  1.88s/it]\rLoading pipeline components...:  60%|\u2588\u2588\u2588\u2588\u2588\u2588    | 3/5 [00:03<00:02,  1.13s/it]\r\n\rLoading weights:   0%|          | 0/398 [00:00<?, ?it/s]\u001b[A\r\n\rLoading weights:   1%|          | 2/398 [00:00<01:04,  6.15it/s]\u001b[A\r\n\rLoading weights:   1%|          | 3/398 [00:01<05:06,  1.29it/s]\u001b[A\r\n\rLoading weights:   1%|          | 4/398 [00:02<05:14,  1.25it/s]\u001b[A\r\n\rLoading weights:   3%|\u258e         | 11/398 [00:03<01:25,  4.51it/s]\u001b[A\r\n\rLoading weights:   3%|\u258e         | 12/398 [00:05<03:12,  2.00it/s]\u001b[A\r\n\rLoading weights:   3%|\u258e         | 13/398 [00:06<03:37,  1.77it/s]\u001b[A\r\n\rLoading weights:   4%|\u258e         | 14/398 [00:07<03:54,  1.64it/s]\u001b[A\r\n\rLoading weights:   4%|\u258d         | 15/398 [00:07<04:09,  1.54it/s]\u001b[A\r\n\rLoading weights:   5%|\u258d         | 18/398 [00:08<03:03,  2.07it/s]\u001b[A\r\n\rLoading weights:   5%|\u258d         | 19/398 [00:09<03:21,  1.88it/s]\u001b[A\r\n\rLoading weights:   5%|\u258c         | 21/398 [00:10<02:48,  2.24it/s]\u001b[A\r\n\rLoading weights:   6%|\u258c         | 24/398 [00:10<02:02,  3.05it/s]\u001b[A\r\n\rLoading weights:   6%|\u258b         | 25/398 [00:13<03:26,  1.80it/s]\u001b[A\r\n\rLoading weights:   7%|\u258b         | 26/398 [00:16<08:04,  1.30s/it]\u001b[A\r\n\rLoading weights:   7%|\u258b         | 27/398 [00:17<06:56,  1.12s/it]\u001b[A\r\n\rLoading weights:   7%|\u258b         | 28/398 [00:17<05:55,  1.04it/s]\u001b[A\r\n\rLoading weights:   8%|\u258a         | 32/398 [00:20<03:13,  1.89it/s]\u001b[A\r\n\rLoading weights:   8%|\u258a         | 33/398 [00:20<04:33,  1.33it/s]\u001b[A\r\n\rLoading weights:   9%|\u258a         | 34/398 [00:21<04:40,  1.30it/s]\u001b[A\r\n\rLoading weights:   9%|\u2589         | 35/398 [00:23<05:48,  1.04it/s]\u001b[A\r\n\rLoading weights:   9%|\u2589         | 36/398 [00:23<05:35,  1.08it/s]\u001b[A\r\n\rLoading weights:  10%|\u2588         | 40/398 [00:24<03:03,  1.95it/s]\u001b[A\r\n\rLoading weights:  10%|\u2588         | 41/398 [00:26<04:29,  1.33it/s]\u001b[A\r\n\rLoading weights:  11%|\u2588         | 42/398 [00:28<05:32,  1.07it/s]\u001b[A\r\n\rLoading weights:  11%|\u2588         | 43/398 [00:30<06:30,  1.10s/it]\u001b[A\r\n\rLoading weights:  11%|\u2588         | 44/398 [00:31<06:11,  1.05s/it]\u001b[A\r\n\rLoading weights:  11%|\u2588\u258f        | 45/398 [00:31<05:57,  1.01s/it]\u001b[A\r\n\rLoading weights:  12%|\u2588\u258f        | 46/398 [00:33<06:58,  1.19s/it]\u001b[A\r\n\rLoading weights:  14%|\u2588\u258d        | 56/398 [00:34<01:45,  3.23it/s]\u001b[A\r\n\rLoading weights:  14%|\u2588\u258d        | 57/398 [00:40<05:24,  1.05it/s]\u001b[A\r\n\rLoading weights:  15%|\u2588\u258d        | 58/398 [00:41<05:20,  1.06it/s]\u001b[A\r\n\rLoading weights:  15%|\u2588\u258d        | 59/398 [00:45<07:38,  1.35s/it]\u001b[A\r\n\rLoading weights:  15%|\u2588\u258c        | 60/398 [00:45<06:40,  1.19s/it]\u001b[A\r\n\rLoading weights:  15%|\u2588\u258c        | 61/398 [00:45<05:45,  1.02s/it]\u001b[A\r\n\rLoading weights:  16%|\u2588\u258c        | 62/398 [00:47<05:35,  1.00it/s]\u001b[A\r\n\rLoading weights:  16%|\u2588\u258c        | 63/398 [00:48<06:34,  1.18s/it]\u001b[A\r\n\rLoading weights:  16%|\u2588\u258c        | 64/398 [00:49<05:41,  1.02s/it]\u001b[A\r\n\rLoading weights:  17%|\u2588\u258b        | 69/398 [00:49<02:16,  2.42it/s]\u001b[A\r\n\rLoading weights:  18%|\u2588\u258a        | 70/398 [00:52<03:21,  1.63it/s]\u001b[A\r\n\rLoading weights:  18%|\u2588\u258a        | 71/398 [00:52<03:36,  1.51it/s]\u001b[A\r\n\rLoading weights:  18%|\u2588\u258a        | 73/398 [00:53<03:07,  1.74it/s]\u001b[A\r\n\rLoading weights:  19%|\u2588\u258a        | 74/398 [00:55<05:21,  1.01it/s]\u001b[A\r\n\rLoading weights:  19%|\u2588\u2589        | 75/398 [00:56<04:41,  1.15it/s]\u001b[A\r\n\rLoading weights:  19%|\u2588\u2589        | 77/398 [00:58<03:13,  1.66it/s]\u001b[A\r\n\rLoading weights:  20%|\u2588\u2589        | 78/398 [00:59<05:39,  1.06s/it]\u001b[A\r\n\rLoading weights:  20%|\u2588\u2588        | 80/398 [00:59<03:53,  1.36it/s]\u001b[A\r\n\rLoading weights:  21%|\u2588\u2588        | 82/398 [01:00<02:52,  1.84it/s]\u001b[A\r\n\rLoading weights:  21%|\u2588\u2588        | 83/398 [01:03<06:04,  1.16s/it]\u001b[A\r\n\rLoading weights:  21%|\u2588\u2588        | 84/398 [01:05<05:47,  1.11s/it]\u001b[A\r\n\rLoading weights:  21%|\u2588\u2588\u258f       | 85/398 [01:05<05:37,  1.08s/it]\u001b[A\r\n\rLoading weights:  22%|\u2588\u2588\u258f       | 89/398 [01:06<03:10,  1.63it/s]\u001b[A\r\n\rLoading weights:  23%|\u2588\u2588\u258e       | 90/398 [01:07<03:12,  1.60it/s]\u001b[A\r\n\rLoading weights:  23%|\u2588\u2588\u258e       | 91/398 [01:10<04:52,  1.05it/s]\u001b[A\r\n\rLoading weights:  23%|\u2588\u2588\u258e       | 92/398 [01:10<04:45,  1.07it/s]\u001b[A\r\n\rLoading weights:  24%|\u2588\u2588\u258d       | 95/398 [01:11<03:13,  1.56it/s]\u001b[A\r\n\rLoading weights:  25%|\u2588\u2588\u258d       | 98/398 [01:14<03:04,  1.63it/s]\u001b[A\r\n\rLoading weights:  25%|\u2588\u2588\u258d       | 99/398 [01:15<04:21,  1.14it/s]\u001b[A\r\n\rLoading weights:  26%|\u2588\u2588\u258c       | 102/398 [01:18<04:48,  1.03it/s]\u001b[A\r\n\rLoading weights:  26%|\u2588\u2588\u258c       | 103/398 [01:19<04:41,  1.05it/s]\u001b[A\r\n\rLoading weights:  26%|\u2588\u2588\u258b       | 105/398 [01:22<05:12,  1.07s/it]\u001b[A\r\n\rLoading weights:  27%|\u2588\u2588\u258b       | 106/398 [01:23<04:40,  1.04it/s]\u001b[A\r\n\rLoading weights:  27%|\u2588\u2588\u258b       | 107/398 [01:25<05:03,  1.04s/it]\u001b[A\r\n\rLoading weights:  27%|\u2588\u2588\u258b       | 108/398 [01:26<06:13,  1.29s/it]\u001b[A\r\n\rLoading weights:  28%|\u2588\u2588\u258a       | 111/398 [01:26<03:29,  1.37it/s]\u001b[A\r\n\rLoading weights:  28%|\u2588\u2588\u258a       | 112/398 [01:29<05:42,  1.20s/it]\u001b[A\r\n\rLoading weights:  28%|\u2588\u2588\u258a       | 113/398 [01:30<05:25,  1.14s/it]\u001b[A\r\n\rLoading weights:  29%|\u2588\u2588\u258a       | 114/398 [01:33<06:08,  1.30s/it]\u001b[A\r\n\rLoading weights:  29%|\u2588\u2588\u2589       | 115/398 [01:36<06:04,  1.29s/it]\u001b[A\r\n\rLoading weights:  29%|\u2588\u2588\u2589       | 116/398 [01:38<08:54,  1.90s/it]\u001b[A\r\n\rLoading weights:  29%|\u2588\u2588\u2589       | 117/398 [01:40<10:58,  2.34s/it]\u001b[A\r\n\rLoading weights:  30%|\u2588\u2588\u2589       | 118/398 [01:42<08:25,  1.81s/it]\u001b[A\r\n\rLoading weights:  30%|\u2588\u2588\u2589       | 119/398 [01:43<09:21,  2.01s/it]\u001b[A\r\n\rLoading weights:  30%|\u2588\u2588\u2588       | 120/398 [01:49<09:25,  2.03s/it]\u001b[A\r\n\rLoading weights:  30%|\u2588\u2588\u2588       | 121/398 [01:49<11:06,  2.41s/it]\u001b[A\r\n\rLoading weights:  31%|\u2588\u2588\u2588       | 122/398 [01:50<08:22,  1.82s/it]\u001b[A\r\n\rLoading weights:  31%|\u2588\u2588\u2588       | 123/398 [01:52<09:09,  2.00s/it]\u001b[A\r\n\rLoading weights:  31%|\u2588\u2588\u2588       | 124/398 [01:53<07:41,  1.68s/it]\u001b[A\r\n\rLoading weights:  32%|\u2588\u2588\u2588\u258f      | 127/398 [01:54<04:12,  1.07it/s]\u001b[A\r\n\rLoading weights:  32%|\u2588\u2588\u2588\u258f      | 128/398 [01:57<05:03,  1.12s/it]\u001b[A\r\n\rLoading weights:  32%|\u2588\u2588\u2588\u258f      | 129/398 [01:57<04:57,  1.11s/it]\u001b[A\r\n\rLoading weights:  33%|\u2588\u2588\u2588\u258e      | 132/398 [01:57<02:45,  1.61it/s]\u001b[A\r\n\rLoading weights:  33%|\u2588\u2588\u2588\u258e      | 133/398 [01:57<02:40,  1.65it/s]\u001b[A\r\n\rLoading weights:  35%|\u2588\u2588\u2588\u258d      | 138/398 [02:00<01:34,  2.75it/s]\u001b[A\r\n\rLoading weights:  35%|\u2588\u2588\u2588\u258d      | 139/398 [02:01<02:48,  1.53it/s]\u001b[A\r\n\rLoading weights:  35%|\u2588\u2588\u2588\u258c      | 140/398 [02:04<04:48,  1.12s/it]\u001b[A\r\n\rLoading weights:  35%|\u2588\u2588\u2588\u258c      | 141/398 [02:05<04:39,  1.09s/it]\u001b[A\rLoading weights: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 398/398 [02:05<00:00,  3.16it/s]\r\n\rLoading pipeline components...:  80%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588  | 4/5 [02:32<00:59, 59.47s/it]\rLoading pipeline components...: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 5/5 [02:42<00:00, 41.68s/it]\rLoading pipeline components...: 100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 5/5 [02:42<00:00, 32.53s/it]\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 1/50\", \"progress\": 0.262}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 2/50\", \"progress\": 0.274}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 3/50\", \"progress\": 0.286}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 4/50\", \"progress\": 0.298}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 5/50\", \"progress\": 0.31}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 6/50\", \"progress\": 0.322}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 7/50\", \"progress\": 0.334}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 8/50\", \"progress\": 0.346}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 9/50\", \"progress\": 0.358}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 10/50\", \"progress\": 0.37}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 11/50\", \"progress\": 0.382}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 12/50\", \"progress\": 0.394}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 13/50\", \"progress\": 0.406}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 14/50\", \"progress\": 0.41800000000000004}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 15/50\", \"progress\": 0.43}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 16/50\", \"progress\": 0.442}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 17/50\", \"progress\": 0.454}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 18/50\", \"progress\": 0.46599999999999997}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 19/50\", \"progress\": 0.478}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 20/50\", \"progress\": 0.49}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 21/50\", \"progress\": 0.502}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 22/50\", \"progress\": 0.514}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 23/50\", \"progress\": 0.526}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 24/50\", \"progress\": 0.538}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 25/50\", \"progress\": 0.55}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 26/50\", \"progress\": 0.562}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 27/50\", \"progress\": 0.5740000000000001}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 28/50\", \"progress\": 0.5860000000000001}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 29/50\", \"progress\": 0.598}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 30/50\", \"progress\": 0.61}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 31/50\", \"progress\": 0.622}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 32/50\", \"progress\": 0.634}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 33/50\", \"progress\": 0.646}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 34/50\", \"progress\": 0.658}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 35/50\", \"progress\": 0.6699999999999999}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 36/50\", \"progress\": 0.6819999999999999}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 37/50\", \"progress\": 0.694}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 38/50\", \"progress\": 0.706}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 39/50\", \"progress\": 0.718}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 40/50\", \"progress\": 0.73}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 41/50\", \"progress\": 0.742}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 42/50\", \"progress\": 0.754}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 43/50\", \"progress\": 0.766}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 44/50\", \"progress\": 0.778}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 45/50\", \"progress\": 0.79}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 46/50\", \"progress\": 0.802}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 47/50\", \"progress\": 0.814}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 48/50\", \"progress\": 0.826}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 49/50\", \"progress\": 0.838}\r\n\r\nMACHDOCH_PROGRESS {\"stage\": \"Sampling 50/50\", \"progress\": 0.85}\r\nException Code: 0xC0000005\n #0 0x00007ffd37037250 caffe2::detail::_ThrowRuntimeTypeLogicError(class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> const &) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\c10.dll+0xa7250)\n #1 0x00007ffd370371c6 caffe2::detail::_ThrowRuntimeTypeLogicError(class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> const &) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\c10.dll+0xa71c6)\n #2 0x00007ffd3703701a caffe2::detail::_ThrowRuntimeTypeLogicError(class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> const &) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\c10.dll+0xa701a)\n #3 0x00007ffd37036a54 caffe2::detail::_ThrowRuntimeTypeLogicError(class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> const &) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\c10.dll+0xa6a54)\n #4 0x00007ffd37036346 caffe2::detail::_ThrowRuntimeTypeLogicError(class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> const &) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\c10.dll+0xa6346)\n #5 0x00007ffd37032b0e caffe2::detail::_ThrowRuntimeTypeLogicError(class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> const &) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\c10.dll+0xa2b0e)\n #6 0x00007ffd370329ac caffe2::detail::_ThrowRuntimeTypeLogicError(class std::basic_string<char, struct std::char_traits<char>, class std::allocator<char>> const &) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\c10.dll+0xa29ac)\n #7 0x00007ffd36ff5500 c10::alloc_cpu(unsigned __int64) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\c10.dll+0x65500)\n #8 0x00007ffd36fa0019 c10::DefaultCPUAllocator::allocate(unsigned __int64) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\c10.dll+0x10019)\n #9 0x00007ffd36fba0bf c10::StorageImpl::StorageImpl(struct c10::StorageImpl::use_byte_size_t, class c10::SymInt const &, struct c10::Allocator *, bool) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\c10.dll+0x2a0bf)\n#10 0x00007ffc98c44063 at::detail::empty_generic(class c10::ArrayRef<__int64>, struct c10::Allocator *, class c10::DispatchKeySet, enum c10::ScalarType, class std::optional<enum c10::MemoryFormat>) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x84063)\n#11 0x00007ffc98c44a81 at::detail::empty_strided_generic(class c10::ArrayRef<__int64>, class c10::ArrayRef<__int64>, struct c10::Allocator *, class c10::DispatchKeySet, enum c10::ScalarType) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x84a81)\n#12 0x00007ffc98c453b8 at::detail::empty_strided_cpu(class c10::ArrayRef<__int64>, class c10::ArrayRef<__int64>, class std::optional<enum c10::ScalarType>, class std::optional<enum c10::Layout>, class std::optional<struct c10::Device>, class std::optional<bool>) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x853b8)\n#13 0x00007ffc9955a34d at::native::empty_strided_cpu(class c10::ArrayRef<__int64>, class c10::ArrayRef<__int64>, class std::optional<enum c10::ScalarType>, class std::optional<enum c10::Layout>, class std::optional<struct c10::Device>, class std::optional<bool>) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x99a34d)\n#14 0x00007ffc9aa84e8d at::cpu::_embedding_bag_per_sample_weights_backward(class at::Tensor const &, class at::Tensor const &, class at::Tensor const &, class at::Tensor const &, class at::Tensor const &, __int64, __int64) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x1ec4e8d)\n#15 0x00007ffc9aa8471e at::cpu::_embedding_bag_per_sample_weights_backward(class at::Tensor const &, class at::Tensor const &, class at::Tensor const &, class at::Tensor const &, class at::Tensor const &, __int64, __int64) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x1ec471e)\n#16 0x00007ffc9a06580a at::_ops::empty_strided::redispatch(class c10::DispatchKeySet, class c10::ArrayRef<class c10::SymInt>, class c10::ArrayRef<class c10::SymInt>, class std::optional<enum c10::ScalarType>, class std::optional<enum c10::Layout>, class std::optional<struct c10::Device>, class std::optional<bool>) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x14a580a)\n#17 0x00007ffc9a065644 at::_ops::empty_strided::redispatch(class c10::DispatchKeySet, class c10::ArrayRef<class c10::SymInt>, class c10::ArrayRef<class c10::SymInt>, class std::optional<enum c10::ScalarType>, class std::optional<enum c10::Layout>, class std::optional<struct c10::Device>, class std::optional<bool>) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x14a5644)\n#18 0x00007ffc9a5639e1 at::_ops::_foobar_out::redispatch(class c10::DispatchKeySet, class at::Tensor const &, bool, bool, bool, class at::Tensor &) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x19a39e1)\n#19 0x00007ffc9a063a34 at::_ops::empty_strided::call(class c10::ArrayRef<class c10::SymInt>, class c10::ArrayRef<class c10::SymInt>, class std::optional<enum c10::ScalarType>, class std::optional<enum c10::Layout>, class std::optional<struct c10::Device>, class std::optional<bool>) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x14a3a34)\n#20 0x00007ffc99519abe at::native::to(class at::Tensor const &, class std::optional<enum c10::ScalarType>, class std::optional<enum c10::Layout>, class std::optional<struct c10::Device>, class std::optional<bool>, bool, bool, class std::optional<enum c10::MemoryFormat>) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x959abe)\n#21 0x00007ffc99518cb4 at::native::_to_copy(class at::Tensor const &, class std::optional<enum c10::ScalarType>, class std::optional<enum c10::Layout>, class std::optional<struct c10::Device>, class std::optional<bool>, bool, class std::optional<enum c10::MemoryFormat>) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x958cb4)\n#22 0x00007ffc9a6a76d3 at::compositeexplicitautograd::_fused_moving_avg_obs_fq_helper_outf(class at::Tensor const &, class at::Tensor const &, class at::Tensor const &, class at::Tensor &, class at::Tensor &, class at::Tensor &, class at::Tensor &, double, __int64, __int64, __int64, bool, bool, class at::Tensor &, class at::Tensor &) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x1ae76d3)\n#23 0x00007ffc99c7c25e at::_ops::_to_copy::redispatch(class c10::DispatchKeySet, class at::Tensor const &, class std::optional<enum c10::ScalarType>, class std::optional<enum c10::Layout>, class std::optional<struct c10::Device>, class std::optional<bool>, bool, class std::optional<enum c10::MemoryFormat>) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x10bc25e)\n#24 0x00007ffc9a5823a2 at::_ops::_foobar_out::redispatch(class c10::DispatchKeySet, class at::Tensor const &, bool, bool, bool, class at::Tensor &) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x19c23a2)\n#25 0x00007ffc99c7c25e at::_ops::_to_copy::redispatch(class c10::DispatchKeySet, class at::Tensor const &, class std::optional<enum c10::ScalarType>, class std::optional<enum c10::Layout>, class std::optional<struct c10::Device>, class std::optional<bool>, bool, class std::optional<enum c10::MemoryFormat>) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x10bc25e)\n#26 0x00007ffc9c6ed44d torch::autograd::impl::JitDecompRegisterer::JitDecompRegisterer(struct torch::autograd::impl::JitDecompInterface *) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x3b2d44d)\n#27 0x00007ffc99c7b043 at::_ops::_to_copy::call(class at::Tensor const &, class std::optional<enum c10::ScalarType>, class std::optional<enum c10::Layout>, class std::optional<struct c10::Device>, class std::optional<bool>, bool, class std::optional<enum c10::MemoryFormat>) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x10bb043)\n#28 0x00007ffc995197de at::native::to(class at::Tensor const &, class std::optional<enum c10::ScalarType>, class std::optional<enum c10::Layout>, class std::optional<struct c10::Device>, class std::optional<bool>, bool, bool, class std::optional<enum c10::MemoryFormat>) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x9597de)\n#29 0x00007ffc9a90853e at::compositeimplicitautograd::_autocast_to_full_precision(class at::Tensor const &, bool, bool) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x1d4853e)\n#30 0x00007ffc99de517c at::_ops::to_dtype_layout::call(class at::Tensor const &, class std::optional<enum c10::ScalarType>, class std::optional<enum c10::Layout>, class std::optional<struct c10::Device>, class std::optional<bool>, bool, bool, class std::optional<enum c10::MemoryFormat>) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x122517c)\n#31 0x00007ffc98bc8098 at::Tensor::to(struct c10::TensorOptions, bool, bool, class std::optional<enum c10::MemoryFormat>) const (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_cpu.dll+0x8098)\n#32 0x00007ffcd4a421e6 THPPointer<struct _object>::~THPPointer<struct _object>(void) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_python.dll+0x1721e6)\n#33 0x00007ffcd49496cd torch::PythonArgs::pyobject(int) (D:\\Models\\machdoch\\runtime\\environment\\Lib\\site-packages\\torch\\lib\\torch_python.dll+0x796cd)\n#34 0x00007ffd1f721aa7 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x81aa7)\n#35 0x00007ffd1f6da780 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x3a780)\n#36 0x00007ffd1f6da6e5 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x3a6e5)\n#37 0x00007ffd1f6dbaff (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x3baff)\n#38 0x00007ffd1f6d9b7c (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x39b7c)\n#39 0x00007ffd1f6fbd62 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x5bd62)\n#40 0x00007ffd1f7107cd (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x707cd)\n#41 0x00007ffd1f710717 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x70717)\n#42 0x00007ffd1f6df594 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x3f594)\n#43 0x00007ffd1f6d9b7c (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x39b7c)\n#44 0x00007ffd1f74e437 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0xae437)\n#45 0x00007ffd1f74cad3 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0xacad3)\n#46 0x00007ffd1f74c9fe (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0xac9fe)\n#47 0x00007ffd1f71075e (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x7075e)\n#48 0x00007ffd1f6df594 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x3f594)\n#49 0x00007ffd1f74e630 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0xae630)\n#50 0x00007ffd1f74c8e6 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0xac8e6)\n#51 0x00007ffd1f6c3bfc (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x23bfc)\n#52 0x00007ffd1f6c3cec (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0x23cec)\n#53 0x00007ffd1f767270 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0xc7270)\n#54 0x00007ffd1f7670ce (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0xc70ce)\n#55 0x00007ffd1f766ea9 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0xc6ea9)\n#56 0x00007ffd1f76695e (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0xc695e)\n#57 0x00007ffd1f766837 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0xc6837)\n#58 0x00007ffd1f78b4af (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0xeb4af)\n#59 0x00007ffd1f78b260 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0xeb260)\n#60 0x00007ffd1f76ef77 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python312.dll+0xcef77)\n#61 0x00007ff71c931230 (D:\\Models\\machdoch\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python.exe+0x1230)\n#62 0x00007ffda951cdf7 (C:\\WINDOWS\\System32\\KERNEL32.DLL+0x2cdf7)\n#63 0x00007ffdaacbee4c (C:\\WINDOWS\\SYSTEM32\\ntdll.dll+0x7ee4c)\n",
+            "seconds": 1322.2073979,
+            "success": false
+          }
+        ],
+        "nativeRepeatedGenerationPassed": false,
+        "nativeProcessRelease": {
+          "observedAt": "2026-10-06T19:10:17.6577886Z",
+          "ownedProcessIds": [26024, 22628, 32684, 28420, 20088],
+          "remainingProcessIds": [],
+          "allObservedReleased": true,
+          "nativeTestExitCode": 101,
+          "explicitReleaseBeforePanic": true
+        },
+        "hostMemoryObservations": {
+          "samples": 144,
+          "minimumAvailablePhysicalBytes": 255770624,
+          "nativePressureThresholdBytes": 2147483648,
+          "samplesBelowThreshold": 54
+        }
+      }
+    },
+    "publisherFinetuneManagedNativeRetryGeneration": {
+      "source": "flux2-base4b-publisher-finetune/generation-result-managed-native-retry.json",
+      "sha256": "dec70c75f443242d830066236d4d9d6ce215a3ef87a14a1ac027d6fdbb637746",
+      "result": {
+        "originalFailureRetained": true,
+        "nativeColdAndRepeatedGeneration": [
+          {
+            "attempt": "cold",
+            "reusedPipeline": false,
+            "seconds": 927.6044735,
+            "success": true,
+            "workerResult": {
+              "addons": [],
+              "aspectRatio": "1:1",
+              "device": "cuda",
+              "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+              "deviceMemoryBytes": 17095983104,
+              "editConditioning": null,
+              "modelPolicy": "fast",
+              "negativePrompt": "",
+              "numInferenceSteps": 50,
+              "outputs": [
+                {
+                  "fileName": "output-0000.png",
+                  "height": 512,
+                  "index": 0,
+                  "seed": 42,
+                  "width": 512
+                }
+              ],
+              "packages": {
+                "accelerate": "1.14.0",
+                "bitsandbytes": "0.50.2",
+                "datasets": "5.0.1",
+                "diffusers": "0.41.0.dev0",
+                "ftfy": "6.3.1",
+                "imageio-ffmpeg": "0.6.0",
+                "numpy": "2.5.2",
+                "opencv-python-headless": "4.13.0.92",
+                "peft": "0.19.1",
+                "pillow": "12.3.0",
+                "protobuf": "7.35.1",
+                "resvg_py": "0.5.0",
+                "safetensors": "0.8.0",
+                "scipy": "1.18.1",
+                "sentencepiece": "0.2.2",
+                "spandrel": "0.4.2",
+                "torch": "2.12.0+rocm7.14.0",
+                "torchvision": "0.27.0+rocm7.14.0",
+                "transformers": "5.17.0"
+              },
+              "performance": null,
+              "prompt": "A red ceramic teapot and porcelain cup, mdflux2pot",
+              "requireChromaBackground": false,
+              "schemaVersion": 5,
+              "vaeDecode": {
+                "convolutionBackend": "native",
+                "device": "pipeline",
+                "enabled": false,
+                "mode": "native-full-frame",
+                "postQuantBackend": "native",
+                "thresholdPixels": 1024
+              },
+              "workerVersion": "media-diffusers-worker/1.77.0"
+            },
+            "pixelsMatchOriginal": true,
+            "imageSha256": "fce8a664fe778cfaec555432ecc2946a822bcb69ab430b7e7cb6eed5b7508ec1"
+          },
+          {
+            "attempt": "warm",
+            "reusedPipeline": true,
+            "seconds": 599.1355115,
+            "success": true,
+            "workerResult": {
+              "addons": [],
+              "aspectRatio": "1:1",
+              "device": "cuda",
+              "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+              "deviceMemoryBytes": 17095983104,
+              "editConditioning": null,
+              "modelPolicy": "fast",
+              "negativePrompt": "",
+              "numInferenceSteps": 50,
+              "outputs": [
+                {
+                  "fileName": "output-0000.png",
+                  "height": 512,
+                  "index": 0,
+                  "seed": 42,
+                  "width": 512
+                }
+              ],
+              "packages": {
+                "accelerate": "1.14.0",
+                "bitsandbytes": "0.50.2",
+                "datasets": "5.0.1",
+                "diffusers": "0.41.0.dev0",
+                "ftfy": "6.3.1",
+                "imageio-ffmpeg": "0.6.0",
+                "numpy": "2.5.2",
+                "opencv-python-headless": "4.13.0.92",
+                "peft": "0.19.1",
+                "pillow": "12.3.0",
+                "protobuf": "7.35.1",
+                "resvg_py": "0.5.0",
+                "safetensors": "0.8.0",
+                "scipy": "1.18.1",
+                "sentencepiece": "0.2.2",
+                "spandrel": "0.4.2",
+                "torch": "2.12.0+rocm7.14.0",
+                "torchvision": "0.27.0+rocm7.14.0",
+                "transformers": "5.17.0"
+              },
+              "performance": null,
+              "prompt": "A red ceramic teapot and porcelain cup, mdflux2pot",
+              "requireChromaBackground": false,
+              "schemaVersion": 5,
+              "vaeDecode": {
+                "convolutionBackend": "native",
+                "device": "pipeline",
+                "enabled": false,
+                "mode": "native-full-frame",
+                "postQuantBackend": "native",
+                "thresholdPixels": 1024
+              },
+              "workerVersion": "media-diffusers-worker/1.77.0"
+            },
+            "pixelsMatchOriginal": true,
+            "imageSha256": "fce8a664fe778cfaec555432ecc2946a822bcb69ab430b7e7cb6eed5b7508ec1"
+          }
+        ],
+        "nativeRepeatedGenerationPassed": true,
+        "nativeExplicitReleasePassed": true,
+        "sourceImageSha256": "fce8a664fe778cfaec555432ecc2946a822bcb69ab430b7e7cb6eed5b7508ec1",
+        "hostMemoryObservations": {
+          "samples": 305,
+          "minimumAvailablePhysicalBytes": 45801472,
+          "minimumFreeVirtualMemoryBytes": 469168128,
+          "samplesBelowThreshold": 19
+        }
+      }
+    },
+    "nativeRuntimeVerification": {
+      "source": "flux2-base4b-publisher-finetune/native-worker-generation-records/runtime-verification.json",
+      "sha256": "d35ada7213198b9b5a1cefd3054cd96332638ce8deddf4affd91926f0222ac1c",
+      "result": {
+        "runtime": {
+          "architectures": [
+            "stable-diffusion-1",
+            "stable-diffusion-2",
+            "stable-diffusion-xl",
+            "pony",
+            "stable-diffusion-3",
+            "flux-1",
+            "flux-2",
+            "framepack-i2v",
+            "hunyuan-video-1.5-i2v",
+            "minimax-h3-ref2va",
+            "krea-2",
+            "qwen-image-2.1",
+            "ltx-video",
+            "wan-2.2-ti2v",
+            "intro-svg",
+            "stable-diffusion-xl-dmad-4step",
+            "stable-diffusion-xl-dmad-1step",
+            "minimax-h3-dmad-4step",
+            "minimax-h3-dmad-full-4step",
+            "minimax-h3-pdmd-4step",
+            "minimax-h3-pdmd-2step",
+            "z-image-turbo",
+            "z-image",
+            "qwen-image",
+            "qwen-image-2512",
+            "qwen-image-edit-2511",
+            "sana",
+            "sana-sprint",
+            "glm-image",
+            "hidream-i1-full",
+            "ideogram-4",
+            "flux-1-schnell",
+            "flux-1-dev",
+            "flux-2-klein-base-4b",
+            "flux-2-klein-9b",
+            "flux-2-klein-base-9b",
+            "flux-2-dev",
+            "krea-2-raw",
+            "ltx-2.5",
+            "ltx-2.3",
+            "wan-2.2-t2v-a14b",
+            "wan-2.2-i2v-a14b",
+            "wan-2.1-t2v-1.3b",
+            "hunyuan-video-1.5-t2v",
+            "cogvideox-2b",
+            "cogvideox-1.5-5b",
+            "cogvideox-1.5-5b-i2v",
+            "mochi-1",
+            "helios",
+            "stable-video-diffusion",
+            "audioldm-2",
+            "sulphur-2-dev"
+          ],
+          "capabilities": [
+            "lora",
+            "textual-inversion",
+            "multi-lora",
+            "local-image-edit",
+            "text-to-video",
+            "masked-region-inpainting",
+            "openpose-controlnet",
+            "image-to-video",
+            "start-end-to-video",
+            "vp9-alpha",
+            "alpha-video",
+            "temporal-chroma-matte",
+            "video-quality-presets",
+            "non-looping-video",
+            "seamless-video-loop",
+            "video-composite",
+            "source-anchored-articulated-loop",
+            "source-anchored-wind-fabric",
+            "periodic-wind-streaks",
+            "text-to-svg",
+            "image-to-svg",
+            "text-to-audio"
+          ],
+          "device": "cuda",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "deviceMemoryBytes": 17095983104,
+          "diagnostic": "Media Studio imports, computation, and video encoding passed.",
+          "packages": {
+            "accelerate": "1.14.0",
+            "bitsandbytes": "0.50.2",
+            "datasets": "5.0.1",
+            "diffusers": "0.41.0.dev0",
+            "ftfy": "6.3.1",
+            "imageio-ffmpeg": "0.6.0",
+            "numpy": "2.5.2",
+            "opencv-python-headless": "4.13.0.92",
+            "peft": "0.19.1",
+            "pillow": "12.3.0",
+            "protobuf": "7.35.1",
+            "resvg_py": "0.5.0",
+            "safetensors": "0.8.0",
+            "scipy": "1.18.1",
+            "sentencepiece": "0.2.2",
+            "spandrel": "0.4.2",
+            "torch": "2.12.0+rocm7.14.0",
+            "torchvision": "0.27.0+rocm7.14.0",
+            "transformers": "5.17.0"
+          },
+          "physicalMemoryBytes": 33618337792,
+          "pythonVersion": "3.12.10",
+          "ready": true,
+          "status": "ready",
+          "workerVersion": "media-diffusers-worker/1.77.0"
+        },
+        "seconds": 168.9192479
+      }
+    },
+    "nativeReducedRetention": {
+      "source": "flux2-retained-workflows/native-retention-verification.json",
+      "sha256": "ab514c53ffb79e86ec68883a637d5c734924c73707793282eebd84e720a86d09",
+      "result": {
+        "pretrainedQualityVerified": false,
+        "nativeGenerationSucceeded": true,
+        "nativeWarmPipelineReused": true,
+        "coldAndWarmPixelsMatch": true,
+        "coldSeconds": 185.7051725,
+        "warmSeconds": 2.4936009,
+        "device": "AMD Radeon RX 9070 (cuda:0)",
+        "imageSha256": [
+          "a755528401e61bd1c10624702732e0f01c0b1604040fdef8451023a5a7a587ec",
+          "a755528401e61bd1c10624702732e0f01c0b1604040fdef8451023a5a7a587ec"
+        ],
+        "nativeExplicitReleasePassed": true
+      }
+    },
+    "publisherEmbeddingManagedDiagnosticGeneration": {
+      "source": "flux2-base4b-publisher-embedding/generation-result-managed-diagnostic.json",
+      "sha256": "9b8c6d455233bbbc2deb1eaf543f3ecce7b7c3b3e2592bef094a6cbac8d99165",
+      "result": {
+        "seconds": 767.7030000000013,
+        "digest": "dcea6a9390f22e17c9351cf50119f1bd78a991e7c3f851554b0569e8ff09fe6a",
+        "vectorCount": 1,
+        "peakAllocatedBytes": 8318857216,
+        "peakReservedBytes": 8336179200,
+        "workerResult": {
+          "schemaVersion": 5,
+          "workerVersion": "media-diffusers-worker/1.77.0",
+          "packages": {
+            "transformers": "5.17.0",
+            "sentencepiece": "0.2.2",
+            "protobuf": "7.35.1",
+            "accelerate": "1.14.0",
+            "peft": "0.19.1",
+            "datasets": "5.0.1",
+            "bitsandbytes": "0.50.2",
+            "ftfy": "6.3.1",
+            "safetensors": "0.8.0",
+            "numpy": "2.5.2",
+            "scipy": "1.18.1",
+            "pillow": "12.3.0",
+            "imageio-ffmpeg": "0.6.0",
+            "opencv-python-headless": "4.13.0.92",
+            "spandrel": "0.4.2",
+            "resvg_py": "0.5.0",
+            "diffusers": "0.41.0.dev0",
+            "torch": "2.12.0+rocm7.14.0",
+            "torchvision": "0.27.0+rocm7.14.0"
+          },
+          "device": "cuda",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "deviceMemoryBytes": 17095983104,
+          "prompt": "A red ceramic teapot and porcelain cup, mdflux2vec",
+          "negativePrompt": "",
+          "modelPolicy": "fast",
+          "aspectRatio": "1:1",
+          "numInferenceSteps": 50,
+          "vaeDecode": {
+            "mode": "native-full-frame",
+            "enabled": false,
+            "thresholdPixels": 1024,
+            "postQuantBackend": "native",
+            "device": "pipeline",
+            "convolutionBackend": "native"
+          },
+          "addons": [
+            {
+              "kind": "textual-inversion",
+              "addonId": "local-addon:sha256:dcea6a9390f22e17c9351cf50119f1bd78a991e7c3f851554b0569e8ff09fe6a",
+              "digest": "dcea6a9390f22e17c9351cf50119f1bd78a991e7c3f851554b0569e8ff09fe6a",
+              "token": "mdflux2vec",
+              "placement": "positive",
+              "loadedComponents": ["text-encoder"],
+              "embeddingVectors": [
+                {
+                  "component": "text-encoder",
+                  "tensorKey": "flux2_qwen3",
+                  "vectorCount": 1,
+                  "dimension": 2560,
+                  "registeredTokens": ["mdflux2vec"],
+                  "encodedTokenCounts": {
+                    "positive": 1
+                  },
+                  "maxSequenceLength": 512
+                }
+              ]
+            }
+          ],
+          "performance": null,
+          "requireChromaBackground": false,
+          "editConditioning": null,
+          "outputs": [
+            {
+              "index": 0,
+              "fileName": "output-0000.png",
+              "seed": 42,
+              "width": 512,
+              "height": 512
+            }
+          ]
+        },
+        "transformerDtype": "torch.bfloat16",
+        "textEncoderDtype": "torch.bfloat16",
+        "vaeDtype": "torch.bfloat16",
+        "transformerParameters": 3875544576,
+        "latentShapes": [[1, 1024, 128]],
+        "pixelsMatchOriginal": true
+      }
+    },
+    "publisherEmbeddingManagedInitialFailure": {
+      "source": "flux2-base4b-publisher-embedding/managed-generation-failure.json",
+      "sha256": "60c96a630cdc3e38c775b1fe97536c25fcd9c790cd4685394788f06158562cc3",
+      "result": {
+        "workflow": "managed generation",
+        "probe": "managed",
+        "exitCode": -1073741819,
+        "architecture": "flux-2-klein-base-4b",
+        "log": "flux2-publisher-managed-embedding-generation.log",
+        "lastStage": "Sampling 50/50",
+        "outputSaved": false,
+        "exceptionCode": "0xC0000005",
+        "diagnosis": "Native Torch CPU allocation/copy stack; Python frame pending diagnostic run",
+        "method": "embedding"
+      }
+    },
+    "publisherFinetuneMaterialization": {
+      "source": "flux2-base4b-publisher-finetune/transformer-materialization.json",
+      "sha256": "10a3b6cc92a516bea1b6b6e6397ad793497557db2f7168243e374c3603e5bc76",
+      "result": {
+        "retainedLink": "D:\\Models\\machdoch\\verification\\2026-10-06-training\\flux2-base4b-publisher-finetune\\retained-transformer-ssd-link",
+        "seconds": 3191.307864,
+        "source": "C:\\Development\\machdoch-verification\\2026-10-06-training\\flux2-base4b-finetune-transformer",
+        "destination": "D:\\Models\\machdoch\\verification\\2026-10-06-training\\flux2-base4b-publisher-finetune\\output\\model\\transformer",
+        "files": [
+          {
+            "bytes": 617,
+            "sha256": "d5e80e35219a2ec452db8d862cc6ffc66952ea332a3149ec7cde104f51a15c28",
+            "name": "config.json"
+          },
+          {
+            "bytes": 993269776,
+            "sha256": "b5a65b7f16f955ec0be4203cd8c13dbd837ed2c8ece05ce6ca42413eb7d8c4cc",
+            "name": "diffusion_pytorch_model-00001-of-00009.safetensors"
+          },
+          {
+            "bytes": 981472976,
+            "sha256": "75245cbf281cc2aa81f91a702210242fc05dffae247323e6b62c0290227d6a26",
+            "name": "diffusion_pytorch_model-00002-of-00009.safetensors"
+          },
+          {
+            "bytes": 830475616,
+            "sha256": "ed94ea624a16dcc8d5cf8e92b52bf4a45fe2ccf01000a3c2de95b131d9bcb141",
+            "name": "diffusion_pytorch_model-00003-of-00009.safetensors"
+          },
+          {
+            "bytes": 981471160,
+            "sha256": "9d41fcca94606cb49539e68ad5769fdee2ffab82a31c58aab92ff6630da74bac",
+            "name": "diffusion_pytorch_model-00004-of-00009.safetensors"
+          },
+          {
+            "bytes": 981471160,
+            "sha256": "5762c24c333b8c6c873cdf8581b37b8c72ec1ccb3895798af9754410334960fb",
+            "name": "diffusion_pytorch_model-00005-of-00009.safetensors"
+          },
+          {
+            "bytes": 981471168,
+            "sha256": "e0be880ddb58d82a948925736ae257fbc7e53a4db7cec446d20a0af264dc3d4d",
+            "name": "diffusion_pytorch_model-00006-of-00009.safetensors"
+          },
+          {
+            "bytes": 981471176,
+            "sha256": "1dc58106f4098b16479612f576c67830bafc30fba9fd7b9014c4ca2b4ddcbb73",
+            "name": "diffusion_pytorch_model-00007-of-00009.safetensors"
+          },
+          {
+            "bytes": 981471176,
+            "sha256": "4f5cec84a247d18cd75a437a0dc944e1348c5f7f2685dc1aab496d71ed16ce85",
+            "name": "diffusion_pytorch_model-00008-of-00009.safetensors"
+          },
+          {
+            "bytes": 38535392,
+            "sha256": "6bd55d7995e56991553a7d2381701d89f857866ca20f0ae047cb88bbc82002cf",
+            "name": "diffusion_pytorch_model-00009-of-00009.safetensors"
+          },
+          {
+            "bytes": 18284,
+            "sha256": "107daa8e109a69b927ee0d99d816266c8f3b4a8b89cd9995570df172ff31a802",
+            "name": "diffusion_pytorch_model.safetensors.index.json"
+          }
+        ]
+      }
+    },
+    "publisherFinetuneStagingArchive": {
+      "source": "flux2-base4b-publisher-finetune/transformer-staging-archive.json",
+      "sha256": "7ffc9739b015736e5ae5a7bf2143ee8339680a48575e1f5ce4c1de1f7ea3374e",
+      "result": {
+        "originalSource": "C:\\Development\\machdoch-verification\\2026-10-06-training\\flux2-base4b-finetune-transformer",
+        "archive": "D:\\Models\\machdoch\\verification\\2026-10-06-training\\flux2-base4b-finetune-transformer-archive",
+        "archiveHashesVerified": true,
+        "verifiedAt": "2026-10-06T19:19:11.5308707Z",
+        "seconds": 306.1809536,
+        "files": [
+          {
+            "name": "config.json",
+            "bytes": 617,
+            "sha256": "d5e80e35219a2ec452db8d862cc6ffc66952ea332a3149ec7cde104f51a15c28"
+          },
+          {
+            "name": "diffusion_pytorch_model-00001-of-00009.safetensors",
+            "bytes": 993269776,
+            "sha256": "b5a65b7f16f955ec0be4203cd8c13dbd837ed2c8ece05ce6ca42413eb7d8c4cc"
+          },
+          {
+            "name": "diffusion_pytorch_model-00002-of-00009.safetensors",
+            "bytes": 981472976,
+            "sha256": "75245cbf281cc2aa81f91a702210242fc05dffae247323e6b62c0290227d6a26"
+          },
+          {
+            "name": "diffusion_pytorch_model-00003-of-00009.safetensors",
+            "bytes": 830475616,
+            "sha256": "ed94ea624a16dcc8d5cf8e92b52bf4a45fe2ccf01000a3c2de95b131d9bcb141"
+          },
+          {
+            "name": "diffusion_pytorch_model-00004-of-00009.safetensors",
+            "bytes": 981471160,
+            "sha256": "9d41fcca94606cb49539e68ad5769fdee2ffab82a31c58aab92ff6630da74bac"
+          },
+          {
+            "name": "diffusion_pytorch_model-00005-of-00009.safetensors",
+            "bytes": 981471160,
+            "sha256": "5762c24c333b8c6c873cdf8581b37b8c72ec1ccb3895798af9754410334960fb"
+          },
+          {
+            "name": "diffusion_pytorch_model-00006-of-00009.safetensors",
+            "bytes": 981471168,
+            "sha256": "e0be880ddb58d82a948925736ae257fbc7e53a4db7cec446d20a0af264dc3d4d"
+          },
+          {
+            "name": "diffusion_pytorch_model-00007-of-00009.safetensors",
+            "bytes": 981471176,
+            "sha256": "1dc58106f4098b16479612f576c67830bafc30fba9fd7b9014c4ca2b4ddcbb73"
+          },
+          {
+            "name": "diffusion_pytorch_model-00008-of-00009.safetensors",
+            "bytes": 981471176,
+            "sha256": "4f5cec84a247d18cd75a437a0dc944e1348c5f7f2685dc1aab496d71ed16ce85"
+          },
+          {
+            "name": "diffusion_pytorch_model-00009-of-00009.safetensors",
+            "bytes": 38535392,
+            "sha256": "6bd55d7995e56991553a7d2381701d89f857866ca20f0ae047cb88bbc82002cf"
+          },
+          {
+            "name": "diffusion_pytorch_model.safetensors.index.json",
+            "bytes": 18284,
+            "sha256": "107daa8e109a69b927ee0d99d816266c8f3b4a8b89cd9995570df172ff31a802"
+          }
+        ]
+      }
+    },
+    "publisherSourceReverification": {
+      "source": "flux2-base4b-publisher-source-reverification.json",
+      "sha256": "71c84baf51b9a39092f6a7999a31dcab570daa251f495f60272a0ac6da783753",
+      "result": {
+        "revision": "a3b4f4849157f664bdbc776fd7453c2783562f4d",
+        "allPublisherFilesMatch": true,
+        "seconds": 20.40599999999904,
+        "files": [
+          {
+            "path": "text_encoder/generation_config.json",
+            "bytes": 214,
+            "matchesPublisher": true
+          },
+          {
+            "path": "model_index.json",
+            "bytes": 422,
+            "matchesPublisher": true
+          },
+          {
+            "path": "scheduler/scheduler_config.json",
+            "bytes": 486,
+            "matchesPublisher": true
+          },
+          {
+            "path": "transformer/config.json",
+            "bytes": 531,
+            "matchesPublisher": true
+          },
+          {
+            "path": "tokenizer/special_tokens_map.json",
+            "bytes": 613,
+            "matchesPublisher": true
+          },
+          {
+            "path": "tokenizer/added_tokens.json",
+            "bytes": 707,
+            "matchesPublisher": true
+          },
+          {
+            "path": "vae/config.json",
+            "bytes": 821,
+            "matchesPublisher": true
+          },
+          {
+            "path": "text_encoder/config.json",
+            "bytes": 1536,
+            "matchesPublisher": true
+          },
+          {
+            "path": "tokenizer/chat_template.jinja",
+            "bytes": 4168,
+            "matchesPublisher": true
+          },
+          {
+            "path": "tokenizer/tokenizer_config.json",
+            "bytes": 5404,
+            "matchesPublisher": true
+          },
+          {
+            "path": "text_encoder/model.safetensors.index.json",
+            "bytes": 32855,
+            "matchesPublisher": true
+          },
+          {
+            "path": "tokenizer/merges.txt",
+            "bytes": 1671853,
+            "matchesPublisher": true
+          },
+          {
+            "path": "tokenizer/vocab.json",
+            "bytes": 2776833,
+            "matchesPublisher": true
+          },
+          {
+            "path": "tokenizer/tokenizer.json",
+            "bytes": 11422654,
+            "matchesPublisher": true
+          },
+          {
+            "path": "vae/diffusion_pytorch_model.safetensors",
+            "bytes": 168120878,
+            "matchesPublisher": true
+          },
+          {
+            "path": "text_encoder/model-00002-of-00002.safetensors",
+            "bytes": 3077766632,
+            "matchesPublisher": true
+          },
+          {
+            "path": "text_encoder/model-00001-of-00002.safetensors",
+            "bytes": 4967215360,
+            "matchesPublisher": true
+          },
+          {
+            "path": "transformer/diffusion_pytorch_model.safetensors",
+            "bytes": 7751109744,
+            "matchesPublisher": true
+          }
+        ],
+        "additionalFiles": ["source.json"]
+      }
+    },
+    "publisherSourceRestoration": {
+      "source": "flux2-base4b-publisher-source-restoration.json",
+      "sha256": "e3b1bfd9acf9d2eec78e185506c58769863da554e193d48c9466f776d2a3ddbb",
+      "result": {
+        "repository": "black-forest-labs/FLUX.2-klein-base-4B",
+        "revision": "a3b4f4849157f664bdbc776fd7453c2783562f4d",
+        "root": "C:\\Development\\machdoch-verification\\2026-10-06-training\\flux2-klein-base4b-pretrained",
+        "reason": "Previously verified source directory was absent during final verification",
+        "complete": true,
+        "seconds": 404.7810000000027,
+        "fileCount": 18,
+        "bytes": 15980131711,
+        "files": [
+          {
+            "sourcePath": "text_encoder/generation_config.json",
+            "bytes": 214,
+            "digestAlgorithm": "git-blob-sha1",
+            "digest": "f5af93d0c7764fa38e3b1cd3aaba1b6307246d3b"
+          },
+          {
+            "sourcePath": "model_index.json",
+            "bytes": 422,
+            "digestAlgorithm": "git-blob-sha1",
+            "digest": "8bd1147173cb71f16e20819cbb8b7955695f5a16"
+          },
+          {
+            "sourcePath": "scheduler/scheduler_config.json",
+            "bytes": 486,
+            "digestAlgorithm": "git-blob-sha1",
+            "digest": "7e53605e2643440b310fa554f087641893883c5f"
+          },
+          {
+            "sourcePath": "transformer/config.json",
+            "bytes": 531,
+            "digestAlgorithm": "git-blob-sha1",
+            "digest": "bc01657cf4dab7af77161271db7bc2f2098fe804"
+          },
+          {
+            "sourcePath": "tokenizer/special_tokens_map.json",
+            "bytes": 613,
+            "digestAlgorithm": "git-blob-sha1",
+            "digest": "ac23c0aaa2434523c494330aeb79c58395378103"
+          },
+          {
+            "sourcePath": "tokenizer/added_tokens.json",
+            "bytes": 707,
+            "digestAlgorithm": "git-blob-sha1",
+            "digest": "b54f9135e44c1e81047e8d05cb027af8bc039eed"
+          },
+          {
+            "sourcePath": "vae/config.json",
+            "bytes": 821,
+            "digestAlgorithm": "git-blob-sha1",
+            "digest": "c3f38eb4c188a96a462519159356bd0fcc28cd14"
+          },
+          {
+            "sourcePath": "text_encoder/config.json",
+            "bytes": 1536,
+            "digestAlgorithm": "git-blob-sha1",
+            "digest": "86f951d170cfd1fdc1c8a57a041e05c27b7b789b"
+          },
+          {
+            "sourcePath": "tokenizer/chat_template.jinja",
+            "bytes": 4168,
+            "digestAlgorithm": "git-blob-sha1",
+            "digest": "01be9b307daa2d425f7c168c9fb145a286e0afb4"
+          },
+          {
+            "sourcePath": "tokenizer/tokenizer_config.json",
+            "bytes": 5404,
+            "digestAlgorithm": "git-blob-sha1",
+            "digest": "ddaf69808214a44fdd26d3785b66c1367c78277a"
+          },
+          {
+            "sourcePath": "text_encoder/model.safetensors.index.json",
+            "bytes": 32855,
+            "digestAlgorithm": "git-blob-sha1",
+            "digest": "b65d8063815c8679d85bb919337b36fae8de75cf"
+          },
+          {
+            "sourcePath": "tokenizer/merges.txt",
+            "bytes": 1671853,
+            "digestAlgorithm": "git-blob-sha1",
+            "digest": "31349551d90c7606f325fe0f11bbb8bd5fa0d7c7"
+          },
+          {
+            "sourcePath": "tokenizer/vocab.json",
+            "bytes": 2776833,
+            "digestAlgorithm": "git-blob-sha1",
+            "digest": "4783fe10ac3adce15ac8f358ef5462739852c569"
+          },
+          {
+            "sourcePath": "tokenizer/tokenizer.json",
+            "bytes": 11422654,
+            "digestAlgorithm": "sha256",
+            "digest": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+          },
+          {
+            "sourcePath": "vae/diffusion_pytorch_model.safetensors",
+            "bytes": 168120878,
+            "digestAlgorithm": "sha256",
+            "digest": "ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04"
+          },
+          {
+            "sourcePath": "text_encoder/model-00002-of-00002.safetensors",
+            "bytes": 3077766632,
+            "digestAlgorithm": "sha256",
+            "digest": "82f2bd839378541b0557bfabaf37c7d3d637071fdcb73302dedd7cf61162ce07"
+          },
+          {
+            "sourcePath": "text_encoder/model-00001-of-00002.safetensors",
+            "bytes": 4967215360,
+            "digestAlgorithm": "sha256",
+            "digest": "8c0506e7f4936fa7e26183a4fd8da4e2bdbc5990ba64ae441f965d51228f36ea"
+          },
+          {
+            "sourcePath": "transformer/diffusion_pytorch_model.safetensors",
+            "bytes": 7751109744,
+            "digestAlgorithm": "sha256",
+            "digest": "e109674697ffa1a3983126e32512f5428a9442bd8df59f9c95566ee90a473bb6"
+          }
+        ]
+      }
+    },
+    "pinnedVideoTrainerSources": {
+      "source": "pinned-video-trainer-source-audit.json",
+      "sha256": "c04a3df280989645284b4e4864f43ff6be9e5b4c40b827ff31300ec83ef3bfef",
+      "result": {
+        "revision": "4295ee3ec58efa6577bc459e9b84ca3f63aa9a96",
+        "sources": [
+          {
+            "path": "examples/cogvideo/train_cogvideox_lora.py",
+            "url": "https://api.github.com/repos/huggingface/diffusers/contents/examples/cogvideo/train_cogvideox_lora.py?ref=4295ee3ec58efa6577bc459e9b84ca3f63aa9a96",
+            "status": 200,
+            "gitBlob": "3fd542173e348e3b4544e3ce171eb1f6b6cb430c",
+            "sha256": "94aa5c0bbc7292199e653aa37523fa11b8789e53485755d866bfe350ab0b563a",
+            "bytes": 64256,
+            "imports": [
+              "accelerate",
+              "accelerate.logging",
+              "accelerate.utils",
+              "datasets",
+              "diffusers",
+              "diffusers.image_processor",
+              "diffusers.models.autoencoders.vae",
+              "diffusers.models.embeddings",
+              "diffusers.optimization",
+              "diffusers.pipelines.cogvideo.pipeline_cogvideox",
+              "diffusers.training_utils",
+              "diffusers.utils",
+              "diffusers.utils.hub_utils",
+              "diffusers.utils.torch_utils",
+              "huggingface_hub",
+              "pathlib",
+              "peft",
+              "torch.utils.data",
+              "torchvision.transforms",
+              "torchvision.transforms.functional",
+              "tqdm.auto",
+              "transformers",
+              "typing"
+            ]
+          },
+          {
+            "path": "examples/dreambooth/train_dreambooth_lora_wan.py",
+            "url": "https://api.github.com/repos/huggingface/diffusers/contents/examples/dreambooth/train_dreambooth_lora_wan.py?ref=4295ee3ec58efa6577bc459e9b84ca3f63aa9a96",
+            "status": 404
+          }
+        ]
+      }
+    },
+    "pinnedVideoExampleTree": {
+      "source": "pinned-video-example-paths.json",
+      "sha256": "ba9f9e71dca6548035e676b44e78cf44a73d2408e2619b820b763772d0d37ba0",
+      "result": {
+        "revision": "4295ee3ec58efa6577bc459e9b84ca3f63aa9a96",
+        "url": "https://api.github.com/repos/huggingface/diffusers/git/trees/4295ee3ec58efa6577bc459e9b84ca3f63aa9a96?recursive=1",
+        "tree": "4295ee3ec58efa6577bc459e9b84ca3f63aa9a96",
+        "truncated": false,
+        "files": [
+          {
+            "path": "examples/cogvideo/README.md",
+            "sha": "3d22b2bf9931fc53bd861c807d094214bbcac0d1"
+          },
+          {
+            "path": "examples/cogvideo/requirements.txt",
+            "sha": "c2238804be9f4b41300ac2962fd76afca53f1e71"
+          },
+          {
+            "path": "examples/cogvideo/train_cogvideox_image_to_video_lora.py",
+            "sha": "12ad753eff8b9657241deb6ba198840243b4d648"
+          },
+          {
+            "path": "examples/cogvideo/train_cogvideox_lora.py",
+            "sha": "3fd542173e348e3b4544e3ce171eb1f6b6cb430c"
+          },
+          {
+            "path": "examples/community/cogvideox_ddim_inversion.py",
+            "sha": "36d95901c65fceabcbc5c07375bd7e62d0ba02c7"
+          },
+          {
+            "path": "examples/community/pipeline_stg_cogvideox.py",
+            "sha": "bdb6aecc30c3034f7a1e8cc31aba4683340e5b75"
+          },
+          {
+            "path": "examples/community/pipeline_stg_wan.py",
+            "sha": "0833869bd35ca9015b06bfff7ed51383864f0b6c"
+          }
+        ]
+      }
+    }
+  },
+  "logs": [
+    {
+      "check": "mediaSuite",
+      "source": "flux2-media-suite-current-final.log",
+      "sha256": "1d934a1c793cd13fdcfae5ae709c21f5807345468d00f520d40681fbc51b8554"
+    },
+    {
+      "check": "workerConditioning",
+      "source": "flux2-worker-conditioning-regressions-final.log",
+      "sha256": "96c12b610c2aea7229acf0ba462a3fe03bf9c557e0153edd5600abb7449a4eea"
+    },
+    {
+      "check": "zImageOptimizedConditioning",
+      "source": "flux2-z-image-conditioning-final.log",
+      "sha256": "4e486de27b7b50215c205be58f0f77988bf816da8b00e4600a37c8b01233ca41"
+    },
+    {
+      "check": "kleinTrainingResume",
+      "source": "flux2-training-export-shards-final.log",
+      "sha256": "56b504a7953609b92a652f705499700f3a8762d9c90e495fb1086da94b81ac28"
+    },
+    {
+      "check": "kleinOptimizedConditioning",
+      "source": "flux2-conditioning-logits-truncation-final.log",
+      "sha256": "f08f639045b86ace201f30e542f6d3c023d5c8f207755f9bb9b4e445836ae850"
+    },
+    {
+      "check": "otherTrainers",
+      "source": "flux2-other-trainers-regressions.log",
+      "sha256": "8aca132238aa09e0dead3f27115496dcb69487293b9e232a51e0970f4243666b"
+    },
+    {
+      "check": "nativeTraining",
+      "source": "flux2-native-final-training-regressions.log",
+      "sha256": "311d1a340892645ce68a11b9117fb33be01f8a5f9a1a94dee12086d77053042a"
+    },
+    {
+      "check": "nativeAddons",
+      "source": "flux2-native-final-addon-regressions.log",
+      "sha256": "57f7f3f750652ac71050193be686a18c736027eddda35820c7632b9e2efc4072"
+    },
+    {
+      "check": "nativePackages",
+      "source": "flux2-native-final-package-regressions.log",
+      "sha256": "9a67694bb0670b79071a16d743c00c1310f745f5c64acbab9aca20818d20867a"
+    },
+    {
+      "check": "nativePublisherInspection",
+      "source": "flux2-native-publisher-package-inspection.log",
+      "sha256": "f4b6f4c2bad02994d8e671ba0e778736b7947f1e4c4e215179d496425e4be06f"
+    },
+    {
+      "check": "nativeCheckpoints",
+      "source": "flux2-native-final-checkpoint-regressions.log",
+      "sha256": "d2d92cc0c1389d1e5ca3ceea79415194582171d64637670cfddc11bb832d1ec3"
+    },
+    {
+      "check": "nativeWorker",
+      "source": "flux2-native-retention-worker-regressions-final.log",
+      "sha256": "a7cd1e5e5939357a176d5b6d4da516595eb5b1d2fb737083f61c749d6eeb7f54"
+    },
+    {
+      "check": "nativePublisherLora",
+      "source": "flux2-native-publisher-addon-import.log",
+      "sha256": "a2eceeb14027197465f78dc83b230fb817940cba1ffd27ad24c85eee6df8e4ca"
+    },
+    {
+      "check": "nativeMemoryManager",
+      "source": "flux2-native-retention-memory-regressions-final.log",
+      "sha256": "060f1bb65bfd57b16222f67189bf8df36d0b5b2fef72b9d7d128d9f152a04b11"
+    },
+    {
+      "check": "nativePublisherEmbedding",
+      "source": "flux2-native-publisher-embedding-import.log",
+      "sha256": "af515574a3e778f9f6fb27c74df24dd0dd17bdcf23300aac24d0b64ab0d9643a"
+    },
+    {
+      "check": "nativeReducedEmbedding",
+      "source": "flux2-native-retained-embedding-import.log",
+      "sha256": "d9b525572e614aec8816fe5ac42cefedc521e3fd5542dd7d03df74efb637859f"
+    },
+    {
+      "check": "nativeReducedFinetune",
+      "source": "flux2-native-retained-finetune-import.log",
+      "sha256": "d2c426e76200872c58f4b9225af514c6afcda16a8578e77ea717d4ba2609f6a0"
+    },
+    {
+      "check": "nativeCompilation",
+      "source": "flux2-native-retention-recovered-final-build.log",
+      "sha256": "0376287e9f1954499ce233824d03a1c9311751b793ff7a736ebfed03b4dd433a"
+    },
+    {
+      "check": "nativeGatewayBuildFixture",
+      "source": "flux2-native-build-fixture-regression-final.log",
+      "sha256": "e0a325b9e9f065d0dc3c0f1bda437f2769a947a603cf1c7781694d0b4bf28e06"
+    },
+    {
+      "check": "publisherSourceReverification",
+      "source": "flux2-publisher-source-reverification.log",
+      "sha256": "3aac0b279be8a662710a18e3bee625db32e60f903bc7df33a8e4dcdfb70e8b16"
+    },
+    {
+      "check": "mediaTypecheck",
+      "source": "flux2-media-typecheck-current-final.log",
+      "sha256": "5f524a5a892cb612d21ed806a906356e4c528b99b873e71f3bb9fe76a076037d"
+    },
+    {
+      "check": "clientTypecheck",
+      "source": "flux2-client-typecheck.log",
+      "sha256": "2879e4c6eab829d35a4f08db294a6869987b1e02ab2fa121ade45b6115231aa2"
+    },
+    {
+      "check": "uiBuild",
+      "source": "flux2-ui-build.log",
+      "sha256": "fcd45bdaa0846a5850cadf1d2affa57f05cb287b890ee716903042377d5532c3"
+    },
+    {
+      "check": "focusedLint",
+      "source": "flux2-focused-lint-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "check": "nativeRuntimeVerification",
+      "source": "flux2-native-runtime-verification-final.log",
+      "sha256": "29dba4db95dc144652b70475a8efd3a9e736dccb41b88f605be74263632a5fc8"
+    },
+    {
+      "check": "nativePublisherFinetuneImport",
+      "source": "flux2-native-publisher-finetune-import-final.log",
+      "sha256": "2d4e69455e7fd52a24626b030330893cafb343a904bec9f4ab514632d43dc324"
+    },
+    {
+      "check": "nativePublisherFinetuneGenerationAttempt",
+      "source": "flux2-native-publisher-finetune-resident-generation-final.log",
+      "sha256": "d1e51f6bbca7e9cfeb163071a82e5596ab73c201062c0fa04ef78c4326727abd"
+    },
+    {
+      "check": "nativePublisherFinetunePixelComparison",
+      "source": "flux2-native-publisher-finetune-generation-comparison-final.log",
+      "sha256": "2e498cda07dd32b2a7c6eef175f8eda0b6e64af1b8d4cf1729c2906715b77b9e"
+    },
+    {
+      "check": "nativeCompilationMemoryFailure",
+      "source": "flux2-native-retention-final-build.log",
+      "sha256": "c6369f39cf8857a44efeb136d1d909a2bd45cb5f2eed798f543b41c2e881d48d"
+    },
+    {
+      "check": "nativeCompilationMissingTempDirectory",
+      "source": "flux2-native-retention-sequential-final-build.log",
+      "sha256": "f35f967bb1a93a5aa318dcbe883e632ad23a25f4598d465f2cc909a5c719dcf5"
+    },
+    {
+      "check": "transformerStagingArchive",
+      "source": "flux2-transformer-staging-archive-verification-final.log",
+      "sha256": "70d587d8a735a580af5be19f143c53ce66920236b56c412c6df7b77b54a96875"
+    },
+    {
+      "check": "publisherSourceRestoration",
+      "source": "flux2-publisher-source-restoration-final.log",
+      "sha256": "ce80ec5dce9001d60e8660b05d4185473653d7a7a8018e0c86fd2e097fb17f46"
+    },
+    {
+      "check": "nativeReducedRetention",
+      "source": "flux2-native-reduced-retention-final.log",
+      "sha256": "90c12ba32b9e9712d055b5d6881770cee3a775e8a66c9b90260452a14e1d256c"
+    },
+    {
+      "check": "nativeReducedRetentionPixelComparison",
+      "source": "flux2-native-reduced-retention-comparison-final.log",
+      "sha256": "60a1a33d4782f92e68efef7be2db43fea387966416bbf3424feb4f124c7f1cd8"
+    },
+    {
+      "check": "nativePublisherFinetuneRetentionRetry",
+      "source": "flux2-native-publisher-finetune-retention-retry-final.log",
+      "sha256": "2de54d3134b5eb17cee0a80caeceb9d561b881ef82e4743548a92bfdb56ac747"
+    },
+    {
+      "check": "nativePublisherFinetuneRetentionRetryPixelComparison",
+      "source": "flux2-native-publisher-finetune-retention-retry-comparison-final.log",
+      "sha256": "ec03a125465f2543a8dde68a1568544e844a32d150de02cf6bd20f8b1f5a52e1"
+    }
+  ],
+  "limitations": [
+    "35 catalog identifiers still lack training routes",
+    "Reduced models do not verify publisher weights",
+    "One managed publisher embedding run crashed in native Torch after sampling; a diagnostic retry passed with exact pixel agreement",
+    "An initial repeated publisher finetune request crashed after sampling under severe memory pressure; a fresh pair passed with pipeline reuse and exact source pixels, but the crash cause and sustained reliability remain unresolved",
+    "Short publisher runs do not establish concept learning",
+    "Timings are not controlled speed benchmarks",
+    "Distilled retention and 9B publisher training remain unverified",
+    "SD3 and FLUX.1 publisher access returned HTTP 401 without local credentials",
+    "No desktop interaction or complete bundle verification in this continuation"
+  ]
+}

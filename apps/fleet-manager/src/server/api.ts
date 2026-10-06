@@ -2,6 +2,17 @@ import {
   mediaRequestSchema,
   ralphRequestSchema,
   ralphEditorCapability,
+  schedulerRequestSchema,
+  schedulerEditorCapability,
+  instructionRequestSchema,
+  instructionEditorCapability,
+  workspaceRequestSchema,
+  workspaceToolsCapability,
+  maximumWorkspaceRequestBodyBytes,
+  deviceSettingsRequestSchema,
+  deviceSettingsCapability,
+  maximumDeviceSettingsRequestBodyBytes,
+  hostRequestSchema,
 } from "@machdoch/fleet-protocol";
 import {
   createFleetManagedSettingsEtag,
@@ -71,6 +82,41 @@ import {
 } from "./request-limits";
 
 const maximumAuthenticationBodyBytes = 16 * 1024;
+const productOperationSchemas = {
+  deviceSettings: deviceSettingsRequestSchema,
+  media: mediaRequestSchema,
+  ralph: ralphRequestSchema,
+  scheduler: schedulerRequestSchema,
+  instructions: instructionRequestSchema,
+  workspace: workspaceRequestSchema,
+};
+const productOperationCapabilities: Partial<
+  Record<
+    keyof typeof productOperationSchemas,
+    { capability: string; message: string }
+  >
+> = {
+  deviceSettings: {
+    capability: deviceSettingsCapability,
+    message: "Device settings require a native client.",
+  },
+  ralph: {
+    capability: ralphEditorCapability,
+    message: "Update this device to edit RALPH flows.",
+  },
+  scheduler: {
+    capability: schedulerEditorCapability,
+    message: "Update this device to manage scheduled jobs.",
+  },
+  instructions: {
+    capability: instructionEditorCapability,
+    message: "Update this device to edit instructions.",
+  },
+  workspace: {
+    capability: workspaceToolsCapability,
+    message: "Workspace tools require a native client.",
+  },
+};
 const maximumSettingsSyncReportBodyBytes = 16 * 1024;
 const passwordValueSchema = z
   .string()
@@ -260,35 +306,43 @@ async function routeApi(
     if (method === "GET" && path[3] === "snapshot") {
       return instanceProductSnapshot(runtime, request, path[1]);
     }
-    if (method === "POST" && (path[3] === "media" || path[3] === "ralph")) {
+    if (
+      method === "POST" &&
+      path[3] &&
+      Object.hasOwn(productOperationSchemas, path[3])
+    ) {
       requireMutation(runtime, request);
       requireManagedInstance(runtime, path[1]);
+      const operation = path[3] as keyof typeof productOperationSchemas;
       const input = await parseJson(
         request,
-        path[3] === "ralph" ? ralphRequestSchema : mediaRequestSchema,
+        productOperationSchemas[operation],
         400,
         "Operation request is invalid.",
-        maximumMediaRequestBodyBytes,
+        operation === "workspace"
+          ? maximumWorkspaceRequestBodyBytes
+          : operation === "deviceSettings"
+            ? maximumDeviceSettingsRequestBodyBytes
+            : maximumMediaRequestBodyBytes,
       );
       requireMutation(runtime, request);
       requireManagedInstance(runtime, path[1]);
+      const capability = productOperationCapabilities[operation];
       if (
-        path[3] === "ralph" &&
-        !runtime.gateways.supportsCapability(path[1], ralphEditorCapability)
+        capability &&
+        !runtime.gateways.supportsCapability(path[1], capability.capability)
       )
-        throw new HttpError(409, "Update this device to edit RALPH flows.");
+        throw new HttpError(409, capability.message);
       const response = await relay(
         runtime,
         path[1],
-        path[3] === "ralph"
-          ? { type: "ralph", request: ralphRequestSchema.parse(input) }
-          : { type: "media", request: mediaRequestSchema.parse(input) },
+        hostRequestSchema.parse({ type: operation, request: input }),
         request.signal,
       );
       requireOwner(runtime, request);
       requireManagedInstance(runtime, path[1]);
       if (response.type === "error") throwHostError(response);
-      if (response.type !== path[3])
+      if (response.type !== operation || !("response" in response))
         throw new HttpError(
           502,
           "Instance returned an invalid operation response.",

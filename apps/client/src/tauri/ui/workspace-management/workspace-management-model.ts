@@ -12,7 +12,10 @@ export const createWorkspaceRootKey = (workspaceRoot: string): string => {
     trimmedRoot,
   );
   const normalizedSeparators = windowsStyle
-    ? trimmedRoot.replace(/\\/gu, "/")
+    ? trimmedRoot
+        .replace(/\\/gu, "/")
+        .replace(/^\/\/\?\/([a-z]:\/)/iu, "$1")
+        .replace(/^\/\/\?\/UNC\//iu, "//")
     : trimmedRoot;
   const withoutTrailingSeparators = normalizedSeparators.replace(/\/+$/gu, "");
   const normalizedRoot =

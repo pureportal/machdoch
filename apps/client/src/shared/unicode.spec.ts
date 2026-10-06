@@ -3,7 +3,7 @@ import {
   hasUnpairedUtf16Surrogate,
   sliceUtf16PrefixAtCodePointBoundary,
   sliceUtf16SuffixAtCodePointBoundary,
-} from "./unicode.js";
+} from "@machdoch/fleet-protocol/unicode";
 
 describe("Unicode scalar validation", () => {
   it("accepts surrogate pairs and rejects isolated surrogates", () => {

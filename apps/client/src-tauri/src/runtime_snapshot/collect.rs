@@ -82,13 +82,34 @@ fn openai_model_supports_pro_mode(provider: &str, model: &str) -> bool {
 
     let normalized = model.trim().to_ascii_lowercase();
 
-    ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
-        .iter()
-        .any(|base| {
-            normalized
-                .strip_prefix(base)
-                .is_some_and(|suffix| suffix.is_empty() || is_date_suffix(suffix))
-        })
+    [
+        "gpt-6-astra",
+        "gpt-5.6",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna",
+    ]
+    .iter()
+    .any(|base| {
+        normalized
+            .strip_prefix(base)
+            .is_some_and(|suffix| suffix.is_empty() || is_date_suffix(suffix))
+    })
+}
+
+pub(super) fn require_reasoning_execution_mode(
+    reasoning_mode: &ReasoningExecutionMode,
+    provider: &str,
+    model: &str,
+) -> Result<(), String> {
+    if matches!(reasoning_mode, ReasoningExecutionMode::Pro)
+        && !openai_model_supports_pro_mode(provider, model)
+    {
+        return Err(format!(
+            "Reasoning execution mode `pro` is not supported by `{model}` on `{provider}`."
+        ));
+    }
+    Ok(())
 }
 
 fn resolve_runtime_agent_limits(
@@ -218,10 +239,19 @@ pub(super) fn get_speech_to_text_provider_availability(
     env: &HashMap<String, String>,
 ) -> Vec<AudioProviderAvailability> {
     let mut availability = get_audio_provider_availability(env);
-    availability.push(AudioProviderAvailability {
-        provider: "whisper".to_string(),
-        configured: true,
-    });
+    availability.extend(
+        [
+            "whisper",
+            "whisper-tiny",
+            "whistle",
+            "whistle-tiny",
+            "phonon2",
+        ]
+        .map(|provider| AudioProviderAvailability {
+            provider: provider.to_string(),
+            configured: true,
+        }),
+    );
     availability
 }
 
@@ -423,13 +453,7 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
         .transpose()?
         .unwrap_or_else(|| default_reasoning_mode.clone());
 
-    if matches!(reasoning_mode, ReasoningExecutionMode::Pro)
-        && !openai_model_supports_pro_mode(&provider, &model)
-    {
-        return Err(format!(
-            "Reasoning execution mode `pro` is not supported by `{model}` on `{provider}`."
-        ));
-    }
+    require_reasoning_execution_mode(&reasoning_mode, &provider, &model)?;
 
     let offline = matches!(
         env.get("MACHDOCH_OFFLINE").map(String::as_str),
@@ -492,6 +516,41 @@ mod workspace_memory_tests {
         assert!(!resolve_workspace_memory_enabled(Some(false), None));
         assert!(resolve_workspace_memory_enabled(Some(true), None));
         assert!(resolve_workspace_memory_enabled(None, None));
+    }
+}
+
+#[cfg(test)]
+mod reasoning_execution_tests {
+    use super::{require_reasoning_execution_mode, ReasoningExecutionMode};
+
+    #[test]
+    fn pro_mode_requires_a_supported_openai_model() {
+        for model in ["gpt-6-astra", "gpt-5.6", "gpt-5.6-sol-2026-10-06"] {
+            assert!(require_reasoning_execution_mode(
+                &ReasoningExecutionMode::Pro,
+                "openai",
+                model
+            )
+            .is_ok());
+        }
+        for (provider, model) in [
+            ("openai", "gpt-5.4"),
+            ("google", "gpt-6-astra"),
+            ("openai", "gpt-5.6-other"),
+        ] {
+            assert!(require_reasoning_execution_mode(
+                &ReasoningExecutionMode::Pro,
+                provider,
+                model
+            )
+            .is_err());
+            assert!(require_reasoning_execution_mode(
+                &ReasoningExecutionMode::Standard,
+                provider,
+                model
+            )
+            .is_ok());
+        }
     }
 }
 

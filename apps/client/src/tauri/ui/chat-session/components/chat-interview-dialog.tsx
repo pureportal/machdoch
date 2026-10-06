@@ -21,7 +21,7 @@ import { Textarea } from "@machdoch/media-studio/tauri/ui/components/ui/textarea
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { getDefaultRalphInputValue } from "../../ralph/_helpers/validate-ralph-input-field-values.helper";
 import { RalphInputControl } from "../../ralph/components/ralph-input-controls";
-import { TaskThinkingPanel } from "../../task-thinking-panel";
+import { TaskThinkingPanel } from "@machdoch/client-ui/conversation/task-thinking-panel";
 import type { ChatInterviewDialogState } from "../_helpers/chat-interview";
 
 interface ChatInterviewDialogProps {

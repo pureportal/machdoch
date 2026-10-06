@@ -1,0 +1,11 @@
+✔ ships the complete upstream DMAD terms and notices with every adapted worker module (421.4136ms)
+✔ packages RefMod workers with complete upstream licences and attribution (367.7185ms)
+✔ retains the full H3 model agreement and required notice (66.2869ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1179.1835

@@ -10,14 +10,8 @@ import {
   type CommandDefinition,
   type CommandPageItem,
 } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
-import {
-  getCatalogModelsForProvider,
-  getDefaultReviewModelForProvider,
-  getProviderLabel,
-  SUPPORTED_PROVIDER_ORDER,
-  type ProviderModelCatalogSnapshot,
-  type RuntimeProvider,
-} from "../../../model-catalog";
+import { getCatalogModelsForProvider, getDefaultReviewModelForProvider, SUPPORTED_PROVIDER_ORDER, type ProviderModelCatalogSnapshot, type RuntimeProvider } from "../../../model-catalog";
+import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import {
   loadProviderModelCatalog,
   type UserAgentLimitsSettings,

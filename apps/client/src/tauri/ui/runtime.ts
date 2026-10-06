@@ -1,8 +1,151 @@
+import {
+  canUseDeviceSettings,
+  getRemoteDeviceSettingsPlatform,
+  invokeDeviceSettingsCommand,
+} from "./device-settings-platform";
+import { deviceSettingsCommands } from "@machdoch/fleet-protocol/device-settings";
+import { taskTimeoutSchema, type TaskExecutionTimeoutState } from "@machdoch/fleet-protocol/task-thinking";
+import { composerHistorySelectionSchema, type ComposerHistorySelection } from "@machdoch/fleet-protocol";
+import { isMediaPoseMap, type MediaPoseMap } from "@machdoch/media-studio/core/media/contracts.js";
+import {
+  contextPackDefinitionSchema,
+  contextPackExportSchema,
+} from "@machdoch/fleet-protocol/context-pack-contract";
+import type {
+  SaveSmartContextPackInput,
+  SmartContextPackExportPayload,
+} from "@machdoch/client-ui/context-packs/model";
+import {
+  getRemoteWorkspacePlatform,
+  invokeWorkspaceTools,
+} from "./workspace-management/workspace-platform";
+import { encodeWorkspaceFileContent } from "@machdoch/fleet-protocol/workspace";
+import type {
+  WorkspaceGitDiff,
+  WorkspacePullRequestOverview,
+  WorkspaceGitRepositoryDiscovery,
+  WorkspaceGitOverview,
+  WorkspaceGitAction,
+  WorkspaceEntryKind,
+  WorkspaceDirectoryPage,
+  WorkspaceFileDocument,
+  WorkspaceFileSaveResult,
+  WorkspaceShellDiscovery,
+  WorkspaceTerminalStarted,
+  WorkspaceTerminalEvent,
+} from "@machdoch/fleet-protocol/workspace-contract";
+export type {
+  WorkspaceGitChange,
+  WorkspaceGitPatchKind,
+  WorkspaceGitPatch,
+  WorkspaceGitDiff,
+  WorkspaceGitBranch,
+  WorkspaceGitRemote,
+  WorkspaceGitCommit,
+  WorkspacePullRequest,
+  WorkspacePullRequestOverview,
+  WorkspaceGitRepository,
+  WorkspaceGitRepositoryDiscovery,
+  WorkspaceGitOverview,
+  WorkspaceGitAction,
+  WorkspaceEntryKind,
+  WorkspaceDirectoryEntry,
+  WorkspaceDirectoryPage,
+  WorkspaceFileKind,
+  WorkspaceFilePreviewKind,
+  WorkspaceFileDocument,
+  WorkspaceFileSaveResult,
+  WorkspaceShell,
+  WorkspaceShellDiscovery,
+  WorkspaceTerminalStarted,
+  WorkspaceTerminalEvent,
+} from "@machdoch/fleet-protocol/workspace-contract";
+import { createInstructionMutationArguments } from "@machdoch/fleet-protocol/instruction-command";
+import type {
+  InstructionRegistryResult,
+  InstructionMutationInput,
+  InstructionMutationResult,
+} from "@machdoch/fleet-protocol/instruction-contract";
+export type {
+  InstructionProfileView,
+  InstructionWorkspaceView,
+  InstructionLibraryRecoveryView,
+  InstructionRegistryResult,
+  InstructionMutationInput,
+  InstructionMutationResult,
+} from "@machdoch/fleet-protocol/instruction-contract";
+import type {
+  SchedulerJobStatus,
+  SchedulerRunStatus,
+  SchedulerRunSource,
+  SchedulerScheduleSummary,
+  SchedulerCreateScheduleInput,
+  SchedulerTriggerSummary,
+  SchedulerCreateTriggerInput,
+  SchedulerRetrySummary,
+  SchedulerQueueSummary,
+  SchedulerJobSummary,
+  SchedulerRunSummary,
+  SchedulerContextPackInput,
+  SchedulerRalphFlowPermissionsInput,
+  SchedulerRalphFlowInput,
+  SchedulerRalphFlowSummary,
+  SchedulerCreateJobInput,
+  SchedulerListJobsResult,
+  SchedulerListRunsResult,
+  SchedulerJobActionResult,
+  SchedulerRunActionResult,
+  SchedulerRunHandle,
+  SchedulerEnqueueSummary,
+  SchedulerRunDueResult,
+  SchedulerRalphVariableReadinessSummary,
+  SchedulerRalphReadinessResult,
+  SchedulerFleetRunResult,
+  SchedulerTriggerResult,
+  SchedulerRetryResult,
+  SchedulerPromptDefinitionSummary,
+  SchedulerPromptSyncResult,
+} from "@machdoch/fleet-protocol/scheduler-contract";
+export type {
+  SchedulerJobStatus,
+  SchedulerRunStatus,
+  SchedulerRunSource,
+  SchedulerMissedRunPolicy,
+  SchedulerScheduleSummary,
+  SchedulerCreateScheduleInput,
+  SchedulerTriggerSummary,
+  SchedulerCreateTriggerInput,
+  SchedulerRetrySummary,
+  SchedulerQueueSummary,
+  SchedulerJobSummary,
+  SchedulerRunSummary,
+  SchedulerContextPackInput,
+  SchedulerRalphFlowPermissionsInput,
+  SchedulerRalphFlowInput,
+  SchedulerRalphFlowSummary,
+  SchedulerCreateJobInput,
+  SchedulerListJobsResult,
+  SchedulerListRunsResult,
+  SchedulerJobActionResult,
+  SchedulerRunActionResult,
+  SchedulerRunHandle,
+  SchedulerEnqueueSummary,
+  SchedulerRunDueResult,
+  SchedulerRalphVariableReadinessSummary,
+  SchedulerRalphReadinessResult,
+  SchedulerFleetRunResult,
+  SchedulerTriggerResult,
+  SchedulerRetryResult,
+  SchedulerPromptDefinitionSummary,
+  SchedulerPromptSyncResult,
+} from "@machdoch/fleet-protocol/scheduler-contract";
 import type {
   ActiveDesktopTaskSummary,
   RecentDesktopTaskResult,
 } from "../../shared/task-run-state.js";
 import { getRemoteRalphPlatform } from "./ralph/ralph-platform";
+import { getRemoteSchedulerPlatform } from "./scheduler/scheduler-platform";
+import { getRemoteInstructionPlatform } from "./instruction-management/instruction-platform";
 import * as tauriCore from "@tauri-apps/api/core";
 import { VALID_SPEECH_TO_TEXT_PROVIDERS } from "../../core/runtime-contract.generated.js";
 import type {
@@ -37,7 +180,6 @@ import { replaceDiscoveredModelCapabilities } from "../../core/model-capabilitie
 import { normalizeDesktopTaskRunError } from "./desktop-task-error.js";
 import { normalizeMcpConfigSaveError } from "./mcp-config-error.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
-import type { InstructionTagRule } from "../../core/instruction-system/types.js";
 import type { MediaAssetReference } from "@machdoch/media-studio/core/media/contracts.js";
 import type {
   RalphGenerationEvent,
@@ -202,9 +344,16 @@ export const USER_VOICE_AI_PROVIDER_ORDER: UserVoiceAiProvider[] = [
   ...USER_AUDIO_AI_PROVIDERS,
 ];
 
+import { isLocalSpeechProvider } from "../../shared/local-speech";
+
 export const USER_SPEECH_TO_TEXT_PROVIDER_ORDER: UserSpeechToTextProvider[] = [
   ...VALID_SPEECH_TO_TEXT_PROVIDERS.filter((provider) => provider !== "none"),
 ];
+
+export {
+  isLocalSpeechProvider,
+  speechProviderLabel,
+} from "../../shared/local-speech";
 
 export const USER_API_KEY_PROVIDER_PORTAL_URLS: Record<
   UserApiKeyProvider,
@@ -283,316 +432,6 @@ export interface McpPresetSummary {
   description: string;
   serverId: string;
   serverTitle: string;
-}
-
-export interface InstructionProfileView {
-  id: string;
-  name: string;
-  description?: string;
-  body?: string;
-  createdAt: string;
-  updatedAt: string;
-  byteLength: number;
-  lineCount: number;
-  digest: string;
-  manualAssignmentCount: number;
-  enabled: boolean;
-  global: boolean;
-  tags: string[];
-  match?: InstructionTagRule;
-}
-
-export interface InstructionWorkspaceView {
-  id: string;
-  root: string;
-  displayName?: string;
-  tags: string[];
-  scopes: Array<{ path: string; profiles: string[] }>;
-}
-
-export interface InstructionLibraryRecoveryView {
-  libraryPath: string;
-  backupPath: string;
-  primaryValid: boolean;
-  primaryDigest?: string;
-  backupValid: boolean;
-  backupDigest?: string;
-  backupRevision?: number;
-  resetDigest?: string;
-  resetSource?: "primary" | "backup";
-  errorCode?: string;
-  errorMessage?: string;
-}
-
-export interface InstructionRegistryResult {
-  schemaVersion: number;
-  revision: number;
-  profiles: InstructionProfileView[];
-  workspaces: InstructionWorkspaceView[];
-  recovery?: InstructionLibraryRecoveryView;
-  libraryError?: string;
-}
-
-export interface WorkspaceGitChange {
-  status: string;
-  path: string;
-  originalPath?: string;
-  staged: boolean;
-  unstaged: boolean;
-  untracked: boolean;
-  conflicted: boolean;
-}
-
-export type WorkspaceGitPatchKind = "staged" | "unstaged" | "untracked";
-
-export interface WorkspaceGitPatch {
-  kind: WorkspaceGitPatchKind;
-  content: string;
-  binary: boolean;
-  truncated: boolean;
-}
-
-export interface WorkspaceGitDiff {
-  path: string;
-  originalPath?: string;
-  patches: WorkspaceGitPatch[];
-}
-
-export interface WorkspaceGitBranch {
-  name: string;
-  commit: string;
-  current: boolean;
-  upstream?: string;
-}
-
-export interface WorkspaceGitRemote {
-  name: string;
-  fetchUrl?: string;
-  pushUrl?: string;
-}
-
-export interface WorkspaceGitCommit {
-  hash: string;
-  shortHash: string;
-  subject: string;
-  author: string;
-  authoredAt: string;
-}
-
-export interface WorkspacePullRequest {
-  number: number;
-  title: string;
-  state: string;
-  url: string;
-  headBranch: string;
-  baseBranch: string;
-  draft: boolean;
-  author?: string;
-  updatedAt?: string;
-}
-
-export interface WorkspacePullRequestOverview {
-  available: boolean;
-  reason?: string;
-  items: WorkspacePullRequest[];
-}
-
-export interface WorkspaceGitRepository {
-  repositoryRoot: string;
-  relativePath: string;
-}
-
-export interface WorkspaceGitRepositoryDiscovery {
-  workspaceRoot: string;
-  repositories: WorkspaceGitRepository[];
-  scanLimited: boolean;
-  issues: string[];
-}
-
-export interface WorkspaceGitOverview {
-  workspaceRoot: string;
-  repositoryRoot: string;
-  branch: string;
-  detached: boolean;
-  upstream?: string;
-  ahead: number;
-  behind: number;
-  clean: boolean;
-  stagedCount: number;
-  unstagedCount: number;
-  untrackedCount: number;
-  conflictedCount: number;
-  totalChanges: number;
-  changes: WorkspaceGitChange[];
-  changesTruncated: boolean;
-  localBranches: WorkspaceGitBranch[];
-  remoteBranches: WorkspaceGitBranch[];
-  remotes: WorkspaceGitRemote[];
-  headCommit?: WorkspaceGitCommit;
-}
-
-export type WorkspaceGitAction =
-  | "fetch"
-  | "pull"
-  | "checkout"
-  | "checkout-remote"
-  | "create-branch"
-  | "add-remote"
-  | "remove-remote";
-
-export type WorkspaceEntryKind = "file" | "directory";
-
-export interface WorkspaceDirectoryEntry {
-  name: string;
-  path: string;
-  kind: "file" | "directory" | "symlink" | "other";
-  targetKind: "file" | "directory" | "other" | null;
-  size: number | null;
-  modifiedAt: number | null;
-}
-
-export interface WorkspaceDirectoryPage {
-  path: string;
-  entries: WorkspaceDirectoryEntry[];
-  nextOffset: number | null;
-  totalEntries: number;
-  limitReached: boolean;
-  omittedEntries: number;
-}
-
-export type WorkspaceFileKind = "text" | "media" | "binary" | "oversized";
-export type WorkspaceFilePreviewKind =
-  | "markdown"
-  | "image"
-  | "pdf"
-  | "audio"
-  | "video";
-
-export interface WorkspaceFileDocument {
-  path: string;
-  name: string;
-  size: number;
-  modifiedAt: number | null;
-  revision: string | null;
-  kind: WorkspaceFileKind;
-  previewKind: WorkspaceFilePreviewKind | null;
-  language: string | null;
-  content: string | null;
-  editable: boolean;
-  bom: boolean;
-  reason: string | null;
-}
-
-export interface WorkspaceFileSaveResult {
-  status: "saved" | "conflict";
-  revision: string;
-  modifiedAt: number | null;
-  size: number;
-}
-
-export interface WorkspaceShell {
-  id: string;
-  label: string;
-  kind: string;
-}
-
-export interface WorkspaceShellDiscovery {
-  platform: string;
-  shells: WorkspaceShell[];
-  defaultShellId: string | null;
-  externalTerminal: { id: string; label: string } | null;
-}
-
-export interface WorkspaceTerminalStarted {
-  sessionId: string;
-  shellId: string;
-  processId: number | null;
-}
-
-export type WorkspaceTerminalEvent =
-  | { type: "output"; sessionId: string; data: string }
-  | { type: "exit"; exitCode: number | null }
-  | { type: "error"; message: string };
-
-export type InstructionMutationInput =
-  | {
-      operation: "profile-create";
-      profileId?: string;
-      name: string;
-      description?: string;
-      body: string;
-      enabled?: boolean;
-      global?: boolean;
-      tags?: string[];
-      match?: InstructionTagRule;
-      expectedRevision: number;
-    }
-  | {
-      operation: "profile-edit";
-      profileId: string;
-      name?: string;
-      description?: string;
-      body?: string;
-      enabled?: boolean;
-      global?: boolean;
-      tags?: string[];
-      match?: InstructionTagRule | null;
-      expectedRevision: number;
-    }
-  | {
-      operation: "profile-duplicate";
-      profileId: string;
-      name?: string;
-      expectedRevision: number;
-    }
-  | {
-      operation: "profile-delete";
-      profileId: string;
-      expectedRevision: number;
-    }
-  | {
-      operation: "workspace-configure";
-      root: string;
-      displayName?: string;
-      tags?: string[];
-      profileIds?: string[];
-      expectedRevision: number;
-    }
-  | {
-      operation: "workspace-relink";
-      workspaceId: string;
-      root: string;
-      expectedRevision: number;
-    }
-  | {
-      operation: "workspace-remove";
-      workspaceId: string;
-      confirmAssignedRemoval: boolean;
-      expectedRevision: number;
-    }
-  | {
-      operation: "workspace-scope-set";
-      workspaceId: string;
-      path: string;
-      profileIds: string[];
-      expectedRevision: number;
-    }
-  | {
-      operation: "recovery-restore";
-      expectedDigest: string;
-    }
-  | {
-      operation: "recovery-reset";
-      expectedDigest: string;
-    };
-
-export interface InstructionMutationResult {
-  library?: { revision: number } & Record<string, unknown>;
-  previousRevision?: number;
-  profile?: { id: string; name: string } & Record<string, unknown>;
-  workspace?: { id: string; root: string } & Record<string, unknown>;
-  recovered?: boolean;
-  reset?: boolean;
 }
 
 export interface DroppedPathEntry {
@@ -710,8 +549,20 @@ export interface FleetControlCommandEvent {
   kind: FleetControlCommandKind;
   taskId?: string;
   sessionId?: string;
+  specialKind?: "pose";
+  poseScene?: MediaPoseMap;
+  history?: ComposerHistorySelection;
   prompt?: string;
   goalObjective?: string;
+  iterationCount?: number;
+  iterationMode?: "repeat-prompt" | "continue" | "repeat-prompt-and-continue";
+  runningAction?: "queue" | "steer" | "stop-and-send";
+  direction?: -1 | 1;
+  targetIndex?: number;
+  variableValues?: Record<string, string>;
+  contextPack?: SaveSmartContextPackInput;
+  importedContextPacks?: SmartContextPackExportPayload;
+  paths?: string[];
   title?: string;
   tags?: string[];
   provider?: string;
@@ -721,15 +572,15 @@ export interface FleetControlCommandEvent {
   reasoning?: string;
   promptEnhancementMode?: string;
   workspace?: string;
+  destinationWorkspace?: string;
   enabled?: boolean;
   memoryId?: string;
   attachmentId?: string;
   contextPackId?: string;
   messageId?: string;
-  jobId?: string;
   runId?: string;
   flowId?: string;
-  scope?: "workspace" | "user";
+  scope?: "workspace" | "user" | "global";
   parameters?: Record<string, string>;
   maxTransitions?: number;
   target?: "image" | "svg";
@@ -794,312 +645,6 @@ export type FleetShellQuickTaskSnapshot = NonNullable<
 export type FleetShellMediaSnapshot = NonNullable<ProductShell["media"]>;
 
 export type FleetControlShellSnapshot = ProductShell;
-
-export type SchedulerJobStatus = "active" | "paused" | "completed" | "deleted";
-
-export type SchedulerRunStatus =
-  | "queued"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "cancelled"
-  | "timed_out"
-  | "expired"
-  | "skipped";
-
-export type SchedulerRunSource =
-  | "schedule"
-  | "manual"
-  | "manual-retry"
-  | "event";
-
-export type SchedulerMissedRunPolicy =
-  | "skip"
-  | "enqueue-latest"
-  | "enqueue-all";
-
-export type SchedulerScheduleSummary =
-  | {
-      type: "cron";
-      expression: string;
-      timezone: string;
-    }
-  | {
-      type: "interval";
-      intervalMs: number;
-      anchorAt: number;
-    }
-  | {
-      type: "delay";
-      runAt: number;
-    };
-
-export type SchedulerCreateScheduleInput =
-  | {
-      type: "cron";
-      expression: string;
-      timezone?: string;
-    }
-  | {
-      type: "interval";
-      intervalMs: number;
-    }
-  | {
-      type: "delay";
-      delayMs?: number;
-      runAt?: number;
-    };
-
-export interface SchedulerTriggerSummary {
-  id: string;
-  kind: string;
-  enabled: boolean;
-  name?: string;
-  eventType?: string;
-  schedule?: SchedulerScheduleSummary;
-  nextRunAt?: number;
-  filters?: Record<string, unknown>;
-  recoveryFilters?: Record<string, unknown>;
-  firingMode?: "event" | "state";
-  cooldownMs?: number;
-  repeatIntervalMs?: number;
-  debounceMs?: number;
-  dedupeKeyTemplate?: string;
-  maxEventsPerWindow?: {
-    maxEvents: number;
-    windowMs: number;
-  };
-}
-
-export interface SchedulerCreateTriggerInput {
-  id?: string;
-  kind: string;
-  enabled?: boolean;
-  name?: string;
-  eventType?: string;
-  schedule?: SchedulerCreateScheduleInput;
-  filters?: Record<string, unknown>;
-  recoveryFilters?: Record<string, unknown>;
-  firingMode?: "event" | "state";
-  cooldownMs?: number;
-  repeatIntervalMs?: number;
-  debounceMs?: number;
-  dedupeKeyTemplate?: string;
-  maxEventsPerWindow?: {
-    maxEvents: number;
-    windowMs: number;
-  };
-}
-
-export interface SchedulerRetrySummary {
-  maxAttempts: number;
-  factor: number;
-  minTimeoutMs: number;
-  maxTimeoutMs: number;
-  randomize: boolean;
-}
-
-export interface SchedulerQueueSummary {
-  concurrencyKey: string;
-  concurrencyLimit: number;
-}
-
-export interface SchedulerJobSummary {
-  id: string;
-  name: string;
-  status: SchedulerJobStatus;
-  schedule: SchedulerScheduleSummary | null;
-  triggers: SchedulerTriggerSummary[];
-  triggerLabel: string;
-  targetType: "prompt" | "ralph-flow";
-  workspaceRoot: string;
-  prompt: string;
-  ralphFlow: SchedulerRalphFlowSummary | null;
-  nextRunAt: number | null;
-  lastStartedAt: number | null;
-  lastFinishedAt: number | null;
-  queue: SchedulerQueueSummary;
-  retry: SchedulerRetrySummary;
-  dedupeKey: string | null;
-  ttlMs: number | null;
-  maxDurationMs: number | null;
-}
-
-export interface SchedulerRunSummary {
-  id: string;
-  jobId: string;
-  source: SchedulerRunSource;
-  status: SchedulerRunStatus;
-  scheduledFor: number;
-  enqueuedAt: number;
-  updatedAt: number;
-  attempt: number;
-  maxAttempts: number;
-  queueKey: string;
-  startedAt: number | null;
-  finishedAt: number | null;
-  nextAttemptAt: number | null;
-  expiresAt: number | null;
-  error: string | null;
-  summary: string | null;
-}
-
-export interface SchedulerContextPackInput {
-  name: string;
-  instructions?: string;
-  prompt?: string;
-  contextPaths?: string[];
-  variableValues?: Record<string, string>;
-}
-
-export interface SchedulerRalphFlowPermissionsInput {
-  allowedRoots: string[];
-  allowCommands: boolean;
-  allowWrites: boolean;
-  allowNetwork: boolean;
-  allowMcpTools: boolean;
-}
-
-export interface SchedulerRalphFlowInput {
-  scope?: "workspace" | "user";
-  id: string;
-  params?: Record<string, string>;
-  maxTransitions?: number;
-  runLogScope?: "workspace" | "user";
-  executionProfile?: "unattended";
-  resumePolicy?: "never" | "recoverable";
-  permissions: SchedulerRalphFlowPermissionsInput;
-}
-
-export interface SchedulerRalphFlowSummary extends SchedulerRalphFlowInput {
-  scope: "workspace" | "user";
-  params: Record<string, string>;
-}
-
-export interface SchedulerCreateJobInput {
-  requestId?: string;
-  name?: string;
-  schedule?: SchedulerCreateScheduleInput;
-  triggers?: SchedulerCreateTriggerInput[];
-  targetType?: "prompt" | "ralph-flow";
-  prompt?: string;
-  promptFile?: string;
-  ralphFlow?: SchedulerRalphFlowInput;
-  contextPaths?: string[];
-  imagePaths?: string[];
-  contextPacks?: SchedulerContextPackInput[];
-  macros?: string[];
-  missedRunPolicy?: SchedulerMissedRunPolicy;
-  missedRunGraceMs?: number;
-  retryAttempts?: number;
-  retryMinMs?: number;
-  retryMaxMs?: number;
-  retryFactor?: number;
-  retryRandomize?: boolean;
-  dedupeKey?: string;
-  ttlMs?: number;
-  maxDurationMs?: number;
-  concurrencyKey?: string;
-  concurrencyLimit?: number;
-  historyLimit?: number;
-  maxCatchUpRuns?: number;
-  mode?: RuntimeSnapshot["mode"];
-  provider?: RuntimeProvider;
-  model?: string;
-  reasoning?: RuntimeSnapshot["reasoning"];
-}
-
-export interface SchedulerListJobsResult {
-  workspaceRoot: string;
-  jobs: SchedulerJobSummary[];
-}
-
-export interface SchedulerListRunsResult {
-  workspaceRoot: string;
-  runs: SchedulerRunSummary[];
-}
-
-export interface SchedulerJobActionResult {
-  job: SchedulerJobSummary;
-}
-
-export interface SchedulerRunActionResult {
-  run: SchedulerRunSummary;
-}
-
-export interface SchedulerRunHandle {
-  jobId: string;
-  runId: string;
-}
-
-export interface SchedulerEnqueueSummary {
-  handle: SchedulerRunHandle;
-  run: SchedulerRunSummary;
-  deduplicated: boolean;
-}
-
-export interface SchedulerRunDueResult {
-  queued: SchedulerRunSummary[];
-  runs: SchedulerRunSummary[];
-}
-
-export interface SchedulerRalphVariableReadinessSummary {
-  name: string;
-  type: string;
-  required: boolean;
-  default?: string;
-  value?: string;
-  source: "parameter" | "default" | "missing";
-}
-
-export interface SchedulerRalphReadinessResult {
-  ready: boolean;
-  flowId: string;
-  flowName?: string;
-  flowFingerprint?: string;
-  variables: SchedulerRalphVariableReadinessSummary[];
-  autoResolvedHumanBlockIds: string[];
-  blockingHumanBlockIds: string[];
-  errors: string[];
-  warnings: string[];
-}
-
-export interface SchedulerFleetRunResult {
-  recovered: number;
-  queued: number;
-  runs: number;
-  workspaces: Array<{
-    workspaceRoot: string;
-    recovered: number;
-    queued: number;
-    runs: number;
-    error?: string;
-  }>;
-}
-
-export interface SchedulerTriggerResult {
-  queued: SchedulerEnqueueSummary;
-  runs: SchedulerRunSummary[];
-}
-
-export interface SchedulerRetryResult {
-  handle: SchedulerRunHandle;
-  runs: SchedulerRunSummary[];
-}
-
-export interface SchedulerPromptDefinitionSummary {
-  path: string;
-  name: string;
-  enabled: boolean;
-  warnings: string[];
-}
-
-export interface SchedulerPromptSyncResult {
-  workspaceRoot: string;
-  discovered: SchedulerPromptDefinitionSummary[];
-  syncedJobs: SchedulerJobSummary[];
-  pausedJobs: SchedulerJobSummary[];
-}
 
 export interface McpCommandDiscoveryResult {
   workspaceRoot: string;
@@ -1367,7 +912,20 @@ const FLEET_CONTROL_COMMAND_KINDS = [
   "retry",
   "continue",
   "submit-message",
+  "edit-message",
+  "restore-prompt-history",
+  "replay-message",
+  "add-context-attachments",
+  "set-running-message-action",
+  "update-queued-message",
+  "move-queued-message",
+  "reorder-queued-message",
+  "remove-queued-message",
+  "retry-queued-message",
+  "remove-queued-attachment",
+  "clear-queued-attachments",
   "create-session",
+  "open-quick-chat",
   "activate-session",
   "archive-session",
   "pin-session",
@@ -1377,15 +935,21 @@ const FLEET_CONTROL_COMMAND_KINDS = [
   "rename-session",
   "tag-session",
   "clear-session-history",
+  "reset-session-time",
+  "move-session-to-top",
   "clear-session-mode",
   "clear-session-reasoning",
   "update-draft",
   "set-session-model",
   "set-session-mode",
+  "set-adaptive-controller",
   "set-parallel-agent-mode",
   "set-goal-mode",
   "set-session-reasoning",
   "set-session-workspace",
+  "add-workspace",
+  "remove-workspace",
+  "relink-workspace",
   "clear-session-workspace",
   "set-prompt-enhancement-mode",
   "set-interview",
@@ -1398,16 +962,14 @@ const FLEET_CONTROL_COMMAND_KINDS = [
   "remove-attachment",
   "clear-attachments",
   "apply-context-pack",
+  "save-context-pack",
+  "import-context-packs",
   "delete-context-pack",
   "save-message-context-pack",
   "speak-message",
   "stop-speaking",
-  "scheduler-trigger",
-  "scheduler-pause",
-  "scheduler-resume",
-  "scheduler-delete",
-  "scheduler-retry-run",
-  "scheduler-cancel-run",
+  "set-auto-speak",
+  "set-speech-input-recording",
   "ralph-run",
   "ralph-resume-run",
   "generate-media",
@@ -1809,11 +1371,64 @@ const isFleetControlCommandEvent = (
     ) &&
     (value.taskId === undefined || typeof value.taskId === "string") &&
     (value.sessionId === undefined || typeof value.sessionId === "string") &&
+    (value.specialKind === undefined ||
+      (value.kind === "create-session" && value.specialKind === "pose")) &&
+    (value.poseScene === undefined ||
+      (value.kind === "create-session" && value.specialKind === "pose" && isMediaPoseMap(value.poseScene))) &&
     (value.prompt === undefined || typeof value.prompt === "string") &&
+    (value.history === undefined || composerHistorySelectionSchema.safeParse(value.history).success) &&
+    (value.kind !== "restore-prompt-history" || (value.history !== undefined && typeof value.prompt === "string")) &&
     (value.goalObjective === undefined ||
       (typeof value.goalObjective === "string" &&
         value.goalObjective.trim().length > 0 &&
         value.goalObjective.trim().length <= 4_000)) &&
+    (value.iterationCount === undefined ||
+      (Number.isInteger(value.iterationCount) &&
+        Number(value.iterationCount) >= 1 &&
+        Number(value.iterationCount) <= 20)) &&
+    (value.iterationMode === undefined ||
+      ["repeat-prompt", "continue", "repeat-prompt-and-continue"].includes(
+        String(value.iterationMode),
+      )) &&
+    (value.runningAction === undefined ||
+      ["queue", "steer", "stop-and-send"].includes(
+        String(value.runningAction),
+      )) &&
+    (value.direction === undefined ||
+      value.direction === -1 ||
+      value.direction === 1) &&
+    (value.targetIndex === undefined ||
+      (Number.isInteger(value.targetIndex) &&
+        Number(value.targetIndex) >= 0 &&
+        Number(value.targetIndex) <= 511)) &&
+    (value.paths === undefined ||
+      (Array.isArray(value.paths) &&
+        value.paths.length > 0 &&
+        value.paths.length <= 64 &&
+        value.paths.every(
+          (path) =>
+            typeof path === "string" &&
+            path.length > 0 &&
+            path.length <= 2048 &&
+            !path.includes("\0"),
+        ))) &&
+    (value.variableValues === undefined ||
+      (isRecord(value.variableValues) &&
+        Object.keys(value.variableValues).length <= 64 &&
+        Object.entries(value.variableValues).every(
+          ([key, entry]) =>
+            key.length <= 240 &&
+            typeof entry === "string" &&
+            entry.length <= 12000,
+        ))) &&
+    (value.contextPack === undefined ||
+      contextPackDefinitionSchema.safeParse(value.contextPack).success) &&
+    (value.importedContextPacks === undefined ||
+      contextPackExportSchema.safeParse(value.importedContextPacks).success) &&
+    (value.kind !== "save-context-pack" || value.contextPack !== undefined) &&
+    (value.kind !== "import-context-packs" ||
+      (value.importedContextPacks !== undefined &&
+        ["workspace", "global"].includes(String(value.scope)))) &&
     (value.title === undefined || typeof value.title === "string") &&
     (value.tags === undefined ||
       (Array.isArray(value.tags) &&
@@ -1826,6 +1441,8 @@ const isFleetControlCommandEvent = (
       FLEET_CONTROL_RUN_MODES.includes(
         value.mode as (typeof FLEET_CONTROL_RUN_MODES)[number],
       )) &&
+    (value.kind !== "set-adaptive-controller" ||
+      ["default", "enabled", "disabled"].includes(String(value.mode))) &&
     (value.kind !== "set-parallel-agent-mode" ||
       ["disabled", "read-only", "machdoch", "native"].includes(
         String(value.mode),
@@ -1841,6 +1458,8 @@ const isFleetControlCommandEvent = (
       value.reasoning === undefined ||
       isRuntimeReasoningMode(value.reasoning)) &&
     (value.workspace === undefined || typeof value.workspace === "string") &&
+    (value.destinationWorkspace === undefined ||
+      typeof value.destinationWorkspace === "string") &&
     (value.enabled === undefined || typeof value.enabled === "boolean") &&
     (value.memoryId === undefined || typeof value.memoryId === "string") &&
     (value.attachmentId === undefined ||
@@ -1848,12 +1467,12 @@ const isFleetControlCommandEvent = (
     (value.contextPackId === undefined ||
       typeof value.contextPackId === "string") &&
     (value.messageId === undefined || typeof value.messageId === "string") &&
-    (value.jobId === undefined || typeof value.jobId === "string") &&
     (value.runId === undefined || typeof value.runId === "string") &&
     (value.flowId === undefined || typeof value.flowId === "string") &&
     (value.scope === undefined ||
       value.scope === "workspace" ||
-      value.scope === "user") &&
+      value.scope === "user" ||
+      value.scope === "global") &&
     (value.parameters === undefined ||
       (isRecord(value.parameters) &&
         Object.values(value.parameters).every(
@@ -2647,7 +2266,7 @@ const createSpeechToTextAvailabilitySnapshot = (
   return USER_SPEECH_TO_TEXT_PROVIDER_ORDER.map((provider) => ({
     provider,
     configured:
-      provider === "whisper" || configuredProviders.includes(provider),
+      isLocalSpeechProvider(provider) || configuredProviders.includes(provider),
   }));
 };
 
@@ -3165,6 +2784,9 @@ const loadTauriValueOrFallback = async <T>(
   errorFallback: () => T = fallback,
   throwOnTauriError = false,
 ): Promise<T> => {
+  const remote = getRemoteDeviceSettingsPlatform();
+  if (remote && Object.hasOwn(deviceSettingsCommands, command))
+    return remote.invoke<T>(command);
   if (!canInvokeTauriCommands()) {
     return fallback();
   }
@@ -3183,6 +2805,8 @@ const loadTauriValueOrFallback = async <T>(
 export const loadGlobalProviderAvailability = async (): Promise<
   RuntimeProviderAvailability[]
 > => {
+  if (getRemoteDeviceSettingsPlatform())
+    return invokeDeviceSettingsCommand("get_global_provider_availability");
   const remote = getRemoteRalphPlatform();
   if (remote) return remote.providers;
 
@@ -3196,6 +2820,15 @@ export const loadGlobalProviderAvailability = async (): Promise<
 
 export const loadProviderModelCatalog =
   async (): Promise<ProviderModelCatalogSnapshot> => {
+    if (getRemoteDeviceSettingsPlatform()) {
+      const snapshot =
+        await invokeDeviceSettingsCommand<ProviderModelCatalogSnapshot>(
+          "get_provider_model_catalog",
+        );
+      for (const provider of snapshot.providers)
+        replaceDiscoveredModelCapabilities(provider.provider, provider.models);
+      return snapshot;
+    }
     const remote = getRemoteRalphPlatform();
     if (remote) return remote.catalog;
 
@@ -3233,7 +2866,7 @@ export const saveUserProviderApiKey = async (
     throw new Error("Expected a non-empty API key.");
   }
 
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     const runtimeProvider = SUPPORTED_PROVIDER_ORDER.find(
       (entry): entry is Extract<RuntimeProvider, UserApiKeyProvider> =>
         entry === provider,
@@ -3244,13 +2877,12 @@ export const saveUserProviderApiKey = async (
   }
 
   try {
-    const result = await tauriCore.invoke<RuntimeProviderAvailability[]>(
-      "save_user_provider_api_key",
-      {
-        provider,
-        apiKey: normalizedApiKey,
-      },
-    );
+    const result = await invokeDeviceSettingsCommand<
+      RuntimeProviderAvailability[]
+    >("save_user_provider_api_key", {
+      provider,
+      apiKey: normalizedApiKey,
+    });
     await emitUserSettingsChanged("provider-keys");
     return result;
   } catch (error) {
@@ -3261,13 +2893,12 @@ export const saveUserProviderApiKey = async (
 export const deleteUserProviderApiKey = async (
   provider: UserApiKeyProvider,
 ): Promise<RuntimeProviderAvailability[]> => {
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return createProviderAvailabilitySnapshot([]);
   }
-  const result = await tauriCore.invoke<RuntimeProviderAvailability[]>(
-    "delete_user_provider_api_key",
-    { provider },
-  );
+  const result = await invokeDeviceSettingsCommand<
+    RuntimeProviderAvailability[]
+  >("delete_user_provider_api_key", { provider });
   await emitUserSettingsChanged("provider-keys");
   return result;
 };
@@ -3338,14 +2969,14 @@ export const loadUserDesktopSettings =
   };
 
 export const loadUserAnswerLanguage = async (): Promise<string> => {
-  return tauriCore.invoke<string>("get_user_answer_language");
+  return invokeDeviceSettingsCommand<string>("get_user_answer_language");
 };
 
 export const saveUserAnswerLanguage = async (
   language: string,
 ): Promise<string> => {
   const normalizedLanguage = language.trim();
-  const savedLanguage = await tauriCore.invoke<string>(
+  const savedLanguage = await invokeDeviceSettingsCommand<string>(
     "save_user_answer_language",
     { language: normalizedLanguage },
   );
@@ -3354,6 +2985,13 @@ export const saveUserAnswerLanguage = async (
 };
 
 export const loadUserMemorySettings = async (): Promise<UserMemorySettings> => {
+  if (getRemoteDeviceSettingsPlatform())
+    return invokeDeviceSettingsCommand("get_user_memory_settings");
+  const remote = getRemoteWorkspacePlatform();
+  if (remote)
+    return remote.transport.invoke<UserMemorySettings>(
+      "get_user_memory_settings",
+    );
   return loadTauriValueOrFallback(
     "get_user_memory_settings",
     createDefaultUserMemorySettings,
@@ -3367,6 +3005,13 @@ export const loadWorkspaceMemoryEntries = async (
   workspaceRoot?: string | null,
 ): Promise<ConversationMemoryEntry[]> => {
   const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+
+  const remote = getRemoteWorkspacePlatform();
+  if (remote && normalizedWorkspaceRoot)
+    return remote.transport.invoke<ConversationMemoryEntry[]>(
+      "get_workspace_memory_entries",
+      { workspaceRoot: normalizedWorkspaceRoot },
+    );
 
   if (!normalizedWorkspaceRoot || !canInvokeTauriCommands()) {
     return [];
@@ -3389,6 +3034,12 @@ export const loadWorkspaceReasoningBankLessons = async (
   if (!normalizedWorkspaceRoot) {
     throw new Error("Select a workspace to view ReasoningBank.");
   }
+  const remote = getRemoteWorkspacePlatform();
+  if (remote)
+    return remote.transport.invoke<ReasoningLesson[]>(
+      "get_workspace_reasoning_bank_lessons",
+      { workspaceRoot: normalizedWorkspaceRoot },
+    );
   if (!canInvokeTauriCommands()) return [];
   return await tauriCore.invoke<ReasoningLesson[]>(
     "get_workspace_reasoning_bank_lessons",
@@ -3406,6 +3057,13 @@ export const loadMcpConfigDocument = async (
     if (!normalizedWorkspaceRoot) {
       return createFallbackMcpConfigDocument("workspace", workspaceRoot);
     }
+
+    const remote = getRemoteWorkspacePlatform();
+    if (remote)
+      return remote.transport.invoke<McpConfigDocument>(
+        "get_workspace_mcp_config_document",
+        { workspaceRoot: normalizedWorkspaceRoot },
+      );
 
     if (!canInvokeTauriCommands()) {
       return createFallbackMcpConfigDocument(
@@ -3425,6 +3083,8 @@ export const loadMcpConfigDocument = async (
     }
   }
 
+  if (getRemoteDeviceSettingsPlatform())
+    return invokeDeviceSettingsCommand("get_user_mcp_config_document");
   if (!canInvokeTauriCommands()) {
     return createFallbackMcpConfigDocument("user");
   }
@@ -3474,6 +3134,10 @@ export const loadUserReviewModelSettings =
 
 export const loadUserInternalTaskModelSettings =
   async (): Promise<UserInternalTaskModelSettings> => {
+    if (getRemoteDeviceSettingsPlatform())
+      return invokeDeviceSettingsCommand(
+        "get_user_internal_task_model_settings",
+      );
     const remote = getRemoteRalphPlatform();
     if (remote) return remote.internalTaskModel;
 
@@ -3583,7 +3247,7 @@ export const acknowledgeRecentDesktopTaskResults = async (
 export const saveUserGlobalMemoryEnabled = async (
   enabled: boolean,
 ): Promise<UserMemorySettings> => {
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return {
       ...createDefaultUserMemorySettings(),
       globalEnabled: enabled,
@@ -3591,7 +3255,7 @@ export const saveUserGlobalMemoryEnabled = async (
   }
 
   try {
-    const result = await tauriCore.invoke<UserMemorySettings>(
+    const result = await invokeDeviceSettingsCommand<UserMemorySettings>(
       "save_user_global_memory_enabled",
       { enabled },
     );
@@ -3605,7 +3269,7 @@ export const saveUserGlobalMemoryEnabled = async (
 export const saveUserWorkspaceMemoryDefaultEnabled = async (
   enabled: boolean,
 ): Promise<UserMemorySettings> => {
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return {
       ...createDefaultUserMemorySettings(),
       workspaceDefaultEnabled: enabled,
@@ -3613,7 +3277,7 @@ export const saveUserWorkspaceMemoryDefaultEnabled = async (
   }
 
   try {
-    const result = await tauriCore.invoke<UserMemorySettings>(
+    const result = await invokeDeviceSettingsCommand<UserMemorySettings>(
       "save_user_workspace_memory_default_enabled",
       { enabled },
     );
@@ -3627,12 +3291,12 @@ export const saveUserWorkspaceMemoryDefaultEnabled = async (
 export const forgetUserGlobalMemoryEntry = async (
   id: string,
 ): Promise<UserMemorySettings> => {
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return createDefaultUserMemorySettings();
   }
 
   try {
-    const result = await tauriCore.invoke<UserMemorySettings>(
+    const result = await invokeDeviceSettingsCommand<UserMemorySettings>(
       "forget_user_global_memory_entry",
       { id },
     );
@@ -3652,6 +3316,13 @@ export const forgetWorkspaceMemoryEntry = async (
   if (!normalizedWorkspaceRoot) {
     throw new Error("Select a workspace before removing workspace memory.");
   }
+
+  const remote = getRemoteWorkspacePlatform();
+  if (remote)
+    return remote.transport.invoke<ConversationMemoryEntry[]>(
+      "forget_workspace_memory",
+      { workspaceRoot: normalizedWorkspaceRoot, id },
+    );
 
   if (!canInvokeTauriCommands()) {
     return [];
@@ -3682,6 +3353,26 @@ export const saveMcpConfigDocument = async (
       throw new Error("Select a workspace before saving workspace MCP config.");
     }
 
+    const remote = getRemoteWorkspacePlatform();
+    if (remote) {
+      if (expectedRaw === undefined)
+        throw new Error(
+          "Reload the workspace MCP configuration before saving.",
+        );
+      try {
+        return await remote.transport.invoke<McpConfigDocument>(
+          "save_workspace_mcp_config_document",
+          {
+            workspaceRoot: normalizedWorkspaceRoot,
+            rawBase64: encodeWorkspaceFileContent(normalizedRaw),
+            expectedRawBase64: encodeWorkspaceFileContent(expectedRaw),
+          },
+        );
+      } catch (error) {
+        throw normalizeMcpConfigSaveError(error);
+      }
+    }
+
     if (!canInvokeTauriCommands()) {
       return {
         ...createFallbackMcpConfigDocument(
@@ -3709,6 +3400,18 @@ export const saveMcpConfigDocument = async (
     }
   }
 
+  if (getRemoteDeviceSettingsPlatform()) {
+    if (expectedRaw === undefined)
+      throw new Error("Reload the global MCP configuration before saving.");
+    try {
+      return await invokeDeviceSettingsCommand<McpConfigDocument>(
+        "save_user_mcp_config_document",
+        { raw: normalizedRaw, expectedRaw },
+      );
+    } catch (error) {
+      throw normalizeMcpConfigSaveError(error);
+    }
+  }
   if (!canInvokeTauriCommands()) {
     return {
       ...createFallbackMcpConfigDocument("user"),
@@ -3737,7 +3440,7 @@ export const saveUserDesktopSettings = async (
 ): Promise<UserDesktopSettings> => {
   const normalizedSettings = normalizeUserDesktopSettings(settings);
 
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     const nextSettings = {
       ...createDefaultUserDesktopSettings(),
       ...normalizedSettings,
@@ -3748,7 +3451,7 @@ export const saveUserDesktopSettings = async (
   }
 
   try {
-    const nextSettings = await tauriCore.invoke<UserDesktopSettings>(
+    const nextSettings = await invokeDeviceSettingsCommand<UserDesktopSettings>(
       "save_user_desktop_settings",
       { settings: normalizedSettings },
     );
@@ -3765,12 +3468,12 @@ export const saveUserAgentLimitsSettings = async (
 ): Promise<UserAgentLimitsSettings> => {
   const normalizedSettings = normalizeUserAgentLimitsSettings(settings);
 
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return normalizedSettings;
   }
 
   try {
-    const result = await tauriCore.invoke<UserAgentLimitsSettings>(
+    const result = await invokeDeviceSettingsCommand<UserAgentLimitsSettings>(
       "save_user_agent_limits_settings",
       { settings: normalizedSettings },
     );
@@ -3786,12 +3489,12 @@ export const saveUserWorkspaceRunSettings = async (
 ): Promise<UserWorkspaceRunSettings> => {
   const normalizedSettings = normalizeUserWorkspaceRunSettings(settings);
 
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return normalizedSettings;
   }
 
   try {
-    const result = await tauriCore.invoke<UserWorkspaceRunSettings>(
+    const result = await invokeDeviceSettingsCommand<UserWorkspaceRunSettings>(
       "save_user_workspace_run_settings",
       { settings: normalizedSettings },
     );
@@ -3807,12 +3510,12 @@ export const saveUserReviewModelSettings = async (
 ): Promise<UserReviewModelSettings> => {
   const normalizedSettings = normalizeUserReviewModelSettings(settings);
 
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return normalizedSettings;
   }
 
   try {
-    const result = await tauriCore.invoke<UserReviewModelSettings>(
+    const result = await invokeDeviceSettingsCommand<UserReviewModelSettings>(
       "save_user_review_model_settings",
       { settings: normalizedSettings },
     );
@@ -3828,15 +3531,16 @@ export const saveUserInternalTaskModelSettings = async (
 ): Promise<UserInternalTaskModelSettings> => {
   const normalizedSettings = normalizeUserInternalTaskModelSettings(settings);
 
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return normalizedSettings;
   }
 
   try {
-    const result = await tauriCore.invoke<UserInternalTaskModelSettings>(
-      "save_user_internal_task_model_settings",
-      { settings: normalizedSettings },
-    );
+    const result =
+      await invokeDeviceSettingsCommand<UserInternalTaskModelSettings>(
+        "save_user_internal_task_model_settings",
+        { settings: normalizedSettings },
+      );
     await emitUserSettingsChanged("internal-task-model");
     return result;
   } catch (error) {
@@ -3858,12 +3562,12 @@ export const saveWorkspaceDefaultMode = async (
     throw new Error("Expected workspace mode to be one of ask or machdoch.");
   }
 
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return null;
   }
 
   try {
-    return await tauriCore.invoke<string>("save_workspace_default_mode", {
+    return await invokeWorkspaceTools<string>("save_workspace_default_mode", {
       workspaceRoot: normalizedWorkspaceRoot,
       mode,
     });
@@ -3888,15 +3592,18 @@ export const saveWorkspaceMemoryOverride = async (
     );
   }
 
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return null;
   }
 
   try {
-    return await tauriCore.invoke<string>("save_workspace_memory_override", {
-      workspaceRoot: normalizedWorkspaceRoot,
-      enabled,
-    });
+    return await invokeWorkspaceTools<string>(
+      "save_workspace_memory_override",
+      {
+        workspaceRoot: normalizedWorkspaceRoot,
+        enabled,
+      },
+    );
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -3915,8 +3622,8 @@ export const saveWorkspaceAdaptiveControllerOverride = async (
   if (enabled !== null && typeof enabled !== "boolean") {
     throw new Error("Choose Default, Enabled, or Disabled.");
   }
-  if (!canInvokeTauriCommands()) return null;
-  return await tauriCore.invoke<string>(
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) return null;
+  return await invokeWorkspaceTools<string>(
     "save_workspace_adaptive_controller_override",
     {
       workspaceRoot: normalizedWorkspaceRoot,
@@ -3933,8 +3640,8 @@ export const saveWorkspaceReasoningBankEnabled = async (
   if (!normalizedWorkspaceRoot) {
     throw new Error("Select a workspace before changing ReasoningBank.");
   }
-  if (!canInvokeTauriCommands()) return null;
-  return await tauriCore.invoke<string>(
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) return null;
+  return await invokeWorkspaceTools<string>(
     "save_workspace_reasoning_bank_enabled",
     {
       workspaceRoot: normalizedWorkspaceRoot,
@@ -3959,12 +3666,12 @@ export const saveWorkspaceReasoningMode = async (
     );
   }
 
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return null;
   }
 
   try {
-    return await tauriCore.invoke<string>("save_workspace_reasoning_mode", {
+    return await invokeWorkspaceTools<string>("save_workspace_reasoning_mode", {
       workspaceRoot: normalizedWorkspaceRoot,
       reasoning,
     });
@@ -3989,12 +3696,12 @@ export const saveWorkspaceContextWindow = async (
     );
   }
 
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return null;
   }
 
   try {
-    return await tauriCore.invoke<string>("save_workspace_context_window", {
+    return await invokeWorkspaceTools<string>("save_workspace_context_window", {
       workspaceRoot: normalizedWorkspaceRoot,
       contextWindow,
     });
@@ -4017,12 +3724,12 @@ export const saveWorkspaceReasoningExecutionMode = async (
     throw new Error("Expected workspace reasoning mode to be standard or pro.");
   }
 
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return null;
   }
 
   try {
-    return await tauriCore.invoke<string>(
+    return await invokeWorkspaceTools<string>(
       "save_workspace_reasoning_execution_mode",
       {
         workspaceRoot: normalizedWorkspaceRoot,
@@ -4037,6 +3744,12 @@ export const saveWorkspaceReasoningExecutionMode = async (
 export const subscribeToDesktopSettingsChanged = async (
   onChange: (settings: UserDesktopSettings) => void,
 ): Promise<() => void> => {
+  const remote = getRemoteDeviceSettingsPlatform();
+  if (remote)
+    return remote.listen<UserDesktopSettings>(
+      DESKTOP_SETTINGS_CHANGED_EVENT,
+      (event) => onChange(event.payload),
+    );
   if (!canEmitTauriWindowEvents()) {
     return () => {};
   }
@@ -4078,7 +3791,7 @@ export const saveUserWebSearchApiKey = async (
     throw new Error("Expected a non-empty API key.");
   }
 
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return {
       ...createDefaultUserWebSearchSettings(),
       apiKeys: {
@@ -4089,7 +3802,7 @@ export const saveUserWebSearchApiKey = async (
   }
 
   try {
-    const result = await tauriCore.invoke<UserWebSearchSettings>(
+    const result = await invokeDeviceSettingsCommand<UserWebSearchSettings>(
       "save_user_web_search_api_key",
       {
         provider,
@@ -4106,10 +3819,10 @@ export const saveUserWebSearchApiKey = async (
 export const deleteUserWebSearchApiKey = async (
   provider: UserWebSearchApiKeyProvider,
 ): Promise<UserWebSearchSettings> => {
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return createDefaultUserWebSearchSettings();
   }
-  const result = await tauriCore.invoke<UserWebSearchSettings>(
+  const result = await invokeDeviceSettingsCommand<UserWebSearchSettings>(
     "delete_user_web_search_api_key",
     { provider },
   );
@@ -4120,7 +3833,7 @@ export const deleteUserWebSearchApiKey = async (
 export const saveUserWebSearchActiveProvider = async (
   provider: WebSearchProvider,
 ): Promise<UserWebSearchSettings> => {
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return {
       ...createDefaultUserWebSearchSettings(),
       activeProvider: provider,
@@ -4128,7 +3841,7 @@ export const saveUserWebSearchActiveProvider = async (
   }
 
   try {
-    const result = await tauriCore.invoke<UserWebSearchSettings>(
+    const result = await invokeDeviceSettingsCommand<UserWebSearchSettings>(
       "save_user_web_search_active_provider",
       {
         provider,
@@ -4144,7 +3857,7 @@ export const saveUserWebSearchActiveProvider = async (
 export const saveUserVoiceActiveProvider = async (
   provider: VoiceAiProvider,
 ): Promise<UserVoiceSettings> => {
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return {
       ...createDefaultUserVoiceSettings(),
       activeProvider: provider,
@@ -4152,7 +3865,7 @@ export const saveUserVoiceActiveProvider = async (
   }
 
   try {
-    const result = await tauriCore.invoke<UserVoiceSettings>(
+    const result = await invokeDeviceSettingsCommand<UserVoiceSettings>(
       "save_user_voice_active_provider",
       { provider },
     );
@@ -4166,7 +3879,7 @@ export const saveUserVoiceActiveProvider = async (
 export const saveUserSpeechToTextActiveProvider = async (
   provider: SpeechToTextProvider,
 ): Promise<UserSpeechToTextSettings> => {
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return {
       ...createDefaultUserSpeechToTextSettings(),
       activeProvider: provider,
@@ -4174,7 +3887,7 @@ export const saveUserSpeechToTextActiveProvider = async (
   }
 
   try {
-    const result = await tauriCore.invoke<UserSpeechToTextSettings>(
+    const result = await invokeDeviceSettingsCommand<UserSpeechToTextSettings>(
       "save_user_speech_to_text_active_provider",
       { provider },
     );
@@ -4190,7 +3903,7 @@ export const saveUserSpeechToTextInputDevice = async (
 ): Promise<UserSpeechToTextSettings> => {
   const normalizedInputDeviceId = inputDeviceId?.trim() || null;
 
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return {
       ...createDefaultUserSpeechToTextSettings(),
       inputDeviceId: normalizedInputDeviceId,
@@ -4198,7 +3911,7 @@ export const saveUserSpeechToTextInputDevice = async (
   }
 
   try {
-    const result = await tauriCore.invoke<UserSpeechToTextSettings>(
+    const result = await invokeDeviceSettingsCommand<UserSpeechToTextSettings>(
       "save_user_speech_to_text_input_device",
       { inputDeviceId: normalizedInputDeviceId },
     );
@@ -4212,11 +3925,11 @@ export const saveUserSpeechToTextInputDevice = async (
 export const saveUserSpeechToTextKeyTerms = async (
   keyTerms: string[],
 ): Promise<UserSpeechToTextSettings> => {
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return { ...createDefaultUserSpeechToTextSettings(), keyTerms };
   }
 
-  const result = await tauriCore.invoke<UserSpeechToTextSettings>(
+  const result = await invokeDeviceSettingsCommand<UserSpeechToTextSettings>(
     "save_user_speech_to_text_key_terms",
     { keyTerms },
   );
@@ -4227,11 +3940,11 @@ export const saveUserSpeechToTextKeyTerms = async (
 export const saveUserSpeechToTextContext = async (
   speechContext: string,
 ): Promise<UserSpeechToTextSettings> => {
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return { ...createDefaultUserSpeechToTextSettings(), speechContext };
   }
 
-  const result = await tauriCore.invoke<UserSpeechToTextSettings>(
+  const result = await invokeDeviceSettingsCommand<UserSpeechToTextSettings>(
     "save_user_speech_to_text_context",
     { speechContext },
   );
@@ -4243,12 +3956,12 @@ export const saveUserSpeechToTextProcessing = async (options: {
   autoTranslateToEnglish: boolean;
   autoFormat: boolean;
 }): Promise<UserSpeechToTextSettings> => {
-  if (!canInvokeTauriCommands()) {
+  if (!canUseDeviceSettings()) {
     return { ...createDefaultUserSpeechToTextSettings(), ...options };
   }
 
   try {
-    const result = await tauriCore.invoke<UserSpeechToTextSettings>(
+    const result = await invokeDeviceSettingsCommand<UserSpeechToTextSettings>(
       "save_user_speech_to_text_processing",
       options,
     );
@@ -4365,6 +4078,14 @@ export const loadWorkspaceRuntimeSnapshot = async (
 ): Promise<RuntimeSnapshot | null> => {
   const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
 
+  const remote = getRemoteWorkspacePlatform();
+  if (remote) {
+    if (!normalizedWorkspaceRoot) throw new Error("Select a workspace first.");
+    return remote.transport.invoke<RuntimeSnapshot>("get_runtime_snapshot", {
+      workspaceRoot: normalizedWorkspaceRoot,
+    });
+  }
+
   if (!canInvokeTauriCommands()) {
     return null;
   }
@@ -4391,15 +4112,17 @@ export const cancelDesktopTask = async (taskId: string): Promise<void> => {
 export const resetDesktopTaskTimeout = async (
   taskId: string,
   idleTimeoutMinutes?: number,
-): Promise<void> => {
+): Promise<TaskExecutionTimeoutState> => {
   if (!canInvokeTauriCommands()) {
     throw new Error("Chat timeout controls require the desktop app.");
   }
 
-  await tauriCore.invoke("reset_desktop_task_timeout", {
-    taskId,
-    idleTimeoutMinutes,
-  });
+  return taskTimeoutSchema.parse(
+    await tauriCore.invoke("reset_desktop_task_timeout", {
+      taskId,
+      idleTimeoutMinutes,
+    }),
+  );
 };
 
 const normalizeFleetConnectionStatus = (
@@ -4619,17 +4342,20 @@ export const getPendingFleetControlCommands = async (): Promise<
 
 export const acknowledgeFleetControlCommand = async (
   commandId: string,
+  error: string | null = null,
 ): Promise<boolean> => {
   if (!canInvokeTauriCommands()) {
     return false;
   }
   return tauriCore.invoke<boolean>("acknowledge_fleet_control_command", {
     commandId,
+    error,
   });
 };
 
 export const updateFleetControlShellSnapshot = async (
   snapshot: FleetControlShellSnapshot,
+  sessionIds: string[],
 ): Promise<void> => {
   if (!canInvokeTauriCommands()) {
     return;
@@ -4637,6 +4363,7 @@ export const updateFleetControlShellSnapshot = async (
 
   await tauriCore.invoke("update_fleet_control_shell_snapshot", {
     snapshot,
+    sessionIds,
   });
 };
 
@@ -4694,24 +4421,19 @@ const normalizeInstructionCommandWorkspace = (
   return normalizeWorkspaceRoot(workspaceRoot) ?? "";
 };
 
-const appendInstructionOption = (
-  argumentsList: string[],
-  flag: string,
-  value: string | number | undefined,
-): void => {
-  if (value === undefined) {
-    return;
-  }
-
-  argumentsList.push(flag);
-  argumentsList.push(String(value));
-};
-
 const runInstructionCommand = async <Result>(
   workspaceRoot: string | null | undefined,
   argumentsList: string[],
   fallback: () => Result,
 ): Promise<Result> => {
+  const remote = getRemoteInstructionPlatform();
+  if (remote)
+    return remote.invoke<Result>("run_instruction_command", {
+      request: {
+        workspaceRoot: normalizeInstructionCommandWorkspace(workspaceRoot),
+        arguments: argumentsList,
+      },
+    });
   if (!canInvokeTauriCommands()) {
     return fallback();
   }
@@ -4731,7 +4453,7 @@ const runInstructionCommand = async <Result>(
 export const listInstructions = async (
   workspaceRoot: string | null | undefined,
 ): Promise<InstructionRegistryResult> => {
-  if (!canInvokeTauriCommands()) {
+  if (!getRemoteInstructionPlatform() && !canInvokeTauriCommands()) {
     return {
       schemaVersion: 2,
       revision: 0,
@@ -4747,189 +4469,11 @@ export const listInstructions = async (
       ],
     };
   }
-  let recovery: InstructionLibraryRecoveryView | undefined;
-  try {
-    recovery = await runInstructionCommand<InstructionLibraryRecoveryView>(
-      workspaceRoot,
-      ["recovery", "status"],
-      () => ({
-        libraryPath: "",
-        backupPath: "",
-        primaryValid: true,
-        backupValid: false,
-      }),
-    );
-  } catch (error) {
-    recovery = {
-      libraryPath: "",
-      backupPath: "",
-      // A status-command failure does not prove that the primary is invalid.
-      // The independent list command below remains the source of truth for
-      // whether the library can be used.
-      primaryValid: true,
-      backupValid: false,
-      errorCode: "INSTRUCTION_LIBRARY_RECOVERY_STATUS_UNAVAILABLE",
-      errorMessage: error instanceof Error ? error.message : String(error),
-    };
-  }
-  let library: Pick<
-    InstructionRegistryResult,
-    "schemaVersion" | "revision" | "profiles" | "workspaces"
-  > = {
-    schemaVersion: 2,
-    revision: 0,
-    profiles: [],
-    workspaces: [],
-  };
-  let libraryError: string | undefined;
-  try {
-    library = await runInstructionCommand<typeof library>(
-      workspaceRoot,
-      ["profiles", "list", "--include-content"],
-      assertInstructionDesktopAvailable,
-    );
-  } catch (error) {
-    libraryError = error instanceof Error ? error.message : String(error);
-  }
-  return {
-    ...library,
-    ...(recovery === undefined ? {} : { recovery }),
-    ...(libraryError === undefined ? {} : { libraryError }),
-  };
-};
-
-const createInstructionMutationArguments = (
-  input: InstructionMutationInput,
-): string[] => {
-  const args: string[] = [];
-  switch (input.operation) {
-    case "profile-create":
-      args.push("profiles", "create");
-      appendInstructionOption(args, "--name", input.name);
-      appendInstructionOption(args, "--description", input.description);
-      appendInstructionOption(args, "--prompt", input.body);
-      appendInstructionOption(
-        args,
-        "--metadata-json",
-        JSON.stringify({
-          ...(input.profileId === undefined ? {} : { id: input.profileId }),
-          ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
-          ...(input.global === undefined ? {} : { global: input.global }),
-          ...(input.tags === undefined ? {} : { tags: input.tags }),
-          ...(input.match === undefined ? {} : { match: input.match }),
-        }),
-      );
-      appendInstructionOption(
-        args,
-        "--expected-revision",
-        input.expectedRevision,
-      );
-      break;
-    case "profile-edit":
-      args.push("profiles", "edit", input.profileId);
-      appendInstructionOption(args, "--name", input.name);
-      if (input.description !== undefined) {
-        args.push("--description", input.description);
-      }
-      appendInstructionOption(args, "--prompt", input.body);
-      appendInstructionOption(
-        args,
-        "--metadata-json",
-        JSON.stringify({
-          ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
-          ...(input.global === undefined ? {} : { global: input.global }),
-          ...(input.tags === undefined ? {} : { tags: input.tags }),
-          ...(input.match === undefined ? {} : { match: input.match }),
-        }),
-      );
-      appendInstructionOption(
-        args,
-        "--expected-revision",
-        input.expectedRevision,
-      );
-      break;
-    case "profile-duplicate":
-      args.push("profiles", "duplicate", input.profileId);
-      appendInstructionOption(args, "--name", input.name);
-      appendInstructionOption(
-        args,
-        "--expected-revision",
-        input.expectedRevision,
-      );
-      break;
-    case "profile-delete":
-      args.push("profiles", "delete", input.profileId);
-      appendInstructionOption(
-        args,
-        "--expected-revision",
-        input.expectedRevision,
-      );
-      break;
-    case "workspace-configure":
-      args.push("workspaces", "configure", input.root);
-      appendInstructionOption(args, "--name", input.displayName);
-      appendInstructionOption(
-        args,
-        "--metadata-json",
-        JSON.stringify({
-          ...(input.tags === undefined ? {} : { tags: input.tags }),
-          ...(input.profileIds === undefined
-            ? {}
-            : { profileIds: input.profileIds }),
-        }),
-      );
-      appendInstructionOption(
-        args,
-        "--expected-revision",
-        input.expectedRevision,
-      );
-      break;
-    case "workspace-relink":
-      args.push("workspaces", "relink", input.workspaceId);
-      appendInstructionOption(args, "--path", input.root);
-      appendInstructionOption(
-        args,
-        "--expected-revision",
-        input.expectedRevision,
-      );
-      break;
-    case "workspace-remove":
-      args.push("workspaces", "remove", input.workspaceId);
-      if (input.confirmAssignedRemoval) {
-        args.push("--confirm-assignment-removal");
-      }
-      appendInstructionOption(
-        args,
-        "--expected-revision",
-        input.expectedRevision,
-      );
-      break;
-    case "workspace-scope-set":
-      if (input.profileIds.length === 0) {
-        args.push("assignments", "remove", input.workspaceId);
-      } else {
-        args.push("assignments", "set", input.workspaceId);
-        for (const profileId of input.profileIds) {
-          appendInstructionOption(args, "--profile", profileId);
-        }
-      }
-      appendInstructionOption(args, "--path", input.path);
-      appendInstructionOption(
-        args,
-        "--expected-revision",
-        input.expectedRevision,
-      );
-      break;
-    case "recovery-restore":
-      args.push("recovery", "restore");
-      appendInstructionOption(args, "--expected-digest", input.expectedDigest);
-      break;
-    case "recovery-reset":
-      args.push("recovery", "reset");
-      appendInstructionOption(args, "--expected-digest", input.expectedDigest);
-      break;
-  }
-  return args;
+  return runInstructionCommand<InstructionRegistryResult>(
+    workspaceRoot,
+    ["registry", "list", "--include-content"],
+    assertInstructionDesktopAvailable,
+  );
 };
 
 export const mutateInstructions = async (
@@ -4949,11 +4493,11 @@ export const loadWorkspaceGitRepositories = async (
   if (!normalizedWorkspaceRoot) {
     throw new Error("Select a workspace before loading Git information.");
   }
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return discoverPreviewWorkspaceGitRepositories(normalizedWorkspaceRoot);
   }
   try {
-    return await tauriCore.invoke<WorkspaceGitRepositoryDiscovery>(
+    return await invokeWorkspaceTools<WorkspaceGitRepositoryDiscovery>(
       "discover_workspace_git_repositories",
       { workspaceRoot: normalizedWorkspaceRoot },
     );
@@ -4971,14 +4515,14 @@ export const loadWorkspaceGitOverview = async (
   if (!normalizedWorkspaceRoot || !normalizedRepositoryRoot) {
     throw new Error("Select a Git repository before loading its status.");
   }
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return loadPreviewWorkspaceGitOverview(
       normalizedWorkspaceRoot,
       normalizedRepositoryRoot,
     );
   }
   try {
-    return await tauriCore.invoke<WorkspaceGitOverview>(
+    return await invokeWorkspaceTools<WorkspaceGitOverview>(
       "get_workspace_git_overview",
       {
         request: {
@@ -5006,7 +4550,7 @@ export const loadWorkspaceGitDiff = async (
   if (!normalizedRelativePath) {
     throw new Error("Select a changed file to view its diff.");
   }
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return loadPreviewWorkspaceGitDiff(
       normalizedWorkspaceRoot,
       normalizedRepositoryRoot,
@@ -5014,13 +4558,16 @@ export const loadWorkspaceGitDiff = async (
     );
   }
   try {
-    return await tauriCore.invoke<WorkspaceGitDiff>("get_workspace_git_diff", {
-      request: {
-        workspaceRoot: normalizedWorkspaceRoot,
-        repositoryRoot: normalizedRepositoryRoot,
-        relativePath: normalizedRelativePath,
+    return await invokeWorkspaceTools<WorkspaceGitDiff>(
+      "get_workspace_git_diff",
+      {
+        request: {
+          workspaceRoot: normalizedWorkspaceRoot,
+          repositoryRoot: normalizedRepositoryRoot,
+          relativePath: normalizedRelativePath,
+        },
       },
-    });
+    );
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -5035,14 +4582,14 @@ export const loadWorkspacePullRequests = async (
   if (!normalizedWorkspaceRoot || !normalizedRepositoryRoot) {
     throw new Error("Select a Git repository before loading pull requests.");
   }
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return loadPreviewWorkspacePullRequests(
       normalizedWorkspaceRoot,
       normalizedRepositoryRoot,
     );
   }
   try {
-    return await tauriCore.invoke<WorkspacePullRequestOverview>(
+    return await invokeWorkspaceTools<WorkspacePullRequestOverview>(
       "get_workspace_pull_requests",
       {
         request: {
@@ -5071,14 +4618,14 @@ export const runWorkspaceGitAction = async (
   if (!normalizedWorkspaceRoot || !normalizedRepositoryRoot) {
     throw new Error("Select a Git repository before running an action.");
   }
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return loadPreviewWorkspaceGitOverview(
       normalizedWorkspaceRoot,
       normalizedRepositoryRoot,
     );
   }
   try {
-    return await tauriCore.invoke<WorkspaceGitOverview>(
+    return await invokeWorkspaceTools<WorkspaceGitOverview>(
       "run_workspace_git_action",
       {
         request: {
@@ -5117,9 +4664,10 @@ export const loadWorkspaceRunConfigurationDocument = async (
   workspaceRoot: string,
 ): Promise<WorkspaceRunConfigurationDocument> => {
   const root = requireWorkspaceRoot(workspaceRoot);
-  if (!canInvokeTauriCommands()) return createEmptyWorkspaceRunDocument();
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform())
+    return createEmptyWorkspaceRunDocument();
   try {
-    return await tauriCore.invoke<WorkspaceRunConfigurationDocument>(
+    return await invokeWorkspaceTools<WorkspaceRunConfigurationDocument>(
       "get_workspace_run_configuration_document",
       { workspaceRoot: root },
     );
@@ -5132,9 +4680,10 @@ export const loadWorkspaceRunSnapshot = async (
   workspaceRoot: string,
 ): Promise<WorkspaceRunSnapshot> => {
   const root = requireWorkspaceRoot(workspaceRoot);
-  if (!canInvokeTauriCommands()) return createEmptyWorkspaceRunSnapshot(root);
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform())
+    return createEmptyWorkspaceRunSnapshot(root);
   try {
-    return await tauriCore.invoke<WorkspaceRunSnapshot>(
+    return await invokeWorkspaceTools<WorkspaceRunSnapshot>(
       "get_workspace_run_snapshot",
       { workspaceRoot: root },
     );
@@ -5148,7 +4697,7 @@ export const saveWorkspaceRunConfigurationDocument = async (
   document: WorkspaceRunConfigurationDocument,
 ): Promise<WorkspaceRunSnapshot> => {
   const root = requireWorkspaceRoot(workspaceRoot);
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return {
       ...createEmptyWorkspaceRunSnapshot(root),
       primaryConfigurationId: workspaceRunPrimaryConfigurationId(
@@ -5158,9 +4707,20 @@ export const saveWorkspaceRunConfigurationDocument = async (
     };
   }
   try {
-    return await tauriCore.invoke<WorkspaceRunSnapshot>(
+    return await invokeWorkspaceTools<WorkspaceRunSnapshot>(
       "save_workspace_run_configuration_document",
-      { request: { workspaceRoot: root, document } },
+      {
+        request: {
+          workspaceRoot: root,
+          ...(getRemoteWorkspacePlatform()
+            ? {
+                documentBase64: encodeWorkspaceFileContent(
+                  JSON.stringify(document),
+                ),
+              }
+            : { document }),
+        },
+      },
     );
   } catch (error) {
     throw normalizeWorkspaceToolsError(error);
@@ -5176,9 +4736,10 @@ const runWorkspaceConfigurationAction = async (
   configurationId?: string,
 ): Promise<WorkspaceRunSnapshot> => {
   const root = requireWorkspaceRoot(workspaceRoot);
-  if (!canInvokeTauriCommands()) return createEmptyWorkspaceRunSnapshot(root);
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform())
+    return createEmptyWorkspaceRunSnapshot(root);
   try {
-    return await tauriCore.invoke<WorkspaceRunSnapshot>(action, {
+    return await invokeWorkspaceTools<WorkspaceRunSnapshot>(action, {
       request: {
         workspaceRoot: root,
         ...(configurationId?.trim()
@@ -5226,15 +4787,22 @@ export const precheckWorkspaceRunConfigurationJson = async (
   documentJson: string,
 ): Promise<WorkspaceRunConfigurationDocument> => {
   const root = requireWorkspaceRoot(workspaceRoot);
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     throw new Error(
       "Run configuration precheck is only available in the desktop app.",
     );
   }
   try {
-    return await tauriCore.invoke<WorkspaceRunConfigurationDocument>(
+    return await invokeWorkspaceTools<WorkspaceRunConfigurationDocument>(
       "precheck_workspace_run_configuration_json",
-      { request: { workspaceRoot: root, documentJson } },
+      {
+        request: {
+          workspaceRoot: root,
+          ...(getRemoteWorkspacePlatform()
+            ? { documentBase64: encodeWorkspaceFileContent(documentJson) }
+            : { documentJson }),
+        },
+      },
     );
   } catch (error) {
     throw normalizeWorkspaceToolsError(error);
@@ -5243,7 +4811,13 @@ export const precheckWorkspaceRunConfigurationJson = async (
 
 export const listenWorkspaceRunState = async (
   listener: (snapshot: WorkspaceRunSnapshot) => void,
+  workspaceRoot?: string,
 ): Promise<() => void> => {
+  const remote = getRemoteWorkspacePlatform();
+  if (remote) {
+    if (!workspaceRoot) throw new Error("Select a workspace first.");
+    return remote.subscribeRunState(workspaceRoot, listener);
+  }
   if (!canInvokeTauriCommands()) return () => undefined;
   return listen<WorkspaceRunSnapshot>(WORKSPACE_RUN_STATE_EVENT, (event) => {
     listener(event.payload);
@@ -5288,11 +4862,11 @@ export const listWorkspaceDirectory = async (
   if (!Number.isSafeInteger(offset) || offset < 0) {
     throw new Error("The directory page offset is invalid.");
   }
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return listPreviewWorkspaceDirectory(path, offset);
   }
   try {
-    return await tauriCore.invoke<WorkspaceDirectoryPage>(
+    return await invokeWorkspaceTools<WorkspaceDirectoryPage>(
       "list_workspace_directory",
       { workspaceRoot: root, relativePath: path, offset },
     );
@@ -5307,9 +4881,10 @@ export const readWorkspaceFile = async (
 ): Promise<WorkspaceFileDocument> => {
   const root = requireWorkspaceRoot(workspaceRoot);
   const path = requireWorkspaceRelativePath(relativePath);
-  if (!canInvokeTauriCommands()) return readPreviewWorkspaceFile(path);
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform())
+    return readPreviewWorkspaceFile(path);
   try {
-    return await tauriCore.invoke<WorkspaceFileDocument>(
+    return await invokeWorkspaceTools<WorkspaceFileDocument>(
       "read_workspace_file",
       { workspaceRoot: root, relativePath: path },
     );
@@ -5328,7 +4903,7 @@ export const saveWorkspaceFile = async (
   const root = requireWorkspaceRoot(workspaceRoot);
   const path = requireWorkspaceRelativePath(relativePath);
   if (!expectedRevision) throw new Error("Reload the file before saving.");
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return savePreviewWorkspaceFile(
       path,
       content,
@@ -5338,13 +4913,15 @@ export const saveWorkspaceFile = async (
     );
   }
   try {
-    return await tauriCore.invoke<WorkspaceFileSaveResult>(
+    return await invokeWorkspaceTools<WorkspaceFileSaveResult>(
       "save_workspace_file",
       {
         request: {
           workspaceRoot: root,
           relativePath: path,
-          content,
+          ...(getRemoteWorkspacePlatform()
+            ? { contentBase64: encodeWorkspaceFileContent(content) }
+            : { content }),
           expectedRevision,
           force: options.force ?? false,
           bom: options.bom ?? false,
@@ -5365,11 +4942,11 @@ export const createWorkspaceEntry = async (
   const root = requireWorkspaceRoot(workspaceRoot);
   const parent = requireWorkspaceRelativePath(parentPath);
   if (!name) throw new Error("Enter a name.");
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return createPreviewWorkspaceEntry(parent, name, kind);
   }
   try {
-    return await tauriCore.invoke<string>("create_workspace_entry", {
+    return await invokeWorkspaceTools<string>("create_workspace_entry", {
       request: { workspaceRoot: root, parentPath: parent, name, kind },
     });
   } catch (error) {
@@ -5385,11 +4962,11 @@ export const renameWorkspaceEntry = async (
   const root = requireWorkspaceRoot(workspaceRoot);
   const path = requireWorkspaceRelativePath(relativePath);
   if (!name) throw new Error("Enter a name.");
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return renamePreviewWorkspaceEntry(path, name);
   }
   try {
-    return await tauriCore.invoke<string>("rename_workspace_entry", {
+    return await invokeWorkspaceTools<string>("rename_workspace_entry", {
       request: { workspaceRoot: root, relativePath: path, name },
     });
   } catch (error) {
@@ -5404,12 +4981,12 @@ export const deleteWorkspaceEntry = async (
 ): Promise<void> => {
   const root = requireWorkspaceRoot(workspaceRoot);
   const path = requireWorkspaceRelativePath(relativePath);
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     deletePreviewWorkspaceEntry(path);
     return;
   }
   try {
-    await tauriCore.invoke("delete_workspace_entry", {
+    await invokeWorkspaceTools("delete_workspace_entry", {
       request: { workspaceRoot: root, relativePath: path, recursive },
     });
   } catch (error) {
@@ -5417,17 +4994,24 @@ export const deleteWorkspaceEntry = async (
   }
 };
 
-export const discoverWorkspaceShells =
-  async (): Promise<WorkspaceShellDiscovery> => {
-    if (!canInvokeTauriCommands()) return discoverPreviewWorkspaceShells();
-    try {
-      return await tauriCore.invoke<WorkspaceShellDiscovery>(
-        "discover_workspace_shells",
-      );
-    } catch (error) {
-      throw normalizeWorkspaceToolsError(error);
-    }
-  };
+export const discoverWorkspaceShells = async (
+  workspaceRoot: string,
+): Promise<WorkspaceShellDiscovery> => {
+  const remote = getRemoteWorkspacePlatform();
+  if (remote) {
+    return remote.transport.invoke("discover_workspace_shells", {
+      workspaceRoot: requireTerminalWorkspaceRoot(workspaceRoot),
+    });
+  }
+  if (!canInvokeTauriCommands()) return discoverPreviewWorkspaceShells();
+  try {
+    return await tauriCore.invoke<WorkspaceShellDiscovery>(
+      "discover_workspace_shells",
+    );
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
 
 export const startWorkspaceTerminal = async (
   workspaceRoot: string,
@@ -5438,6 +5022,9 @@ export const startWorkspaceTerminal = async (
 ): Promise<WorkspaceTerminalStarted> => {
   const root = requireTerminalWorkspaceRoot(workspaceRoot);
   if (!shellId) throw new Error("Choose a shell.");
+  const remote = getRemoteWorkspacePlatform();
+  if (remote)
+    return remote.startTerminal(root, shellId, columns, rows, onEvent);
   if (!canInvokeTauriCommands()) {
     await new Promise<void>((resolve) => window.setTimeout(resolve, 200));
     return startPreviewWorkspaceTerminal(root, shellId, onEvent);
@@ -5467,6 +5054,11 @@ export const writeWorkspaceTerminal = async (
   data: string,
 ): Promise<void> => {
   if (!sessionId) throw new Error("This terminal is no longer running.");
+  const remote = getRemoteWorkspacePlatform();
+  if (remote)
+    return remote.terminalCommand("write_workspace_terminal", sessionId, {
+      data,
+    });
   if (!canInvokeTauriCommands()) {
     writePreviewWorkspaceTerminal(sessionId, data);
     return;
@@ -5484,6 +5076,13 @@ export const writeWorkspaceTerminalBinary = async (
 ): Promise<void> => {
   if (!sessionId) throw new Error("This terminal is no longer running.");
   const encoded = encodeBinaryStringAsBase64(data);
+  const remote = getRemoteWorkspacePlatform();
+  if (remote)
+    return remote.terminalCommand(
+      "write_workspace_terminal_binary",
+      sessionId,
+      { data: encoded },
+    );
   if (!canInvokeTauriCommands()) {
     writePreviewWorkspaceTerminal(sessionId, data);
     return;
@@ -5502,6 +5101,13 @@ export const acknowledgeWorkspaceTerminalOutput = async (
   sessionId: string,
   bytes: number,
 ): Promise<void> => {
+  const remote = getRemoteWorkspacePlatform();
+  if (sessionId && remote)
+    return remote.terminalCommand(
+      "acknowledge_workspace_terminal_output",
+      sessionId,
+      { bytes: Math.max(0, Math.round(bytes)) },
+    );
   if (!sessionId || !canInvokeTauriCommands()) return;
   try {
     await tauriCore.invoke("acknowledge_workspace_terminal_output", {
@@ -5518,6 +5124,12 @@ export const resizeWorkspaceTerminal = async (
   columns: number,
   rows: number,
 ): Promise<void> => {
+  const remote = getRemoteWorkspacePlatform();
+  if (sessionId && remote)
+    return remote.terminalCommand("resize_workspace_terminal", sessionId, {
+      columns: Math.round(columns),
+      rows: Math.round(rows),
+    });
   if (!sessionId || !canInvokeTauriCommands()) return;
   try {
     await tauriCore.invoke("resize_workspace_terminal", {
@@ -5534,6 +5146,8 @@ export const stopWorkspaceTerminal = async (
   sessionId: string,
 ): Promise<void> => {
   if (!sessionId) return;
+  const remote = getRemoteWorkspacePlatform();
+  if (remote) return remote.stopTerminal(sessionId);
   if (!canInvokeTauriCommands()) {
     stopPreviewWorkspaceTerminal(sessionId);
     return;
@@ -5549,6 +5163,8 @@ export const stopWorkspaceTerminals = async (
   workspaceRoot: string,
 ): Promise<number> => {
   const root = requireTerminalWorkspaceRoot(workspaceRoot);
+  const remote = getRemoteWorkspacePlatform();
+  if (remote) return remote.stopTerminals(root);
   if (!canInvokeTauriCommands()) {
     return stopPreviewWorkspaceTerminals(root);
   }
@@ -5567,6 +5183,12 @@ export const openWorkspaceTerminalHost = async (
 ): Promise<void> => {
   const root = requireTerminalWorkspaceRoot(workspaceRoot);
   if (!terminalId) return;
+  const remote = getRemoteWorkspacePlatform();
+  if (remote)
+    return remote.transport.invoke("open_workspace_terminal_host", {
+      workspaceRoot: root,
+      terminalId,
+    });
   if (!canInvokeTauriCommands()) return;
   try {
     await tauriCore.invoke("open_workspace_terminal_host", {
@@ -5583,6 +5205,16 @@ const runMcpCommand = async <Result>(
   argumentsList: string[],
   fallback: () => Result,
 ): Promise<Result> => {
+  const remote = getRemoteWorkspacePlatform();
+  if (remote)
+    return remote.transport.invoke<Result>("run_mcp_command", {
+      request: {
+        workspaceRoot: requireWorkspaceRoot(
+          normalizeMcpCommandWorkspace(workspaceRoot),
+        ),
+        arguments: argumentsList,
+      },
+    });
   if (!canInvokeTauriCommands()) {
     return fallback();
   }
@@ -5745,7 +5377,7 @@ const runRalphCommand = async <Result>(
   fallback: () => Result,
   options?: { taskId?: string },
 ): Promise<Result> => {
-  const remote = getRemoteRalphPlatform();
+  const remote = getRemoteRalphPlatform() ?? getRemoteSchedulerPlatform();
   if (remote)
     return remote.invoke<Result>("run_ralph_command", {
       request: {
@@ -6369,17 +6001,19 @@ const runSchedulerCommand = async <Result>(
   invalidPayloadMessage: string,
   fallback: () => Result,
 ): Promise<Result> => {
-  if (!canInvokeTauriCommands()) {
-    return fallback();
-  }
+  const remote = getRemoteSchedulerPlatform();
+  if (!remote && !canInvokeTauriCommands()) return fallback();
 
   try {
-    const response = await tauriCore.invoke<unknown>("run_scheduler_command", {
+    const args = {
       request: {
         workspaceRoot: normalizeSchedulerCommandWorkspace(workspaceRoot),
         arguments: argumentsList,
       },
-    });
+    };
+    const response = remote
+      ? await remote.invoke<unknown>("run_scheduler_command", args)
+      : await tauriCore.invoke<unknown>("run_scheduler_command", args);
     const normalizedResponse = normalize(response);
 
     if (!normalizedResponse) {
@@ -6882,6 +6516,12 @@ export const runDueSchedulerJobs = async (
 export const subscribeToUserSettingsChanged = async (
   onChange: (kind: UserSettingsChangeKind) => void,
 ): Promise<() => void> => {
+  const remote = getRemoteDeviceSettingsPlatform();
+  if (remote)
+    return remote.listen<{ kind: UserSettingsChangeKind }>(
+      USER_SETTINGS_CHANGED_EVENT,
+      (event) => onChange(event.payload.kind),
+    );
   if (!canEmitTauriWindowEvents()) {
     return () => {};
   }
@@ -6911,6 +6551,7 @@ export type UserSettingsChangeKind =
   | "review-model"
   | "internal-task-model"
   | "provider-enrollment"
+  | "instructions"
   | "mcp";
 
 const emitUserSettingsChanged = async (
@@ -7136,73 +6777,52 @@ export const getTaskFileChangeFiles = async (
 const runProviderSyncCommand = async <Result>(
   workspaceRoot: string | null | undefined,
   argumentsList: string[],
-  fallback: () => Result,
 ): Promise<Result> => {
-  if (!canInvokeTauriCommands()) {
-    return fallback();
-  }
+  const request = {
+    workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
+    arguments: argumentsList,
+  };
+  const remote = getRemoteWorkspacePlatform();
+  if (remote)
+    return remote.transport.invoke<Result>("run_provider_sync_command", {
+      request,
+    });
+  if (!canInvokeTauriCommands())
+    throw new Error("Connect to a client to manage provider sync.");
   try {
     return await tauriCore.invoke<Result>("run_provider_sync_command", {
-      request: {
-        workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
-        arguments: argumentsList,
-      },
+      request,
     });
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
 };
 
-const createProviderSyncFallback = (
-  workspaceRoot: string | null | undefined,
-): ProviderSyncStatus => ({
-  schemaVersion: 1,
-  enabled: false,
-  daemon: { running: false, autostartInstalled: false },
-  workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
-  targets: [],
-});
-
 export const getProviderSyncStatus = async (
   workspaceRoot: string | null | undefined,
 ): Promise<ProviderSyncStatus> =>
-  runProviderSyncCommand(workspaceRoot, ["status"], () =>
-    createProviderSyncFallback(workspaceRoot),
-  );
+  runProviderSyncCommand(workspaceRoot, ["status"]);
 
 export const refreshProviderSync = async (
   workspaceRoot: string | null | undefined,
 ): Promise<ProviderSyncStatus> =>
-  runProviderSyncCommand(workspaceRoot, ["refresh"], () =>
-    createProviderSyncFallback(workspaceRoot),
-  );
+  runProviderSyncCommand(workspaceRoot, ["refresh"]);
 
 export const setProviderSyncEnabled = async (
   workspaceRoot: string | null | undefined,
   enabled: boolean,
 ): Promise<ProviderSyncStatus> =>
-  runProviderSyncCommand(
-    workspaceRoot,
-    [enabled ? "enable" : "disable"],
-    () => ({ ...createProviderSyncFallback(workspaceRoot), enabled }),
-  );
+  runProviderSyncCommand(workspaceRoot, [enabled ? "enable" : "disable"]);
 
 export const doctorProviderSync = async (
   workspaceRoot: string | null | undefined,
 ): Promise<Record<string, unknown>> =>
-  runProviderSyncCommand(workspaceRoot, ["doctor"], () => ({
-    healthy: false,
-    status: createProviderSyncFallback(workspaceRoot),
-  }));
+  runProviderSyncCommand(workspaceRoot, ["doctor"]);
 
 export const planProviderSync = async (
   workspaceRoot: string | null | undefined,
 ): Promise<Record<string, unknown>> =>
-  runProviderSyncCommand(workspaceRoot, ["plan"], () => ({
-    enabled: false,
-    workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
-    providers: [],
-  }));
+  runProviderSyncCommand(workspaceRoot, ["plan"]);
 
 export const getTaskFileChangeHunks = async (
   changeSetId: string,
@@ -7355,12 +6975,12 @@ export const openWorkspacePath = async (
     throw new Error("Expected a workspace-relative path.");
   }
 
-  if (!canInvokeTauriCommands()) {
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
     return;
   }
 
   try {
-    await tauriCore.invoke("open_workspace_path", {
+    await invokeWorkspaceTools("open_workspace_path", {
       workspaceRoot: normalizedWorkspaceRoot ?? "",
       relativePath: normalizedRelativePath,
     });
@@ -7456,6 +7076,19 @@ const ATTACHMENT_LINK_PROTOCOLS = new Set([
   "mailto:",
   "ftp:",
 ]);
+
+export const openWorkspaceRunUrl = async (
+  workspaceRoot: string,
+  configurationId: string,
+  url: string,
+): Promise<void> => {
+  const platform = getRemoteWorkspacePlatform();
+  if (platform) {
+    await platform.openRunUrl(workspaceRoot, configurationId, url);
+    return;
+  }
+  await openExternalUrl(url);
+};
 
 export const openExternalUrl = async (url: string): Promise<void> => {
   const normalizedUrl = url.trim();
@@ -7577,6 +7210,15 @@ export const resolveWorkspaceFilePreviewSource = async (
 
   if (!normalizedRelativePath) {
     throw new Error("Expected a workspace-relative path to preview.");
+  }
+
+  const remote = getRemoteWorkspacePlatform();
+  if (remote) {
+    if (!normalizedWorkspaceRoot) throw new Error("Select a workspace.");
+    return remote.previewSource(
+      normalizedWorkspaceRoot,
+      normalizedRelativePath,
+    );
   }
 
   if (!canInvokeTauriCommands()) {

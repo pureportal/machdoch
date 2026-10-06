@@ -1,0 +1,378 @@
+[
+  {
+    "name": "list",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_scheduler_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["list"]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "prompt with schedule and event",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_scheduler_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "create",
+            "--name",
+            "Review",
+            "--interval-ms",
+            "60000",
+            "--prompt",
+            "Check changes",
+            "--trigger",
+            "{\"kind\":\"workspace-file\",\"eventType\":\"workspace-file.created\"}",
+            "--trigger-filter",
+            "{\"glob\":\"src/**\"}",
+            "--retry-attempts",
+            "3",
+            "--concurrency-limit",
+            "1"
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "RALPH scheduled job",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_scheduler_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "create",
+            "--scheduler-target",
+            "ralph-flow",
+            "--scheduled-ralph-flow",
+            "review",
+            "--scheduled-ralph-profile",
+            "unattended",
+            "--scheduled-ralph-param",
+            "path=src",
+            "--scheduled-ralph-allowed-root",
+            "/projects/demo",
+            "--scheduled-ralph-allow-commands",
+            "true"
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "inspect flow",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_scheduler_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "inspect-ralph",
+            "review",
+            "--scheduled-ralph-flow-scope",
+            "workspace"
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "RALPH workspace discovery",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["list", "--scope", "workspace"]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "RALPH user discovery",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["list", "--scope", "user"]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "read",
+    "request": {
+      "kind": "read",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "offset": 0
+    },
+    "accepted": true
+  },
+  {
+    "name": "release",
+    "request": {
+      "kind": "release",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345"
+    },
+    "accepted": true
+  },
+  {
+    "name": "events",
+    "request": {
+      "kind": "events",
+      "after": 1
+    },
+    "accepted": true
+  },
+  {
+    "name": "service command",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_scheduler_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["service-all"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "unknown option",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_scheduler_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["create", "--unknown", "value"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "missing value",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_scheduler_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["create", "--prompt"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "multiple positionals",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_scheduler_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["delete", "job-1", "job-2"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "NUL argument",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_scheduler_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["create", "--prompt", "bad\u0000value"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "blank workspace",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_scheduler_command",
+      "args": {
+        "request": {
+          "workspaceRoot": " ",
+          "arguments": ["list"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "unknown workspace field",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_scheduler_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["list"],
+          "taskId": "task"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "unknown top-level field",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_scheduler_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["list"]
+        }
+      },
+      "extra": true
+    },
+    "accepted": false
+  },
+  {
+    "name": "unknown command",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "eval",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["list"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "RALPH run",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["run", "review"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "RALPH discovery extra option",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_ralph_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["list", "--scope", "workspace", "--json"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "invalid id",
+    "request": {
+      "kind": "invoke",
+      "id": "bad",
+      "command": "run_scheduler_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["list"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "negative read",
+    "request": {
+      "kind": "read",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "offset": -1
+    },
+    "accepted": false
+  },
+  {
+    "name": "fractional read",
+    "request": {
+      "kind": "read",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "offset": 1.5
+    },
+    "accepted": false
+  },
+  {
+    "name": "large read",
+    "request": {
+      "kind": "read",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "offset": 67108865
+    },
+    "accepted": false
+  },
+  {
+    "name": "unsafe event cursor",
+    "request": {
+      "kind": "events",
+      "after": 9007199254740992
+    },
+    "accepted": false
+  },
+  {
+    "name": "unknown release field",
+    "request": {
+      "kind": "release",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "extra": true
+    },
+    "accepted": false
+  }
+]

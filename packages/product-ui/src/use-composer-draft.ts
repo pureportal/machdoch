@@ -1,4 +1,9 @@
-import type { ProductCommand, ProductShell } from "@machdoch/fleet-protocol";
+import type {
+  ProductCommand,
+  ProductShell,
+  ProductIterationMode,
+  ProductRunningMessageAction,
+} from "@machdoch/fleet-protocol";
 import { useSyncExternalStore } from "react";
 import type { ProductCommandHandler } from "./product-runtime";
 
@@ -87,7 +92,12 @@ export function useComposerDraft(
     });
   }
 
-  function submitDraft(goalObjective?: string): Promise<void> {
+  function submitDraft(
+    goalObjective?: string,
+    iterationCount?: number,
+    iterationMode?: ProductIterationMode,
+    runningAction?: ProductRunningMessageAction,
+  ): Promise<void> {
     const entry = getDraft();
     const submittedText = entry.text;
     const prompt = submittedText.trim();
@@ -112,6 +122,9 @@ export function useComposerDraft(
           prompt,
           promptEnhancementMode: composer.promptEnhancementMode,
           interviewEnabled: composer.interviewEnabled,
+          ...(iterationCount !== undefined ? { iterationCount } : {}),
+          ...(iterationMode ? { iterationMode } : {}),
+          ...(runningAction ? { runningAction } : {}),
           ...(goalObjective && !/^\/goal(?:\s|$)/u.test(prompt)
             ? { goalObjective }
             : {}),

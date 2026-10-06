@@ -30,6 +30,7 @@ export class FleetOperationStore {
   >(
     request: Request,
     invoke: () => Promise<unknown>,
+    control = false,
   ): Promise<OperationResponse> {
     for (const [id, operation] of this.operations)
       if (operation.result && Date.now() - operation.touched > 600_000)
@@ -83,8 +84,6 @@ export class FleetOperationStore {
       operation.touched = Date.now();
       return { state: "pending" };
     }
-    const control =
-      request.command !== undefined && request.command !== "run_ralph_command";
     if (
       this.operations.size >= 128 ||
       [...this.operations.values()].filter((value) => !value.result).length >=

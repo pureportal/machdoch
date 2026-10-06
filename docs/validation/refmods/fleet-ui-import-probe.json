@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-06T18:12:16.391Z",
+  "imported": true,
+  "body": "Basic\nAdvanced\nTrain\nAssets\nActivity\nImage\nVideo\nSVG\nAudio\nAssistant\nConvert to Advanced\nPrompt\nStarting image\nAdd image\nModel\nChoose model\nManage models\nClose RefMods\nMiniMax H3 RefMods\nAdd files\nLibrary\nBrowse folder\nCreate RefMod\nExport bundle\nHost folder\ndda0b1ebb5d04aeb8b28c3ed3fa3b171.safetensors\n↑\n↓\nRemove\nModality \nAll\nVisual\nAudio\nCopies \nCurves\n0 tokens\nToken limit \nMore options\n16:9 · Draft\nGenerate video\n\nAdd a prompt\n\nVideo output",
+  "requests": [
+    {
+      "command": "media_get_runtime_setup"
+    },
+    {
+      "command": "media_read_studio_state"
+    },
+    {
+      "command": "media_initialize_runtime"
+    },
+    {
+      "command": "media_list_run_page"
+    },
+    {
+      "command": "media_list_runs"
+    },
+    {
+      "command": "media_list_asset_page"
+    },
+    {
+      "command": "media_get_model_catalog"
+    },
+    {
+      "command": "media_discover_workspace_models"
+    },
+    {
+      "command": "media_get_model_catalog"
+    },
+    {
+      "command": "media_get_model_catalog"
+    },
+    {
+      "command": "media_get_flow"
+    },
+    {
+      "command": "media_list_flows"
+    },
+    {
+      "command": "media_write_studio_state"
+    },
+    {
+      "command": "media_create_transfer"
+    },
+    {
+      "command": "media_list_run_page"
+    },
+    {
+      "command": "media_list_runs"
+    },
+    {
+      "command": "media_list_asset_page"
+    },
+    {
+      "command": "media_get_model_catalog"
+    },
+    {
+      "command": "media_get_model_catalog"
+    },
+    {
+      "command": "media_write_transfer"
+    },
+    {
+      "command": "media_get_model_catalog"
+    },
+    {
+      "command": "media_list_run_page"
+    },
+    {
+      "command": "media_list_runs"
+    },
+    {
+      "command": "media_list_asset_page"
+    },
+    {
+      "command": "media_refmod_operation",
+      "operation": "import"
+    },
+    {
+      "command": "media_get_model_catalog"
+    },
+    {
+      "command": "media_get_model_catalog"
+    },
+    {
+      "command": "media_list_run_page"
+    },
+    {
+      "command": "media_list_runs"
+    },
+    {
+      "command": "media_list_asset_page"
+    },
+    {
+      "command": "media_remove_transfer"
+    },
+    {
+      "command": "media_get_model_catalog"
+    },
+    {
+      "command": "media_refmod_operation",
+      "operation": "inspect-many"
+    }
+  ],
+  "failures": [],
+  "statuses": []
+}

@@ -1,0 +1,280 @@
+{
+  "date": "2026-10-06T18:23:23.919Z",
+  "pretrainedWeightsUsed": false,
+  "sourceSha256": "d73621708c71f2e5c9ea8f4d67f5fd0ef39037e77a9d3eb19f39c083eb0c01b5",
+  "exports": [
+    {
+      "file": "desktop-export.safetensors",
+      "sizeBytes": 23792,
+      "sha256": "f601e565a37a517eddad5a5fb8b22b82be3125448f0387de28f889702fedf710",
+      "memberCount": 6,
+      "tokens": 112,
+      "checks": [
+        {
+          "kind": "image",
+          "shape": [
+            1,
+            24,
+            1,
+            4,
+            4
+          ],
+          "tokens": 4,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.3805525036301849
+        },
+        {
+          "kind": "image",
+          "shape": [
+            1,
+            24,
+            1,
+            4,
+            4
+          ],
+          "tokens": 4,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.3805525036301849
+        },
+        {
+          "kind": "video",
+          "shape": [
+            1,
+            24,
+            3,
+            4,
+            4
+          ],
+          "tokens": 12,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.31805570934495714
+        },
+        {
+          "kind": "video",
+          "shape": [
+            1,
+            24,
+            3,
+            4,
+            4
+          ],
+          "tokens": 12,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.31805570934495714
+        },
+        {
+          "kind": "audio",
+          "shape": [
+            1,
+            32,
+            2,
+            20
+          ],
+          "tokens": 40,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.6301315128603039
+        },
+        {
+          "kind": "audio",
+          "shape": [
+            1,
+            32,
+            2,
+            20
+          ],
+          "tokens": 40,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.6301315128603039
+        }
+      ]
+    },
+    {
+      "file": "fleet-export.safetensors",
+      "sizeBytes": 23792,
+      "sha256": "57787aa107fa07eb7524cd243c14b04cca5d068acfdecca6cb544214826f928a",
+      "memberCount": 6,
+      "tokens": 112,
+      "checks": [
+        {
+          "kind": "image",
+          "shape": [
+            1,
+            24,
+            1,
+            4,
+            4
+          ],
+          "tokens": 4,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.3805525036301849
+        },
+        {
+          "kind": "image",
+          "shape": [
+            1,
+            24,
+            1,
+            4,
+            4
+          ],
+          "tokens": 4,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.3805525036301849
+        },
+        {
+          "kind": "video",
+          "shape": [
+            1,
+            24,
+            3,
+            4,
+            4
+          ],
+          "tokens": 12,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.3163222586063801
+        },
+        {
+          "kind": "video",
+          "shape": [
+            1,
+            24,
+            3,
+            4,
+            4
+          ],
+          "tokens": 12,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.3163222586063801
+        },
+        {
+          "kind": "audio",
+          "shape": [
+            1,
+            32,
+            2,
+            20
+          ],
+          "tokens": 40,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.6191240060513719
+        },
+        {
+          "kind": "audio",
+          "shape": [
+            1,
+            32,
+            2,
+            20
+          ],
+          "tokens": 40,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.6191240060513719
+        }
+      ]
+    },
+    {
+      "file": "fleet-export-final.safetensors",
+      "sizeBytes": 23792,
+      "sha256": "57787aa107fa07eb7524cd243c14b04cca5d068acfdecca6cb544214826f928a",
+      "memberCount": 6,
+      "tokens": 112,
+      "checks": [
+        {
+          "kind": "image",
+          "shape": [
+            1,
+            24,
+            1,
+            4,
+            4
+          ],
+          "tokens": 4,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.3805525036301849
+        },
+        {
+          "kind": "image",
+          "shape": [
+            1,
+            24,
+            1,
+            4,
+            4
+          ],
+          "tokens": 4,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.3805525036301849
+        },
+        {
+          "kind": "video",
+          "shape": [
+            1,
+            24,
+            3,
+            4,
+            4
+          ],
+          "tokens": 12,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.3163222586063801
+        },
+        {
+          "kind": "video",
+          "shape": [
+            1,
+            24,
+            3,
+            4,
+            4
+          ],
+          "tokens": 12,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.3163222586063801
+        },
+        {
+          "kind": "audio",
+          "shape": [
+            1,
+            32,
+            2,
+            20
+          ],
+          "tokens": 40,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.6191240060513719
+        },
+        {
+          "kind": "audio",
+          "shape": [
+            1,
+            32,
+            2,
+            20
+          ],
+          "tokens": 40,
+          "finite": true,
+          "changedFromSource": true,
+          "energyRatio": 0.6191240060513719
+        }
+      ]
+    }
+  ]
+}

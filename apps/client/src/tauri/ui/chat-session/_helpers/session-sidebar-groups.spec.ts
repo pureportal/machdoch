@@ -4,20 +4,25 @@ import {
 } from "../../chat-session.model";
 import {
   compareSessionsBySidebarGroup,
-  getUnpinnedSessionDividerIndex,
+  getUnpinnedSessionDividerIndex as getDividerIndex,
   isSessionPinnedInSidebar,
-} from "./session-sidebar-groups";
+  type SessionSidebarGroup,
+} from "@machdoch/product-ui";
+import { getSessionSidebarGroup } from "./session-sidebar-group";
+
+const getUnpinnedSessionDividerIndex = (sessions: SessionSidebarGroup[]) =>
+  getDividerIndex(sessions, (session) => session);
 
 describe("sidebar session groups", () => {
-  const pinnedSession = createSession({
+  const pinnedSession = getSessionSidebarGroup(createSession({
     id: "pinned",
     pinnedAt: 10,
-  });
-  const unpinnedSession = createSession({ id: "unpinned" });
-  const quickSession = createSession({
+  }));
+  const unpinnedSession = getSessionSidebarGroup(createSession({ id: "unpinned" }));
+  const quickSession = getSessionSidebarGroup(createSession({
     id: "quick",
     specialSession: QUICK_VOICE_SESSION_KIND,
-  });
+  }));
 
   it("treats Quick Chat and explicitly pinned sessions as pinned rows", () => {
     expect(isSessionPinnedInSidebar(quickSession)).toBe(true);
@@ -56,7 +61,7 @@ describe("sidebar session groups", () => {
   it("updates the divider boundary after repeated pin state changes", () => {
     const newlyPinnedSession = {
       ...unpinnedSession,
-      pinnedAt: 20,
+      pinned: true,
     };
     expect(
       getUnpinnedSessionDividerIndex([newlyPinnedSession, pinnedSession]),
@@ -64,14 +69,14 @@ describe("sidebar session groups", () => {
 
     const unpinnedAgainSession = {
       ...newlyPinnedSession,
-      pinnedAt: undefined,
+      pinned: false,
     };
     expect(
       getUnpinnedSessionDividerIndex([pinnedSession, unpinnedAgainSession]),
     ).toBe(1);
 
     const allUnpinnedSessions = [
-      { ...pinnedSession, pinnedAt: undefined },
+      { ...pinnedSession, pinned: false },
       unpinnedAgainSession,
     ];
     expect(getUnpinnedSessionDividerIndex(allUnpinnedSessions)).toBeNull();

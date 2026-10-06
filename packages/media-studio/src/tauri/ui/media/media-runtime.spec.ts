@@ -60,6 +60,37 @@ describe("media asset importing", () => {
 });
 
 describe("media runtime error normalization", () => {
+  it("preserves the runtime installation instruction and recovery action", () => {
+    const failure = {
+      schemaVersion: 1,
+      code: "RUNTIME_NOT_INSTALLED",
+      category: "configuration",
+      message: "Install the Media Studio runtime, then try again.",
+      technicalDiagnostic: "Install the Media Studio Python runtime",
+      context: {
+        nodeId: null,
+        providerId: null,
+        modelId: null,
+        runtimeId: null,
+        runId: null,
+        assetId: null,
+        operation: "media_refmod_operation",
+      },
+      retryability: "after-user-action",
+      partialOutputsExist: false,
+      suggestedActions: [
+        {
+          id: "open-models",
+          label: "Open Models",
+          description: "Install the Media Studio runtime.",
+        },
+      ],
+    };
+    expect(normalizeMediaError(failure, "media_refmod_operation")).toEqual(
+      failure,
+    );
+  });
+
   it("preserves validated structured native errors and safely contains unstructured failures", () => {
     const nativeFailure = {
       schemaVersion: 1 as const,

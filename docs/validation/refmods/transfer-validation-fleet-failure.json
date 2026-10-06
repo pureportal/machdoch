@@ -1,0 +1,8 @@
+{
+  "date": "2026-10-06T20:36:57.456Z",
+  "failures": [],
+  "pageErrors": [],
+  "transportFailures": [],
+  "body": "",
+  "failure": "TimeoutError: locator.click: Timeout 240000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: 'Video', exact: true })\u001b[22m\n"
+}

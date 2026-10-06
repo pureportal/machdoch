@@ -369,6 +369,8 @@ if (new URLSearchParams(location.search).has("fleet")) {
     storageKey: "fleet:review-host",
     open: async () => null,
     save: async () => null,
+    release: async () => undefined,
+    fileName: (path) => path,
     upload: async () => {
       throw new Error("No upload in this fixture");
     },

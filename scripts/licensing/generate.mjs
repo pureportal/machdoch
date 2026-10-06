@@ -60,7 +60,15 @@ if (profileName === "desktop") {
     "apps/client/src-tauri/Cargo.toml",
     "apps/client/src-tauri/Cargo.lock",
     "packages/fleet-protocol/Cargo.toml",
+    "apps/client/scripts/local-speech-assets.json",
+    "apps/client/src-tauri/python/local_speech_requirements.txt",
+    "apps/client/src-tauri/resources/speech-legal/python-packages.json",
+    "apps/client/src-tauri/resources/speech-legal/python-native.json",
   );
+  if (process.platform === "win32")
+    inputFiles.push(
+      "apps/client/src-tauri/resources/speech-legal/windows-runtime.json",
+    );
 }
 async function collectInputHashes() {
   const hashes = {};
@@ -99,13 +107,29 @@ try {
     "apps/client/src-tauri/python/LICENSE-fizgig.txt",
     "apps/client/src-tauri/python/THIRD_PARTY_NOTICES-fizgig.md",
     "apps/client/src-tauri/python/LICENSE-MuseTalk.txt",
+    "apps/client/src-tauri/python/LICENSE-RefMod-MIT.txt",
+    "apps/client/src-tauri/python/LICENSE-H3-PromptBuilder-MIT.txt",
+    "apps/client/src-tauri/python/NOTICE-RefMod.txt",
     "apps/client/src-tauri/python/LICENSE-diffusers-training.txt",
+    "apps/client/src-tauri/python/LICENSE-DMAD.txt",
+    "apps/client/src-tauri/python/NOTICE-DMAD.txt",
     "apps/client/src-tauri/resources/whisper/LICENSE-whisper.cpp.txt",
     "apps/client/src-tauri/resources/whisper/LICENSE-whisper-model.txt",
     "apps/client/src-tauri/resources/whisper/LICENSE-vulkan-loader.txt",
   ]) {
     await mkdir(dirname(join(stage, file)), { recursive: true });
     await cp(join(repositoryRoot, file), join(stage, file));
+  }
+  if (profileName === "desktop") {
+    await cp(
+      join(repositoryRoot, "apps/client/src-tauri/resources/speech-legal"),
+      join(stage, "speech"),
+      { recursive: true },
+    );
+    await cp(
+      join(repositoryRoot, "apps/client/scripts/local-speech-assets.json"),
+      join(stage, "speech/assets.json"),
+    );
   }
   const metadata = JSON.parse(
     await readFile(join(repositoryRoot, "package.json"), "utf8"),
@@ -171,9 +195,13 @@ try {
     throw new Error(`Incomplete third-party notices:\n${missing.join("\n")}`);
   }
   await writePackageIndex(stage, entries);
-  if (JSON.stringify(await collectInputHashes()) !== JSON.stringify(inputs)) {
+  const currentInputs = await collectInputHashes();
+  const changedInputs = inputFiles.filter(
+    (file) => currentInputs[file] !== inputs[file],
+  );
+  if (changedInputs.length > 0) {
     throw new Error(
-      "Release inputs changed while collecting notices. Run the licence generator again.",
+      `Release inputs changed while collecting notices: ${changedInputs.join(", ")}. Run the licence generator again.`,
     );
   }
   await writeFile(

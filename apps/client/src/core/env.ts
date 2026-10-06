@@ -595,7 +595,7 @@ export const saveUserSpeechToTextActiveProvider = async (
 ): Promise<string> => {
   if (!VALID_SPEECH_TO_TEXT_PROVIDERS.includes(provider)) {
     throw new Error(
-      "Expected speech-to-text.provider to be one of none, openai, google, or whisper.",
+      "Choose a speech input provider.",
     );
   }
 

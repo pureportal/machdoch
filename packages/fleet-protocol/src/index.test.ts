@@ -54,6 +54,52 @@ void test("project commands constrain folder names and reject arbitrary paths or
   );
 });
 
+void test("workspace library commands require only their paths", () => {
+  for (const kind of ["add-workspace", "remove-workspace"] as const) {
+    assert.equal(
+      productCommandSchema.safeParse({ kind, workspace: "/projects/demo" })
+        .success,
+      true,
+    );
+    assert.equal(productCommandSchema.safeParse({ kind }).success, false);
+    assert.equal(
+      productCommandSchema.safeParse({ kind, workspace: "" }).success,
+      false,
+    );
+    assert.equal(
+      productCommandSchema.safeParse({
+        kind,
+        workspace: "/projects/demo",
+        sessionId: "session-1",
+      }).success,
+      false,
+    );
+  }
+  const relink = {
+    kind: "relink-workspace",
+    workspace: "/projects/demo",
+    destinationWorkspace: "/projects/new",
+  };
+  assert.equal(productCommandSchema.safeParse(relink).success, true);
+  assert.equal(
+    productCommandSchema.safeParse({ ...relink, destinationWorkspace: null })
+      .success,
+    false,
+  );
+  assert.equal(
+    productCommandSchema.safeParse({ ...relink, destinationWorkspace: "" })
+      .success,
+    false,
+  );
+  assert.equal(
+    productCommandSchema.safeParse({
+      ...relink,
+      destinationWorkspace: undefined,
+    }).success,
+    false,
+  );
+});
+
 const managedSettingsDelivery = () => ({
   schemaVersion: 2,
   managerId: "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",

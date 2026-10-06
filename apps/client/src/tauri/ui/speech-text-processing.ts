@@ -1,6 +1,7 @@
 import { runInternalDesktopTask } from "./internal-task-model";
 import { cancelDesktopTask, type UserSpeechToTextProvider } from "./runtime";
 import { awaitSpeechOperation } from "./speech-operation";
+import { isLocalSpeechProvider } from "../../shared/local-speech";
 
 const EDITED_SPEECH_TEXT_PATTERN =
   /<machdoch_speech_text>\s*([\s\S]*?)\s*<\/machdoch_speech_text>/iu;
@@ -25,8 +26,8 @@ export const processUserSpeechText = async (
     throw new Error("Speech transcript is too long to process.");
   }
   if (
-    !options.autoFormat &&
-    (!options.autoTranslateToEnglish || options.provider === "whisper")
+    isLocalSpeechProvider(options.provider) ||
+    (!options.autoFormat && !options.autoTranslateToEnglish)
   ) {
     return transcript;
   }

@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 
-GPU_MEMORY_ERROR = "GPU out of memory. Close other GPU applications, reduce image dimensions, or choose a smaller model, then retry."
+GPU_MEMORY_ERROR = "GPU out of memory. Close other GPU applications, reduce dimensions, or choose a smaller model, then retry."
 
 
 def retention_seconds(load_seconds: float) -> float:
@@ -61,7 +61,7 @@ def is_gpu_out_of_memory(error: BaseException) -> bool:
     )
 
 
-class ImagePipelineCache:
+class ModelPipelineCache:
     def __init__(self, torch: Any, device: str, started_at: float | None = None):
         self.torch = torch
         self.device = device

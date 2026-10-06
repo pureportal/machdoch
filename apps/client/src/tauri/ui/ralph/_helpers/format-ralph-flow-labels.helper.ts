@@ -6,11 +6,8 @@ import type {
   RalphUtilityType,
   RalphValidationScope,
 } from "../../../../core/ralph.js";
-import {
-  getProviderLabel,
-  type CatalogModel,
-  type RuntimeProvider,
-} from "../../model-catalog";
+import { type CatalogModel, type RuntimeProvider } from "../../model-catalog";
+import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 
 export type RalphProviderOption = RuntimeProvider | "default";
 

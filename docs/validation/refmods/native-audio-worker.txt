@@ -1,0 +1,6 @@
+
+running 1 test
+test media::model_memory::tests::refmod_worker_tests::audio_tests::refmod_audio_vae_creation_preview_and_export_without_generation_weights ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1036 filtered out; finished in 505.37s
+

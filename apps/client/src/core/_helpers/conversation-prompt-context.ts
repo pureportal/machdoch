@@ -29,7 +29,7 @@ import {
   resolveInternalTaskRuntimeConfig,
 } from "../internal-task-model.js";
 import { observeAgentModelCall } from "../model-usage.js";
-import { sliceUtf16PrefixAtCodePointBoundary } from "../../shared/unicode.js";
+import { sliceUtf16PrefixAtCodePointBoundary } from "@machdoch/fleet-protocol/unicode";
 import {
   compactTraceText,
   createTextSection,

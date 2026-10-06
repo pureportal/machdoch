@@ -81,7 +81,7 @@ impl DesktopTaskTimeout {
         &self,
         idle_timeout_minutes: Option<u32>,
         emit: impl FnOnce(Value),
-    ) -> Result<(), String> {
+    ) -> Result<Value, String> {
         if idle_timeout_minutes.is_some_and(|minutes| {
             !(MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES
                 ..=MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES)
@@ -102,8 +102,8 @@ impl DesktopTaskTimeout {
         state.mark_activity();
         let snapshot = state.snapshot();
         drop(state);
-        emit(snapshot);
-        Ok(())
+        emit(snapshot.clone());
+        Ok(snapshot)
     }
 
     pub(super) fn expire_if_idle(&self) -> Result<Option<u64>, String> {
@@ -141,9 +141,12 @@ mod tests {
     fn reset_extends_the_deadline_and_publishes_the_enforced_timeout() {
         let timeout = DesktopTaskTimeout::new("main".to_string(), 20);
         elapse(&timeout, 1199);
-        timeout
-            .reset(None, |state| assert_eq!(state["idleTimeoutMs"], 1_200_000))
+        let mut published = Value::Null;
+        let enforced = timeout
+            .reset(None, |state| published = state)
             .unwrap();
+        assert_eq!(enforced["idleTimeoutMs"], 1_200_000);
+        assert_eq!(enforced, published);
         elapse(&timeout, 2);
         assert_eq!(timeout.expire_if_idle().unwrap(), None);
         elapse(&timeout, 1200);

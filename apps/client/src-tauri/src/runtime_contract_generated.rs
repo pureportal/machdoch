@@ -59,7 +59,16 @@ pub const USER_WEB_SEARCH_PROVIDERS: [&str; 3] = ["perplexity", "tavily", "serpe
 pub const USER_AUDIO_AI_PROVIDERS: [&str; 2] = ["openai", "google"];
 pub const VALID_WEB_SEARCH_PROVIDERS: [&str; 4] = ["none", "perplexity", "tavily", "serper"];
 pub const VALID_AUDIO_AI_PROVIDERS: [&str; 3] = ["none", "openai", "google"];
-pub const VALID_SPEECH_TO_TEXT_PROVIDERS: [&str; 4] = ["none", "openai", "google", "whisper"];
+pub const VALID_SPEECH_TO_TEXT_PROVIDERS: [&str; 8] = [
+    "none",
+    "openai",
+    "google",
+    "whisper",
+    "whisper-tiny",
+    "whistle",
+    "whistle-tiny",
+    "phonon2",
+];
 pub const USER_REVIEW_MODEL_MODES: [&str; 2] = ["base", "dedicated"];
 pub const RUNTIME_ENV_KEYS: [&str; 15] = [
     "MACHDOCH_MODE",

@@ -1,24 +1,7 @@
 use super::*;
 
 fn attachment() -> Shape {
-    Shape::Union(vec![
-        object(vec![
-            required("id", identifier()),
-            required("source", enumeration(&["path"])),
-            required("kind", short_text()),
-            required("name", text()),
-            required("path", text()),
-            optional("parent", text()),
-        ]),
-        object(vec![
-            required("id", identifier()),
-            required("source", enumeration(&["media-asset"])),
-            required("kind", short_text()),
-            required("name", text()),
-            required("workspaceRoot", workspace()),
-            required("assetId", identifier()),
-        ]),
-    ])
+    Shape::ContextAttachment
 }
 
 fn memory_entry() -> Shape {
@@ -85,6 +68,9 @@ fn product_session() -> Shape {
         required("attachmentCount", Shape::Integer),
         optional("runningTaskId", identifier()),
         required("canRename", Shape::Bool),
+        optional("canResetTime", Shape::Bool),
+        optional("canMoveToTop", Shape::Bool),
+        optional("unread", Shape::Bool),
         required("canDelete", Shape::Bool),
         required("canArchive", Shape::Bool),
         required("canPin", Shape::Bool),
@@ -108,6 +94,9 @@ fn product_message() -> Shape {
         required("id", identifier()),
         required("role", string(64)),
         required("content", text()),
+        optional("rawContent", text()),
+        optional("originalPrompt", text()),
+        optional("workspace", Shape::Nullable(Box::new(workspace()))),
         optional("createdAt", Shape::Integer),
         optional("taskId", identifier()),
         optional(
@@ -132,12 +121,26 @@ fn product_message() -> Shape {
                 optional("mode", string(64)),
                 required("entries", array(trace_entry(), 24)),
                 required("timeline", array(trace_entry(), 40)),
+                optional(
+                    "timeout",
+                    object(vec![
+                        required("startedAt", Shape::Integer),
+                        required("lastActivityAt", Shape::Integer),
+                        required("idleTimeoutMs", Shape::Nullable(Box::new(Shape::Integer))),
+                        required(
+                            "absoluteTimeoutMs",
+                            Shape::Nullable(Box::new(Shape::Integer)),
+                        ),
+                    ]),
+                ),
             ]),
         ),
         required(
             "actions",
             object(vec![
                 required("canRetry", Shape::Bool),
+                optional("canEdit", Shape::Bool),
+                optional("canReplay", Shape::Bool),
                 required("canContinue", Shape::Bool),
                 required("canSaveAsContextPack", Shape::Bool),
                 required("canSpeak", Shape::Bool),
@@ -232,6 +235,13 @@ fn composer() -> Shape {
         required("modelCatalog", array(model_provider(), 32)),
         required("mode", enumeration(&["ask", "machdoch"])),
         required("defaultMode", enumeration(&["ask", "machdoch"])),
+        optional(
+            "adaptiveController",
+            object(vec![
+                required("override", Shape::Nullable(Box::new(Shape::Bool))),
+                required("defaultEnabled", Shape::Nullable(Box::new(Shape::Bool))),
+            ]),
+        ),
         optional("parallelAgentMode", parallel_agent_mode()),
         optional("goalMode", goal_mode()),
         optional(
@@ -395,6 +405,8 @@ fn voice() -> Shape {
         optional("speakingMessageId", identifier()),
         required("speechInputSupported", Shape::Bool),
         required("speechInputEnabled", Shape::Bool),
+        required("speechInputRecording", Shape::Bool),
+        required("speechInputBusy", Shape::Bool),
         optional("speechInputStatus", text()),
     ])
 }

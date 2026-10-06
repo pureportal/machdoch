@@ -1,0 +1,14 @@
+Importing the installed Diffusers H3 video VAE
+Could not detect ROCm GPU architecture: [WinError 2] The system cannot find the file specified
+
+ROCm GPU architecture detection failed despite ROCm being available.
+                
+W1006 16:01:48.216000 8304 Lib\site-packages\torch\utils\flop_counter.py:29] triton not found; flop counting will not work for triton kernels
+PASS video encoding 1 -> 1
+PASS video encoding 5 -> 2
+PASS video encoding 22 -> 7
+PASS video encoding 39 -> 12
+PASS selected video frames from 7 latent frames
+PASS selected video frames from 12 latent frames
+PASS selected video frames from 17 latent frames
+{"pretrainedWeightsUsed": false, "diffusers": "0.41.0.dev0", "checks": [{"encodeFrames": 1, "latentFrames": 1}, {"encodeFrames": 5, "latentFrames": 2}, {"encodeFrames": 22, "latentFrames": 7}, {"encodeFrames": 39, "latentFrames": 12}, {"latentFrames": 7, "decodedFrames": 22, "boundedSelectedFramesEqualFullDecode": true}, {"latentFrames": 12, "decodedFrames": 39, "boundedSelectedFramesEqualFullDecode": true}, {"latentFrames": 17, "decodedFrames": 56, "boundedSelectedFramesEqualFullDecode": true}], "fullOutcomeVerified": false, "nativeSingleFrameDecodeError": "torch.cat(): expected a non-empty list of Tensors", "seconds": 146.53099999999995}

@@ -2,7 +2,7 @@ import { ExternalLink, Loader2, X } from "lucide-react";
 import type { JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { useCommandOverlay } from "@machdoch/media-studio/tauri/ui/commands/use-command-overlay.js";
-import type { FilePreview } from "./file-preview-dialog";
+import type { FilePreview } from "@machdoch/client-ui/file-preview/dialog";
 
 export interface FilePreviewDialogFallbackProps {
   preview: FilePreview;

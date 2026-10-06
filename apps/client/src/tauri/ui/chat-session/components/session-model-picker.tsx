@@ -9,13 +9,8 @@ import type {
   CommandPage,
   CommandPageGroup,
 } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
-import {
-  getCatalogModelsForProvider,
-  getModelLabelForProvider,
-  getProviderLabel,
-  type ProviderModelCatalogSnapshot,
-  type RuntimeProvider,
-} from "../../model-catalog";
+import { getCatalogModelsForProvider, getModelLabelForProvider, type ProviderModelCatalogSnapshot, type RuntimeProvider } from "../../model-catalog";
+import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import { loadProviderModelCatalog } from "../../runtime";
 
 export interface SessionModelPickerProps {

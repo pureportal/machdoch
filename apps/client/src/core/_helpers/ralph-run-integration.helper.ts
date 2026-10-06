@@ -1,5 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
+import { setTimeout } from "node:timers/promises";
 import { assertRalphWorkspaceBoundary } from "./assert-ralph-workspace-boundary.helper.js";
 import {
   snapshotRalphIntegrationConflicts,
@@ -25,37 +26,57 @@ export type { RalphRunIntegration } from "./ralph-integration-state.helper.js";
 const removeInterruptedCandidates = async (
   repositoryRoot: string,
   worktreeRoot: string,
+  candidateFailure?: unknown,
 ): Promise<void> => {
-  const worktrees = await git(repositoryRoot, [
-    "worktree",
-    "list",
-    "--porcelain",
-    "-z",
-  ]);
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const integrationRoot = `${worktreeRoot}-integration-${attempt}`;
-    const candidate = worktrees
-      .split("\0\0")
-      .find((entry) =>
-        entry
-          .split("\0")
-          .some(
-            (field) =>
-              field === `worktree ${integrationRoot.replace(/\\/gu, "/")}`,
-          ),
-      );
-    if (!candidate) continue;
-    if (!candidate.split("\0").includes("detached")) {
-      throw new Error(
-        "RALPH integration workspace is no longer a detached candidate.",
+  try {
+    const worktrees = await git(repositoryRoot, [
+      "worktree",
+      "list",
+      "--porcelain",
+      "-z",
+    ]);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const integrationRoot = `${worktreeRoot}-integration-${attempt}`;
+      const candidate = worktrees
+        .split("\0\0")
+        .find((entry) =>
+          entry
+            .split("\0")
+            .some(
+              (field) =>
+                field === `worktree ${integrationRoot.replace(/\\/gu, "/")}`,
+            ),
+        );
+      if (!candidate) continue;
+      if (!candidate.split("\0").includes("detached")) {
+        throw new Error(
+          "RALPH integration workspace is no longer a detached candidate.",
+        );
+      }
+      await git(repositoryRoot, [
+        "worktree",
+        "remove",
+        "--force",
+        "--force",
+        integrationRoot,
+      ]);
+    }
+  } catch (cleanupError) {
+    if (candidateFailure !== undefined) {
+      const preparationReason =
+        candidateFailure instanceof Error
+          ? candidateFailure.message
+          : String(candidateFailure);
+      const cleanupReason =
+        cleanupError instanceof Error
+          ? cleanupError.message
+          : String(cleanupError);
+      throw new AggregateError(
+        [candidateFailure, cleanupError],
+        `RALPH could not prepare or remove its integration candidate: ${preparationReason}\nCandidate cleanup failed: ${cleanupReason}`,
       );
     }
-    await git(repositoryRoot, [
-      "worktree",
-      "remove",
-      "--force",
-      integrationRoot,
-    ]);
+    throw cleanupError;
   }
 };
 
@@ -213,14 +234,16 @@ export const integrateRalphRunWorktree = async (
         );
         const integrationRoot = `${worktree.worktreeRoot}-integration-${attempt}`;
         await mkdir(runDirectory, { recursive: true });
-        await git(worktree.repositoryRoot, [
-          "worktree",
-          "add",
-          "--detach",
-          integrationRoot,
-          sourceCommit,
-        ]);
+        let candidatePrepared = false;
+        let candidateFailure: unknown;
+        let retryPreparation = false;
         try {
+          await git(
+            worktree.repositoryRoot,
+            ["worktree", "add", "--detach", integrationRoot, sourceCommit],
+            options.signal ? { signal: options.signal } : {},
+          );
+          candidatePrepared = true;
           let failure: string | undefined;
           try {
             await git(integrationRoot, [
@@ -373,13 +396,32 @@ export const integrateRalphRunWorktree = async (
             mergedTree,
           );
           return completePending();
+        } catch (error) {
+          candidateFailure = error;
+          if (
+            !candidatePrepared &&
+            attempt < 2 &&
+            error instanceof Error &&
+            /timed out/iu.test(error.message) &&
+            !options.signal?.aborted
+          ) {
+            retryPreparation = true;
+          } else {
+            throw error;
+          }
         } finally {
-          await git(worktree.repositoryRoot, [
-            "worktree",
-            "remove",
-            "--force",
-            integrationRoot,
-          ]);
+          await removeInterruptedCandidates(
+            worktree.repositoryRoot,
+            worktree.worktreeRoot,
+            candidateFailure,
+          );
+        }
+        if (retryPreparation) {
+          await setTimeout(
+            (attempt + 1) * 1_000 + Math.floor(Math.random() * 250),
+            undefined,
+            options.signal ? { signal: options.signal } : {},
+          );
         }
       }
       throw new Error(

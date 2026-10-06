@@ -18,7 +18,7 @@ pub(super) fn resolve_attached_path(
     let normalized_path = normalize_attached_path_input(path)?;
     let resolved_path = canonicalize_attached_path(normalized_path)?;
 
-    if is_clipboard_image_attachment(&resolved_path) {
+    if is_clipboard_image_attachment(&resolved_path) || super::context_attachment_storage::is_stored_context_attachment(&resolved_path) {
         return Ok(resolved_path);
     }
 

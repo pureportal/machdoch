@@ -1,3 +1,4 @@
+import { ApplicationShell } from "@machdoch/product-ui";
 import {
   Suspense,
   lazy,
@@ -84,7 +85,7 @@ const OnboardingWizard = lazy(async () => {
 });
 
 const FilePreviewDialog = lazy(async () => {
-  const module = await import("./chat-session/components/file-preview-dialog");
+  const module = await import("@machdoch/client-ui/file-preview/dialog");
 
   return { default: module.FilePreviewDialog };
 });
@@ -96,7 +97,8 @@ const RalphApp = lazy(async () => {
 });
 
 const MediaStudio = lazy(async () => {
-  const module = await import("@machdoch/media-studio/tauri/ui/media/media-studio.js");
+  const module =
+    await import("@machdoch/media-studio/tauri/ui/media/media-studio.js");
 
   return { default: module.MediaStudio };
 });
@@ -878,91 +880,10 @@ export const ChatSession = (): JSX.Element => {
         commandOverlayId="settings-dialog"
         commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
       >
-        <div className="app-shell relative flex h-dvh w-full flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 font-sans text-slate-100 antialiased">
-          <ShellTitlebar {...controller.titlebar} />
-
-          <FileDropOverlay
-            active={controller.fileDrop.isActive}
-            label="Attach to task"
-          />
-
-          {onboardingOpen && !controller.catalogOpen ? (
-            <Suspense
-              fallback={
-                <div
-                  role="status"
-                  aria-live="polite"
-                  className="absolute inset-0 z-70 grid place-items-center bg-slate-950/92 text-sm text-slate-400 backdrop-blur-xl"
-                >
-                  Preparing settings…
-                </div>
-              }
-            >
-              <OnboardingWizard
-                activeSession={controller.composer.activeSession}
-                chooserProviders={controller.composer.chooserProviders}
-                hasAnyProvider={controller.hasAnyProvider}
-                effectiveWorkspaceMode={
-                  controller.settingsDialog.effectiveWorkspaceMode
-                }
-                isUiControlAvailable={controller.composer.isUiControlAvailable}
-                uiControlDescription={controller.composer.uiControlDescription}
-                settingsSection={controller.settingsDialog.settingsSection}
-                onSettingsSectionChange={
-                  controller.settingsDialog.onSettingsSectionChange
-                }
-                providerSetup={controller.settingsDialog.providerSetup}
-                webSearchSetup={controller.settingsDialog.webSearchSetup}
-                mcpSetup={controller.settingsDialog.mcpSetup}
-                agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}
-                appearanceSetup={appearance}
-                memorySetup={controller.settingsDialog.memorySetup}
-                desktopSetup={controller.settingsDialog.desktopSetup}
-                workspaceRunSetup={controller.settingsDialog.workspaceRunSetup}
-                voiceSetup={controller.settingsDialog.voiceSetup}
-                onSelectFolder={controller.composer.onSelectFolder}
-                onSessionModelSelection={
-                  controller.composer.onSessionModelSelection
-                }
-                onSessionModeSelection={
-                  controller.composer.onSessionModeSelection
-                }
-                onUiControlEnabledChange={
-                  controller.composer.onUiControlEnabledChange
-                }
-                onFinish={() => {
-                  return closeOnboarding(false);
-                }}
-                onSkip={() => {
-                  return closeOnboarding(true);
-                }}
-              />
-            </Suspense>
-          ) : null}
-
-          {controller.voiceInputOverlay.visible ? (
-            <div className="absolute inset-0 z-50 overflow-hidden bg-slate-950/96 backdrop-blur-xl">
-              <VoiceInputOverlay
-                title="Voice input"
-                starting={controller.voiceInputOverlay.starting}
-                recording={controller.voiceInputOverlay.recording}
-                transcribing={controller.voiceInputOverlay.transcribing}
-                level={controller.voiceInputOverlay.level}
-                statusText={controller.voiceInputOverlay.statusText}
-                statusTone={controller.voiceInputOverlay.statusTone}
-                primaryActionDisabled={
-                  controller.voiceInputOverlay.starting ||
-                  controller.voiceInputOverlay.transcribing
-                }
-                onPrimaryAction={controller.voiceInputOverlay.onAction}
-                onCancel={controller.voiceInputOverlay.onCancel}
-                className="rounded-xl border border-slate-800/70 bg-slate-950/96"
-                headerClassName="px-8"
-              />
-            </div>
-          ) : null}
-
-          <div className="flex min-h-0 min-w-0 flex-1 w-full flex-col overflow-hidden bg-slate-950 md:flex-row">
+        <ApplicationShell
+          className="app-shell rounded-xl border border-slate-800 antialiased"
+          topbar={<ShellTitlebar {...controller.titlebar} />}
+          navigation={
             <AppRail
               activeApp={activeApp}
               chatActivity={chatActivity}
@@ -974,170 +895,278 @@ export const ChatSession = (): JSX.Element => {
               onOpenFleetManager={() => setFleetManagerOpen(true)}
               onOpenSettings={controller.openProviderSettings}
             />
+          }
+          overlays={
+            <>
+              <FileDropOverlay
+                active={controller.fileDrop.isActive}
+                label="Attach to task"
+              />
 
-            {activeApp === "chat" ? (
-              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                {isMobile ? (
-                  <Sheet open={sessionsOpen} onOpenChange={setSessionsOpen}>
-                    <SheetContent
-                      side="left"
-                      showCloseButton={false}
-                      aria-describedby={undefined}
-                      className="app-session-drawer w-[min(24rem,100dvw)] max-w-full gap-0 border-slate-800 bg-slate-950 p-0"
+              {onboardingOpen && !controller.catalogOpen ? (
+                <Suspense
+                  fallback={
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="absolute inset-0 z-70 grid place-items-center bg-slate-950/92 text-sm text-slate-400 backdrop-blur-xl"
                     >
-                      <SheetTitle className="sr-only">Sessions</SheetTitle>
-                      <SessionsSidebar
-                        {...controller.sidebar}
-                        searchInputRef={sessionSearchInputRef}
-                        onClose={() => setSessionsOpen(false)}
-                        onActivateSession={(sessionId) => {
-                          controller.sidebar.onActivateSession(sessionId);
-                          setSessionsOpen(false);
-                        }}
-                        onCreateSession={() => {
-                          controller.sidebar.onCreateSession();
-                          setSessionsOpen(false);
-                        }}
-                      />
-                    </SheetContent>
-                  </Sheet>
-                ) : (
-                  <SessionsSidebar
-                    {...controller.sidebar}
-                    searchInputRef={sessionSearchInputRef}
+                      Preparing settings…
+                    </div>
+                  }
+                >
+                  <OnboardingWizard
+                    activeSession={controller.composer.activeSession}
+                    chooserProviders={controller.composer.chooserProviders}
+                    hasAnyProvider={controller.hasAnyProvider}
+                    effectiveWorkspaceMode={
+                      controller.settingsDialog.effectiveWorkspaceMode
+                    }
+                    isUiControlAvailable={
+                      controller.composer.isUiControlAvailable
+                    }
+                    uiControlDescription={
+                      controller.composer.uiControlDescription
+                    }
+                    settingsSection={controller.settingsDialog.settingsSection}
+                    onSettingsSectionChange={
+                      controller.settingsDialog.onSettingsSectionChange
+                    }
+                    providerSetup={controller.settingsDialog.providerSetup}
+                    webSearchSetup={controller.settingsDialog.webSearchSetup}
+                    mcpSetup={controller.settingsDialog.mcpSetup}
+                    agentLimitsSetup={
+                      controller.settingsDialog.agentLimitsSetup
+                    }
+                    appearanceSetup={appearance}
+                    memorySetup={controller.settingsDialog.memorySetup}
+                    desktopSetup={controller.settingsDialog.desktopSetup}
+                    workspaceRunSetup={
+                      controller.settingsDialog.workspaceRunSetup
+                    }
+                    voiceSetup={controller.settingsDialog.voiceSetup}
+                    onSelectFolder={controller.composer.onSelectFolder}
+                    onSessionModelSelection={
+                      controller.composer.onSessionModelSelection
+                    }
+                    onSessionModeSelection={
+                      controller.composer.onSessionModeSelection
+                    }
+                    onUiControlEnabledChange={
+                      controller.composer.onUiControlEnabledChange
+                    }
+                    onFinish={() => {
+                      return closeOnboarding(false);
+                    }}
+                    onSkip={() => {
+                      return closeOnboarding(true);
+                    }}
                   />
-                )}
+                </Suspense>
+              ) : null}
 
-                {controller.isDesktop && !controller.hasAnyProvider ? (
-                  <ProviderEmptyState
-                    onOpenSettings={controller.openProviderSettings}
+              {controller.voiceInputOverlay.visible ? (
+                <div className="absolute inset-0 z-50 overflow-hidden bg-slate-950/96 backdrop-blur-xl">
+                  <VoiceInputOverlay
+                    title="Voice input"
+                    starting={controller.voiceInputOverlay.starting}
+                    recording={controller.voiceInputOverlay.recording}
+                    transcribing={controller.voiceInputOverlay.transcribing}
+                    level={controller.voiceInputOverlay.level}
+                    statusText={controller.voiceInputOverlay.statusText}
+                    statusTone={controller.voiceInputOverlay.statusTone}
+                    primaryActionDisabled={
+                      controller.voiceInputOverlay.starting ||
+                      controller.voiceInputOverlay.transcribing
+                    }
+                    onPrimaryAction={controller.voiceInputOverlay.onAction}
+                    onCancel={controller.voiceInputOverlay.onCancel}
+                    className="rounded-xl border border-slate-800/70 bg-slate-950/96"
+                    headerClassName="px-8"
                   />
-                ) : (
-                  <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
-                    <SessionHeader
-                      {...controller.header}
-                      onOpenSessions={
-                        isMobile ? () => setSessionsOpen(true) : undefined
-                      }
+                </div>
+              ) : null}
+            </>
+          }
+        >
+          {activeApp === "chat" ? (
+            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+              {isMobile ? (
+                <Sheet open={sessionsOpen} onOpenChange={setSessionsOpen}>
+                  <SheetContent
+                    side="left"
+                    showCloseButton={false}
+                    aria-describedby={undefined}
+                    className="app-session-drawer w-[min(24rem,100dvw)] max-w-full gap-0 border-slate-800 bg-slate-950 p-0"
+                  >
+                    <SheetTitle className="sr-only">Sessions</SheetTitle>
+                    <SessionsSidebar
+                      {...controller.sidebar}
+                      searchInputRef={sessionSearchInputRef}
+                      onClose={() => setSessionsOpen(false)}
+                      onActivateSession={(sessionId) => {
+                        controller.sidebar.onActivateSession(sessionId);
+                        setSessionsOpen(false);
+                      }}
+                      onCreateSession={() => {
+                        controller.sidebar.onCreateSession();
+                        setSessionsOpen(false);
+                      }}
                     />
+                  </SheetContent>
+                </Sheet>
+              ) : (
+                <SessionsSidebar
+                  {...controller.sidebar}
+                  searchInputRef={sessionSearchInputRef}
+                />
+              )}
 
-                    <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-                      <ScrollArea className="h-full min-w-0" type="always">
-                        <ConversationFeed
-                          key={controller.composer.activeSession.id}
-                          {...controller.conversation}
-                          hideEmptyState={controller.composer.activeSession.specialSession === "pose"}
-                          poseScenePreview={controller.composer.activeSession.specialSession === "pose" ? <PoseScenePreview key={controller.composer.activeSession.id} sessionId={controller.composer.activeSession.id} initialScene={controller.composer.activeSession.poseScene} onSceneChange={(scene) => controller.updatePoseScene(controller.composer.activeSession.id, scene)} /> : undefined}
-                        />
-                      </ScrollArea>
-                      <ScrollToTopButton
-                        visible={controller.conversation.showScrollToTopButton}
-                        onClick={controller.conversation.onScrollToTop}
-                        className="top-4 right-4"
-                      />
-                      <ScrollToNewestButton
-                        visible={
-                          controller.conversation.showScrollToNewestButton
+              {controller.isDesktop && !controller.hasAnyProvider ? (
+                <ProviderEmptyState
+                  onOpenSettings={controller.openProviderSettings}
+                />
+              ) : (
+                <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-slate-950">
+                  <SessionHeader
+                    {...controller.header}
+                    onOpenSessions={
+                      isMobile ? () => setSessionsOpen(true) : undefined
+                    }
+                  />
+
+                  <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+                    <ScrollArea className="h-full min-w-0" type="always">
+                      <ConversationFeed
+                        key={controller.composer.activeSession.id}
+                        {...controller.conversation}
+                        hideEmptyState={
+                          controller.composer.activeSession.specialSession ===
+                          "pose"
                         }
-                        onClick={controller.conversation.onScrollToNewest}
-                        className="bottom-4 right-4"
+                        poseScenePreview={
+                          controller.composer.activeSession.specialSession ===
+                          "pose" ? (
+                            <PoseScenePreview
+                              key={controller.composer.activeSession.id}
+                              sessionId={controller.composer.activeSession.id}
+                              initialScene={
+                                controller.composer.activeSession.poseScene
+                              }
+                              onSceneChange={(scene) =>
+                                controller.updatePoseScene(
+                                  controller.composer.activeSession.id,
+                                  scene,
+                                )
+                              }
+                            />
+                          ) : undefined
+                        }
+                      />
+                    </ScrollArea>
+                    <ScrollToTopButton
+                      visible={controller.conversation.showScrollToTopButton}
+                      onClick={controller.conversation.onScrollToTop}
+                      className="top-4 right-4"
+                    />
+                    <ScrollToNewestButton
+                      visible={controller.conversation.showScrollToNewestButton}
+                      onClick={controller.conversation.onScrollToNewest}
+                      className="bottom-4 right-4"
+                    />
+                  </div>
+
+                  <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-8 pb-5 pt-3 backdrop-blur-xl">
+                    <div className="mx-auto w-full max-w-5xl min-w-0">
+                      <SessionComposer
+                        key={controller.composer.activeSession.id}
+                        {...controller.composer}
+                        onBrowseMediaAssets={() => {
+                          setPendingMediaSection("library");
+                          selectApp("media");
+                        }}
+                        onCreateMediaAsset={(prompt) => {
+                          setPendingMediaDraftPrompt(prompt);
+                          setPendingMediaSection("generate");
+                          selectApp("media");
+                        }}
                       />
                     </div>
+                  </footer>
+                </main>
+              )}
+            </div>
+          ) : null}
 
-                    <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-8 pb-5 pt-3 backdrop-blur-xl">
-                      <div className="mx-auto w-full max-w-5xl min-w-0">
-                        <SessionComposer
-                          key={controller.composer.activeSession.id}
-                          {...controller.composer}
-                          onBrowseMediaAssets={() => {
-                            setPendingMediaSection("library");
-                            selectApp("media");
-                          }}
-                          onCreateMediaAsset={(prompt) => {
-                            setPendingMediaDraftPrompt(prompt);
-                            setPendingMediaSection("generate");
-                            selectApp("media");
-                          }}
-                        />
-                      </div>
-                    </footer>
-                  </main>
-                )}
-              </div>
-            ) : null}
+          {activeApp === "ralph" ? (
+            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+              <Suspense fallback={appLoadingFallback}>
+                <RalphApp
+                  isActive
+                  providerStatuses={controller.titlebar.providerStatuses}
+                  onOpenMediaRun={(runId) => {
+                    setPendingMediaRunId(runId);
+                    selectApp("media");
+                  }}
+                />
+              </Suspense>
+            </div>
+          ) : null}
 
-            {activeApp === "ralph" ? (
-              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                <Suspense fallback={appLoadingFallback}>
-                  <RalphApp
-                    isActive
-                    providerStatuses={controller.titlebar.providerStatuses}
-                    onOpenMediaRun={(runId) => {
-                      setPendingMediaRunId(runId);
-                      selectApp("media");
-                    }}
-                  />
-                </Suspense>
-              </div>
-            ) : null}
+          {activeApp === "media" ? (
+            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+              <Suspense fallback={appLoadingFallback}>
+                <MediaStudio
+                  savedPoseScenes={controller.savedPoseScenes}
+                  onRenamePoseScene={controller.renamePoseScene}
+                  onOpenPoseChat={(map) => {
+                    controller.createPoseChat(map);
+                    selectApp("chat");
+                  }}
+                  providerStatuses={controller.titlebar.providerStatuses}
+                  onOpenProviderSettings={controller.openProviderSettings}
+                  workspaceRoot={controller.composer.activeSession.workspace}
+                  openRunId={pendingMediaRunId}
+                  onOpenRunHandled={() => setPendingMediaRunId(null)}
+                  openSection={pendingMediaSection}
+                  onOpenSectionHandled={() => setPendingMediaSection(null)}
+                  openAssetId={pendingMediaAssetId}
+                  onOpenAssetHandled={() => setPendingMediaAssetId(null)}
+                  importPath={pendingMediaImportPath}
+                  onImportPathHandled={() => setPendingMediaImportPath(null)}
+                  draftPrompt={pendingMediaDraftPrompt}
+                  onDraftPromptHandled={() => setPendingMediaDraftPrompt(null)}
+                />
+              </Suspense>
+            </div>
+          ) : null}
 
-            {activeApp === "media" ? (
-              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                <Suspense fallback={appLoadingFallback}>
-                  <MediaStudio
-                    savedPoseScenes={controller.savedPoseScenes}
-                    onRenamePoseScene={controller.renamePoseScene}
-                    onOpenPoseChat={(map) => {
-                      controller.createPoseChat(map);
-                      selectApp("chat");
-                    }}
-                    providerStatuses={controller.titlebar.providerStatuses}
-                    onOpenProviderSettings={controller.openProviderSettings}
-                    workspaceRoot={controller.composer.activeSession.workspace}
-                    openRunId={pendingMediaRunId}
-                    onOpenRunHandled={() => setPendingMediaRunId(null)}
-                    openSection={pendingMediaSection}
-                    onOpenSectionHandled={() => setPendingMediaSection(null)}
-                    openAssetId={pendingMediaAssetId}
-                    onOpenAssetHandled={() => setPendingMediaAssetId(null)}
-                    importPath={pendingMediaImportPath}
-                    onImportPathHandled={() => setPendingMediaImportPath(null)}
-                    draftPrompt={pendingMediaDraftPrompt}
-                    onDraftPromptHandled={() =>
-                      setPendingMediaDraftPrompt(null)
-                    }
-                  />
-                </Suspense>
-              </div>
-            ) : null}
+          {activeApp === "instructions" ? (
+            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+              <Suspense fallback={appLoadingFallback}>
+                <InstructionManager
+                  setup={controller.instructionManagement}
+                  onDirtyChange={setInstructionDraftDirty}
+                />
+              </Suspense>
+            </div>
+          ) : null}
 
-            {activeApp === "instructions" ? (
-              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                <Suspense fallback={appLoadingFallback}>
-                  <InstructionManager
-                    setup={controller.instructionManagement}
-                    onDirtyChange={setInstructionDraftDirty}
-                  />
-                </Suspense>
-              </div>
-            ) : null}
-
-            {activeApp === "workspaces" ? (
-              <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                <Suspense fallback={appLoadingFallback}>
-                  <WorkspaceManager
-                    setup={controller.instructionManagement}
-                    workspaceSetup={controller.workspaceManagement}
-                    activeWorkspaceRoot={
-                      controller.composer.activeSession.workspace
-                    }
-                    onDirtyChange={setWorkspaceDraftDirty}
-                  />
-                </Suspense>
-              </div>
-            ) : null}
-          </div>
-        </div>
+          {activeApp === "workspaces" ? (
+            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+              <Suspense fallback={appLoadingFallback}>
+                <WorkspaceManager
+                  setup={controller.instructionManagement}
+                  workspaceSetup={controller.workspaceManagement}
+                  activeWorkspaceRoot={
+                    controller.composer.activeSession.workspace
+                  }
+                  onDirtyChange={setWorkspaceDraftDirty}
+                />
+              </Suspense>
+            </div>
+          ) : null}
+        </ApplicationShell>
 
         {controller.catalogOpen ? (
           <Suspense fallback={null}>

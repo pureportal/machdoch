@@ -1,0 +1,16 @@
+
+running 11 tests
+test media::model_memory::tests::refmod_cancellation_stops_queued_and_active_workers ... ok
+test media::model_memory::tests::refmod_worker_tests::audio_tests::refmod_audio_vae_creation_preview_and_export_without_generation_weights ... ignored, requires MACHDOCH_MEDIA_PYTHON with GPU support and MACHDOCH_H3_AUDIO_VAE
+test media::model_memory::tests::refmod_worker_tests::refmod_worker_inspection_import_and_export_roundtrip ... ignored, requires MACHDOCH_MEDIA_PYTHON pointing to an installed media runtime
+test media::refmod_models::tests::refmod_discovery_requires_a_nonempty_vae_in_this_workspace ... ok
+test media::refmod_models::tests::refmod_discovery_uses_the_preferred_package_and_rejects_ambiguity ... ok
+test media::refmod_models::tests::refmod_vaes_resolve_without_the_generation_components ... ok
+test media::refmods::tests::cancellation_is_scoped_to_workspace_and_cleans_up_after_completion ... ok
+test media::refmods::tests::conditioning_evidence_matches_active_modalities ... ok
+test media::refmods::tests::inactive_files_do_not_need_to_exist ... ok
+test media::refmods::tests::operation_completion_removes_only_its_reserved_temporary_files ... ok
+test media::refmods::tests::refmod_library_listing_creates_the_workspace_library_and_preserves_folder_requests ... ok
+
+test result: ok. 9 passed; 0 failed; 2 ignored; 0 measured; 1037 filtered out; finished in 1.32s
+

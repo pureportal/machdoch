@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-06T20:58:19.368Z",
+  "pretrainedWeightsUsed": false,
+  "actualNativeFileDialogs": true,
+  "message": "The RefMod file cannot be read. Choose another reference file.",
+  "invalidFileRecoveryPassed": true,
+  "validImportRetryPassed": true,
+  "controlsRestored": true,
+  "originalFilesPreserved": true,
+  "temporaryFiles": []
+}

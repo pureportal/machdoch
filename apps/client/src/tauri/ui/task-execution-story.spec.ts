@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTaskExecutionStory } from "./task-execution-story";
+import { createTaskExecutionStory } from "@machdoch/client-ui/conversation/task-execution-story";
 import {
   appendThinkingProgress,
   createInitialThinkingTrace,

@@ -10,8 +10,8 @@ import {
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetDesktopTaskTimeout } from "./runtime";
-import { TaskTimeoutControls } from "./task-timeout-controls";
-import { TaskThinkingPanel } from "./task-thinking-panel";
+import { TaskTimeoutControls } from "@machdoch/client-ui/conversation/task-timeout-controls";
+import { TaskThinkingPanel } from "@machdoch/client-ui/conversation/task-thinking-panel";
 import {
   appendThinkingProgress,
   createInitialThinkingTrace,
@@ -28,7 +28,8 @@ afterEach(() => {
 const openControls = (): HTMLInputElement => {
   render(
     createElement(TaskTimeoutControls, {
-      taskId: "chat-1",
+      bounds: { min: 1, max: 1440 },
+      onReset: (minutes) => resetDesktopTaskTimeout("chat-1", minutes),
       idleTimeoutMs: 1_200_000,
     }),
   );
@@ -52,7 +53,14 @@ describe("chat timeout controls", () => {
       },
     };
     const view = render(
-      createElement(TaskThinkingPanel, { taskId: "chat-1", thinking: trace }),
+      createElement(TaskThinkingPanel, {
+        timeoutControls: createElement(TaskTimeoutControls, {
+          idleTimeoutMs: 1_200_000,
+          bounds: { min: 1, max: 1440 },
+          onReset: (minutes) => resetDesktopTaskTimeout("chat-1", minutes),
+        }),
+        thinking: trace,
+      }),
     );
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(
       "50",
@@ -82,14 +90,25 @@ describe("chat timeout controls", () => {
     expect(updated.task).toBe(trace.task);
     expect(updated.mode).toBe("ask");
     view.rerender(
-      createElement(TaskThinkingPanel, { taskId: "chat-1", thinking: updated }),
+      createElement(TaskThinkingPanel, {
+        timeoutControls: createElement(TaskTimeoutControls, {
+          idleTimeoutMs: 1_200_000,
+          bounds: { min: 1, max: 1440 },
+          onReset: (minutes) => resetDesktopTaskTimeout("chat-1", minutes),
+        }),
+        thinking: updated,
+      }),
     );
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe(
       "0",
     );
     view.rerender(
       createElement(TaskThinkingPanel, {
-        taskId: "chat-1",
+        timeoutControls: createElement(TaskTimeoutControls, {
+          idleTimeoutMs: 1_200_000,
+          bounds: { min: 1, max: 1440 },
+          onReset: (minutes) => resetDesktopTaskTimeout("chat-1", minutes),
+        }),
         thinking: { ...updated, status: "complete" },
       }),
     );

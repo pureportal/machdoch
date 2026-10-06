@@ -76,9 +76,12 @@ import {
 } from "../../../../core/media/pose-map.js";
 import { MediaPoseWorkspace } from "./media-pose-workspace";
 import { MediaAudioGenerateView } from "./media-audio-generate-view";
+import { MediaRefModControls } from "./media-refmod-controls";
+import { MediaRefModLibraryAction } from "./media-refmod-library-action";
 import type { MediaAudioRecipeSettings } from "../../../../core/media/contracts.js";
 
 interface MediaGenerateViewProps {
+  workspaceRoot?: string;
   assistant?: JSX.Element;
   target: MediaGenerationTarget;
   settings: ImageRecipeSettings;
@@ -139,6 +142,7 @@ const TARGETS: ReadonlyArray<{
 ];
 
 export const MediaGenerateView = ({
+  workspaceRoot = "",
   assistant,
   target,
   settings,
@@ -615,6 +619,10 @@ export const MediaGenerateView = ({
           ? { loopMode: "none" as const, transparentBackground: false }
           : {}),
         modelId: modelId as MediaVideoRecipeSettings["modelId"],
+        refMods:
+          model?.architecture === "minimax-h3-ref2va"
+            ? (videoSettings.refMods ?? [])
+            : [],
         modelAddons: reconcileMediaModelAddonSelections(
           model ?? null,
           catalog.addons,
@@ -1207,6 +1215,31 @@ export const MediaGenerateView = ({
               ) : null}
 
               {target !== "image" ? modelField : null}
+
+              {target === "video" && minimaxH3 && (
+                <MediaRefModControls
+                  key={workspaceRoot}
+                  workspaceRoot={workspaceRoot}
+                  settings={videoSettings}
+                  imageCount={settings.referenceImages.length ? 1 : 0}
+                  onChange={(references) =>
+                    onVideoSettingsChange({ ...videoSettings, ...references })
+                  }
+                  onInsertLabel={(label) =>
+                    onChange({
+                      ...settings,
+                      prompt: `${settings.prompt}${settings.prompt ? " " : ""}${label}`,
+                    })
+                  }
+                />
+              )}
+
+              {target === "video" && !minimaxH3 && workspaceRoot && (
+                <MediaRefModLibraryAction
+                  key={workspaceRoot}
+                  workspaceRoot={workspaceRoot}
+                />
+              )}
 
               {target !== "video" || settings.referenceImages.length === 0 ? (
                 <MediaAddonTriggerWarnings

@@ -1,0 +1,15 @@
+Whistle and Needle
+
+Developed by Cactus Compute, Inc.
+https://github.com/cactus-compute/needle
+https://huggingface.co/Cactus-Compute/whistle
+https://huggingface.co/Cactus-Compute/needle3
+
+Whistle: Speech Recognition for Tiny Devices (2026)
+Jakub Mroz, Henry Ndubuaku, Karen Mosoyan, Noah Cylich, Satyajit Kumar,
+Parkirat Sandhu, Roman Shemet, Justin H. Lee.
+
+Machdoch distributes the upstream model weights and native runtime unmodified.
+Both are licensed under the Apache License, Version 2.0.
+Pinned upstream revisions and SHA-256 digests appear in assets.json in the
+desktop licence bundle.

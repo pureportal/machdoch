@@ -1,3 +1,4 @@
+use crate::identifiers::valid_uuid;
 use serde::{de::Error as _, Deserialize, Deserializer};
 use serde_json::{Map, Value};
 
@@ -6,6 +7,9 @@ const MAX_MEDIA_BYTES: f64 = 64.0 * 1024.0 * 1024.0;
 const MAX_RESPONSE_CHUNK: usize = 262_144;
 
 const MEDIA_COMMANDS: &[&str] = &[
+    "media_get_asset_storage",
+    "media_move_asset_storage",
+    "media_resume_asset_storage",
     "media_read_studio_state",
     "media_write_studio_state",
     "media_create_transfer",
@@ -67,6 +71,7 @@ const MEDIA_COMMANDS: &[&str] = &[
     "media_read_asset_preview",
     "media_read_quality_report",
     "media_refresh_local_diffusers_runtime",
+    "media_refmod_operation",
     "media_remove_model",
     "media_remove_model_addon",
     "media_resolve_human_review",
@@ -110,7 +115,24 @@ where
     let valid = match typed {
         MediaRequest::Release { id } => valid_uuid(&id),
         MediaRequest::Invoke { id, command, args } => {
-            valid_uuid(&id) && MEDIA_COMMANDS.contains(&command.as_str()) && valid_json_args(&args)
+            valid_uuid(&id)
+                && MEDIA_COMMANDS.contains(&command.as_str())
+                && valid_json_args(&args)
+                && match command.as_str() {
+                    "media_get_asset_storage" | "media_resume_asset_storage" => args.is_empty(),
+                    "media_move_asset_storage" => {
+                        args.len() == 1
+                            && args
+                                .get("folder")
+                                .and_then(Value::as_str)
+                                .is_some_and(|value| {
+                                    !value.is_empty()
+                                        && value.encode_utf16().count() <= 4096
+                                        && !value.contains('\0')
+                                })
+                    }
+                    _ => true,
+                }
         }
         MediaRequest::Read { id, offset } => {
             valid_uuid(&id) && valid_nonnegative_integer(&offset, MAX_MEDIA_BYTES)
@@ -178,21 +200,6 @@ fn valid_nonnegative_integer(value: &Value, max: f64) -> bool {
     value.as_f64().is_some_and(|number| {
         number.is_finite() && number.fract() == 0.0 && (0.0..=max).contains(&number)
     })
-}
-
-fn valid_uuid(id: &str) -> bool {
-    if id == "00000000-0000-0000-0000-000000000000" || id == "ffffffff-ffff-ffff-ffff-ffffffffffff"
-    {
-        return true;
-    }
-    let bytes = id.as_bytes();
-    bytes.len() == 36
-        && bytes.iter().enumerate().all(|(index, byte)| match index {
-            8 | 13 | 18 | 23 => *byte == b'-',
-            14 => (b'1'..=b'8').contains(byte),
-            19 => matches!(byte, b'8' | b'9' | b'a' | b'b' | b'A' | b'B'),
-            _ => byte.is_ascii_hexdigit(),
-        })
 }
 
 #[cfg(test)]

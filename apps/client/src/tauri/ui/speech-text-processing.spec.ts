@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { runInternalDesktopTask } from "./internal-task-model";
 import { processUserSpeechText } from "./speech-text-processing";
 import type { UserSpeechToTextProvider } from "./runtime";
+import { LOCAL_SPEECH_PROVIDERS } from "../../shared/local-speech";
 
 const cancelTask = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 vi.mock("./runtime", () => ({ cancelDesktopTask: cancelTask }));
@@ -27,7 +28,7 @@ beforeEach(() => {
 });
 
 describe("speech text processing", () => {
-  it.each<UserSpeechToTextProvider>(["openai", "google", "whisper"])(
+  it.each<UserSpeechToTextProvider>(["openai", "google"])(
     "uses the internal task model to format %s transcripts",
     async (provider) => {
       const text = await processUserSpeechText({
@@ -68,18 +69,21 @@ describe("speech text processing", () => {
     );
   });
 
-  it("keeps Whisper's local translation without a second model request", async () => {
-    await expect(
-      processUserSpeechText({
-        provider: "whisper",
-        text: "Open the file.",
-        autoTranslateToEnglish: true,
-        autoFormat: false,
-      }),
-    ).resolves.toBe("Open the file.");
+  it.each(LOCAL_SPEECH_PROVIDERS)(
+    "keeps %s transcripts local with processing enabled",
+    async (provider) => {
+      await expect(
+        processUserSpeechText({
+          provider,
+          text: "Open the file.",
+          autoTranslateToEnglish: true,
+          autoFormat: true,
+        }),
+      ).resolves.toBe("Open the file.");
 
-    expect(runTask).not.toHaveBeenCalled();
-  });
+      expect(runTask).not.toHaveBeenCalled();
+    },
+  );
 
   it("rejects a response without edited text", async () => {
     runTask.mockResolvedValueOnce({
@@ -88,7 +92,7 @@ describe("speech text processing", () => {
 
     await expect(
       processUserSpeechText({
-        provider: "whisper",
+        provider: "google",
         text: "open the file",
         autoTranslateToEnglish: false,
         autoFormat: true,
@@ -100,7 +104,7 @@ describe("speech text processing", () => {
     runTask.mockImplementationOnce(() => new Promise(() => {}));
     const controller = new AbortController();
     const processing = processUserSpeechText({
-      provider: "whisper",
+      provider: "google",
       text: "open file",
       autoTranslateToEnglish: false,
       autoFormat: true,
@@ -119,7 +123,7 @@ describe("speech text processing", () => {
     controller.abort();
     await expect(
       processUserSpeechText({
-        provider: "whisper",
+        provider: "google",
         text: "open file",
         autoTranslateToEnglish: false,
         autoFormat: true,
@@ -134,7 +138,7 @@ describe("speech text processing", () => {
     try {
       runTask.mockImplementationOnce(() => new Promise(() => {}));
       const processing = processUserSpeechText({
-        provider: "whisper",
+        provider: "google",
         text: "open file",
         autoTranslateToEnglish: false,
         autoFormat: true,

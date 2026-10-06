@@ -1,0 +1,140 @@
+{
+  "sizeBytes": 3774476288,
+  "requiredBytes": 5207808496,
+  "weightsRead": false,
+  "tensorCount": 562,
+  "normalization": {
+    "mean": {
+      "dtype": "F16",
+      "shape": [
+        24
+      ],
+      "data_offsets": [
+        0,
+        48
+      ]
+    },
+    "standardDeviation": {
+      "dtype": "F16",
+      "shape": [
+        24
+      ],
+      "data_offsets": [
+        48,
+        96
+      ]
+    }
+  },
+  "encoderBlocks": [
+    "encoder.down.0.block.0.norm1.weight",
+    "encoder.down.0.block.1.norm1.weight",
+    "encoder.down.1.block.0.norm1.weight",
+    "encoder.down.1.block.1.norm1.weight",
+    "encoder.down.2.block.0.norm1.weight",
+    "encoder.down.2.block.1.norm1.weight",
+    "encoder.down.3.block.0.norm1.weight",
+    "encoder.down.3.block.1.norm1.weight",
+    "encoder.down.4.block.0.norm1.weight",
+    "encoder.down.4.block.1.norm1.weight",
+    "encoder.down.5.block.0.norm1.weight",
+    "encoder.down.5.block.1.norm1.weight"
+  ],
+  "decoderLayers": 36,
+  "representativeWeights": {
+    "encoder.conv_in.weight": {
+      "dtype": "F16",
+      "shape": [
+        128,
+        3,
+        3,
+        3,
+        3
+      ],
+      "data_offsets": [
+        4847065440,
+        4847086176
+      ]
+    },
+    "quant_conv.weight": {
+      "dtype": "F16",
+      "shape": [
+        48,
+        48,
+        1,
+        1,
+        1
+      ],
+      "data_offsets": [
+        5207737552,
+        5207742160
+      ]
+    },
+    "post_quant_conv.weight": {
+      "dtype": "F16",
+      "shape": [
+        24,
+        24,
+        1,
+        1,
+        1
+      ],
+      "data_offsets": [
+        5207736304,
+        5207737456
+      ]
+    },
+    "decoder.x_embedder.weight": {
+      "dtype": "F16",
+      "shape": [
+        2048,
+        24
+      ],
+      "data_offsets": [
+        4846966880,
+        4847065184
+      ]
+    },
+    "decoder.transformer_blocks.0.attn.to_qkv.weight": {
+      "dtype": "F16",
+      "shape": [
+        6144,
+        2048
+      ],
+      "data_offsets": [
+        21022816,
+        46188640
+      ]
+    },
+    "decoder.transformer_blocks.0.attn.to_qkv.bias": {
+      "dtype": "F16",
+      "shape": [
+        6144
+      ],
+      "data_offsets": [
+        21010528,
+        21022816
+      ]
+    },
+    "decoder.transformer_blocks.0.ff.w1.weight": {
+      "dtype": "F16",
+      "shape": [
+        16384,
+        2048
+      ],
+      "data_offsets": [
+        46221408,
+        113330272
+      ]
+    },
+    "decoder.transformer_blocks.0.ff.w1.bias": {
+      "dtype": "F16",
+      "shape": [
+        16384
+      ],
+      "data_offsets": [
+        46188640,
+        46221408
+      ]
+    }
+  }
+}

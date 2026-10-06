@@ -62,6 +62,86 @@ describe("provider capability registry", () => {
     expect(probeCommandMock).toHaveBeenCalledTimes(3);
   });
 
+  it("retains the OS launch reason when the CLI is unavailable", async () => {
+    probeCommandMock.mockResolvedValue({
+      error: Object.assign(new Error("spawn unavailable-provider.exe ENOENT"), {
+        code: "ENOENT",
+      }),
+      stdout: "",
+      stderr: "",
+    });
+    const result = await probeProviderCli(
+      "claude-cli",
+      "unavailable-provider.exe",
+    );
+    expect(result.available).toBe(false);
+    expect(result.features).toEqual([]);
+    expect(result.warnings.join("\n")).toContain(
+      "spawn unavailable-provider.exe ENOENT",
+    );
+  });
+
+  it("retains timeout and stderr diagnostics without trusting incomplete help", async () => {
+    probeCommandMock.mockImplementation(async (_command, args) =>
+      args[0] === "--version"
+        ? { status: 0, stdout: "fixture-cli 1.0.0", stderr: "" }
+        : {
+            error: Object.assign(
+              new Error("Command timed out after 30000ms."),
+              { code: "ETIMEDOUT" },
+            ),
+            stdout: "--append-system-prompt-file --output-format",
+            stderr: "provider initialization stalled",
+          },
+    );
+    const result = await probeProviderCli(
+      "claude-cli",
+      "timed-help-diagnostics.exe",
+    );
+    expect(result.available).toBe(true);
+    expect(result.features).toEqual([]);
+    expect(result.warnings.join("\n")).toContain(
+      "Command timed out after 30000ms.",
+    );
+    expect(result.warnings.join("\n")).toContain(
+      "provider initialization stalled",
+    );
+    probeCommandMock.mockResolvedValue({
+      status: 0,
+      stdout: "fixture-cli 1.0.0 --append-system-prompt-file --output-format",
+      stderr: "",
+    });
+    const recovered = await probeProviderCli(
+      "claude-cli",
+      "timed-help-diagnostics.exe",
+    );
+    expect(recovered.features).toEqual([
+      "--append-system-prompt-file",
+      "--output-format",
+    ]);
+    expect(recovered.warnings).toEqual([]);
+  });
+
+  it("identifies the failed Codex exec probe and excludes its unverified flags", async () => {
+    probeCommandMock.mockImplementation(async (_command, args) =>
+      args[0] === "exec"
+        ? {
+            error: new Error("Codex exec help transport failed"),
+            stdout: "--json",
+            stderr: "",
+          }
+        : { status: 0, stdout: "codex-cli 1.0.0 --config --json", stderr: "" },
+    );
+    const result = await probeProviderCli(
+      "codex-cli",
+      "failed-exec-help-diagnostics.exe",
+    );
+    expect(result.features).toEqual([]);
+    expect(result.warnings.join("\n")).toContain(
+      "Codex exec help probe failed: Codex exec help transport failed",
+    );
+  });
+
   it("limits command concurrency across different CLI probes to two", async () => {
     let active = 0;
     let maximum = 0;

@@ -7,6 +7,9 @@ import type {
 export interface ProductRuntime {
   mediaHref?: string;
   ralphHref?: string;
+  schedulerHref?: string;
+  instructionsHref?: string;
+  workspaceHref?: string;
   servicesHref?: string;
   settingsHref?: string;
   getSnapshot(signal?: AbortSignal): Promise<ProductSnapshot>;

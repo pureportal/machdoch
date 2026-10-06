@@ -1,0 +1,32 @@
+{
+  "devServerStarted": false,
+  "pretrainedWeightsUsed": false,
+  "checks": [
+    {
+      "operation": "list",
+      "passed": true
+    },
+    {
+      "operation": "inspect",
+      "passed": true
+    },
+    {
+      "operation": "import",
+      "passed": true
+    },
+    {
+      "operation": "inspect",
+      "passed": true
+    },
+    {
+      "operation": "save",
+      "passed": true
+    },
+    {
+      "operation": "inspect",
+      "passed": true
+    }
+  ],
+  "workspace": "C:\\Development\\machdoch\\.tmp\\refmod-live-native-voTC7e",
+  "passed": true
+}

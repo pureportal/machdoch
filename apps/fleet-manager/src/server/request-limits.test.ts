@@ -33,6 +33,51 @@ describe("Fleet Manager request limits", () => {
     ).toBe(16 * 1024);
   });
 
+  it.each(["instructions", "scheduler"])(
+    "accepts bounded %s editor payloads through the HTTP server",
+    (feature) => {
+      expect(
+        maximumRequestBodyBytes(
+          `/api/instances/host/product/${feature}`,
+          config,
+        ),
+      ).toBe(2_250_000);
+      expect(
+        maximumRequestBodyBytes(
+          `/api/instances/host/product/${feature}/other`,
+          config,
+        ),
+      ).toBe(64 * 1024);
+    },
+  );
+
+  it("accepts a reviewed MCP document and its replacement within the workspace limit", () => {
+    expect(
+      maximumRequestBodyBytes("/api/instances/host/product/workspace", config),
+    ).toBe(3_000_000);
+    expect(
+      maximumRequestBodyBytes(
+        "/api/instances/host/product/workspace/other",
+        config,
+      ),
+    ).toBe(64 * 1024);
+  });
+
+  it("accepts a reviewed global MCP document through the device settings route", () => {
+    expect(
+      maximumRequestBodyBytes(
+        "/api/instances/host/product/deviceSettings",
+        config,
+      ),
+    ).toBe(3_000_000);
+    expect(
+      maximumRequestBodyBytes(
+        "/api/instances/host/product/deviceSettings/other",
+        config,
+      ),
+    ).toBe(64 * 1024);
+  });
+
   it("accounts for the larger configured settings input", () => {
     expect(
       maximumRequestBodyBytes("/api/settings/profiles/profile_one", config),

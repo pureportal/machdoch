@@ -12,6 +12,7 @@ import {
   parseMediaTriggerWords,
 } from "../../../../core/media/asset-metadata.js";
 import { MEDIA_MODEL_ARCHITECTURES } from "../../../../core/media/model-architectures.js";
+import { openMediaModelProfile } from "../../../../core/media/open-model-profiles.js";
 import type {
   MediaAssetCategory,
   MediaAssetImportResult,
@@ -71,6 +72,12 @@ export const MediaModelEditDialog = ({
   const embedding = addon?.kind === "textual-inversion";
   const [name, setName] = useState(resource.displayName);
   const [architecture, setArchitecture] = useState(resource.architecture ?? "");
+  const selectedProfile = openMediaModelProfile(architecture);
+  const studentProfile =
+    !addon && selectedProfile?.distillation ? selectedProfile : null;
+  const studentModel =
+    !addon &&
+    Boolean(openMediaModelProfile(resource.architecture)?.distillation);
   const [license, setLicense] = useState(resource.license.name);
   const [commercialUse, setCommercialUse] = useState(
     resource.license.commercialUse,
@@ -136,10 +143,12 @@ export const MediaModelEditDialog = ({
               displayName: name.trim(),
               architecture,
               sourceUrl: normalizedUrl,
-              licenseName: license.trim() || null,
-              commercialUse:
-                commercialUse === "allowed" ||
-                commercialUse === "review-required"
+              licenseName:
+                studentProfile?.license.name ?? (license.trim() || null),
+              commercialUse: studentProfile
+                ? studentProfile.license.commercialUse
+                : commercialUse === "allowed" ||
+                    commercialUse === "review-required"
                   ? commercialUse
                   : null,
               triggerWords: triggers,
@@ -241,7 +250,7 @@ export const MediaModelEditDialog = ({
                     <span>Model type</span>
                     <select
                       value={architecture}
-                      disabled={!editable}
+                      disabled={!editable || studentModel}
                       onChange={(event) => setArchitecture(event.target.value)}
                       className={inputClass}
                     >
@@ -285,9 +294,9 @@ export const MediaModelEditDialog = ({
                 <label className={labelClass}>
                   <span>License</span>
                   <input
-                    value={license}
+                    value={studentProfile?.license.name ?? license}
                     maxLength={256}
-                    readOnly={!editable}
+                    readOnly={!editable || studentProfile !== null}
                     onChange={(event) => setLicense(event.target.value)}
                     className={inputClass}
                   />
@@ -295,8 +304,10 @@ export const MediaModelEditDialog = ({
                 <label className={labelClass}>
                   <span>Commercial use</span>
                   <select
-                    value={commercialUse}
-                    disabled={!editable}
+                    value={
+                      studentProfile?.license.commercialUse ?? commercialUse
+                    }
+                    disabled={!editable || studentProfile !== null}
                     onChange={(event) =>
                       setCommercialUse(
                         event.target.value as typeof commercialUse,

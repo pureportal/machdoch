@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import gc
+from copy import deepcopy
 import os
 from pathlib import Path
 import subprocess
@@ -48,7 +49,90 @@ def _mux_audio(destination: Path, audio: Any, sample_rate: int, duration: float)
     audio_path.unlink()
 
 
-def generate(request: dict[str, Any], worker: Any) -> dict[str, Any]:
+def _prepare_pipeline(request, profile, arguments, model, dtype, device, diffusers, worker):
+    pipeline = media_open_models.load_pipeline(diffusers, model, dtype, image_conditioned="image" in arguments)
+    applied_addons = []
+    if profile["family"] == "CogVideoX" or profile["architecture"] == "wan-2.1-t2v-1.3b":
+        addons = request.get("addons", [])
+        if any(addon.get("kind") not in ("lora", "textual-inversion") for addon in addons):
+            raise ValueError("Choose video LoRAs or embeddings.")
+        applied_addons = worker._load_video_addons(pipeline.transformer, [addon for addon in addons if addon["kind"] == "lora"])
+        embeddings = [addon for addon in addons if addon["kind"] == "textual-inversion"]
+        if embeddings:
+            if len(embeddings) > 16:
+                raise ValueError("Choose up to sixteen embeddings.")
+            prompt, negative, applied, *_ = worker._apply_addons(pipeline, embeddings, arguments["prompt"], arguments.get("negative_prompt", ""))
+            arguments.update(prompt=prompt, negative_prompt=negative)
+            applied_addons.extend(applied)
+    if device == "cuda":
+        if request.get("memoryProfile") == "memory-saver":
+            pipeline.enable_sequential_cpu_offload()
+        elif request.get("memoryProfile") == "maximum-speed":
+            pipeline.to(device)
+        else:
+            pipeline.enable_model_cpu_offload()
+    else:
+        pipeline.to(device)
+    if profile["family"] == "CogVideoX":
+        from media_cogvideo_conditioning import enable_vae_tiling
+
+        enable_vae_tiling(pipeline)
+    elif hasattr(pipeline.vae, "enable_tiling"):
+        pipeline.vae.enable_tiling()
+    return pipeline, applied_addons
+
+
+def _sample_pipeline(request, profile, arguments, model, dtype, device, diffusers, torch, worker, cache=None):
+    cached = cache.acquire({"command": "generate-video", "model": model, "dtype": str(dtype),
+        "addons": request.get("addons", []), "imageConditioned": "image" in arguments,
+        "width": arguments["width"], "height": arguments["height"],
+        "memoryProfile": request.get("memoryProfile")}) if cache is not None else None
+    pipeline = None
+    try:
+        if cached is None:
+            worker._progress("Loading video model", 0.04)
+            pipeline, applied_addons = _prepare_pipeline(request, profile, arguments, model, dtype, device, diffusers, worker)
+            if cache is not None:
+                cache.store({"pipeline": pipeline, "addons": deepcopy(applied_addons)})
+        else:
+            worker._progress("Preparing video", 0.04)
+            pipeline, applied_addons = cached["pipeline"], deepcopy(cached["addons"])
+            prompt, negative = arguments.get("prompt", ""), arguments.get("negative_prompt", "")
+            for addon in applied_addons:
+                if addon["kind"] == "textual-inversion":
+                    if addon["placement"] in ("positive", "both"):
+                        prompt = worker._append_token(prompt, addon["token"])
+                    if addon["placement"] in ("negative", "both"):
+                        negative = worker._append_token(negative, addon["token"])
+            if any(addon["kind"] == "textual-inversion" for addon in applied_addons):
+                worker._verify_embedding_prompt_tokens(pipeline, applied_addons, prompt, negative)
+                arguments.update(prompt=prompt, negative_prompt=negative)
+        if profile["guidanceParameter"] == "guider":
+            pipeline.guider = diffusers.ClassifierFreeGuidance(guidance_scale=request["guidanceScale"])
+        if any(addon["kind"] == "textual-inversion" for addon in applied_addons):
+            if profile["family"] == "Wan":
+                from media_wan_conditioning import embedding_arguments
+            else:
+                from media_cogvideo_conditioning import embedding_arguments
+
+            if arguments["guidance_scale"] <= 1 and any(addon["kind"] == "textual-inversion" and addon["placement"] != "positive" for addon in applied_addons):
+                raise ValueError("Negative embeddings need guidance above 1. Increase guidance or change embedding placement.")
+            arguments.update(embedding_arguments(pipeline, arguments["prompt"], arguments.get("negative_prompt", ""), device, arguments["guidance_scale"]))
+        worker._enable_sampling_progress(pipeline)
+        worker._progress("Generating video", 0.12)
+        with torch.inference_mode():
+            result = pipeline(**arguments)
+        audio = result.audio.detach().cpu() if profile.get("audio") else None
+        sample_rate = pipeline.vocoder.config.output_sampling_rate if audio is not None else None
+        return result.frames[0], audio, sample_rate, applied_addons
+    finally:
+        del pipeline
+        gc.collect()
+        if device == "cuda":
+            torch.cuda.empty_cache()
+
+
+def generate(request: dict[str, Any], worker: Any, cache=None) -> dict[str, Any]:
     started = time.perf_counter()
     if request.get("schemaVersion") != worker.SCHEMA_VERSION:
         raise worker.WorkerError("Unsupported worker request schema")
@@ -63,8 +147,8 @@ def generate(request: dict[str, Any], worker: Any) -> dict[str, Any]:
         raise worker.WorkerError("Choose a non-looping shot to keep generated audio synchronized")
     if request.get("loopMode") == "seamless":
         raise worker.WorkerError("Use a shot, boomerang, or crossfade with this video profile")
-    if request.get("addons") and profile["family"] != "CogVideoX":
-        raise worker.WorkerError("This video profile does not support LoRAs")
+    if request.get("addons") and profile["family"] != "CogVideoX" and profile["architecture"] != "wan-2.1-t2v-1.3b":
+        raise worker.WorkerError("This video profile does not support these add-ons")
     negative_prompt = request.get("negativePrompt", "")
     if not isinstance(negative_prompt, str) or len(negative_prompt) > 8_000:
         raise worker.WorkerError("negativePrompt must contain at most 8000 characters")
@@ -103,36 +187,24 @@ def generate(request: dict[str, Any], worker: Any) -> dict[str, Any]:
     device, device_label, device_memory = worker._device(torch)
     backend = worker._configure_video_conv3d_backend(torch, device)
     memory = worker._start_video_memory_observation(torch, device)
-    dtype = torch.float16 if device == "cuda" and profile["architecture"] == "cogvideox-2b" else worker._pipeline_dtype(torch, device)
+    dtype = (torch.bfloat16 if profile.get("distillation") or device == "cuda" and profile["architecture"].startswith("cogvideox-1.5-")
+             else torch.float16 if device == "cuda" and profile["architecture"] == "cogvideox-2b" else worker._pipeline_dtype(torch, device))
     generator = torch.Generator(device=device if device == "cuda" else "cpu").manual_seed(request["seed"])
     arguments = media_open_models.video_arguments(profile, request, image, last_image, width, height, generator)
     output_directory = worker._fresh_output_directory(request["outputDirectory"])
-    worker._progress("Loading video model", 0.04)
-    pipeline = media_open_models.load_pipeline(diffusers, model, dtype, image_conditioned=image is not None)
-    applied_addons = worker._load_video_addons(pipeline.transformer, request.get("addons", [])) if profile["family"] == "CogVideoX" else []
-    if profile["guidanceParameter"] == "guider":
-        pipeline.guider = diffusers.ClassifierFreeGuidance(guidance_scale=guidance)
-    if device == "cuda":
-        if request.get("memoryProfile") == "memory-saver":
-            pipeline.enable_sequential_cpu_offload()
-        elif request.get("memoryProfile") == "maximum-speed":
-            pipeline.to(device)
-        else:
-            pipeline.enable_model_cpu_offload()
+    if profile.get("distillation"):
+        import media_h3_distillation
+
+        if cache is not None:
+            cache.clear()
+        worker._progress("Loading video model", 0.04)
+        frames, audio, sample_rate, applied_addons = media_h3_distillation.render(model, profile, request, width, height, device, diffusers, worker._progress)
     else:
-        pipeline.to(device)
-    if hasattr(pipeline.vae, "enable_tiling"):
-        pipeline.vae.enable_tiling()
-    worker._enable_sampling_progress(pipeline)
-    worker._progress("Generating video", 0.12)
-    with torch.inference_mode():
-        result = pipeline(**arguments)
-    frames = result.frames[0]
+        frames, audio, sample_rate, applied_addons = _sample_pipeline(request, profile, arguments, model, dtype, device, diffusers, torch, worker, cache)
+    frames = list(frames)
     if len(frames) != request["numFrames"]:
         raise worker.WorkerError("The video model returned an unexpected frame count")
-    audio = result.audio.detach().cpu() if profile.get("audio") else None
-    sample_rate = pipeline.vocoder.config.output_sampling_rate if audio is not None else None
-    del pipeline, result, arguments, generator
+    del arguments, generator
     gc.collect()
     if device == "cuda":
         torch.cuda.empty_cache()

@@ -1,18 +1,6 @@
-import {
-  isMediaAssetContextAttachment,
-  type ChatSessionContextAttachment,
-  type ChatSessionMessagePromptEnhancement,
-  type ChatSessionQueuedMessage,
-  type ChatSessionQueuedPromptEnhancementRequest,
-} from "../../chat-session.model";
-
-export const PROMPT_ENHANCEMENT_MODES = [
-  "off",
-  "simple",
-  "web-search",
-] as const;
-
-export type PromptEnhancementMode = (typeof PROMPT_ENHANCEMENT_MODES)[number];
+import type { PromptEnhancementMode } from "@machdoch/client-ui/composer/prompt-enhancement-options";
+import { type ChatSessionMessagePromptEnhancement, type ChatSessionQueuedMessage, type ChatSessionQueuedPromptEnhancementRequest } from "../../chat-session.model";
+import { isMediaAssetContextAttachment, type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 
 export type ActivePromptEnhancementMode = Exclude<PromptEnhancementMode, "off">;
 
@@ -42,12 +30,6 @@ export const isPromptEnhancementCancellation = (
       error.taskId === taskId)
   );
 };
-
-export const PROMPT_ENHANCEMENT_LABELS = {
-  off: "Off",
-  simple: "Simple enhance",
-  "web-search": "Enhance with web search",
-} satisfies Record<PromptEnhancementMode, string>;
 
 const ENHANCED_PROMPT_TAG_PATTERN =
   /<machdoch_enhanced_prompt>\s*([\s\S]*?)\s*<\/machdoch_enhanced_prompt>/iu;

@@ -1,4 +1,3 @@
-import { open, save } from "@tauri-apps/plugin-dialog";
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -37,6 +36,9 @@ import {
 } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
+  openSettingsFile as open,
+  saveSettingsFile as save,
+  settingsFileLabel,
   approveSettingsTransfer,
   cancelEncryptedSettingsFileImport,
   commitEncryptedSettingsFileImport,
@@ -1000,7 +1002,7 @@ const EncryptedSettingsFilePanel = ({
             <div className="flex flex-col gap-2 sm:flex-row">
               <Input
                 readOnly
-                value={filePath}
+                value={settingsFileLabel(filePath)}
                 aria-label={
                   exporting
                     ? "Encrypted file destination"

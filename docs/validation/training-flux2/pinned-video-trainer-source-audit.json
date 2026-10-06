@@ -1,0 +1,43 @@
+{
+  "revision": "4295ee3ec58efa6577bc459e9b84ca3f63aa9a96",
+  "sources": [
+    {
+      "path": "examples/cogvideo/train_cogvideox_lora.py",
+      "url": "https://api.github.com/repos/huggingface/diffusers/contents/examples/cogvideo/train_cogvideox_lora.py?ref=4295ee3ec58efa6577bc459e9b84ca3f63aa9a96",
+      "status": 200,
+      "gitBlob": "3fd542173e348e3b4544e3ce171eb1f6b6cb430c",
+      "sha256": "94aa5c0bbc7292199e653aa37523fa11b8789e53485755d866bfe350ab0b563a",
+      "bytes": 64256,
+      "imports": [
+        "accelerate",
+        "accelerate.logging",
+        "accelerate.utils",
+        "datasets",
+        "diffusers",
+        "diffusers.image_processor",
+        "diffusers.models.autoencoders.vae",
+        "diffusers.models.embeddings",
+        "diffusers.optimization",
+        "diffusers.pipelines.cogvideo.pipeline_cogvideox",
+        "diffusers.training_utils",
+        "diffusers.utils",
+        "diffusers.utils.hub_utils",
+        "diffusers.utils.torch_utils",
+        "huggingface_hub",
+        "pathlib",
+        "peft",
+        "torch.utils.data",
+        "torchvision.transforms",
+        "torchvision.transforms.functional",
+        "tqdm.auto",
+        "transformers",
+        "typing"
+      ]
+    },
+    {
+      "path": "examples/dreambooth/train_dreambooth_lora_wan.py",
+      "url": "https://api.github.com/repos/huggingface/diffusers/contents/examples/dreambooth/train_dreambooth_lora_wan.py?ref=4295ee3ec58efa6577bc459e9b84ca3f63aa9a96",
+      "status": 404
+    }
+  ]
+}

@@ -2,11 +2,16 @@
 
 import type { ProductCommand, ProductSnapshot } from "@machdoch/fleet-protocol";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentType } from "react";
+import type { RemoteComposerProps } from "./remote-composer-props";
+import type { RemoteConversationProps } from "./conversation";
 import type { ProductRuntime } from "./product-runtime";
 import { ProductShell } from "./product-shell";
 import type { ProductView } from "./product-rail";
 import { SnapshotRefreshCoordinator } from "./snapshot-refresh-coordinator";
 import { createComposerDraftStore } from "./use-composer-draft";
+import type { SessionDataSource } from "./session-data";
+import type { SessionSidebarCommandState } from "./session-sidebar-commands-state";
 
 const snapshotRefreshIntervalMs = 1_500;
 
@@ -18,13 +23,21 @@ interface RuntimeLifecycle {
 }
 
 export function RemoteProductApp({
+  Composer,
+  Conversation,
+  SidebarCommands,
   initialView,
   instanceName,
   runtime,
+  sessionData,
 }: {
+  Composer: ComponentType<RemoteComposerProps>;
+  Conversation: ComponentType<RemoteConversationProps>;
+  SidebarCommands?: ComponentType<SessionSidebarCommandState> | undefined;
   initialView?: ProductView;
   instanceName: string;
   runtime: ProductRuntime;
+  sessionData?: SessionDataSource | undefined;
 }): React.ReactElement {
   const [snapshot, setSnapshot] = useState<ProductSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -143,10 +156,16 @@ export function RemoteProductApp({
 
   return (
     <ProductShell
+      Composer={Composer}
+      Conversation={Conversation}
+      SidebarCommands={SidebarCommands}
       {...(initialView ? { initialView } : {})}
       drafts={drafts}
       mediaHref={runtime.mediaHref}
+      workspaceHref={runtime.workspaceHref}
       ralphHref={runtime.ralphHref}
+      schedulerHref={runtime.schedulerHref}
+      instructionsHref={runtime.instructionsHref}
       servicesHref={runtime.servicesHref}
       settingsHref={runtime.settingsHref}
       instanceName={instanceName}
@@ -157,6 +176,7 @@ export function RemoteProductApp({
       pendingCommands={pendingCommands}
       onCommand={execute}
       onRefresh={refresh}
+      sessionData={sessionData}
     />
   );
 }

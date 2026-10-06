@@ -42,6 +42,7 @@ export const readMediaImageSampling = (
 
 export const mediaImageSamplingError = (
   settings: MediaImageSamplingSettings,
+  architecture?: MediaLocalModelArchitecture | null,
 ): string | null => {
   if ((settings.width != null) !== (settings.height != null))
     return "Enter both width and height.";
@@ -70,6 +71,19 @@ export const mediaImageSamplingError = (
       settings.guidanceScale > 20)
   )
     return "Guidance must be between 0 and 20.";
+  const profile = openMediaModelProfile(architecture);
+  if (
+    profile?.fixedSteps &&
+    settings.numInferenceSteps != null &&
+    settings.numInferenceSteps !== profile.steps
+  )
+    return `${profile.displayName} requires ${profile.steps} sampling steps.`;
+  if (
+    profile?.fixedGuidance &&
+    settings.guidanceScale != null &&
+    settings.guidanceScale !== profile.guidance
+  )
+    return `${profile.displayName} requires guidance ${profile.guidance}.`;
   return null;
 };
 

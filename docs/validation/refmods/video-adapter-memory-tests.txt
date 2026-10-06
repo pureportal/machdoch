@@ -1,0 +1,13 @@
+Could not detect ROCm GPU architecture: [WinError 2] The system cannot find the file specified
+
+ROCm GPU architecture detection failed despite ROCm being available.
+                
+W1006 17:00:02.093000 12092 Lib\site-packages\torch\utils\flop_counter.py:29] triton not found; flop counting will not work for triton kernels
+C:\Users\ehrha\AppData\Roaming\com.machdoch.fleetverification.r1791257513352.dev\media-studio\runtime\environment\Lib\site-packages\torch\jit\_script.py:365: DeprecationWarning: `torch.jit.script_method` is deprecated. Please switch to `torch.compile` or `torch.export`.
+  warnings.warn(
+test_insufficient_gpu_memory_fails_before_loading_model_weights (test_media_minimax_h3_video_adapter.H3VideoAdapterTests.test_insufficient_gpu_memory_fails_before_loading_model_weights) ... ok
+
+----------------------------------------------------------------------
+Ran 1 test in 69.200s
+
+OK

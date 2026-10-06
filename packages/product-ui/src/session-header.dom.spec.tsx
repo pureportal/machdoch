@@ -33,7 +33,9 @@ const session: ProductSession = {
 function harness() {
   const onCommand = vi.fn().mockResolvedValue(true);
   const element = (value: ProductSession, pending = false) => (
-    <SessionHeader session={value} pending={pending} onCommand={onCommand} />
+    <div className="machdoch-product">
+      <SessionHeader session={value} pending={pending} onCommand={onCommand} />
+    </div>
   );
   const view = render(element(session));
   return {
@@ -55,6 +57,50 @@ function rename() {
 afterEach(cleanup);
 
 describe("session header editing", () => {
+  it("confirms clearing Quick Chat history and delegates it to the native session", async () => {
+    const view = harness();
+    expect(
+      screen.queryByRole("button", { name: "Clear Quick Chat history" }),
+    ).toBeNull();
+    view.show({ ...session, specialKind: "quick-voice", canDelete: false });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear Quick Chat history" }),
+    );
+    expect(
+      screen.getByRole("dialog", { name: "Clear Quick Chat history?" }),
+    ).toBeTruthy();
+    expect(view.onCommand).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(view.onCommand).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear Quick Chat history" }),
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Clear history" }));
+    });
+    expect(view.onCommand).toHaveBeenCalledWith({
+      kind: "clear-session-history",
+      sessionId: session.id,
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it.each([
+    ["Reset time", "reset-session-time"],
+    ["Move to top", "move-session-to-top"],
+  ])("offers %s when the native session exposes it", async (label, kind) => {
+    const view = harness();
+    view.show({ ...session, canResetTime: true, canMoveToTop: true });
+    fireEvent.keyDown(screen.getByRole("button", { name: "Session actions" }), {
+      key: "Enter",
+    });
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("menuitem", { name: label }));
+    expect(view.onCommand).toHaveBeenCalledWith({
+      kind,
+      sessionId: session.id,
+    });
+  });
   it("preserves an in-progress title when a snapshot refreshes tags", () => {
     const view = harness();
     const input = rename();

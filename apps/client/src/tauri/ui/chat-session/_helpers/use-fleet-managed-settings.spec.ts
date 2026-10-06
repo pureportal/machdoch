@@ -1,10 +1,7 @@
 import type { FleetManagedSettingsDocument } from "@machdoch/fleet-protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createInitialShellState,
-  type FleetManagedSettingsState,
-  type SmartContextPack,
-} from "../../chat-session.model";
+import { createInitialShellState, type FleetManagedSettingsState } from "../../chat-session.model";
+import { type SmartContextPack } from "@machdoch/client-ui/context-packs/model";
 import {
   applyManagedShellSettings,
   createManagedContextPacks,

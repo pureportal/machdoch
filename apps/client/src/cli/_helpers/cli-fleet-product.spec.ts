@@ -7,6 +7,7 @@ import {
 } from "@machdoch/fleet-protocol";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadRuntimeConfig } from "../../core/config.js";
+import { loadUserMemorySettings } from "../../core/env.js";
 import { createTaskExecutionController } from "../../core/execution.js";
 import {
   FleetCliProductRuntime,
@@ -24,6 +25,175 @@ afterEach(async () => {
 });
 
 describe.sequential("Fleet CLI product runtime", () => {
+  it("rejects native client mutations without accepting a receipt", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-context-pack-"));
+    roots.push(root);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", join(root, "config"));
+    const workspace = join(root, "workspace");
+    await mkdir(workspace, { recursive: true });
+    const runtime = await FleetCliProductRuntime.create(workspace);
+    try {
+      const before = await runtime.handleRequest({
+        type: "getProductSnapshot",
+      });
+      if (
+        before.type !== "productSnapshot" ||
+        !before.snapshot.shell?.activeSessionId
+      )
+        throw new Error("Session snapshot is missing.");
+      const sessionId = before.snapshot.shell.activeSessionId;
+      const commands = [
+        { kind: "open-quick-chat" as const },
+        { kind: "edit-message" as const, sessionId, messageId: "native-message", prompt: "Edited request" },
+        { kind: "replay-message" as const, sessionId, messageId: "native-message" },
+        { kind: "reset-session-time" as const, sessionId },
+        { kind: "move-session-to-top" as const, sessionId },
+        { kind: "restore-prompt-history" as const, sessionId, prompt: "Recalled request", history: { index: 0, prompt: "Original request", attachmentIds: [], previousDraft: "", previousAttachmentIds: [] } },
+        { kind: "set-adaptive-controller" as const, sessionId, mode: "enabled" as const },
+        {
+          kind: "save-context-pack" as const,
+          sessionId,
+          contextPack: {
+            name: "Native pack",
+            scope: "global" as const,
+            instructions: "",
+            prompt: "Test",
+            contextAttachments: [],
+            variables: [],
+            triggerPhrases: [],
+            triggerPathPatterns: [],
+          },
+        },
+        {
+          kind: "import-context-packs" as const,
+          sessionId,
+          scope: "global" as const,
+          paths: ["native-transfer"],
+        },
+      ];
+      for (const command of commands)
+        expect(
+          await runtime.handleRequest({
+            type: "executeProductCommand",
+            command,
+          }),
+        ).toMatchObject({ type: "error", code: "unavailable" });
+      const after = await runtime.handleRequest({ type: "getProductSnapshot" });
+      if (after.type !== "productSnapshot")
+        throw new Error("Session snapshot is missing.");
+      expect(after.snapshot.commands).toEqual(before.snapshot.commands);
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
+  it("persists the remote global-memory choice and applies it to the next task", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-memory-toggle-"));
+    roots.push(root);
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", join(root, "config"));
+    const workspace = join(root, "workspace");
+    const createController = vi.fn<typeof createTaskExecutionController>(
+      (task, config) => ({
+        signal: new AbortController().signal,
+        cancel: vi.fn(),
+        execute: async () => ({
+          task,
+          mode: config.mode,
+          status: "executed",
+          summary: "Done",
+          executedTools: [],
+          outputSections: [],
+        }),
+      }),
+    );
+    const dependencies = {
+      loadUserMemorySettings: async () => ({
+        ...(await loadUserMemorySettings()),
+        globalEnabled: true,
+      }),
+      loadRuntimeConfig: async (
+        ...args: Parameters<typeof loadRuntimeConfig>
+      ) => ({
+        ...(await loadRuntimeConfig(...args)),
+        provider: "openai" as const,
+        model: "gpt-5.4",
+        offline: false,
+        providerAvailability: [
+          { provider: "openai" as const, configured: true },
+        ],
+      }),
+      createTaskExecutionController: createController,
+    };
+    const runtime = await FleetCliProductRuntime.create(
+      workspace,
+      dependencies,
+    );
+    const initial = await runtime.handleRequest({ type: "getProductSnapshot" });
+    if (
+      initial.type !== "productSnapshot" ||
+      !initial.snapshot.shell?.activeSessionId
+    )
+      throw new Error("Session snapshot is missing.");
+    const sessionId = initial.snapshot.shell.activeSessionId;
+    expect(initial.snapshot.shell.composer?.globalMemoryEnabled).toBe(true);
+    const command = {
+      kind: "set-global-memory",
+      commandId: crypto.randomUUID(),
+      sessionId,
+      enabled: false,
+    } as const;
+    expect(
+      await runtime.handleRequest({ type: "executeProductCommand", command }),
+    ).toMatchObject({ type: "commandAccepted", receipt: { duplicate: false } });
+    await runtime.shutdown();
+    const restored = await FleetCliProductRuntime.create(
+      workspace,
+      dependencies,
+    );
+    try {
+      expect(
+        await restored.handleRequest({
+          type: "executeProductCommand",
+          command,
+        }),
+      ).toMatchObject({
+        type: "commandAccepted",
+        receipt: { duplicate: true },
+      });
+      const snapshot = await restored.handleRequest({
+        type: "getProductSnapshot",
+      });
+      if (snapshot.type !== "productSnapshot")
+        throw new Error("Session snapshot is missing.");
+      expect(snapshot.snapshot.shell?.composer?.globalMemoryEnabled).toBe(
+        false,
+      );
+      expect(
+        await restored.handleRequest({
+          type: "executeProductCommand",
+          command: {
+            kind: "submit-message",
+            sessionId,
+            prompt: "Review the workspace",
+            promptEnhancementMode: "off",
+            interviewEnabled: false,
+          },
+        }),
+      ).toMatchObject({ type: "commandAccepted" });
+      expect(createController).toHaveBeenCalledWith(
+        "Review the workspace",
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          conversationContext: expect.objectContaining({
+            globalMemoryEnabled: false,
+          }),
+        }),
+      );
+    } finally {
+      await restored.shutdown();
+    }
+  });
   it("persists the correlated session identity and workspace across a service restart", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-session-route-"));
     roots.push(root);

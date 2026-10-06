@@ -1,6 +1,9 @@
 use super::*;
 use std::{fs, path::PathBuf, time::SystemTime};
 
+#[path = "refmod_worker_tests.rs"]
+mod refmod_worker_tests;
+
 struct Fixture {
     root: PathBuf,
 }
@@ -26,7 +29,7 @@ def emit_progress(request):
         print('MACHDOCH_PROGRESS ' + json.dumps({'stage': 'Sampling', 'progress': (index + 1) / count}), file=sys.stderr, flush=True)
         time.sleep(request.get('progressDelay', 0))
 if sys.argv[1] != 'serve':
-    request = json.load(sys.stdin) if sys.argv[1] in ('canny', 'generate-video') else {}
+    request = json.load(sys.stdin) if sys.argv[1] in ('canny', 'generate-video', 'refmod') else {}
     emit_progress(request)
     if request.get('delay'):
         (root / 'active.pending').write_text(str(os.getpid()))
@@ -109,7 +112,7 @@ fn assert_reaped(pid: u32) {
 }
 
 #[test]
-fn reuses_worker_for_images_and_probes_without_extending_retention_for_probes() {
+fn reuses_worker_for_images_videos_and_probes_without_extending_retention_for_probes() {
     let fixture = Fixture::new();
     let stopping = AtomicBool::new(false);
     let mut resident = None;
@@ -128,6 +131,11 @@ fn reuses_worker_for_images_and_probes_without_extending_retention_for_probes() 
         serde_json::from_slice::<serde_json::Value>(&second.stdout).unwrap()["prompt"],
         "zweite – 画像"
     );
+    let (video, _) = fixture.work("generate-video", serde_json::json!({"prompt":"motion"}));
+    let deadline = resident.as_ref().unwrap().expires_at;
+    let video = execute(&mut resident, &video, &stopping).unwrap();
+    assert_eq!(pid(&first), pid(&video));
+    assert!(resident.as_ref().unwrap().expires_at > deadline);
     release(&mut resident).unwrap();
     assert_reaped(pid(&first));
 }
@@ -152,18 +160,18 @@ fn idle_watchdog_reaps_expired_and_memory_pressured_workers() {
 }
 
 #[test]
-fn other_model_operations_release_the_idle_image_worker_first() {
+fn other_model_operations_release_the_idle_model_worker_first() {
     let fixture = Fixture::new();
     let stopping = AtomicBool::new(false);
     let mut resident = None;
     let (image, _) = fixture.work("generate", serde_json::json!({}));
     let image = execute(&mut resident, &image, &stopping).unwrap();
-    let (video, _) = fixture.work("generate-video", serde_json::json!({}));
-    let video = execute(&mut resident, &video, &stopping).unwrap();
-    assert_ne!(pid(&image), pid(&video));
+    let (audio, _) = fixture.work("generate-audio", serde_json::json!({}));
+    let audio = execute(&mut resident, &audio, &stopping).unwrap();
+    assert_ne!(pid(&image), pid(&audio));
     assert!(resident.is_none());
     assert_reaped(pid(&image));
-    assert_reaped(pid(&video));
+    assert_reaped(pid(&audio));
 }
 
 #[test]
@@ -368,6 +376,38 @@ fn cancellation_and_monitor_failures_reap_in_flight_workers() {
         assert!(!worker.alive().unwrap());
         assert_reaped(pid(&output));
     }
+}
+
+#[test]
+fn refmod_cancellation_stops_queued_and_active_workers() {
+    let fixture = Fixture::new();
+    let interruption = Arc::new(AtomicBool::new(true));
+    let (mut queued, _) = fixture.work("refmod", serde_json::json!({"delay":30}));
+    queued.cancellation = Some(WorkerCancellation::Operation(interruption.clone()));
+    let error = execute(&mut None, &queued, &AtomicBool::new(false)).unwrap_err();
+    assert!(error.contains("canceled"));
+    assert!(!fixture.root.join("active").exists());
+
+    interruption.store(false, Ordering::Release);
+    let root = fixture.root.clone();
+    let cancel = interruption.clone();
+    let cancellation = thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while !root.join("active").exists() {
+            assert!(Instant::now() < deadline);
+            thread::sleep(Duration::from_millis(20));
+        }
+        cancel.store(true, Ordering::Release);
+    });
+    queued.timeout = Duration::from_secs(60);
+    let error = execute(&mut None, &queued, &AtomicBool::new(false)).unwrap_err();
+    cancellation.join().unwrap();
+    assert!(error.contains("canceled"));
+    let worker_pid = fs::read_to_string(fixture.root.join("active"))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert_reaped(worker_pid);
 }
 
 #[test]

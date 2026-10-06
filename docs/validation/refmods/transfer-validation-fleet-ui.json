@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-06T21:09:47.140Z",
+  "productionManager": true,
+  "pretrainedWeightsUsed": false,
+  "message": "The RefMod file cannot be read. Choose another reference file.",
+  "invalidFileRecoveryPassed": true,
+  "validImportRetryPassed": true,
+  "failedBatchUploadsReleased": true,
+  "validUploadReleased": true,
+  "baselineFilesPreserved": true,
+  "controlsRestored": true,
+  "validationError": {
+    "category": "validation",
+    "code": "INVALID_REQUEST",
+    "context": {
+      "assetId": null,
+      "modelId": null,
+      "nodeId": null,
+      "operation": "media_refmod_operation",
+      "providerId": null,
+      "runId": null,
+      "runtimeId": null
+    },
+    "message": "The RefMod file cannot be read. Choose another reference file.",
+    "partialOutputsExist": false,
+    "retryability": "after-user-action",
+    "schemaVersion": 1,
+    "suggestedActions": [
+      {
+        "description": "Correct the highlighted input or choose a compatible preset.",
+        "id": "review-input",
+        "label": "Review settings"
+      }
+    ],
+    "technicalDiagnostic": "Local Diffusers worker failed: SafetensorError: Error while deserializing header: header too large"
+  },
+  "pageErrors": [],
+  "transportFailures": []
+}

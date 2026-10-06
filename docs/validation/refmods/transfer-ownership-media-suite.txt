@@ -1,0 +1,10 @@
+$ vitest run --config vitest.config.ts
+
+ RUN  v4.1.10 C:/Development/machdoch/packages/media-studio
+
+
+ Test Files  91 passed (91)
+      Tests  781 passed (781)
+   Start at  22:33:27
+   Duration  41.17s (transform 10.20s, setup 0ms, import 47.24s, tests 53.42s, environment 28.57s)
+

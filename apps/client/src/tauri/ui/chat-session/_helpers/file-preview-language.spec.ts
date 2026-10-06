@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getFilePreviewRenderKind } from "./file-preview-language";
+import { getFilePreviewRenderKind } from "@machdoch/client-ui/file-preview/file-preview-language";
 
 describe("file preview support", () => {
   it.each([

@@ -1,11 +1,12 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
-import { getProviderLabel } from "../../../model-catalog";
+import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import {
   USER_SPEECH_TO_TEXT_PROVIDER_ORDER,
   USER_VOICE_AI_PROVIDER_ORDER,
-  type SpeechToTextProvider,
+  speechProviderLabel,
+  isLocalSpeechProvider,
   type VoiceAiProvider,
 } from "../../../runtime";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
@@ -18,16 +19,6 @@ import {
 } from "./shared";
 import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { VoiceSettingsControls } from "./types";
-
-const getSpeechToTextProviderLabel = (
-  provider: SpeechToTextProvider,
-): string => {
-  return provider === "none"
-    ? "Disabled"
-    : provider === "whisper"
-      ? "Whisper (local)"
-      : getProviderLabel(provider);
-};
 
 const getVoiceAiProviderLabel = (provider: VoiceAiProvider): string => {
   return provider === "none"
@@ -60,6 +51,15 @@ export const VoiceSettingsPanel = ({
     setup.speechInputDeviceSaving ||
     setup.aiProviderSaving;
   const keyTermsChanged = keyTermsDraft.trim() !== savedKeyTerms.trim();
+  const keyTerms = keyTermsDraft
+    .split(/\r?\n/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+  const keyTermsLimit = setup.speechToTextProvider === "phonon2" ? 25 : 100;
+  const keyTermsError =
+    keyTerms.length > keyTermsLimit
+      ? `Use no more than ${keyTermsLimit} key terms.`
+      : undefined;
   const speechContextChanged =
     speechContextDraft.trim() !== setup.speechContext.trim();
 
@@ -120,15 +120,17 @@ export const VoiceSettingsPanel = ({
               ["none", ...USER_SPEECH_TO_TEXT_PROVIDER_ORDER] as const
             ).map((provider) => ({
               value: provider,
-              label: getSpeechToTextProviderLabel(provider),
-              ariaLabel: `Speak to text provider ${getSpeechToTextProviderLabel(provider)}`,
+              label: speechProviderLabel(provider),
+              ariaLabel: `Speak to text provider ${speechProviderLabel(provider)}`,
               disabled:
                 provider !== "none" &&
                 !speechToTextProviderConfigured.get(provider),
               title:
                 provider !== "none" &&
                 !speechToTextProviderConfigured.get(provider)
-                  ? "Add this provider's API key before selecting it."
+                  ? isLocalSpeechProvider(provider)
+                    ? "Reinstall Machdoch to restore this speech model."
+                    : "Add this provider's API key before selecting it."
                   : undefined,
             }))}
             disabled={setup.speechToTextProviderSaving}
@@ -137,30 +139,40 @@ export const VoiceSettingsPanel = ({
 
           <SettingPanel
             label="Key terms"
-            detail="One per line; up to 100 terms, 80 characters each."
+            detail={`One per line; up to ${keyTermsLimit} terms, 80 characters each.`}
           >
             <div className="grid gap-2">
               <textarea
                 aria-label="Speech key terms"
+                aria-invalid={Boolean(keyTermsError)}
+                aria-describedby={
+                  keyTermsError ? "speech-key-terms-error" : undefined
+                }
                 value={keyTermsDraft}
                 maxLength={8100}
                 rows={4}
                 onChange={(event) => setKeyTermsDraft(event.target.value)}
                 className="w-full resize-y rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none transition-colors focus:border-sky-500/40"
               />
+              {keyTermsError ? (
+                <p
+                  id="speech-key-terms-error"
+                  role="alert"
+                  className="text-sm text-rose-300"
+                >
+                  {keyTermsError}
+                </p>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
                 className="justify-self-end"
-                disabled={persistenceBusy || !keyTermsChanged}
+                disabled={
+                  persistenceBusy || !keyTermsChanged || Boolean(keyTermsError)
+                }
                 onClick={() => {
-                  void setup.onSpeechKeyTermsSave(
-                    keyTermsDraft
-                      .split(/\r?\n/)
-                      .map((term) => term.trim())
-                      .filter(Boolean),
-                  );
+                  void setup.onSpeechKeyTermsSave(keyTerms);
                 }}
               >
                 Save terms

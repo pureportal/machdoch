@@ -1,0 +1,583 @@
+{
+  "date": "2026-10-06T21:13:06.756Z",
+  "fullOutcomeVerified": false,
+  "devServerStarted": false,
+  "pretrainedWeightsUsed": false,
+  "changes": [
+    "Creator releases removed and replaced uploads and waits for pending work before releasing inputs on close",
+    "Failed creation and export release download reservations while creation inputs remain reusable",
+    "Failed batch import releases every selected upload",
+    "Source, mask and suggested RefMod names use the original upload names",
+    "Unreadable RefMod files return input validation and a file recovery instruction instead of a generic internal error",
+    "The creator toggle displays Close creator while open"
+  ],
+  "checks": {
+    "mediaSuite": {
+      "passed": true,
+      "testCount": 781,
+      "fileCount": 91,
+      "log": "transfer-ownership-media-suite.txt"
+    },
+    "mediaTypecheck": {
+      "passed": true,
+      "exitCode": 0,
+      "log": "transfer-ownership-typecheck.txt"
+    },
+    "clientUITypecheck": {
+      "passed": true,
+      "exitCode": 0,
+      "log": "transfer-ownership-client-typecheck.txt"
+    },
+    "mediaLint": {
+      "passed": true,
+      "exitCode": 0,
+      "log": "transfer-ownership-lint.txt"
+    },
+    "format": {
+      "passed": true,
+      "exitCode": 0,
+      "log": "transfer-ownership-format.txt"
+    },
+    "licenceTests": {
+      "passed": true,
+      "testCount": 3,
+      "log": "transfer-ownership-licence-tests.txt"
+    },
+    "desktopUIBuild": {
+      "passed": true,
+      "exitCode": 0,
+      "log": "transfer-ownership-desktop-ui-build.txt"
+    },
+    "fleetUIBuild": {
+      "passed": true,
+      "exitCode": 0,
+      "log": "transfer-ownership-fleet-ui-build.txt"
+    },
+    "nativeCompilation": {
+      "passed": true,
+      "command": "cargo build --bin machdoch --features tauri/custom-protocol",
+      "log": "transfer-ownership-native-build.jsonl",
+      "normalApplicationDependencies": true,
+      "customProtocol": true,
+      "artifactSelection": "desktop executable and required rlib; no staticlib/cdylib or debug symbols",
+      "shippingLibraryArtifactsVerified": false,
+      "executableSha256": "a2349d8e51ce6cef89a2e274fba7e4d2506f462c93142acad0cf7354c0eee12e",
+      "stagedExecutableMatchesCompiled": true,
+      "liveVerificationScope": "Final desktop and fleet creator ownership, malformed-file recovery and valid import retry"
+    },
+    "fleetUI": {
+      "date": "2026-10-06T21:06:34.182Z",
+      "productionManager": true,
+      "pretrainedWeightsUsed": false,
+      "checks": [
+        "original-source-mask-and-suggested-names",
+        "replaced-mask-released",
+        "removed-mask-released",
+        "removed-source-and-mask-released",
+        "failed-creation-1-download-released-inputs-retained",
+        "failed-creation-2-download-released-inputs-retained",
+        "closed-creator-inputs-released",
+        "failed-batch-import-all-uploads-released"
+      ],
+      "baselineFilesPreserved": [
+        "16a44e8d-ffac-443d-81fb-cac27e4de908-picture.png"
+      ],
+      "newUploadsRemaining": 0,
+      "originalFilesPreserved": true,
+      "originalHashes": [
+        "f665670f52d71c42e22b4760a0d351dca8a22d390977d7955bddffb977c72621",
+        "810a7e611c7893c873fa6755c3a2ada29997e8f49aa61516848d75755cd2b197"
+      ],
+      "temporaryFiles": [],
+      "pageErrors": [],
+      "transportFailures": [],
+      "responseWarnings": [],
+      "failures": [
+        {
+          "category": "configuration",
+          "code": "MODEL_NOT_INSTALLED",
+          "context": {
+            "assetId": null,
+            "modelId": null,
+            "nodeId": null,
+            "operation": "media_refmod_operation",
+            "providerId": null,
+            "runId": null,
+            "runtimeId": null
+          },
+          "message": "MiniMax H3 video VAE is incomplete or damaged. Install a complete video checkpoint.",
+          "partialOutputsExist": false,
+          "retryability": "after-user-action",
+          "schemaVersion": 1,
+          "suggestedActions": [
+            {
+              "description": "Review the download, license, disk, and compatibility plan.",
+              "id": "open-models",
+              "label": "Open Models"
+            }
+          ],
+          "technicalDiagnostic": "Local Diffusers worker failed: ValueError: MiniMax H3 video VAE is incomplete or damaged. Replace \\\\?\\D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\workspace\\models\\minimax-h3-ref2va\\vae\\minimax_h3_video_vae_fp16.safetensors with a complete checkpoint."
+        },
+        {
+          "category": "configuration",
+          "code": "MODEL_NOT_INSTALLED",
+          "context": {
+            "assetId": null,
+            "modelId": null,
+            "nodeId": null,
+            "operation": "media_refmod_operation",
+            "providerId": null,
+            "runId": null,
+            "runtimeId": null
+          },
+          "message": "MiniMax H3 video VAE is incomplete or damaged. Install a complete video checkpoint.",
+          "partialOutputsExist": false,
+          "retryability": "after-user-action",
+          "schemaVersion": 1,
+          "suggestedActions": [
+            {
+              "description": "Review the download, license, disk, and compatibility plan.",
+              "id": "open-models",
+              "label": "Open Models"
+            }
+          ],
+          "technicalDiagnostic": "Local Diffusers worker failed: ValueError: MiniMax H3 video VAE is incomplete or damaged. Replace \\\\?\\D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\workspace\\models\\minimax-h3-ref2va\\vae\\minimax_h3_video_vae_fp16.safetensors with a complete checkpoint."
+        },
+        {
+          "category": "validation",
+          "code": "INVALID_REQUEST",
+          "context": {
+            "assetId": null,
+            "modelId": null,
+            "nodeId": null,
+            "operation": "media_refmod_operation",
+            "providerId": null,
+            "runId": null,
+            "runtimeId": null
+          },
+          "message": "The RefMod file cannot be read. Choose another reference file.",
+          "partialOutputsExist": false,
+          "retryability": "after-user-action",
+          "schemaVersion": 1,
+          "suggestedActions": [
+            {
+              "description": "Correct the highlighted input or choose a compatible preset.",
+              "id": "review-input",
+              "label": "Review settings"
+            }
+          ],
+          "technicalDiagnostic": "Local Diffusers worker failed: SafetensorError: Error while deserializing header: header too large"
+        }
+      ],
+      "transferReservations": [
+        {
+          "id": "e1e951bb-737b-46ab-aa0e-ecaa1e54ac4b",
+          "name": "picture.png",
+          "direction": "upload"
+        },
+        {
+          "id": "25f48253-9a0e-4149-bc68-2e3069e3bb0a",
+          "name": "mask.png",
+          "direction": "upload"
+        },
+        {
+          "id": "31dc45e7-c312-472e-8300-bc10ecae48e7",
+          "name": "mask.png",
+          "direction": "upload"
+        },
+        {
+          "id": "801710f0-008e-41df-b828-a4bf8db12565",
+          "name": "mask.png",
+          "direction": "upload"
+        },
+        {
+          "id": "a08a42de-35f0-46c3-a0ea-672a613e0c84",
+          "name": "picture.png",
+          "direction": "upload"
+        },
+        {
+          "id": "4b593a32-0ea0-46de-b6d3-a31def814c3c",
+          "name": "mask.png",
+          "direction": "upload"
+        },
+        {
+          "id": "006367ad-b533-4cdf-bd64-0b0238534e2a",
+          "name": "Transfer ownership verification.safetensors",
+          "direction": "download"
+        },
+        {
+          "id": "224cace4-db0a-45d3-8638-1641094716ce",
+          "name": "Transfer ownership verification.safetensors",
+          "direction": "download"
+        },
+        {
+          "id": "b15010c4-2f9b-45bb-8259-7c55afe09e02",
+          "name": "invalid-transfer-import.safetensors",
+          "direction": "upload"
+        },
+        {
+          "id": "3a0156a6-c1df-46af-9599-a847706b619f",
+          "name": "import.safetensors",
+          "direction": "upload"
+        }
+      ],
+      "releasedTransferIds": [
+        "25f48253-9a0e-4149-bc68-2e3069e3bb0a",
+        "31dc45e7-c312-472e-8300-bc10ecae48e7",
+        "e1e951bb-737b-46ab-aa0e-ecaa1e54ac4b",
+        "801710f0-008e-41df-b828-a4bf8db12565",
+        "006367ad-b533-4cdf-bd64-0b0238534e2a",
+        "224cace4-db0a-45d3-8638-1641094716ce",
+        "a08a42de-35f0-46c3-a0ea-672a613e0c84",
+        "4b593a32-0ea0-46de-b6d3-a31def814c3c",
+        "b15010c4-2f9b-45bb-8259-7c55afe09e02",
+        "3a0156a6-c1df-46af-9599-a847706b619f"
+      ]
+    },
+    "nativeUI": {
+      "date": "2026-10-06T20:56:36.987Z",
+      "pretrainedWeightsUsed": false,
+      "actualNativeFileDialogs": true,
+      "checks": [
+        "mask-removal-preserves-original",
+        "source-removal-preserves-originals",
+        "creator-close-preserves-originals"
+      ],
+      "originalFilesPreserved": true,
+      "sourceHashes": [
+        "f665670f52d71c42e22b4760a0d351dca8a22d390977d7955bddffb977c72621",
+        "810a7e611c7893c873fa6755c3a2ada29997e8f49aa61516848d75755cd2b197"
+      ]
+    },
+    "nativeRecovery": {
+      "passed": true,
+      "testCount": 17,
+      "log": "transfer-ownership-error-tests.txt",
+      "scope": "production error module with its child-module path made explicit in the isolated test harness"
+    },
+    "transferRegistry": {
+      "date": "2026-10-06T21:10:24.323Z",
+      "productionHost": true,
+      "onlyFixtureTransferIdsProbed": true,
+      "tensorValuesRead": false,
+      "checks": [
+        {
+          "id": "e1e951bb-737b-46ab-aa0e-ecaa1e54ac4b",
+          "direction": "upload",
+          "name": "picture.png",
+          "reservationAbsent": true
+        },
+        {
+          "id": "25f48253-9a0e-4149-bc68-2e3069e3bb0a",
+          "direction": "upload",
+          "name": "mask.png",
+          "reservationAbsent": true
+        },
+        {
+          "id": "31dc45e7-c312-472e-8300-bc10ecae48e7",
+          "direction": "upload",
+          "name": "mask.png",
+          "reservationAbsent": true
+        },
+        {
+          "id": "801710f0-008e-41df-b828-a4bf8db12565",
+          "direction": "upload",
+          "name": "mask.png",
+          "reservationAbsent": true
+        },
+        {
+          "id": "a08a42de-35f0-46c3-a0ea-672a613e0c84",
+          "direction": "upload",
+          "name": "picture.png",
+          "reservationAbsent": true
+        },
+        {
+          "id": "4b593a32-0ea0-46de-b6d3-a31def814c3c",
+          "direction": "upload",
+          "name": "mask.png",
+          "reservationAbsent": true
+        },
+        {
+          "id": "006367ad-b533-4cdf-bd64-0b0238534e2a",
+          "direction": "download",
+          "name": "Transfer ownership verification.safetensors",
+          "reservationAbsent": true
+        },
+        {
+          "id": "224cace4-db0a-45d3-8638-1641094716ce",
+          "direction": "download",
+          "name": "Transfer ownership verification.safetensors",
+          "reservationAbsent": true
+        },
+        {
+          "id": "b15010c4-2f9b-45bb-8259-7c55afe09e02",
+          "direction": "upload",
+          "name": "invalid-transfer-import.safetensors",
+          "reservationAbsent": true
+        },
+        {
+          "id": "3a0156a6-c1df-46af-9599-a847706b619f",
+          "direction": "upload",
+          "name": "import.safetensors",
+          "reservationAbsent": true
+        }
+      ]
+    },
+    "fileValidation": {
+      "fleet": {
+        "date": "2026-10-06T21:09:47.140Z",
+        "productionManager": true,
+        "pretrainedWeightsUsed": false,
+        "message": "The RefMod file cannot be read. Choose another reference file.",
+        "invalidFileRecoveryPassed": true,
+        "validImportRetryPassed": true,
+        "failedBatchUploadsReleased": true,
+        "validUploadReleased": true,
+        "baselineFilesPreserved": true,
+        "controlsRestored": true,
+        "validationError": {
+          "category": "validation",
+          "code": "INVALID_REQUEST",
+          "context": {
+            "assetId": null,
+            "modelId": null,
+            "nodeId": null,
+            "operation": "media_refmod_operation",
+            "providerId": null,
+            "runId": null,
+            "runtimeId": null
+          },
+          "message": "The RefMod file cannot be read. Choose another reference file.",
+          "partialOutputsExist": false,
+          "retryability": "after-user-action",
+          "schemaVersion": 1,
+          "suggestedActions": [
+            {
+              "description": "Correct the highlighted input or choose a compatible preset.",
+              "id": "review-input",
+              "label": "Review settings"
+            }
+          ],
+          "technicalDiagnostic": "Local Diffusers worker failed: SafetensorError: Error while deserializing header: header too large"
+        },
+        "pageErrors": [],
+        "transportFailures": []
+      },
+      "native": {
+        "date": "2026-10-06T20:58:19.368Z",
+        "pretrainedWeightsUsed": false,
+        "actualNativeFileDialogs": true,
+        "message": "The RefMod file cannot be read. Choose another reference file.",
+        "invalidFileRecoveryPassed": true,
+        "validImportRetryPassed": true,
+        "controlsRestored": true,
+        "originalFilesPreserved": true,
+        "temporaryFiles": []
+      }
+    },
+    "ownershipUICompilation": {
+      "date": "2026-10-06T20:17:31.8577658+00:00",
+      "ownershipUIReport": "transfer-ownership-ui.json",
+      "executableSha256": "26e4feb8884ab48d9c2d0f88e1f617f427f3f80bfbef30e2a9211be9aea82a11",
+      "validationImprovementPending": true,
+      "nativeUIReport": "transfer-ownership-native-ui.json",
+      "buildLog": "transfer-ownership-ui-native-build.jsonl"
+    },
+    "initialOwnershipAttempt": {
+      "diagnostic": "transfer-ownership-cold-start.json",
+      "date": "2026-10-06T19:56:50.016Z",
+      "timedOutBeforeAnyUpload": true,
+      "hostRecoveredWithoutRestart": true,
+      "workflowInitializationAwaitedForRerun": true,
+      "rootCauseEstablished": false
+    },
+    "frozenProductionAssets": {
+      "date": "2026-10-06T20:48:32.892Z",
+      "privateProductionApp": true,
+      "appRoot": "D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\production-app-final",
+      "entry": "/media-studio/assets/media-mzxF5M8e.js",
+      "entrySha256": "f76e0fd4cc10ff71b187fcf8b317174930fa81619f06560433e468e4633ee711",
+      "sizeBytes": 603175,
+      "devServerStarted": false
+    },
+    "servedProductionAssets": {
+      "date": "2026-10-06T20:52:27.282Z",
+      "htmlStatus": 200,
+      "htmlLength": 3539,
+      "assets": [
+        {
+          "path": "/media-studio/assets/media-mzxF5M8e.js",
+          "status": 200,
+          "contentType": "application/javascript; charset=UTF-8",
+          "sizeBytes": 603175
+        }
+      ]
+    },
+    "initialFileValidationAttempt": {
+      "diagnostic": "transfer-validation-fleet-assets-failure.json",
+      "failedBeforeProductRPC": true,
+      "rootCauseEstablished": true,
+      "missingScript": "/media-studio/assets/media-DYAardcG.js",
+      "scriptHTTPStatus": 404,
+      "scriptWasPresentOnDisk": true,
+      "resolvedByPrivateProductionSnapshot": true
+    },
+    "scopedDiffCheck": {
+      "passed": true,
+      "exitCode": 0
+    },
+    "documentationFormat": {
+      "passed": true,
+      "exitCode": 0
+    }
+  },
+  "baseline": {
+    "date": "2026-10-06T19:21:14.8532197+00:00",
+    "isolatedIdentifier": "com.machdoch.refmodverification.r1791300414432.dev",
+    "files": [
+      {
+        "name": "16a44e8d-ffac-443d-81fb-cac27e4de908-picture.png",
+        "sizeBytes": 116,
+        "modifiedAt": "2026-10-06T19:00:45.2691729Z",
+        "sha256": "f665670f52d71c42e22b4760a0d351dca8a22d390977d7955bddffb977c72621"
+      }
+    ],
+    "sourceSha256": "f665670f52d71c42e22b4760a0d351dca8a22d390977d7955bddffb977c72621",
+    "filesPreserved": true
+  },
+  "sourceFiles": {
+    "packages/media-studio/src/fleet-transport.ts": "eec0c34e7e034fbce17677d32730a994462756d4bd049849378291bda87f30dd",
+    "packages/media-studio/src/tauri/ui/media/media-platform.ts": "24dcdde98e1610db47f1a7aa681a3f65c8fe5254266090bcfef4bdba8a2c2a26",
+    "packages/media-studio/src/tauri/ui/media/components/media-refmod-creator.tsx": "e36e3bf0586fcdfa9d7339fb3a066cd756ef44ce86eff5d9dc14f1781d9c4f4c",
+    "packages/media-studio/src/tauri/ui/media/components/media-refmod-controls.tsx": "8cb02e413afd0c5b6848d18f5eec7482902b081ce018ca94cceb9a732d7c06d4",
+    "packages/media-studio/src/tauri/ui/media/components/use-refmod-sources.ts": "c7117932239c0ef08352b5f48c3453a415b4a987cafcba9d217f8dd93bdc2510",
+    "apps/client/src-tauri/src/media/error/refmods.rs": "a044bad79bdb7457bbe9afb371a8efc0205a2236d6a06353c9522a88930f08b3"
+  },
+  "packagedFiles": {
+    "media_diffusers_worker.py": {
+      "sourceSha256": "2a354ada744a64936233a2eb6711e3e9ebf817d2a00a63737ec9e26990b988e5",
+      "packagedSha256": "2a354ada744a64936233a2eb6711e3e9ebf817d2a00a63737ec9e26990b988e5",
+      "matchesSource": true
+    },
+    "media_refmods.py": {
+      "sourceSha256": "89e4dc878018f388f0135d8564d042af892670319628b00f996e2b8899cea8ca",
+      "packagedSha256": "89e4dc878018f388f0135d8564d042af892670319628b00f996e2b8899cea8ca",
+      "matchesSource": true
+    },
+    "media_refmod_preview.py": {
+      "sourceSha256": "e2aec8744afdcd5ef253c95cadc7917f413c98ed25b8f3e57060a9ed04462106",
+      "packagedSha256": "e2aec8744afdcd5ef253c95cadc7917f413c98ed25b8f3e57060a9ed04462106",
+      "matchesSource": true
+    },
+    "media_refmod_creation.py": {
+      "sourceSha256": "b4d7aa42ff9110d23b6069b88ca356b8ffbb970a8ac863e8e6727b7e3cae606d",
+      "packagedSha256": "b4d7aa42ff9110d23b6069b88ca356b8ffbb970a8ac863e8e6727b7e3cae606d",
+      "matchesSource": true
+    },
+    "media_refmod_models.py": {
+      "sourceSha256": "17133c0b58121b8f36bc701ae6a1ff847646f5ca93da2bdc36a309354911b705",
+      "packagedSha256": "17133c0b58121b8f36bc701ae6a1ff847646f5ca93da2bdc36a309354911b705",
+      "matchesSource": true
+    },
+    "media_refmod_conditioning.py": {
+      "sourceSha256": "e957c4b4a98861d810afcb5e02fb6174c9bed6543458d68170d006658d07a62f",
+      "packagedSha256": "e957c4b4a98861d810afcb5e02fb6174c9bed6543458d68170d006658d07a62f",
+      "matchesSource": true
+    },
+    "media_minimax_h3.py": {
+      "sourceSha256": "a3e16352b31692e3751d62ead2f9101404fb368eb614de1d8fa530a0ee98c56e",
+      "packagedSha256": "a3e16352b31692e3751d62ead2f9101404fb368eb614de1d8fa530a0ee98c56e",
+      "matchesSource": true
+    },
+    "fizgig/minimax/model.py": {
+      "sourceSha256": "00792978b3c050dc7132752aed0ac12e562fa70b75b967a5e4579f3c42b55a80",
+      "packagedSha256": "00792978b3c050dc7132752aed0ac12e562fa70b75b967a5e4579f3c42b55a80",
+      "matchesSource": true
+    },
+    "fizgig/minimax/sampling.py": {
+      "sourceSha256": "90fd8ba7f0790f22848795b24257f6b808b289e59d5b446c7b81fda0f4c8574a",
+      "packagedSha256": "90fd8ba7f0790f22848795b24257f6b808b289e59d5b446c7b81fda0f4c8574a",
+      "matchesSource": true
+    },
+    "fizgig/minimax/vae.py": {
+      "sourceSha256": "a1c0dc2d0adb5469446c1a34038e88c88876cd7aa705da554b3b2416b348dc01",
+      "packagedSha256": "a1c0dc2d0adb5469446c1a34038e88c88876cd7aa705da554b3b2416b348dc01",
+      "matchesSource": true
+    },
+    "fizgig/minimax/video_vae_checkpoint.py": {
+      "sourceSha256": "fc8a630c1c4c51c13621ddccf38dfe1b8b7b0685ad10c4d8b56d38df5a53b205",
+      "packagedSha256": "fc8a630c1c4c51c13621ddccf38dfe1b8b7b0685ad10c4d8b56d38df5a53b205",
+      "matchesSource": true
+    },
+    "fizgig/minimax/audio_vae.py": {
+      "sourceSha256": "ac22cf022d0ed200fc50c81981391acdb804e7bef6c24d7ab5829cf8f563799b",
+      "packagedSha256": "ac22cf022d0ed200fc50c81981391acdb804e7bef6c24d7ab5829cf8f563799b",
+      "matchesSource": true
+    }
+  },
+  "modelEvidence": {
+    "videoVae": {
+      "path": "D:/Models/machdoch/worker-staging/minimax-h3/minimax_h3_video_vae_fp16.safetensors",
+      "sizeBytes": 3774476288,
+      "requiredBytes": 5207808496,
+      "incomplete": true,
+      "headerOnly": true,
+      "tensorValuesRead": false
+    },
+    "missingRequiredFilesInSearchedModelLocations": [
+      "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
+      "mmh3-4b-ClipProj-v3.1.safetensors"
+    ],
+    "stagedFL2VAGGUFDoesNotMeetRef2VARequirements": true,
+    "supportedRuntime": "local:minimax-h3-ref2va",
+    "fileSearchEvidenceSource": "ui-workflow-verification.json",
+    "recentFilenameRecheck": {
+      "date": "2026-10-06T21:17:07.983Z",
+      "stagedRoot": "D:\\Models\\machdoch\\worker-staging\\minimax-h3",
+      "stagedRootScanComplete": true,
+      "stagedFiles": [
+        "minimax_h3_video_vae_fp16.safetensors",
+        "minimax_h3_audio_vae_fp32.safetensors"
+      ],
+      "requiredRef2vaFilesFound": false,
+      "broaderDModelsRecheckCompleted": false,
+      "broaderDModelsRecheckStoppedAfterVerificationWindow": true
+    }
+  },
+  "licensing": {
+    "modelLicenceSha256": "59b99642b95ea21630e311198ddbfffbfe05aadba0c2f5d884cbdf4efcc90f44",
+    "matchesPrimary": true,
+    "primarySource": "https://huggingface.co/MiniMaxAI/MiniMax-H3/raw/main/LICENSE",
+    "modelUseAuthorizationVerified": false,
+    "transformerAndSamplerGPLDistributionResolved": false
+  },
+  "limitations": [
+    "Complete pretrained video creation, preview and Ref2VA generation remain unverified",
+    "Fixed-seed image/video/audio/mixed quality comparisons remain unverified",
+    "Complete-checkpoint peak GPU memory and model-use authorization remain unverified",
+    "Transformer/sampler code-distribution provenance remains unresolved",
+    "An earlier fleet missing-audio preview returned HTTP 502; the instrumented rerun passed, but the earlier transport failure was not explained",
+    "The first ownership browser attempt timed out before its first upload while the host/workflow was initializing; the host recovered without a restart, but the cause of the delay remains unexplained"
+  ],
+  "cleanup": {
+    "date": "2026-10-06T21:12:48.663Z",
+    "verified": true,
+    "ownedDesktopStopped": true,
+    "ownedBrowserContextsStopped": true,
+    "ownedProductionManagerStopped": true,
+    "fixturePortsClosed": true,
+    "newUploadsRemaining": 0,
+    "baselineUploadPreserved": true,
+    "temporaryLibraryFiles": [],
+    "sharedProcessesStopped": false,
+    "fixturesRetained": true,
+    "runtimeJunctionRetained": true,
+    "devServerStarted": false
+  },
+  "screenshots": [
+    "transfer-ownership-native.png",
+    "transfer-ownership-fleet.png",
+    "transfer-validation-native.png",
+    "transfer-validation-fleet.png"
+  ]
+}

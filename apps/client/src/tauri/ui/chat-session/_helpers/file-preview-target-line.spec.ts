@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   getFilePreviewTargetLineIndex,
   scrollFilePreviewTargetLineIntoView,
-} from "./file-preview-target-line";
+} from "@machdoch/client-ui/file-preview/file-preview-target-line";
 
 describe("getFilePreviewTargetLineIndex", () => {
   it("converts a valid one-based source line to a preview line index", () => {

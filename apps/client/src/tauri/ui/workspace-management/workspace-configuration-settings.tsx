@@ -1,4 +1,3 @@
-import { isTauri } from "@tauri-apps/api/core";
 import { LoaderCircle, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
@@ -73,23 +72,6 @@ const createWorkspaceConfigurationValues = (
   };
 };
 
-const createFallbackWorkspaceConfigurationValues = (
-  workspaceMemoryDefaultEnabled: boolean,
-): WorkspaceConfigurationValues => ({
-  defaultMode: "machdoch",
-  effectiveMode: "machdoch",
-  defaultReasoning: "default",
-  effectiveReasoning: "default",
-  defaultReasoningExecutionMode: "standard",
-  effectiveReasoningExecutionMode: "standard",
-  defaultContextWindow: "default",
-  effectiveContextWindow: "default",
-  workspaceMemoryOverride: null,
-  adaptiveControllerOverride: null,
-  workspaceMemoryEnabled: workspaceMemoryDefaultEnabled,
-  reasoningBankEnabled: true,
-});
-
 export const WorkspaceConfigurationSettings = ({
   workspaceRoot,
   workspaceLabel,
@@ -105,9 +87,7 @@ export const WorkspaceConfigurationSettings = ({
   const [message, setMessage] = useState<SettingsStatusMessage | null>(null);
   const requestIdRef = useRef(0);
   const workspaceRootRef = useRef(workspaceRoot);
-  const valuesRef = useRef(values);
   workspaceRootRef.current = workspaceRoot;
-  valuesRef.current = values;
 
   const loadSnapshot = useCallback(async (): Promise<void> => {
     const requestId = requestIdRef.current + 1;
@@ -127,13 +107,6 @@ export const WorkspaceConfigurationSettings = ({
 
       if (nextSnapshot) {
         const nextValues = createWorkspaceConfigurationValues(nextSnapshot);
-        valuesRef.current = nextValues;
-        setValues(nextValues);
-      } else if (!isTauri()) {
-        const nextValues = createFallbackWorkspaceConfigurationValues(
-          workspaceMemoryDefaultEnabled,
-        );
-        valuesRef.current = nextValues;
         setValues(nextValues);
       } else {
         setMessage({
@@ -146,7 +119,6 @@ export const WorkspaceConfigurationSettings = ({
         requestIdRef.current === requestId &&
         workspaceRootRef.current === workspaceRoot
       ) {
-        valuesRef.current = null;
         setValues(null);
         setMessage({
           tone: "error",
@@ -164,10 +136,9 @@ export const WorkspaceConfigurationSettings = ({
         setLoading(false);
       }
     }
-  }, [workspaceMemoryDefaultEnabled, workspaceRoot]);
+  }, [workspaceRoot]);
 
   useEffect(() => {
-    valuesRef.current = null;
     setValues(null);
     setSaving(false);
     void loadSnapshot();
@@ -186,9 +157,6 @@ export const WorkspaceConfigurationSettings = ({
   const saveSetting = useCallback(
     async (
       save: () => Promise<unknown>,
-      updateValues: (
-        current: WorkspaceConfigurationValues,
-      ) => WorkspaceConfigurationValues,
       successMessage: string,
       failureMessage: string,
     ): Promise<void> => {
@@ -210,15 +178,11 @@ export const WorkspaceConfigurationSettings = ({
           return;
         }
 
-        const currentValues =
-          valuesRef.current ??
-          createFallbackWorkspaceConfigurationValues(
-            workspaceMemoryDefaultEnabled,
+        if (!nextSnapshot)
+          throw new Error(
+            "Workspace settings could not be reloaded. Refresh and try again.",
           );
-        const nextValues = nextSnapshot
-          ? createWorkspaceConfigurationValues(nextSnapshot)
-          : updateValues(currentValues);
-        valuesRef.current = nextValues;
+        const nextValues = createWorkspaceConfigurationValues(nextSnapshot);
         setValues(nextValues);
 
         if (
@@ -246,7 +210,7 @@ export const WorkspaceConfigurationSettings = ({
         }
       }
     },
-    [onSaved, workspaceMemoryDefaultEnabled, workspaceRoot],
+    [onSaved, workspaceRoot],
   );
 
   if (!values) {
@@ -288,11 +252,6 @@ export const WorkspaceConfigurationSettings = ({
         onDefaultModeChange: async (mode) => {
           await saveSetting(
             () => saveWorkspaceDefaultMode(workspaceRoot, mode),
-            (current) => ({
-              ...current,
-              defaultMode: mode,
-              effectiveMode: isTauri() ? current.effectiveMode : mode,
-            }),
             "Workspace default mode saved.",
             "Workspace default mode could not be updated.",
           );
@@ -300,11 +259,6 @@ export const WorkspaceConfigurationSettings = ({
         onWorkspaceMemoryOverrideChange: async (enabled) => {
           await saveSetting(
             () => saveWorkspaceMemoryOverride(workspaceRoot, enabled),
-            (current) => ({
-              ...current,
-              workspaceMemoryOverride: enabled,
-              workspaceMemoryEnabled: enabled ?? workspaceMemoryDefaultEnabled,
-            }),
             "Workspace memory setting saved.",
             "Workspace memory could not be updated.",
           );
@@ -313,7 +267,6 @@ export const WorkspaceConfigurationSettings = ({
           await saveSetting(
             () =>
               saveWorkspaceAdaptiveControllerOverride(workspaceRoot, enabled),
-            (current) => ({ ...current, adaptiveControllerOverride: enabled }),
             "Adaptive context & compute saved.",
             "Adaptive context & compute could not be updated.",
           );
@@ -321,7 +274,6 @@ export const WorkspaceConfigurationSettings = ({
         onReasoningBankEnabledChange: async (enabled) => {
           await saveSetting(
             () => saveWorkspaceReasoningBankEnabled(workspaceRoot, enabled),
-            (current) => ({ ...current, reasoningBankEnabled: enabled }),
             "ReasoningBank setting saved.",
             "ReasoningBank could not be updated.",
           );
@@ -329,13 +281,6 @@ export const WorkspaceConfigurationSettings = ({
         onReasoningModeChange: async (reasoning: ReasoningMode) => {
           await saveSetting(
             () => saveWorkspaceReasoningMode(workspaceRoot, reasoning),
-            (current) => ({
-              ...current,
-              defaultReasoning: reasoning,
-              effectiveReasoning: isTauri()
-                ? current.effectiveReasoning
-                : reasoning,
-            }),
             "Workspace reasoning saved.",
             "Workspace reasoning mode could not be updated.",
           );
@@ -346,13 +291,6 @@ export const WorkspaceConfigurationSettings = ({
           await saveSetting(
             () =>
               saveWorkspaceReasoningExecutionMode(workspaceRoot, reasoningMode),
-            (current) => ({
-              ...current,
-              defaultReasoningExecutionMode: reasoningMode,
-              effectiveReasoningExecutionMode: isTauri()
-                ? current.effectiveReasoningExecutionMode
-                : reasoningMode,
-            }),
             "Workspace reasoning mode saved.",
             "Workspace reasoning mode could not be updated.",
           );
@@ -360,13 +298,6 @@ export const WorkspaceConfigurationSettings = ({
         onContextWindowChange: async (contextWindow: ContextWindow) => {
           await saveSetting(
             () => saveWorkspaceContextWindow(workspaceRoot, contextWindow),
-            (current) => ({
-              ...current,
-              defaultContextWindow: contextWindow,
-              effectiveContextWindow: isTauri()
-                ? current.effectiveContextWindow
-                : contextWindow,
-            }),
             "Workspace context window saved.",
             "Workspace context window could not be updated.",
           );

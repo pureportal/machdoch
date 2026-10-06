@@ -29,7 +29,7 @@ const runtimeMocks = vi.hoisted(() => ({
   acknowledgeWorkspaceTerminalOutput: vi.fn<
     (sessionId: string, bytes: number) => Promise<void>
   >(async () => {}),
-  discoverWorkspaceShells: vi.fn<() => Promise<unknown>>(),
+  discoverWorkspaceShells: vi.fn<(workspaceRoot: string) => Promise<unknown>>(),
   resizeWorkspaceTerminal: vi.fn<
     (sessionId: string, columns: number, rows: number) => Promise<void>
   >(async () => {}),
@@ -254,6 +254,9 @@ describe("WorkspaceTerminalStore shell startup", () => {
 
     await store.initialize();
 
+    expect(runtimeMocks.discoverWorkspaceShells).toHaveBeenCalledWith(
+      "C:\\Workspace With Spaces",
+    );
     expect(runtimeMocks.startWorkspaceTerminal).toHaveBeenCalledTimes(2);
     expect(runtimeMocks.startWorkspaceTerminal.mock.calls[0]?.[1]).toBe(
       "windows-powershell",

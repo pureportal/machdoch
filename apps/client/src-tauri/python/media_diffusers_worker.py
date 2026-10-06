@@ -1,8 +1,8 @@
-"""Offline Media Studio inference with supervised image-pipeline reuse."""
+"""Offline Media Studio inference with supervised model reuse."""
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stdout
 import gc
 import hashlib
 import importlib.metadata
@@ -30,7 +30,7 @@ import numpy as np
 from PIL import Image, ImageOps
 import media_open_models
 
-WORKER_VERSION = "media-diffusers-worker/1.76.0"
+WORKER_VERSION = "media-diffusers-worker/1.77.0"
 # Disk group files contain only checkpoint/adapter tensors. Keep their
 # compatibility identity independent from response/provenance releases until
 # that serialization contract itself changes.
@@ -331,7 +331,10 @@ def _verify_runtime_operations(torch: Any, device: str) -> None:
     for module in ("accelerate", "cv2", "peft", "safetensors.torch", "sentencepiece", "torchvision", "transformers"):
         importlib.import_module(module)
     diffusers = importlib.import_module("diffusers")
-    for pipeline in ("Flux2KleinPipeline", "HunyuanVideo15ImageToVideoPipeline", "WanImageToVideoPipeline"):
+    for pipeline in (
+        "Flux2KleinPipeline", "HunyuanVideo15ImageToVideoPipeline", "WanImageToVideoPipeline",
+        "MiniMaxH3Transformer3DModel", "AutoencoderKLMiniMaxH3", "AutoencoderKLMiniMaxH3Audio",
+    ):
         getattr(diffusers, pipeline)
 
     sample = torch.ones((4, 4), device=device)
@@ -1005,6 +1008,9 @@ def _load_pipeline(
     model_path = _absolute_existing_path(model.get("path"), file=package_kind == "single-file")
     device, _, _ = _device(torch)
     dtype = torch_dtype if torch_dtype is not None else _pipeline_dtype(torch, device)
+    if torch_dtype is None and architecture in ("z-image", "z-image-turbo", "flux-2",
+            "flux-2-klein-base-4b", "flux-2-klein-9b", "flux-2-klein-base-9b"):
+        dtype = torch.bfloat16 if device == "cuda" and torch.cuda.is_bf16_supported() else torch.float32
     common = {
         "torch_dtype": dtype,
         "local_files_only": True,
@@ -1064,6 +1070,19 @@ def _load_pipeline(
         if config_path is not None:
             config_path = _absolute_existing_path(config_path, file=False)
             common["config"] = str(config_path)
+            if architecture in ("stable-diffusion-1", "stable-diffusion-2"):
+                index = json.loads((config_path / "model_index.json").read_text(encoding="utf-8"))
+                checker = index.get("safety_checker")
+                if checker is not None and checker != [None, None]:
+                    if checker != ["stable_diffusion", "StableDiffusionSafetyChecker"]:
+                        raise WorkerError("The model declares an unknown safety checker. Reinstall its model components.")
+                    try:
+                        common["safety_checker"] = diffusers.pipelines.stable_diffusion.StableDiffusionSafetyChecker.from_pretrained(
+                            str(config_path / "safety_checker"), dtype=dtype,
+                            local_files_only=True, use_safetensors=True,
+                        )
+                    except OSError as error:
+                        raise WorkerError("The model's safety checker is missing or invalid. Reinstall its model components.") from error
         pipeline = pipeline_class.from_single_file(str(model_path), **common)
     else:
         raise WorkerError(f"Unsupported model package kind: {package_kind}")
@@ -1195,6 +1214,7 @@ def _load_textual_inversion(
     target_components: list[str],
     profiles: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    import torch
     from safetensors.torch import load_file
     from transformers import AddedToken
 
@@ -1202,6 +1222,7 @@ def _load_textual_inversion(
     runtime_components = {
         "text-encoder": ("tokenizer", "text_encoder"),
         "text-encoder-2": ("tokenizer_2", "text_encoder_2"),
+        "text-encoder-3": ("tokenizer_3", "text_encoder_3"),
     }
     loaded: list[dict[str, Any]] = []
     for profile in profiles:
@@ -1241,24 +1262,27 @@ def _load_textual_inversion(
             raise WorkerError(
                 f"Embedding tensor {tensor_key} has width {profile['dimension']}, but {component} expects {runtime_dimension}"
             )
-        pipeline.load_textual_inversion(
-            tensor,
-            token=token,
-            tokenizer=tokenizer,
-            text_encoder=text_encoder,
-        )
         registered_tokens = _registered_token_aliases(
             token, profile["vectorCount"]
         )
-        vocabulary = tokenizer.get_vocab()
-        if any(alias not in vocabulary for alias in registered_tokens):
-            raise WorkerError(
-                f"Textual-inversion aliases were not fully registered in {component}"
-            )
-        tokenizer.add_tokens([
+        added = tokenizer.add_tokens([
             AddedToken(alias, normalized=False, single_word=True, special=False)
             for alias in registered_tokens
         ])
+        if added != len(registered_tokens):
+            raise WorkerError(
+                f"Textual-inversion aliases collide with existing tokens in {component}"
+            )
+        text_encoder.resize_token_embeddings(len(tokenizer), mean_resizing=False)
+        weight = text_encoder.get_input_embeddings().weight
+        token_ids = torch.tensor(
+            tokenizer.convert_tokens_to_ids(registered_tokens), device=weight.device
+        )
+        with torch.no_grad():
+            weight.index_copy_(
+                0, token_ids,
+                tensor.reshape(observed_vector_count, observed_dimension).to(weight),
+            )
         if tokenizer.tokenize(" ".join(registered_tokens)) != registered_tokens:
             raise WorkerError(f"The {component} tokenizer cannot encode all vectors for {token}")
         loaded.append({**profile, "registeredTokens": registered_tokens})
@@ -1278,6 +1302,8 @@ def _append_token(prompt: str, token: str) -> str:
 def _verify_embedding_prompt_tokens(
     pipeline: Any, applied: list[dict[str, Any]], prompt: str, negative_prompt: str
 ) -> None:
+    from media_embedding_prompts import expand_embedding_prompt
+
     for addon in applied:
         if addon["kind"] != "textual-inversion":
             continue
@@ -1285,14 +1311,22 @@ def _verify_embedding_prompt_tokens(
             tokenizer = getattr(pipeline, {
                 "text-encoder": "tokenizer",
                 "text-encoder-2": "tokenizer_2",
+                "text-encoder-3": "tokenizer_3",
             }[profile["component"]])
-            limit = min(int(tokenizer.model_max_length), 512)
+            maximum = (pipeline.transformer.config.max_text_seq_length if profile["tensorKey"] == "cogvideox_t5"
+                       else 300 if profile["tensorKey"] == "gemma" else 256 if profile["component"] == "text-encoder-3" else 512)
+            limit = min(int(tokenizer.model_max_length), maximum)
             channels = {"positive": prompt, "negative": negative_prompt}
             encoded_counts = {}
             for channel, text in channels.items():
                 if addon["placement"] not in (channel, "both"):
                     continue
-                expanded = pipeline.maybe_convert_prompt(text, tokenizer)
+                expanded = expand_embedding_prompt(text, tokenizer)
+                if profile["tensorKey"] in ("z_image_qwen3", "flux2_qwen3"):
+                    expanded = tokenizer.apply_chat_template(
+                        [{"role": "user", "content": expanded}], tokenize=False,
+                        add_generation_prompt=True, enable_thinking=profile["tensorKey"] == "z_image_qwen3",
+                    )
                 ids = tokenizer(expanded, truncation=True, max_length=limit)["input_ids"]
                 counts = [ids.count(tokenizer.convert_tokens_to_ids(alias)) for alias in profile["registeredTokens"]]
                 if not counts or min(counts) == 0 or len(set(counts)) != 1:
@@ -1302,6 +1336,51 @@ def _verify_embedding_prompt_tokens(
                 encoded_counts[channel] = sum(counts)
             profile["encodedTokenCounts"] = encoded_counts
             profile["maxSequenceLength"] = limit
+
+
+def _sana_embedding_arguments(pipeline: Any, prompt: str, negative_prompt: str,
+                              device: Any, guidance: float) -> dict[str, Any]:
+    import torch
+    from media_sana_conditioning import encode_sana_prompts
+
+    prompts = [prompt, negative_prompt] if guidance > 1 else [prompt]
+    with torch.no_grad():
+        encoded, mask = encode_sana_prompts(pipeline, prompts, device)
+    arguments = {"prompt": None, "prompt_embeds": encoded[:1], "prompt_attention_mask": mask[:1]}
+    if guidance > 1:
+        arguments.update(negative_prompt=None, negative_prompt_embeds=encoded[1:],
+                         negative_prompt_attention_mask=mask[1:])
+    return arguments
+
+
+def _sd3_embedding_arguments(pipeline: Any, prompt: str, negative_prompt: str,
+                             device: Any, guidance: float) -> dict[str, Any]:
+    import torch
+    from media_sd3_conditioning import encode_sd3_prompts
+
+    prompts = [prompt, negative_prompt] if guidance > 1 else [prompt]
+    with torch.no_grad():
+        encoded, pooled = encode_sd3_prompts(pipeline, prompts, device)
+    arguments = {"prompt": None, "prompt_embeds": encoded[:1], "pooled_prompt_embeds": pooled[:1]}
+    if guidance > 1:
+        arguments.update(negative_prompt=None, negative_prompt_embeds=encoded[1:],
+                         negative_pooled_prompt_embeds=pooled[1:])
+    return arguments
+
+
+def _z_image_embedding_arguments(pipeline: Any, prompt: str, negative_prompt: str,
+                                 device: Any, guidance: float) -> dict[str, Any]:
+    import torch
+    from media_z_image_conditioning import encode_z_image_prompts
+
+    prompts = [prompt, negative_prompt] if guidance > 1 else [prompt]
+    with torch.no_grad():
+        encoded, mask = encode_z_image_prompts(pipeline, prompts, device)
+    captions = [hidden[valid] for hidden, valid in zip(encoded, mask)]
+    arguments = {"prompt": None, "prompt_embeds": captions[:1]}
+    if guidance > 1:
+        arguments.update(negative_prompt=None, negative_prompt_embeds=captions[1:])
+    return arguments
 
 
 def _confirmed_lora_components(
@@ -1652,10 +1731,6 @@ def _apply_addons(
                 }
             )
         elif kind == "textual-inversion":
-            if not hasattr(pipeline, "load_textual_inversion"):
-                raise WorkerError(
-                    "The selected pipeline does not expose textual-inversion loading"
-                )
             token = _required_text(addon, "token", 128)
             if token in tokens or _token_exists(pipeline, token):
                 raise WorkerError(
@@ -2498,6 +2573,14 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
     if not isinstance(seed, int) or not 0 <= seed < 2**63:
         raise WorkerError("seed is invalid")
     architecture = _required_text(model, "architecture", 64)
+    profile = media_open_models.PROFILES.get(architecture)
+    if profile is not None and profile.get("distillation", {}).get("sampler") == "lcm":
+        from media_sdxl_distillation import validate_request
+
+        try:
+            validate_request(request, profile)
+        except ValueError as error:
+            raise WorkerError(str(error)) from error
     width, height, step_count, requested_guidance = _image_sampling(request, architecture, policy)
     output_directory = _fresh_output_directory(request.get("outputDirectory"))
     addons = request.get("addons", [])
@@ -2752,7 +2835,15 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         )
         if architecture != "krea-2":
             if runtime_device == "cuda":
-                pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
+                if architecture in ("z-image", "z-image-turbo"):
+                    pipeline.enable_group_offload(
+                        onload_device=torch.device("cuda", torch.cuda.current_device()),
+                        offload_device=torch.device("cpu"), offload_type="block_level",
+                        num_blocks_per_group=1, non_blocking=True, use_stream=True,
+                        record_stream=True, low_cpu_mem_usage=True,
+                    )
+                else:
+                    pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
             else:
                 pipeline.to(runtime_device)
         else:
@@ -2958,7 +3049,16 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                 arguments["control_guidance_start"] = control_start
             if "control_guidance_end" in call_parameters:
                 arguments["control_guidance_end"] = control_end
-        if "negative_prompt" in call_parameters and negative_prompt.strip():
+        if architecture in ("flux-2", "flux-2-klein-base-4b", "flux-2-klein-9b", "flux-2-klein-base-9b") and (negative_prompt.strip() or any(addon["kind"] == "textual-inversion" for addon in applied)):
+            from media_flux2_conditioning import embedding_arguments
+
+            guidance = arguments.get("guidance_scale", call_parameters["guidance_scale"].default)
+            if negative_prompt.strip() and (guidance <= 1 or pipeline.config.is_distilled):
+                raise WorkerError("Negative prompts and embeddings need a Klein Base model with guidance above 1.")
+            arguments.update(embedding_arguments(
+                pipeline, effective_prompt, negative_prompt, pipeline._execution_device, guidance,
+            ))
+        elif "negative_prompt" in call_parameters and negative_prompt.strip():
             if architecture == "qwen-image-2.1":
                 if requested_guidance == 1:
                     raise WorkerError("Qwen-Image 2.1 needs guidance above 1 for a negative prompt")
@@ -2972,6 +3072,21 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             raise WorkerError(
                 f"{architecture} does not expose negative-prompt conditioning in this pipeline"
             )
+        if architecture == "sana" and any(addon["kind"] == "textual-inversion" for addon in applied):
+            guidance = arguments.get("guidance_scale", call_parameters["guidance_scale"].default)
+            arguments.update(_sana_embedding_arguments(
+                pipeline, effective_prompt, negative_prompt, pipeline._execution_device, guidance,
+            ))
+        if architecture == "stable-diffusion-3" and any(addon["kind"] == "textual-inversion" for addon in applied):
+            guidance = arguments.get("guidance_scale", call_parameters["guidance_scale"].default)
+            arguments.update(_sd3_embedding_arguments(
+                pipeline, effective_prompt, negative_prompt, pipeline._execution_device, guidance,
+            ))
+        if architecture in ("z-image", "z-image-turbo") and any(addon["kind"] == "textual-inversion" for addon in applied):
+            guidance = arguments.get("guidance_scale", call_parameters["guidance_scale"].default)
+            arguments.update(_z_image_embedding_arguments(
+                pipeline, effective_prompt, negative_prompt, pipeline._execution_device, guidance,
+            ))
         if has_lora_schedule:
             step_callbacks.append(
                 _scheduled_lora_callback(
@@ -8644,10 +8759,23 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
     model = request["model"]
     model_root = _absolute_existing_path(model.get("path"), file=False)
     prompt = _required_text(request, "prompt", 8_000)
-    source_path = _absolute_existing_path(request.get("firstFramePath"), file=True)
-    last_path = _absolute_existing_path(request.get("lastFramePath"), file=True)
-    if source_path.read_bytes() != last_path.read_bytes():
+    source_path = _absolute_existing_path(request["firstFramePath"], file=True) if request.get("firstFramePath") else None
+    last_path = _absolute_existing_path(request["lastFramePath"], file=True) if request.get("lastFramePath") else None
+    if (source_path is None) != (last_path is None):
+        raise WorkerError("Choose the same image for both frame inputs, or leave both empty for RefMods")
+    if source_path is not None and source_path.read_bytes() != last_path.read_bytes():
         raise WorkerError("MiniMax H3 uses one reference image")
+    from media_refmods import load_references
+
+    ref_mods = request.get("refMods", [])
+    ref_mod_max_tokens = request.get("refModMaxTokens", 65536)
+    try:
+        saved_references, _ = load_references(ref_mods, ref_mod_max_tokens)
+    except (ValueError, OSError) as error:
+        raise WorkerError(str(error)) from error
+    if source_path is None and not saved_references:
+        raise WorkerError("Choose a reference image or enable a RefMod")
+    del saved_references
     if request.get("transparentBackground") or request.get("loopMode") != "none":
         raise WorkerError("MiniMax H3 requires opaque, non-looping video")
     if request.get("animatedBackground") is not None:
@@ -8698,6 +8826,8 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
         steps=steps + 1,
         seed=seed,
         swap_blocks=44,
+        ref_mods=ref_mods,
+        ref_mod_max_tokens=ref_mod_max_tokens,
     )
     _progress("Generating MiniMax H3 video and audio", 0.10)
     with redirect_stdout(sys.stderr):
@@ -8784,8 +8914,9 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
             "scheduler": "reference",
         },
         "conv3dBackend": conv3d_backend,
-        "conditioningMode": "minimax-h3-reference-image-audio",
-        "conditioningFraming": {"referenceImage": source_path.name},
+        "conditioningMode": "minimax-h3-refmods" if args.ref_mod_evidence["files"] else "minimax-h3-reference-image-audio",
+        "conditioningFraming": {"referenceImage": source_path.name if source_path else None,
+                                "refMods": args.ref_mod_evidence},
         "endpointRestoration": None,
         "loopEndpointRestoration": None,
         "loopBoundaryInspection": None,
@@ -8804,11 +8935,15 @@ def _generate_minimax_h3_video(request: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def generate_video(request: dict[str, Any]) -> dict[str, Any]:
+def generate_video(request: dict[str, Any], cache=None) -> dict[str, Any]:
+    if request.get("refMods") and request.get("model", {}).get("architecture") != "minimax-h3-ref2va":
+        raise WorkerError("RefMods require MiniMax H3")
     if isinstance(request.get("model"), dict) and request["model"].get("architecture") in media_open_models.PROFILES:
         import media_open_video
 
-        return media_open_video.generate(request, sys.modules[__name__])
+        return media_open_video.generate(request, sys.modules[__name__], cache)
+    if cache is not None:
+        cache.clear()
     if isinstance(request.get("model"), dict) and request["model"].get("architecture") == "minimax-h3-ref2va":
         return _generate_minimax_h3_video(request)
     _progress("Starting video runtime", 0.02)
@@ -9584,6 +9719,18 @@ def main() -> int:
                 raise WorkerError("Worker request must be a JSON object")
             _emit(generate_video(request))
             return 0
+        if command == "refmod":
+            from media_refmods import handle_request
+
+            request = json.load(sys.stdin)
+            with redirect_stdout(sys.stderr):
+                if isinstance(request, dict) and request.get("operation") in ("create", "preview"):
+                    torch, _ = _runtime()
+                    device, _, _ = _device(torch)
+                    _configure_video_conv3d_backend(torch, device)
+                result = handle_request(request)
+            _emit({"schemaVersion": SCHEMA_VERSION, "workerVersion": WORKER_VERSION, "result": result})
+            return 0
         if command == "generate-svg":
             request = json.load(sys.stdin)
             if not isinstance(request, dict):
@@ -9633,7 +9780,7 @@ def main() -> int:
             return 0
         raise WorkerError(
             "Expected exactly one command: probe, verify-runtime, generate, "
-            "generate-video, generate-svg, generate-audio, or render-source-anchored-loop"
+            "generate-video, refmod, generate-svg, generate-audio, or render-source-anchored-loop"
         )
     except WorkerError as error:
         _emit(

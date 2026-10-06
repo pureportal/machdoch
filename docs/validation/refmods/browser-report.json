@@ -1,0 +1,104 @@
+{
+  "browser": "msedge",
+  "serverStarted": false,
+  "workspace": "C:\\Development\\machdoch\\.tmp\\refmod-browser-5e2bTi",
+  "requests": [
+    {
+      "operation": "list",
+      "offset": 0,
+      "directory": "C:\\Development\\machdoch\\.tmp\\refmod-browser-5e2bTi\\models\\refmods"
+    },
+    {
+      "operation": "inspect-many",
+      "paths": [
+        "C:\\Development\\machdoch\\.tmp\\refmod-browser-5e2bTi\\models\\refmods\\audio.safetensors"
+      ],
+      "offset": 0
+    },
+    {
+      "operation": "preview",
+      "operationId": "05353799-51ac-4487-bb0f-8560214ecf00",
+      "path": "C:\\Development\\machdoch\\.tmp\\refmod-browser-5e2bTi\\models\\refmods\\audio.safetensors",
+      "member": 0,
+      "frameIndex": 0,
+      "compare": true,
+      "strength": 0.35
+    },
+    {
+      "operation": "save",
+      "slots": [
+        {
+          "path": "C:\\Development\\machdoch\\.tmp\\refmod-browser-5e2bTi\\models\\refmods\\audio.safetensors",
+          "enabled": true,
+          "selection": "all",
+          "visualStrength": 1,
+          "audioStrength": 0.35,
+          "copies": 2
+        }
+      ],
+      "outputPath": "C:\\Development\\machdoch\\.tmp\\refmod-browser-5e2bTi\\references.safetensors",
+      "name": "References",
+      "maxTokens": 65536
+    }
+  ],
+  "export": {
+    "path": "C:\\Development\\machdoch\\.tmp\\refmod-browser-5e2bTi\\references.safetensors",
+    "name": "References",
+    "kind": "bundle",
+    "members": [
+      {
+        "key": "ref_0",
+        "kind": "audio",
+        "name": "stereo",
+        "shape": [
+          1,
+          32,
+          2,
+          80
+        ],
+        "tokens": 160,
+        "frameCount": 0,
+        "metadata": {
+          "kind": "audio",
+          "name": "stereo",
+          "sample_rate": 32000,
+          "source": "C:\\Development\\machdoch\\.tmp\\refmod-real-audio-5hepdeq6\\stereo.wav",
+          "concept_type": "Signal",
+          "description": "Stereo tones at 440 and 880 Hz",
+          "_format_version": 4,
+          "latent_t": 80
+        }
+      },
+      {
+        "key": "ref_1",
+        "kind": "audio",
+        "name": "stereo",
+        "shape": [
+          1,
+          32,
+          2,
+          80
+        ],
+        "tokens": 160,
+        "frameCount": 0,
+        "metadata": {
+          "kind": "audio",
+          "name": "stereo",
+          "sample_rate": 32000,
+          "source": "C:\\Development\\machdoch\\.tmp\\refmod-real-audio-5hepdeq6\\stereo.wav",
+          "concept_type": "Signal",
+          "description": "Stereo tones at 440 and 880 Hz",
+          "_format_version": 4,
+          "latent_t": 80
+        }
+      }
+    ],
+    "tokens": 320,
+    "sizeBytes": 41824
+  },
+  "desktopOverflow": false,
+  "narrowOverflow": false,
+  "pageErrors": [],
+  "previewSource": "Prerecorded pretrained VAE outputs from refmod-real-audio-5hepdeq6",
+  "nativeDispatch": false
+}

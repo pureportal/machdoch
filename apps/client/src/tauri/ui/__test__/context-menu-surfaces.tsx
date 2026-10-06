@@ -10,7 +10,7 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-} from "../components/ui/dropdown-menu";
+} from "@machdoch/client-ui/dropdown-menu";
 import {
   Dialog,
   DialogTrigger,

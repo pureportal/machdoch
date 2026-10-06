@@ -24,7 +24,7 @@ import { createInstructionResolutionFixture } from "../__test__/instruction-test
 import { createInstructionDeliveryPlan } from "../instruction-system/index.ts";
 import { createCliInstructionCapabilityFromProbe } from "../provider-enrollment/instruction-delivery-preflight.ts";
 import { probeProviderCli } from "../provider-enrollment/capability-registry.ts";
-import { hasUnpairedUtf16Surrogate } from "../../shared/unicode.ts";
+import { hasUnpairedUtf16Surrogate } from "@machdoch/fleet-protocol/unicode";
 import type { ModelDrivenExecutionParams } from "./agent-runtime-types.ts";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.ts";
 import type { AgentToolExecutionResult } from "./agent-tools-shared.ts";

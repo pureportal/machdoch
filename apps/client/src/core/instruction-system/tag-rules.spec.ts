@@ -4,7 +4,7 @@ import {
   instructionTagRuleMatches,
   normalizeInstructionTagRule,
   normalizeInstructionTags,
-} from "./tag-rules.js";
+} from "@machdoch/fleet-protocol/instruction-tags";
 
 describe("instruction tag rules", () => {
   it("matches nested case-insensitive AND and OR groups", () => {

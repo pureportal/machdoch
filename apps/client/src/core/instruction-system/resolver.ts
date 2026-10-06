@@ -5,7 +5,7 @@ import { getModelContextWindowTokens } from "../model-capabilities.js";
 import { loadInstructionLibrary } from "./library-store.js";
 import { loadFleetManagedProfile } from "../fleet-settings.js";
 import { inventoryNativeInstructions } from "./native-inventory.js";
-import { instructionTagRuleMatches } from "./tag-rules.js";
+import { instructionTagRuleMatches } from "@machdoch/fleet-protocol/instruction-tags";
 import {
   loadMcpInitializationInstructionSnapshot,
   mcpInitializationInstructionSupplementBytes,
@@ -861,8 +861,9 @@ export const resolveInstructionSet = async (
         convention: record.convention,
         recognizingConventions: record.recognizingConventions,
         status: record.status,
-        digest: record.digest,
-        byteLength: record.byteLength,
+        ...(record.status === "suppressed"
+          ? {}
+          : { digest: record.digest, byteLength: record.byteLength }),
       })),
     nativeInventoryError: nativeInventoryResult.error,
     mcpInitializationInstructions: mcpInitializationInstructions.map(
@@ -1082,8 +1083,9 @@ export const adaptFrozenInstructionSet = async (
         convention: record.convention,
         recognizingConventions: record.recognizingConventions,
         status: record.status,
-        digest: record.digest,
-        byteLength: record.byteLength,
+        ...(record.status === "suppressed"
+          ? {}
+          : { digest: record.digest, byteLength: record.byteLength }),
       })),
     nativeInventoryError: nativeInventoryResult.error,
     mcpInitializationInstructions: resolution.mcpInitializationInstructions.map(

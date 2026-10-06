@@ -1,13 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-  appendContextAttachmentsToTask,
-  createContextAttachmentFromMediaAsset,
-  createContextAttachmentFromReference,
-  getImageAttachmentMediaReferences,
-  mergeContextAttachments,
-  isLinkContextAttachment,
-  stripContextAttachmentsTaskBlock,
-} from "./session-context-attachments";
+import { isLinkContextAttachment } from "@machdoch/client-ui/composer/model";
+import { appendContextAttachmentsToTask, createContextAttachmentFromMediaAsset, getImageAttachmentMediaReferences, mergeContextAttachments, stripContextAttachmentsTaskBlock } from "./session-context-attachments";
+import { createContextAttachmentFromReference } from "@machdoch/client-ui/composer/attachment-reference";
 
 describe("session context attachments", () => {
   it("creates link attachments and preserves them in hidden task context", () => {

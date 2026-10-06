@@ -5,7 +5,10 @@ import {
   ralphRequestSchema,
   type ProductSnapshot,
 } from "@machdoch/fleet-protocol";
-import { createFleetOperationTransport } from "@machdoch/product-ui";
+import {
+  createFleetOperationTransport,
+  useBrowserAppearance,
+} from "@machdoch/product-ui";
 import { createFleetMediaTransport } from "@machdoch/media-studio/fleet-transport.js";
 import { configureRemoteMediaPlatform } from "@machdoch/media-studio/tauri/ui/media/media-platform.js";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
@@ -18,7 +21,7 @@ import {
 } from "../ui/ralph/ralph-platform";
 import { configureRalphSettingsStorage } from "../ui/lib/shell-store";
 import { isConfiguredModelProvider } from "../../core/runtime-contract.generated.js";
-import { replaceDiscoveredModelCapabilities } from "../../core/model-capabilities.js";
+import { createRemoteTaskPlatform } from "../ui/remote-task-platform";
 import type { UserInternalTaskModelSettings } from "../ui/runtime";
 
 const instanceId = new URLSearchParams(window.location.search).get("instance");
@@ -26,6 +29,7 @@ if (!instanceId) throw new Error("Select a connected instance.");
 const basePath = `/api/instances/${encodeURIComponent(instanceId)}/product`;
 
 function FleetRalph(): React.ReactElement {
+  useBrowserAppearance();
   const [snapshot, setSnapshot] = useState<ProductSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const platform = useRef<RemoteRalphPlatform | null>(null);
@@ -69,53 +73,17 @@ function FleetRalph(): React.ReactElement {
                 }),
               ),
             );
-          const updated: RemoteRalphPlatform = {
-            ...transport,
-            catalog: {
-              generatedAt: Date.now(),
-              providers: composer.modelCatalog.flatMap((provider) =>
-                isConfiguredModelProvider(provider.provider)
-                  ? [
-                      {
-                        ...provider,
-                        provider: provider.provider,
-                        source: "fleet",
-                        models: provider.models.map((model) => ({
-                          ...model,
-                          capabilities: {
-                            reasoningModes: model.reasoningOptions,
-                          },
-                        })),
-                      },
-                    ]
-                  : [],
-              ),
-            },
-            providers: (result.shell.runtime?.providerStatuses ?? []).flatMap(
-              (provider) =>
-                isConfiguredModelProvider(provider.provider)
-                  ? [
-                      {
-                        provider: provider.provider,
-                        configured: provider.available,
-                        source: "user" as const,
-                      },
-                    ]
-                  : [],
-            ),
+          const updated = createRemoteTaskPlatform(
+            result,
+            transport,
             internalTaskModel,
-          };
+          );
           if (platform.current) Object.assign(platform.current, updated);
           else {
             platform.current = updated;
             configureRemoteRalphPlatform(updated);
             configureRalphSettingsStorage(instanceId!);
           }
-          for (const provider of updated.catalog.providers)
-            replaceDiscoveredModelCapabilities(
-              provider.provider,
-              provider.models,
-            );
           setSnapshot(result);
           setError(null);
         })

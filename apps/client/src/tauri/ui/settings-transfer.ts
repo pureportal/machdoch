@@ -1,4 +1,13 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { isTauri } from "@tauri-apps/api/core";
+import {
+  open as nativeOpen,
+  save as nativeSave,
+} from "@tauri-apps/plugin-dialog";
+import {
+  getRemoteDeviceSettingsFiles,
+  getRemoteDeviceSettingsPlatform,
+  invokeDeviceSettingsCommand as invoke,
+} from "./device-settings-platform";
 import { listen } from "@tauri-apps/api/event";
 
 export const SETTINGS_TRANSFER_EVENT =
@@ -72,19 +81,46 @@ export const approveSettingsTransfer = async (): Promise<void> =>
 export const stopSettingsTransfer = async (): Promise<SettingsTransferStatus> =>
   invoke<SettingsTransferStatus>("stop_settings_transfer");
 
+export const openSettingsFile = (
+  options?: Parameters<typeof nativeOpen>[0],
+): Promise<string | string[] | null> =>
+  getRemoteDeviceSettingsPlatform()
+    ? getRemoteDeviceSettingsFiles().open(options)
+    : nativeOpen(options);
+
+export const saveSettingsFile: typeof nativeSave = (options) =>
+  getRemoteDeviceSettingsPlatform()
+    ? getRemoteDeviceSettingsFiles().save(options)
+    : nativeSave(options);
+
+export const settingsFileLabel = (path: string): string =>
+  getRemoteDeviceSettingsPlatform()
+    ? (getRemoteDeviceSettingsFiles().fileName(path) ?? "")
+    : path;
+
 export const exportEncryptedSettingsFile = async (
   request: ExportEncryptedSettingsFileRequest,
-): Promise<EncryptedSettingsFileExportResult> =>
-  invoke<EncryptedSettingsFileExportResult>("export_encrypted_settings_file", {
-    request,
-  });
+): Promise<EncryptedSettingsFileExportResult> => {
+  const result = await invoke<EncryptedSettingsFileExportResult>(
+    "export_encrypted_settings_file",
+    { request },
+  );
+  if (getRemoteDeviceSettingsPlatform())
+    await getRemoteDeviceSettingsFiles().download(request.destinationPath);
+  return result;
+};
 
 export const inspectEncryptedSettingsFile = async (
   request: InspectEncryptedSettingsFileRequest,
-): Promise<EncryptedSettingsFileImportReview> =>
-  invoke<EncryptedSettingsFileImportReview>("inspect_encrypted_settings_file", {
-    request,
-  });
+): Promise<EncryptedSettingsFileImportReview> => {
+  const result = await invoke<EncryptedSettingsFileImportReview>(
+    "inspect_encrypted_settings_file",
+    { request },
+  );
+  if (getRemoteDeviceSettingsPlatform())
+    await getRemoteDeviceSettingsFiles().release(request.sourcePath);
+  return result;
+};
 
 export const commitEncryptedSettingsFileImport = async (
   token: string,
@@ -104,6 +140,33 @@ export const cancelEncryptedSettingsFileImport = async (
 export const subscribeToSettingsTransfer = async (
   onChange: (status: SettingsTransferStatus) => void,
 ): Promise<() => void> => {
+  const remote = getRemoteDeviceSettingsPlatform();
+  if (remote) {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async (): Promise<void> => {
+      try {
+        const status = await remote.invoke<SettingsTransferStatus>(
+          "get_settings_transfer_status",
+          {},
+        );
+        if (!stopped) onChange(status);
+      } catch (error) {
+        if (!stopped)
+          console.error("Could not refresh settings transfer.", error);
+      } finally {
+        if (!stopped)
+          timer = setTimeout(() => {
+            void poll();
+          }, 750);
+      }
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }
   if (!canSubscribeToTauriEvents()) return () => undefined;
   return listen<SettingsTransferStatus>(SETTINGS_TRANSFER_EVENT, (event) => {
     onChange(event.payload);
@@ -113,6 +176,12 @@ export const subscribeToSettingsTransfer = async (
 export const subscribeToSettingsImport = async (
   onImport: (event: SettingsImportEvent) => void,
 ): Promise<() => void> => {
+  const remote = getRemoteDeviceSettingsPlatform();
+  if (remote)
+    return remote.listen<SettingsImportEvent>(
+      SETTINGS_IMPORTED_EVENT,
+      ({ payload }) => onImport(payload),
+    );
   if (!canSubscribeToTauriEvents()) return () => undefined;
   return listen<SettingsImportEvent>(SETTINGS_IMPORTED_EVENT, (event) => {
     onImport(event.payload);

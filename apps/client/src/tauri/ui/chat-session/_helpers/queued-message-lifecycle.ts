@@ -1,10 +1,5 @@
-import {
-  getActiveChatOperationIds,
-  getSessionOverviewStatus,
-  type ChatSessionContextAttachment,
-  type ChatSessionQueuedMessage,
-  type ChatSessionRecord,
-} from "../../chat-session.model";
+import { getActiveChatOperationIds, getSessionOverviewStatus, type ChatSessionQueuedMessage, type ChatSessionRecord } from "../../chat-session.model";
+import { type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import {
   createQueuedMessageDispatchPrompt,
   type QueuedMessageDispatchPrompt,

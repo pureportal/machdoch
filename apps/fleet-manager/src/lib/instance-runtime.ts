@@ -6,11 +6,12 @@ import {
 } from "@machdoch/fleet-protocol";
 import type { ProductRuntime } from "@machdoch/product-ui";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
+import type { SessionComposerText } from "@machdoch/fleet-protocol/session-data";
 
 export function createInstanceRuntime(
   instanceId: string,
-  settingsEnabled: boolean,
   initialSessionId?: string,
+  readComposerText?: (sessionId: string) => Promise<SessionComposerText>,
 ): ProductRuntime {
   const basePath = `/api/instances/${encodeURIComponent(instanceId)}/product`;
   const selectionCommandId = crypto.randomUUID();
@@ -19,25 +20,49 @@ export function createInstanceRuntime(
   const readSnapshot = async (
     signal?: AbortSignal,
   ): Promise<ProductSnapshot> => {
-    const payload = await api<unknown>(`${basePath}/snapshot`, { signal });
-    const result = productSnapshotSchema.safeParse(payload);
-    if (!result.success)
-      throw new Error("Instance returned incompatible product data.");
-    return result.data;
+    const deadline = Date.now() + 3_000;
+    while (true) {
+      signal?.throwIfAborted();
+      const payload = await api<unknown>(`${basePath}/snapshot`, { signal });
+      const result = productSnapshotSchema.safeParse(payload);
+      if (!result.success)
+        throw new Error("Instance returned incompatible product data.");
+      const snapshot = result.data;
+      if (snapshot.shell?.composer?.textTruncated) {
+        if (!readComposerText)
+          throw new Error(
+            "The full draft could not be loaded. Reconnect the device.",
+          );
+        const text = await readComposerText(snapshot.shell.composer.sessionId);
+        signal?.throwIfAborted();
+        if (
+          text.sessionId !== snapshot.shell.composer.sessionId ||
+          text.draftRevision !== snapshot.shell.composer.draftRevision
+        ) {
+          if (Date.now() >= deadline)
+            throw new Error(
+              "The draft changed while loading. Refresh the device.",
+            );
+          await new Promise<void>((resolve) => setTimeout(resolve, 100));
+          continue;
+        }
+        snapshot.shell.composer = { ...snapshot.shell.composer, ...text };
+      }
+      return snapshot;
+    }
   };
   const runtime: ProductRuntime = {
     mediaHref: `/media-studio/index.html?instance=${encodeURIComponent(instanceId)}`,
     ralphHref: `/media-studio/ralph.html?instance=${encodeURIComponent(instanceId)}`,
+    schedulerHref: `/media-studio/scheduler.html?instance=${encodeURIComponent(instanceId)}`,
+    instructionsHref: `/media-studio/instructions.html?instance=${encodeURIComponent(instanceId)}`,
+    workspaceHref: `/media-studio/workspaces.html?instance=${encodeURIComponent(instanceId)}`,
     servicesHref: `/instances/${encodeURIComponent(instanceId)}/runs`,
-    ...(settingsEnabled ? { settingsHref: "/settings" } : {}),
+    settingsHref: `/media-studio/settings.html?instance=${encodeURIComponent(instanceId)}`,
     async getSnapshot(signal) {
       const snapshot = await readSnapshot(signal);
       if (!initialSessionId || sessionSelected) return snapshot;
-      if (
-        !snapshot.shell?.sessions.some(
-          (session) => session.id === initialSessionId,
-        )
-      )
+      if (!snapshot.shell)
         throw new Error(
           "This session is no longer on the device. Open the device from Overview.",
         );
@@ -66,11 +91,7 @@ export function createInstanceRuntime(
       let selectedSnapshot = await readSnapshot(selectionSignal);
       while (selectedSnapshot.shell?.activeSessionId !== initialSessionId) {
         selectionSignal.throwIfAborted();
-        if (
-          !selectedSnapshot.shell?.sessions.some(
-            (session) => session.id === initialSessionId,
-          )
-        )
+        if (!selectedSnapshot.shell)
           throw new Error(
             "This session is no longer on the device. Open the device from Overview.",
           );

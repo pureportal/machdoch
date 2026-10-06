@@ -12,6 +12,8 @@ import {
 } from "../../shared/goals.js";
 import { FleetRalphRuntime } from "./cli-fleet-ralph.js";
 import { FleetRalphEditor } from "./cli-fleet-ralph-editor.js";
+import { FleetSchedulerRuntime } from "./cli-fleet-scheduler.js";
+import { FleetInstructionRuntime } from "./cli-fleet-instructions.js";
 import { FleetMediaWorker } from "./cli-fleet-media.js";
 import {
   isMediaPoseMap,
@@ -344,10 +346,26 @@ const cloneState = (state: FleetCliState): FleetCliState =>
   structuredClone(state);
 
 export class FleetCliProductRuntime {
+  private readonly instructions = new FleetInstructionRuntime(
+    (workspace) => this.assertWorkspace(workspace),
+    () => this.state.workspaceRoot,
+  );
   private readonly media = new FleetMediaWorker();
   private readonly ralph = new FleetRalphRuntime();
   private readonly ralphEditor = new FleetRalphEditor((workspace) =>
     this.assertWorkspace(workspace),
+  );
+  private readonly scheduler = new FleetSchedulerRuntime(
+    (workspace) => this.assertWorkspace(workspace),
+    async () => {
+      const library = this.projects.getSnapshot();
+      return [
+        this.state.workspaceRoot,
+        ...library.projects
+          .filter((project) => project.status === "ready")
+          .map((project) => join(library.root, project.name)),
+      ];
+    },
   );
   private readonly runs = new FleetRunManager((workspace) =>
     this.assertWorkspace(workspace),
@@ -402,7 +420,9 @@ export class FleetCliProductRuntime {
         "A saved session references a project missing from this host's library. Restore the project library before starting the service.",
       );
     if (!savedState || recovered) await dependencies.saveState(state);
-    return new FleetCliProductRuntime(state, dependencies, projects);
+    const runtime = new FleetCliProductRuntime(state, dependencies, projects);
+    runtime.scheduler.start();
+    return runtime;
   }
 
   async handleRequest(request: HostRequest): Promise<HostResponse> {
@@ -414,6 +434,28 @@ export class FleetCliProductRuntime {
       };
     try {
       switch (request.type) {
+        case "deviceSettings":
+          return {
+            type: "error",
+            code: "unavailable",
+            message: "Device settings require a native client.",
+          };
+        case "workspace":
+          return {
+            type: "error",
+            code: "unavailable",
+            message: "Workspace tools require a native client.",
+          };
+        case "instructions":
+          return {
+            type: "instructions",
+            response: await this.instructions.request(request.request),
+          };
+        case "scheduler":
+          return {
+            type: "scheduler",
+            response: await this.scheduler.request(request.request),
+          };
         case "ralph":
           return {
             type: "ralph",
@@ -442,6 +484,9 @@ export class FleetCliProductRuntime {
             receipt: { commandId: request.command.commandId, duplicate },
           };
         }
+        case "validatePreviewTarget":
+          await this.runs.previewTarget(request.target);
+          return { type: "previewTargetReady" };
         case "openPreviewTunnel":
           await this.previewTunnels.open(request);
           return { type: "previewTunnelReady" };
@@ -463,6 +508,8 @@ export class FleetCliProductRuntime {
     this.media.close();
     this.previewTunnels.close();
     const ralphEditorStopped = this.ralphEditor.shutdown();
+    const schedulerStopped = this.scheduler.shutdown();
+    const instructionsStopped = this.instructions.shutdown();
     const runsStopped = this.runs.shutdown();
     const projectsStopped = this.projects.shutdown();
     await this.mutationTail;
@@ -472,6 +519,8 @@ export class FleetCliProductRuntime {
     }
     await Promise.allSettled([
       this.ralph.shutdown(),
+      schedulerStopped,
+      instructionsStopped,
       ...this.taskSettlements.values(),
       projectsStopped,
       runsStopped,
@@ -595,6 +644,13 @@ export class FleetCliProductRuntime {
 
   private async executeCommand(command: ProductCommand): Promise<HostResponse> {
     switch (command.kind) {
+      case "add-workspace":
+      case "remove-workspace":
+      case "relink-workspace":
+        throw new FleetProductError(
+          "unavailable",
+          "Workspace tools require a native client.",
+        );
       case "create-project":
       case "clone-project":
       case "import-project":
@@ -888,9 +944,12 @@ export class FleetCliProductRuntime {
           "A Fleet CLI session must keep its configured workspace.",
         );
       case "set-session-memory":
+      case "set-global-memory":
         return await this.commitCommand(command, (state, _id, timestamp) => {
           const session = this.getSession(state, command.sessionId);
-          session.sessionMemoryEnabled = command.enabled;
+          if (command.kind === "set-global-memory")
+            session.globalMemoryEnabled = command.enabled;
+          else session.sessionMemoryEnabled = command.enabled;
           session.updatedAt = timestamp;
           return { record: { sessionId: session.id } };
         });
@@ -930,23 +989,36 @@ export class FleetCliProductRuntime {
       case "branch-session":
       case "delete-session":
         return await this.changeSessionLifecycle(command);
-      case "set-global-memory":
       case "set-ui-control":
+      case "open-quick-chat":
+      case "set-adaptive-controller":
+      case "restore-prompt-history":
+      case "reset-session-time":
+      case "move-session-to-top":
+      case "edit-message":
+      case "replay-message":
+      case "add-context-attachments":
+      case "update-queued-message":
+      case "move-queued-message":
+      case "reorder-queued-message":
+      case "remove-queued-message":
+      case "retry-queued-message":
+      case "remove-queued-attachment":
+      case "clear-queued-attachments":
+      case "set-running-message-action":
       case "remove-attachment":
       case "clear-attachments":
       case "delete-context-pack":
+      case "save-context-pack":
+      case "import-context-packs":
       case "save-message-context-pack":
       case "speak-message":
       case "stop-speaking":
+      case "set-auto-speak":
+      case "set-speech-input-recording":
       case "set-prompt-enhancement-mode":
       case "set-interview":
       case "cancel-prompt-enhancement":
-      case "scheduler-trigger":
-      case "scheduler-pause":
-      case "scheduler-resume":
-      case "scheduler-delete":
-      case "scheduler-retry-run":
-      case "scheduler-cancel-run":
       case "generate-media":
       case "cancel-media-run":
         throw new FleetProductError(
@@ -1632,7 +1704,7 @@ export class FleetCliProductRuntime {
         })),
         visibleMessages: activeSession.messages
           .slice(-80)
-          .map((message) => this.createMessageSnapshot(message)),
+          .map((message) => ({ ...this.createMessageSnapshot(message), workspace: activeSession.workspace })),
         composer: {
           sessionId: activeSession.id,
           draft: activeSession.draft,

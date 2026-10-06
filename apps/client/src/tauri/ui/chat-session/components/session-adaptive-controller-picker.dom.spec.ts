@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
-import { SessionAdaptiveControllerPicker } from "./session-adaptive-controller-picker";
+import { SessionAdaptiveControllerPicker } from "@machdoch/client-ui/composer/adaptive-controller-picker";
 
 afterEach(cleanup);
 

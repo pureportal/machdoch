@@ -42,10 +42,10 @@ beforeEach(() => {
 });
 
 describe("speech text processing with the internal task model", () => {
-  it("improves a Whisper transcript with the configured model", async () => {
+  it("improves a cloud transcript with the configured model", async () => {
     await expect(
       processUserSpeechText({
-        provider: "whisper",
+        provider: "google",
         text: "open file",
         autoTranslateToEnglish: false,
         autoFormat: true,

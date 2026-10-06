@@ -72,6 +72,13 @@ temp/
 models/
 apps/client/src-tauri/resources/whisper/*.bin
 apps/client/src-tauri/resources/whisper/*.download-*
+apps/client/src-tauri/resources/speech/
+apps/client/src-tauri/resources/speech-legal/python/
+apps/client/src-tauri/resources/speech-legal/python-runtime/
+apps/client/src-tauri/resources/speech-legal/python-packages.json
+apps/client/src-tauri/resources/speech-legal/python-native/
+apps/client/src-tauri/resources/speech-legal/python-native.json
+apps/client/src-tauri/resources/speech-legal/source/
 
 # Developer-only accelerator runtimes are assembled locally and are never
 # shipped from the source tree.

@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { TaskThinkingPanel } from "./task-thinking-panel.tsx";
+import { TaskThinkingPanel } from "@machdoch/client-ui/conversation/task-thinking-panel";
 import type { TaskThinkingTrace } from "./task-thinking.model.ts";
 
 const createRepresentativeTrace = (): TaskThinkingTrace => ({

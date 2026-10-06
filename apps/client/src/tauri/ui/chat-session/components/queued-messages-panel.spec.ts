@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach } from "vitest";
-import { QueuedMessagesPanel } from "./queued-messages-panel";
+import { QueuedMessagesPanel } from "@machdoch/client-ui/composer/queued-messages-panel";
 
 afterEach(() => {
   cleanup();

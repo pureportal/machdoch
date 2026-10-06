@@ -1,0 +1,6 @@
+{
+  "devServerStarted": false,
+  "pretrainedWeightsUsed": false,
+  "connected": false,
+  "error": "Fleet API 404: {\"error\":\"Instance was not found.\"}"
+}

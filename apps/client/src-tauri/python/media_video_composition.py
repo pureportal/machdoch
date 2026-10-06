@@ -285,10 +285,10 @@ def video_audio(request: dict[str, Any], progress: Progress) -> dict[str, Any]:
     return _compose([path], audio_path, audio_start, output_directory, progress)
 
 
-def inspect_video(request: dict[str, Any], progress: Progress) -> dict[str, Any]:
+def inspect_video(request: dict[str, Any], progress: Progress, *, require_webm: bool = True) -> dict[str, Any]:
     import imageio_ffmpeg
 
-    path = _input_file(request.get("inputPath"), "inputPath", webm=True)
+    path = _input_file(request.get("inputPath"), "inputPath", webm=require_webm)
     progress("Reading video", 0.1)
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
     streams = _decode(ffmpeg, path)

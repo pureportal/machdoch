@@ -4,9 +4,17 @@ use serde::{de::Error as _, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::{error::Error, fmt};
 
+pub mod context_packs;
+pub mod device_settings;
+pub mod identifiers;
+pub mod instructions;
 mod media;
+mod operation;
 pub mod ralph;
+pub mod scheduler;
 mod snapshot;
+pub mod workspace;
+pub const MAX_COMPOSER_TEXT_CHARACTERS: usize = 1_000_000;
 
 pub const GATEWAY_PROTOCOL_VERSION: u32 = 4;
 pub const PRODUCT_CAPABILITY: &str = "product.v4";
@@ -710,6 +718,22 @@ pub fn deserialize_host_message(
     deny_unknown_fields
 )]
 pub enum HostRequest {
+    DeviceSettings {
+        #[serde(deserialize_with = "device_settings::deserialize_device_settings_request")]
+        request: Value,
+    },
+    Workspace {
+        #[serde(deserialize_with = "workspace::deserialize_workspace_request")]
+        request: Value,
+    },
+    Instructions {
+        #[serde(deserialize_with = "instructions::deserialize_instruction_request")]
+        request: Value,
+    },
+    Scheduler {
+        #[serde(deserialize_with = "scheduler::deserialize_scheduler_request")]
+        request: Value,
+    },
     Ralph {
         #[serde(deserialize_with = "ralph::deserialize_ralph_request")]
         request: Value,
@@ -731,6 +755,9 @@ pub enum HostRequest {
         workspace: String,
         command: Value,
     },
+    ValidatePreviewTarget {
+        target: Value,
+    },
     OpenPreviewTunnel {
         target: Value,
         tunnel_id: String,
@@ -746,6 +773,22 @@ pub enum HostRequest {
     deny_unknown_fields
 )]
 pub enum HostResponse {
+    DeviceSettings {
+        #[serde(deserialize_with = "media::deserialize_media_response")]
+        response: Value,
+    },
+    Workspace {
+        #[serde(deserialize_with = "media::deserialize_media_response")]
+        response: Value,
+    },
+    Instructions {
+        #[serde(deserialize_with = "media::deserialize_media_response")]
+        response: Value,
+    },
+    Scheduler {
+        #[serde(deserialize_with = "media::deserialize_media_response")]
+        response: Value,
+    },
     Ralph {
         #[serde(deserialize_with = "media::deserialize_media_response")]
         response: Value,
@@ -758,6 +801,7 @@ pub enum HostResponse {
         snapshot: Value,
     },
     PreviewTunnelReady,
+    PreviewTargetReady,
     ProductSnapshot {
         #[serde(
             deserialize_with = "snapshot::deserialize_product_snapshot",
@@ -790,10 +834,22 @@ pub enum HostErrorCode {
     Internal,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ComposerHistorySelection {
+    pub index: u32,
+    pub prompt: String,
+    pub attachment_ids: Vec<String>,
+    pub previous_draft: String,
+    pub previous_attachment_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProductCommand {
     pub kind: ProductCommandKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history: Option<ComposerHistorySelection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub special_kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -821,6 +877,22 @@ pub struct ProductCommand {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal_objective: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iteration_count: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iteration_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub running_action: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<i8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_index: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variable_values: Option<BTreeMap<String, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paths: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_pack: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tags: Option<Vec<String>>,
@@ -841,6 +913,8 @@ pub struct ProductCommand {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination_workspace: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub memory_id: Option<String>,
@@ -850,8 +924,6 @@ pub struct ProductCommand {
     pub context_pack_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub job_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -889,7 +961,10 @@ pub enum ProductCommandKind {
     Retry,
     Continue,
     SubmitMessage,
+    EditMessage,
+    ReplayMessage,
     CreateSession,
+    OpenQuickChat,
     ActivateSession,
     ArchiveSession,
     PinSession,
@@ -899,15 +974,31 @@ pub enum ProductCommandKind {
     RenameSession,
     TagSession,
     ClearSessionHistory,
+    ResetSessionTime,
+    MoveSessionToTop,
     ClearSessionMode,
     ClearSessionReasoning,
     UpdateDraft,
+    RestorePromptHistory,
+    UpdateQueuedMessage,
+    MoveQueuedMessage,
+    ReorderQueuedMessage,
+    RemoveQueuedMessage,
+    RetryQueuedMessage,
+    RemoveQueuedAttachment,
+    ClearQueuedAttachments,
+    SetRunningMessageAction,
+    AddContextAttachments,
     SetSessionModel,
     SetSessionMode,
+    SetAdaptiveController,
     SetParallelAgentMode,
     SetGoalMode,
     SetSessionReasoning,
     SetSessionWorkspace,
+    AddWorkspace,
+    RemoveWorkspace,
+    RelinkWorkspace,
     ClearSessionWorkspace,
     SetPromptEnhancementMode,
     SetInterview,
@@ -920,16 +1011,14 @@ pub enum ProductCommandKind {
     RemoveAttachment,
     ClearAttachments,
     ApplyContextPack,
+    SaveContextPack,
+    ImportContextPacks,
     DeleteContextPack,
     SaveMessageContextPack,
     SpeakMessage,
     StopSpeaking,
-    SchedulerTrigger,
-    SchedulerPause,
-    SchedulerResume,
-    SchedulerDelete,
-    SchedulerRetryRun,
-    SchedulerCancelRun,
+    SetAutoSpeak,
+    SetSpeechInputRecording,
     RalphRun,
     RalphResumeRun,
     GenerateMedia,
@@ -939,6 +1028,8 @@ pub enum ProductCommandKind {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RawProductCommand {
+    #[serde(default)]
+    history: Option<ComposerHistorySelection>,
     #[serde(default)]
     special_kind: Option<String>,
     #[serde(default)]
@@ -966,6 +1057,22 @@ struct RawProductCommand {
     prompt: Option<String>,
     #[serde(default)]
     goal_objective: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_integer")]
+    iteration_count: Option<u32>,
+    #[serde(default)]
+    iteration_mode: Option<String>,
+    #[serde(default)]
+    running_action: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_integer")]
+    direction: Option<i8>,
+    #[serde(default, deserialize_with = "deserialize_optional_integer")]
+    target_index: Option<u32>,
+    #[serde(default)]
+    variable_values: Option<BTreeMap<String, String>>,
+    #[serde(default)]
+    paths: Option<Vec<String>>,
+    #[serde(default)]
+    context_pack: Option<Value>,
     #[serde(default)]
     title: Option<String>,
     #[serde(default)]
@@ -987,6 +1094,8 @@ struct RawProductCommand {
     #[serde(default)]
     workspace: Option<String>,
     #[serde(default)]
+    destination_workspace: Option<String>,
+    #[serde(default)]
     enabled: Option<bool>,
     #[serde(default)]
     memory_id: Option<String>,
@@ -996,8 +1105,6 @@ struct RawProductCommand {
     context_pack_id: Option<String>,
     #[serde(default)]
     message_id: Option<String>,
-    #[serde(default)]
-    job_id: Option<String>,
     #[serde(default)]
     run_id: Option<String>,
     #[serde(default)]
@@ -1022,6 +1129,20 @@ struct RawProductCommand {
     transparent_background: Option<bool>,
 }
 
+fn deserialize_optional_integer<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: serde::de::DeserializeOwned,
+{
+    let number = f64::deserialize(deserializer)?;
+    if number.fract() != 0.0 || number.abs() > 9_007_199_254_740_991.0 {
+        return Err(D::Error::custom("Expected a safe integer."));
+    }
+    serde_json::from_value(Value::from(number as i64))
+        .map(Some)
+        .map_err(D::Error::custom)
+}
+
 impl<'de> Deserialize<'de> for ProductCommand {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1034,15 +1155,16 @@ impl<'de> Deserialize<'de> for ProductCommand {
             .keys()
             .cloned()
             .collect::<Vec<_>>();
-        if payload.get("poseScene").is_some_and(Value::is_null) {
-            return Err(D::Error::custom("poseScene must be an object."));
-        }
-        if payload.get("goalObjective").is_some_and(Value::is_null) {
-            return Err(D::Error::custom("goalObjective must be a string."));
+        if let Some(field) = field_names
+            .iter()
+            .find(|field| payload.get(field.as_str()).is_some_and(Value::is_null))
+        {
+            return Err(D::Error::custom(format!("{field} must not be null.")));
         }
         let raw = RawProductCommand::deserialize(payload).map_err(D::Error::custom)?;
         let mut command = Self {
             kind: raw.kind,
+            history: raw.history,
             special_kind: raw.special_kind,
             pose_scene: raw.pose_scene,
             name: raw.name,
@@ -1056,6 +1178,14 @@ impl<'de> Deserialize<'de> for ProductCommand {
             session_id: raw.session_id,
             prompt: raw.prompt,
             goal_objective: raw.goal_objective,
+            iteration_count: raw.iteration_count,
+            iteration_mode: raw.iteration_mode,
+            running_action: raw.running_action,
+            direction: raw.direction,
+            target_index: raw.target_index,
+            variable_values: raw.variable_values,
+            paths: raw.paths,
+            context_pack: raw.context_pack,
             title: raw.title,
             tags: raw.tags,
             provider: raw.provider,
@@ -1066,12 +1196,12 @@ impl<'de> Deserialize<'de> for ProductCommand {
             prompt_enhancement_mode: raw.prompt_enhancement_mode,
             interview_enabled: raw.interview_enabled,
             workspace: raw.workspace,
+            destination_workspace: raw.destination_workspace,
             enabled: raw.enabled,
             memory_id: raw.memory_id,
             attachment_id: raw.attachment_id,
             context_pack_id: raw.context_pack_id,
             message_id: raw.message_id,
-            job_id: raw.job_id,
             run_id: raw.run_id,
             flow_id: raw.flow_id,
             scope: raw.scope,
@@ -1127,11 +1257,11 @@ impl ProductCommand {
             &mut self.model,
             &mut self.model_id,
             &mut self.workspace,
+            &mut self.destination_workspace,
             &mut self.memory_id,
             &mut self.attachment_id,
             &mut self.context_pack_id,
             &mut self.message_id,
-            &mut self.job_id,
             &mut self.run_id,
             &mut self.flow_id,
         ] {
@@ -1148,6 +1278,16 @@ impl ProductCommand {
         if let Some(tags) = &mut self.tags {
             for tag in tags {
                 *tag = ecmascript_trim(tag).to_string();
+            }
+        }
+
+        if let Some(history) = &mut self.history {
+            for id in history
+                .attachment_ids
+                .iter_mut()
+                .chain(history.previous_attachment_ids.iter_mut())
+            {
+                *id = ecmascript_trim(id).to_owned();
             }
         }
 
@@ -1195,7 +1335,10 @@ impl ProductCommand {
                 ),
                 ("interviewEnabled", self.interview_enabled.is_some()),
             ]),
-            ProductCommandKind::CreateSession | ProductCommandKind::StopSpeaking => {}
+            ProductCommandKind::CreateSession
+            | ProductCommandKind::OpenQuickChat
+            | ProductCommandKind::StopSpeaking => {}
+            ProductCommandKind::SetAutoSpeak => required.push(("enabled", self.enabled.is_some())),
             ProductCommandKind::ActivateSession
             | ProductCommandKind::ArchiveSession
             | ProductCommandKind::PinSession
@@ -1203,6 +1346,8 @@ impl ProductCommand {
             | ProductCommandKind::BranchSession
             | ProductCommandKind::DeleteSession
             | ProductCommandKind::ClearSessionHistory
+            | ProductCommandKind::ResetSessionTime
+            | ProductCommandKind::MoveSessionToTop
             | ProductCommandKind::ClearSessionMode
             | ProductCommandKind::ClearSessionReasoning
             | ProductCommandKind::ClearAttachments
@@ -1217,9 +1362,58 @@ impl ProductCommand {
                 ("sessionId", self.session_id.is_some()),
                 ("tags", self.tags.is_some()),
             ]),
+            ProductCommandKind::EditMessage => required.extend([
+                ("sessionId", self.session_id.is_some()),
+                ("messageId", self.message_id.is_some()),
+                ("prompt", self.prompt.is_some()),
+            ]),
+            ProductCommandKind::ReplayMessage => required.extend([
+                ("sessionId", self.session_id.is_some()),
+                ("messageId", self.message_id.is_some()),
+            ]),
             ProductCommandKind::UpdateDraft => required.extend([
                 ("sessionId", self.session_id.is_some()),
                 ("prompt", self.prompt.is_some()),
+            ]),
+            ProductCommandKind::RestorePromptHistory => required.extend([
+                ("sessionId", self.session_id.is_some()),
+                ("prompt", self.prompt.is_some()),
+                ("history", self.history.is_some()),
+            ]),
+            ProductCommandKind::UpdateQueuedMessage
+            | ProductCommandKind::MoveQueuedMessage
+            | ProductCommandKind::ReorderQueuedMessage
+            | ProductCommandKind::RemoveQueuedMessage
+            | ProductCommandKind::RetryQueuedMessage
+            | ProductCommandKind::RemoveQueuedAttachment
+            | ProductCommandKind::ClearQueuedAttachments => {
+                required.extend([
+                    ("sessionId", self.session_id.is_some()),
+                    ("messageId", self.message_id.is_some()),
+                ]);
+                match self.kind {
+                    ProductCommandKind::UpdateQueuedMessage => {
+                        required.push(("prompt", self.prompt.is_some()));
+                    }
+                    ProductCommandKind::MoveQueuedMessage => {
+                        required.push(("direction", self.direction.is_some()));
+                    }
+                    ProductCommandKind::ReorderQueuedMessage => {
+                        required.push(("targetIndex", self.target_index.is_some()));
+                    }
+                    ProductCommandKind::RemoveQueuedAttachment => {
+                        required.push(("attachmentId", self.attachment_id.is_some()));
+                    }
+                    _ => {}
+                }
+            }
+            ProductCommandKind::AddContextAttachments => required.extend([
+                ("sessionId", self.session_id.is_some()),
+                ("paths", self.paths.is_some()),
+            ]),
+            ProductCommandKind::SetRunningMessageAction => required.extend([
+                ("sessionId", self.session_id.is_some()),
+                ("runningAction", self.running_action.is_some()),
             ]),
             ProductCommandKind::SetSessionModel => required.extend([
                 ("sessionId", self.session_id.is_some()),
@@ -1227,6 +1421,7 @@ impl ProductCommand {
                 ("model", self.model.is_some()),
             ]),
             ProductCommandKind::SetSessionMode
+            | ProductCommandKind::SetAdaptiveController
             | ProductCommandKind::SetParallelAgentMode
             | ProductCommandKind::SetGoalMode => required.extend([
                 ("sessionId", self.session_id.is_some()),
@@ -1240,6 +1435,13 @@ impl ProductCommand {
                 ("sessionId", self.session_id.is_some()),
                 ("workspace", self.workspace.is_some()),
             ]),
+            ProductCommandKind::AddWorkspace | ProductCommandKind::RemoveWorkspace => {
+                required.push(("workspace", self.workspace.is_some()))
+            }
+            ProductCommandKind::RelinkWorkspace => required.extend([
+                ("workspace", self.workspace.is_some()),
+                ("destinationWorkspace", self.destination_workspace.is_some()),
+            ]),
             ProductCommandKind::SetPromptEnhancementMode => required.extend([
                 ("sessionId", self.session_id.is_some()),
                 (
@@ -1247,7 +1449,8 @@ impl ProductCommand {
                     self.prompt_enhancement_mode.is_some(),
                 ),
             ]),
-            ProductCommandKind::SetInterview
+            ProductCommandKind::SetSpeechInputRecording
+            | ProductCommandKind::SetInterview
             | ProductCommandKind::SetSessionMemory
             | ProductCommandKind::SetWorkspaceMemory
             | ProductCommandKind::SetGlobalMemory
@@ -1263,6 +1466,15 @@ impl ProductCommand {
                 ("sessionId", self.session_id.is_some()),
                 ("attachmentId", self.attachment_id.is_some()),
             ]),
+            ProductCommandKind::SaveContextPack => required.extend([
+                ("sessionId", self.session_id.is_some()),
+                ("contextPack", self.context_pack.is_some()),
+            ]),
+            ProductCommandKind::ImportContextPacks => required.extend([
+                ("sessionId", self.session_id.is_some()),
+                ("paths", self.paths.is_some()),
+                ("scope", self.scope.is_some()),
+            ]),
             ProductCommandKind::ApplyContextPack => required.extend([
                 ("sessionId", self.session_id.is_some()),
                 ("contextPackId", self.context_pack_id.is_some()),
@@ -1274,19 +1486,6 @@ impl ProductCommand {
                 required.extend([
                     ("sessionId", self.session_id.is_some()),
                     ("messageId", self.message_id.is_some()),
-                ])
-            }
-            ProductCommandKind::SchedulerTrigger
-            | ProductCommandKind::SchedulerPause
-            | ProductCommandKind::SchedulerResume
-            | ProductCommandKind::SchedulerDelete => required.extend([
-                ("workspace", self.workspace.is_some()),
-                ("jobId", self.job_id.is_some()),
-            ]),
-            ProductCommandKind::SchedulerRetryRun | ProductCommandKind::SchedulerCancelRun => {
-                required.extend([
-                    ("workspace", self.workspace.is_some()),
-                    ("runId", self.run_id.is_some()),
                 ])
             }
             ProductCommandKind::RalphRun => required.extend([
@@ -1338,6 +1537,13 @@ impl ProductCommand {
 
     fn validate_values(&self) -> Result<(), String> {
         let valid = match self.kind {
+            ProductCommandKind::AddWorkspace | ProductCommandKind::RemoveWorkspace => {
+                valid_workspace(self.workspace.as_deref().unwrap())
+            }
+            ProductCommandKind::RelinkWorkspace => {
+                valid_workspace(self.workspace.as_deref().unwrap())
+                    && valid_workspace(self.destination_workspace.as_deref().unwrap())
+            }
             ProductCommandKind::CreateProject | ProductCommandKind::ImportProject => {
                 valid_project_name(self.name.as_deref())
             }
@@ -1360,12 +1566,23 @@ impl ProductCommand {
             }
             ProductCommandKind::SubmitMessage => {
                 valid_identifier(self.session_id.as_deref())
-                    && valid_command_text(self.prompt.as_deref())
+                    && valid_trimmed_text(self.prompt.as_deref(), MAX_COMPOSER_TEXT_CHARACTERS)
                     && self
                         .goal_objective
                         .as_deref()
                         .is_none_or(|objective| valid_trimmed_text(Some(objective), 4_000))
                     && valid_prompt_enhancement_mode(self.prompt_enhancement_mode.as_deref())
+                    && self
+                        .iteration_count
+                        .is_none_or(|count| (1..=20).contains(&count))
+                    && self
+                        .iteration_mode
+                        .as_deref()
+                        .is_none_or(valid_iteration_mode)
+                    && self
+                        .running_action
+                        .as_deref()
+                        .is_none_or(valid_running_action)
             }
             ProductCommandKind::CreateSession => {
                 self.workspace.as_deref().is_none_or(valid_workspace)
@@ -1382,6 +1599,8 @@ impl ProductCommand {
             | ProductCommandKind::BranchSession
             | ProductCommandKind::DeleteSession
             | ProductCommandKind::ClearSessionHistory
+            | ProductCommandKind::ResetSessionTime
+            | ProductCommandKind::MoveSessionToTop
             | ProductCommandKind::ClearSessionMode
             | ProductCommandKind::ClearSessionReasoning
             | ProductCommandKind::ClearAttachments
@@ -1395,9 +1614,82 @@ impl ProductCommand {
             ProductCommandKind::TagSession => {
                 valid_identifier(self.session_id.as_deref()) && valid_tags(self.tags.as_deref())
             }
+            ProductCommandKind::EditMessage => {
+                valid_identifier(self.session_id.as_deref())
+                    && valid_identifier(self.message_id.as_deref())
+                    && valid_trimmed_text(self.prompt.as_deref(), MAX_COMPOSER_TEXT_CHARACTERS)
+            }
+            ProductCommandKind::ReplayMessage => {
+                valid_identifier(self.session_id.as_deref())
+                    && valid_identifier(self.message_id.as_deref())
+            }
             ProductCommandKind::UpdateDraft => {
                 valid_identifier(self.session_id.as_deref())
-                    && valid_text(self.prompt.as_deref(), 8_000)
+                    && valid_text(self.prompt.as_deref(), MAX_COMPOSER_TEXT_CHARACTERS)
+            }
+            ProductCommandKind::RestorePromptHistory => {
+                valid_identifier(self.session_id.as_deref())
+                    && valid_text(self.prompt.as_deref(), MAX_COMPOSER_TEXT_CHARACTERS)
+                    && self.history.as_ref().is_some_and(|history| {
+                        history.index <= 10_000
+                            && valid_text(Some(&history.prompt), MAX_COMPOSER_TEXT_CHARACTERS)
+                            && valid_text(Some(&history.previous_draft), MAX_COMPOSER_TEXT_CHARACTERS)
+                            && history.attachment_ids.len() <= 64
+                            && history.previous_attachment_ids.len() <= 64
+                            && history
+                                .attachment_ids
+                                .iter()
+                                .chain(history.previous_attachment_ids.iter())
+                                .all(|id| valid_identifier(Some(id)))
+                    })
+            }
+            ProductCommandKind::UpdateQueuedMessage
+            | ProductCommandKind::MoveQueuedMessage
+            | ProductCommandKind::ReorderQueuedMessage
+            | ProductCommandKind::RemoveQueuedMessage
+            | ProductCommandKind::RetryQueuedMessage
+            | ProductCommandKind::RemoveQueuedAttachment
+            | ProductCommandKind::ClearQueuedAttachments => {
+                valid_identifier(self.session_id.as_deref())
+                    && valid_identifier(self.message_id.as_deref())
+                    && match self.kind {
+                        ProductCommandKind::UpdateQueuedMessage => {
+                            valid_text(self.prompt.as_deref(), MAX_COMPOSER_TEXT_CHARACTERS)
+                        }
+                        ProductCommandKind::MoveQueuedMessage => {
+                            matches!(self.direction, Some(-1 | 1))
+                        }
+                        ProductCommandKind::ReorderQueuedMessage => {
+                            self.target_index.is_some_and(|index| index <= 511)
+                        }
+                        ProductCommandKind::RemoveQueuedAttachment => {
+                            valid_identifier(self.attachment_id.as_deref())
+                        }
+                        _ => true,
+                    }
+            }
+            ProductCommandKind::AddContextAttachments => {
+                valid_identifier(self.session_id.as_deref())
+                    && self
+                        .message_id
+                        .as_deref()
+                        .is_none_or(|value| valid_identifier(Some(value)))
+                    && self.paths.as_ref().is_some_and(|paths| {
+                        !paths.is_empty()
+                            && paths.len() <= 64
+                            && paths.iter().all(|path| {
+                                !path.is_empty()
+                                    && path.encode_utf16().count() <= 2048
+                                    && !path.contains('\0')
+                            })
+                    })
+            }
+            ProductCommandKind::SetRunningMessageAction => {
+                valid_identifier(self.session_id.as_deref())
+                    && self
+                        .running_action
+                        .as_deref()
+                        .is_some_and(valid_running_action)
             }
             ProductCommandKind::SetSessionModel => {
                 valid_identifier(self.session_id.as_deref())
@@ -1406,6 +1698,13 @@ impl ProductCommand {
             }
             ProductCommandKind::SetSessionMode => {
                 valid_identifier(self.session_id.as_deref()) && valid_mode(self.mode.as_deref())
+            }
+            ProductCommandKind::SetAdaptiveController => {
+                valid_identifier(self.session_id.as_deref())
+                    && matches!(
+                        self.mode.as_deref(),
+                        Some("default" | "enabled" | "disabled")
+                    )
             }
             ProductCommandKind::SetParallelAgentMode => {
                 valid_identifier(self.session_id.as_deref())
@@ -1427,7 +1726,8 @@ impl ProductCommand {
                 valid_identifier(self.session_id.as_deref())
                     && valid_prompt_enhancement_mode(self.prompt_enhancement_mode.as_deref())
             }
-            ProductCommandKind::SetInterview
+            ProductCommandKind::SetSpeechInputRecording
+            | ProductCommandKind::SetInterview
             | ProductCommandKind::SetSessionMemory
             | ProductCommandKind::SetWorkspaceMemory
             | ProductCommandKind::SetGlobalMemory
@@ -1440,9 +1740,34 @@ impl ProductCommand {
                 valid_identifier(self.session_id.as_deref())
                     && valid_identifier(self.attachment_id.as_deref())
             }
+            ProductCommandKind::SaveContextPack => {
+                valid_identifier(self.session_id.as_deref())
+                    && self
+                        .context_pack
+                        .as_ref()
+                        .is_some_and(context_packs::valid_definition)
+            }
+            ProductCommandKind::ImportContextPacks => {
+                valid_identifier(self.session_id.as_deref())
+                    && matches!(self.scope.as_deref(), Some("workspace" | "global"))
+                    && self.paths.as_ref().is_some_and(|paths| {
+                        paths.len() == 1
+                            && paths.iter().all(|path| {
+                                !path.is_empty()
+                                    && path.encode_utf16().count() <= 2048
+                                    && !path.contains('\0')
+                            })
+                    })
+            }
             ProductCommandKind::ApplyContextPack => {
                 valid_identifier(self.session_id.as_deref())
                     && valid_identifier(self.context_pack_id.as_deref())
+                    && self.variable_values.as_ref().is_none_or(|values| {
+                        values.len() <= 64
+                            && values.iter().all(|(key, value)| {
+                                valid_text(Some(key), 240) && valid_text(Some(value), 12_000)
+                            })
+                    })
             }
             ProductCommandKind::DeleteContextPack => {
                 valid_identifier(self.context_pack_id.as_deref())
@@ -1451,18 +1776,9 @@ impl ProductCommand {
                 valid_identifier(self.session_id.as_deref())
                     && valid_identifier(self.message_id.as_deref())
             }
-            ProductCommandKind::StopSpeaking => true,
-            ProductCommandKind::SchedulerTrigger
-            | ProductCommandKind::SchedulerPause
-            | ProductCommandKind::SchedulerResume
-            | ProductCommandKind::SchedulerDelete => {
-                valid_workspace(self.workspace.as_deref().unwrap())
-                    && valid_identifier(self.job_id.as_deref())
-            }
-            ProductCommandKind::SchedulerRetryRun | ProductCommandKind::SchedulerCancelRun => {
-                valid_workspace(self.workspace.as_deref().unwrap())
-                    && valid_identifier(self.run_id.as_deref())
-            }
+            ProductCommandKind::OpenQuickChat
+            | ProductCommandKind::StopSpeaking
+            | ProductCommandKind::SetAutoSpeak => true,
             ProductCommandKind::RalphRun => {
                 self.valid_ralph_runtime()
                     && valid_identifier(self.flow_id.as_deref())
@@ -1692,6 +2008,17 @@ fn valid_reasoning(value: Option<&str>) -> bool {
     )
 }
 
+fn valid_iteration_mode(value: &str) -> bool {
+    matches!(
+        value,
+        "repeat-prompt" | "continue" | "repeat-prompt-and-continue"
+    )
+}
+
+fn valid_running_action(value: &str) -> bool {
+    matches!(value, "queue" | "steer" | "stop-and-send")
+}
+
 fn valid_prompt_enhancement_mode(value: Option<&str>) -> bool {
     matches!(value, Some("off" | "simple" | "web-search"))
 }
@@ -1746,10 +2073,14 @@ impl ProductCommandKind {
                 "sessionId",
                 "prompt",
                 "goalObjective",
+                "iterationCount",
+                "iterationMode",
+                "runningAction",
                 "promptEnhancementMode",
                 "interviewEnabled",
             ],
             Self::CreateSession => &["kind", "commandId", "workspace", "specialKind", "poseScene"],
+            Self::OpenQuickChat => &["kind", "commandId"],
             Self::ActivateSession
             | Self::ArchiveSession
             | Self::PinSession
@@ -1757,6 +2088,8 @@ impl ProductCommandKind {
             | Self::BranchSession
             | Self::DeleteSession
             | Self::ClearSessionHistory
+            | Self::ResetSessionTime
+            | Self::MoveSessionToTop
             | Self::ClearSessionMode
             | Self::ClearSessionReasoning
             | Self::ClearAttachments
@@ -1764,35 +2097,65 @@ impl ProductCommandKind {
             Self::RenameSession => &["kind", "commandId", "sessionId", "title"],
             Self::TagSession => &["kind", "commandId", "sessionId", "tags"],
             Self::UpdateDraft => &["kind", "commandId", "sessionId", "prompt"],
+            Self::RestorePromptHistory => &["kind", "commandId", "sessionId", "prompt", "history"],
+            Self::EditMessage => &["kind", "commandId", "sessionId", "messageId", "prompt"],
+            Self::ReplayMessage => &["kind", "commandId", "sessionId", "messageId"],
+            Self::UpdateQueuedMessage => &["kind", "commandId", "sessionId", "messageId", "prompt"],
+            Self::MoveQueuedMessage => {
+                &["kind", "commandId", "sessionId", "messageId", "direction"]
+            }
+            Self::ReorderQueuedMessage => {
+                &["kind", "commandId", "sessionId", "messageId", "targetIndex"]
+            }
+            Self::RemoveQueuedMessage | Self::RetryQueuedMessage | Self::ClearQueuedAttachments => {
+                &["kind", "commandId", "sessionId", "messageId"]
+            }
+            Self::RemoveQueuedAttachment => &[
+                "kind",
+                "commandId",
+                "sessionId",
+                "messageId",
+                "attachmentId",
+            ],
+            Self::AddContextAttachments => {
+                &["kind", "commandId", "sessionId", "messageId", "paths"]
+            }
+            Self::SetRunningMessageAction => &["kind", "commandId", "sessionId", "runningAction"],
             Self::SetSessionModel => &["kind", "commandId", "sessionId", "provider", "model"],
             Self::SetSessionMode => &["kind", "commandId", "sessionId", "mode"],
+            Self::SetAdaptiveController => &["kind", "commandId", "sessionId", "mode"],
             Self::SetParallelAgentMode => &["kind", "commandId", "sessionId", "mode"],
             Self::SetGoalMode => &["kind", "commandId", "sessionId", "mode"],
             Self::SetSessionReasoning => &["kind", "commandId", "sessionId", "reasoning"],
             Self::SetSessionWorkspace => &["kind", "commandId", "sessionId", "workspace"],
+            Self::AddWorkspace | Self::RemoveWorkspace => &["kind", "commandId", "workspace"],
+            Self::RelinkWorkspace => &["kind", "commandId", "workspace", "destinationWorkspace"],
             Self::SetPromptEnhancementMode => {
                 &["kind", "commandId", "sessionId", "promptEnhancementMode"]
             }
-            Self::SetInterview
+            Self::SetSpeechInputRecording
+            | Self::SetInterview
             | Self::SetSessionMemory
             | Self::SetWorkspaceMemory
             | Self::SetGlobalMemory
             | Self::SetUiControl => &["kind", "commandId", "sessionId", "enabled"],
             Self::ForgetSessionMemory => &["kind", "commandId", "sessionId", "memoryId"],
             Self::RemoveAttachment => &["kind", "commandId", "sessionId", "attachmentId"],
-            Self::ApplyContextPack => &["kind", "commandId", "sessionId", "contextPackId"],
+            Self::SaveContextPack => &["kind", "commandId", "sessionId", "contextPack"],
+            Self::ImportContextPacks => &["kind", "commandId", "sessionId", "paths", "scope"],
+            Self::ApplyContextPack => &[
+                "kind",
+                "commandId",
+                "sessionId",
+                "contextPackId",
+                "variableValues",
+            ],
             Self::DeleteContextPack => &["kind", "commandId", "contextPackId"],
             Self::SaveMessageContextPack | Self::SpeakMessage => {
                 &["kind", "commandId", "sessionId", "messageId"]
             }
             Self::StopSpeaking => &["kind", "commandId"],
-            Self::SchedulerTrigger
-            | Self::SchedulerPause
-            | Self::SchedulerResume
-            | Self::SchedulerDelete => &["kind", "commandId", "workspace", "jobId"],
-            Self::SchedulerRetryRun | Self::SchedulerCancelRun => {
-                &["kind", "commandId", "workspace", "runId"]
-            }
+            Self::SetAutoSpeak => &["kind", "commandId", "enabled"],
             Self::RalphRun => &[
                 "kind",
                 "commandId",
@@ -1844,7 +2207,10 @@ impl ProductCommandKind {
             Self::Retry => "retry",
             Self::Continue => "continue",
             Self::SubmitMessage => "submit-message",
+            Self::EditMessage => "edit-message",
+            Self::ReplayMessage => "replay-message",
             Self::CreateSession => "create-session",
+            Self::OpenQuickChat => "open-quick-chat",
             Self::ActivateSession => "activate-session",
             Self::ArchiveSession => "archive-session",
             Self::PinSession => "pin-session",
@@ -1854,15 +2220,31 @@ impl ProductCommandKind {
             Self::RenameSession => "rename-session",
             Self::TagSession => "tag-session",
             Self::ClearSessionHistory => "clear-session-history",
+            Self::ResetSessionTime => "reset-session-time",
+            Self::MoveSessionToTop => "move-session-to-top",
             Self::ClearSessionMode => "clear-session-mode",
             Self::ClearSessionReasoning => "clear-session-reasoning",
             Self::UpdateDraft => "update-draft",
+            Self::RestorePromptHistory => "restore-prompt-history",
+            Self::UpdateQueuedMessage => "update-queued-message",
+            Self::MoveQueuedMessage => "move-queued-message",
+            Self::ReorderQueuedMessage => "reorder-queued-message",
+            Self::RemoveQueuedMessage => "remove-queued-message",
+            Self::RetryQueuedMessage => "retry-queued-message",
+            Self::RemoveQueuedAttachment => "remove-queued-attachment",
+            Self::ClearQueuedAttachments => "clear-queued-attachments",
+            Self::SetRunningMessageAction => "set-running-message-action",
+            Self::AddContextAttachments => "add-context-attachments",
             Self::SetSessionModel => "set-session-model",
             Self::SetSessionMode => "set-session-mode",
+            Self::SetAdaptiveController => "set-adaptive-controller",
             Self::SetParallelAgentMode => "set-parallel-agent-mode",
             Self::SetGoalMode => "set-goal-mode",
             Self::SetSessionReasoning => "set-session-reasoning",
             Self::SetSessionWorkspace => "set-session-workspace",
+            Self::AddWorkspace => "add-workspace",
+            Self::RemoveWorkspace => "remove-workspace",
+            Self::RelinkWorkspace => "relink-workspace",
             Self::ClearSessionWorkspace => "clear-session-workspace",
             Self::SetPromptEnhancementMode => "set-prompt-enhancement-mode",
             Self::SetInterview => "set-interview",
@@ -1875,16 +2257,14 @@ impl ProductCommandKind {
             Self::RemoveAttachment => "remove-attachment",
             Self::ClearAttachments => "clear-attachments",
             Self::ApplyContextPack => "apply-context-pack",
+            Self::SaveContextPack => "save-context-pack",
+            Self::ImportContextPacks => "import-context-packs",
             Self::DeleteContextPack => "delete-context-pack",
             Self::SaveMessageContextPack => "save-message-context-pack",
             Self::SpeakMessage => "speak-message",
             Self::StopSpeaking => "stop-speaking",
-            Self::SchedulerTrigger => "scheduler-trigger",
-            Self::SchedulerPause => "scheduler-pause",
-            Self::SchedulerResume => "scheduler-resume",
-            Self::SchedulerDelete => "scheduler-delete",
-            Self::SchedulerRetryRun => "scheduler-retry-run",
-            Self::SchedulerCancelRun => "scheduler-cancel-run",
+            Self::SetAutoSpeak => "set-auto-speak",
+            Self::SetSpeechInputRecording => "set-speech-input-recording",
             Self::RalphRun => "ralph-run",
             Self::RalphResumeRun => "ralph-resume-run",
             Self::GenerateMedia => "generate-media",
@@ -2017,6 +2397,7 @@ mod tests {
 
     fn cancel_command() -> ProductCommand {
         ProductCommand {
+            history: None,
             special_kind: None,
             pose_scene: None,
             name: None,
@@ -2031,6 +2412,14 @@ mod tests {
             session_id: None,
             prompt: None,
             goal_objective: None,
+            iteration_count: None,
+            iteration_mode: None,
+            running_action: None,
+            direction: None,
+            target_index: None,
+            variable_values: None,
+            paths: None,
+            context_pack: None,
             title: None,
             tags: None,
             provider: None,
@@ -2041,12 +2430,12 @@ mod tests {
             prompt_enhancement_mode: None,
             interview_enabled: None,
             workspace: None,
+            destination_workspace: None,
             enabled: None,
             memory_id: None,
             attachment_id: None,
             context_pack_id: None,
             message_id: None,
-            job_id: None,
             run_id: None,
             flow_id: None,
             scope: None,
@@ -2099,7 +2488,6 @@ mod tests {
             "attachmentId": "attachment-1",
             "contextPackId": "pack-1",
             "messageId": "message-1",
-            "jobId": "job-1",
             "runId": "run-1",
             "flowId": "flow-1",
             "scope": "workspace",
@@ -2292,16 +2680,6 @@ mod tests {
             Some(vec!["priority".to_string(), "release".to_string()])
         );
 
-        let scheduler_run = serde_json::from_value::<ProductCommand>(serde_json::json!({
-            "kind": "scheduler-retry-run",
-            "workspace": " C:\\workspace ",
-            "runId": " run-1 "
-        }))
-        .expect("padded scheduler command should decode");
-
-        assert_eq!(scheduler_run.workspace.as_deref(), Some("C:\\workspace"));
-        assert_eq!(scheduler_run.run_id.as_deref(), Some("run-1"));
-
         let media_run = serde_json::from_value::<ProductCommand>(serde_json::json!({
             "kind": "generate-media",
             "prompt": " Create a geometric owl ",
@@ -2406,17 +2784,13 @@ mod tests {
             ("set-workspace-memory", &["sessionId", "enabled"][..]),
             ("set-global-memory", &["sessionId", "enabled"][..]),
             ("set-ui-control", &["sessionId", "enabled"][..]),
+            ("set-auto-speak", &["enabled"][..]),
+            ("set-speech-input-recording", &["sessionId", "enabled"][..]),
             ("remove-attachment", &["sessionId", "attachmentId"][..]),
             ("apply-context-pack", &["sessionId", "contextPackId"][..]),
             ("delete-context-pack", &["contextPackId"][..]),
             ("save-message-context-pack", &["sessionId", "messageId"][..]),
             ("speak-message", &["sessionId", "messageId"][..]),
-            ("scheduler-trigger", &["workspace", "jobId"][..]),
-            ("scheduler-pause", &["workspace", "jobId"][..]),
-            ("scheduler-resume", &["workspace", "jobId"][..]),
-            ("scheduler-delete", &["workspace", "jobId"][..]),
-            ("scheduler-retry-run", &["workspace", "runId"][..]),
-            ("scheduler-cancel-run", &["workspace", "runId"][..]),
             (
                 "ralph-run",
                 &[
@@ -2500,12 +2874,6 @@ mod tests {
             "save-message-context-pack",
             "speak-message",
             "stop-speaking",
-            "scheduler-trigger",
-            "scheduler-pause",
-            "scheduler-resume",
-            "scheduler-delete",
-            "scheduler-retry-run",
-            "scheduler-cancel-run",
             "ralph-run",
             "ralph-resume-run",
             "generate-media",
@@ -2572,8 +2940,6 @@ mod tests {
                 "workspace",
                 serde_json::json!("\t"),
             ),
-            ("scheduler-trigger", "workspace", serde_json::json!("  ")),
-            ("scheduler-trigger", "jobId", serde_json::json!("")),
         ] {
             let mut command = command_payload(kind);
             command[field] = value;

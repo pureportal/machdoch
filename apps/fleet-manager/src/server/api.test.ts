@@ -28,6 +28,85 @@ afterEach(() => {
 });
 
 describe("Fleet Manager API", () => {
+  it.each([
+    {
+      domain: "deviceSettings",
+      command: "get_user_provider_api_keys",
+      arguments: [],
+    },
+    {
+      domain: "workspace",
+      command: "read_workspace_file",
+      arguments: [],
+    },
+    {
+      domain: "scheduler",
+      command: "run_scheduler_command",
+      arguments: ["create", "--prompt", "Check files", "--delay-ms", "60000"],
+    },
+    {
+      domain: "instructions",
+      command: "run_instruction_command",
+      arguments: ["profiles", "list", "--include-content"],
+    },
+  ] as const)(
+    "relays $domain operations after authentication, CSRF and host capability checks",
+    async ({ domain, command, arguments: argumentsList }) => {
+      runtime = testRuntime();
+      setRuntimeForTests(runtime);
+      const { cookie, csrf } = await authenticateTestOwner();
+      const instance = enrollTestInstance(runtime);
+      const path = `/api/instances/${instance.instanceId}/product/${domain}`;
+      const request = {
+        kind: "invoke",
+        id: crypto.randomUUID(),
+        command,
+        args:
+          domain === "deviceSettings"
+            ? {}
+            : domain === "workspace"
+              ? { workspaceRoot: "/projects/demo", relativePath: "README.md" }
+              : {
+                  request: {
+                    workspaceRoot: "/projects/demo",
+                    arguments: [...argumentsList],
+                  },
+                },
+      };
+      const relay = vi
+        .spyOn(runtime.gateways, "relay")
+        .mockResolvedValue({ type: domain, response: { state: "pending" } });
+      expect((await apiRequest(path, "POST", request)).status).toBe(401);
+      expect((await apiRequest(path, "POST", request, cookie)).status).toBe(
+        403,
+      );
+      expect(
+        (
+          await apiRequest(
+            path,
+            "POST",
+            { ...request, command: "execute_shell" },
+            cookie,
+            csrf,
+          )
+        ).status,
+      ).toBe(400);
+      expect(
+        (await apiRequest(path, "POST", request, cookie, csrf)).status,
+      ).toBe(409);
+      expect(relay).not.toHaveBeenCalled();
+      vi.spyOn(runtime.gateways, "supportsCapability").mockReturnValue(true);
+      expect(
+        (await apiRequest(path, "POST", request, cookie, csrf)).status,
+      ).toBe(200);
+      expect(relay).toHaveBeenCalledWith(
+        instance.instanceId,
+        { type: domain, request },
+        expect.any(AbortSignal),
+      );
+    },
+  );
+
   it("protects RALPH editing with authentication, CSRF, capability checks, and closed arguments", async () => {
     runtime = testRuntime();
     setRuntimeForTests(runtime);
@@ -73,9 +152,18 @@ describe("Fleet Manager API", () => {
     );
   });
 
-  it.each(["owner", "device"])(
-    "withholds RALPH results after %s revocation during dispatch",
-    async (revocation) => {
+  it.each([
+    ["ralph", "owner"],
+    ["ralph", "device"],
+    ["scheduler", "owner"],
+    ["scheduler", "device"],
+    ["instructions", "owner"],
+    ["instructions", "device"],
+    ["deviceSettings", "owner"],
+    ["deviceSettings", "device"],
+  ] as const)(
+    "withholds %s results after %s revocation during dispatch",
+    async (domain, revocation) => {
       runtime = testRuntime();
       setRuntimeForTests(runtime);
       const { cookie, csrf } = await authenticateTestOwner();
@@ -91,12 +179,12 @@ describe("Fleet Manager API", () => {
         else
           runtime!.fleetStore.revokeInstance(instance.instanceId, nowSeconds());
         return {
-          type: "ralph",
+          type: domain,
           response: { state: "failed", error: "private-result" },
         };
       });
       const response = await apiRequest(
-        `/api/instances/${instance.instanceId}/product/ralph`,
+        `/api/instances/${instance.instanceId}/product/${domain}`,
         "POST",
         { kind: "read", id: crypto.randomUUID(), offset: 0 },
         cookie,

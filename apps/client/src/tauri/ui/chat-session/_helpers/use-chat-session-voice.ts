@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { getProviderLabel } from "../../model-catalog";
+import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import {
   synthesizeUserVoiceAudio,
   type UserVoiceAiProvider,

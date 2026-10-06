@@ -4,10 +4,8 @@ import {
   resolveInternalTaskModelSelection,
   type InternalTaskModelSelection,
 } from "../../../internal-task-model";
-import {
-  getModelLabelForProvider,
-  getProviderLabel,
-} from "../../../model-catalog";
+import { getModelLabelForProvider } from "../../../model-catalog";
+import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import {
   getReasoningModesForProvider,
   normalizeReasoningModeForProvider,

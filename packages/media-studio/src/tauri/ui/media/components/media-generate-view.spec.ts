@@ -226,6 +226,33 @@ afterEach(() => {
 });
 
 describe("MediaGenerateView", () => {
+  it("opens RefMod management before a generation model is installed", () => {
+    const videoChange = vi.fn();
+    const generate = vi.fn();
+    render(
+      createElement(
+        MediaGenerateView,
+        createProps({
+          target: "video",
+          workspaceRoot: "C:/work",
+          videoGenerationSupported: false,
+          videoGenerationBlockedReason: "Install a video model",
+          onVideoSettingsChange: videoChange,
+          onGenerate: generate,
+        }),
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "RefMods" }));
+    expect(screen.getByRole("button", { name: "Add files" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Browse folder" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Create RefMod" }));
+    expect(screen.getByRole("group", { name: "Create RefMod" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close RefMods" }));
+    expect(screen.queryByRole("group", { name: "Create RefMod" })).toBeNull();
+    expect(videoChange).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   it("shows audio initialization without misidentifying the desktop as a browser", () => {
     render(
       createElement(
@@ -1118,9 +1145,11 @@ describe("MediaGenerateView", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /More options/u }));
-    fireEvent.click(screen.getByRole("button", { name: "Choose LoRAs" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose LoRAs and embeddings" }),
+    );
 
-    const dialog = screen.getByRole("dialog", { name: "LoRAs" });
+    const dialog = screen.getByRole("dialog", { name: "LoRAs and embeddings" });
     expect(within(dialog).getByLabelText("Search add-ons")).toBeTruthy();
     fireEvent.click(
       within(dialog).getByRole("button", { name: /Portrait Detail/u }),

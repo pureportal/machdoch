@@ -3,7 +3,10 @@
 import { createElement } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentComposer, type AgentComposerProps } from "./agent-composer";
+import {
+  AgentComposer,
+  type AgentComposerProps,
+} from "@machdoch/client-ui/composer/agent-composer";
 
 const noop = (): void => {};
 const noopAsync = async (): Promise<void> => {};
@@ -17,16 +20,13 @@ const createProps = (
   draftRevision: 100,
   textareaLabel: "Task composer",
   placeholder: "What should machdoch do next?",
-  chooserProviders: ["openai"],
-  activeProvider: "openai",
-  activeModel: "gpt-5.4",
+  modelPicker: null,
   contextAttachments: [],
   imageInputSupported: true,
   imageInputDisabledReason: null,
   canSend: true,
   sendDisabledReason: null,
   isExecuting: false,
-  onModelSelection: noop,
   onSelectContextFiles: noopAsync,
   onSelectContextFolders: noopAsync,
   onSelectContextImages: noopAsync,

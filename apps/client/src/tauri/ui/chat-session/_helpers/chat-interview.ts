@@ -8,12 +8,8 @@ import type {
 } from "../../../../core/ralph.js";
 import type { TaskInterviewSession } from "../../../../core/task-interview.js";
 import type { RuntimeProvider } from "../../model-catalog";
-import {
-  isMediaAssetContextAttachment,
-  type ChatSessionContextAttachment,
-  type ChatSessionMessageSettings,
-  type ChatSessionRecord,
-} from "../../chat-session.model";
+import { type ChatSessionMessageSettings, type ChatSessionRecord } from "../../chat-session.model";
+import { isMediaAssetContextAttachment, type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import type { TaskThinkingTrace } from "../../task-thinking.model";
 import { createAiContextHistory } from "./ai-context-window";
 

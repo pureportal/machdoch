@@ -1,0 +1,91 @@
+{
+  "scopeComplete": false,
+  "generationArchitectures": 52,
+  "integratedTrainingIdentifiers": 20,
+  "missingTrainers": 32,
+  "checks": [
+    {
+      "log": "D:\\Models\\machdoch\\verification\\2026-10-06-training\\cogvideo-precision-worker-tests.log",
+      "passed": 31,
+      "sha256": "e29cf7e1cb8e0dc880f96b0b0e32556748831c503a29fafc844e0a21a6b74844"
+    },
+    {
+      "log": "D:\\Models\\machdoch\\verification\\2026-10-06-training\\cogvideo-retention-model_memory.log",
+      "passed": 13,
+      "sha256": "1a70a2376a4d7da4d7f70a57f40e0c23c358cf48309052b9b43d5cf1347e777f"
+    },
+    {
+      "log": "D:\\Models\\machdoch\\verification\\2026-10-06-training\\cogvideo-retention-training.log",
+      "passed": 17,
+      "sha256": "780a7f8a397aec808ed3a47d0e9d54c606f2d32208da5ba4ef31144b28db4512"
+    },
+    {
+      "log": "D:\\Models\\machdoch\\verification\\2026-10-06-training\\cogvideo-retention-model_addon.log",
+      "passed": 27,
+      "sha256": "c2d6a9964b625f9885fdd845d8d5b4b173786cb3d9d4e7863646bb1334e3f78c"
+    },
+    {
+      "log": "D:\\Models\\machdoch\\verification\\2026-10-06-training\\cogvideo-retention-model_package_import.log",
+      "passed": 25,
+      "sha256": "3db70f531e44f835ad55f85898a700e54fc46381f904a1a0d04697b51992db3b"
+    }
+  ],
+  "mediaUi": {
+    "files": 91,
+    "passed": 785
+  },
+  "clientUiTypecheck": {
+    "passed": false,
+    "failure": "conversation-feed.tsx task metadata type mismatch"
+  },
+  "pretrainedCogVideoX2B": {
+    "sourceRevision": "1137dacfc2c9c012bed6a0793f4ecf2ca8e7ba01",
+    "sourceBytes": 13775555658,
+    "correctedLora": {
+      "status": "completed",
+      "exitCode": 0,
+      "job": "C:\\mtrain\\verification\\cogvideo-2b\\lora",
+      "probe": {
+        "method": "lora",
+        "steps": 4,
+        "trainableParameters": 4147200,
+        "trainableTensors": 360,
+        "changedSampledTrainableTensors": 360,
+        "frozenParameters": 6671678435,
+        "sampledFrozenTensors": 1391,
+        "sampledFrozenUnchanged": true,
+        "loopSeconds": 118.04699999999866,
+        "loopPeakAllocatedBytes": 3933202432,
+        "loopPeakReservedBytes": 4315938816,
+        "preparationPeakAllocatedBytes": 11688927232,
+        "preparationPeakReservedBytes": 11714691072,
+        "datasetSignature": "deed34ecff87d9e9baec08fc8f749f654cad7583338cfc05aae8b0d86532138b"
+      },
+      "process": {
+        "method": "lora",
+        "seconds": 816.7809999999954,
+        "status": {
+          "state": "completed",
+          "message": null
+        },
+        "peakAllocatedBytes": 11688927232,
+        "peakReservedBytes": 11714691072
+      },
+      "hostMemory": {
+        "sampleCount": 369,
+        "endUtc": "2026-10-06T22:05:56.3827632Z",
+        "minimumAvailablePhysicalBytes": 92028928.0,
+        "minimumFreeVirtualMemoryBytes": 798064640.0,
+        "maximumPrivateBytes": 24077414400.0
+      },
+      "artifactSha256": "af69be324fb739912d2d663663fc9c7616acfaac9a115236b17e765a41dd77cc",
+      "nativeAddonImport": "passed",
+      "nativeAddonImportLog": "D:\\Models\\machdoch\\verification\\2026-10-06-training\\cogvideo-native-lora-import.log"
+    },
+    "finetune": "pending",
+    "embedding": "running",
+    "trainedArtifactGeneration": "pending"
+  },
+  "nativeCompilationAfterTrainingIdleRelease": "pending",
+  "pretrainedCogVideoX15": "unverified"
+}

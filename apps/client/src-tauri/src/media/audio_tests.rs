@@ -167,7 +167,10 @@ print(json.dumps({'unitTest': True}))
             "generate-audio",
             Some(b"{}"),
             std::time::Duration::from_secs(10),
-            Some((&workspace.paths, &workspace.request.run_id)),
+            Some(crate::media::model_memory::WorkerCancellation::Generation(
+                workspace.paths.clone(),
+                workspace.request.run_id.clone(),
+            )),
         )
         .unwrap();
         assert!(output.status.success());

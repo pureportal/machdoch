@@ -1,0 +1,34 @@
+{
+  "devServerStarted": false,
+  "pretrainedWeightsUsed": false,
+  "transport": "fleet",
+  "checks": [
+    {
+      "operation": "list",
+      "passed": true
+    },
+    {
+      "operation": "inspect",
+      "passed": true
+    },
+    {
+      "operation": "import",
+      "passed": true
+    },
+    {
+      "operation": "inspect",
+      "passed": true
+    },
+    {
+      "operation": "save",
+      "passed": true
+    },
+    {
+      "operation": "inspect",
+      "passed": true
+    }
+  ],
+  "strengthChangedStoredLatent": true,
+  "workspace": "C:\\Development\\machdoch\\.tmp\\fleet-native-verification\\com.machdoch.fleetverification.r1791257513352\\workspace\\refmod-fleet-HQrHv2",
+  "passed": true
+}

@@ -19,6 +19,12 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
     index = json.loads((root / "model_index.json").read_text(encoding="utf-8"))
     if index.get("_class_name") != profile["pipeline"]:
         raise ValueError(f"The model folder does not match {profile['displayName']}")
+    if profile.get("distillation", {}).get("sampler") == "lcm":
+        from media_sdxl_distillation import load_pipeline as load_sdxl_student
+
+        pipeline = load_sdxl_student(diffusers, root, profile, dtype)
+        pipeline.set_progress_bar_config(disable=True)
+        return pipeline
     class_name = profile.get("imagePipeline") if image_conditioned else profile["pipeline"]
     if not class_name:
         class_name = profile["pipeline"]
@@ -37,6 +43,23 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
         options["is_distilled"] = profile["fixedSteps"]
     if profile["architecture"] == "krea-2-raw":
         options["is_distilled"] = False
+    if profile["architecture"] == "sana":
+        import torch
+
+        encoder_dtype = torch.bfloat16 if dtype != torch.float32 and torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float32
+        dtype = {"transformer": dtype, "text_encoder": encoder_dtype,
+                 "vae": torch.float32, "default": dtype}
+    elif profile["family"] == "CogVideoX":
+        import torch
+
+        encoder_dtype = torch.float16 if model["architecture"] == "cogvideox-2b" and dtype != torch.float32 else dtype
+        dtype = {"transformer": dtype, "text_encoder": encoder_dtype,
+                 "vae": torch.float32, "default": dtype}
+    elif profile["family"] == "Wan":
+        import torch
+
+        dtype = {"transformer": dtype, "transformer_2": dtype, "text_encoder": dtype,
+                 "vae": torch.float32, "default": dtype}
     pipeline = pipeline_class.from_pretrained(
         str(root), dtype=dtype, local_files_only=True,
         use_safetensors=True, trust_remote_code=False, **options,
@@ -58,10 +81,17 @@ def image_arguments(architecture: str, sampling: dict[str, Any], images: list[An
     if guidance is None:
         guidance = profile["guidance"]
     arguments = {profile["guidanceParameter"]: guidance}
+    if profile.get("distillation", {}).get("sampler") == "lcm":
+        if negative_prompt.strip():
+            raise ValueError(f"{profile['displayName']} does not use negative prompts")
+        arguments["timesteps"] = profile["distillation"]["timesteps"]
     if profile["guidanceParameter"] == "true_cfg_scale":
         arguments["negative_prompt"] = negative_prompt or " "
     if architecture == "ideogram-4":
         arguments["guidance_schedule"] = None
+    if architecture == "sana":
+        arguments["complex_human_instruction"] = None
+        arguments["use_resolution_binning"] = False
     if images:
         arguments["image"] = images[0] if len(images) == 1 else images
     return arguments
@@ -77,6 +107,8 @@ def validate_sampling(architecture: str, steps: int, guidance: float | None) -> 
 
 def video_arguments(profile: dict[str, Any], request: dict[str, Any], image: Any, last_image: Any, width: int, height: int, generator: Any) -> dict[str, Any]:
     contract = profile["video"]
+    if profile.get("distillation") and request.get("fps") != contract["fps"]:
+        raise ValueError(f"{profile['displayName']} requires {contract['fps']} fps")
     frames = request.get("numFrames")
     if not isinstance(frames, int) or isinstance(frames, bool) or not contract["minimum"] <= frames <= contract["maximum"] or (frames - contract["minimum"]) % contract["stride"]:
         raise ValueError(f"{profile['displayName']} requires {contract['minimum']}–{contract['maximum']} frames in increments of {contract['stride']}")

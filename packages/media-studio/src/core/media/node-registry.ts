@@ -10,6 +10,7 @@ import { AUDIO_NODE_DEFINITIONS } from "./audio-nodes.js";
 import { VIDEO_COMPOSITION_NODE_DEFINITIONS } from "./video-composition-nodes.js";
 import { DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY } from "./subject-cutout-policy.js";
 import { isMediaImageMask } from "./image-mask.js";
+import { readRefMods } from "./refmods.js";
 import {
   WORKFLOW_NODE_DEFINITIONS,
   WORKFLOW_GATE_FIELDS,
@@ -31,7 +32,8 @@ export type MediaNodeFieldKind =
   | "select"
   | "model"
   | "model-priority"
-  | "addons";
+  | "addons"
+  | "refmods";
 
 export interface MediaNodeFieldOption {
   value: string;
@@ -1020,6 +1022,8 @@ export const MEDIA_NODE_DEFINITIONS = [
     inputs: [promptPort, firstFrameInput, lastFrameInput],
     outputs: [videoOutput],
     fields: [
+      { id: "refMods", label: "RefMods", description: "", group: "Basic", kind: "refmods", required: false, defaultValue: [], examples: [[]], visibleWhen: { fieldId: "modelId", equals: "local:minimax-h3-ref2va" } },
+      { id: "refModMaxTokens", label: "Reference tokens", description: "", group: "Expert", kind: "number", required: false, defaultValue: 65536, examples: [65536], integer: true, min: 0, max: 1048576, visibleWhen: { fieldId: "modelId", equals: "local:minimax-h3-ref2va" } },
       {
         id: "modelAddons",
         label: "Video LoRAs",
@@ -2704,6 +2708,9 @@ const validateFieldValue = (
       break;
     case "addons":
       isValid = isModelAddonSelectionList(value);
+      break;
+    case "refmods":
+      try { readRefMods(value); isValid = true; } catch { isValid = false; }
       break;
   }
   return isValid

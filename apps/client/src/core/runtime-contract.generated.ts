@@ -44,7 +44,7 @@ export type AudioProvider = (typeof USER_AUDIO_AI_PROVIDERS)[number];
 
 export const VALID_AUDIO_AI_PROVIDERS = ["none", "openai", "google"] as const;
 export type VoiceAiProvider = (typeof VALID_AUDIO_AI_PROVIDERS)[number];
-export const VALID_SPEECH_TO_TEXT_PROVIDERS = ["none", "openai", "google", "whisper"] as const;
+export const VALID_SPEECH_TO_TEXT_PROVIDERS = ["none", "openai", "google", "whisper", "whisper-tiny", "whistle", "whistle-tiny", "phonon2"] as const;
 export type SpeechToTextProvider = (typeof VALID_SPEECH_TO_TEXT_PROVIDERS)[number];
 
 export const RUNTIME_MEMORY_SCOPES = ["session", "workspace", "global"] as const;

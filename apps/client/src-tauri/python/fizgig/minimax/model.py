@@ -1,4 +1,7 @@
-"""MiniMax H3 DiT — pure-PyTorch port for image-only training.
+"""MiniMax H3 DiT — pure-PyTorch training and joint audiovisual inference.
+
+Machdoch modification, 2026-10-06: mixed visual/audio reference projection,
+position layout, modality tags and clean conditioning timesteps. See NOTICE-RefMod.txt.
 
 Faithful, weight-name-compatible port of ComfyUI's comfy/ldm/minimax/model.py, with the
 ComfyUI plumbing replaced by plain PyTorch so it trains under Fizgig's LoRA / rotating-FT
@@ -10,12 +13,9 @@ machinery:
   optimized_attention                 -> F.scaled_dot_product_attention
   prefetch / patcher wrappers         -> dropped
 
-Scope: IMAGE ONLY. A still image is a single video frame (T=1), so the packed sequence is
-[text | audio | video] — the refs / keyframes / cond-row apparatus of the reference is omitted
-(nothing conditions an image run), but the AUDIO ROWS ARE NOT: H3 always packs an audio block,
-and for one still that is 4 rows of silence noised on the audio schedule. They carry no loss;
-they exist so the frozen base runs in the layout it was trained in. `final_layer.audio_out` is
-built for checkpoint compatibility and never run — we only read the video head.
+The packed sequence is [text | references | audio | video]. References may be visual
+or stereo audio latents and remain conditioning throughout denoising. Image training
+retains the native audio rows without audio loss; joint inference reads both output heads.
 
 Module + parameter names match the checkpoint exactly (blocks.N.attn.qkv_proj.weight,
 adaln_proj.linear.weight, video_patch_proj, condition_proj, time_embedder.proj_in, rope.inv_freq,
@@ -252,6 +252,16 @@ def image_position_ids(text_len, latent_h, latent_w, num_audio_latents: int = 0,
     cursor = float(text_len)
     ref_rows = []
     for _ref in (refs or ()):
+        if _ref[0] == "audio":
+            audio_length = int(_ref[1])
+            width_axis = _axis_from_sqrt_area(latent_w, 2, math.sqrt(latent_h * latent_w))
+            positions = torch.zeros(audio_length * AUDIO_CHANNELS, 3, dtype=torch.float64)
+            positions[:, 0] = (cursor + torch.arange(audio_length, dtype=torch.float64)).repeat(AUDIO_CHANNELS)
+            positions[:audio_length, 2] = float(width_axis[0])
+            positions[audio_length:, 2] = float(width_axis[-1])
+            ref_rows.append(positions)
+            cursor += audio_length
+            continue
         rh, rw = int(_ref[0]), int(_ref[1])
         rt = int(_ref[2]) if len(_ref) > 2 else 1
         r_frame = _frame_grid(rh, rw)
@@ -789,12 +799,9 @@ class MiniMaxH3DiT(nn.Module):
                        across steps exactly like the reference pipeline. Overrides audio_noise.
         return_audio : also return the audio head's prediction for those rows, so a sampler
                        can step them.
-        ref_latents  : optional list of [1, C, 1, h, w] NORMALIZED reference latents (r2v). Each
-                       is packed as condition rows right after the text: noise-augmented, tagged
-                       video, pinned near clean, and never denoised. Their presence shifts the
-                       target's temporal origin (see image_position_ids). A [1, C, T, h, w]
-                       entry (T > 1) is a VIDEO-kind reference — a multi-frame RefMod — and
-                       rides on the video clock like ComfyUI's PackedLayout packs it.
+        ref_latents  : normalized visual [1,24,T,h,w] or stereo audio [1,32,2,T] references.
+                       Visual rows use near-clean noise augmentation; audio rows remain clean.
+                       Both retain their modality and shift the target's temporal origin.
         text_token_tags : optional [L] per-row modality tags for the text rows. Required when the
                        conditioning carries `<Picture i>` vision blocks, whose rows are VIDEO —
                        without it every text row is tagged TEXT and the vision rows are modulated
@@ -827,19 +834,31 @@ class MiniMaxH3DiT(nn.Module):
         # with a trace of noise first: r = aug*r + (1-aug)*noise. The reference restarts the SAME
         # CPU generator for every condition rather than drawing one continuous stream, so this
         # reseeds inside the loop — a shared stream would give different rows for ref 2 onward.
-        ref_shapes, ref_embed = [], None
+        ref_shapes, ref_embed, ref_audio_spans = [], None, []
         if ref_latents:
             _rows = []
+            reference_offset = 0
             for z in ref_latents:
+                if z.ndim == 4:
+                    if tuple(z.shape[:3]) != (1, self.config.audio_latents_dim, AUDIO_CHANNELS) or z.shape[-1] < 1:
+                        raise ValueError("Audio reference must have shape [1,32,2,T]")
+                    audio_reference = z[0].permute(1, 2, 0).reshape(-1, self.config.audio_latents_dim)
+                    projected = self.audio_patch_proj(audio_reference.to(device=device, dtype=self.audio_patch_proj.weight.dtype)).to(dtype)
+                    _rows.append(projected)
+                    ref_shapes.append(("audio", z.shape[-1]))
+                    ref_audio_spans.append((reference_offset, reference_offset + projected.shape[0]))
+                    reference_offset += projected.shape[0]
+                    continue
                 r = patchify_video(z.to(device=device, dtype=torch.float32), self.patch_size)
                 if visual_cond_noise_aug < 1.0:
                     gen = torch.Generator("cpu").manual_seed(int(seed))
                     noise = torch.randn(r.shape, generator=gen, dtype=torch.float32).to(device)
                     r = visual_cond_noise_aug * r + (1.0 - visual_cond_noise_aug) * noise
-                _rows.append(r)
+                projected = self.video_patch_proj(r.to(self.video_patch_proj.weight.dtype)).to(dtype)
+                _rows.append(projected)
+                reference_offset += projected.shape[0]
                 ref_shapes.append((z.shape[-2], z.shape[-1], z.shape[2]))
-            ref_embed = self.video_patch_proj(
-                torch.cat(_rows, dim=0).to(self.video_patch_proj.weight.dtype)).to(dtype)
+            ref_embed = torch.cat(_rows, dim=0)
 
         # fl2va keyframe condition rows: the same row machinery as a reference, on the
         # target's own grid, with a role-pinned noise seed per frame (see the docstring).
@@ -925,9 +944,13 @@ class MiniMaxH3DiT(nn.Module):
         # Condition rows sit at max(t, aug) — near clean whatever the sampler is doing, so on a
         # late step they can share the video timestep and on an early one they need their own.
         t_parts = [t_val] + ([t_audio] if audio_embed is not None else [])
+        visual_reference_t_index = len(t_parts)
         if n_cond:
             t_parts.append(torch.maximum(t_val, torch.tensor([visual_cond_noise_aug],
-                                                             device=device, dtype=torch.float32)))
+                                                              device=device, dtype=torch.float32)))
+        audio_reference_t_index = len(t_parts)
+        if ref_audio_spans:
+            t_parts.append(torch.ones_like(t_val))
         t_all = torch.cat(t_parts) if len(t_parts) > 1 else t_val
         uniq, inverse = torch.unique(t_all, sorted=True, return_inverse=True)
         # Kept fp32 when the loader kept the AdaLN projections fp32 (ComfyUI's curve-checkpoint
@@ -945,7 +968,12 @@ class MiniMaxH3DiT(nn.Module):
             tags[:text_len] = _tt                    # vision-block rows carry VIDEO_TAG
         row_t_index = torch.full((seq_len,), int(inverse[0]), dtype=torch.long, device=device)
         if n_cond:                                   # cond rows: video tag (already), cond timestep
-            row_t_index[text_len:audio_start] = int(inverse[-1])
+            row_t_index[text_len:audio_start] = int(inverse[visual_reference_t_index])
+        for start, stop in ref_audio_spans:
+            start += text_len + n_kf
+            stop += text_len + n_kf
+            tags[start:stop] = AUDIO_TAG
+            row_t_index[start:stop] = int(inverse[audio_reference_t_index])
         if audio_embed is not None:
             tags[audio_start:video_start] = AUDIO_TAG
             row_t_index[audio_start:video_start] = int(inverse[1])

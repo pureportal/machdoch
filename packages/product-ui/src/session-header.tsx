@@ -8,6 +8,8 @@ import {
   Pin,
   Trash2,
   MoreHorizontal,
+  ArrowUpToLine,
+  RotateCcw,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { DropdownMenu } from "radix-ui";
@@ -28,6 +30,9 @@ export function SessionHeader({
   const [tagDraft, setTagDraft] = useState(session.tags.join(", "));
   const [editingTags, setEditingTags] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteKind, setDeleteKind] = useState<"session" | "history">(
+    "session",
+  );
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const menuTriggerRef = useRef<HTMLButtonElement>(null);
@@ -202,6 +207,7 @@ export function SessionHeader({
                 pendingEdit.current = null;
                 if (target === "delete") {
                   menuTriggerRef.current?.focus();
+                  setDeleteKind("session");
                   setDeleteError(null);
                   setDeleteOpen(true);
                   return;
@@ -246,6 +252,32 @@ export function SessionHeader({
                   {session.pinnedAt !== undefined
                     ? "Unpin session"
                     : "Pin session"}
+                </DropdownMenu.Item>
+              ) : null}
+              {session.canResetTime ? (
+                <DropdownMenu.Item
+                  disabled={pending}
+                  onSelect={() =>
+                    void onCommand({
+                      kind: "reset-session-time",
+                      sessionId: session.id,
+                    })
+                  }
+                >
+                  <RotateCcw /> Reset time
+                </DropdownMenu.Item>
+              ) : null}
+              {session.canMoveToTop ? (
+                <DropdownMenu.Item
+                  disabled={pending}
+                  onSelect={() =>
+                    void onCommand({
+                      kind: "move-session-to-top",
+                      sessionId: session.id,
+                    })
+                  }
+                >
+                  <ArrowUpToLine /> Move to top
                 </DropdownMenu.Item>
               ) : null}
               {session.canDuplicate ? (
@@ -299,7 +331,9 @@ export function SessionHeader({
                   }}
                 >
                   <Trash2 />
-                  Delete session
+                  {deleteKind === "history"
+                    ? "Clear history"
+                    : "Delete session"}
                 </DropdownMenu.Item>
               ) : null}
             </DropdownMenu.Content>
@@ -384,6 +418,7 @@ export function SessionHeader({
             aria-label="Delete session"
             disabled={pending}
             onClick={() => {
+              setDeleteKind("session");
               setDeleteError(null);
               setDeleteOpen(true);
             }}
@@ -392,10 +427,33 @@ export function SessionHeader({
           </button>
         ) : null}
       </div>
+      {session.specialKind === "quick-voice" ? (
+        <button
+          type="button"
+          className="m-product-secondary-button"
+          aria-label="Clear Quick Chat history"
+          disabled={pending || deleting}
+          onClick={() => {
+            setDeleteKind("history");
+            setDeleteError(null);
+            setDeleteOpen(true);
+          }}
+        >
+          <Trash2 aria-hidden="true" /> Clear
+        </button>
+      ) : null}
       {deleteOpen ? (
         <ProductModal
-          title={`Delete ${session.title}?`}
-          description="This deletes all messages in the session."
+          title={
+            deleteKind === "history"
+              ? "Clear Quick Chat history?"
+              : `Delete ${session.title}?`
+          }
+          description={
+            deleteKind === "history"
+              ? "This removes the messages, prompt history, and session memory."
+              : "This deletes all messages in the session."
+          }
           dismissible={!deleting}
           onClose={() => setDeleteOpen(false)}
         >
@@ -421,20 +479,25 @@ export function SessionHeader({
                 setDeleting(true);
                 setDeleteError(null);
                 void onCommand({
-                  kind: "delete-session",
+                  kind:
+                    deleteKind === "history"
+                      ? "clear-session-history"
+                      : "delete-session",
                   sessionId: session.id,
                 })
                   .then((deleted) => {
                     if (deleted) setDeleteOpen(false);
                     else
                       setDeleteError(
-                        "Session could not be deleted. Try again.",
+                        deleteKind === "history"
+                          ? "History could not be cleared. Try again."
+                          : "Session could not be deleted. Try again.",
                       );
                   })
                   .finally(() => setDeleting(false));
               }}
             >
-              Delete session
+              {deleteKind === "history" ? "Clear history" : "Delete session"}
             </button>
           </div>
         </ProductModal>

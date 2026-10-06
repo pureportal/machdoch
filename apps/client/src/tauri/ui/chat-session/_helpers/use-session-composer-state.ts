@@ -5,10 +5,9 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import type {
-  ChatSessionContextAttachment,
-  ChatSessionRecord,
-} from "../../chat-session.model";
+import type { ChatSessionRecord } from "../../chat-session.model";
+import { navigatePromptHistory } from "@machdoch/client-ui/composer/prompt-history-navigation";
+import type { ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import type { ChatSessionShellStateController } from "./use-chat-session-shell-state";
 
 interface ComposerHistoryPreview {
@@ -227,68 +226,29 @@ export const useSessionComposerState = (
 
       event.preventDefault();
 
-      if (event.key === "ArrowUp") {
-        const nextIndex = activePreview
-          ? Math.max(activePreview.index - 1, 0)
-          : historyLength - 1;
-        const nextPrompt = history[nextIndex];
-
-        if (nextPrompt === undefined) {
-          resetDraftHistoryState();
-          return;
-        }
-
-        if (!activePreview) {
-          state.setDraftBeforeHistory(currentDraft);
-        }
-
-        const baseComposerSession =
-          currentDraft === state.activeSession.draft
-            ? state.activeSession
-            : { ...state.activeSession, draft: currentDraft };
-
-        state.setPromptHistoryIndex(nextIndex);
-        setHistoryPreview({
-          sessionId: state.activeSession.id,
-          index: nextIndex,
-          draft: nextPrompt,
-          contextAttachments: cloneAttachments(
-            state.activeSession.promptContextHistory[nextIndex] ?? [],
-          ),
-          baseComposerIdentity:
-            activePreview?.baseComposerIdentity ??
-            createComposerIdentity(baseComposerSession),
-          historyIdentity: promptHistoryIdentity,
-        });
-        return;
-      }
-
-      if (!activePreview) {
-        return;
-      }
-
-      const nextIndex = activePreview.index + 1;
-
-      if (nextIndex >= historyLength) {
+      const next = navigatePromptHistory({
+        draft: activePreview?.draft ?? currentDraft,
+        draftBeforeHistory: state.draftBeforeHistory,
+        historyIndex: activePreview?.index ?? null,
+      }, history, event.key === "ArrowUp" ? "previous" : "next");
+      if (next.historyIndex === null) {
         resetDraftHistoryState();
         return;
       }
-
-      const nextPrompt = history[nextIndex];
-
-      if (nextPrompt === undefined) {
-        resetDraftHistoryState();
-        return;
-      }
-
-      state.setPromptHistoryIndex(nextIndex);
+      if (!activePreview) state.setDraftBeforeHistory(next.draftBeforeHistory);
+      const baseComposerSession = currentDraft === state.activeSession.draft
+        ? state.activeSession
+        : { ...state.activeSession, draft: currentDraft };
+      state.setPromptHistoryIndex(next.historyIndex);
       setHistoryPreview({
-        ...activePreview,
-        index: nextIndex,
-        draft: nextPrompt,
+        sessionId: state.activeSession.id,
+        index: next.historyIndex,
+        draft: next.draft,
         contextAttachments: cloneAttachments(
-          state.activeSession.promptContextHistory[nextIndex] ?? [],
+          state.activeSession.promptContextHistory[next.historyIndex] ?? [],
         ),
+        baseComposerIdentity: activePreview?.baseComposerIdentity ?? createComposerIdentity(baseComposerSession),
+        historyIdentity: promptHistoryIdentity,
       });
     },
     [

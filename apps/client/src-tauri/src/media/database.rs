@@ -6869,6 +6869,8 @@ mod tests {
             (512, 288),
         );
         let request = GenerateMediaVideoRequest {
+            ref_mods: Vec::new(),
+            ref_mod_max_tokens: 65536,
             model_addons: Vec::new(),
             width: None,
             height: None,
@@ -8085,7 +8087,7 @@ mod tests {
         assert_eq!(initial.schema_version, 1);
         assert_eq!(initial.catalog_revision, catalog::CATALOG_REVISION);
         assert_eq!(initial.providers.len(), 8);
-        assert_eq!(initial.models.len(), 45);
+        assert_eq!(initial.models.len(), 49);
         for profile in super::super::open_models::profiles() {
             let model = initial
                 .models

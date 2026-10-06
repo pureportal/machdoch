@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-06T19:21:14.8532197+00:00",
+  "isolatedIdentifier": "com.machdoch.refmodverification.r1791300414432.dev",
+  "files": [
+    {
+      "name": "16a44e8d-ffac-443d-81fb-cac27e4de908-picture.png",
+      "sizeBytes": 116,
+      "modifiedAt": "2026-10-06T19:00:45.2691729Z",
+      "sha256": "f665670f52d71c42e22b4760a0d351dca8a22d390977d7955bddffb977c72621"
+    }
+  ],
+  "sourceSha256": "f665670f52d71c42e22b4760a0d351dca8a22d390977d7955bddffb977c72621",
+  "filesPreserved": true
+}

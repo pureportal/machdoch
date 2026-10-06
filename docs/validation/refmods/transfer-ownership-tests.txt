@@ -1,0 +1,10 @@
+$ vitest run --config vitest.config.ts "src/fleet-refmod-transfers.spec.ts" "src/tauri/ui/media/media-platform.spec.ts" "src/tauri/ui/media/components/media-refmod-creator.spec.ts" "src/tauri/ui/media/components/media-refmod-controls.spec.ts" "src/tauri/ui/media/media-refmods.spec.ts"
+
+ RUN  v4.1.10 C:/Development/machdoch/packages/media-studio
+
+
+ Test Files  5 passed (5)
+      Tests  36 passed (36)
+   Start at  21:32:26
+   Duration  42.52s (transform 21.44s, setup 0ms, import 59.22s, tests 30.96s, environment 12.04s)
+

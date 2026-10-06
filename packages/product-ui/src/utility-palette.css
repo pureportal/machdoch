@@ -1,0 +1,467 @@
+@theme inline {
+  --color-slate-50: var(--app-slate-50);
+  --color-slate-100: var(--app-slate-100);
+  --color-slate-200: var(--app-slate-200);
+  --color-slate-300: var(--app-slate-300);
+  --color-slate-400: var(--app-slate-400);
+  --color-slate-500: var(--app-slate-500);
+  --color-slate-600: var(--app-slate-600);
+  --color-slate-700: var(--app-slate-700);
+  --color-slate-800: var(--app-slate-800);
+  --color-slate-900: var(--app-slate-900);
+  --color-slate-950: var(--app-slate-950);
+
+  --color-sky-50: var(--app-sky-50);
+  --color-sky-100: var(--app-sky-100);
+  --color-sky-200: var(--app-sky-200);
+  --color-sky-300: var(--app-sky-300);
+  --color-sky-400: var(--app-sky-400);
+  --color-sky-500: var(--app-sky-500);
+  --color-sky-600: var(--app-sky-600);
+  --color-sky-700: var(--app-sky-700);
+  --color-sky-800: var(--app-sky-800);
+  --color-sky-900: var(--app-sky-900);
+  --color-sky-950: var(--app-sky-950);
+
+  --color-emerald-50: var(--app-emerald-50);
+  --color-emerald-100: var(--app-emerald-100);
+  --color-emerald-200: var(--app-emerald-200);
+  --color-emerald-300: var(--app-emerald-300);
+  --color-emerald-400: var(--app-emerald-400);
+  --color-emerald-500: var(--app-emerald-500);
+  --color-emerald-600: var(--app-emerald-600);
+  --color-emerald-700: var(--app-emerald-700);
+  --color-emerald-800: var(--app-emerald-800);
+  --color-emerald-900: var(--app-emerald-900);
+  --color-emerald-950: var(--app-emerald-950);
+
+  --color-lime-50: var(--app-lime-50);
+  --color-lime-100: var(--app-lime-100);
+  --color-lime-200: var(--app-lime-200);
+  --color-lime-300: var(--app-lime-300);
+  --color-lime-400: var(--app-lime-400);
+  --color-lime-500: var(--app-lime-500);
+  --color-lime-950: var(--app-lime-950);
+
+  --color-violet-100: var(--app-violet-100);
+  --color-violet-200: var(--app-violet-200);
+  --color-violet-300: var(--app-violet-300);
+  --color-violet-400: var(--app-violet-400);
+  --color-violet-500: var(--app-violet-500);
+  --color-violet-950: var(--app-violet-950);
+
+  --color-amber-100: var(--app-amber-100);
+  --color-amber-200: var(--app-amber-200);
+  --color-amber-300: var(--app-amber-300);
+  --color-amber-400: var(--app-amber-400);
+  --color-amber-500: var(--app-amber-500);
+
+  --color-rose-100: var(--app-rose-100);
+  --color-rose-200: var(--app-rose-200);
+  --color-rose-300: var(--app-rose-300);
+  --color-rose-400: var(--app-rose-400);
+  --color-rose-500: var(--app-rose-500);
+  --color-red-500: var(--app-red-500);
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-950"] {
+  background-color: var(--app-bg) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950/96"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-950/96"] {
+  background-color: color-mix(
+    in srgb,
+    var(--app-bg) 96%,
+    transparent
+  ) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950/98"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-950/98"] {
+  background-color: color-mix(
+    in srgb,
+    var(--app-bg) 98%,
+    transparent
+  ) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950/90"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-950/90"] {
+  background-color: color-mix(
+    in srgb,
+    var(--app-bg) 90%,
+    transparent
+  ) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950/80"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-950/80"] {
+  background-color: color-mix(
+    in srgb,
+    var(--app-bg) 80%,
+    transparent
+  ) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950/75"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-950/75"] {
+  background-color: color-mix(
+    in srgb,
+    var(--app-bg) 75%,
+    transparent
+  ) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950/70"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-950/70"] {
+  background-color: color-mix(
+    in srgb,
+    var(--app-bg) 70%,
+    transparent
+  ) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950/60"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-950/60"] {
+  background-color: color-mix(
+    in srgb,
+    var(--app-bg) 60%,
+    transparent
+  ) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950/50"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-950/50"] {
+  background-color: color-mix(
+    in srgb,
+    var(--app-bg) 50%,
+    transparent
+  ) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950/40"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-950/40"] {
+  background-color: color-mix(
+    in srgb,
+    var(--app-bg) 40%,
+    transparent
+  ) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-900"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-900"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-900/90"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-900/90"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-900/80"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-900/80"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-900/70"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-900/70"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-900/60"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-900/60"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-900/50"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-900/50"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-900/40"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-900/40"] {
+  background-color: var(--app-surface) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-800"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="bg-slate-800"] {
+  background-color: var(--app-surface-muted) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="border-slate-900"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="border-slate-900"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="border-slate-900/80"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="border-slate-900/80"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="border-slate-800"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="border-slate-800"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="border-slate-800/80"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="border-slate-800/80"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="border-slate-800/90"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="border-slate-800/90"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="border-slate-800/75"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="border-slate-800/75"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="border-slate-800/70"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="border-slate-800/70"] {
+  border-color: var(--app-border) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="border-slate-700"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="border-slate-700"] {
+  border-color: var(--app-border-strong) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-white"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="text-white"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-slate-100"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="text-slate-100"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-slate-200"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="text-slate-200"] {
+  color: var(--app-text) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-slate-300"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="text-slate-300"] {
+  color: var(--app-text-soft) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-slate-400"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="text-slate-400"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-slate-500"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="text-slate-500"] {
+  color: var(--app-text-muted) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-slate-600"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="text-slate-600"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-slate-700"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) [class~="text-slate-700"] {
+  color: var(--app-text-faint) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  .placeholder\:text-slate-600::placeholder {
+  color: var(--app-text-faint) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) .hover\:bg-slate-900:hover,
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) .hover\:bg-slate-900\/70:hover,
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) .hover\:bg-slate-800:hover {
+  background-color: var(--app-hover) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) .hover\:border-slate-800:hover,
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) .hover\:border-slate-700:hover {
+  border-color: var(--app-border-strong) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) .hover\:text-slate-100:hover,
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog) .hover\:text-white:hover {
+  color: var(--app-text) !important;
+}
+
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-sky-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-sky-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-sky-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-sky-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-sky-300"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-sky-300"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-sky-400"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-sky-400"] {
+  color: var(--app-sky-700) !important;
+}
+
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-sky-500"][class~="text-white"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="bg-sky-500"][class~="text-white"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-sky-600"][class~="text-white"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="bg-sky-600"][class~="text-white"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-red-500"][class~="text-white"],
+:where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="bg-red-500"][class~="text-white"] {
+  color: white !important;
+}
+
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-900/28"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="bg-slate-900/28"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-900/65"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="bg-slate-900/65"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-900/75"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="bg-slate-900/75"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-900/85"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="bg-slate-900/85"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-900/95"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="bg-slate-900/95"] {
+  background-color: var(--app-surface-raised) !important;
+}
+
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950/55"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="bg-slate-950/55"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950/72"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="bg-slate-950/72"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950/92"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="bg-slate-950/92"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-950/95"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="bg-slate-950/95"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="bg-slate-800/80"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="bg-slate-800/80"] {
+  background-color: color-mix(
+    in srgb,
+    var(--app-surface-muted) 68%,
+    white
+  ) !important;
+}
+
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="border-slate-800/60"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="border-slate-800/60"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="border-slate-700/80"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="border-slate-700/80"] {
+  border-color: var(--app-border) !important;
+}
+
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-sky-50"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-sky-50"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-sky-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-sky-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-sky-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-sky-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-sky-300"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-sky-300"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-sky-400"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-sky-400"] {
+  color: var(--app-sky-700) !important;
+}
+
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-emerald-50"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-emerald-50"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-emerald-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-emerald-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-emerald-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-emerald-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-emerald-300"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-emerald-300"] {
+  color: hsl(173 42% 25%) !important;
+}
+
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-amber-50"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-amber-50"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-amber-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-amber-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-amber-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-amber-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-amber-300"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-amber-300"] {
+  color: hsl(36 82% 31%) !important;
+}
+
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-rose-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-rose-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-rose-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-rose-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-rose-300"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-rose-300"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-rose-400"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-rose-400"] {
+  color: hsl(348 68% 36%) !important;
+}
+
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-violet-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-violet-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-violet-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-violet-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)[class~="text-violet-300"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dashboard, .fleet-dialog)
+  [class~="text-violet-300"] {
+  color: hsl(262 50% 39%) !important;
+}

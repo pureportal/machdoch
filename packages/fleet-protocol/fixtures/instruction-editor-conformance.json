@@ -1,0 +1,689 @@
+[
+  {
+    "name": "registry list with content",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "",
+          "arguments": ["registry", "list", "--include-content"]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "registry list rejects mutation options",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "",
+          "arguments": ["registry", "list", "--expected-revision", "1"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "client operation 1: profiles list",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles", "list", "--include-content"]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "client operation 2: profiles create",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "profiles",
+            "create",
+            "--name",
+            "Review",
+            "--prompt",
+            "--literal 🌿",
+            "--metadata-json",
+            "{\"global\":true}",
+            "--expected-revision",
+            "0"
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "client operation 3: profiles edit",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "profiles",
+            "edit",
+            "2d46f10e-c337-45bc-9a95-3f08369c3345",
+            "--description",
+            "",
+            "--prompt",
+            "New content",
+            "--expected-revision",
+            "1"
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "client operation 4: profiles duplicate",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "profiles",
+            "duplicate",
+            "2d46f10e-c337-45bc-9a95-3f08369c3345",
+            "--name",
+            "Copy",
+            "--expected-revision",
+            "2"
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "client operation 5: profiles delete",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "profiles",
+            "delete",
+            "2d46f10e-c337-45bc-9a95-3f08369c3345",
+            "--expected-revision",
+            "3"
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "client operation 6: workspaces list",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["workspaces", "list"]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "client operation 7: workspaces configure",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "workspaces",
+            "configure",
+            "--name",
+            "Demo",
+            "/projects/demo",
+            "--metadata-json",
+            "{\"tags\":[\"web\"]}",
+            "--expected-revision",
+            "4"
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "client operation 8: workspaces relink",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "workspaces",
+            "relink",
+            "2d46f10e-c337-45bc-9a95-3f08369c3345",
+            "--path",
+            "/projects/demo",
+            "--expected-revision",
+            "5"
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "client operation 9: workspaces remove",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "workspaces",
+            "remove",
+            "2d46f10e-c337-45bc-9a95-3f08369c3345",
+            "--confirm-assignment-removal",
+            "--expected-revision",
+            "6"
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "client operation 10: assignments set",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "assignments",
+            "set",
+            "2d46f10e-c337-45bc-9a95-3f08369c3345",
+            "--path",
+            ".",
+            "--profile",
+            "2d46f10e-c337-45bc-9a95-3f08369c3345",
+            "--profile",
+            "other",
+            "--expected-revision",
+            "7"
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "client operation 11: assignments remove",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "assignments",
+            "remove",
+            "2d46f10e-c337-45bc-9a95-3f08369c3345",
+            "--path",
+            ".",
+            "--expected-revision",
+            "8"
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "client operation 12: recovery status",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["recovery", "status"]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "client operation 13: recovery restore",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["recovery", "restore", "--expected-digest", "digest"]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "client operation 14: recovery reset",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["recovery", "reset", "--expected-digest", "digest"]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "closed arguments 1",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "profiles",
+            "show",
+            "2d46f10e-c337-45bc-9a95-3f08369c3345"
+          ]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 2",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles", "create", "extra"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 3",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles", "edit"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 4",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "profiles",
+            "edit",
+            "2d46f10e-c337-45bc-9a95-3f08369c3345",
+            "extra"
+          ]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 5",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles", "create", "--prompt"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 6",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles", "create", "--cwd", "/outside"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 7",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles", "create", "--prompt-file", "/secret"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 8",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles", "create", "--metadata-file", "/secret"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 9",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles", "create", "--name", "One", "--name", "Two"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 10",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "profiles",
+            "list",
+            "--include-content",
+            "--include-content"
+          ]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 11",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "profiles",
+            "list",
+            "--profile",
+            "2d46f10e-c337-45bc-9a95-3f08369c3345"
+          ]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 12",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles", "create", "--prompt", "bad\u0000value"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 13",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["instructions", "list"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 14",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": []
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 15",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "closed arguments 16",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": [
+            "workspaces",
+            "configure",
+            "/projects/demo",
+            "--path",
+            "/outside"
+          ]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "read result",
+    "request": {
+      "kind": "read",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "offset": 0
+    },
+    "accepted": true
+  },
+  {
+    "name": "release result",
+    "request": {
+      "kind": "release",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345"
+    },
+    "accepted": true
+  },
+  {
+    "name": "events",
+    "request": {
+      "kind": "events",
+      "after": 0
+    },
+    "accepted": true
+  },
+  {
+    "name": "arbitrary command",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "execute_shell",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles", "list"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "invalid operation identity",
+    "request": {
+      "kind": "invoke",
+      "id": "not-a-uuid",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles", "list"]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "extra invocation field",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles", "list"]
+        }
+      },
+      "shell": "whoami"
+    },
+    "accepted": false
+  },
+  {
+    "name": "extra command args",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "arguments": ["profiles", "list"]
+        },
+        "path": "/secret"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "global library without a selected workspace",
+    "request": {
+      "kind": "invoke",
+      "id": "2d46f10e-c337-45bc-9a95-3f08369c3345",
+      "command": "run_instruction_command",
+      "args": {
+        "request": {
+          "workspaceRoot": "",
+          "arguments": ["profiles", "list"]
+        }
+      }
+    },
+    "accepted": true
+  }
+]

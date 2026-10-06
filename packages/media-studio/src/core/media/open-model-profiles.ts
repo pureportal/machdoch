@@ -1,6 +1,7 @@
 import profiles from "../../../../../apps/client/src-tauri/python/open_media_models.json" with { type: "json" };
 import manifests from "../../../../../apps/client/src-tauri/src/media/open_model_manifests.json" with { type: "json" };
 import type { MediaCapability, MediaModelDescriptor } from "./contracts.js";
+import { getMediaModelAddonCapabilities } from "./model-addons.js";
 
 export interface OpenMediaModelProfile {
   id: string;
@@ -20,6 +21,21 @@ export interface OpenMediaModelProfile {
   prompt?: boolean;
   spatialMultiple?: number;
   video?: { minimum: number; maximum: number; stride: number; fps: number };
+  license: {
+    name: string;
+    spdxId: string | null;
+    commercialUse: "allowed" | "review-required";
+    sourceUrl?: string;
+  };
+  distillation?: {
+    method: "dmad" | "pdmd";
+    checkpointFile: string;
+    checkpointSha256: string;
+    checkpointByteSize: number;
+  } & (
+    | { sampler: "renoise" | "euler"; videoShift: number; audioShift: number }
+    | { sampler: "lcm"; timesteps: number[] }
+  );
 }
 
 export const OPEN_MEDIA_MODEL_PROFILES: readonly OpenMediaModelProfile[] =
@@ -59,14 +75,17 @@ export const createOpenMediaModels = (
       management: {
         acquisition: manifest ? "managed-install" : "file-import",
       },
-      addonCapabilities: [],
+      addonCapabilities: getMediaModelAddonCapabilities(
+        "local-diffusers",
+        profile.architecture,
+      ),
       runtimeReadiness: "unverified",
       license: {
         ...profile.license,
         commercialUse: profile.license.commercialUse as
           | "allowed"
           | "review-required",
-        sourceUrl: source,
+        sourceUrl: profile.license.sourceUrl ?? source,
         requiresAcceptance: profile.license.commercialUse !== "allowed",
       },
       recommended: false,

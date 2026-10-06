@@ -1,5 +1,10 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import {
+  hasMediaHost,
+  invoke,
+  isRemoteMedia,
+  open,
+} from "@machdoch/media-studio/tauri/ui/media/media-platform.js";
+import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import { FolderOpen, LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
@@ -25,7 +30,7 @@ export function AssetStorageSettingsPanel() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isTauri()) return;
+    if (!hasMediaHost()) return;
     let active = true;
     let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
@@ -47,7 +52,7 @@ export function AssetStorageSettingsPanel() {
     };
   }, []);
 
-  if (!isTauri()) {
+  if (!hasMediaHost()) {
     return (
       <p className="text-sm text-slate-400">
         Open the desktop app to change the asset folder.
@@ -151,7 +156,9 @@ export function AssetStorageSettingsPanel() {
       )}
       {!moving && folder && (
         <div className="space-y-3 rounded-lg border border-slate-700 p-4">
-          <p className="break-all text-sm text-slate-200">{folder}</p>
+          {!isRemoteMedia() ? (
+            <p className="break-all text-sm text-slate-200">{folder}</p>
+          ) : null}
           <p className="text-sm text-slate-400">
             Move all models, LoRAs, and other Media Studio assets here. Media
             Studio pauses until the move finishes; interrupted moves resume on
@@ -177,7 +184,17 @@ export function AssetStorageSettingsPanel() {
           {error}
         </p>
       )}
-      {!moving && (
+      {!moving && isRemoteMedia() ? (
+        <label className="grid gap-2 text-sm">
+          Move assets to
+          <Input
+            aria-label="Move assets to"
+            value={folder ?? ""}
+            disabled={busy || !status}
+            onChange={(event) => setFolder(event.target.value || null)}
+          />
+        </label>
+      ) : !moving ? (
         <Button
           variant="outline"
           disabled={busy || !status}
@@ -186,7 +203,7 @@ export function AssetStorageSettingsPanel() {
           <FolderOpen className="h-4 w-4" />
           Choose folder
         </Button>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -14,47 +14,57 @@ import {
 import {
   createFleetSessionId,
   productSnapshotVersion,
+  type ComposerHistorySelection,
 } from "@machdoch/fleet-protocol";
+import { getOriginalPromptContent } from "@machdoch/product-ui";
+import {
+  renderMediaPoseSvg,
+  type MediaPoseMap,
+} from "@machdoch/media-studio/core/media/contracts.js";
 import { getAvailableParallelAgentModes } from "../../../../core/parallel-agent-capabilities.js";
 import {
-  isMediaAssetContextAttachment,
   isTransientChatOperationMessage,
+  isQuickVoiceSession,
   type ChatSessionMessage,
-  type ChatSessionContextAttachment,
   type ChatSessionRecord,
-  type SmartContextPack,
   type ShellPersistedState,
 } from "../../chat-session.model";
+import type {
+  SmartContextPack,
+  SaveSmartContextPackInput,
+  SmartContextPackExportPayload,
+  SmartContextPackScope,
+} from "@machdoch/client-ui/context-packs/model";
+import {
+  isMediaAssetContextAttachment,
+  type ChatSessionContextAttachment,
+} from "@machdoch/client-ui/composer/model";
 import {
   canArchiveSession,
   canDeleteSession,
   canDuplicateSession,
   canPinSession,
   canRenameSession,
+  compareSessionsByAttention,
   getSessionOverviewStatus,
   getSessionTitle,
+  hasUnreadCompletedSessionResponse,
 } from "../../chat-session.model";
 import {
   getSmartContextPackScope,
   getSmartContextPackScopeLabel,
-} from "./smart-context-packs";
+} from "@machdoch/client-ui/context-packs/helpers";
 import {
   acknowledgeFleetControlCommand,
   cancelDesktopTask,
-  cancelSchedulerRun,
-  deleteSchedulerJob,
   getFleetConnectionStatus,
   getPendingFleetControlCommands,
   loadActiveDesktopTasks,
   loadProviderModelCatalog,
   listSchedulerJobs,
   listSchedulerRuns,
-  pauseSchedulerJob,
   REASONING_MODE_ORDER,
-  resumeSchedulerJob,
-  retrySchedulerRun,
   subscribeToFleetControlCommands,
-  triggerSchedulerJob,
   updateFleetControlShellSnapshot,
   type FleetControlCommandEvent,
   type FleetControlShellSnapshot,
@@ -87,17 +97,22 @@ import { useFleetRalph } from "../../ralph/use-fleet-ralph";
 import {
   getCatalogModelsForProvider,
   getModelLabelForProvider,
-  getProviderLabel,
   type ProviderModelCatalogSnapshot,
   type RuntimeProvider,
 } from "../../model-catalog";
+import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import { getReasoningModesForProvider } from "../../reasoning-options";
 import {
   beginCrossWindowOperation,
   completeCrossWindowOperation,
   releaseCrossWindowOperation,
 } from "../../lib/cross-window-operation";
+import { createFleetComposerText } from "./fleet-composer-text";
 import { getRenderedMessageContent } from "./execution-message";
+import { getMessageWorkspaceRoot } from "./message-workspace";
+import { useFleetSessionData } from "./use-fleet-session-data";
+import { selectFleetSessionWindow } from "./fleet-session-window";
+import { getRetryableAgentMessageIds } from "@machdoch/client-ui/conversation/retryable-messages";
 import {
   canUseTauriStore,
   getCurrentShellWindowLabel,
@@ -120,18 +135,7 @@ const RALPH_LAUNCH_POLL_MS = 75;
 class NonRetryableFleetCommandError extends Error {}
 const IDEMPOTENT_FLEET_COMMAND_KINDS = new Set<
   FleetControlCommandEvent["kind"]
->([
-  "scheduler-trigger",
-  "scheduler-pause",
-  "scheduler-resume",
-  "scheduler-delete",
-  "scheduler-retry-run",
-  "scheduler-cancel-run",
-  "ralph-run",
-  "ralph-resume-run",
-  "generate-media",
-  "cancel-media-run",
-]);
+>(["ralph-run", "ralph-resume-run", "generate-media", "cancel-media-run"]);
 const MAX_IDEMPOTENT_FLEET_COMMAND_ATTEMPTS = 3;
 const MAIN_WINDOW_LABEL = "main";
 const FLEET_MESSAGE_LIMIT = 80;
@@ -193,6 +197,7 @@ const createMessageSourceSnapshot = (
       title: source.execution.task,
       summary: source.execution.summary,
       mode: source.execution.mode,
+      ...(thinking?.timeout ? { timeout: thinking.timeout } : {}),
       entries: thinking
         ? thinking.timelineEvents.slice(-24).map((entry) => ({
             label: entry.label,
@@ -242,6 +247,7 @@ const createMessageSourceSnapshot = (
         ? { summary: source.thinking.assistantText }
         : {}),
       mode: source.thinking.mode,
+      ...(source.thinking.timeout ? { timeout: source.thinking.timeout } : {}),
       entries: source.thinking.timelineEvents.slice(-24).map((entry) => ({
         label: entry.label,
         detail: entry.detail,
@@ -283,8 +289,18 @@ const createMessageSnapshot = (
   message: ChatSessionMessage,
   speakingMessageId: string | null,
   voiceSupported: boolean,
+  workspace: string | null,
+  retryableMessages: ReadonlySet<string>,
 ): FleetShellMessageSnapshot => {
   const source = createMessageSourceSnapshot(message);
+  const content = getRenderedMessageContent(message) || message.content;
+  const originalPrompt =
+    message.role === "user"
+      ? getOriginalPromptContent(
+          content,
+          message.promptEnhancement?.originalContent,
+        )
+      : null;
   const promptEnhancement =
     isTransientChatOperationMessage(message) &&
     message.lifecycle?.owner === "prompt-enhancement";
@@ -292,7 +308,10 @@ const createMessageSnapshot = (
   return {
     id: message.id,
     role: message.role,
-    content: getRenderedMessageContent(message) || message.content,
+    content,
+    rawContent: message.content,
+    workspace,
+    ...(originalPrompt ? { originalPrompt } : {}),
     ...(typeof message.createdAt === "number"
       ? { createdAt: message.createdAt }
       : {}),
@@ -304,9 +323,18 @@ const createMessageSnapshot = (
     ),
     ...(source ? { source } : {}),
     actions: {
+      canEdit:
+        message.role === "user" &&
+        !message.taskAction &&
+        !isTransientChatOperationMessage(message),
+      canReplay:
+        message.role === "agent" &&
+        !isTransientChatOperationMessage(message) &&
+        retryableMessages.has(message.id),
       canRetry: canRetryOrContinueMessage(message),
       canContinue: canRetryOrContinueMessage(message),
-      canSaveAsContextPack: message.content.trim().length > 0,
+      canSaveAsContextPack:
+        message.role === "user" && message.content.trim().length > 0,
       canSpeak: voiceSupported && message.role === "agent",
       isSpeaking: speakingMessageId === message.id,
     },
@@ -371,6 +399,9 @@ const createSessionSnapshot = (
         }
       : {}),
     canRename: canRenameSession(session),
+    canResetTime: !isQuickVoiceSession(session),
+    canMoveToTop: !isQuickVoiceSession(session),
+    unread: hasUnreadCompletedSessionResponse(session),
     canDelete: canDeleteSession(session),
     canArchive: canArchiveSession(session),
     canPin: canPinSession(session),
@@ -558,6 +589,9 @@ export const useFleetControl = (options: {
   hasHydrated: boolean;
   shellState: ShellPersistedState;
   activeSession: ChatSessionRecord;
+  runningTaskMessageAction: "queue" | "steer" | "stop-and-send";
+  imageInputSupported: boolean;
+  imageInputDisabledReason: string | null;
   visibleMessages: ChatSessionMessage[];
   runtimeSnapshot: RuntimeSnapshot | null;
   runtimeLoading: boolean;
@@ -566,6 +600,7 @@ export const useFleetControl = (options: {
   chooserProviders: RuntimeProvider[];
   defaultMode: RuntimeSnapshot["mode"];
   defaultReasoning: RuntimeSnapshot["reasoning"];
+  defaultAdaptiveControllerEnabled: boolean | null;
   activeRunMode: RuntimeSnapshot["mode"];
   activeReasoning: RuntimeSnapshot["reasoning"];
   composerWorkspaceLabel: string;
@@ -601,13 +636,20 @@ export const useFleetControl = (options: {
   speakingMessageId: string | null;
   speechInputSupported: boolean;
   speechInputEnabled: boolean;
+  speechInputRecording: boolean;
+  speechInputBusy: boolean;
   speechInputStatus: string | null;
   activeDesktopTasksRef: MutableRefObject<Map<string, string>>;
   flushPersistence: () => Promise<void>;
+  onImportSessionPayload: (payload: unknown) => number;
   onMarkFleetCommandHandled: (commandId: string) => void;
   onRetryTask: (message: ChatSessionMessage) => void;
+  onEditMessage: (message: ChatSessionMessage, content: string) => boolean;
+  onReplayMessage: (message: ChatSessionMessage) => boolean;
   onContinueTask: (message: ChatSessionMessage) => void;
   onCreateSession: (workspace?: string, sessionId?: string) => void;
+  onCreatePoseChat: (scene: MediaPoseMap | null, sessionId: string) => string;
+  onOpenQuickChat: (sessionId: string) => void;
   onActivateSession: (sessionId: string) => void;
   onArchiveSession: (sessionId: string) => void;
   onTogglePinnedSession: (sessionId: string) => void;
@@ -617,7 +659,14 @@ export const useFleetControl = (options: {
   onRenameSession: (sessionId: string, title: string) => void;
   onTagSession: (sessionId: string, tags: string[]) => void;
   onClearSessionHistory: (sessionId: string) => void;
+  onResetSessionTime: (sessionId: string) => void;
+  onMoveSessionToTop: (sessionId: string) => void;
   onUpdateSessionDraft: (sessionId: string, draft: string) => void;
+  onRestorePromptHistory: (
+    sessionId: string,
+    draft: string,
+    history: ComposerHistorySelection,
+  ) => boolean;
   onSetSessionModel: (
     sessionId: string,
     provider: RuntimeProvider,
@@ -626,6 +675,10 @@ export const useFleetControl = (options: {
   onSetSessionMode: (
     sessionId: string,
     mode: RuntimeSnapshot["mode"] | null,
+  ) => void;
+  onSetAdaptiveController: (
+    sessionId: string,
+    override: boolean | null,
   ) => void;
   onSetGoalMode: (sessionId: string, mode: GoalMode) => void;
   onSetParallelAgentMode: (
@@ -637,6 +690,12 @@ export const useFleetControl = (options: {
     reasoning: RuntimeSnapshot["reasoning"] | null,
   ) => void;
   onSetSessionWorkspace: (sessionId: string, workspace: string | null) => void;
+  onAddWorkspace: (workspace: string) => void | Promise<void>;
+  onRemoveWorkspace: (workspace: string) => Promise<void>;
+  onRelinkWorkspace: (
+    workspace: string,
+    destinationWorkspace: string,
+  ) => Promise<void>;
   onSetPromptEnhancementMode: (mode: "off" | "simple" | "web-search") => void;
   onSetInterview: (enabled: boolean) => void;
   onCancelPromptEnhancement: (taskId: string) => void;
@@ -646,6 +705,9 @@ export const useFleetControl = (options: {
     promptEnhancementMode: "off" | "simple" | "web-search";
     interviewEnabled: boolean;
     goalObjective?: string;
+    iterationCount?: number;
+    iterationMode?: "repeat-prompt" | "continue" | "repeat-prompt-and-continue";
+    runningAction?: "queue" | "steer" | "stop-and-send";
   }) => boolean;
   onSetSessionMemory: (sessionId: string, enabled: boolean) => void;
   onForgetSessionMemory: (sessionId: string, memoryId: string) => void;
@@ -654,13 +716,83 @@ export const useFleetControl = (options: {
   onSetUiControl: (sessionId: string, enabled: boolean) => void;
   onRemoveContextAttachment: (sessionId: string, attachmentId: string) => void;
   onClearContextAttachments: (sessionId: string) => void;
-  onApplyContextPack: (sessionId: string, packId: string) => boolean;
+  onAddContextAttachments: (
+    sessionId: string,
+    paths: string[],
+    messageId?: string,
+  ) => Promise<void>;
+  onApplyContextPack: (
+    sessionId: string,
+    packId: string,
+    variableValues?: Record<string, string>,
+  ) => boolean;
+  onSaveContextPack: (
+    sessionId: string,
+    input: SaveSmartContextPackInput,
+  ) => void;
+  onImportContextPacks: (
+    sessionId: string,
+    payload: SmartContextPackExportPayload,
+    scope: SmartContextPackScope,
+  ) => void;
+  onRunningTaskMessageActionChange: (
+    action: "queue" | "steer" | "stop-and-send",
+  ) => void;
+  onQueuedMessageChange: (messageId: string, content: string) => void;
+  onQueuedMessageMove: (messageId: string, direction: -1 | 1) => void;
+  onQueuedMessageReorder: (messageId: string, targetIndex: number) => void;
+  onQueuedMessageRemove: (messageId: string) => void;
+  onQueuedMessageRetry: (messageId: string) => void;
+  onQueuedMessageRemoveContextAttachment: (
+    messageId: string,
+    attachmentId: string,
+  ) => void;
+  onQueuedMessageClearContextAttachments: (messageId: string) => void;
   onDeleteContextPack: (packId: string) => void;
   onSaveMessageAsContextPack: (message: ChatSessionMessage) => void;
   onSpeakMessage: (message: ChatSessionMessage) => void;
   onStopSpeaking: () => void;
+  onSetAutoSpeak: (enabled: boolean) => void;
+  onSetSpeechInputRecording: (
+    sessionId: string,
+    enabled: boolean,
+  ) => Promise<void>;
 }): void => {
+  const retryableCache = useRef(
+    new WeakMap<ChatSessionMessage[], ReadonlySet<string>>(),
+  );
+  const retryableIds = useCallback((messages: ChatSessionMessage[]) => {
+    let cached = retryableCache.current.get(messages);
+    if (!cached) {
+      cached = getRetryableAgentMessageIds(messages);
+      retryableCache.current.set(messages, cached);
+    }
+    return cached;
+  }, []);
   const currentWindowLabel = getCurrentShellWindowLabel();
+  useFleetSessionData({
+    hasHydrated: options.hasHydrated,
+    state: options.shellState,
+    importSessionPayload: options.onImportSessionPayload,
+    flushPersistence: options.flushPersistence,
+    projectSession: (session) =>
+      createSessionSnapshot(
+        session,
+        options.shellState.queuedSessionMessages,
+        options.activeDesktopTasksRef,
+        options.defaultMode,
+        options.defaultReasoning,
+      ),
+    projectAttachment: createAttachmentSnapshot,
+    projectMessage: (message, messages, workspace) =>
+      createMessageSnapshot(
+        message,
+        options.speakingMessageId,
+        options.voiceSupported,
+        getMessageWorkspaceRoot(message, messages, workspace),
+        retryableIds(messages),
+      ),
+  });
   const isPrimaryController = canUseTauriStore()
     ? currentWindowLabel === MAIN_WINDOW_LABEL
     : true;
@@ -941,24 +1073,39 @@ export const useFleetControl = (options: {
       version: productSnapshotVersion,
       capturedAt: Date.now(),
       activeSessionId: options.activeSession.id,
-      sessions: options.shellState.sessions
-        .slice(0, FLEET_SESSION_LIMIT)
-        .map((session) =>
-          createSessionSnapshot(
-            session,
-            options.shellState.queuedSessionMessages,
-            options.activeDesktopTasksRef,
-            options.defaultMode,
-            options.defaultReasoning,
-          ),
+      ...(options.activeSession.specialSession === "pose" &&
+      options.activeSession.poseScene
+        ? { poseSceneSvg: renderMediaPoseSvg(options.activeSession.poseScene) }
+        : {}),
+      sessions: selectFleetSessionWindow(
+        options.shellState.sessions.slice().sort(compareSessionsByAttention),
+        options.activeSession.id,
+        FLEET_SESSION_LIMIT,
+      ).map((session) =>
+        createSessionSnapshot(
+          session,
+          options.shellState.queuedSessionMessages,
+          options.activeDesktopTasksRef,
+          options.defaultMode,
+          options.defaultReasoning,
         ),
-      workspaces: options.recentWorkspaces.slice(0, 40).map((root) => ({
-        root,
-        label: getWorkspaceLabel(root),
-        sessionCount: options.shellState.sessions.filter(
-          (session) => session.workspace === root,
-        ).length,
-      })),
+      ),
+      workspaces: [
+        ...new Set([
+          ...options.recentWorkspaces,
+          ...(options.instructionRegistry?.workspaces.map(
+            (workspace) => workspace.root,
+          ) ?? []),
+        ]),
+      ]
+        .slice(0, 128)
+        .map((root) => ({
+          root,
+          label: getWorkspaceLabel(root),
+          sessionCount: options.shellState.sessions.filter(
+            (session) => session.workspace === root,
+          ).length,
+        })),
       visibleMessages: options.visibleMessages
         .slice(-FLEET_MESSAGE_LIMIT)
         .map((entry) =>
@@ -966,11 +1113,37 @@ export const useFleetControl = (options: {
             entry,
             options.speakingMessageId,
             options.voiceSupported,
+            getMessageWorkspaceRoot(
+              entry,
+              options.visibleMessages,
+              options.activeSession.workspace,
+            ),
+            retryableIds(options.visibleMessages),
           ),
         ),
       composer: {
-        sessionId: options.activeSession.id,
-        draft: options.activeSession.draft,
+        ...createFleetComposerText(
+          options.shellState,
+          options.activeSession,
+          createAttachmentSnapshot,
+          8_000,
+          32,
+        ),
+        textTruncated:
+          options.activeSession.draft.length > 8_000 ||
+          options.activeSession.promptHistory.length > 30 ||
+          options.activeSession.promptHistory.some(
+            (prompt) => prompt.length > 8_000,
+          ) ||
+          options.shellState.queuedSessionMessages
+            .filter((message) => message.sessionId === options.activeSession.id)
+            .some(
+              (message, index) =>
+                index >= 32 ||
+                (message.visibleMessageContent ?? message.task).length >
+                  8_000 ||
+                (message.failureMessage?.length ?? 0) > 12_000,
+            ),
         provider: options.activeSession.provider,
         providerLabel: getProviderLabel(options.activeSession.provider),
         model: options.activeSession.model,
@@ -983,6 +1156,10 @@ export const useFleetControl = (options: {
         modelCatalog,
         mode: options.activeRunMode,
         defaultMode: options.defaultMode,
+        adaptiveController: {
+          override: options.activeSession.adaptiveControllerOverride ?? null,
+          defaultEnabled: options.defaultAdaptiveControllerEnabled,
+        },
         goalMode: resolveGoalMode(
           options.activeSession.provider,
           options.activeSession.goalMode,
@@ -1056,6 +1233,11 @@ export const useFleetControl = (options: {
         ),
         chooserProviders: options.chooserProviders,
         matchedContextPackIds: options.matchedContextPackIds,
+        imageInputSupported: options.imageInputSupported,
+        ...(options.imageInputDisabledReason
+          ? { imageInputDisabledReason: options.imageInputDisabledReason }
+          : {}),
+        runningTaskMessageAction: options.runningTaskMessageAction,
       },
       runtime: {
         loading: options.runtimeLoading,
@@ -1124,6 +1306,8 @@ export const useFleetControl = (options: {
           : {}),
         speechInputSupported: options.speechInputSupported,
         speechInputEnabled: options.speechInputEnabled,
+        speechInputRecording: options.speechInputRecording,
+        speechInputBusy: options.speechInputBusy,
         ...(options.speechInputStatus
           ? { speechInputStatus: options.speechInputStatus }
           : {}),
@@ -1184,6 +1368,7 @@ export const useFleetControl = (options: {
     options.speechInputSupported,
     options.uiControlDescription,
     options.visibleMessages,
+    retryableIds,
     options.voiceSupported,
     options.workspaceContextPacks,
     modelCatalogLoading,
@@ -1192,31 +1377,6 @@ export const useFleetControl = (options: {
     mediaSnapshot,
     schedulerState,
   ]);
-
-  const runFleetSchedulerAction = useCallback(
-    async (action: () => Promise<unknown>): Promise<void> => {
-      try {
-        await action();
-      } catch (error) {
-        if (fleetControlMountedRef.current) {
-          console.error("Fleet Manager action failed", error);
-        }
-        throw error;
-      }
-
-      try {
-        await refreshScheduler();
-      } catch (error) {
-        if (fleetControlMountedRef.current) {
-          console.error(
-            "Failed to refresh Fleet Manager scheduler state",
-            error,
-          );
-        }
-      }
-    },
-    [refreshScheduler],
-  );
 
   const startFleetRalphAction = useCallback(
     async (
@@ -1339,6 +1499,25 @@ export const useFleetControl = (options: {
       }
 
       switch (command.kind) {
+        case "edit-message":
+        case "replay-message": {
+          const message = sourceSession.messages.find(
+            (entry) => entry.id === command.messageId,
+          );
+          if (!message || isTransientChatOperationMessage(message))
+            throw new NonRetryableFleetCommandError(
+              "The message is no longer available. Refresh the conversation.",
+            );
+          const accepted =
+            command.kind === "edit-message"
+              ? options.onEditMessage(message, command.prompt ?? "")
+              : options.onReplayMessage(message);
+          if (!accepted)
+            throw new NonRetryableFleetCommandError(
+              "The message could not be submitted. Wait for the current task to finish, then try again.",
+            );
+          break;
+        }
         case "cancel": {
           if (command.taskId) {
             await cancelDesktopTask(command.taskId);
@@ -1402,12 +1581,141 @@ export const useFleetControl = (options: {
                 | "simple"
                 | "web-search",
               interviewEnabled: command.enabled === true,
+              ...(command.iterationCount !== undefined
+                ? { iterationCount: command.iterationCount }
+                : {}),
+              ...(command.iterationMode
+                ? { iterationMode: command.iterationMode }
+                : {}),
+              ...(command.runningAction
+                ? { runningAction: command.runningAction }
+                : {}),
               ...(command.goalObjective
                 ? { goalObjective: command.goalObjective }
                 : {}),
             })
           ) {
             throw new Error("The Fleet message could not be submitted.");
+          }
+          break;
+        }
+
+        case "add-context-attachments": {
+          if (!command.paths?.length)
+            throw new NonRetryableFleetCommandError("Select an attachment.");
+          if (command.messageId) {
+            const message = options.shellState.queuedSessionMessages.find(
+              (entry) =>
+                entry.id === command.messageId &&
+                entry.sessionId === sourceSession.id,
+            );
+            if (
+              !message ||
+              message.status === "enhancing" ||
+              message.status === "dispatching"
+            )
+              throw new NonRetryableFleetCommandError(
+                "This queued message cannot be changed. Refresh the device.",
+              );
+          }
+          await options.onAddContextAttachments(
+            sourceSession.id,
+            command.paths,
+            command.messageId,
+          );
+          break;
+        }
+        case "set-running-message-action": {
+          if (!command.runningAction)
+            throw new NonRetryableFleetCommandError(
+              "Choose how to send messages while a task is running.",
+            );
+          options.onRunningTaskMessageActionChange(command.runningAction);
+          break;
+        }
+        case "update-queued-message":
+        case "move-queued-message":
+        case "reorder-queued-message":
+        case "remove-queued-message":
+        case "retry-queued-message":
+        case "remove-queued-attachment":
+        case "clear-queued-attachments": {
+          const message = options.shellState.queuedSessionMessages.find(
+            (entry) =>
+              entry.id === command.messageId &&
+              entry.sessionId === sourceSession.id,
+          );
+          if (!message)
+            throw new NonRetryableFleetCommandError(
+              "The queued message is no longer available. Refresh the device.",
+            );
+          if (
+            message.status === "enhancing" ||
+            message.status === "dispatching"
+          )
+            throw new NonRetryableFleetCommandError(
+              "Wait for this message to finish before changing it.",
+            );
+          if (
+            (command.kind === "move-queued-message" ||
+              command.kind === "reorder-queued-message") &&
+            (message.iteration ||
+              options.shellState.queuedSessionMessages.some(
+                (entry) =>
+                  entry.sessionId === sourceSession.id &&
+                  (entry.status === "enhancing" ||
+                    entry.status === "dispatching"),
+              ))
+          )
+            throw new NonRetryableFleetCommandError(
+              "Wait for queued work to finish before reordering messages.",
+            );
+          switch (command.kind) {
+            case "update-queued-message":
+              options.onQueuedMessageChange(message.id, command.prompt ?? "");
+              break;
+            case "move-queued-message":
+              if (command.direction !== -1 && command.direction !== 1)
+                throw new NonRetryableFleetCommandError(
+                  "Choose a queue direction.",
+                );
+              options.onQueuedMessageMove(message.id, command.direction);
+              break;
+            case "reorder-queued-message":
+              if (command.targetIndex === undefined)
+                throw new NonRetryableFleetCommandError(
+                  "Choose a queue position.",
+                );
+              options.onQueuedMessageReorder(message.id, command.targetIndex);
+              break;
+            case "remove-queued-message":
+              options.onQueuedMessageRemove(message.id);
+              break;
+            case "retry-queued-message":
+              if (message.status !== "failed")
+                throw new NonRetryableFleetCommandError(
+                  "Only failed queued messages can be retried.",
+                );
+              options.onQueuedMessageRetry(message.id);
+              break;
+            case "remove-queued-attachment":
+              if (
+                !command.attachmentId ||
+                !message.contextAttachments.some(
+                  (entry) => entry.id === command.attachmentId,
+                )
+              )
+                throw new NonRetryableFleetCommandError(
+                  "The queued attachment is no longer available.",
+                );
+              options.onQueuedMessageRemoveContextAttachment(
+                message.id,
+                command.attachmentId,
+              );
+              break;
+            case "clear-queued-attachments":
+              options.onQueuedMessageClearContextAttachments(message.id);
+              break;
           }
           break;
         }
@@ -1419,11 +1727,20 @@ export const useFleetControl = (options: {
           break;
         }
 
-        case "create-session": {
-          options.onCreateSession(
-            command.workspace,
+        case "open-quick-chat": {
+          options.onOpenQuickChat(
             await createFleetSessionId(command.commandId),
           );
+          break;
+        }
+
+        case "create-session": {
+          const sessionId = await createFleetSessionId(command.commandId);
+          if (command.specialKind === "pose") {
+            options.onCreatePoseChat(command.poseScene ?? null, sessionId);
+          } else {
+            options.onCreateSession(command.workspace, sessionId);
+          }
           break;
         }
 
@@ -1431,6 +1748,18 @@ export const useFleetControl = (options: {
           if (command.sessionId) {
             options.onActivateSession(command.sessionId);
           }
+          break;
+        }
+
+        case "reset-session-time":
+        case "move-session-to-top": {
+          if (isQuickVoiceSession(sourceSession))
+            throw new NonRetryableFleetCommandError(
+              "Quick Chat stays pinned at the top.",
+            );
+          if (command.kind === "reset-session-time")
+            options.onResetSessionTime(sourceSession.id);
+          else options.onMoveSessionToTop(sourceSession.id);
           break;
         }
 
@@ -1500,6 +1829,23 @@ export const useFleetControl = (options: {
           break;
         }
 
+        case "restore-prompt-history": {
+          if (
+            !command.history ||
+            command.prompt === undefined ||
+            !options.onRestorePromptHistory(
+              sourceSession.id,
+              command.prompt,
+              command.history,
+            )
+          ) {
+            throw new NonRetryableFleetCommandError(
+              "The draft or prompt history changed. Select the prompt again.",
+            );
+          }
+          break;
+        }
+
         case "set-session-model": {
           const provider = command.provider;
           const runtimeProvider =
@@ -1552,6 +1898,21 @@ export const useFleetControl = (options: {
             options.onSetGoalMode(command.sessionId, command.mode);
           break;
         }
+        case "set-adaptive-controller": {
+          if (
+            !command.sessionId ||
+            !["default", "enabled", "disabled"].includes(String(command.mode))
+          ) {
+            throw new NonRetryableFleetCommandError(
+              "Choose an adaptive context and compute setting for this session.",
+            );
+          }
+          options.onSetAdaptiveController(
+            command.sessionId,
+            command.mode === "default" ? null : command.mode === "enabled",
+          );
+          break;
+        }
         case "set-parallel-agent-mode": {
           if (
             command.sessionId &&
@@ -1590,6 +1951,28 @@ export const useFleetControl = (options: {
           if (command.sessionId) {
             options.onSetSessionReasoning(command.sessionId, null);
           }
+          break;
+        }
+
+        case "add-workspace": {
+          if (!command.workspace) throw new Error("Select a workspace.");
+          await options.onAddWorkspace(command.workspace);
+          break;
+        }
+
+        case "remove-workspace": {
+          if (!command.workspace) throw new Error("Select a workspace.");
+          await options.onRemoveWorkspace(command.workspace);
+          break;
+        }
+
+        case "relink-workspace": {
+          if (!command.workspace || !command.destinationWorkspace)
+            throw new Error("Select both workspace paths.");
+          await options.onRelinkWorkspace(
+            command.workspace,
+            command.destinationWorkspace,
+          );
           break;
         }
 
@@ -1697,12 +2080,41 @@ export const useFleetControl = (options: {
             !options.onApplyContextPack(
               command.sessionId,
               command.contextPackId,
+              command.variableValues,
             )
           ) {
             throw new NonRetryableFleetCommandError(
               `Context pack \`${command.contextPackId}\` is no longer available for session \`${command.sessionId}\`.`,
             );
           }
+          break;
+        }
+
+        case "save-context-pack": {
+          if (!command.sessionId || !command.contextPack) {
+            throw new NonRetryableFleetCommandError(
+              "The context pack is missing its session or content.",
+            );
+          }
+          options.onSaveContextPack(command.sessionId, command.contextPack);
+          break;
+        }
+
+        case "import-context-packs": {
+          if (
+            !command.sessionId ||
+            !command.importedContextPacks ||
+            (command.scope !== "workspace" && command.scope !== "global")
+          ) {
+            throw new NonRetryableFleetCommandError(
+              "The context-pack import is missing its session, archive, or scope.",
+            );
+          }
+          options.onImportContextPacks(
+            command.sessionId,
+            command.importedContextPacks,
+            command.scope,
+          );
           break;
         }
 
@@ -1740,88 +2152,36 @@ export const useFleetControl = (options: {
           break;
         }
 
+        case "set-auto-speak": {
+          if (!options.voiceSupported) {
+            throw new NonRetryableFleetCommandError(
+              "Speech playback is unavailable on this device.",
+            );
+          }
+          options.onSetAutoSpeak(command.enabled === true);
+          break;
+        }
+
+        case "set-speech-input-recording": {
+          if (
+            command.enabled === true &&
+            (!options.speechInputSupported || !options.speechInputEnabled)
+          ) {
+            throw new NonRetryableFleetCommandError(
+              "Configure speech input on this device first.",
+            );
+          }
+          await options.onSetSpeechInputRecording(
+            sourceSession.id,
+            command.enabled === true,
+          );
+          break;
+        }
+
         case "generate-media":
         case "cancel-media-run": {
           await executeFleetMediaCommand(command, configuredMediaProviderIds);
           await refreshMedia();
-          break;
-        }
-
-        case "scheduler-trigger": {
-          if (command.jobId) {
-            await runFleetSchedulerAction(() =>
-              triggerSchedulerJob(
-                command.workspace ?? options.activeSession.workspace,
-                command.jobId!,
-                command.commandId,
-              ),
-            );
-          }
-          break;
-        }
-
-        case "scheduler-pause": {
-          if (command.jobId) {
-            await runFleetSchedulerAction(() =>
-              pauseSchedulerJob(
-                command.workspace ?? options.activeSession.workspace,
-                command.jobId!,
-                command.commandId,
-              ),
-            );
-          }
-          break;
-        }
-
-        case "scheduler-resume": {
-          if (command.jobId) {
-            await runFleetSchedulerAction(() =>
-              resumeSchedulerJob(
-                command.workspace ?? options.activeSession.workspace,
-                command.jobId!,
-                command.commandId,
-              ),
-            );
-          }
-          break;
-        }
-
-        case "scheduler-delete": {
-          if (command.jobId) {
-            await runFleetSchedulerAction(() =>
-              deleteSchedulerJob(
-                command.workspace ?? options.activeSession.workspace,
-                command.jobId!,
-                command.commandId,
-              ),
-            );
-          }
-          break;
-        }
-
-        case "scheduler-retry-run": {
-          if (command.runId) {
-            await runFleetSchedulerAction(() =>
-              retrySchedulerRun(
-                command.workspace ?? options.activeSession.workspace,
-                command.runId!,
-                command.commandId,
-              ),
-            );
-          }
-          break;
-        }
-
-        case "scheduler-cancel-run": {
-          if (command.runId) {
-            await runFleetSchedulerAction(() =>
-              cancelSchedulerRun(
-                command.workspace ?? options.activeSession.workspace,
-                command.runId!,
-                command.commandId,
-              ),
-            );
-          }
           break;
         }
 
@@ -1856,7 +2216,6 @@ export const useFleetControl = (options: {
       providerModelCatalog,
       refreshMedia,
       refreshRalph,
-      runFleetSchedulerAction,
       startFleetRalphAction,
     ],
   );
@@ -1930,9 +2289,10 @@ export const useFleetControl = (options: {
         lastSnapshotCapturedAtRef.current + 1,
       );
       lastSnapshotCapturedAtRef.current = snapshot.capturedAt;
+      const sessionIds = options.shellState.sessions.map(({ id }) => id);
       const serializedSnapshot = JSON.stringify({
-        ...snapshot,
-        capturedAt: 0,
+        snapshot: { ...snapshot, capturedAt: 0 },
+        sessionIds,
       });
 
       if (serializedSnapshot === lastPublishedSnapshotRef.current) {
@@ -1941,7 +2301,7 @@ export const useFleetControl = (options: {
 
       const attemptSequence = snapshotPublishAttemptSequenceRef.current + 1;
       snapshotPublishAttemptSequenceRef.current = attemptSequence;
-      void updateFleetControlShellSnapshot(snapshot)
+      void updateFleetControlShellSnapshot(snapshot, sessionIds)
         .then(() => {
           if (
             !fleetControlMountedRef.current ||
@@ -2058,7 +2418,10 @@ export const useFleetControl = (options: {
         if (shouldAcknowledge) {
           try {
             if (canUseTauriStore()) {
-              await acknowledgeFleetControlCommand(command.commandId);
+              await acknowledgeFleetControlCommand(
+                command.commandId,
+                error instanceof Error ? error.message : String(error),
+              );
             }
             if (!disposed) {
               console.error("Fleet Manager command failed", error);

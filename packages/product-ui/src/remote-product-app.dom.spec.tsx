@@ -98,10 +98,20 @@ function harness(strict = false) {
   const element = (runtime: ProductRuntime) =>
     strict ? (
       <StrictMode>
-        <RemoteProductApp instanceName="Instance" runtime={runtime} />
+        <RemoteProductApp
+          Conversation={() => null}
+          Composer={() => null}
+          instanceName="Instance"
+          runtime={runtime}
+        />
       </StrictMode>
     ) : (
-      <RemoteProductApp instanceName="Instance" runtime={runtime} />
+      <RemoteProductApp
+        Conversation={() => null}
+        Composer={() => null}
+        instanceName="Instance"
+        runtime={runtime}
+      />
     );
   const view = render(element(remote.runtime));
   return {
@@ -126,6 +136,8 @@ describe("remote runtime refresh lifecycle", () => {
     const remote = transport();
     render(
       <RemoteProductApp
+        Conversation={() => null}
+        Composer={() => null}
         instanceName="Instance"
         runtime={remote.runtime}
         initialView="chat"

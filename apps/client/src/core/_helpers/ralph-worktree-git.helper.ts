@@ -20,15 +20,20 @@ export const runRalphWorktreeGit = async (
     input?: string;
     onStdoutBytes?: (chunk: Buffer) => void;
     signal?: AbortSignal;
+    timeoutMs?: number;
   } = {},
 ): Promise<string> => {
   try {
     const result = await runStreamingCommand(
       "git",
-      ["--no-optional-locks", ...args],
+      [
+        "--no-optional-locks",
+        ...(process.platform === "win32" ? ["-c", "core.longpaths=true"] : []),
+        ...args,
+      ],
       {
         cwd,
-        timeoutMs: 30_000,
+        timeoutMs: 120_000,
         maxBufferBytes: 32 * 1024 * 1024,
         normalizeOutput: false,
         ...options,
@@ -42,7 +47,9 @@ export const runRalphWorktreeGit = async (
       typeof error.stderr === "string" &&
       error.stderr.trim()
     ) {
-      throw new Error(error.stderr.trim(), { cause: error });
+      throw new Error(`${error.message}\n${error.stderr.trim()}`, {
+        cause: error,
+      });
     }
     throw error;
   }

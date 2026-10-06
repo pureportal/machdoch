@@ -1,0 +1,169 @@
+{
+  "date": "2026-10-06T21:06:34.182Z",
+  "productionManager": true,
+  "pretrainedWeightsUsed": false,
+  "checks": [
+    "original-source-mask-and-suggested-names",
+    "replaced-mask-released",
+    "removed-mask-released",
+    "removed-source-and-mask-released",
+    "failed-creation-1-download-released-inputs-retained",
+    "failed-creation-2-download-released-inputs-retained",
+    "closed-creator-inputs-released",
+    "failed-batch-import-all-uploads-released"
+  ],
+  "baselineFilesPreserved": [
+    "16a44e8d-ffac-443d-81fb-cac27e4de908-picture.png"
+  ],
+  "newUploadsRemaining": 0,
+  "originalFilesPreserved": true,
+  "originalHashes": [
+    "f665670f52d71c42e22b4760a0d351dca8a22d390977d7955bddffb977c72621",
+    "810a7e611c7893c873fa6755c3a2ada29997e8f49aa61516848d75755cd2b197"
+  ],
+  "temporaryFiles": [],
+  "pageErrors": [],
+  "transportFailures": [],
+  "responseWarnings": [],
+  "failures": [
+    {
+      "category": "configuration",
+      "code": "MODEL_NOT_INSTALLED",
+      "context": {
+        "assetId": null,
+        "modelId": null,
+        "nodeId": null,
+        "operation": "media_refmod_operation",
+        "providerId": null,
+        "runId": null,
+        "runtimeId": null
+      },
+      "message": "MiniMax H3 video VAE is incomplete or damaged. Install a complete video checkpoint.",
+      "partialOutputsExist": false,
+      "retryability": "after-user-action",
+      "schemaVersion": 1,
+      "suggestedActions": [
+        {
+          "description": "Review the download, license, disk, and compatibility plan.",
+          "id": "open-models",
+          "label": "Open Models"
+        }
+      ],
+      "technicalDiagnostic": "Local Diffusers worker failed: ValueError: MiniMax H3 video VAE is incomplete or damaged. Replace \\\\?\\D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\workspace\\models\\minimax-h3-ref2va\\vae\\minimax_h3_video_vae_fp16.safetensors with a complete checkpoint."
+    },
+    {
+      "category": "configuration",
+      "code": "MODEL_NOT_INSTALLED",
+      "context": {
+        "assetId": null,
+        "modelId": null,
+        "nodeId": null,
+        "operation": "media_refmod_operation",
+        "providerId": null,
+        "runId": null,
+        "runtimeId": null
+      },
+      "message": "MiniMax H3 video VAE is incomplete or damaged. Install a complete video checkpoint.",
+      "partialOutputsExist": false,
+      "retryability": "after-user-action",
+      "schemaVersion": 1,
+      "suggestedActions": [
+        {
+          "description": "Review the download, license, disk, and compatibility plan.",
+          "id": "open-models",
+          "label": "Open Models"
+        }
+      ],
+      "technicalDiagnostic": "Local Diffusers worker failed: ValueError: MiniMax H3 video VAE is incomplete or damaged. Replace \\\\?\\D:\\Machdoch-RefMod-Verification\\com.machdoch.refmodverification.r1791300414432.dev\\fixture\\workspace\\models\\minimax-h3-ref2va\\vae\\minimax_h3_video_vae_fp16.safetensors with a complete checkpoint."
+    },
+    {
+      "category": "validation",
+      "code": "INVALID_REQUEST",
+      "context": {
+        "assetId": null,
+        "modelId": null,
+        "nodeId": null,
+        "operation": "media_refmod_operation",
+        "providerId": null,
+        "runId": null,
+        "runtimeId": null
+      },
+      "message": "The RefMod file cannot be read. Choose another reference file.",
+      "partialOutputsExist": false,
+      "retryability": "after-user-action",
+      "schemaVersion": 1,
+      "suggestedActions": [
+        {
+          "description": "Correct the highlighted input or choose a compatible preset.",
+          "id": "review-input",
+          "label": "Review settings"
+        }
+      ],
+      "technicalDiagnostic": "Local Diffusers worker failed: SafetensorError: Error while deserializing header: header too large"
+    }
+  ],
+  "transferReservations": [
+    {
+      "id": "e1e951bb-737b-46ab-aa0e-ecaa1e54ac4b",
+      "name": "picture.png",
+      "direction": "upload"
+    },
+    {
+      "id": "25f48253-9a0e-4149-bc68-2e3069e3bb0a",
+      "name": "mask.png",
+      "direction": "upload"
+    },
+    {
+      "id": "31dc45e7-c312-472e-8300-bc10ecae48e7",
+      "name": "mask.png",
+      "direction": "upload"
+    },
+    {
+      "id": "801710f0-008e-41df-b828-a4bf8db12565",
+      "name": "mask.png",
+      "direction": "upload"
+    },
+    {
+      "id": "a08a42de-35f0-46c3-a0ea-672a613e0c84",
+      "name": "picture.png",
+      "direction": "upload"
+    },
+    {
+      "id": "4b593a32-0ea0-46de-b6d3-a31def814c3c",
+      "name": "mask.png",
+      "direction": "upload"
+    },
+    {
+      "id": "006367ad-b533-4cdf-bd64-0b0238534e2a",
+      "name": "Transfer ownership verification.safetensors",
+      "direction": "download"
+    },
+    {
+      "id": "224cace4-db0a-45d3-8638-1641094716ce",
+      "name": "Transfer ownership verification.safetensors",
+      "direction": "download"
+    },
+    {
+      "id": "b15010c4-2f9b-45bb-8259-7c55afe09e02",
+      "name": "invalid-transfer-import.safetensors",
+      "direction": "upload"
+    },
+    {
+      "id": "3a0156a6-c1df-46af-9599-a847706b619f",
+      "name": "import.safetensors",
+      "direction": "upload"
+    }
+  ],
+  "releasedTransferIds": [
+    "25f48253-9a0e-4149-bc68-2e3069e3bb0a",
+    "31dc45e7-c312-472e-8300-bc10ecae48e7",
+    "e1e951bb-737b-46ab-aa0e-ecaa1e54ac4b",
+    "801710f0-008e-41df-b828-a4bf8db12565",
+    "006367ad-b533-4cdf-bd64-0b0238534e2a",
+    "224cace4-db0a-45d3-8638-1641094716ce",
+    "a08a42de-35f0-46c3-a0ea-672a613e0c84",
+    "4b593a32-0ea0-46de-b6d3-a31def814c3c",
+    "b15010c4-2f9b-45bb-8259-7c55afe09e02",
+    "3a0156a6-c1df-46af-9599-a847706b619f"
+  ]
+}

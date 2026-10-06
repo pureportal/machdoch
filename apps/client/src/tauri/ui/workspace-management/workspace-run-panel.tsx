@@ -35,7 +35,7 @@ import {
   listenWorkspaceRunState,
   loadWorkspaceRunConfigurationDocument,
   loadWorkspaceRunSnapshot,
-  openExternalUrl,
+  openWorkspaceRunUrl,
   restartWorkspaceRunConfiguration,
   startWorkspaceRunConfiguration,
   stopWorkspaceRunConfiguration,
@@ -355,7 +355,7 @@ export const WorkspaceRunPanel = ({
         );
         setSnapshotError(null);
       }
-    })
+    }, normalizedRoot)
       .then((listener) => {
         if (active) unlisten = listener;
         else listener();
@@ -622,9 +622,16 @@ export const WorkspaceRunPanel = ({
           status={displayedStatus}
           onOpenUrl={(url) => {
             setActionError(null);
-            void openExternalUrl(url).catch((cause) =>
-              setActionError(errorMessage(cause)),
+            const source = [displayedStatus, ...displayedStatus.children].find(
+              (status) =>
+                status.configuration.kind === "task" &&
+                status.configuration.urls.includes(url),
             );
+            void openWorkspaceRunUrl(
+              normalizedRoot,
+              (source ?? displayedStatus).configuration.id,
+              url,
+            ).catch((cause) => setActionError(errorMessage(cause)));
           }}
         />
       ) : null}

@@ -55,7 +55,7 @@ import { getModelContextWindowTokens } from "../model-capabilities.js";
 import {
   sliceUtf16PrefixAtCodePointBoundary,
   sliceUtf16SuffixAtCodePointBoundary,
-} from "../../shared/unicode.js";
+} from "@machdoch/fleet-protocol/unicode";
 import { CopilotCliOutputDecoder } from "./copilot-cli-output.js";
 import { readCopilotCliTelemetry } from "./copilot-cli-telemetry.js";
 import {

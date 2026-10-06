@@ -167,6 +167,7 @@ const PaletteBody = ({
   const registrySnapshot = React.useSyncExternalStore(
     registry.subscribe,
     registry.getSnapshot,
+    registry.getSnapshot,
   );
   const page = pages[pages.length - 1];
   const frameKey =

@@ -1,17 +1,8 @@
-import type {
-  ChatSessionContextAttachment,
-  ChatSessionQueuedMessage,
-  ChatSessionQueuedPromptEnhancementRequest,
-  ChatSessionRequestIteration,
-} from "../../chat-session.model";
-import { MAX_REQUEST_ITERATIONS } from "../../chat-session.model";
+import type { ChatSessionQueuedMessage, ChatSessionQueuedPromptEnhancementRequest } from "../../chat-session.model";
+import type { ChatSessionContextAttachment, RequestIterationMode } from "@machdoch/client-ui/composer/model";
+import { MAX_REQUEST_ITERATIONS } from "@machdoch/client-ui/composer/model";
 
 export const CONTINUE_ITERATION_CONTENT = "Continue";
-export const DEFAULT_REQUEST_ITERATION_MODE = "continue" as const;
-
-export type RequestIterationMode = NonNullable<
-  ChatSessionRequestIteration["mode"]
->;
 
 const createIterationContent = (
   task: string,

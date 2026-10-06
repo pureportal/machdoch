@@ -1,0 +1,99 @@
+{
+  "date": "2026-10-06",
+  "changes": [
+    "Preview reads only the selected bundle member and preserves its dtype",
+    "Preview checks selected tensor fp32 memory cost before materialization",
+    "Inspect, load and save reject audio sample_rate values other than integer 32000",
+    "Inspect and load reject non-integer latent dimension metadata",
+    "Missing managed runtime returns RUNTIME_NOT_INSTALLED with an installation instruction and Open Models recovery"
+  ],
+  "checks": [
+    {
+      "command": "runtime/Scripts/python.exe -m unittest -v test_media_refmod_loading test_media_refmods test_media_refmod_collections test_media_refmod_models test_media_refmod_sources",
+      "workingDirectory": "apps/client/src-tauri/python",
+      "exitCode": 0,
+      "passed": 41,
+      "durationSeconds": 21.387,
+      "newRegressionTests": 6
+    },
+    {
+      "command": "pnpm --filter @machdoch/media-studio test",
+      "exitCode": 0,
+      "passed": 765,
+      "filesPassed": 88,
+      "durationSeconds": 150.65
+    },
+    {
+      "command": "pnpm --filter @machdoch/media-studio typecheck",
+      "exitCode": 0
+    },
+    {
+      "command": "pnpm --filter @machdoch/media-studio check",
+      "exitCode": 0
+    },
+    {
+      "command": "node --test scripts/licensing/media-refmods.test.mjs",
+      "exitCode": 0,
+      "passed": 2
+    },
+    {
+      "command": "refmod_worker_inspection_import_and_export_roundtrip --ignored --test-threads=1",
+      "exitCode": 0,
+      "passed": 1,
+      "durationSeconds": 90.51,
+      "nativeExecutable": "previously compiled desktop test executable",
+      "workerSource": "current Python source"
+    },
+    {
+      "command": "production media/error.rs module compiled with rustc --test and resolved serde dependencies",
+      "exitCode": 0,
+      "passed": 10,
+      "durationSeconds": 0.14
+    },
+    {
+      "command": "pnpm --filter @machdoch/media-studio exec vitest run --config vitest.config.ts src/tauri/ui/media/media-runtime.spec.ts src/tauri/ui/media/media-refmods.spec.ts",
+      "exitCode": 0,
+      "passed": 17,
+      "durationSeconds": 35.93
+    },
+    {
+      "command": "pnpm --filter @machdoch/client build:ui",
+      "exitCode": 0,
+      "durationSeconds": 40.17
+    },
+    {
+      "command": "cargo check --tests",
+      "workingDirectory": "apps/client/src-tauri",
+      "exitCode": 0,
+      "durationSeconds": 100,
+      "includesRuntimeRecoveryChange": true,
+      "log": "native-runtime-recovery-final-check.txt"
+    }
+  ],
+  "packagedPythonHelpers": {
+    "media_refmods.py": {
+      "sourceMatchesPackaged": true,
+      "sha256": "89e4dc878018f388f0135d8564d042af892670319628b00f996e2b8899cea8ca"
+    },
+    "media_refmod_preview.py": {
+      "sourceMatchesPackaged": true,
+      "sha256": "34b7800d4e8c3743907df2fb92e7d14424e969c5fe7055804160f4f11598f7d3"
+    }
+  },
+  "liveDesktopProbe": {
+    "commandReached": true,
+    "completed": false,
+    "diagnostic": "Install the Media Studio Python runtime",
+    "newRecoveryMessageVerifiedInLiveApp": false
+  },
+  "pretrainedWeightsUsed": false,
+  "devServerStarted": false,
+  "fullOutcomeVerified": false,
+  "outstanding": [
+    "MiniMax authorization for pretrained testing in the stated EU environment is not established",
+    "The existing video VAE preflight evidence reports a truncated checkpoint",
+    "Pretrained visual, audio and mixed-reference generation quality comparisons",
+    "Live desktop and fleet workflow acceptance",
+    "GPL provenance and combined-work distribution obligations for the existing H3 runtime"
+  ]
+}

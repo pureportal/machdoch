@@ -17,6 +17,8 @@ export interface MediaPlatform {
   ) => Promise<string | string[] | null>;
   save: typeof nativeSave;
   upload: (blob: Blob, name: string) => Promise<string>;
+  release: (path: string) => Promise<void>;
+  fileName: (path: string) => string;
   storageKey: string;
 }
 
@@ -47,6 +49,11 @@ export const open: MediaPlatform["open"] = (options) =>
   remotePlatform ? remotePlatform.open(options) : nativeOpen(options);
 export const save: typeof nativeSave = (options) =>
   remotePlatform ? remotePlatform.save(options) : nativeSave(options);
+export const releaseFile = async (path: string): Promise<void> => {
+  if (remotePlatform) await remotePlatform.release(path);
+};
+export const pickedFileName = (path: string): string =>
+  remotePlatform ? remotePlatform.fileName(path) : path.split(/[\\/]/u).at(-1)!;
 export const mediaStorageKey = (key: string): string =>
   remotePlatform ? `${remotePlatform.storageKey}:${key}` : key;
 export const openUrl = async (url: string): Promise<void> => {

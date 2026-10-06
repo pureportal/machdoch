@@ -1,6 +1,7 @@
 use serde::{de::Error, ser::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
+#[derive(Clone)]
 enum Shape {
     Bool,
     Integer,
@@ -19,8 +20,10 @@ enum Shape {
     ProjectListItem,
     BoundedInteger(u64, u64),
     HostTelemetry,
+    ContextAttachment,
 }
 
+#[derive(Clone)]
 struct Field {
     name: &'static str,
     shape: Shape,
@@ -92,6 +95,7 @@ impl Shape {
                 shape.accepts(value)
                     && value["memoryUsedBytes"].as_f64() <= value["memoryTotalBytes"].as_f64()
             }
+            Self::ContextAttachment => crate::context_packs::valid_attachment(value),
             Self::Integer => value.as_f64().is_some_and(|number| {
                 (0.0..=9_007_199_254_740_991.0).contains(&number) && number.fract() == 0.0
             }),
@@ -255,8 +259,84 @@ fn product_snapshot_shape() -> Shape {
         required("eventId", Shape::Integer),
         required("sessions", array(session(), 128)),
         required("commands", array(command(), 100)),
-        optional("shell", shell::shape()),
+        optional("shell", product_shell_shape()),
     ])
+}
+
+fn queued_message(attachments: Shape) -> Shape {
+    object(vec![
+        required("id", string(8_000)),
+        required("content", string(8_000)),
+        required("attachments", attachments),
+        required(
+            "status",
+            enumeration(&["queued", "enhancing", "dispatching", "failed"]),
+        ),
+        required("createdAt", Shape::Integer),
+        optional(
+            "iteration",
+            object(vec![
+                required("groupId", identifier()),
+                required("index", Shape::BoundedInteger(1, 20)),
+                required("total", Shape::BoundedInteger(1, 20)),
+                required(
+                    "mode",
+                    enumeration(&["repeat-prompt", "continue", "repeat-prompt-and-continue"]),
+                ),
+            ]),
+        ),
+        optional("waitingForIteration", Shape::BoundedInteger(1, 20)),
+        optional(
+            "promptEnhancementMode",
+            enumeration(&["simple", "web-search"]),
+        ),
+        optional("failureMessage", text()),
+    ])
+}
+
+fn product_shell_shape() -> Shape {
+    let Shape::Object(mut fields) = shell::shape() else {
+        unreachable!("Product shell must be an object.");
+    };
+    let composer = fields
+        .iter_mut()
+        .find(|field| field.name == "composer")
+        .expect("Product shell must define its composer.");
+    let Shape::Object(composer_fields) = &mut composer.shape else {
+        unreachable!("Product composer must be an object.");
+    };
+    let attachments = composer_fields
+        .iter()
+        .find(|field| field.name == "attachments")
+        .expect("Product composer must define its attachments.")
+        .shape
+        .clone();
+    composer_fields.extend([
+        optional(
+            "queuedMessages",
+            array(queued_message(attachments.clone()), 512),
+        ),
+        optional(
+            "history",
+            array(
+                object(vec![
+                    required("index", Shape::BoundedInteger(0, 10_000)),
+                    required("prompt", Shape::String(8_000, false)),
+                    required("attachments", attachments),
+                ]),
+                30,
+            ),
+        ),
+        optional(
+            "runningTaskMessageAction",
+            enumeration(&["queue", "steer", "stop-and-send"]),
+        ),
+        optional("draftRevision", Shape::Integer),
+        optional("textTruncated", Shape::Bool),
+        optional("imageInputSupported", Shape::Bool),
+        optional("imageInputDisabledReason", text()),
+    ]);
+    object(fields)
 }
 
 mod shell;

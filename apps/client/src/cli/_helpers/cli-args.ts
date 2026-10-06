@@ -1888,6 +1888,7 @@ export const parseCliArgs = (
     }
 
     const instructionGroups = new Set<InstructionCliGroup>([
+      "registry",
       "profiles",
       "assignments",
       "workspaces",
@@ -1909,11 +1910,12 @@ export const parseCliArgs = (
       firstInstructionWord !== "validate"
     ) {
       fail(
-        `Unknown instruction command \`${firstInstructionWord}\`. Use profiles, assignments, workspaces, transfer, recovery, resolve, or validate.`,
+        `Unknown instruction command \`${firstInstructionWord}\`. Use registry, profiles, assignments, workspaces, transfer, recovery, resolve, or validate.`,
       );
     }
     const groupAction = normalizeOptionalString(rawSecond);
     const instructionGroupPrefix: Record<InstructionCliGroup, string> = {
+      registry: "registry",
       profiles: "profile",
       assignments: "assignment",
       workspaces: "workspace",
@@ -1932,7 +1934,7 @@ export const parseCliArgs = (
           .filter(Boolean)
           .join(
             " ",
-          )}\`. Use profiles, assignments, workspaces, transfer, recovery, resolve, or validate.`,
+          )}\`. Use registry, profiles, assignments, workspaces, transfer, recovery, resolve, or validate.`,
       );
     }
     const instructionOptionNames = new Set([
@@ -2095,7 +2097,7 @@ export const parseCliArgs = (
       values?.["include-content"] === true,
       "--include-content",
       action,
-      ["profile-list", "resolve", "recovery-export"],
+      ["registry-list", "profile-list", "resolve", "recovery-export"],
     );
     assertInstructionOptionAllowed(
       values?.["include-workspaces"] === true,
@@ -2172,6 +2174,7 @@ export const parseCliArgs = (
     const instructionSecondarySubject =
       normalizeOptionalString(rawSecondarySubject);
     const actionsWithoutSubjects = new Set<InstructionCliAction>([
+      "registry-list",
       "profile-list",
       "assignment-list",
       "workspace-list",

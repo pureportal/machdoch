@@ -4,7 +4,7 @@ import {
   getWorkspaceMarkdownLinkTarget,
   isLocalMarkdownLinkHref,
   openWorkspaceMarkdownLinkTarget,
-} from "./workspace-markdown-links";
+} from "@machdoch/client-ui/conversation/workspace-markdown-links";
 
 const WINDOWS_WORKSPACE =
   "C:\\Development\\alpartis.morgana\\app.alpartis.cloud";

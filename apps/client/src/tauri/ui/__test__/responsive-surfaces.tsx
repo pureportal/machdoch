@@ -7,7 +7,7 @@ import { ChatInputNeededDialog } from "../chat-session/components/chat-input-nee
 import { ChatInterviewDialog } from "../chat-session/components/chat-interview-dialog";
 import type { ChatInterviewDialogState } from "../chat-session/_helpers/chat-interview";
 import { AttachmentImagePreviewDialog } from "../chat-session/components/attachment-image-preview-dialog";
-import { FilePreviewDialog } from "../chat-session/components/file-preview-dialog";
+import { FilePreviewDialog } from "@machdoch/client-ui/file-preview/dialog";
 import { createSession } from "../chat-session.model";
 import { VoiceInputOverlay } from "../components/voice-input-overlay";
 import { MediaAssetImportDialog } from "@machdoch/media-studio/tauri/ui/media/components/media-asset-import-dialog.js";
@@ -20,7 +20,8 @@ import { useAppearanceSettings } from "../chat-session/_helpers/use-appearance-s
 import { RalphGenerationInterviewDialog } from "../ralph/components/ralph-generation-interview-dialog";
 import { WorkspaceRunDialogControl } from "../chat-session/components/workspace-run-dialog-control";
 import { MediaImageMaskEditor } from "@machdoch/media-studio/tauri/ui/media/components/media-image-mask-editor.js";
-import { TaskTimeoutControls } from "../task-timeout-controls";
+import { resetDesktopTaskTimeout } from "../runtime";
+import { TaskTimeoutControls } from "@machdoch/client-ui/conversation/task-timeout-controls";
 import type { MediaImageMask } from "@machdoch/media-studio/core/media/contracts.js";
 import {
   createOverviewLibrary,
@@ -242,7 +243,13 @@ function Surface({ name }: { name: string }): JSX.Element {
   if (name === "ralph-expanded-editor") return <ExpandedEditor />;
   if (name === "task-timeout")
     return (
-      <TaskTimeoutControls taskId="responsive-task" idleTimeoutMs={60000} />
+      <TaskTimeoutControls
+        bounds={{ min: 1, max: 1440 }}
+        onReset={(minutes) =>
+          resetDesktopTaskTimeout("responsive-task", minutes)
+        }
+        idleTimeoutMs={60000}
+      />
     );
   if (name === "ralph-overview")
     return (

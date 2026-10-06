@@ -1101,6 +1101,88 @@ describe("media flow compiler", () => {
     });
   });
 
+  it.each(["sana", "stable-diffusion-3"] as const)(
+    "resolves %s embedding encoder profiles in both prompt channels",
+    (architecture) => {
+      const baseModel = createMediaModelCatalog({
+        isOpenAiConfigured: false,
+        isLocalFluxInstalled: true,
+      }).find((model) => model.id === "local:flux-2-klein-4b")!;
+      const model = {
+        ...baseModel,
+        id: `local:user:${architecture}`,
+        architecture,
+        addonCapabilities: getMediaModelAddonCapabilities(
+          "local-diffusers",
+          architecture,
+        ),
+        userImported: true,
+      } as const;
+      const profiles: MediaModelAddonDescriptor["embeddingVectors"] =
+        architecture === "sana"
+          ? [
+              {
+                component: "text-encoder",
+                tensorKey: "gemma",
+                dimension: 2304,
+                vectorCount: 1,
+              },
+            ]
+          : [
+              {
+                component: "text-encoder",
+                tensorKey: "clip_l",
+                dimension: 768,
+                vectorCount: 1,
+              },
+              {
+                component: "text-encoder-2",
+                tensorKey: "clip_g",
+                dimension: 1280,
+                vectorCount: 1,
+              },
+              {
+                component: "text-encoder-3",
+                tensorKey: "t5",
+                dimension: 4096,
+                vectorCount: 1,
+              },
+            ];
+      const embedding = {
+        ...SDXL_EMBEDDING,
+        id: `addon:embedding:${architecture}`,
+        architecture,
+        targetComponents: profiles.map((profile) => profile.component),
+        embeddingVectors: profiles,
+        defaultToken: "<MiXeD>",
+      } satisfies MediaModelAddonDescriptor;
+      const plan = compileMediaFlow({
+        flow: createFlow({
+          ...DEFAULT_SETTINGS,
+          providerPolicy: "local",
+          modelId: model.id,
+          modelAddons: [
+            {
+              kind: "textual-inversion",
+              addonId: embedding.id,
+              enabled: true,
+              token: "<MiXeD>",
+              placement: "both",
+            },
+          ],
+        }),
+        models: [model],
+        addons: [embedding],
+        compiledAt: "2026-10-06T10:10:00.000Z",
+      });
+      expect(plan.status).toBe("ready");
+      expect(plan.addons[0]).toMatchObject({
+        descriptor: { embeddingVectors: profiles },
+        selection: { token: "<MiXeD>", placement: "both" },
+      });
+    },
+  );
+
   it("rejects negative textual-inversion placement for FLUX pipelines", () => {
     const baseModel = createMediaModelCatalog({
       isOpenAiConfigured: false,

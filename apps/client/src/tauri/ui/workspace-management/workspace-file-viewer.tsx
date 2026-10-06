@@ -23,8 +23,8 @@ import {
   useState,
   type JSX,
 } from "react";
-import { MarkdownContent } from "../components/markdown-content";
-import { getWorkspaceMarkdownLinkTarget } from "../components/workspace-markdown-links";
+import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
+import { getWorkspaceMarkdownLinkTarget } from "@machdoch/client-ui/conversation/workspace-markdown-links";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
 import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
@@ -80,6 +80,7 @@ const WorkspaceMarkdownImage = ({
 
   useEffect(() => {
     let active = true;
+    let previewSource: string | null = null;
     setFailed(false);
     setResolvedSource(null);
     if (!source) return () => {};
@@ -94,13 +95,19 @@ const WorkspaceMarkdownImage = ({
     }
     void resolveWorkspaceFilePreviewSource(workspaceRoot, path)
       .then((nextSource) => {
-        if (active) setResolvedSource(nextSource);
+        if (active) {
+          previewSource = nextSource;
+          setResolvedSource(nextSource);
+        } else if (nextSource.startsWith("blob:"))
+          URL.revokeObjectURL(nextSource);
       })
       .catch(() => {
         if (active) setFailed(true);
       });
     return () => {
       active = false;
+      if (previewSource?.startsWith("blob:"))
+        URL.revokeObjectURL(previewSource);
     };
   }, [documentPath, source, workspaceRoot]);
 
@@ -270,6 +277,7 @@ export const WorkspaceFileViewer = ({
 
   useEffect(() => {
     let active = true;
+    let resolvedSource: string | null = null;
     setPreviewSource(null);
     setPreviewError(null);
     if (!document?.previewKind || document.previewKind === "markdown") {
@@ -284,13 +292,18 @@ export const WorkspaceFileViewer = ({
     }
     void resolveWorkspaceFilePreviewSource(workspaceRoot, document.path)
       .then((source) => {
-        if (active) setPreviewSource(source);
+        if (active) {
+          resolvedSource = source;
+          setPreviewSource(source);
+        } else if (source.startsWith("blob:")) URL.revokeObjectURL(source);
       })
       .catch((previewError: unknown) => {
         if (active) setPreviewError(errorMessage(previewError));
       });
     return () => {
       active = false;
+      if (resolvedSource?.startsWith("blob:"))
+        URL.revokeObjectURL(resolvedSource);
     };
   }, [
     document?.language,
