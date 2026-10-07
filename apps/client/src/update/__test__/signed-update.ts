@@ -1,3 +1,5 @@
+/// <reference types="node" />
+
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import type { UpdateArtifact } from "../release.js";
 
