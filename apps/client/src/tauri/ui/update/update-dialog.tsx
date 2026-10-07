@@ -25,6 +25,7 @@ export function UpdateDialog({
   const working = ["downloading", "installing", "checking"].includes(
     updater.phase,
   );
+  const available = updater.release && updater.phase === "available";
   const title =
     updater.phase === "current"
       ? "You're up to date"
@@ -56,7 +57,7 @@ export function UpdateDialog({
             <DialogDescription id="update-description">{`${updater.release.currentVersion} → ${updater.release.version}`}</DialogDescription>
           ) : null}
         </DialogHeader>
-        {updater.release && !working && updater.phase !== "installed" ? (
+        {available ? (
           <Button
             variant="link"
             className="h-auto w-fit justify-start px-0"
@@ -108,7 +109,7 @@ export function UpdateDialog({
             {updater.error}
           </p>
         ) : null}
-        {updater.release && !working && updater.phase !== "installed" ? (
+        {available ? (
           <label className="grid gap-2 text-sm">
             Remind me
             <select
@@ -136,7 +137,7 @@ export function UpdateDialog({
             >
               Restart Machdoch
             </Button>
-          ) : updater.release && !working ? (
+          ) : available ? (
             <>
               <Button
                 variant="outline"
