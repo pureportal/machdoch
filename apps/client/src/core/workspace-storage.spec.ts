@@ -7,6 +7,7 @@ import {
   readdir,
   rm,
   symlink,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -344,13 +345,19 @@ describe("workspace storage migration", () => {
     expect(await exists(getWorkspaceStorageMarkerPath(root))).toBe(true);
   });
 
-  it("does not move storage while a RALPH owner is alive", async () => {
+  it("does not move storage while a RALPH lease is active", async () => {
     const root = await createWorkspace();
     await write(
       root,
       ".machdoch/ralph/runs/active/run-lease.json",
       JSON.stringify({
+        schemaVersion: 1,
+        runId: "active",
+        flowId: "flow",
         ownerId: `${process.pid}:11111111-1111-1111-1111-111111111111`,
+        generation: 1,
+        acquiredAt: new Date().toISOString(),
+        durationMs: 120_000,
       }),
     );
     await expect(ensureWorkspaceStorage(root)).rejects.toThrow(
@@ -359,6 +366,47 @@ describe("workspace storage migration", () => {
     expect(
       await exists(join(root, ".machdoch/ralph/runs/active/run-lease.json")),
     ).toBe(true);
+    expect(await exists(getWorkspaceStorageMarkerPath(root))).toBe(false);
+  });
+
+  it("migrates expired leases even when their process IDs are still alive", async () => {
+    const root = await createWorkspace();
+    const lease = {
+      schemaVersion: 1,
+      runId: "expired",
+      flowId: "flow",
+      ownerId: `${process.pid}:11111111-1111-1111-1111-111111111111`,
+      generation: 1,
+      acquiredAt: "2026-01-01T00:00:00Z",
+      durationMs: 1_000,
+    };
+    const leasePath = ".machdoch/ralph/runs/expired/run-lease.json";
+    await write(root, leasePath, JSON.stringify(lease));
+    const heartbeat = new Date(Date.now() - 10_000);
+    await utimes(join(root, leasePath), heartbeat, heartbeat);
+
+    await ensureWorkspaceStorage(root);
+
+    expect(
+      JSON.parse(
+        await readFile(
+          join(root, ".machdoch/local/state/ralph/runs/expired/run-lease.json"),
+          "utf8",
+        ),
+      ),
+    ).toEqual(lease);
+    expect(await exists(getWorkspaceStorageMarkerPath(root))).toBe(true);
+  });
+
+  it("retains invalid leases instead of assuming their runs are inactive", async () => {
+    const root = await createWorkspace();
+    const leasePath = ".machdoch/ralph/runs/invalid/run-lease.json";
+    await write(root, leasePath, '{"ownerId":"invalid"}');
+
+    await expect(ensureWorkspaceStorage(root)).rejects.toThrow(
+      "durable lease is invalid",
+    );
+    expect(await exists(join(root, leasePath))).toBe(true);
     expect(await exists(getWorkspaceStorageMarkerPath(root))).toBe(false);
   });
 
