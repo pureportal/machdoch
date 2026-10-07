@@ -48,14 +48,14 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       name: "scopeRegistryFile",
       type: "path",
       default:
-        ".machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json",
+        ".machdoch/local/state/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json",
       required: false,
     },
     {
       name: "scopeRegistryMarkdown",
       type: "path",
       default:
-        ".machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md",
+        ".machdoch/local/state/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md",
       required: false,
     },
     {
@@ -160,26 +160,27 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
     {
       name: "activeUiImprovementFile",
       type: "path",
-      default: ".machdoch/ralph/ui-improvements/active-ui-improvement.json",
+      default:
+        ".machdoch/local/state/ralph/ui-improvements/active-ui-improvement.json",
       required: false,
     },
     {
       name: "completedUiImprovementsFile",
       type: "path",
       default:
-        ".machdoch/ralph/ui-improvements/completed-ui-improvements.jsonl",
+        ".machdoch/local/state/ralph/ui-improvements/completed-ui-improvements.jsonl",
       required: false,
     },
     {
       name: "uiImprovementOutcomesFile",
       type: "path",
-      default: ".machdoch/ralph/ui-improvements/outcomes.jsonl",
+      default: ".machdoch/local/state/ralph/ui-improvements/outcomes.jsonl",
       required: false,
     },
     {
       name: "archivedUiImprovementsDirectory",
       type: "path",
-      default: ".machdoch/ralph/ui-improvements/archive",
+      default: ".machdoch/local/state/ralph/ui-improvements/archive",
       required: false,
     },
     {
@@ -227,7 +228,8 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
     {
       name: "notesFile",
       type: "path",
-      default: ".machdoch/ralph/ui-improvements/RALPH_UI_IMPROVEMENT_NOTES.md",
+      default:
+        ".machdoch/local/state/ralph/ui-improvements/RALPH_UI_IMPROVEMENT_NOTES.md",
       required: false,
     },
   ],
@@ -249,9 +251,9 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         type: "BEGIN_SCOPE_CYCLE",
         flowAlias: "autonomous-ui-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md}}",
         strategy: "{{scopeSelectionStrategy:text=ui-first}}",
         includeMarkdown: true,
       },
@@ -281,9 +283,9 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         type: "UPDATE_SCOPE_REGISTRY",
         flowAlias: "autonomous-ui-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md}}",
         strategy: "{{scopeSelectionStrategy:text=ui-first}}",
         includeMarkdown: true,
       },
@@ -298,7 +300,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         type: "SELECT_SCOPE",
         flowAlias: "autonomous-ui-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
         strategy: "{{scopeSelectionStrategy:text=ui-first}}",
       },
     },
@@ -312,7 +314,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         type: "DETECT_PROJECT_COMMANDS",
         rootPath: "{{data:select-scope:scope.paths.0}}",
         outputPath:
-          "{{projectCommandsFile:path=.machdoch/ralph/ui-improvements/project-commands.json}}",
+          "{{projectCommandsFile:path=.machdoch/local/state/ralph/ui-improvements/project-commands.json}}",
       },
     },
     {
@@ -323,7 +325,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "QUERY_JSONL",
-        path: "{{completedUiImprovementsFile:path=.machdoch/ralph/ui-improvements/completed-ui-improvements.jsonl}}",
+        path: "{{completedUiImprovementsFile:path=.machdoch/local/state/ralph/ui-improvements/completed-ui-improvements.jsonl}}",
         maxResults: 50,
         order: "newest",
       },
@@ -336,7 +338,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "QUERY_JSONL",
-        path: "{{uiImprovementOutcomesFile:path=.machdoch/ralph/ui-improvements/outcomes.jsonl}}",
+        path: "{{uiImprovementOutcomesFile:path=.machdoch/local/state/ralph/ui-improvements/outcomes.jsonl}}",
         maxResults: 50,
         order: "newest",
       },
@@ -485,7 +487,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "PROMPT_JSON",
         outputPath:
-          "{{candidateFile:path=.machdoch/ralph/ui-improvements/candidate.json}}",
+          "{{candidateFile:path=.machdoch/local/state/ralph/ui-improvements/candidate.json}}",
         maxAttempts: 2,
         schema: {
           type: "object",
@@ -727,7 +729,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FILE_EXISTS",
-        path: "{{activeUiImprovementFile:path=.machdoch/ralph/ui-improvements/active-ui-improvement.json}}",
+        path: "{{activeUiImprovementFile:path=.machdoch/local/state/ralph/ui-improvements/active-ui-improvement.json}}",
       },
     },
     {
@@ -739,9 +741,9 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "ARCHIVE_FILE",
-        path: "{{activeUiImprovementFile:path=.machdoch/ralph/ui-improvements/active-ui-improvement.json}}",
+        path: "{{activeUiImprovementFile:path=.machdoch/local/state/ralph/ui-improvements/active-ui-improvement.json}}",
         rootPath:
-          "{{archivedUiImprovementsDirectory:path=.machdoch/ralph/ui-improvements/archive}}",
+          "{{archivedUiImprovementsDirectory:path=.machdoch/local/state/ralph/ui-improvements/archive}}",
       },
     },
     {
@@ -752,7 +754,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "WRITE_JSON",
-        path: "{{activeUiImprovementFile:path=.machdoch/ralph/ui-improvements/active-ui-improvement.json}}",
+        path: "{{activeUiImprovementFile:path=.machdoch/local/state/ralph/ui-improvements/active-ui-improvement.json}}",
         input: "{{data:choose-ui-improvement:output.selectedCandidate}}",
       },
     },
@@ -765,7 +767,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "GIT_SNAPSHOT",
         outputPath:
-          "{{gitSnapshotFile:path=.machdoch/ralph/ui-improvements/git-snapshot.json}}",
+          "{{gitSnapshotFile:path=.machdoch/local/state/ralph/ui-improvements/git-snapshot.json}}",
       },
     },
     {
@@ -810,7 +812,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Implement the active UI improvement package at {{activeUiImprovementFile:path=.machdoch/ralph/ui-improvements/active-ui-improvement.json}} using package {{data:choose-ui-improvement:output.selectedCandidate}}, selected scope cluster {{result:select-scope}}, research {{summary:ui-research}}, deterministic baseline {{result:git-snapshot-before}}, verification baseline, detected commands, latest validator/reviewer feedback, scope guard {{result:scope-change-guard}}, work-yield evidence {{data:work-yield-analysis:output}}, verification routing, and designPolicy={{designPolicy:text=}}. Complete the whole cohesive UI package within selected paths plus required adjacent tests/docs/imports. A full view/component refactor, replacement of weak local structure, shared-primitive change, or verified dependency upgrade is allowed when the package calls for it; preserve behavior that is outside the package, not accidental implementation shape. Do not declare success after a small diff while any acceptance criterion, related change, state, viewport, or sibling-view consistency gap in the selected package remains. Prefer clean minimalist responsive accessible UI, restrained badges/copy/icons, stable dimensions, and no overflow/hydration regressions. Security-only hardening is low priority in this nonsecurity UI flow. Dependency changes use allowDependencyChanges={{allowDependencyChanges:boolean=true}}, schemas/migrations use allowSchemaChanges={{allowSchemaChanges:boolean=true}}, and public APIs/shared primitives use allowPublicApiChanges={{allowPublicApiChanges:boolean=true}} when necessary and verified. Repair only new/worsened failures, make bounded reversible design decisions, do not start/restart servers, and append an evidence note to {{notesFile:path=.machdoch/ralph/ui-improvements/RALPH_UI_IMPROVEMENT_NOTES.md}}.",
+        "Implement the active UI improvement package at {{activeUiImprovementFile:path=.machdoch/local/state/ralph/ui-improvements/active-ui-improvement.json}} using package {{data:choose-ui-improvement:output.selectedCandidate}}, selected scope cluster {{result:select-scope}}, research {{summary:ui-research}}, deterministic baseline {{result:git-snapshot-before}}, verification baseline, detected commands, latest validator/reviewer feedback, scope guard {{result:scope-change-guard}}, work-yield evidence {{data:work-yield-analysis:output}}, verification routing, and designPolicy={{designPolicy:text=}}. Complete the whole cohesive UI package within selected paths plus required adjacent tests/docs/imports. A full view/component refactor, replacement of weak local structure, shared-primitive change, or verified dependency upgrade is allowed when the package calls for it; preserve behavior that is outside the package, not accidental implementation shape. Do not declare success after a small diff while any acceptance criterion, related change, state, viewport, or sibling-view consistency gap in the selected package remains. Prefer clean minimalist responsive accessible UI, restrained badges/copy/icons, stable dimensions, and no overflow/hydration regressions. Security-only hardening is low priority in this nonsecurity UI flow. Dependency changes use allowDependencyChanges={{allowDependencyChanges:boolean=true}}, schemas/migrations use allowSchemaChanges={{allowSchemaChanges:boolean=true}}, and public APIs/shared primitives use allowPublicApiChanges={{allowPublicApiChanges:boolean=true}} when necessary and verified. Repair only new/worsened failures, make bounded reversible design decisions, do not start/restart servers, and append an evidence note to {{notesFile:path=.machdoch/local/state/ralph/ui-improvements/RALPH_UI_IMPROVEMENT_NOTES.md}}.",
     },
     {
       id: "select-verification-command",
@@ -985,7 +987,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "GIT_DIFF_SUMMARY",
         outputPath:
-          "{{gitDiffFile:path=.machdoch/ralph/ui-improvements/git-diff.json}}",
+          "{{gitDiffFile:path=.machdoch/local/state/ralph/ui-improvements/git-diff.json}}",
       },
     },
     {
@@ -1066,7 +1068,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "PROMPT_JSON",
         outputPath:
-          "{{reviewFile:path=.machdoch/ralph/ui-improvements/review.json}}",
+          "{{reviewFile:path=.machdoch/local/state/ralph/ui-improvements/review.json}}",
         maxAttempts: 2,
         schema: {
           type: "object",
@@ -1173,9 +1175,9 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{uiReportFile:path=.machdoch/ralph/ui-improvements/final-report.json}}",
+        path: "{{uiReportFile:path=.machdoch/local/state/ralph/ui-improvements/final-report.json}}",
         outputPath:
-          "{{uiReportMarkdown:path=.machdoch/ralph/ui-improvements/final-report.md}}",
+          "{{uiReportMarkdown:path=.machdoch/local/state/ralph/ui-improvements/final-report.md}}",
       },
     },
     {
@@ -1186,9 +1188,9 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{uiReportFile:path=.machdoch/ralph/ui-improvements/final-report.json}}",
+        path: "{{uiReportFile:path=.machdoch/local/state/ralph/ui-improvements/final-report.json}}",
         outputPath:
-          "{{uiReportMarkdown:path=.machdoch/ralph/ui-improvements/final-report.md}}",
+          "{{uiReportMarkdown:path=.machdoch/local/state/ralph/ui-improvements/final-report.md}}",
       },
     },
     {
@@ -1199,9 +1201,9 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{uiReportFile:path=.machdoch/ralph/ui-improvements/final-report.json}}",
+        path: "{{uiReportFile:path=.machdoch/local/state/ralph/ui-improvements/final-report.json}}",
         outputPath:
-          "{{uiReportMarkdown:path=.machdoch/ralph/ui-improvements/final-report.md}}",
+          "{{uiReportMarkdown:path=.machdoch/local/state/ralph/ui-improvements/final-report.md}}",
       },
     },
     {
@@ -1212,7 +1214,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "READ_JSON",
-        path: "{{activeUiImprovementFile:path=.machdoch/ralph/ui-improvements/active-ui-improvement.json}}",
+        path: "{{activeUiImprovementFile:path=.machdoch/local/state/ralph/ui-improvements/active-ui-improvement.json}}",
       },
     },
     {
@@ -1223,7 +1225,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "APPEND_JSONL",
-        path: "{{completedUiImprovementsFile:path=.machdoch/ralph/ui-improvements/completed-ui-improvements.jsonl}}",
+        path: "{{completedUiImprovementsFile:path=.machdoch/local/state/ralph/ui-improvements/completed-ui-improvements.jsonl}}",
         input: "{{data:read-active-ui-improvement:json}}",
       },
     },
@@ -1236,9 +1238,9 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "ARCHIVE_FILE",
-        path: "{{activeUiImprovementFile:path=.machdoch/ralph/ui-improvements/active-ui-improvement.json}}",
+        path: "{{activeUiImprovementFile:path=.machdoch/local/state/ralph/ui-improvements/active-ui-improvement.json}}",
         rootPath:
-          "{{archivedUiImprovementsDirectory:path=.machdoch/ralph/ui-improvements/archive}}",
+          "{{archivedUiImprovementsDirectory:path=.machdoch/local/state/ralph/ui-improvements/archive}}",
       },
     },
     {
@@ -1251,9 +1253,9 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "autonomous-ui-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md}}",
         scopeOutcome: "deferred",
         includeMarkdown: true,
       },
@@ -1268,9 +1270,9 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "autonomous-ui-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md}}",
         scopeOutcome: "no-meaningful-work",
         includeMarkdown: true,
       },
@@ -1285,9 +1287,9 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "autonomous-ui-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/ui-improvements/autonomous-ui-improvement-loop.scope-registry.md}}",
         scopeOutcome: "invalid",
         includeMarkdown: true,
       },
@@ -1302,7 +1304,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DONE",
-        path: "{{uiImprovementOutcomesFile:path=.machdoch/ralph/ui-improvements/outcomes.jsonl}}",
+        path: "{{uiImprovementOutcomesFile:path=.machdoch/local/state/ralph/ui-improvements/outcomes.jsonl}}",
         input:
           '{"outcome":"DONE","scopeId":"{{data:select-scope:scope.id}}","candidateId":"{{data:choose-ui-improvement:output.selectedCandidate.id}}","visualStatus":"{{data:resolve-runtime-urls:output.visualStatus}}"}',
       },
@@ -1317,7 +1319,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
-        path: "{{uiImprovementOutcomesFile:path=.machdoch/ralph/ui-improvements/outcomes.jsonl}}",
+        path: "{{uiImprovementOutcomesFile:path=.machdoch/local/state/ralph/ui-improvements/outcomes.jsonl}}",
         input: "{{data:choose-ui-improvement:output}}",
       },
     },
@@ -1331,7 +1333,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
-        path: "{{uiImprovementOutcomesFile:path=.machdoch/ralph/ui-improvements/outcomes.jsonl}}",
+        path: "{{uiImprovementOutcomesFile:path=.machdoch/local/state/ralph/ui-improvements/outcomes.jsonl}}",
         input:
           '{"outcome":"DEFER","scopeRoot":"{{scopeRoot:path=.}}","reason":"The coverage cycle is waiting on deferred scopes."}',
       },
@@ -1346,7 +1348,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "STOP",
-        path: "{{uiImprovementOutcomesFile:path=.machdoch/ralph/ui-improvements/outcomes.jsonl}}",
+        path: "{{uiImprovementOutcomesFile:path=.machdoch/local/state/ralph/ui-improvements/outcomes.jsonl}}",
         input:
           '{"outcome":"STOP","scopeRoot":"{{scopeRoot:path=.}}","reason":"No evidence-backed UI package cleared the threshold."}',
       },
@@ -1361,7 +1363,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "INVALID",
-        path: "{{uiImprovementOutcomesFile:path=.machdoch/ralph/ui-improvements/outcomes.jsonl}}",
+        path: "{{uiImprovementOutcomesFile:path=.machdoch/local/state/ralph/ui-improvements/outcomes.jsonl}}",
         input:
           '{"outcome":"INVALID","scopeRoot":"{{scopeRoot:path=.}}","reason":"Discovery, state, or validation output was invalid."}',
       },
@@ -1376,7 +1378,7 @@ const autonomousUiImprovementLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "STOP",
-        path: "{{uiImprovementOutcomesFile:path=.machdoch/ralph/ui-improvements/outcomes.jsonl}}",
+        path: "{{uiImprovementOutcomesFile:path=.machdoch/local/state/ralph/ui-improvements/outcomes.jsonl}}",
         input:
           '{"outcome":"STOP","scopeRoot":"{{scopeRoot:path=.}}","reason":"The current UI coverage cycle has no remaining eligible scope."}',
       },
