@@ -31,6 +31,7 @@ mod payload_files;
 mod process;
 mod progress;
 mod ralph;
+pub(crate) mod ralph_host_recovery;
 mod ralph_media_bridge;
 mod ralph_progress;
 mod ralph_recovery;
@@ -247,7 +248,7 @@ pub struct SchedulerCommandRequest {
     arguments: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RalphCommandRequest {
     workspace_root: String,
@@ -294,10 +295,13 @@ pub struct TaskInterviewCommandRequest {
 
 #[tauri::command]
 pub async fn cancel_desktop_task(
+    app_handle: tauri::AppHandle,
     state: tauri::State<'_, DesktopTaskCancelMap>,
     task_id: String,
 ) -> Result<(), String> {
-    request_desktop_task_cancel(&state, &task_id);
+    app_handle
+        .state::<ralph_host_recovery::RalphHostRecoveryState>()
+        .remove_task(&task_id, || request_desktop_task_cancel(&state, &task_id))?;
     Ok(())
 }
 
@@ -695,7 +699,10 @@ pub async fn resolve_attached_image_preview_path(
     allow_file_preview_source(&app_handle, &resolved_path)
 }
 
-pub(crate) fn resolve_context_attachment_path(workspace_root: Option<&str>, path: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_context_attachment_path(
+    workspace_root: Option<&str>,
+    path: &str,
+) -> Result<PathBuf, String> {
     resolve_attached_path(&AttachmentPathGrantMap::default(), workspace_root, path)
 }
 
@@ -748,16 +755,32 @@ pub async fn start_scheduler_service(request: SchedulerCommandRequest) -> Result
 #[tauri::command]
 pub async fn run_ralph_command(
     app_handle: tauri::AppHandle,
-    state: tauri::State<'_, DesktopTaskCancelMap>,
     window: tauri::WebviewWindow,
-    mut request: RalphCommandRequest,
+    request: RalphCommandRequest,
 ) -> Result<Value, String> {
-    let window_label = window.label().to_string();
+    run_registered_ralph_command(app_handle, window.label().to_string(), request, None).await
+}
+
+async fn run_registered_ralph_command(
+    app_handle: tauri::AppHandle,
+    window_label: String,
+    mut request: RalphCommandRequest,
+    restored: Option<ralph_host_recovery::RestoredRalphCommand>,
+) -> Result<Value, String> {
+    let state = app_handle.state::<DesktopTaskCancelMap>();
+    let restoring = restored.is_some();
+    let run_id = restored
+        .as_ref()
+        .map(|saved| saved.run_id.clone())
+        .or_else(|| ralph_recovery::recovery_run_id(&request.arguments));
     let cancel_flag = Arc::new(AtomicBool::new(false));
-    let task_id = normalize_task_id(request.task_id.as_deref());
+    let task_id = normalize_task_id(request.task_id.as_deref()).or_else(|| run_id.clone());
     let task_workspace_root = request.workspace_root.clone();
     let task_arguments = request.arguments.clone();
-    let task_started_at = create_progress_timestamp();
+    let task_started_at = restored
+        .as_ref()
+        .map(|saved| saved.started_at)
+        .unwrap_or_else(create_progress_timestamp);
     request.task_id = task_id.clone();
 
     if let Some(id) = &task_id {
@@ -789,18 +812,73 @@ pub async fn run_ralph_command(
         }
     }
 
-    let sleep_inhibition = app_handle
-        .state::<crate::sleep_inhibition::SystemSleepInhibitor>()
-        .acquire();
-    let result = match sleep_inhibition {
+    let preparation = if cancel_flag.load(Ordering::SeqCst) {
+        Err("The Ralph CLI command was cancelled.".to_string())
+    } else if let Some(error) = restored.and_then(|saved| saved.error) {
+        Err(error)
+    } else {
+        run_id
+            .as_deref()
+            .map(|id| {
+                app_handle
+                    .state::<ralph_host_recovery::RalphHostRecoveryState>()
+                    .register(
+                        &request,
+                        &window_label,
+                        id,
+                        task_started_at,
+                        restoring,
+                        &cancel_flag,
+                    )
+            })
+            .transpose()
+            .map(|_| ())
+    };
+    let worker_app = app_handle.clone();
+    let result = match preparation.and_then(|_| {
+        if run_id.is_some() {
+            app_handle
+                .state::<ralph_host_recovery::RalphHostRecoveryState>()
+                .start_supervision(&app_handle)?;
+        }
+        app_handle
+            .state::<crate::sleep_inhibition::SystemSleepInhibitor>()
+            .acquire()
+    }) {
         Ok(guard) => tauri::async_runtime::spawn_blocking(move || {
             let _sleep_inhibition = guard;
-            execute_ralph_command(app_handle, window_label, request, cancel_flag)
+            execute_ralph_command(
+                worker_app,
+                window_label,
+                request,
+                cancel_flag,
+                run_id,
+                restoring,
+            )
         })
         .await
         .map_err(|error| format!("The Ralph command bridge stopped unexpectedly. {error}"))
         .and_then(|result| result),
         Err(error) => Err(error),
+    };
+
+    let result = match task_id
+        .as_deref()
+        .map(|id| {
+            app_handle
+                .state::<ralph_host_recovery::RalphHostRecoveryState>()
+                .remove_task(id, || {})
+        })
+        .transpose()
+    {
+        Ok(_) => result,
+        Err(error) => Err(format!(
+            "Failed to finish Ralph host recovery tracking: {error}. Command result: {}",
+            result
+                .as_ref()
+                .map(|_| "completed".to_string())
+                .unwrap_or_else(Clone::clone)
+        )),
     };
 
     if let Some(id) = &task_id {

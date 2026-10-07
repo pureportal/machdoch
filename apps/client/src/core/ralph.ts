@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { assertRalphWorkspaceBoundary } from "./_helpers/assert-ralph-workspace-boundary.helper.js";
+import { retryTransientFileOperation } from "./_helpers/retry-transient-file-operation.helper.js";
 import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
 import * as addFormatsModule from "ajv-formats";
 import type { FormatsPlugin } from "ajv-formats";
@@ -161,6 +162,11 @@ import {
   writeFileAtomically,
   writeJsonAtomically,
 } from "./_helpers/write-file-atomically.helper.js";
+import {
+  RALPH_INITIALIZATION_ARTIFACT_PREFIX,
+  publishRalphInitializationRecord,
+  reserveRalphRunInitialization,
+} from "./_helpers/ralph-run-initialization.helper.js";
 import {
   parseRalphWorkItemState,
   transitionRalphWorkItemState,
@@ -2395,7 +2401,11 @@ export const pruneRalphRunArtifacts = async (
   );
   const candidates = await Promise.all(
     entries
-      .filter((entry) => entry.isDirectory())
+      .filter(
+        (entry) =>
+          entry.isDirectory() &&
+          !entry.name.startsWith(RALPH_INITIALIZATION_ARTIFACT_PREFIX),
+      )
       .map(async (entry) => {
         const path = join(runDirectory, entry.name);
         const metadata = await stat(path).catch(() => undefined);
@@ -2415,6 +2425,12 @@ export const pruneRalphRunArtifacts = async (
   for (const [index, candidate] of candidates.entries()) {
     if (
       candidate.id === options.preserveRunId ||
+      existsSync(
+        join(
+          runDirectory,
+          `${RALPH_INITIALIZATION_ARTIFACT_PREFIX}${candidate.id}.json`,
+        ),
+      ) ||
       candidate.record?.status === "running" ||
       !candidate.metadata ||
       (index < maxRuns && candidate.metadata.mtimeMs >= cutoff)
@@ -2746,45 +2762,18 @@ export const createRalphRunLogger = async (
       options.runId,
     );
 
-  if (
-    !options.append &&
-    !options.forceTakeover &&
-    existsSync(paths.recordPath)
-  ) {
-    let existing: unknown;
-    try {
-      existing = JSON.parse(
-        await readFile(paths.recordPath, "utf8"),
-      ) as unknown;
-    } catch (error) {
-      throw new Error(
-        `Ralph logger refused to overwrite unreadable existing run record ${paths.recordPath}.`,
-        { cause: error },
-      );
-    }
-    if (!isRalphRunRecord(existing, RALPH_FLOW_SCHEMA_VERSION)) {
-      throw new Error(
-        `Ralph logger refused to overwrite invalid existing run record ${paths.recordPath}.`,
-      );
-    }
-    const lease = existing.checkpoint?.lease;
-    const leaseIsLive = Boolean(
-      lease && !lease.releasedAt && Date.parse(lease.expiresAt) > Date.now(),
-    );
-    if (existing.status === "running" || leaseIsLive) {
-      throw new Error(
-        `Ralph logger refused to overwrite active run ${paths.id}; resume with append mode or explicitly take it over.`,
-      );
-    }
+  if (options.append || options.forceTakeover) {
+    await mkdir(paths.directory, { recursive: true });
+  } else {
+    await reserveRalphRunInitialization(paths, flow.id);
   }
   if (!options.append) {
     await pruneRalphRunArtifacts(workspaceRoot, {
       scope: options.scope ?? "workspace",
-      ...(options.runId ? { preserveRunId: options.runId } : {}),
+      preserveRunId: paths.id,
     }).catch(() => undefined);
   }
 
-  await mkdir(paths.directory, { recursive: true });
   await scavengeAtomicTemporaryFiles(paths.directory).catch(() => undefined);
   const logger = new RalphFileRunLogger(
     paths,
@@ -2874,7 +2863,9 @@ export const writeRalphRunRecord = async (
     paths,
   );
 
-  await writeJsonAtomically(paths.recordPath, record);
+  await publishRalphInitializationRecord(paths, flow.id, () =>
+    writeJsonAtomically(paths.recordPath, record),
+  );
 
   return { id: paths.id, path: paths.recordPath, paths, record };
 };
@@ -2883,10 +2874,18 @@ const readRalphRunRecordFile = async (
   path: string,
 ): Promise<RalphRunRecord | null> => {
   try {
-    const value = JSON.parse(await readFile(path, "utf8")) as unknown;
+    const value = JSON.parse(
+      await retryTransientFileOperation(() => readFile(path, "utf8")),
+    ) as unknown;
     return isRalphRunRecord(value, RALPH_FLOW_SCHEMA_VERSION) ? value : null;
-  } catch {
-    return null;
+  } catch (error) {
+    if (
+      error instanceof SyntaxError ||
+      (isRecord(error) && error.code === "ENOENT")
+    ) {
+      return null;
+    }
+    throw error;
   }
 };
 
@@ -3185,7 +3184,10 @@ export const listRalphRunRecords = async (
   await Promise.all(
     Array.from({ length: Math.min(entries.length, 4) }, async () => {
       for (const entry of pendingEntries) {
-        if (entry.isDirectory()) {
+        if (
+          entry.isDirectory() &&
+          !entry.name.startsWith(RALPH_INITIALIZATION_ARTIFACT_PREFIX)
+        ) {
           const directory = join(runDirectory, entry.name);
           const path = join(directory, "run.json");
           const record = await summaryCache.read(path, () =>
@@ -16054,9 +16056,11 @@ const runRalphFlowImpl = async (
           logger.paths,
         );
         await retryRalphPersistenceOperation(() =>
-          writeJsonAtomically(logger.paths!.recordPath, record, {
-            beforeCommit: assertLockOwnership,
-          }),
+          publishRalphInitializationRecord(logger.paths!, flow.id, () =>
+            writeJsonAtomically(logger.paths!.recordPath, record, {
+              beforeCommit: assertLockOwnership,
+            }),
+          ),
         );
         await assertLockOwnership();
       }
@@ -16794,9 +16798,11 @@ const runRalphFlowImpl = async (
                 resultContext.variables,
                 logger.paths,
               );
-              await writeJsonAtomically(logger.paths.recordPath, record, {
-                beforeCommit: assertBoundaryOwnership,
-              });
+              await publishRalphInitializationRecord(logger.paths, flow.id, () =>
+                writeJsonAtomically(logger.paths!.recordPath, record, {
+                  beforeCommit: assertBoundaryOwnership,
+                }),
+              );
               lastRunProjectionAt = Date.now();
               await assertBoundaryOwnership();
             }
@@ -16999,7 +17005,10 @@ const runRalphFlowImpl = async (
 
   syncTotalTransitions();
 
-  if (boundaryRecoveryRequired && !runStoreInitializationError) {
+  if (
+    !runStoreInitializationError &&
+    (boundaryRecoveryRequired || (checkpoint && runStore))
+  ) {
     await persistRunBoundary(
       currentBlockId,
       "Restored durable Ralph execution boundary.",
@@ -18497,9 +18506,11 @@ export const runRalphFlow = async (
             paths,
           );
           await mutationLock.assertOwnership();
-          await writeJsonAtomically(paths.recordPath, record, {
-            beforeCommit: mutationLock.assertOwnership,
-          });
+          await publishRalphInitializationRecord(paths, flow.id, () =>
+            writeJsonAtomically(paths.recordPath, record, {
+              beforeCommit: mutationLock!.assertOwnership,
+            }),
+          );
           await mutationLock.assertOwnership();
         }
       }

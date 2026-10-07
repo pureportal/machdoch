@@ -1,0 +1,49 @@
+{
+  "passed": true,
+  "checkedAt": "2026-10-07T18:44:30.753Z",
+  "frozenSourceCount": 2751,
+  "frozenChanges": [],
+  "workspaceChanges": [],
+  "operationalSourcesUnchanged": true,
+  "refreshedSources": [
+    "apps/client/src-tauri/src/shared_cli.rs"
+  ],
+  "sharedRuntimeSha256": "f92b174fee030e3d657a8a4336caff01f78001f414274cf76692f88a93ef31a1",
+  "earlierOptimizedBuildPrecedesSharedRuntimeRepair": true,
+  "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+  "executableSha256": "4bcf8f7394f19b551ba01b17fdca92e5f2dc36390bdd622cdfbeb861cf780915",
+  "embeddedCliOffset": 47875543,
+  "canonicalExecutableUnchanged": true,
+  "bundledExecutableSha256": "dc378f7594bdbd79fd1464b50108b838cb5111429231a58f5a72d275b7170868",
+  "onlyInstallerBundleMarkerChanged": true,
+  "controllerSha256": "acb6f46a91a9242430b3980e478a8d4f4b8b2aff328e208d559a00e8b0f16bbd",
+  "standardRelease": {
+    "sha256": "f1fe59e3f0ba7e881ba90a0cb76e140fcb4661571fcf3eaeef33bbca12b2515a",
+    "bytes": 210093056,
+    "embeddedCliOffset": 44932463,
+    "profile": {
+      "optLevel": 3,
+      "lto": true,
+      "codegenUnits": 1,
+      "incremental": false,
+      "panic": "abort",
+      "strip": true
+    },
+    "sharedRuntimeSourceSha256": "f92b174fee030e3d657a8a4336caff01f78001f414274cf76692f88a93ef31a1",
+    "canonicalExecutableUnchanged": true,
+    "compilerObservations": [
+      {
+        "pid": 17800,
+        "startedAtEpochMs": 1791393035507,
+        "codegenFlag": "-C codegen-units=1"
+      },
+      {
+        "pid": 26868,
+        "startedAtEpochMs": 1791394725757,
+        "ltoFlag": "-C lto",
+        "codegenFlag": "-C codegen-units=1"
+      }
+    ],
+    "compilerObservationErrors": 4
+  }
+}

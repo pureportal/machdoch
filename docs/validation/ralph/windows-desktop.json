@@ -1,0 +1,220 @@
+{
+  "passed": true,
+  "checkedAt": "2026-10-07T15:42:20.169Z",
+  "executableSha256": "4bcf8f7394f19b551ba01b17fdca92e5f2dc36390bdd622cdfbeb861cf780915",
+  "cases": [
+    {
+      "mode": "utility",
+      "runId": "desktop-10148-1791383314267038300-0",
+      "status": "completed",
+      "effectiveStatus": "completed",
+      "durability": "healthy",
+      "outcome": "succeeded",
+      "verified": true,
+      "leaseGeneration": 2,
+      "released": true,
+      "hostCrashes": 1,
+      "watcherCrashes": 0,
+      "recordSha256": "a878c5985a14d5c76383c6f5a7944f2ea52d8ef2f38bbb1170e8c285b787f4cc",
+      "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+      "longDependency": {
+        "pathLength": 347,
+        "sha256": "2ce8be133fe21a4abd7d8330d9b443092dc2ce28826f191442c14989f9d55b15",
+        "bytesMatchPackagedDependency": true
+      },
+      "noOwnedProcesses": true,
+      "policyRemoved": true
+    },
+    {
+      "mode": "initialization",
+      "runId": "desktop-30708-1791383666481622900-0",
+      "status": "completed",
+      "effectiveStatus": "completed",
+      "durability": "healthy",
+      "outcome": "succeeded",
+      "verified": true,
+      "leaseGeneration": 1,
+      "released": true,
+      "hostCrashes": 1,
+      "watcherCrashes": 0,
+      "recordSha256": "e23ea74afa895fe70e1ccb732d1e149085251deabfea0f8a580d159c46ecbc58",
+      "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+      "longDependency": {
+        "pathLength": 354,
+        "sha256": "2ce8be133fe21a4abd7d8330d9b443092dc2ce28826f191442c14989f9d55b15",
+        "bytesMatchPackagedDependency": true
+      },
+      "noOwnedProcesses": true,
+      "policyRemoved": true
+    },
+    {
+      "mode": "progress",
+      "runId": "desktop-23408-1791386127484426500-0",
+      "status": "completed",
+      "effectiveStatus": "completed",
+      "durability": "healthy",
+      "outcome": "succeeded",
+      "verified": true,
+      "leaseGeneration": 5,
+      "released": true,
+      "hostCrashes": 4,
+      "watcherCrashes": 0,
+      "recordSha256": "1cb453ad6bfcc372907b63a52e9b79dcb1d4d8e135280cde7dc76a7aea3f5c97",
+      "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+      "longDependency": {
+        "pathLength": 348,
+        "sha256": "2ce8be133fe21a4abd7d8330d9b443092dc2ce28826f191442c14989f9d55b15",
+        "bytesMatchPackagedDependency": true
+      },
+      "noOwnedProcesses": true,
+      "policyRemoved": true
+    },
+    {
+      "mode": "watcher-loss",
+      "runId": "desktop-2248-1791386388683169300-0",
+      "status": "completed",
+      "effectiveStatus": "completed",
+      "durability": "healthy",
+      "outcome": "succeeded",
+      "verified": true,
+      "leaseGeneration": 2,
+      "released": true,
+      "hostCrashes": 2,
+      "watcherCrashes": 2,
+      "recordSha256": "b9f7a96d6bd9c0cd9ce2ccfdd6fcba66471651f2e127503a21d43e0927b4c89d",
+      "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+      "longDependency": {
+        "pathLength": 352,
+        "sha256": "2ce8be133fe21a4abd7d8330d9b443092dc2ce28826f191442c14989f9d55b15",
+        "bytesMatchPackagedDependency": true
+      },
+      "noOwnedProcesses": true,
+      "policyRemoved": true
+    },
+    {
+      "mode": "watcher-budget",
+      "runId": "desktop-26356-1791386600754255400-0",
+      "status": "completed",
+      "effectiveStatus": "completed",
+      "durability": "healthy",
+      "outcome": "succeeded",
+      "verified": true,
+      "leaseGeneration": 2,
+      "released": true,
+      "hostCrashes": 1,
+      "watcherCrashes": 4,
+      "watcherBudgetExhausted": true,
+      "recordSha256": "41fc80da025a8155dd802d55cee6483a08f893382606a3c62ce24a169eb74cb5",
+      "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+      "longDependency": {
+        "pathLength": 354,
+        "sha256": "2ce8be133fe21a4abd7d8330d9b443092dc2ce28826f191442c14989f9d55b15",
+        "bytesMatchPackagedDependency": true
+      },
+      "noOwnedProcesses": true,
+      "policyRemoved": true
+    },
+    {
+      "mode": "stagnation",
+      "runId": "desktop-24196-1791386916555066600-0",
+      "status": "running",
+      "effectiveStatus": "abandoned",
+      "checkpointRetained": true,
+      "durability": "healthy",
+      "verified": false,
+      "leaseGeneration": 1,
+      "released": false,
+      "hostCrashes": 3,
+      "watcherCrashes": 0,
+      "recordSha256": "f938e6a1e965eaf75afb201014f52fa770cb2291e9de3d45775940a3a940fba3",
+      "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+      "longDependency": {
+        "pathLength": 350,
+        "sha256": "2ce8be133fe21a4abd7d8330d9b443092dc2ce28826f191442c14989f9d55b15",
+        "bytesMatchPackagedDependency": true
+      },
+      "noOwnedProcesses": true,
+      "policyRemoved": true
+    },
+    {
+      "mode": "cancel",
+      "runId": "desktop-29952-1791387023172594600-0",
+      "status": "stopped",
+      "effectiveStatus": "stopped",
+      "durability": "healthy",
+      "outcome": "cancelled",
+      "verified": false,
+      "leaseGeneration": 1,
+      "released": true,
+      "hostCrashes": 1,
+      "watcherCrashes": 0,
+      "recordSha256": "c2d32a35c90ecaa83cbb0e150096d9c9f5e956842a13e41d0a36965f274a93d6",
+      "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+      "longDependency": {
+        "pathLength": 346,
+        "sha256": "2ce8be133fe21a4abd7d8330d9b443092dc2ce28826f191442c14989f9d55b15",
+        "bytesMatchPackagedDependency": true
+      },
+      "noOwnedProcesses": true,
+      "policyRemoved": true
+    },
+    {
+      "mode": "quit",
+      "runId": "desktop-26416-1791387112125614600-0",
+      "status": "stopped",
+      "effectiveStatus": "stopped",
+      "durability": "healthy",
+      "outcome": "cancelled",
+      "verified": false,
+      "leaseGeneration": 1,
+      "released": true,
+      "hostCrashes": 0,
+      "watcherCrashes": 0,
+      "recordSha256": "8b1b9aa7acffec06115be446c59bb799fe29bb838d176bac7cce47b822e323a2",
+      "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+      "longDependency": {
+        "pathLength": 344,
+        "sha256": "2ce8be133fe21a4abd7d8330d9b443092dc2ce28826f191442c14989f9d55b15",
+        "bytesMatchPackagedDependency": true
+      },
+      "noOwnedProcesses": true,
+      "policyRemoved": true
+    },
+    {
+      "mode": "provider",
+      "runId": "desktop-30472-1791387409284696000-0",
+      "status": "completed",
+      "effectiveStatus": "completed",
+      "durability": "healthy",
+      "outcome": "succeeded",
+      "verified": true,
+      "leaseGeneration": 2,
+      "released": true,
+      "hostCrashes": 1,
+      "watcherCrashes": 0,
+      "recordSha256": "6c40b8b1b90b812fc66e9aa596e76ad232d49d018e707896890a85066bf882b2",
+      "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+      "longDependency": {
+        "pathLength": 348,
+        "sha256": "2ce8be133fe21a4abd7d8330d9b443092dc2ce28826f191442c14989f9d55b15",
+        "bytesMatchPackagedDependency": true
+      },
+      "provider": {
+        "exactStageFiles": 3,
+        "successfulPromptResults": 3,
+        "interruptedAttempts": [
+          {
+            "blockId": "prompt-2",
+            "status": "error",
+            "output": "ERROR",
+            "attempt": 1
+          }
+        ],
+        "canonicalInstructionDigest": "190f53f009bb2bd7c67b38d842d01ed25c8a22d4eb1e50b95e6e8e4ea9a95b20",
+        "instructionDigestPreserved": true
+      },
+      "noOwnedProcesses": true,
+      "policyRemoved": true
+    }
+  ]
+}

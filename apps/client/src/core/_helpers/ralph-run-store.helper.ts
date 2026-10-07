@@ -11,6 +11,7 @@ import { basename, join } from "node:path";
 import type { RalphRunCheckpoint } from "../ralph.js";
 import { writeJsonAtomically } from "./write-file-atomically.helper.js";
 import { isRalphRunOwnerAlive } from "./is-ralph-run-owner-alive.helper.js";
+import { retryTransientFileOperation } from "./retry-transient-file-operation.helper.js";
 import {
   MAX_RALPH_JOURNAL_ENTRY_BYTES,
   readRalphRunJournal,
@@ -21,15 +22,6 @@ export { RalphRunStoreCorruptionError } from "./ralph-run-journal.helper.js";
 const CHECKPOINT_SCHEMA_VERSION = 1;
 const LEASE_SCHEMA_VERSION = 1;
 const MAX_STORED_CHECKPOINTS = 8;
-const TRANSIENT_FILE_ERROR_CODES = new Set([
-  "EACCES",
-  "EAGAIN",
-  "EBUSY",
-  "EMFILE",
-  "ENFILE",
-  "EPERM",
-]);
-const DEFAULT_TRANSIENT_RETRY_WINDOW_MS = 5_000;
 
 interface RalphCheckpointEnvelope {
   schemaVersion: typeof CHECKPOINT_SCHEMA_VERSION;
@@ -80,38 +72,10 @@ const checkpointChecksum = (
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-const isTransientFileError = (error: unknown): boolean =>
-  isRecord(error) &&
-  typeof error.code === "string" &&
-  TRANSIENT_FILE_ERROR_CODES.has(error.code);
-
 const isMissingFileError = (error: unknown): boolean =>
   isRecord(error) && error.code === "ENOENT";
 
-const delay = (durationMs: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, durationMs));
-
 export class RalphRunStoreOwnershipError extends Error {}
-
-const retryTransientFileOperation = async <T>(
-  operation: () => Promise<T>,
-  retryWindowMs = DEFAULT_TRANSIENT_RETRY_WINDOW_MS,
-): Promise<T> => {
-  const deadline = Date.now() + Math.max(0, retryWindowMs);
-  let retryDelayMs = 20;
-
-  for (;;) {
-    try {
-      return await operation();
-    } catch (error) {
-      if (!isTransientFileError(error) || Date.now() >= deadline) {
-        throw error;
-      }
-      await delay(Math.min(retryDelayMs, Math.max(0, deadline - Date.now())));
-      retryDelayMs = Math.min(250, retryDelayMs * 2);
-    }
-  }
-};
 
 export class RalphRunStore {
   public readonly directory: string;

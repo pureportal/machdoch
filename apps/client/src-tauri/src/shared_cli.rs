@@ -292,7 +292,12 @@ fn materialize_cached_runtime_file_in_directory(
         materialize_cached_runtime_file_contents(&runtime_path, contents, executable)
     })?;
 
-    Ok(runtime_path)
+    fs::canonicalize(&runtime_path).map_err(|error| {
+        format!(
+            "Failed to resolve the bundled CLI runtime file at {}: {error}",
+            runtime_path.display()
+        )
+    })
 }
 
 #[cfg(any(machdoch_embedded_runtime, test))]
@@ -682,9 +687,9 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert!(paths
-            .iter()
-            .all(|path| path == &directory.join(file_name.as_str())));
+        let expected_path = fs::canonicalize(directory.join(file_name.as_str()))
+            .expect("materialized runtime path should resolve");
+        assert!(paths.iter().all(|path| path == &expected_path));
         assert_eq!(
             fs::read(directory.join(file_name.as_str())).expect("final runtime should be readable"),
             *contents
@@ -726,11 +731,46 @@ mod tests {
             .expect("materialization worker should not panic")
             .expect("materialization worker should complete after lock release");
 
-        assert_eq!(materialized, runtime_path);
+        assert_eq!(
+            materialized,
+            fs::canonicalize(&runtime_path).expect("materialized runtime path should resolve")
+        );
         assert_eq!(
             fs::read(&materialized).expect("materialized runtime should be readable"),
             contents
         );
         cleanup(&directory);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn materialized_executable_launches_beyond_windows_max_path() {
+        let root = temp_runtime_directory("long-executable");
+        let mut directory = root.clone();
+        while directory.as_os_str().len() < 280 {
+            directory.push("runtime-path-component");
+        }
+        fs::create_dir_all(&directory).expect("long runtime directory should be created");
+        let executable = env::current_exe().expect("test executable should resolve");
+        let contents = fs::read(executable).expect("test executable should be readable");
+        let path = materialize_cached_runtime_file_in_directory(
+            &directory,
+            "machdoch-node-test.exe",
+            &contents,
+            true,
+        )
+        .expect("long runtime executable should be materialized");
+        let output = Command::new(path)
+            .args([
+                "--exact",
+                "shared_cli::tests::shared_cli_supervision_test_entrypoint",
+                "--nocapture",
+            ])
+            .env(TEST_CHILD_MODE_ENV, "json")
+            .output()
+            .expect("long runtime executable should launch");
+        assert!(output.status.success());
+        assert!(String::from_utf8_lossy(&output.stdout).contains("{\"ok\":true}"));
+        cleanup(&root);
     }
 }

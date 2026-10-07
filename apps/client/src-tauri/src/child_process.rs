@@ -565,6 +565,11 @@ mod tests {
                 unsafe {
                     libc::signal(libc::SIGTERM, libc::SIG_IGN);
                 }
+                let ready_path = env::var_os("MACHDOCH_TEST_CHILD_READY_PATH")
+                    .map(PathBuf::from)
+                    .expect("child readiness path should be provided");
+                fs::write(ready_path, std::process::id().to_string())
+                    .expect("child readiness should be recorded");
                 thread::sleep(Duration::from_secs(60));
             }
             Ok("spawn-descendant") | Ok("spawn-descendant-and-exit") => {
@@ -618,7 +623,7 @@ mod tests {
         }
     }
 
-    fn wait_for_descendant_pid(path: &Path) -> u32 {
+    fn wait_for_recorded_test_pid(path: &Path) -> u32 {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             if let Ok(pid) = fs::read_to_string(path) {
@@ -628,7 +633,7 @@ mod tests {
             }
             assert!(
                 Instant::now() < deadline,
-                "descendant pid was not recorded before the test deadline"
+                "test process pid was not recorded before the test deadline"
             );
             thread::sleep(Duration::from_millis(25));
         }
@@ -727,9 +732,12 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn supervised_child_escalates_when_graceful_termination_is_ignored() {
-        let mut child = SupervisedChild::spawn(&mut test_child_command("ignore-term"))
-            .expect("supervised test child should start");
-        thread::sleep(Duration::from_millis(100));
+        let ready_path = TestPath::new();
+        let mut command = test_child_command("ignore-term");
+        command.env("MACHDOCH_TEST_CHILD_READY_PATH", &ready_path.0);
+        let mut child =
+            SupervisedChild::spawn(&mut command).expect("supervised test child should start");
+        assert_eq!(wait_for_recorded_test_pid(&ready_path.0), child.child.id());
         let cleanup = child
             .terminate_and_reap()
             .expect("uncooperative child should be forcibly terminated");
@@ -744,7 +752,7 @@ mod tests {
         command.env(TEST_DESCENDANT_PID_PATH_ENV, &pid_path.0);
         let mut child = SupervisedChild::spawn_with_required_isolation(&mut command)
             .expect("supervised descendant parent should start");
-        let descendant_pid = wait_for_descendant_pid(&pid_path.0);
+        let descendant_pid = wait_for_recorded_test_pid(&pid_path.0);
 
         child
             .terminate_and_reap()
@@ -759,7 +767,7 @@ mod tests {
         command.env(TEST_DESCENDANT_PID_PATH_ENV, &pid_path.0);
         let mut child = SupervisedChild::spawn_with_required_isolation(&mut command)
             .expect("supervised descendant parent should start");
-        let descendant_pid = wait_for_descendant_pid(&pid_path.0);
+        let descendant_pid = wait_for_recorded_test_pid(&pid_path.0);
         let status = loop {
             if let Some(status) = child.try_wait().expect("parent should remain observable") {
                 break status;
@@ -778,7 +786,7 @@ mod tests {
         command.env(TEST_DESCENDANT_PID_PATH_ENV, &pid_path.0);
         let mut child = SupervisedChild::spawn_preserving_descendants_after_exit(&mut command)
             .expect("persistent-descendant parent should start");
-        let descendant_pid = wait_for_descendant_pid(&pid_path.0);
+        let descendant_pid = wait_for_recorded_test_pid(&pid_path.0);
         let guard = TestProcessGuard(Some(descendant_pid));
         let status = loop {
             if let Some(status) = child.try_wait().expect("parent should remain observable") {

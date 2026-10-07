@@ -21,14 +21,9 @@ pub(crate) async fn invoke(
             let window = app
                 .get_webview_window("main")
                 .ok_or_else(|| json!("Open the desktop client before editing RALPH flows."))?;
-            crate::desktop_task::run_ralph_command(
-                app.clone(),
-                app.state::<crate::desktop_task::DesktopTaskCancelMap>(),
-                window,
-                request,
-            )
-            .await
-            .map_err(|error| json!(error))
+            crate::desktop_task::run_ralph_command(app.clone(), window, request)
+                .await
+                .map_err(|error| json!(error))
         }
         "get_active_desktop_tasks" => {
             let result = crate::desktop_task::get_active_desktop_tasks(app.state())
@@ -56,7 +51,7 @@ pub(crate) async fn invoke(
                 .as_str()
                 .ok_or_else(|| json!("Select a task."))?
                 .to_owned();
-            crate::desktop_task::cancel_desktop_task(app.state(), task_id)
+            crate::desktop_task::cancel_desktop_task(app.clone(), app.state(), task_id)
                 .await
                 .map_err(|error| json!(error))?;
             Ok(Value::Null)

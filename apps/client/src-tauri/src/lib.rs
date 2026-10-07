@@ -54,6 +54,15 @@ fn app_title(is_development: bool) -> &'static str {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if std::env::args().nth(1).as_deref()
+        == Some(desktop_task::ralph_host_recovery::watcher::WATCHER_ARGUMENT)
+    {
+        if let Err(error) = desktop_task::ralph_host_recovery::watcher::run() {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("--fleet-media-worker") {
         if let Err(error) = media::fleet_worker::run() {
             eprintln!("{error}");
@@ -163,6 +172,7 @@ pub fn run() {
         .manage(ui_operation::CrossWindowOperationState::default())
         .manage(runtime_snapshot::McpConfigWriteLock::default())
         .manage(workspace_run::WorkspaceRunState::default())
+        .manage(desktop_task::ralph_host_recovery::RalphHostRecoveryState::default())
         .manage(workspace_tools::WorkspaceTerminalState::default())
         .manage(fleet_control::workspace_terminal::FleetWorkspaceTerminalState::default())
         .on_window_event(|window, event| {
@@ -211,6 +221,9 @@ pub fn run() {
             }
 
             desktop_shell::display_layout::initialize(app.handle());
+
+            desktop_task::ralph_host_recovery::initialize(app.handle())
+                .map_err(std::io::Error::other)?;
 
             Ok(())
         })
@@ -471,6 +484,15 @@ pub fn run() {
         .build(context)
         .expect("error while building machdoch desktop shell")
         .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+                if let Err(error) = app
+                    .state::<desktop_task::ralph_host_recovery::RalphHostRecoveryState>()
+                    .shutdown()
+                {
+                    api.prevent_exit();
+                    eprintln!("Failed to stop Ralph recovery before desktop shutdown: {error}");
+                }
+            }
             if matches!(event, tauri::RunEvent::Exit) {
                 desktop_shell::placement::save(app);
                 app.state::<fleet::FleetConnectionState>().shutdown();

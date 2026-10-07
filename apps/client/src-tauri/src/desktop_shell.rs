@@ -148,6 +148,15 @@ pub(crate) fn request_graceful_exit<R: tauri::Runtime>(app: &AppHandle<R>) {
         return;
     }
 
+    if let Err(error) = app
+        .state::<crate::desktop_task::ralph_host_recovery::RalphHostRecoveryState>()
+        .shutdown()
+    {
+        EXIT_REQUESTED.store(false, Ordering::SeqCst);
+        eprintln!("Failed to stop Ralph recovery before desktop shutdown: {error}");
+        return;
+    }
+
     let app = app.clone();
     let active_task_count = {
         let state = app.state::<crate::desktop_task::DesktopTaskCancelMap>();

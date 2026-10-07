@@ -1,0 +1,42 @@
+{
+  "passed": true,
+  "checkedAt": "2026-10-07T15:08:01.259Z",
+  "archiveSha256": "835d95b8b9896001d81da85b328496f370e7836e9be62fa79f2485a79a4336fd",
+  "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+  "entrySha256": "2b0bc0c8b62f447bba78da1a175e1d90a4acc50c824cfe0d74d99058c1df7b38",
+  "cases": [
+    {
+      "name": "completion",
+      "runId": "desktop-336-1791384860200-0",
+      "status": "completed",
+      "healthy": true,
+      "released": true,
+      "generation": 1,
+      "appends": 1,
+      "recordSha256": "f2333ad41f5cc89c5805b8690875ce6c31132e596b00ff4ae1a913360f1b5f97"
+    },
+    {
+      "name": "interruption",
+      "runId": "desktop-336-1791384863856-0",
+      "status": "completed",
+      "healthy": true,
+      "released": true,
+      "generation": 2,
+      "appends": 1,
+      "recordSha256": "803687ae2d1aedf8924004c0a6d17105d9d221fbf02cfadae6c012674dd05095",
+      "consumptionPreservedAtResume": true,
+      "consumptionObservationSource": "headless-process-acceptance.json; asserted while the resumed checkpoint existed"
+    },
+    {
+      "name": "cancellation",
+      "runId": "desktop-336-1791384898302-0",
+      "status": "stopped",
+      "healthy": true,
+      "released": true,
+      "generation": 1,
+      "appends": 1,
+      "recordSha256": "158890db17c426d643c7aec0b340f1261b1d7cc80e817c1de4c89f49324f85d1"
+    }
+  ],
+  "remainingOwnedProcesses": []
+}

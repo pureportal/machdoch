@@ -1,0 +1,65 @@
+{
+  "passed": true,
+  "checkedAt": "2026-10-07T18:44:21.766Z",
+  "checks": [
+    {
+      "command": "git",
+      "args": [
+        "diff",
+        "--check"
+      ],
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "warning: in the working copy of 'apps/client/src-tauri/src/child_process.rs', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src-tauri/src/desktop_shell.rs', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src-tauri/src/desktop_task.rs', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src-tauri/src/desktop_task/ralph.rs', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src-tauri/src/fleet_control/dispatch.rs', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src-tauri/src/fleet_control/ralph.rs', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src-tauri/src/lib.rs', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src-tauri/src/shared_cli.rs', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src/cli/main.ts', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src/core/__test__/fixtures/windows-file-lock.cs', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src/core/__test__/ralph-reliability.spec.ts', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src/core/__test__/ralph-storage.spec.ts', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src/core/__test__/windows-file-lock.ts', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src/core/_helpers/create-ralph-storage-paths.helper.ts', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src/core/_helpers/create-ralph-storage-paths.spec.ts', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src/core/_helpers/prepare-ralph-isolated-run.helper.ts', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src/core/_helpers/ralph-run-store.helper.ts', LF will be replaced by CRLF the next time Git touches it\nwarning: in the working copy of 'apps/client/src/core/ralph.ts', LF will be replaced by CRLF the next time Git touches it\n"
+    },
+    {
+      "command": "rustfmt",
+      "args": [
+        "--edition",
+        "2021",
+        "--config",
+        "skip_children=true",
+        "--check",
+        "apps/client/src-tauri/src/child_process.rs",
+        "apps/client/src-tauri/src/desktop_shell.rs",
+        "apps/client/src-tauri/src/desktop_task.rs",
+        "apps/client/src-tauri/src/desktop_task/ralph.rs",
+        "apps/client/src-tauri/src/desktop_task/ralph_recovery.rs",
+        "apps/client/src-tauri/src/fleet_control/dispatch.rs",
+        "apps/client/src-tauri/src/fleet_control/ralph.rs",
+        "apps/client/src-tauri/src/lib.rs",
+        "apps/client/src-tauri/src/shared_cli.rs",
+        "apps/client/src-tauri/src/desktop_task/ralph_host_recovery.rs",
+        "apps/client/src-tauri/src/desktop_task/ralph_host_recovery/manifest.rs",
+        "apps/client/src-tauri/src/desktop_task/ralph_host_recovery/monitor.rs",
+        "apps/client/src-tauri/src/desktop_task/ralph_host_recovery/watcher.rs",
+        "apps/client/src-tauri/src/desktop_task/ralph_live_owner.rs"
+      ],
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "rustFiles": [
+    "apps/client/src-tauri/src/child_process.rs",
+    "apps/client/src-tauri/src/desktop_shell.rs",
+    "apps/client/src-tauri/src/desktop_task.rs",
+    "apps/client/src-tauri/src/desktop_task/ralph.rs",
+    "apps/client/src-tauri/src/desktop_task/ralph_recovery.rs",
+    "apps/client/src-tauri/src/fleet_control/dispatch.rs",
+    "apps/client/src-tauri/src/fleet_control/ralph.rs",
+    "apps/client/src-tauri/src/lib.rs",
+    "apps/client/src-tauri/src/shared_cli.rs",
+    "apps/client/src-tauri/src/desktop_task/ralph_host_recovery.rs",
+    "apps/client/src-tauri/src/desktop_task/ralph_host_recovery/manifest.rs",
+    "apps/client/src-tauri/src/desktop_task/ralph_host_recovery/monitor.rs",
+    "apps/client/src-tauri/src/desktop_task/ralph_host_recovery/watcher.rs",
+    "apps/client/src-tauri/src/desktop_task/ralph_live_owner.rs"
+  ],
+  "unchangedSourceProof": "source-final-readback.json",
+  "earlierPassedChecks": [
+    "Core TypeScript",
+    "Test and logic TypeScript",
+    "Scoped oxlint"
+  ]
+}

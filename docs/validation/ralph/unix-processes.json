@@ -1,0 +1,87 @@
+{
+  "passed": true,
+  "checkedAt": "2026-10-07T14:30:51.598Z",
+  "cases": [
+    {
+      "name": "reservation",
+      "runId": "desktop-148-1791382571020-0",
+      "directory": "/root/machdoch-ralph-stability-128e6933/process-cases/startup-rI339t/workspace/.machdoch/ralph/runs/desktop-148-1791382571020-0",
+      "status": "completed",
+      "durability": "healthy",
+      "generation": 1,
+      "released": true,
+      "appends": 1,
+      "recordSha256": "6ad2394125ffb2e76c2f94182e0d5480327d6de752928b28a303bdbec12b6156"
+    },
+    {
+      "name": "recovery",
+      "runId": "desktop-118-1791382571053-0",
+      "directory": "/root/machdoch-ralph-stability-128e6933/process-cases/recovery-kAysj8/workspace/.machdoch/ralph/runs/desktop-118-1791382571053-0",
+      "status": "completed",
+      "durability": "healthy",
+      "generation": 1,
+      "released": true,
+      "appends": 1,
+      "recordSha256": "08a245917e730866a931ebf2a82be45a490fbe9406b0abf6172b826abbf182fe"
+    },
+    {
+      "name": "cancel",
+      "runId": "desktop-351-1791382873547-0",
+      "directory": "/root/machdoch-ralph-stability-128e6933/process-cases/cancel-FZuj4D/workspace/.machdoch/ralph/runs/desktop-351-1791382873547-0",
+      "status": "stopped",
+      "durability": "healthy",
+      "generation": 1,
+      "released": true,
+      "appends": 1,
+      "recordSha256": "1889389dcf9e1979aa208036d56269986ea344d9382054f7c6a69dbef349cdc1"
+    },
+    {
+      "name": "owner-loss",
+      "runId": "desktop-170-1791382570909-0",
+      "directory": "/root/machdoch-ralph-stability-128e6933/process-cases/owner-loss-s86ary/workspace/.machdoch/ralph/runs/desktop-170-1791382570909-0",
+      "status": "completed",
+      "durability": "healthy",
+      "generation": 2,
+      "released": true,
+      "appends": 1,
+      "recordSha256": "1c4edeb68de557c59cda0c59244ce89508702c1788c3f0ef77ddb59fbbf25016"
+    },
+    {
+      "name": "startup",
+      "runId": "desktop-155-1791382570921-0",
+      "directory": "/root/machdoch-ralph-stability-128e6933/process-cases/startup-ygGEW9/workspace/.machdoch/ralph/runs/desktop-155-1791382570921-0",
+      "status": "completed",
+      "durability": "healthy",
+      "generation": 1,
+      "released": true,
+      "appends": 1,
+      "recordSha256": "f5021a74a93bdd5bd3415617cf678ce07c3a9c5c0fca8fe2e05f92f62f32586b"
+    },
+    {
+      "name": "startup-cancel",
+      "runId": "desktop-179-1791382571442-0",
+      "directory": "/root/machdoch-ralph-stability-128e6933/process-cases/cancel-OVOE7L/workspace/.machdoch/ralph/runs/desktop-179-1791382571442-0",
+      "status": "stopped",
+      "durability": "healthy",
+      "generation": 1,
+      "released": true,
+      "appends": 0,
+      "recordSha256": "f2692cf053006a62f2d077b05632c0f8fad1699459e59f66c8aa9715181e32a3"
+    },
+    {
+      "name": "resumed-cancel",
+      "runId": "desktop-107-1791383262168-0",
+      "directory": "/root/machdoch-ralph-stability-128e6933/process-cases/owner-loss-fuOD9Q/workspace/.machdoch/ralph/runs/desktop-107-1791383262168-0",
+      "status": "stopped",
+      "durability": "healthy",
+      "generation": 2,
+      "released": true,
+      "appends": 1,
+      "recordSha256": "7f6963e1f89b27805090d58fd3b670520159fda7f6c6fe13e1eb4aef88e3bffc"
+    }
+  ],
+  "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+  "executableSha256": "6c465dbef000e2d50fa4d2677edd9669de02f4a0279ea07c4dcbfc2b7d58d83f",
+  "remainingOwnedProcesses": [],
+  "fullTauriDesktop": false
+}

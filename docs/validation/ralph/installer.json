@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "checkedAt": "2026-10-07T15:06:47.582Z",
+  "installer": {
+    "path": "C:/Users/ehrha/AppData/Local/Temp/machdoch-ralph-stability-ViFe18/artifacts/machdoch-current-setup.exe",
+    "sha256": "cdaf5f17e16be469abbb4f333a87ad09eae105db2c45608c5d115edcd7192cad",
+    "bytes": 463077860
+  },
+  "testedExecutableSha256": "4bcf8f7394f19b551ba01b17fdca92e5f2dc36390bdd622cdfbeb861cf780915",
+  "bundledExecutableSha256": "dc378f7594bdbd79fd1464b50108b838cb5111429231a58f5a72d275b7170868",
+  "bundleMarker": {
+    "offset": 299550154,
+    "before": "UNK",
+    "after": "NSS",
+    "changedBytes": 3
+  },
+  "allOtherBytesIdentical": true,
+  "installed": false,
+  "signed": false
+}
