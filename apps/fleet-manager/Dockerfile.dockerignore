@@ -31,6 +31,8 @@
 !apps/client/src-tauri/resources/whisper/
 !apps/client/src-tauri/resources/whisper/LICENSE-*.txt
 !packages/
+!packages/client-ui/
+!packages/client-ui/**
 !packages/fleet-protocol/
 !packages/fleet-protocol/**
 !packages/product-ui/
