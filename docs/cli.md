@@ -6,25 +6,25 @@ Run `machdoch update` to install the latest release, or `machdoch update --check
 
 ## Input
 
-| Key | Action |
-| --- | --- |
-| Enter | Send |
-| Ctrl+J, Alt+Enter | Insert a newline |
-| Shift+Enter | Insert a newline when the terminal reports extended keys |
-| Backslash, then Enter | Continue on a new line |
-| Up / Down | Move between visible rows, then browse prompt history |
-| Ctrl+R | Search history; Enter accepts, Esc restores the draft |
-| Tab | Complete slash commands and their arguments |
-| Ctrl+G | Edit the draft with `VISUAL` or `EDITOR` |
-| Ctrl+A / Ctrl+E | Start / end of the line |
-| Ctrl+Left / Ctrl+Right | Move by word |
-| Ctrl+U / Ctrl+K | Delete to the start / end of the line |
-| Ctrl+W / Ctrl+Y | Delete a word / paste deleted text |
-| Ctrl+_ | Undo an edit |
-| Ctrl+L | Clear the terminal and redraw |
-| Ctrl+C | Cancel the task or discard the draft |
-| Esc | Cancel the running task |
-| Ctrl+D | Exit when the prompt is empty |
+| Key                    | Action                                                   |
+| ---------------------- | -------------------------------------------------------- |
+| Enter                  | Send                                                     |
+| Ctrl+J, Alt+Enter      | Insert a newline                                         |
+| Shift+Enter            | Insert a newline when the terminal reports extended keys |
+| Backslash, then Enter  | Continue on a new line                                   |
+| Up / Down              | Move between visible rows, then browse prompt history    |
+| Ctrl+R                 | Search history; Enter accepts, Esc restores the draft    |
+| Tab                    | Complete slash commands and their arguments              |
+| Ctrl+G                 | Edit the draft with `VISUAL` or `EDITOR`                 |
+| Ctrl+A / Ctrl+E        | Start / end of the line                                  |
+| Ctrl+Left / Ctrl+Right | Move by word                                             |
+| Ctrl+U / Ctrl+K        | Delete to the start / end of the line                    |
+| Ctrl+W / Ctrl+Y        | Delete a word / paste deleted text                       |
+| Ctrl+_                 | Undo an edit                                             |
+| Ctrl+L                 | Clear the terminal and redraw                            |
+| Ctrl+C                 | Cancel the task or discard the draft                     |
+| Esc                    | Cancel the running task                                  |
+| Ctrl+D                 | Exit when the prompt is empty                            |
 
 Bracketed paste keeps a whole block editable, including newlines and tabs. In a terminal without bracketed paste, use `/paste` and finish with `/end`. Prompt history persists across sessions. `/shortcuts` lists the controls in the terminal.
 
