@@ -3,6 +3,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readdir,
   rm,
   stat,
   writeFile,
@@ -63,6 +64,24 @@ const waitForDiagnostic = async (
     await wait(25);
   }
   throw new Error("Timed out waiting for provider-sync daemon diagnostics.");
+};
+
+const waitForReconcileLockContention = async (
+  userConfigRoot: string,
+): Promise<void> => {
+  await vi.waitFor(
+    async () => {
+      const entries = await readdir(
+        join(userConfigRoot, "provider-enrollment"),
+      );
+      expect(
+        entries.some((name) =>
+          name.startsWith("reconcile.state.machdoch.lock.candidate."),
+        ),
+      ).toBe(true);
+    },
+    { timeout: 5_000 },
+  );
 };
 
 afterEach(async () => {
@@ -282,7 +301,7 @@ describe("provider sync daemon", () => {
       await acquired;
       try {
         await requestProviderSyncRefresh();
-        await wait(150);
+        await waitForReconcileLockContention(userConfigRoot);
         // Request another pass after the first has started reading its inputs.
         await requestProviderSyncRefresh();
         await wait(50);
@@ -383,7 +402,7 @@ describe("provider sync daemon", () => {
 
     try {
       await requestProviderSyncRefresh();
-      await wait(150);
+      await waitForReconcileLockContention(userConfigRoot);
       controller.abort();
       await wait(100);
 
