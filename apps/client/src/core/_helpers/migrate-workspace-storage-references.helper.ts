@@ -5,6 +5,7 @@ import type { RalphFlow } from "../ralph.js";
 import { createRalphFlowFingerprint } from "./create-ralph-flow-fingerprint.helper.js";
 import { isRalphRunOwnerAlive } from "./is-ralph-run-owner-alive.helper.js";
 import { writeJsonAtomically } from "./write-file-atomically.helper.js";
+import { ensureRalphWorktreeIdentity } from "./ralph-worktree-identity.helper.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -239,7 +240,36 @@ export const migrateWorkspaceStorageReferences = async (
     if (!entry.isDirectory()) continue;
     const directory = join(runs, entry.name);
     for (const file of await listDirectory(directory)) {
-      if (file.isFile() && file.name === "run.json") {
+      if (
+        file.isFile() &&
+        ["workspace-isolation.json", "workspace-preparation.json"].includes(
+          file.name,
+        )
+      ) {
+        const worktree: unknown = JSON.parse(
+          await readFile(join(directory, file.name), "utf8"),
+        );
+        if (
+          !isRecord(worktree) ||
+          typeof worktree.branch !== "string" ||
+          !/^ralph\/[a-f0-9]{20}$/u.test(worktree.branch)
+        ) {
+          throw new Error(`Invalid RALPH worktree metadata: ${directory}`);
+        }
+        await ensureRalphWorktreeIdentity(
+          directory,
+          worktree.branch.slice("ralph/".length),
+        );
+      }
+      if (
+        file.isFile() &&
+        [
+          "run.json",
+          "workspace-isolation.json",
+          "workspace-preparation.json",
+          "workspace-integration.json",
+        ].includes(file.name)
+      ) {
         await migrateJsonReferences(
           join(directory, file.name),
           workspaceRoot,
