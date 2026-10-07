@@ -18309,6 +18309,7 @@ export const runRalphFlow = async (
     `ralph-${flow.id}-${randomUUID()}`;
 
   try {
+    await ensureWorkspaceStorage(config.workspaceRoot);
     if (
       options.isolatedWorktree ||
       options.checkpoint?.runWorktree ||
@@ -18388,6 +18389,7 @@ export const runRalphFlow = async (
         })),
       };
       config = { ...config, workspaceRoot: worktree.executionWorkspaceRoot };
+      await ensureWorkspaceStorage(config.workspaceRoot);
       options = {
         ...options,
         runWorktree: worktree,
