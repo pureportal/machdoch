@@ -89,20 +89,20 @@ const fullFeatureImplementationFlow: RalphFlow = {
     {
       name: "checklistDirectory",
       type: "path",
-      default: ".machdoch/feature-implementation",
+      default: ".machdoch/local/state/feature-implementation",
       required: false,
     },
     { name: "checklistFile", type: "path", default: "", required: false },
     {
       name: "checklistArchiveDirectory",
       type: "path",
-      default: ".machdoch/feature-implementation/archive",
+      default: ".machdoch/local/state/feature-implementation/archive",
       required: false,
     },
     {
       name: "featureOutcomesFile",
       type: "path",
-      default: ".machdoch/feature-implementation/outcomes.jsonl",
+      default: ".machdoch/local/state/feature-implementation/outcomes.jsonl",
       required: false,
     },
     {
@@ -215,7 +215,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         type: "DETECT_PROJECT_COMMANDS",
         rootPath: ".",
         outputPath:
-          "{{projectCommandsFile:path=.machdoch/feature-implementation/project-commands.json}}",
+          "{{projectCommandsFile:path=.machdoch/local/state/feature-implementation/project-commands.json}}",
       },
     },
     {
@@ -228,7 +228,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         type: "TRANSFORM_JSON",
         input: "{}",
         expression:
-          "(() => { const featureId = String(variables.featureId || 'current-feature').trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, '-').replace(/^-+|-+$/gu, '') || 'current-feature'; const configured = String(variables.checklistFile || '').trim(); const directory = String(variables.checklistDirectory || '.machdoch/feature-implementation').trim().replace(/[\\/]+$/gu, '') || '.machdoch/feature-implementation'; const requestKey = JSON.stringify([variables.featureRequest || '', variables.acceptanceCriteria || '', variables.previousGoal || '']); return { featureId, requestKey, path: configured || `${directory}/${featureId}.checklist.json` }; })()",
+          "(() => { const featureId = String(variables.featureId || 'current-feature').trim().toLowerCase().replace(/[^a-z0-9._-]+/gu, '-').replace(/^-+|-+$/gu, '') || 'current-feature'; const configured = String(variables.checklistFile || '').trim(); const directory = String(variables.checklistDirectory || '.machdoch/local/state/feature-implementation').trim().replace(/[\\/]+$/gu, '') || '.machdoch/local/state/feature-implementation'; const requestKey = JSON.stringify([variables.featureRequest || '', variables.acceptanceCriteria || '', variables.previousGoal || '']); return { featureId, requestKey, path: configured || `${directory}/${featureId}.checklist.json` }; })()",
       },
     },
     {
@@ -316,7 +316,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         type: "ARCHIVE_FILE",
         path: "{{data:resolve-checklist-path:output.path}}",
         rootPath:
-          "{{checklistArchiveDirectory:path=.machdoch/feature-implementation/archive}}",
+          "{{checklistArchiveDirectory:path=.machdoch/local/state/feature-implementation/archive}}",
       },
     },
     {
@@ -443,7 +443,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         type: "GIT_SNAPSHOT",
         cwd: ".",
         outputPath:
-          "{{gitSnapshotFile:path=.machdoch/feature-implementation/git-snapshot.json}}",
+          "{{gitSnapshotFile:path=.machdoch/local/state/feature-implementation/git-snapshot.json}}",
       },
     },
     {
@@ -673,7 +673,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         type: "GIT_DIFF_SUMMARY",
         cwd: ".",
         outputPath:
-          "{{gitDiffFile:path=.machdoch/feature-implementation/git-diff.json}}",
+          "{{gitDiffFile:path=.machdoch/local/state/feature-implementation/git-diff.json}}",
       },
     },
     {
@@ -824,7 +824,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DONE",
-        path: "{{featureOutcomesFile:path=.machdoch/feature-implementation/outcomes.jsonl}}",
+        path: "{{featureOutcomesFile:path=.machdoch/local/state/feature-implementation/outcomes.jsonl}}",
         input:
           '{"outcome":"DONE","featureId":"{{data:resolve-checklist-path:output.featureId}}","checklistPath":"{{data:resolve-checklist-path:output.path}}"}',
       },
@@ -839,7 +839,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
-        path: "{{featureOutcomesFile:path=.machdoch/feature-implementation/outcomes.jsonl}}",
+        path: "{{featureOutcomesFile:path=.machdoch/local/state/feature-implementation/outcomes.jsonl}}",
         input:
           '{"outcome":"DEFER","reason":"Bounded autonomous recovery exhausted."}',
       },
@@ -854,7 +854,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "BLOCKED",
-        path: "{{featureOutcomesFile:path=.machdoch/feature-implementation/outcomes.jsonl}}",
+        path: "{{featureOutcomesFile:path=.machdoch/local/state/feature-implementation/outcomes.jsonl}}",
         input:
           '{"outcome":"BLOCKED","reason":"Persisted checklist tasks have no currently selectable work.","assessment":{{data:assess-checklist-tasks}}}',
       },
@@ -869,7 +869,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "INVALID",
-        path: "{{featureOutcomesFile:path=.machdoch/feature-implementation/outcomes.jsonl}}",
+        path: "{{featureOutcomesFile:path=.machdoch/local/state/feature-implementation/outcomes.jsonl}}",
         input:
           '{"outcome":"INVALID","reason":"Autonomous checklist preparation or state recovery produced invalid data."}',
       },
@@ -882,9 +882,9 @@ const fullFeatureImplementationFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{featureReportFile:path=.machdoch/feature-implementation/final-report.json}}",
+        path: "{{featureReportFile:path=.machdoch/local/state/feature-implementation/final-report.json}}",
         outputPath:
-          "{{featureReportMarkdown:path=.machdoch/feature-implementation/final-report.md}}",
+          "{{featureReportMarkdown:path=.machdoch/local/state/feature-implementation/final-report.md}}",
       },
     },
     {
@@ -895,9 +895,9 @@ const fullFeatureImplementationFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{featureReportFile:path=.machdoch/feature-implementation/final-report.json}}",
+        path: "{{featureReportFile:path=.machdoch/local/state/feature-implementation/final-report.json}}",
         outputPath:
-          "{{featureReportMarkdown:path=.machdoch/feature-implementation/final-report.md}}",
+          "{{featureReportMarkdown:path=.machdoch/local/state/feature-implementation/final-report.md}}",
       },
     },
     {
@@ -923,7 +923,7 @@ const fullFeatureImplementationFlow: RalphFlow = {
         type: "ARCHIVE_FILE",
         path: "{{data:resolve-checklist-path:output.path}}",
         rootPath:
-          "{{checklistArchiveDirectory:path=.machdoch/feature-implementation/archive}}",
+          "{{checklistArchiveDirectory:path=.machdoch/local/state/feature-implementation/archive}}",
       },
     },
     {

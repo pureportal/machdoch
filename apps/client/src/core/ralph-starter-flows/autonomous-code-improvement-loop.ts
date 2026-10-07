@@ -169,14 +169,14 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       name: "scopeRegistryFile",
       type: "path",
       default:
-        ".machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json",
+        ".machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json",
       required: false,
     },
     {
       name: "scopeRegistryMarkdown",
       type: "path",
       default:
-        ".machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md",
+        ".machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md",
       required: false,
     },
     {
@@ -273,31 +273,34 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
     {
       name: "activeImprovementPlanFile",
       type: "path",
-      default: ".machdoch/ralph/code-improvements/active-improvement-plan.json",
+      default:
+        ".machdoch/local/state/ralph/code-improvements/active-improvement-plan.json",
       required: false,
     },
     {
       name: "completedImprovementsFile",
       type: "path",
-      default: ".machdoch/ralph/code-improvements/completed-improvements.jsonl",
+      default:
+        ".machdoch/local/state/ralph/code-improvements/completed-improvements.jsonl",
       required: false,
     },
     {
       name: "deferredImprovementsFile",
       type: "path",
-      default: ".machdoch/ralph/code-improvements/deferred-improvements.jsonl",
+      default:
+        ".machdoch/local/state/ralph/code-improvements/deferred-improvements.jsonl",
       required: false,
     },
     {
       name: "improvementOutcomesFile",
       type: "path",
-      default: ".machdoch/ralph/code-improvements/outcomes.jsonl",
+      default: ".machdoch/local/state/ralph/code-improvements/outcomes.jsonl",
       required: false,
     },
     {
       name: "archivedImprovementsDirectory",
       type: "path",
-      default: ".machdoch/ralph/code-improvements/archive",
+      default: ".machdoch/local/state/ralph/code-improvements/archive",
       required: false,
     },
     {
@@ -350,7 +353,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Find Active Improvement Plan",
       {
         type: "FILE_EXISTS",
-        path: "{{activeImprovementPlanFile:path=.machdoch/ralph/code-improvements/active-improvement-plan.json}}",
+        path: "{{activeImprovementPlanFile:path=.machdoch/local/state/ralph/code-improvements/active-improvement-plan.json}}",
       },
       1,
     ),
@@ -361,9 +364,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "BEGIN_SCOPE_CYCLE",
         flowAlias: "autonomous-code-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
         strategy: "{{scopeSelectionStrategy:text=priority}}",
         includeMarkdown: true,
       },
@@ -390,9 +393,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "UPDATE_SCOPE_REGISTRY",
         flowAlias: "autonomous-code-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
         strategy: "{{scopeSelectionStrategy:text=priority}}",
         includeMarkdown: true,
       },
@@ -405,7 +408,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "SELECT_SCOPE",
         flowAlias: "autonomous-code-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
         strategy: "{{scopeSelectionStrategy:text=priority}}",
       },
       4,
@@ -417,7 +420,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "DETECT_PROJECT_COMMANDS",
         rootPath: "{{data:select-scope:scope.paths.0}}",
         outputPath:
-          "{{projectCommandsFile:path=.machdoch/ralph/code-improvements/project-commands.json}}",
+          "{{projectCommandsFile:path=.machdoch/local/state/ralph/code-improvements/project-commands.json}}",
       },
       5,
       -1,
@@ -427,7 +430,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Read Completed Improvements",
       {
         type: "QUERY_JSONL",
-        path: "{{completedImprovementsFile:path=.machdoch/ralph/code-improvements/completed-improvements.jsonl}}",
+        path: "{{completedImprovementsFile:path=.machdoch/local/state/ralph/code-improvements/completed-improvements.jsonl}}",
         maxResults: 50,
         order: "newest",
       },
@@ -438,7 +441,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Read Deferred Improvements",
       {
         type: "QUERY_JSONL",
-        path: "{{deferredImprovementsFile:path=.machdoch/ralph/code-improvements/deferred-improvements.jsonl}}",
+        path: "{{deferredImprovementsFile:path=.machdoch/local/state/ralph/code-improvements/deferred-improvements.jsonl}}",
         maxResults: 50,
         order: "newest",
       },
@@ -652,7 +655,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Write Active Improvement Plan",
       {
         type: "WRITE_JSON",
-        path: "{{activeImprovementPlanFile:path=.machdoch/ralph/code-improvements/active-improvement-plan.json}}",
+        path: "{{activeImprovementPlanFile:path=.machdoch/local/state/ralph/code-improvements/active-improvement-plan.json}}",
         input: "{{data:build-improvement-plan:output}}",
       },
       11,
@@ -662,7 +665,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Read Active Improvement Plan",
       {
         type: "READ_JSON",
-        path: "{{activeImprovementPlanFile:path=.machdoch/ralph/code-improvements/active-improvement-plan.json}}",
+        path: "{{activeImprovementPlanFile:path=.machdoch/local/state/ralph/code-improvements/active-improvement-plan.json}}",
       },
       12,
     ),
@@ -673,7 +676,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "DETECT_PROJECT_COMMANDS",
         rootPath: "{{data:read-active-improvement:json.scope.paths.0}}",
         outputPath:
-          "{{projectCommandsFile:path=.machdoch/ralph/code-improvements/project-commands.json}}",
+          "{{projectCommandsFile:path=.machdoch/local/state/ralph/code-improvements/project-commands.json}}",
       },
       13,
     ),
@@ -682,7 +685,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Assess Improvement Tasks",
       {
         type: "ASSESS_JSON_TASKS",
-        path: "{{activeImprovementPlanFile:path=.machdoch/ralph/code-improvements/active-improvement-plan.json}}",
+        path: "{{activeImprovementPlanFile:path=.machdoch/local/state/ralph/code-improvements/active-improvement-plan.json}}",
         jsonPath: "tasks",
         strategy: "priority",
         maxTasks: 1,
@@ -694,7 +697,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Select Improvement Task",
       {
         type: "SELECT_JSON_TASK",
-        path: "{{activeImprovementPlanFile:path=.machdoch/ralph/code-improvements/active-improvement-plan.json}}",
+        path: "{{activeImprovementPlanFile:path=.machdoch/local/state/ralph/code-improvements/active-improvement-plan.json}}",
         jsonPath: "tasks",
         strategy: "priority",
         maxTasks: 1,
@@ -708,7 +711,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "GIT_SNAPSHOT",
         cwd: ".",
         outputPath:
-          "{{gitSnapshotFile:path=.machdoch/ralph/code-improvements/git-snapshot.json}}",
+          "{{gitSnapshotFile:path=.machdoch/local/state/ralph/code-improvements/git-snapshot.json}}",
       },
       16,
       -1,
@@ -768,7 +771,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Mark Task Verifying",
       {
         type: "MARK_JSON_TASK",
-        path: "{{activeImprovementPlanFile:path=.machdoch/ralph/code-improvements/active-improvement-plan.json}}",
+        path: "{{activeImprovementPlanFile:path=.machdoch/local/state/ralph/code-improvements/active-improvement-plan.json}}",
         jsonPath: "tasks",
         input: "{{data:select-improvement-task}}",
         status: "verifying",
@@ -806,7 +809,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Mark Task Repairing",
       {
         type: "MARK_JSON_TASK",
-        path: "{{activeImprovementPlanFile:path=.machdoch/ralph/code-improvements/active-improvement-plan.json}}",
+        path: "{{activeImprovementPlanFile:path=.machdoch/local/state/ralph/code-improvements/active-improvement-plan.json}}",
         jsonPath: "tasks",
         input: "{{data:select-improvement-task}}",
         status: "repairing",
@@ -902,7 +905,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "GIT_DIFF_SUMMARY",
         cwd: ".",
         outputPath:
-          "{{gitDiffFile:path=.machdoch/ralph/code-improvements/git-diff.json}}",
+          "{{gitDiffFile:path=.machdoch/local/state/ralph/code-improvements/git-diff.json}}",
       },
       25,
       -1,
@@ -932,7 +935,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
           scopeGuardBlockId: "scope-change-guard",
           workItemBlockId: "select-improvement-task",
           excludedPaths: [
-            "{{activeImprovementPlanFile:path=.machdoch/ralph/code-improvements/active-improvement-plan.json}}",
+            "{{activeImprovementPlanFile:path=.machdoch/local/state/ralph/code-improvements/active-improvement-plan.json}}",
           ],
           trackPrevious: true,
         },
@@ -976,7 +979,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "PROMPT_JSON",
         outputPath:
-          "{{reviewFile:path=.machdoch/ralph/code-improvements/review.json}}",
+          "{{reviewFile:path=.machdoch/local/state/ralph/code-improvements/review.json}}",
         maxAttempts: 2,
         schema: {
           type: "object",
@@ -1074,7 +1077,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Mark Task Completed",
       {
         type: "MARK_JSON_TASK",
-        path: "{{activeImprovementPlanFile:path=.machdoch/ralph/code-improvements/active-improvement-plan.json}}",
+        path: "{{activeImprovementPlanFile:path=.machdoch/local/state/ralph/code-improvements/active-improvement-plan.json}}",
         jsonPath: "tasks",
         input: "{{data:select-improvement-task}}",
         status: "completed",
@@ -1087,7 +1090,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Mark Task Deferred",
       {
         type: "MARK_JSON_TASK",
-        path: "{{activeImprovementPlanFile:path=.machdoch/ralph/code-improvements/active-improvement-plan.json}}",
+        path: "{{activeImprovementPlanFile:path=.machdoch/local/state/ralph/code-improvements/active-improvement-plan.json}}",
         jsonPath: "tasks",
         input: "{{data:select-improvement-task}}",
         status: "deferred",
@@ -1100,7 +1103,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Read Completed Improvement Plan",
       {
         type: "READ_JSON",
-        path: "{{activeImprovementPlanFile:path=.machdoch/ralph/code-improvements/active-improvement-plan.json}}",
+        path: "{{activeImprovementPlanFile:path=.machdoch/local/state/ralph/code-improvements/active-improvement-plan.json}}",
       },
       16,
       2,
@@ -1110,7 +1113,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Append Completed Improvement",
       {
         type: "APPEND_JSONL",
-        path: "{{completedImprovementsFile:path=.machdoch/ralph/code-improvements/completed-improvements.jsonl}}",
+        path: "{{completedImprovementsFile:path=.machdoch/local/state/ralph/code-improvements/completed-improvements.jsonl}}",
         input: "{{data:read-completed-improvement-plan:json}}",
       },
       17,
@@ -1123,9 +1126,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "autonomous-code-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
         scopeId: "{{data:read-completed-improvement-plan:json.scope.id}}",
         scopeOutcome: "completed",
         includeMarkdown: true,
@@ -1140,9 +1143,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "autonomous-code-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
         scopeId: "{{data:read-active-improvement:json.scope.id}}",
         scopeOutcome: "deferred",
         includeMarkdown: true,
@@ -1155,7 +1158,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Retain Deferred Improvement Plan",
       {
         type: "APPEND_JSONL",
-        path: "{{deferredImprovementsFile:path=.machdoch/ralph/code-improvements/deferred-improvements.jsonl}}",
+        path: "{{deferredImprovementsFile:path=.machdoch/local/state/ralph/code-improvements/deferred-improvements.jsonl}}",
         input: "{{data:read-active-improvement:json}}",
       },
       17,
@@ -1169,9 +1172,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "autonomous-code-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
         scopeId: "{{data:select-scope:scope.id}}",
         scopeOutcome: "deferred",
         includeMarkdown: true,
@@ -1186,9 +1189,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "autonomous-code-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
         scopeId: "{{data:select-scope:scope.id}}",
         scopeOutcome: "no-meaningful-work",
         includeMarkdown: true,
@@ -1203,9 +1206,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "autonomous-code-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
         scopeId: "{{data:select-scope:scope.id}}",
         scopeOutcome: "invalid",
         includeMarkdown: true,
@@ -1220,9 +1223,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "autonomous-code-improvement-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/autonomous-code-improvement-loop.scope-registry.md}}",
         scopeId: "{{data:read-active-improvement:json.scope.id}}",
         scopeOutcome: "invalid",
         includeMarkdown: true,
@@ -1236,7 +1239,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "APPEND_JSONL",
         workOutcome: "DONE",
-        path: "{{improvementOutcomesFile:path=.machdoch/ralph/code-improvements/outcomes.jsonl}}",
+        path: "{{improvementOutcomesFile:path=.machdoch/local/state/ralph/code-improvements/outcomes.jsonl}}",
         input:
           '{"outcome":"DONE","scopeId":"{{data:read-completed-improvement-plan:json.scope.id}}","planId":"{{data:read-completed-improvement-plan:json.planId}}"}',
       },
@@ -1250,7 +1253,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
-        path: "{{improvementOutcomesFile:path=.machdoch/ralph/code-improvements/outcomes.jsonl}}",
+        path: "{{improvementOutcomesFile:path=.machdoch/local/state/ralph/code-improvements/outcomes.jsonl}}",
         input: '{"outcome":"DEFER","scopeRoot":"{{scopeRoot:path=.}}"}',
       },
       19,
@@ -1263,7 +1266,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
-        path: "{{improvementOutcomesFile:path=.machdoch/ralph/code-improvements/outcomes.jsonl}}",
+        path: "{{improvementOutcomesFile:path=.machdoch/local/state/ralph/code-improvements/outcomes.jsonl}}",
         input:
           '{"outcome":"DEFER","scopeRoot":"{{scopeRoot:path=.}}","reason":"The current scope was deferred and retained before coverage continued."}',
       },
@@ -1277,7 +1280,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "APPEND_JSONL",
         workOutcome: "STOP",
-        path: "{{improvementOutcomesFile:path=.machdoch/ralph/code-improvements/outcomes.jsonl}}",
+        path: "{{improvementOutcomesFile:path=.machdoch/local/state/ralph/code-improvements/outcomes.jsonl}}",
         input:
           '{"outcome":"STOP","scopeRoot":"{{scopeRoot:path=.}}","reason":"No evidence-backed improvement portfolio remained."}',
       },
@@ -1291,7 +1294,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "APPEND_JSONL",
         workOutcome: "STOP",
-        path: "{{improvementOutcomesFile:path=.machdoch/ralph/code-improvements/outcomes.jsonl}}",
+        path: "{{improvementOutcomesFile:path=.machdoch/local/state/ralph/code-improvements/outcomes.jsonl}}",
         input:
           '{"outcome":"STOP","scopeRoot":"{{scopeRoot:path=.}}","reason":"The current coverage cycle has no remaining eligible scope."}',
       },
@@ -1305,7 +1308,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "APPEND_JSONL",
         workOutcome: "INVALID",
-        path: "{{improvementOutcomesFile:path=.machdoch/ralph/code-improvements/outcomes.jsonl}}",
+        path: "{{improvementOutcomesFile:path=.machdoch/local/state/ralph/code-improvements/outcomes.jsonl}}",
         input:
           '{"outcome":"INVALID","scopeRoot":"{{scopeRoot:path=.}}","reason":"Discovery, plan, task, or validation state was invalid."}',
       },
@@ -1319,7 +1322,7 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       {
         type: "APPEND_JSONL",
         workOutcome: "INVALID",
-        path: "{{improvementOutcomesFile:path=.machdoch/ralph/code-improvements/outcomes.jsonl}}",
+        path: "{{improvementOutcomesFile:path=.machdoch/local/state/ralph/code-improvements/outcomes.jsonl}}",
         input:
           '{"outcome":"INVALID","scopeRoot":"{{scopeRoot:path=.}}","reason":"The current scope plan was invalid and was retained for review."}',
       },
@@ -1332,9 +1335,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Archive Active Improvement Plan",
       {
         type: "ARCHIVE_FILE",
-        path: "{{activeImprovementPlanFile:path=.machdoch/ralph/code-improvements/active-improvement-plan.json}}",
+        path: "{{activeImprovementPlanFile:path=.machdoch/local/state/ralph/code-improvements/active-improvement-plan.json}}",
         rootPath:
-          "{{archivedImprovementsDirectory:path=.machdoch/ralph/code-improvements/archive}}",
+          "{{archivedImprovementsDirectory:path=.machdoch/local/state/ralph/code-improvements/archive}}",
       },
       20,
       2,
@@ -1345,9 +1348,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Final Improvement Report",
       {
         type: "FINAL_REPORT",
-        path: "{{improvementReportFile:path=.machdoch/ralph/code-improvements/final-report.json}}",
+        path: "{{improvementReportFile:path=.machdoch/local/state/ralph/code-improvements/final-report.json}}",
         outputPath:
-          "{{improvementReportMarkdown:path=.machdoch/ralph/code-improvements/final-report.md}}",
+          "{{improvementReportMarkdown:path=.machdoch/local/state/ralph/code-improvements/final-report.md}}",
       },
       21,
       2,
@@ -1357,9 +1360,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Completion Report",
       {
         type: "FINAL_REPORT",
-        path: "{{improvementReportFile:path=.machdoch/ralph/code-improvements/final-report.json}}",
+        path: "{{improvementReportFile:path=.machdoch/local/state/ralph/code-improvements/final-report.json}}",
         outputPath:
-          "{{improvementReportMarkdown:path=.machdoch/ralph/code-improvements/final-report.md}}",
+          "{{improvementReportMarkdown:path=.machdoch/local/state/ralph/code-improvements/final-report.md}}",
       },
       23,
       2,
@@ -1369,9 +1372,9 @@ const autonomousCodeImprovementLoopFlow: RalphFlow = {
       "Retained Improvement Report",
       {
         type: "FINAL_REPORT",
-        path: "{{improvementReportFile:path=.machdoch/ralph/code-improvements/final-report.json}}",
+        path: "{{improvementReportFile:path=.machdoch/local/state/ralph/code-improvements/final-report.json}}",
         outputPath:
-          "{{improvementReportMarkdown:path=.machdoch/ralph/code-improvements/final-report.md}}",
+          "{{improvementReportMarkdown:path=.machdoch/local/state/ralph/code-improvements/final-report.md}}",
       },
       21,
       3,

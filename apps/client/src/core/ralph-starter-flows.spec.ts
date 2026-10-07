@@ -1288,19 +1288,19 @@ describe("Ralph starter flows", () => {
         starterFlowId: "autonomous-ui-improvement-loop",
         variableName: "notesFile",
         expectedPath:
-          ".machdoch/ralph/ui-improvements/RALPH_UI_IMPROVEMENT_NOTES.md",
+          ".machdoch/local/state/ralph/ui-improvements/RALPH_UI_IMPROVEMENT_NOTES.md",
         rootFallback: "path=RALPH_UI_IMPROVEMENT_NOTES.md",
       },
       {
         starterFlowId: "autonomous-refactoring-flow",
         variableName: "notesFile",
-        expectedPath: ".machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md",
+        expectedPath: ".machdoch/local/state/ralph/refactor/RALPH_REFACTOR_NOTES.md",
         rootFallback: "path=RALPH_REFACTOR_NOTES.md",
       },
       {
         starterFlowId: "security-fix-loop",
         variableName: "historyFile",
-        expectedPath: ".machdoch/ralph/security/RALPH_SECURITY_HISTORY.md",
+        expectedPath: ".machdoch/local/state/ralph/security/RALPH_SECURITY_HISTORY.md",
         rootFallback: "path=RALPH_SECURITY_HISTORY.md",
       },
     ] as const;
@@ -2599,7 +2599,7 @@ describe("Ralph starter flows", () => {
     });
     expect(activePlanFile).toMatchObject({
       type: "path",
-      default: ".machdoch/ralph/code-improvements/active-improvement-plan.json",
+      default: ".machdoch/local/state/ralph/code-improvements/active-improvement-plan.json",
     });
     expect(scopeScanDepth).toMatchObject({ type: "number", default: "6" });
     expect(taskAssessment).toMatchObject({

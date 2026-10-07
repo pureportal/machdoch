@@ -32,14 +32,14 @@ const autonomousRefactoringFlow: RalphFlow = {
       name: "scopeRegistryFile",
       type: "path",
       default:
-        ".machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json",
+        ".machdoch/local/state/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json",
       required: false,
     },
     {
       name: "scopeRegistryMarkdown",
       type: "path",
       default:
-        ".machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md",
+        ".machdoch/local/state/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md",
       required: false,
     },
     {
@@ -114,7 +114,7 @@ const autonomousRefactoringFlow: RalphFlow = {
     {
       name: "notesFile",
       type: "path",
-      default: ".machdoch/ralph/refactor/RALPH_REFACTOR_NOTES.md",
+      default: ".machdoch/local/state/ralph/refactor/RALPH_REFACTOR_NOTES.md",
       required: false,
     },
     {
@@ -174,7 +174,7 @@ const autonomousRefactoringFlow: RalphFlow = {
     {
       name: "refactorOutcomesFile",
       type: "path",
-      default: ".machdoch/ralph/refactor/outcomes.jsonl",
+      default: ".machdoch/local/state/ralph/refactor/outcomes.jsonl",
       required: false,
     },
   ],
@@ -196,9 +196,9 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "BEGIN_SCOPE_CYCLE",
         flowAlias: "repository-refactor-validation-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md}}",
         strategy: "{{scopeSelectionStrategy:text=priority}}",
         includeMarkdown: true,
       },
@@ -228,9 +228,9 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "UPDATE_SCOPE_REGISTRY",
         flowAlias: "repository-refactor-validation-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md}}",
         strategy: "{{scopeSelectionStrategy:text=priority}}",
         includeMarkdown: true,
       },
@@ -245,7 +245,7 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "SELECT_SCOPE",
         flowAlias: "repository-refactor-validation-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
         strategy: "{{scopeSelectionStrategy:text=priority}}",
       },
     },
@@ -259,7 +259,7 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "DETECT_PROJECT_COMMANDS",
         rootPath: "{{data:select-scope:scope.paths.0}}",
         outputPath:
-          "{{projectCommandsFile:path=.machdoch/ralph/refactor/project-commands.json}}",
+          "{{projectCommandsFile:path=.machdoch/local/state/ralph/refactor/project-commands.json}}",
       },
     },
     {
@@ -270,7 +270,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "QUERY_JSONL",
-        path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
+        path: "{{refactorOutcomesFile:path=.machdoch/local/state/ralph/refactor/outcomes.jsonl}}",
         maxResults: 50,
         order: "newest",
       },
@@ -418,7 +418,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "PROMPT_JSON",
         outputPath:
-          "{{refactorPlanFile:path=.machdoch/ralph/refactor/refactor-plan.json}}",
+          "{{refactorPlanFile:path=.machdoch/local/state/ralph/refactor/refactor-plan.json}}",
         maxAttempts: 2,
         schema: {
           type: "object",
@@ -588,7 +588,7 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "GIT_SNAPSHOT",
         cwd: ".",
         outputPath:
-          "{{gitSnapshotFile:path=.machdoch/ralph/refactor/git-snapshot.json}}",
+          "{{gitSnapshotFile:path=.machdoch/local/state/ralph/refactor/git-snapshot.json}}",
       },
     },
     {
@@ -720,7 +720,7 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "GIT_DIFF_SUMMARY",
         cwd: ".",
         outputPath:
-          "{{gitDiffFile:path=.machdoch/ralph/refactor/git-diff.json}}",
+          "{{gitDiffFile:path=.machdoch/local/state/ralph/refactor/git-diff.json}}",
       },
     },
     {
@@ -758,9 +758,9 @@ const autonomousRefactoringFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{refactorReportFile:path=.machdoch/ralph/refactor/final-report.json}}",
+        path: "{{refactorReportFile:path=.machdoch/local/state/ralph/refactor/final-report.json}}",
         outputPath:
-          "{{refactorReportMarkdown:path=.machdoch/ralph/refactor/final-report.md}}",
+          "{{refactorReportMarkdown:path=.machdoch/local/state/ralph/refactor/final-report.md}}",
       },
     },
     {
@@ -771,9 +771,9 @@ const autonomousRefactoringFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{refactorReportFile:path=.machdoch/ralph/refactor/final-report.json}}",
+        path: "{{refactorReportFile:path=.machdoch/local/state/ralph/refactor/final-report.json}}",
         outputPath:
-          "{{refactorReportMarkdown:path=.machdoch/ralph/refactor/final-report.md}}",
+          "{{refactorReportMarkdown:path=.machdoch/local/state/ralph/refactor/final-report.md}}",
       },
     },
     {
@@ -784,9 +784,9 @@ const autonomousRefactoringFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{refactorReportFile:path=.machdoch/ralph/refactor/final-report.json}}",
+        path: "{{refactorReportFile:path=.machdoch/local/state/ralph/refactor/final-report.json}}",
         outputPath:
-          "{{refactorReportMarkdown:path=.machdoch/ralph/refactor/final-report.md}}",
+          "{{refactorReportMarkdown:path=.machdoch/local/state/ralph/refactor/final-report.md}}",
       },
     },
     {
@@ -846,9 +846,9 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "repository-refactor-validation-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md}}",
         scopeOutcome: "deferred",
         includeMarkdown: true,
       },
@@ -863,9 +863,9 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "repository-refactor-validation-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md}}",
         scopeOutcome: "no-meaningful-work",
         includeMarkdown: true,
       },
@@ -880,9 +880,9 @@ const autonomousRefactoringFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "repository-refactor-validation-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/repository-refactor-validation-loop.scope-registry.md}}",
         scopeOutcome: "invalid",
         includeMarkdown: true,
       },
@@ -896,7 +896,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "APPEND_JSONL",
-        path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
+        path: "{{refactorOutcomesFile:path=.machdoch/local/state/ralph/refactor/outcomes.jsonl}}",
         input:
           '{"state":"selected","scopeId":"{{data:select-scope:scope.id}}","plan":{{data:audit-against-policy:output}}}',
       },
@@ -911,7 +911,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DONE",
-        path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
+        path: "{{refactorOutcomesFile:path=.machdoch/local/state/ralph/refactor/outcomes.jsonl}}",
         input:
           '{"state":"completed","scopeId":"{{data:select-scope:scope.id}}","plan":{{data:audit-against-policy:output}},"validation":{{data:final-refactor-scan:output}}}',
       },
@@ -926,7 +926,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
-        path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
+        path: "{{refactorOutcomesFile:path=.machdoch/local/state/ralph/refactor/outcomes.jsonl}}",
         input:
           '{"state":"deferred","scopeId":"{{data:select-scope:scope.id}}","plan":{{data:audit-against-policy:output}}}',
       },
@@ -941,7 +941,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "STOP",
-        path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
+        path: "{{refactorOutcomesFile:path=.machdoch/local/state/ralph/refactor/outcomes.jsonl}}",
         input:
           '{"state":"exhausted","scopeId":"{{data:select-scope:scope.id}}","plan":{{data:audit-against-policy:output}}}',
       },
@@ -956,7 +956,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "INVALID",
-        path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
+        path: "{{refactorOutcomesFile:path=.machdoch/local/state/ralph/refactor/outcomes.jsonl}}",
         input: '{"outcome":"INVALID","scopeRoot":"{{scopeRoot:path=.}}"}',
       },
     },
@@ -970,7 +970,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
-        path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
+        path: "{{refactorOutcomesFile:path=.machdoch/local/state/ralph/refactor/outcomes.jsonl}}",
         input:
           '{"state":"coverage-deferred","scopeRoot":"{{scopeRoot:path=.}}","reason":"The coverage cycle is waiting on deferred scopes."}',
       },
@@ -985,7 +985,7 @@ const autonomousRefactoringFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "STOP",
-        path: "{{refactorOutcomesFile:path=.machdoch/ralph/refactor/outcomes.jsonl}}",
+        path: "{{refactorOutcomesFile:path=.machdoch/local/state/ralph/refactor/outcomes.jsonl}}",
         input:
           '{"state":"coverage-exhausted","scopeRoot":"{{scopeRoot:path=.}}","reason":"The current refactor coverage cycle has no remaining eligible scope."}',
       },

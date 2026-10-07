@@ -37,14 +37,14 @@ const securityFixLoopFlow: RalphFlow = {
       name: "scopeRegistryFile",
       type: "path",
       default:
-        ".machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.json",
+        ".machdoch/local/state/ralph/scope-registry/security-review-fix-loop.scope-registry.json",
       required: false,
     },
     {
       name: "scopeRegistryMarkdown",
       type: "path",
       default:
-        ".machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.md",
+        ".machdoch/local/state/ralph/scope-registry/security-review-fix-loop.scope-registry.md",
       required: false,
     },
     {
@@ -86,7 +86,7 @@ const securityFixLoopFlow: RalphFlow = {
     {
       name: "historyFile",
       type: "path",
-      default: ".machdoch/ralph/security/RALPH_SECURITY_HISTORY.md",
+      default: ".machdoch/local/state/ralph/security/RALPH_SECURITY_HISTORY.md",
       required: false,
     },
     {
@@ -170,7 +170,7 @@ const securityFixLoopFlow: RalphFlow = {
     {
       name: "securityOutcomesFile",
       type: "path",
-      default: ".machdoch/ralph/security/outcomes.jsonl",
+      default: ".machdoch/local/state/ralph/security/outcomes.jsonl",
       required: false,
     },
   ],
@@ -192,9 +192,9 @@ const securityFixLoopFlow: RalphFlow = {
         type: "BEGIN_SCOPE_CYCLE",
         flowAlias: "security-review-fix-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/security-review-fix-loop.scope-registry.md}}",
         strategy: "{{scopeSelectionStrategy:text=risk-first}}",
         includeMarkdown: true,
       },
@@ -257,9 +257,9 @@ const securityFixLoopFlow: RalphFlow = {
         type: "UPDATE_SCOPE_REGISTRY",
         flowAlias: "security-review-fix-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/security-review-fix-loop.scope-registry.md}}",
         strategy: "{{scopeSelectionStrategy:text=risk-first}}",
         includeMarkdown: true,
       },
@@ -274,7 +274,7 @@ const securityFixLoopFlow: RalphFlow = {
         type: "SELECT_SCOPE",
         flowAlias: "security-review-fix-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
         strategy: "{{scopeSelectionStrategy:text=risk-first}}",
       },
     },
@@ -288,7 +288,7 @@ const securityFixLoopFlow: RalphFlow = {
         type: "DETECT_PROJECT_COMMANDS",
         rootPath: "{{data:select-scope:scope.paths.0}}",
         outputPath:
-          "{{projectCommandsFile:path=.machdoch/ralph/security/project-commands.json}}",
+          "{{projectCommandsFile:path=.machdoch/local/state/ralph/security/project-commands.json}}",
       },
     },
     {
@@ -299,7 +299,7 @@ const securityFixLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "QUERY_JSONL",
-        path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
+        path: "{{securityOutcomesFile:path=.machdoch/local/state/ralph/security/outcomes.jsonl}}",
         maxResults: 50,
         order: "newest",
       },
@@ -314,7 +314,7 @@ const securityFixLoopFlow: RalphFlow = {
         type: "GIT_SNAPSHOT",
         cwd: ".",
         outputPath:
-          "{{gitSnapshotFile:path=.machdoch/ralph/security/git-snapshot.json}}",
+          "{{gitSnapshotFile:path=.machdoch/local/state/ralph/security/git-snapshot.json}}",
       },
     },
     {
@@ -333,7 +333,7 @@ const securityFixLoopFlow: RalphFlow = {
       utility: {
         type: "PROMPT_JSON",
         outputPath:
-          "{{securityReviewFile:path=.machdoch/ralph/security/review.json}}",
+          "{{securityReviewFile:path=.machdoch/local/state/ralph/security/review.json}}",
         maxAttempts: 2,
         schema: {
           type: "object",
@@ -460,7 +460,7 @@ const securityFixLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Fix security findings from {{data:security-check:output.findings}} for selected scope {{result:select-scope}} at or above {{severityThreshold:text=high}}. Use threat model, git/verification baselines, and scope guard {{result:scope-change-guard}}. Keep changes cohesive, add targeted tests, and do not start/restart servers. Dependency changes use allowDependencyChanges={{allowDependencyChanges:boolean=true}}, schemas/migrations follow schemaChangePolicy={{schemaChangePolicy:text=allow-verified}} and allowSchemaChanges={{allowSchemaChanges:boolean=true}}, and public APIs use allowPublicApiChanges={{allowPublicApiChanges:boolean=true}} when necessary and verified; update consumers and rollback notes. Repair only new/worsened failures, make bounded reversible assumptions autonomously, and append concise evidence to {{historyFile:path=.machdoch/ralph/security/RALPH_SECURITY_HISTORY.md}}.",
+        "Fix security findings from {{data:security-check:output.findings}} for selected scope {{result:select-scope}} at or above {{severityThreshold:text=high}}. Use threat model, git/verification baselines, and scope guard {{result:scope-change-guard}}. Keep changes cohesive, add targeted tests, and do not start/restart servers. Dependency changes use allowDependencyChanges={{allowDependencyChanges:boolean=true}}, schemas/migrations follow schemaChangePolicy={{schemaChangePolicy:text=allow-verified}} and allowSchemaChanges={{allowSchemaChanges:boolean=true}}, and public APIs use allowPublicApiChanges={{allowPublicApiChanges:boolean=true}} when necessary and verified; update consumers and rollback notes. Repair only new/worsened failures, make bounded reversible assumptions autonomously, and append concise evidence to {{historyFile:path=.machdoch/local/state/ralph/security/RALPH_SECURITY_HISTORY.md}}.",
     },
     {
       id: "verification-decision",
@@ -509,7 +509,7 @@ const securityFixLoopFlow: RalphFlow = {
         type: "GIT_DIFF_SUMMARY",
         cwd: ".",
         outputPath:
-          "{{gitDiffFile:path=.machdoch/ralph/security/git-diff.json}}",
+          "{{gitDiffFile:path=.machdoch/local/state/ralph/security/git-diff.json}}",
       },
     },
     {
@@ -534,9 +534,9 @@ const securityFixLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{securityReportFile:path=.machdoch/ralph/security/final-report.json}}",
+        path: "{{securityReportFile:path=.machdoch/local/state/ralph/security/final-report.json}}",
         outputPath:
-          "{{securityReportMarkdown:path=.machdoch/ralph/security/final-report.md}}",
+          "{{securityReportMarkdown:path=.machdoch/local/state/ralph/security/final-report.md}}",
       },
     },
     {
@@ -547,9 +547,9 @@ const securityFixLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{securityReportFile:path=.machdoch/ralph/security/final-report.json}}",
+        path: "{{securityReportFile:path=.machdoch/local/state/ralph/security/final-report.json}}",
         outputPath:
-          "{{securityReportMarkdown:path=.machdoch/ralph/security/final-report.md}}",
+          "{{securityReportMarkdown:path=.machdoch/local/state/ralph/security/final-report.md}}",
       },
     },
     {
@@ -562,9 +562,9 @@ const securityFixLoopFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "security-review-fix-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/security-review-fix-loop.scope-registry.md}}",
         scopeOutcome: "completed",
         includeMarkdown: true,
       },
@@ -577,9 +577,9 @@ const securityFixLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{securityReportFile:path=.machdoch/ralph/security/final-report.json}}",
+        path: "{{securityReportFile:path=.machdoch/local/state/ralph/security/final-report.json}}",
         outputPath:
-          "{{securityReportMarkdown:path=.machdoch/ralph/security/final-report.md}}",
+          "{{securityReportMarkdown:path=.machdoch/local/state/ralph/security/final-report.md}}",
       },
     },
     {
@@ -605,9 +605,9 @@ const securityFixLoopFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "security-review-fix-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/security-review-fix-loop.scope-registry.md}}",
         scopeOutcome: "deferred",
         includeMarkdown: true,
       },
@@ -622,9 +622,9 @@ const securityFixLoopFlow: RalphFlow = {
         type: "MARK_SCOPE_RESULT",
         flowAlias: "security-review-fix-loop",
         registryPath:
-          "{{scopeRegistryFile:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
+          "{{scopeRegistryFile:path=.machdoch/local/state/ralph/scope-registry/security-review-fix-loop.scope-registry.json}}",
         outputPath:
-          "{{scopeRegistryMarkdown:path=.machdoch/ralph/scope-registry/security-review-fix-loop.scope-registry.md}}",
+          "{{scopeRegistryMarkdown:path=.machdoch/local/state/ralph/scope-registry/security-review-fix-loop.scope-registry.md}}",
         scopeOutcome: "invalid",
         includeMarkdown: true,
       },
@@ -638,7 +638,7 @@ const securityFixLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "APPEND_JSONL",
-        path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
+        path: "{{securityOutcomesFile:path=.machdoch/local/state/ralph/security/outcomes.jsonl}}",
         input:
           '{"state":"selected","scopeId":"{{data:select-scope:scope.id}}","review":{{data:security-check:output}}}',
       },
@@ -653,7 +653,7 @@ const securityFixLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DONE",
-        path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
+        path: "{{securityOutcomesFile:path=.machdoch/local/state/ralph/security/outcomes.jsonl}}",
         input:
           '{"state":"repaired","scopeId":"{{data:select-scope:scope.id}}","review":{{data:security-check:output}},"validation":{{data:verify-stop-condition:output}}}',
       },
@@ -668,7 +668,7 @@ const securityFixLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
-        path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
+        path: "{{securityOutcomesFile:path=.machdoch/local/state/ralph/security/outcomes.jsonl}}",
         input:
           '{"state":"deferred","scopeId":"{{data:select-scope:scope.id}}","review":{{data:security-check:output}}}',
       },
@@ -683,7 +683,7 @@ const securityFixLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "STOP",
-        path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
+        path: "{{securityOutcomesFile:path=.machdoch/local/state/ralph/security/outcomes.jsonl}}",
         input:
           '{"state":"clear","scopeId":"{{data:select-scope:scope.id}}","review":{{data:security-check:output}}}',
       },
@@ -698,7 +698,7 @@ const securityFixLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "INVALID",
-        path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
+        path: "{{securityOutcomesFile:path=.machdoch/local/state/ralph/security/outcomes.jsonl}}",
         input: '{"outcome":"INVALID","scopeRoot":"{{scopeRoot:path=.}}"}',
       },
     },
@@ -712,7 +712,7 @@ const securityFixLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
-        path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
+        path: "{{securityOutcomesFile:path=.machdoch/local/state/ralph/security/outcomes.jsonl}}",
         input:
           '{"state":"coverage-deferred","scopeRoot":"{{scopeRoot:path=.}}","reason":"The coverage cycle is waiting on deferred scopes."}',
       },
@@ -727,7 +727,7 @@ const securityFixLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "STOP",
-        path: "{{securityOutcomesFile:path=.machdoch/ralph/security/outcomes.jsonl}}",
+        path: "{{securityOutcomesFile:path=.machdoch/local/state/ralph/security/outcomes.jsonl}}",
         input:
           '{"state":"coverage-exhausted","scopeRoot":"{{scopeRoot:path=.}}","reason":"The current security coverage cycle has no remaining eligible scope."}',
       },

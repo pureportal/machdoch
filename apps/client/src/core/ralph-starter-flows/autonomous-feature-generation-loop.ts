@@ -56,8 +56,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
   id: "starter-autonomous-feature-generation-loop",
   alias: "autonomous-feature-generation-loop",
   name: "Autonomous Feature Generation Loop",
-  description:
-    "Continuously selects, implements, and verifies feature goals.",
+  description: "Continuously selects, implements, and verifies feature goals.",
   settings: {
     autonomy: {
       recoverFailedEnd: true,
@@ -71,31 +70,32 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
     {
       name: "goalFilePath",
       type: "path",
-      default: ".machdoch/autonomous-features/active-goal.json",
+      default: ".machdoch/local/state/autonomous-features/active-goal.json",
       required: false,
     },
     {
       name: "completedGoalsFile",
       type: "path",
-      default: ".machdoch/autonomous-features/completed-goals.jsonl",
+      default:
+        ".machdoch/local/state/autonomous-features/completed-goals.jsonl",
       required: false,
     },
     {
       name: "goalOutcomesFile",
       type: "path",
-      default: ".machdoch/autonomous-features/outcomes.jsonl",
+      default: ".machdoch/local/state/autonomous-features/outcomes.jsonl",
       required: false,
     },
     {
       name: "archivedGoalsDirectory",
       type: "path",
-      default: ".machdoch/autonomous-features/archive",
+      default: ".machdoch/local/state/autonomous-features/archive",
       required: false,
     },
     {
       name: "projectProfileFile",
       type: "path",
-      default: ".machdoch/autonomous-features/project-profile.json",
+      default: ".machdoch/local/state/autonomous-features/project-profile.json",
       required: false,
     },
     {
@@ -263,7 +263,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FILE_EXISTS",
-        path: "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+        path: "{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}",
       },
     },
     {
@@ -274,7 +274,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "READ_JSON",
-        path: "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+        path: "{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}",
       },
     },
     {
@@ -291,7 +291,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Resume the tracked autonomous feature goal from {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}. JSON read result: {{result:read-active-goal}}. Extract the goal, acceptance criteria, plan, completed tasks, verification expectations, risks, and next planned/implementing work. Do not create a new goal while this file exists and never edit task lifecycle fields; runtime task utilities own them.",
+        "Resume the tracked autonomous feature goal from {{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}. JSON read result: {{result:read-active-goal}}. Extract the goal, acceptance criteria, plan, completed tasks, verification expectations, risks, and next planned/implementing work. Do not create a new goal while this file exists and never edit task lifecycle fields; runtime task utilities own them.",
     },
     {
       id: "detect-project-commands",
@@ -303,7 +303,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
         type: "DETECT_PROJECT_COMMANDS",
         rootPath: ".",
         outputPath:
-          "{{projectCommandsFile:path=.machdoch/autonomous-features/project-commands.json}}",
+          "{{projectCommandsFile:path=.machdoch/local/state/autonomous-features/project-commands.json}}",
       },
     },
     {
@@ -314,7 +314,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "QUERY_JSONL",
-        path: "{{completedGoalsFile:path=.machdoch/autonomous-features/completed-goals.jsonl}}",
+        path: "{{completedGoalsFile:path=.machdoch/local/state/autonomous-features/completed-goals.jsonl}}",
         maxResults: 50,
         order: "newest",
       },
@@ -327,7 +327,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "QUERY_JSONL",
-        path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
+        path: "{{goalOutcomesFile:path=.machdoch/local/state/autonomous-features/outcomes.jsonl}}",
         maxResults: 50,
         order: "newest",
       },
@@ -348,7 +348,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "PROMPT_JSON",
         outputPath:
-          "{{projectProfileFile:path=.machdoch/autonomous-features/project-profile.json}}",
+          "{{projectProfileFile:path=.machdoch/local/state/autonomous-features/project-profile.json}}",
         maxAttempts: 2,
         schema: {
           type: "object",
@@ -645,7 +645,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
           },
         },
         prompt:
-          "Critique, rescore, and select the strongest feature from structured portfolio {{data:draft-feature-goal:output}} using persisted constitution {{data:understand-project:output.constitution}} and focused research {{summary:research-inspiration}}. Strengthen product value, reduce ambiguity, remove contradicted work, and add measurable acceptance criteria. Every task must include stable id, canonical status planned/implementing/verifying/repairing/completed/deferred, batchKey, dependencies, likelyFiles, size, acceptanceCriteria, and priority so runtime utilities own lifecycle transitions and up to {{maxTasksPerImplementationPass:number=3}} compatible tasks can run per pass. Use task deferred only for unavailable external state; use top-level deferred only when the entire goal is externally impossible. Make the best bounded reversible product assumption without human approval. If every candidate lacks value/evidence, return status no_action with tasks []; otherwise select autonomously. Return only schema-valid JSON for {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}.",
+          "Critique, rescore, and select the strongest feature from structured portfolio {{data:draft-feature-goal:output}} using persisted constitution {{data:understand-project:output.constitution}} and focused research {{summary:research-inspiration}}. Strengthen product value, reduce ambiguity, remove contradicted work, and add measurable acceptance criteria. Every task must include stable id, canonical status planned/implementing/verifying/repairing/completed/deferred, batchKey, dependencies, likelyFiles, size, acceptanceCriteria, and priority so runtime utilities own lifecycle transitions and up to {{maxTasksPerImplementationPass:number=3}} compatible tasks can run per pass. Use task deferred only for unavailable external state; use top-level deferred only when the entire goal is externally impossible. Make the best bounded reversible product assumption without human approval. If every candidate lacks value/evidence, return status no_action with tasks []; otherwise select autonomously. Return only schema-valid JSON for {{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}.",
       },
     },
     {
@@ -713,7 +713,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "WRITE_JSON",
-        path: "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+        path: "{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}",
         input: "{{data:improve-feature-goal:output}}",
       },
     },
@@ -731,7 +731,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Create or update implementation guidance around active goal JSON {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}} without changing task lifecycle fields. Use active goal context {{summary:prepare-active-goal}}, newly tracked goal {{result:write-active-goal}}, detected commands {{result:detect-project-commands}}, and durable project profile {{data:understand-project:output}} when present. Confirm the checklist is dependency-aware, resumable, scoped to {{implementationScope:text=auto-detect}}, respects excludedAreas={{excludedAreas:text=}}, and includes verification, visual, auth, and design expectations. SELECT_JSON_TASK and MARK_JSON_TASK exclusively own status transitions.",
+        "Create or update implementation guidance around active goal JSON {{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}} without changing task lifecycle fields. Use active goal context {{summary:prepare-active-goal}}, newly tracked goal {{result:write-active-goal}}, detected commands {{result:detect-project-commands}}, and durable project profile {{data:understand-project:output}} when present. Confirm the checklist is dependency-aware, resumable, scoped to {{implementationScope:text=auto-detect}}, respects excludedAreas={{excludedAreas:text=}}, and includes verification, visual, auth, and design expectations. SELECT_JSON_TASK and MARK_JSON_TASK exclusively own status transitions.",
     },
     {
       id: "read-canonical-active-goal",
@@ -741,7 +741,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "READ_JSON",
-        path: "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+        path: "{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}",
       },
     },
     {
@@ -752,7 +752,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "ASSESS_JSON_TASKS",
-        path: "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+        path: "{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}",
         jsonPath: "tasks",
         strategy: "start-to-end",
         maxTasks: "{{maxTasksPerImplementationPass:number=3}}",
@@ -766,7 +766,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "SELECT_JSON_TASK",
-        path: "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+        path: "{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}",
         jsonPath: "tasks",
         strategy: "start-to-end",
         maxTasks: "{{maxTasksPerImplementationPass:number=3}}",
@@ -782,7 +782,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
         type: "GIT_SNAPSHOT",
         cwd: ".",
         outputPath:
-          "{{gitSnapshotFile:path=.machdoch/autonomous-features/git-snapshot.json}}",
+          "{{gitSnapshotFile:path=.machdoch/local/state/autonomous-features/git-snapshot.json}}",
       },
     },
     {
@@ -799,7 +799,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       },
       type: "PROMPT",
       prompt:
-        "Implement the selected active-goal task batch {{data:select-next-task:tasks}} from {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}. Complete every compatible selected task in this pass. Use git baseline {{result:git-snapshot-before}}, baseline verification {{result:baseline-verification}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-implementation-pass}}, validation feedback {{result:validate-goal}}, work-yield analysis {{data:work-yield-analysis:output}}, and durable constitution {{data:understand-project:output.constitution}}. Follow local patterns, keep changes scoped, avoid excluded areas {{excludedAreas:text=}}, apply authInstructions={{authInstructions:text=}} and designGuidelines={{designGuidelines:text=}}, and add meaningful tests. Dependency changes are allowed with allowDependencyChanges={{allowDependencyChanges:boolean=true}}, schemas/migrations with allowSchemaChanges={{allowSchemaChanges:boolean=true}}, and public APIs with allowPublicApiChanges={{allowPublicApiChanges:boolean=true}} when required and verified. Never edit task lifecycle fields: runtime SELECT_JSON_TASK and MARK_JSON_TASK own every status transition. Repair only new or worsened failures relative to baseline and make bounded reversible assumptions autonomously.",
+        "Implement the selected active-goal task batch {{data:select-next-task:tasks}} from {{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}. Complete every compatible selected task in this pass. Use git baseline {{result:git-snapshot-before}}, baseline verification {{result:baseline-verification}}, detected commands {{result:detect-project-commands}}, pass count {{result:count-implementation-pass}}, validation feedback {{result:validate-goal}}, work-yield analysis {{data:work-yield-analysis:output}}, and durable constitution {{data:understand-project:output.constitution}}. Follow local patterns, keep changes scoped, avoid excluded areas {{excludedAreas:text=}}, apply authInstructions={{authInstructions:text=}} and designGuidelines={{designGuidelines:text=}}, and add meaningful tests. Dependency changes are allowed with allowDependencyChanges={{allowDependencyChanges:boolean=true}}, schemas/migrations with allowSchemaChanges={{allowSchemaChanges:boolean=true}}, and public APIs with allowPublicApiChanges={{allowPublicApiChanges:boolean=true}} when required and verified. Never edit task lifecycle fields: runtime SELECT_JSON_TASK and MARK_JSON_TASK own every status transition. Repair only new or worsened failures relative to baseline and make bounded reversible assumptions autonomously.",
     },
     {
       id: "mark-tasks-verifying",
@@ -809,7 +809,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "MARK_JSON_TASK",
-        path: "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+        path: "{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}",
         jsonPath: "tasks",
         input: "{{data:select-next-task}}",
         status: "verifying",
@@ -830,7 +830,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
           currentBlockId: "git-diff-summary",
           workItemBlockId: "select-next-task",
           excludedPaths: [
-            "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+            "{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}",
           ],
           verifyOnObservationError: true,
         },
@@ -991,7 +991,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
         type: "GIT_DIFF_SUMMARY",
         cwd: ".",
         outputPath:
-          "{{gitDiffFile:path=.machdoch/autonomous-features/git-diff.json}}",
+          "{{gitDiffFile:path=.machdoch/local/state/autonomous-features/git-diff.json}}",
       },
     },
     {
@@ -1005,7 +1005,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
         maxAttempts: 2,
         schema: RALPH_VALIDATOR_JSON_SCHEMA,
         prompt:
-          "Validate active goal JSON {{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}} against selected task batch {{data:select-next-task:tasks}}, work-yield analysis {{data:work-yield-analysis:output}}, baseline verification {{result:baseline-verification}}, post-change verification {{result:run-verification}}, git diff {{result:git-diff-summary}}, and visual review {{result:visual-review}}. Judge only the active goal and required adjacent tests/docs/imports; ignore unrelated workspace changes. If no implementation files changed or only goal JSON changed, avoid DONE unless the task truly required no file changes. Return DONE when the whole goal is implemented and no new/worsened verification failure exists relative to baseline, CONTINUE when bounded tasks remain, RETRY for own regressions, and ERROR only when unavailable external credentials/state or repeated non-progress makes this goal deferrable. Never wait for a human decision; make the best bounded reversible assumption. Include confidence, summary, evidence, and remainingWork.",
+          "Validate active goal JSON {{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}} against selected task batch {{data:select-next-task:tasks}}, work-yield analysis {{data:work-yield-analysis:output}}, baseline verification {{result:baseline-verification}}, post-change verification {{result:run-verification}}, git diff {{result:git-diff-summary}}, and visual review {{result:visual-review}}. Judge only the active goal and required adjacent tests/docs/imports; ignore unrelated workspace changes. If no implementation files changed or only goal JSON changed, avoid DONE unless the task truly required no file changes. Return DONE when the whole goal is implemented and no new/worsened verification failure exists relative to baseline, CONTINUE when bounded tasks remain, RETRY for own regressions, and ERROR only when unavailable external credentials/state or repeated non-progress makes this goal deferrable. Never wait for a human decision; make the best bounded reversible assumption. Include confidence, summary, evidence, and remainingWork.",
       },
     },
     {
@@ -1016,7 +1016,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "MARK_JSON_TASK",
-        path: "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+        path: "{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}",
         jsonPath: "tasks",
         input: "{{data:select-next-task}}",
         status: "repairing",
@@ -1030,7 +1030,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "MARK_JSON_TASK",
-        path: "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+        path: "{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}",
         jsonPath: "tasks",
         input: "{{data:select-next-task}}",
         status: "completed",
@@ -1044,7 +1044,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "MARK_JSON_TASK",
-        path: "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+        path: "{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}",
         jsonPath: "tasks",
         input: "{{data:select-next-task}}",
         status: "deferred",
@@ -1058,7 +1058,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "READ_JSON",
-        path: "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+        path: "{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}",
       },
     },
     {
@@ -1069,7 +1069,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "APPEND_JSONL",
-        path: "{{completedGoalsFile:path=.machdoch/autonomous-features/completed-goals.jsonl}}",
+        path: "{{completedGoalsFile:path=.machdoch/local/state/autonomous-features/completed-goals.jsonl}}",
         input: "{{data:read-completed-goal:json}}",
       },
     },
@@ -1081,9 +1081,9 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{autonomousReportFile:path=.machdoch/autonomous-features/final-report.json}}",
+        path: "{{autonomousReportFile:path=.machdoch/local/state/autonomous-features/final-report.json}}",
         outputPath:
-          "{{autonomousReportMarkdown:path=.machdoch/autonomous-features/final-report.md}}",
+          "{{autonomousReportMarkdown:path=.machdoch/local/state/autonomous-features/final-report.md}}",
       },
     },
     {
@@ -1095,9 +1095,9 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "ARCHIVE_FILE",
-        path: "{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}",
+        path: "{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}",
         rootPath:
-          "{{archivedGoalsDirectory:path=.machdoch/autonomous-features/archive}}",
+          "{{archivedGoalsDirectory:path=.machdoch/local/state/autonomous-features/archive}}",
       },
     },
     {
@@ -1108,9 +1108,9 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{autonomousReportFile:path=.machdoch/autonomous-features/final-report.json}}",
+        path: "{{autonomousReportFile:path=.machdoch/local/state/autonomous-features/final-report.json}}",
         outputPath:
-          "{{autonomousReportMarkdown:path=.machdoch/autonomous-features/final-report.md}}",
+          "{{autonomousReportMarkdown:path=.machdoch/local/state/autonomous-features/final-report.md}}",
       },
     },
     {
@@ -1121,9 +1121,9 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "FINAL_REPORT",
-        path: "{{autonomousReportFile:path=.machdoch/autonomous-features/final-report.json}}",
+        path: "{{autonomousReportFile:path=.machdoch/local/state/autonomous-features/final-report.json}}",
         outputPath:
-          "{{autonomousReportMarkdown:path=.machdoch/autonomous-features/final-report.md}}",
+          "{{autonomousReportMarkdown:path=.machdoch/local/state/autonomous-features/final-report.md}}",
       },
     },
     {
@@ -1136,7 +1136,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DONE",
-        path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
+        path: "{{goalOutcomesFile:path=.machdoch/local/state/autonomous-features/outcomes.jsonl}}",
         input:
           '{"outcome":"DONE","goalId":"{{data:read-completed-goal:json.id}}"}',
       },
@@ -1151,7 +1151,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
-        path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
+        path: "{{goalOutcomesFile:path=.machdoch/local/state/autonomous-features/outcomes.jsonl}}",
         input:
           '{"outcome":"DEFER","goal":{{data:read-canonical-active-goal:json}},"reason":"Bounded repair exhausted or external state unavailable."}',
       },
@@ -1166,7 +1166,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
-        path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
+        path: "{{goalOutcomesFile:path=.machdoch/local/state/autonomous-features/outcomes.jsonl}}",
         input:
           '{"outcome":"DEFER","goal":{{data:read-active-goal:json}},"reason":"The resumed goal could not be prepared safely."}',
       },
@@ -1181,7 +1181,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "DEFER",
-        path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
+        path: "{{goalOutcomesFile:path=.machdoch/local/state/autonomous-features/outcomes.jsonl}}",
         input:
           '{"outcome":"DEFER","reason":"Eligible feature work exists but is temporarily unavailable."}',
       },
@@ -1196,7 +1196,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "BLOCKED",
-        path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
+        path: "{{goalOutcomesFile:path=.machdoch/local/state/autonomous-features/outcomes.jsonl}}",
         input:
           '{"outcome":"BLOCKED","goal":{{data:read-canonical-active-goal:json}},"reason":"Persisted goal tasks have no currently selectable work.","assessment":{{data:assess-goal-tasks}}}',
       },
@@ -1211,9 +1211,9 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "STOP",
-        path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
+        path: "{{goalOutcomesFile:path=.machdoch/local/state/autonomous-features/outcomes.jsonl}}",
         input:
-          '{"outcome":"STOP","goalPath":"{{goalFilePath:path=.machdoch/autonomous-features/active-goal.json}}","reason":"No evidence-backed feature cleared the meaningful-work threshold."}',
+          '{"outcome":"STOP","goalPath":"{{goalFilePath:path=.machdoch/local/state/autonomous-features/active-goal.json}}","reason":"No evidence-backed feature cleared the meaningful-work threshold."}',
       },
     },
     {
@@ -1226,7 +1226,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       utility: {
         type: "APPEND_JSONL",
         workOutcome: "INVALID",
-        path: "{{goalOutcomesFile:path=.machdoch/autonomous-features/outcomes.jsonl}}",
+        path: "{{goalOutcomesFile:path=.machdoch/local/state/autonomous-features/outcomes.jsonl}}",
         input:
           '{"outcome":"INVALID","reason":"Goal discovery, state recovery, or validation produced invalid structured data."}',
       },
@@ -1239,7 +1239,7 @@ const autonomousFeatureGenerationLoopFlow: RalphFlow = {
       type: "UTILITY",
       utility: {
         type: "LOOP_COUNTER",
-        path: ".machdoch/autonomous-features/run-counters.json",
+        path: ".machdoch/local/state/autonomous-features/run-counters.json",
         counterName: "processed-goals.{{run:id}}",
         maxAttempts: "{{maxGoalsPerRun:number=100}}",
       },
