@@ -7,6 +7,7 @@ import {
   requiredDebianDependencies,
   requiredLinuxPackagePaths,
   requiredRpmDependencies,
+  runPackageCommand,
   validateDebianPackage,
   validateGlibcBaseline,
   validateOnnxRuntimeRunpath,
@@ -19,6 +20,15 @@ const configuration = JSON.parse(
     "utf8",
   ),
 );
+
+test("captures package listings larger than the default subprocess buffer", () => {
+  const outputLength = 2 * 1024 * 1024;
+  const output = runPackageCommand(process.execPath, [
+    "-e",
+    `process.stdout.write("x".repeat(${outputLength}))`,
+  ]);
+  assert.equal(output, "x".repeat(outputLength));
+});
 
 test("accepts the expected ARM64 Debian metadata and paths", () => {
   assert.doesNotThrow(() =>
