@@ -17,7 +17,12 @@ import { getWorkspaceStorageMarkerPath } from "./workspace-storage-paths.js";
 import { loadWorkspaceConfigFile } from "./config.js";
 import { loadWorkspaceMemory } from "./workspace-memory.js";
 import { RalphRunStore } from "./_helpers/ralph-run-store.helper.js";
-import { readRalphRunRecord, type RalphFlow } from "./ralph.js";
+import { readRalphRunRecord, runRalphFlow, type RalphFlow } from "./ralph.js";
+import {
+  createFlow,
+  customizations,
+  runtimeConfig,
+} from "./__test__/ralph-test-helpers.js";
 import { createRalphFlowFingerprint } from "./_helpers/create-ralph-flow-fingerprint.helper.js";
 
 const roots: string[] = [];
@@ -164,7 +169,11 @@ describe("workspace storage migration", () => {
       const checkpoint = {
         flowFingerprint: createRalphFlowFingerprint(flow),
         currentBlockId: "work",
-        variables: { file: ".machdoch/ralph/tasks.json" },
+        variables: {
+          file: ".machdoch/ralph/tasks.json",
+          memory: ".machdoch/memory.json",
+          summaries: ".machdoch/ralph/run-summary-cache.json",
+        },
       };
       const envelope = {
         schemaVersion: 1,
@@ -236,7 +245,11 @@ describe("workspace storage migration", () => {
       );
       expect(
         (await store.readLatestCheckpoint())?.checkpoint.variables,
-      ).toEqual({ file: ".machdoch/local/state/ralph/tasks.json" });
+      ).toEqual({
+        file: ".machdoch/local/state/ralph/tasks.json",
+        memory: ".machdoch/local/state/memory.json",
+        summaries: ".machdoch/local/cache/ralph/run-summary-cache.json",
+      });
       expect(
         (await store.readLatestCheckpoint())?.checkpoint.flowFingerprint,
       ).toBe(createRalphFlowFingerprint(migratedFlow));
@@ -266,6 +279,43 @@ describe("workspace storage migration", () => {
     expect(await exists(getWorkspaceStorageMarkerPath(root))).toBe(false);
     await write(root, ".machdoch/local/state/memory.json", "old");
     await ensureWorkspaceStorage(root);
+    expect(await exists(join(root, ".machdoch/memory.json"))).toBe(false);
+    expect(await exists(getWorkspaceStorageMarkerPath(root))).toBe(true);
+  });
+
+  it("initializes storage before a direct RALPH execution", async () => {
+    const root = await createWorkspace();
+    await write(root, ".machdoch/memory.json", '{"version":1,"entries":[]}');
+    const flow = createFlow({
+      blocks: [
+        { id: "start", type: "START", title: "Start" },
+        {
+          id: "check",
+          type: "UTILITY",
+          title: "Check",
+          utility: {
+            type: "FILE_EXISTS",
+            path: ".machdoch/local/state/memory.json",
+          },
+        },
+        { id: "end", type: "END", title: "End" },
+      ],
+      edges: [
+        {
+          id: "start-check",
+          from: "start",
+          fromOutput: "SUCCESS",
+          to: "check",
+        },
+        { id: "check-end", from: "check", fromOutput: "EXISTS", to: "end" },
+      ],
+    });
+    const result = await runRalphFlow(
+      flow,
+      { ...runtimeConfig, workspaceRoot: root },
+      customizations,
+    );
+    expect(result.status, result.summary).toBe("completed");
     expect(await exists(join(root, ".machdoch/memory.json"))).toBe(false);
     expect(await exists(getWorkspaceStorageMarkerPath(root))).toBe(true);
   });

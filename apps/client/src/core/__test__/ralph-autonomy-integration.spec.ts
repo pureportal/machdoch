@@ -2,7 +2,9 @@ import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { executeTask } from "../execution.js";
+import { ensureWorkspaceStorage } from "../workspace-storage.js";
 import {
   discoverRalphScopeEvidence,
   readRalphScopeRegistryFile,
@@ -20,6 +22,16 @@ import {
 
 const workspaces: string[] = [];
 
+vi.mock("../execution.js", () => ({
+  executeTask: vi
+    .fn()
+    .mockRejectedValue(new Error("Unexpected model execution")),
+}));
+
+beforeEach(() => {
+  vi.mocked(executeTask).mockClear();
+});
+
 afterEach(async () => {
   await Promise.all(
     workspaces
@@ -31,6 +43,7 @@ afterEach(async () => {
 const createWorkspace = async (): Promise<string> => {
   const workspace = await mkdtemp(join(tmpdir(), "ralph-autonomy-"));
   workspaces.push(workspace);
+  await ensureWorkspaceStorage(workspace);
   return workspace;
 };
 
@@ -1518,6 +1531,7 @@ describe("RALPH autonomy integration", () => {
         "deferred",
       ]),
     );
+    expect(executeTask).not.toHaveBeenCalled();
     expect(
       result.blockResults.find(
         (entry) => entry.blockId === "retained-outcome-report",
