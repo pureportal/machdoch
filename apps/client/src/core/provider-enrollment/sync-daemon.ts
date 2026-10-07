@@ -23,6 +23,13 @@ const REFRESH_REQUEST_FILE_NAME = "refresh.request";
 const DAEMON_STOP_TIMEOUT_MS = 10_000;
 const DAEMON_STOP_POLL_MS = 50;
 const DAEMON_CONTROL_POLL_MS = 1_000;
+const WORKSPACE_WATCH_DIRECTORIES = new Set([
+  ".machdoch",
+  ".machdoch/mcp",
+  ".machdoch/local",
+  ".machdoch/local/cache",
+  ".machdoch/local/cache/mcp",
+]);
 const DAEMON_RECORD_KEYS = new Set([
   "schemaVersion",
   "pid",
@@ -573,10 +580,9 @@ export const isProviderSyncWorkspaceWatchPath = (path: string): boolean => {
   const normalized = normalizeWatchedPath(path);
   return (
     normalized === ".env" ||
-    normalized === ".machdoch" ||
-    normalized === ".machdoch/mcp" ||
+    WORKSPACE_WATCH_DIRECTORIES.has(normalized) ||
     normalized === ".machdoch/mcp/mcp.json" ||
-    normalized === ".machdoch/mcp/discovery-cache.json"
+    normalized === ".machdoch/local/cache/mcp/discovery-cache.json"
   );
 };
 
@@ -607,8 +613,9 @@ const createWorkspaceWatchers = (
   const roots = [
     ...new Set([
       watchWorkspaceRoot,
-      join(watchWorkspaceRoot, ".machdoch"),
-      join(watchWorkspaceRoot, ".machdoch", "mcp"),
+      ...[...WORKSPACE_WATCH_DIRECTORIES].map((directory) =>
+        join(watchWorkspaceRoot, directory),
+      ),
     ]),
   ];
 
@@ -625,8 +632,7 @@ const createWorkspaceWatchers = (
             join(root, filename.toString()),
           );
           const normalized = normalizeWatchedPath(changedPath);
-          if (normalized === ".machdoch" || normalized === ".machdoch/mcp")
-            onInvalidated();
+          if (WORKSPACE_WATCH_DIRECTORIES.has(normalized)) onInvalidated();
           else if (isProviderSyncWorkspaceWatchPath(changedPath)) onChange();
         },
       );

@@ -112,7 +112,18 @@ describe("provider sync daemon", () => {
     ).toBe(false);
     expect(
       isProviderSyncWorkspaceWatchPath(".machdoch/mcp/discovery-cache.json"),
+    ).toBe(false);
+    expect(
+      isProviderSyncWorkspaceWatchPath(
+        ".machdoch/local/cache/mcp/discovery-cache.json",
+      ),
     ).toBe(true);
+    expect(isProviderSyncWorkspaceWatchPath(".machdoch/local/cache/mcp")).toBe(
+      true,
+    );
+    expect(
+      isProviderSyncWorkspaceWatchPath(".machdoch/local/state/memory.json"),
+    ).toBe(false);
     expect(
       isProviderSyncWorkspaceWatchPath("node_modules/package/index.js"),
     ).toBe(false);
@@ -223,9 +234,31 @@ describe("provider sync daemon", () => {
       await expect(loadDiagnostic()).resolves.toMatchObject({
         runCompletedAt: configured.runCompletedAt,
       });
+      const cacheDirectory = join(workspaceRoot, ".machdoch/local/cache/mcp");
+      await mkdir(cacheDirectory, { recursive: true });
+      await writeFile(
+        join(cacheDirectory, "discovery-cache.json"),
+        '{"schemaVersion":1,"servers":{}}\n',
+      );
+      await waitForDiagnostic(
+        (diagnostic) => diagnostic.runCompletedAt !== configured.runCompletedAt,
+      );
+      await wait(300);
+      const cacheCreated = (await loadDiagnostic())!;
+      await writeFile(
+        join(cacheDirectory, "discovery-cache.json"),
+        '{"schemaVersion":1,"servers":{}}\n\n',
+      );
+      await waitForDiagnostic(
+        (diagnostic) =>
+          diagnostic.runCompletedAt !== cacheCreated.runCompletedAt,
+      );
+      await wait(300);
+      const cacheUpdated = (await loadDiagnostic())!;
       await requestProviderSyncRefresh();
       const refreshed = await waitForDiagnostic(
-        (diagnostic) => diagnostic.runCompletedAt !== configured.runCompletedAt,
+        (diagnostic) =>
+          diagnostic.runCompletedAt !== cacheUpdated.runCompletedAt,
       );
       await wait(300);
       await expect(loadDiagnostic()).resolves.toMatchObject({
