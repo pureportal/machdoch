@@ -625,15 +625,18 @@ const createWorkspaceWatchers = (
       const watcher = watch(
         root,
         { recursive: false },
-        (_eventType, filename) => {
+        (eventType, filename) => {
           if (!filename) return onInvalidated();
           const changedPath = relative(
             watchWorkspaceRoot,
             join(root, filename.toString()),
           );
           const normalized = normalizeWatchedPath(changedPath);
-          if (WORKSPACE_WATCH_DIRECTORIES.has(normalized)) onInvalidated();
-          else if (isProviderSyncWorkspaceWatchPath(changedPath)) onChange();
+          if (WORKSPACE_WATCH_DIRECTORIES.has(normalized)) {
+            if (eventType === "rename") onInvalidated();
+            return;
+          }
+          if (isProviderSyncWorkspaceWatchPath(changedPath)) onChange();
         },
       );
       watcher.on("error", () => {
