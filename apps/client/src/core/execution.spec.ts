@@ -337,13 +337,14 @@ describe("executeTask", () => {
           conversationContext: { history: [], parallelAgentMode },
         },
       );
-      expect(result.status).toBe("executed");
+      expect(result.status).toBe(
+        parallelAgentMode === "native" ? "blocked" : "executed",
+      );
     }
     expect(available).toEqual({
       disabled: false,
       "read-only": true,
       machdoch: true,
-      native: false,
     });
 
     const unavailableAdapter: AgentModelAdapter = {

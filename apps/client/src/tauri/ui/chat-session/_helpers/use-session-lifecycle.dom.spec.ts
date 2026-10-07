@@ -74,7 +74,7 @@ describe("new session agent preferences", () => {
   });
 
   it.each(["codex-cli", "claude-cli"] as const)(
-    "uses the last selected modes after restoring shell state for %s",
+    "restores the goal mode and clears unverified native parallel mode for %s",
     (provider) => {
       let shellState: ShellPersistedState = normalizeShellState({
         ...createInitialShellState(),
@@ -109,7 +109,7 @@ describe("new session agent preferences", () => {
 
       act(() => result.current.createNewSession());
 
-      expect(shellState.sessions[0]?.parallelAgentMode).toBe("native");
+      expect(shellState.sessions[0]?.parallelAgentMode).toBe("disabled");
       expect(shellState.sessions[0]?.goalMode).toBe("native");
       expect(shellState.sessions[0]?.goal).toBeUndefined();
       expect(shellState.activeSessionId).toBe(activeSessionId);
