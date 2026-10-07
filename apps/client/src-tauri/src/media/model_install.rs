@@ -275,6 +275,10 @@ fn manifest_digest(manifest: &BuiltinModelManifest) -> String {
         hasher.update(file.byte_size.to_string().as_bytes());
         hasher.update(b"\0");
         hasher.update(file.sha256.as_bytes());
+        if let Some(url) = open::file_download_url(manifest.model_id, file.path) {
+            hasher.update(b"\0");
+            hasher.update(url.as_bytes());
+        }
     }
     format!("{:x}", hasher.finalize())
 }
@@ -1366,7 +1370,9 @@ async fn download_file(
     if offset < file.byte_size {
         let cancellation = wait_for_cancellation(paths, job_id);
         tokio::pin!(cancellation);
-        let url = if manifest.model_id == BIREFNET_MODEL_ID && file.path == "LICENSE" {
+        let url = if let Some(url) = open::file_download_url(manifest.model_id, file.path) {
+            url.to_string()
+        } else if manifest.model_id == BIREFNET_MODEL_ID && file.path == "LICENSE" {
             BIREFNET_LICENSE_URL.to_string()
         } else if manifest.model_id == BIREFNET_MODEL_ID {
             format!("{}/{}", manifest.download_root, file.path)
@@ -1848,6 +1854,54 @@ mod tests {
             assert!(planned.files.iter().all(|file| file.sha256.len() == 64
                 && !file.path.ends_with(".py")
                 && !file.path.ends_with(".bin")));
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn student_download_plans_include_base_components_and_the_matching_checkpoint() {
+        let (root, paths) = test_paths("student-plan");
+        database::initialize(&paths).unwrap();
+        for architecture in [
+            "stable-diffusion-xl-dmad-4step",
+            "stable-diffusion-xl-dmad-1step",
+        ] {
+            let profile = super::super::open_models::by_architecture(architecture).unwrap();
+            let student = profile.distillation.as_ref().unwrap();
+            let manifest = builtin_manifest(&profile.id).unwrap();
+            let planned = plan(&paths, &profile.id).unwrap();
+            assert_eq!(planned.total_bytes, 6_941_898_407);
+            assert!(planned.license.requires_acceptance);
+            assert!(planned
+                .files
+                .iter()
+                .any(|file| file.path == "unet/config.json"));
+            assert!(!planned
+                .files
+                .iter()
+                .any(|file| file.path.starts_with("unet/") && file.path != "unet/config.json"));
+            let checkpoint = manifest
+                .files
+                .iter()
+                .find(|file| file.path == student.checkpoint_file)
+                .unwrap();
+            assert_eq!(checkpoint.byte_size, student.checkpoint_byte_size);
+            assert_eq!(checkpoint.sha256, student.checkpoint_sha256);
+            let checkpoint_url = open::file_download_url(&profile.id, checkpoint.path).unwrap();
+            assert!(checkpoint_url.contains(
+                "ZhengmingYu/DMAD/resolve/b1fa1f8745fd6563bf922e6be4b4b03125aaabdd/sdxl/"
+            ));
+            assert!(
+                open::file_download_url(&profile.id, "text_encoder/model.safetensors")
+                    .unwrap()
+                    .ends_with("text_encoder/model.fp16.safetensors")
+            );
+            assert!(open::file_download_url(&profile.id, "LICENSE.md").unwrap().contains("stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/"));
+            assert!(manifest.files.iter().all(|file| open::file_download_url(
+                &profile.id,
+                file.path
+            )
+            .is_some()));
         }
         fs::remove_dir_all(root).unwrap();
     }

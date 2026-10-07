@@ -27,7 +27,9 @@
       "timesteps": [999, 749, 499, 249],
       "checkpointFile": "distillation/dmad_sdxl_4step_unet_fp16.bin",
       "checkpointSha256": "02c18fd274bf50eec47b5769ee2a18e9d6a6b497e3824cb6cadeb4127b490a5c",
-      "checkpointByteSize": 5135837515
+      "checkpointByteSize": 5135837515,
+      "baseRepository": "stabilityai/stable-diffusion-xl-base-1.0",
+      "checkpointSourceFile": "sdxl/dmad_sdxl_4step_unet_fp16.bin"
     }
   },
   {
@@ -58,7 +60,9 @@
       "timesteps": [399],
       "checkpointFile": "distillation/dmad_sdxl_1step_unet_fp16.bin",
       "checkpointSha256": "17a765a5033162ed109e4b81c0b637fab744ce5f53dd75c291ccaf785d635d13",
-      "checkpointByteSize": 5135837515
+      "checkpointByteSize": 5135837515,
+      "baseRepository": "stabilityai/stable-diffusion-xl-base-1.0",
+      "checkpointSourceFile": "sdxl/dmad_sdxl_1step_unet_fp16.bin"
     }
   },
   {
@@ -92,7 +96,9 @@
       "audioShift": 2,
       "checkpointFile": "distillation/dmad_minimax_h3_4step_lora_critic.safetensors",
       "checkpointSha256": "61d0865d6bf426e328caeab6610a28a677c68e9f2f04c607657c6451e38b5980",
-      "checkpointByteSize": 1383674304
+      "checkpointByteSize": 1383674304,
+      "baseRepository": "MiniMaxAI/MiniMax-H3",
+      "checkpointSourceFile": "minimax_h3/dmad_minimax_h3_4step_lora_critic.safetensors"
     }
   },
   {
@@ -126,7 +132,9 @@
       "audioShift": 2,
       "checkpointFile": "distillation/dmad_minimax_h3_4step_full_critic.safetensors",
       "checkpointSha256": "ac23eaef3a359666610769e4ef5f8af9530262c265f25ac211b0b54e51efc91e",
-      "checkpointByteSize": 1383674320
+      "checkpointByteSize": 1383674320,
+      "baseRepository": "MiniMaxAI/MiniMax-H3",
+      "checkpointSourceFile": "minimax_h3/dmad_minimax_h3_4step_full_critic.safetensors"
     }
   },
   {
@@ -160,7 +168,9 @@
       "audioShift": 3,
       "checkpointFile": "distillation/pdmd_4nfe.safetensors",
       "checkpointSha256": "ed0dfe587a3c0ab35e44b55c3ef6346c101cc083bb6e97b2d2c774f34dd901cd",
-      "checkpointByteSize": 1383680592
+      "checkpointByteSize": 1383680592,
+      "baseRepository": "MiniMaxAI/MiniMax-H3",
+      "checkpointSourceFile": "lora_model_0.safetensors"
     }
   },
   {
@@ -194,7 +204,9 @@
       "audioShift": 6,
       "checkpointFile": "distillation/pdmd_2nfe.safetensors",
       "checkpointSha256": "3179e630c3fbd96b9ad7aec3a54fe23fa0ddc63e4afb64607f10cdb3d05c862a",
-      "checkpointByteSize": 1383680648
+      "checkpointByteSize": 1383680648,
+      "baseRepository": "MiniMaxAI/MiniMax-H3",
+      "checkpointSourceFile": "lora_model_0.safetensors"
     }
   },
   {

@@ -10,6 +10,7 @@ import {
 import { createElement, type ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createMediaModelCatalogSnapshot } from "../../../../core/media/catalog.js";
+import { createOpenMediaModels } from "../../../../core/media/open-model-profiles.js";
 import type {
   MediaAssetDeletionImpact,
   MediaAssetRecord,
@@ -23,8 +24,9 @@ vi.mock("./media-visual-preview", () => ({
   MediaResourcePreview: () => null,
 }));
 
+const importDialog = vi.hoisted(() => vi.fn(() => null));
 vi.mock("./media-asset-import-dialog", () => ({
-  MediaAssetImportDialog: () => null,
+  MediaAssetImportDialog: importDialog,
 }));
 
 vi.mock("./media-asset-metadata-editor", () => ({
@@ -126,6 +128,26 @@ const createProps = (overrides: Partial<Props> = {}): Props => ({
 });
 
 describe("MediaAssetsView discovery", () => {
+  it("opens setup for the PDMD variant selected in the library", () => {
+    importDialog.mockClear();
+    const props = createProps();
+    const model = createOpenMediaModels("test").find(
+      (model) => model.architecture === "minimax-h3-pdmd-2step",
+    )!;
+    render(
+      createElement(MediaAssetsView, {
+        ...props,
+        catalog: { ...props.catalog, models: [model] },
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Models" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import model" }));
+    expect(importDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ initialArchitecture: "minimax-h3-pdmd-2step" }),
+      undefined,
+    );
+  });
+
   it("filters OpenPose assets and opens one as the pose map", () => {
     const pose = {
       ...asset,

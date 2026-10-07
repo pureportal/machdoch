@@ -7,7 +7,7 @@ import unittest
 from unittest import mock
 
 import torch
-from diffusers import LCMScheduler
+from diffusers import AutoencoderKL, LCMScheduler
 
 import media_diffusers_worker as worker
 import media_open_models as models
@@ -16,6 +16,34 @@ from media_student_checkpoints import checkpoint_path
 
 
 class SDXLStudentTests(unittest.TestCase):
+    def test_native_rocm_decoder_bounds_actual_vae_tiles(self):
+        vae = AutoencoderKL(
+            block_out_channels=(4, 4, 4, 4), norm_num_groups=4,
+            down_block_types=("DownEncoderBlock2D",) * 4,
+            up_block_types=("UpDecoderBlock2D",) * 4,
+            layers_per_block=1, sample_size=1024,
+        ).eval()
+        rocm = SimpleNamespace(version=SimpleNamespace(hip="7.14"),
+                               backends=SimpleNamespace(cudnn=SimpleNamespace(enabled=False)))
+        evidence = worker._configure_large_image_vae_decode(
+            SimpleNamespace(vae=vae), "stable-diffusion-xl-dmad-4step", rocm, 1024, 768,
+        )
+        tile_shapes = []
+        handle = vae.decoder.register_forward_pre_hook(
+            lambda module, args: tile_shapes.append(args[0].shape[-2:]),
+        )
+        try:
+            with torch.no_grad():
+                decoded = vae.decode(torch.zeros(1, 4, 128, 96)).sample
+        finally:
+            handle.remove()
+        self.assertEqual(decoded.shape, (1, 3, 1024, 768))
+        self.assertTrue(torch.isfinite(decoded).all())
+        self.assertGreater(len(tile_shapes), 1)
+        self.assertTrue(all(max(shape) <= 64 for shape in tile_shapes))
+        self.assertEqual(evidence["mode"], "native-overlap-tiled")
+        self.assertEqual(evidence["device"], "pipeline")
+
     def test_spectral_weights_use_the_first_forward_power_iteration_and_gain(self):
         for dtype in (torch.float32, torch.float16):
             with self.subTest(dtype=dtype):

@@ -34,7 +34,20 @@ fn live_sdxl_student_folder_passes_import_review() {
         std::env::var("MACHDOCH_SDXL_DMAD_TEST_ROOT").expect("set the live SDXL DMAD folder"),
     );
     let package = inventory(&root).unwrap();
-    assert!(inspect(&root).unwrap().can_import);
+    let inspection = inspect(&root).unwrap();
+    assert!(inspection.can_import);
+    assert_eq!(
+        inspection.detected_architecture.as_deref(),
+        Some("stable-diffusion-xl-dmad-4step")
+    );
+    assert_eq!(inspection.suggested_display_name, "SDXL DMAD 4-step");
+    assert_eq!(
+        inspection.available_architectures,
+        vec![
+            "stable-diffusion-xl-dmad-4step",
+            "stable-diffusion-xl-dmad-1step"
+        ]
+    );
     for architecture in [
         "stable-diffusion-xl-dmad-4step",
         "stable-diffusion-xl-dmad-1step",
@@ -187,22 +200,12 @@ fn h3_student_import_rejects_a_different_checkpoint_before_publication() {
         target,
     )
     .unwrap();
-    let inspection = inspect(&package.0).unwrap();
     let paths = super::MediaRuntimePaths {
         _storage_lease: None,
         database: package.0.join("media.sqlite3"),
         blobs: package.0.join("blobs"),
     };
-    let request = super::ImportMediaLocalModelRequest {
-        source_path: package.0.to_str().unwrap().to_string(),
-        review_token: inspection.review_token,
-        display_name: student.display_name.clone(),
-        architecture: student.architecture.clone(),
-        source_url: None,
-        license_name: None,
-        commercial_use: Some("review-required".to_string()),
-    };
-    assert!(super::import_reviewed(&paths, &request)
+    assert!(inspect(&package.0)
         .err()
         .unwrap()
         .contains("published student checkpoint"));

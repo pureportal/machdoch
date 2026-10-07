@@ -1989,15 +1989,17 @@ def _configure_large_image_vae_decode(
     width: int,
     height: int,
 ) -> dict[str, Any]:
-    """Use the model's overlapping tiled decoder above a 1024-pixel edge.
-
-    FLUX.2 quality canvases exceed the VAE's native 1024 sample size. On the
-    validated Windows RDNA 4 runtime a monolithic BF16 decode can dispatch an
-    unsupported MIOpen convolution after sampling has already completed.
-    Diffusers' native tiler preserves the generated latent while bounding every
-    decode convolution and blending overlaps.
-    """
-    enabled = max(width, height) > 1_024
+    """Bound VAE decode memory with the model's overlapping tiles."""
+    native_sdxl_decode = (
+        architecture in (
+            "stable-diffusion-xl", "stable-diffusion-xl-dmad-4step",
+            "stable-diffusion-xl-dmad-1step",
+        )
+        and getattr(torch.version, "hip", None) is not None
+        and not torch.backends.cudnn.enabled
+    )
+    tile_size = 512 if native_sdxl_decode else 1_024
+    enabled = max(width, height) > tile_size
     vae = getattr(pipeline, "vae", None)
     enable_tiling = getattr(vae, "enable_tiling", None)
     if enabled and not callable(enable_tiling):
@@ -2006,10 +2008,7 @@ def _configure_large_image_vae_decode(
         )
     if enabled:
         enable_tiling()
-        if architecture == "flux-2":
-            # The FLUX.2 VAE's default 1024-pixel tile still dispatches a
-            # 128x128 latent convolution. Use its supported configurable tile
-            # contract to keep the CPU fallback bounded.
+        if architecture == "flux-2" or native_sdxl_decode:
             vae.tile_sample_min_size = 512
             vae.tile_latent_min_size = 64
     post_quant_backend = "native"
@@ -2042,7 +2041,7 @@ def _configure_large_image_vae_decode(
             else "native-full-frame"
         ),
         "enabled": enabled,
-        "thresholdPixels": 1_024,
+        "thresholdPixels": tile_size,
         "postQuantBackend": post_quant_backend,
         "device": (
             "cpu"

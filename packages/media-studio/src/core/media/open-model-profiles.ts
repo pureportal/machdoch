@@ -1,5 +1,6 @@
 import profiles from "../../../../../apps/client/src-tauri/python/open_media_models.json" with { type: "json" };
 import manifests from "../../../../../apps/client/src-tauri/src/media/open_model_manifests.json" with { type: "json" };
+import studentManifests from "../../../../../apps/client/src-tauri/src/media/student_model_manifests.json" with { type: "json" };
 import type { MediaCapability, MediaModelDescriptor } from "./contracts.js";
 import { getMediaModelAddonCapabilities } from "./model-addons.js";
 
@@ -9,6 +10,7 @@ export interface OpenMediaModelProfile {
   displayName: string;
   family: string;
   repository: string;
+  revision: string;
   pipeline: string;
   capabilities: readonly MediaCapability[];
   steps: number;
@@ -29,6 +31,8 @@ export interface OpenMediaModelProfile {
   };
   distillation?: {
     method: "dmad" | "pdmd";
+    baseRepository: string;
+    checkpointSourceFile: string;
     checkpointFile: string;
     checkpointSha256: string;
     checkpointByteSize: number;
@@ -52,7 +56,9 @@ export const createOpenMediaModels = (
   catalogRevision: string,
 ): MediaModelDescriptor[] =>
   profiles.map((profile) => {
-    const manifest = manifests.find((item) => item.modelId === profile.id);
+    const manifest = [...manifests, ...studentManifests].find(
+      (item) => item.modelId === profile.id,
+    );
     const source = `https://huggingface.co/${profile.repository}`;
     return {
       id: profile.id,

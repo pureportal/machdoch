@@ -1,5 +1,6 @@
 import { isRemoteMedia } from "../media-platform";
 import { MEDIA_MODEL_ARCHITECTURES } from "../../../../core/media/model-architectures.js";
+import { openMediaModelProfile } from "../../../../core/media/open-model-profiles.js";
 import { getCurrentWindow, type DragDropEvent } from "@tauri-apps/api/window";
 import { open as openDialog } from "../media-platform";
 import { Eye, FileUp, Import, LoaderCircle, Upload, X } from "lucide-react";
@@ -40,9 +41,12 @@ import { ControlTooltip } from "../../components/ui/tooltip";
 import { cn } from "../../lib/utils";
 import { MediaCategoryPicker } from "./media-category-picker";
 import { MediaSampleImagesInput } from "./media-sample-images-input";
+import { MediaStudentSetup } from "./media-student-setup";
+import { MediaExternalLink } from "./media-external-link";
 
 interface MediaAssetImportDialogProps {
   initialPath?: string;
+  initialArchitecture?: MediaLocalModelArchitecture;
   assets: readonly MediaAssetRecord[];
   categories: readonly MediaAssetCategory[];
   loading: boolean;
@@ -122,6 +126,7 @@ const IMPORT_PROGRESS_LABELS: Record<
 
 export const MediaAssetImportDialog = ({
   initialPath,
+  initialArchitecture,
   assets,
   categories,
   loading,
@@ -150,7 +155,7 @@ export const MediaAssetImportDialog = ({
   );
   const [displayName, setDisplayName] = useState("");
   const [architecture, setArchitecture] =
-    useState<MediaLocalModelArchitecture | null>(null);
+    useState<MediaLocalModelArchitecture | null>(initialArchitecture ?? null);
   const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [tags, setTags] = useState("");
   const [triggerWords, setTriggerWords] = useState("");
@@ -168,6 +173,14 @@ export const MediaAssetImportDialog = ({
     new Set<"displayName" | "architecture" | "tags" | "triggerWords">(),
   );
   const importIsAddon = importType === "lora" || importType === "embedding";
+  const studentProfile =
+    !importIsAddon && openMediaModelProfile(architecture)?.distillation
+      ? openMediaModelProfile(architecture)!
+      : null;
+  const availableArchitectures = modelInspection?.availableArchitectures ?? [];
+  const studentMatchesFolder =
+    availableArchitectures.length === 0 ||
+    (architecture !== null && availableArchitectures.includes(architecture));
   const importIsGenerationAsset = importType === "model" || importIsAddon;
   const compatibleImportTypes: readonly MediaAssetImportType[] = modelFolder
     ? ["model"]
@@ -189,7 +202,10 @@ export const MediaAssetImportDialog = ({
   const normalizedSourceUrl = sourceUrl.trim()
     ? normalizeMediaExternalLink(sourceUrl)
     : null;
-  const sourceUrlValid = !sourceUrl.trim() || normalizedSourceUrl !== null;
+  const sourceUrlValid =
+    Boolean(studentProfile) ||
+    !sourceUrl.trim() ||
+    normalizedSourceUrl !== null;
   const localTypeMatches =
     !importIsAddon ||
     !addonInspection?.detectedKind ||
@@ -221,7 +237,7 @@ export const MediaAssetImportDialog = ({
 
   const resetFields = useCallback((): void => {
     setDisplayName("");
-    setArchitecture(null);
+    setArchitecture(initialArchitecture ?? null);
     setCategoryIds([]);
     setTags("");
     setTriggerWords("");
@@ -232,7 +248,7 @@ export const MediaAssetImportDialog = ({
     setSampleImages([]);
     dirtyEnrichmentFields.current.clear();
     onDismissInspection();
-  }, [onDismissInspection]);
+  }, [initialArchitecture, onDismissInspection]);
 
   const chooseType = (type: MediaAssetImportType): void => {
     if (loading || !compatibleImportTypes.includes(type)) return;
@@ -252,7 +268,7 @@ export const MediaAssetImportDialog = ({
       setPath(selectedPath);
       const prefill = parseMediaAssetImportFilename(selectedPath);
       setDisplayName(prefill.displayName);
-      setArchitecture(prefill.architecture);
+      setArchitecture(initialArchitecture ?? prefill.architecture);
       const inferredType = folder
         ? "model"
         : inferMediaAssetImportType(selectedPath);
@@ -262,7 +278,7 @@ export const MediaAssetImportDialog = ({
         onInspectAddon(selectedPath);
       }
     },
-    [onInspectAddon, onInspectModel, resetFields],
+    [initialArchitecture, onInspectAddon, onInspectModel, resetFields],
   );
 
   const chooseFile = async (): Promise<void> => {
@@ -401,14 +417,27 @@ export const MediaAssetImportDialog = ({
   useEffect(() => {
     if (!inspection) return;
     setPath(inspection.sourcePath);
-    if (!dirtyEnrichmentFields.current.has("displayName")) {
-      setDisplayName(inspection.suggestedDisplayName);
+    const inspectedArchitecture =
+      initialArchitecture &&
+      modelInspection?.availableArchitectures.includes(initialArchitecture)
+        ? initialArchitecture
+        : inspection.detectedArchitecture;
+    if (
+      !dirtyEnrichmentFields.current.has("displayName") &&
+      !dirtyEnrichmentFields.current.has("architecture")
+    ) {
+      const profile = openMediaModelProfile(inspectedArchitecture);
+      setDisplayName(
+        profile?.distillation
+          ? profile.displayName
+          : inspection.suggestedDisplayName,
+      );
     }
     if (
       inspection.detectedArchitecture &&
       !dirtyEnrichmentFields.current.has("architecture")
     ) {
-      setArchitecture(inspection.detectedArchitecture);
+      setArchitecture(inspectedArchitecture);
     }
     if (
       "suggestedTriggerWords" in inspection &&
@@ -426,7 +455,7 @@ export const MediaAssetImportDialog = ({
         ),
       );
     }
-  }, [inspection, importType]);
+  }, [inspection, importType, initialArchitecture, modelInspection]);
 
   useEffect(() => {
     if (!civitaiInspection?.canEnrich) return;
@@ -465,7 +494,9 @@ export const MediaAssetImportDialog = ({
     categoryIds,
     tags: splitValues(tags),
     triggerWords: normalizeMediaTriggerWords(triggerWords),
-    sourceUrl: normalizedSourceUrl,
+    sourceUrl: studentProfile
+      ? `https://huggingface.co/${studentProfile.repository}`
+      : normalizedSourceUrl,
     sampleAssetIds,
     sampleImages,
   });
@@ -476,7 +507,14 @@ export const MediaAssetImportDialog = ({
       onClose();
       return;
     }
-    if (!path || !importType || !sourceUrlValid || !importTypeMatches) return;
+    if (
+      !path ||
+      !importType ||
+      !sourceUrlValid ||
+      !importTypeMatches ||
+      !studentMatchesFolder
+    )
+      return;
     if (!importIsGenerationAsset) {
       const result = await onImportMedia(path, generationMetadata());
       if (result) onClose();
@@ -499,9 +537,13 @@ export const MediaAssetImportDialog = ({
           reviewToken: inspection.reviewToken,
           displayName: displayName.trim(),
           architecture,
-          sourceUrl: normalizedSourceUrl,
-          licenseName: licenseName.trim() || null,
-          commercialUse: commercialUse || null,
+          sourceUrl: studentProfile
+            ? `https://huggingface.co/${studentProfile.repository}`
+            : normalizedSourceUrl,
+          licenseName:
+            studentProfile?.license.name ?? (licenseName.trim() || null),
+          commercialUse:
+            studentProfile?.license.commercialUse ?? (commercialUse || null),
         },
         generationMetadata(),
       );
@@ -545,7 +587,7 @@ export const MediaAssetImportDialog = ({
               id="media-import-title"
               className="text-base font-semibold text-slate-100"
             >
-              Import
+              {studentProfile?.displayName ?? "Import"}
             </h1>
             <ControlTooltip content="Close">
               <button
@@ -559,39 +601,50 @@ export const MediaAssetImportDialog = ({
             </ControlTooltip>
           </header>
           <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
-            <button
-              type="button"
-              disabled={loading}
-              onClick={() => void chooseFile()}
-              className="flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-700 bg-slate-900/35 px-5 text-slate-400 hover:border-sky-500 hover:text-sky-200 disabled:cursor-wait"
-            >
-              {loading ? (
-                <LoaderCircle className="h-6 w-6 animate-spin" />
-              ) : path ? (
-                <FileUp className="h-6 w-6 text-slate-300" />
-              ) : (
-                <Upload className="h-6 w-6" />
-              )}
-              <span className="max-w-full truncate text-sm">
-                {path ? fileName(path) : "Drop or select a file"}
-              </span>
-              {loading && progress ? (
-                <div className="w-full max-w-sm space-y-1.5 px-4">
-                  <div className="flex items-center justify-between text-xs">
-                    <span>{IMPORT_PROGRESS_LABELS[progress.stage]}</span>
-                    <span>{Math.round(progress.progress * 100)}%</span>
+            {studentProfile ? (
+              <>
+                {!path || error ? (
+                  <MediaStudentSetup
+                    architecture={studentProfile.architecture}
+                  />
+                ) : null}
+              </>
+            ) : null}
+            {!studentProfile ? (
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => void chooseFile()}
+                className="flex min-h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl border border-dashed border-slate-700 bg-slate-900/35 px-5 text-slate-400 hover:border-sky-500 hover:text-sky-200 disabled:cursor-wait"
+              >
+                {loading ? (
+                  <LoaderCircle className="h-6 w-6 animate-spin" />
+                ) : path ? (
+                  <FileUp className="h-6 w-6 text-slate-300" />
+                ) : (
+                  <Upload className="h-6 w-6" />
+                )}
+                <span className="max-w-full truncate text-sm">
+                  {path ? fileName(path) : "Drop or select a file"}
+                </span>
+                {loading && progress ? (
+                  <div className="w-full max-w-sm space-y-1.5 px-4">
+                    <div className="flex items-center justify-between text-xs">
+                      <span>{IMPORT_PROGRESS_LABELS[progress.stage]}</span>
+                      <span>{Math.round(progress.progress * 100)}%</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
+                      <div
+                        className="h-full rounded-full bg-sky-400 transition-[width]"
+                        style={{
+                          width: `${Math.round(progress.progress * 100)}%`,
+                        }}
+                      />
+                    </div>
                   </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-800">
-                    <div
-                      className="h-full rounded-full bg-sky-400 transition-[width]"
-                      style={{
-                        width: `${Math.round(progress.progress * 100)}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ) : null}
-            </button>
+                ) : null}
+              </button>
+            ) : null}
             <Button
               type="button"
               variant="outline"
@@ -600,6 +653,15 @@ export const MediaAssetImportDialog = ({
             >
               Model folder
             </Button>
+            {studentProfile && path ? (
+              <p role="status" className="break-all text-xs text-slate-400">
+                {loading
+                  ? progress
+                    ? `${IMPORT_PROGRESS_LABELS[progress.stage]} ${Math.round(progress.progress * 100)}%`
+                    : "Checking model folder…"
+                  : path}
+              </p>
+            ) : null}
 
             {isRemoteMedia() ? (
               <form
@@ -607,7 +669,13 @@ export const MediaAssetImportDialog = ({
                 onSubmit={(event) => {
                   event.preventDefault();
                   const selectedPath = hostPath.trim();
-                  if (selectedPath) selectPath(selectedPath);
+                  if (selectedPath)
+                    selectPath(
+                      selectedPath,
+                      Boolean(studentProfile) ||
+                        listCompatibleMediaAssetImportTypes(selectedPath)
+                          .length === 0,
+                    );
                 }}
               >
                 <input
@@ -622,12 +690,12 @@ export const MediaAssetImportDialog = ({
                   disabled={loading || !hostPath.trim()}
                   className="rounded-lg border border-slate-700 px-3 py-2 text-sm text-slate-200 disabled:opacity-50"
                 >
-                  Use file
+                  {studentProfile ? "Use folder" : "Use file"}
                 </button>
               </form>
             ) : null}
 
-            {path ? (
+            {path && compatibleImportTypes.length > 1 ? (
               <fieldset>
                 <legend className="mb-2 text-sm font-medium text-slate-200">
                   Type
@@ -701,6 +769,15 @@ export const MediaAssetImportDialog = ({
                         value={architecture ?? ""}
                         onChange={(event) => {
                           dirtyEnrichmentFields.current.add("architecture");
+                          const profile = openMediaModelProfile(
+                            event.target.value,
+                          );
+                          if (
+                            profile?.distillation &&
+                            !dirtyEnrichmentFields.current.has("displayName")
+                          ) {
+                            setDisplayName(profile.displayName);
+                          }
                           setArchitecture(
                             (event.target.value ||
                               null) as MediaLocalModelArchitecture | null,
@@ -710,13 +787,15 @@ export const MediaAssetImportDialog = ({
                       >
                         <option value="">Select base model</option>
                         {MEDIA_MODEL_ARCHITECTURES.filter((item) =>
-                          importIsAddon
-                            ? item.value !== "qwen-image-2.1"
-                            : ![
-                                "ltx-video",
-                                "framepack-i2v",
-                                "hunyuan-video-1.5-i2v",
-                              ].includes(item.value),
+                          availableArchitectures.length > 0
+                            ? availableArchitectures.includes(item.value)
+                            : importIsAddon
+                              ? item.value !== "qwen-image-2.1"
+                              : ![
+                                  "ltx-video",
+                                  "framepack-i2v",
+                                  "hunyuan-video-1.5-i2v",
+                                ].includes(item.value),
                         ).map((item) => (
                           <option key={item.value} value={item.value}>
                             {item.label}
@@ -724,7 +803,14 @@ export const MediaAssetImportDialog = ({
                         ))}
                       </select>
                     </label>
-                    {architecture === "qwen-image-2.1" && !importIsAddon ? (
+                    {studentProfile ? (
+                      <MediaExternalLink
+                        href={studentProfile.license.sourceUrl!}
+                        className="text-xs text-sky-300 underline sm:col-span-2"
+                      >
+                        {studentProfile.license.name}
+                      </MediaExternalLink>
+                    ) : architecture === "qwen-image-2.1" && !importIsAddon ? (
                       <a
                         href="https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE"
                         target="_blank"
@@ -771,36 +857,38 @@ export const MediaAssetImportDialog = ({
                     )}
                   </>
                 ) : null}
-                <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
-                  <span>Source URL</span>
-                  <div className="flex gap-2">
-                    <input
-                      type="url"
-                      value={sourceUrl}
-                      onChange={(event) => setSourceUrl(event.target.value)}
-                      className="h-10 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
-                    />
-                    {importIsGenerationAsset ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() =>
-                          onInspectCivitai(normalizedSourceUrl ?? "")
-                        }
-                        disabled={
-                          loading ||
-                          !normalizedSourceUrl ||
-                          !isMediaCivitaiSourceUrl(normalizedSourceUrl)
-                        }
-                      >
-                        Enrich
-                      </Button>
+                {!studentProfile ? (
+                  <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
+                    <span>Source URL</span>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        value={sourceUrl}
+                        onChange={(event) => setSourceUrl(event.target.value)}
+                        className="h-10 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 text-slate-100 outline-none focus:border-sky-500"
+                      />
+                      {importIsGenerationAsset ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() =>
+                            onInspectCivitai(normalizedSourceUrl ?? "")
+                          }
+                          disabled={
+                            loading ||
+                            !normalizedSourceUrl ||
+                            !isMediaCivitaiSourceUrl(normalizedSourceUrl)
+                          }
+                        >
+                          Enrich
+                        </Button>
+                      ) : null}
+                    </div>
+                    {!sourceUrlValid ? (
+                      <span className="text-rose-300">Enter an HTTPS URL</span>
                     ) : null}
-                  </div>
-                  {!sourceUrlValid ? (
-                    <span className="text-rose-300">Enter an HTTPS URL</span>
-                  ) : null}
-                </label>
+                  </label>
+                ) : null}
                 {importIsAddon ? (
                   <label className="space-y-1 text-xs text-slate-400 sm:col-span-2">
                     <span>
@@ -860,6 +948,11 @@ export const MediaAssetImportDialog = ({
                 {inspection.blockingReason}
               </p>
             ) : null}
+            {!studentMatchesFolder ? (
+              <p role="alert" className="text-sm text-rose-300">
+                Choose a student included in this folder.
+              </p>
+            ) : null}
             {importType && !importTypeMatches ? (
               <p className="text-sm text-rose-300">
                 {detectedAddonKind === "lora"
@@ -886,6 +979,7 @@ export const MediaAssetImportDialog = ({
                     !importType ||
                     !sourceUrlValid ||
                     !importTypeMatches ||
+                    !studentMatchesFolder ||
                     (importIsGenerationAsset &&
                       (!inspection ||
                         !inspection.canImport ||
