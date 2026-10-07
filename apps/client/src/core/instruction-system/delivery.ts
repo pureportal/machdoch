@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ConfiguredModelProvider } from "../runtime-contract.generated.js";
+import { supportsNativeSubagentInstructionDelivery } from "./subagents.js";
 import {
   canonicalDigest,
   deepFreeze,
@@ -506,8 +507,7 @@ export const createInstructionDeliveryPlan = (
 export const assertNativeSubagentInstructionDelivery = (
   plan: InstructionDeliveryPlan,
 ): void => {
-  const support = plan.capability.lifecycle.subagents;
-  if (support === "reattached" || support === "session") {
+  if (supportsNativeSubagentInstructionDelivery(plan.capability)) {
     return;
   }
   throw new InstructionSystemError(

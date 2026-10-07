@@ -1187,39 +1187,52 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     },
   );
 
-  it("delivers the parent instruction file to every native Claude subagent", async () => {
-    const workspaceRoot = await createWorkspace();
-    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
-    const params = createParams(workspaceRoot, {
-      provider: "claude-cli",
-      model: "claude-opus-4-6",
-    });
-    params.preparedConversationContext = {
-      ...preparedConversationContext,
-      parallelAgentMode: "native",
-    };
+  it.each(["adapter", "runtime"] as const)(
+    "delivers the parent instruction file to every native Claude subagent through the %s",
+    async (entrypoint) => {
+      const workspaceRoot = await createWorkspace();
+      process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+      const params = createParams(workspaceRoot, {
+        provider: "claude-cli",
+        model: "claude-opus-4-6",
+      });
+      params.preparedConversationContext = {
+        ...preparedConversationContext,
+        parallelAgentMode: "native",
+      };
+      params.conversationContext = { history: [], parallelAgentMode: "native" };
 
-    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
-    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
-    const call = spawnCalls[0]!;
-    expect(call.args).not.toContain("--disallowedTools");
-    const parentInstructionPath =
-      call.args[call.args.indexOf("--append-system-prompt-file") + 1];
-    expect(call.args).toContain("--append-subagent-system-prompt-file");
-    expect(
-      call.args[call.args.indexOf("--append-subagent-system-prompt-file") + 1],
-    ).toBe(parentInstructionPath);
-    writeStructuredAnswer(call, "Completed native work.");
-    call.child.emit("close", 0, null);
-    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
-  });
+      const resultPromise =
+        entrypoint === "runtime"
+          ? maybeExecuteModelDrivenTask(params)
+          : maybeExecuteExternalAgentProviderTask(params);
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      expect(call.args).not.toContain("--disallowedTools");
+      const parentInstructionPath =
+        call.args[call.args.indexOf("--append-system-prompt-file") + 1];
+      expect(call.args).toContain("--append-subagent-system-prompt-file");
+      expect(
+        call.args[
+          call.args.indexOf("--append-subagent-system-prompt-file") + 1
+        ],
+      ).toBe(parentInstructionPath);
+      writeStructuredAnswer(call, "Completed native work.");
+      call.child.emit("close", 0, null);
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "executed",
+      });
+    },
+  );
 
   it.each([
-    ["codex-cli", "MACHDOCH_CODEX_CLI_PATH"],
-    ["copilot-cli", "MACHDOCH_COPILOT_CLI_PATH"],
+    ["codex-cli", "adapter", "MACHDOCH_CODEX_CLI_PATH"],
+    ["copilot-cli", "adapter", "MACHDOCH_COPILOT_CLI_PATH"],
+    ["codex-cli", "runtime", "MACHDOCH_CODEX_CLI_PATH"],
+    ["copilot-cli", "runtime", "MACHDOCH_COPILOT_CLI_PATH"],
   ] as const)(
-    "blocks unverified native subagent instruction delivery for %s",
-    async (provider, binaryEnvironmentKey) => {
+    "blocks unverified native subagent instruction delivery for %s through the %s",
+    async (provider, entrypoint, binaryEnvironmentKey) => {
       const workspaceRoot = await createWorkspace();
       process.env[binaryEnvironmentKey] = process.execPath;
       const params = createParams(workspaceRoot, { provider });
@@ -1227,8 +1240,12 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         ...preparedConversationContext,
         parallelAgentMode: "native",
       };
+      params.conversationContext = { history: [], parallelAgentMode: "native" };
 
-      const result = await maybeExecuteExternalAgentProviderTask(params);
+      const result =
+        entrypoint === "runtime"
+          ? await maybeExecuteModelDrivenTask(params)
+          : await maybeExecuteExternalAgentProviderTask(params);
 
       expect(result?.status).toBe("blocked");
       expect(result?.summary).toContain("cannot confirm delivery");
