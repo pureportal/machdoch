@@ -329,8 +329,7 @@ Usage:
   machdoch update [--json]
   machdoch update --check [--json]
 
---check only checks for a newer release. Installation verifies the signed
-package before changing files. Linux packages may require administrator access.
+--check checks without installing. Linux packages may require administrator access.
 Restart running Machdoch services after an update.`,
   run: RUN_HELP,
   chat: CHAT_HELP,
