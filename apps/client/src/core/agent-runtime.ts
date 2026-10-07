@@ -2463,15 +2463,19 @@ export const maybeExecuteModelDrivenTask = async (
       adaptivePlan,
     );
 
+    if (
+      params.conversationContext?.parallelAgentMode === "native" &&
+      instructionPlan
+    ) {
+      assertNativeSubagentInstructionDelivery(instructionPlan);
+    }
     const parallelMode = resolveParallelAgentMode(
       executionConfig.provider,
       executionConfig.model,
       params.conversationContext?.parallelAgentMode,
+      instructionPlan,
     );
     preparedConversationContext.parallelAgentMode = parallelMode;
-    if (parallelMode === "native" && instructionPlan) {
-      assertNativeSubagentInstructionDelivery(instructionPlan);
-    }
 
     const parallelTool =
       (parallelMode === "read-only" || parallelMode === "machdoch") &&

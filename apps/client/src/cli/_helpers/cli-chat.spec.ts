@@ -421,6 +421,47 @@ describe("interactive chat workflows", () => {
     expect((await listChatSessions()).sessions).toHaveLength(1);
   });
 
+  it.each([
+    ["codex-cli", "gpt-6.1-sol"],
+    ["claude-cli", "claude-opus-4-6"],
+    ["copilot-cli", "gemini-3.5-flash"],
+    ["openai", "gpt-6-sol"],
+  ] as const)(
+    "omits unverified native agents from the %s chat menu",
+    async (provider, model) => {
+      menuMocks.select.mockResolvedValueOnce("machdoch");
+      const executeTask = vi.fn<typeof printTaskPreview>(async (args) =>
+        result(args.task!),
+      );
+      const { lines } = await runChat(
+        [
+          `/model ${provider} ${model}`,
+          "/parallel",
+          "/parallel native",
+          "First",
+          "/exit",
+        ],
+        executeTask,
+      );
+
+      expect(menuMocks.select).toHaveBeenCalledWith(
+        "Parallel agents",
+        [
+          { value: "disabled", label: "disabled" },
+          { value: "read-only", label: "read-only" },
+          { value: "machdoch", label: "machdoch" },
+        ],
+        { currentValue: "disabled" },
+      );
+      expect(lines.join("\n")).toContain(
+        "Usage: /parallel [disabled|read-only|machdoch]",
+      );
+      expect(
+        executeTask.mock.calls[0]?.[1]?.conversationContext?.parallelAgentMode,
+      ).toBe("machdoch");
+    },
+  );
+
   it("applies parallel mode to each task and resets it for a new conversation", async () => {
     const executeTask = vi.fn<typeof printTaskPreview>(async (args) =>
       result(args.task!),
