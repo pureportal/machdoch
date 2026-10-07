@@ -284,11 +284,11 @@
   {
     "ecosystem": "cargo",
     "name": "webview2-com",
-    "version": "0.38.2",
+    "version": "0.39.1",
     "files": [
       {
-        "file": "legal/third-party/supplemental/cargo/webview2-com@0.38.2/LICENSE",
-        "source": "https://raw.githubusercontent.com/wravery/webview2-rs/b74dc5e2b394044bea5191052868ce7a106c202c/LICENSE",
+        "file": "legal/third-party/supplemental/cargo/webview2-com@0.39.1/LICENSE",
+        "source": "https://raw.githubusercontent.com/wravery/webview2-rs/edc2caf886175ccaebe86078c9cfe1ae2a187328/LICENSE",
         "sha256": "0dcf41516e608bbcb6cdc5229feb7b86fe4a643b85e7df251133c93408fdac73"
       }
     ]
@@ -308,11 +308,11 @@
   {
     "ecosystem": "cargo",
     "name": "webview2-com-sys",
-    "version": "0.38.2",
+    "version": "0.39.1",
     "files": [
       {
-        "file": "legal/third-party/supplemental/cargo/webview2-com-sys@0.38.2/LICENSE",
-        "source": "https://raw.githubusercontent.com/wravery/webview2-rs/b74dc5e2b394044bea5191052868ce7a106c202c/LICENSE",
+        "file": "legal/third-party/supplemental/cargo/webview2-com-sys@0.39.1/LICENSE",
+        "source": "https://raw.githubusercontent.com/wravery/webview2-rs/edc2caf886175ccaebe86078c9cfe1ae2a187328/LICENSE",
         "sha256": "0dcf41516e608bbcb6cdc5229feb7b86fe4a643b85e7df251133c93408fdac73"
       }
     ]
