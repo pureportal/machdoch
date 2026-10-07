@@ -152,7 +152,7 @@ jobs:
           RUSTFLAGS: -C link-arg=-Wl,-rpath,$ORIGIN/../lib/machdoch
         run: |
           export ORT_LIB_LOCATION="$PWD/apps/client/src-tauri/target/onnxruntime"
-          pnpm --filter @machdoch/client tauri build ${{ matrix.bundle_args }}
+          pnpm --filter @machdoch/client tauri build --verbose ${{ matrix.bundle_args }}
 
       - name: Build non-Linux Tauri installers
         if: "!startsWith(matrix.release_target, 'linux-')"
