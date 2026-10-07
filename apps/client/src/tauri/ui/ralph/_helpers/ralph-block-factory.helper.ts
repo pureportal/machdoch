@@ -219,12 +219,12 @@ export const createDefaultUtilityConfig = (
       return {
         type,
         path: "{{file:path}}",
-        rootPath: ".machdoch/ralph/archive",
+        rootPath: ".machdoch/local/state/ralph/archive",
       };
     case "LOOP_COUNTER":
       return {
         type,
-        path: ".machdoch/ralph/counters.json",
+        path: ".machdoch/local/state/ralph/counters.json",
         counterName: "loop",
         maxAttempts: 10,
       };
@@ -245,21 +245,21 @@ export const createDefaultUtilityConfig = (
     case "ASSESS_JSON_TASKS":
       return {
         type,
-        path: "{{checklistFile:path=.machdoch/ralph/tasks.json}}",
+        path: "{{checklistFile:path=.machdoch/local/state/ralph/tasks.json}}",
         jsonPath: "tasks",
         strategy: "start-to-end",
       };
     case "SELECT_JSON_TASK":
       return {
         type,
-        path: "{{checklistFile:path=.machdoch/ralph/tasks.json}}",
+        path: "{{checklistFile:path=.machdoch/local/state/ralph/tasks.json}}",
         jsonPath: "tasks",
         strategy: "start-to-end",
       };
     case "MARK_JSON_TASK":
       return {
         type,
-        path: "{{checklistFile:path=.machdoch/ralph/tasks.json}}",
+        path: "{{checklistFile:path=.machdoch/local/state/ralph/tasks.json}}",
         jsonPath: "tasks",
         status: "verifying",
       };
@@ -313,19 +313,19 @@ export const createDefaultUtilityConfig = (
       return {
         type,
         cwd: ".",
-        outputPath: ".machdoch/ralph/git-snapshot.json",
+        outputPath: ".machdoch/local/state/ralph/git-snapshot.json",
       };
     case "GIT_DIFF_SUMMARY":
       return {
         type,
         cwd: ".",
-        outputPath: ".machdoch/ralph/git-diff-summary.json",
+        outputPath: ".machdoch/local/state/ralph/git-diff-summary.json",
       };
     case "DETECT_PROJECT_COMMANDS":
       return {
         type,
         rootPath: ".",
-        outputPath: ".machdoch/ralph/project-commands.json",
+        outputPath: ".machdoch/local/state/ralph/project-commands.json",
       };
     case "SET_VARIABLE":
       return { type, variableName: "value", value: "{{lastResultSummary}}" };
@@ -341,8 +341,8 @@ export const createDefaultUtilityConfig = (
     case "FINAL_REPORT":
       return {
         type,
-        path: ".machdoch/ralph/final-report.json",
-        outputPath: ".machdoch/ralph/final-report.md",
+        path: ".machdoch/local/state/ralph/final-report.json",
+        outputPath: ".machdoch/local/state/ralph/final-report.md",
       };
     case "NOTIFY":
       return { type, message: "{{lastResultSummary}}" };

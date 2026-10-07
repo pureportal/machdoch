@@ -28,6 +28,7 @@ mod ui_operation;
 mod voice;
 mod workspace_git;
 mod workspace_run;
+mod workspace_storage;
 mod workspace_tools;
 
 use tauri::Manager as _;

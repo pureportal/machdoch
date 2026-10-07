@@ -81,13 +81,13 @@ fn read_bounded_cli_stream(mut stream: impl Read, stream_name: &str) -> Result<V
     Ok(bytes)
 }
 
-pub(crate) fn run_side_effect_free_json_command(
+pub(crate) fn run_shared_cli_json_command(
     args: &[String],
     input: Zeroizing<Vec<u8>>,
     command_timeout: Duration,
 ) -> Result<Value, String> {
     let shared = create_shared_cli_command(args)?;
-    run_side_effect_free_json_command_with_command(
+    run_shared_cli_json_command_with_command(
         shared.command,
         input,
         command_timeout,
@@ -95,7 +95,7 @@ pub(crate) fn run_side_effect_free_json_command(
     )
 }
 
-fn run_side_effect_free_json_command_with_command(
+fn run_shared_cli_json_command_with_command(
     mut command: Command,
     input: Zeroizing<Vec<u8>>,
     command_timeout: Duration,
@@ -106,23 +106,23 @@ fn run_side_effect_free_json_command_with_command(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = SupervisedChild::spawn(&mut command)
-        .map_err(|_| "The side-effect-free shared CLI validator could not start.".to_string())?;
+        .map_err(|_| "The shared CLI command could not start.".to_string())?;
     let mut stdin = child
         .stdin
         .take()
-        .ok_or_else(|| "The shared CLI validator did not expose stdin.".to_string())?;
+        .ok_or_else(|| "The shared CLI command did not expose stdin.".to_string())?;
     let stdout = child
         .stdout
         .take()
-        .ok_or_else(|| "The shared CLI validator did not expose stdout.".to_string())?;
+        .ok_or_else(|| "The shared CLI command did not expose stdout.".to_string())?;
     let stderr = child
         .stderr
         .take()
-        .ok_or_else(|| "The shared CLI validator did not expose stderr.".to_string())?;
+        .ok_or_else(|| "The shared CLI command did not expose stderr.".to_string())?;
     let input_worker = thread::spawn(move || {
         let result = stdin.write_all(&input).and_then(|()| stdin.flush());
         drop(stdin);
-        result.map_err(|_| "The shared CLI validator input could not be written.".to_string())
+        result.map_err(|_| "The shared CLI command input could not be written.".to_string())
     });
     let stdout_worker = thread::spawn(move || read_bounded_cli_stream(stdout, "stdout"));
     let stderr_worker = thread::spawn(move || read_bounded_cli_stream(stderr, "stderr"));
@@ -132,24 +132,24 @@ fn run_side_effect_free_json_command_with_command(
             Ok(Some(status)) => break Ok(status),
             Ok(None) if started_at.elapsed() >= command_timeout => {
                 let _ = child.terminate_and_reap();
-                break Err("The shared CLI validator exceeded its safety timeout.".to_string());
+                break Err("The shared CLI command exceeded its safety timeout.".to_string());
             }
             Ok(None) => thread::sleep(Duration::from_millis(25)),
             Err(_) => {
                 let _ = child.terminate_and_reap();
-                break Err("The shared CLI validator could not be monitored.".to_string());
+                break Err("The shared CLI command could not be monitored.".to_string());
             }
         }
     };
     let input_result = input_worker
         .join()
-        .map_err(|_| "The shared CLI validator input worker stopped unexpectedly.".to_string());
+        .map_err(|_| "The shared CLI command input worker stopped unexpectedly.".to_string());
     let stdout_result = stdout_worker
         .join()
-        .map_err(|_| "The shared CLI validator output worker stopped unexpectedly.".to_string());
+        .map_err(|_| "The shared CLI command output worker stopped unexpectedly.".to_string());
     let stderr_result = stderr_worker
         .join()
-        .map_err(|_| "The shared CLI validator error worker stopped unexpectedly.".to_string());
+        .map_err(|_| "The shared CLI command error worker stopped unexpectedly.".to_string());
     let input_result = input_result?;
     let stdout = Zeroizing::new(stdout_result??);
     let _stderr = Zeroizing::new(stderr_result??);
@@ -159,7 +159,7 @@ fn run_side_effect_free_json_command_with_command(
     }
     input_result?;
     serde_json::from_slice::<Value>(&stdout)
-        .map_err(|_| "The shared CLI validator returned invalid JSON.".to_string())
+        .map_err(|_| "The shared CLI command returned invalid JSON.".to_string())
 }
 
 #[cfg(not(machdoch_embedded_runtime))]
@@ -480,8 +480,8 @@ mod tests {
 
     use super::{
         materialize_cached_runtime_file_contents, materialize_cached_runtime_file_in_directory,
-        read_bounded_cli_stream, run_side_effect_free_json_command_with_command,
-        sanitize_node_options, MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES,
+        read_bounded_cli_stream, run_shared_cli_json_command_with_command, sanitize_node_options,
+        MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES,
     };
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_SHARED_CLI_TEST_CHILD_MODE";
@@ -532,7 +532,7 @@ mod tests {
 
     #[test]
     fn side_effect_free_validator_timeout_stops_and_joins_child_workers() {
-        let error = run_side_effect_free_json_command_with_command(
+        let error = run_shared_cli_json_command_with_command(
             test_child_command("hold"),
             Zeroizing::new(b"{}".to_vec()),
             Duration::from_millis(100),
@@ -540,15 +540,12 @@ mod tests {
         )
         .expect_err("hanging validator should time out");
 
-        assert_eq!(
-            error,
-            "The shared CLI validator exceeded its safety timeout."
-        );
+        assert_eq!(error, "The shared CLI command exceeded its safety timeout.");
     }
 
     #[test]
     fn side_effect_free_validator_monitor_failure_stops_and_joins_child_workers() {
-        let error = run_side_effect_free_json_command_with_command(
+        let error = run_shared_cli_json_command_with_command(
             test_child_command("hold"),
             Zeroizing::new(b"{}".to_vec()),
             Duration::from_secs(5),
@@ -556,7 +553,7 @@ mod tests {
         )
         .expect_err("monitor failure should stop the validator");
 
-        assert_eq!(error, "The shared CLI validator could not be monitored.");
+        assert_eq!(error, "The shared CLI command could not be monitored.");
     }
 
     #[test]

@@ -1,15 +1,16 @@
+import {
+  withSchedulerStateLock,
+  writeSchedulerFileDurably,
+} from "./_helpers/scheduler-file-storage.helper.js";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
   mkdir,
-  open,
   readFile,
   realpath,
   readdir,
-  rename,
   rm,
   stat,
-  writeFile,
 } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { VALID_MODEL_PROVIDERS } from "./runtime-contract.generated.js";
@@ -34,10 +35,7 @@ import type {
   ReasoningMode,
   RunMode,
 } from "./runtime-contract.generated.js";
-import {
-  getNextCronRunAfter,
-  parseCronExpression,
-} from "./_helpers/parse-cron-expression.helper.js";
+import { parseCronExpression } from "./_helpers/parse-cron-expression.helper.js";
 import { splitDueTimesByMissedPolicy } from "./_helpers/split-due-times-by-missed-policy.helper.js";
 import {
   normalizeSchedulerMultilineText,
@@ -68,6 +66,19 @@ import {
   schedulerEventTypeMatches,
 } from "./_helpers/scheduler-event-trigger-matching.helper.js";
 import { normalizeStringList } from "../helpers/normalize-string-list.helper.js";
+import {
+  getNextSchedulerRunAfter as getNextRunAfter,
+  createCanonicalWorkspaceQueueKey,
+  getSchedulerStatePath,
+  getSchedulerStorageWorkspaceRoot,
+  readWorkspaceSchedulerStateUnlocked,
+  writeWorkspaceSchedulerStateUnlocked,
+} from "./_helpers/scheduler-workspace-storage.helper.js";
+export {
+  getSchedulerDefinitionPath,
+  getSchedulerDefinitionPath as getWorkspaceSchedulerDefinitionPath,
+  getSchedulerStatePath,
+} from "./_helpers/scheduler-workspace-storage.helper.js";
 export { createScheduledJobTaskText } from "./_helpers/create-scheduled-job-task-text.helper.js";
 export { getScheduledJobContextPaths } from "./_helpers/get-scheduled-job-context-paths.helper.js";
 export {
@@ -111,12 +122,6 @@ const DEFAULT_UNATTENDED_RALPH_RETRY_POLICY: ScheduledRetryPolicy = {
   ...DEFAULT_RETRY_POLICY,
   maxAttempts: 3,
 };
-const SCHEDULER_STATE_LOCK_RETRY_MS = 25;
-const SCHEDULER_STATE_LOCK_STALE_MS = 5 * 60_000;
-const SCHEDULER_STATE_LOCK_TRANSIENT_ACCESS_MS = 2_000;
-const SCHEDULER_STATE_REPLACE_RETRY_DELAYS_MS = [
-  0, 10, 25, 50, 100, 250,
-] as const;
 class StaleScheduledRunClaimError extends Error {
   constructor(runId: string) {
     super(`Scheduled run claim is no longer current: ${runId}`);
@@ -711,17 +716,11 @@ const createEmptySchedulerState = (timestamp: number): SmartSchedulerState => ({
 export const getWorkspaceSchedulerStatePath = (
   workspaceRoot: string,
 ): string => {
-  return join(workspaceRoot, ".machdoch", SMART_SCHEDULER_FILE_NAME);
+  return getSchedulerStatePath(workspaceRoot);
 };
 
 export const getUserSchedulerStatePath = (): string => {
   return join(dirname(getUserConfigPath()), SMART_SCHEDULER_FILE_NAME);
-};
-
-const sleep = async (durationMs: number): Promise<void> => {
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, durationMs);
-  });
 };
 
 const sleepWithSignal = async (
@@ -755,135 +754,6 @@ const isErrorWithCode = (error: unknown, code: string): boolean => {
     "code" in error &&
     (error as { code?: unknown }).code === code
   );
-};
-
-const isTransientStateReplaceError = (error: unknown): boolean => {
-  return (
-    isErrorWithCode(error, "EBUSY") ||
-    isErrorWithCode(error, "EACCES") ||
-    isErrorWithCode(error, "EPERM")
-  );
-};
-
-const isSchedulerStateLockContentionError = (
-  error: unknown,
-  lockPath: string,
-): boolean => {
-  if (isErrorWithCode(error, "EEXIST")) {
-    return true;
-  }
-
-  return (
-    (isErrorWithCode(error, "EACCES") || isErrorWithCode(error, "EPERM")) &&
-    existsSync(lockPath)
-  );
-};
-
-const getSchedulerStateLockPath = (statePath: string): string => {
-  return `${statePath}.lock`;
-};
-
-const removeStaleSchedulerStateLock = async (
-  lockPath: string,
-): Promise<void> => {
-  try {
-    const metadata = await stat(lockPath);
-
-    if (Date.now() - metadata.mtimeMs <= SCHEDULER_STATE_LOCK_STALE_MS) {
-      return;
-    }
-
-    await rm(lockPath, { recursive: true, force: true });
-  } catch (error) {
-    if (!isErrorWithCode(error, "ENOENT")) {
-      throw error;
-    }
-  }
-};
-
-const releaseSchedulerStateLock = async (
-  lockPath: string,
-  token: string,
-): Promise<void> => {
-  const tokenPath = join(lockPath, "owner");
-
-  try {
-    const currentToken = (await readFile(tokenPath, "utf8")).trim();
-
-    if (currentToken === token) {
-      await rm(lockPath, { recursive: true, force: true });
-    }
-  } catch (error) {
-    if (!isErrorWithCode(error, "ENOENT")) {
-      throw error;
-    }
-  }
-};
-
-const acquireSchedulerStateLock = async (
-  statePath: string,
-): Promise<() => Promise<void>> => {
-  const lockPath = getSchedulerStateLockPath(statePath);
-  const token = `${process.pid}:${Date.now()}:${randomUUID()}`;
-  const startedAt = Date.now();
-
-  await mkdir(dirname(statePath), { recursive: true });
-
-  for (;;) {
-    try {
-      await mkdir(lockPath);
-
-      try {
-        await writeFile(join(lockPath, "owner"), token, "utf8");
-      } catch (error) {
-        await rm(lockPath, { recursive: true, force: true });
-        throw error;
-      }
-
-      return () => releaseSchedulerStateLock(lockPath, token);
-    } catch (error) {
-      if (
-        (isErrorWithCode(error, "EACCES") || isErrorWithCode(error, "EPERM")) &&
-        !existsSync(lockPath) &&
-        Date.now() - startedAt <= SCHEDULER_STATE_LOCK_TRANSIENT_ACCESS_MS
-      ) {
-        await sleep(SCHEDULER_STATE_LOCK_RETRY_MS);
-        continue;
-      }
-
-      if (!isSchedulerStateLockContentionError(error, lockPath)) {
-        throw error;
-      }
-
-      await removeStaleSchedulerStateLock(lockPath);
-      await sleep(SCHEDULER_STATE_LOCK_RETRY_MS);
-    }
-  }
-};
-
-const withSchedulerStateLock = async <T>(
-  statePath: string,
-  operation: () => Promise<T>,
-): Promise<T> => {
-  const releaseLock = await acquireSchedulerStateLock(statePath);
-  let operationCompleted = false;
-
-  try {
-    const result = await operation();
-    operationCompleted = true;
-    await releaseLock();
-    return result;
-  } catch (error) {
-    if (!operationCompleted) {
-      try {
-        await releaseLock();
-      } catch {
-        // Preserve the original scheduler failure; stale locks are reclaimed.
-      }
-    }
-
-    throw error;
-  }
 };
 
 const isRecordValue = (value: unknown): value is Record<string, unknown> => {
@@ -1064,11 +934,20 @@ const inferPreviousScheduledJobProvenance = (
 interface SmartSchedulerStateReadResult {
   state: SmartSchedulerState;
   requiresPersistence: boolean;
+  definitionFingerprint?: string;
 }
 
 const readSmartSchedulerStateResult = async (
   statePath: string,
+  timestamp = Date.now(),
 ): Promise<SmartSchedulerStateReadResult> => {
+  const workspaceRoot = getSchedulerStorageWorkspaceRoot(statePath);
+  if (workspaceRoot) {
+    return {
+      ...(await readWorkspaceSchedulerStateUnlocked(workspaceRoot, timestamp)),
+      requiresPersistence: false,
+    };
+  }
   if (!existsSync(statePath)) {
     return {
       state: createEmptySchedulerState(Date.now()),
@@ -1076,8 +955,7 @@ const readSmartSchedulerStateResult = async (
     };
   }
 
-  const raw = await readFile(statePath, "utf8");
-  const parsedValue: unknown = JSON.parse(raw);
+  const parsedValue: unknown = JSON.parse(await readFile(statePath, "utf8"));
 
   if (
     !isRecordValue(parsedValue) ||
@@ -1153,64 +1031,30 @@ const readSmartSchedulerStateResult = async (
 export const readSmartSchedulerState = async (
   statePath: string,
 ): Promise<SmartSchedulerState> => {
+  const workspaceRoot = getSchedulerStorageWorkspaceRoot(statePath);
+  if (workspaceRoot) {
+    return withSchedulerStateLock(
+      statePath,
+      async () => (await readSmartSchedulerStateResult(statePath)).state,
+    );
+  }
   return (await readSmartSchedulerStateResult(statePath)).state;
-};
-
-const replaceSmartSchedulerStateFile = async (
-  tempPath: string,
-  statePath: string,
-): Promise<void> => {
-  let lastError: unknown;
-
-  for (const delayMs of SCHEDULER_STATE_REPLACE_RETRY_DELAYS_MS) {
-    if (delayMs > 0) {
-      await sleep(delayMs);
-    }
-
-    try {
-      await rename(tempPath, statePath);
-      return;
-    } catch (error) {
-      if (!isTransientStateReplaceError(error)) {
-        throw error;
-      }
-
-      lastError = error;
-    }
-  }
-
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
-};
-
-const writeSchedulerFileDurably = async (
-  tempPath: string,
-  targetPath: string,
-  content: string,
-): Promise<void> => {
-  const handle = await open(tempPath, "wx");
-  try {
-    await handle.writeFile(content, "utf8");
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-
-  await replaceSmartSchedulerStateFile(tempPath, targetPath);
-
-  if (process.platform !== "win32") {
-    const directoryHandle = await open(dirname(targetPath), "r");
-    try {
-      await directoryHandle.sync();
-    } finally {
-      await directoryHandle.close();
-    }
-  }
 };
 
 const writeSmartSchedulerStateUnlocked = async (
   statePath: string,
   state: SmartSchedulerState,
+  expectedDefinitionFingerprint?: string,
 ): Promise<void> => {
+  const workspaceRoot = getSchedulerStorageWorkspaceRoot(statePath);
+  if (workspaceRoot) {
+    await writeWorkspaceSchedulerStateUnlocked(
+      workspaceRoot,
+      state,
+      expectedDefinitionFingerprint,
+    );
+    return;
+  }
   await mkdir(dirname(statePath), { recursive: true });
 
   const tempPath = `${statePath}.${process.pid}.${Date.now()}.${randomUUID()}.tmp`;
@@ -1229,8 +1073,9 @@ const writeSmartSchedulerStateUnlocked = async (
 
 const readAndUpgradeSmartSchedulerStateUnlocked = async (
   statePath: string,
+  timestamp = Date.now(),
 ): Promise<SmartSchedulerState> => {
-  const result = await readSmartSchedulerStateResult(statePath);
+  const result = await readSmartSchedulerStateResult(statePath, timestamp);
 
   if (result.requiresPersistence) {
     await writeSmartSchedulerStateUnlocked(statePath, result.state);
@@ -1877,14 +1722,6 @@ const canonicalizeWorkspaceRoot = async (
 
     return absoluteRoot;
   }
-};
-
-const createCanonicalWorkspaceQueueKey = (workspaceRoot: string): string => {
-  const normalized = resolve(workspaceRoot).replaceAll("\\", "/");
-  const canonical =
-    process.platform === "win32" ? normalized.toLowerCase() : normalized;
-
-  return `ralph-workspace:${canonical}`;
 };
 
 const hasScheduledValue = (value: unknown): boolean => {
@@ -2843,29 +2680,6 @@ const isTimeoutReason = (value: unknown): boolean =>
 const isHeartbeatPersistenceFailure = (value: unknown): boolean =>
   value instanceof ScheduledRunHeartbeatPersistenceError;
 
-const getNextRunAfter = (
-  schedule: ScheduledJobSchedule,
-  afterTimestamp: number,
-): number | undefined => {
-  switch (schedule.type) {
-    case "cron":
-      return getNextCronRunAfter(
-        schedule.expression,
-        schedule.timezone,
-        afterTimestamp,
-      );
-    case "interval": {
-      const elapsed = afterTimestamp - schedule.anchorAt;
-      const intervalsElapsed =
-        elapsed < 0 ? 0 : Math.floor(elapsed / schedule.intervalMs) + 1;
-
-      return schedule.anchorAt + intervalsElapsed * schedule.intervalMs;
-    }
-    case "delay":
-      return schedule.runAt > afterTimestamp ? schedule.runAt : undefined;
-  }
-};
-
 const collectDueRunTimes = (
   job: ScheduledJob,
   now: number,
@@ -3227,7 +3041,11 @@ export class DurableSmartScheduler {
     await this.ensureWorkspaceRegistered();
     const mutation = this.stateMutation.then(async () => {
       return withSchedulerStateLock(this.statePath, async () => {
-        const state = await readSmartSchedulerState(this.statePath);
+        const stateRead = await readSmartSchedulerStateResult(
+          this.statePath,
+          this.now(),
+        );
+        const state = stateRead.state;
         const requestKey = normalizeSchedulerText(request?.key);
         const payloadHash =
           requestKey && request
@@ -3270,7 +3088,11 @@ export class DurableSmartScheduler {
             -DEFAULT_MUTATION_RECEIPT_LIMIT,
           );
         }
-        await writeSmartSchedulerStateUnlocked(this.statePath, state);
+        await writeSmartSchedulerStateUnlocked(
+          this.statePath,
+          state,
+          stateRead.definitionFingerprint,
+        );
 
         return result;
       });
@@ -3287,7 +3109,7 @@ export class DurableSmartScheduler {
   async getState(): Promise<SmartSchedulerState> {
     await this.ensureWorkspaceRegistered();
     return withSchedulerStateLock(this.statePath, () =>
-      readAndUpgradeSmartSchedulerStateUnlocked(this.statePath),
+      readAndUpgradeSmartSchedulerStateUnlocked(this.statePath, this.now()),
     );
   }
 

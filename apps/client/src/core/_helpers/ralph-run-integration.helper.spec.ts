@@ -87,7 +87,7 @@ const createRepository = async () => {
   git(repository, "add", ".");
   git(repository, "commit", "-qm", "initial");
   const createRun = async (id: string, workspace = repository) => {
-    const directory = join(workspace, ".machdoch", "ralph", "runs", id);
+    const directory = join(workspace, ".machdoch", "local", "state", "ralph", "runs", id);
     await mkdir(directory, { recursive: true });
     return {
       directory,

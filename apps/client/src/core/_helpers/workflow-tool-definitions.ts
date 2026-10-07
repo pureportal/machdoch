@@ -10,6 +10,9 @@ import {
 import { createRalphFlowFingerprint } from "./create-ralph-flow-fingerprint.helper.js";
 import {
   getRalphFlowPath,
+  getRalphFlowStorageDirectory,
+  getRalphRunDirectory,
+  getRalphArtifactDirectory,
   getRalphRevisionDirectory,
 } from "./create-ralph-storage-paths.helper.js";
 import { join } from "node:path";
@@ -56,9 +59,9 @@ const workflowTool = (
             ? args.flow.id
             : undefined;
       const paths = [
-        ...["flows", "revisions", "runs", "artifacts"].map((directory) =>
-          join(".machdoch", "ralph", directory),
-        ),
+        getRalphFlowStorageDirectory(context.workspaceRoot),
+        getRalphRunDirectory(context.workspaceRoot),
+        getRalphArtifactDirectory(context.workspaceRoot),
         ...(flowId
           ? [
               getRalphFlowPath(context.workspaceRoot, flowId),
@@ -66,7 +69,7 @@ const workflowTool = (
             ]
           : []),
         ...(typeof args.runId === "string"
-          ? [join(".machdoch", "ralph", "runs", args.runId)]
+          ? [join(getRalphRunDirectory(context.workspaceRoot), args.runId)]
           : []),
       ];
       for (const path of paths) {

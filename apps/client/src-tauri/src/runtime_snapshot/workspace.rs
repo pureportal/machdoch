@@ -113,6 +113,7 @@ pub(crate) fn resolve_workspace_root_path(workspace_root: &str) -> Result<PathBu
 pub(super) fn load_workspace_config(
     workspace_root: &Path,
 ) -> Result<(WorkspaceConfigFile, Option<String>), String> {
+    crate::workspace_storage::ensure_workspace_storage(workspace_root)?;
     let config_path = workspace_root.join(".machdoch").join("config.json");
 
     if !config_path.exists() {

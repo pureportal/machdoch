@@ -188,7 +188,9 @@ const getExecutionFileChangeFingerprint = (
   const files = fileChanges.files
     .filter(
       (file) =>
-        !/(?:^|\/)\.machdoch(?:\/|$)/u.test(file.path.replace(/\\/gu, "/")),
+        !/(?:^|\/)\.machdoch\/local(?:\/|$)/u.test(
+          file.path.replace(/\\/gu, "/"),
+        ),
     )
     .map((file) => ({
       path: file.path.replace(/\\/gu, "/"),

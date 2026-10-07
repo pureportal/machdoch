@@ -151,7 +151,7 @@ pub async fn export_fleet_local_settings(
         if let Some(workspace) = workspace_root {
             args.extend(["--cwd".to_string(), workspace]);
         }
-        let value = crate::shared_cli::run_side_effect_free_json_command(
+        let value = crate::shared_cli::run_shared_cli_json_command(
             &args,
             zeroize::Zeroizing::new(Vec::new()),
             std::time::Duration::from_secs(60),

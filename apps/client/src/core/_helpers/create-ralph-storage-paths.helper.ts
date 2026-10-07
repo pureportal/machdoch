@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getUserConfigPath } from "../env.js";
+import { getWorkspaceLocalDirectory } from "../workspace-storage-paths.js";
 import {
   FLOW_FILE_EXTENSION,
   normalizeFlowFileName,
@@ -48,18 +49,44 @@ export const getRalphFlowStorageDirectory = (
   workspaceRoot: string,
   scope: RalphFlowScope = "workspace",
 ): string => {
-  return join(getRalphStorageDirectory(workspaceRoot, scope), RALPH_FLOW_SUBDIRECTORY);
+  return join(
+    getRalphStorageDirectory(workspaceRoot, scope),
+    RALPH_FLOW_SUBDIRECTORY,
+  );
 };
 
 export const getRalphRunDirectory = (
   workspaceRoot: string,
   scope: RalphFlowScope = "workspace",
 ): string => {
-  return join(getRalphStorageDirectory(workspaceRoot, scope), RALPH_RUN_SUBDIRECTORY);
+  return join(
+    getRalphStateDirectory(workspaceRoot, scope),
+    RALPH_RUN_SUBDIRECTORY,
+  );
 };
 
+export const getRalphStateDirectory = (
+  workspaceRoot: string,
+  scope: RalphFlowScope = "workspace",
+): string =>
+  scope === "user"
+    ? getUserRalphDirectory()
+    : join(getWorkspaceLocalDirectory(workspaceRoot, "state"), "ralph");
+
+export const getRalphCacheDirectory = (
+  workspaceRoot: string,
+  scope: RalphFlowScope = "workspace",
+): string =>
+  scope === "user"
+    ? getUserRalphDirectory()
+    : join(getWorkspaceLocalDirectory(workspaceRoot, "cache"), "ralph");
+
 export const getRalphArtifactDirectory = (workspaceRoot: string): string => {
-  return join(getRalphStorageDirectory(workspaceRoot, "workspace"), RALPH_ARTIFACT_SUBDIRECTORY);
+  return join(
+    getWorkspaceLocalDirectory(workspaceRoot, "artifacts"),
+    "ralph",
+    RALPH_ARTIFACT_SUBDIRECTORY,
+  );
 };
 
 export const getRalphRevisionDirectory = (
@@ -68,7 +95,7 @@ export const getRalphRevisionDirectory = (
   scope: RalphFlowScope = "workspace",
 ): string => {
   return join(
-    getRalphStorageDirectory(workspaceRoot, scope),
+    getRalphStateDirectory(workspaceRoot, scope),
     RALPH_REVISION_SUBDIRECTORY,
     normalizeFlowId(flowId),
   );
@@ -91,7 +118,10 @@ export const getRalphFlowPath = (
   id: string,
   scope: RalphFlowScope = "workspace",
 ): string => {
-  return join(getRalphFlowStorageDirectory(workspaceRoot, scope), normalizeFlowFileName(id));
+  return join(
+    getRalphFlowStorageDirectory(workspaceRoot, scope),
+    normalizeFlowFileName(id),
+  );
 };
 
 export const createRalphRevisionFilePath = (

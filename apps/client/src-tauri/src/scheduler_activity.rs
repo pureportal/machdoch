@@ -56,7 +56,10 @@ pub enum WorkspaceSchedulerActivity {
 
 fn read_workspace_activity(workspace_root: &str) -> Result<Vec<SchedulerActivityRun>, String> {
     let workspace_path = resolve_workspace_root_path(workspace_root)?;
-    let state_path = workspace_path.join(".machdoch").join("scheduler.json");
+    crate::workspace_storage::ensure_workspace_storage(&workspace_path)?;
+    let state_path = workspace_path
+        .join(".machdoch/local/state")
+        .join("scheduler.json");
     let file = match File::open(&state_path) {
         Ok(file) => file,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
@@ -71,7 +74,7 @@ fn read_workspace_activity(workspace_root: &str) -> Result<Vec<SchedulerActivity
     }
     let state: SchedulerActivityState = serde_json::from_slice(&content)
         .map_err(|error| format!("Invalid scheduler activity: {error}"))?;
-    if state.schema != "machdoch.smartScheduler" || state.schema_version != 2 {
+    if state.schema != "machdoch.smartScheduler.runtime" || state.schema_version != 1 {
         return Err("Unsupported scheduler state format.".to_string());
     }
     if state.runs.iter().any(|run| run.id.trim().is_empty()) {

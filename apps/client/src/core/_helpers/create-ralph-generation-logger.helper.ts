@@ -1,3 +1,4 @@
+import { ensureWorkspaceStorage } from "../workspace-storage.js";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -10,9 +11,10 @@ import {
   sanitizeTraceValue,
 } from "../ralph.js";
 import {
-  getRalphStorageDirectory,
+  getUserRalphDirectory,
   type RalphFlowScope,
 } from "./create-ralph-storage-paths.helper.js";
+import { getWorkspaceLocalDirectory } from "../workspace-storage-paths.js";
 import type {
   RalphFlowGenerationResult,
   RalphGenerationEvent,
@@ -26,7 +28,9 @@ export const getRalphGenerationDirectory = (
   scope: RalphFlowScope = "workspace",
 ): string => {
   return join(
-    getRalphStorageDirectory(workspaceRoot, scope),
+    scope === "user"
+      ? getUserRalphDirectory()
+      : join(getWorkspaceLocalDirectory(workspaceRoot, "artifacts"), "ralph"),
     RALPH_GENERATION_SUBDIRECTORY,
   );
 };
@@ -84,7 +88,11 @@ export class RalphFileGenerationLogger {
     };
 
     this.enqueue(async () => {
-      await appendFile(this.paths.traceJsonlPath, createRalphLogLine(safeEvent), "utf8");
+      await appendFile(
+        this.paths.traceJsonlPath,
+        createRalphLogLine(safeEvent),
+        "utf8",
+      );
       await appendFile(
         this.paths.simpleMarkdownPath,
         `${formatRalphGenerationMarkdownEntry(safeEvent)}\n`,
@@ -111,11 +119,9 @@ export class RalphFileGenerationLogger {
       return;
     }
 
-    this.pending = this.pending
-      .then(write)
-      .catch(() => {
-        this.failed = true;
-      });
+    this.pending = this.pending.then(write).catch(() => {
+      this.failed = true;
+    });
   }
 }
 
@@ -129,6 +135,7 @@ export const createRalphGenerationLogger = async (
     scope?: RalphFlowScope;
   },
 ): Promise<RalphFileGenerationLogger> => {
+  if (options.scope !== "user") await ensureWorkspaceStorage(workspaceRoot);
   const createdAt = createLogTimestamp();
   const paths = createRalphGenerationArtifactPaths(
     getRalphGenerationDirectory(workspaceRoot, options.scope ?? "workspace"),

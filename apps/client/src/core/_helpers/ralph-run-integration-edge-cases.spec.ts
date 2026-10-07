@@ -54,7 +54,7 @@ const createRun = async (source = "original\n") => {
   await writeFile(join(repository, "binary.bin"), Buffer.from([0, 1, 2]));
   git(repository, "add", ".");
   git(repository, "commit", "-qm", "initial");
-  const directory = join(repository, ".machdoch", "ralph", "runs", "edge");
+  const directory = join(repository, ".machdoch", "local", "state", "ralph", "runs", "edge");
   await mkdir(directory, { recursive: true });
   const worktree = await prepareRalphRunWorktree(repository, directory);
   return { repository, directory, worktree };

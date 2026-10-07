@@ -36,6 +36,8 @@ describe("RALPH Git change snapshots", () => {
       const runDirectory = join(
         workspace,
         ".machdoch",
+        "local",
+        "state",
         "ralph",
         "runs",
         "run-1",
@@ -43,7 +45,14 @@ describe("RALPH Git change snapshots", () => {
       await mkdir(runDirectory, { recursive: true });
       await writeFile(join(runDirectory, "run.json"), '{"status":"running"}');
       await writeFile(
-        join(workspace, ".machdoch", "ralph", "counters.json"),
+        join(
+          workspace,
+          ".machdoch",
+          "local",
+          "state",
+          "ralph",
+          "counters.json",
+        ),
         '{"counters":{"loop":{"run":{"count":3}}}}',
       );
 

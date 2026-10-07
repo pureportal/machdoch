@@ -211,6 +211,8 @@ pub(crate) fn resolve_record_path(
         "workspace" => {
             crate::runtime_snapshot::resolve_workspace_root_path(&request.workspace_root)?
                 .join(".machdoch")
+                .join("local")
+                .join("state")
                 .join("ralph")
         }
         "user" => crate::runtime_snapshot::get_user_config_directory()?.join("ralph"),

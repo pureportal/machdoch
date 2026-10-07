@@ -33,8 +33,8 @@ impl TestWorkspace {
 
     fn write_state(&self, runs: Value) -> Vec<u8> {
         let content = serde_json::to_vec(&json!({
-            "schema": "machdoch.smartScheduler",
-            "schemaVersion": 2,
+            "schema": "machdoch.smartScheduler.runtime",
+            "schemaVersion": 1,
             "createdAt": 1,
             "updatedAt": 2,
             "jobs": [],
@@ -43,8 +43,9 @@ impl TestWorkspace {
             "runs": runs,
         }))
         .unwrap();
-        fs::create_dir_all(self.0.join(".machdoch")).unwrap();
-        fs::write(self.0.join(".machdoch/scheduler.json"), &content).unwrap();
+        fs::create_dir_all(self.0.join(".machdoch/local/state")).unwrap();
+        fs::write(self.0.join(".machdoch/local/state/storage-layout.json"), "{\"version\":1}").unwrap();
+        fs::write(self.0.join(".machdoch/local/state/scheduler.json"), &content).unwrap();
         content
     }
 }
@@ -70,7 +71,7 @@ fn activity_reads_all_workspaces_once_without_changing_scheduler_files() {
         "id": "run-1", "status": "running", "summary": "private result"
     }]));
     second.write_state(json!([{"id": "run-1", "status": "timed_out"}]));
-    fs::create_dir(first.0.join(".machdoch/scheduler.json.lock")).unwrap();
+    fs::create_dir(first.0.join(".machdoch/local/state/scheduler.json.lock")).unwrap();
 
     let result = read_scheduler_activity(vec![first.root(), second.root(), first.root()]);
 
@@ -82,10 +83,10 @@ fn activity_reads_all_workspaces_once_without_changing_scheduler_files() {
         ])
     );
     assert_eq!(
-        fs::read(first.0.join(".machdoch/scheduler.json")).unwrap(),
+        fs::read(first.0.join(".machdoch/local/state/scheduler.json")).unwrap(),
         original
     );
-    assert!(first.0.join(".machdoch/scheduler.json.lock").is_dir());
+    assert!(first.0.join(".machdoch/local/state/scheduler.json.lock").is_dir());
 }
 
 #[test]
@@ -102,7 +103,7 @@ fn activity_keeps_successful_workspaces_when_another_state_is_invalid() {
     let invalid = TestWorkspace::new();
     let valid = TestWorkspace::new();
     invalid.write_state(json!([]));
-    fs::write(invalid.0.join(".machdoch/scheduler.json"), "{").unwrap();
+    fs::write(invalid.0.join(".machdoch/local/state/scheduler.json"), "{").unwrap();
     valid.write_state(json!([{"id": "run-2", "status": "queued"}]));
 
     let result =
@@ -127,10 +128,10 @@ fn activity_rejects_unsupported_schemas_and_invalid_run_records() {
         workspace.write_state(runs);
         assert!(read_workspace_activity(&workspace.root()).is_err());
     }
-    for (schema, version) in [("machdoch.smartScheduler", 1), ("other", 2)] {
+    for (schema, version) in [("machdoch.smartScheduler.runtime", 2), ("other", 1)] {
         workspace.write_state(json!([]));
         fs::write(
-            workspace.0.join(".machdoch/scheduler.json"),
+            workspace.0.join(".machdoch/local/state/scheduler.json"),
             serde_json::to_vec(&json!({"schema": schema, "schemaVersion": version, "runs": []}))
                 .unwrap(),
         )
@@ -152,7 +153,7 @@ fn activity_bounds_the_amount_of_state_read() {
     workspace.write_state(json!([]));
     let file = fs::OpenOptions::new()
         .write(true)
-        .open(workspace.0.join(".machdoch/scheduler.json"))
+        .open(workspace.0.join(".machdoch/local/state/scheduler.json"))
         .unwrap();
     file.set_len(MAX_SCHEDULER_STATE_BYTES + 1).unwrap();
     assert!(read_workspace_activity(&workspace.root())

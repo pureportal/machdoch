@@ -5,6 +5,7 @@ import { loadWorkspaceConfigFile } from "./config.js";
 import { tokenizeMemoryText } from "./memory-retrieval.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
+import { ensureWorkspaceStorage } from "./workspace-storage.js";
 
 export type ReasoningOutcome = "success" | "failure";
 
@@ -124,7 +125,13 @@ const isReasoningLesson = (value: unknown): value is ReasoningLesson => {
 };
 
 export const getReasoningBankPath = (workspaceRoot: string): string =>
-  join(resolve(workspaceRoot), ".machdoch", "reasoning-bank.json");
+  join(
+    resolve(workspaceRoot),
+    ".machdoch",
+    "local",
+    "state",
+    "reasoning-bank.json",
+  );
 
 export const isReasoningBankEnabled = async (
   workspaceRoot: string,
@@ -193,7 +200,10 @@ export const createLocalReasoningBank = (
   const path = getReasoningBankPath(workspaceRoot);
 
   return {
-    load: async () => (await loadDocument(path)).lessons,
+    load: async () => {
+      await ensureWorkspaceStorage(workspaceRoot);
+      return (await loadDocument(path)).lessons;
+    },
     consolidate: async (candidates) => {
       if (candidates.length === 0) return [];
       if (!candidates.every(isReasoningLessonCandidate)) {
@@ -209,6 +219,7 @@ export const createLocalReasoningBank = (
       }
       const stored: ReasoningLesson[] = [];
       let retainedIds = new Set<string>();
+      await ensureWorkspaceStorage(workspaceRoot);
       await withCooperativeFileLock(path, async () => {
         const document = await loadDocument(path);
         const lessons = [...document.lessons];
@@ -287,6 +298,7 @@ export const createLocalReasoningBank = (
     recordOutcome: async (ids, outcome) => {
       if (ids.length === 0) return;
       const selected = new Set(ids);
+      await ensureWorkspaceStorage(workspaceRoot);
       await withCooperativeFileLock(path, async () => {
         const document = await loadDocument(path);
         let changed = false;
@@ -310,6 +322,7 @@ export const createLocalReasoningBank = (
     recordRetrieval: async (ids) => {
       if (ids.length === 0) return;
       const selected = new Set(ids);
+      await ensureWorkspaceStorage(workspaceRoot);
       await withCooperativeFileLock(path, async () => {
         const document = await loadDocument(path);
         const now = Date.now();
@@ -333,6 +346,7 @@ export const createLocalReasoningBank = (
     },
     forget: async (id) => {
       let removed = false;
+      await ensureWorkspaceStorage(workspaceRoot);
       await withCooperativeFileLock(path, async () => {
         const document = await loadDocument(path);
         const lessons = document.lessons.filter((entry) => entry.id !== id);

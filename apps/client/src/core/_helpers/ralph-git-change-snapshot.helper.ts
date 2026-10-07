@@ -64,7 +64,7 @@ const createGitContentPathspecs = (
 ): string[] => {
   const controlArtifactPath = relative(
     gitRoot,
-    resolve(workspaceRoot, ".machdoch"),
+    resolve(workspaceRoot, ".machdoch", "local"),
   ).replace(/\\/gu, "/");
 
   if (

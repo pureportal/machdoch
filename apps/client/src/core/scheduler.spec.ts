@@ -4,6 +4,7 @@ import {
   readFile,
   realpath,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,11 +13,14 @@ import {
   DurableSmartScheduler,
   createScheduledRalphExecutionSnapshot,
   getNextCronRunAfter,
+  getSchedulerDefinitionPath,
+  getSchedulerStatePath,
   getWorkspaceSchedulerStatePath,
   readSmartSchedulerState,
   SMART_SCHEDULER_SCHEMA,
   SMART_SCHEDULER_SCHEMA_VERSION,
   syncScheduledPromptJobs,
+  type ScheduledJob,
   type ScheduledTaskExecutor,
 } from "./scheduler.ts";
 import {
@@ -320,6 +324,159 @@ describe("readSmartSchedulerState", () => {
     await expect(readSmartSchedulerState(statePath)).rejects.toThrow(
       "Unsupported smart scheduler state file",
     );
+  });
+});
+
+describe("workspace scheduler definition and state separation", () => {
+  it("keeps the shared definition untouched through enqueue, execution and completion", async () => {
+    const workspaceRoot = await createWorkspace();
+    const clock = createClock();
+    const statePath = getSchedulerStatePath(workspaceRoot);
+    expect(statePath).toBe(join(workspaceRoot, ".machdoch", "local", "state", "scheduler.json"));
+    expect(getWorkspaceSchedulerStatePath(workspaceRoot)).toBe(statePath);
+    const scheduler = new DurableSmartScheduler({
+      statePath,
+      clock,
+      executor: { execute: async () => createSuccessfulResult() },
+    });
+    const job = await scheduler.upsertJob({
+      schedule: { type: "delay", runAt: 1_000 },
+      target: { workspaceRoot, prompt: "Run once" },
+    });
+    const definitionPath = getSchedulerDefinitionPath(workspaceRoot);
+    const original = await readFile(definitionPath, "utf8");
+    const before = await stat(definitionPath);
+    clock.set(1_000);
+
+    expect(await scheduler.enqueueDueRuns()).toHaveLength(1);
+    const restarted = new DurableSmartScheduler({
+      statePath,
+      clock,
+      executor: { execute: async () => createSuccessfulResult() },
+    });
+    expect((await restarted.getJob(job.id))?.status).toBe("completed");
+    expect((await restarted.runQueuedRuns({ recoverAbandoned: false }))[0]?.status).toBe("succeeded");
+    expect((await restarted.getState()).events.length).toBeGreaterThan(0);
+
+    expect(await readFile(definitionPath, "utf8")).toBe(original);
+    expect((await stat(definitionPath)).mtimeMs).toBe(before.mtimeMs);
+    const shared = JSON.parse(original) as { jobs: ScheduledJob[] };
+    expect(shared.jobs[0]!.status).toBe("active");
+    expect(shared.jobs[0]).not.toHaveProperty("nextRunAt");
+    const local = JSON.parse(await readFile(statePath, "utf8")) as { jobs: Array<Record<string, unknown>> };
+    expect(local.jobs[0]).toMatchObject({ status: "completed", lastFinishedAt: 1_000 });
+    expect(local.jobs[0]).not.toHaveProperty("target");
+  });
+
+  it("loads live definition edits, initializes their new timing once and retains queued snapshots", async () => {
+    const workspaceRoot = await createWorkspace();
+    const clock = createClock();
+    const scheduler = new DurableSmartScheduler({
+      statePath: getSchedulerStatePath(workspaceRoot),
+      clock,
+    });
+    const job = await scheduler.upsertJob({
+      schedule: { type: "interval", intervalMs: 1_000, anchorAt: 0 },
+      target: { workspaceRoot, prompt: "Original task" },
+    });
+    const queued = await scheduler.triggerJobNow(job.id, "original-snapshot");
+    const path = getSchedulerDefinitionPath(workspaceRoot);
+    const definitions = JSON.parse(await readFile(path, "utf8")) as { jobs: ScheduledJob[] };
+    definitions.jobs[0]!.name = "Edited definition";
+    definitions.jobs[0]!.target.prompt = "Edited task";
+    const trigger = definitions.jobs[0]!.triggers.find((candidate) => candidate.kind === "time");
+    if (!trigger || trigger.kind !== "time" || trigger.schedule.type !== "interval") {
+      throw new Error("Expected an interval trigger fixture.");
+    }
+    trigger.schedule.intervalMs = 2_000;
+    const edited = JSON.stringify(definitions);
+    await writeFile(path, edited, "utf8");
+    clock.set(1_000);
+
+    const editedJob = await scheduler.getJob(job.id);
+    expect(editedJob).toMatchObject({
+      name: "Edited definition",
+      target: { prompt: "Edited task" },
+      nextRunAt: 2_000,
+    });
+    expect((await scheduler.listRuns(job.id))[0]!.targetSnapshot).toEqual(queued.run.targetSnapshot);
+    expect((await scheduler.listRuns(job.id))[0]!.targetSnapshot?.prompt).toBe("Original task");
+    clock.set(2_000);
+    const due = (await scheduler.enqueueDueRuns())[0]!;
+    expect(due.run.scheduledFor).toBe(2_000);
+    expect(due.run.targetSnapshot?.prompt).toBe("Edited task");
+    expect(await readFile(path, "utf8")).toBe(edited);
+  });
+
+  it("migrates and executes queued work through a direct scheduler without parent initialization", async () => {
+    const workspaceRoot = await createWorkspace();
+    const clock = createClock(100);
+    const source = new DurableSmartScheduler({
+      statePath: join(workspaceRoot, "custom-scheduler.json"),
+      clock,
+    });
+    const job = await source.upsertJob({
+      triggers: [{ kind: "manual" }],
+      target: { workspaceRoot, prompt: "Resume queued task" },
+    });
+    const queued = await source.triggerJobNow(job.id, "resume-queued");
+    const original = await source.getState();
+    await writeFile(getSchedulerDefinitionPath(workspaceRoot), JSON.stringify(original), "utf8");
+    const observedTasks: string[] = [];
+    const direct = new DurableSmartScheduler({
+      statePath: getSchedulerStatePath(workspaceRoot),
+      clock,
+      executor: {
+        execute: async (request) => {
+          observedTasks.push(request.job.target.prompt);
+          return createSuccessfulResult();
+        },
+      },
+    });
+
+    expect(await direct.triggerJobNow(job.id, "resume-queued")).toEqual(queued);
+    expect((await direct.runQueuedRuns({ recoverAbandoned: false }))[0]?.status).toBe("succeeded");
+    expect(observedTasks).toEqual(["Resume queued task"]);
+    expect(await direct.listRuns(job.id)).toHaveLength(1);
+    expect((await direct.getState()).mutationReceipts).toEqual(original.mutationReceipts);
+  });
+
+  it("archives deleted definitions locally while retaining their run history", async () => {
+    const workspaceRoot = await createWorkspace();
+    const statePath = getSchedulerStatePath(workspaceRoot);
+    const scheduler = new DurableSmartScheduler({ statePath });
+    const job = await scheduler.upsertJob({
+      triggers: [{ kind: "manual" }],
+      target: { workspaceRoot, prompt: "Retain history" },
+    });
+    const queued = await scheduler.triggerJobNow(job.id);
+    await scheduler.deleteJob(job.id, "delete-job");
+
+    const shared = JSON.parse(await readFile(getSchedulerDefinitionPath(workspaceRoot), "utf8")) as { jobs: unknown[] };
+    expect(shared.jobs).toEqual([]);
+    const restarted = new DurableSmartScheduler({ statePath });
+    expect(await restarted.listJobs()).toEqual([]);
+    expect((await restarted.getState()).jobs[0]).toMatchObject({ id: job.id, status: "deleted" });
+    expect((await restarted.listRuns(job.id))[0]).toEqual(queued.run);
+    expect((await restarted.deleteJob(job.id, "delete-job")).status).toBe("deleted");
+  });
+
+  it("keeps custom state paths in a single file with their runtime data", async () => {
+    const workspaceRoot = await createWorkspace();
+    const statePath = join(workspaceRoot, "custom-scheduler.json");
+    const scheduler = new DurableSmartScheduler({ statePath });
+    const job = await scheduler.upsertJob({
+      schedule: { type: "interval", intervalMs: 1_000 },
+      target: { workspaceRoot, prompt: "Custom storage" },
+    });
+    await scheduler.triggerJobNow(job.id, "custom-run");
+    const stored = JSON.parse(await readFile(statePath, "utf8")) as { schema: string; jobs: ScheduledJob[]; runs: unknown[] };
+    expect(stored.schema).toBe(SMART_SCHEDULER_SCHEMA);
+    expect(stored.jobs[0]!.target.prompt).toBe("Custom storage");
+    expect(stored.jobs[0]!.nextRunAt).toBeDefined();
+    expect(stored.runs).toHaveLength(1);
+    await expect(readFile(getSchedulerDefinitionPath(workspaceRoot), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readFile(getSchedulerStatePath(workspaceRoot), "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   });
 });
 
