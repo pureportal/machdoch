@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeTask } from "../execution.js";
+import { ensureWorkspaceStorage } from "../workspace-storage.js";
 import {
   createRalphRunLogger,
   runRalphFlow,
@@ -52,10 +53,11 @@ const createWorkspace = async () => {
   git("config", "user.name", "Test");
   git("config", "user.email", "test@example.invalid");
   git("config", "core.autocrlf", "false");
+  await ensureWorkspaceStorage(workspace);
   await writeFile(join(workspace, "source.txt"), "original\n");
   await writeFile(
     join(workspace, "verify.mjs"),
-    'import { mkdirSync, writeFileSync } from "node:fs"; mkdirSync(".machdoch", { recursive: true }); writeFileSync(".machdoch/verified.txt", process.cwd());\n',
+    'import { mkdirSync, writeFileSync } from "node:fs"; mkdirSync(".machdoch/local/state", { recursive: true }); writeFileSync(".machdoch/local/state/verified.txt", process.cwd());\n',
   );
   git("add", ".");
   git("commit", "-qm", "initial");
@@ -225,7 +227,7 @@ describe("RALPH flow integration", () => {
           title: "Done",
           utility: {
             type: "APPEND_JSONL",
-            path: ".machdoch/completed.jsonl",
+            path: ".machdoch/local/state/completed.jsonl",
             input: '{"status":"DONE"}',
             workOutcome: "DONE",
           },

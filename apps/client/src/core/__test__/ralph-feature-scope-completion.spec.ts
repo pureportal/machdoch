@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { afterEach, expect, it, vi } from "vitest";
 import { executeTask } from "../execution.js";
 import { runRalphFlow } from "../ralph.js";
+import { ensureWorkspaceStorage } from "../workspace-storage.js";
 import { getRalphStarterFlow } from "../ralph-starter-flows.js";
 import {
   createExecutionResult,
@@ -26,10 +27,10 @@ it.each([false, true])(
         join(workspace, "app.js"),
         "module.exports = { feature: false };\n",
       );
-      await writeFile(join(workspace, ".gitignore"), ".machdoch/\n");
+      await ensureWorkspaceStorage(workspace);
       for (const argumentsList of [
         ["init"],
-        ["add", "app.js", ".gitignore"],
+        ["add", "."],
         [
           "-c",
           "user.name=Test",
@@ -138,6 +139,8 @@ it.each([false, true])(
         join(
           workspace,
           ".machdoch",
+          "local",
+          "state",
           "feature-implementation",
           "outcomes.jsonl",
         ),

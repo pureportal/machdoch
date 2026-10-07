@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { normalizeLocalCommandCwd } from "./process-execution.js";
+import { RALPH_SOURCE_PATHS } from "./ralph-worktree-git.helper.js";
 
 export interface RalphGitChangedFileSnapshot {
   path: string;
@@ -56,30 +57,6 @@ const normalizeWorkspaceRelativePath = (
     : path;
 
   return relativePath.replace(/\\/gu, "/").replace(/^\.\/+/u, "");
-};
-
-const createGitContentPathspecs = (
-  gitRoot: string,
-  workspaceRoot: string,
-): string[] => {
-  const controlArtifactPath = relative(
-    gitRoot,
-    resolve(workspaceRoot, ".machdoch", "local"),
-  ).replace(/\\/gu, "/");
-
-  if (
-    isAbsolute(controlArtifactPath) ||
-    controlArtifactPath === ".." ||
-    controlArtifactPath.startsWith("../")
-  ) {
-    return ["."];
-  }
-
-  return [
-    ".",
-    `:(exclude)${controlArtifactPath}`,
-    `:(exclude)${controlArtifactPath}/**`,
-  ];
 };
 
 interface PorcelainV1StatusEntry {
@@ -257,7 +234,7 @@ export const collectRalphGitChangeSnapshot = async (
     realpath(options.workspaceRoot).catch(() => resolve(options.workspaceRoot)),
   ]);
   const rootOptions: RalphGitChangeSnapshotOptions = { ...options, cwd: root };
-  const contentPathspecs = createGitContentPathspecs(root, workspaceRoot);
+  const contentPathspecs = RALPH_SOURCE_PATHS;
   const includeHead = options.includeHead !== false;
   const includeDiffs = options.includeDiffs !== false;
   const [

@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { collectRalphGitChangeSnapshot } from "./ralph-git-change-snapshot.helper.js";
 
 describe("RALPH Git change snapshots", () => {
-  it("excludes engine control artifacts for a workspace nested inside its worktree", async () => {
+  it("includes shared files and excludes tracked local state across nested workspaces", async () => {
     if (spawnSync("git", ["--version"]).status !== 0) {
       return;
     }
@@ -14,10 +14,18 @@ describe("RALPH Git change snapshots", () => {
     const root = await mkdtemp(join(tmpdir(), "ralph-git-snapshot-"));
     const workspace = join(root, "packages", "app");
     const artifactPath = join(workspace, "artifact.js");
+    const localDirectories = [
+      join(root, ".machdoch/local/state"),
+      join(root, "packages/other/.machdoch/local/state"),
+    ];
 
     try {
       await mkdir(workspace, { recursive: true });
       await writeFile(artifactPath, "export const value = 1;\n", "utf8");
+      for (const directory of localDirectories) {
+        await mkdir(directory, { recursive: true });
+        await writeFile(join(directory, "state.json"), "{}");
+      }
       expect(spawnSync("git", ["init"], { cwd: root }).status).toBe(0);
       expect(
         spawnSync("git", ["config", "user.email", "test@example.com"], {
@@ -33,6 +41,9 @@ describe("RALPH Git change snapshots", () => {
       ).toBe(0);
 
       await writeFile(artifactPath, "export const value = 2;\n", "utf8");
+      for (const directory of localDirectories) {
+        await writeFile(join(directory, "state.json"), '{"changed":true}');
+      }
       const runDirectory = join(
         workspace,
         ".machdoch",
@@ -43,6 +54,7 @@ describe("RALPH Git change snapshots", () => {
         "run-1",
       );
       await mkdir(runDirectory, { recursive: true });
+      await writeFile(join(workspace, ".machdoch/config.json"), "{}");
       await writeFile(join(runDirectory, "run.json"), '{"status":"running"}');
       await writeFile(
         join(
@@ -63,10 +75,13 @@ describe("RALPH Git change snapshots", () => {
         maxOutputBytes: 1_000_000,
       });
 
-      expect(snapshot.changedFiles).toEqual(["artifact.js"]);
+      expect([...snapshot.changedFiles].sort()).toEqual([
+        ".machdoch/config.json",
+        "artifact.js",
+      ]);
       expect(snapshot.diffFiles).toEqual(["artifact.js"]);
-      expect(snapshot.status).not.toContain(".machdoch");
-      expect(snapshot.diffStat).not.toContain(".machdoch");
+      expect(snapshot.status).not.toContain(".machdoch/local");
+      expect(snapshot.diffStat).not.toContain(".machdoch/local");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
