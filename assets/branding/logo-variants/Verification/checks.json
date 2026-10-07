@@ -1,0 +1,66 @@
+{
+  "svgRasterChecks": 144,
+  "combinations": 144,
+  "downloads": [
+    {
+      "theme": "light",
+      "color": "neutral",
+      "layout": "horizontal",
+      "filename": "machdoch-01-action-m-01-grotesk-horizontal.svg"
+    },
+    {
+      "theme": "light",
+      "color": "neutral",
+      "layout": "stacked",
+      "filename": "machdoch-01-action-m-01-grotesk-stacked.svg"
+    },
+    {
+      "theme": "light",
+      "color": "accent",
+      "layout": "horizontal",
+      "filename": "machdoch-01-action-m-01-grotesk-horizontal.svg"
+    },
+    {
+      "theme": "light",
+      "color": "accent",
+      "layout": "stacked",
+      "filename": "machdoch-01-action-m-01-grotesk-stacked.svg"
+    },
+    {
+      "theme": "dark",
+      "color": "neutral",
+      "layout": "horizontal",
+      "filename": "machdoch-01-action-m-01-grotesk-horizontal.svg"
+    },
+    {
+      "theme": "dark",
+      "color": "neutral",
+      "layout": "stacked",
+      "filename": "machdoch-01-action-m-01-grotesk-stacked.svg"
+    },
+    {
+      "theme": "dark",
+      "color": "accent",
+      "layout": "horizontal",
+      "filename": "machdoch-01-action-m-01-grotesk-horizontal.svg"
+    },
+    {
+      "theme": "dark",
+      "color": "accent",
+      "layout": "stacked",
+      "filename": "machdoch-01-action-m-01-grotesk-stacked.svg"
+    }
+  ],
+  "individualDownloads": 2,
+  "widthsChecked": [
+    320,
+    390,
+    768,
+    1440
+  ],
+  "browser": "Microsoft Edge / Playwright",
+  "offline": true,
+  "keyboardSelection": true,
+  "pageErrors": [],
+  "externalRequests": []
+}

@@ -1,0 +1,89 @@
+[
+  {
+    "id": "01-grotesk",
+    "name": "Grotesk",
+    "family": "spacegrotesk",
+    "text": "machdoch",
+    "weight": 600
+  },
+  {
+    "id": "02-humanist",
+    "name": "Humanist",
+    "family": "sourcesans3",
+    "text": "machdoch",
+    "weight": 650
+  },
+  {
+    "id": "03-geometric",
+    "name": "Geometric",
+    "family": "manrope",
+    "text": "machdoch",
+    "weight": 650
+  },
+  {
+    "id": "04-precise",
+    "name": "Precise",
+    "family": "sora",
+    "text": "machdoch",
+    "weight": 600
+  },
+  {
+    "id": "05-soft",
+    "name": "Soft",
+    "family": "outfit",
+    "text": "machdoch",
+    "weight": 550
+  },
+  {
+    "id": "06-titlecase",
+    "name": "Titlecase",
+    "family": "plusjakartasans",
+    "text": "Machdoch",
+    "weight": 600
+  },
+  {
+    "id": "07-rounded",
+    "name": "Rounded",
+    "family": "nunito",
+    "text": "machdoch",
+    "weight": 750
+  },
+  {
+    "id": "08-uppercase",
+    "name": "Uppercase",
+    "family": "urbanist",
+    "text": "MACHDOCH",
+    "weight": 650,
+    "tracking": 35
+  },
+  {
+    "id": "09-mono",
+    "name": "Mono",
+    "family": "ibmplexmono",
+    "text": "machdoch",
+    "weight": 500
+  },
+  {
+    "id": "10-wide",
+    "name": "Wide",
+    "family": "syne",
+    "text": "machdoch",
+    "weight": 600
+  },
+  {
+    "id": "11-editorial",
+    "name": "Editorial",
+    "family": "sourceserif4",
+    "text": "Machdoch",
+    "weight": 600,
+    "axes": { "opsz": 32 }
+  },
+  {
+    "id": "12-compact-title",
+    "name": "Compact Title",
+    "family": "spacegrotesk",
+    "text": "Machdoch",
+    "weight": 650,
+    "tracking": -15
+  }
+]
