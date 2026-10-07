@@ -10,6 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ensureWorkspaceStorage } from "../workspace-storage.js";
 import { integrateRalphRunWorktree as integrateWorktree } from "./ralph-run-integration.helper.js";
 import { prepareRalphRunWorktree as prepareWorktree } from "./ralph-run-worktree.helper.js";
 import * as streamingCommand from "./streaming-command.js";
@@ -84,10 +85,19 @@ const createRepository = async () => {
   await writeFile(join(repository, "source.txt"), "original\n");
   await writeFile(join(repository, "binary.bin"), Buffer.from([0, 1, 2]));
   await writeFile(join(repository, "deleted.txt"), "delete me\n");
+  await ensureWorkspaceStorage(repository);
   git(repository, "add", ".");
   git(repository, "commit", "-qm", "initial");
   const createRun = async (id: string, workspace = repository) => {
-    const directory = join(workspace, ".machdoch", "local", "state", "ralph", "runs", id);
+    const directory = join(
+      workspace,
+      ".machdoch",
+      "local",
+      "state",
+      "ralph",
+      "runs",
+      id,
+    );
     await mkdir(directory, { recursive: true });
     return {
       directory,
@@ -105,16 +115,23 @@ const noVerification = async (): Promise<void> => undefined;
 describe("automatic RALPH integration", () => {
   it("integrates while ignored runtime data exists in the verification candidate", async () => {
     const { repository, createRun } = await createRepository();
-    await writeFile(join(repository, ".gitignore"), ".machdoch\n");
-    git(repository, "add", ".gitignore");
-    git(repository, "commit", "-qm", "ignore runtime data");
     const { directory, worktree } = await createRun("ignored-runtime");
     await writeFile(join(worktree.worktreeRoot, "source.txt"), "candidate\n");
     const verify = vi.fn(async (candidate: string) => {
-      await mkdir(join(candidate, ".machdoch"), { recursive: true });
-      await writeFile(join(candidate, ".machdoch", "private.json"), "{}");
-      await mkdir(join(candidate, "nested"), { recursive: true });
-      await writeFile(join(candidate, "nested", ".machdoch"), "private");
+      await mkdir(join(candidate, ".machdoch/local/state"), {
+        recursive: true,
+      });
+      await writeFile(
+        join(candidate, ".machdoch/local/state/private.json"),
+        "{}",
+      );
+      await mkdir(join(candidate, "nested/.machdoch/local/state"), {
+        recursive: true,
+      });
+      await writeFile(
+        join(candidate, "nested/.machdoch/local/state/private.json"),
+        "private",
+      );
     });
 
     const result = await integrateRalphRunWorktree(worktree, directory, {
@@ -131,13 +148,15 @@ describe("automatic RALPH integration", () => {
       "candidate\n",
     );
     await expect(
-      readFile(join(repository, "nested", ".machdoch")),
+      readFile(join(repository, "nested/.machdoch/local/state/private.json")),
     ).rejects.toMatchObject({ code: "ENOENT" });
     expect(
       await readFile(
         join(
           repository,
           ".machdoch",
+          "local",
+          "state",
           "ralph",
           "runs",
           "ignored-runtime",
@@ -184,9 +203,11 @@ describe("automatic RALPH integration", () => {
       join(second.worktree.worktreeRoot, "second.txt"),
       "second\n",
     );
-    await mkdir(join(second.worktree.worktreeRoot, ".machdoch"));
+    await mkdir(join(second.worktree.worktreeRoot, ".machdoch/local/state"), {
+      recursive: true,
+    });
     await writeFile(
-      join(second.worktree.worktreeRoot, ".machdoch", "private.json"),
+      join(second.worktree.worktreeRoot, ".machdoch/local/state/private.json"),
       "{}",
     );
     let activeVerifications = 0;
@@ -229,7 +250,7 @@ describe("automatic RALPH integration", () => {
       readFile(join(repository, "deleted.txt")),
     ).rejects.toMatchObject({ code: "ENOENT" });
     await expect(
-      readFile(join(repository, ".machdoch", "private.json")),
+      readFile(join(repository, ".machdoch/local/state/private.json")),
     ).rejects.toMatchObject({ code: "ENOENT" });
     expect(git(repository, "diff", "--cached", "--binary")).toBe(staged);
     expect(git(repository, "rev-parse", "HEAD")).toBe(head);
