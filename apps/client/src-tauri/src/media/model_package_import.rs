@@ -29,6 +29,7 @@ struct PackageInventory {
     tensor_count: u32,
     review_token: String,
     pipeline: String,
+    student_architectures: Vec<String>,
 }
 
 fn inventory(source: &Path) -> MediaResult<PackageInventory> {
@@ -42,6 +43,7 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
     let root = fs::canonicalize(source)
         .map_err(|error| format!("Could not open model folder: {error}"))?;
     let mut files = Vec::new();
+    let mut student_architectures = Vec::new();
     let mut pending = vec![(root.clone(), 0)];
     while let Some((directory, depth)) = pending.pop() {
         if depth > 8 {
@@ -63,14 +65,14 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
                 }
                 pending.push((path, depth + 1));
             } else if metadata.is_file() {
-                let published_student = open_models::profiles().iter().find_map(|profile| {
-                    profile.distillation.as_ref().filter(|student| {
-                        path == root.join(&student.checkpoint_file)
-                            && path.extension().and_then(|extension| extension.to_str())
-                                == Some("bin")
-                    })
+                let student_profile = open_models::profiles().iter().find(|profile| {
+                    profile
+                        .distillation
+                        .as_ref()
+                        .is_some_and(|student| path == root.join(&student.checkpoint_file))
                 });
-                if let Some(student) = published_student {
+                if let Some(profile) = student_profile {
+                    let student = profile.distillation.as_ref().unwrap();
                     if model_import::hash_file(&path)?
                         != (
                             student.checkpoint_byte_size,
@@ -82,12 +84,13 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
                             student.checkpoint_file
                         ));
                     }
+                    student_architectures.push(profile.architecture.clone());
                 }
                 if path
                     .extension()
                     .and_then(|extension| extension.to_str())
                     .is_some_and(|extension| {
-                        published_student.is_none()
+                        student_profile.is_none()
                             && matches!(
                                 extension,
                                 "py" | "pyc" | "bin" | "pt" | "pth" | "ckpt" | "gguf"
@@ -308,6 +311,7 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
         tensor_count,
         review_token: format!("{:x}", hasher.finalize()),
         pipeline,
+        student_architectures,
     })
 }
 
@@ -407,59 +411,80 @@ fn cogvideo_architecture(root: &Path, pipeline: &str) -> MediaResult<String> {
 
 pub(super) fn inspect(source: &Path) -> MediaResult<MediaLocalModelImportInspection> {
     let package = inventory(source)?;
+    inspect_package(&package)
+}
+
+fn inspect_package(package: &PackageInventory) -> MediaResult<MediaLocalModelImportInspection> {
     let matches = open_models::profiles()
         .iter()
         .filter(|profile| profile.pipeline == package.pipeline)
         .collect::<Vec<_>>();
-    let detected = match package.pipeline.as_str() {
-        "StableDiffusionXLPipeline" => Some("stable-diffusion-xl".to_string()),
-        "StableDiffusion3Pipeline" => Some("stable-diffusion-3".to_string()),
-        "Flux2KleinPipeline" => flux2_klein_architecture(&package.root)?,
-        "CogVideoXPipeline" | "CogVideoXImageToVideoPipeline" => {
-            Some(cogvideo_architecture(&package.root, &package.pipeline)?)
-        }
-        "ZImagePipeline" => {
-            let index = read_json(&package.root.join("model_index.json"))?;
-            match index.get("_machdoch_training_architecture") {
-                Some(Value::String(architecture))
-                    if matches!(architecture.as_str(), "z-image" | "z-image-turbo") =>
-                {
-                    Some(architecture.clone())
-                }
-                None => None,
-                _ => return Err("The Z-Image training architecture is invalid.".to_string()),
+    let students = matches
+        .iter()
+        .filter(|profile| {
+            package
+                .student_architectures
+                .contains(&profile.architecture)
+        })
+        .collect::<Vec<_>>();
+    for profile in &students {
+        validate_student_package(package, profile)?;
+    }
+    let detected = if let Some(profile) = students.first() {
+        Some(profile.architecture.clone())
+    } else {
+        match package.pipeline.as_str() {
+            "StableDiffusionXLPipeline" => Some("stable-diffusion-xl".to_string()),
+            "StableDiffusion3Pipeline" => Some("stable-diffusion-3".to_string()),
+            "Flux2KleinPipeline" => flux2_klein_architecture(&package.root)?,
+            "CogVideoXPipeline" | "CogVideoXImageToVideoPipeline" => {
+                Some(cogvideo_architecture(&package.root, &package.pipeline)?)
             }
-        }
-        "Krea2Pipeline" => {
-            let index = read_json(&package.root.join("model_index.json"))?;
-            match index["is_distilled"].as_bool() {
-                Some(true) => Some("krea-2".to_string()),
-                Some(false) => Some("krea-2-raw".to_string()),
-                None => return Err("The KREA 2 model index is missing is_distilled.".to_string()),
-            }
-        }
-        "FluxPipeline" => {
-            let config = read_json(&package.root.join("transformer/config.json"))?;
-            match config["guidance_embeds"].as_bool() {
-                Some(true) => Some("flux-1-dev".to_string()),
-                Some(false) => Some("flux-1-schnell".to_string()),
-                None => {
-                    return Err(
-                        "The FLUX.1 transformer configuration is missing guidance_embeds."
-                            .to_string(),
-                    )
+            "ZImagePipeline" => {
+                let index = read_json(&package.root.join("model_index.json"))?;
+                match index.get("_machdoch_training_architecture") {
+                    Some(Value::String(architecture))
+                        if matches!(architecture.as_str(), "z-image" | "z-image-turbo") =>
+                    {
+                        Some(architecture.clone())
+                    }
+                    None => None,
+                    _ => return Err("The Z-Image training architecture is invalid.".to_string()),
                 }
             }
-        }
-        "StableDiffusionPipeline" => {
-            let config = read_json(&package.root.join("text_encoder/config.json"))?;
-            match config["hidden_size"].as_u64() {
-                Some(768) => Some("stable-diffusion-1".to_string()),
-                Some(1024) => Some("stable-diffusion-2".to_string()),
-                _ => None,
+            "Krea2Pipeline" => {
+                let index = read_json(&package.root.join("model_index.json"))?;
+                match index["is_distilled"].as_bool() {
+                    Some(true) => Some("krea-2".to_string()),
+                    Some(false) => Some("krea-2-raw".to_string()),
+                    None => {
+                        return Err("The KREA 2 model index is missing is_distilled.".to_string())
+                    }
+                }
             }
+            "FluxPipeline" => {
+                let config = read_json(&package.root.join("transformer/config.json"))?;
+                match config["guidance_embeds"].as_bool() {
+                    Some(true) => Some("flux-1-dev".to_string()),
+                    Some(false) => Some("flux-1-schnell".to_string()),
+                    None => {
+                        return Err(
+                            "The FLUX.1 transformer configuration is missing guidance_embeds."
+                                .to_string(),
+                        )
+                    }
+                }
+            }
+            "StableDiffusionPipeline" => {
+                let config = read_json(&package.root.join("text_encoder/config.json"))?;
+                match config["hidden_size"].as_u64() {
+                    Some(768) => Some("stable-diffusion-1".to_string()),
+                    Some(1024) => Some("stable-diffusion-2".to_string()),
+                    _ => None,
+                }
+            }
+            _ => (matches.len() == 1).then(|| matches[0].architecture.clone()),
         }
-        _ => (matches.len() == 1).then(|| matches[0].architecture.clone()),
     };
     let name = package
         .root
@@ -477,8 +502,15 @@ pub(super) fn inspect(source: &Path) -> MediaResult<MediaLocalModelImportInspect
         tensor_count: package.tensor_count,
         header_digest: package.review_token.clone(),
         duplicate: None,
-        review_token: package.review_token,
-        suggested_display_name: name,
+        review_token: package.review_token.clone(),
+        suggested_display_name: students
+            .first()
+            .map(|profile| profile.display_name.clone())
+            .unwrap_or(name),
+        available_architectures: students
+            .iter()
+            .map(|profile| profile.architecture.clone())
+            .collect(),
         architecture_confidence: if detected.is_some() {
             "high"
         } else {
@@ -486,7 +518,7 @@ pub(super) fn inspect(source: &Path) -> MediaResult<MediaLocalModelImportInspect
         }
         .to_string(),
         detected_architecture: detected,
-        metadata_summary: vec![package.pipeline],
+        metadata_summary: vec![package.pipeline.clone()],
         warnings: Vec::new(),
     })
 }
@@ -525,11 +557,9 @@ fn validate_student_package(
     }
     let checkpoint = package.root.join(&student.checkpoint_file);
     if !package.files.contains(&checkpoint)
-        || model_import::hash_file(&checkpoint)?
-            != (
-                student.checkpoint_byte_size,
-                student.checkpoint_sha256.clone(),
-            )
+        || !package
+            .student_architectures
+            .contains(&profile.architecture)
     {
         return Err(format!(
             "Import the published student checkpoint at {}",
@@ -570,11 +600,18 @@ pub(super) fn import_reviewed(
     model_import::validated_text("displayName", &request.display_name, 120)?;
     model_import::validated_source_url(request.source_url.as_deref())?;
     model_import::validated_optional_text("licenseName", request.license_name.as_deref(), 256)?;
-    let inspection = inspect(Path::new(&request.source_path))?;
+    let package = inventory(Path::new(&request.source_path))?;
+    let inspection = inspect_package(&package)?;
     if request.review_token != inspection.review_token {
         return Err("The model folder changed. Inspect it again.".to_string());
     }
-    let package = inventory(Path::new(&request.source_path))?;
+    if !inspection.available_architectures.is_empty()
+        && !inspection
+            .available_architectures
+            .contains(&request.architecture)
+    {
+        return Err("Choose a student included in this folder.".to_string());
+    }
     if package.pipeline == "StableDiffusionXLPipeline"
         && !package.files.iter().any(|path| {
             path.parent() == Some(package.root.join("unet").as_path())

@@ -29,17 +29,40 @@ struct FileSnapshot {
     path: String,
     byte_size: u64,
     sha256: String,
+    download_url: Option<String>,
+}
+
+fn snapshots() -> &'static [ManifestSnapshot] {
+    static SNAPSHOTS: OnceLock<Vec<ManifestSnapshot>> = OnceLock::new();
+    SNAPSHOTS.get_or_init(|| {
+        let mut snapshots: Vec<ManifestSnapshot> =
+            serde_json::from_str(include_str!("open_model_manifests.json"))
+                .expect("bundled media installation manifests must be valid");
+        snapshots.extend(
+            serde_json::from_str::<Vec<ManifestSnapshot>>(include_str!(
+                "student_model_manifests.json"
+            ))
+            .expect("bundled student installation manifests must be valid"),
+        );
+        snapshots
+    })
+}
+
+pub(super) fn file_download_url(model_id: &str, path: &str) -> Option<&'static str> {
+    snapshots()
+        .iter()
+        .find(|snapshot| snapshot.model_id == model_id)?
+        .files
+        .iter()
+        .find(|file| file.path == path)?
+        .download_url
+        .as_deref()
 }
 
 pub(super) fn manifests() -> &'static [BuiltinModelManifest] {
-    static SNAPSHOTS: OnceLock<Vec<ManifestSnapshot>> = OnceLock::new();
     static MANIFESTS: OnceLock<Vec<BuiltinModelManifest>> = OnceLock::new();
-    let snapshots = SNAPSHOTS.get_or_init(|| {
-        serde_json::from_str(include_str!("open_model_manifests.json"))
-            .expect("bundled media installation manifests must be valid")
-    });
     MANIFESTS.get_or_init(|| {
-        snapshots
+        snapshots()
             .iter()
             .map(|snapshot| BuiltinModelManifest {
                 model_id: &snapshot.model_id,

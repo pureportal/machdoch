@@ -70,6 +70,7 @@ const inspection: MediaLocalModelImportInspection = {
   reviewToken: "review:model",
   suggestedDisplayName: "Moody Krea 2 Mix v50",
   detectedArchitecture: "krea-2",
+  availableArchitectures: [],
   architectureConfidence: "high",
   metadataSummary: [],
   warnings: [],
@@ -276,6 +277,134 @@ it("inspects a complete model folder selected through the directory picker", asy
   );
   expect(runtimeMocks.openDialog).toHaveBeenCalledWith(
     expect.objectContaining({ directory: true, multiple: false }),
+  );
+  expect(screen.getByRole("button", { name: "Import model" })).toBeTruthy();
+});
+
+it("guides PDMD setup before picking a folder", () => {
+  render(
+    createElement(
+      MediaAssetImportDialog,
+      createProps({ initialArchitecture: "minimax-h3-pdmd-2step" }),
+    ),
+  );
+  expect(
+    screen.getByRole("link", { name: "Download student" }).getAttribute("href"),
+  ).toContain("/lora_model_0.safetensors");
+  expect(
+    screen.getByRole("link", { name: "full MiniMax H3 base" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByText("distillation/pdmd_2nfe.safetensors", {
+      selector: "code",
+    }),
+  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Model folder" })).toBeTruthy();
+  expect(
+    screen.queryByRole("button", { name: "Drop or select a file" }),
+  ).toBeNull();
+  expect(screen.getByText(/128 GB RAM/u)).toBeTruthy();
+  expect(screen.getByRole("link", { name: "H3 licence" })).toBeTruthy();
+});
+
+it("selects an included SDXL student and imports with its published terms", async () => {
+  const sourcePath = "C:\\models\\students";
+  const props = createProps({ initialPath: sourcePath });
+  const view = render(createElement(MediaAssetImportDialog, props));
+  await waitFor(() =>
+    expect(props.onInspectModel).toHaveBeenCalledWith(sourcePath),
+  );
+  view.rerender(
+    createElement(MediaAssetImportDialog, {
+      ...props,
+      modelInspection: {
+        ...inspection,
+        sourcePath,
+        suggestedDisplayName: "SDXL DMAD 4-step",
+        detectedArchitecture: "stable-diffusion-xl-dmad-4step",
+        availableArchitectures: [
+          "stable-diffusion-xl-dmad-4step",
+          "stable-diffusion-xl-dmad-1step",
+        ],
+      },
+    }),
+  );
+  const selector = screen.getByRole("combobox", {
+    name: "Base model",
+  }) as HTMLSelectElement;
+  expect(selector.value).toBe("stable-diffusion-xl-dmad-4step");
+  expect(screen.queryByRole("option", { name: "SDXL" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "License" })).toBeNull();
+  expect(screen.queryByRole("combobox", { name: "Commercial use" })).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Source URL" })).toBeNull();
+  fireEvent.change(selector, {
+    target: { value: "stable-diffusion-xl-dmad-1step" },
+  });
+  expect(
+    (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
+  ).toBe("SDXL DMAD 1-step");
+  fireEvent.click(screen.getByRole("button", { name: "Import model" }));
+  await waitFor(() =>
+    expect(props.onImportModel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        architecture: "stable-diffusion-xl-dmad-1step",
+        displayName: "SDXL DMAD 1-step",
+        licenseName: "CreativeML Open RAIL++-M",
+        commercialUse: "review-required",
+        sourceUrl: "https://huggingface.co/ZhengmingYu/DMAD",
+      }),
+      expect.objectContaining({
+        sourceUrl: "https://huggingface.co/ZhengmingYu/DMAD",
+      }),
+    ),
+  );
+});
+
+it("retains the variant selected in the model library when a folder contains both students", async () => {
+  const sourcePath = "C:\\models\\students";
+  const props = createProps({
+    initialPath: sourcePath,
+    initialArchitecture: "stable-diffusion-xl-dmad-1step",
+  });
+  const view = render(createElement(MediaAssetImportDialog, props));
+  await waitFor(() =>
+    expect(props.onInspectModel).toHaveBeenCalledWith(sourcePath),
+  );
+  view.rerender(
+    createElement(MediaAssetImportDialog, {
+      ...props,
+      modelInspection: {
+        ...inspection,
+        sourcePath,
+        suggestedDisplayName: "SDXL DMAD 4-step",
+        detectedArchitecture: "stable-diffusion-xl-dmad-4step",
+        availableArchitectures: [
+          "stable-diffusion-xl-dmad-4step",
+          "stable-diffusion-xl-dmad-1step",
+        ],
+      },
+    }),
+  );
+  expect(
+    (screen.getByRole("combobox", { name: "Base model" }) as HTMLSelectElement)
+      .value,
+  ).toBe("stable-diffusion-xl-dmad-1step");
+  expect(
+    (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
+  ).toBe("SDXL DMAD 1-step");
+});
+
+it("accepts a student folder path on a connected client", async () => {
+  vi.spyOn(mediaPlatform, "isRemoteMedia").mockReturnValue(true);
+  const props = createProps({ initialArchitecture: "minimax-h3-pdmd-4step" });
+  render(createElement(MediaAssetImportDialog, props));
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Connected client file path" }),
+    { target: { value: " C:\\models\\pdmd " } },
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Use folder" }));
+  await waitFor(() =>
+    expect(props.onInspectModel).toHaveBeenCalledWith("C:\\models\\pdmd"),
   );
   expect(screen.getByRole("button", { name: "Import model" })).toBeTruthy();
 });

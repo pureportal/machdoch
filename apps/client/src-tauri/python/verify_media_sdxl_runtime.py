@@ -55,8 +55,13 @@ def verify(model_root: Path, output_root: Path, architectures: list[str], baseli
             cases = [
                 ("cold", "a photo of a cat", 42),
                 ("warm-repeat", "a photo of a cat", 42),
-                ("warm-new-prompt", "A red ceramic teapot on a wooden table, soft window light, photograph", 43),
-            ] if profile else [("baseline", "a photo of a cat", 42)]
+            ]
+            if profile:
+                cases.extend([
+                    ("warm-new-prompt", "A red ceramic teapot on a wooden table, soft window light, photograph", 42),
+                    ("warm-new-seed", "a photo of a cat", 43),
+                ])
+            records = []
             for name, prompt, seed in cases:
                 run_root = output_root / f"{architecture}-{name}"
                 run_root.mkdir()
@@ -82,6 +87,8 @@ def verify(model_root: Path, output_root: Path, architectures: list[str], baseli
                 elapsed = time.monotonic() - started
                 image_path = run_root / result["outputs"][0]["fileName"]
                 pixels = np.asarray(Image.open(image_path).convert("RGB"))
+                if pixels.shape != (1024, 1024, 3):
+                    raise RuntimeError("SDXL verification output has incorrect dimensions")
                 record = {"architecture": architecture, "case": name, "seconds": elapsed,
                           "peakAllocatedBytes": torch.cuda.max_memory_allocated(),
                           "peakReservedBytes": torch.cuda.max_memory_reserved(),
@@ -89,15 +96,16 @@ def verify(model_root: Path, output_root: Path, architectures: list[str], baseli
                           "pixelMean": float(pixels.mean()), "pixelStd": float(pixels.std()),
                           "image": str(image_path), "request": request, "response": result}
                 summary["runs"].append(record)
+                records.append(record)
                 (output_root / "results.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
                 print(json.dumps({key: record[key] for key in ("architecture", "case", "seconds", "peakAllocatedBytes", "pixelSha256", "pixelStd")}), flush=True)
                 release_allocator(torch, device)
+            if records[0]["pixelSha256"] != records[1]["pixelSha256"]:
+                raise RuntimeError("Repeated SDXL seed produced different pixels")
             if profile:
-                records = summary["runs"][-3:]
-                if records[0]["pixelSha256"] != records[1]["pixelSha256"]:
-                    raise RuntimeError("Repeated SDXL student seed produced different pixels")
-                if records[1]["pixelSha256"] == records[2]["pixelSha256"]:
-                    raise RuntimeError("SDXL student ignored the changed prompt and seed")
+                for record in records[2:]:
+                    if records[1]["pixelSha256"] == record["pixelSha256"]:
+                        raise RuntimeError(f"SDXL student ignored {record['case']}")
                 pipeline = cache.value["pipeline"]
                 generator = torch.Generator(device=device).manual_seed(42)
                 timesteps = []

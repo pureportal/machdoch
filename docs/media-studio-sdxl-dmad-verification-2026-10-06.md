@@ -1,6 +1,6 @@
 # SDXL DMAD verification
 
-October 6, 2026. The SDXL one-step and four-step integrations are implemented. Both real student checkpoints passed native package review. The four-step runtime loaded its real UNet and base components successfully in the initial attempt, but image generation remains unverified. The recovery attempt also encountered concurrent full-model training and was stopped when host commit headroom became insufficient. No successful rendered image or valid inference benchmark is claimed.
+October 6, 2026. The SDXL one-step and four-step integrations are implemented. Both real student checkpoints passed native package review. The attempts recorded below were interrupted by concurrent training and produced no verified render. Both students subsequently passed real image generation, determinism, and sampling checks; see the [October 7 live verification](media-studio-sdxl-dmad-live-verification-2026-10-07.md) for current results and the VAE memory fix.
 
 ## Implementation
 

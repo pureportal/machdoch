@@ -278,6 +278,9 @@ export const MediaAssetsView = ({
   const [civitaiOpen, setCivitaiOpen] = useState(false);
   const [civitaiSource, setCivitaiSource] = useState("");
   const [importPath, setImportPath] = useState<string | undefined>();
+  const [importArchitecture, setImportArchitecture] = useState<
+    string | undefined
+  >();
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(
     openAssetId ?? null,
@@ -527,6 +530,7 @@ export const MediaAssetsView = ({
         } else if (model.management.acquisition === "file-import") {
           setSelectedResourceId(null);
           setImportPath(undefined);
+          setImportArchitecture(model.architecture ?? undefined);
           setImportOpen(true);
         }
       }
@@ -699,6 +703,7 @@ export const MediaAssetsView = ({
           type="button"
           onClick={() => {
             setImportPath(undefined);
+            setImportArchitecture(undefined);
             setImportOpen(true);
           }}
           disabled={!importSupported}
@@ -815,6 +820,7 @@ export const MediaAssetsView = ({
                     disabled={importLoading}
                     onClick={() => {
                       setImportPath(file.path);
+                      setImportArchitecture(undefined);
                       setImportOpen(true);
                     }}
                   >
@@ -925,6 +931,9 @@ export const MediaAssetsView = ({
                           disabled={!importSupported}
                           onClick={() => {
                             setImportPath(undefined);
+                            setImportArchitecture(
+                              model.architecture ?? undefined,
+                            );
                             setImportOpen(true);
                           }}
                         >
@@ -1456,11 +1465,19 @@ export const MediaAssetsView = ({
           model={installModel}
           onClose={() => setInstallModel(null)}
           onInstalled={onRefreshModels}
+          onUseModel={() => {
+            const model = catalog.models.find(
+              (model) => model.id === installModel.id,
+            );
+            if (model) onUseModel(model);
+            setInstallModel(null);
+          }}
         />
       ) : null}
       {importOpen ? (
         <MediaAssetImportDialog
           initialPath={importPath}
+          initialArchitecture={importArchitecture}
           assets={assets}
           categories={categories}
           loading={importLoading}
@@ -1477,12 +1494,16 @@ export const MediaAssetsView = ({
           onImportAddon={onImportAddon}
           onImportSampleUrl={onImportSampleUrl}
           onViewResource={(resourceId) => {
-            if (showResource(resourceId)) setImportOpen(false);
+            if (showResource(resourceId)) {
+              setImportOpen(false);
+              setImportArchitecture(undefined);
+            }
           }}
           onDismissInspection={onDismissImport}
           onManageCategories={() => setCategoryManagerOpen(true)}
           onClose={() => {
             setImportOpen(false);
+            setImportArchitecture(undefined);
             onDismissImport();
           }}
         />

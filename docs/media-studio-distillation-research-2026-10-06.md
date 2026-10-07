@@ -100,7 +100,7 @@ The live Hugging Face file API confirmed these additional [DMAD students](https:
 | Wan2.1-T2V-1.3B | 4 | About 2.8 GB |
 | Wan2.1-T2V-14B | 4 | About 28.6 GB |
 
-These are trained students, so reproducing their inference does not require student training. SDXL has since been integrated and its real components loaded, but rendering is blocked by concurrent training; see the [SDXL verification report](media-studio-sdxl-dmad-verification-2026-10-06.md). Wan2.1-1.3B remains a candidate after freeing memory and adding its loading and sampling path. Other architectures still require a matching released student or separate distillation training.
+These are trained students, so reproducing their inference does not require student training. Both SDXL students have since passed real 1024×1024 generation, repeatability, and sampling checks on the RX 9070; see the [SDXL live verification report](media-studio-sdxl-dmad-live-verification-2026-10-07.md). End-to-end speedup was not established. Wan2.1-1.3B remains a candidate after adding its loading and sampling path. Other architectures still require a matching released student or separate distillation training.
 
 The H3 student downloads remain [DMAD](https://huggingface.co/ZhengmingYu/DMAD), [PDMD 4-step](https://huggingface.co/pdmd2026/pdmd_4NFE_lora), and [PDMD 2-step](https://huggingface.co/pdmd2026/pdmd_2NFE_lora), each about 1.4 GB per adapter, plus the original H3 components. EU use of H3 and its derivatives requires a separate MiniMax grant under the published agreement; changing the host or training another H3 student does not establish that grant.
 

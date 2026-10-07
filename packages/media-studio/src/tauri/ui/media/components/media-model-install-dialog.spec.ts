@@ -78,6 +78,7 @@ it("reopens an active download without creating another job", async () => {
     createElement(MediaModelInstallDialog, {
       model,
       onClose: vi.fn(),
+      onUseModel: vi.fn(),
       onInstalled: vi.fn(async () => undefined),
     }),
   );
@@ -100,6 +101,7 @@ it("starts a download with the reviewed package identity and supports cancellati
     createElement(MediaModelInstallDialog, {
       model,
       onClose: vi.fn(),
+      onUseModel: vi.fn(),
       onInstalled: vi.fn(async () => undefined),
     }),
   );
@@ -150,6 +152,7 @@ it("ignores a status response started before cancellation", async () => {
     createElement(MediaModelInstallDialog, {
       model,
       onClose: vi.fn(),
+      onUseModel: vi.fn(),
       onInstalled: vi.fn(async () => undefined),
     }),
   );
@@ -177,6 +180,7 @@ it("pauses status polling until cancellation completes", async () => {
   const props = {
     model,
     onClose: vi.fn(),
+    onUseModel: vi.fn(),
     onInstalled: vi.fn(async () => undefined),
   };
   const view = render(createElement(MediaModelInstallDialog, props));
@@ -200,6 +204,7 @@ it("requires acceptance when the package terms require it", async () => {
     createElement(MediaModelInstallDialog, {
       model,
       onClose: vi.fn(),
+      onUseModel: vi.fn(),
       onInstalled: vi.fn(async () => undefined),
     }),
   );
@@ -219,4 +224,73 @@ it("requires acceptance when the package terms require it", async () => {
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(false);
+});
+
+it("lets the user select the model after installation completes", async () => {
+  let finishRefresh!: () => void;
+  const onInstalled = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finishRefresh = resolve;
+      }),
+  );
+  const onUseModel = vi.fn();
+  runtime.start.mockResolvedValue({ ...job, status: "installed", progress: 1 });
+  render(
+    createElement(MediaModelInstallDialog, {
+      model,
+      onClose: vi.fn(),
+      onInstalled,
+      onUseModel,
+    }),
+  );
+  const download = await screen.findByRole("button", {
+    name: "Download model",
+  });
+  await waitFor(() =>
+    expect((download as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(download);
+  await waitFor(() => expect(onInstalled).toHaveBeenCalledOnce());
+  const useModel = await screen.findByRole("button", { name: "Use model" });
+  expect((useModel as HTMLButtonElement).disabled).toBe(true);
+  expect(onUseModel).not.toHaveBeenCalled();
+  await act(async () => finishRefresh());
+  expect((useModel as HTMLButtonElement).disabled).toBe(false);
+  fireEvent.click(useModel);
+  expect(onUseModel).toHaveBeenCalledOnce();
+});
+
+it("shows a failed catalog refresh after a polled download completes", async () => {
+  let failRefresh!: (failure: Error) => void;
+  const onInstalled = vi.fn(
+    () =>
+      new Promise<void>((_resolve, reject) => {
+        failRefresh = reject;
+      }),
+  );
+  const onUseModel = vi.fn();
+  runtime.plan.mockResolvedValue({
+    ...createLocalFluxInstallPlan(),
+    activeJob: job,
+  });
+  runtime.get.mockResolvedValue({ ...job, status: "installed", progress: 1 });
+  render(
+    createElement(MediaModelInstallDialog, {
+      model,
+      onClose: vi.fn(),
+      onInstalled,
+      onUseModel,
+    }),
+  );
+  const useModel = await screen.findByRole("button", { name: "Use model" });
+  await waitFor(() => expect(onInstalled).toHaveBeenCalledOnce());
+  await act(async () => failRefresh(new Error("Could not refresh models")));
+  expect(
+    await screen.findByText(
+      "Could not update the model list. Reopen this window to retry.",
+    ),
+  ).toBeTruthy();
+  expect((useModel as HTMLButtonElement).disabled).toBe(true);
+  expect(onUseModel).not.toHaveBeenCalled();
 });

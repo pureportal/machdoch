@@ -11,6 +11,7 @@ import {
   cancelMediaModelInstall,
 } from "../media-runtime";
 import { Button } from "../../components/ui/button";
+import { MediaExternalLink } from "./media-external-link";
 import {
   Dialog,
   DialogContent,
@@ -28,15 +29,18 @@ export const MediaModelInstallDialog = ({
   model,
   onClose,
   onInstalled,
+  onUseModel,
 }: {
   model: MediaModelDescriptor;
   onClose: () => void;
   onInstalled: () => Promise<void>;
+  onUseModel: () => void;
 }): JSX.Element => {
   const [plan, setPlan] = useState<MediaModelInstallPlan | null>(null);
   const [job, setJob] = useState<MediaModelInstallJob | null>(null);
   const [accepted, setAccepted] = useState(false);
   const [pending, setPending] = useState(false);
+  const [readyToUse, setReadyToUse] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const jobMutation = useRef(0);
   useEffect(() => {
@@ -58,6 +62,28 @@ export const MediaModelInstallDialog = ({
       current = false;
     };
   }, [model.id]);
+  const installed =
+    job?.status === "installed" || plan?.alreadyInstalled === true;
+  useEffect(() => {
+    if (!installed) return;
+    let current = true;
+    void onInstalled()
+      .then(() => {
+        if (current) {
+          setReadyToUse(true);
+          setError(null);
+        }
+      })
+      .catch(() => {
+        if (current)
+          setError(
+            "Could not update the model list. Reopen this window to retry.",
+          );
+      });
+    return () => {
+      current = false;
+    };
+  }, [installed, onInstalled]);
   const jobId = job?.id;
   const active = activeJob(job);
   useEffect(() => {
@@ -74,7 +100,6 @@ export const MediaModelInstallDialog = ({
           return;
         }
         setJob(result);
-        if (result.status === "installed") await onInstalled();
         if (current && activeJob(result))
           timer = setTimeout(() => void poll(), 1000);
       } catch (failure) {
@@ -86,7 +111,7 @@ export const MediaModelInstallDialog = ({
       current = false;
       clearTimeout(timer);
     };
-  }, [jobId, active, pending, onInstalled]);
+  }, [jobId, active, pending]);
   const start = async (): Promise<void> => {
     if (!plan) return;
     jobMutation.current += 1;
@@ -101,7 +126,6 @@ export const MediaModelInstallDialog = ({
         acceptLicense: accepted || !plan.license.requiresAcceptance,
       });
       setJob(result);
-      if (result.status === "installed") await onInstalled();
     } catch (failure) {
       setError(String(failure));
     } finally {
@@ -149,14 +173,12 @@ export const MediaModelInstallDialog = ({
                   onChange={(event) => setAccepted(event.target.checked)}
                 />
                 I accept{" "}
-                <a
+                <MediaExternalLink
                   href={plan.license.sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
                   className="text-sky-300 underline"
                 >
                   {plan.license.name}
-                </a>
+                </MediaExternalLink>
               </label>
             ) : null}
             {plan.hasSufficientSpace === false ? (
@@ -190,7 +212,9 @@ export const MediaModelInstallDialog = ({
               Cancel download
             </Button>
           ) : job?.status === "installed" || plan?.alreadyInstalled ? (
-            <Button onClick={onClose}>Done</Button>
+            <Button onClick={onUseModel} disabled={!readyToUse || pending}>
+              Use model
+            </Button>
           ) : (
             <Button
               onClick={() => void start()}

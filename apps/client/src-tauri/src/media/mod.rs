@@ -478,6 +478,7 @@ pub(crate) struct MediaLocalModelImportInspection {
     review_token: String,
     suggested_display_name: String,
     detected_architecture: Option<String>,
+    available_architectures: Vec<String>,
     architecture_confidence: String,
     metadata_summary: Vec<String>,
     warnings: Vec<String>,

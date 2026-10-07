@@ -720,6 +720,7 @@ export interface MediaLocalModelImportInspection {
   reviewToken: string;
   suggestedDisplayName: string;
   detectedArchitecture: MediaLocalModelArchitecture | null;
+  availableArchitectures: MediaLocalModelArchitecture[];
   architectureConfidence: MediaLocalModelArchitectureConfidence;
   metadataSummary: string[];
   warnings: string[];

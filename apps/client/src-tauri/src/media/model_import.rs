@@ -615,6 +615,7 @@ pub(super) fn inspect_header(
         review_token: inspection_review_token(&header),
         suggested_display_name: suggested_display_name(&header),
         detected_architecture,
+        available_architectures: Vec::new(),
         architecture_confidence: architecture_confidence.to_string(),
         metadata_summary: metadata_summary(&header),
         warnings,
