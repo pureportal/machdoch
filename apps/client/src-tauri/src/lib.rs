@@ -1,4 +1,5 @@
 mod agent_cli;
+mod app_update;
 mod atomic_file;
 mod child_process;
 mod cli_settings_bridge;
@@ -147,6 +148,7 @@ pub fn run() {
     }
 
     builder
+        .manage(app_update::AppUpdateState::default())
         .manage(desktop_task::AttachmentPathGrantMap::default())
         .manage(desktop_task::DesktopTaskCancelMap::default())
         .manage(desktop_shell::FileManagerInvocationState::with_initial(
@@ -237,7 +239,12 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
+            app_update::app_update_available,
+            app_update::prepare_app_update,
+            app_update::finish_app_update,
             desktop_shell::startup::main_window_ready,
             idle_shutdown::supports_idle_shutdown,
             idle_shutdown::get_shutdown_when_idle,

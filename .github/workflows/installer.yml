@@ -49,6 +49,8 @@ jobs:
     container: ${{ matrix.container }}
     env:
       DESKTOP_TARGET_DIR: ${{ matrix.release_target == 'windows-x64' && '.cache/rust' || 'apps/client/src-tauri/target' }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - name: Install Linux build dependencies
         if: startsWith(matrix.release_target, 'linux-')
@@ -207,6 +209,12 @@ jobs:
           "${{ matrix.rpm_architecture }}"
           apps/client/src-tauri/tauri.conf.json
 
+      - name: Sign canonical update packages
+        shell: bash
+        run: |
+          node .github/scripts/update-manifest.mjs sign release-assets apps/client/src-tauri/tauri.conf.json
+          pnpm exec oxnode apps/client/scripts/verify-update-signatures.ts release-assets
+
       - name: Upload installer artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -214,6 +222,7 @@ jobs:
           path: |
             ${{ steps.assets.outputs.paths }}
             ${{ steps.headless.outputs.path }}
+            release-assets/*.sig
           if-no-files-found: error
 
       - name: Generate SBOM

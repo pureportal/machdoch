@@ -3,4 +3,9 @@ set -eu
 # Resolve symlinks so /usr/local/bin/machdoch can point at this launcher.
 machdoch_entry=$(readlink -f -- "$0")
 machdoch_dir=$(dirname -- "$machdoch_entry")
-exec node "$machdoch_dir/machdoch-cli.cjs" "$@"
+version=$(cat "$machdoch_dir/current")
+case "$version" in
+  ""|*[!0-9.]*) printf '%s\n' 'Invalid Machdoch release pointer.' >&2; exit 1 ;;
+esac
+export MACHDOCH_HEADLESS_ROOT="$machdoch_dir"
+exec node "$machdoch_dir/releases/$version/machdoch-cli.cjs" "$@"

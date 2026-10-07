@@ -83,6 +83,7 @@ pub(crate) fn run_cli(args: &[String]) -> Result<i32, String> {
             "MACHDOCH_NATIVE_EXECUTABLE",
             env::current_exe().map_err(|error| error.to_string())?,
         )
+        .env("MACHDOCH_INSTALLER_KIND", installer_kind())
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
@@ -95,6 +96,18 @@ pub(crate) fn run_cli(args: &[String]) -> Result<i32, String> {
     })?;
 
     Ok(status.code().unwrap_or(1))
+}
+
+fn installer_kind() -> &'static str {
+    use tauri::utils::{config::BundleType, platform::bundle_type};
+    match bundle_type() {
+        Some(BundleType::Deb) => "deb",
+        Some(BundleType::Rpm) => "rpm",
+        Some(BundleType::AppImage) => "appimage",
+        Some(BundleType::Msi) => "msi",
+        Some(BundleType::Nsis) => "nsis",
+        _ => "",
+    }
 }
 
 fn strip_launcher_mode_flags(args: &[String]) -> Vec<String> {

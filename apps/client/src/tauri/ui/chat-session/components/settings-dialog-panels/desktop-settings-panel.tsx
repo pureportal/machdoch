@@ -1,4 +1,5 @@
 import { SettingsToggle } from "./settings-toggle";
+import { UpdateSettingsControl } from "../../../update/update-settings-control";
 import { SettingsNumberInput } from "./settings-number-input";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState, type JSX } from "react";
@@ -553,6 +554,8 @@ export const DesktopSettingsPanel = ({
           </SettingPanel>
         </div>
       </SettingsCard>
+
+      <UpdateSettingsControl />
 
       {isTauri() ? (
         <SettingsCard

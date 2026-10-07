@@ -31,11 +31,13 @@ if (dirname(stage) !== dist)
   throw new Error("Refusing to use an unexpected staging path.");
 try {
   const root = join(stage, "machdoch");
-  await mkdir(root);
-  await cp(join(dist, "legal-headless"), root, {
+  const payload = join(root, "releases", metadata.version);
+  await mkdir(payload, { recursive: true });
+  await writeFile(join(root, "current"), `${metadata.version}\n`);
+  await cp(join(dist, "legal-headless"), payload, {
     recursive: true,
   });
-  await cp(join(dist, "machdoch-cli.cjs"), join(root, "machdoch-cli.cjs"));
+  await cp(join(dist, "machdoch-cli.cjs"), join(payload, "machdoch-cli.cjs"));
   await cp(
     join(repositoryRoot, "packaging/headless/machdoch"),
     join(root, "machdoch"),
@@ -48,7 +50,7 @@ try {
   await chmod(join(root, "machdoch"), 0o755);
   await cp(
     dirname(require.resolve("playwright-core/package.json")),
-    join(root, "node_modules/playwright-core"),
+    join(payload, "node_modules/playwright-core"),
     { recursive: true, dereference: true },
   );
   await cp(
@@ -56,7 +58,7 @@ try {
     join(root, "machdoch-fleet.service"),
   );
   await writeFile(
-    join(root, "package.json"),
+    join(payload, "package.json"),
     `${JSON.stringify({ name: "machdoch-headless", version: metadata.version, license: metadata.license, private: true, engines: metadata.engines }, null, 2)}\n`,
   );
   const archive = join(dist, "machdoch-headless.tar.gz");

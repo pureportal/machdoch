@@ -1,6 +1,7 @@
 import { parseArgs, type ParseArgsConfig } from "node:util";
 
 export const cliTokenOptions = {
+  check: { type: "boolean" },
   json: { type: "boolean" },
   verbose: { type: "boolean", short: "v" },
   help: { type: "boolean", short: "h" },

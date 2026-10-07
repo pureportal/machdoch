@@ -73,6 +73,7 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
     args.command === "ralph" && !usesAgentRuntime(args);
   if (
     args.command !== "help" &&
+    args.command !== "update" &&
     args.command !== "memory" &&
     !isInternalProviderProcess &&
     !isLocalRalphCommand
@@ -91,6 +92,12 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
   }
 
   switch (args.command) {
+    case "update": {
+      const { runUpdateCommand } =
+        await import("./_helpers/cli-update-commands.js");
+      await runUpdateCommand(args);
+      return;
+    }
     case "media-flow-agent": {
       const { runMediaFlowAgentCommand } =
         await import("./_helpers/cli-media-flow-agent.js");
