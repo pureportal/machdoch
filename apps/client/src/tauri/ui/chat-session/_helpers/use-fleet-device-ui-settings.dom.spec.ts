@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -101,18 +103,15 @@ describe("client confirmation of remote voice settings", () => {
   it("returns actual device voices and microphones", async () => {
     renderHook(() => useDevice());
     await request("get_device_voice_preferences");
-    expect(invoke).toHaveBeenCalledWith(
-      "complete_fleet_client_request",
-      {
-        id: "request",
-        error: null,
-        result: expect.objectContaining({
-          rate: 1,
-          voiceOptions: [expect.objectContaining({ voiceURI: "device-voice" })],
-          speechInputDevices: [{ deviceId: "mic", label: "Device microphone" }],
-        }),
-      },
-    );
+    expect(invoke).toHaveBeenCalledWith("complete_fleet_client_request", {
+      id: "request",
+      error: null,
+      result: expect.objectContaining({
+        rate: 1,
+        voiceOptions: [expect.objectContaining({ voiceURI: "device-voice" })],
+        speechInputDevices: [{ deviceId: "mic", label: "Device microphone" }],
+      }),
+    });
   });
 
   it("waits for persisted preferences before confirming the changed state", async () => {
@@ -133,18 +132,15 @@ describe("client confirmation of remote voice settings", () => {
     await act(async () => {
       finish();
     });
-    expect(invoke).toHaveBeenCalledWith(
-      "complete_fleet_client_request",
-      {
-        id: "request",
-        error: null,
-        result: expect.objectContaining({
-          rate: 1.3,
-          autoSpeakResponses: true,
-          preferredVoiceURI: "device-voice",
-        }),
-      },
-    );
+    expect(invoke).toHaveBeenCalledWith("complete_fleet_client_request", {
+      id: "request",
+      error: null,
+      result: expect.objectContaining({
+        rate: 1.3,
+        autoSpeakResponses: true,
+        preferredVoiceURI: "device-voice",
+      }),
+    });
   });
 
   it("reports failed persistence without confirming success", async () => {
@@ -155,10 +151,11 @@ describe("client confirmation of remote voice settings", () => {
       autoSpeakResponses: false,
       preferredVoiceURI: null,
     });
-    expect(invoke).toHaveBeenCalledWith(
-      "complete_fleet_client_request",
-      { id: "request", result: null, error: "Storage is unavailable." },
-    );
+    expect(invoke).toHaveBeenCalledWith("complete_fleet_client_request", {
+      id: "request",
+      result: null,
+      error: "Storage is unavailable.",
+    });
   });
 
   it("rejects a voice from the browser rather than the device list", async () => {
@@ -168,14 +165,11 @@ describe("client confirmation of remote voice settings", () => {
       autoSpeakResponses: false,
       preferredVoiceURI: "browser-voice",
     });
-    expect(invoke).toHaveBeenCalledWith(
-      "complete_fleet_client_request",
-      {
-        id: "request",
-        result: null,
-        error: "Choose a voice listed on this device.",
-      },
-    );
+    expect(invoke).toHaveBeenCalledWith("complete_fleet_client_request", {
+      id: "request",
+      result: null,
+      error: "Choose a voice listed on this device.",
+    });
     expect(flush).not.toHaveBeenCalled();
   });
 
@@ -186,14 +180,11 @@ describe("client confirmation of remote voice settings", () => {
       autoSpeakResponses: true,
       preferredVoiceURI: null,
     });
-    expect(invoke).toHaveBeenCalledWith(
-      "complete_fleet_client_request",
-      {
-        id: "request",
-        result: null,
-        error: "Configure voice playback before enabling automatic speech.",
-      },
-    );
+    expect(invoke).toHaveBeenCalledWith("complete_fleet_client_request", {
+      id: "request",
+      result: null,
+      error: "Configure voice playback before enabling automatic speech.",
+    });
     expect(flush).not.toHaveBeenCalled();
   });
 

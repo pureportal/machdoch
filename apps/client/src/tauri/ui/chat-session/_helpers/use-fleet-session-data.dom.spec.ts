@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { webcrypto } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -406,12 +408,62 @@ it("keeps the paging revision stable while live execution updates and changes it
 it("reads changed files only through the owning native session and message", async () => {
   const stage = { state: "complete" } as const;
   const execution = {
-    task: "Native task", mode: "ask" as const, status: "executed" as const, summary: "Complete", executedTools: [], outputSections: [],
-    response: { markdown: "Native answer", highlights: [], relatedFiles: [{ path: "notes/Grüße.md", description: "Native reference" }], verification: ["Verified"], followUps: [] },
-    metadata: { instructionResolutionId: "resolution", instructionSources: [{ id: "source", name: "Workspace" }], privateDiagnostic: "Not projected" },
-    fileChanges: { files: [], changeSetId: "native-set", totalFiles: 2, additions: 0, deletions: 0, binaryFiles: 0, gitlinkFiles: 0, symlinkFiles: 0, modeOnlyFiles: 0, failedFiles: 0, status: "complete" as const, attribution: "workspace-observed" as const, repositoryCount: 1, issues: [], completeness: { discovery: stage, startSnapshots: stage, finishSnapshots: stage, renameAnalysis: stage, lineAnalysis: stage, persistence: stage } },
+    task: "Native task",
+    mode: "ask" as const,
+    status: "executed" as const,
+    summary: "Complete",
+    executedTools: [],
+    outputSections: [],
+    response: {
+      markdown: "Native answer",
+      highlights: [],
+      relatedFiles: [
+        { path: "notes/Grüße.md", description: "Native reference" },
+      ],
+      verification: ["Verified"],
+      followUps: [],
+    },
+    metadata: {
+      instructionResolutionId: "resolution",
+      instructionSources: [{ id: "source", name: "Workspace" }],
+      privateDiagnostic: "Not projected",
+    },
+    fileChanges: {
+      files: [],
+      changeSetId: "native-set",
+      totalFiles: 2,
+      additions: 0,
+      deletions: 0,
+      binaryFiles: 0,
+      gitlinkFiles: 0,
+      symlinkFiles: 0,
+      modeOnlyFiles: 0,
+      failedFiles: 0,
+      status: "complete" as const,
+      attribution: "workspace-observed" as const,
+      repositoryCount: 1,
+      issues: [],
+      completeness: {
+        discovery: stage,
+        startSnapshots: stage,
+        finishSnapshots: stage,
+        renameAnalysis: stage,
+        lineAnalysis: stage,
+        persistence: stage,
+      },
+    },
   };
-  const session = createSession({ id: "native-session", messages: [{ id: "native-message", role: "agent", content: "Native answer", source: { kind: "execution", execution } }] });
+  const session = createSession({
+    id: "native-session",
+    messages: [
+      {
+        id: "native-message",
+        role: "agent",
+        content: "Native answer",
+        source: { kind: "execution", execution },
+      },
+    ],
+  });
   const { send } = setup([session, createSession({ id: "other-session" })]);
   const nativeReads = vi.fn();
   invoke.mockImplementation(async (command, args) => {
@@ -425,22 +477,65 @@ it("reads changed files only through the owning native session and message", asy
     }
     return undefined;
   });
-  const args = { sessionId: session.id, messageId: "native-message", changeSetId: "native-set", limit: 100 };
+  const args = {
+    sessionId: session.id,
+    messageId: "native-message",
+    changeSetId: "native-set",
+    limit: 100,
+  };
   const read = await send("get_session_file_change_files", args);
-  expect(read).toMatchObject({ error: null, result: { files: [], nextCursor: null } });
-  expect(nativeReads).toHaveBeenCalledWith("get_task_file_change_files", { request: { changeSetId: "native-set", limit: 100 } });
-  for (const wrong of [{ ...args, sessionId: "other-session" }, { ...args, messageId: "missing" }, { ...args, changeSetId: "other-set" }]) {
+  expect(read).toMatchObject({
+    error: null,
+    result: { files: [], nextCursor: null },
+  });
+  expect(nativeReads).toHaveBeenCalledWith("get_task_file_change_files", {
+    request: { changeSetId: "native-set", limit: 100 },
+  });
+  for (const wrong of [
+    { ...args, sessionId: "other-session" },
+    { ...args, messageId: "missing" },
+    { ...args, changeSetId: "other-set" },
+  ]) {
     const rejected = await send("get_session_file_change_files", wrong);
     expect(rejected.error).toContain("no longer in this conversation");
     expect(nativeReads).toHaveBeenCalledTimes(1);
   }
-  const hunks = await send("get_session_file_change_hunks", { ...args, fileId: 1, afterOrdinal: 0 });
-  expect(hunks).toMatchObject({ error: null, result: { ranges: [], nextCursor: null } });
-  expect(nativeReads).toHaveBeenCalledWith("get_task_file_change_hunks", { request: { changeSetId: "native-set", limit: 100, fileId: 1, afterOrdinal: 0 } });
-  const page = await send("get_session_message_page", { sessionId: session.id, limit: 1 });
-  const projected = (page.result as { messages: { execution: { metadata: Record<string, unknown>; response: unknown } }[] }).messages[0]!.execution;
-  expect(projected.response).toEqual({ relatedFiles: execution.response.relatedFiles, verification: execution.response.verification });
-  expect(projected.metadata).toEqual({ instructionResolutionId: "resolution", instructionSources: execution.metadata.instructionSources });
+  const hunks = await send("get_session_file_change_hunks", {
+    ...args,
+    fileId: 1,
+    afterOrdinal: 0,
+  });
+  expect(hunks).toMatchObject({
+    error: null,
+    result: { ranges: [], nextCursor: null },
+  });
+  expect(nativeReads).toHaveBeenCalledWith("get_task_file_change_hunks", {
+    request: {
+      changeSetId: "native-set",
+      limit: 100,
+      fileId: 1,
+      afterOrdinal: 0,
+    },
+  });
+  const page = await send("get_session_message_page", {
+    sessionId: session.id,
+    limit: 1,
+  });
+  const projected = (
+    page.result as {
+      messages: {
+        execution: { metadata: Record<string, unknown>; response: unknown };
+      }[];
+    }
+  ).messages[0]!.execution;
+  expect(projected.response).toEqual({
+    relatedFiles: execution.response.relatedFiles,
+    verification: execution.response.verification,
+  });
+  expect(projected.metadata).toEqual({
+    instructionResolutionId: "resolution",
+    instructionSources: execution.metadata.instructionSources,
+  });
 });
 
 it("listens only in the main native window and releases the listener", async () => {

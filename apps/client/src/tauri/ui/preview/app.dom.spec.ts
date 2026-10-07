@@ -32,8 +32,6 @@ vi.mock("../lib/shell-store", () => ({
   getCurrentShellWindowLabel: () => native.label,
 }));
 vi.mock("../runtime", () => ({
-  ASSISTANT_BUBBLE_WINDOW_LABEL: "assistant-bubble",
-  ASSISTANT_POPUP_WINDOW_LABEL: "assistant-popup",
   QUICK_VOICE_WINDOW_LABEL: "quick-voice",
   TRAY_MENU_WINDOW_LABEL: "tray-menu",
 }));
@@ -43,8 +41,8 @@ vi.mock("../chat-session-shell", () => ({
     return createElement("div", null, "Chat");
   },
 }));
-vi.mock("../assistant-bubble-shell", () => ({
-  AssistantBubbleShell: () => createElement("div", null, "Bubble"),
+vi.mock("../quick-voice-shell", () => ({
+  QuickVoiceShell: () => createElement("div", null, "Quick voice"),
 }));
 
 beforeEach(() => {
@@ -65,10 +63,10 @@ describe("desktop startup readiness", () => {
     });
   });
 
-  it("does not apply main startup settings from an assistant window", async () => {
-    native.label = "assistant-bubble";
+  it("does not apply main startup settings from a secondary window", async () => {
+    native.label = "quick-voice";
     render(createElement(App));
-    await screen.findByText("Bubble");
+    await screen.findByText("Quick voice");
     expect(native.invoke).not.toHaveBeenCalled();
   });
 
