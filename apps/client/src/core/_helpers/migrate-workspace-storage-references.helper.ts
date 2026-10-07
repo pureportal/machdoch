@@ -32,6 +32,10 @@ export const migrateWorkspacePathReferences = (
     }
     return value
       .replace(
+        /\.machdoch([\\/])ralph\1run-summary-cache\.json(?=[\\/]|$)/gu,
+        ".machdoch$1local$1cache$1ralph$1run-summary-cache.json",
+      )
+      .replace(
         /\.machdoch([\\/])ralph\1(artifacts|generations|diagnostics)(?=[\\/]|$)/gu,
         ".machdoch$1local$1artifacts$1ralph$1$2",
       )
@@ -42,6 +46,18 @@ export const migrateWorkspacePathReferences = (
       .replace(
         /\.machdoch([\\/])(autonomous-features|feature-implementation)(?=[\\/]|$)/gu,
         ".machdoch$1local$1state$1$2",
+      )
+      .replace(
+        /\.machdoch([\\/])(memory\.json|reasoning-bank\.json)(?=[\\/]|$)/gu,
+        ".machdoch$1local$1state$1$2",
+      )
+      .replace(
+        /\.machdoch([\\/])mcp\1discovery-cache\.json(?=[\\/]|$)/gu,
+        ".machdoch$1local$1cache$1mcp$1discovery-cache.json",
+      )
+      .replace(
+        /\.machdoch([\\/])fleet-payloads(?=[\\/]|$)/gu,
+        ".machdoch$1local$1cache$1fleet-payloads",
       );
   }
   if (Array.isArray(value))
@@ -236,6 +252,25 @@ export const migrateWorkspaceStorageReferences = async (
       if (file.isFile() && file.name.endsWith(".json")) {
         await migrateJsonReferences(
           join(checkpoints, file.name),
+          workspaceRoot,
+          fingerprints,
+        );
+      }
+    }
+  }
+  const generations = join(
+    projectDirectory,
+    "local",
+    "artifacts",
+    "ralph",
+    "generations",
+  );
+  for (const entry of await listDirectory(generations)) {
+    if (!entry.isDirectory()) continue;
+    for (const file of await listDirectory(join(generations, entry.name))) {
+      if (file.isFile() && file.name === "generation.json") {
+        await migrateJsonReferences(
+          join(generations, entry.name, file.name),
           workspaceRoot,
           fingerprints,
         );

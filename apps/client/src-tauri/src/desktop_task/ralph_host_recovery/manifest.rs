@@ -209,7 +209,10 @@ pub(crate) fn resolve_record_path(
     }
     let root = match scope {
         "workspace" => {
-            crate::runtime_snapshot::resolve_workspace_root_path(&request.workspace_root)?
+            let workspace =
+                crate::runtime_snapshot::resolve_workspace_root_path(&request.workspace_root)?;
+            crate::workspace_storage::ensure_workspace_storage(&workspace)?;
+            workspace
                 .join(".machdoch")
                 .join("local")
                 .join("state")

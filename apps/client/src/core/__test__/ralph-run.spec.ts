@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeTask } from "../execution.js";
+import { ensureWorkspaceStorage } from "../workspace-storage.js";
 import { mcpClientManager } from "../mcp/client.js";
 import { RalphRunStore } from "../_helpers/ralph-run-store.helper.js";
 import { RALPH_VALIDATOR_JSON_SCHEMA } from "../_helpers/parse-ralph-validator-json-result.helper.js";
@@ -5715,6 +5716,7 @@ describe("runRalphFlow", () => {
         );
         await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
 
+        await ensureWorkspaceStorage(workspace);
         expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
         expect(
           spawnSync("git", ["config", "user.email", "test@example.com"], {
@@ -5870,6 +5872,7 @@ describe("runRalphFlow", () => {
           "utf8",
         );
 
+        await ensureWorkspaceStorage(workspace);
         expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
         expect(
           spawnSync("git", ["config", "user.email", "test@example.com"], {
@@ -5987,6 +5990,7 @@ describe("runRalphFlow", () => {
         );
         await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
 
+        await ensureWorkspaceStorage(workspace);
         expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
         expect(
           spawnSync("git", ["config", "user.email", "test@example.com"], {
@@ -6099,6 +6103,7 @@ describe("runRalphFlow", () => {
         );
         await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
 
+        await ensureWorkspaceStorage(workspace);
         expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
         expect(
           spawnSync("git", ["config", "user.email", "test@example.com"], {
@@ -6244,6 +6249,7 @@ describe("runRalphFlow", () => {
         );
         await writeFile(join(workspace, "docs", "note.md"), "before\n", "utf8");
 
+        await ensureWorkspaceStorage(workspace);
         expect(spawnSync("git", ["init"], { cwd: workspace }).status).toBe(0);
         expect(
           spawnSync("git", ["config", "user.email", "test@example.com"], {

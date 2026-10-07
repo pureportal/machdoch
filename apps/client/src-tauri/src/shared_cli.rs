@@ -32,7 +32,7 @@ const EMBEDDED_NODE_BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ma
 const EMBEDDED_BROWSER_RUNTIME: &[u8] =
     include_bytes!(concat!(env!("OUT_DIR"), "/machdoch-browser-runtime.tar.gz"));
 const BUILD_NODE_REQUIREMENT: &str = "Node.js >= 20.10";
-const MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_SHARED_CLI_OUTPUT_BYTES: u64 = 8 * 1024 * 1024;
 
 pub(crate) struct SharedCliCommand {
     pub(crate) command: Command,
@@ -53,7 +53,7 @@ pub(crate) fn create_shared_cli_command(args: &[String]) -> Result<SharedCliComm
 }
 
 fn read_bounded_cli_stream(mut stream: impl Read, stream_name: &str) -> Result<Vec<u8>, String> {
-    let capture_limit = MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES as usize;
+    let capture_limit = MAX_SHARED_CLI_OUTPUT_BYTES as usize;
     let mut bytes = Vec::with_capacity(capture_limit.min(8192));
     let mut exceeded_limit = false;
     let mut buffer = [0_u8; 8192];
@@ -481,7 +481,7 @@ mod tests {
     use super::{
         materialize_cached_runtime_file_contents, materialize_cached_runtime_file_in_directory,
         read_bounded_cli_stream, run_shared_cli_json_command_with_command, sanitize_node_options,
-        MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES,
+        MAX_SHARED_CLI_OUTPUT_BYTES,
     };
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_SHARED_CLI_TEST_CHILD_MODE";
@@ -567,7 +567,7 @@ mod tests {
 
     #[test]
     fn oversized_cli_output_is_drained_without_unbounded_capture() {
-        let output_size = MAX_SIDE_EFFECT_FREE_CLI_OUTPUT_BYTES as usize + 16 * 1024;
+        let output_size = MAX_SHARED_CLI_OUTPUT_BYTES as usize + 16 * 1024;
         let bytes_read = Arc::new(AtomicUsize::new(0));
         let reader = TrackingReader {
             bytes: io::Cursor::new(vec![b'x'; output_size]),

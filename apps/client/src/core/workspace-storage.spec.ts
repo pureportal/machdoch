@@ -81,6 +81,18 @@ describe("workspace storage migration", () => {
     );
     await write(
       root,
+      ".machdoch/ralph/generations/one/generation.json",
+      JSON.stringify({
+        logPaths: {
+          traceJsonlPath: join(
+            root,
+            ".machdoch/ralph/generations/one/trace.jsonl",
+          ),
+        },
+      }),
+    );
+    await write(
+      root,
       ".machdoch/mcp/mcp.json",
       '{"schemaVersion":1,"servers":[]}',
     );
@@ -127,6 +139,18 @@ describe("workspace storage migration", () => {
         join(root, ".machdoch/local/cache/mcp/discovery-cache.json"),
       ),
     ).toBe(true);
+    const generation = JSON.parse(
+      await readFile(
+        join(
+          root,
+          ".machdoch/local/artifacts/ralph/generations/one/generation.json",
+        ),
+        "utf8",
+      ),
+    );
+    expect(generation.logPaths.traceJsonlPath).toBe(
+      join(root, ".machdoch/local/artifacts/ralph/generations/one/trace.jsonl"),
+    );
     expect(
       await exists(
         join(root, ".machdoch/local/cache/chrome-landing-test/Profile/data"),
