@@ -10,6 +10,7 @@ FROM base AS dependencies
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/fleet-manager/package.json apps/fleet-manager/package.json
 COPY apps/client/package.json apps/client/package.json
+COPY packages/client-ui/package.json packages/client-ui/package.json
 COPY packages/fleet-protocol/package.json packages/fleet-protocol/package.json
 COPY packages/product-ui/package.json packages/product-ui/package.json
 COPY packages/media-studio/package.json packages/media-studio/package.json
@@ -20,6 +21,7 @@ FROM dependencies AS build
 
 COPY apps/fleet-manager apps/fleet-manager
 COPY apps/client apps/client
+COPY packages/client-ui packages/client-ui
 COPY packages/fleet-protocol packages/fleet-protocol
 COPY packages/product-ui packages/product-ui
 COPY packages/media-studio packages/media-studio
@@ -35,8 +37,10 @@ FROM base AS production-dependencies
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/fleet-manager/package.json apps/fleet-manager/package.json
+COPY packages/client-ui/package.json packages/client-ui/package.json
 COPY packages/fleet-protocol/package.json packages/fleet-protocol/package.json
 COPY packages/product-ui/package.json packages/product-ui/package.json
+COPY packages/media-studio/package.json packages/media-studio/package.json
 
 RUN pnpm install --prod --frozen-lockfile
 
@@ -52,8 +56,10 @@ COPY --from=build --chown=node:node /workspace/apps/fleet-manager/public apps/fl
 COPY --from=build --chown=node:node /workspace/apps/fleet-manager/src apps/fleet-manager/src
 COPY --from=build --chown=node:node /workspace/apps/fleet-manager/next.config.ts apps/fleet-manager/next.config.ts
 COPY --from=build --chown=node:node /workspace/apps/fleet-manager/tsconfig.json apps/fleet-manager/tsconfig.json
+COPY --from=build --chown=node:node /workspace/packages/client-ui/src packages/client-ui/src
 COPY --from=build --chown=node:node /workspace/packages/fleet-protocol/src packages/fleet-protocol/src
 COPY --from=build --chown=node:node /workspace/packages/product-ui/src packages/product-ui/src
+COPY --from=build --chown=node:node /workspace/packages/media-studio/src packages/media-studio/src
 COPY --from=build /workspace/apps/fleet-manager/dist/legal legal-release
 
 RUN mkdir -p /config/data \
@@ -63,7 +69,9 @@ WORKDIR /workspace/apps/fleet-manager
 
 RUN test -f .next/BUILD_ID \
     && test -f public/media-studio/index.html \
+    && test -L node_modules/@machdoch/client-ui \
     && test -L node_modules/@machdoch/fleet-protocol \
+    && test -L node_modules/@machdoch/media-studio \
     && test -L node_modules/@machdoch/product-ui \
     && node --import @oxc-node/core/register --input-type=module --eval "await import('@machdoch/fleet-protocol')"
 
