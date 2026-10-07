@@ -386,6 +386,9 @@ jobs:
           RUSTFLAGS: -C link-arg=-Wl,-rpath,$ORIGIN/../lib/machdoch
         run: |
           export ORT_LIB_LOCATION="$PWD/apps/client/src-tauri/target/onnxruntime"
+          speech_runtime="$PWD/apps/client/src-tauri/resources/speech/runtime"
+          speech_packages="$speech_runtime/lib/python3.12/site-packages"
+          export LD_LIBRARY_PATH="$speech_runtime/lib:$speech_packages/numpy.libs:$speech_packages/scipy.libs:$speech_packages/torch/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           pnpm --filter @machdoch/client tauri build --verbose ${{ matrix.bundle_args }}
 
       - name: Build non-Linux release assets
