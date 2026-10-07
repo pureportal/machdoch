@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { prepareRpmExecutable } from "./rpm-executable.mjs";
 
 const repositoryRoot = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -121,6 +122,12 @@ try {
   ]);
   await mkdir(rpmDirectory, { recursive: true });
   run("dpkg-deb", ["--extract", debPath, payloadDirectory]);
+  await writeFile(
+    join(payloadDirectory, "usr/bin", productName),
+    prepareRpmExecutable(
+      await readFile(join(tauriDirectory, "target/release", productName)),
+    ),
+  );
 
   const payloadPaths = (await listPayloadPaths(payloadDirectory)).sort(
     (left, right) => left.localeCompare(right),

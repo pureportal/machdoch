@@ -9,6 +9,7 @@ import type {
 import type { TaskDeterministicAction } from "../../core/types.js";
 
 export type CommandName =
+  | "update"
   | "run"
   | "chat"
   | "interview"
@@ -322,6 +323,7 @@ export interface InstructionCliOptions {
 }
 
 export interface ParsedCliArgs {
+  update?: { check: boolean };
   mediaFlowAgent?: { inputJsonFile: string };
   command: CommandName;
   helpTopic?: string;

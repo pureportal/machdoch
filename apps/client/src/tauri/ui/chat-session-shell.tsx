@@ -67,6 +67,11 @@ import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/comman
 import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
 import { useCommandOverlay } from "@machdoch/media-studio/tauri/ui/commands/use-command-overlay.js";
 import type { CommandDefinition } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+import {
+  CHECK_FOR_UPDATES_EVENT,
+  useDesktopUpdate,
+} from "./update/use-desktop-update";
+import { UpdateDialog } from "./update/update-dialog";
 
 const SettingsDialog = lazy(async () => {
   const module = await import("./chat-session/components/settings-dialog");
@@ -228,6 +233,24 @@ export const ChatSession = (): JSX.Element => {
 
   const chatRunning = controller.activeChatOperationIds.length > 0;
   const chatActivity = toAppActivityState(chatRunning, chatCompletedSinceView);
+  const updater = useDesktopUpdate({
+    busy:
+      chatRunning ||
+      [ralphActivity, mediaActivity, schedulerActivity].some((activity) =>
+        activity.includes("running"),
+      ) ||
+      instructionDraftDirty ||
+      workspaceDraftDirty ||
+      controller.voiceInputOverlay.visible,
+    flush: controller.flushPersistence,
+  });
+
+  useEffect(() => {
+    const closeSettings = () => controller.setCatalogOpen(false);
+    window.addEventListener(CHECK_FOR_UPDATES_EVENT, closeSettings);
+    return () =>
+      window.removeEventListener(CHECK_FOR_UPDATES_EVENT, closeSettings);
+  }, [controller.setCatalogOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1248,6 +1271,10 @@ export const ChatSession = (): JSX.Element => {
       <ChatInputNeededDialog {...controller.inputNeeded} />
 
       <ChatInterviewDialog {...controller.chatInterview} />
+      <UpdateDialog
+        updater={updater}
+        blocked={onboardingOpen || controller.catalogOpen}
+      />
     </CommandProvider>
   );
 };

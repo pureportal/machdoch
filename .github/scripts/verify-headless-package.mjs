@@ -35,8 +35,13 @@ try {
   const extracted = run("tar", ["-xzf", archive, "-C", temp]);
   assert.equal(extracted.status, 0, extracted.stderr);
   const root = join(temp, "machdoch");
+  const payload = join(
+    root,
+    "releases",
+    readFileSync(join(root, "current"), "utf8").trim(),
+  );
   const licenceManifest = JSON.parse(
-    readFileSync(join(root, "manifest.json"), "utf8"),
+    readFileSync(join(payload, "manifest.json"), "utf8"),
   );
   assert.equal(licenceManifest.profile, "headless");
   assert.ok(licenceManifest.packages.length > 0);
@@ -46,12 +51,12 @@ try {
     "EULA.md",
     "THIRD_PARTY_NOTICES.md",
   ]) {
-    assert.ok(readFileSync(join(root, file), "utf8").trim());
+    assert.ok(readFileSync(join(payload, file), "utf8").trim());
   }
   for (const [file, expectedHash] of Object.entries(licenceManifest.files)) {
     assert.equal(
       createHash("sha256")
-        .update(readFileSync(join(root, file)))
+        .update(readFileSync(join(payload, file)))
         .digest("hex"),
       expectedHash,
       `Packaged legal file differs: ${file}`,
@@ -89,7 +94,7 @@ try {
   );
   // The only external bundle dependency must resolve from the extracted archive.
   const browser = run(process.execPath, ["-e", "require('playwright-core')"], {
-    cwd: root,
+    cwd: payload,
     env,
   });
   assert.equal(browser.status, 0, browser.stderr);

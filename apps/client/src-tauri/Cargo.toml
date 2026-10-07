@@ -14,7 +14,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dev-dependencies]
-tauri = { version = "2.11", features = ["test"] }
+tauri = { version = "2.12", features = ["test"] }
 
 [dependencies]
 argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "zeroize"] }
@@ -58,13 +58,15 @@ snow = { version = "=0.10.0", default-features = false, features = [
 ] }
 socket2 = "=0.6.0"
 sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }
-tauri = { version = "2.11", features = ["protocol-asset", "tray-icon"] }
+tauri = { version = "2.12", features = ["protocol-asset", "tray-icon"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-dialog = "2.7"
 tauri-plugin-global-shortcut = "2"
-tauri-plugin-mcp-bridge = "0.11.2"
+tauri-plugin-mcp-bridge = { git = "https://github.com/hypothesi/mcp-server-tauri", rev = "be7c1d1e86f7f9fc0514f7de588313a3e0407ac9" }
 tauri-plugin-opener = "2.5"
 tauri-plugin-store = "2.4"
+tauri-plugin-updater = "=2.13.1"
+tauri-plugin-process = "2"
 tar = "0.4"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = { version = "0.28.0", default-features = false, features = ["connect", "rustls-tls-native-roots"] }

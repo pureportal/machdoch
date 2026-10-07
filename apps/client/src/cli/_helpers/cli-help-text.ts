@@ -17,6 +17,7 @@ Core commands:
   memory         Inspect and remove saved memory facts
   inspect        List discovered prompts and skills
   tools          List available tool areas and model-facing functions
+  update         Install the latest Machdoch release
 
 Automation and integration:
   ralph          Create, validate, run, and inspect RALPH flows
@@ -322,6 +323,15 @@ Use --timezone for cron schedules, --prompt-file for file input, and --json for
 automation. Run 'machdoch scheduler create --help' to return to this reference.`;
 
 const HELP_BY_TOPIC: Readonly<Record<string, string>> = {
+  update: `machdoch update - install the latest stable GitHub release
+
+Usage:
+  machdoch update [--json]
+  machdoch update --check [--json]
+
+--check only checks for a newer release. Installation verifies the signed
+package before changing files. Linux packages may require administrator access.
+Restart running Machdoch services after an update.`,
   run: RUN_HELP,
   chat: CHAT_HELP,
   config: CONFIG_HELP,

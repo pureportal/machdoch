@@ -22,7 +22,10 @@
         "enable": true,
         "scope": []
       },
-      "capabilities": ["default"]
+      "capabilities": [
+        "default",
+        "updater"
+      ]
     },
     "windows": [
       {
@@ -141,7 +144,13 @@
       "python/media_runtime_manifest.json": "python/media_runtime_manifest.json",
       "../scripts/build_source_anchored_loop.py": "python/build_source_anchored_loop.py"
     },
-    "targets": ["msi", "nsis", "deb", "rpm", "appimage"],
+    "targets": [
+      "msi",
+      "nsis",
+      "deb",
+      "rpm",
+      "appimage"
+    ],
     "windows": {
       "wix": {
         "upgradeCode": "47638e6f-1542-5d67-bc57-e5ae45db5fd8",
@@ -161,8 +170,14 @@
     },
     "linux": {
       "deb": {
-        "depends": ["libgbm1", "libpipewire-0.3-0", "libvulkan1"],
-        "recommends": ["python3-nautilus"],
+        "depends": [
+          "libgbm1",
+          "libpipewire-0.3-0",
+          "libvulkan1"
+        ],
+        "recommends": [
+          "python3-nautilus"
+        ],
         "files": {
           "/usr/share/kio/servicemenus/machdoch-folder-context.desktop": "linux/machdoch-folder-context.desktop",
           "/usr/share/kio/servicemenus/machdoch-files-context.desktop": "linux/machdoch-files-context.desktop",
@@ -182,7 +197,9 @@
           "libvulkan.so.1()(64bit)",
           "libwebkit2gtk-4.1.so.0()(64bit)"
         ],
-        "recommends": ["nautilus-python"],
+        "recommends": [
+          "nautilus-python"
+        ],
         "files": {
           "/usr/share/kio/servicemenus/machdoch-folder-context.desktop": "linux/machdoch-folder-context.desktop",
           "/usr/share/kio/servicemenus/machdoch-files-context.desktop": "linux/machdoch-files-context.desktop",
@@ -196,6 +213,19 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU3RDU3NUE1QUVFM0JDRjIKUldUeXZPT3VwWFhWNTgvWkxSRkpQbGs3c05PcGsyKzdlOHkrSTc0QnRDWDhFVHpUSmw0RWZ5VGUK",
+      "endpoints": [
+        "https://github.com/pureportal/machdoch/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

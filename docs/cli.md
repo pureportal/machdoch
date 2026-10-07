@@ -2,6 +2,8 @@
 
 Start an interactive session with `machdoch --cli`, or run a single task with `machdoch run "your task"`. Use `--cwd <folder>` to choose the workspace.
 
+Run `machdoch update` to install the latest release, or `machdoch update --check` to check first. See [Updating Machdoch](updates.md).
+
 ## Input
 
 | Key | Action |

@@ -109,6 +109,8 @@ export const parseCliArgs = (
 
   const json = values?.json === true;
   const verbose = values?.verbose === true;
+  if (values?.check && positionals[0] !== "update")
+    fail("--check is only valid for machdoch update.");
   const quickRunRequested = values?.quick === true;
   const workspaceRoot =
     normalizeOptionalString(values?.cwd) ??
@@ -995,6 +997,18 @@ export const parseCliArgs = (
         }),
       },
     );
+  }
+
+  if (first === "update") {
+    if (rest.length || quickRunRequested || rawTask)
+      fail("Usage: machdoch update [--check] [--json]");
+    return {
+      command: "update",
+      workspaceRoot,
+      json,
+      verbose,
+      update: { check: values?.check === true },
+    };
   }
 
   if (first === "help") {

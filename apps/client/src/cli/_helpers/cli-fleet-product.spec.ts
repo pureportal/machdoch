@@ -44,12 +44,36 @@ describe.sequential("Fleet CLI product runtime", () => {
       const sessionId = before.snapshot.shell.activeSessionId;
       const commands = [
         { kind: "open-quick-chat" as const },
-        { kind: "edit-message" as const, sessionId, messageId: "native-message", prompt: "Edited request" },
-        { kind: "replay-message" as const, sessionId, messageId: "native-message" },
+        {
+          kind: "edit-message" as const,
+          sessionId,
+          messageId: "native-message",
+          prompt: "Edited request",
+        },
+        {
+          kind: "replay-message" as const,
+          sessionId,
+          messageId: "native-message",
+        },
         { kind: "reset-session-time" as const, sessionId },
         { kind: "move-session-to-top" as const, sessionId },
-        { kind: "restore-prompt-history" as const, sessionId, prompt: "Recalled request", history: { index: 0, prompt: "Original request", attachmentIds: [], previousDraft: "", previousAttachmentIds: [] } },
-        { kind: "set-adaptive-controller" as const, sessionId, mode: "enabled" as const },
+        {
+          kind: "restore-prompt-history" as const,
+          sessionId,
+          prompt: "Recalled request",
+          history: {
+            index: 0,
+            prompt: "Original request",
+            attachmentIds: [],
+            previousDraft: "",
+            previousAttachmentIds: [],
+          },
+        },
+        {
+          kind: "set-adaptive-controller" as const,
+          sessionId,
+          mode: "enabled" as const,
+        },
         {
           kind: "save-context-pack" as const,
           sessionId,
@@ -606,7 +630,15 @@ describe.sequential("Fleet CLI product runtime", () => {
           mode: "native",
         },
       }),
-    ).toMatchObject({ type: "commandAccepted" });
+    ).toMatchObject({ type: "error", code: "invalidRequest" });
+    const codexSnapshot = await runtime.handleRequest({
+      type: "getProductSnapshot",
+    });
+    expect(
+      codexSnapshot.type === "productSnapshot"
+        ? codexSnapshot.snapshot.shell?.composer?.availableParallelAgentModes
+        : undefined,
+    ).toEqual(["disabled", "read-only", "machdoch"]);
     expect(
       await runtime.handleRequest({
         type: "executeProductCommand",

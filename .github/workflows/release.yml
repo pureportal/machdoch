@@ -14,7 +14,7 @@ permissions:
   attestations: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: machdoch-release
   cancel-in-progress: false
 
 jobs:
@@ -217,12 +217,12 @@ jobs:
             release_id="$(gh release view "$TAG_NAME" --json databaseId --jq '.databaseId')"
             is_draft="$(gh release view "$TAG_NAME" --json isDraft --jq '.isDraft')"
 
-            gh release edit "$TAG_NAME" --title "$RELEASE_TITLE"
-
             if [ "$is_draft" = "true" ]; then
+              gh release edit "$TAG_NAME" --title "$RELEASE_TITLE"
               echo "publish_on_success=true" >> "$GITHUB_OUTPUT"
             else
-              echo "publish_on_success=false" >> "$GITHUB_OUTPUT"
+              echo "Published releases cannot be rebuilt. Bump the version before releasing." >&2
+              exit 1
             fi
 
             echo "delete_on_failure=false" >> "$GITHUB_OUTPUT"
@@ -274,6 +274,8 @@ jobs:
     container: ${{ matrix.container }}
     env:
       DESKTOP_TARGET_DIR: ${{ matrix.release_target == 'windows-x64' && '.cache/rust' || 'apps/client/src-tauri/target' }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     permissions:
       contents: write
       id-token: write
@@ -441,6 +443,12 @@ jobs:
           "${{ matrix.rpm_architecture }}"
           apps/client/src-tauri/tauri.conf.json
 
+      - name: Sign canonical update packages
+        shell: bash
+        run: |
+          node .github/scripts/update-manifest.mjs sign release-assets apps/client/src-tauri/tauri.conf.json
+          pnpm exec oxnode apps/client/scripts/verify-update-signatures.ts release-assets
+
       - name: Upload release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -454,6 +462,7 @@ jobs:
           ${{ steps.assets.outputs.paths }}
           ${{ steps.headless.outputs.path }}
           EOF
+          gh release upload "$TAG_NAME" release-assets/*.sig --clobber
 
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
@@ -692,10 +701,26 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Setup Node
-        uses: actions/setup-node@v6
+      - name: Setup pnpm and Node
+        uses: pnpm/setup@v2
         with:
-          node-version: 22.13
+          runtime: node@22.13
+          install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Publish update manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
+        shell: bash
+        run: |
+          gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --dir update-assets --pattern 'machdoch-*'
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG_NAME" > update-release.json
+          pnpm exec oxnode apps/client/scripts/verify-update-signatures.ts update-assets
+          node .github/scripts/update-manifest.mjs build update-assets apps/client/src-tauri/tauri.conf.json update-release.json
+          gh release upload "$TAG_NAME" update-assets/latest.json --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Remove superseded installer assets
         env:
@@ -721,6 +746,7 @@ jobs:
         run: |
           gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json assets > release.json
           node .github/scripts/release-assets.mjs verify "$VERSION" release.json
+          node .github/scripts/update-manifest.mjs verify release.json apps/client/src-tauri/tauri.conf.json
 
   publish-release:
     needs:
@@ -739,7 +765,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
-        run: gh release edit "$TAG_NAME" --draft=false --repo "$GITHUB_REPOSITORY"
+        run: gh release edit "$TAG_NAME" --draft=false --latest --repo "$GITHUB_REPOSITORY"
 
   cleanup-release:
     name: Cleanup Draft Release on Failure
