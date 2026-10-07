@@ -1269,6 +1269,8 @@ describe("runRalphFlow", () => {
           join(
             workspace,
             ".machdoch",
+            "local",
+            "state",
             "ralph",
             "runs",
             ".workspace-writer.ralph.lock",
@@ -4016,6 +4018,8 @@ describe("runRalphFlow", () => {
           join(
             workspace,
             ".machdoch",
+            "local",
+            "state",
             "ralph",
             "runs",
             runId,
@@ -4261,7 +4265,15 @@ describe("runRalphFlow", () => {
     const project = join(workspace, "project");
     const outside = join(testRoot, "outside");
     const runId = "linked-run-artifact";
-    const artifactRoot = join(workspace, ".machdoch", "local", "state", "ralph", "runs", runId);
+    const artifactRoot = join(
+      workspace,
+      ".machdoch",
+      "local",
+      "state",
+      "ralph",
+      "runs",
+      runId,
+    );
     vi.mocked(executeTask).mockResolvedValueOnce(
       createExecutionResult({
         summary: "Valid JSON.",
@@ -4682,6 +4694,8 @@ describe("runRalphFlow", () => {
             join(
               workspace,
               ".machdoch",
+              "local",
+              "state",
               "ralph",
               "runs",
               "windows-namespace-artifact",
@@ -4867,6 +4881,8 @@ describe("runRalphFlow", () => {
       const reservedPath = join(
         workspace,
         ".machdoch",
+        "local",
+        "state",
         "ralph",
         "runs",
         runId,
@@ -6421,9 +6437,19 @@ describe("runRalphFlow", () => {
           "utf8",
         );
         const persistedRegistryPath = join(workspace, registryPath);
-        await mkdir(join(workspace, ".machdoch", "ralph", "scope-registry"), {
-          recursive: true,
-        });
+        await mkdir(
+          join(
+            workspace,
+            ".machdoch",
+            "local",
+            "state",
+            "ralph",
+            "scope-registry",
+          ),
+          {
+            recursive: true,
+          },
+        );
         await writeFile(
           persistedRegistryPath,
           JSON.stringify({
@@ -6588,7 +6614,16 @@ describe("runRalphFlow", () => {
           ),
         ).toBe(true);
         const archives = (
-          await readdir(join(workspace, ".machdoch", "ralph", "scope-registry"))
+          await readdir(
+            join(
+              workspace,
+              ".machdoch",
+              "local",
+              "state",
+              "ralph",
+              "scope-registry",
+            ),
+          )
         ).filter((name) => name.startsWith(".invalid-scope-registry-"));
         expect(archives).toHaveLength(1);
         const archived = JSON.parse(
@@ -6596,6 +6631,8 @@ describe("runRalphFlow", () => {
             join(
               workspace,
               ".machdoch",
+              "local",
+              "state",
               "ralph",
               "scope-registry",
               archives[0]!,
@@ -7549,6 +7586,8 @@ describe("runRalphFlow", () => {
           join(
             workspace,
             ".machdoch",
+            "local",
+            "state",
             "ralph",
             "runs",
             ".workspace-writer.ralph.lock",
@@ -7579,6 +7618,8 @@ describe("runRalphFlow", () => {
     const lockPath = join(
       workspace,
       ".machdoch",
+      "local",
+      "state",
       "ralph",
       "runs",
       ".workspace-writer.ralph.lock",
@@ -7607,9 +7648,12 @@ describe("runRalphFlow", () => {
     });
 
     try {
-      await mkdir(join(workspace, ".machdoch", "local", "state", "ralph", "runs"), {
-        recursive: true,
-      });
+      await mkdir(
+        join(workspace, ".machdoch", "local", "state", "ralph", "runs"),
+        {
+          recursive: true,
+        },
+      );
       await writeFile(
         lockPath,
         `${JSON.stringify({ token: "abandoned", ownerId: "dead-run" })}\n`,
@@ -8211,6 +8255,8 @@ describe("runRalphFlow", () => {
       const reportPath = join(
         workspace,
         ".machdoch",
+        "local",
+        "state",
         "ralph",
         "runs",
         "report-run",
@@ -9627,6 +9673,8 @@ describe("runRalphFlow", () => {
           join(
             workspace,
             ".machdoch",
+            "local",
+            "state",
             "ralph",
             "runs",
             ".workspace-writer.ralph.lock",
@@ -11495,6 +11543,8 @@ describe("runRalphFlow", () => {
       const fallbackPath = join(
         workspace,
         ".machdoch",
+        "local",
+        "state",
         "ralph",
         "runs",
         "fallback-report-run",

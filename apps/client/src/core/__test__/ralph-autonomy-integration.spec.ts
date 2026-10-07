@@ -38,7 +38,8 @@ describe("RALPH autonomy integration", () => {
   it("continues completed coverage cycles without triggering stagnation guards", async () => {
     const workspace = await createWorkspace();
     await writeFile(join(workspace, "package.json"), "{}", "utf8");
-    const registryPath = ".machdoch/local/state/ralph/scope-registry/continuous.json";
+    const registryPath =
+      ".machdoch/local/state/ralph/scope-registry/continuous.json";
     const scopeUtility = {
       registryPath,
       flowAlias: "continuous",
@@ -1443,6 +1444,8 @@ describe("RALPH autonomy integration", () => {
     const registryPath = join(
       workspace,
       ".machdoch",
+      "local",
+      "state",
       "ralph",
       "scope-registry",
       "security-review-fix-loop.scope-registry.json",
@@ -1529,6 +1532,8 @@ describe("RALPH autonomy integration", () => {
           join(
             workspace,
             ".machdoch",
+            "local",
+            "state",
             "ralph",
             "runs",
             "starter-security-no-op",

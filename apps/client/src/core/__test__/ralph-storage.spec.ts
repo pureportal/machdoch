@@ -127,7 +127,14 @@ describe("Ralph flow storage", () => {
       },
     ]);
     await writeFile(
-      join(workspaceRoot, ".machdoch", "ralph", "run-summary-cache.json"),
+      join(
+        workspaceRoot,
+        ".machdoch",
+        "local",
+        "cache",
+        "ralph",
+        "run-summary-cache.json",
+      ),
       "{invalid",
     );
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -489,7 +496,16 @@ describe("Ralph flow storage", () => {
       "was not found",
     );
     await expect(
-      readdir(join(workspaceRoot, ".machdoch", "local", "state", "ralph", "revisions")),
+      readdir(
+        join(
+          workspaceRoot,
+          ".machdoch",
+          "local",
+          "state",
+          "ralph",
+          "revisions",
+        ),
+      ),
     ).resolves.toEqual([]);
   });
 
@@ -749,7 +765,10 @@ describe("Ralph flow storage", () => {
         "already has reserved artifacts",
       );
     }
-    const directory = join(workspaceRoot, ".machdoch/local/state/ralph/runs/reserved-run");
+    const directory = join(
+      workspaceRoot,
+      ".machdoch/local/state/ralph/runs/reserved-run",
+    );
     const trace = await readFile(join(directory, "trace.jsonl"), "utf8");
     await expect(
       createRalphRunLogger(workspaceRoot, flow, { runId: "reserved-run" }),
@@ -770,9 +789,9 @@ describe("Ralph flow storage", () => {
     await expect(
       pruneRalphRunArtifacts(workspaceRoot, { maxAgeDays: 1 }),
     ).resolves.toEqual({ removed: [] });
-    await expect(readFile(join(directory, "trace.jsonl"), "utf8")).resolves.toContain(
-      flow.id,
-    );
+    await expect(
+      readFile(join(directory, "trace.jsonl"), "utf8"),
+    ).resolves.toContain(flow.id);
   });
 
   it("excludes private initialization locks from run listings and pruning", async () => {
