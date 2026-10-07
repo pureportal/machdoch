@@ -19,7 +19,7 @@ await test("generates a complete manifest with release-pinned URLs, checksums, a
       await writeFile(
         join(directory, `${name}.sig`),
         Buffer.from(
-          "untrusted comment: test\npacket\ntrusted comment: timestamp:1\tversion:2.0.0\nglobal\n",
+          `untrusted comment: test\npacket\ntrusted comment: timestamp:1\tfile:${name}\tversion:2.0.0\nglobal\n`,
         ).toString("base64"),
       );
     }

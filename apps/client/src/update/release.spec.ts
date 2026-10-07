@@ -53,4 +53,42 @@ describe("latest stable update discovery", () => {
     fetch.mockResolvedValueOnce(new Response(" ".repeat(1024 * 1024 + 1)));
     await expect(checkLatestRelease("1.0.0")).rejects.toThrow(/too large/);
   });
+
+  it("rejects a signed package mapped to a different platform", () => {
+    const artifact = createSignedArtifact().artifact;
+    expect(() =>
+      parseRelease({
+        version: "2.0.0",
+        platforms: { "linux-x86_64-appimage": artifact },
+      }),
+    ).toThrow(/platform/);
+    expect(() =>
+      parseRelease({
+        version: "2.0.0",
+        platforms: {
+          "linux-x86_64-appimage": {
+            ...artifact,
+            url: "https://github.com/pureportal/machdoch/releases/download/v2.0.0/machdoch-linux-amd64.AppImage",
+          },
+        },
+      }),
+    ).toThrow(/filename/);
+  });
+
+  it("rejects duplicate signed metadata and unsigned version substitutions", () => {
+    const malformed = release();
+    const artifact = malformed.platforms["linux-headless"];
+    const original = Buffer.from(artifact.signature, "base64").toString();
+    artifact.signature = Buffer.from(
+      original.replace(
+        "file:machdoch-headless.tar.gz",
+        "file:machdoch-headless.tar.gz\tfile:machdoch-headless.tar.gz",
+      ),
+    ).toString("base64");
+    expect(() => parseRelease(malformed)).toThrow(/one version and filename/);
+    artifact.signature = Buffer.from(
+      original.replace("version:2.0.0", "version:3.0.0"),
+    ).toString("base64");
+    expect(() => parseRelease(malformed)).toThrow(/version and filename/);
+  });
 });

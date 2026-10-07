@@ -1,4 +1,6 @@
 import { gt, valid } from "semver";
+import updateTargets from "./update-targets.json" with { type: "json" };
+import { parseSignedArtifactMetadata } from "./signature-metadata.js";
 
 export const RELEASE_REPOSITORY = "pureportal/machdoch";
 export const RELEASE_MANIFEST_URL = `https://github.com/${RELEASE_REPOSITORY}/releases/latest/download/latest.json`;
@@ -67,7 +69,20 @@ export function parseRelease(value: unknown): UpdateRelease {
       artifact.size > 4 * 1024 ** 3
     )
       throw new Error(`Invalid update artifact: ${target}`);
-    validateArtifactUrl(artifact.url, version);
+    const url = validateArtifactUrl(artifact.url, version);
+    const fileName = url.pathname.slice(url.pathname.lastIndexOf("/") + 1);
+    if (
+      Object.hasOwn(updateTargets, target) &&
+      fileName !== updateTargets[target as keyof typeof updateTargets]
+    )
+      throw new Error(
+        `The update package does not match its platform: ${target}`,
+      );
+    const signed = parseSignedArtifactMetadata(artifact.signature);
+    if (signed.version !== version || signed.fileName !== fileName)
+      throw new Error(
+        `The update signature is not bound to its version and filename: ${target}`,
+      );
     platforms[target] = artifact as unknown as UpdateArtifact;
   }
   return {

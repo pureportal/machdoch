@@ -42,7 +42,9 @@ function availableUpdate() {
       platforms: {
         "linux-headless": {
           url: "https://github.com/pureportal/machdoch/releases/download/v2.0.0/machdoch-headless.tar.gz",
-          signature: "signature",
+          signature: btoa(
+            "untrusted comment: test\npacket\ntrusted comment: timestamp:1\tfile:machdoch-headless.tar.gz\tversion:2.0.0\nglobal\n",
+          ),
           sha256: "0".repeat(64),
           size: 100,
         },

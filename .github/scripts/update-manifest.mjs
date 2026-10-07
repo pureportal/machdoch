@@ -6,16 +6,11 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalInstallerNames } from "./release-assets.mjs";
+import updateAssets from "../../apps/client/src/update/update-targets.json" with { type: "json" };
 
-export const updateTargets = {
-  "machdoch-windows-x64.msi": "windows-x86_64-msi",
-  "machdoch-windows-x64-setup.exe": "windows-x86_64-nsis",
-  "machdoch-linux-amd64.deb": "linux-x86_64-deb",
-  "machdoch-linux-arm64.deb": "linux-aarch64-deb",
-  "machdoch-linux-x86_64.rpm": "linux-x86_64-rpm",
-  "machdoch-linux-amd64.AppImage": "linux-x86_64-appimage",
-  "machdoch-headless.tar.gz": "linux-headless",
-};
+export const updateTargets = Object.fromEntries(
+  Object.entries(updateAssets).map(([target, name]) => [name, target]),
+);
 
 export async function buildUpdateManifest(directory, version, notes = "") {
   if (!/^\d+\.\d+\.\d+$/.test(version))
@@ -27,7 +22,10 @@ export async function buildUpdateManifest(directory, version, notes = "") {
     const comment = Buffer.from(signature, "base64")
       .toString("utf8")
       .split(/\r?\n/)[2];
-    if (!comment?.split("\t").includes(`version:${version}`))
+    if (
+      !comment?.split("\t").includes(`version:${version}`) ||
+      !comment.split("\t").includes(`file:${name}`)
+    )
       throw new Error(`Signature is not bound to ${version}: ${name}`);
     const hash = createHash("sha256");
     for await (const chunk of createReadStream(artifact)) hash.update(chunk);
