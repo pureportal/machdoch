@@ -28,6 +28,7 @@ for (const name of await readdir(directory)) {
     await readFile(join(directory, name), "utf8"),
     UPDATE_PUBLIC_KEY,
     configuration.version,
+    name.slice(0, -4),
   );
   verified += 1;
 }

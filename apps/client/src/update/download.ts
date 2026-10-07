@@ -52,6 +52,7 @@ export async function downloadUpdate(
       artifact.signature,
       publicKey,
       version,
+      new URL(artifact.url).pathname.split("/").at(-1)!,
     );
     await file.sync();
     completed = true;

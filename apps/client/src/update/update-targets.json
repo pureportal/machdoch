@@ -1,0 +1,9 @@
+{
+  "windows-x86_64-msi": "machdoch-windows-x64.msi",
+  "windows-x86_64-nsis": "machdoch-windows-x64-setup.exe",
+  "linux-x86_64-deb": "machdoch-linux-amd64.deb",
+  "linux-aarch64-deb": "machdoch-linux-arm64.deb",
+  "linux-x86_64-rpm": "machdoch-linux-x86_64.rpm",
+  "linux-x86_64-appimage": "machdoch-linux-amd64.AppImage",
+  "linux-headless": "machdoch-headless.tar.gz"
+}

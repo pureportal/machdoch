@@ -1,5 +1,5 @@
 import { createPublicKey, timingSafeEqual, verify } from "node:crypto";
-import { eq } from "semver";
+import { parseSignedArtifactMetadata } from "./signature-metadata.js";
 
 function decodeBase64(value: string): Buffer {
   const encoded = value.trim();
@@ -13,6 +13,7 @@ export function verifyUpdateSignature(
   encodedSignature: string,
   encodedPublicKey: string,
   version: string,
+  fileName: string,
 ): void {
   const publicLines = decodeBase64(encodedPublicKey)
     .toString("utf8")
@@ -65,15 +66,12 @@ export function verifyUpdateSignature(
     throw new Error(
       "Update signature verification failed. The installed files were not changed.",
     );
-  const signedVersions = comment
-    .split("\t")
-    .filter((field) => field.startsWith("version:"));
-  if (
-    signedVersions.length !== 1 ||
-    !eq(signedVersions[0]!.slice(8), version)
-  ) {
+  const signed = parseSignedArtifactMetadata(encodedSignature);
+  if (signed.version !== version) {
     throw new Error(
       "The signed update version does not match the release version.",
     );
   }
+  if (signed.fileName !== fileName)
+    throw new Error("The signed update filename does not match the package.");
 }

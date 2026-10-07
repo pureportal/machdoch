@@ -18,6 +18,7 @@ describe("update signature verification", () => {
         signed.artifact.signature,
         signed.publicKey,
         "2.0.0",
+        "machdoch-headless.tar.gz",
       ),
     ).not.toThrow();
   });
@@ -31,6 +32,7 @@ describe("update signature verification", () => {
         signed.artifact.signature,
         signed.publicKey,
         "2.0.0",
+        "machdoch-headless.tar.gz",
       ),
     ).toThrow(/verification/);
     expect(() =>
@@ -39,6 +41,7 @@ describe("update signature verification", () => {
         signed.artifact.signature,
         other.publicKey,
         "2.0.0",
+        "machdoch-headless.tar.gz",
       ),
     ).toThrow(/verification/);
     expect(() =>
@@ -47,6 +50,7 @@ describe("update signature verification", () => {
         signed.artifact.signature,
         signed.publicKey,
         "3.0.0",
+        "machdoch-headless.tar.gz",
       ),
     ).toThrow(/version/);
   });
@@ -59,7 +63,13 @@ describe("update signature verification", () => {
         .replace("version:2.0.0", "version:3.0.0"),
     ).toString("base64");
     expect(() =>
-      verifyUpdateSignature(signed.digest, changed, signed.publicKey, "3.0.0"),
+      verifyUpdateSignature(
+        signed.digest,
+        changed,
+        signed.publicKey,
+        "3.0.0",
+        "machdoch-headless.tar.gz",
+      ),
     ).toThrow(/verification/);
     expect(() =>
       verifyUpdateSignature(
@@ -67,6 +77,7 @@ describe("update signature verification", () => {
         "not base64",
         signed.publicKey,
         "2.0.0",
+        "machdoch-headless.tar.gz",
       ),
     ).toThrow(/encoding/);
   });
@@ -109,9 +120,23 @@ describe("update signature verification", () => {
         await readFile(`${artifact}.sig`, "utf8"),
         await readFile(`${key}.pub`, "utf8"),
         "2.0.0",
+        "artifact.bin",
       );
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  it("rejects a correctly signed package substituted for another filename", () => {
+    const signed = createSignedArtifact();
+    expect(() =>
+      verifyUpdateSignature(
+        signed.digest,
+        signed.artifact.signature,
+        signed.publicKey,
+        "2.0.0",
+        "machdoch-linux-amd64.AppImage",
+      ),
+    ).toThrow(/filename/);
   });
 });
