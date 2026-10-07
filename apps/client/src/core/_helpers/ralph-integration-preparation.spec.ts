@@ -43,7 +43,7 @@ const createFixture = async () => {
   const root = await mkdtemp(join(tmpdir(), "ralph-integration-preparation-"));
   roots.push(root);
   const repository = join(root, "repository");
-  const runDirectory = join(repository, ".machdoch", "ralph", "runs", "run");
+  const runDirectory = join(repository, ".machdoch", "local", "state", "ralph", "runs", "run");
   await mkdir(join(repository, ".git"), { recursive: true });
   await mkdir(runDirectory, { recursive: true });
   await writeFile(join(repository, "source.txt"), "original\n");

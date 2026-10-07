@@ -35,7 +35,7 @@ const run = (
   createdAt: string,
 ) => ({
   id,
-  path: `C:/repo/.machdoch/ralph/runs/${id}/run.json`,
+  path: `C:/repo/.machdoch/local/state/ralph/runs/${id}/run.json`,
   createdAt,
   ...(status === "running" ? {} : { finishedAt: createdAt }),
   flowId: flow.id,

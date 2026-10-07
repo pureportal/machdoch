@@ -489,7 +489,7 @@ describe("Ralph flow storage", () => {
       "was not found",
     );
     await expect(
-      readdir(join(workspaceRoot, ".machdoch", "ralph", "revisions")),
+      readdir(join(workspaceRoot, ".machdoch", "local", "state", "ralph", "revisions")),
     ).resolves.toEqual([]);
   });
 
@@ -640,7 +640,7 @@ describe("Ralph flow storage", () => {
     ).resolves.toHaveLength(2);
   });
 
-  it("writes capped Ralph run records under .machdoch/ralph/runs", async () => {
+  it("writes capped Ralph run records under .machdoch/local/state/ralph/runs", async () => {
     const workspaceRoot = await createWorkspace();
     const flow = createFlow({
       updatedAt: "2026-06-13T08:00:00.000Z",
@@ -749,7 +749,7 @@ describe("Ralph flow storage", () => {
         "already has reserved artifacts",
       );
     }
-    const directory = join(workspaceRoot, ".machdoch/ralph/runs/reserved-run");
+    const directory = join(workspaceRoot, ".machdoch/local/state/ralph/runs/reserved-run");
     const trace = await readFile(join(directory, "trace.jsonl"), "utf8");
     await expect(
       createRalphRunLogger(workspaceRoot, flow, { runId: "reserved-run" }),

@@ -24,7 +24,7 @@ const writeDiscoveryCache = async (
   workspaceRoot: string,
   discoveries: Record<string, McpServerDiscovery>,
 ): Promise<void> => {
-  const cacheDirectory = join(workspaceRoot, ".machdoch", "mcp");
+  const cacheDirectory = join(workspaceRoot, ".machdoch", "local", "cache", "mcp");
 
   await mkdir(cacheDirectory, { recursive: true });
   await writeFile(
@@ -45,7 +45,7 @@ const writeWorkspaceMcpConfig = async (
   workspaceRoot: string,
   serverId = "github",
 ): Promise<void> => {
-  const configDirectory = join(workspaceRoot, ".machdoch", "mcp");
+  const configDirectory = join(workspaceRoot, ".machdoch", "local", "cache", "mcp");
 
   await mkdir(configDirectory, { recursive: true });
   await writeFile(
@@ -113,7 +113,7 @@ const createConfig = (): McpEffectiveConfig => ({
   workspaceConfigPath: "C:/workspace/.machdoch/mcp/mcp.json",
   userDiscoveryCachePath: "C:/config/mcp-discovery-cache.json",
   workspaceDiscoveryCachePath:
-    "C:/workspace/.machdoch/mcp/discovery-cache.json",
+    "C:/workspace/.machdoch/local/cache/mcp/discovery-cache.json",
   servers: [
     {
       id: "github",

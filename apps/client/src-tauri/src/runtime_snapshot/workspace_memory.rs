@@ -22,8 +22,12 @@ struct WorkspaceMemoryDocument {
 }
 
 fn get_workspace_memory_path(workspace_root: &str) -> Result<PathBuf, String> {
-    Ok(resolve_workspace_root_path(workspace_root)?
+    let root = resolve_workspace_root_path(workspace_root)?;
+    crate::workspace_storage::ensure_workspace_storage(&root)?;
+    Ok(root
         .join(".machdoch")
+        .join("local")
+        .join("state")
         .join("memory.json"))
 }
 
@@ -116,13 +120,18 @@ mod tests {
     #[test]
     fn loads_and_forgets_workspace_memory() {
         let workspace = create_workspace();
-        let memory_path = workspace.join(".machdoch").join("memory.json");
+        let memory_path = workspace.join(".machdoch/local/state").join("memory.json");
         fs::create_dir_all(
             memory_path
                 .parent()
                 .expect("memory path should have a parent"),
         )
         .expect("memory directory should be created");
+        fs::write(
+            workspace.join(".machdoch/local/state/storage-layout.json"),
+            "{\"version\":1}",
+        )
+        .unwrap();
         let document = WorkspaceMemoryDocument {
             version: WORKSPACE_MEMORY_VERSION,
             entries: vec![UserMemoryEntry {

@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createLocalReasoningBank,
@@ -182,7 +182,7 @@ describe("local ReasoningBank", () => {
   it("rejects malformed persisted lessons", async () => {
     const root = await createWorkspace();
     const path = getReasoningBankPath(root);
-    await mkdir(join(root, ".machdoch"), { recursive: true });
+    await mkdir(dirname(path), { recursive: true });
     await writeFile(path, JSON.stringify({ version: 1, lessons: [{}] }));
     await expect(createLocalReasoningBank(root).load()).rejects.toThrow(
       "Unsupported ReasoningBank document",

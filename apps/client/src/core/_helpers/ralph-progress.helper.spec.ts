@@ -273,7 +273,7 @@ describe("RALPH progress detector", () => {
       fileChanges: {
         files: [
           {
-            path: ".machdoch/ralph/counters.json",
+            path: ".machdoch/local/state/ralph/counters.json",
             operation: "modified",
             entryType: "text",
             oldMode: "100644",

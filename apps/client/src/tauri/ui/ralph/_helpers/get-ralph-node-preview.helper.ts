@@ -213,13 +213,13 @@ export const getUtilityNodePreview = (
         primary: `Archive ${compactPreviewText(utility.path, "file path not set")}`,
         secondary: utility.outputPath
           ? `To ${utility.outputPath}`
-          : `Root: ${compactPreviewText(utility.rootPath, ".machdoch/ralph/archive")}`,
+          : `Root: ${compactPreviewText(utility.rootPath, ".machdoch/local/state/ralph/archive")}`,
         chips: ["SUCCESS", "NOT_FOUND", "ERROR"],
       };
     case "LOOP_COUNTER":
       return {
         primary: `Counter ${compactPreviewText(utility.counterName, "loop")}`,
-        secondary: `State: ${compactPreviewText(utility.path, ".machdoch/ralph/counters.json")}`,
+        secondary: `State: ${compactPreviewText(utility.path, ".machdoch/local/state/ralph/counters.json")}`,
         chips: [
           `limit ${utility.maxAttempts ?? "none"}`,
           utility.reset ? "reset" : "increment",

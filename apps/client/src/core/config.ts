@@ -12,6 +12,7 @@ import { assertReasoningExecutionModeSupportedForProviderModel } from "./reasoni
 import { assertReasoningModeSupportedForProviderModel } from "./reasoning-modes.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
+import { ensureWorkspaceStorage } from "./workspace-storage.js";
 import { withoutObjectPath } from "./_helpers/without-object-path.helper.js";
 import {
   getUserConfigPath,
@@ -84,6 +85,7 @@ const isModelProvider = (
 export const loadWorkspaceConfigFile = async (
   workspaceRoot: string,
 ): Promise<{ config: WorkspaceConfigFile; path?: string }> => {
+  await ensureWorkspaceStorage(workspaceRoot);
   const configPath = join(
     workspaceRoot,
     WORKSPACE_CONFIG_DIRECTORY,

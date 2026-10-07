@@ -22,8 +22,16 @@ it("snapshots literal source paths and deletions while excluding tracked and ign
     git("init", "-q");
     await mkdir(join(root, ".machdoch"));
     await mkdir(join(root, "nested"));
-    await writeFile(join(root, ".machdoch", "tracked.json"), "{}");
-    await writeFile(join(root, "nested", ".machdoch"), "private");
+    await mkdir(join(root, ".machdoch", "local"));
+    await mkdir(join(root, "nested", ".machdoch", "local"), {
+      recursive: true,
+    });
+    await writeFile(join(root, ".machdoch", "config.json"), "{}");
+    await writeFile(join(root, ".machdoch", "local", "tracked.json"), "{}");
+    await writeFile(
+      join(root, "nested", ".machdoch", "local", "state.json"),
+      "private",
+    );
     await writeFile(join(root, "deleted.txt"), "delete me\n");
     await writeFile(join(root, "source.txt"), "baseline\n");
     git("add", ".");
@@ -41,8 +49,8 @@ it("snapshots literal source paths and deletions while excluding tracked and ign
     git("add", "source.txt");
     const index = git("write-tree");
     await writeFile(join(root, "source.txt"), "working\n");
-    await writeFile(join(root, ".gitignore"), ".machdoch\n");
-    await writeFile(join(root, ".machdoch", "ignored.json"), "{}");
+    await writeFile(join(root, ".gitignore"), "**/.machdoch/local/\n");
+    await writeFile(join(root, ".machdoch", "local", "ignored.json"), "{}");
     await writeFile(join(root, "[literal] space.txt"), "literal\n");
     await writeFile(join(root, "nested", ".machdoch-source"), "source\n");
     await rm(join(root, "deleted.txt"));
@@ -51,6 +59,7 @@ it("snapshots literal source paths and deletions while excluding tracked and ign
 
     expect(git("ls-tree", "-r", "--name-only", tree).split("\n")).toEqual([
       ".gitignore",
+      ".machdoch/config.json",
       "[literal] space.txt",
       "nested/.machdoch-source",
       "source.txt",
@@ -59,18 +68,21 @@ it("snapshots literal source paths and deletions while excluding tracked and ign
     expect(git("rev-parse", "HEAD")).toBe(head);
     expect(git("write-tree")).toBe(index);
     expect(
-      await readFile(join(root, ".machdoch", "tracked.json"), "utf8"),
+      await readFile(join(root, ".machdoch", "local", "tracked.json"), "utf8"),
     ).toBe("{}");
-    expect(await readFile(join(root, "nested", ".machdoch"), "utf8")).toBe(
-      "private",
-    );
+    expect(
+      await readFile(
+        join(root, "nested", ".machdoch", "local", "state.json"),
+        "utf8",
+      ),
+    ).toBe("private");
 
     await stageRalphSourceChanges(root);
 
     expect(git("write-tree")).toBe(tree);
     expect(git("rev-parse", "HEAD")).toBe(head);
     expect(
-      await readFile(join(root, ".machdoch", "ignored.json"), "utf8"),
+      await readFile(join(root, ".machdoch", "local", "ignored.json"), "utf8"),
     ).toBe("{}");
   } finally {
     await rm(root, {

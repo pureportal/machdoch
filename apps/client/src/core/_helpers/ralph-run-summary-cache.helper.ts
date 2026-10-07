@@ -24,8 +24,11 @@ export class RalphRunSummaryCache {
   private changed = false;
   private readonly path: string;
 
-  constructor(private readonly runDirectory: string) {
-    this.path = join(runDirectory, "..", "run-summary-cache.json");
+  constructor(
+    private readonly runDirectory: string,
+    cacheDirectory: string,
+  ) {
+    this.path = join(cacheDirectory, "run-summary-cache.json");
   }
 
   async load(): Promise<void> {

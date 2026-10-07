@@ -7,6 +7,7 @@ import {
 } from "../_helpers/read-stable-regular-file.helper.js";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
+import { getWorkspaceLocalDirectory } from "../workspace-storage-paths.js";
 import type { ToolCallEffect, ToolRiskLevel } from "../types.js";
 import { enrichMcpDiscoveryMetadata } from "./discovery-metadata.js";
 import { getMcpPreset, listMcpPresets } from "./presets.js";
@@ -735,8 +736,8 @@ export const getWorkspaceMcpDiscoveryCachePath = (
   workspaceRoot: string,
 ): string => {
   return join(
-    workspaceRoot,
-    MCP_WORKSPACE_DIRECTORY,
+    getWorkspaceLocalDirectory(workspaceRoot, "cache"),
+    "mcp",
     MCP_WORKSPACE_DISCOVERY_CACHE_FILE_NAME,
   );
 };

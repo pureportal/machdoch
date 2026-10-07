@@ -4261,7 +4261,7 @@ describe("runRalphFlow", () => {
     const project = join(workspace, "project");
     const outside = join(testRoot, "outside");
     const runId = "linked-run-artifact";
-    const artifactRoot = join(workspace, ".machdoch", "ralph", "runs", runId);
+    const artifactRoot = join(workspace, ".machdoch", "local", "state", "ralph", "runs", runId);
     vi.mocked(executeTask).mockResolvedValueOnce(
       createExecutionResult({
         summary: "Valid JSON.",
@@ -6408,7 +6408,7 @@ describe("runRalphFlow", () => {
     async (beginCycle) => {
       const workspace = await mkdtemp(join(tmpdir(), "ralph-scope-registry-"));
       const registryPath =
-        ".machdoch/ralph/scope-registry/test-flow.scope-registry.json";
+        ".machdoch/local/state/ralph/scope-registry/test-flow.scope-registry.json";
 
       try {
         await mkdir(join(workspace, "src"), { recursive: true });
@@ -7607,7 +7607,7 @@ describe("runRalphFlow", () => {
     });
 
     try {
-      await mkdir(join(workspace, ".machdoch", "ralph", "runs"), {
+      await mkdir(join(workspace, ".machdoch", "local", "state", "ralph", "runs"), {
         recursive: true,
       });
       await writeFile(

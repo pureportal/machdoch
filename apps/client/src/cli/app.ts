@@ -211,6 +211,16 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
 };
 
 export const runCli = async (argv: string[]): Promise<CommandName> => {
+  if (argv[0] === "workspace-storage-migrate") {
+    if (argv.length !== 2 || !argv[1]?.trim()) {
+      throw new Error("Workspace storage migration requires a workspace path.");
+    }
+    const { ensureWorkspaceStorage } =
+      await import("../core/workspace-storage.js");
+    await ensureWorkspaceStorage(argv[1]);
+    writeStdoutLine(JSON.stringify({ version: 1 }));
+    return "config";
+  }
   let args = parseCliArgs(argv);
   if (args.task === "-") {
     args = { ...args, task: await readTaskFromStdin() };

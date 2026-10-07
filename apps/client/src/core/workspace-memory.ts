@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
+import { ensureWorkspaceStorage } from "./workspace-storage.js";
 import {
   MAX_WORKSPACE_MEMORY_ENTRIES,
   forgetConversationMemoryEntry,
@@ -12,7 +13,7 @@ import {
 import type { ConversationMemoryEntry } from "./types.js";
 
 const WORKSPACE_MEMORY_VERSION = 1;
-const WORKSPACE_MEMORY_DIRECTORY = ".machdoch";
+const WORKSPACE_MEMORY_DIRECTORY = ".machdoch/local/state";
 const WORKSPACE_MEMORY_FILE = "memory.json";
 
 interface WorkspaceMemoryDocument {
@@ -31,6 +32,7 @@ export const getWorkspaceMemoryPath = (workspaceRoot: string): string => {
 const loadWorkspaceMemoryDocument = async (
   workspaceRoot: string,
 ): Promise<WorkspaceMemoryDocument> => {
+  await ensureWorkspaceStorage(workspaceRoot);
   const path = getWorkspaceMemoryPath(workspaceRoot);
   let raw: string;
 
@@ -72,6 +74,7 @@ export const rememberWorkspaceMemory = async (
   content: string,
   metadata: ConversationMemoryMetadata = {},
 ): Promise<ConversationMemoryEntry> => {
+  await ensureWorkspaceStorage(workspaceRoot);
   const path = getWorkspaceMemoryPath(workspaceRoot);
   let rememberedEntry: ConversationMemoryEntry | undefined;
 

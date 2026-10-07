@@ -372,7 +372,7 @@ export const createDefaultRalphScopeRegistryPath = (
 ): string => {
   const safeAlias = normalizeScopeId(flowAlias || "default");
 
-  return `.machdoch/ralph/scope-registry/${safeAlias}.scope-registry.json`;
+  return `.machdoch/local/state/ralph/scope-registry/${safeAlias}.scope-registry.json`;
 };
 
 export const parseRalphScopeExcludePaths = (

@@ -228,7 +228,7 @@ pub(super) fn validate_flows_with_core(entries: &[FileSnapshotEntry]) -> Result<
         "--flow-json-file".to_string(),
         "-".to_string(),
     ];
-    let response = crate::shared_cli::run_side_effect_free_json_command(
+    let response = crate::shared_cli::run_shared_cli_json_command(
         &arguments,
         batch,
         RALPH_CORE_VALIDATION_TIMEOUT,

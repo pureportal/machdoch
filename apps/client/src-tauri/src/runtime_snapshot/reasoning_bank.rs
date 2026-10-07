@@ -34,8 +34,12 @@ struct ReasoningBankDocument {
 pub(super) fn load_reasoning_bank_lessons(
     workspace_root: &str,
 ) -> Result<Vec<ReasoningBankLesson>, String> {
-    let path = resolve_workspace_root_path(workspace_root)?
+    let root = resolve_workspace_root_path(workspace_root)?;
+    crate::workspace_storage::ensure_workspace_storage(&root)?;
+    let path = root
         .join(".machdoch")
+        .join("local")
+        .join("state")
         .join("reasoning-bank.json");
     let raw = match fs::read_to_string(&path) {
         Ok(raw) => raw,
@@ -69,8 +73,9 @@ mod tests {
             "machdoch-reasoning-bank-{}-{unique}",
             std::process::id()
         ));
-        let directory = root.join(".machdoch");
+        let directory = root.join(".machdoch/local/state");
         fs::create_dir_all(&directory).expect("directory should be created");
+        fs::write(directory.join("storage-layout.json"), "{\"version\":1}").unwrap();
         let document = serde_json::json!({
             "version": 1,
             "lessons": [

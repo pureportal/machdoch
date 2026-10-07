@@ -3,13 +3,14 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runStreamingCommand } from "./streaming-command.js";
+import { isWorkspaceLocalPath } from "../workspace-storage-paths.js";
 
 export const RALPH_SOURCE_PATHS = [
   ".",
-  ":(glob,exclude).machdoch",
-  ":(glob,exclude).machdoch/**",
-  ":(glob,exclude)**/.machdoch",
-  ":(glob,exclude)**/.machdoch/**",
+  ":(glob,exclude).machdoch/local",
+  ":(glob,exclude).machdoch/local/**",
+  ":(glob,exclude)**/.machdoch/local",
+  ":(glob,exclude)**/.machdoch/local/**",
 ];
 
 export const runRalphWorktreeGit = async (
@@ -67,7 +68,7 @@ export const stageRalphSourceChanges = async (
   const paths: string[] = [];
   const artifacts: string[] = [];
   for (const path of new Set(files.split("\0").filter(Boolean))) {
-    (path.split("/").includes(".machdoch") ? artifacts : paths).push(path);
+    (isWorkspaceLocalPath(path) ? artifacts : paths).push(path);
   }
   if (paths.length > 0) {
     await runRalphWorktreeGit(

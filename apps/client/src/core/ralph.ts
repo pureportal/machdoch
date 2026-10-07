@@ -1,3 +1,4 @@
+import { ensureWorkspaceStorage } from "./workspace-storage.js";
 import { createHash, randomUUID } from "node:crypto";
 import { assertRalphWorkspaceBoundary } from "./_helpers/assert-ralph-workspace-boundary.helper.js";
 import { retryTransientFileOperation } from "./_helpers/retry-transient-file-operation.helper.js";
@@ -46,6 +47,7 @@ import {
   createRalphRevisionFilePath,
   createRalphRunArtifactPaths,
   getRalphArtifactDirectory,
+  getRalphCacheDirectory,
   getRalphFlowPath,
   getRalphFlowStorageDirectory,
   getRalphRevisionDirectory,
@@ -1712,6 +1714,7 @@ export const resolveRalphFlowReference = async (
   reference: string,
   options: { scope?: RalphFlowScope } = {},
 ): Promise<RalphFlowReferenceResolution> => {
+  if (options.scope !== "user") await ensureWorkspaceStorage(workspaceRoot);
   const scope = options.scope ?? "workspace";
   const normalizedReference = normalizeFlowId(reference);
 
@@ -1874,6 +1877,7 @@ export const writeRalphFlow = async (
   flow: RalphFlow,
   options: RalphFlowWriteOptions = {},
 ): Promise<string> => {
+  if (options.scope !== "user") await ensureWorkspaceStorage(workspaceRoot);
   const scope = options.scope ?? "workspace";
   const validation = validateRalphFlow(flow);
 
@@ -1960,6 +1964,7 @@ export const listRalphFlows = async (
   workspaceRoot: string,
   options: RalphFlowListOptions = {},
 ): Promise<RalphFlowSummary[]> => {
+  if (options.scope !== "user") await ensureWorkspaceStorage(workspaceRoot);
   const scopes: RalphFlowScope[] =
     options.scope === "all"
       ? ["workspace", "user"]
@@ -2392,6 +2397,7 @@ export const pruneRalphRunArtifacts = async (
     preserveRunId?: string;
   } = {},
 ): Promise<{ removed: string[] }> => {
+  if (options.scope !== "user") await ensureWorkspaceStorage(workspaceRoot);
   const runDirectory = getRalphRunDirectory(
     workspaceRoot,
     options.scope ?? "workspace",
@@ -2753,6 +2759,7 @@ export const createRalphRunLogger = async (
     scope?: RalphFlowScope;
   } = {},
 ): Promise<RalphRunLogger> => {
+  if (options.scope !== "user") await ensureWorkspaceStorage(workspaceRoot);
   const createdAt = createLogTimestamp();
   const paths =
     options.paths ??
@@ -2838,6 +2845,7 @@ export const writeRalphRunRecord = async (
     scope?: RalphFlowScope;
   } = {},
 ): Promise<RalphRunRecordWriteResult> => {
+  if (options.scope !== "user") await ensureWorkspaceStorage(workspaceRoot);
   const createdAt = new Date().toISOString();
   const runDirectory = getRalphRunDirectory(
     workspaceRoot,
@@ -3015,6 +3023,7 @@ const resolveRalphRunRecordPath = async (
   runId: string,
   scope: RalphFlowScope = "workspace",
 ): Promise<string> => {
+  if (scope === "workspace") await ensureWorkspaceStorage(workspaceRoot);
   const normalizedRunId = normalizeRunId(runId);
   const runDirectory = getRalphRunDirectory(workspaceRoot, scope);
   const directoryRecordPath = join(runDirectory, normalizedRunId, "run.json");
@@ -3163,6 +3172,7 @@ export const listRalphRunRecords = async (
     includeActive?: boolean;
   } = {},
 ): Promise<RalphRunSummary[]> => {
+  if (options.scope !== "user") await ensureWorkspaceStorage(workspaceRoot);
   const runDirectory = getRalphRunDirectory(
     workspaceRoot,
     options.scope ?? "workspace",
@@ -3173,7 +3183,10 @@ export const listRalphRunRecords = async (
   }
 
   const entries = await readdir(runDirectory, { withFileTypes: true });
-  const summaryCache = new RalphRunSummaryCache(runDirectory);
+  const summaryCache = new RalphRunSummaryCache(
+    runDirectory,
+    getRalphCacheDirectory(workspaceRoot, options.scope ?? "workspace"),
+  );
   await summaryCache.load();
   const summaries: RalphRunSummary[] = [];
   const normalizedFlowId = options.flowId
@@ -3270,6 +3283,7 @@ export const readRalphRunLog = async (
   kind: "simple" | "trace" = "simple",
   options: { scope?: RalphFlowScope } = {},
 ): Promise<RalphRunLogReadResult> => {
+  if (options.scope !== "user") await ensureWorkspaceStorage(workspaceRoot);
   const scope = options.scope ?? "workspace";
 
   try {
@@ -8507,7 +8521,7 @@ const createArchiveFilePath = async (
   }
 
   const archiveRoot = await resolveWorkspaceContainedMutationPath(
-    utility.rootPath?.trim() || ".machdoch/ralph/archive",
+    utility.rootPath?.trim() || ".machdoch/local/state/ralph/archive",
     workspaceRoot,
     { preserveRequestedPath: true },
   );
@@ -8689,7 +8703,7 @@ const executeLoopCounterUtilityBlock = async (
   context: RalphResultContext,
 ): Promise<RalphBlockExecutionResult> => {
   const path = await resolveWorkspaceContainedMutationPath(
-    utility.path?.trim() || ".machdoch/ralph/counters.json",
+    utility.path?.trim() || ".machdoch/local/state/ralph/counters.json",
     config.workspaceRoot,
   );
   const counterName = utility.counterName?.trim() || block.id;
@@ -10575,6 +10589,8 @@ const executeUiAnalyzeBrowserUtilityBlock = async (
       const registryPath = join(
         config.workspaceRoot,
         ".machdoch",
+        "local",
+        "state",
         "ralph",
         "managed-servers",
         `${serverIdentity}.json`,
@@ -16798,10 +16814,13 @@ const runRalphFlowImpl = async (
                 resultContext.variables,
                 logger.paths,
               );
-              await publishRalphInitializationRecord(logger.paths, flow.id, () =>
-                writeJsonAtomically(logger.paths!.recordPath, record, {
-                  beforeCommit: assertBoundaryOwnership,
-                }),
+              await publishRalphInitializationRecord(
+                logger.paths,
+                flow.id,
+                () =>
+                  writeJsonAtomically(logger.paths!.recordPath, record, {
+                    beforeCommit: assertBoundaryOwnership,
+                  }),
               );
               lastRunProjectionAt = Date.now();
               await assertBoundaryOwnership();

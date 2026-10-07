@@ -53,10 +53,17 @@ describe("create Ralph storage paths", () => {
       join(workspaceRoot, ".machdoch", "ralph", "flows"),
     );
     expect(getRalphRunDirectory(workspaceRoot)).toBe(
-      join(workspaceRoot, ".machdoch", "ralph", "runs"),
+      join(workspaceRoot, ".machdoch", "local", "state", "ralph", "runs"),
     );
     expect(getRalphArtifactDirectory(workspaceRoot)).toBe(
-      join(workspaceRoot, ".machdoch", "ralph", "artifacts"),
+      join(
+        workspaceRoot,
+        ".machdoch",
+        "local",
+        "artifacts",
+        "ralph",
+        "artifacts",
+      ),
     );
   });
 
@@ -81,7 +88,15 @@ describe("create Ralph storage paths", () => {
       join(workspaceRoot, ".machdoch", "ralph", "flows", "refactor-flow.json"),
     );
     expect(getRalphRevisionDirectory(workspaceRoot, " Refactor Flow ")).toBe(
-      join(workspaceRoot, ".machdoch", "ralph", "revisions", "refactor-flow"),
+      join(
+        workspaceRoot,
+        ".machdoch",
+        "local",
+        "state",
+        "ralph",
+        "revisions",
+        "refactor-flow",
+      ),
     );
     expect(
       getRalphRevisionPath(workspaceRoot, " Refactor Flow ", " Revision:One "),
@@ -89,6 +104,8 @@ describe("create Ralph storage paths", () => {
       join(
         workspaceRoot,
         ".machdoch",
+        "local",
+        "state",
         "ralph",
         "revisions",
         "refactor-flow",

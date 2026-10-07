@@ -149,6 +149,8 @@ export class FleetRalphEditor {
     const temporaryRoot = join(
       resolvedWorkspace,
       ".machdoch",
+      "local",
+      "cache",
       "fleet-payloads",
     );
     await mkdir(temporaryRoot, { recursive: true });

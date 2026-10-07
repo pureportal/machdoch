@@ -11,7 +11,14 @@ import {
 describe("getRalphGenerationDirectory", () => {
   it("resolves workspace generation artifacts under the Ralph storage directory", () => {
     expect(getRalphGenerationDirectory("/workspace")).toBe(
-      join("/workspace", ".machdoch", "ralph", "generations"),
+      join(
+        "/workspace",
+        ".machdoch",
+        "local",
+        "artifacts",
+        "ralph",
+        "generations",
+      ),
     );
   });
 });
@@ -92,12 +99,12 @@ describe("createRalphGenerationLogger", () => {
       });
       await logger.flush();
 
-      await expect(readFile(logger.paths.simpleMarkdownPath, "utf8")).resolves.toContain(
-        "- 2026-06-20T10:11:12.013Z Started.",
-      );
-      await expect(readFile(logger.paths.traceJsonlPath, "utf8")).resolves.toContain(
-        "\"type\":\"started\"",
-      );
+      await expect(
+        readFile(logger.paths.simpleMarkdownPath, "utf8"),
+      ).resolves.toContain("- 2026-06-20T10:11:12.013Z Started.");
+      await expect(
+        readFile(logger.paths.traceJsonlPath, "utf8"),
+      ).resolves.toContain('"type":"started"');
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

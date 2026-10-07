@@ -65,8 +65,8 @@ Thumbs.db
 tmp/
 temp/
 
-# Machdoch config
-.machdoch
+# Machdoch local data
+**/.machdoch/local/
 
 # Model folder
 models/

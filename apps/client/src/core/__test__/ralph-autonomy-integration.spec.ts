@@ -38,7 +38,7 @@ describe("RALPH autonomy integration", () => {
   it("continues completed coverage cycles without triggering stagnation guards", async () => {
     const workspace = await createWorkspace();
     await writeFile(join(workspace, "package.json"), "{}", "utf8");
-    const registryPath = ".machdoch/ralph/scope-registry/continuous.json";
+    const registryPath = ".machdoch/local/state/ralph/scope-registry/continuous.json";
     const scopeUtility = {
       registryPath,
       flowAlias: "continuous",
@@ -324,7 +324,7 @@ describe("RALPH autonomy integration", () => {
           title: "Retry",
           utility: {
             type: "LOOP_COUNTER",
-            path: ".machdoch/ralph/counters.json",
+            path: ".machdoch/local/state/ralph/counters.json",
             counterName: "unproductive-cycle",
           },
         },
@@ -653,7 +653,7 @@ describe("RALPH autonomy integration", () => {
           title: "Bound passes",
           utility: {
             type: "LOOP_COUNTER",
-            path: ".machdoch/ralph/counters.json",
+            path: ".machdoch/local/state/ralph/counters.json",
             counterName: "productive-cycle",
             maxAttempts: 2,
           },

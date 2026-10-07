@@ -206,7 +206,7 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
     const workspaceRoot = resolve("C:/workspace");
     const runId = "scheduled-run-1-autonomous-improvement";
     mocks.readRalphRunRecord.mockResolvedValue({
-      path: resolve(`C:/workspace/.machdoch/ralph/runs/${runId}/run.json`),
+      path: resolve(`C:/workspace/.machdoch/local/state/ralph/runs/${runId}/run.json`),
       record: {
         id: "scheduled-different-run-autonomous-improvement",
         flowId: "different-flow",
@@ -240,18 +240,18 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
     };
     const paths = {
       id: runId,
-      directory: resolve(`C:/workspace/.machdoch/ralph/runs/${runId}`),
+      directory: resolve(`C:/workspace/.machdoch/local/state/ralph/runs/${runId}`),
       recordPath: resolve(
-        `C:/workspace/.machdoch/ralph/runs/${runId}/run.json`,
+        `C:/workspace/.machdoch/local/state/ralph/runs/${runId}/run.json`,
       ),
       simpleJsonlPath: resolve(
-        `C:/workspace/.machdoch/ralph/runs/${runId}/simple.jsonl`,
+        `C:/workspace/.machdoch/local/state/ralph/runs/${runId}/simple.jsonl`,
       ),
       simpleMarkdownPath: resolve(
-        `C:/workspace/.machdoch/ralph/runs/${runId}/simple.md`,
+        `C:/workspace/.machdoch/local/state/ralph/runs/${runId}/simple.md`,
       ),
       traceJsonlPath: resolve(
-        `C:/workspace/.machdoch/ralph/runs/${runId}/trace.jsonl`,
+        `C:/workspace/.machdoch/local/state/ralph/runs/${runId}/trace.jsonl`,
       ),
     };
     const record = {
@@ -330,7 +330,7 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
     const workspaceRoot = resolve("C:/workspace");
     const runId = "scheduled-run-1-autonomous-improvement";
     mocks.readRalphRunRecord.mockResolvedValue({
-      path: resolve(`C:/workspace/.machdoch/ralph/runs/${runId}/run.json`),
+      path: resolve(`C:/workspace/.machdoch/local/state/ralph/runs/${runId}/run.json`),
       record: {
         schemaVersion: 1,
         id: runId,
@@ -381,7 +381,7 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
   it("resumes a stopped checkpoint after a timed-out scheduler attempt", async () => {
     const workspaceRoot = resolve("C:/workspace");
     const runId = "scheduled-run-1-autonomous-improvement";
-    const directory = resolve(`C:/workspace/.machdoch/ralph/runs/${runId}`);
+    const directory = resolve(`C:/workspace/.machdoch/local/state/ralph/runs/${runId}`);
     const checkpoint = {
       currentBlockId: "verify",
       transitions: 9,
@@ -480,7 +480,7 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
       repeatedFailures: {},
     };
     const directory = resolve(
-      `C:/workspace/.machdoch/ralph/runs/${parentRalphRunId}`,
+      `C:/workspace/.machdoch/local/state/ralph/runs/${parentRalphRunId}`,
     );
     mocks.readRalphRunRecord.mockResolvedValue({
       path: resolve(`${directory}/run.json`),
@@ -539,7 +539,7 @@ describe("createSchedulerExecutor scheduled RALPH recovery", () => {
     const childRalphRunId = "scheduled-run-1-autonomous-improvement";
     mocks.readRalphRunRecord.mockResolvedValue({
       path: resolve(
-        `C:/workspace/.machdoch/ralph/runs/${parentRalphRunId}/run.json`,
+        `C:/workspace/.machdoch/local/state/ralph/runs/${parentRalphRunId}/run.json`,
       ),
       record: {
         schemaVersion: 1,

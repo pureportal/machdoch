@@ -62,7 +62,7 @@ describe("ralph-block-factory helper", () => {
 
     expect(utility).toEqual({
       type: "ASSESS_JSON_TASKS",
-      path: "{{checklistFile:path=.machdoch/ralph/tasks.json}}",
+      path: "{{checklistFile:path=.machdoch/local/state/ralph/tasks.json}}",
       jsonPath: "tasks",
       strategy: "start-to-end",
     });
