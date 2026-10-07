@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import {
   lstat,
   mkdir,
@@ -115,7 +117,7 @@ const moveStorageEntry = async (
     sourceMetadata.isFile() &&
     destinationMetadata.isFile() &&
     sourceMetadata.size === destinationMetadata.size &&
-    (await readFile(source)).equals(await readFile(destination))
+    (await hashStorageFile(source)) === (await hashStorageFile(destination))
   ) {
     await unlink(source);
     return;
@@ -123,6 +125,12 @@ const moveStorageEntry = async (
   throw new Error(
     `Workspace storage conflict at ${destination}. Move one of the conflicting files and reload the workspace.`,
   );
+};
+
+const hashStorageFile = async (path: string): Promise<string> => {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
 };
 
 const updateIgnoreFile = async (
@@ -142,7 +150,12 @@ const updateIgnoreFile = async (
     return line;
   });
   if (projectIgnore) {
-    for (const pattern of ["/local/", "*.json.lock/", "*.json.*.tmp"]) {
+    for (const pattern of [
+      "/local/",
+      "*.machdoch.lock*/",
+      "*.json.lock/",
+      "*.tmp",
+    ]) {
       if (updated.some((line) => line.trim() === pattern)) continue;
       if (updated.at(-1) === "") updated.pop();
       updated.push(pattern, "");
@@ -221,14 +234,16 @@ const migrateStorage = async (workspaceRoot: string): Promise<void> => {
       for (const entry of await readdir(directory, { withFileTypes: true })) {
         const category =
           entry.isDirectory() &&
-          (/^(?:chrome-|browser-profile-)/u.test(entry.name) || entry.name === "fleet-payloads")
+          (/^(?:chrome-|browser-profile-)/u.test(entry.name) ||
+            entry.name === "fleet-payloads")
             ? "cache"
             : (entry.isDirectory() &&
                   ["e2e", "seo-image-sources"].includes(entry.name)) ||
                 (entry.isFile() &&
-                  /\.(?:png|jpe?g|webp|gif|mp4|webm|zip|log|trace)$/iu.test(
+                  (/^(?:screenshot(?:[._-].*)?|media-studio-.+)\.(?:png|jpe?g|webp|gif|mp4|webm)$/iu.test(
                     entry.name,
-                  ))
+                  ) ||
+                    /\.(?:log|trace)$/iu.test(entry.name)))
               ? "artifacts"
               : undefined;
         if (category)
@@ -248,6 +263,7 @@ const migrateStorage = async (workspaceRoot: string): Promise<void> => {
         version: WORKSPACE_STORAGE_LAYOUT_VERSION,
       });
     },
+    { timeoutMs: 120_000 },
   );
 };
 

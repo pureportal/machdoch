@@ -90,7 +90,11 @@ const migrateJsonReferences = async (
     throw new Error(`Workspace storage must be a regular file: ${path}`);
   }
   const original: unknown = JSON.parse(await readFile(path, "utf8"));
-  const updated = migrateWorkspacePathReferences(original, workspaceRoot, fingerprints);
+  const updated = migrateWorkspacePathReferences(
+    original,
+    workspaceRoot,
+    fingerprints,
+  );
   if (JSON.stringify(original) === JSON.stringify(updated)) return;
   if (
     isRecord(original) &&
@@ -152,20 +156,34 @@ export const migrateWorkspaceStorageReferences = async (
       for (const entry of await listDirectory(path)) {
         const child = join(path, entry.name);
         if (entry.isDirectory()) await visit(child);
-        else if (entry.name.endsWith(".json"))
-          flowPaths.push(child);
+        else if (entry.name.endsWith(".json")) flowPaths.push(child);
       }
     };
     await visit(directory);
   }
-  const fingerprintPath = join(projectDirectory, "local", "state", "storage-path-references.json");
+  const fingerprintPath = join(
+    projectDirectory,
+    "local",
+    "state",
+    "storage-path-references.json",
+  );
   const fingerprints = new Map<string, string>();
   try {
+    const metadata = await lstat(fingerprintPath);
+    if (!metadata.isFile() || metadata.isSymbolicLink()) {
+      throw new Error(
+        `Workspace storage must be a regular file: ${fingerprintPath}`,
+      );
+    }
     const saved: unknown = JSON.parse(await readFile(fingerprintPath, "utf8"));
-    if (!isRecord(saved) || Object.values(saved).some((value) => typeof value !== "string")) {
+    if (
+      !isRecord(saved) ||
+      Object.values(saved).some((value) => typeof value !== "string")
+    ) {
       throw new Error(`Invalid migration fingerprint map: ${fingerprintPath}`);
     }
-    for (const [before, after] of Object.entries(saved)) fingerprints.set(before, after as string);
+    for (const [before, after] of Object.entries(saved))
+      fingerprints.set(before, after as string);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
@@ -176,26 +194,41 @@ export const migrateWorkspaceStorageReferences = async (
     }
     const original: unknown = JSON.parse(await readFile(path, "utf8"));
     if (!isFlow(original)) continue;
-    const updated = migrateWorkspacePathReferences(original, workspaceRoot) as RalphFlow;
+    const updated = migrateWorkspacePathReferences(
+      original,
+      workspaceRoot,
+    ) as RalphFlow;
     const before = createRalphFlowFingerprint(original);
     const after = createRalphFlowFingerprint(updated);
     if (before !== after) fingerprints.set(before, after);
   }
   if (fingerprints.size > 0) {
-    await writeJsonAtomically(fingerprintPath, Object.fromEntries(fingerprints));
+    await writeJsonAtomically(
+      fingerprintPath,
+      Object.fromEntries(fingerprints),
+    );
   }
-  for (const path of flowPaths) await migrateJsonReferences(path, workspaceRoot, fingerprints);
+  for (const path of flowPaths)
+    await migrateJsonReferences(path, workspaceRoot, fingerprints);
   const runs = join(projectDirectory, "local", "state", "ralph", "runs");
   for (const entry of await listDirectory(runs)) {
     if (entry.isFile() && entry.name.endsWith(".json")) {
-      await migrateJsonReferences(join(runs, entry.name), workspaceRoot, fingerprints);
+      await migrateJsonReferences(
+        join(runs, entry.name),
+        workspaceRoot,
+        fingerprints,
+      );
       continue;
     }
     if (!entry.isDirectory()) continue;
     const directory = join(runs, entry.name);
     for (const file of await listDirectory(directory)) {
       if (file.isFile() && file.name === "run.json") {
-        await migrateJsonReferences(join(directory, file.name), workspaceRoot, fingerprints);
+        await migrateJsonReferences(
+          join(directory, file.name),
+          workspaceRoot,
+          fingerprints,
+        );
       }
     }
     const checkpoints = join(directory, "checkpoints");

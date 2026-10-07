@@ -56,6 +56,7 @@ describe("workspace storage migration", () => {
     await write(root, ".machdoch/run.json", '{"configurations":[]}');
     await write(root, ".machdoch/prompts/task.prompt.md", "A shared task");
     await write(root, ".machdoch/custom.json", '{"userDefined":true}');
+    await write(root, ".machdoch/logo.png", "shared image");
     await write(root, ".machdoch/memory.json", '{"version":1,"entries":[]}');
     await write(
       root,
@@ -92,6 +93,7 @@ describe("workspace storage migration", () => {
       "prompts/task.prompt.md",
       "mcp/mcp.json",
       "custom.json",
+      "logo.png",
     ]) {
       expect(await exists(join(root, ".machdoch", path))).toBe(true);
     }
@@ -147,79 +149,108 @@ describe("workspace storage migration", () => {
     expect(await exists(join(root, ".machdoch/memory.json"))).toBe(false);
   });
 
-  it("relocates flow, run, and checkpoint references and preserves checkpoint integrity", async () => {
-    const root = await createWorkspace();
-    const flow: RalphFlow = {
-      schemaVersion: 1,
-      id: "flow",
-      name: "Flow",
-      guidance: "Read .machdoch/ralph/counters.json",
-      blocks: [],
-      edges: [],
-    };
-    const checkpoint = {
-      flowFingerprint: createRalphFlowFingerprint(flow),
-      currentBlockId: "work",
-      variables: { file: ".machdoch/ralph/tasks.json" },
-    };
-    const envelope = {
-      schemaVersion: 1,
-      generation: 1,
-      createdAt: "2026-01-01T00:00:00Z",
-      checkpoint,
-      checksum: createHash("sha256")
-        .update(JSON.stringify({ generation: 1, checkpoint }))
-        .digest("hex"),
-    };
-    const record = {
-      schemaVersion: 1,
-      id: "run",
-      createdAt: "2026-01-01T00:00:00Z",
-      flowId: "flow",
-      flowName: "Flow",
-      status: "completed",
-      summary: "Done",
-      events: [],
-      blockResults: [],
-      logPaths: {
-        simpleMarkdownPath: join(root, ".machdoch/ralph/runs/run/simple.md"),
-      },
-      preparation: { flowFingerprint: createRalphFlowFingerprint(flow), flowSnapshot: flow },
-    };
-    await write(root, ".machdoch/ralph/flows/flow.json", JSON.stringify(flow));
-    await write(
-      root,
-      ".machdoch/ralph/runs/run/run.json",
-      JSON.stringify(record),
-    );
-    await write(
-      root,
-      ".machdoch/ralph/runs/run/checkpoints/0000000001-11111111-1111-1111-1111-111111111111.json",
-      JSON.stringify(envelope),
-    );
-    await ensureWorkspaceStorage(root);
-    const migratedFlow = JSON.parse(
-      await readFile(join(root, ".machdoch/ralph/flows/flow.json"), "utf8"),
-    );
-    expect(migratedFlow.guidance).toBe("Read .machdoch/local/state/ralph/counters.json");
-    const migratedRun = await readRalphRunRecord(root, "run");
-    expect(migratedRun.record.logPaths?.simpleMarkdownPath).toBe(
-      join(root, ".machdoch/local/state/ralph/runs/run/simple.md"),
-    );
-    const store = new RalphRunStore(
-      join(root, ".machdoch/local/state/ralph/runs/run"),
-    );
-    expect(
-      (await store.readLatestCheckpoint())?.checkpoint.variables,
-    ).toEqual({ file: ".machdoch/local/state/ralph/tasks.json" });
-    expect((await store.readLatestCheckpoint())?.checkpoint.flowFingerprint).toBe(
-      createRalphFlowFingerprint(migratedFlow),
-    );
-    const migratedRecord = JSON.parse(await readFile(
-      join(root, ".machdoch/local/state/ralph/runs/run/run.json"), "utf8",
-    ));
-    expect(migratedRecord.preparation.flowFingerprint).toBe(createRalphFlowFingerprint(migratedFlow));
-  });
+  it.each([false, true])(
+    "preserves path references and checkpoint integrity after interruption: %s",
+    async (interrupted) => {
+      const root = await createWorkspace();
+      const flow: RalphFlow = {
+        schemaVersion: 1,
+        id: "flow",
+        name: "Flow",
+        guidance: "Read .machdoch/ralph/counters.json",
+        blocks: [],
+        edges: [],
+      };
+      const checkpoint = {
+        flowFingerprint: createRalphFlowFingerprint(flow),
+        currentBlockId: "work",
+        variables: { file: ".machdoch/ralph/tasks.json" },
+      };
+      const envelope = {
+        schemaVersion: 1,
+        generation: 1,
+        createdAt: "2026-01-01T00:00:00Z",
+        checkpoint,
+        checksum: createHash("sha256")
+          .update(JSON.stringify({ generation: 1, checkpoint }))
+          .digest("hex"),
+      };
+      const record = {
+        schemaVersion: 1,
+        id: "run",
+        createdAt: "2026-01-01T00:00:00Z",
+        flowId: "flow",
+        flowName: "Flow",
+        status: "completed",
+        summary: "Done",
+        events: [],
+        blockResults: [],
+        logPaths: {
+          simpleMarkdownPath: join(root, ".machdoch/ralph/runs/run/simple.md"),
+        },
+        preparation: {
+          flowFingerprint: createRalphFlowFingerprint(flow),
+          flowSnapshot: flow,
+        },
+      };
+      await write(
+        root,
+        ".machdoch/ralph/flows/flow.json",
+        JSON.stringify(flow),
+      );
+      await write(
+        root,
+        ".machdoch/ralph/runs/run/run.json",
+        JSON.stringify(record),
+      );
+      await write(
+        root,
+        ".machdoch/ralph/runs/run/checkpoints/0000000001-11111111-1111-1111-1111-111111111111.json",
+        JSON.stringify(
+          interrupted ? { ...envelope, checksum: "invalid" } : envelope,
+        ),
+      );
+      if (interrupted) {
+        await expect(ensureWorkspaceStorage(root)).rejects.toThrow(
+          "invalid checksum",
+        );
+        await write(
+          root,
+          ".machdoch/local/state/ralph/runs/run/checkpoints/0000000001-11111111-1111-1111-1111-111111111111.json",
+          JSON.stringify(envelope),
+        );
+      }
+      await ensureWorkspaceStorage(root);
+      const migratedFlow = JSON.parse(
+        await readFile(join(root, ".machdoch/ralph/flows/flow.json"), "utf8"),
+      );
+      expect(migratedFlow.guidance).toBe(
+        "Read .machdoch/local/state/ralph/counters.json",
+      );
+      const migratedRun = await readRalphRunRecord(root, "run");
+      expect(migratedRun.record.logPaths?.simpleMarkdownPath).toBe(
+        join(root, ".machdoch/local/state/ralph/runs/run/simple.md"),
+      );
+      const store = new RalphRunStore(
+        join(root, ".machdoch/local/state/ralph/runs/run"),
+      );
+      expect(
+        (await store.readLatestCheckpoint())?.checkpoint.variables,
+      ).toEqual({ file: ".machdoch/local/state/ralph/tasks.json" });
+      expect(
+        (await store.readLatestCheckpoint())?.checkpoint.flowFingerprint,
+      ).toBe(createRalphFlowFingerprint(migratedFlow));
+      const migratedRecord = JSON.parse(
+        await readFile(
+          join(root, ".machdoch/local/state/ralph/runs/run/run.json"),
+          "utf8",
+        ),
+      );
+      expect(migratedRecord.preparation.flowFingerprint).toBe(
+        createRalphFlowFingerprint(migratedFlow),
+      );
+    },
+  );
 
   it("preserves conflicts and can resume after they are resolved", async () => {
     const root = await createWorkspace();

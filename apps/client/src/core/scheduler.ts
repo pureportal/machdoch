@@ -1,17 +1,14 @@
 import {
+  getNextSchedulerRunAfter as getNextRunAfter,
+  createCanonicalWorkspaceQueueKey,
+} from "./_helpers/scheduler-workspace-model.helper.js";
+import {
   withSchedulerStateLock,
   writeSchedulerFileDurably,
 } from "./_helpers/scheduler-file-storage.helper.js";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import {
-  mkdir,
-  readFile,
-  realpath,
-  readdir,
-  rm,
-  stat,
-} from "node:fs/promises";
+import { mkdir, readFile, realpath, readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { VALID_MODEL_PROVIDERS } from "./runtime-contract.generated.js";
 import {
@@ -67,8 +64,6 @@ import {
 } from "./_helpers/scheduler-event-trigger-matching.helper.js";
 import { normalizeStringList } from "../helpers/normalize-string-list.helper.js";
 import {
-  getNextSchedulerRunAfter as getNextRunAfter,
-  createCanonicalWorkspaceQueueKey,
   getSchedulerStatePath,
   getSchedulerStorageWorkspaceRoot,
   readWorkspaceSchedulerStateUnlocked,
@@ -76,7 +71,6 @@ import {
 } from "./_helpers/scheduler-workspace-storage.helper.js";
 export {
   getSchedulerDefinitionPath,
-  getSchedulerDefinitionPath as getWorkspaceSchedulerDefinitionPath,
   getSchedulerStatePath,
 } from "./_helpers/scheduler-workspace-storage.helper.js";
 export { createScheduledJobTaskText } from "./_helpers/create-scheduled-job-task-text.helper.js";
