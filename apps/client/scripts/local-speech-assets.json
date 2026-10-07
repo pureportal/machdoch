@@ -97,9 +97,10 @@
         },
         "distributionList": {
           "path": "windows-runtime/REDIST.html",
-          "url": "https://learn.microsoft.com/en-us/visualstudio/releases/2026/redistribution",
-          "sha256": "7ceec7e64424154de40134ca7739026de902bd777c5a760cbc8c60c6e5903a96",
-          "size": 48818
+          "url": "https://raw.githubusercontent.com/pureportal/machdoch/073f72d3bc2d1678f067a92aa273dccb4498c7a3/legal/third-party/microsoft/visual-studio-2026-REDIST.html",
+          "source": "https://learn.microsoft.com/en-us/visualstudio/releases/2026/redistribution",
+          "sha256": "99b86c6518ace71fa8830b9fa71f1c0ebf3693f9d788a6523eea670cd5771e20",
+          "size": 48845
         }
       }
     },
