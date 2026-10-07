@@ -912,8 +912,11 @@ describe("createRalphFlowWithAgent", () => {
         ),
         "utf8",
       );
+      await mkdir(join(workspace, ".machdoch/local/cache/mcp"), {
+        recursive: true,
+      });
       await writeFile(
-        join(workspace, ".machdoch", "mcp", "discovery-cache.json"),
+        join(workspace, ".machdoch/local/cache/mcp/discovery-cache.json"),
         JSON.stringify(
           {
             schemaVersion: 1,
@@ -1068,8 +1071,11 @@ describe("createRalphFlowWithAgent", () => {
         ),
         "utf8",
       );
+      await mkdir(join(workspace, ".machdoch/local/cache/mcp"), {
+        recursive: true,
+      });
       await writeFile(
-        join(workspace, ".machdoch", "mcp", "discovery-cache.json"),
+        join(workspace, ".machdoch/local/cache/mcp/discovery-cache.json"),
         JSON.stringify(
           {
             schemaVersion: 1,

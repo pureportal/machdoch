@@ -7,6 +7,7 @@ import {
   writeSchedulerFileDurably,
 } from "./_helpers/scheduler-file-storage.helper.js";
 import { createHash, randomUUID } from "node:crypto";
+import { ensureWorkspaceStorage } from "./workspace-storage.js";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, realpath, readdir, rm, stat } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
@@ -1027,6 +1028,7 @@ export const readSmartSchedulerState = async (
 ): Promise<SmartSchedulerState> => {
   const workspaceRoot = getSchedulerStorageWorkspaceRoot(statePath);
   if (workspaceRoot) {
+    await ensureWorkspaceStorage(workspaceRoot);
     return withSchedulerStateLock(
       statePath,
       async () => (await readSmartSchedulerStateResult(statePath)).state,
@@ -1082,6 +1084,8 @@ export const writeSmartSchedulerState = async (
   statePath: string,
   state: SmartSchedulerState,
 ): Promise<void> => {
+  const workspaceRoot = getSchedulerStorageWorkspaceRoot(statePath);
+  if (workspaceRoot) await ensureWorkspaceStorage(workspaceRoot);
   await withSchedulerStateLock(statePath, () =>
     writeSmartSchedulerStateUnlocked(statePath, state),
   );
@@ -3012,6 +3016,11 @@ export class DurableSmartScheduler {
   }
 
   private async ensureWorkspaceRegistered(): Promise<void> {
+    const storageWorkspaceRoot = getSchedulerStorageWorkspaceRoot(
+      this.statePath,
+    );
+    if (storageWorkspaceRoot)
+      await ensureWorkspaceStorage(storageWorkspaceRoot);
     if (!this.workspaceRoot) {
       return;
     }
