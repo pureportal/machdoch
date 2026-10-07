@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import {
   cp,
   lstat,
@@ -13,6 +12,7 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { setTimeout } from "node:timers/promises";
 import { assertRalphWorkspaceBoundary } from "./assert-ralph-workspace-boundary.helper.js";
 import { writeJsonAtomically } from "./write-file-atomically.helper.js";
+import { ensureRalphWorktreeIdentity } from "./ralph-worktree-identity.helper.js";
 import {
   commitRalphSnapshot,
   RALPH_SOURCE_PATHS,
@@ -269,10 +269,7 @@ const prepareRalphRunWorktreeAttempt = async (
       "RALPH workspace must be inside a Git repository for isolated runs.",
     );
   }
-  const key = createHash("sha256")
-    .update(resolve(runDirectory))
-    .digest("hex")
-    .slice(0, 20);
+  const key = await ensureRalphWorktreeIdentity(runDirectory);
   const worktreeRoot = join(
     dirname(repositoryRoot),
     ".machdoch-ralph-worktrees",
