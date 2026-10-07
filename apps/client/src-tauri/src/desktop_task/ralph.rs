@@ -9,7 +9,11 @@ use std::{
 };
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tauri::Manager as _;
+
+#[path = "ralph_live_owner.rs"]
+mod live_owner;
 
 use crate::{
     child_process::{SupervisedChild, SupervisedChildSpawnError},
@@ -27,8 +31,8 @@ use super::{
     progress::{create_bridge_progress, emit_progress_event},
     ralph_media_bridge::RalphMediaBridge,
     ralph_recovery::{
-        recovery_inspection_arguments, supervise_ralph_command, RalphCommandAttempt,
-        RALPH_RUN_ID_ENV,
+        inspect_ralph_saved_run, recovery_arguments, recovery_inspection_arguments,
+        supervise_ralph_command, RalphCommandAttempt, RALPH_RUN_ID_ENV,
     },
     registry::normalize_task_id,
     OpenRalphFlowPathRequest, RalphCommandRequest, DESKTOP_TASK_WAIT_POLL_MS,
@@ -61,6 +65,24 @@ fn create_ralph_cancel_path() -> PathBuf {
     std::env::temp_dir().join(format!(
         "machdoch-ralph-cancel-{}-{timestamp}-{sequence}.request",
         std::process::id()
+    ))
+}
+
+fn retained_ralph_cancel_path(
+    request: &RalphCommandRequest,
+    run_id: &str,
+) -> Result<Option<PathBuf>, String> {
+    let Some(task_id) = normalize_task_id(request.task_id.as_deref()) else {
+        return Ok(None);
+    };
+    let record = super::ralph_host_recovery::resolve_record_path(request, run_id)?;
+    let digest = Sha256::new()
+        .chain_update(record.as_os_str().as_encoded_bytes())
+        .chain_update([0])
+        .chain_update(task_id.as_bytes())
+        .finalize();
+    Ok(Some(
+        std::env::temp_dir().join(format!("machdoch-ralph-cancel-{digest:x}.request")),
     ))
 }
 
@@ -163,6 +185,12 @@ fn finish_ralph_command_attempt(
     run_id: Option<&str>,
     interrupted_child: &mut bool,
 ) -> Result<Value, String> {
+    let output_failed = output.is_err();
+    let response_missing = output.as_ref().is_ok_and(|(stdout, stderr)| {
+        stdout.trim().is_empty()
+            && format_command_failure(stderr, "")
+                == "The shared CLI exited without additional diagnostics."
+    });
     let response = output
         .and_then(|(stdout, stderr)| {
             finish_ralph_command_response(status.success(), &stdout, &stderr)
@@ -174,7 +202,12 @@ fn finish_ralph_command_attempt(
             Ok(response)
         })
         .map_err(|reason| format!("{reason} Exit status: {status}."));
-    *interrupted_child = response.is_err() && status.code() != Some(130);
+    *interrupted_child = response.is_err()
+        && status.code() != Some(130)
+        && (run_id.is_some()
+            || output_failed
+            || response_missing
+            || !matches!(status.code(), Some(1 | 2)));
     response
 }
 
@@ -250,14 +283,46 @@ fn stop_ralph_cli_after_wait_error(
 pub(super) fn execute_ralph_command(
     app_handle: tauri::AppHandle,
     window_label: String,
-    request: RalphCommandRequest,
+    mut request: RalphCommandRequest,
     cancel_flag: Arc<AtomicBool>,
+    run_id: Option<String>,
+    restoring: bool,
 ) -> Result<Value, String> {
+    if restoring {
+        let id = run_id
+            .as_deref()
+            .ok_or_else(|| "The restored Ralph command has no run identifier.".to_string())?;
+        let record_path = super::ralph_host_recovery::resolve_record_path(&request, id)?;
+        if cancel_flag.load(Ordering::SeqCst) {
+            if let Some(path) = retained_ralph_cancel_path(&request, id)? {
+                live_owner::request_owner_stop(&path)?;
+            }
+            return Err("The Ralph CLI command was cancelled.".to_string());
+        }
+        let record_exists = record_path
+            .try_exists()
+            .map_err(|error| format!("Failed to inspect the restored Ralph run record: {error}"))?;
+        if record_exists
+            || request
+                .arguments
+                .first()
+                .is_some_and(|action| action == "resume")
+        {
+            let detail =
+                observe_restored_ralph_run(&app_handle, &window_label, &request, &cancel_flag, id)?;
+            if let Some(response) = reconcile_ralph_command_response(&detail, id)? {
+                return Ok(response);
+            }
+            request.arguments = recovery_arguments(&request.arguments, id);
+        }
+    }
     supervise_ralph_command(
         &request.arguments,
+        run_id.as_deref(),
         || cancel_flag.load(Ordering::SeqCst),
         |arguments, run_id| {
             let mut interrupted_child = false;
+            let mut meaningful_transitions = None;
             let result = execute_ralph_command_attempt(
                 app_handle.clone(),
                 window_label.clone(),
@@ -268,9 +333,10 @@ pub(super) fn execute_ralph_command(
                 },
                 cancel_flag.clone(),
                 run_id,
+                None,
                 &mut interrupted_child,
             );
-            let retry_reason = match (&result, run_id) {
+            let mut retry_reason = match (&result, run_id) {
                 (Ok(response), Some(id))
                     if response["run"]["status"] == "crashed"
                         && response["run"]["runId"] == id
@@ -281,27 +347,68 @@ pub(super) fn execute_ralph_command(
                 (Err(reason), Some(_)) if interrupted_child => Some(reason.clone()),
                 _ => None,
             };
+            if restoring && retry_reason.is_none() && result.is_err() {
+                if let Some(id) = run_id {
+                    let saved_directory = super::ralph_host_recovery::resolve_record_path(
+                        &request, id,
+                    )
+                    .and_then(|path| {
+                        path.parent()
+                            .ok_or_else(|| {
+                                "The restored Ralph record has no directory.".to_string()
+                            })?
+                            .try_exists()
+                            .map_err(|error| {
+                                format!("Failed to inspect the restored Ralph directory: {error}")
+                            })
+                    });
+                    if matches!(saved_directory, Ok(true)) {
+                        retry_reason = result.as_ref().err().cloned();
+                    } else if let Err(error) = saved_directory {
+                        return RalphCommandAttempt {
+                            result: Err(format!("Failed to inspect the saved Ralph directory before recovery: {error}")),
+                            retry_reason: None,
+                            meaningful_transitions: None,
+                        };
+                    }
+                }
+            }
             if let (Some(reason), Some(id)) = (&retry_reason, run_id) {
                 if !cancel_flag.load(Ordering::SeqCst) {
-                    let mut inspection_interrupted = false;
-                    let inspection = execute_ralph_command_attempt(
-                        app_handle.clone(),
-                        window_label.clone(),
-                        RalphCommandRequest {
-                            workspace_root: request.workspace_root.clone(),
-                            arguments: recovery_inspection_arguments(&request.arguments, id),
-                            task_id: request.task_id.clone(),
-                        },
-                        cancel_flag.clone(),
-                        None,
-                        &mut inspection_interrupted,
-                    );
-                    match inspection.and_then(|detail| reconcile_ralph_command_response(&detail, id)) {
-                        Ok(Some(response)) => return RalphCommandAttempt { result: Ok(response), retry_reason: None },
+                    let inspection = if restoring {
+                        observe_restored_ralph_run(
+                            &app_handle,
+                            &window_label,
+                            &request,
+                            &cancel_flag,
+                            id,
+                        )
+                    } else {
+                        inspect_saved_run_command(
+                            &app_handle,
+                            &window_label,
+                            &request,
+                            &cancel_flag,
+                            id,
+                            None,
+                        )
+                    };
+                    let inspection = inspection.and_then(|detail| {
+                        let response = reconcile_ralph_command_response(&detail, id)?;
+                        if detail["record"]["checkpoint"]["runId"] == id {
+                            meaningful_transitions = detail["record"]["checkpoint"]["progress"]
+                                ["meaningfulTransitions"]
+                                .as_u64();
+                        }
+                        Ok(response)
+                    });
+                    match inspection {
+                        Ok(Some(response)) => return RalphCommandAttempt { result: Ok(response), retry_reason: None, meaningful_transitions: None },
                         Ok(None) => {},
                         Err(error) => return RalphCommandAttempt {
                             result: Err(format!("{reason}\nFailed to inspect the saved Ralph run before recovery: {error}")),
                             retry_reason: None,
+                            meaningful_transitions: None,
                         },
                     }
                 }
@@ -309,6 +416,7 @@ pub(super) fn execute_ralph_command(
             RalphCommandAttempt {
                 result,
                 retry_reason,
+                meaningful_transitions,
             }
         },
         || {
@@ -324,6 +432,81 @@ pub(super) fn execute_ralph_command(
                     true,
                 ),
             );
+        },
+    )
+}
+
+fn observe_restored_ralph_run(
+    app_handle: &tauri::AppHandle,
+    window_label: &str,
+    request: &RalphCommandRequest,
+    cancel_flag: &Arc<AtomicBool>,
+    run_id: &str,
+) -> Result<Value, String> {
+    let cancellation_path = retained_ralph_cancel_path(request, run_id)?;
+    let record_path = super::ralph_host_recovery::resolve_record_path(request, run_id)?;
+    let record_deadline = Instant::now() + Duration::from_secs(30);
+    let observation_cancel_flag = Arc::new(AtomicBool::new(false));
+    live_owner::observe_live_owner(
+        run_id,
+        cancellation_path.as_deref(),
+        || cancel_flag.load(Ordering::SeqCst),
+        |deadline| {
+            while !record_path
+                .try_exists()
+                .map_err(|error| format!("Failed to inspect the restored Ralph record: {error}"))?
+            {
+                if deadline.is_none() && cancel_flag.load(Ordering::SeqCst) {
+                    return Err("The Ralph CLI command was cancelled.".to_string());
+                }
+                if Instant::now() >= deadline.unwrap_or(record_deadline) {
+                    return Err("The reserved Ralph run did not publish its initial saved record within 30 seconds. Inspect its retained artifacts before starting more work.".to_string());
+                }
+                thread::sleep(Duration::from_millis(DESKTOP_TASK_WAIT_POLL_MS));
+            }
+            inspect_saved_run_command(
+                app_handle,
+                window_label,
+                request,
+                if deadline.is_some() {
+                    &observation_cancel_flag
+                } else {
+                    cancel_flag
+                },
+                run_id,
+                deadline,
+            )
+        },
+    )
+}
+
+fn inspect_saved_run_command(
+    app_handle: &tauri::AppHandle,
+    window_label: &str,
+    request: &RalphCommandRequest,
+    cancel_flag: &Arc<AtomicBool>,
+    run_id: &str,
+    deadline: Option<Instant>,
+) -> Result<Value, String> {
+    inspect_ralph_saved_run(
+        || {
+            cancel_flag.load(Ordering::SeqCst)
+                || deadline.is_some_and(|deadline| Instant::now() >= deadline)
+        },
+        |interrupted| {
+            execute_ralph_command_attempt(
+                app_handle.clone(),
+                window_label.to_string(),
+                RalphCommandRequest {
+                    workspace_root: request.workspace_root.clone(),
+                    arguments: recovery_inspection_arguments(&request.arguments, run_id),
+                    task_id: request.task_id.clone(),
+                },
+                cancel_flag.clone(),
+                None,
+                deadline,
+                interrupted,
+            )
         },
     )
 }
@@ -402,6 +585,7 @@ fn execute_ralph_command_attempt(
     request: RalphCommandRequest,
     cancel_flag: Arc<AtomicBool>,
     run_id: Option<&str>,
+    deadline: Option<Instant>,
     interrupted_child: &mut bool,
 ) -> Result<Value, String> {
     let workspace_path = resolve_workspace_root_path(&request.workspace_root)?;
@@ -414,16 +598,32 @@ fn execute_ralph_command_attempt(
         .map(String::as_str)
         .unwrap_or("ralph")
         .to_string();
-    let timeout_ms = ralph_command_timeout_ms(&progress_task);
+    let timeout_ms = match deadline {
+        Some(deadline) => {
+            let remaining = deadline
+                .saturating_duration_since(Instant::now())
+                .as_millis()
+                .min(u128::from(u64::MAX)) as u64;
+            Some(
+                ralph_command_timeout_ms(&progress_task)
+                    .map_or(remaining, |timeout| timeout.min(remaining)),
+            )
+        }
+        None => ralph_command_timeout_ms(&progress_task),
+    };
     let mut cli_args = vec![
         "--json".to_string(),
         "--cwd".to_string(),
         normalized_workspace_root,
         "ralph".to_string(),
     ];
+    let retained_cancellation_path = match run_id {
+        Some(id) => retained_ralph_cancel_path(&request, id)?,
+        None => None,
+    };
     let (arguments, mut payload_paths) =
         rewrite_ralph_payload_arguments(payload_workspace_root.as_str(), request.arguments)?;
-    let cancellation_path = create_ralph_cancel_path();
+    let cancellation_path = retained_cancellation_path.unwrap_or_else(create_ralph_cancel_path);
     payload_paths.push(cancellation_path.clone());
     let allow_graceful_stop = matches!(progress_task.as_str(), "run" | "resume");
 
@@ -609,6 +809,7 @@ fn execute_ralph_command_attempt(
                 if let Some(timeout_ms) =
                     timeout_ms.filter(|limit| started_at.elapsed() >= Duration::from_millis(*limit))
                 {
+                    *interrupted_child = progress_task == "run-detail";
                     emit_progress_event(
                         &progress_app_handle,
                         &progress_window_label,
@@ -685,6 +886,8 @@ pub(super) fn resolve_ralph_flow_path_for_open(
             task_id: None,
         },
         Arc::new(AtomicBool::new(false)),
+        None,
+        false,
     )?;
     let resolved_path = command_response
         .get("path")
@@ -725,12 +928,53 @@ mod tests {
         finish_ralph_command_attempt, finish_ralph_command_response, normalize_ralph_flow_scope,
         parse_ralph_command_response, ralph_command_timeout_ms, read_ralph_stdout,
         read_ralph_stdout_with_limit, reconcile_ralph_command_response, request_ralph_cli_stop,
-        stop_ralph_cli_after_wait_error, RALPH_CANCEL_PATH_ENV,
+        retained_ralph_cancel_path, stop_ralph_cli_after_wait_error, RALPH_CANCEL_PATH_ENV,
     };
     use crate::child_process::{ChildCleanupKind, SupervisedChild};
     use crate::desktop_task::process::SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES;
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_RALPH_LIFECYCLE_TEST_MODE";
+
+    #[test]
+    fn registered_run_cancellation_survives_restoration_and_stays_with_its_task() {
+        let request = crate::desktop_task::RalphCommandRequest {
+            workspace_root: env::temp_dir().to_string_lossy().into_owned(),
+            arguments: vec![
+                "run".into(),
+                "flow".into(),
+                "--scope".into(),
+                "workspace".into(),
+            ],
+            task_id: Some("task/../../outside".into()),
+        };
+        let path = retained_ralph_cancel_path(&request, "run")
+            .unwrap()
+            .unwrap();
+        assert_eq!(path.parent(), Some(env::temp_dir().as_path()));
+        let mut restored = request.clone();
+        restored.arguments =
+            super::super::ralph_recovery::recovery_arguments(&request.arguments, "run");
+        assert_eq!(
+            retained_ralph_cancel_path(&restored, "run")
+                .unwrap()
+                .unwrap(),
+            path
+        );
+        restored.task_id = Some("other-task".into());
+        assert_ne!(
+            retained_ralph_cancel_path(&restored, "run")
+                .unwrap()
+                .unwrap(),
+            path
+        );
+        assert_ne!(
+            retained_ralph_cancel_path(&request, "other-run")
+                .unwrap()
+                .unwrap(),
+            path
+        );
+        assert!(retained_ralph_cancel_path(&request, "../outside").is_err());
+    }
 
     #[test]
     fn recovery_reconciles_saved_terminal_outcomes_without_replaying_them() {
@@ -983,6 +1227,88 @@ mod tests {
 
         assert!(!interrupted);
         assert!(error.contains("Output stream closed"));
+    }
+
+    #[test]
+    fn read_only_cli_failures_and_cancellation_are_not_inspection_interruptions() {
+        for code in [1, 2, 130] {
+            #[cfg(windows)]
+            let status = std::process::ExitStatus::from_raw(code);
+            #[cfg(unix)]
+            let status = std::process::ExitStatus::from_raw((code as i32) << 8);
+            let mut interrupted = false;
+            let response = finish_ralph_command_attempt(
+                status,
+                Ok((
+                    String::new(),
+                    "{\"error\":\"Saved run is unavailable.\"}".to_string(),
+                )),
+                None,
+                &mut interrupted,
+            );
+            assert!(response.is_err());
+            assert!(!interrupted);
+        }
+    }
+
+    #[test]
+    fn abnormal_query_exit_requires_inspection_recovery() {
+        #[cfg(windows)]
+        let status = std::process::ExitStatus::from_raw(0xc0000409);
+        #[cfg(unix)]
+        let status = std::process::ExitStatus::from_raw(9);
+        let mut interrupted = false;
+        let response = finish_ralph_command_attempt(
+            status,
+            Ok((String::new(), String::new())),
+            None,
+            &mut interrupted,
+        );
+        assert!(response.is_err());
+        assert!(interrupted);
+    }
+
+    #[test]
+    fn silent_query_exit_requires_inspection_recovery() {
+        for code in [1, 2] {
+            for stderr in [
+                "",
+                "Debugger attached.\nWaiting for the debugger to disconnect...",
+            ] {
+                #[cfg(windows)]
+                let status = ExitStatus::from_raw(code);
+                #[cfg(unix)]
+                let status = ExitStatus::from_raw((code as i32) << 8);
+                let mut interrupted = false;
+                let response = finish_ralph_command_attempt(
+                    status,
+                    Ok((" \n".into(), stderr.into())),
+                    None,
+                    &mut interrupted,
+                );
+                assert!(response.is_err());
+                assert!(interrupted);
+            }
+        }
+    }
+
+    #[test]
+    fn query_capture_failure_requires_inspection_recovery_even_after_exit_one() {
+        #[cfg(windows)]
+        let status = std::process::ExitStatus::from_raw(1);
+        #[cfg(unix)]
+        let status = std::process::ExitStatus::from_raw(1 << 8);
+        let mut interrupted = false;
+        let response = finish_ralph_command_attempt(
+            status,
+            Err("Query output could not be collected.".to_string()),
+            None,
+            &mut interrupted,
+        );
+        assert!(response
+            .unwrap_err()
+            .contains("Query output could not be collected."));
+        assert!(interrupted);
     }
 
     #[test]

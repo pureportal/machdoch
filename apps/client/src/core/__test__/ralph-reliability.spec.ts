@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as atomicWrites from "../_helpers/write-file-atomically.helper.js";
 import { RalphRunStore } from "../_helpers/ralph-run-store.helper.js";
@@ -18,6 +18,7 @@ import {
   runtimeConfig,
 } from "./ralph-test-helpers.js";
 import {
+  lockWindowsFileRead,
   lockWindowsFileReplacement,
   prepareWindowsFileLocker,
 } from "./windows-file-lock.js";
@@ -78,13 +79,72 @@ const createRun = async () => {
 afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(
-    workspaces
-      .splice(0)
-      .map((workspace) => rm(workspace, { recursive: true, force: true })),
+    workspaces.splice(0).map((workspace) => {
+      if (
+        dirname(resolve(workspace)) !== resolve(tmpdir()) ||
+        !basename(workspace).startsWith("ralph-reliability-")
+      ) {
+        throw new Error("Unexpected RALPH reliability workspace.");
+      }
+      return rm(workspace, { recursive: true, force: true });
+    }),
   );
 });
 
 describe("RALPH durable execution recovery", () => {
+  it.skipIf(process.platform !== "win32")(
+    "reads a saved completion after temporary Windows read contention without changing committed work",
+    async () => {
+      const { workspace, flow, logger, config } = await createRun();
+      const result = await runRalphFlow(flow, config, customizations, {
+        logger,
+      });
+      expect(result.status, result.summary).toBe("completed");
+      const original = await readFile(logger.paths!.recordPath, "utf8");
+      const release = await lockWindowsFileRead(logger.paths!.recordPath);
+      const timer = setTimeout(() => void release(), 300);
+      try {
+        await expect(
+          readRalphRunRecord(workspace, logger.runId),
+        ).resolves.toMatchObject({
+          record: { id: logger.runId, status: "completed" },
+        });
+        expect(await readFile(logger.paths!.recordPath, "utf8")).toBe(original);
+        expect(await readFile(join(workspace, "effects.txt"), "utf8")).toBe(
+          "once\n",
+        );
+      } finally {
+        clearTimeout(timer);
+        await release();
+      }
+    },
+    60_000,
+  );
+
+  it.skipIf(process.platform !== "win32")(
+    "preserves the filesystem error when a saved-run read lock exceeds the retry window",
+    async () => {
+      const { workspace, flow, logger, config } = await createRun();
+      await runRalphFlow(flow, config, customizations, { logger });
+      const release = await lockWindowsFileRead(logger.paths!.recordPath);
+      try {
+        await expect(
+          readRalphRunRecord(workspace, logger.runId),
+        ).rejects.toMatchObject({
+          code: expect.stringMatching(/^(EACCES|EPERM|EBUSY)$/),
+        });
+      } finally {
+        await release();
+      }
+      await expect(
+        readRalphRunRecord(workspace, logger.runId),
+      ).resolves.toMatchObject({
+        record: { status: "completed" },
+      });
+    },
+    60_000,
+  );
+
   it("refuses to clear required durability when resuming without a run store", async () => {
     const { workspace, flow, config } = await createRun();
     const result = await runRalphFlow(flow, config, customizations, {
@@ -278,6 +338,61 @@ describe("RALPH durable execution recovery", () => {
       resumed.checkpoint?.totalTransitions ?? resumed.blockResults.length,
     ).toBeGreaterThanOrEqual(paused.checkpoint!.totalTransitions!);
   }, 30_000);
+
+  it("claims durable ownership before resuming a replay-safe block", async () => {
+    const { workspace, flow, logger, config } = await createRun();
+    flow.blocks[2] = {
+      id: "next",
+      type: "UTILITY",
+      title: "Wait",
+      utility: { type: "WAIT", delaySeconds: 0.01 },
+    };
+    const paused = await runRalphFlow(flow, config, customizations, {
+      logger,
+      maxTransitions: 2,
+    });
+    expect(paused.checkpoint?.currentBlockId).toBe("next");
+    const resumeLogger = await createRalphRunLogger(workspace, flow, {
+      runId: logger.runId,
+      paths: logger.paths!,
+      append: true,
+    });
+    const competingLogger = await createRalphRunLogger(workspace, flow, {
+      runId: logger.runId,
+      paths: logger.paths!,
+      append: true,
+    });
+    const ownerId = `${process.pid}:${randomUUID()}`;
+    const store = new RalphRunStore(logger.paths!.directory);
+    let executingLease: Awaited<ReturnType<RalphRunStore["readLease"]>>;
+    let competingStatus: string | undefined;
+    const resumed = await runRalphFlow(flow, config, customizations, {
+      logger: resumeLogger,
+      checkpoint: paused.checkpoint!,
+      leaseOwnerId: ownerId,
+      maxTransitions: 10,
+      onEvent: async (event) => {
+        if (event.type !== "block-start" || event.blockId !== "next") return;
+        executingLease = await store.readLease();
+        const competing = await runRalphFlow(flow, config, customizations, {
+          logger: competingLogger,
+          checkpoint: paused.checkpoint!,
+          leaseOwnerId: `${process.pid}:${randomUUID()}`,
+          maxTransitions: 10,
+        });
+        competingStatus = competing.status;
+      },
+    });
+    expect(executingLease).toMatchObject({
+      active: true,
+      lease: { ownerId },
+    });
+    expect(competingStatus).toBe("blocked");
+    expect(resumed.status, resumed.summary).toBe("completed");
+    expect(await readFile(join(workspace, "effects.txt"), "utf8")).toBe(
+      "once\n",
+    );
+  });
 
   it("refuses further side effects when a persistence retry loses ownership", async () => {
     const { workspace, flow, logger, config } = await createRun();

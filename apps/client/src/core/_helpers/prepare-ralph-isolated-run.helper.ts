@@ -13,6 +13,7 @@ import {
   isRalphRunRecord,
 } from "./create-ralph-run-record.helper.js";
 import { RalphRunStore } from "./ralph-run-store.helper.js";
+import { publishRalphInitializationRecord } from "./ralph-run-initialization.helper.js";
 import {
   prepareRalphRunWorktree,
   type RalphRunWorktree,
@@ -175,9 +176,11 @@ export const prepareRalphIsolatedRun = async (
       checkpoint.variables,
       paths,
     );
-    await writeJsonAtomically(paths.recordPath, record, {
-      beforeCommit: lock.assertOwnership,
-    });
+    await publishRalphInitializationRecord(paths, flow.id, () =>
+      writeJsonAtomically(paths.recordPath, record, {
+        beforeCommit: lock.assertOwnership,
+      }),
+    );
     options.signal?.throwIfAborted();
     const worktree = await prepareRalphRunWorktree(
       workspaceRoot,

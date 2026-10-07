@@ -2,7 +2,7 @@ import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { afterAll } from "vitest";
@@ -33,12 +33,19 @@ const compileFileLocker = async (): Promise<string> => {
 };
 
 afterAll(async () => {
-  if (compilerDirectory)
+  if (compilerDirectory) {
+    if (
+      dirname(resolve(compilerDirectory)) !== resolve(tmpdir()) ||
+      !basename(compilerDirectory).startsWith("ralph-file-locker-")
+    ) {
+      throw new Error("Unexpected Windows file-locker directory.");
+    }
     await rm(compilerDirectory, { recursive: true, force: true });
+  }
 });
 
-export const lockWindowsFileReplacement = async (path: string) => {
-  const child = spawn(await prepareWindowsFileLocker(), [path], {
+const lockWindowsFile = async (path: string, sharing: "read" | "none") => {
+  const child = spawn(await prepareWindowsFileLocker(), [path, sharing], {
     windowsHide: true,
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -84,6 +91,12 @@ export const lockWindowsFileReplacement = async (path: string) => {
         throw new Error(`Windows file lock exited ${code}: ${stderr}`);
     })());
 };
+
+export const lockWindowsFileReplacement = (path: string) =>
+  lockWindowsFile(path, "read");
+
+export const lockWindowsFileRead = (path: string) =>
+  lockWindowsFile(path, "none");
 
 export const prepareWindowsFileLocker = (): Promise<string> =>
   (lockerExecutable ??= compileFileLocker());

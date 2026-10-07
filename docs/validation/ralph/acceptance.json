@@ -1,0 +1,326 @@
+{
+  "passed": true,
+  "checkedAt": "2026-10-07T18:44:32.090Z",
+  "scope": "Current implementation and finite fault-injection verification",
+  "sourceSha256": "acb6f46a91a9242430b3980e478a8d4f4b8b2aff328e208d559a00e8b0f16bbd",
+  "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+  "windowsExecutableSha256": "f1fe59e3f0ba7e881ba90a0cb76e140fcb4661571fcf3eaeef33bbca12b2515a",
+  "compactEvidence": [
+    {
+      "file": "tests.json",
+      "sha256": "edba6ff92ff1062731596b53080ef4a0376ae00aa9c86945857ef23ffd7e3f69"
+    },
+    {
+      "file": "sources.json",
+      "sha256": "e9167984181aaebe12bb3edf6ca371715efccd0f0f419c65e76e389d4c70f417"
+    },
+    {
+      "file": "windows-desktop.json",
+      "sha256": "a48f966cb5a1210e4499c8ea09ac9333672bd20584e0eba43bc0fe3803419776"
+    },
+    {
+      "file": "unix-processes.json",
+      "sha256": "462f102a1f17a896b0375a3f2431eb1da717fd5089532a7186665f88ec7f06b8"
+    },
+    {
+      "file": "headless.json",
+      "sha256": "2afa1cf2ac7ea0a9aac620b65b84fae59d41e813a8ee1c8f20129f346170ef10"
+    },
+    {
+      "file": "installer.json",
+      "sha256": "12f78bded537981a93b881729faff5b74a5a3d68a5ce891a554381a2e373963a"
+    },
+    {
+      "file": "history.json",
+      "sha256": "3bc7d36f1d281daa1d1f69c979b59b96f1c0404caed05d32cdd53d2156b7d6e6"
+    },
+    {
+      "file": "static-checks.json",
+      "sha256": "9a659370936b432c4066236d84c6647a97f6b6d6efb708ba097f1f14a59ff2bf"
+    },
+    {
+      "file": "runtime.json",
+      "sha256": "532492757d2465aad1a7bd4eefbee9422f6e3610fcd78810825d52a231c45a36"
+    },
+    {
+      "file": "windows-standard-desktop.json",
+      "sha256": "8ef94ea59644a98d52fd89f5ca36eebf47ddc60453d6dbb6bb5e9cc88acf50b3"
+    },
+    {
+      "file": "standard-installer.json",
+      "sha256": "386a52d83f1d8ec59cd284dd6c49521a60cdea181762a5899b10bac7549bd76a"
+    }
+  ],
+  "privateRawRoot": "C:/Users/ehrha/AppData/Local/Temp/machdoch-ralph-stability-ViFe18",
+  "rawReceipts": [
+    {
+      "file": "current-test-summary.json",
+      "sha256": "2618b4d0d6e7c2d651cce95ae7694e180c61fffc115b31bf63996bc175da6636"
+    },
+    {
+      "file": "ralph-tests.json",
+      "sha256": "dd00dc07d81b4f719187a571170db42b5626c24531077340c2e797beb203a24a"
+    },
+    {
+      "file": "ralph-timeout-recheck.json",
+      "sha256": "fd47d70074e076a06fa1fb7aeb8930cc8432ba0f8debb69254c12d7740448869"
+    },
+    {
+      "file": "ralph-portfolio-recheck.json",
+      "sha256": "535c87e4272a6e1098b1ecaa19f280fa50205badb8c9a643ff9c59cf488e6332"
+    },
+    {
+      "file": "windows-native-readiness-attempt.json",
+      "sha256": "2d74a0b505ba4c9710a30cf94699fd4f185b84804df386061fecf3a2f1bf838c"
+    },
+    {
+      "file": "windows-native-readiness-recheck.json",
+      "sha256": "7d6d0337e88e7f7557d5b1b1551739cb7386f1f986b1cea1ca33bcaa247cd635"
+    },
+    {
+      "file": "linux-native.json",
+      "sha256": "1cf387cf07ec2b3282564d7851d6eb2ccfa76806d80f5441a4a8c58d6e0e6a70"
+    },
+    {
+      "file": "client-tests.json",
+      "sha256": "2551ad18a7cee7f56ece1758642dc25c1939e1949db736f75c8f97ec240c8ee7"
+    },
+    {
+      "file": "contention-recheck.json",
+      "sha256": "0e81f8893ba345e9d7561bf0a38758a758aa7083a075ba2e3352af4063086e48"
+    },
+    {
+      "file": "scheduler-isolated-recheck.json",
+      "sha256": "178021453a353608d32d9982ee483548fc616a3f05b6ddc9358e2532cc211bd1"
+    },
+    {
+      "file": "release-current-acceptance.json",
+      "sha256": "299d04092562cb3ab841551badf384761de57e93f69d3736de9b837b50d39e12"
+    },
+    {
+      "file": "package-current-acceptance.json",
+      "sha256": "a3c2e063eee161815a8ed589333668f5c2bc6606acdd32912d7348d7513b3ac9"
+    },
+    {
+      "file": "headless-package-acceptance.json",
+      "sha256": "d0932d88a34b520737c19763a06399d56fabca45eebbf2e58ec5a9676b1204c7"
+    },
+    {
+      "file": "headless-process-acceptance.json",
+      "sha256": "c788a3ce62b118b78e50aac050ce962e58da5f516d1c1a766283933a881bfc6b"
+    },
+    {
+      "file": "headless-process-readback.json",
+      "sha256": "76f26fbd6631cd28b1eb7a8f41b25bc050bd322b05bfac1ed876db0b5c654bcf"
+    },
+    {
+      "file": "unix-process-readback.json",
+      "sha256": "78edf55f7f6c4c2da76c0da6cb0fdc07539f3ee46dbac1bd40f33b8dfa46661c"
+    },
+    {
+      "file": "gui-current-readback.json",
+      "sha256": "40b060a9562acdd1799a8dedf3d6b39112866cf68134687cc8f36f0b821d4511"
+    },
+    {
+      "file": "source-final-readback.json",
+      "sha256": "ce2472028e9a1deaa622dc12104a2dd07bfabdd88836cb269f715b0da71fe577"
+    },
+    {
+      "file": "history-final-readback.json",
+      "sha256": "361f29ef02d667c57297bdc3f9b7937e5c2b0897acd6289c6e8fbcbbcbf832a8"
+    },
+    {
+      "file": "gui-utility.json",
+      "sha256": "3172118f5b4825e0ba8aa063c1d122cef2a3b8c27615e857e850234d7c6a2d47"
+    },
+    {
+      "file": "gui-initialization.json",
+      "sha256": "143dac3855c886c358fcf9d717133e402ed199707a2f3b06db572e62bc5463ba"
+    },
+    {
+      "file": "gui-progress.json",
+      "sha256": "dfa6f606d1b885aae2ac76af5c6a05d74ce28075e1014e4ee5166ca193f1eab1"
+    },
+    {
+      "file": "gui-watcher-loss.json",
+      "sha256": "1780ed4a9159a06d1570a443cb2230a277d5966412782f9374242b2b7f619830"
+    },
+    {
+      "file": "gui-watcher-budget.json",
+      "sha256": "2bf94a7605be365078d65509a1b413366e19f79f4d7c16fb7d9df64b31f3afd4"
+    },
+    {
+      "file": "gui-stagnation.json",
+      "sha256": "dfb1113dd9b57b2bd985d292cbbb7c0188e9801d2875ebe1a5a52f1855701530"
+    },
+    {
+      "file": "gui-cancel.json",
+      "sha256": "3d7d5b7ea70a79bf2074d05af8bfc5d4ea1af217b97d1cf922864a4cdde4eb72"
+    },
+    {
+      "file": "gui-quit.json",
+      "sha256": "e2aeb8f9c9287fe1d1209233fab7830e726bff5167a0316ecc81caaad5a45a68"
+    },
+    {
+      "file": "gui-provider.json",
+      "sha256": "3495dd630f9f602935ddd2b1584bfcedcccbcbc8c08ec848d7d605c0b4887f9d"
+    },
+    {
+      "file": "standard-release-build.json",
+      "sha256": "2d127b73ae435445ec233894fc7c258753920fe731cb4560356f830e0e81f79f"
+    },
+    {
+      "file": "standard-compiler-provenance.json",
+      "sha256": "a510b092b0a6bc8e683f03f5b363224107231c22b205d26f09f85ba463926899"
+    },
+    {
+      "file": "standard-verification-runner.json",
+      "sha256": "889238e9f2be34196bf9a4c8dd76c1a7f43970ad3e972bd193e157995236e954"
+    },
+    {
+      "file": "standard-desktop-resume.json",
+      "sha256": "e405ebc4ada5ebd84293d90d9c128d494ea3bf05762ae7ead2664e24e89875f8"
+    },
+    {
+      "file": "gui-standard-readback.json",
+      "sha256": "3ea34456fe2844960e7f5a70b4d91fe21a5d7aac16a356e611fd01e6f68b33d7"
+    },
+    {
+      "file": "package-standard-nsis.json",
+      "sha256": "c293a84078fe27ffe5c64b546778db27cd5f44bc933af13887223a9359884655"
+    },
+    {
+      "file": "package-standard-current-acceptance.json",
+      "sha256": "b85618856179679e55ce2fb8f641effb7381813ae720a70eeda38b708ee356e0"
+    },
+    {
+      "file": "gui-standard-initialization-mkdir-delay-attempt.json",
+      "sha256": "874ce5bbe39a0947b536dd2d986baf1db73ca2c3177abe6e36e28b76190fd6e1"
+    },
+    {
+      "file": "gui-standard-utility.json",
+      "sha256": "2d038080a623bdaa93c6e10072fc46253eb6ec6677547ad2aecb300104a123c2"
+    },
+    {
+      "file": "gui-standard-initialization.json",
+      "sha256": "046ec745bea5c0c00da4360c639e41517e3ca09f40fd3f7bc0e18bbc01b4067b"
+    },
+    {
+      "file": "gui-standard-progress.json",
+      "sha256": "b622ec92ee5ec1a552b753fbe3bc6f781904f1001d58fb215dc35cdd19fca92d"
+    },
+    {
+      "file": "gui-standard-watcher-loss.json",
+      "sha256": "023d6c6356d62fd381ccb34112b0c58ca2bbce6b4e7a8f2bd4d299beb916c3da"
+    },
+    {
+      "file": "gui-standard-watcher-budget.json",
+      "sha256": "cc7a54e5bd3caa8e844966df2464ba74bff759bfc6db0f1abee59c77b0958aa2"
+    },
+    {
+      "file": "gui-standard-stagnation.json",
+      "sha256": "505d2eabfb6836133c5ca64bd4342ca035f8e23831c2baae51d3da94635ed9fb"
+    },
+    {
+      "file": "gui-standard-cancel.json",
+      "sha256": "2f53946318986dd475cd46df85df31331590352affed6fec64781fd4e72e6f03"
+    },
+    {
+      "file": "gui-standard-quit.json",
+      "sha256": "22a8291f1ca7006130bb57d585c00119d3debc3f63f090f0425dee1243f6bde8"
+    },
+    {
+      "file": "gui-standard-provider.json",
+      "sha256": "c2e7f0948f18605dbdb75b34629c6b04ba6ff3dc473040fe22fd68593ef6d385"
+    },
+    {
+      "file": "cleanup-readback.json",
+      "sha256": "20b199a4d44af95ccb5fb446a13452b7dd670394f6482bd748ec29abeed45e74"
+    },
+    {
+      "file": "long-runtime-before.json",
+      "sha256": "a8a7246c6aeb3194910d4d5b81971394deef4f5ab6f96a39626f4aee467bfe23"
+    },
+    {
+      "file": "long-runtime-after.json",
+      "sha256": "52202e6a12f5475c68c9ec4987b7925e6230bdd12c9cc26a84a27c5492b167fd"
+    },
+    {
+      "file": "long-runtime-linux.json",
+      "sha256": "e15a316e95a7eed53418948dde27f7a0ac6d610535aa653157dc4564cb141c6b"
+    },
+    {
+      "file": "initialization-preload-diagnosis.json",
+      "sha256": "88b60c91ad579258718c8d3a2f98cd228e45de3373ac2510b2d4bab58fd8f572"
+    },
+    {
+      "file": "standard-long-path-refresh.json",
+      "sha256": "2c7af2008c25961012390c8dfaf0d12eac8182f9f0ba67841c540c9f84416acd"
+    },
+    {
+      "file": "standard-long-path-campaign.json",
+      "sha256": "b18a64382e8a34066a16aa4c2970ff3f27a81b1dea9c6964f94a965a7a221ea0"
+    },
+    {
+      "file": "standard-before-long-path/gui-standard-initialization.json",
+      "sha256": "29f665498a6c28726945e57c7fb88088fca81a421e74b8ecdea957bbfc8c3129"
+    },
+    {
+      "file": "standard-before-long-path/standard-release-build.json",
+      "sha256": "301e0bc43615f8d044d5d316e4a67c22cb0ed299eb6b4d6876a19c71686b3be9"
+    },
+    {
+      "file": "standard-before-long-path/package-standard-current-acceptance.json",
+      "sha256": "84a035a0ee13f209d9cc7dd3b203405decb64707568108bde714d6d454445c2c"
+    }
+  ],
+  "limitations": [
+    "The broad client suite is not fully green.",
+    "Historical native fast-fail call site and truncated instruction-probe cause could not be recovered from retained artifacts.",
+    "Whole-machine restart and simultaneous loss of every supervisor were not tested.",
+    "Linux GUI, installer installation, and signing were not tested.",
+    "Real-provider verification used the existing elevated Windows token and existing credential source.",
+    "Uncommitted external effects may require reconciliation."
+  ],
+  "testedBuildProfile": {
+    "optLevel": 3,
+    "lto": true,
+    "codegenUnits": 1,
+    "incremental": false,
+    "panic": "abort",
+    "strip": true
+  },
+  "standardReleaseVerificationPending": false,
+  "earlierOptimizedBuild": {
+    "executableSha256": "4bcf8f7394f19b551ba01b17fdca92e5f2dc36390bdd622cdfbeb861cf780915",
+    "profile": {
+      "optLevel": 3,
+      "lto": false,
+      "codegenUnits": 16
+    },
+    "precedesSharedRuntimeRepair": true
+  },
+  "sharedRuntimeSourceSha256": "f92b174fee030e3d657a8a4336caff01f78001f414274cf76692f88a93ef31a1",
+  "standardRelease": {
+    "verified": true,
+    "profile": {
+      "optLevel": 3,
+      "lto": true,
+      "codegenUnits": 1,
+      "incremental": false,
+      "panic": "abort",
+      "strip": true
+    },
+    "executableSha256": "f1fe59e3f0ba7e881ba90a0cb76e140fcb4661571fcf3eaeef33bbca12b2515a",
+    "installerSha256": "f5223b161426a3a03c08a62df2024ec77119cc79910b5c273ae842e006786b71",
+    "desktopScenarios": 9
+  },
+  "cleanup": {
+    "passed": true,
+    "readOnly": true,
+    "noOwnedProcesses": true,
+    "noOwnedBrowserPolicies": true,
+    "installedApplicationReplaced": false,
+    "developmentServerStarted": false
+  }
+}

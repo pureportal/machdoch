@@ -33,9 +33,9 @@ afterEach(async () => {
   }
 
   await Promise.all(
-    temporaryRoots.splice(0).map((root) =>
-      rm(root, { recursive: true, force: true }),
-    ),
+    temporaryRoots
+      .splice(0)
+      .map((root) => rm(root, { recursive: true, force: true })),
   );
 });
 
@@ -63,7 +63,9 @@ describe("create Ralph storage paths", () => {
   it("creates user-scoped directories from the configured user config directory", () => {
     process.env.MACHDOCH_USER_CONFIG_DIR = join("custom", "machdoch-config");
 
-    expect(getUserRalphDirectory()).toBe(join("custom", "machdoch-config", "ralph"));
+    expect(getUserRalphDirectory()).toBe(
+      join("custom", "machdoch-config", "ralph"),
+    );
     expect(getRalphStorageDirectory("ignored", "user")).toBe(
       join("custom", "machdoch-config", "ralph"),
     );
@@ -81,7 +83,9 @@ describe("create Ralph storage paths", () => {
     expect(getRalphRevisionDirectory(workspaceRoot, " Refactor Flow ")).toBe(
       join(workspaceRoot, ".machdoch", "ralph", "revisions", "refactor-flow"),
     );
-    expect(getRalphRevisionPath(workspaceRoot, " Refactor Flow ", " Revision:One ")).toBe(
+    expect(
+      getRalphRevisionPath(workspaceRoot, " Refactor Flow ", " Revision:One "),
+    ).toBe(
       join(
         workspaceRoot,
         ".machdoch",
@@ -126,7 +130,11 @@ describe("create Ralph storage paths", () => {
     const runDirectory = join(root, "runs");
 
     expect(
-      createRalphRunArtifactPaths(runDirectory, "2026-06-20T12:34:56.789Z", " My Run "),
+      createRalphRunArtifactPaths(
+        runDirectory,
+        "2026-06-20T12:34:56.789Z",
+        " My Run ",
+      ),
     ).toEqual({
       id: "My-Run",
       directory: join(runDirectory, "My-Run"),
@@ -137,17 +145,34 @@ describe("create Ralph storage paths", () => {
     });
   });
 
+  it("keeps a reserved preferred identity when its directory already exists", async () => {
+    const root = await createTemporaryRoot();
+    const runDirectory = join(root, "runs");
+    await mkdir(join(runDirectory, "reserved-run"), { recursive: true });
+    const paths = createRalphRunArtifactPaths(
+      runDirectory,
+      "2026-06-20T12:34:56.789Z",
+      "reserved-run",
+    );
+    expect(paths.id).toBe("reserved-run");
+    expect(paths.directory).toBe(join(runDirectory, "reserved-run"));
+  });
+
   it("creates timestamp run artifact paths and suffixes existing directories", async () => {
     const root = await createTemporaryRoot();
     const runDirectory = join(root, "runs");
     const timestamp = "2026-06-20T12:34:56.789Z";
 
-    await mkdir(join(runDirectory, "2026-06-20T12-34-56-789Z"), { recursive: true });
+    await mkdir(join(runDirectory, "2026-06-20T12-34-56-789Z"), {
+      recursive: true,
+    });
 
     const paths = createRalphRunArtifactPaths(runDirectory, timestamp);
 
     expect(paths.id).toBe("2026-06-20T12-34-56-789Z-1");
-    expect(paths.directory).toBe(join(runDirectory, "2026-06-20T12-34-56-789Z-1"));
+    expect(paths.directory).toBe(
+      join(runDirectory, "2026-06-20T12-34-56-789Z-1"),
+    );
     expect(paths.recordPath).toBe(join(paths.directory, "run.json"));
     expect(paths.simpleJsonlPath).toBe(join(paths.directory, "simple.jsonl"));
     expect(paths.simpleMarkdownPath).toBe(join(paths.directory, "simple.md"));

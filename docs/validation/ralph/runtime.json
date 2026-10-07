@@ -1,0 +1,111 @@
+{
+  "sourceSha256": "f92b174fee030e3d657a8a4336caff01f78001f414274cf76692f88a93ef31a1",
+  "windows": {
+    "passed": true,
+    "before": false,
+    "code": 0,
+    "startedAt": "2026-10-07T17:01:39.844Z",
+    "finishedAt": "2026-10-07T17:01:42.745Z",
+    "sourceSha256": "f92b174fee030e3d657a8a4336caff01f78001f414274cf76692f88a93ef31a1",
+    "testSummary": "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.66s",
+    "logPath": "C:/Users/ehrha/AppData/Local/Temp/machdoch-ralph-stability-ViFe18/long-runtime-after.log"
+  },
+  "linux": {
+    "passed": true,
+    "code": 0,
+    "startedAt": "2026-10-07T17:03:44.980Z",
+    "finishedAt": "2026-10-07T17:04:24.318Z",
+    "sourceSha256": "f92b174fee030e3d657a8a4336caff01f78001f414274cf76692f88a93ef31a1",
+    "testSummary": "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.24s",
+    "logPath": "C:/Users/ehrha/AppData/Local/Temp/machdoch-ralph-stability-ViFe18/long-runtime-linux.log"
+  },
+  "regressionBeforeRepair": {
+    "passed": true,
+    "before": true,
+    "code": 101,
+    "startedAt": "2026-10-07T17:01:11.967Z",
+    "finishedAt": "2026-10-07T17:01:19.151Z",
+    "sourceSha256": "7193f732873c40924a4fbbe0d8da646c2dd0bef632ec2d4bcf41da168ff41f98",
+    "testSummary": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.04s",
+    "logPath": "C:/Users/ehrha/AppData/Local/Temp/machdoch-ralph-stability-ViFe18/long-runtime-before.log"
+  },
+  "diagnosis": {
+    "startedAt": "2026-10-07T17:07:26.342Z",
+    "node": "C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\standard-initialization-1791391636368\\profile\\depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-a\\AppData\\Local\\machdoch\\runtime\\machdoch-node-29.2.0-c338cb29d71e3ccb.exe",
+    "nodePathLength": 262,
+    "options": "--require \"C:\\\\Users\\\\ehrha\\\\AppData\\\\Local\\\\Temp\\\\machdoch-ralph-stability-ViFe18\\\\initialization-delay.cjs\"",
+    "cases": [
+      {
+        "entry": "C:\\Program Files\\nodejs\\node.exe",
+        "passed": true,
+        "stdout": "{\"loaded\":true,\"node\":\"v24.14.1\"}\n",
+        "stderr": ""
+      },
+      {
+        "entry": "C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\standard-initialization-1791391636368\\profile\\depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-a\\AppData\\Local\\machdoch\\runtime\\machdoch-node-29.2.0-c338cb29d71e3ccb.exe",
+        "passed": false,
+        "code": "ENOENT",
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "entry": "\\\\?\\C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\standard-initialization-1791391636368\\profile\\depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-a\\AppData\\Local\\machdoch\\runtime\\machdoch-node-29.2.0-c338cb29d71e3ccb.exe",
+        "passed": true,
+        "stdout": "{\"loaded\":true,\"node\":\"v24.14.1\"}\n",
+        "stderr": ""
+      }
+    ],
+    "nodeSha256": "58e74bf02fc5bbacc41dcb8bef089961cd5bddd37830b87784e4fc624d145d1f",
+    "rustLaunch": {
+      "stdout": "length=262 launch_error=The system cannot find the path specified. (os error 3)\nlength=266 status=exit code: 0 stdout=v24.14.1\n stderr=\n",
+      "stderr": ""
+    }
+  },
+  "failedDesktopAttempt": {
+    "passed": false,
+    "mode": "initialization",
+    "variant": "standard",
+    "root": "C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\standard-initialization-1791391636368",
+    "workspace": "C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\standard-initialization-1791391636368\\workspace",
+    "profile": "C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\standard-initialization-1791391636368\\profile\\depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-a",
+    "executable": "C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\bin\\machdoch-ralph-128e6933-standard-initialization.exe",
+    "startedAt": "2026-10-07T16:47:16.368Z",
+    "killedHosts": [],
+    "killedWatchers": [],
+    "observedProcesses": [
+      {
+        "ProcessId": 22340,
+        "ParentProcessId": 26508,
+        "ExecutablePath": "C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\bin\\machdoch-ralph-128e6933-standard-initialization.exe",
+        "CommandLine": "\"C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\bin\\machdoch-ralph-128e6933-standard-initialization.exe\"",
+        "startedAtEpochMs": 1791391640024
+      },
+      {
+        "ProcessId": 9696,
+        "ParentProcessId": 22340,
+        "ExecutablePath": "C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\bin\\machdoch-ralph-128e6933-standard-initialization.exe",
+        "CommandLine": "\"C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\bin\\machdoch-ralph-128e6933-standard-initialization.exe\" --ralph-host-watcher C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\standard-initialization-1791391636368\\profile\\depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-a\\AppData\\Roaming\\com.machdoch.ralphverification.r1791377537642\\ralph-recovery\\desktop-22340-1791391644398176600.json 22340 134358652400240215 desktop-22340-1791391644398176600",
+        "startedAtEpochMs": 1791391698387
+      }
+    ],
+    "executableSha256": "bc2b374ae3f88b9ff38ea4206eaaa79fc5b9f60690d1628305ab76cbf4897ea3",
+    "cliSha256": "a6473e28b769004b3f69a5cb336fdf85038acf5b5e97327702f18b3aebd7c00e",
+    "initialHost": {
+      "ProcessId": 22340,
+      "ParentProcessId": 26508,
+      "ExecutablePath": "C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\bin\\machdoch-ralph-128e6933-standard-initialization.exe",
+      "CommandLine": "\"C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\bin\\machdoch-ralph-128e6933-standard-initialization.exe\"",
+      "startedAtEpochMs": 1791391640024
+    },
+    "manifestPath": "C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\standard-initialization-1791391636368\\profile\\depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-depth-a\\AppData\\Roaming\\com.machdoch.ralphverification.r1791377537642\\ralph-recovery\\desktop-22340-1791391644398176600.json",
+    "runId": "desktop-22340-1791391698334892800-0",
+    "runDirectory": "C:\\Users\\ehrha\\AppData\\Local\\Temp\\machdoch-ralph-stability-ViFe18\\gui\\standard-initialization-1791391636368\\workspace\\.machdoch\\ralph\\runs\\desktop-22340-1791391698334892800-0",
+    "error": "Error: Initialization claim before first record exceeded 180000 ms\n    at wait (file:///C:/Users/ehrha/AppData/Local/Temp/machdoch-ralph-stability-ViFe18/gui-check.mjs:22:186)\n    at async file:///C:/Users/ehrha/AppData/Local/Temp/machdoch-ralph-stability-ViFe18/gui-check.mjs:124:5",
+    "remainingOwnedProcesses": [],
+    "policyCleanup": {
+      "removed": true,
+      "valueName": "machdoch-ralph-128e6933-standard-initialization.exe"
+    },
+    "finishedAt": "2026-10-07T16:51:24.209Z"
+  }
+}

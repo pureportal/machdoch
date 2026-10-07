@@ -1,0 +1,218 @@
+{
+  "ralph": {
+    "total": 1534,
+    "initialPassed": 1530,
+    "initialFailed": 4,
+    "allPassedAcrossRecordedRuns": true,
+    "resolved": [
+      {
+        "file": "apps/client/src/cli/_helpers/cli-fleet-ralph-editor.spec.ts",
+        "test": "bounds recent task results by bytes as well as task count",
+        "recheckDurationMs": 31536.900999999998
+      },
+      {
+        "file": "apps/client/src/core/__test__/ralph-autonomy-integration.spec.ts",
+        "test": "RALPH autonomy integration completes every eligible task in a durable portfolio before succeeding",
+        "recheckDurationMs": 33980.0768
+      },
+      {
+        "file": "apps/client/src/core/__test__/ralph-reliability.spec.ts",
+        "test": "RALPH durable execution recovery immediately resumes a recently killed owner without replaying committed progress",
+        "recheckDurationMs": 15433.0509
+      },
+      {
+        "file": "apps/client/src/core/__test__/ralph-run.spec.ts",
+        "test": "runRalphFlow retires completed JSON task claims before archiving their lifecycle file",
+        "recheckDurationMs": 52689.5006
+      }
+    ]
+  },
+  "windowsNative": {
+    "passedAcrossRuns": 99,
+    "initialPassed": 98,
+    "initialFailed": 1,
+    "ignored": 1,
+    "recheckReceiptSha256": "7d6d0337e88e7f7557d5b1b1551739cb7386f1f986b1cea1ca33bcaa247cd635"
+  },
+  "linuxNative": {
+    "passed": 96,
+    "failed": 0,
+    "ignored": 1,
+    "fixtureUsesProductionModules": true,
+    "fullTauriDesktop": false
+  },
+  "scheduler": {
+    "passed": 5,
+    "failed": 0,
+    "ralphJobTestDurationMs": 5042.9661
+  },
+  "broadClient": {
+    "initialPassed": 4289,
+    "initialFailed": 26,
+    "initialSkipped": 3,
+    "fullyGreen": false,
+    "failures": [
+      {
+        "file": "apps/client/src/core/fleet-runs.spec.ts",
+        "test": "headless project services keeps Unicode logs within the snapshot byte budget",
+        "firstDiagnostic": "AssertionError: expected 1 to be greater than 100\n    at C:/Development/machdoch/apps/client/src/core/fleet-runs.spec.ts:370:9"
+      },
+      {
+        "file": "apps/client/src/cli/_helpers/cli-fleet-scheduler.spec.ts",
+        "test": "discovers, inspects, triggers, cancels, retries and runs due RALPH jobs",
+        "firstDiagnostic": "Error: STACK_TRACE_ERROR\n    at task (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:1784:27)\n    at Object.<anonymous> (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:1817:16)\n    at Object.<anonymous> (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:1563:28)\n    at chain (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:599:14)\n    at C:/Development/machd"
+      },
+      {
+        "file": "apps/client/src/core/provider-enrollment/sync-daemon.spec.ts",
+        "test": "provider sync daemon does not reconcile in response to unrelated workspace churn",
+        "firstDiagnostic": "Error: expected { schemaVersion: 2, pid: 4704, …(4) } to match object { Object (runCompletedAt) }\n(5 matching properties omitted from actual)\n    at _Assertion.__VITEST_RESOLVES__ (file:///C:/Development/machdoch/node_modules/@vitest/expect/dist/index.js:1710:17)\n    at _Assertion.propertyGetter (file:///C:/Development/machdoch/node_modules/chai/index.js:1570:27)\n    at Reflect.get (<anonymous>)\n    at Object.proxyGetter [as get] (file:///C:/Development/machdoch/node_modules/chai/index.js:1659:2"
+      },
+      {
+        "file": "apps/client/src/core/_helpers/task-file-change-capture.spec.ts",
+        "test": "task file change capture reports tracked edits, new untracked files, line counts, and hunk ranges",
+        "firstDiagnostic": "Error: STACK_TRACE_ERROR\n    at task (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:1784:27)\n    at Object.<anonymous> (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:1817:16)\n    at Object.<anonymous> (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:1563:28)\n    at chain (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:599:14)\n    at C:/Development/machd"
+      },
+      {
+        "file": "apps/client/src/core/_helpers/task-file-change-capture.spec.ts",
+        "test": "task file change capture streams patches without retaining very large changed lines",
+        "firstDiagnostic": "Error: STACK_TRACE_ERROR\n    at task (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:1784:27)\n    at Object.<anonymous> (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:1817:16)\n    at Object.<anonymous> (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:1563:28)\n    at chain (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:599:14)\n    at C:/Development/machd"
+      },
+      {
+        "file": "apps/client/src/core/_helpers/task-file-change-capture.spec.ts",
+        "test": "task file change capture uses the dirty task-start state as its baseline",
+        "firstDiagnostic": "Error: STACK_TRACE_ERROR\n    at task (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:1784:27)\n    at Object.<anonymous> (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:1817:16)\n    at Object.<anonymous> (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:1563:28)\n    at chain (file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:599:14)\n    at C:/Development/machd"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/app-shell/use-shutdown-when-idle.spec.ts",
+        "test": "shutdown monitoring across chat and image work shuts down only after queued messages, retries, image jobs and settlement have all drained",
+        "firstDiagnostic": "Error: [vitest] No \"loadShellStateRevision\" export is defined on the \"../lib/shell-store\" mock. Did you forget to return it from \"vi.mock\"?\nIf you need to partially mock a module, you can use \"importOriginal\" helper inside:\n\n    at VitestMocker.createError (file:///C:/Development/machdoch/node_modules/vitest/dist/chunks/startVitestModuleRunner.DB-7oCpn.js:62:17)\n    at Object.get (file:///C:/Development/machdoch/node_modules/vitest/dist/chunks/startVitestModuleRunner.DB-7oCpn.js:327:16)\n    at M"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/app-shell/use-shutdown-when-idle.spec.ts",
+        "test": "shutdown monitoring across chat and image work inspects queued work persisted by another window even when the local view is idle",
+        "firstDiagnostic": "Error: [vitest] No \"loadShellStateRevision\" export is defined on the \"../lib/shell-store\" mock. Did you forget to return it from \"vi.mock\"?\nIf you need to partially mock a module, you can use \"importOriginal\" helper inside:\n\n    at VitestMocker.createError (file:///C:/Development/machdoch/node_modules/vitest/dist/chunks/startVitestModuleRunner.DB-7oCpn.js:62:17)\n    at Object.get (file:///C:/Development/machdoch/node_modules/vitest/dist/chunks/startVitestModuleRunner.DB-7oCpn.js:327:16)\n    at M"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/app-shell/use-shutdown-when-idle.spec.ts",
+        "test": "shutdown monitoring across chat and image work disarms when work inspection fails",
+        "firstDiagnostic": "Error: [vitest] No \"loadShellStateRevision\" export is defined on the \"../lib/shell-store\" mock. Did you forget to return it from \"vi.mock\"?\nIf you need to partially mock a module, you can use \"importOriginal\" helper inside:\n\n    at VitestMocker.createError (file:///C:/Development/machdoch/node_modules/vitest/dist/chunks/startVitestModuleRunner.DB-7oCpn.js:62:17)\n    at Object.get (file:///C:/Development/machdoch/node_modules/vitest/dist/chunks/startVitestModuleRunner.DB-7oCpn.js:327:16)\n    at M"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/preview/app.dom.spec.ts",
+        "test": "desktop startup readiness does not apply main startup settings from an assistant window",
+        "firstDiagnostic": "Error: Unable to find an element with the text: Bubble. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.\n\nIgnored nodes: comments, script, style\n\u001b[36m<body>\u001b[39m\n  \u001b[36m<div>\u001b[39m\n    \u001b[36m<main\u001b[39m\n      \u001b[33mclass\u001b[39m=\u001b[32m\"h-dvh min-h-0 bg-slate-950 text-slate-50 flex flex-col\"\u001b[39m\n    \u001b[36m>\u001b[39m\n      \u001b[36m<div>\u001b[39m\n        \u001b[0mChat\u001b[0m\n      \u001b[36m</div>\u001b[39m\n    \u001b[36m</ma"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-device-ui-settings.dom.spec.ts",
+        "test": "client confirmation of remote voice settings returns actual device voices and microphones",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-device-ui-settings.dom.spec.ts:102:5\n    at file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///C:/Development/machdoch"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-device-ui-settings.dom.spec.ts",
+        "test": "client confirmation of remote voice settings waits for persisted preferences before confirming the changed state",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-device-ui-settings.dom.spec.ts:125:5\n    at file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///C:/Development/machdoch"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-device-ui-settings.dom.spec.ts",
+        "test": "client confirmation of remote voice settings reports failed persistence without confirming success",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-device-ui-settings.dom.spec.ts:152:5\n    at file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///C:/Development/machdoch"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-device-ui-settings.dom.spec.ts",
+        "test": "client confirmation of remote voice settings rejects a voice from the browser rather than the device list",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-device-ui-settings.dom.spec.ts:165:5\n    at file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///C:/Development/machdoch"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-device-ui-settings.dom.spec.ts",
+        "test": "client confirmation of remote voice settings requires configured playback before enabling automatic speech",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-device-ui-settings.dom.spec.ts:183:5\n    at file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///C:/Development/machdoch"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-device-ui-settings.dom.spec.ts",
+        "test": "client confirmation of remote voice settings does not subscribe in a secondary window",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-device-ui-settings.dom.spec.ts:202:5\n    at file:///C:/Development/machdoch/node_modules/@vitest/runner/dist/chunk-artifact.js:302:11\n    at file:///C:/Development/machdoch"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts",
+        "test": "exports full native sessions outside the live snapshot without truncating draft or transcript content",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at setup (C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:87:16)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:117:20\n    at file:/"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts",
+        "test": "uses native content search across the full session index",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at setup (C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:87:16)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:150:20\n    at file:/"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts",
+        "test": "returns complete native drafts, all forty history entries and long queued text",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at setup (C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:87:16)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:176:29\n    at file:/"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts",
+        "test": "returns chronological pages and lossless message text while rejecting a stale revision",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at setup (C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:87:16)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:220:29\n    at file:/"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts",
+        "test": "confirms imports only after canonical native mutation and persistence",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at setup (C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:87:16)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:255:29\n    at file:/"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts",
+        "test": "refuses removed sessions and excludes Quick Chat archives",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at setup (C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:87:16)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:273:20\n    at file:/"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts",
+        "test": "returns the complete native activity trace including tool details and timeout state",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at setup (C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:87:16)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:321:20\n    at file:/"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts",
+        "test": "keeps the paging revision stable while live execution updates and changes it when message text changes",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at setup (C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:87:16)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:346:39\n    at file:/"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts",
+        "test": "reads changed files only through the owning native session and message",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at setup (C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:87:16)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:415:20\n    at file:/"
+      },
+      {
+        "file": "apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts",
+        "test": "listens only in the main native window and releases the listener",
+        "firstDiagnostic": "ReferenceError: document is not defined\n    at render (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:256:5)\n    at Proxy.renderHook (C:\\Development\\machdoch\\node_modules\\@testing-library\\react\\dist\\pure.js:339:7)\n    at setup (C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:87:16)\n    at C:/Development/machdoch/apps/client/src/tauri/ui/chat-session/_helpers/use-fleet-session-data.dom.spec.ts:448:19\n    at file:/"
+      }
+    ]
+  },
+  "sharedRuntime": {
+    "windows": {
+      "passed": true,
+      "before": false,
+      "code": 0,
+      "startedAt": "2026-10-07T17:01:39.844Z",
+      "finishedAt": "2026-10-07T17:01:42.745Z",
+      "sourceSha256": "f92b174fee030e3d657a8a4336caff01f78001f414274cf76692f88a93ef31a1",
+      "testSummary": "test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.66s",
+      "logPath": "C:/Users/ehrha/AppData/Local/Temp/machdoch-ralph-stability-ViFe18/long-runtime-after.log"
+    },
+    "linux": {
+      "passed": true,
+      "code": 0,
+      "startedAt": "2026-10-07T17:03:44.980Z",
+      "finishedAt": "2026-10-07T17:04:24.318Z",
+      "sourceSha256": "f92b174fee030e3d657a8a4336caff01f78001f414274cf76692f88a93ef31a1",
+      "testSummary": "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 29 filtered out; finished in 0.24s",
+      "logPath": "C:/Users/ehrha/AppData/Local/Temp/machdoch-ralph-stability-ViFe18/long-runtime-linux.log"
+    },
+    "regressionBeforeRepair": {
+      "passed": true,
+      "before": true,
+      "code": 101,
+      "startedAt": "2026-10-07T17:01:11.967Z",
+      "finishedAt": "2026-10-07T17:01:19.151Z",
+      "sourceSha256": "7193f732873c40924a4fbbe0d8da646c2dd0bef632ec2d4bcf41da168ff41f98",
+      "testSummary": "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 40 filtered out; finished in 0.04s",
+      "logPath": "C:/Users/ehrha/AppData/Local/Temp/machdoch-ralph-stability-ViFe18/long-runtime-before.log"
+    }
+  }
+}

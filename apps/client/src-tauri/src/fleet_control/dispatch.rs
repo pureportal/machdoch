@@ -96,7 +96,12 @@ pub(super) fn dispatch_fleet_command(
     if event.kind == "cancel" {
         if let Some(task_id) = event.task_id.as_deref() {
             let cancel_state = app_handle.state::<DesktopTaskCancelMap>();
-            request_desktop_task_cancel(&cancel_state, task_id);
+            app_handle
+                .state::<crate::desktop_task::ralph_host_recovery::RalphHostRecoveryState>()
+                .remove_task(task_id, || {
+                    request_desktop_task_cancel(&cancel_state, task_id)
+                })
+                .map_err(FleetCommandDispatchError::Unavailable)?;
         }
     }
 

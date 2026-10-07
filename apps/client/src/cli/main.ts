@@ -11,9 +11,12 @@ import {
 } from "./_helpers/cli-error.js";
 import { createCliStyle } from "./_helpers/cli-terminal.js";
 
+const retainRalphExecution = Boolean(process.env.MACHDOCH_RALPH_CANCEL_PATH?.trim());
+
 const handleStreamError = (error: unknown): void => {
   if (isBrokenPipeError(error)) {
-    process.exit(0);
+    if (!retainRalphExecution) process.exit(0);
+    return;
   }
 
   throw error;
@@ -27,6 +30,10 @@ const exitAfterOutputFlush = async (): Promise<never> => {
     [process.stdout, process.stderr].map(
       (stream) =>
         new Promise<void>((resolve, reject) => {
+          if (retainRalphExecution && isBrokenPipeError(stream.errored)) {
+            resolve();
+            return;
+          }
           stream.write("", (error) => (error ? reject(error) : resolve()));
         }),
     ),

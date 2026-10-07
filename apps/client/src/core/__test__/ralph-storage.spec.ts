@@ -1,4 +1,5 @@
 import {
+  mkdir,
   mkdtemp,
   readdir,
   readFile,
@@ -16,12 +17,14 @@ import {
   RalphFlowNotFoundError,
   createRalphFlowFingerprint,
   createRalphRunLogger,
+  getRalphRunDirectory,
   deleteRalphFlow,
   getRalphFlowPath,
   listRalphFlowRevisions,
   listRalphFlows,
   listRalphRunRecords,
   parseRalphFlowJson,
+  pruneRalphRunArtifacts,
   readRalphFlow,
   readRalphRunLog,
   readRalphRunRecord,
@@ -725,6 +728,69 @@ describe("Ralph flow storage", () => {
     ]);
   });
 
+  it("reserves a new run once before publishing its initial record", async () => {
+    const workspaceRoot = await createWorkspace();
+    const flow = createFlow();
+    const starts = await Promise.allSettled(
+      Array.from({ length: 20 }, () =>
+        createRalphRunLogger(workspaceRoot, flow, { runId: "reserved-run" }),
+      ),
+    );
+    expect(starts.filter((start) => start.status === "fulfilled")).toHaveLength(
+      1,
+    );
+    for (const start of starts) {
+      if (start.status === "fulfilled") await start.value.flush();
+    }
+    const failures = starts.filter((start) => start.status === "rejected");
+    expect(failures).toHaveLength(19);
+    for (const failure of failures) {
+      expect(failure.reason.message).toContain(
+        "already has reserved artifacts",
+      );
+    }
+    const directory = join(workspaceRoot, ".machdoch/ralph/runs/reserved-run");
+    const trace = await readFile(join(directory, "trace.jsonl"), "utf8");
+    await expect(
+      createRalphRunLogger(workspaceRoot, flow, { runId: "reserved-run" }),
+    ).rejects.toThrow("already has reserved artifacts");
+    expect(await readFile(join(directory, "trace.jsonl"), "utf8")).toBe(trace);
+  });
+
+  it("preserves an initializer while pruning old runs", async () => {
+    const workspaceRoot = await createWorkspace();
+    const flow = createFlow();
+    const logger = await createRalphRunLogger(workspaceRoot, flow, {
+      runId: "initializing-run",
+    });
+    await logger.flush();
+    const directory = join(getRalphRunDirectory(workspaceRoot), logger.runId);
+    const old = new Date(Date.now() - 100 * 24 * 60 * 60_000);
+    await utimes(directory, old, old);
+    await expect(
+      pruneRalphRunArtifacts(workspaceRoot, { maxAgeDays: 1 }),
+    ).resolves.toEqual({ removed: [] });
+    await expect(readFile(join(directory, "trace.jsonl"), "utf8")).resolves.toContain(
+      flow.id,
+    );
+  });
+
+  it("excludes private initialization locks from run listings and pruning", async () => {
+    const workspaceRoot = await createWorkspace();
+    const directory = join(
+      getRalphRunDirectory(workspaceRoot),
+      ".ralph-initializing-run.json.guard.machdoch.lock",
+    );
+    await mkdir(directory, { recursive: true });
+    const old = new Date(Date.now() - 100 * 24 * 60 * 60_000);
+    await utimes(directory, old, old);
+    await expect(listRalphRunRecords(workspaceRoot)).resolves.toEqual([]);
+    await expect(
+      pruneRalphRunArtifacts(workspaceRoot, { maxAgeDays: 1 }),
+    ).resolves.toEqual({ removed: [] });
+    expect(await readdir(directory)).toEqual([]);
+  });
+
   it("reads, lists, filters, and loads logs for file-backed run records", async () => {
     const workspaceRoot = await createWorkspace();
     const flow = createFlow();
@@ -1124,7 +1190,7 @@ describe("Ralph flow storage", () => {
         runId: "live-run",
         paths,
       }),
-    ).rejects.toThrow("refused to overwrite active run");
+    ).rejects.toThrow("already has reserved artifacts");
 
     const after = await Promise.all(
       artifactPaths.map((path) => readFile(path)),

@@ -122,7 +122,7 @@ export const createRalphRunArtifactPaths = (
   let candidateDirectory = join(runDirectory, id);
   let suffix = 1;
 
-  while (existsSync(candidateDirectory)) {
+  while (!preferredId && existsSync(candidateDirectory)) {
     id = `${baseName}-${suffix}`;
     candidateDirectory = join(runDirectory, id);
     suffix += 1;
