@@ -9,7 +9,10 @@ import {
   createSession,
   type ChatSessionQueuedMessage,
 } from "../chat-session.model";
-import { loadShellStateSnapshot } from "../lib/shell-store";
+import {
+  loadShellStateRevision,
+  loadShellStateSnapshot,
+} from "../lib/shell-store";
 import {
   useShutdownWhenIdle,
   type ShutdownWhenIdleOptions,
@@ -27,10 +30,16 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async () => vi.fn()),
 }));
-vi.mock("../lib/shell-store", () => ({ loadShellStateSnapshot: vi.fn() }));
-vi.mock("@machdoch/media-studio/tauri/ui/media/media-generation-service.js", () => ({
-  hasPendingMediaGeneration: () => activity.media,
+vi.mock("../lib/shell-store", () => ({
+  loadShellStateRevision: vi.fn(),
+  loadShellStateSnapshot: vi.fn(),
 }));
+vi.mock(
+  "@machdoch/media-studio/tauri/ui/media/media-generation-service.js",
+  () => ({
+    hasPendingMediaGeneration: () => activity.media,
+  }),
+);
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -77,9 +86,13 @@ const setup = async () => {
     flush: vi.fn(async () => undefined),
   };
   let persisted = options.state;
+  let revision = 10;
+  vi.mocked(loadShellStateRevision)
+    .mockReset()
+    .mockImplementation(async () => revision);
   vi.mocked(loadShellStateSnapshot)
     .mockReset()
-    .mockImplementation(async () => ({ state: persisted, revision: 10 }));
+    .mockImplementation(async () => ({ state: persisted, revision }));
   const view = renderHook(
     (input: ShutdownWhenIdleOptions) => useShutdownWhenIdle(input),
     { initialProps: options },
@@ -91,6 +104,7 @@ const setup = async () => {
   const update = (patch: Partial<ShutdownWhenIdleOptions>) => {
     Object.assign(options, patch);
     persisted = options.state;
+    revision += 1;
     view.rerender({ ...options });
   };
   return {
@@ -99,6 +113,7 @@ const setup = async () => {
     update,
     persist: (state: typeof persisted) => {
       persisted = state;
+      revision += 1;
     },
   };
 };
@@ -179,7 +194,9 @@ describe("shutdown monitoring across chat and image work", () => {
     unsettled = false;
     await advance();
     expect(shutdownCalls()).toHaveLength(1);
-    expect(shutdownCalls()[0][1]).toEqual({ expectedRevision: 10 });
+    expect(shutdownCalls()[0][1]).toEqual({
+      expectedRevision: await loadShellStateRevision(),
+    });
     expect(view.result.current.enabled).toBe(false);
   });
 
@@ -207,7 +224,7 @@ describe("shutdown monitoring across chat and image work", () => {
 
   it("disarms when work inspection fails", async () => {
     const view = await setup();
-    vi.mocked(loadShellStateSnapshot).mockRejectedValue(
+    vi.mocked(loadShellStateRevision).mockRejectedValue(
       new Error("Storage unavailable"),
     );
     await advance();
