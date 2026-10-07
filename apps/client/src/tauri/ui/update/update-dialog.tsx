@@ -48,7 +48,7 @@ export function UpdateDialog({
         aria-describedby={updater.release ? "update-description" : undefined}
       >
         <DialogHeader>
-          <div className="mb-3 grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+          <div className="mb-3 grid size-12 place-items-center rounded-2xl bg-sky-950/70 text-sky-300">
             <Download aria-hidden="true" className="size-6" />
           </div>
           <DialogTitle>{title}</DialogTitle>
@@ -59,7 +59,7 @@ export function UpdateDialog({
         {updater.release && !working && updater.phase !== "installed" ? (
           <Button
             variant="link"
-            className="h-auto justify-start px-0"
+            className="h-auto w-fit justify-start px-0"
             onClick={() => {
               void openUrl(
                 `https://github.com/pureportal/machdoch/releases/tag/v${updater.release!.version}`,
@@ -90,7 +90,7 @@ export function UpdateDialog({
             </div>
             <progress
               aria-label="Update download"
-              className="h-2 w-full accent-primary"
+              className="h-2 w-full accent-sky-500"
               max={updater.progress.total ?? 1}
               value={
                 updater.progress.total ? updater.progress.downloaded : undefined
@@ -104,7 +104,7 @@ export function UpdateDialog({
           </p>
         ) : null}
         {updater.error ? (
-          <p role="alert" className="text-sm text-destructive">
+          <p role="alert" className="text-sm text-rose-300">
             {updater.error}
           </p>
         ) : null}
@@ -112,7 +112,7 @@ export function UpdateDialog({
           <label className="grid gap-2 text-sm">
             Remind me
             <select
-              className="h-9 rounded-md border border-input bg-background px-3 text-foreground"
+              className="h-9 rounded-md border border-slate-700 bg-slate-950 px-3 text-slate-100"
               value={duration}
               onChange={(event) =>
                 setDuration(event.target.value as typeof duration)
@@ -129,6 +129,7 @@ export function UpdateDialog({
         <DialogFooter>
           {updater.phase === "installed" ? (
             <Button
+              className="bg-sky-600 text-white hover:bg-sky-500"
               onClick={() => {
                 void updater.restart();
               }}
@@ -149,6 +150,7 @@ export function UpdateDialog({
                   : "Remind me later"}
               </Button>
               <Button
+                className="bg-sky-600 text-white hover:bg-sky-500"
                 disabled={updater.saving}
                 onClick={() => {
                   void updater.install();
