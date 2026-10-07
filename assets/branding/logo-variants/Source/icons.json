@@ -1,0 +1,74 @@
+[
+  {
+    "id": "01-action-m",
+    "name": "Action M",
+    "concept": "An M with an advancing cut: the app name and work moving forward.",
+    "artwork": "<path d=\"M16 80V20H30L50 48L70 20H84V64L68 80V45L50 69L32 45V80Z\"/>"
+  },
+  {
+    "id": "02-open-command",
+    "name": "Open Command",
+    "concept": "A flat, open command window, drawing on the existing terminal identity.",
+    "artwork": "<g fill=\"none\" stroke=\"currentColor\" stroke-width=\"9\" stroke-linecap=\"square\" stroke-linejoin=\"round\"><path d=\"M78 20H35Q20 20 20 35V72M22 80H65Q80 80 80 65V40\"/><path d=\"M38 35L53 50L38 65\"/></g>"
+  },
+  {
+    "id": "03-connected-m",
+    "name": "Connected M",
+    "concept": "A continuous M joins workflow steps while retaining a readable initial.",
+    "artwork": "<path d=\"M22 74V28L50 58L78 28V74\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"10\" stroke-linejoin=\"round\"/><circle cx=\"22\" cy=\"74\" r=\"9\"/><circle cx=\"50\" cy=\"58\" r=\"9\"/><circle cx=\"78\" cy=\"74\" r=\"9\"/>"
+  },
+  {
+    "id": "04-workspace",
+    "name": "Workspace",
+    "concept": "A workspace folder with a completion mark cut into its silhouette.",
+    "artwork": "<path fill-rule=\"evenodd\" d=\"M16 30Q16 22 24 22H40L50 32H76Q84 32 84 40V76Q84 84 76 84H24Q16 84 16 76ZM27 54L34 47L44 57L65 39L72 47L44 72Z\"/>"
+  },
+  {
+    "id": "05-prompt-check",
+    "name": "Prompt Check",
+    "concept": "A command becomes a completed task: the shortest expression of the core promise.",
+    "artwork": "<g fill=\"none\" stroke=\"currentColor\" stroke-width=\"10\" stroke-linecap=\"square\" stroke-linejoin=\"round\"><path d=\"M20 28L42 50L20 72\"/><path d=\"M53 62L64 73L83 42\"/></g>"
+  },
+  {
+    "id": "06-repeat",
+    "name": "Repeat",
+    "concept": "A single returning route for reusable flows and scheduled work.",
+    "artwork": "<path d=\"M62 24H34Q20 24 20 38V62Q20 76 34 76H66Q80 76 80 62V47\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"11\" stroke-linecap=\"round\"/><path d=\"M57 10L81 24L57 38Z\"/>"
+  },
+  {
+    "id": "07-step-route",
+    "name": "Step Route",
+    "concept": "A small sequence of connected steps ending in an action.",
+    "artwork": "<path d=\"M23 75V58Q23 49 32 49H64Q77 49 77 36V25\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"10\" stroke-linecap=\"round\"/><circle cx=\"23\" cy=\"75\" r=\"9\"/><circle cx=\"48\" cy=\"49\" r=\"8\"/><path d=\"M62 31L77 13L92 31Z\"/>"
+  },
+  {
+    "id": "08-md-monogram",
+    "name": "MD Monogram",
+    "concept": "The two parts of Machdoch share one compact, solid monogram.",
+    "artwork": "<path fill-rule=\"evenodd\" d=\"M12 78V22H26L40 43L54 22H65Q89 22 89 50Q89 78 65 78H54V45L40 65L26 45V78ZM66 35V65Q77 65 77 50Q77 35 66 35Z\"/>"
+  },
+  {
+    "id": "09-forward",
+    "name": "Forward",
+    "concept": "Two decisive cuts convey execution and continued progress.",
+    "artwork": "<path d=\"M15 22H33L61 50L33 78H15L43 50ZM48 22H66L94 50L66 78H48L76 50Z\"/>"
+  },
+  {
+    "id": "10-dialogue-action",
+    "name": "Dialogue Action",
+    "concept": "A conversation opens into action, reflecting the chat-to-work interaction.",
+    "artwork": "<g fill=\"none\" stroke=\"currentColor\" stroke-width=\"9\" stroke-linejoin=\"round\" stroke-linecap=\"round\"><path d=\"M67 22H33Q20 22 20 35V62Q20 75 33 75H38L52 86V75H65\"/><path d=\"M48 48H82M68 34L82 48L68 62\"/></g>"
+  },
+  {
+    "id": "11-task-stack",
+    "name": "Task Stack",
+    "concept": "A reduced task list with a completed step, focused on getting work done.",
+    "artwork": "<g fill=\"none\" stroke=\"currentColor\" stroke-width=\"10\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M20 27H51M20 50H40M20 73H65\"/><path d=\"M61 45L71 55L87 32\"/></g>"
+  },
+  {
+    "id": "12-converge",
+    "name": "Converge",
+    "concept": "Two inputs merge into one forward direction: coordinating tools toward an outcome.",
+    "artwork": "<path d=\"M18 20H37L59 42H82V58H59L37 80H18L48 50Z\"/>"
+  }
+]

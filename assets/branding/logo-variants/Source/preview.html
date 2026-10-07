@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Machdoch — Logo Variants</title>
+    <style>__STYLES__</style>
+  </head>
+  <body>
+    <header class="page-header">
+      <h1>Machdoch <span>/ Logo Variants</span></h1>
+      <div class="display-controls">
+        <label>Theme <select id="theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+        <label>Color <select id="color"><option value="neutral">Ink</option><option value="accent">Accent</option></select></label>
+      </div>
+    </header>
+    <main>
+      <section class="composition" aria-labelledby="pair-title">
+        <div class="composition-bar">
+          <h2 id="pair-title">Action M + Grotesk</h2>
+          <label>Layout <select id="layout"><option value="horizontal">Horizontal</option><option value="stacked">Stacked</option></select></label>
+        </div>
+        <div class="lockup-stage" id="lockup-stage"></div>
+        <div class="composition-footer">
+          <div class="context-samples">
+            <div id="sidebar-sample" class="sidebar-sample" aria-label="Sidebar preview"></div>
+            <div id="header-sample" class="header-sample" aria-label="Header preview"></div>
+          </div>
+          <div class="download-actions">
+            <button type="button" data-download="icon">Download icon</button>
+            <button type="button" data-download="wordmark">Download text</button>
+            <button type="button" class="primary" data-download="lockup">Download logo</button>
+          </div>
+        </div>
+      </section>
+      <section aria-labelledby="icons-title">
+        <div class="section-bar"><h2 id="icons-title">Icons</h2><span class="scale-label">16 / 24 / 32 px</span></div>
+        <div id="icons" class="icon-grid" role="group" aria-label="Choose icon"></div>
+      </section>
+      <section aria-labelledby="wordmarks-title">
+        <div class="section-bar"><h2 id="wordmarks-title">Text</h2><label>Size <select id="text-size"><option value="40">40 px</option><option value="24">24 px</option><option value="16">16 px</option></select></label></div>
+        <div id="wordmarks" class="wordmark-grid" role="group" aria-label="Choose text"></div>
+      </section>
+      <p id="download-status" class="sr-only" role="status"></p>
+    </main>
+    <footer class="page-footer"><a href="Overview.svg">Overview</a><a href="Research.md">Research</a></footer>
+    <script id="catalog" type="application/json">__CATALOG__</script>
+    <script>__SCRIPT__</script>
+  </body>
+</html>
