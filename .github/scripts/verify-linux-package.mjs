@@ -233,26 +233,36 @@ export function validateOnnxRuntimeRunpath(dynamicSection) {
   }
 }
 
-function run(command, args) {
+export function runPackageCommand(command, args) {
   return execFileSync(command, args, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
+    maxBuffer: 64 * 1024 * 1024,
   }).trimEnd();
 }
 
 function readDebianField(packagePath, field) {
-  return run("dpkg-deb", ["--field", packagePath, field]);
+  return runPackageCommand("dpkg-deb", ["--field", packagePath, field]);
 }
 
 function readRpmField(packagePath, field) {
-  return run("rpm", ["-qp", "--queryformat", `%{${field}}`, packagePath]);
+  return runPackageCommand("rpm", [
+    "-qp",
+    "--queryformat",
+    `%{${field}}`,
+    packagePath,
+  ]);
 }
 
 function verifyGlibcBaseline(packagePath, configuration) {
   const extractionDirectory = mkdtempSync(join(tmpdir(), "machdoch-deb-"));
 
   try {
-    run("dpkg-deb", ["--extract", packagePath, extractionDirectory]);
+    runPackageCommand("dpkg-deb", [
+      "--extract",
+      packagePath,
+      extractionDirectory,
+    ]);
     const executablePath = join(
       extractionDirectory,
       "usr",
@@ -267,12 +277,14 @@ function verifyGlibcBaseline(packagePath, configuration) {
       "libonnxruntime.so.1",
     );
     validateGlibcBaseline(
-      run("readelf", ["--version-info", executablePath]),
+      runPackageCommand("readelf", ["--version-info", executablePath]),
       "2.36",
     );
-    validateOnnxRuntimeRunpath(run("readelf", ["--dynamic", executablePath]));
+    validateOnnxRuntimeRunpath(
+      runPackageCommand("readelf", ["--dynamic", executablePath]),
+    );
     validateGlibcBaseline(
-      run("readelf", ["--version-info", onnxRuntimePath]),
+      runPackageCommand("readelf", ["--version-info", onnxRuntimePath]),
       "2.36",
     );
   } finally {
@@ -284,7 +296,7 @@ function verifyDebianPackage(packagePath, architecture, configuration) {
   validateDebianPackage({
     architecture,
     configuration,
-    contents: run("dpkg-deb", ["--contents", packagePath]),
+    contents: runPackageCommand("dpkg-deb", ["--contents", packagePath]),
     fields: {
       package: readDebianField(packagePath, "Package"),
       version: readDebianField(packagePath, "Version"),
@@ -303,9 +315,11 @@ function verifyRpmPackage(packagePath, architecture, configuration) {
   validateRpmPackage({
     architecture,
     configuration,
-    dependencies: run("rpm", ["-qp", "--requires", packagePath]).split(
-      /\r?\n/u,
-    ),
+    dependencies: runPackageCommand("rpm", [
+      "-qp",
+      "--requires",
+      packagePath,
+    ]).split(/\r?\n/u),
     fields: {
       name: readRpmField(packagePath, "NAME"),
       version: readRpmField(packagePath, "VERSION"),
@@ -314,10 +328,14 @@ function verifyRpmPackage(packagePath, architecture, configuration) {
       summary: readRpmField(packagePath, "SUMMARY"),
       description: readRpmField(packagePath, "DESCRIPTION"),
     },
-    packagePaths: run("rpm", ["-qpl", packagePath]).split(/\r?\n/u),
-    recommendations: run("rpm", ["-qp", "--recommends", packagePath]).split(
+    packagePaths: runPackageCommand("rpm", ["-qpl", packagePath]).split(
       /\r?\n/u,
     ),
+    recommendations: runPackageCommand("rpm", [
+      "-qp",
+      "--recommends",
+      packagePath,
+    ]).split(/\r?\n/u),
   });
 }
 
