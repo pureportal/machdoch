@@ -686,8 +686,10 @@ describe("CLI provider enrollment materializer", () => {
       const workspaceRoot = join(root, "workspace");
       const userConfigRoot = join(root, "user-config");
       const mcpRoot = join(workspaceRoot, ".machdoch", "mcp");
+      const mcpCacheRoot = join(workspaceRoot, ".machdoch/local/cache/mcp");
       await Promise.all([
         mkdir(mcpRoot, { recursive: true }),
+        mkdir(mcpCacheRoot, { recursive: true }),
         mkdir(userConfigRoot, { recursive: true }),
       ]);
       await Promise.all([
@@ -710,7 +712,7 @@ describe("CLI provider enrollment materializer", () => {
           "utf8",
         ),
         writeFile(
-          join(mcpRoot, "discovery-cache.json"),
+          join(mcpCacheRoot, "discovery-cache.json"),
           `${JSON.stringify({
             schemaVersion: 1,
             servers: {

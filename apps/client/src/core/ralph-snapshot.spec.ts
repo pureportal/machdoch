@@ -28,7 +28,7 @@ afterEach(async () => {
 });
 
 describe("Ralph snapshot storage reads", () => {
-  it("returns empty scopes without creating storage or configuration", async () => {
+  it("returns empty scopes after initializing workspace storage", async () => {
     await expect(loadRalphSnapshot(workspaceRoot)).resolves.toEqual({
       workspaceRoot,
       scopes: [
@@ -36,7 +36,11 @@ describe("Ralph snapshot storage reads", () => {
         { scope: "user", flows: [], runs: [] },
       ],
     });
-    expect(await readdir(workspaceRoot)).toEqual([]);
+    expect(await readdir(workspaceRoot)).toEqual([".machdoch"]);
+    expect((await readdir(join(workspaceRoot, ".machdoch"))).sort()).toEqual([
+      ".gitignore",
+      "local",
+    ]);
   });
 
   it("preserves the existing flow and run summaries for both scopes", async () => {

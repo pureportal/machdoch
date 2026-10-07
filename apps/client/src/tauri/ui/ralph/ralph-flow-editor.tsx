@@ -8842,7 +8842,7 @@ export const RalphFlowEditor = ({
                 <Input
                   value={selectedUtility.outputPath ?? ""}
                   aria-label="Utility output path"
-                  placeholder=".machdoch/ralph/archive/file.json"
+                  placeholder=".machdoch/local/state/ralph/archive/file.json"
                   onChange={(event) =>
                     updateSelectedUtility({ outputPath: event.target.value })
                   }
@@ -8856,9 +8856,12 @@ export const RalphFlowEditor = ({
                 help="Used when output path is blank."
               >
                 <Input
-                  value={selectedUtility.rootPath ?? ".machdoch/ralph/archive"}
+                  value={
+                    selectedUtility.rootPath ??
+                    ".machdoch/local/state/ralph/archive"
+                  }
                   aria-label="Archive root path"
-                  placeholder=".machdoch/ralph/archive"
+                  placeholder=".machdoch/local/state/ralph/archive"
                   onChange={(event) =>
                     updateSelectedUtility({ rootPath: event.target.value })
                   }
@@ -8876,9 +8879,12 @@ export const RalphFlowEditor = ({
               help="Workspace-relative JSON state file."
             >
               <Input
-                value={selectedUtility.path ?? ".machdoch/ralph/counters.json"}
+                value={
+                  selectedUtility.path ??
+                  ".machdoch/local/state/ralph/counters.json"
+                }
                 aria-label="Loop counter file"
-                placeholder=".machdoch/ralph/counters.json"
+                placeholder=".machdoch/local/state/ralph/counters.json"
                 onChange={(event) =>
                   updateSelectedUtility({ path: event.target.value })
                 }
@@ -9020,14 +9026,14 @@ export const RalphFlowEditor = ({
             </RalphInspectorField>
             <RalphInspectorField
               label="Registry path"
-              help="Optional workspace-relative JSON registry path. Blank uses .machdoch/ralph/scope-registry/<flow>.scope-registry.json."
+              help="Blank uses the flow's local scope registry."
             >
               <Input
                 value={
                   selectedUtility.registryPath ?? selectedUtility.path ?? ""
                 }
                 aria-label="Scope registry path"
-                placeholder=".machdoch/ralph/scope-registry/flow.scope-registry.json"
+                placeholder=".machdoch/local/state/ralph/scope-registry/flow.scope-registry.json"
                 onChange={(event) =>
                   updateSelectedUtility({ registryPath: event.target.value })
                 }
@@ -9285,7 +9291,7 @@ export const RalphFlowEditor = ({
               <Input
                 value={selectedUtility.outputPath ?? ""}
                 aria-label="Project command detection output path"
-                placeholder=".machdoch/ralph/project-commands.json"
+                placeholder=".machdoch/local/state/ralph/project-commands.json"
                 onChange={(event) =>
                   updateSelectedUtility({ outputPath: event.target.value })
                 }
@@ -9352,7 +9358,7 @@ export const RalphFlowEditor = ({
               <Input
                 value={selectedUtility.outputPath ?? ""}
                 aria-label="Prompt JSON output path"
-                placeholder=".machdoch/ralph/artifact.json"
+                placeholder=".machdoch/local/artifacts/ralph/artifact.json"
                 onChange={(event) =>
                   updateSelectedUtility({ outputPath: event.target.value })
                 }
@@ -9383,7 +9389,7 @@ export const RalphFlowEditor = ({
               <Input
                 value={selectedUtility.path ?? ""}
                 aria-label="Final report JSON path"
-                placeholder=".machdoch/ralph/final-report.json"
+                placeholder=".machdoch/local/state/ralph/final-report.json"
                 onChange={(event) =>
                   updateSelectedUtility({ path: event.target.value })
                 }
@@ -9401,7 +9407,7 @@ export const RalphFlowEditor = ({
                   ""
                 }
                 aria-label="Final report markdown path"
-                placeholder=".machdoch/ralph/final-report.md"
+                placeholder=".machdoch/local/state/ralph/final-report.md"
                 onChange={(event) =>
                   updateSelectedUtility({ outputPath: event.target.value })
                 }

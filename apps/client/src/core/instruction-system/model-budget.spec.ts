@@ -79,8 +79,10 @@ it("includes frozen MCP initialization hints in provider/model preflight", async
   const root = await mkdtemp(join(tmpdir(), "machdoch-model-budget-"));
   const workspaceRoot = join(root, "workspace");
   const mcpRoot = join(workspaceRoot, ".machdoch", "mcp");
+  const mcpCacheRoot = join(workspaceRoot, ".machdoch/local/cache/mcp");
   roots.push(root);
   await mkdir(mcpRoot, { recursive: true });
+  await mkdir(mcpCacheRoot, { recursive: true });
   await writeFile(
     join(mcpRoot, "mcp.json"),
     `${JSON.stringify({
@@ -111,7 +113,7 @@ it("includes frozen MCP initialization hints in provider/model preflight", async
   expect(withoutHint.budget.blockingErrors).toEqual([]);
 
   await writeFile(
-    join(mcpRoot, "discovery-cache.json"),
+    join(mcpCacheRoot, "discovery-cache.json"),
     `${JSON.stringify({
       schemaVersion: 1,
       servers: {

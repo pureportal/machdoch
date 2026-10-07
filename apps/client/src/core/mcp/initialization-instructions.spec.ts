@@ -22,7 +22,9 @@ const writeFixture = async (
   instructions: Record<string, string>,
 ): Promise<void> => {
   const directory = join(workspaceRoot, ".machdoch", "mcp");
+  const cacheDirectory = join(workspaceRoot, ".machdoch/local/cache/mcp");
   await mkdir(directory, { recursive: true });
+  await mkdir(cacheDirectory, { recursive: true });
   const serverIds = Object.keys(instructions);
   await writeFile(
     join(directory, "mcp.json"),
@@ -40,7 +42,7 @@ const writeFixture = async (
     "utf8",
   );
   await writeFile(
-    join(directory, "discovery-cache.json"),
+    join(cacheDirectory, "discovery-cache.json"),
     `${JSON.stringify({
       schemaVersion: 1,
       servers: Object.fromEntries(
@@ -144,7 +146,7 @@ it("rejects malformed UTF-8 instead of silently replacing discovery-cache bytes"
   await mkdir(workspaceRoot);
   await writeFixture(workspaceRoot, { server: "Safe hint." });
   await writeFile(
-    join(workspaceRoot, ".machdoch", "mcp", "discovery-cache.json"),
+    join(workspaceRoot, ".machdoch/local/cache/mcp/discovery-cache.json"),
     Buffer.from([0xff]),
   );
 
@@ -160,6 +162,8 @@ it("rejects linked MCP configuration inputs when the host can create links", asy
   const cachePath = join(
     workspaceRoot,
     ".machdoch",
+    "local",
+    "cache",
     "mcp",
     "discovery-cache.json",
   );
