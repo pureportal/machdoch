@@ -3,7 +3,7 @@ import { lstat, readdir, readFile, utimes } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { RalphFlow } from "../ralph.js";
 import { createRalphFlowFingerprint } from "./create-ralph-flow-fingerprint.helper.js";
-import { isRalphRunOwnerAlive } from "./is-ralph-run-owner-alive.helper.js";
+import { RalphRunStore } from "./ralph-run-store.helper.js";
 import { writeJsonAtomically } from "./write-file-atomically.helper.js";
 import { ensureRalphWorktreeIdentity } from "./ralph-worktree-identity.helper.js";
 
@@ -22,6 +22,7 @@ export const migrateWorkspacePathReferences = (
   fingerprints: ReadonlyMap<string, string> = new Map(),
 ): unknown => {
   if (typeof value === "string") {
+    if (!value.includes(".machdoch")) return value;
     if (isAbsolute(value)) {
       const path = relative(resolve(workspaceRoot), resolve(value));
       if (
@@ -61,19 +62,27 @@ export const migrateWorkspacePathReferences = (
         ".machdoch$1local$1cache$1fleet-payloads",
       );
   }
-  if (Array.isArray(value))
-    return value.map((entry) =>
+  if (Array.isArray(value)) {
+    const updated = value.map((entry) =>
       migrateWorkspacePathReferences(entry, workspaceRoot, fingerprints),
     );
+    return updated.some((entry, index) => entry !== value[index])
+      ? updated
+      : value;
+  }
   if (!isRecord(value)) return value;
-  const updated = Object.fromEntries(
-    Object.entries(value).map(([key, entry]) => [
-      key,
+  let updated: Record<string, unknown> | undefined;
+  for (const [key, entry] of Object.entries(value)) {
+    const migrated =
       key === "flowFingerprint" && typeof entry === "string"
         ? (fingerprints.get(entry) ?? entry)
-        : migrateWorkspacePathReferences(entry, workspaceRoot, fingerprints),
-    ]),
-  );
+        : migrateWorkspacePathReferences(entry, workspaceRoot, fingerprints);
+    if (migrated !== entry) {
+      updated ??= { ...value };
+      updated[key] = migrated;
+    }
+  }
+  if (!updated) return value;
   if (
     isFlow(value.flowSnapshot) &&
     isFlow(updated.flowSnapshot) &&
@@ -112,7 +121,7 @@ const migrateJsonReferences = async (
     workspaceRoot,
     fingerprints,
   );
-  if (JSON.stringify(original) === JSON.stringify(updated)) return;
+  if (original === updated) return;
   if (
     isRecord(original) &&
     isRecord(updated) &&
@@ -139,20 +148,19 @@ export const assertWorkspaceRunsInactive = async (
 ): Promise<void> => {
   for (const entry of await listDirectory(runDirectory)) {
     if (!entry.isDirectory()) continue;
-    const leasePath = join(runDirectory, entry.name, "run-lease.json");
-    let lease: unknown;
+    const store = new RalphRunStore(join(runDirectory, entry.name));
     try {
-      lease = JSON.parse(await readFile(leasePath, "utf8"));
+      const metadata = await lstat(store.leasePath);
+      if (!metadata.isFile() || metadata.isSymbolicLink()) {
+        throw new Error(
+          `Workspace storage must be a regular file: ${store.leasePath}`,
+        );
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
       throw error;
     }
-    if (
-      isRecord(lease) &&
-      !lease.releasedAt &&
-      typeof lease.ownerId === "string" &&
-      isRalphRunOwnerAlive(lease.ownerId)
-    ) {
+    if ((await store.readLease(0))?.active) {
       throw new Error(
         `Stop the active RALPH run before migrating workspace storage: ${entry.name}`,
       );
