@@ -717,10 +717,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.prepare-release.outputs.tag_name }}
+          RELEASE_ID: ${{ needs.prepare-release.outputs.release_id }}
         shell: bash
         run: |
           gh release download "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --dir update-assets --pattern 'machdoch-*'
-          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG_NAME" > update-release.json
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > update-release.json
           pnpm exec oxnode apps/client/scripts/verify-update-signatures.ts update-assets
           node .github/scripts/update-manifest.mjs build update-assets apps/client/src-tauri/tauri.conf.json update-release.json
           gh release upload "$TAG_NAME" update-assets/latest.json --repo "$GITHUB_REPOSITORY" --clobber
