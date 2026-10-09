@@ -11,6 +11,7 @@ use crate::{
     cooperative_file_lock::with_cooperative_file_lock,
 };
 
+use super::migration::migrate_version_one;
 use super::model::{
     validate_document, validate_schema_version, RunConfiguration, RunConfigurationDocument,
 };
@@ -28,14 +29,25 @@ enum DeserializeDocumentError {
     Schema(String),
 }
 
-fn deserialize_document(
-    document_json: &str,
-) -> Result<RunConfigurationDocument, DeserializeDocumentError> {
+#[derive(Debug)]
+struct LoadedDocument {
+    document: RunConfigurationDocument,
+    migrated: bool,
+}
+
+fn deserialize_document(document_json: &str) -> Result<LoadedDocument, DeserializeDocumentError> {
     let header = serde_json::from_str::<RunConfigurationDocumentHeader>(document_json)
         .map_err(DeserializeDocumentError::Json)?;
-    validate_schema_version(header.schema_version).map_err(DeserializeDocumentError::Schema)?;
-    serde_json::from_str::<RunConfigurationDocument>(document_json)
-        .map_err(DeserializeDocumentError::Json)
+    let migrated = header.schema_version == 1;
+    let document = if migrated {
+        let value = serde_json::from_str(document_json).map_err(DeserializeDocumentError::Json)?;
+        let value = migrate_version_one(value).map_err(DeserializeDocumentError::Schema)?;
+        serde_json::from_value(value).map_err(DeserializeDocumentError::Json)?
+    } else {
+        validate_schema_version(header.schema_version).map_err(DeserializeDocumentError::Schema)?;
+        serde_json::from_str(document_json).map_err(DeserializeDocumentError::Json)?
+    };
+    Ok(LoadedDocument { document, migrated })
 }
 
 pub fn configuration_path(workspace_root: &Path) -> PathBuf {
@@ -44,17 +56,34 @@ pub fn configuration_path(workspace_root: &Path) -> PathBuf {
 
 pub fn load_document(workspace_root: &Path) -> Result<RunConfigurationDocument, String> {
     let path = configuration_path(workspace_root);
-    let file = match fs::File::open(&path) {
+    let loaded = read_document_file(&path)?;
+    if !loaded.migrated {
+        return Ok(loaded.document);
+    }
+    with_cooperative_file_lock(&path, || {
+        let loaded = read_document_file(&path)?;
+        if loaded.migrated {
+            write_document(&path, &loaded.document)?;
+        }
+        Ok(loaded.document)
+    })
+}
+
+fn read_document_file(path: &Path) -> Result<LoadedDocument, String> {
+    let file = match fs::File::open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            return Ok(RunConfigurationDocument::default());
+            return Ok(LoadedDocument {
+                document: RunConfigurationDocument::default(),
+                migrated: false,
+            });
         }
         Err(error) => return Err(format!("Failed to read {}: {error}", path.display())),
     };
-    read_document(file, &path)
+    read_document(file, path)
 }
 
-fn read_document(reader: impl Read, path: &Path) -> Result<RunConfigurationDocument, String> {
+fn read_document(reader: impl Read, path: &Path) -> Result<LoadedDocument, String> {
     let mut bytes = Vec::new();
     reader
         .take(MAX_CONFIGURATION_DOCUMENT_BYTES + 1)
@@ -68,14 +97,14 @@ fn read_document(reader: impl Read, path: &Path) -> Result<RunConfigurationDocum
     }
     let raw = String::from_utf8(bytes)
         .map_err(|error| format!("Failed to read {}: {error}", path.display()))?;
-    let document = deserialize_document(&raw).map_err(|error| match error {
+    let loaded = deserialize_document(&raw).map_err(|error| match error {
         DeserializeDocumentError::Json(error) => {
             format!("Failed to parse {}: {error}", path.display())
         }
         DeserializeDocumentError::Schema(message) => message,
     })?;
-    validate_document(&document)?;
-    Ok(document)
+    validate_document(&loaded.document)?;
+    Ok(loaded)
 }
 
 pub fn save_document(
@@ -90,16 +119,20 @@ pub fn save_document(
             fs::create_dir_all(parent)
                 .map_err(|error| format!("Failed to create {}: {error}", parent.display()))?;
         }
-        let mut serialized = serde_json::to_string_pretty(document)
-            .map_err(|error| format!("Failed to serialize run configurations: {error}"))?;
-        serialized.push('\n');
-        if serialized.len() as u64 > MAX_CONFIGURATION_DOCUMENT_BYTES {
-            return Err("Run configuration exceeds the 1 MB limit.".to_string());
-        }
-        write_file_atomic(&path, serialized.as_bytes(), AtomicWriteOptions::default())
-            .map_err(|error| format!("Failed to write {}: {error}", path.display()))
+        write_document(&path, document)
     })?;
     Ok(path)
+}
+
+fn write_document(path: &Path, document: &RunConfigurationDocument) -> Result<(), String> {
+    let mut serialized = serde_json::to_string_pretty(document)
+        .map_err(|error| format!("Failed to serialize run configurations: {error}"))?;
+    serialized.push('\n');
+    if serialized.len() as u64 > MAX_CONFIGURATION_DOCUMENT_BYTES {
+        return Err("Run configuration exceeds the 1 MB limit.".to_string());
+    }
+    write_file_atomic(path, serialized.as_bytes(), AtomicWriteOptions::default())
+        .map_err(|error| format!("Failed to write {}: {error}", path.display()))
 }
 
 pub fn precheck_document(
@@ -109,15 +142,15 @@ pub fn precheck_document(
     if document_json.len() as u64 > MAX_CONFIGURATION_DOCUMENT_BYTES {
         return Err("Run configuration exceeds the 1 MB limit.".to_string());
     }
-    let document = deserialize_document(document_json).map_err(|error| match error {
+    let loaded = deserialize_document(document_json).map_err(|error| match error {
         DeserializeDocumentError::Json(error) => {
             format!("Invalid run configuration JSON: {error}")
         }
         DeserializeDocumentError::Schema(message) => message,
     })?;
-    validate_document(&document)?;
-    validate_working_directories(workspace_root, &document)?;
-    Ok(document)
+    validate_document(&loaded.document)?;
+    validate_working_directories(workspace_root, &loaded.document)?;
+    Ok(loaded.document)
 }
 
 pub fn resolve_working_directory(
@@ -170,6 +203,10 @@ fn validate_working_directories(
 #[cfg(test)]
 #[path = "persistence_byte_budget_tests.rs"]
 mod byte_budget_tests;
+
+#[cfg(test)]
+#[path = "persistence_migration_tests.rs"]
+mod migration_tests;
 
 #[cfg(test)]
 mod tests {
@@ -251,15 +288,21 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_current_configuration_documents() {
+    fn rejects_unsupported_configuration_documents_without_rewriting() {
         let workspace = temporary_workspace("non-current-schema");
         fs::create_dir_all(workspace.join(".machdoch"))
             .expect("configuration directory should be created");
-        let document = r#"{"schemaVersion":1,"primaryConfigurationId":null,"configurations":[]}"#;
-        fs::write(configuration_path(&workspace), document)
-            .expect("configuration should be written");
-        assert!(load_document(&workspace).is_err());
-        assert!(precheck_document(&workspace, document).is_err());
+        for version in [0, RUN_SCHEMA_VERSION + 1] {
+            let document = format!(r#"{{"schemaVersion":{version},"configurations":[]}}"#);
+            fs::write(configuration_path(&workspace), &document)
+                .expect("configuration should be written");
+            assert!(load_document(&workspace).is_err());
+            assert!(precheck_document(&workspace, &document).is_err());
+            assert_eq!(
+                fs::read_to_string(configuration_path(&workspace)).unwrap(),
+                document
+            );
+        }
         let _ = fs::remove_dir_all(workspace);
     }
 }

@@ -2,6 +2,7 @@ mod control;
 mod health;
 mod health_dns;
 mod manager;
+mod migration;
 pub mod model;
 mod persistence;
 mod presence;
@@ -397,6 +398,47 @@ mod tests {
             .as_ref()
             .and_then(Value::as_object)
             .expect("handoff context should remain an object")
+    }
+
+    #[test]
+    fn desktop_handoff_migrates_version_one_without_a_warning() {
+        let workspace = temporary_workspace("version-one-schema");
+        write_run_configuration(
+            &workspace,
+            &serde_json::json!({
+                "schemaVersion": 1,
+                "primaryConfigurationId": "server",
+                "configurations": [{
+                    "id": "server", "name": "Server", "kind": "task",
+                    "command": "run-server", "hot_reload": true
+                }]
+            })
+            .to_string(),
+        );
+        let outcome = enrich_conversation_context_with_manager(
+            &RunManager::default(),
+            workspace.to_string_lossy().as_ref(),
+            Some(serde_json::json!({ "history": [] })),
+        )
+        .expect("version one should be migrated during desktop handoff");
+
+        assert!(outcome.warning.is_none());
+        let context = handoff_context(&outcome);
+        assert_eq!(context["workspaceRun"]["primaryConfigurationId"], "server");
+        assert_eq!(
+            context["workspaceRun"]["configurations"][0]["configuration"]["primary"],
+            true
+        );
+        assert_eq!(
+            context["workspaceRun"]["configurations"][0]["configuration"]["hotReload"],
+            true
+        );
+        let saved: Value = serde_json::from_str(
+            &fs::read_to_string(workspace.join(".machdoch/run.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(saved["schemaVersion"], RUN_SCHEMA_VERSION);
+        fs::remove_dir_all(&workspace).unwrap();
     }
 
     #[test]

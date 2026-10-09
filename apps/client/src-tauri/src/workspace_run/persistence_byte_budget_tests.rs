@@ -152,7 +152,7 @@ fn check_reader(size: usize, multibyte: bool) {
     if size > LIMIT {
         assert!(result.unwrap_err().contains("exceeds the 1 MB limit"));
     } else {
-        assert_eq!(result.unwrap(), document);
+        assert_eq!(result.unwrap().document, document);
     }
 }
 
@@ -209,4 +209,26 @@ fn reader_propagates_io_errors() {
     let error = read_document(FailedReader, Path::new("run.json")).unwrap_err();
     assert!(error.starts_with("Failed to read "));
     assert!(error.contains("controlled read failure"));
+}
+
+#[test]
+fn migration_checks_the_serialized_size_before_replacing_the_source() {
+    let workspace = temporary_workspace("migration-size");
+    let (document, _) = boundary_document(LIMIT + 1, true);
+    let mut source = serde_json::to_value(document).unwrap();
+    source["schemaVersion"] = 1.into();
+    source["primaryConfigurationId"] = "task-0".into();
+    for configuration in source["configurations"].as_array_mut().unwrap() {
+        configuration.as_object_mut().unwrap().remove("primary");
+    }
+    let raw = source.to_string();
+    assert!(raw.len() < LIMIT);
+    let path = configuration_path(&workspace);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, &raw).unwrap();
+    assert!(load_document(&workspace)
+        .unwrap_err()
+        .contains("1 MB limit"));
+    assert_eq!(fs::read_to_string(&path).unwrap(), raw);
+    fs::remove_dir_all(&workspace).unwrap();
 }

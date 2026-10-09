@@ -20,6 +20,7 @@ import {
 import { terminateProcessTree } from "./_helpers/process-tree.js";
 import { writeFileAtomically } from "./_helpers/write-file-atomically.helper.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
+import { parseWorkspaceRunDocument } from "./_helpers/parse-workspace-run-document.helper.js";
 
 type Status = RunSnapshot["statuses"][number];
 interface Run {
@@ -162,8 +163,9 @@ export class FleetRunManager {
             "Stop all project services before editing their configuration.",
           );
         const path = await this.configPath(root, true);
+        await this.load(root);
         await withCooperativeFileLock(path, async () => {
-          const previous = await this.load(root);
+          const previous = await this.readDocument(root);
           if (previous.revision !== command.expectedRevision)
             throw new Error(
               "Run configuration changed. Reload it before saving.",
@@ -196,7 +198,9 @@ export class FleetRunManager {
             mode: 0o600,
             beforeCommit: async () => {
               await this.configPath(root, true);
-              if ((await this.load(root)).revision !== previous.revision)
+              if (
+                (await this.readDocument(root)).revision !== previous.revision
+              )
                 throw new Error("Run configuration changed during save.");
             },
           });
@@ -371,6 +375,34 @@ export class FleetRunManager {
     return path;
   }
   private async load(root: string): Promise<DocumentState> {
+    const loaded = await this.readDocument(root);
+    if (!loaded.migrated) return this.rememberDocument(root, loaded);
+    const path = await this.configPath(root, false);
+    return await withCooperativeFileLock(path, async () => {
+      const latest = await this.readDocument(root);
+      if (!latest.migrated) return this.rememberDocument(root, latest);
+      const content = JSON.stringify(latest.document, null, 2) + "\n";
+      if (Buffer.byteLength(content) > 1024 * 1024)
+        throw new Error("Run configuration exceeds 1 MiB.");
+      await writeFileAtomically(path, content, "utf8", {
+        mode: 0o600,
+        beforeCommit: async () => {
+          await this.configPath(root, false);
+          if ((await this.readDocument(root)).revision !== latest.revision)
+            throw new Error(
+              "Run configuration changed during migration. Reload it.",
+            );
+        },
+      });
+      return this.rememberDocument(root, {
+        document: latest.document,
+        revision: digest(content),
+      });
+    });
+  }
+  private async readDocument(
+    root: string,
+  ): Promise<DocumentState & { migrated: boolean }> {
     const path = await this.configPath(root, false);
     let content = "";
     const file = await open(path, "r").catch((error: NodeJS.ErrnoException) => {
@@ -398,11 +430,14 @@ export class FleetRunManager {
       }
     const revision = digest(content);
     const cached = this.documents.get(root);
-    if (cached?.revision === revision) return cached;
-    const document = content
-      ? runDocumentSchema.parse(JSON.parse(content))
-      : emptyDocument();
-    const state = { document, revision };
+    if (cached?.revision === revision) return { ...cached, migrated: false };
+    const parsed = content
+      ? parseWorkspaceRunDocument(JSON.parse(content))
+      : { document: emptyDocument(), migrated: false };
+    return { ...parsed, revision };
+  }
+  private rememberDocument(root: string, loaded: DocumentState): DocumentState {
+    const state = { document: loaded.document, revision: loaded.revision };
     this.documents.set(root, state);
     if (this.documents.size > 16)
       for (const [key] of this.documents) {

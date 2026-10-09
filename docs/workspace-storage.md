@@ -2,6 +2,8 @@
 
 Shared files stay in `.machdoch/`: `config.json`, launch settings in `run.json`, scheduler definitions, MCP configuration, prompts, skills, macros, and RALPH flow definitions.
 
+Desktop and headless run loading migrate version 1 `run.json` files to version 2. Migration preserves the selected primary configuration and run settings, converts snake_case fields to camelCase, and atomically saves the validated result. Per-run health timing fields are removed; global Workspace Run settings apply. Invalid documents and unsupported schema versions remain untouched. Prechecking older JSON converts it without writing a file.
+
 Local data lives in the ignored `.machdoch/local/` subtree:
 
 | Directory    | Data                                                                                                                  |
