@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   mkdtemp,
   writeFile,
@@ -81,6 +81,91 @@ async function unusedPort(): Promise<number> {
   return port;
 }
 describe.sequential("headless project services", () => {
+  it("persists version one migrations once across concurrent snapshots without starting commands", async () => {
+    const f = await setup();
+    const path = join(f.root, ".machdoch", "run.json");
+    await mkdir(join(f.root, ".machdoch"));
+    const current = task({ environment: { TOKEN: "stored-value" } });
+    const {
+      primary: _primary,
+      workingDirectory,
+      hotReload,
+      healthCheck,
+      restartPolicy,
+      ...fields
+    } = current;
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        primaryConfigurationId: current.id,
+        configurations: [
+          {
+            ...fields,
+            working_directory: workingDirectory,
+            hot_reload: hotReload,
+            health_check: healthCheck,
+            restart_policy: restartPolicy,
+          },
+        ],
+      }),
+    );
+    const snapshots = await Promise.all(
+      Array.from({ length: 8 }, () => f.manager.snapshot(f.root)),
+    );
+    const persisted = await readFile(path, "utf8");
+    expect(JSON.parse(persisted)).toEqual({
+      schemaVersion: 2,
+      configurations: [current],
+    });
+    for (const snapshot of snapshots) {
+      expect(snapshot.revision).toBe(
+        createHash("sha256").update(persisted).digest("hex"),
+      );
+      expect(snapshot.document.configurations[0]).toMatchObject({
+        primary: true,
+        environment: { TOKEN: redactedRunValue },
+      });
+      expect(snapshot.statuses[0]).toMatchObject({
+        state: "stopped",
+        pid: null,
+      });
+    }
+    const formatted = " \n" + persisted;
+    await writeFile(path, formatted);
+    const reloaded = await f.manager.snapshot(f.root);
+    expect(reloaded.document).toEqual(snapshots[0]!.document);
+    expect(await readFile(path, "utf8")).toBe(formatted);
+    await f.manager.execute(f.root, {
+      action: "save",
+      commandId: randomUUID(),
+      expectedRevision: reloaded.revision,
+      document: reloaded.document,
+    });
+    expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
+      schemaVersion: 2,
+      configurations: [current],
+    });
+  });
+
+  it.each([1, 3])(
+    "preserves rejected source documents at schema version %s",
+    async (schemaVersion) => {
+      const f = await setup();
+      await mkdir(join(f.root, ".machdoch"));
+      const path = join(f.root, ".machdoch", "run.json");
+      const { primary: _primary, ...configuration } = task();
+      const source = JSON.stringify({
+        schemaVersion,
+        primaryConfigurationId: "missing",
+        configurations: [configuration],
+      });
+      await writeFile(path, source);
+      await expect(f.manager.snapshot(f.root)).rejects.toThrow();
+      expect(await readFile(path, "utf8")).toBe(source);
+    },
+  );
+
   it("redacts multiline secrets and drops the complete tail of oversized output lines", async () => {
     const f = await setup(
       'console.log(process.env.MULTILINE); process.stdout.write("x".repeat(17000)+"secret-"); setTimeout(()=>console.log("tail"),50); setInterval(()=>{},1000)',
