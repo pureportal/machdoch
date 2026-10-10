@@ -37,6 +37,20 @@ beforeEach(async () => {
 });
 
 describe("native Codex goals", () => {
+  const completeGoal = (): ExternalAgentCliOutputUpdate => {
+    send({
+      method: "thread/goal/updated",
+      params: { threadId: "thread-1", goal: { status: "complete" } },
+    });
+    return send({
+      method: "turn/completed",
+      params: {
+        threadId: "thread-1",
+        turn: { id: "turn-1", status: "completed" },
+      },
+    });
+  };
+
   it("creates a provider goal and supplies context before enabling continuation", () => {
     startGoal();
     expect(messages.map((message) => message.method)).toEqual([
@@ -293,5 +307,141 @@ describe("native Codex goals", () => {
     );
     expect(decoder.hasTerminalResult()).toBe(false);
     expect(decoder.push("invalid json\n").resultExitCode).toBe(1);
+  });
+
+  it.each([32_767, 4_000_000])(
+    "continues after oversized tool output delivered in %s-character chunks",
+    (chunkSize) => {
+      startGoal();
+      const source = `${JSON.stringify({
+        method: "item/completed",
+        params: {
+          threadId: "thread-1",
+          item: {
+            id: "large-tool",
+            type: "commandExecution",
+            aggregatedOutput: "x".repeat(2_100_000) + "\nAll tests passed.",
+            exitCode: 0,
+          },
+        },
+      })}\n`;
+      for (let offset = 0; offset < source.length; offset += chunkSize)
+        expect(
+          decoder.push(source.slice(offset, offset + chunkSize)).resultExitCode,
+        ).toBeUndefined();
+      expect(decoder.getToolCallCount()).toBe(1);
+      expect(decoder.getToolEvidence()).toContain("All tests passed.");
+      expect(decoder.getToolEvidence()).toContain('"outputTruncated":true');
+      expect(decoder.getToolEvidence().length).toBeLessThanOrEqual(32_000);
+      expect(completeGoal().resultExitCode).toBe(0);
+      expect(decoder.getFailureMessage()).toBeUndefined();
+      expect(close).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("processes batches larger than the old message limit without a cumulative output limit", () => {
+    startGoal();
+    const source = Array.from(
+      { length: 1_100 },
+      (_, index) =>
+        JSON.stringify({
+          method: "item/completed",
+          params: {
+            threadId: "thread-1",
+            item: {
+              id: String(index),
+              type: "commandExecution",
+              aggregatedOutput: "x".repeat(2_000),
+              exitCode: 0,
+            },
+          },
+        }) + "\n",
+    ).join("");
+    expect(source.length).toBeGreaterThan(2_000_000);
+    expect(decoder.push(source).resultExitCode).toBeUndefined();
+    expect(decoder.getToolCallCount()).toBe(1_100);
+    expect(decoder.getToolEvidence().length).toBeLessThanOrEqual(32_000);
+    expect(completeGoal().resultExitCode).toBe(0);
+  });
+
+  it.each(["x", "\u0000"])(
+    "bounds oversized assistant output without blocking completion (%j)",
+    (character) => {
+      startGoal();
+      const update = send({
+        method: "item/completed",
+        params: {
+          threadId: "thread-1",
+          item: {
+            id: "answer",
+            type: "agentMessage",
+            text: character.repeat(2_100_000) + "Final verification passed.",
+          },
+        },
+      });
+      expect(update.displayText.join("").length).toBeLessThan(512_000);
+      expect(decoder.getFinalOutput()).toContain("Final verification passed.");
+      expect(completeGoal().resultExitCode).toBe(0);
+    },
+  );
+
+  it("preserves a terminal result when large or malformed data arrives later", () => {
+    startGoal();
+    expect(completeGoal().resultExitCode).toBe(0);
+    expect(decoder.push("x".repeat(2_100_000) + "\n")).toEqual({
+      displayText: [],
+    });
+    expect(decoder.finish().resultExitCode).toBeUndefined();
+    expect(decoder.getFailureMessage()).toBeUndefined();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("keeps output already decoded when a later message is malformed", () => {
+    startGoal();
+    const source =
+      JSON.stringify({
+        method: "item/completed",
+        params: {
+          threadId: "thread-1",
+          item: { id: "answer", type: "agentMessage", text: "Work is saved." },
+        },
+      }) + "\ninvalid\n";
+    expect(decoder.push(source)).toMatchObject({
+      displayText: ["Work is saved.\n\n"],
+      resultExitCode: 1,
+    });
+    expect(decoder.getFailureMessage()).toContain("invalid goal protocol");
+    expect(decoder.push("x".repeat(2_100_000))).toEqual({ displayText: [] });
+    expect(decoder.getFailureMessage()).toContain("invalid goal protocol");
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("decodes a final control message without a trailing newline at EOF", () => {
+    startGoal();
+    send({
+      method: "thread/goal/updated",
+      params: { threadId: "thread-1", goal: { status: "complete" } },
+    });
+    decoder.push(
+      JSON.stringify({
+        method: "turn/completed",
+        params: {
+          threadId: "thread-1",
+          turn: { id: "turn-1", status: "completed" },
+        },
+      }),
+    );
+    expect(decoder.finish().resultExitCode).toBe(0);
+    expect(decoder.getFailureMessage()).toBeUndefined();
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("fails once when a process exits midway through a protocol message", () => {
+    startGoal();
+    decoder.push('{"method":"turn/completed","params":');
+    expect(decoder.finish().resultExitCode).toBe(1);
+    expect(decoder.getFailureMessage()).toContain("invalid goal protocol");
+    expect(decoder.finish().resultExitCode).toBeUndefined();
+    expect(close).toHaveBeenCalledOnce();
   });
 });
