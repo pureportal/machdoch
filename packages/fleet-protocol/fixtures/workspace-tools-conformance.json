@@ -1,5 +1,58 @@
 [
   {
+    "name": "Enable automatic workspace ignore rules",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "save_workspace_auto_gitignore",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "enabled": true
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "Disable automatic workspace ignore rules",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "save_workspace_auto_gitignore",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "enabled": false
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "Reject invalid automatic workspace ignore value",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "save_workspace_auto_gitignore",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "enabled": null
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "Reject extra automatic workspace ignore fields",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "save_workspace_auto_gitignore",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "enabled": true,
+        "extra": true
+      }
+    },
+    "accepted": false
+  },
+  {
     "name": "read .",
     "request": {
       "kind": "invoke",
@@ -2117,9 +2170,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "servers"
-          ]
+          "arguments": ["servers"]
         }
       }
     },
@@ -2134,10 +2185,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "servers",
-            "--include-disabled"
-          ]
+          "arguments": ["servers", "--include-disabled"]
         }
       }
     },
@@ -2152,9 +2200,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "cache"
-          ]
+          "arguments": ["cache"]
         }
       }
     },
@@ -2169,10 +2215,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "discover",
-            "server-a"
-          ]
+          "arguments": ["discover", "server-a"]
         }
       }
     },
@@ -2187,10 +2230,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "refresh",
-            "server-a"
-          ]
+          "arguments": ["refresh", "server-a"]
         }
       }
     },
@@ -2205,10 +2245,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "oauth-start",
-            "server-a"
-          ]
+          "arguments": ["oauth-start", "server-a"]
         }
       }
     },
@@ -2223,10 +2260,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "oauth-authorize",
-            "server-a"
-          ]
+          "arguments": ["oauth-authorize", "server-a"]
         }
       }
     },
@@ -2260,9 +2294,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "shell"
-          ]
+          "arguments": ["shell"]
         }
       }
     },
@@ -2277,11 +2309,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "cache",
-            "--workspace",
-            "/unknown"
-          ]
+          "arguments": ["cache", "--workspace", "/unknown"]
         }
       }
     },
@@ -2296,10 +2324,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "servers",
-            "--any"
-          ]
+          "arguments": ["servers", "--any"]
         }
       }
     },
@@ -2314,10 +2339,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "discover",
-            "--workspace"
-          ]
+          "arguments": ["discover", "--workspace"]
         }
       }
     },
@@ -2332,10 +2354,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "discover",
-            ""
-          ]
+          "arguments": ["discover", ""]
         }
       }
     },
@@ -2350,10 +2369,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "oauth-finish",
-            "server-a"
-          ]
+          "arguments": ["oauth-finish", "server-a"]
         }
       }
     },
@@ -2368,11 +2384,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "oauth-finish",
-            "server-a",
-            "abc\u0000def"
-          ]
+          "arguments": ["oauth-finish", "server-a", "abc\u0000def"]
         }
       }
     },
@@ -2792,9 +2804,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "status"
-          ]
+          "arguments": ["status"]
         }
       }
     },
@@ -2809,9 +2819,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "refresh"
-          ]
+          "arguments": ["refresh"]
         }
       }
     },
@@ -2826,9 +2834,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "enable"
-          ]
+          "arguments": ["enable"]
         }
       }
     },
@@ -2843,9 +2849,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "disable"
-          ]
+          "arguments": ["disable"]
         }
       }
     },
@@ -2860,9 +2864,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "doctor"
-          ]
+          "arguments": ["doctor"]
         }
       }
     },
@@ -2877,9 +2879,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "plan"
-          ]
+          "arguments": ["plan"]
         }
       }
     },
@@ -2894,9 +2894,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "daemon"
-          ]
+          "arguments": ["daemon"]
         }
       }
     },
@@ -2911,10 +2909,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "status",
-            "--secret"
-          ]
+          "arguments": ["status", "--secret"]
         }
       }
     },
@@ -2929,9 +2924,7 @@
       "args": {
         "request": {
           "workspaceRoot": "/projects/demo",
-          "arguments": [
-            "status"
-          ],
+          "arguments": ["status"],
           "extra": true
         }
       }
@@ -2947,9 +2940,7 @@
       "args": {
         "request": {
           "workspaceRoot": "",
-          "arguments": [
-            "status"
-          ]
+          "arguments": ["status"]
         }
       }
     },
@@ -3004,9 +2995,7 @@
       "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
       "command": "get_session_export",
       "args": {
-        "sessionIds": [
-          "older-session"
-        ]
+        "sessionIds": ["older-session"]
       }
     },
     "accepted": true
@@ -3030,9 +3019,7 @@
       "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
       "command": "get_session_export",
       "args": {
-        "sessionIds": [
-          "session"
-        ],
+        "sessionIds": ["session"],
         "all": true
       }
     },
@@ -3073,14 +3060,9 @@
         "limit": 80,
         "query": "Grüße 🌿",
         "scope": "all",
-        "statuses": [
-          "done",
-          "unread"
-        ],
+        "statuses": ["done", "unread"],
         "project": "__all_projects__",
-        "tags": [
-          "UI"
-        ]
+        "tags": ["UI"]
       }
     },
     "accepted": true
@@ -3096,13 +3078,9 @@
         "limit": 80,
         "query": "Grüße 🌿",
         "scope": "all",
-        "statuses": [
-          "invented"
-        ],
+        "statuses": ["invented"],
         "project": "__all_projects__",
-        "tags": [
-          "UI"
-        ]
+        "tags": ["UI"]
       }
     },
     "accepted": false
@@ -3118,14 +3096,9 @@
         "limit": 81,
         "query": "Grüße 🌿",
         "scope": "all",
-        "statuses": [
-          "done",
-          "unread"
-        ],
+        "statuses": ["done", "unread"],
         "project": "__all_projects__",
-        "tags": [
-          "UI"
-        ]
+        "tags": ["UI"]
       }
     },
     "accepted": false
@@ -3141,14 +3114,9 @@
         "limit": 80,
         "query": "Grüße 🌿",
         "scope": "all",
-        "statuses": [
-          "done",
-          "unread"
-        ],
+        "statuses": ["done", "unread"],
         "project": "__all_projects__",
-        "tags": [
-          "UI"
-        ]
+        "tags": ["UI"]
       }
     },
     "accepted": false

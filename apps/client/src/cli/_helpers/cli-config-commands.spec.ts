@@ -66,6 +66,41 @@ afterEach(async () => {
 });
 
 describe("CLI configuration catalog", () => {
+  it("saves and resets automatic workspace ignore rules", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+    const setting = "workspace.auto-gitignore";
+    const getSetting = async () =>
+      (await loadCliConfigEntries(workspaceRoot)).find(
+        (entry) => entry.setting === setting,
+      );
+    expect(await getSetting()).toMatchObject({
+      value: true,
+      source: "default",
+    });
+    const result = await saveConfigSetting(workspaceRoot, setting, "off");
+    expect(result).toMatchObject({ value: false, scope: "workspace" });
+    expect(JSON.parse(await readFile(result.configPath, "utf8"))).toMatchObject(
+      {
+        autoGitignore: false,
+      },
+    );
+    expect(await getSetting()).toMatchObject({ value: false, source: "saved" });
+    await expect(
+      saveConfigSetting(workspaceRoot, setting, "sometimes"),
+    ).rejects.toThrow();
+    await saveConfigSetting(workspaceRoot, setting, "on");
+    expect(await getSetting()).toMatchObject({ value: true, source: "saved" });
+    await clearConfigSetting(workspaceRoot, setting);
+    expect(await getSetting()).toMatchObject({
+      value: true,
+      source: "default",
+    });
+    expect(
+      JSON.parse(await readFile(result.configPath, "utf8")),
+    ).not.toHaveProperty("autoGitignore");
+  });
+
   it("defaults answer language to English and clears its prompt instruction", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();

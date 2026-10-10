@@ -85,6 +85,14 @@ pub(super) async fn invoke(
             .await
             .map_err(|error| json!(error))?,
         ),
+        "save_workspace_auto_gitignore" => serde_json::to_value(
+            runtime_snapshot::save_workspace_auto_gitignore(
+                workspace,
+                args["enabled"].as_bool().unwrap(),
+            )
+            .await
+            .map_err(|error| json!(error))?,
+        ),
         "save_workspace_reasoning_mode" => serde_json::to_value(
             runtime_snapshot::save_workspace_reasoning_mode(
                 workspace,

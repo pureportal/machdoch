@@ -84,6 +84,7 @@ export interface WorkspaceSettingsControls {
   adaptiveControllerOverride?: boolean | null;
   workspaceMemoryEnabled?: boolean;
   reasoningBankEnabled?: boolean;
+  autoGitignore?: boolean;
   reasoningProvider?: RuntimeProvider;
   reasoningModel?: string;
   saving: boolean;
@@ -92,8 +93,11 @@ export interface WorkspaceSettingsControls {
   onWorkspaceMemoryOverrideChange?: (
     enabled: boolean | null,
   ) => Promise<void> | void;
-  onAdaptiveControllerOverrideChange?: (enabled: boolean | null) => Promise<void> | void;
+  onAdaptiveControllerOverrideChange?: (
+    enabled: boolean | null,
+  ) => Promise<void> | void;
   onReasoningBankEnabledChange?: (enabled: boolean) => Promise<void> | void;
+  onAutoGitignoreChange?: (enabled: boolean) => Promise<void> | void;
   onReasoningModeChange: (reasoning: ReasoningMode) => Promise<void> | void;
   onReasoningExecutionModeChange: (
     reasoningMode: ReasoningExecutionMode,

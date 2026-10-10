@@ -74,10 +74,10 @@ pub use types::{
 };
 pub(crate) use workspace::{get_user_config_directory, resolve_workspace_root_path};
 use workspace::{
-    save_workspace_adaptive_controller_override_value, save_workspace_context_window_value,
-    save_workspace_default_mode_value, save_workspace_memory_override_value,
-    save_workspace_reasoning_bank_enabled_value, save_workspace_reasoning_execution_mode_value,
-    save_workspace_reasoning_mode_value,
+    save_workspace_adaptive_controller_override_value, save_workspace_auto_gitignore_value,
+    save_workspace_context_window_value, save_workspace_default_mode_value,
+    save_workspace_memory_override_value, save_workspace_reasoning_bank_enabled_value,
+    save_workspace_reasoning_execution_mode_value, save_workspace_reasoning_mode_value,
 };
 use workspace_memory::{forget_workspace_memory_entry, load_workspace_memory_entries};
 
@@ -503,6 +503,15 @@ pub async fn save_workspace_reasoning_bank_enabled(
     enabled: bool,
 ) -> Result<String, String> {
     let config_path = save_workspace_reasoning_bank_enabled_value(&workspace_root, enabled)?;
+    Ok(config_path.display().to_string())
+}
+
+#[tauri::command]
+pub async fn save_workspace_auto_gitignore(
+    workspace_root: String,
+    enabled: bool,
+) -> Result<String, String> {
+    let config_path = save_workspace_auto_gitignore_value(&workspace_root, enabled)?;
     Ok(config_path.display().to_string())
 }
 

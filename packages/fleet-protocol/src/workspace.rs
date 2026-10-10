@@ -400,8 +400,10 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
                     && (args["enabled"].is_boolean() || args["enabled"].is_null())
             })
         }
-        "save_workspace_reasoning_bank_enabled" => fields(args, &["workspaceRoot", "enabled"])
-            .is_some_and(|args| root(&args["workspaceRoot"]) && args["enabled"].is_boolean()),
+        "save_workspace_reasoning_bank_enabled" | "save_workspace_auto_gitignore" => {
+            fields(args, &["workspaceRoot", "enabled"])
+                .is_some_and(|args| root(&args["workspaceRoot"]) && args["enabled"].is_boolean())
+        }
         "save_workspace_reasoning_mode" => fields(args, &["workspaceRoot", "reasoning"])
             .is_some_and(|args| {
                 root(&args["workspaceRoot"])

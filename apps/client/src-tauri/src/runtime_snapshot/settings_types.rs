@@ -122,6 +122,7 @@ pub(super) struct WorkspaceConfigFile {
     pub(super) compatibility: Option<WorkspaceCompatibilityConfig>,
     pub(super) workspace_memory_enabled: Option<bool>,
     pub(super) reasoning_bank_enabled: Option<bool>,
+    pub(super) auto_gitignore: Option<bool>,
     pub(super) adaptive_controller_enabled: Option<bool>,
 }
 

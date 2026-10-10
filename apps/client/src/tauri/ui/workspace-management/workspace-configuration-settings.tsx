@@ -8,6 +8,7 @@ import {
   saveWorkspaceMemoryOverride,
   saveWorkspaceAdaptiveControllerOverride,
   saveWorkspaceReasoningBankEnabled,
+  saveWorkspaceAutoGitignore,
   saveWorkspaceReasoningExecutionMode,
   saveWorkspaceReasoningMode,
   type ContextWindow,
@@ -40,6 +41,7 @@ type WorkspaceConfigurationValues = Omit<
   | "onWorkspaceMemoryOverrideChange"
   | "onAdaptiveControllerOverrideChange"
   | "onReasoningBankEnabledChange"
+  | "onAutoGitignoreChange"
   | "onReasoningModeChange"
   | "onReasoningExecutionModeChange"
   | "onContextWindowChange"
@@ -66,6 +68,7 @@ const createWorkspaceConfigurationValues = (
     adaptiveControllerOverride: snapshot.adaptiveControllerOverride ?? null,
     workspaceMemoryEnabled: snapshot.workspaceMemoryEnabled,
     reasoningBankEnabled: snapshot.reasoningBankEnabled !== false,
+    autoGitignore: snapshot.autoGitignore !== false,
     reasoningProvider:
       snapshot.provider === "unconfigured" ? undefined : snapshot.provider,
     reasoningModel: snapshot.model,
@@ -276,6 +279,13 @@ export const WorkspaceConfigurationSettings = ({
             () => saveWorkspaceReasoningBankEnabled(workspaceRoot, enabled),
             "ReasoningBank setting saved.",
             "ReasoningBank could not be updated.",
+          );
+        },
+        onAutoGitignoreChange: async (enabled) => {
+          await saveSetting(
+            () => saveWorkspaceAutoGitignore(workspaceRoot, enabled),
+            ".gitignore settings saved.",
+            ".gitignore settings could not be updated.",
           );
         },
         onReasoningModeChange: async (reasoning: ReasoningMode) => {

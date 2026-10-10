@@ -10,6 +10,10 @@ import {
   unlink,
 } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import {
+  ensureWorkspaceGitignore,
+  isWorkspaceGitignoreEnabled,
+} from "./workspace-gitignore.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import {
   writeFileAtomically,
@@ -133,34 +137,16 @@ const hashStorageFile = async (path: string): Promise<string> => {
   return hash.digest("hex");
 };
 
-const updateIgnoreFile = async (
-  path: string,
-  projectIgnore: boolean,
-): Promise<void> => {
+const updateRootIgnoreFile = async (path: string): Promise<void> => {
   const original = (await readRegularFile(path)) ?? "";
   const newline = original.includes("\r\n") ? "\r\n" : "\n";
   const lines = original.split(/\r?\n/u);
   const updated = lines.map((line) => {
-    if (
-      !projectIgnore &&
-      /^\/?(?:\*\*\/)?\.machdoch(?:\/|\/\*\*)?\s*$/u.test(line)
-    ) {
+    if (/^\/?(?:\*\*\/)?\.machdoch(?:\/|\/\*\*)?\s*$/u.test(line)) {
       return "**/.machdoch/local/";
     }
     return line;
   });
-  if (projectIgnore) {
-    for (const pattern of [
-      "/local/",
-      "*.machdoch.lock*/",
-      "*.json.lock/",
-      "*.tmp",
-    ]) {
-      if (updated.some((line) => line.trim() === pattern)) continue;
-      if (updated.at(-1) === "") updated.pop();
-      updated.push(pattern, "");
-    }
-  }
   const content = updated.join(newline);
   if (content !== original) await writeFileAtomically(path, content);
 };
@@ -257,8 +243,9 @@ const migrateStorage = async (workspaceRoot: string): Promise<void> => {
           );
       }
       await migrateWorkspaceStorageReferences(workspaceRoot);
-      await updateIgnoreFile(join(directory, ".gitignore"), true);
-      await updateIgnoreFile(join(workspaceRoot, ".gitignore"), false);
+      if (await isWorkspaceGitignoreEnabled(workspaceRoot)) {
+        await updateRootIgnoreFile(join(workspaceRoot, ".gitignore"));
+      }
       await writeJsonAtomically(getWorkspaceStorageMarkerPath(workspaceRoot), {
         version: WORKSPACE_STORAGE_LAYOUT_VERSION,
       });
@@ -267,16 +254,20 @@ const migrateStorage = async (workspaceRoot: string): Promise<void> => {
   );
 };
 
-export const ensureWorkspaceStorage = (
+export const ensureWorkspaceStorage = async (
   workspaceRoot: string,
 ): Promise<void> => {
   const root = resolve(workspaceRoot);
   const existing = migrations.get(root);
-  if (existing) return existing;
-  const migration = migrateStorage(root).catch((error: unknown) => {
-    migrations.delete(root);
-    throw error;
-  });
-  migrations.set(root, migration);
-  return migration;
+  if (existing) {
+    await existing;
+  } else {
+    const migration = migrateStorage(root).catch((error: unknown) => {
+      migrations.delete(root);
+      throw error;
+    });
+    migrations.set(root, migration);
+    await migration;
+  }
+  await ensureWorkspaceGitignore(root);
 };

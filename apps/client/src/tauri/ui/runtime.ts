@@ -3680,6 +3680,23 @@ export const saveWorkspaceReasoningBankEnabled = async (
   );
 };
 
+export const saveWorkspaceAutoGitignore = async (
+  workspaceRoot: string | null | undefined,
+  enabled: boolean,
+): Promise<string | null> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalizedWorkspaceRoot) {
+    throw new Error(
+      "Select a workspace before changing its .gitignore settings.",
+    );
+  }
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) return null;
+  return await invokeWorkspaceTools<string>("save_workspace_auto_gitignore", {
+    workspaceRoot: normalizedWorkspaceRoot,
+    enabled,
+  });
+};
+
 export const saveWorkspaceReasoningMode = async (
   workspaceRoot: string | null | undefined,
   reasoning: RuntimeSnapshot["reasoning"],

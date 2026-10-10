@@ -136,8 +136,14 @@ export const workspaceRequestSchema = z.union([
   operationReadSchema,
   operationReleaseSchema,
   z.discriminatedUnion("command", [
-    command("get_session_file_change_files", sessionDataCommands.get_session_file_change_files),
-    command("get_session_file_change_hunks", sessionDataCommands.get_session_file_change_hunks),
+    command(
+      "get_session_file_change_files",
+      sessionDataCommands.get_session_file_change_files,
+    ),
+    command(
+      "get_session_file_change_hunks",
+      sessionDataCommands.get_session_file_change_hunks,
+    ),
     command("get_session_export", sessionDataCommands.get_session_export),
     command("reset_desktop_task_timeout", resetTaskTimeoutCommandSchema),
     command(
@@ -293,6 +299,10 @@ export const workspaceRequestSchema = z.union([
     ),
     command(
       "save_workspace_reasoning_bank_enabled",
+      z.strictObject({ workspaceRoot: root, enabled: z.boolean() }),
+    ),
+    command(
+      "save_workspace_auto_gitignore",
       z.strictObject({ workspaceRoot: root, enabled: z.boolean() }),
     ),
     command(

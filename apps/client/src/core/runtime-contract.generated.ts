@@ -273,6 +273,7 @@ export interface WorkspaceConfigFile {
   compatibility?: WorkspaceCompatibilityConfig;
   workspaceMemoryEnabled?: boolean | null;
   reasoningBankEnabled?: boolean;
+  autoGitignore?: boolean;
   adaptiveControllerEnabled?: boolean | null;
 }
 
@@ -371,6 +372,7 @@ export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits" | "co
   defaultContextWindow?: ContextWindow;
   workspaceMemoryEnabled: boolean;
   reasoningBankEnabled?: boolean;
+  autoGitignore?: boolean;
   adaptiveControllerOverride?: boolean | null;
   workspaceMemoryOverride: boolean | null;
   contextWindow?: ContextWindow;

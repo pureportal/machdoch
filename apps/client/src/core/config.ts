@@ -13,6 +13,7 @@ import { assertReasoningModeSupportedForProviderModel } from "./reasoning-modes.
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
 import { ensureWorkspaceStorage } from "./workspace-storage.js";
+import { ensureWorkspaceGitignore } from "./workspace-gitignore.js";
 import { withoutObjectPath } from "./_helpers/without-object-path.helper.js";
 import {
   getUserConfigPath,
@@ -219,6 +220,20 @@ export const saveWorkspaceReasoningBankEnabled = async (
   return saveWorkspaceConfigFile(workspaceRoot, {
     reasoningBankEnabled: enabled,
   });
+};
+
+export const saveWorkspaceAutoGitignore = async (
+  workspaceRoot: string,
+  enabled: boolean,
+): Promise<string> => {
+  if (typeof enabled !== "boolean") {
+    throw new Error("Expected autoGitignore to be a boolean.");
+  }
+  const configPath = await saveWorkspaceConfigFile(workspaceRoot, {
+    autoGitignore: enabled,
+  });
+  if (enabled) await ensureWorkspaceGitignore(workspaceRoot);
+  return configPath;
 };
 
 export const saveWorkspaceReasoningMode = async (

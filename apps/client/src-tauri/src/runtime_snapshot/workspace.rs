@@ -273,6 +273,26 @@ pub(super) fn save_workspace_reasoning_mode_value(
     Ok(config_path)
 }
 
+pub(super) fn save_workspace_auto_gitignore_value(
+    workspace_root: &str,
+    enabled: bool,
+) -> Result<PathBuf, String> {
+    let workspace_path = resolve_workspace_root_path(workspace_root)?;
+    let config_path = workspace_path.join(".machdoch").join("config.json");
+    with_cooperative_file_lock(&config_path, || {
+        let mut config = load_workspace_config_json(&config_path)?;
+        config.insert(
+            "autoGitignore".to_string(),
+            serde_json::Value::Bool(enabled),
+        );
+        write_workspace_config_json(&config_path, &config)
+    })?;
+    if enabled {
+        crate::workspace_storage::ensure_workspace_storage(&workspace_path)?;
+    }
+    Ok(config_path)
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -281,8 +301,9 @@ mod tests {
     };
 
     use super::{
-        save_workspace_memory_override_value, save_workspace_reasoning_bank_enabled_value,
-        save_workspace_reasoning_execution_mode_value, ReasoningExecutionMode,
+        save_workspace_auto_gitignore_value, save_workspace_memory_override_value,
+        save_workspace_reasoning_bank_enabled_value, save_workspace_reasoning_execution_mode_value,
+        ReasoningExecutionMode,
     };
 
     #[test]
@@ -367,6 +388,41 @@ mod tests {
         assert_eq!(config["reasoningBankEnabled"], false);
 
         fs::remove_dir_all(workspace).expect("workspace should be removable");
+    }
+
+    #[test]
+    fn automatic_gitignore_setting_preserves_other_workspace_settings() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace = std::env::temp_dir().join(format!("machdoch-auto-gitignore-{unique}"));
+        let directory = workspace.join(".machdoch");
+        fs::create_dir_all(directory.join("local/state")).unwrap();
+        let config_path = directory.join("config.json");
+        fs::write(&config_path, r#"{"defaultMode":"ask"}"#).unwrap();
+        let workspace_root = workspace.to_string_lossy();
+        save_workspace_auto_gitignore_value(&workspace_root, false).unwrap();
+        let config: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert_eq!(config["autoGitignore"], false);
+        assert_eq!(config["defaultMode"], "ask");
+        assert!(!directory.join(".gitignore").exists());
+        fs::write(
+            directory.join("local/state/storage-layout.json"),
+            r#"{"version":1}"#,
+        )
+        .unwrap();
+        fs::write(
+            directory.join(".gitignore"),
+            "/local/\n*.machdoch.lock*/\n*.json.lock/\n*.tmp\n",
+        )
+        .unwrap();
+        save_workspace_auto_gitignore_value(&workspace_root, true).unwrap();
+        let (config, _) = super::load_workspace_config(&workspace).unwrap();
+        assert_eq!(config.auto_gitignore, Some(true));
+        assert_eq!(config.default_mode.as_deref(), Some("ask"));
+        fs::remove_dir_all(workspace).unwrap();
     }
 }
 
