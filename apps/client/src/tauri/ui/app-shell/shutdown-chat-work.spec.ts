@@ -132,8 +132,20 @@ describe("shared shutdown chat activity", () => {
       queuedMessage(queued.sessions[0].id, "failed"),
     ];
     work.persist(queued);
-    expect(await work.inspect()).toEqual({ busy: true, revision: 13 });
+    expect(await work.inspect()).toEqual({ busy: false, revision: 13 });
   });
+
+  it.each(["queued", "enhancing", "dispatching", "failed"] as const)(
+    "ignores an orphaned %s entry that the work dispatcher cannot run",
+    async (status) => {
+      const state = createInitialShellState();
+      state.queuedSessionMessages = [queuedMessage("deleted-chat", status)];
+      expect(await setup(state).inspect()).toEqual({
+        busy: false,
+        revision: 10,
+      });
+    },
+  );
 
   it("flushes local changes before inspecting shared activity", async () => {
     const work = setup(taskState(), createInitialShellState());

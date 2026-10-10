@@ -5,11 +5,25 @@ pub(super) fn has_pending_chat_work(
     automatic_retries: bool,
     retry_attempts: u32,
 ) -> Result<bool, String> {
-    let queued = array_field(state, "queuedSessionMessages")?;
-    if !queued.is_empty() {
-        return Ok(true);
+    let sessions = array_field(state, "sessions")?;
+    for queued in array_field(state, "queuedSessionMessages")? {
+        let status = queued["status"]
+            .as_str()
+            .ok_or("Chat queue state is unavailable.")?;
+        if !matches!(status, "queued" | "enhancing" | "dispatching" | "failed") {
+            return Err("Chat queue state is unavailable.".to_string());
+        }
+        if status == "failed" {
+            continue;
+        }
+        let session_id = queued["sessionId"]
+            .as_str()
+            .ok_or("Queued chat identity is unavailable.")?;
+        if sessions.iter().any(|session| session["id"] == session_id) {
+            return Ok(true);
+        }
     }
-    for session in array_field(state, "sessions")? {
+    for session in sessions {
         let messages = array_field(session, "messages")?;
         let mut latest_user = None;
         for message in messages {
@@ -34,9 +48,15 @@ pub(super) fn has_pending_chat_work(
         let Some(source) = latest_user else {
             continue;
         };
-        let Some(attempt) = source.get("executionAttempt") else {
+        let Some(attempt) = source
+            .get("executionAttempt")
+            .filter(|value| !value.is_null())
+        else {
             continue;
         };
+        if attempt["task"].as_str().unwrap_or_default().is_empty() {
+            continue;
+        }
         let retry_number = attempt["retryNumber"]
             .as_u64()
             .ok_or("Chat retry state is unavailable.")?;
@@ -75,6 +95,7 @@ fn is_transient(message: &Value) -> bool {
 
 fn task_outcome<'a>(messages: &'a [Value], id: &str) -> Result<Option<&'a str>, String> {
     let mut thinking = None;
+    let mut interrupted = None;
     for message in messages.iter().rev() {
         if message["role"] != "agent"
             || message["source"]["kind"] == "preview"
@@ -87,16 +108,27 @@ fn task_outcome<'a>(messages: &'a [Value], id: &str) -> Result<Option<&'a str>, 
             thinking.get_or_insert(message);
             continue;
         }
+        if message["source"]["kind"] == "interrupted-task" {
+            interrupted.get_or_insert(message);
+            continue;
+        }
         return message_outcome(message);
     }
-    thinking
+    interrupted
+        .or(thinking)
         .map(message_outcome)
         .transpose()
         .map(Option::flatten)
 }
 
 fn message_outcome(message: &Value) -> Result<Option<&str>, String> {
-    if let Some(outcome) = message.get("outcome") {
+    let outcome = message.get("outcome").filter(|value| !value.is_null());
+    if message["source"]["kind"] == "execution"
+        && (outcome.is_none() || message["outcome"]["status"] == "crashed")
+    {
+        return execution_outcome(message);
+    }
+    if let Some(outcome) = outcome {
         return match outcome["status"].as_str() {
             Some(
                 status @ ("succeeded" | "failed" | "crashed" | "timed-out" | "cancelled"
@@ -110,13 +142,16 @@ fn message_outcome(message: &Value) -> Result<Option<&str>, String> {
     };
     match source["kind"].as_str() {
         Some("interrupted-task") => Ok(Some("crashed")),
-        Some("execution") => match source["execution"]["status"].as_str() {
-            Some("executed" | "planned") => Ok(Some("succeeded")),
-            Some(status @ ("failed" | "cancelled" | "blocked" | "unsupported")) => Ok(Some(status)),
-            _ => Err("Chat execution outcome is unavailable.".to_string()),
-        },
         Some("thinking") if source["thinking"]["status"] == "complete" => Ok(Some("succeeded")),
         _ => Ok(None),
+    }
+}
+
+fn execution_outcome(message: &Value) -> Result<Option<&str>, String> {
+    match message["source"]["execution"]["status"].as_str() {
+        Some("executed" | "planned") => Ok(Some("succeeded")),
+        Some(status @ ("failed" | "cancelled" | "blocked" | "unsupported")) => Ok(Some(status)),
+        _ => Err("Chat execution outcome is unavailable.".to_string()),
     }
 }
 
