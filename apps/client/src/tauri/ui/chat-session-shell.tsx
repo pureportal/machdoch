@@ -234,14 +234,6 @@ export const ChatSession = (): JSX.Element => {
   const chatRunning = controller.activeChatOperationIds.length > 0;
   const chatActivity = toAppActivityState(chatRunning, chatCompletedSinceView);
   const updater = useDesktopUpdate({
-    busy:
-      chatRunning ||
-      [ralphActivity, mediaActivity, schedulerActivity].some((activity) =>
-        activity.includes("running"),
-      ) ||
-      instructionDraftDirty ||
-      workspaceDraftDirty ||
-      controller.voiceInputOverlay.visible,
     flush: controller.flushPersistence,
   });
 

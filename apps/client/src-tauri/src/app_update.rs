@@ -20,11 +20,6 @@ pub(crate) async fn prepare_app_update(app: AppHandle) -> Result<(), String> {
         if !app_update_available() {
             return Err("Updates require an installed release build.".to_string());
         }
-        if crate::idle_shutdown::has_pending_shutdown_work(app.clone())? {
-            return Err(
-                "Wait for running work to finish before installing the update.".to_string(),
-            );
-        }
         let state = app.state::<AppUpdateState>();
         let mut guard = state
             .0
