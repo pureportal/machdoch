@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   MessagesSquare,
   Settings2,
+  Shield,
   Users,
 } from "lucide-react";
 import { ApplicationNavigation } from "@machdoch/product-ui";
@@ -23,6 +24,7 @@ const items: {
   { href: "/enrollment", label: "Enrollment", icon: KeyRound },
   { href: "/settings", label: "Settings", icon: Settings2, settingsOnly: true },
   { href: "/users", label: "Users", icon: Users },
+  { href: "/privacy", label: "Privacy", icon: Shield },
 ];
 
 export function DashboardNavigation({

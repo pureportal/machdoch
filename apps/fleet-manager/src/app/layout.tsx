@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { FleetAppearance } from "@/components/fleet-appearance";
+import { FleetAnalytics } from "@/components/fleet-analytics";
+import packageManifest from "../../package.json";
 import "./globals.css";
 import "@machdoch/product-ui/styles.css";
 import "./fleet-shell.css";
@@ -32,6 +34,7 @@ export default function RootLayout({
         className={`${geist.variable} ${geistMono.variable} font-sans antialiased`}
       >
         <FleetAppearance />
+        <FleetAnalytics version={packageManifest.version} />
         {children}
       </body>
     </html>

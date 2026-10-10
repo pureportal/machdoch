@@ -432,6 +432,23 @@
               Releases
             </a>
             <a href="https://github.com/pureportal/machdoch">GitHub</a>
+            <a href="https://pureportal.io/privacy">Privacy policy</a>
+            <details class="analytics-settings">
+              <summary>Analytics</summary>
+              <label
+                ><input
+                  id="analytics-consent"
+                  type="checkbox"
+                  aria-describedby="analytics-description"
+                />
+                Share usage and diagnostics</label
+              >
+              <p id="analytics-description">
+                Allow PurePortal to measure feature use, performance, and errors
+                with Swetrix. You can turn this off here at any time.
+              </p>
+              <p id="analytics-error" role="alert" hidden></p>
+            </details>
           </nav>
           <a class="back-to-top" href="#top">
             Back to top
@@ -442,5 +459,6 @@
         </div>
       </footer>
     </div>
+    <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

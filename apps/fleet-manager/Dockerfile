@@ -14,6 +14,7 @@ COPY packages/client-ui/package.json packages/client-ui/package.json
 COPY packages/fleet-protocol/package.json packages/fleet-protocol/package.json
 COPY packages/product-ui/package.json packages/product-ui/package.json
 COPY packages/media-studio/package.json packages/media-studio/package.json
+COPY packages/analytics/package.json packages/analytics/package.json
 
 RUN pnpm install --frozen-lockfile
 
@@ -25,6 +26,7 @@ COPY packages/client-ui packages/client-ui
 COPY packages/fleet-protocol packages/fleet-protocol
 COPY packages/product-ui packages/product-ui
 COPY packages/media-studio packages/media-studio
+COPY packages/analytics packages/analytics
 COPY LICENSE NOTICE EULA.md THIRD_PARTY_NOTICES.md ./
 COPY legal legal
 COPY docs/licensing docs/licensing
@@ -41,6 +43,7 @@ COPY packages/client-ui/package.json packages/client-ui/package.json
 COPY packages/fleet-protocol/package.json packages/fleet-protocol/package.json
 COPY packages/product-ui/package.json packages/product-ui/package.json
 COPY packages/media-studio/package.json packages/media-studio/package.json
+COPY packages/analytics/package.json packages/analytics/package.json
 
 RUN pnpm install --prod --frozen-lockfile
 
@@ -60,6 +63,7 @@ COPY --from=build --chown=node:node /workspace/packages/client-ui/src packages/c
 COPY --from=build --chown=node:node /workspace/packages/fleet-protocol/src packages/fleet-protocol/src
 COPY --from=build --chown=node:node /workspace/packages/product-ui/src packages/product-ui/src
 COPY --from=build --chown=node:node /workspace/packages/media-studio/src packages/media-studio/src
+COPY --from=build --chown=node:node /workspace/packages/analytics/src packages/analytics/src
 COPY --from=build /workspace/apps/fleet-manager/dist/legal legal-release
 
 RUN mkdir -p /config/data \

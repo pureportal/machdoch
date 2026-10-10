@@ -4,12 +4,14 @@ WORKDIR /workspace
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/landing/package.json apps/landing/package.json
+COPY packages/analytics/package.json packages/analytics/package.json
 
 RUN npm install --global corepack@0.34.6 \
     && corepack enable \
     && pnpm install --frozen-lockfile
 
 COPY apps/landing apps/landing
+COPY packages/analytics packages/analytics
 
 ARG MACHDOCH_LANDING_URL
 RUN MACHDOCH_LANDING_URL="${MACHDOCH_LANDING_URL}" pnpm build:landing
