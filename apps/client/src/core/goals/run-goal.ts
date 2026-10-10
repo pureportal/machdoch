@@ -239,7 +239,10 @@ export const executeGoalRun = async (
         if (!goal || goal.id !== goalId || goal.status !== "active") break;
         checkRunLimit();
         if (signal.aborted || lastResult.status === "cancelled") break;
-        if (!["executed", "planned", "blocked"].includes(lastResult.status)) {
+        if (
+          lastResult.failure?.retryable === false ||
+          !["executed", "planned", "blocked"].includes(lastResult.status)
+        ) {
           await checkpoint("blocked", lastResult.reason ?? lastResult.summary);
           break;
         }
@@ -276,6 +279,16 @@ export const executeGoalRun = async (
             "paused",
             "Token usage is unavailable. Resume without a token limit by setting a new goal.",
           );
+          break;
+        }
+        if (evaluation.failure?.retryable === false) {
+          const reason = evaluation.reason ?? evaluation.summary;
+          lastResult = {
+            ...lastResult,
+            failure: evaluation.failure,
+            reason,
+          };
+          await checkpoint("blocked", reason);
           break;
         }
         if (

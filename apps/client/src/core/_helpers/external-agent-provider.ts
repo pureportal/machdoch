@@ -65,6 +65,10 @@ import {
   type ExternalAgentCliOutputUpdate,
 } from "./external-agent-cli-output.js";
 import { recordExternalAgentModelCall } from "../model-usage.js";
+import {
+  CODEX_AUTHENTICATION_RECOVERY,
+  isCodexAuthenticationFailure,
+} from "./codex-authentication-failure.js";
 import { getWorkspacePresenceEnrollment } from "./workspace-agent-presence.js";
 import { startLocalMcpHost, type LocalMcpEndpoint } from "../local-mcp/http.js";
 import { upsertMemoryUpdate } from "./agent-runtime-shared.js";
@@ -87,6 +91,7 @@ export interface SpawnedAgentResult {
   usage?: AgentModelStreamUsage;
   retryCount?: number;
   failureMessage?: string;
+  authenticationRequired?: boolean;
   providerShutdownRecovery?: {
     kind: "final-output-exit-timeout" | "child-exit-close-timeout";
     graceMs: number;
@@ -210,14 +215,9 @@ const createExternalAgentFailureReason = (
   failureMessage?: string,
 ): string => {
   const providerLabel = getAgentCliProviderLabel(provider);
-  const combined = [stderr, stdout].filter(Boolean).join("\n");
-  if (
-    provider === "codex-cli" &&
-    /refresh_token_(?:reused|expired|invalidated)|refresh token (?:has already been used|was already used|has expired|has been revoked)/iu.test(
-      combined,
-    )
-  ) {
-    return "Codex login has expired or been invalidated. Run `codex login --device-auth` on this machine as the same OS user running Machdoch, then retry the task.";
+  const combined = [stderr, stdout, failureMessage].filter(Boolean).join("\n");
+  if (provider === "codex-cli" && isCodexAuthenticationFailure(combined)) {
+    return CODEX_AUTHENTICATION_RECOVERY;
   }
   const quotaLine = combined
     .split(/\r?\n/u)
@@ -953,6 +953,8 @@ export const runExternalAgentCommand = async (
           : new CopilotCliOutputDecoder(captureGoalEvidence));
     const actionOutputBatcher = createActionOutputBatcher(onActionOutput);
     let settled = false;
+    let authenticationRequired = false;
+    let stderrDiagnosticTail = "";
     let abortError: Error | undefined;
     let abortTerminationPromise: Promise<void> | undefined;
     let abortSettlementHandle: ReturnType<typeof setTimeout> | undefined;
@@ -1007,6 +1009,11 @@ export const runExternalAgentCommand = async (
         return;
       }
 
+      if (authenticationRequired) {
+        resolveOnce(1, null);
+        return;
+      }
+
       settled = true;
       cleanup();
       reject(error);
@@ -1025,9 +1032,12 @@ export const runExternalAgentCommand = async (
       cleanup();
       const usage = outputDecoder.getUsage();
       const retryCount = outputDecoder.getRetryCount();
-      const failureMessage = outputDecoder.getFailureMessage?.();
-      const effectiveExitCode =
-        exitCode === 0 && structuredResultExitCode !== undefined
+      const failureMessage = authenticationRequired
+        ? CODEX_AUTHENTICATION_RECOVERY
+        : outputDecoder.getFailureMessage?.();
+      const effectiveExitCode = authenticationRequired
+        ? 1
+        : exitCode === 0 && structuredResultExitCode !== undefined
           ? structuredResultExitCode
           : exitCode === 0 && !outputDecoder.hasTerminalResult()
             ? 1
@@ -1051,6 +1061,7 @@ export const runExternalAgentCommand = async (
         ...(usage ? { usage } : {}),
         ...(retryCount === undefined ? {} : { retryCount }),
         ...(failureMessage ? { failureMessage } : {}),
+        ...(authenticationRequired ? { authenticationRequired: true } : {}),
         ...(shutdownRecovery
           ? { providerShutdownRecovery: shutdownRecovery }
           : {}),
@@ -1250,6 +1261,15 @@ export const runExternalAgentCommand = async (
     function handleStructuredOutputUpdate(
       update: ExternalAgentCliOutputUpdate,
     ): void {
+      if (
+        provider === "codex-cli" &&
+        update.resultExitCode !== undefined &&
+        update.resultExitCode !== 0 &&
+        isCodexAuthenticationFailure(outputDecoder.getFailureMessage?.() ?? "")
+      ) {
+        stopForAuthenticationFailure();
+        return;
+      }
       for (const displayText of update.displayText) {
         actionOutputBatcher.enqueue("stdout", displayText);
       }
@@ -1263,13 +1283,34 @@ export const runExternalAgentCommand = async (
     }
 
     function handleStderrData(chunk: string): void {
-      if (settled) {
+      if (settled || authenticationRequired) {
         return;
       }
 
       appendBoundedOutput(stderr, chunk, MAX_CAPTURED_STDERR_CHARS);
       stderrBytes += Buffer.byteLength(chunk, "utf8");
+      if (provider === "codex-cli") {
+        const diagnostic = `${stderrDiagnosticTail}${chunk}`;
+        if (isCodexAuthenticationFailure(diagnostic)) {
+          stopForAuthenticationFailure();
+          return;
+        }
+        stderrDiagnosticTail = sliceUtf16SuffixAtCodePointBoundary(
+          diagnostic,
+          MAX_DIAGNOSTIC_CHARS,
+        );
+      }
       actionOutputBatcher.enqueue("stderr", chunk);
+    }
+
+    function stopForAuthenticationFailure(): void {
+      if (authenticationRequired || settled || abortError) return;
+      authenticationRequired = true;
+      actionOutputBatcher.enqueue(
+        "stderr",
+        `${CODEX_AUTHENTICATION_RECOVERY}\n`,
+      );
+      beginTermination(new Error(CODEX_AUTHENTICATION_RECOVERY));
     }
 
     function handleChildExit(
@@ -2450,13 +2491,21 @@ const executeExternalAgentCliTask = async (
     !result.providerShutdownRecovery.childExitObservedBeforeRecovery &&
     result.exitCode === null;
   if (result.exitCode !== 0 && !finalAnswerRecoveredWithoutExitCode) {
-    const reason = createExternalAgentFailureReason(
-      provider,
-      stdout,
-      stderr,
-      result.exitCode,
-      result.failureMessage,
-    );
+    const authenticationRequired =
+      provider === "codex-cli" &&
+      (result.authenticationRequired === true ||
+        isCodexAuthenticationFailure(
+          [stderr, result.failureMessage].filter(Boolean).join("\n"),
+        ));
+    const reason = authenticationRequired
+      ? CODEX_AUTHENTICATION_RECOVERY
+      : createExternalAgentFailureReason(
+          provider,
+          stdout,
+          stderr,
+          result.exitCode,
+          result.failureMessage,
+        );
     const summary = reason.startsWith(`${providerLabel} `)
       ? reason
       : `${providerLabel} execution failed: ${reason}`;
@@ -2490,7 +2539,15 @@ const executeExternalAgentCliTask = async (
       {
         task: params.task,
         mode: params.config.mode,
-        status: "failed",
+        status: authenticationRequired ? "blocked" : "failed",
+        ...(authenticationRequired
+          ? {
+              failure: {
+                kind: "authentication" as const,
+                retryable: false as const,
+              },
+            }
+          : {}),
         summary: limitText(summary, 500),
         executedTools: ["shell"],
         metadata: instructionMetadata,

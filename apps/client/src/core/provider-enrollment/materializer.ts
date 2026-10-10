@@ -621,11 +621,11 @@ const renderCodexEnrollment = async (
 ): Promise<RenderedEnrollmentFiles> => {
   const codexHome = join(rootPath, "codex-home");
   await mkdir(codexHome, { recursive: true, mode: 0o700 });
-  const linkedAuthentication = await linkCodexAuthentication(codexHome);
+  await linkCodexAuthentication(codexHome);
   const configPath = join(codexHome, "config.toml");
   const content = [
     `developer_instructions = ${JSON.stringify(systemInstructions)}`,
-    ...(linkedAuthentication ? ['cli_auth_credentials_store = "file"'] : []),
+    'cli_auth_credentials_store = "file"',
     "project_doc_max_bytes = 0",
     "project_doc_fallback_filenames = []",
     renderCodexUntrustedProjectsToml(workspaceRoot),

@@ -422,6 +422,18 @@ export const deriveRalphRunOutcome = (input: {
       nextAction: "Resume from the retained checkpoint.",
     });
   }
+  const seenBlocks = new Set<string>();
+  for (const result of [...blockResults].reverse()) {
+    if (seenBlocks.has(result.blockId)) continue;
+    seenBlocks.add(result.blockId);
+    if (result.failure?.kind === "authentication") {
+      return createOutcome("blocked", result.error ?? result.summary, {
+        evidence,
+        retryable: false,
+        nextAction: "Sign in to Codex, then resume the task.",
+      });
+    }
+  }
   if (progress?.stalledReason) {
     return createOutcome("stalled", progress.stalledReason, {
       evidence,

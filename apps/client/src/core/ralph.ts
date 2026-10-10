@@ -1194,7 +1194,7 @@ export interface RalphBlockExecutionResult {
 }
 
 export interface RalphBlockFailure {
-  kind: "persistence" | "terminal-decision";
+  kind: "persistence" | "terminal-decision" | "authentication";
   retryable: false;
 }
 
@@ -17468,6 +17468,8 @@ const runRalphFlowImpl = async (
       });
     }
 
+    if (!result.failure && result.result?.failure)
+      result.failure = result.result.failure;
     const appendResultToHistory = !historyByOperationId.has(operationId);
     if (appendResultToHistory) {
       blockResults.push(result);
@@ -17515,6 +17517,19 @@ const runRalphFlowImpl = async (
       }
     }
     updateResultContext(resultContext, result);
+    if (result.failure?.kind === "authentication") {
+      return finishRun({
+        flow: flow.id,
+        status: "blocked",
+        summary: result.error ?? result.summary,
+        events,
+        blockResults,
+        missingVariables: [],
+        unknownVariables: [],
+        validation,
+        checkpoint: createRetryCheckpoint(block.id),
+      });
+    }
     if (
       result.output === "SUCCESS" &&
       block.type === "UTILITY" &&

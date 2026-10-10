@@ -69,6 +69,29 @@ describe("createRalphBlockExecutionErrorResult", () => {
   });
 });
 
+describe("authentication blockers", () => {
+  it.each(["prompt", "validator", "decision"] as const)(
+    "preserves the terminal failure for %s blocks",
+    (type) => {
+      const result = createExecutionResult({
+        status: "blocked",
+        reason: "Sign in to Codex.",
+        failure: { kind: "authentication", retryable: false },
+      });
+      const blockResult =
+        type === "prompt"
+          ? createRalphPromptExecutionResult(promptBlock, result, 1)
+          : type === "validator"
+            ? createRalphValidatorExecutionResult(validatorBlock, result)
+            : createRalphDecisionExecutionResult(decisionBlock, result);
+      expect(blockResult).toMatchObject({
+        output: "ERROR",
+        failure: { kind: "authentication", retryable: false },
+      });
+    },
+  );
+});
+
 describe("createRalphPromptExecutionResult", () => {
   it("creates a completed prompt result from an executed task result", () => {
     const result = createExecutionResult({

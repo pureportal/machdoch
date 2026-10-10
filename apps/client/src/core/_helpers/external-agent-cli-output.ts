@@ -332,7 +332,9 @@ export class CodexCliOutputDecoder
 
     if (type === "turn.failed" || type === "error") {
       const error = isRecord(event.error) ? event.error : event;
-      const message = getString(error, "message");
+      const message = [getString(error, "code"), getString(error, "message")]
+        .filter(Boolean)
+        .join(": ");
       if (message) {
         this.recordDiagnostic(message);
         this.failureMessage = message;

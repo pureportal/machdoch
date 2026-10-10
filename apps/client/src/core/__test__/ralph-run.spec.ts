@@ -122,6 +122,52 @@ describe("runRalphFlow", () => {
     }
   });
 
+  it("stops authentication blockers before infinite retries or error routes and resumes after sign-in", async () => {
+    vi.mocked(executeTask).mockResolvedValueOnce(
+      createExecutionResult({
+        status: "blocked",
+        summary: "Sign in to Codex.",
+        reason: "Sign in to Codex.",
+        failure: { kind: "authentication", retryable: false },
+      }),
+    );
+    const flow = createFlow();
+    const prompt = flow.blocks.find((block) => block.id === "fix-tsc")!;
+    prompt.settings = { retry: { mode: "infinite", maxRetries: null } };
+    flow.edges.push({
+      id: "auth-loop",
+      from: prompt.id,
+      fromOutput: "ERROR",
+      to: prompt.id,
+    });
+    const blocked = await runRalphFlow(flow, runtimeConfig, customizations, {
+      maxTransitions: 10,
+    });
+    expect(blocked).toMatchObject({
+      status: "blocked",
+      checkpoint: { currentBlockId: prompt.id },
+      outcome: { status: "blocked", retryable: false },
+    });
+    expect(executeTask).toHaveBeenCalledTimes(1);
+    expect(blocked.events.some((event) => event.type === "retry")).toBe(false);
+
+    vi.mocked(executeTask)
+      .mockResolvedValueOnce(createExecutionResult())
+      .mockResolvedValueOnce(
+        createExecutionResult({
+          control: { kind: "ralph-validator", decision: "DONE" },
+        }),
+      );
+    const resumed = await runRalphFlow(flow, runtimeConfig, customizations, {
+      checkpoint: blocked.checkpoint!,
+      maxTransitions: 10,
+    });
+    expect(resumed).toMatchObject({
+      status: "completed",
+      outcome: { status: "succeeded" },
+    });
+  });
+
   it("runs prompt blocks, validators, and routes to END", async () => {
     vi.mocked(executeTask)
       .mockResolvedValueOnce(
