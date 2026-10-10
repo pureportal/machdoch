@@ -1,4 +1,5 @@
 import { invoke as nativeInvoke, isTauri } from "@tauri-apps/api/core";
+import { trackOperation } from "@machdoch/analytics/operations";
 import { listen as nativeListen } from "@tauri-apps/api/event";
 import {
   open as nativeOpen,
@@ -37,7 +38,7 @@ export const invoke = <T>(
 ): Promise<T> =>
   remotePlatform
     ? remotePlatform.invoke<T>(command, args)
-    : nativeInvoke<T>(command, args);
+    : trackOperation(command, () => nativeInvoke<T>(command, args));
 export const listen = <T>(
   name: string,
   handler: (event: { payload: T }) => void,

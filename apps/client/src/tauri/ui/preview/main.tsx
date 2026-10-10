@@ -1,11 +1,21 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { isTauri } from "@tauri-apps/api/core";
+import { startBrowserAnalytics } from "@machdoch/analytics/browser";
 import "../styles.css";
 import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { App } from "./app";
 import { preserveNativeContextMenu } from "../lib/native-context-menu";
 
 declare const __MACHDOCH_DEVELOPMENT__: boolean;
+declare const __MACHDOCH_VERSION__: string;
+
+startBrowserAnalytics({
+  app: "software",
+  version: __MACHDOCH_VERSION__,
+  development: __MACHDOCH_DEVELOPMENT__ || import.meta.env.DEV,
+  native: isTauri(),
+});
 
 if (__MACHDOCH_DEVELOPMENT__) {
   void import("./media-quality-driver").then((driver) => {

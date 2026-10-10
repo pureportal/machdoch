@@ -4,9 +4,19 @@ import {
   invokeDeviceSettingsCommand,
 } from "./device-settings-platform";
 import { deviceSettingsCommands } from "@machdoch/fleet-protocol/device-settings";
-import { taskTimeoutSchema, type TaskExecutionTimeoutState } from "@machdoch/fleet-protocol/task-thinking";
-import { composerHistorySelectionSchema, type ComposerHistorySelection } from "@machdoch/fleet-protocol";
-import { isMediaPoseMap, type MediaPoseMap } from "@machdoch/media-studio/core/media/contracts.js";
+import { observeDesktopTasks } from "./lib/task-analytics.js";
+import {
+  taskTimeoutSchema,
+  type TaskExecutionTimeoutState,
+} from "@machdoch/fleet-protocol/task-thinking";
+import {
+  composerHistorySelectionSchema,
+  type ComposerHistorySelection,
+} from "@machdoch/fleet-protocol";
+import {
+  isMediaPoseMap,
+  type MediaPoseMap,
+} from "@machdoch/media-studio/core/media/contracts.js";
 import {
   contextPackDefinitionSchema,
   contextPackExportSchema,
@@ -147,6 +157,7 @@ import { getRemoteRalphPlatform } from "./ralph/ralph-platform";
 import { getRemoteSchedulerPlatform } from "./scheduler/scheduler-platform";
 import { getRemoteInstructionPlatform } from "./instruction-management/instruction-platform";
 import * as tauriCore from "@tauri-apps/api/core";
+import { invoke as analyticsInvoke } from "./lib/analytics-invoke";
 import { VALID_SPEECH_TO_TEXT_PROVIDERS } from "../../core/runtime-contract.generated.js";
 import type {
   FleetManagedSettingsDelivery,
@@ -1374,10 +1385,14 @@ const isFleetControlCommandEvent = (
     (value.specialKind === undefined ||
       (value.kind === "create-session" && value.specialKind === "pose")) &&
     (value.poseScene === undefined ||
-      (value.kind === "create-session" && value.specialKind === "pose" && isMediaPoseMap(value.poseScene))) &&
+      (value.kind === "create-session" &&
+        value.specialKind === "pose" &&
+        isMediaPoseMap(value.poseScene))) &&
     (value.prompt === undefined || typeof value.prompt === "string") &&
-    (value.history === undefined || composerHistorySelectionSchema.safeParse(value.history).success) &&
-    (value.kind !== "restore-prompt-history" || (value.history !== undefined && typeof value.prompt === "string")) &&
+    (value.history === undefined ||
+      composerHistorySelectionSchema.safeParse(value.history).success) &&
+    (value.kind !== "restore-prompt-history" ||
+      (value.history !== undefined && typeof value.prompt === "string")) &&
     (value.goalObjective === undefined ||
       (typeof value.goalObjective === "string" &&
         value.goalObjective.trim().length > 0 &&
@@ -2792,7 +2807,7 @@ const loadTauriValueOrFallback = async <T>(
   }
 
   try {
-    return await tauriCore.invoke<T>(command);
+    return await analyticsInvoke<T>(command);
   } catch (error) {
     console.error(errorMessage, error);
     if (throwOnTauriError) {
@@ -3018,7 +3033,7 @@ export const loadWorkspaceMemoryEntries = async (
   }
 
   try {
-    return await tauriCore.invoke<ConversationMemoryEntry[]>(
+    return await analyticsInvoke<ConversationMemoryEntry[]>(
       "get_workspace_memory_entries",
       { workspaceRoot: normalizedWorkspaceRoot },
     );
@@ -3041,7 +3056,7 @@ export const loadWorkspaceReasoningBankLessons = async (
       { workspaceRoot: normalizedWorkspaceRoot },
     );
   if (!canInvokeTauriCommands()) return [];
-  return await tauriCore.invoke<ReasoningLesson[]>(
+  return await analyticsInvoke<ReasoningLesson[]>(
     "get_workspace_reasoning_bank_lessons",
     { workspaceRoot: normalizedWorkspaceRoot },
   );
@@ -3073,7 +3088,7 @@ export const loadMcpConfigDocument = async (
     }
 
     try {
-      return await tauriCore.invoke<McpConfigDocument>(
+      return await analyticsInvoke<McpConfigDocument>(
         "get_workspace_mcp_config_document",
         { workspaceRoot: normalizedWorkspaceRoot },
       );
@@ -3090,7 +3105,7 @@ export const loadMcpConfigDocument = async (
   }
 
   try {
-    return await tauriCore.invoke<McpConfigDocument>(
+    return await analyticsInvoke<McpConfigDocument>(
       "get_user_mcp_config_document",
     );
   } catch (error) {
@@ -3165,7 +3180,7 @@ export const loadActiveDesktopTaskIds = async (): Promise<string[] | null> => {
   }
 
   try {
-    return await tauriCore.invoke<string[]>("get_active_desktop_task_ids");
+    return await analyticsInvoke<string[]>("get_active_desktop_task_ids");
   } catch (error) {
     console.error("Failed to load active desktop task IDs", error);
     return null;
@@ -3176,16 +3191,24 @@ export const loadActiveDesktopTasks = async (): Promise<
   ActiveDesktopTaskSummary[] | null
 > => {
   const remote = getRemoteRalphPlatform();
-  if (remote) return remote.invoke("get_active_desktop_tasks");
+  if (remote)
+    return remote
+      .invoke<ActiveDesktopTaskSummary[]>("get_active_desktop_tasks")
+      .then((tasks) => {
+        observeDesktopTasks(tasks);
+        return tasks;
+      });
 
   if (!canInvokeTauriCommands()) {
     return null;
   }
 
   try {
-    return await tauriCore.invoke<ActiveDesktopTaskSummary[]>(
+    const tasks = await analyticsInvoke<ActiveDesktopTaskSummary[]>(
       "get_active_desktop_tasks",
     );
+    observeDesktopTasks(tasks);
+    return tasks;
   } catch (error) {
     console.error("Failed to load active desktop tasks", error);
     return null;
@@ -3197,9 +3220,14 @@ export const loadRecentDesktopTaskResults = async (
 ): Promise<RecentDesktopTaskResult[] | null> => {
   const remote = getRemoteRalphPlatform();
   if (remote)
-    return remote.invoke("get_recent_desktop_task_results", {
-      taskIds: [...taskIds],
-    });
+    return remote
+      .invoke<RecentDesktopTaskResult[]>("get_recent_desktop_task_results", {
+        taskIds: [...taskIds],
+      })
+      .then((tasks) => {
+        observeDesktopTasks(tasks);
+        return tasks;
+      });
 
   if (!canInvokeTauriCommands()) {
     return null;
@@ -3214,10 +3242,12 @@ export const loadRecentDesktopTaskResults = async (
   }
 
   try {
-    return await tauriCore.invoke<RecentDesktopTaskResult[]>(
+    const tasks = await analyticsInvoke<RecentDesktopTaskResult[]>(
       "get_recent_desktop_task_results",
       { taskIds: normalizedTaskIds },
     );
+    observeDesktopTasks(tasks);
+    return tasks;
   } catch (error) {
     console.error("Failed to load recent desktop task results", error);
     return null;
@@ -3239,7 +3269,7 @@ export const acknowledgeRecentDesktopTaskResults = async (
     return;
   }
 
-  await tauriCore.invoke("acknowledge_recent_desktop_task_results", {
+  await analyticsInvoke("acknowledge_recent_desktop_task_results", {
     taskIds: normalizedTaskIds,
   });
 };
@@ -3329,7 +3359,7 @@ export const forgetWorkspaceMemoryEntry = async (
   }
 
   try {
-    return await tauriCore.invoke<ConversationMemoryEntry[]>(
+    return await analyticsInvoke<ConversationMemoryEntry[]>(
       "forget_workspace_memory",
       { workspaceRoot: normalizedWorkspaceRoot, id },
     );
@@ -3385,7 +3415,7 @@ export const saveMcpConfigDocument = async (
     }
 
     try {
-      const result = await tauriCore.invoke<McpConfigDocument>(
+      const result = await analyticsInvoke<McpConfigDocument>(
         "save_workspace_mcp_config_document",
         {
           workspaceRoot: normalizedWorkspaceRoot,
@@ -3421,7 +3451,7 @@ export const saveMcpConfigDocument = async (
   }
 
   try {
-    const result = await tauriCore.invoke<McpConfigDocument>(
+    const result = await analyticsInvoke<McpConfigDocument>(
       "save_user_mcp_config_document",
       {
         raw: normalizedRaw,
@@ -3775,7 +3805,7 @@ export const syncChatCompletionIndicator = async (
   }
 
   try {
-    await tauriCore.invoke("sync_chat_completion_indicator", { completed });
+    await analyticsInvoke("sync_chat_completion_indicator", { completed });
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }
@@ -3991,7 +4021,7 @@ export const synthesizeUserVoiceAudio = async (options: {
   }
 
   try {
-    return await tauriCore.invoke<SynthesizedVoiceAudio>(
+    return await analyticsInvoke<SynthesizedVoiceAudio>(
       "synthesize_user_voice_audio",
       {
         provider: options.provider,
@@ -4039,18 +4069,18 @@ export const transcribeUserSpeechAudio = async (options: {
   const requestId = crypto.randomUUID();
   const signal = options.signal;
   signal?.throwIfAborted();
-  await tauriCore.invoke("begin_user_speech_transcription", { requestId });
+  await analyticsInvoke("begin_user_speech_transcription", { requestId });
   const cancel = (): void => {
-    void tauriCore
-      .invoke("cancel_user_speech_transcription", { requestId })
-      .catch((error: unknown) => {
-        console.error("Could not cancel speech transcription", error);
-      });
+    void analyticsInvoke("cancel_user_speech_transcription", {
+      requestId,
+    }).catch((error: unknown) => {
+      console.error("Could not cancel speech transcription", error);
+    });
   };
   signal?.addEventListener("abort", cancel, { once: true });
   try {
     signal?.throwIfAborted();
-    return await tauriCore.invoke<TranscribedSpeechText>(
+    return await analyticsInvoke<TranscribedSpeechText>(
       "transcribe_user_speech_audio",
       {
         requestId,
@@ -4091,7 +4121,7 @@ export const loadWorkspaceRuntimeSnapshot = async (
   }
 
   try {
-    return await tauriCore.invoke<RuntimeSnapshot>("get_runtime_snapshot", {
+    return await analyticsInvoke<RuntimeSnapshot>("get_runtime_snapshot", {
       workspaceRoot: normalizedWorkspaceRoot ?? "",
     });
   } catch (error) {
@@ -4105,7 +4135,7 @@ export const cancelDesktopTask = async (taskId: string): Promise<void> => {
   if (remote) return remote.invoke("cancel_desktop_task", { taskId });
 
   if (canInvokeTauriCommands()) {
-    return await tauriCore.invoke("cancel_desktop_task", { taskId });
+    return await analyticsInvoke("cancel_desktop_task", { taskId });
   }
 };
 
@@ -4118,7 +4148,7 @@ export const resetDesktopTaskTimeout = async (
   }
 
   return taskTimeoutSchema.parse(
-    await tauriCore.invoke("reset_desktop_task_timeout", {
+    await analyticsInvoke("reset_desktop_task_timeout", {
       taskId,
       idleTimeoutMinutes,
     }),
@@ -4192,7 +4222,7 @@ export const getFleetConnectionStatus =
       return { enabled: false, phase: "disabled" };
     }
     const status = normalizeFleetConnectionStatus(
-      await tauriCore.invoke<unknown>("get_fleet_connection_status"),
+      await analyticsInvoke<unknown>("get_fleet_connection_status"),
     );
     if (!status) {
       throw new Error("The Fleet Manager connection payload was invalid.");
@@ -4206,7 +4236,7 @@ export const getFleetManagedSettings = async (
   if (!canInvokeTauriCommands()) {
     return null;
   }
-  return tauriCore.invoke<FleetManagedSettingsDelivery | null>(
+  return analyticsInvoke<FleetManagedSettingsDelivery | null>(
     "get_fleet_managed_settings",
     { knownEtag: knownEtag ?? null },
   );
@@ -4215,7 +4245,7 @@ export const getFleetManagedSettings = async (
 export async function exportFleetLocalSettings(
   workspaceRoot: string | null,
 ): Promise<FleetManagedSettingsDocument> {
-  return tauriCore.invoke<FleetManagedSettingsDocument>(
+  return analyticsInvoke<FleetManagedSettingsDocument>(
     "export_fleet_local_settings",
     { workspaceRoot },
   );
@@ -4226,7 +4256,7 @@ export async function captureFleetEnrollmentSettings(
   instanceId: string,
   document: FleetManagedSettingsDocument,
 ): Promise<void> {
-  await tauriCore.invoke("capture_fleet_enrollment_settings", {
+  await analyticsInvoke("capture_fleet_enrollment_settings", {
     managerId,
     instanceId,
     document,
@@ -4234,7 +4264,7 @@ export async function captureFleetEnrollmentSettings(
 }
 
 export async function fleetEnrollmentCaptureRequired(): Promise<boolean> {
-  return tauriCore.invoke<boolean>("fleet_enrollment_capture_required");
+  return analyticsInvoke<boolean>("fleet_enrollment_capture_required");
 }
 
 export const reportFleetManagedSettingsApplied = async (
@@ -4243,7 +4273,7 @@ export const reportFleetManagedSettingsApplied = async (
   revision: number | null,
 ): Promise<void> => {
   if (!canInvokeTauriCommands()) return;
-  await tauriCore.invoke("report_fleet_managed_settings_applied", {
+  await analyticsInvoke("report_fleet_managed_settings_applied", {
     managerId,
     profileId,
     revision,
@@ -4257,7 +4287,7 @@ export const reportFleetManagedSettingsFailure = async (
   error: string,
 ): Promise<void> => {
   if (!canInvokeTauriCommands()) return;
-  await tauriCore.invoke("report_fleet_managed_settings_failure", {
+  await analyticsInvoke("report_fleet_managed_settings_failure", {
     managerId,
     profileId,
     revision,
@@ -4270,7 +4300,7 @@ export const synchronizeFleetManagedPrompts = async (
   prompts: FleetManagedPrompt[],
 ): Promise<void> => {
   if (!canInvokeTauriCommands()) return;
-  await tauriCore.invoke("synchronize_fleet_managed_prompts", {
+  await analyticsInvoke("synchronize_fleet_managed_prompts", {
     managerId,
     prompts,
   });
@@ -4287,7 +4317,7 @@ export const enrollFleetManager = async (
     );
   }
   const status = normalizeFleetConnectionStatus(
-    await tauriCore.invoke<unknown>("enroll_fleet_manager", {
+    await analyticsInvoke<unknown>("enroll_fleet_manager", {
       managerUrl,
       enrollmentKey,
       displayName,
@@ -4307,7 +4337,7 @@ export const reconnectFleetManager =
       );
     }
     const status = normalizeFleetConnectionStatus(
-      await tauriCore.invoke<unknown>("reconnect_fleet_manager"),
+      await analyticsInvoke<unknown>("reconnect_fleet_manager"),
     );
     if (!status) {
       throw new Error("The Fleet Manager reconnect payload was invalid.");
@@ -4321,7 +4351,7 @@ export const resetFleetManagerConnection =
       return { enabled: false, phase: "disabled" };
     }
     const status = normalizeFleetConnectionStatus(
-      await tauriCore.invoke<unknown>("reset_fleet_manager_connection"),
+      await analyticsInvoke<unknown>("reset_fleet_manager_connection"),
     );
     if (!status) {
       throw new Error("The Fleet Manager reset payload was invalid.");
@@ -4335,7 +4365,7 @@ export const getPendingFleetControlCommands = async (): Promise<
   if (!canInvokeTauriCommands()) {
     return [];
   }
-  return tauriCore.invoke<FleetControlCommandEvent[]>(
+  return analyticsInvoke<FleetControlCommandEvent[]>(
     "get_pending_fleet_control_commands",
   );
 };
@@ -4347,7 +4377,7 @@ export const acknowledgeFleetControlCommand = async (
   if (!canInvokeTauriCommands()) {
     return false;
   }
-  return tauriCore.invoke<boolean>("acknowledge_fleet_control_command", {
+  return analyticsInvoke<boolean>("acknowledge_fleet_control_command", {
     commandId,
     error,
   });
@@ -4361,7 +4391,7 @@ export const updateFleetControlShellSnapshot = async (
     return;
   }
 
-  await tauriCore.invoke("update_fleet_control_shell_snapshot", {
+  await analyticsInvoke("update_fleet_control_shell_snapshot", {
     snapshot,
     sessionIds,
   });
@@ -4439,7 +4469,7 @@ const runInstructionCommand = async <Result>(
   }
 
   try {
-    return await tauriCore.invoke<Result>("run_instruction_command", {
+    return await analyticsInvoke<Result>("run_instruction_command", {
       request: {
         workspaceRoot: normalizeInstructionCommandWorkspace(workspaceRoot),
         arguments: argumentsList,
@@ -5005,7 +5035,7 @@ export const discoverWorkspaceShells = async (
   }
   if (!canInvokeTauriCommands()) return discoverPreviewWorkspaceShells();
   try {
-    return await tauriCore.invoke<WorkspaceShellDiscovery>(
+    return await analyticsInvoke<WorkspaceShellDiscovery>(
       "discover_workspace_shells",
     );
   } catch (error) {
@@ -5032,7 +5062,7 @@ export const startWorkspaceTerminal = async (
   const channel = new tauriCore.Channel<WorkspaceTerminalEvent>();
   channel.onmessage = onEvent;
   try {
-    return await tauriCore.invoke<WorkspaceTerminalStarted>(
+    return await analyticsInvoke<WorkspaceTerminalStarted>(
       "start_workspace_terminal",
       {
         request: {
@@ -5064,7 +5094,7 @@ export const writeWorkspaceTerminal = async (
     return;
   }
   try {
-    await tauriCore.invoke("write_workspace_terminal", { sessionId, data });
+    await analyticsInvoke("write_workspace_terminal", { sessionId, data });
   } catch (error) {
     throw normalizeWorkspaceToolsError(error);
   }
@@ -5088,7 +5118,7 @@ export const writeWorkspaceTerminalBinary = async (
     return;
   }
   try {
-    await tauriCore.invoke("write_workspace_terminal_binary", {
+    await analyticsInvoke("write_workspace_terminal_binary", {
       sessionId,
       data: encoded,
     });
@@ -5110,7 +5140,7 @@ export const acknowledgeWorkspaceTerminalOutput = async (
     );
   if (!sessionId || !canInvokeTauriCommands()) return;
   try {
-    await tauriCore.invoke("acknowledge_workspace_terminal_output", {
+    await analyticsInvoke("acknowledge_workspace_terminal_output", {
       sessionId,
       bytes: Math.max(0, Math.round(bytes)),
     });
@@ -5132,7 +5162,7 @@ export const resizeWorkspaceTerminal = async (
     });
   if (!sessionId || !canInvokeTauriCommands()) return;
   try {
-    await tauriCore.invoke("resize_workspace_terminal", {
+    await analyticsInvoke("resize_workspace_terminal", {
       sessionId,
       columns: Math.round(columns),
       rows: Math.round(rows),
@@ -5153,7 +5183,7 @@ export const stopWorkspaceTerminal = async (
     return;
   }
   try {
-    await tauriCore.invoke("stop_workspace_terminal", { sessionId });
+    await analyticsInvoke("stop_workspace_terminal", { sessionId });
   } catch (error) {
     throw normalizeWorkspaceToolsError(error);
   }
@@ -5169,7 +5199,7 @@ export const stopWorkspaceTerminals = async (
     return stopPreviewWorkspaceTerminals(root);
   }
   try {
-    return await tauriCore.invoke<number>("stop_workspace_terminals", {
+    return await analyticsInvoke<number>("stop_workspace_terminals", {
       workspaceRoot: root,
     });
   } catch (error) {
@@ -5191,7 +5221,7 @@ export const openWorkspaceTerminalHost = async (
     });
   if (!canInvokeTauriCommands()) return;
   try {
-    await tauriCore.invoke("open_workspace_terminal_host", {
+    await analyticsInvoke("open_workspace_terminal_host", {
       workspaceRoot: root,
       terminalId,
     });
@@ -5220,7 +5250,7 @@ const runMcpCommand = async <Result>(
   }
 
   try {
-    return await tauriCore.invoke<Result>("run_mcp_command", {
+    return await analyticsInvoke<Result>("run_mcp_command", {
       request: {
         workspaceRoot: normalizeMcpCommandWorkspace(workspaceRoot),
         arguments: argumentsList,
@@ -5392,7 +5422,7 @@ const runRalphCommand = async <Result>(
   }
 
   try {
-    return await tauriCore.invoke<Result>("run_ralph_command", {
+    return await analyticsInvoke<Result>("run_ralph_command", {
       request: {
         workspaceRoot: normalizeRalphCommandWorkspace(workspaceRoot),
         arguments: argumentsList,
@@ -5422,7 +5452,7 @@ const runTaskInterviewCommand = async <Result>(
   }
 
   try {
-    return await tauriCore.invoke<Result>("run_task_interview_command", {
+    return await analyticsInvoke<Result>("run_task_interview_command", {
       request: {
         workspaceRoot: normalizeTaskInterviewCommandWorkspace(workspaceRoot),
         arguments: argumentsList,
@@ -5947,7 +5977,7 @@ export const openRalphFlowInExplorer = async (
   }
 
   try {
-    await tauriCore.invoke("open_ralph_flow_in_explorer", {
+    await analyticsInvoke("open_ralph_flow_in_explorer", {
       request: {
         workspaceRoot: normalizedWorkspaceRoot ?? "",
         flow: normalizedName,
@@ -6013,7 +6043,7 @@ const runSchedulerCommand = async <Result>(
     };
     const response = remote
       ? await remote.invoke<unknown>("run_scheduler_command", args)
-      : await tauriCore.invoke<unknown>("run_scheduler_command", args);
+      : await analyticsInvoke<unknown>("run_scheduler_command", args);
     const normalizedResponse = normalize(response);
 
     if (!normalizedResponse) {
@@ -6610,22 +6640,20 @@ export const ensurePersistentSchedulerService = async (
     return schedulerServiceStartPromise;
   }
 
-  const startPromise = tauriCore
-    .invoke<number>("start_scheduler_service", {
-      request: {
-        workspaceRoot: normalizeSchedulerCommandWorkspace(workspaceRoot),
-        arguments: [
-          "service-all",
-          "--service-poll-ms",
-          "30000",
-          "--service-idle-shutdown-ms",
-          "300000",
-        ],
-      },
-    })
-    .catch((error) => {
-      throw error instanceof Error ? error : new Error(String(error));
-    });
+  const startPromise = analyticsInvoke<number>("start_scheduler_service", {
+    request: {
+      workspaceRoot: normalizeSchedulerCommandWorkspace(workspaceRoot),
+      arguments: [
+        "service-all",
+        "--service-poll-ms",
+        "30000",
+        "--service-idle-shutdown-ms",
+        "300000",
+      ],
+    },
+  }).catch((error) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  });
   schedulerServiceStartPromise = startPromise;
 
   try {
@@ -6762,7 +6790,7 @@ export const getTaskFileChangeFiles = async (
     return { files: [] };
   }
 
-  return await tauriCore.invoke<TaskFileChangePage>(
+  return await analyticsInvoke<TaskFileChangePage>(
     "get_task_file_change_files",
     {
       request: {
@@ -6790,7 +6818,7 @@ const runProviderSyncCommand = async <Result>(
   if (!canInvokeTauriCommands())
     throw new Error("Connect to a client to manage provider sync.");
   try {
-    return await tauriCore.invoke<Result>("run_provider_sync_command", {
+    return await analyticsInvoke<Result>("run_provider_sync_command", {
       request,
     });
   } catch (error) {
@@ -6836,7 +6864,7 @@ export const getTaskFileChangeHunks = async (
     return { ranges: [] };
   }
 
-  return await tauriCore.invoke<TaskFileChangeHunkPage>(
+  return await analyticsInvoke<TaskFileChangeHunkPage>(
     "get_task_file_change_hunks",
     {
       request: {
@@ -6913,7 +6941,7 @@ export const runDesktopTask = async (
   }
 
   try {
-    return await tauriCore.invoke<DesktopTaskRunResponse>("run_desktop_task", {
+    return await analyticsInvoke<DesktopTaskRunResponse>("run_desktop_task", {
       request: {
         workspaceRoot: normalizedWorkspaceRoot ?? "",
         task: normalizedTask,
@@ -7005,7 +7033,7 @@ export const openAttachedPath = async (
   }
 
   try {
-    await tauriCore.invoke("open_attached_path", {
+    await analyticsInvoke("open_attached_path", {
       path: normalizedPath,
       workspaceRoot: normalizedWorkspaceRoot,
     });
@@ -7030,7 +7058,7 @@ export const readWorkspaceFilePreview = async (
   }
 
   try {
-    return await tauriCore.invoke<FilePreviewReadResult>(
+    return await analyticsInvoke<FilePreviewReadResult>(
       "read_workspace_file_preview",
       {
         workspaceRoot: normalizedWorkspaceRoot ?? "",
@@ -7058,7 +7086,7 @@ export const readAttachedFilePreview = async (
   }
 
   try {
-    return await tauriCore.invoke<FilePreviewReadResult>(
+    return await analyticsInvoke<FilePreviewReadResult>(
       "read_attached_file_preview",
       {
         path: normalizedPath,
@@ -7156,7 +7184,7 @@ export const resolveAttachedImagePreviewSource = async (
 
   if (canInvokeTauriCommands()) {
     try {
-      resolvedPath = await tauriCore.invoke<string>(
+      resolvedPath = await analyticsInvoke<string>(
         "resolve_attached_image_preview_path",
         {
           path: normalizedPath,
@@ -7186,7 +7214,7 @@ export const resolveAttachedFilePreviewSource = async (
 
   if (canInvokeTauriCommands()) {
     try {
-      resolvedPath = await tauriCore.invoke<string>(
+      resolvedPath = await analyticsInvoke<string>(
         "resolve_attached_file_preview_path",
         {
           path: normalizedPath,
@@ -7229,7 +7257,7 @@ export const resolveWorkspaceFilePreviewSource = async (
 
   if (canInvokeTauriCommands()) {
     try {
-      resolvedPath = await tauriCore.invoke<string>(
+      resolvedPath = await analyticsInvoke<string>(
         "resolve_workspace_file_preview_path",
         {
           workspaceRoot: normalizedWorkspaceRoot ?? "",
@@ -7261,7 +7289,7 @@ export const saveClipboardImageAttachment = async (
   }
 
   try {
-    return await tauriCore.invoke<string>("save_clipboard_image_attachment", {
+    return await analyticsInvoke<string>("save_clipboard_image_attachment", {
       request: {
         dataBase64: await blobToBase64(input.blob),
         mediaType,
@@ -7290,7 +7318,7 @@ export const resolveDroppedPaths = async (
   }
 
   try {
-    return await tauriCore.invoke<DroppedPathsResolution>(
+    return await analyticsInvoke<DroppedPathsResolution>(
       "resolve_dropped_paths",
       {
         paths: normalizedPaths,
@@ -7308,7 +7336,7 @@ export const takeFileManagerInvocations = async (): Promise<
     return [];
   }
 
-  return tauriCore.invoke<FileManagerInvocation[]>(
+  return analyticsInvoke<FileManagerInvocation[]>(
     "take_file_manager_invocations",
   );
 };
@@ -7323,7 +7351,7 @@ export const resolveFileManagerInvocation = async (
     );
   }
 
-  return tauriCore.invoke<FileManagerInvocationRoute>(
+  return analyticsInvoke<FileManagerInvocationRoute>(
     "resolve_file_manager_invocation",
     {
       invocation,

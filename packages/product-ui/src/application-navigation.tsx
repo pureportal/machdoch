@@ -1,6 +1,7 @@
 import { Menu, TerminalSquare, type LucideIcon } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
 import type { ReactNode } from "react";
+import { navigationFeature } from "@machdoch/analytics/catalog";
 
 export type ApplicationActivity =
   | "idle"
@@ -63,6 +64,7 @@ export function ApplicationNavigation({
       "aria-pressed": item.pressed,
       "aria-keyshortcuts": item.shortcut?.ariaKeyShortcuts,
       "data-active": item.active === true || item.pressed === true,
+      "data-analytics-feature": navigationFeature(item.id),
       title,
     };
     const content = (
@@ -104,6 +106,7 @@ export function ApplicationNavigation({
                   {item.href ? (
                     <a
                       href={item.href}
+                      data-analytics-feature={navigationFeature(item.id)}
                       aria-current={item.active ? "page" : undefined}
                     >
                       <item.icon aria-hidden="true" />
@@ -113,6 +116,7 @@ export function ApplicationNavigation({
                   ) : (
                     <button
                       type="button"
+                      data-analytics-feature={navigationFeature(item.id)}
                       onClick={item.onSelect}
                       aria-current={item.active ? "page" : undefined}
                     >

@@ -10,6 +10,7 @@ import {
 } from "../../../core/media/audio-flow.js";
 import { prepareAudioSubmission } from "./media-audio-execution.js";
 import { generateMediaAudio } from "./media-runtime.js";
+import { trackView } from "@machdoch/analytics/browser";
 import { assessRemoteEditExecution } from "./media-remote-edit-assessment";
 import { useMediaGenerationTiming } from "./use-media-generation-timing";
 import {
@@ -1538,8 +1539,10 @@ export const MediaStudio = ({
         !firstFrameEdge &&
         !lastFrameEdge &&
         (videoBinding.model.capabilities.includes("text-to-video") ||
-         (videoBinding.model.architecture === "minimax-h3-ref2va" &&
-          (readMediaVideoRecipeSettings(resolvedFlow)?.refMods ?? []).some(isActiveRefMod)));
+          (videoBinding.model.architecture === "minimax-h3-ref2va" &&
+            (readMediaVideoRecipeSettings(resolvedFlow)?.refMods ?? []).some(
+              isActiveRefMod,
+            )));
       const generatedFrame =
         !nativeText &&
         (firstFrameNode?.type !== "source.image" ||
@@ -1713,6 +1716,7 @@ export const MediaStudio = ({
   const selectSection = useCallback((activeSection: MediaStudioSection) => {
     setState((current) => ({ ...current, activeSection }));
   }, []);
+  useEffect(() => trackView(state.activeSection), [state.activeSection]);
   const mediaSectionCommandStateRef = useRef({
     activeSection: state.activeSection,
     selectSection,
@@ -3291,8 +3295,11 @@ export const MediaStudio = ({
                   workspaceRoot: normalizedWorkspaceRoot,
                   firstFrameAssetId,
                   lastFrameAssetId,
-                  refMods: readMediaVideoRecipeSettings(submittedFlow)?.refMods ?? [],
-                  refModMaxTokens: readMediaVideoRecipeSettings(submittedFlow)?.refModMaxTokens ?? 65536,
+                  refMods:
+                    readMediaVideoRecipeSettings(submittedFlow)?.refMods ?? [],
+                  refModMaxTokens:
+                    readMediaVideoRecipeSettings(submittedFlow)
+                      ?.refModMaxTokens ?? 65536,
                   aspectRatio,
                   resolution,
                   width:
@@ -3414,8 +3421,14 @@ export const MediaStudio = ({
                 !submittedExecution.firstFrameAssetId &&
                 !submittedExecution.videoModel.capabilities.includes(
                   "text-to-video",
-                ) && !(submittedExecution.videoModel.architecture === "minimax-h3-ref2va" &&
-                  (readMediaVideoRecipeSettings(submittedFlow)?.refMods ?? []).some(isActiveRefMod))
+                ) &&
+                !(
+                  submittedExecution.videoModel.architecture ===
+                    "minimax-h3-ref2va" &&
+                  (
+                    readMediaVideoRecipeSettings(submittedFlow)?.refMods ?? []
+                  ).some(isActiveRefMod)
+                )
               ) {
                 throw new Error(
                   "The video endpoint assets are no longer available.",
@@ -4927,7 +4940,9 @@ export const MediaStudio = ({
               onImported={refreshModelCatalog}
               onUseAddon={useAddonInCreate}
               onUseModel={(id) => {
-                const model = activeModelCatalog.models.find((item) => item.id === id);
+                const model = activeModelCatalog.models.find(
+                  (item) => item.id === id,
+                );
                 if (model) useModelInCreate(model);
               }}
               canUseAddon={(architecture, method, baseModelId) =>
@@ -4938,7 +4953,9 @@ export const MediaStudio = ({
                     (baseModelId === null || model.id === baseModelId) &&
                     model.architecture === architecture &&
                     model.addonCapabilities.some(
-                      (capability) => capability.kind === (method === "embedding" ? "textual-inversion" : "lora"),
+                      (capability) =>
+                        capability.kind ===
+                        (method === "embedding" ? "textual-inversion" : "lora"),
                     ) &&
                     (runtimeStatus?.directGenerationModelIds ?? []).includes(
                       model.id,

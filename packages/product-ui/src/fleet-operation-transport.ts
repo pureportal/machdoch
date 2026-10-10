@@ -2,6 +2,8 @@ import {
   operationResponseSchema,
   type OperationResponse,
 } from "@machdoch/fleet-protocol";
+import { trackOperation } from "@machdoch/analytics/operations";
+import { invocationOperation } from "@machdoch/analytics/catalog";
 
 export interface FleetOperationTransport {
   invoke<T>(command: string, args?: Record<string, unknown>): Promise<T>;
@@ -55,62 +57,64 @@ export function createFleetOperationTransport(
       command: string,
       args: Record<string, unknown> = {},
     ): Promise<T> {
-      const id = crypto.randomUUID();
-      const started = await exchange({
-        kind: "invoke",
-        id,
-        command,
-        args: JSON.parse(JSON.stringify(args)),
+      return trackOperation(invocationOperation(command, args), async () => {
+        const id = crypto.randomUUID();
+        const started = await exchange({
+          kind: "invoke",
+          id,
+          command,
+          args: JSON.parse(JSON.stringify(args)),
+        });
+        if (started.state === "failed")
+          throw typeof started.error === "string"
+            ? new Error(started.error)
+            : started.error;
+        let content = "";
+        let complete = false;
+        try {
+          for (;;) {
+            const response = await exchange({
+              kind: "read",
+              id,
+              offset: content.length,
+            });
+            if (response.state === "failed") {
+              complete = true;
+              throw typeof response.error === "string"
+                ? new Error(response.error)
+                : response.error;
+            }
+            if (response.state === "pending") {
+              await new Promise<void>((resolve) => setTimeout(resolve, 250));
+              continue;
+            }
+            if (
+              response.state !== "complete" ||
+              response.offset !== content.length
+            )
+              throw new Error("Invalid remote response.");
+            content += response.chunk;
+            if (content.length === response.total) {
+              complete = true;
+              break;
+            }
+          }
+          const bytes = Uint8Array.from(atob(content), (character) =>
+            character.charCodeAt(0),
+          );
+          return JSON.parse(
+            new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+          ) as T;
+        } finally {
+          if (complete) {
+            try {
+              await exchange({ kind: "release", id });
+            } catch (error) {
+              console.error("Could not release remote operation", error);
+            }
+          }
+        }
       });
-      if (started.state === "failed")
-        throw typeof started.error === "string"
-          ? new Error(started.error)
-          : started.error;
-      let content = "";
-      let complete = false;
-      try {
-        for (;;) {
-          const response = await exchange({
-            kind: "read",
-            id,
-            offset: content.length,
-          });
-          if (response.state === "failed") {
-            complete = true;
-            throw typeof response.error === "string"
-              ? new Error(response.error)
-              : response.error;
-          }
-          if (response.state === "pending") {
-            await new Promise<void>((resolve) => setTimeout(resolve, 250));
-            continue;
-          }
-          if (
-            response.state !== "complete" ||
-            response.offset !== content.length
-          )
-            throw new Error("Invalid remote response.");
-          content += response.chunk;
-          if (content.length === response.total) {
-            complete = true;
-            break;
-          }
-        }
-        const bytes = Uint8Array.from(atob(content), (character) =>
-          character.charCodeAt(0),
-        );
-        return JSON.parse(
-          new TextDecoder("utf-8", { fatal: true }).decode(bytes),
-        ) as T;
-      } finally {
-        if (complete) {
-          try {
-            await exchange({ kind: "release", id });
-          } catch (error) {
-            console.error("Could not release remote operation", error);
-          }
-        }
-      }
     },
     async listen<T>(
       name: string,

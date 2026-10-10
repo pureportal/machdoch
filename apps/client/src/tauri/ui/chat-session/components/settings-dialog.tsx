@@ -1,4 +1,6 @@
 import { CivitaiSettingsPanel } from "@machdoch/media-studio/tauri/ui/media/components/civitai-settings-panel.js";
+import { AnalyticsPrivacyControl } from "@machdoch/analytics/privacy-control";
+import { PRIVACY_URL } from "@machdoch/analytics/catalog";
 import { canUseDeviceSettings } from "../../device-settings-platform";
 import { AlertTriangle, LoaderCircle, X, type LucideIcon } from "lucide-react";
 import {
@@ -36,6 +38,7 @@ import {
   speechProviderLabel,
   USER_VOICE_AI_PROVIDER_ORDER,
   USER_WEB_SEARCH_PROVIDER_ORDER,
+  openExternalUrl,
 } from "../../runtime";
 import {
   getWebSearchProviderLabel,
@@ -144,6 +147,12 @@ const renderSettingsPanel = ({
   voiceSetup,
 }: SettingsDialogProps): JSX.Element => {
   switch (settingsSection) {
+    case "privacy":
+      return (
+        <AnalyticsPrivacyControl
+          openPrivacy={() => openExternalUrl(PRIVACY_URL)}
+        />
+      );
     case "answer-language":
       return <AnswerLanguageSettingsPanel />;
     case "session-defaults":

@@ -1168,13 +1168,27 @@ describe("MediaTrainView", () => {
 
 describe("media-training API", () => {
   it("invokes the canonical training commands and camelCase arguments", async () => {
+    const status: MediaTrainingStatus = {
+      state: "running",
+      message: null,
+      outputPath: null,
+      canResume: false,
+      completedSteps: 0,
+      totalSteps: 1,
+      progress: null,
+    };
+    mocks.invoke.mockImplementation((command: string) =>
+      Promise.resolve(
+        command === "media_get_training_status" ? status : undefined,
+      ),
+    );
     const training =
       await vi.importActual<typeof import("../media-training")>(
         "../media-training",
       );
     await training.submitTraining(trainingRequest);
     await training.inspectTrainingSamples(paths, "stable-diffusion-xl");
-    await training.getTrainingStatus("training-job");
+    expect(await training.getTrainingStatus("training-job")).toEqual(status);
     await training.cancelTraining("training-job");
     await training.resumeTraining("training-job");
     await training.finishTraining("training-job");

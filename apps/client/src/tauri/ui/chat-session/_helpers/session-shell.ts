@@ -60,7 +60,8 @@ export type SettingsSection =
   | "memory"
   | "desktop"
   | "workspace-run"
-  | "transfer";
+  | "transfer"
+  | "privacy";
 export type SettingsSectionGroup =
   | "Setup"
   | "Agent"
@@ -95,6 +96,13 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
   description: string;
   keywords: readonly string[];
 }> = [
+  {
+    id: "privacy",
+    label: "Privacy",
+    group: "Data",
+    description: "",
+    keywords: ["analytics", "swetrix", "usage", "diagnostics", "consent"],
+  },
   {
     id: "answer-language",
     label: "Answer language",

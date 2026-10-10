@@ -22,6 +22,7 @@ export function UpdateSettingsControl() {
   return enabled ? (
     <Button
       variant="outline"
+      data-analytics-feature="update"
       onClick={() => window.dispatchEvent(new Event(CHECK_FOR_UPDATES_EVENT))}
     >
       Check for updates

@@ -1,4 +1,5 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { isTauri } from "@tauri-apps/api/core";
+import { invoke } from "./lib/analytics-invoke.js";
 import type { FleetOperationTransport } from "@machdoch/product-ui/fleet-operation-transport";
 import type { FleetMediaTransport } from "@machdoch/media-studio/fleet-transport.js";
 

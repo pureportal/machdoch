@@ -1,4 +1,6 @@
 import { isTauri } from "@tauri-apps/api/core";
+import { trackView, useFeature } from "@machdoch/analytics/browser";
+import { commandFeature } from "@machdoch/analytics/catalog";
 import * as React from "react";
 import { CommandPalette } from "./command-palette";
 import { CommandRegistry, type CommandRegistration } from "./command-registry";
@@ -162,6 +164,9 @@ export const CommandProvider = ({
   const [paletteError, setPaletteError] = React.useState<string | null>(null);
   const activeViewRef = React.useRef(activeView);
   activeViewRef.current = activeView;
+  React.useEffect(() => {
+    if (activeView) trackView(activeView);
+  }, [activeView]);
   const invokerRef = React.useRef<HTMLElement | null>(null);
   const invocationFocusRef = React.useRef<CommandContextSnapshot["focus"]>({
     kind: "document",
@@ -331,6 +336,9 @@ export const CommandProvider = ({
         }
       }
       const startingRevision = surfaceRevisionRef.current;
+      const analyticsFeature = commandFeature(id);
+      if (analyticsFeature)
+        useFeature(analyticsFeature, fromPalette ? "pointer" : "keyboard");
       const startingView = activeViewRef.current;
       activeControllersRef.current.set(id, { controller, fromPalette });
       try {

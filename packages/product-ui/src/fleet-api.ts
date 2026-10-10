@@ -1,3 +1,6 @@
+import { trackOperation } from "@machdoch/analytics/operations";
+import { fleetOperation } from "@machdoch/analytics/catalog";
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -8,6 +11,11 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const operation = fleetOperation(path, init.method?.toUpperCase() ?? "GET");
+  return trackOperation(operation ?? "", () => request<T>(path, init));
+}
+
+async function request<T>(path: string, init: RequestInit): Promise<T> {
   const method = init.method?.toUpperCase() ?? "GET";
   const headers = new Headers(init.headers);
   if (init.body && !headers.has("Content-Type"))
