@@ -1,4 +1,4 @@
-import * as tauriCore from "@tauri-apps/api/core";
+import { invoke } from "../lib/analytics-invoke.js";
 import type { FleetOperationTransport } from "@machdoch/product-ui";
 import type { WorkspaceRunSnapshot } from "../../../shared/workspace-run.js";
 import type {
@@ -228,5 +228,5 @@ export function invokeWorkspaceTools<T>(
 ): Promise<T> {
   return remotePlatform
     ? remotePlatform.transport.invoke<T>(command, args)
-    : tauriCore.invoke<T>(command, args);
+    : invoke<T>(command, args);
 }

@@ -3,6 +3,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { useEffect, useRef, useState } from "react";
+import { trackOperation } from "@machdoch/analytics/operations";
 import { parseRelease } from "../../../update/release.js";
 import {
   deferUpdateNotification,
@@ -78,10 +79,12 @@ export function useDesktopUpdate(options: {
         setError(null);
       }
       try {
-        const found = await check({
-          timeout: 30_000,
-          headers: { "Cache-Control": "no-cache" },
-        });
+        const found = await trackOperation(manual ? "update.check" : "", () =>
+          check({
+            timeout: 30_000,
+            headers: { "Cache-Control": "no-cache" },
+          }),
+        );
         if (disposed) {
           await found?.close();
           return;
@@ -220,17 +223,19 @@ export function useDesktopUpdate(options: {
       await invoke("prepare_app_update");
       setPhase("downloading");
       setProgress({ downloaded: 0 });
-      await selected.download(
-        (event) => {
-          if (event.event === "Started")
-            setProgress({ downloaded: 0, total: event.data.contentLength });
-          else if (event.event === "Progress")
-            setProgress((value) => ({
-              ...value,
-              downloaded: value.downloaded + event.data.chunkLength,
-            }));
-        },
-        { timeout: 30 * 60_000 },
+      await trackOperation("update.download", () =>
+        selected.download(
+          (event) => {
+            if (event.event === "Started")
+              setProgress({ downloaded: 0, total: event.data.contentLength });
+            else if (event.event === "Progress")
+              setProgress((value) => ({
+                ...value,
+                downloaded: value.downloaded + event.data.chunkLength,
+              }));
+          },
+          { timeout: 30 * 60_000 },
+        ),
       );
       if (latest.current.busy)
         throw new Error(
@@ -239,7 +244,7 @@ export function useDesktopUpdate(options: {
       await latest.current.flush();
       await invoke("prepare_app_update");
       setPhase("installing");
-      await selected.install();
+      await trackOperation("update.install", () => selected.install());
       installed.current = true;
       setPhase("installed");
       await relaunch();

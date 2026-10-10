@@ -4,6 +4,7 @@ import type { CommandName, ParsedCliArgs } from "./_helpers/cli-args.js";
 import { writeStderrLine, writeStdoutLine } from "./_helpers/cli-io.js";
 import { createCliStyle } from "./_helpers/cli-terminal.js";
 import { readTaskFromStdin } from "./_helpers/cli-task-stdin.js";
+import { trackCliCommand } from "./_helpers/cli-analytics.js";
 
 const AGENT_RUNTIME_COMMANDS = new Set<CommandName>([
   "run",
@@ -247,7 +248,7 @@ export const runCli = async (argv: string[]): Promise<CommandName> => {
 
   let commandFailure: { error: unknown } | undefined;
   try {
-    await runParsedCliCommand(args);
+    await trackCliCommand(args.command, () => runParsedCliCommand(args));
   } catch (error) {
     commandFailure = { error };
   }

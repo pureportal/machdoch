@@ -1,4 +1,5 @@
 import { invoke as tauriInvoke, hasMediaHost } from "./media-platform";
+import { observeJob } from "@machdoch/analytics/browser";
 import { listen } from "./media-platform";
 import { hash as sha256 } from "fast-sha256";
 import { createMediaModelCatalogSnapshot } from "../../../core/media/catalog.js";
@@ -2231,7 +2232,8 @@ export const generateMediaVideo = async (
 export const generateMediaAudio = async (
   request: import("../../../core/media/contracts.js").GenerateMediaAudioRequest,
 ): Promise<MediaRunDetail> => {
-  if (!canInvokeNativeRuntime()) throw new Error("Open the desktop app to generate audio.");
+  if (!canInvokeNativeRuntime())
+    throw new Error("Open the desktop app to generate audio.");
   return invoke<MediaRunDetail>("media_generate_audio", { request });
 };
 
@@ -2273,6 +2275,14 @@ export const listMediaRuns = async (): Promise<MediaRuntimeRunRecord[]> => {
       invoke<MediaRuntimeRunRecord[]>("media_list_runs", { limit: 100 }),
     ]);
     const items = mergeMediaRunUpdates(snapshot.items, updates);
+    for (const run of items)
+      observeJob(
+        run.id,
+        run.executor === "media-workflow" || run.executor === "local-image-flow"
+          ? "media.workflows"
+          : "media.generate",
+        run.status,
+      );
     if (nativeRunSnapshot?.revision === snapshot.revision) {
       nativeRunSnapshot = { revision: snapshot.revision, items };
     }

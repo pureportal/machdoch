@@ -1,4 +1,5 @@
 import { invoke, isRemoteMedia } from "./media-platform";
+import { observeJob } from "@machdoch/analytics/browser";
 
 export type MediaTrainingConcept = "style" | "face" | "character" | "object";
 export type MediaTrainingArchitecture =
@@ -74,7 +75,8 @@ export const TRAINING_ARCHITECTURES: readonly {
 
 export const isVideoTrainingArchitecture = (
   architecture: MediaTrainingArchitecture,
-): boolean => architecture.startsWith("cogvideox-") || architecture === "wan-2.1-t2v-1.3b";
+): boolean =>
+  architecture.startsWith("cogvideox-") || architecture === "wan-2.1-t2v-1.3b";
 
 export interface MediaTrainingVideoSettings {
   width: number;
@@ -269,7 +271,16 @@ export const inspectTrainingSamples = (
 export const getTrainingStatus = (
   requestId: string,
 ): Promise<MediaTrainingStatus> =>
-  localInvoke("media_get_training_status", { requestId });
+  localInvoke<MediaTrainingStatus>("media_get_training_status", {
+    requestId,
+  }).then((status) => {
+    observeJob(
+      requestId,
+      "media.training",
+      status.state === "starting" ? "running" : status.state,
+    );
+    return status;
+  });
 
 export const cancelTraining = (requestId: string): Promise<void> =>
   localInvoke("media_cancel_training", { requestId });

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import "./analytics.js";
 import {
   productSnapshotSchema,
   type ProductSnapshot,

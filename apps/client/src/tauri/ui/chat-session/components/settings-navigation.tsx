@@ -10,6 +10,7 @@ import {
   Network,
   Palette,
   Search,
+  Shield,
   Timer,
   Volume2,
   X,
@@ -56,6 +57,7 @@ const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   desktop: Monitor,
   "workspace-run": Timer,
   transfer: ArrowLeftRight,
+  privacy: Shield,
 };
 export const SETTINGS_SECTION_GROUP_ORDER: readonly SettingsSectionGroup[] = [
   "Setup",
