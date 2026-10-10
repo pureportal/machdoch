@@ -7,7 +7,7 @@ const securityHeaders = [
   { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
   {
     key: "Content-Security-Policy",
-    value: `default-src 'self'; script-src ${scriptSources.join(" ")}; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
+    value: `default-src 'self'; script-src ${scriptSources.join(" ")}; style-src 'self' 'unsafe-inline'; connect-src 'self' https://swetrix.pureportal.io; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
   },
   { key: "Referrer-Policy", value: "no-referrer" },
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -30,7 +30,7 @@ const nextConfig: NextConfig = {
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           {
             key: "Content-Security-Policy",
-            value: `default-src 'self'; script-src ${scriptSources.join(" ")}; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'`,
+            value: `default-src 'self'; script-src ${scriptSources.join(" ")}; style-src 'self' 'unsafe-inline'; connect-src 'self' https://swetrix.pureportal.io; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'`,
           },
         ],
       },

@@ -4,7 +4,7 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
-    "lib": ["ES2022"],
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "noEmit": true,
@@ -15,5 +15,5 @@
     "target": "ES2022",
     "types": ["node", "vite/client"]
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "src/**/*.ts"]
 }
