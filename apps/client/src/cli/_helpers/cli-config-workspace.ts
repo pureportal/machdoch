@@ -1,5 +1,6 @@
 import {
   clearWorkspaceConfigValue,
+  saveWorkspaceAutoGitignore,
   saveWorkspaceDefaultMode,
   saveWorkspaceDefaultModel,
   saveWorkspaceContextWindow,
@@ -96,6 +97,14 @@ export const WORKSPACE_CONFIG_DEFINITIONS: readonly CliConfigSettingDefinition[]
       category: "Workspace",
       scope: "workspace",
       description: "Discover compatible prompts and skills under .github.",
+      acceptedValues: "on|off",
+      choices: BOOLEAN_CHOICES,
+    },
+    {
+      setting: "workspace.auto-gitignore",
+      category: "Workspace",
+      scope: "workspace",
+      description: "Automatically add Machdoch .gitignore rules.",
       acceptedValues: "on|off",
       choices: BOOLEAN_CHOICES,
     },
@@ -208,6 +217,17 @@ const saveWorkspaceConfigSetting = async (
     };
   }
 
+  if (normalizedSetting === "workspace.auto-gitignore") {
+    const enabled = parseConfigBoolean(normalizedSetting, normalizedValue);
+    return {
+      setting: normalizedSetting,
+      scope: "workspace",
+      configPath: await saveWorkspaceAutoGitignore(workspaceRoot, enabled),
+      status: "configured",
+      value: enabled,
+    };
+  }
+
   if (normalizedSetting === "workspace.github-customizations") {
     const enabled = parseConfigBoolean(normalizedSetting, normalizedValue);
     return {
@@ -237,6 +257,7 @@ const resetSetting = async (
     "workspace.reasoning-mode": ["reasoningMode"],
     "workspace.context-window": ["contextWindow"],
     "workspace.offline": ["offline"],
+    "workspace.auto-gitignore": ["autoGitignore"],
     "workspace.github-customizations": [
       "compatibility",
       "discoverGithubCustomizations",
@@ -337,6 +358,10 @@ const resolveEntry = (
       source = configSource(
         snapshot.workspaceConfig.compatibility?.discoverGithubCustomizations,
       );
+      break;
+    case "workspace.auto-gitignore":
+      value = snapshot.workspaceConfig.autoGitignore ?? true;
+      source = configSource(snapshot.workspaceConfig.autoGitignore);
       break;
     default:
       return unsupportedConfigSetting(setting);

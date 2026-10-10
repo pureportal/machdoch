@@ -15,6 +15,7 @@ pub struct RuntimeSnapshot {
     pub(super) default_context_window: ContextWindow,
     pub(super) workspace_memory_enabled: bool,
     pub(super) reasoning_bank_enabled: bool,
+    pub(super) auto_gitignore: bool,
     pub(super) workspace_memory_override: Option<bool>,
     pub(super) adaptive_controller_override: Option<bool>,
     pub(super) mode: String,

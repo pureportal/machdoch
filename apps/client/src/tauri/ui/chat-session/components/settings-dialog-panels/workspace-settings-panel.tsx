@@ -260,6 +260,23 @@ export const WorkspaceSettingsPanel = ({
         </SettingPanel>
       ) : null}
 
+      {setup.onAutoGitignoreChange ? (
+        <SettingPanel label="Automatic .gitignore rules">
+          <ChoiceButtons
+            label="Automatic .gitignore rules"
+            value={setup.autoGitignore === false ? "disabled" : "enabled"}
+            options={[
+              { value: "enabled", label: "Enabled" },
+              { value: "disabled", label: "Disabled" },
+            ]}
+            disabled={setup.saving || !setup.workspaceRoot}
+            onChange={(value) => {
+              void setup.onAutoGitignoreChange?.(value === "enabled");
+            }}
+          />
+        </SettingPanel>
+      ) : null}
+
       <SettingPanel label="Default mode">
         <ChoiceButtons
           label="Default workspace mode"

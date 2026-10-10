@@ -126,7 +126,16 @@
     },
     "SpeechToTextProvider": {
       "type": "string",
-      "enum": ["none", "openai", "google", "whisper", "whisper-tiny", "whistle", "whistle-tiny", "phonon2"]
+      "enum": [
+        "none",
+        "openai",
+        "google",
+        "whisper",
+        "whisper-tiny",
+        "whistle",
+        "whistle-tiny",
+        "phonon2"
+      ]
     },
     "RuntimeMemoryScope": {
       "type": "string",
@@ -225,6 +234,10 @@
           "type": ["boolean", "null"]
         },
         "reasoningBankEnabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "autoGitignore": {
           "type": "boolean",
           "default": true
         },

@@ -476,6 +476,7 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
         default_context_window,
         workspace_memory_enabled,
         reasoning_bank_enabled: config.reasoning_bank_enabled.unwrap_or(true),
+        auto_gitignore: config.auto_gitignore.unwrap_or(true),
         workspace_memory_override,
         adaptive_controller_override: config.adaptive_controller_enabled,
         mode,

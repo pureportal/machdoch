@@ -480,6 +480,7 @@ pub fn run() {
             runtime_snapshot::save_workspace_memory_override,
             runtime_snapshot::save_workspace_adaptive_controller_override,
             runtime_snapshot::save_workspace_reasoning_bank_enabled,
+            runtime_snapshot::save_workspace_auto_gitignore,
             runtime_snapshot::save_workspace_reasoning_mode,
             runtime_snapshot::save_workspace_context_window,
             runtime_snapshot::save_workspace_reasoning_execution_mode,
