@@ -18,10 +18,10 @@ fn attempted_task(status: &str, retry_number: u32) -> Value {
 }
 
 #[test]
-fn shutdown_waits_for_every_queued_message_in_every_chat() {
+fn shutdown_waits_for_dispatchable_messages_and_ignores_failed_or_orphaned_entries() {
     let mut state = shell(json!([]));
     assert!(!has_pending_chat_work(&state, true, 2).unwrap());
-    for status in ["queued", "enhancing", "dispatching", "failed"] {
+    for status in ["queued", "enhancing", "dispatching"] {
         state["queuedSessionMessages"] = json!([
             {"id": "failed", "sessionId": "visible", "status": "failed"},
             {"id": "pending", "sessionId": "background", "status": status}
@@ -29,7 +29,12 @@ fn shutdown_waits_for_every_queued_message_in_every_chat() {
         assert!(has_pending_chat_work(&state, true, 2).unwrap());
     }
     state["queuedSessionMessages"] = json!([{"id": "failed", "status": "failed"}]);
-    assert!(has_pending_chat_work(&state, true, 2).unwrap());
+    assert!(!has_pending_chat_work(&state, true, 2).unwrap());
+    for status in ["queued", "enhancing", "dispatching"] {
+        state["queuedSessionMessages"] =
+            json!([{"id": "orphan", "sessionId": "deleted", "status": status}]);
+        assert!(!has_pending_chat_work(&state, true, 2).unwrap());
+    }
     state["queuedSessionMessages"] = json!([]);
     assert!(!has_pending_chat_work(&state, true, 2).unwrap());
 }
@@ -98,4 +103,62 @@ fn unknown_chat_state_never_authorizes_shutdown() {
         assert!(has_pending_chat_work(&state, true, 2).is_err());
     }
     assert!(has_pending_chat_work(&attempted_task("unknown", 0), true, 2).is_err());
+    let mut queue = shell(json!([]));
+    for value in [
+        json!({}),
+        json!({"status": "unknown"}),
+        json!({"status": "queued"}),
+    ] {
+        queue["queuedSessionMessages"] = json!([value]);
+        assert!(has_pending_chat_work(&queue, true, 2).is_err());
+    }
+}
+
+#[test]
+fn real_results_take_precedence_over_later_interruption_markers() {
+    let mut state = attempted_task("succeeded", 0);
+    state["sessions"][0]["messages"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "id": "interrupted", "taskId": "task", "role": "agent",
+            "source": {"kind": "interrupted-task"}, "outcome": {"status": "crashed"}
+        }));
+    assert!(!has_pending_chat_work(&state, true, 2).unwrap());
+}
+
+#[test]
+fn execution_results_replace_a_crashed_outcome_on_the_same_message() {
+    for status in ["executed", "planned", "cancelled", "blocked", "unsupported"] {
+        let mut state = attempted_task("crashed", 0);
+        state["sessions"][0]["messages"][1]["source"] =
+            json!({"kind": "execution", "execution": {"status": status}});
+        assert!(!has_pending_chat_work(&state, true, 2).unwrap());
+    }
+}
+
+#[test]
+fn absent_retry_tasks_and_null_optional_fields_do_not_block_shutdown() {
+    let mut state = attempted_task("failed", 0);
+    state["sessions"][0]["messages"][0]["executionAttempt"]["task"] = json!("");
+    assert!(!has_pending_chat_work(&state, true, 2).unwrap());
+    state["sessions"][0]["messages"][0]["executionAttempt"] = Value::Null;
+    assert!(!has_pending_chat_work(&state, true, 2).unwrap());
+    state["sessions"][0]["messages"][1]["outcome"] = Value::Null;
+    state["sessions"][0]["messages"][1]["source"] = Value::Null;
+    assert!(!has_pending_chat_work(&state, true, 2).unwrap());
+}
+
+#[test]
+fn previews_and_incomplete_thinking_never_finish_a_task() {
+    for source in [
+        json!({"kind": "preview"}),
+        json!({"kind": "thinking", "thinking": {"status": "running"}}),
+    ] {
+        let state = shell(json!([
+            {"id": "user", "taskId": "task", "role": "user"},
+            {"id": "agent", "taskId": "task", "role": "agent", "source": source}
+        ]));
+        assert!(has_pending_chat_work(&state, false, 0).unwrap());
+    }
 }

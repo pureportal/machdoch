@@ -6,6 +6,7 @@ import {
   type ChatSessionQueuedMessage,
 } from "../chat-session.model";
 import { hasPendingChatWork, IdleShutdownMonitor } from "./shutdown-when-idle";
+import { createDeferred } from "./__test__/deferred";
 
 describe("shutdown eligibility", () => {
   it("includes other chats, queued messages, and pending retries", () => {
@@ -43,6 +44,7 @@ describe("shutdown eligibility", () => {
     ).toBe(false);
     state.queuedSessionMessages.push({
       id: "queued",
+      sessionId: "background",
       status: "queued",
     } as ChatSessionQueuedMessage);
     expect(
@@ -51,7 +53,7 @@ describe("shutdown eligibility", () => {
     state.queuedSessionMessages[0].status = "failed";
     expect(
       hasPendingChatWork(state, { ...settings, automaticRetries: false }),
-    ).toBe(true);
+    ).toBe(false);
     state.queuedSessionMessages = [];
     expect(
       hasPendingChatWork(state, { ...settings, automaticRetries: false }),
@@ -91,7 +93,7 @@ describe("shutdown eligibility", () => {
     expect(shutdown).toHaveBeenCalledTimes(2);
   });
 
-  it("requires a fresh quiet period after work changes between inspections", async () => {
+  it("uses the latest revision without restarting the quiet period for unrelated saves", async () => {
     const monitor = new IdleShutdownMonitor(5000);
     monitor.setEnabled(true);
     const shutdown = vi.fn(async () => true);
@@ -100,24 +102,80 @@ describe("shutdown eligibility", () => {
       shutdown,
       0,
     );
-    await monitor.check(
-      async () => ({ busy: false, revision: 2 }),
-      shutdown,
-      5000,
-    );
-    await monitor.check(
-      async () => ({ busy: false, revision: 2 }),
-      shutdown,
-      9999,
-    );
-    expect(shutdown).not.toHaveBeenCalled();
     expect(
       await monitor.check(
         async () => ({ busy: false, revision: 2 }),
         shutdown,
-        10000,
+        5000,
       ),
     ).toBe(true);
+    expect(shutdown).toHaveBeenCalledExactlyOnceWith(2);
+  });
+
+  it("does not restart the quiet period for duplicate enabled events", async () => {
+    const monitor = new IdleShutdownMonitor(5000);
+    monitor.setEnabled(true);
+    const inspect = async () => ({ busy: false, revision: 1 });
+    const shutdown = vi.fn(async () => true);
+    await monitor.check(inspect, shutdown, 0);
+    monitor.setEnabled(true);
+    expect(await monitor.check(inspect, shutdown, 5000)).toBe(true);
+    expect(shutdown).toHaveBeenCalledOnce();
+  });
+
+  it("starts the quiet period after a slow idle inspection completes", async () => {
+    const clock = vi.spyOn(performance, "now").mockReturnValue(0);
+    const monitor = new IdleShutdownMonitor(5000);
+    const pending = createDeferred<{ busy: boolean; revision: number }>();
+    const shutdown = vi.fn(async () => true);
+    monitor.setEnabled(true);
+    const first = monitor.check(() => pending.promise, shutdown);
+    clock.mockReturnValue(6000);
+    pending.resolve({ busy: false, revision: 1 });
+    await first;
+    clock.mockReturnValue(6001);
+    expect(
+      await monitor.check(async () => ({ busy: false, revision: 1 }), shutdown),
+    ).toBe(false);
+    expect(shutdown).not.toHaveBeenCalled();
+    clock.mockReturnValue(11000);
+    expect(
+      await monitor.check(async () => ({ busy: false, revision: 1 }), shutdown),
+    ).toBe(true);
+  });
+
+  it("lets a new arm proceed while an old inspection is still waiting", async () => {
+    const monitor = new IdleShutdownMonitor(0);
+    const pending = createDeferred<{ busy: boolean; revision: number }>();
+    const shutdown = vi.fn(async () => true);
+    monitor.setEnabled(true);
+    const old = monitor.check(() => pending.promise, shutdown, 0);
+    monitor.setEnabled(false);
+    monitor.setEnabled(true);
+    expect(
+      await monitor.check(
+        async () => ({ busy: false, revision: 2 }),
+        shutdown,
+        1,
+      ),
+    ).toBe(true);
+    pending.resolve({ busy: false, revision: 1 });
+    expect(await old).toBe(false);
+    expect(shutdown).toHaveBeenCalledExactlyOnceWith(2);
+  });
+
+  it("ignores a late shutdown result after cancellation and rearming", async () => {
+    const monitor = new IdleShutdownMonitor(0);
+    const pending = createDeferred<boolean>();
+    const inspect = async () => ({ busy: false, revision: 1 });
+    monitor.setEnabled(true);
+    const old = monitor.check(inspect, () => pending.promise, 0);
+    await Promise.resolve();
+    monitor.setEnabled(false);
+    monitor.setEnabled(true);
+    pending.resolve(true);
+    expect(await old).toBe(false);
+    expect(await monitor.check(inspect, async () => true, 1)).toBe(true);
   });
 
   it("cancels an in-flight inspection and treats failed checks as unknown activity", async () => {

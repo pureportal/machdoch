@@ -3,18 +3,22 @@ use std::{collections::HashSet, sync::Mutex};
 use tauri::{AppHandle, Emitter as _, Manager as _};
 
 mod chat_work;
+#[cfg(any(target_os = "windows", test))]
+mod command;
+mod mode;
+use mode::ShutdownMode;
 
 #[derive(Default)]
 pub(crate) struct IdleShutdownState {
-    enabled: Mutex<bool>,
+    mode: Mutex<ShutdownMode>,
     pending_media_windows: Mutex<HashSet<String>>,
     pending_chat_windows: Mutex<HashSet<String>>,
 }
 
 impl IdleShutdownState {
     fn clear_window(&self, label: &str) -> Result<bool, String> {
-        let mut enabled = self
-            .enabled
+        let mut mode = self
+            .mode
             .lock()
             .map_err(|_| "Shutdown state is unavailable.")?;
         let mut media = self
@@ -27,9 +31,9 @@ impl IdleShutdownState {
             .map_err(|_| "Chat activity is unavailable.")?;
         let had_media = media.remove(label);
         let had_chat = chats.remove(label);
-        let disarmed = *enabled && (had_media || had_chat);
+        let disarmed = mode.enabled && (had_media || had_chat);
         if disarmed {
-            *enabled = false;
+            mode.set_enabled(false)?;
         }
         Ok(disarmed)
     }
@@ -45,28 +49,54 @@ pub(crate) fn set_shutdown_when_idle(
     app: AppHandle,
     state: tauri::State<'_, IdleShutdownState>,
     enabled: bool,
-) -> Result<(), String> {
+    expected_generation: u64,
+) -> Result<ShutdownMode, String> {
     if enabled && !supports_idle_shutdown() {
         return Err("PC shutdown is only available on Windows.".to_string());
     }
-    *state
-        .enabled
-        .lock()
-        .map_err(|_| "Shutdown state is unavailable.")? = enabled;
-    if let Err(error) = app.emit("shutdown-when-idle-changed", enabled) {
+    change_mode(&app, &state, enabled, Some(expected_generation))
+}
+
+fn publish_mode(app: &AppHandle, mode: ShutdownMode) {
+    if let Err(error) = app.emit("shutdown-when-idle-changed", mode) {
         eprintln!("Could not publish shutdown mode: {error}");
     }
-    Ok(())
+}
+
+pub(crate) fn disable_shutdown_when_idle(app: &AppHandle) -> Result<(), String> {
+    change_mode(app, &app.state::<IdleShutdownState>(), false, None).map(|_| ())
+}
+
+fn change_mode(
+    app: &AppHandle,
+    state: &IdleShutdownState,
+    enabled: bool,
+    expected_generation: Option<u64>,
+) -> Result<ShutdownMode, String> {
+    let mut mode = state
+        .mode
+        .lock()
+        .map_err(|_| "Shutdown state is unavailable.")?;
+    match expected_generation {
+        Some(expected) => {
+            if !mode.set_enabled_if_current(enabled, expected)? {
+                return Ok(*mode);
+            }
+        }
+        None => mode.set_enabled(enabled)?,
+    }
+    publish_mode(app, *mode);
+    Ok(*mode)
 }
 
 #[tauri::command]
 pub(crate) fn get_shutdown_when_idle(
     state: tauri::State<'_, IdleShutdownState>,
-) -> Result<bool, String> {
+) -> Result<ShutdownMode, String> {
     state
-        .enabled
+        .mode
         .lock()
-        .map(|enabled| *enabled)
+        .map(|mode| *mode)
         .map_err(|_| "Shutdown state is unavailable.".to_string())
 }
 
@@ -116,11 +146,10 @@ pub(crate) fn set_window_pending_chat_work(
 
 pub(crate) fn clear_window_work(app: &AppHandle, label: &str) {
     match app.state::<IdleShutdownState>().clear_window(label) {
-        Ok(true) => {
-            if let Err(error) = app.emit("shutdown-when-idle-changed", false) {
-                eprintln!("Could not publish shutdown mode: {error}");
-            }
-        }
+        Ok(true) => match get_shutdown_when_idle(app.state::<IdleShutdownState>()) {
+            Ok(mode) => publish_mode(app, mode),
+            Err(error) => eprintln!("Could not inspect shutdown mode: {error}"),
+        },
         Ok(false) => {}
         Err(error) => eprintln!("Could not clear activity for closed window: {error}"),
     }
@@ -152,15 +181,16 @@ pub(crate) fn has_pending_shutdown_work(app: AppHandle) -> Result<bool, String> 
 pub(crate) async fn shutdown_if_idle(
     app: AppHandle,
     expected_revision: u64,
+    expected_generation: u64,
 ) -> Result<bool, String> {
     let settings = crate::runtime_snapshot::get_user_agent_limits_settings().await?;
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<IdleShutdownState>();
-        let mut enabled = state
-            .enabled
+        let mut mode = state
+            .mode
             .lock()
             .map_err(|_| "Shutdown state is unavailable.")?;
-        if !*enabled {
+        if !mode.matches(expected_generation) {
             return Ok(false);
         }
         let windows = state
@@ -193,12 +223,14 @@ pub(crate) async fn shutdown_if_idle(
             });
         match stopped {
             Ok(true) => {
-                *enabled = false;
+                mode.set_enabled(false)?;
+                publish_mode(&app, *mode);
                 Ok(true)
             }
             Ok(false) => Ok(false),
             Err(error) => {
-                *enabled = false;
+                mode.set_enabled(false)?;
+                publish_mode(&app, *mode);
                 Err(error)
             }
         }
@@ -209,20 +241,17 @@ pub(crate) async fn shutdown_if_idle(
 
 #[cfg(all(target_os = "windows", not(test)))]
 fn force_shutdown() -> Result<(), String> {
-    use std::{os::windows::process::CommandExt, process::Command};
-    let output = Command::new("shutdown.exe")
+    let windows = std::env::var_os("SystemRoot")
+        .ok_or("PC shutdown failed: the Windows directory is unavailable.")?;
+    let mut command = tokio::process::Command::new(
+        std::path::Path::new(&windows)
+            .join("System32")
+            .join("shutdown.exe"),
+    );
+    command
         .args(["/s", "/f", "/t", "0"])
-        .creation_flags(0x08000000)
-        .output()
-        .map_err(|error| format!("PC shutdown failed: {error}"))?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(format!(
-            "PC shutdown failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ))
-    }
+        .creation_flags(0x08000000);
+    tauri::async_runtime::block_on(command::run(command, std::time::Duration::from_secs(10)))
 }
 
 #[cfg(all(not(target_os = "windows"), not(test)))]
@@ -243,7 +272,7 @@ mod tests {
     fn closing_a_window_with_pending_work_disarms_shutdown() {
         for media in [true, false] {
             let state = IdleShutdownState::default();
-            *state.enabled.lock().unwrap() = true;
+            state.mode.lock().unwrap().set_enabled(true).unwrap();
             let pending = if media {
                 &state.pending_media_windows
             } else {
@@ -251,9 +280,9 @@ mod tests {
             };
             pending.lock().unwrap().insert("working".to_string());
             assert!(!state.clear_window("idle").unwrap());
-            assert!(*state.enabled.lock().unwrap());
+            assert!(state.mode.lock().unwrap().enabled);
             assert!(state.clear_window("working").unwrap());
-            assert!(!*state.enabled.lock().unwrap());
+            assert!(!state.mode.lock().unwrap().enabled);
         }
     }
 }

@@ -58,11 +58,7 @@ pub(crate) async fn prepare_app_update(app: AppHandle) -> Result<(), String> {
                     .map_err(|error| format!("Another update may be running. {error}"))?,
             );
         }
-        crate::idle_shutdown::set_shutdown_when_idle(
-            app.clone(),
-            app.state::<crate::idle_shutdown::IdleShutdownState>(),
-            false,
-        )
+        crate::idle_shutdown::disable_shutdown_when_idle(&app)
     })
     .await
     .map_err(|error| error.to_string())?
