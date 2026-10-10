@@ -212,9 +212,10 @@ export function createFleetMediaTransport(
     async open(options) {
       if (options?.directory)
         throw new Error("Enter a folder path on the connected host.");
-      const files = await new Promise<File[]>((resolve) => {
+      const files = await new Promise<File[]>((resolve, reject) => {
         const input = document.createElement("input");
         input.type = "file";
+        input.hidden = true;
         input.multiple = options?.multiple === true;
         input.accept =
           options?.filters
@@ -222,13 +223,23 @@ export function createFleetMediaTransport(
               filter.extensions.map((extension) => `.${extension}`),
             )
             .join(",") ?? "";
+        const finish = (files: File[]): void => {
+          input.remove();
+          resolve(files);
+        };
         input.addEventListener(
           "change",
-          () => resolve(Array.from(input.files ?? [])),
+          () => finish(Array.from(input.files ?? [])),
           { once: true },
         );
-        input.addEventListener("cancel", () => resolve([]), { once: true });
-        input.click();
+        input.addEventListener("cancel", () => finish([]), { once: true });
+        document.body.append(input);
+        try {
+          input.click();
+        } catch (error) {
+          input.remove();
+          reject(error);
+        }
       });
       if (!files.length) return null;
       const paths: string[] = [];

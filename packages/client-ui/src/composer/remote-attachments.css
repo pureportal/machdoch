@@ -1,0 +1,99 @@
+.m-attachment-dialog {
+  max-height: calc(
+    var(--m-viewport-height, 100dvh) - 16px - env(safe-area-inset-top) -
+      env(safe-area-inset-bottom)
+  );
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.m-attachment-directory {
+  max-height: calc(var(--m-viewport-height, 100dvh) * 0.4);
+  overscroll-behavior: contain;
+}
+
+.m-attachment-dialog [role="alert"] {
+  overflow-wrap: anywhere;
+}
+
+.m-attachment-entry,
+.m-attachment-file {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.m-attachment-file {
+  min-height: 44px;
+  width: 100%;
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 14px;
+}
+
+.m-attachment-file:has(input:enabled),
+.m-attachment-directory-select:has(input:enabled) {
+  cursor: pointer;
+}
+
+.m-attachment-file:has(input:checked) {
+  background: color-mix(in srgb, var(--app-sky-500) 12%, transparent);
+}
+
+.m-attachment-file:focus-within,
+.m-attachment-directory-select:focus-within {
+  outline: 2px solid var(--app-sky-500);
+  outline-offset: -2px;
+}
+
+.m-attachment-file span,
+.m-attachment-folder span {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.m-attachment-dialog input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  accent-color: var(--app-sky-500);
+}
+
+.m-attachment-directory-select {
+  display: grid;
+  min-width: 44px;
+  min-height: 44px;
+  flex-shrink: 0;
+  place-items: center;
+  border-radius: 8px;
+}
+
+.m-attachment-folder {
+  height: auto;
+  min-height: 44px;
+}
+
+@media (max-width: 640px), (max-height: 500px) {
+  .m-attachment-dialog {
+    width: calc(100% - 16px);
+    gap: 16px;
+    padding: 20px;
+  }
+
+  .m-attachment-dialog-footer {
+    flex-direction: row;
+  }
+
+  .m-attachment-dialog-footer > button {
+    flex: 1;
+  }
+}
+
+@media (pointer: coarse) {
+  .m-attachment-dialog button {
+    min-height: 44px;
+  }
+}

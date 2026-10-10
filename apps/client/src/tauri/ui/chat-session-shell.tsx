@@ -188,7 +188,7 @@ export const ChatSession = (): JSX.Element => {
   const [instructionDraftDirty, setInstructionDraftDirty] = useState(false);
   const [workspaceDraftDirty, setWorkspaceDraftDirty] = useState(false);
   const sessionSearchInputRef = useRef<HTMLInputElement | null>(null);
-  const isMobile = useIsMobile();
+  const isMobile = useIsMobile(1101);
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const previousChatOperationIdsRef = useRef<Set<string>>(new Set());
   const appShellInteractionRevisionRef = useRef(0);

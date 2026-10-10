@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import "./remote-attachments.css";
 import type {
   FleetOperationTransport,
   RemoteComposerProps,
@@ -59,12 +60,14 @@ export function RemoteComposerHost(
     mediaTransport,
   });
   const requestVersion = useRef(0);
+  const uploadInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     requestVersion.current++;
     setSelection(null);
     setDirectory(null);
     setSelected([]);
     setError(null);
+    setBusy(false);
   }, [session.id, session.workspace]);
 
   const report = (reason: unknown): void =>
@@ -81,6 +84,8 @@ export function RemoteComposerHost(
       throw new Error("The attachments could not be added. Try again.");
   };
   const upload = async (files: File[], messageId?: string): Promise<void> => {
+    if (!files.length) return;
+    const version = ++requestVersion.current;
     const target: Selection = {
       sessionId: session.id,
       workspace: session.workspace ?? null,
@@ -102,18 +107,16 @@ export function RemoteComposerHost(
           await mediaTransport.release(transferPath);
         }
       }
-      setSelection((current) =>
-        current?.sessionId === target.sessionId ? null : current,
-      );
+      if (version === requestVersion.current) setSelection(null);
     } catch (reason) {
-      report(reason);
+      if (version === requestVersion.current) report(reason);
     } finally {
-      setBusy(false);
+      if (version === requestVersion.current) setBusy(false);
     }
   };
   const browse = async (
     target: Selection,
-    relativePath = "",
+    relativePath = ".",
     offset = 0,
   ): Promise<void> => {
     if (!target.workspace) {
@@ -126,7 +129,11 @@ export function RemoteComposerHost(
     try {
       const page = await workspaceTransport.invoke<WorkspaceDirectoryPage>(
         "list_workspace_directory",
-        { workspaceRoot: target.workspace, relativePath, offset },
+        {
+          workspaceRoot: target.workspace,
+          relativePath: relativePath || ".",
+          offset,
+        },
       );
       if (version === requestVersion.current)
         setDirectory((current) =>
@@ -179,7 +186,7 @@ export function RemoteComposerHost(
           .toLowerCase()
           .startsWith(`${workspace.replaceAll("\\", "/").toLowerCase()}/`)
           ? attachment.path.slice(workspace.length + 1).replaceAll("\\", "/")
-          : "";
+          : ".";
       void browse(target, relative);
       return;
     }
@@ -219,7 +226,10 @@ export function RemoteComposerHost(
           }
         }}
       >
-        <DialogContent aria-describedby={undefined}>
+        <DialogContent
+          aria-describedby={undefined}
+          className="m-attachment-dialog"
+        >
           <DialogHeader>
             <DialogTitle>
               {selection?.kind === "folders"
@@ -230,20 +240,24 @@ export function RemoteComposerHost(
             </DialogTitle>
           </DialogHeader>
           {selection?.kind !== "folders" ? (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <input
+                ref={uploadInput}
+                type="file"
+                multiple
+                accept={selection?.kind === "images" ? "image/*" : undefined}
+                aria-label="Upload attachments"
+                className="hidden"
+                disabled={busy}
+                onChange={(event) => {
+                  const files = Array.from(event.currentTarget.files ?? []);
+                  event.currentTarget.value = "";
+                  void upload(files, selection?.messageId);
+                }}
+              />
               <Button
                 disabled={busy}
-                onClick={() => {
-                  const input = document.createElement("input");
-                  input.type = "file";
-                  input.multiple = true;
-                  if (selection?.kind === "images") input.accept = "image/*";
-                  const messageId = selection?.messageId;
-                  input.onchange = () => {
-                    void upload(Array.from(input.files ?? []), messageId);
-                  };
-                  input.click();
-                }}
+                onClick={() => uploadInput.current?.click()}
               >
                 Upload files
               </Button>
@@ -259,12 +273,12 @@ export function RemoteComposerHost(
             </div>
           ) : null}
           {directory && selection ? (
-            <div className="max-h-[50dvh] overflow-auto space-y-1">
+            <div className="m-attachment-directory min-h-0 overflow-auto space-y-1">
               <div className="flex gap-2 items-center">
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={busy || !directory.path}
+                  disabled={busy || !directory.path || directory.path === "."}
                   onClick={() =>
                     void browse(
                       selection,
@@ -275,14 +289,18 @@ export function RemoteComposerHost(
                   Up
                 </Button>
                 <span className="truncate text-sm">
-                  {directory.path || selection.workspace}
+                  {directory.path && directory.path !== "."
+                    ? directory.path
+                    : selection.workspace}
                 </span>
               </div>
-              {selection.kind === "folders" && !directory.path ? (
-                <label className="flex gap-2 items-center py-2">
+              {selection.kind === "folders" &&
+              (!directory.path || directory.path === ".") ? (
+                <label className="m-attachment-file">
                   <input
                     type="checkbox"
                     checked={selected.includes("")}
+                    disabled={busy}
                     onChange={(event) =>
                       setSelected((current) =>
                         event.target.checked
@@ -291,48 +309,61 @@ export function RemoteComposerHost(
                       )
                     }
                   />
-                  {selection.workspace}
+                  <span>{selection.workspace}</span>
                 </label>
               ) : null}
-              {directory.entries.map((entry) => (
-                <div key={entry.path} className="flex gap-2 items-center">
-                  {(
-                    selection.kind === "folders"
-                      ? entry.kind === "directory"
-                      : entry.kind === "file" &&
-                        (selection.kind !== "images" ||
-                          /\.(?:png|jpe?g|webp|gif|bmp|tiff?|svg|avif)$/iu.test(
-                            entry.name,
-                          ))
-                  ) ? (
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${entry.name}`}
-                      checked={selected.includes(entry.path)}
-                      disabled={busy}
-                      onChange={(event) =>
-                        setSelected((current) =>
-                          event.target.checked
-                            ? [...current, entry.path]
-                            : current.filter((path) => path !== entry.path),
-                        )
-                      }
-                    />
-                  ) : null}
-                  {entry.kind === "directory" ? (
-                    <Button
-                      variant="ghost"
-                      className="justify-start min-w-0 truncate"
-                      disabled={busy}
-                      onClick={() => void browse(selection, entry.path)}
-                    >
-                      {entry.name}/
-                    </Button>
-                  ) : (
-                    <span className="text-sm truncate py-2">{entry.name}</span>
-                  )}
-                </div>
-              ))}
+              {directory.entries.map((entry) => {
+                const selectable =
+                  selection.kind === "folders"
+                    ? entry.kind === "directory"
+                    : entry.kind === "file" &&
+                      (selection.kind !== "images" ||
+                        /\.(?:png|jpe?g|webp|gif|bmp|tiff?|svg|avif)$/iu.test(
+                          entry.name,
+                        ));
+                const checkbox = selectable ? (
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${entry.name}`}
+                    checked={selected.includes(entry.path)}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setSelected((current) =>
+                        event.target.checked
+                          ? [...current, entry.path]
+                          : current.filter((path) => path !== entry.path),
+                      )
+                    }
+                  />
+                ) : null;
+                const FileRow = selectable ? "label" : "div";
+                return (
+                  <div key={entry.path} className="m-attachment-entry">
+                    {entry.kind === "directory" ? (
+                      <>
+                        {checkbox ? (
+                          <label className="m-attachment-directory-select">
+                            {checkbox}
+                          </label>
+                        ) : null}
+                        <Button
+                          variant="ghost"
+                          className="m-attachment-folder justify-start min-w-0"
+                          disabled={busy}
+                          onClick={() => void browse(selection, entry.path)}
+                        >
+                          <span>{entry.name}/</span>
+                        </Button>
+                      </>
+                    ) : (
+                      <FileRow className="m-attachment-file">
+                        {checkbox}
+                        <span>{entry.name}</span>
+                      </FileRow>
+                    )}
+                  </div>
+                );
+              })}
               {directory.nextOffset !== null ? (
                 <Button
                   variant="outline"
@@ -355,7 +386,7 @@ export function RemoteComposerHost(
               {error}
             </p>
           ) : null}
-          <DialogFooter>
+          <DialogFooter className="m-attachment-dialog-footer">
             <Button
               variant="outline"
               disabled={busy}
@@ -367,15 +398,22 @@ export function RemoteComposerHost(
               disabled={busy || !selected.length}
               onClick={() => {
                 if (!selection) return;
+                const version = ++requestVersion.current;
                 setBusy(true);
                 setError(null);
                 void attach(selection, selectedPaths)
-                  .then(() => setSelection(null))
-                  .catch(report)
-                  .finally(() => setBusy(false));
+                  .then(() => {
+                    if (version === requestVersion.current) setSelection(null);
+                  })
+                  .catch((reason: unknown) => {
+                    if (version === requestVersion.current) report(reason);
+                  })
+                  .finally(() => {
+                    if (version === requestVersion.current) setBusy(false);
+                  });
               }}
             >
-              Attach
+              {busy ? "Attaching…" : "Attach"}
             </Button>
           </DialogFooter>
         </DialogContent>

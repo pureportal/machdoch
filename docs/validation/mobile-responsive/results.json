@@ -1,0 +1,172 @@
+{
+  "measurements": [
+    {
+      "width": 320,
+      "height": 740,
+      "composerHeight": 205,
+      "conversationHeight": 368
+    },
+    {
+      "width": 390,
+      "height": 844,
+      "composerHeight": 205,
+      "conversationHeight": 472
+    },
+    {
+      "width": 920,
+      "height": 414,
+      "composerHeight": 161.234375,
+      "conversationHeight": 110.765625
+    },
+    {
+      "width": 390,
+      "height": 420,
+      "composerHeight": 204.1875,
+      "conversationHeight": 73.8125
+    }
+  ],
+  "attachmentBrowsing": {
+    "fileTarget": {
+      "x": 37,
+      "y": 482,
+      "width": 246,
+      "height": 79
+    },
+    "folderTarget": {
+      "x": 37,
+      "y": 359,
+      "width": 44,
+      "height": 44
+    },
+    "lastFileAttached": true
+  },
+  "mediaPicker": {
+    "pickerMounted": true,
+    "cancelledPickerRemoved": true,
+    "importedBytes": 183254,
+    "transfersReleased": true
+  },
+  "fleetForms": {
+    "profileSaved": true,
+    "instructionPersisted": true,
+    "enrollmentCreated": true
+  },
+  "keyboardViewports": {
+    "fleet": {
+      "layout": {
+        "width": 390,
+        "height": 844
+      },
+      "visible": {
+        "height": 360,
+        "offsetTop": 40
+      },
+      "input": {
+        "x": 19,
+        "y": 279.40625,
+        "width": 352,
+        "height": 57.59375
+      },
+      "send": {
+        "x": 327,
+        "y": 343,
+        "width": 44,
+        "height": 44
+      }
+    },
+    "machdoch": {
+      "layout": {
+        "width": 390,
+        "height": 844
+      },
+      "visible": {
+        "height": 360,
+        "offsetTop": 40
+      },
+      "input": {
+        "x": 22,
+        "y": 278.40625,
+        "width": 346,
+        "height": 57.59375
+      },
+      "send": {
+        "x": 324,
+        "y": 342,
+        "width": 44,
+        "height": 44
+      }
+    },
+    "simulation": "VisualViewport height and offset overrides; native keyboard not exercised."
+  },
+  "uploaded": [
+    {
+      "name": "Screenshot_20261010-103245.png",
+      "size": 183254
+    },
+    {
+      "name": "Screenshot_20261010-103420.png",
+      "size": 211155
+    },
+    {
+      "name": "Screenshot_20261010-103528.png",
+      "size": 152550
+    },
+    {
+      "name": "Urlaub – März 📷.bin",
+      "size": 1179665
+    },
+    {
+      "name": "phone-report.txt",
+      "size": 16
+    }
+  ],
+  "browsed": [".", "photos", ".", ".", "photos", "."],
+  "transferWrites": [
+    {
+      "name": "Screenshot_20261010-103245.png",
+      "offset": 0
+    },
+    {
+      "name": "Screenshot_20261010-103420.png",
+      "offset": 0
+    },
+    {
+      "name": "Screenshot_20261010-103528.png",
+      "offset": 0
+    },
+    {
+      "name": "Urlaub – März 📷.bin",
+      "offset": 0
+    },
+    {
+      "name": "Urlaub – März 📷.bin",
+      "offset": 0
+    },
+    {
+      "name": "Urlaub – März 📷.bin",
+      "offset": 393216
+    },
+    {
+      "name": "Urlaub – März 📷.bin",
+      "offset": 786432
+    },
+    {
+      "name": "Urlaub – März 📷.bin",
+      "offset": 1179648
+    },
+    {
+      "name": "phone-report.txt",
+      "offset": 0
+    },
+    {
+      "name": "phone-report.txt",
+      "offset": 0
+    },
+    {
+      "name": "Screenshot_20261010-103245.png",
+      "offset": 0
+    }
+  ],
+  "errors": [],
+  "limitation": "Production manager and browser with a simulated native device; no physical phone or live desktop attachment storage."
+}

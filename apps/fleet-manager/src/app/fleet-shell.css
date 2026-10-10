@@ -61,9 +61,13 @@
 }
 
 @media (max-width: 639px) {
+  .fleet-dashboard main > div {
+    padding-block: 16px;
+  }
   .fleet-dialog {
     max-height: calc(
-      100dvh - 1rem - env(safe-area-inset-top) - env(safe-area-inset-bottom)
+      var(--m-viewport-height, 100dvh) - 1rem - env(safe-area-inset-top) -
+        env(safe-area-inset-bottom)
     );
     width: calc(100% - 1rem);
   }

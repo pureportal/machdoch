@@ -719,6 +719,7 @@
   display: flex;
   min-height: 0;
   flex: 1;
+  overflow: hidden;
 }
 
 .m-product-latest {
@@ -2841,9 +2842,6 @@
   transition: none;
 }
 
-.m-product-composer-options-toggle {
-  display: none;
-}
 .m-product-session-actions .m-product-session-menu-toggle {
   display: grid;
 }
@@ -2886,7 +2884,7 @@
   overscroll-behavior: contain;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .machdoch-product {
     --m-topbar-height: calc(53px + env(safe-area-inset-top));
   }
@@ -2902,7 +2900,9 @@
       max(8px, env(safe-area-inset-left));
   }
   .m-product-brand,
-  .m-product-topbar-divider,
+  .m-product-topbar-divider {
+    display: none;
+  }
   .m-product-back {
     grid-column: 1;
     grid-row: 1;
@@ -2949,7 +2949,9 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .m-product-session-header {
-    min-height: 56px;
+    height: 52px;
+    flex-basis: 52px;
+    min-height: 52px;
     padding: 8px 12px;
   }
   .m-product-session-actions > .m-product-icon-button,
@@ -2980,6 +2982,9 @@
   }
   .m-product-composer-wrap {
     flex: 0 0 auto;
+    max-height: calc(var(--m-viewport-height, 100dvh) * 0.6);
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 8px max(10px, env(safe-area-inset-right))
       max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
     backdrop-filter: none;
@@ -2991,44 +2996,6 @@
   .m-product-composer-toolbar {
     gap: 6px;
     padding-bottom: 8px;
-  }
-  .m-product-composer-toolbar .m-composer-model-picker {
-    min-width: 0;
-    flex: 1 0 140px;
-  }
-  .m-product-composer-toolbar .m-composer-model-trigger {
-    width: 100%;
-    min-width: 0;
-    min-height: 44px;
-  }
-  .m-product-composer-toolbar .m-composer-model-trigger span {
-    min-width: 0;
-  }
-  .m-product-composer-options-toggle {
-    display: inline-flex;
-    min-height: 44px;
-    flex: 0 0 auto;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    border: 1px solid var(--m-border);
-    border-radius: 12px;
-    background: var(--m-panel);
-    padding: 0 10px;
-    font-size: 12px;
-  }
-  .m-product-composer-options-toggle svg {
-    width: 16px;
-    height: 16px;
-  }
-  .m-product-composer-toolbar[data-options-open="false"]
-    > :not(.m-composer-model-picker):not(.m-product-composer-options-toggle) {
-    display: none;
-  }
-  .m-product-composer-toolbar[data-options-open="true"] {
-    max-height: max(100px, calc(var(--m-viewport-height, 100dvh) * 0.32));
-    overflow-y: auto;
-    overscroll-behavior: contain;
   }
   .m-product-composer-input-row {
     margin-top: 8px;
@@ -3060,6 +3027,28 @@
   border: 1px solid var(--m-border-strong);
   border-radius: 12px;
   background: var(--m-panel);
+}
+
+@container application (max-height: 600px) {
+  .m-product-topbar {
+    --m-topbar-height: calc(44px + env(safe-area-inset-top));
+    padding-block: env(safe-area-inset-top) 0;
+  }
+
+  .m-product-session-header {
+    height: 44px;
+    min-height: 44px;
+    flex-basis: 44px;
+    padding-block: 0;
+  }
+
+  .m-product-session-tags-input {
+    display: none;
+  }
+
+  .m-product-composer-wrap {
+    padding-block: 4px max(4px, env(safe-area-inset-bottom));
+  }
 }
 
 .m-product-unsent-message details {
@@ -3297,7 +3286,10 @@
 .m-project-dialog {
   position: fixed;
   z-index: 130;
-  top: calc(min(100dvh, var(--m-viewport-height, 100dvh)) / 2);
+  top: calc(
+    var(--m-viewport-offset-top, 0px) +
+      min(100dvh, var(--m-viewport-height, 100dvh)) / 2
+  );
   left: 50%;
   transform: translate(-50%, -50%);
   width: min(520px, calc(100vw - 24px));

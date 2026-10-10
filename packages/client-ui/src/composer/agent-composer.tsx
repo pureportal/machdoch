@@ -1549,9 +1549,9 @@ export const AgentComposer = ({
       className="app-agent-composer-session"
       busy={inputBlocked}
       disabled={inputBlocked}
-      toolbar={
+      modelPicker={modelPicker}
+      controls={
         <>
-          {modelPicker}
           {toolbarControls}
           {toggleButtons}
         </>
