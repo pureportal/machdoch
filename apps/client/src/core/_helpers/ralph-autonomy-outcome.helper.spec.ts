@@ -105,6 +105,49 @@ const autonomy: RalphRunAutonomyMetadata = {
   deferred: [],
   totalTransitions: 4,
 };
+describe("authentication blockers", () => {
+  const blocked: RalphBlockExecutionResult = {
+    blockId: "worker",
+    output: "ERROR",
+    status: "error",
+    attempt: 1,
+    summary: "Sign in to Codex.",
+    failure: { kind: "authentication", retryable: false },
+  };
+
+  it("prevents scheduler retries of an authentication failure", () => {
+    expect(
+      deriveRalphRunOutcome({
+        flow,
+        lifecycleStatus: "blocked",
+        blockResults: [blocked],
+        autonomy,
+      }),
+    ).toMatchObject({
+      status: "blocked",
+      retryable: false,
+      reason: blocked.summary,
+    });
+  });
+
+  it("clears the blocker after the same block succeeds on manual resume", () => {
+    const recovered: RalphBlockExecutionResult = {
+      blockId: blocked.blockId,
+      output: "SUCCESS",
+      status: "completed",
+      attempt: 2,
+      summary: "Completed after sign-in.",
+    };
+    expect(
+      deriveRalphRunOutcome({
+        flow,
+        lifecycleStatus: "completed",
+        terminalBlockId: "done",
+        blockResults: [blocked, recovered],
+      }),
+    ).toMatchObject({ status: "succeeded", retryable: false });
+  });
+});
 const result = (
   blockId: string,
   output: string,

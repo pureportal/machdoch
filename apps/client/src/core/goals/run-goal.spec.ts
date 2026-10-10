@@ -71,6 +71,43 @@ afterEach(async () => {
 });
 
 describe("goal run budgets", () => {
+  it.each(["work", "evaluation"] as const)(
+    "stops an authentication failure during %s and resumes after sign-in",
+    async (phase) => {
+      const execute = vi.fn<GoalTurnExecutor>(
+        async (_task, _config, turnOptions) => {
+          const currentPhase = turnOptions.resultProtocol
+            ? "evaluation"
+            : "work";
+          return currentPhase === phase
+            ? {
+                ...result(),
+                status: "blocked",
+                summary: "Sign in to Codex.",
+                reason: "Sign in to Codex.",
+                failure: { kind: "authentication", retryable: false },
+              }
+            : result(Boolean(turnOptions.resultProtocol));
+        },
+      );
+      const blocked = await run("/goal Verify auth", execute);
+      expect(blocked).toMatchObject({
+        status: "blocked",
+        failure: { kind: "authentication", retryable: false },
+      });
+      expect((await read()).goal).toMatchObject({
+        status: "blocked",
+        reason: "Sign in to Codex.",
+      });
+      expect(execute).toHaveBeenCalledTimes(phase === "work" ? 1 : 2);
+
+      await run("/goal resume", async (_task, _config, turnOptions) =>
+        result(Boolean(turnOptions.resultProtocol)),
+      );
+      expect((await read()).goal?.status).toBe("complete");
+    },
+  );
+
   it("checkpoints elapsed time and observed usage before the worker finishes", async () => {
     const execute = vi.fn<GoalTurnExecutor>(
       async (_task, _config, turnOptions) => {

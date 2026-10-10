@@ -1,5 +1,15 @@
-import type { TaskExecutionFileChanges } from '@machdoch/fleet-protocol/task-file-changes';
-export type { TaskExecutionChangedLineRange, TaskExecutionFileChange, TaskExecutionFileChangeCompleteness, TaskExecutionFileChangeIssue, TaskExecutionFileChangeOperation, TaskExecutionFileEntryType, TaskExecutionFileLineAnalysis, TaskExecutionFileChanges, TaskExecutionFileChangeStage } from '@machdoch/fleet-protocol/task-file-changes';
+import type { TaskExecutionFileChanges } from "@machdoch/fleet-protocol/task-file-changes";
+export type {
+  TaskExecutionChangedLineRange,
+  TaskExecutionFileChange,
+  TaskExecutionFileChangeCompleteness,
+  TaskExecutionFileChangeIssue,
+  TaskExecutionFileChangeOperation,
+  TaskExecutionFileEntryType,
+  TaskExecutionFileLineAnalysis,
+  TaskExecutionFileChanges,
+  TaskExecutionFileChangeStage,
+} from "@machdoch/fleet-protocol/task-file-changes";
 import type {
   ModelProvider,
   ReasoningMode,
@@ -696,6 +706,7 @@ export interface TaskExecutionResult {
   reason?: string;
   metadata?: Record<string, unknown>;
   outputSections: TaskExecutionSection[];
+  failure?: { kind: "authentication"; retryable: false };
   response?: TaskExecutionNarrative;
   fileChanges?: TaskExecutionFileChanges;
   autopilot?: TaskAutopilotReport;

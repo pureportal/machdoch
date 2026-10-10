@@ -53,6 +53,7 @@ export const createRalphPromptExecutionResult = (
       summary: result.summary,
       markdown: getRalphResultMarkdown(result),
       error: result.reason ?? result.summary,
+      ...(result.failure ? { failure: result.failure } : {}),
     };
   }
 
@@ -89,6 +90,7 @@ export const createRalphValidatorExecutionResult = (
     summary: result.summary,
     markdown: getRalphResultMarkdown(result),
     ...(isError ? { error: result.reason ?? result.summary } : {}),
+    ...(isError && result.failure ? { failure: result.failure } : {}),
     ...(result.status === "executed" && decision === "ERROR"
       ? {
           failure: {
@@ -142,5 +144,6 @@ export const createRalphDecisionExecutionResult = (
     summary: error ?? result.summary,
     markdown: getRalphResultMarkdown(result),
     ...(error ? { error } : {}),
+    ...(error && result.failure ? { failure: result.failure } : {}),
   };
 };

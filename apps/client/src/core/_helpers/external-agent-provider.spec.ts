@@ -2479,6 +2479,8 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     "Your access token could not be refreshed because your refresh token was already used. Please log out and sign in again.",
     '{"error":{"code":"refresh_token_expired"}}',
     '{"error":{"code":"refresh_token_invalidated"}}',
+    "Your access token could not be refreshed because you have since logged out or signed in to another account. Please sign in again.",
+    "Not logged in. Run codex login.",
   ])(
     "gives a sign-in recovery command for invalid Codex refresh tokens: %s",
     async (error) => {
@@ -2489,14 +2491,100 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       );
       await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
       const call = spawnCalls[0]!;
+      const processKillSpy =
+        process.platform === "win32"
+          ? undefined
+          : vi.spyOn(process, "kill").mockReturnValue(true);
       call.child.stderr.write(error);
       call.child.emit("close", 1, null);
+      if (process.platform === "win32")
+        spawnCalls
+          .find((entry) => entry.executable === "taskkill")
+          ?.child.emit("close", 0, null);
 
       const result = await resultPromise;
-      expect(result?.status).toBe("failed");
-      expect(result?.reason).toContain("codex login --device-auth");
+      expect(result?.status).toBe("blocked");
+      expect(result?.failure).toEqual({
+        kind: "authentication",
+        retryable: false,
+      });
+      expect(result?.reason).toContain(
+        'codex -c cli_auth_credentials_store="file" login --device-auth',
+      );
       expect(result?.reason).toContain("same OS user running Machdoch");
-      expect(spawnCalls).toHaveLength(1);
+      expect(
+        spawnCalls.filter((entry) => entry.executable !== "taskkill"),
+      ).toHaveLength(1);
+      processKillSpy?.mockRestore();
+    },
+  );
+
+  it.each([
+    ["win32", "stderr"],
+    ["win32", "stdout"],
+    ["linux", "stderr"],
+    ["linux", "stdout"],
+    ["linux", "stderr-after-limit"],
+  ] as const)(
+    "stops a persistent Codex authentication error on %s from %s without waiting for process exit",
+    async (platform, stream) => {
+      const workspaceRoot = await createWorkspace();
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const output = vi.fn();
+      const originalPlatform = Object.getOwnPropertyDescriptor(
+        process,
+        "platform",
+      )!;
+      const processKillSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+      try {
+        const resultPromise = maybeExecuteExternalAgentProviderTask({
+          ...createParams(workspaceRoot),
+          onActionOutput: output,
+        });
+        await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+        const child = spawnCalls[0]!.child;
+        Object.defineProperty(process, "platform", { value: platform });
+        vi.useFakeTimers();
+        if (stream !== "stdout") {
+          if (stream === "stderr-after-limit")
+            child.stderr.write("x".repeat(140_000));
+          child.stderr.write("refresh_token_");
+          child.stderr.write("reused\n");
+          child.stderr.write("refresh_token_reused\n".repeat(100));
+        } else {
+          child.stdout.write(
+            `${JSON.stringify({ type: "turn.failed", error: { code: "refresh_token_reused", message: "Unauthorized" } })}\n`,
+          );
+        }
+        if (process.platform === "win32")
+          spawnCalls
+            .find((entry) => entry.executable === "taskkill")
+            ?.child.emit("close", 0, null);
+        else await vi.advanceTimersByTimeAsync(6_000);
+
+        await expect(resultPromise).resolves.toMatchObject({
+          status: "blocked",
+          failure: { kind: "authentication", retryable: false },
+        });
+        const displayed = output.mock.calls
+          .map(([event]) => event.chunk)
+          .join("");
+        expect(displayed.match(/Codex sign-in is required/gu)).toHaveLength(1);
+        expect(displayed).not.toContain("refresh_token_reused");
+        expect(child.stdout.destroyed).toBe(true);
+        expect(child.stderr.destroyed).toBe(true);
+        if (platform === "linux") {
+          expect(processKillSpy).toHaveBeenCalledWith(-child.pid, "SIGTERM");
+          expect(processKillSpy).toHaveBeenCalledWith(-child.pid, "SIGKILL");
+        }
+        expect(
+          spawnCalls.filter((entry) => entry.executable !== "taskkill"),
+        ).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+        Object.defineProperty(process, "platform", originalPlatform);
+        processKillSpy.mockRestore();
+      }
     },
   );
 
