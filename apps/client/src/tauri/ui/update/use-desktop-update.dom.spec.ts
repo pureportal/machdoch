@@ -80,7 +80,7 @@ describe("desktop update lifecycle", () => {
   it("respects a skipped release and allows a manual check to bypass it", async () => {
     mocks.get.mockResolvedValue({ skippedVersion: "2.0.0" });
     const { result } = renderHook(() =>
-      useDesktopUpdate({ busy: false, flush: async () => {} }),
+      useDesktopUpdate({ flush: async () => {} }),
     );
     await waitFor(() => expect(result.current.phase).toBe("available"));
     expect(result.current.open).toBe(false);
@@ -93,7 +93,7 @@ describe("desktop update lifecycle", () => {
 
   it("persists reminders and keeps the dialog open if saving fails", async () => {
     const { result } = renderHook(() =>
-      useDesktopUpdate({ busy: false, flush: async () => {} }),
+      useDesktopUpdate({ flush: async () => {} }),
     );
     await waitFor(() => expect(result.current.open).toBe(true));
     mocks.save.mockRejectedValueOnce(new Error("disk full"));
@@ -111,20 +111,30 @@ describe("desktop update lifecycle", () => {
     expect(result.current.open).toBe(false);
   });
 
-  it("blocks installation while work is active", async () => {
-    const { result } = renderHook(() =>
-      useDesktopUpdate({ busy: true, flush: async () => {} }),
-    );
+  it("downloads, installs, and restarts after saving pending changes", async () => {
+    const flush = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() => useDesktopUpdate({ flush }));
     await waitFor(() => expect(result.current.phase).toBe("available"));
     await act(async () => {
       await result.current.install();
     });
-    expect(mocks.download).not.toHaveBeenCalled();
-    expect(mocks.install).not.toHaveBeenCalled();
-    expect(result.current.error).toMatch(/running work/);
+    expect(flush).toHaveBeenCalledTimes(2);
+    expect(flush.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.download.mock.invocationCallOrder[0]!,
+    );
+    expect(flush.mock.invocationCallOrder[1]).toBeLessThan(
+      mocks.install.mock.invocationCallOrder[0]!,
+    );
+    expect(mocks.download).toHaveBeenCalledOnce();
+    expect(mocks.install).toHaveBeenCalledOnce();
+    expect(mocks.relaunch).toHaveBeenCalledOnce();
+    expect(result.current.phase).toBe("installed");
+    expect(result.current.error).toBeNull();
   });
 
-  it("rechecks activity after downloading and releases the installation lock on failure", async () => {
+  it("saves changes made during the download before installing", async () => {
+    const flush = vi.fn().mockResolvedValue(undefined);
+    const flushAfterDownload = vi.fn().mockResolvedValue(undefined);
     let downloaded: (() => void) | undefined;
     mocks.download.mockImplementation(
       () =>
@@ -133,8 +143,8 @@ describe("desktop update lifecycle", () => {
         }),
     );
     const { result, rerender } = renderHook(
-      ({ busy }) => useDesktopUpdate({ busy, flush: async () => {} }),
-      { initialProps: { busy: false } },
+      (options) => useDesktopUpdate(options),
+      { initialProps: { flush } },
     );
     await waitFor(() => expect(result.current.phase).toBe("available"));
     let installing: Promise<void> | undefined;
@@ -142,22 +152,39 @@ describe("desktop update lifecycle", () => {
       installing = result.current.install();
     });
     await waitFor(() => expect(mocks.download).toHaveBeenCalled());
-    rerender({ busy: true });
+    rerender({ flush: flushAfterDownload });
     await act(async () => {
       downloaded?.();
       await installing;
     });
-    expect(mocks.install).not.toHaveBeenCalled();
+    expect(flush).toHaveBeenCalledOnce();
+    expect(flushAfterDownload).toHaveBeenCalledOnce();
+    expect(mocks.install).toHaveBeenCalledOnce();
+    expect(mocks.relaunch).toHaveBeenCalledOnce();
     expect(mocks.invoke).toHaveBeenCalledWith("finish_app_update");
-    expect(result.current.error).toMatch(/Work started/);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("releases the installation lock when downloading fails", async () => {
+    mocks.download.mockRejectedValueOnce(new Error("download failed"));
+    const { result } = renderHook(() =>
+      useDesktopUpdate({ flush: async () => {} }),
+    );
+    await waitFor(() => expect(result.current.phase).toBe("available"));
+    await act(async () => {
+      await result.current.install();
+    });
+    expect(mocks.install).not.toHaveBeenCalled();
+    expect(mocks.relaunch).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith("finish_app_update");
+    expect(result.current.phase).toBe("available");
+    expect(result.current.error).toBe("download failed");
   });
 
   it("keeps an installed update distinct from a restart failure", async () => {
     mocks.relaunch.mockRejectedValueOnce(new Error("restart failed"));
     const flush = vi.fn().mockResolvedValue(undefined);
-    const { result } = renderHook(() =>
-      useDesktopUpdate({ busy: false, flush }),
-    );
+    const { result } = renderHook(() => useDesktopUpdate({ flush }));
     await waitFor(() => expect(result.current.phase).toBe("available"));
     await act(async () => {
       await result.current.install();
@@ -179,7 +206,7 @@ describe("desktop update lifecycle", () => {
     mocks.get.mockRejectedValueOnce(new Error("storage unavailable"));
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { result } = renderHook(() =>
-      useDesktopUpdate({ busy: false, flush: async () => {} }),
+      useDesktopUpdate({ flush: async () => {} }),
     );
     await waitFor(() => expect(mocks.get).toHaveBeenCalled());
     await act(async () => {

@@ -23,10 +23,7 @@ type UpdatePhase =
   | "installed"
   | "error";
 
-export function useDesktopUpdate(options: {
-  busy: boolean;
-  flush: () => Promise<void>;
-}) {
+export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
   const [phase, setPhase] = useState<UpdatePhase>("idle");
   const [open, setOpen] = useState(false);
   const [release, setRelease] = useState<Update | null>(null);
@@ -215,10 +212,6 @@ export function useDesktopUpdate(options: {
     installing.current = true;
     setError(null);
     try {
-      if (latest.current.busy)
-        throw new Error(
-          "Wait for running work to finish before installing the update.",
-        );
       await latest.current.flush();
       await invoke("prepare_app_update");
       setPhase("downloading");
@@ -237,10 +230,6 @@ export function useDesktopUpdate(options: {
           { timeout: 30 * 60_000 },
         ),
       );
-      if (latest.current.busy)
-        throw new Error(
-          "Work started during the download. Wait for it to finish and try again.",
-        );
       await latest.current.flush();
       await invoke("prepare_app_update");
       setPhase("installing");
@@ -274,8 +263,6 @@ export function useDesktopUpdate(options: {
     check: () => window.dispatchEvent(new Event(CHECK_FOR_UPDATES_EVENT)),
     restart: async () => {
       try {
-        if (latest.current.busy)
-          throw new Error("Wait for running work to finish before restarting.");
         await latest.current.flush();
         await invoke("prepare_app_update");
         await relaunch();
