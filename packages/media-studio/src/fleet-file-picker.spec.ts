@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 
-import { File as NodeFile } from "node:buffer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createFleetMediaTransport } from "./fleet-transport";
 
@@ -25,10 +24,17 @@ describe("Fleet file picker", () => {
   });
 
   it("removes the picker before uploading selected files and releases imported transfers", async () => {
-    const files = [
-      new NodeFile(["photo"], "phone.png"),
-      new NodeFile(["other"], "other.jpg"),
-    ];
+    const bytes = new Uint8Array([1, 2, 3]);
+    const files = ["phone.png", "other.jpg"].map((name) =>
+      Object.assign(new File([bytes], name), {
+        slice: (start?: number, end?: number) => {
+          const chunk = bytes.slice(start, end);
+          return Object.assign(new Blob([chunk]), {
+            arrayBuffer: async () => chunk.buffer,
+          });
+        },
+      }),
+    );
     vi.spyOn(HTMLInputElement.prototype, "click").mockImplementation(
       function (this: HTMLInputElement) {
         expect(this.isConnected).toBe(true);
