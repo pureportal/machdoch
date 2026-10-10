@@ -33,6 +33,7 @@
     "node": ">=22.13"
   },
   "dependencies": {
+    "@machdoch/analytics": "workspace:*",
     "@machdoch/client-ui": "workspace:*",
     "@machdoch/media-studio": "workspace:*",
     "@machdoch/fleet-protocol": "workspace:*",

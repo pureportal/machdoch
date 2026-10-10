@@ -59,6 +59,7 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "@machdoch/analytics": "workspace:*",
     "@anthropic-ai/sdk": "^0.104.2",
     "@codemirror/language": "^6.12.4",
     "@codemirror/language-data": "^6.5.2",

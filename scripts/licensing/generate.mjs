@@ -53,6 +53,7 @@ const inputFiles = [
   ...profile.workspaces.map((workspace) => `${workspace}/package.json`),
   "packages/fleet-protocol/package.json",
   "packages/product-ui/package.json",
+  "packages/analytics/package.json",
   "packages/media-studio/package.json",
 ];
 if (profileName === "desktop") {

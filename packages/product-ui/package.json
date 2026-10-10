@@ -24,6 +24,7 @@
     "typecheck": "tsc --noEmit --pretty false"
   },
   "dependencies": {
+    "@machdoch/analytics": "workspace:*",
     "@machdoch/fleet-protocol": "workspace:*",
     "lucide-react": "^1.18.0",
     "radix-ui": "^1.6.7",

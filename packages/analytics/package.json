@@ -1,0 +1,28 @@
+{
+  "name": "@machdoch/analytics",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./browser": "./src/browser.ts",
+    "./catalog": "./src/catalog.ts",
+    "./client": "./src/client.ts",
+    "./operations": "./src/operations.ts",
+    "./privacy-control": "./src/privacy-control.tsx"
+  },
+  "scripts": {
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "lint": "oxlint src",
+    "typecheck": "tsc --noEmit --pretty false",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "react": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "vitest": "^4.1.10",
+    "jsdom": "^26.1.0"
+  }
+}
