@@ -1,0 +1,14 @@
+[Unit]
+Description=Machdoch analytics retention
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/machdoch
+EnvironmentFile=/etc/machdoch/swetrix.env
+ExecStart=/usr/bin/node --experimental-strip-types scripts/analytics/enforce-retention.mjs
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
