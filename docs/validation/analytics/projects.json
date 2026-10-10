@@ -1,0 +1,98 @@
+[
+  {
+    "app": "landing",
+    "id": "kUVZeJbmLZnJ",
+    "views": [
+      {
+        "name": "Job outcomes",
+        "statistics": "passed"
+      },
+      {
+        "name": "Feature adoption",
+        "statistics": "passed"
+      },
+      {
+        "name": "Web vitals",
+        "statistics": "passed"
+      },
+      {
+        "name": "Page performance",
+        "statistics": "awaiting performance data"
+      },
+      {
+        "name": "Operation latency",
+        "statistics": "passed"
+      },
+      {
+        "name": "Load and engagement",
+        "statistics": "passed"
+      }
+    ],
+    "funnels": ["Download"],
+    "statistics": "passed"
+  },
+  {
+    "app": "fleet",
+    "id": "CPs0D0S7QOfV",
+    "views": [
+      {
+        "name": "Page performance",
+        "statistics": "awaiting performance data"
+      },
+      {
+        "name": "Operation latency",
+        "statistics": "passed"
+      },
+      {
+        "name": "Job outcomes",
+        "statistics": "passed"
+      },
+      {
+        "name": "Web vitals",
+        "statistics": "passed"
+      },
+      {
+        "name": "Load and engagement",
+        "statistics": "passed"
+      },
+      {
+        "name": "Feature adoption",
+        "statistics": "passed"
+      }
+    ],
+    "funnels": ["Open a device"],
+    "statistics": "passed"
+  },
+  {
+    "app": "software",
+    "id": "6UblQ7EkvVkW",
+    "views": [
+      {
+        "name": "Job outcomes",
+        "statistics": "passed"
+      },
+      {
+        "name": "Operation latency",
+        "statistics": "passed"
+      },
+      {
+        "name": "Load and engagement",
+        "statistics": "passed"
+      },
+      {
+        "name": "Page performance",
+        "statistics": "awaiting performance data"
+      },
+      {
+        "name": "Feature adoption",
+        "statistics": "passed"
+      },
+      {
+        "name": "Web vitals",
+        "statistics": "passed"
+      }
+    ],
+    "funnels": ["Chat to automation", "Media workflow"],
+    "statistics": "passed"
+  }
+]
