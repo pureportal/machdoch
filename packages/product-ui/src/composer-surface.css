@@ -1,4 +1,5 @@
 .m-composer-surface {
+  container: composer / inline-size;
   min-width: 0;
   border: 1px solid color-mix(in srgb, var(--app-slate-800) 80%, transparent);
   border-radius: 1.75rem;
@@ -19,9 +20,53 @@
   padding-bottom: 12px;
 }
 
-.m-composer-surface-toolbar > fieldset {
+.m-composer-surface-model {
   min-width: 0;
-  width: 100%;
+  max-width: 100%;
+}
+
+.m-composer-surface-model > *,
+.m-composer-surface-model button {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.m-composer-surface-controls,
+.m-composer-surface-controls > fieldset {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.m-composer-options-toggle {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: var(--app-surface);
+  padding: 0 10px;
+  color: var(--app-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.m-composer-options-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.m-composer-options-toggle:focus-visible {
+  outline: 2px solid var(--app-sky-500);
+  outline-offset: 2px;
 }
 
 .m-composer-surface-body {
@@ -60,16 +105,59 @@
   color: var(--app-slate-500);
 }
 
-@media (max-width: 480px) {
+@container composer (max-width: 640px) {
+  .m-composer-surface-toolbar {
+    gap: 6px !important;
+    flex-wrap: wrap;
+    overflow: visible;
+    padding-bottom: 8px !important;
+  }
+
+  .m-composer-surface-model {
+    flex: 1;
+  }
+
+  .m-composer-surface-model > *,
+  .m-composer-surface-model button {
+    width: 100%;
+  }
+
+  .m-composer-options-toggle {
+    display: inline-flex;
+    min-height: 44px;
+  }
+
+  .m-composer-surface-controls {
+    flex-basis: 100%;
+    max-height: min(200px, calc(var(--m-viewport-height, 100dvh) * 0.3));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .m-composer-surface[data-options-open="false"] .m-composer-surface-controls {
+    display: none;
+  }
+
+  .m-composer-surface-body {
+    margin-top: 8px !important;
+  }
+
   .m-composer-surface .app-composer-form {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
+    gap: 6px !important;
     align-items: end;
   }
 
   .m-composer-surface .app-composer-form > .m-composer-input {
     grid-column: 1 / -1;
     grid-row: 1;
+    min-height: 48px !important;
+    max-height: min(
+      144px,
+      calc(var(--m-viewport-height, 100dvh) * 0.22)
+    ) !important;
+    padding: 10px 14px !important;
   }
 
   .m-composer-surface .app-composer-actions,
@@ -78,5 +166,57 @@
     grid-row: 2;
     justify-content: flex-end;
     flex-direction: row;
+  }
+}
+
+@media (max-width: 900px), (max-height: 600px) {
+  .m-composer-surface {
+    border-radius: 20px;
+    padding: 8px !important;
+  }
+}
+
+@container application (max-height: 600px) {
+  .m-composer-surface-model {
+    flex: 1;
+  }
+
+  .m-composer-options-toggle {
+    display: inline-flex;
+    min-height: 44px;
+  }
+
+  .m-composer-surface-controls {
+    flex-basis: 100%;
+    max-height: calc(var(--m-viewport-height, 100dvh) * 0.24);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .m-composer-surface[data-options-open="false"] .m-composer-surface-controls {
+    display: none;
+  }
+
+  .m-composer-surface .app-composer-form > .m-composer-input {
+    min-height: 48px !important;
+    max-height: max(
+      48px,
+      calc(var(--m-viewport-height, 100dvh) * 0.16)
+    ) !important;
+    padding-block: 10px !important;
+  }
+}
+
+@media (pointer: coarse) {
+  .m-composer-surface :is(button, select) {
+    min-height: 44px !important;
+  }
+
+  .m-composer-surface button:has(> svg) {
+    min-width: 44px !important;
+  }
+
+  .m-composer-surface :is(input, textarea, select) {
+    font-size: max(16px, 1em) !important;
   }
 }

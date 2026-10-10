@@ -1,4 +1,11 @@
-import { GitBranch, PanelLeft, PencilLine, Pin, Trash2 } from "lucide-react";
+import {
+  GitBranch,
+  MoreHorizontal,
+  PanelLeft,
+  PencilLine,
+  Pin,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useRef, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
@@ -6,6 +13,11 @@ import { SubmitShortcut } from "@machdoch/media-studio/tauri/ui/components/ui/su
 import type { ChatSessionRecord } from "../../chat-session.model";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { WorkspaceRunDialogControl } from "./workspace-run-dialog-control";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
 
 export interface SessionHeaderProps {
   onOpenSessions?: () => void;
@@ -88,6 +100,106 @@ export const SessionHeader = ({
     );
   };
 
+  const controls = (
+    <div className="app-session-header-controls flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
+      <WorkspaceRunDialogControl
+        workspaceRoot={activeSession.workspace}
+        primaryTaskRunning={primaryTaskRunning}
+      />
+      {canEditSessionMetadata ? (
+        <SubmitShortcut asChild onSubmitShortcut={commitTags}>
+          <Input
+            value={tagDraft}
+            aria-label="Session tags"
+            placeholder="Tags"
+            onChange={(event) => setTagDraft(event.target.value)}
+            onBlur={commitTags}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
+                event.preventDefault();
+                commitTags();
+              }
+
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setTagDraft(activeSession.tags.join(", "));
+              }
+            }}
+            className="app-session-tags-input h-9 w-44 rounded-2xl border-slate-800 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
+          />
+        </SubmitShortcut>
+      ) : null}
+      {canPinSession ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={isPinned ? "Unpin session" : "Pin session"}
+          aria-pressed={isPinned}
+          tooltip={isPinned ? "Unpin session" : "Pin session"}
+          onClick={onTogglePinnedSession}
+          className={cn(
+            "h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100",
+            isPinned && "text-amber-200 hover:text-amber-100",
+          )}
+        >
+          <Pin className="h-4 w-4" />
+        </Button>
+      ) : null}
+      {canBranchSession ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Branch session"
+          tooltip="Branch session"
+          onClick={onBranchSession}
+          className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+        >
+          <GitBranch className="h-4 w-4" />
+        </Button>
+      ) : null}
+      {showClearSessionHistory ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-label="Clear Quick Chat history"
+          disabled={!canClearSessionHistory}
+          onClick={onClearSessionHistory}
+          className="h-9 rounded-2xl px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100 disabled:text-slate-700 disabled:opacity-100"
+        >
+          Clear
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      ) : null}
+      {canRenameSession ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Rename session"
+          onClick={onStartRename}
+          className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+        >
+          <PencilLine className="h-4 w-4" />
+        </Button>
+      ) : null}
+      {canDeleteSession ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Delete session"
+          onClick={onDeleteSession}
+          className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-rose-500/10 hover:text-rose-200"
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      ) : null}
+    </div>
+  );
+
   return (
     <header className="app-session-header flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2 border-b border-slate-900 bg-slate-950/60 px-8 backdrop-blur-md">
       <div className="flex min-w-0 basis-40 flex-1 items-center gap-2">
@@ -130,103 +242,29 @@ export const SessionHeader = ({
         )}
       </div>
 
-      <div className="app-session-header-controls flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
-        <WorkspaceRunDialogControl
-          workspaceRoot={activeSession.workspace}
-          primaryTaskRunning={primaryTaskRunning}
-        />
-        {canEditSessionMetadata ? (
-          <SubmitShortcut asChild onSubmitShortcut={commitTags}>
-            <Input
-              value={tagDraft}
-              aria-label="Session tags"
-              placeholder="Tags"
-              onChange={(event) => setTagDraft(event.target.value)}
-              onBlur={commitTags}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.ctrlKey && !event.metaKey) {
-                  event.preventDefault();
-                  commitTags();
-                }
-
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  setTagDraft(activeSession.tags.join(", "));
-                }
-              }}
-              className="app-session-tags-input h-9 w-44 rounded-2xl border-slate-800 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
-            />
-          </SubmitShortcut>
-        ) : null}
-        {canPinSession ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label={isPinned ? "Unpin session" : "Pin session"}
-            aria-pressed={isPinned}
-            tooltip={isPinned ? "Unpin session" : "Pin session"}
-            onClick={onTogglePinnedSession}
-            className={cn(
-              "h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100",
-              isPinned && "text-amber-200 hover:text-amber-100",
-            )}
+      {onOpenSessions ? (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Session actions"
+            >
+              <MoreHorizontal className="size-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="end"
+            aria-label="Session actions"
+            className="app-session-actions-popover w-[min(24rem,calc(100vw-1rem))]"
           >
-            <Pin className="h-4 w-4" />
-          </Button>
-        ) : null}
-        {canBranchSession ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Branch session"
-            tooltip="Branch session"
-            onClick={onBranchSession}
-            className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-          >
-            <GitBranch className="h-4 w-4" />
-          </Button>
-        ) : null}
-        {showClearSessionHistory ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            aria-label="Clear Quick Chat history"
-            disabled={!canClearSessionHistory}
-            onClick={onClearSessionHistory}
-            className="h-9 rounded-2xl px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100 disabled:text-slate-700 disabled:opacity-100"
-          >
-            Clear
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        ) : null}
-        {canRenameSession ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Rename session"
-            onClick={onStartRename}
-            className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-          >
-            <PencilLine className="h-4 w-4" />
-          </Button>
-        ) : null}
-        {canDeleteSession ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Delete session"
-            onClick={onDeleteSession}
-            className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-rose-500/10 hover:text-rose-200"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        ) : null}
-      </div>
+            {controls}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        controls
+      )}
     </header>
   );
 };

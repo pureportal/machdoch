@@ -7,6 +7,7 @@ import {
   ArrowLeft,
   LoaderCircle,
   MessageSquare,
+  MoreHorizontal,
   PanelLeft,
   PanelRight,
   RefreshCw,
@@ -14,6 +15,7 @@ import {
   WifiOff,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { DropdownMenu } from "radix-ui";
 import type { ComponentType } from "react";
 import type { RemoteComposerProps } from "./remote-composer-props";
 import type { RemoteConversationProps } from "./conversation";
@@ -24,7 +26,7 @@ import { Ralph } from "./ralph";
 import { SessionHeader } from "./session-header";
 import { SessionSidebar } from "./session-sidebar";
 import { ProductPanel } from "./product-panel";
-import { useMediaQuery, useProductViewport } from "./responsive-layout";
+import { useMediaQuery } from "./responsive-layout";
 import { ProjectLibrary } from "./project-library";
 import type { ComposerDraftStore } from "./use-composer-draft";
 import type { SessionDataSource } from "./session-data";
@@ -150,8 +152,7 @@ export function ProductShell({
     window.addEventListener("message", receiveSettings);
     return () => window.removeEventListener("message", receiveSettings);
   }, [settingsHref]);
-  const compact = useMediaQuery("(max-width: 900px)");
-  const viewportRef = useProductViewport();
+  const compact = useMediaQuery("(max-width: 1100px)");
   useEffect(() => {
     setSessionsOpen(false);
   }, [compact]);
@@ -263,7 +264,6 @@ export function ProductShell({
 
   return (
     <ApplicationShell
-      viewportRef={viewportRef}
       className="machdoch-product"
       topbar={
         <header className="m-product-topbar">
@@ -289,7 +289,7 @@ export function ProductShell({
             </span>
           </div>
           <div className="m-product-topbar-actions">
-            {servicesHref ? (
+            {!compact && servicesHref ? (
               <a
                 href={servicesHref}
                 className="m-product-icon-button"
@@ -302,14 +302,16 @@ export function ProductShell({
             {pendingCommands > 0 ? (
               <LoaderCircle className="m-product-spin" aria-label="Updating" />
             ) : null}
-            <button
-              type="button"
-              className="m-product-icon-button"
-              aria-label="Refresh"
-              onClick={() => void onRefresh()}
-            >
-              <RefreshCw aria-hidden="true" />
-            </button>
+            {!compact ? (
+              <button
+                type="button"
+                className="m-product-icon-button"
+                aria-label="Refresh"
+                onClick={() => void onRefresh()}
+              >
+                <RefreshCw aria-hidden="true" />
+              </button>
+            ) : null}
             {shell && activeView === "chat" ? (
               <button
                 type="button"
@@ -323,7 +325,7 @@ export function ProductShell({
                 <PanelLeft aria-hidden="true" />
               </button>
             ) : null}
-            {shell?.quickTask ? (
+            {!compact && shell?.quickTask ? (
               <button
                 type="button"
                 className="m-product-icon-button"
@@ -349,6 +351,54 @@ export function ProductShell({
               >
                 <PanelRight aria-hidden="true" />
               </button>
+            ) : null}
+            {compact ? (
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <button
+                    type="button"
+                    className="m-product-icon-button"
+                    aria-label="Device actions"
+                  >
+                    <MoreHorizontal aria-hidden="true" />
+                  </button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    className="m-navigation-menu"
+                    align="end"
+                    sideOffset={4}
+                  >
+                    <DropdownMenu.Item onSelect={() => void onRefresh()}>
+                      <RefreshCw aria-hidden="true" />
+                      Refresh
+                    </DropdownMenu.Item>
+                    {servicesHref ? (
+                      <DropdownMenu.Item asChild>
+                        <a href={servicesHref}>
+                          <TerminalSquare aria-hidden="true" />
+                          Services and previews
+                        </a>
+                      </DropdownMenu.Item>
+                    ) : null}
+                    {shell?.quickTask ? (
+                      <DropdownMenu.Item
+                        disabled={commandsBlocked}
+                        onSelect={() => {
+                          void onCommand({ kind: "open-quick-chat" }).then(
+                            (accepted) => {
+                              if (accepted) selectView("chat");
+                            },
+                          );
+                        }}
+                      >
+                        <MessageSquare aria-hidden="true" />
+                        Quick Chat
+                      </DropdownMenu.Item>
+                    ) : null}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
             ) : null}
           </div>
         </header>

@@ -1,4 +1,7 @@
-import type { ReactNode, Ref } from "react";
+"use client";
+
+import type { ReactNode } from "react";
+import { useProductViewport } from "./responsive-layout";
 
 export function ApplicationShell({
   topbar,
@@ -7,7 +10,6 @@ export function ApplicationShell({
   overlays,
   children,
   className = "",
-  viewportRef,
 }: {
   topbar: ReactNode;
   navigation: ReactNode;
@@ -15,10 +17,10 @@ export function ApplicationShell({
   overlays?: ReactNode;
   children: ReactNode;
   className?: string;
-  viewportRef?: Ref<HTMLDivElement>;
 }): React.ReactElement {
+  useProductViewport();
   return (
-    <div ref={viewportRef} className={`m-application-shell ${className}`}>
+    <div className={`m-application-shell ${className}`}>
       {topbar}
       {notices}
       <div className="m-application-body">

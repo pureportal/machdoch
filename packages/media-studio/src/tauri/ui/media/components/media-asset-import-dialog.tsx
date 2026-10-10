@@ -1,4 +1,4 @@
-import { isRemoteMedia } from "../media-platform";
+import { isRemoteMedia, pickedFileName } from "../media-platform";
 import { MEDIA_MODEL_ARCHITECTURES } from "../../../../core/media/model-architectures.js";
 import { openMediaModelProfile } from "../../../../core/media/open-model-profiles.js";
 import { getCurrentWindow, type DragDropEvent } from "@tauri-apps/api/window";
@@ -110,8 +110,6 @@ const splitValues = (value: string): string[] =>
         .filter(Boolean),
     ),
   ].slice(0, 32);
-
-const fileName = (path: string): string => path.split(/[\\/]/u).at(-1) ?? path;
 
 const IMPORT_PROGRESS_LABELS: Record<
   MediaAssetImportProgress["stage"],
@@ -253,7 +251,7 @@ export const MediaAssetImportDialog = ({
   const chooseType = (type: MediaAssetImportType): void => {
     if (loading || !compatibleImportTypes.includes(type)) return;
     resetFields();
-    const prefill = parseMediaAssetImportFilename(path);
+    const prefill = parseMediaAssetImportFilename(pickedFileName(path));
     setDisplayName(prefill.displayName);
     setArchitecture(prefill.architecture);
     setImportType(type);
@@ -266,7 +264,9 @@ export const MediaAssetImportDialog = ({
       resetFields();
       setModelFolder(folder);
       setPath(selectedPath);
-      const prefill = parseMediaAssetImportFilename(selectedPath);
+      const prefill = parseMediaAssetImportFilename(
+        pickedFileName(selectedPath),
+      );
       setDisplayName(prefill.displayName);
       setArchitecture(initialArchitecture ?? prefill.architecture);
       const inferredType = folder
@@ -625,7 +625,7 @@ export const MediaAssetImportDialog = ({
                   <Upload className="h-6 w-6" />
                 )}
                 <span className="max-w-full truncate text-sm">
-                  {path ? fileName(path) : "Drop or select a file"}
+                  {path ? pickedFileName(path) : "Drop or select a file"}
                 </span>
                 {loading && progress ? (
                   <div className="w-full max-w-sm space-y-1.5 px-4">

@@ -3,10 +3,13 @@ import { readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyKeyboardViewport } from "./mobile-viewport-verification.mjs";
 
 export async function selectProductView(page, label) {
   await page.bringToFront();
-  await page.locator(".m-application-navigation").waitFor({ state: "attached" });
+  await page
+    .locator(".m-application-navigation")
+    .waitFor({ state: "attached" });
   const trigger = page.getByRole("button", {
     name: "Open navigation",
     exact: true,
@@ -104,6 +107,59 @@ export async function verifyClientUi(context, expectedPalette, fixtureRoot) {
       fullPage: true,
     });
     await client.setViewportSize({ width: 390, height: 844 });
+    await selectProductView(client, "Chat");
+    const composer = client.getByRole("textbox", {
+      name: "Task composer",
+      exact: true,
+    });
+    await composer.waitFor();
+    await composer.fill("Review the phone layout\nand keep the message draft.");
+    const options = client.getByRole("button", {
+      name: "Composer options",
+      exact: true,
+    });
+    await options.waitFor({ state: "visible" });
+    await options.click();
+    assert.equal(await options.getAttribute("aria-expanded"), "true");
+    await options.click();
+    await client
+      .getByRole("button", { name: "Session actions", exact: true })
+      .click();
+    await client
+      .getByRole("textbox", { name: "Session tags", exact: true })
+      .waitFor();
+    await client.keyboard.press("Escape");
+    await client
+      .getByRole("button", { name: "Open sessions", exact: true })
+      .click();
+    await client.getByRole("dialog").waitFor();
+    await client
+      .getByRole("dialog")
+      .getByRole("button", { name: "Close sessions", exact: true })
+      .click();
+    await client.screenshot({
+      path: join(fixtureRoot, "shared-client-chat-mobile.png"),
+    });
+    const keyboardViewport = await verifyKeyboardViewport(
+      client,
+      fixtureRoot,
+      "machdoch-chat",
+    );
+    await client.setViewportSize({ width: 920, height: 414 });
+    await options.waitFor({ state: "visible" });
+    const send = await client
+      .getByRole("button", { name: "Send message", exact: true })
+      .boundingBox();
+    assert.ok(send && send.y >= 0 && send.y + send.height <= 414);
+    assert.ok(
+      await client.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    );
+    await client.screenshot({
+      path: join(fixtureRoot, "shared-client-chat-landscape.png"),
+    });
+    await client.setViewportSize({ width: 390, height: 844 });
     await client
       .getByRole("button", { name: "Open navigation", exact: true })
       .click();
@@ -120,6 +176,7 @@ export async function verifyClientUi(context, expectedPalette, fixtureRoot) {
       path: join(fixtureRoot, "shared-client-mobile.png"),
       fullPage: true,
     });
+    return keyboardViewport;
   } finally {
     await client.close();
     server.closeAllConnections();

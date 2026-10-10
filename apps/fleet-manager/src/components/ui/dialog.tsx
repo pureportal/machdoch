@@ -22,7 +22,7 @@ export function DialogContent({
       <DialogPrimitive.Overlay className="fleet-overlay fixed inset-0 z-50 bg-slate-950/50 backdrop-blur-sm" />
       <DialogPrimitive.Content
         className={cn(
-          "fleet-dialog fixed left-1/2 top-1/2 z-50 grid min-w-0 max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-6 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card p-5 shadow-2xl outline-none sm:p-7",
+          "fleet-dialog fixed left-1/2 top-[calc(var(--m-viewport-offset-top,0px)+var(--m-viewport-height,100dvh)/2)] z-50 grid min-w-0 max-h-[calc(var(--m-viewport-height,100dvh)-2rem)] w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-6 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card p-5 shadow-2xl outline-none sm:p-7",
           className,
         )}
         {...props}

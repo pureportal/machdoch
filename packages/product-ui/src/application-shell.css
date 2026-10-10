@@ -1,8 +1,11 @@
 .m-application-shell {
-  position: relative;
+  position: fixed;
+  top: var(--m-viewport-offset-top, 0px);
+  inset-inline: 0;
+  container: application / size;
   display: flex;
   width: 100%;
-  height: 100dvh;
+  height: min(100dvh, var(--m-viewport-height, 100dvh));
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
@@ -257,7 +260,7 @@
   color: var(--app-sky-400);
 }
 
-@media (max-width: 767px) {
+@container application (max-width: 900px) or (max-height: 500px) {
   .m-application-body {
     flex-direction: column;
   }

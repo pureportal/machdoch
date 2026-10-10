@@ -19,7 +19,7 @@ import { ReasoningIcons } from "@machdoch/product-ui";
 import { GoalControl, GoalTrigger } from "@machdoch/product-ui";
 import { useGoalDraft } from "@machdoch/product-ui";
 import type { ProductShell } from "@machdoch/fleet-protocol";
-import { Mic, SlidersHorizontal, Volume2 } from "lucide-react";
+import { Mic, Volume2 } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -173,7 +173,6 @@ export function RemoteComposer({
     goalOpen && session.specialKind !== "pose",
     composer.isExecuting,
   );
-  const [optionsOpen, setOptionsOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const closeSessionMemory = useCallback(() => setSessionMemoryOpen(false), []);
   useEffect(() => {
@@ -277,21 +276,7 @@ export function RemoteComposer({
           />
         }
         toolbarControls={
-          <fieldset
-            className="m-product-composer-toolbar app-composer-toolbar"
-            data-options-open={optionsOpen}
-            disabled={pending}
-          >
-            <button
-              type="button"
-              className="m-product-composer-options-toggle"
-              aria-label="Composer options"
-              aria-expanded={optionsOpen}
-              onClick={() => setOptionsOpen((current) => !current)}
-            >
-              <SlidersHorizontal aria-hidden="true" />
-              <span>Options</span>
-            </button>
+          <fieldset className="m-product-composer-toolbar" disabled={pending}>
             <OptionMenu
               disabled={pending}
               label="Reasoning mode"
