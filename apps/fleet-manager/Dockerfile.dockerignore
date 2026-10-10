@@ -39,6 +39,8 @@
 !packages/product-ui/**
 !packages/media-studio/
 !packages/media-studio/**
+!packages/analytics/
+!packages/analytics/**
 
 apps/fleet-manager/.next/
 apps/fleet-manager/.env*
