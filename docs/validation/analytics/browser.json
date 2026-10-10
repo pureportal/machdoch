@@ -1,0 +1,97 @@
+[
+  {
+    "app": "landing",
+    "consent": "passed",
+    "withdrawal": "passed",
+    "privacy": "passed",
+    "liveDelivery": [
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/custom",
+        "status": 201
+      },
+      {
+        "endpoint": "/backend/log/error",
+        "status": 201
+      }
+    ],
+    "statisticsReadback": "passed",
+    "performanceReadback": "passed",
+    "rememberedConsentNavigation": "passed",
+    "customMetricsReadback": "passed"
+  },
+  {
+    "globalPrivacyControl": "passed"
+  },
+  {
+    "cliCollectionWithBotProtection": "passed",
+    "numericOperationMetricReadback": "passed"
+  }
+]

@@ -14,6 +14,8 @@
 
 Machdoch works in a folder you choose, called a **workspace**. Ask it to explain what is there, attach files for context, or give it a task that uses files, commands, Git, or an installed browser. Chat history, settings, workflows, and media assets are stored locally. Requests to cloud models and connected services send the context needed for those requests.
 
+[Usage and diagnostics](docs/analytics.md) are optional and off by default. The [privacy policy](https://pureportal.io/privacy) describes PurePortal's processing.
+
 > [!WARNING]
 > Machdoch is under active development. **Machdoch mode** can change or delete files and run commands, including outside the selected workspace. Start with **Ask** mode and a folder you can safely experiment with. Back up important work and review results.
 
