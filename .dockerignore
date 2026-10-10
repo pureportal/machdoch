@@ -5,8 +5,13 @@
 !apps
 !apps/landing
 !apps/landing/**
+!packages
+!packages/analytics
+!packages/analytics/**
 apps/landing/.cache
 apps/landing/.env*
 apps/landing/dist
 apps/landing/node_modules
 apps/landing/*.tsbuildinfo
+packages/analytics/node_modules
+packages/analytics/coverage
