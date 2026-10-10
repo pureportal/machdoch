@@ -1,6 +1,10 @@
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { AgentModelStreamUsage } from "../types.js";
 import {
+  CodexGoalProtocolError,
+  CodexGoalProtocolReader,
+} from "./codex-goal-protocol.js";
+import {
   CodexCliOutputDecoder,
   type ExternalAgentCliOutputDecoder,
   type ExternalAgentCliOutputUpdate,
@@ -36,7 +40,7 @@ export interface CodexNativeGoalInput {
 
 export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
   private readonly output: CodexCliOutputDecoder;
-  private pendingLine = "";
+  private readonly protocol = new CodexGoalProtocolReader();
   private nextId = 1;
   private readonly requests = new Map<
     number,
@@ -66,7 +70,18 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
   start(): void {
     this.request("initialize", {
       clientInfo: { name: "machdoch", version: "1.0.0" },
-      capabilities: { experimentalApi: true },
+      capabilities: {
+        experimentalApi: true,
+        optOutNotificationMethods: [
+          "thread/started",
+          "item/started",
+          "item/agentMessage/delta",
+          "item/commandExecution/outputDelta",
+          "item/fileChange/outputDelta",
+          "item/reasoning/textDelta",
+          "item/reasoning/summaryTextDelta",
+        ],
+      },
     });
   }
 
@@ -243,9 +258,13 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
         mcpToolCall: "mcp_tool_call",
         webSearch: "web_search",
       };
-      return this.output.push(
-        `${JSON.stringify({ type: "item.completed", item: { ...params.item, type: itemTypes[String(params.item.type)] ?? params.item.type } })}\n`,
-      );
+      return this.output.pushEvent({
+        type: "item.completed",
+        item: {
+          ...params.item,
+          type: itemTypes[String(params.item.type)] ?? params.item.type,
+        },
+      });
     }
     if (event.method === "error" && params.willRetry !== true)
       return this.fail(
@@ -264,49 +283,58 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
     )
       return { displayText: [] };
     this.terminal = true;
-    const update = this.output.push(
-      `${JSON.stringify({ type: "turn.completed" })}\n`,
-    );
+    this.protocol.reset();
+    this.requests.clear();
+    const update = this.output.pushEvent({ type: "turn.completed" });
     this.closeInput();
     return update;
   }
 
   private fail(message: string): ExternalAgentCliOutputUpdate {
+    if (this.terminal) return { displayText: [] };
     this.terminal = true;
-    const update = this.output.push(
-      `${JSON.stringify({ type: "turn.failed", error: { message } })}\n`,
-    );
+    this.protocol.reset();
+    this.requests.clear();
+    const update = this.output.pushEvent({
+      type: "turn.failed",
+      error: { message },
+    });
     this.closeInput();
     return update;
   }
 
   push(chunk: string): ExternalAgentCliOutputUpdate {
-    this.pendingLine += chunk;
+    return this.readProtocol(chunk);
+  }
+
+  private readProtocol(chunk?: string): ExternalAgentCliOutputUpdate {
     const update: ExternalAgentCliOutputUpdate = { displayText: [] };
-    if (this.pendingLine.length > 2_000_000)
-      return this.fail("Codex goal output exceeded the message limit.");
-    let newline: number;
-    while ((newline = this.pendingLine.indexOf("\n")) >= 0) {
-      const line = this.pendingLine.slice(0, newline).trim();
-      this.pendingLine = this.pendingLine.slice(newline + 1);
-      if (!line) continue;
-      let event: unknown;
-      try {
-        event = JSON.parse(line);
-      } catch {
-        return this.fail("Codex returned invalid goal protocol data.");
-      }
-      if (!isRecord(event))
-        return this.fail("Codex returned invalid goal protocol data.");
+    if (this.terminal) return update;
+    const onEvent = (event: Record<string, unknown>): boolean => {
       const next = this.decode(event);
       update.displayText.push(...next.displayText);
       if (next.resultExitCode !== undefined)
         update.resultExitCode = next.resultExitCode;
+      return !this.terminal;
+    };
+    try {
+      if (chunk === undefined) this.protocol.finish(onEvent);
+      else this.protocol.push(chunk, onEvent);
+    } catch (error) {
+      if (!(error instanceof CodexGoalProtocolError)) throw error;
+      const failure = this.fail(
+        `Codex returned invalid goal protocol data: ${error.message}`,
+      );
+      update.displayText.push(...failure.displayText);
+      if (failure.resultExitCode !== undefined)
+        update.resultExitCode = failure.resultExitCode;
     }
     return update;
   }
 
   finish(): ExternalAgentCliOutputUpdate {
+    const update = this.readProtocol();
+    if (update.resultExitCode !== undefined) return update;
     return this.terminal
       ? this.output.finish()
       : this.fail(

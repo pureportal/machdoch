@@ -122,6 +122,12 @@ abstract class JsonLineOutputDecoder {
   getToolCallCount(): number {
     return this.toolCalls.size;
   }
+
+  pushEvent(event: Record<string, unknown>): ExternalAgentCliOutputUpdate {
+    const update: ExternalAgentCliOutputUpdate = { displayText: [] };
+    this.processRecord(event, update);
+    return update;
+  }
   private pendingLine = "";
   private discardingOversizedLine = false;
   protected readonly diagnostics: string[] = [];
@@ -208,6 +214,13 @@ abstract class JsonLineOutputDecoder {
       return;
     }
 
+    this.processRecord(event, update);
+  }
+
+  private processRecord(
+    event: Record<string, unknown>,
+    update: ExternalAgentCliOutputUpdate,
+  ): void {
     if (
       event.type === "item.completed" &&
       isRecord(event.item) &&

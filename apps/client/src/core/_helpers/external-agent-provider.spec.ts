@@ -558,7 +558,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         item: {
           id: "test-1",
           type: "commandExecution",
-          aggregatedOutput: "Every intake test passed.",
+          aggregatedOutput: `${"x".repeat(2_100_000)}Every intake test passed.`,
           exitCode: 0,
         },
       },
@@ -567,7 +567,15 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       method: "turn/completed",
       params: {
         threadId: "thread-1",
-        turn: { id: "turn-1", status: "completed" },
+        turn: {
+          items: Array.from({ length: 1_100 }, (_, index) => ({
+            id: String(index),
+            type: "reasoning",
+            content: ["x".repeat(2_000)],
+          })),
+          id: "turn-1",
+          status: "completed",
+        },
       },
     });
     expect(call.child.stdin.writableEnded).toBe(false);
