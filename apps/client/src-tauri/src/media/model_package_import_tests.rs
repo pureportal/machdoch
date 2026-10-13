@@ -487,7 +487,7 @@ fn h3_student_import_rejects_modified_remote_component_specifications() {
     assert!(inventory(&package.0)
         .err()
         .unwrap()
-        .contains("Invalid MiniMax-H3 component"));
+        .contains("Invalid modular component"));
 }
 
 #[test]
