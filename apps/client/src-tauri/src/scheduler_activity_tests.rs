@@ -44,8 +44,16 @@ impl TestWorkspace {
         }))
         .unwrap();
         fs::create_dir_all(self.0.join(".machdoch/local/state")).unwrap();
-        fs::write(self.0.join(".machdoch/local/state/storage-layout.json"), "{\"version\":1}").unwrap();
-        fs::write(self.0.join(".machdoch/local/state/scheduler.json"), &content).unwrap();
+        fs::write(
+            self.0.join(".machdoch/local/state/storage-layout.json"),
+            "{\"version\":1}",
+        )
+        .unwrap();
+        fs::write(
+            self.0.join(".machdoch/local/state/scheduler.json"),
+            &content,
+        )
+        .unwrap();
         content
     }
 }
@@ -86,7 +94,10 @@ fn activity_reads_all_workspaces_once_without_changing_scheduler_files() {
         fs::read(first.0.join(".machdoch/local/state/scheduler.json")).unwrap(),
         original
     );
-    assert!(first.0.join(".machdoch/local/state/scheduler.json.lock").is_dir());
+    assert!(first
+        .0
+        .join(".machdoch/local/state/scheduler.json.lock")
+        .is_dir());
 }
 
 #[test]
