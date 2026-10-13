@@ -8,6 +8,8 @@ import type {
 } from "../../core/types.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
 import type { TaskPanelTone } from "./task-panel";
+import type { TaskThinkingActionOutputSummary } from "@machdoch/fleet-protocol/task-thinking";
+import { retainTaskActionOutput } from "@machdoch/client-ui/conversation/task-action-output";
 
 const THINKING_STATE_LABELS: Record<TaskExecutionState, string> = {
   starting: "Starting",
@@ -123,6 +125,7 @@ export interface TaskThinkingTrace {
   assistantText?: string;
   modelStream?: TaskThinkingModelStream;
   actionOutputLines?: TaskThinkingActionOutputLine[];
+  actionOutputSummaries?: TaskThinkingActionOutputSummary[];
   tokenUsage?: TaskExecutionTokenUsage;
 }
 
@@ -507,7 +510,7 @@ const createActionOutputLines = (
     return existingLines;
   }
 
-  return [...existingLines, ...nextLines].slice(-ACTION_OUTPUT_LINE_LIMIT);
+  return [...existingLines, ...nextLines];
 };
 
 export const appendThinkingProgress = (
@@ -591,9 +594,14 @@ export const appendThinkingProgress = (
     timelineEvents: nextTimelineEvents,
     ...(nextAssistantText ? { assistantText: nextAssistantText } : {}),
     ...(nextModelStream ? { modelStream: nextModelStream } : {}),
-    ...(nextActionOutputLines.length > 0
-      ? { actionOutputLines: nextActionOutputLines }
-      : {}),
+    ...retainTaskActionOutput(
+      {
+        ...trace,
+        timelineEvents: nextTimelineEvents,
+        actionOutputLines: nextActionOutputLines,
+      },
+      ACTION_OUTPUT_LINE_LIMIT,
+    ),
     ...(nextTokenUsage ? { tokenUsage: nextTokenUsage } : {}),
   };
 };

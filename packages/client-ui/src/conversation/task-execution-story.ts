@@ -1,6 +1,7 @@
 import type { TaskPanelTone } from "@machdoch/fleet-protocol/task-thinking";
 import type {
   TaskThinkingActionOutputLine,
+  TaskThinkingActionOutputSummary,
   TaskThinkingTimelineEvent,
   TaskThinkingTrace,
 } from "@machdoch/fleet-protocol/task-thinking";
@@ -27,6 +28,8 @@ export interface TaskExecutionStoryItem {
   tokenUsage?: TaskThinkingTimelineEvent["tokenUsage"];
   metadata?: TaskThinkingTimelineEvent["metadata"];
   outputLines: TaskThinkingActionOutputLine[];
+  stdoutLineCount: number;
+  stderrLineCount: number;
 }
 
 interface TimelineSource {
@@ -42,7 +45,8 @@ interface OutputSource {
   timestamp: number;
   priority: number;
   order: number;
-  line: TaskThinkingActionOutputLine;
+  output: TaskThinkingActionOutputSummary;
+  lines: TaskThinkingActionOutputLine[];
 }
 
 type StorySource = TimelineSource | OutputSource;
@@ -207,6 +211,8 @@ const createStoryItem = (
     ...(event.tokenUsage ? { tokenUsage: event.tokenUsage } : {}),
     ...(event.metadata ? { metadata: event.metadata } : {}),
     outputLines: [],
+    stdoutLineCount: 0,
+    stderrLineCount: 0,
   };
 };
 
@@ -284,18 +290,23 @@ const attachUsageEvent = (
 
 const formatOutputSummary = (
   toolName: string,
-  lines: TaskThinkingActionOutputLine[],
+  stdoutLineCount: number,
+  stderrLineCount: number,
 ): string => {
-  const streams = new Set(lines.map((line) => line.stream));
+  const lineCount = stdoutLineCount + stderrLineCount;
   const streamLabel =
-    streams.size === 1 ? (lines[0]?.stream ?? "output") : "stdout and stderr";
+    stdoutLineCount > 0 && stderrLineCount > 0
+      ? "stdout and stderr"
+      : stdoutLineCount > 0
+        ? "stdout"
+        : "stderr";
 
-  return `${toolName} · ${lines.length} ${streamLabel} line${lines.length === 1 ? "" : "s"}`;
+  return `${toolName} · ${lineCount} ${streamLabel} line${lineCount === 1 ? "" : "s"}`;
 };
 
-const appendOutputLine = (
+const appendOutput = (
   items: TaskExecutionStoryItem[],
-  line: TaskThinkingActionOutputLine,
+  { output, lines }: OutputSource,
   startedAt: number,
 ): void => {
   for (let index = items.length - 1; index >= 0; index -= 1) {
@@ -304,14 +315,16 @@ const appendOutputLine = (
     if (
       item.kind !== "tool-call" ||
       item.endedAt !== undefined ||
-      item.toolName !== line.toolName
+      item.toolName !== output.toolName
     ) {
       continue;
     }
 
     items[index] = {
       ...item,
-      outputLines: [...item.outputLines, line],
+      outputLines: [...item.outputLines, ...lines],
+      stdoutLineCount: item.stdoutLineCount + output.stdoutLineCount,
+      stderrLineCount: item.stderrLineCount + output.stderrLineCount,
     };
     return;
   }
@@ -320,32 +333,50 @@ const appendOutputLine = (
 
   if (
     previousItem?.kind === "terminal" &&
-    previousItem.toolName === line.toolName
+    previousItem.toolName === output.toolName
   ) {
-    const outputLines = [...previousItem.outputLines, line];
+    const stdoutLineCount =
+      previousItem.stdoutLineCount + output.stdoutLineCount;
+    const stderrLineCount =
+      previousItem.stderrLineCount + output.stderrLineCount;
 
     items[items.length - 1] = {
       ...previousItem,
-      detail: formatOutputSummary(line.toolName, outputLines),
-      endedAt: line.timestamp,
-      outputLines,
+      detail: formatOutputSummary(
+        output.toolName,
+        stdoutLineCount,
+        stderrLineCount,
+      ),
+      endedAt: Math.max(
+        previousItem.endedAt ?? previousItem.timestamp,
+        output.endedAt,
+      ),
+      outputLines: [...previousItem.outputLines, ...lines],
+      stdoutLineCount,
+      stderrLineCount,
     };
     return;
   }
 
   items.push({
-    id: `terminal:${line.toolName}:after:${previousItem?.id ?? "execution-start"}`,
+    id: `terminal:${output.toolName}:after:${previousItem?.id ?? "execution-start"}`,
     kind: "terminal",
     phase: "streaming",
     label: "Terminal activity",
-    sourceLabel: `${line.toolName} terminal output`,
-    detail: formatOutputSummary(line.toolName, [line]),
+    sourceLabel: `${output.toolName} terminal output`,
+    detail: formatOutputSummary(
+      output.toolName,
+      output.stdoutLineCount,
+      output.stderrLineCount,
+    ),
     tone: "neutral",
-    timestamp: line.timestamp,
-    elapsedMs: Math.max(0, line.timestamp - startedAt),
-    endedAt: line.timestamp,
-    toolName: line.toolName,
-    outputLines: [line],
+    timestamp: output.timestamp,
+    elapsedMs: Math.max(0, output.timestamp - startedAt),
+    endedAt: output.endedAt,
+    toolName: output.toolName,
+    outputLines: lines,
+    stdoutLineCount: output.stdoutLineCount,
+    stderrLineCount: output.stderrLineCount,
   });
 };
 
@@ -369,12 +400,31 @@ const createStorySources = (trace: TaskThinkingTrace): StorySource[] => {
       type: "output",
       timestamp: line.timestamp,
       priority: 1,
-      order,
-      line,
+      order: order + (trace.actionOutputSummaries?.length ?? 0),
+      output: {
+        id: line.id,
+        toolName: line.toolName,
+        timestamp: line.timestamp,
+        endedAt: line.timestamp,
+        stdoutLineCount: line.stream === "stdout" ? 1 : 0,
+        stderrLineCount: line.stream === "stderr" ? 1 : 0,
+      },
+      lines: [line],
     }),
   );
 
-  return [...eventSources, ...outputSources].sort(
+  const summarySources: OutputSource[] = (
+    trace.actionOutputSummaries ?? []
+  ).map((output, order) => ({
+    type: "output",
+    timestamp: output.timestamp,
+    priority: 1,
+    order,
+    output,
+    lines: [],
+  }));
+
+  return [...eventSources, ...summarySources, ...outputSources].sort(
     (left, right) =>
       left.timestamp - right.timestamp ||
       left.priority - right.priority ||
@@ -390,7 +440,7 @@ export const createTaskExecutionStory = (
 
   for (const source of createStorySources(trace)) {
     if (source.type === "output") {
-      appendOutputLine(items, source.line, trace.startedAt);
+      appendOutput(items, source, trace.startedAt);
       continue;
     }
 

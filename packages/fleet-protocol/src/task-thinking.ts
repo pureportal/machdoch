@@ -56,6 +56,17 @@ export const taskThinkingActionOutputLineSchema = z.strictObject({
 export type TaskThinkingActionOutputLine = z.infer<
   typeof taskThinkingActionOutputLineSchema
 >;
+export const taskThinkingActionOutputSummarySchema = z.strictObject({
+  id: z.string(),
+  toolName: z.string(),
+  timestamp,
+  endedAt: timestamp,
+  stdoutLineCount: z.number().int().nonnegative(),
+  stderrLineCount: z.number().int().nonnegative(),
+});
+export type TaskThinkingActionOutputSummary = z.infer<
+  typeof taskThinkingActionOutputSummarySchema
+>;
 export const taskThinkingTimelineEventSchema = z.strictObject({
   id: z.string(),
   kind: z.enum([
@@ -108,6 +119,9 @@ export const taskThinkingTraceSchema = z.strictObject({
   assistantText: z.string().optional(),
   modelStream: taskThinkingModelStreamSchema.optional(),
   actionOutputLines: z.array(taskThinkingActionOutputLineSchema).optional(),
+  actionOutputSummaries: z
+    .array(taskThinkingActionOutputSummarySchema)
+    .optional(),
   tokenUsage: tokenUsage.optional(),
 });
 export type TaskThinkingTrace = z.infer<typeof taskThinkingTraceSchema>;

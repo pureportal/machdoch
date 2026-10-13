@@ -1,22 +1,80 @@
-import { normalizeTaskExecutionFileChanges } from '@machdoch/fleet-protocol/task-file-change-normalization';
-import type { SmartContextPack, SmartContextPackVariable, SmartContextPackTrigger } from "@machdoch/client-ui/context-packs/model";
+import { normalizeTaskExecutionFileChanges } from "@machdoch/fleet-protocol/task-file-change-normalization";
+import type {
+  SmartContextPack,
+  SmartContextPackVariable,
+  SmartContextPackTrigger,
+} from "@machdoch/client-ui/context-packs/model";
 import { contextPackLimits } from "@machdoch/fleet-protocol/context-pack-contract";
-import { MAX_REQUEST_ITERATIONS, type ChatSessionContextAttachmentKind, type ChatSessionContextAttachment, type ChatSessionRequestIteration } from "@machdoch/client-ui/composer/model";
+import {
+  MAX_REQUEST_ITERATIONS,
+  type ChatSessionContextAttachmentKind,
+  type ChatSessionContextAttachment,
+  type ChatSessionRequestIteration,
+} from "@machdoch/client-ui/composer/model";
 import { normalizeConversationMemoryEntries } from "../../core/memory.js";
 import { resolveParallelAgentMode } from "../../core/parallel-agent-capabilities.js";
-import { isSessionGoal, resolveGoalMode, type GoalMode, type SessionGoal } from "../../shared/goals.js";
-import { MODEL_PROVIDERS, REASONING_MODES, VALID_TOOLS } from "../../core/runtime-contract.generated.js";
-import type { ConversationMemoryEntry, ParallelAgentMode, TaskExecutionTokenUsage, TaskExecutionNarrative, TaskExecutionResult, TaskExecutionSection, TaskExecutionStatus, TaskExecutionTimeoutState, TaskRunPreview } from "../../core/types.js";
-import type { MediaAssetKind, MediaAssetReference } from "@machdoch/media-studio/core/media/contracts.js";
-import { isMediaPoseMap, type MediaPoseMap, type MediaSavedPoseScene } from "@machdoch/media-studio/core/media/contracts.js";
-import type { ReasoningMode, RunMode, ToolName } from "../../core/runtime-contract.generated.js";
-import { getDefaultModelForProvider, RUNNABLE_PROVIDER_ORDER, type RuntimeProvider } from "./model-catalog";
+import {
+  isSessionGoal,
+  resolveGoalMode,
+  type GoalMode,
+  type SessionGoal,
+} from "../../shared/goals.js";
+import {
+  MODEL_PROVIDERS,
+  REASONING_MODES,
+  VALID_TOOLS,
+} from "../../core/runtime-contract.generated.js";
+import type {
+  ConversationMemoryEntry,
+  ParallelAgentMode,
+  TaskExecutionTokenUsage,
+  TaskExecutionNarrative,
+  TaskExecutionResult,
+  TaskExecutionSection,
+  TaskExecutionStatus,
+  TaskExecutionTimeoutState,
+  TaskRunPreview,
+} from "../../core/types.js";
+import type {
+  MediaAssetKind,
+  MediaAssetReference,
+} from "@machdoch/media-studio/core/media/contracts.js";
+import {
+  isMediaPoseMap,
+  type MediaPoseMap,
+  type MediaSavedPoseScene,
+} from "@machdoch/media-studio/core/media/contracts.js";
+import type {
+  ReasoningMode,
+  RunMode,
+  ToolName,
+} from "../../core/runtime-contract.generated.js";
+import {
+  getDefaultModelForProvider,
+  RUNNABLE_PROVIDER_ORDER,
+  type RuntimeProvider,
+} from "./model-catalog";
 import type { TaskPanelTone } from "./task-panel";
-import { appendTerminalExecutionToThinkingTrace, type TaskThinkingActionOutputLine, type TaskThinkingModelStream, type TaskThinkingSource, type TaskThinkingTimelineEvent, type TaskThinkingTrace } from "./task-thinking.model";
+import {
+  appendTerminalExecutionToThinkingTrace,
+  type TaskThinkingActionOutputLine,
+  type TaskThinkingModelStream,
+  type TaskThinkingSource,
+  type TaskThinkingTimelineEvent,
+  type TaskThinkingTrace,
+} from "./task-thinking.model";
 import { normalizeChatSessionOptionalString } from "./chat-session/_helpers/normalize-chat-session-optional-string.helper";
 import { createWorkspaceRootKey } from "./workspace-management/workspace-management-model";
-import { normalizeExecutionAttempt, type ExecutionAttempt } from "./chat-session/_helpers/execution-attempt";
-import { normalizePromptEnhancementAttempt, type PromptEnhancementAttempt } from "./chat-session/_helpers/prompt-enhancement-attempt";
+import {
+  normalizeExecutionAttempt,
+  type ExecutionAttempt,
+} from "./chat-session/_helpers/execution-attempt";
+import {
+  normalizePromptEnhancementAttempt,
+  type PromptEnhancementAttempt,
+} from "./chat-session/_helpers/prompt-enhancement-attempt";
+import { retainTaskActionOutput } from "@machdoch/client-ui/conversation/task-action-output";
+import { taskThinkingActionOutputSummarySchema } from "@machdoch/fleet-protocol/task-thinking";
 
 export type ChatSessionMessageSource =
   | { kind: "preview"; preview: TaskRunPreview }
@@ -967,10 +1025,7 @@ const normalizeContextPackTokenArray = (
 };
 
 const normalizeContextPackVariableName = (value: unknown): string => {
-  const name = normalizeContextPackToken(
-    value,
-    contextPackLimits.identifier,
-  )
+  const name = normalizeContextPackToken(value, contextPackLimits.identifier)
     .replace(/^\{|\}$/gu, "")
     .replace(/[^A-Za-z0-9_-]/gu, "_");
 
@@ -1801,6 +1856,12 @@ const normalizeThinkingTrace = (
   const actionOutputLines = normalizeThinkingActionOutputLines(
     value.actionOutputLines,
   );
+  const actionOutputSummaries = Array.isArray(value.actionOutputSummaries)
+    ? value.actionOutputSummaries.flatMap((entry) => {
+        const result = taskThinkingActionOutputSummarySchema.safeParse(entry);
+        return result.success ? [result.data] : [];
+      })
+    : [];
   const timelineEvents = normalizeThinkingTimelineEvents(value.timelineEvents);
   const tokenUsage = normalizeThinkingTokenUsage(value.tokenUsage);
   const startedAt = normalizeFiniteNumber(
@@ -1835,16 +1896,12 @@ const normalizeThinkingTrace = (
         }
       : {}),
     ...(modelStream ? { modelStream } : {}),
-    ...(actionOutputLines.length > 0
-      ? {
-          actionOutputLines:
-            status === "complete"
-              ? actionOutputLines.slice(
-                  -COMPLETED_THINKING_ACTION_OUTPUT_LINE_LIMIT,
-                )
-              : actionOutputLines,
-        }
-      : {}),
+    ...retainTaskActionOutput(
+      { actionOutputLines, actionOutputSummaries, timelineEvents },
+      status === "complete"
+        ? COMPLETED_THINKING_ACTION_OUTPUT_LINE_LIMIT
+        : actionOutputLines.length,
+    ),
     ...(tokenUsage ? { tokenUsage } : {}),
   };
 };
