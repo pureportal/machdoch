@@ -7,6 +7,7 @@
   "exports": {
     "./conversation/task-thinking-panel": "./src/conversation/task-thinking-panel.tsx",
     "./conversation/task-execution-story": "./src/conversation/task-execution-story.ts",
+    "./conversation/task-action-output": "./src/conversation/task-action-output.ts",
     "./conversation/task-timeout-indicator": "./src/conversation/task-timeout-indicator.ts",
     "./conversation/task-timeout-controls": "./src/conversation/task-timeout-controls.tsx",
     "./conversation/retryable-messages": "./src/conversation/retryable-messages.ts",

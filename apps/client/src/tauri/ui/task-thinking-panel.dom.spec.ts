@@ -11,6 +11,7 @@ import { createElement } from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { TaskThinkingPanel } from "@machdoch/client-ui/conversation/task-thinking-panel";
 import type { TaskThinkingTrace } from "./task-thinking.model";
+import { retainTaskActionOutput } from "@machdoch/client-ui/conversation/task-action-output";
 
 const createOutputLines = (): NonNullable<
   TaskThinkingTrace["actionOutputLines"]
@@ -96,6 +97,84 @@ afterEach(() => {
 });
 
 describe("TaskThinkingPanel interactions", () => {
+  it("shows the full count and an omission hint when output is trimmed", () => {
+    const liveTrace = createLiveTrace();
+    const trace = {
+      ...liveTrace,
+      actionOutputLines: [
+        ...createOutputLines(),
+        ...createOutputLines().map((line) => ({
+          ...line,
+          id: `next:${line.id}`,
+          timestamp: line.timestamp + 50,
+        })),
+      ],
+    };
+    render(
+      createElement(TaskThinkingPanel, {
+        thinking: { ...trace, ...retainTaskActionOutput(trace, 20) },
+      }),
+    );
+    const disclosure = getOutputDisclosure();
+    fireEvent.click(disclosure.querySelector("summary")!);
+
+    expect(
+      screen.getByText("shell · 100 stdout and stderr lines"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Earlier output is no longer available."),
+    ).toBeTruthy();
+    expect(screen.queryByText("output line 30")).toBeNull();
+    expect(screen.getByText("output line 31")).toBeTruthy();
+    expect(screen.getByText("warning: checking live output")).toBeTruthy();
+  });
+
+  it("keeps the count and omission hint when no terminal text remains", () => {
+    const trace = createLiveTrace();
+    render(
+      createElement(TaskThinkingPanel, {
+        thinking: { ...trace, ...retainTaskActionOutput(trace, 0) },
+      }),
+    );
+    fireEvent.click(getOutputDisclosure().querySelector("summary")!);
+
+    expect(screen.getByText("shell · 50 stdout and stderr lines")).toBeTruthy();
+    expect(
+      screen.getByText("Earlier output is no longer available."),
+    ).toBeTruthy();
+    expect(screen.queryByText("warning: checking live output")).toBeNull();
+  });
+
+  it("omits the hint when all terminal output is retained", () => {
+    render(createElement(TaskThinkingPanel, { thinking: createLiveTrace() }));
+    fireEvent.click(getOutputDisclosure().querySelector("summary")!);
+
+    expect(
+      screen.queryByText("Earlier output is no longer available."),
+    ).toBeNull();
+  });
+
+  it("shows tool output counts even when the output text is gone", () => {
+    const trace = {
+      ...createLiveTrace(),
+      actionOutputLines: createOutputLines().map((line) => ({
+        ...line,
+        timestamp: 1_020,
+      })),
+    };
+    render(
+      createElement(TaskThinkingPanel, {
+        thinking: { ...trace, ...retainTaskActionOutput(trace, 0) },
+      }),
+    );
+    fireEvent.click(screen.getByText("Command and output"));
+
+    expect(screen.getByText("Terminal · 50 lines")).toBeTruthy();
+    expect(
+      screen.getByText("Earlier output is no longer available."),
+    ).toBeTruthy();
+  });
+
   it("keeps terminal output expanded through live appends and completion", async () => {
     const trace = createLiveTrace();
     const view = render(createElement(TaskThinkingPanel, { thinking: trace }));

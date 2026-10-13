@@ -195,10 +195,10 @@ const StoryItemDetails = ({
   const metadata = getTechnicalMetadata(item);
   const hasStartedDetail =
     Boolean(item.startedDetail) && item.startedDetail !== item.detail;
+  const outputLineCount = item.stdoutLineCount + item.stderrLineCount;
+  const hasOmittedOutput = outputLineCount > item.outputLines.length;
   const hasCommandDetails =
-    Boolean(inputPreview) ||
-    Boolean(outputPreview) ||
-    item.outputLines.length > 0;
+    Boolean(inputPreview) || Boolean(outputPreview) || outputLineCount > 0;
 
   if (!hasStartedDetail && !hasCommandDetails && metadata.length === 0) {
     return null;
@@ -259,25 +259,35 @@ const StoryItemDetails = ({
           </div>
         ) : null}
 
-        {item.outputLines.length > 0 ? (
+        {outputLineCount > 0 ? (
           <div className="min-w-0">
             <p className="m-0 text-[10px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
               Terminal
+              {item.kind === "tool-call"
+                ? ` · ${outputLineCount} line${outputLineCount === 1 ? "" : "s"}`
+                : null}
             </p>
-            <div className="app-thinking-code mt-1 max-h-40 overflow-y-auto rounded-lg bg-slate-950/80 px-3 py-2 font-mono text-[11px] leading-5">
-              {item.outputLines.map((line, index) => (
-                <div
-                  key={`${line.id}\0${index}`}
-                  className={cn(
-                    "grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-2",
-                    outputLineClasses[line.stream],
-                  )}
-                >
-                  <span className="text-slate-500">{line.stream}</span>
-                  <span className="min-w-0 break-words">{line.text}</span>
-                </div>
-              ))}
-            </div>
+            {hasOmittedOutput ? (
+              <p className="mt-1 text-xs text-slate-400">
+                Earlier output is no longer available.
+              </p>
+            ) : null}
+            {item.outputLines.length > 0 ? (
+              <div className="app-thinking-code mt-1 max-h-40 overflow-y-auto rounded-lg bg-slate-950/80 px-3 py-2 font-mono text-[11px] leading-5">
+                {item.outputLines.map((line, index) => (
+                  <div
+                    key={`${line.id}\0${index}`}
+                    className={cn(
+                      "grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-2",
+                      outputLineClasses[line.stream],
+                    )}
+                  >
+                    <span className="text-slate-500">{line.stream}</span>
+                    <span className="min-w-0 break-words">{line.text}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
 
