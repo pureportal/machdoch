@@ -19,6 +19,19 @@ import media_open_video as video
 
 
 class OpenMediaModelTests(unittest.TestCase):
+    def test_flux_loads_transformer_and_t5_with_nf4(self):
+        for architecture in ("flux-1-dev", "flux-1-schnell"):
+            with self.subTest(architecture=architecture), tempfile.TemporaryDirectory() as directory:
+                Path(directory, "model_index.json").write_text(json.dumps({"_class_name": "FluxPipeline"}), encoding="utf-8")
+                configuration = object()
+                factory = mock.Mock(return_value=configuration)
+                loader = mock.Mock(return_value=SimpleNamespace())
+                diffusers = SimpleNamespace(FluxPipeline=SimpleNamespace(from_pretrained=loader))
+                with mock.patch.dict("sys.modules", {"diffusers.quantizers": SimpleNamespace(PipelineQuantizationConfig=factory)}):
+                    models.load_pipeline(diffusers, {"architecture": architecture, "path": directory, "packageKind": "diffusers-directory"}, "bf16")
+                factory.assert_called_once_with(quant_backend="bitsandbytes_4bit", quant_kwargs={"load_in_4bit": True, "bnb_4bit_quant_type": "nf4", "bnb_4bit_compute_dtype": "bf16"}, components_to_quantize=["transformer", "text_encoder_2"])
+                self.assertIs(loader.call_args.kwargs["quantization_config"], configuration)
+
     def test_ideogram_auto_preserves_the_published_guidance_schedule(self):
         for sampling in ({}, {"numInferenceSteps": 48}, {"numInferenceSteps": None, "guidanceScale": None}):
             with self.subTest(sampling=sampling):

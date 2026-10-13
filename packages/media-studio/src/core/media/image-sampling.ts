@@ -29,6 +29,7 @@ export interface MediaImageSamplingProfile {
   guidance: readonly [number, number];
   defaultGuidance: number;
   samplers: readonly MediaImageSampler[];
+  recommendedSamplers: readonly MediaImageSampler[];
   sources: readonly string[];
 }
 
@@ -47,7 +48,12 @@ export const compatibleMediaImageSamplers = (
 ) =>
   MEDIA_IMAGE_SAMPLERS.filter((sampler) =>
     mediaImageSamplingProfile(architecture)?.samplers.includes(sampler.value),
-  );
+  ).map((sampler) => ({
+    ...sampler,
+    recommended: mediaImageSamplingProfile(
+      architecture,
+    )!.recommendedSamplers.includes(sampler.value),
+  }));
 
 export interface MediaImageSamplingSettings {
   sampler?: MediaImageSampler | null;

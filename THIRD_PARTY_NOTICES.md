@@ -42,3 +42,11 @@ Local illustration evaluation also uses [Animagine XL 4.0 Opt](https://civitai.c
 Local style evaluation uses the [Double Exposure XL](https://civitai.com/models/281140?modelVersionId=316510) LoRA by MakeThemComeAliveAiArt. Publisher metadata and credit are retained with the downloaded adapter. Its weights are not bundled.
 
 Local evaluation uses [FLUX.1 Dev](https://civitai.com/models/618692?modelVersionId=691639), by Black Forest Labs. Its separately downloaded and converted package retains the complete [FLUX.1 Dev Non-Commercial License](https://huggingface.co/black-forest-labs/FLUX.1-dev/blob/main/LICENSE.md), required attribution and a notice identifying the Diffusers file-layout conversion. CLIP and T5 components retain their MIT and Apache-2.0 licences. These weights are not bundled.
+
+Anima was created by CircleStone Labs and Comfy Org and is built on NVIDIA Cosmos. Its separately acquired weights retain the [CircleStone Labs Non-Commercial License](https://huggingface.co/circlestone-labs/Anima/blob/main/LICENSE.md) and NVIDIA Open Model License. The integration uses Hugging Face Diffusers' Apache-2.0 modular pipeline. No ComfyUI source was copied.
+
+Illustrious XL is by OnomaAI Research; NoobAI XL is by Laxhar Dream Lab. Their separately acquired weights retain the publisher's Fair AI Public License 1.0-SD and any additional model restrictions. RealVisXL is by SG161222, and DreamShaper XL is by Lykon; their model terms and attribution accompany separately acquired weights.
+
+Juggernaut XI is by KandooAI and RunDiffusion. Its separately acquired checkpoint retains [CC BY-NC-ND 4.0 and the publisher's additional restrictions](https://huggingface.co/RunDiffusion/Juggernaut-XI-v11). HiDream-I1 is by HiDream.ai under MIT; its required Meta Llama 3.1 encoder has a separate [Llama 3.1 Community License](https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE). A complete HiDream package must retain both sets of terms. These weights are not bundled.
+
+HiDream's separately acquired NF4 checkpoint is by [hykilpikonna](https://github.com/hykilpikonna/HiDream-I1-nf4); quantized companion weights and layout are published by [szwagros](https://huggingface.co/szwagros/HiDream-I1-Full-4bit). This encoder integration is built with Llama. Package notices retain the original model and Llama terms.

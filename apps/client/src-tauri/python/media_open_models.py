@@ -16,9 +16,18 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
     if model.get("packageKind") != "diffusers-directory":
         raise ValueError(f"{profile['displayName']} requires a complete Diffusers model folder")
     root = Path(model["path"])
-    index = json.loads((root / "model_index.json").read_text(encoding="utf-8"))
+    index_name = "modular_model_index.json" if profile["architecture"] == "anima" else "model_index.json"
+    index = json.loads((root / index_name).read_text(encoding="utf-8"))
     if index.get("_class_name") != profile["pipeline"]:
         raise ValueError(f"The model folder does not match {profile['displayName']}")
+    if profile["architecture"] == "anima":
+        from media_anima import load_pipeline as load_anima
+
+        return load_anima(diffusers, root, dtype)
+    if profile["architecture"] == "hidream-i1-full":
+        from media_hidream import load_pipeline as load_hidream
+
+        return load_hidream(diffusers, root, dtype)
     if profile["architecture"] == "hunyuan-image-3":
         from media_hunyuan_image3 import HunyuanImage3Pipeline
 
@@ -38,6 +47,14 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
     if pipeline_class is None:
         raise ValueError(f"The media runtime does not expose {class_name}. Repair runtime setup.")
     options = {}
+    if profile["architecture"] in ("flux-1-dev", "flux-1-schnell"):
+        from diffusers.quantizers import PipelineQuantizationConfig
+
+        options["quantization_config"] = PipelineQuantizationConfig(
+            quant_backend="bitsandbytes_4bit",
+            quant_kwargs={"load_in_4bit": True, "bnb_4bit_quant_type": "nf4", "bnb_4bit_compute_dtype": dtype},
+            components_to_quantize=["transformer", "text_encoder_2"],
+        )
     if profile["pipeline"] in ("QwenImagePipeline", "QwenImage21Pipeline"):
         from media_qwen_quantization import transformer_arguments
 

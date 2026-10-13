@@ -8,6 +8,84 @@ use serde_json::json;
 use super::{inspect, inventory};
 
 #[test]
+fn anima_modular_packages_validate_conditioner_weights_and_component_paths() {
+    let package = TestPackage::new();
+    fs::remove_file(package.0.join("model_index.json")).unwrap();
+    fs::create_dir(package.0.join("text_conditioner")).unwrap();
+    fs::write(package.0.join("text_conditioner/config.json"), b"{}").unwrap();
+    let specification = |class: &str, subfolder: &str| {
+        json!([
+            "diffusers", class, {
+                "pretrained_model_name_or_path": "circlestone-labs/Anima-Base-v1.0-Diffusers",
+                "subfolder": subfolder,
+                "type_hint": ["diffusers", class]
+            }
+        ])
+    };
+    let mut index = json!({
+        "_class_name": "AnimaModularPipeline",
+        "transformer": specification("CosmosTransformer3DModel", "transformer"),
+        "text_conditioner": specification("AnimaTextConditioner", "text_conditioner")
+    });
+    for (name, library, class) in [
+        ("scheduler", "diffusers", "FlowMatchEulerDiscreteScheduler"),
+        ("text_encoder", "transformers", "Qwen3Model"),
+        ("tokenizer", "transformers", "Qwen2Tokenizer"),
+        ("t5_tokenizer", "transformers", "T5TokenizerFast"),
+        ("vae", "diffusers", "AutoencoderKLQwenImage"),
+    ] {
+        let root = package.0.join(name);
+        fs::create_dir(&root).unwrap();
+        let mut component = specification(class, name);
+        component[0] = json!(library);
+        component[2]["type_hint"][0] = json!(library);
+        index[name] = component;
+        let config = if name == "scheduler" {
+            "scheduler_config.json"
+        } else if class.contains("Tokenizer") {
+            "tokenizer_config.json"
+        } else {
+            "config.json"
+        };
+        fs::write(root.join(config), b"{}").unwrap();
+        if matches!(name, "text_encoder" | "vae") {
+            fs::copy(
+                package
+                    .0
+                    .join("transformer/diffusion_pytorch_model.safetensors"),
+                root.join("model.safetensors"),
+            )
+            .unwrap();
+        }
+    }
+    let index_path = package.0.join("modular_model_index.json");
+    fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
+    assert!(inventory(&package.0)
+        .err()
+        .unwrap()
+        .contains("Missing safetensors weights for text_conditioner"));
+    fs::copy(
+        package
+            .0
+            .join("transformer/diffusion_pytorch_model.safetensors"),
+        package
+            .0
+            .join("text_conditioner/diffusion_pytorch_model.safetensors"),
+    )
+    .unwrap();
+    assert_eq!(
+        inspect(&package.0)
+            .unwrap()
+            .detected_architecture
+            .as_deref(),
+        Some("anima")
+    );
+    index["text_conditioner"][2]["subfolder"] = json!("../external");
+    fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
+    assert!(inventory(&package.0).is_err());
+}
+
+#[test]
 fn qwen_quantized_packages_require_a_valid_declared_transformer() {
     let package = TestPackage::new();
     fs::remove_file(

@@ -31,7 +31,7 @@ from PIL import Image, ImageOps
 import media_open_models
 import media_image_sampling
 
-WORKER_VERSION = "media-diffusers-worker/1.96.0"
+WORKER_VERSION = "media-diffusers-worker/1.101.0"
 OFFLOAD_CACHE_COMPATIBILITY_VERSION = "media-diffusers-worker/1.19.0"
 SCHEMA_VERSION = 5
 MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES = 15 * 1024**3
@@ -1024,12 +1024,16 @@ def _load_pipeline(
     architecture = _required_text(model, "architecture", 64)
     if architecture not in SUPPORTED_ARCHITECTURES:
         raise WorkerError(f"Unsupported model architecture: {architecture}")
+    profile = media_open_models.PROFILES.get(architecture)
+    if profile is not None and profile.get("baseArchitecture"):
+        return _load_pipeline(diffusers, torch, {**model, "architecture": profile["baseArchitecture"]},
+                              flux2_inpainting=flux2_inpainting, torch_dtype=torch_dtype)
     package_kind = _required_text(model, "packageKind", 64)
     model_path = _absolute_existing_path(model.get("path"), file=package_kind == "single-file")
     device, _, _ = _device(torch)
     dtype = torch_dtype if torch_dtype is not None else _pipeline_dtype(torch, device)
     if torch_dtype is None and architecture in (
-        "stable-diffusion-3",
+        "stable-diffusion-3", "anima",
         "z-image", "z-image-turbo",
         "flux-1", "flux-1-dev", "flux-1-schnell", "flux-2", "flux-2-dev",
         "flux-2-klein-base-4b", "flux-2-klein-9b", "flux-2-klein-base-9b",
@@ -1941,6 +1945,13 @@ def _chain_step_callbacks(callbacks: list[Any]) -> Any:
 def _dimensions(
     architecture: str, aspect_ratio: str, policy: str
 ) -> tuple[int, int]:
+    profile = media_open_models.PROFILES.get(architecture)
+    if profile is not None and profile.get("defaultResolution"):
+        scale = profile["defaultResolution"]
+        ratios = {"1:1": (scale, scale), "4:5": (448, 560), "16:9": (768, 432), "9:16": (432, 768)}
+        if aspect_ratio not in ratios:
+            raise WorkerError(f"Unsupported aspect ratio: {aspect_ratio}")
+        return ratios[aspect_ratio]
     small = architecture in ("stable-diffusion-1", "stable-diffusion-2")
     if architecture in ("flux-2", "krea-2", "qwen-image-2.1"):
         scale = (
@@ -2031,15 +2042,13 @@ def _image_sampling(request: dict[str, Any], architecture: str, policy: str) -> 
     return width, height, steps, guidance
 
 
-def _configure_large_image_vae_decode(
-    pipeline: Any,
+def _image_vae_decode_settings(
     architecture: str,
     torch: Any,
     width: int,
     height: int,
     device_memory: int | None,
-) -> dict[str, Any]:
-    """Bound VAE decode memory with the model's overlapping tiles."""
+) -> tuple[bool, int, bool]:
     native_sdxl_decode = (
         architecture in (
             "stable-diffusion-xl", "stable-diffusion-xl-dmad-4step",
@@ -2053,6 +2062,19 @@ def _configure_large_image_vae_decode(
     if qwen_decode and (device_memory is None or device_memory < 15 * 1024 ** 3):
         tile_size = 512
     enabled = width * height > tile_size ** 2 if qwen_decode else max(width, height) > tile_size
+    return enabled, tile_size, native_sdxl_decode
+
+
+def _configure_large_image_vae_decode(
+    pipeline: Any,
+    architecture: str,
+    torch: Any,
+    width: int,
+    height: int,
+    device_memory: int | None,
+) -> dict[str, Any]:
+    enabled, tile_size, native_sdxl_decode = _image_vae_decode_settings(architecture, torch, width, height, device_memory)
+    qwen_decode = architecture in ("qwen-image-2.1", "qwen-image-2.1-turbo")
     vae = getattr(pipeline, "vae", None)
     enable_tiling = getattr(vae, "enable_tiling", None)
     if enabled and not callable(enable_tiling):
@@ -2119,6 +2141,31 @@ def _configure_large_image_vae_decode(
             else "pipeline"
         ),
     }
+
+
+def _configure_image_group_offload(pipeline: Any, torch: Any) -> None:
+    parameters = {
+        id(parameter): parameter
+        for component in pipeline.components.values()
+        if hasattr(component, "parameters")
+        for parameter in component.parameters()
+    }
+    model_bytes = sum(
+        parameter.numel() * parameter.element_size()
+        for parameter in parameters.values()
+    )
+    physical_memory = _physical_memory_bytes()
+    use_stream = (
+        physical_memory is not None
+        and model_bytes > 0
+        and physical_memory >= 2 * model_bytes
+    )
+    pipeline.enable_group_offload(
+        onload_device=torch.device("cuda", torch.cuda.current_device()),
+        offload_device=torch.device("cpu"), offload_type="block_level",
+        num_blocks_per_group=1, non_blocking=use_stream, use_stream=use_stream,
+        record_stream=use_stream, low_cpu_mem_usage=use_stream,
+    )
 
 
 def _decode_flux2_latents_on_cpu(
@@ -2650,6 +2697,11 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         except ValueError as error:
             raise WorkerError(str(error)) from error
     width, height, step_count, requested_guidance = _image_sampling(request, architecture, policy)
+    sampling_architecture = architecture
+    if profile is not None and profile.get("baseArchitecture"):
+        media_open_models.image_arguments(architecture, request.get("sampling", {}), [], negative_prompt)
+        requested_guidance = profile["guidance"] if requested_guidance is None else requested_guidance
+        architecture = profile["baseArchitecture"]
     output_directory = _fresh_output_directory(request.get("outputDirectory"))
     addons = request.get("addons", [])
     if not isinstance(addons, list) or len(addons) > 24:
@@ -2840,10 +2892,8 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         "controlnetPath": str(controlnet_path) if controlnet_path is not None else None,
         "ipAdapterPath": request.get("ipAdapterPath") if ip_adapter_references else None,
         "references": [{"role": item["role"], "influence": item["influence"]} for item in references] if ip_adapter_references else [],
-        "width": width,
-        "height": height,
+        "vaeDecode": _image_vae_decode_settings(architecture, torch, width, height, device_memory),
         "memoryProfile": request.get("memoryProfile"),
-        "sampler": request.get("sampling", {}).get("sampler"),
     }) if cache is not None else None
     if krea_checkpoint:
         config_path = _absolute_existing_path(model.get("configPath"), file=False)
@@ -2866,7 +2916,6 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             model,
             flux2_inpainting=flux2_inpainting,
         )
-        media_image_sampling.configure_sampler(pipeline, diffusers, architecture, request.get("sampling", {}).get("sampler"))
         if control_image is not None and controlnet_path is not None:
             pipeline = _controlnet_pipeline(
                 diffusers,
@@ -2908,20 +2957,19 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         ) = _apply_addons(
             pipeline, addons, prompt, negative_prompt
         )
-        if not krea_checkpoint and architecture != "hunyuan-image-3":
+        if architecture == "anima":
+            pipeline.to(runtime_device)
+        elif not krea_checkpoint and architecture != "hunyuan-image-3":
             if runtime_device == "cuda":
-                if architecture in (
+                if architecture in ("flux-1-dev", "flux-1-schnell"):
+                    pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
+                elif architecture in (
                     "z-image", "z-image-turbo", "qwen-image", "qwen-image-2512",
                     "qwen-image-2.1", "qwen-image-2.1-turbo",
-                    "flux-1", "flux-1-dev", "flux-1-schnell",
+                    "flux-1",
                     "krea-2-raw", "krea-2-turbo",
-                ):
-                    pipeline.enable_group_offload(
-                        onload_device=torch.device("cuda", torch.cuda.current_device()),
-                        offload_device=torch.device("cpu"), offload_type="block_level",
-                        num_blocks_per_group=1, non_blocking=True, use_stream=True,
-                        record_stream=True, low_cpu_mem_usage=True,
-                    )
+                ) or sampling_architecture == "stable-diffusion-3.5-large-turbo":
+                    _configure_image_group_offload(pipeline, torch)
                 else:
                     pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
             else:
@@ -2957,6 +3005,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                 if addon["placement"] in ("negative", "both"):
                     negative_prompt = _append_token(negative_prompt, addon["token"])
         _verify_embedding_prompt_tokens(pipeline, applied, prompt, negative_prompt)
+    media_image_sampling.configure_sampler(pipeline, diffusers, sampling_architecture, request.get("sampling", {}).get("sampler"))
     edit_strength = request.get("editStrength", 0.5)
     if primary_reference_image is not None:
         if (
@@ -3138,6 +3187,8 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             arguments.update(embedding_arguments(
                 pipeline, effective_prompt, negative_prompt, pipeline._execution_device, guidance,
             ))
+        elif architecture == "anima":
+            arguments["negative_prompt"] = negative_prompt
         elif "negative_prompt" in call_parameters and negative_prompt.strip():
             if any(addon["kind"] == "textual-inversion" and addon["placement"] != "positive" for addon in applied):
                 guidance = arguments.get("guidance_scale", call_parameters["guidance_scale"].default)
@@ -3191,7 +3242,12 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         cpu_vae_decode = vae_decode_evidence["device"] == "cpu"
         if cpu_vae_decode:
             arguments["output_type"] = "latent"
-        result = pipeline(**arguments)
+        if architecture == "anima":
+            from media_anima import generate_image
+
+            result = generate_image(pipeline, arguments)
+        else:
+            result = pipeline(**arguments)
         if any(getattr(result, "nsfw_content_detected", None) or []):
             raise WorkerError("The model withheld an image. Adjust the prompt or seed, then retry.")
         if cpu_vae_decode:

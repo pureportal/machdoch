@@ -28,6 +28,7 @@ const KREA_QWEN_IMAGE_REVISION: &str = "75e0b4be04f60ec59a75f475837eced720f823b6
 pub(super) const SUPPORTED_ARCHITECTURES: &[&str] = &[
     "stable-diffusion-1",
     "stable-diffusion-2",
+    "sd-turbo",
     "stable-diffusion-xl",
     "pony",
     "stable-diffusion-3",
@@ -169,6 +170,11 @@ pub(crate) fn capabilities_for_architecture(architecture: &str) -> &'static [&'s
 }
 
 pub(super) fn pipeline_architecture(architecture: &str) -> &str {
+    if let Some(base) = super::open_models::by_architecture(architecture)
+        .and_then(|profile| profile.base_architecture.as_deref())
+    {
+        return base;
+    }
     match architecture {
         "pony" => "stable-diffusion-xl",
         "krea-2-raw" | "krea-2-turbo" => "krea-2",
@@ -694,6 +700,11 @@ pub(super) fn prepare_model_config(
 ) -> MediaResult<Option<PathBuf>> {
     let config_root = revision_root.join("config");
     match architecture {
+        "sd-turbo" => super::model_components::ensure_components(
+            &config_root,
+            include_str!("sd_turbo_components.json"),
+        )
+        .map(Some),
         "wan-2.2-ti2v" => super::model_components::ensure_components(
             &config_root,
             include_str!("wan_components.json"),
@@ -725,8 +736,17 @@ pub(super) fn prepare_model_config(
             .map_err(|error| format!("failed to publish the Qwen runtime manifest: {error}"))?;
             Ok(Some(config_root))
         }
-        "stable-diffusion-1" | "stable-diffusion-xl" | "pony" => {
-            super::model_components::ensure_sd_config(&config_root, architecture).map(Some)
+        architecture
+            if matches!(
+                pipeline_architecture(architecture),
+                "stable-diffusion-1" | "stable-diffusion-xl"
+            ) =>
+        {
+            super::model_components::ensure_sd_config(
+                &config_root,
+                pipeline_architecture(architecture),
+            )
+            .map(Some)
         }
         _ => Ok(None),
     }
@@ -990,7 +1010,11 @@ pub(crate) fn import_reviewed(
     if Path::new(&request.source_path).is_dir() {
         return super::model_package_import::import_reviewed(paths, request);
     }
-    if !SUPPORTED_ARCHITECTURES.contains(&request.architecture.as_str()) {
+    if !SUPPORTED_ARCHITECTURES.contains(&request.architecture.as_str())
+        && !super::open_models::by_architecture(&request.architecture).is_some_and(|profile| {
+            profile.base_architecture.as_deref() == Some("stable-diffusion-xl")
+        })
+    {
         return Err("architecture is not a supported local model family".to_string());
     }
     if request

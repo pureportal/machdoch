@@ -11,6 +11,7 @@ pub(super) struct OpenModelProfile {
     pub(super) family: String,
     pub(super) repository: String,
     pub(super) pipeline: String,
+    pub(super) base_architecture: Option<String>,
     pub(super) capabilities: Vec<String>,
     pub(super) steps: u32,
     pub(super) guidance: f64,
@@ -100,7 +101,14 @@ pub(super) fn required_import_license(architecture: &str) -> Option<&'static Pro
         }));
     }
     by_architecture(architecture)
-        .filter(|profile| profile.distillation.is_some() || architecture == "qwen-image-2.1-turbo")
+        .filter(|profile| {
+            profile.distillation.is_some()
+                || profile.base_architecture.is_some()
+                || matches!(
+                    architecture,
+                    "qwen-image-2.1-turbo" | "anima" | "hidream-i1-full"
+                )
+        })
         .map(|profile| &profile.license)
 }
 

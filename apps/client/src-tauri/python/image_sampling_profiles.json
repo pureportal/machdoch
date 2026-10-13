@@ -5,7 +5,8 @@
     "guidance": [0, 0],
     "defaultGuidance": 0,
     "samplers": ["lcm"],
-    "sources": ["https://huggingface.co/ZhengmingYu/DMAD"]
+    "sources": ["https://huggingface.co/ZhengmingYu/DMAD"],
+    "recommendedSamplers": ["lcm"]
   },
   {
     "architecture": "stable-diffusion-xl-dmad-1step",
@@ -13,7 +14,8 @@
     "guidance": [0, 0],
     "defaultGuidance": 0,
     "samplers": ["lcm"],
-    "sources": ["https://huggingface.co/ZhengmingYu/DMAD"]
+    "sources": ["https://huggingface.co/ZhengmingYu/DMAD"],
+    "recommendedSamplers": ["lcm"]
   },
   {
     "architecture": "z-image-turbo",
@@ -21,7 +23,8 @@
     "guidance": [0, 0],
     "defaultGuidance": 0,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/Tongyi-MAI/Z-Image-Turbo"]
+    "sources": ["https://huggingface.co/Tongyi-MAI/Z-Image-Turbo"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "z-image",
@@ -29,7 +32,8 @@
     "guidance": [3, 5],
     "defaultGuidance": 4,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/Tongyi-MAI/Z-Image"]
+    "sources": ["https://huggingface.co/Tongyi-MAI/Z-Image"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "qwen-image",
@@ -37,7 +41,8 @@
     "guidance": [4, 4],
     "defaultGuidance": 4,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/Qwen/Qwen-Image"]
+    "sources": ["https://huggingface.co/Qwen/Qwen-Image"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "qwen-image-2512",
@@ -45,7 +50,8 @@
     "guidance": [4, 4],
     "defaultGuidance": 4,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/Qwen/Qwen-Image-2512"]
+    "sources": ["https://huggingface.co/Qwen/Qwen-Image-2512"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "qwen-image-edit-2511",
@@ -53,7 +59,8 @@
     "guidance": [4, 4],
     "defaultGuidance": 4,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/Qwen/Qwen-Image-Edit-2511"]
+    "sources": ["https://huggingface.co/Qwen/Qwen-Image-Edit-2511"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "sana",
@@ -64,7 +71,8 @@
     "sources": [
       "https://huggingface.co/Efficient-Large-Model/Sana_1600M_1024px_diffusers",
       "https://huggingface.co/Efficient-Large-Model/Sana_1600M_1024px_diffusers/blob/main/scheduler/scheduler_config.json"
-    ]
+    ],
+    "recommendedSamplers": ["dpmpp-2m"]
   },
   {
     "architecture": "sana-sprint",
@@ -75,7 +83,8 @@
     "sources": [
       "https://huggingface.co/Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers",
       "https://huggingface.co/Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers/blob/main/scheduler/scheduler_config.json"
-    ]
+    ],
+    "recommendedSamplers": ["scm"]
   },
   {
     "architecture": "glm-image",
@@ -83,15 +92,17 @@
     "guidance": [1.5, 1.5],
     "defaultGuidance": 1.5,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/zai-org/GLM-Image"]
+    "sources": ["https://huggingface.co/zai-org/GLM-Image"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "hidream-i1-full",
     "steps": [50, 50],
     "guidance": [5, 5],
     "defaultGuidance": 5,
-    "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/HiDream-ai/HiDream-I1-Full"]
+    "samplers": ["unipc", "flow-euler"],
+    "sources": ["https://huggingface.co/HiDream-ai/HiDream-I1-Full"],
+    "recommendedSamplers": ["unipc"]
   },
   {
     "architecture": "ideogram-4",
@@ -99,7 +110,8 @@
     "guidance": [7, 7],
     "defaultGuidance": 7,
     "samplers": [],
-    "sources": ["https://huggingface.co/ideogram-ai/ideogram-4-nf4"]
+    "sources": ["https://huggingface.co/ideogram-ai/ideogram-4-nf4"],
+    "recommendedSamplers": []
   },
   {
     "architecture": "flux-1-schnell",
@@ -107,7 +119,8 @@
     "guidance": [0, 0],
     "defaultGuidance": 0,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/black-forest-labs/FLUX.1-schnell"]
+    "sources": ["https://huggingface.co/black-forest-labs/FLUX.1-schnell"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "flux-1-dev",
@@ -118,7 +131,8 @@
     "sources": [
       "https://huggingface.co/black-forest-labs/FLUX.1-dev",
       "https://huggingface.co/docs/diffusers/api/pipelines/flux#guidance-distilled"
-    ]
+    ],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "flux-2-klein-base-4b",
@@ -126,7 +140,10 @@
     "guidance": [4, 4],
     "defaultGuidance": 4,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B"]
+    "sources": [
+      "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B"
+    ],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "flux-2-klein-9b",
@@ -134,7 +151,8 @@
     "guidance": [1, 1],
     "defaultGuidance": 1,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/black-forest-labs/FLUX.2-klein-9B"]
+    "sources": ["https://huggingface.co/black-forest-labs/FLUX.2-klein-9B"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "flux-2-klein-base-9b",
@@ -142,7 +160,10 @@
     "guidance": [4, 4],
     "defaultGuidance": 4,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9B"]
+    "sources": [
+      "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9B"
+    ],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "flux-2-dev",
@@ -150,7 +171,8 @@
     "guidance": [4, 4],
     "defaultGuidance": 4,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/black-forest-labs/FLUX.2-dev"]
+    "sources": ["https://huggingface.co/black-forest-labs/FLUX.2-dev"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "krea-2-raw",
@@ -158,7 +180,8 @@
     "guidance": [3.5, 3.5],
     "defaultGuidance": 3.5,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/krea/Krea-2-Raw"]
+    "sources": ["https://huggingface.co/krea/Krea-2-Raw"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "qwen-image-2.1-turbo",
@@ -166,7 +189,8 @@
     "guidance": [1, 1],
     "defaultGuidance": 1,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo"]
+    "sources": ["https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "stable-diffusion-1",
@@ -187,7 +211,8 @@
     "sources": [
       "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/text2img",
       "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
-    ]
+    ],
+    "recommendedSamplers": ["dpmpp-2m-karras"]
   },
   {
     "architecture": "stable-diffusion-2",
@@ -208,7 +233,8 @@
     "sources": [
       "https://huggingface.co/stabilityai/stable-diffusion-2-1",
       "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
-    ]
+    ],
+    "recommendedSamplers": ["dpmpp-2m-karras"]
   },
   {
     "architecture": "stable-diffusion-xl",
@@ -229,7 +255,8 @@
     "sources": [
       "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_xl",
       "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
-    ]
+    ],
+    "recommendedSamplers": ["dpmpp-2m-karras"]
   },
   {
     "architecture": "pony",
@@ -250,7 +277,8 @@
     "sources": [
       "https://civitai.com/models/257749/pony-diffusion-v6-xl",
       "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
-    ]
+    ],
+    "recommendedSamplers": ["euler-ancestral"]
   },
   {
     "architecture": "stable-diffusion-3",
@@ -262,7 +290,8 @@
       "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_3",
       "https://huggingface.co/stabilityai/stable-diffusion-3.5-medium",
       "https://huggingface.co/stabilityai/stable-diffusion-3.5-large"
-    ]
+    ],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "flux-1",
@@ -270,7 +299,8 @@
     "guidance": [3.5, 3.5],
     "defaultGuidance": 3.5,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/black-forest-labs/FLUX.1-dev"]
+    "sources": ["https://huggingface.co/black-forest-labs/FLUX.1-dev"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "flux-2",
@@ -278,7 +308,8 @@
     "guidance": [1, 1],
     "defaultGuidance": 1.0,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/black-forest-labs/FLUX.2-klein-4B"]
+    "sources": ["https://huggingface.co/black-forest-labs/FLUX.2-klein-4B"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "krea-2",
@@ -286,7 +317,8 @@
     "guidance": [0, 1.5],
     "defaultGuidance": 0.5,
     "samplers": ["flow-euler"],
-    "sources": ["https://civitai.com/models/2786499?modelVersionId=3329215"]
+    "sources": ["https://civitai.com/models/2786499?modelVersionId=3329215"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "qwen-image-2.1",
@@ -294,7 +326,8 @@
     "guidance": [1, 1],
     "defaultGuidance": 1.0,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/Qwen/Qwen-Image-2.1"]
+    "sources": ["https://huggingface.co/Qwen/Qwen-Image-2.1"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "krea-2-turbo",
@@ -302,7 +335,8 @@
     "guidance": [0, 0],
     "defaultGuidance": 0.0,
     "samplers": ["flow-euler"],
-    "sources": ["https://huggingface.co/krea/Krea-2-Turbo"]
+    "sources": ["https://huggingface.co/krea/Krea-2-Turbo"],
+    "recommendedSamplers": ["flow-euler"]
   },
   {
     "architecture": "hunyuan-image-3",
@@ -313,6 +347,162 @@
     "sources": [
       "https://huggingface.co/tencent/HunyuanImage-3.0/blob/main/generation_config.json",
       "https://github.com/Tencent-Hunyuan/HunyuanImage-3.0"
+    ],
+    "recommendedSamplers": ["hunyuan-euler"]
+  },
+  {
+    "architecture": "illustrious-xl",
+    "steps": [20, 28],
+    "guidance": [5, 7.5],
+    "defaultGuidance": 7,
+    "samplers": [
+      "euler",
+      "euler-ancestral",
+      "heun",
+      "dpmpp-2m",
+      "dpmpp-2m-karras",
+      "dpmpp-2m-sde-karras",
+      "ddim",
+      "deis",
+      "unipc"
+    ],
+    "recommendedSamplers": ["euler-ancestral"],
+    "sources": [
+      "https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0"
     ]
+  },
+  {
+    "architecture": "noobai-xl",
+    "steps": [25, 30],
+    "guidance": [5, 6],
+    "defaultGuidance": 5.5,
+    "samplers": [
+      "euler",
+      "euler-ancestral",
+      "heun",
+      "dpmpp-2m",
+      "dpmpp-2m-karras",
+      "dpmpp-2m-sde-karras",
+      "ddim",
+      "deis",
+      "unipc"
+    ],
+    "recommendedSamplers": ["euler-ancestral"],
+    "sources": ["https://huggingface.co/Laxhar/noobai-XL-1.0"]
+  },
+  {
+    "architecture": "juggernaut-xl",
+    "steps": [30, 40],
+    "guidance": [3, 7],
+    "defaultGuidance": 5,
+    "samplers": [
+      "euler",
+      "euler-ancestral",
+      "heun",
+      "dpmpp-2m",
+      "dpmpp-2m-karras",
+      "dpmpp-2m-sde-karras",
+      "ddim",
+      "deis",
+      "unipc"
+    ],
+    "recommendedSamplers": ["dpmpp-2m-karras"],
+    "sources": ["https://huggingface.co/RunDiffusion/Juggernaut-XL-v9"]
+  },
+  {
+    "architecture": "realvis-xl",
+    "steps": [50, 60],
+    "guidance": [5, 8],
+    "defaultGuidance": 5,
+    "samplers": [
+      "euler",
+      "euler-ancestral",
+      "heun",
+      "dpmpp-2m",
+      "dpmpp-2m-karras",
+      "dpmpp-2m-sde-karras",
+      "ddim",
+      "deis",
+      "unipc"
+    ],
+    "recommendedSamplers": ["dpmpp-2m-karras"],
+    "sources": ["https://huggingface.co/SG161222/RealVisXL_V5.0"]
+  },
+  {
+    "architecture": "dreamshaper-xl",
+    "steps": [25, 30],
+    "guidance": [5, 8],
+    "defaultGuidance": 7.5,
+    "samplers": [
+      "euler",
+      "euler-ancestral",
+      "heun",
+      "dpmpp-2m",
+      "dpmpp-2m-karras",
+      "dpmpp-2m-sde-karras",
+      "ddim",
+      "deis",
+      "unipc"
+    ],
+    "recommendedSamplers": ["deis"],
+    "sources": ["https://huggingface.co/Lykon/dreamshaper-xl-1-0"]
+  },
+  {
+    "architecture": "sdxl-turbo",
+    "steps": [1, 4],
+    "guidance": [0, 0],
+    "defaultGuidance": 0,
+    "samplers": [
+      "euler",
+      "euler-ancestral",
+      "heun",
+      "dpmpp-2m",
+      "dpmpp-2m-karras",
+      "dpmpp-2m-sde-karras",
+      "ddim",
+      "deis",
+      "unipc"
+    ],
+    "recommendedSamplers": ["euler-ancestral"],
+    "sources": ["https://huggingface.co/stabilityai/sdxl-turbo"]
+  },
+  {
+    "architecture": "sd-turbo",
+    "steps": [1, 4],
+    "guidance": [0, 0],
+    "defaultGuidance": 0,
+    "samplers": [
+      "euler",
+      "euler-ancestral",
+      "heun",
+      "dpmpp-2m",
+      "dpmpp-2m-karras",
+      "dpmpp-2m-sde-karras",
+      "ddim",
+      "deis",
+      "unipc"
+    ],
+    "recommendedSamplers": ["euler"],
+    "sources": ["https://huggingface.co/stabilityai/sd-turbo"]
+  },
+  {
+    "architecture": "stable-diffusion-3.5-large-turbo",
+    "steps": [4, 4],
+    "guidance": [0, 0],
+    "defaultGuidance": 0,
+    "samplers": ["flow-euler"],
+    "recommendedSamplers": ["flow-euler"],
+    "sources": [
+      "https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo"
+    ]
+  },
+  {
+    "architecture": "anima",
+    "steps": [30, 50],
+    "guidance": [4, 5],
+    "defaultGuidance": 4,
+    "samplers": ["flow-euler"],
+    "recommendedSamplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/circlestone-labs/Anima"]
   }
 ]

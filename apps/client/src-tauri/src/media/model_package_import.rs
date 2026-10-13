@@ -137,12 +137,20 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
             .map_err(|error| error.to_string())?;
         hasher.update(modified.as_nanos().to_le_bytes());
     }
-    let index = read_json(&root.join("model_index.json"))?;
+    let modular = root.join("modular_model_index.json").is_file();
+    let index = read_json(&root.join(if modular {
+        "modular_model_index.json"
+    } else {
+        "model_index.json"
+    }))?;
     let pipeline = index
         .get("_class_name")
         .and_then(Value::as_str)
         .ok_or("The model folder has no pipeline class")?
         .to_string();
+    if modular && pipeline != "AnimaModularPipeline" {
+        return Err("Select an Anima modular model folder.".to_string());
+    }
     let gguf_files = files
         .iter()
         .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("gguf"))
@@ -183,6 +191,29 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
         ));
     }
     let h3_student = pipeline == "MiniMaxH3ModularPipeline";
+    let anima = pipeline == "AnimaModularPipeline";
+    if anima {
+        for (name, library, class) in [
+            ("scheduler", "diffusers", "FlowMatchEulerDiscreteScheduler"),
+            ("text_conditioner", "diffusers", "AnimaTextConditioner"),
+            ("text_encoder", "transformers", "Qwen3Model"),
+            ("tokenizer", "transformers", "Qwen2Tokenizer"),
+            ("transformer", "diffusers", "CosmosTransformer3DModel"),
+            ("vae", "diffusers", "AutoencoderKLQwenImage"),
+        ] {
+            if index[name][0] != library || index[name][1] != class {
+                return Err(format!("Missing or incompatible Anima component: {name}"));
+            }
+        }
+        if index["t5_tokenizer"][0] != "transformers"
+            || !matches!(
+                index["t5_tokenizer"][1].as_str(),
+                Some("T5Tokenizer" | "T5TokenizerFast")
+            )
+        {
+            return Err("Missing or incompatible Anima component: t5_tokenizer".to_string());
+        }
+    }
     let sdxl_student = pipeline == "StableDiffusionXLPipeline"
         && open_models::profiles().iter().any(|profile| {
             profile.pipeline == pipeline
@@ -220,25 +251,26 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
         let Some(component) = specification.as_array() else {
             continue;
         };
-        if component.len() != if h3_student { 3 } else { 2 } {
+        if component.len() != if h3_student || anima { 3 } else { 2 } {
             return Err(format!("Invalid component {name}"));
         }
         if component[0].is_null() && component[1].is_null() {
             continue;
         }
         let class = component[1].as_str().ok_or("Invalid component class")?;
-        if h3_student {
+        if h3_student || anima {
             let loading = component[2]
                 .as_object()
-                .ok_or("Invalid MiniMax-H3 component specification")?;
+                .ok_or("Invalid modular component specification")?;
             if loading.get("type_hint") != Some(&Value::Array(component[..2].to_vec()))
                 || loading.get("subfolder").and_then(Value::as_str) != Some(name.as_str())
-                || loading
-                    .get("pretrained_model_name_or_path")
-                    .and_then(Value::as_str)
-                    != Some("MiniMaxAI/MiniMax-H3")
+                || (h3_student
+                    && loading
+                        .get("pretrained_model_name_or_path")
+                        .and_then(Value::as_str)
+                        != Some("MiniMaxAI/MiniMax-H3"))
             {
-                return Err(format!("Invalid MiniMax-H3 component: {name}"));
+                return Err(format!("Invalid modular component: {name}"));
             }
             if name == "transformer_ref" {
                 if component[0] != "diffusers" || class != "MiniMaxH3Transformer3DModel" {
@@ -286,6 +318,7 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
             || class.ends_with("ForConditionalGeneration")
             || class.ends_with("ForCausalLM")
             || class == "SpeechT5HifiGan"
+            || (anima && name == "text_conditioner")
             || native_hunyuan_component
             || (h3_student && name == "text_encoder")
         {
