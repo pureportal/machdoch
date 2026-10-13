@@ -10,11 +10,12 @@ import unittest
 import torch
 from safetensors.torch import save_file
 from peft import LoraConfig
-from transformers import CLIPTextConfig, CLIPTextModel, CLIPTokenizer
+from transformers import CLIPTextConfig, CLIPTextModel, CLIPTextModelWithProjection, CLIPTokenizer
 from diffusers import (
     AutoencoderKL,
     DDIMScheduler,
     StableDiffusionPipeline,
+    StableDiffusionXLPipeline,
     UNet2DConditionModel,
 )
 from diffusers import (
@@ -222,6 +223,41 @@ class TextualInversionTests(unittest.TestCase):
         result = pipeline.text_encoder.get_submodule(target)(value)
         torch.testing.assert_close(result, baseline + 0.6 * (value @ down.T @ up.T))
 
+    def test_kohya_sdxl_lora_changes_both_clip_encoders_with_network_alpha(self):
+        base = image_pipeline()
+        projected = CLIPTextModelWithProjection(base.text_encoder.config)
+        pipeline = StableDiffusionXLPipeline(
+            vae=base.vae, unet=base.unet, scheduler=base.scheduler,
+            text_encoder=base.text_encoder, text_encoder_2=projected,
+            tokenizer=base.tokenizer, tokenizer_2=base.tokenizer,
+        )
+        value = torch.ones(1, 16)
+        down = torch.ones(2, 16) * 0.05
+        up = torch.ones(16, 2) * 0.1
+        modules = (
+            ("lora_te1", pipeline.text_encoder, "encoder.layers.0.self_attn.q_proj"),
+            ("lora_te2", projected, "text_model.encoder.layers.0.self_attn.q_proj"),
+        )
+        baseline = {prefix: encoder.get_submodule(module)(value).detach()
+                    for prefix, encoder, module in modules}
+        state = {}
+        for prefix, _, _ in modules:
+            for projection in ("q", "k", "v", "out"):
+                key = f"{prefix}_text_model_encoder_layers_0_self_attn_{projection}_proj"
+                state[f"{key}.lora_down.weight"] = down.clone()
+                state[f"{key}.lora_up.weight"] = up.clone()
+                state[f"{key}.alpha"] = torch.tensor(4.0)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "kohya.safetensors"
+            save_file(state, path)
+            IMAGE_ADDONS.load_text_encoder_lora(
+                pipeline, path, "kohya-style", ["text-encoder", "text-encoder-2"]
+            )
+        pipeline.set_adapters(["kohya-style"], adapter_weights=[0.6])
+        for prefix, encoder, module in modules:
+            torch.testing.assert_close(encoder.get_submodule(module)(value),
+                                       baseline[prefix] + 0.6 * 2 * (value @ down.T @ up.T))
+
     def test_clip_metadata_preserves_target_patterns_ranks_and_alpha(self):
         query = "encoder.layers.0.self_attn.q_proj"
         value_projection = "encoder.layers.0.self_attn.v_proj"
@@ -274,6 +310,49 @@ class TextualInversionTests(unittest.TestCase):
                 for target, reference in expected.items():
                     torch.testing.assert_close(
                         pipeline.text_encoder.get_submodule(target)(value), reference
+                    )
+
+    def test_sdxl_lora_preserves_the_projected_encoders_module_names(self):
+        target = "encoder.layers.0.self_attn.q_proj"
+        value = torch.ones(1, 16)
+        down = torch.ones(2, 16) * 0.05
+        up = torch.ones(16, 2) * 0.1
+        for with_metadata in (False, True):
+            with self.subTest(metadata=with_metadata), tempfile.TemporaryDirectory() as directory:
+                base = image_pipeline()
+                projected = CLIPTextModelWithProjection(base.text_encoder.config)
+                pipeline = StableDiffusionXLPipeline(
+                    vae=base.vae, unet=base.unet, scheduler=base.scheduler,
+                    text_encoder=base.text_encoder, text_encoder_2=projected,
+                    tokenizer=base.tokenizer, tokenizer_2=base.tokenizer,
+                )
+                encoders = (
+                    ("text_encoder", pipeline.text_encoder, target),
+                    ("text_encoder_2", projected, f"text_model.{target}"),
+                )
+                baseline = {
+                    prefix: encoder.get_submodule(module)(value).detach()
+                    for prefix, encoder, module in encoders
+                }
+                state = {}
+                metadata = {}
+                for prefix, _, _ in encoders:
+                    state[f"{prefix}.text_model.{target}.lora_A.weight"] = down.clone()
+                    state[f"{prefix}.text_model.{target}.lora_B.weight"] = up.clone()
+                    if with_metadata:
+                        config = LoraConfig(r=2, lora_alpha=8, target_modules=[f"text_model.{target}"])
+                        metadata.update({f"{prefix}.{key}": setting for key, setting in config.to_dict().items()})
+                path = Path(directory) / "sdxl-encoder-lora.safetensors"
+                save_file(state, path, metadata={"lora_adapter_metadata": json.dumps(metadata, default=list)} if with_metadata else None)
+                IMAGE_ADDONS.load_text_encoder_lora(
+                    pipeline, path, "dual-clip", ["text-encoder", "text-encoder-2"]
+                )
+                pipeline.set_adapters(["dual-clip"], adapter_weights=[0.6])
+                alpha_scale = 4 if with_metadata else 1
+                for prefix, encoder, module in encoders:
+                    torch.testing.assert_close(
+                        encoder.get_submodule(module)(value),
+                        baseline[prefix] + 0.6 * alpha_scale * (value @ down.T @ up.T),
                     )
 
 

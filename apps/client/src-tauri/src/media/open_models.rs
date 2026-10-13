@@ -16,6 +16,7 @@ pub(super) struct OpenModelProfile {
     pub(super) guidance: f64,
     pub(super) fixed_steps: bool,
     pub(super) fixed_guidance: bool,
+    pub(super) sample_sigmas: Option<Vec<f64>>,
     #[serde(default = "default_max_references")]
     pub(super) max_references: usize,
     pub(super) video: Option<VideoContract>,
@@ -84,6 +85,23 @@ pub(super) fn by_architecture(architecture: &str) -> Option<&'static OpenModelPr
 
 pub(super) fn by_id(model_id: &str) -> Option<&'static OpenModelProfile> {
     profiles().iter().find(|profile| profile.id == model_id)
+}
+
+pub(super) fn required_import_license(architecture: &str) -> Option<&'static ProfileLicense> {
+    if architecture == "qwen-image-2.1" {
+        static LICENSE: OnceLock<ProfileLicense> = OnceLock::new();
+        return Some(LICENSE.get_or_init(|| ProfileLicense {
+            name: "Qwen Research License Agreement".to_string(),
+            spdx_id: None,
+            commercial_use: "review-required".to_string(),
+            source_url: Some(
+                "https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE".to_string(),
+            ),
+        }));
+    }
+    by_architecture(architecture)
+        .filter(|profile| profile.distillation.is_some() || architecture == "qwen-image-2.1-turbo")
+        .map(|profile| &profile.license)
 }
 
 pub(super) fn capabilities(architecture: &str) -> &'static [&'static str] {

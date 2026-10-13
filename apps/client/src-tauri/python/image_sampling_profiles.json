@@ -1,0 +1,318 @@
+[
+  {
+    "architecture": "stable-diffusion-xl-dmad-4step",
+    "steps": [4, 4],
+    "guidance": [0, 0],
+    "defaultGuidance": 0,
+    "samplers": ["lcm"],
+    "sources": ["https://huggingface.co/ZhengmingYu/DMAD"]
+  },
+  {
+    "architecture": "stable-diffusion-xl-dmad-1step",
+    "steps": [1, 1],
+    "guidance": [0, 0],
+    "defaultGuidance": 0,
+    "samplers": ["lcm"],
+    "sources": ["https://huggingface.co/ZhengmingYu/DMAD"]
+  },
+  {
+    "architecture": "z-image-turbo",
+    "steps": [9, 9],
+    "guidance": [0, 0],
+    "defaultGuidance": 0,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/Tongyi-MAI/Z-Image-Turbo"]
+  },
+  {
+    "architecture": "z-image",
+    "steps": [28, 50],
+    "guidance": [3, 5],
+    "defaultGuidance": 4,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/Tongyi-MAI/Z-Image"]
+  },
+  {
+    "architecture": "qwen-image",
+    "steps": [50, 50],
+    "guidance": [4, 4],
+    "defaultGuidance": 4,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/Qwen/Qwen-Image"]
+  },
+  {
+    "architecture": "qwen-image-2512",
+    "steps": [50, 50],
+    "guidance": [4, 4],
+    "defaultGuidance": 4,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/Qwen/Qwen-Image-2512"]
+  },
+  {
+    "architecture": "qwen-image-edit-2511",
+    "steps": [40, 40],
+    "guidance": [4, 4],
+    "defaultGuidance": 4,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/Qwen/Qwen-Image-Edit-2511"]
+  },
+  {
+    "architecture": "sana",
+    "steps": [20, 20],
+    "guidance": [4.5, 4.5],
+    "defaultGuidance": 4.5,
+    "samplers": ["dpmpp-2m"],
+    "sources": [
+      "https://huggingface.co/Efficient-Large-Model/Sana_1600M_1024px_diffusers",
+      "https://huggingface.co/Efficient-Large-Model/Sana_1600M_1024px_diffusers/blob/main/scheduler/scheduler_config.json"
+    ]
+  },
+  {
+    "architecture": "sana-sprint",
+    "steps": [1, 4],
+    "guidance": [4.5, 4.5],
+    "defaultGuidance": 4.5,
+    "samplers": ["scm"],
+    "sources": [
+      "https://huggingface.co/Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers",
+      "https://huggingface.co/Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers/blob/main/scheduler/scheduler_config.json"
+    ]
+  },
+  {
+    "architecture": "glm-image",
+    "steps": [50, 50],
+    "guidance": [1.5, 1.5],
+    "defaultGuidance": 1.5,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/zai-org/GLM-Image"]
+  },
+  {
+    "architecture": "hidream-i1-full",
+    "steps": [50, 50],
+    "guidance": [5, 5],
+    "defaultGuidance": 5,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/HiDream-ai/HiDream-I1-Full"]
+  },
+  {
+    "architecture": "ideogram-4",
+    "steps": [48, 48],
+    "guidance": [7, 7],
+    "defaultGuidance": 7,
+    "samplers": [],
+    "sources": ["https://huggingface.co/ideogram-ai/ideogram-4-nf4"]
+  },
+  {
+    "architecture": "flux-1-schnell",
+    "steps": [4, 4],
+    "guidance": [0, 0],
+    "defaultGuidance": 0,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/black-forest-labs/FLUX.1-schnell"]
+  },
+  {
+    "architecture": "flux-1-dev",
+    "steps": [50, 50],
+    "guidance": [3.5, 3.5],
+    "defaultGuidance": 3.5,
+    "samplers": ["flow-euler"],
+    "sources": [
+      "https://huggingface.co/black-forest-labs/FLUX.1-dev",
+      "https://huggingface.co/docs/diffusers/api/pipelines/flux#guidance-distilled"
+    ]
+  },
+  {
+    "architecture": "flux-2-klein-base-4b",
+    "steps": [50, 50],
+    "guidance": [4, 4],
+    "defaultGuidance": 4,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B"]
+  },
+  {
+    "architecture": "flux-2-klein-9b",
+    "steps": [4, 4],
+    "guidance": [1, 1],
+    "defaultGuidance": 1,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/black-forest-labs/FLUX.2-klein-9B"]
+  },
+  {
+    "architecture": "flux-2-klein-base-9b",
+    "steps": [50, 50],
+    "guidance": [4, 4],
+    "defaultGuidance": 4,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9B"]
+  },
+  {
+    "architecture": "flux-2-dev",
+    "steps": [28, 50],
+    "guidance": [4, 4],
+    "defaultGuidance": 4,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/black-forest-labs/FLUX.2-dev"]
+  },
+  {
+    "architecture": "krea-2-raw",
+    "steps": [52, 52],
+    "guidance": [3.5, 3.5],
+    "defaultGuidance": 3.5,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/krea/Krea-2-Raw"]
+  },
+  {
+    "architecture": "qwen-image-2.1-turbo",
+    "steps": [8, 8],
+    "guidance": [1, 1],
+    "defaultGuidance": 1,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo"]
+  },
+  {
+    "architecture": "stable-diffusion-1",
+    "steps": [20, 50],
+    "guidance": [5, 9],
+    "defaultGuidance": 7.5,
+    "samplers": [
+      "euler",
+      "euler-ancestral",
+      "heun",
+      "dpmpp-2m",
+      "dpmpp-2m-karras",
+      "dpmpp-2m-sde-karras",
+      "ddim",
+      "deis",
+      "unipc"
+    ],
+    "sources": [
+      "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/text2img",
+      "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
+    ]
+  },
+  {
+    "architecture": "stable-diffusion-2",
+    "steps": [20, 50],
+    "guidance": [7, 9],
+    "defaultGuidance": 7.5,
+    "samplers": [
+      "euler",
+      "euler-ancestral",
+      "heun",
+      "dpmpp-2m",
+      "dpmpp-2m-karras",
+      "dpmpp-2m-sde-karras",
+      "ddim",
+      "deis",
+      "unipc"
+    ],
+    "sources": [
+      "https://huggingface.co/stabilityai/stable-diffusion-2-1",
+      "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
+    ]
+  },
+  {
+    "architecture": "stable-diffusion-xl",
+    "steps": [20, 50],
+    "guidance": [5, 8],
+    "defaultGuidance": 5.0,
+    "samplers": [
+      "euler",
+      "euler-ancestral",
+      "heun",
+      "dpmpp-2m",
+      "dpmpp-2m-karras",
+      "dpmpp-2m-sde-karras",
+      "ddim",
+      "deis",
+      "unipc"
+    ],
+    "sources": [
+      "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_xl",
+      "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
+    ]
+  },
+  {
+    "architecture": "pony",
+    "steps": [20, 40],
+    "guidance": [5, 7],
+    "defaultGuidance": 6.0,
+    "samplers": [
+      "euler",
+      "euler-ancestral",
+      "heun",
+      "dpmpp-2m",
+      "dpmpp-2m-karras",
+      "dpmpp-2m-sde-karras",
+      "ddim",
+      "deis",
+      "unipc"
+    ],
+    "sources": [
+      "https://civitai.com/models/257749/pony-diffusion-v6-xl",
+      "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
+    ]
+  },
+  {
+    "architecture": "stable-diffusion-3",
+    "steps": [28, 40],
+    "guidance": [4.5, 7],
+    "defaultGuidance": 7.0,
+    "samplers": ["flow-euler"],
+    "sources": [
+      "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_3",
+      "https://huggingface.co/stabilityai/stable-diffusion-3.5-medium",
+      "https://huggingface.co/stabilityai/stable-diffusion-3.5-large"
+    ]
+  },
+  {
+    "architecture": "flux-1",
+    "steps": [20, 50],
+    "guidance": [3.5, 3.5],
+    "defaultGuidance": 3.5,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/black-forest-labs/FLUX.1-dev"]
+  },
+  {
+    "architecture": "flux-2",
+    "steps": [4, 4],
+    "guidance": [1, 1],
+    "defaultGuidance": 1.0,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/black-forest-labs/FLUX.2-klein-4B"]
+  },
+  {
+    "architecture": "krea-2",
+    "steps": [8, 20],
+    "guidance": [0, 1.5],
+    "defaultGuidance": 0.5,
+    "samplers": ["flow-euler"],
+    "sources": ["https://civitai.com/models/2786499?modelVersionId=3329215"]
+  },
+  {
+    "architecture": "qwen-image-2.1",
+    "steps": [30, 40],
+    "guidance": [1, 1],
+    "defaultGuidance": 1.0,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/Qwen/Qwen-Image-2.1"]
+  },
+  {
+    "architecture": "krea-2-turbo",
+    "steps": [8, 8],
+    "guidance": [0, 0],
+    "defaultGuidance": 0.0,
+    "samplers": ["flow-euler"],
+    "sources": ["https://huggingface.co/krea/Krea-2-Turbo"]
+  },
+  {
+    "architecture": "hunyuan-image-3",
+    "steps": [50, 50],
+    "guidance": [5, 5],
+    "defaultGuidance": 5,
+    "samplers": ["hunyuan-euler"],
+    "sources": [
+      "https://huggingface.co/tencent/HunyuanImage-3.0/blob/main/generation_config.json",
+      "https://github.com/Tencent-Hunyuan/HunyuanImage-3.0"
+    ]
+  }
+]

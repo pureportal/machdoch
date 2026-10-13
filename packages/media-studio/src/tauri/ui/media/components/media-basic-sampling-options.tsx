@@ -10,9 +10,13 @@ import type {
 import {
   defaultMediaImageSteps,
   mediaImageSamplingError,
+  compatibleMediaImageSamplers,
+  mediaImageSamplingProfile,
+  type MediaImageSampler,
 } from "../../../../core/media/image-sampling.js";
 import { mediaVideoDimensionsError } from "../../../../core/media/video-quality.js";
 import { openMediaModelProfile } from "../../../../core/media/open-model-profiles.js";
+import { MediaSamplingRange } from "./media-sampling-range";
 
 const control =
   "h-10 w-full min-w-0 rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-200 transition-colors hover:border-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60 disabled:cursor-not-allowed disabled:opacity-50";
@@ -109,6 +113,29 @@ export const MediaBasicSamplingOptions = ({
         {target === "image" && local ? (
           <>
             <label className={`${field} col-span-full`}>
+              <span>Sampler</span>
+              <select
+                aria-label="Sampler"
+                className={control}
+                value={sampling.sampler ?? ""}
+                onChange={(event) =>
+                  updateSampling({
+                    sampler:
+                      event.target.value === ""
+                        ? null
+                        : (event.target.value as MediaImageSampler),
+                  })
+                }
+              >
+                <option value="">Automatic</option>
+                {compatibleMediaImageSamplers(architecture).map((sampler) => (
+                  <option key={sampler.value} value={sampler.value}>
+                    {sampler.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className={`${field} col-span-full`}>
               <span>
                 {settings.editMask ? "Edit resolution" : "Resolution"}
               </span>
@@ -169,6 +196,7 @@ export const MediaBasicSamplingOptions = ({
             <label className={field}>
               <span>Sampling steps</span>
               <input
+                aria-label="Sampling steps"
                 className={control}
                 type="number"
                 min={1}
@@ -188,14 +216,20 @@ export const MediaBasicSamplingOptions = ({
                   })
                 }
               />
+              <MediaSamplingRange
+                architecture={architecture}
+                parameter="steps"
+                value={
+                  sampling.numInferenceSteps ??
+                  defaultMediaImageSteps(architecture, settings.modelPolicy)
+                }
+              />
             </label>
-            {architecture !== "flux-2" &&
-            architecture !== "krea-2" &&
-            !profile?.fixedGuidance &&
-            architecture !== "qwen-image-2.1" ? (
+            {architecture !== "flux-2" && !profile?.fixedGuidance ? (
               <label className={field}>
                 <span>Guidance</span>
                 <input
+                  aria-label="Guidance"
                   className={control}
                   type="number"
                   min={0}
@@ -210,6 +244,15 @@ export const MediaBasicSamplingOptions = ({
                           ? null
                           : Number(event.target.value),
                     })
+                  }
+                />
+                <MediaSamplingRange
+                  architecture={architecture}
+                  parameter="guidance"
+                  value={
+                    sampling.guidanceScale ??
+                    mediaImageSamplingProfile(architecture)?.defaultGuidance ??
+                    0
                   }
                 />
               </label>

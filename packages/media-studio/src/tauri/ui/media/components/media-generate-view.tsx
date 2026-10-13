@@ -402,7 +402,10 @@ export const MediaGenerateView = ({
     );
   const samplingError =
     target === "image"
-      ? mediaImageSamplingError(settings.sampling ?? {})
+      ? mediaImageSamplingError(
+          settings.sampling ?? {},
+          selectedModel?.architecture,
+        )
       : null;
   const compatibleAddons = addonModel
     ? catalog.addons.filter(
@@ -477,8 +480,7 @@ export const MediaGenerateView = ({
     !videoLoopError &&
     !videoFpsError &&
     !missingImage &&
-    (target !== "image" ||
-      mediaImageSamplingError(settings.sampling ?? {}) === null) &&
+    samplingError === null &&
     (target !== "video" ||
       mediaVideoDimensionsError(videoSettings, selectedModel?.architecture) ===
         null) &&
@@ -1659,7 +1661,9 @@ export const MediaGenerateView = ({
                     ? `Queue ${target}`
                     : `Generate ${target}`}
               </Button>
-              {!generationPending && generationBlockedReason ? (
+              {!generationPending &&
+              generationBlockedReason &&
+              (!advancedOpen || generationBlockedReason !== samplingError) ? (
                 <p className="text-center text-xs text-slate-500">
                   {generationBlockedReason}
                 </p>

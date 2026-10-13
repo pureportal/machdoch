@@ -1,6 +1,6 @@
 # Media Studio model support
 
-The canonical profile file contains 37 models, including AudioLDM 2. Profiles describe exact pipelines and sampling contracts. Installed models with an available runtime can be selected directly; loading and generation errors are reported when a request executes. Catalog coverage does not establish measured inference coverage.
+The canonical profile file contains 40 models, including AudioLDM 2. Profiles describe exact pipelines and sampling contracts. Installed models with an available runtime can be selected directly; loading and generation errors are reported when a request executes. Catalog coverage does not establish measured inference coverage.
 
 | Models                                                                                                               | Acquisition                                                |
 | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -10,7 +10,9 @@ The canonical profile file contains 37 models, including AudioLDM 2. Profiles de
 | LTX-2.5 distilled; LTX-2.3 dev; Sulphur 2 dev; Stable Video Diffusion XT                                             | Import a complete Diffusers folder                         |
 | AudioLDM 2                                                                                                           | Managed download or native Diffusers folder import         |
 
-Existing MiniMax H3, Qwen-Image 2.1, Krea Turbo, FLUX.2 klein 4B, LTX-Video 0.9.8, FramePack, HunyuanVideo I2V, and Stable Diffusion paths remain part of the current catalog.
+MiniMax H3, Qwen-Image 2.1 / Turbo, Krea 2 RAW / Turbo, FLUX.2 klein 4B, LTX-Video 0.9.8, FramePack, HunyuanVideo I2V, and Stable Diffusion paths are part of the catalog. HunyuanImage 3.0 has an adapter for Tencent's separately installed runtime and original model package; it has no real generation evidence on this host.
+
+Basic and Advanced image generation expose compatible samplers, model-specific step and guidance ranges, and warnings outside those ranges. The shared settings profiles cover 31 image architecture identifiers. The [image-engine verification report](media-studio-image-engines-verification-2026-10-12.md) records actual outputs, downloaded checkpoints, source prompts, quality defects and unresolved coverage. Suggested settings are publisher recipes and working ranges, not a guarantee of image quality.
 
 ## Generation and library changes
 
@@ -29,9 +31,11 @@ Existing MiniMax H3, Qwen-Image 2.1, Krea Turbo, FLUX.2 klein 4B, LTX-Video 0.9.
 
 Folder import uses native Diffusers components and safetensors weights. Original single-file LTX/Sulphur or Krea Raw distributions need conversion and all companion components before import. HiDream Full needs its additional Llama encoder. Gated repositories must be obtained with the user's Hugging Face access outside this downloader; access tokens are not implemented here.
 
-LongCat-Video, SkyReels V3, HunyuanImage 3.0, and Open-Sora are **not integrated**. The pinned runtime does not provide their native pipeline classes, and their upstream implementations require separate runtime/dependency and checkpoint conversion work. They are not advertised as executable models.
+LongCat-Video, SkyReels V3, and Open-Sora are **not integrated**. The pinned runtime does not provide their native pipeline classes, and their upstream implementations require separate runtime/dependency and checkpoint conversion work. They are not advertised as executable models.
 
-Only the modes listed by each profile are implemented. This change does not add MiniMax FL2VA, Wan Animate/S2V/VACE, quantized import formats, or every family derivative.
+HunyuanImage 3.0 requires Tencent's optional SDK and sufficient GPU memory. Its original publisher recipe recommends at least three 80 GB GPUs. The researched compressed ComfyUI route uses approximately 50 GB of system RAM and was tested on NVIDIA hardware; this host has 32 GB RAM and an AMD RX 9070 with 16 GB VRAM. That separate implementation is not integrated. The adapter's tests and SDK signature check establish integration contracts, not full-model inference or reference-quality output.
+
+Qwen folder imports accept the implemented GGUF quantization manifest. Original BF16 packages and compressed Hunyuan ComfyUI checkpoints use different layouts; the latter are not integrated. Only the modes listed by each profile are implemented.
 
 Audio generation coverage remains limited to AudioLDM 2. The [audio research](media-studio-audio-research-2026-10-05.md) identifies ACE-Step 1.5, Stable Audio Open, and MiniMax Speech/Music as unintegrated publisher routes. MuseTalk provides supplied-vocal lip sync, not song generation.
 

@@ -7,6 +7,13 @@ import { MediaGenerationEstimate } from "./media-generation-estimate";
 import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import { countMediaRunOutputs } from "../../../../core/media/run-library.js";
 import { MediaWorkflowModelField } from "./media-workflow-model-field";
+import { MediaSamplingRange } from "./media-sampling-range";
+import {
+  compatibleMediaImageSamplers,
+  defaultMediaImageSteps,
+  mediaImageSamplingProfile,
+  mediaImageSamplingConstraints,
+} from "../../../../core/media/image-sampling.js";
 import {
   Position,
   type Connection,
@@ -1163,6 +1170,32 @@ const NodeFieldEditor = ({
     compatibleModels.find((model) => model.id === currentModelId) ??
     compatibleModels.find((model) => model.id === resolvedModel?.id) ??
     null;
+  const imageSampling =
+    selectedModel?.target === "local" &&
+    (node.type === "task.generate-image" || node.type === "task.edit-image")
+      ? mediaImageSamplingConstraints(selectedModel.architecture)
+      : null;
+  const samplingDefault =
+    imageSampling && selectedModel
+      ? field.id === "numInferenceSteps"
+        ? defaultMediaImageSteps(
+            selectedModel.architecture,
+            node.config.modelPolicy === "fast" ||
+              node.config.modelPolicy === "quality"
+              ? node.config.modelPolicy
+              : "balanced",
+          )
+        : field.id === "guidanceScale"
+          ? mediaImageSamplingProfile(selectedModel.architecture)
+              ?.defaultGuidance
+          : undefined
+      : undefined;
+  const fixedSampling =
+    imageSampling !== null &&
+    ((field.id === "numInferenceSteps" && imageSampling.fixedSteps !== null) ||
+      (field.id === "guidanceScale" &&
+        !imageSampling.manualGuidance &&
+        selectedModel?.architecture !== "qwen-image-2.1"));
   const numericStep =
     node.type === "task.generate-video" &&
     (field.id === "width" || field.id === "height")
@@ -1205,7 +1238,7 @@ const NodeFieldEditor = ({
                   ? "vision"
                   : node.type === "operation.lip-sync"
                     ? "lip-sync"
-                  : "upscale"
+                    : "upscale"
           }
           onChange={(value) => onChange(field.id, value)}
         />
@@ -1352,11 +1385,22 @@ const NodeFieldEditor = ({
           <Input
             id={controlId}
             type="number"
-            value={typeof value === "number" ? value : ""}
+            value={
+              fixedSampling
+                ? samplingDefault
+                : typeof value === "number"
+                  ? value
+                  : ""
+            }
+            placeholder={
+              samplingDefault === undefined
+                ? undefined
+                : String(samplingDefault)
+            }
             min={field.min}
             max={field.max}
             step={numericStep}
-            disabled={field.readOnly}
+            disabled={field.readOnly || fixedSampling}
             aria-invalid={issue !== null}
             aria-describedby={describedBy}
             onChange={(event) => {
@@ -1406,9 +1450,19 @@ const NodeFieldEditor = ({
       );
       break;
     case "refmods": {
-      control = <MediaRefModControls workspaceRoot={workspaceRoot}
-        settings={{refMods: readRefMods(value), refModMaxTokens: typeof node.config.refModMaxTokens === "number" ? node.config.refModMaxTokens : 65536}}
-        onChange={(settings) => onPatch?.(settings)} />;
+      control = (
+        <MediaRefModControls
+          workspaceRoot={workspaceRoot}
+          settings={{
+            refMods: readRefMods(value),
+            refModMaxTokens:
+              typeof node.config.refModMaxTokens === "number"
+                ? node.config.refModMaxTokens
+                : 65536,
+          }}
+          onChange={(settings) => onPatch?.(settings)}
+        />
+      );
       break;
     }
     case "addons": {
@@ -1600,8 +1654,35 @@ const NodeFieldEditor = ({
             describedBy={describedBy}
             automaticLabel="Automatic compatible model"
             onChange={(modelId) => {
-              if (Array.isArray(node.config.modelAddons) && onPatch) {
-                onPatch({ modelId, modelAddons: [] });
+              if (onPatch) {
+                const model = models.find(
+                  (candidate) => candidate.id === modelId,
+                );
+                const imageNode =
+                  node.type === "task.generate-image" ||
+                  node.type === "task.edit-image";
+                const sampling =
+                  imageNode && model
+                    ? mediaImageSamplingConstraints(model.architecture)
+                    : null;
+                onPatch({
+                  modelId,
+                  ...(Array.isArray(node.config.modelAddons)
+                    ? { modelAddons: [] }
+                    : {}),
+                  ...(imageNode &&
+                  !compatibleMediaImageSamplers(model?.architecture).some(
+                    (sampler) => sampler.value === node.config.sampler,
+                  )
+                    ? { sampler: null }
+                    : {}),
+                  ...(sampling?.fixedSteps != null
+                    ? { numInferenceSteps: null }
+                    : {}),
+                  ...(sampling && !sampling.manualGuidance
+                    ? { guidanceScale: null }
+                    : {}),
+                });
               } else {
                 onChange(field.id, modelId);
               }
@@ -1618,11 +1699,18 @@ const NodeFieldEditor = ({
       break;
     case "select":
       const options =
-        field.id === "referenceRole" && referenceRoleValues
-          ? field.options?.filter((candidate) =>
-              referenceRoleValues.includes(candidate.value),
-            )
-          : field.options;
+        field.id === "sampler"
+          ? [
+              { value: "", label: "Automatic", description: "" },
+              ...compatibleMediaImageSamplers(selectedModel?.architecture).map(
+                (sampler) => ({ ...sampler, description: "" }),
+              ),
+            ]
+          : field.id === "referenceRole" && referenceRoleValues
+            ? field.options?.filter((candidate) =>
+                referenceRoleValues.includes(candidate.value),
+              )
+            : field.options;
       control = (
         <select
           id={controlId}
@@ -1630,7 +1718,14 @@ const NodeFieldEditor = ({
           disabled={field.readOnly}
           aria-invalid={issue !== null}
           aria-describedby={describedBy}
-          onChange={(event) => onChange(field.id, event.target.value)}
+          onChange={(event) =>
+            onChange(
+              field.id,
+              field.id === "sampler" && event.target.value === ""
+                ? null
+                : event.target.value,
+            )
+          }
           className={cn(
             FIELD_CONTROL_CLASS,
             "h-9 w-full rounded-md border px-3",
@@ -1712,6 +1807,31 @@ const NodeFieldEditor = ({
         ) : null}
       </div>
       {control}
+      {selectedModel?.target === "local" &&
+      (node.type === "task.generate-image" ||
+        node.type === "task.edit-image") &&
+      (field.id === "numInferenceSteps" || field.id === "guidanceScale") ? (
+        <div className="mt-2">
+          <MediaSamplingRange
+            architecture={selectedModel.architecture}
+            parameter={field.id === "numInferenceSteps" ? "steps" : "guidance"}
+            value={
+              typeof value === "number"
+                ? value
+                : field.id === "numInferenceSteps"
+                  ? defaultMediaImageSteps(
+                      selectedModel.architecture,
+                      node.config.modelPolicy === "fast" ||
+                        node.config.modelPolicy === "quality"
+                        ? node.config.modelPolicy
+                        : "balanced",
+                    )
+                  : (mediaImageSamplingProfile(selectedModel.architecture)
+                      ?.defaultGuidance ?? 0)
+            }
+          />
+        </div>
+      ) : null}
       <p id={descriptionId} className="sr-only">
         {selectedOption?.description ?? field.description}
       </p>
@@ -2867,7 +2987,10 @@ const NodeInspector = ({
       : node.type === "task.generate-video"
         ? videoNeedsTerminalConditioning
           ? ["image-to-video", "start-end-to-video"]
-           : firstFrameEdge || lastFrameEdge || (node.config.modelId === "local:minimax-h3-ref2va" && readRefMods(node.config.refMods).some(isActiveRefMod))
+          : firstFrameEdge ||
+              lastFrameEdge ||
+              (node.config.modelId === "local:minimax-h3-ref2va" &&
+                readRefMods(node.config.refMods).some(isActiveRefMod))
             ? ["image-to-video"]
             : ["text-to-video"]
         : node.type === "task.generate-image" &&

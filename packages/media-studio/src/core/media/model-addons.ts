@@ -119,15 +119,17 @@ export const getMediaModelAddonCapabilities = (
     ARCHITECTURE_ADDON_CAPABILITIES[
       architecture === "pony"
         ? "stable-diffusion-xl"
-        : ["flux-1-dev", "flux-1-schnell"].includes(architecture)
-          ? "flux-1"
-          : [
-                "flux-2-klein-base-4b",
-                "flux-2-klein-9b",
-                "flux-2-klein-base-9b",
-              ].includes(architecture)
-            ? "flux-2"
-            : architecture
+        : ["krea-2-raw", "krea-2-turbo"].includes(architecture)
+          ? "krea-2"
+          : ["flux-1-dev", "flux-1-schnell"].includes(architecture)
+            ? "flux-1"
+            : [
+                  "flux-2-klein-base-4b",
+                  "flux-2-klein-9b",
+                  "flux-2-klein-base-9b",
+                ].includes(architecture)
+              ? "flux-2"
+              : architecture
     ] ?? []
   );
 };
@@ -250,7 +252,14 @@ export const inspectMediaModelAddonCompatibility = (
       reason: `${model.displayName} does not expose ${addon.kind} loading.`,
     };
   }
-  if (model.architecture !== addon.architecture) {
+  const kreaArchitectures = ["krea-2", "krea-2-raw", "krea-2-turbo"];
+  if (
+    model.architecture !== addon.architecture &&
+    !(
+      kreaArchitectures.includes(model.architecture ?? "") &&
+      kreaArchitectures.includes(addon.architecture)
+    )
+  ) {
     return {
       status: "incompatible",
       reason: `${addon.displayName} targets ${addon.architecture}, but ${model.displayName} uses ${model.architecture ?? "an unknown architecture"}.`,
@@ -281,9 +290,13 @@ export const inspectMediaModelAddonCompatibility = (
   if (
     addon.kind === "lora" &&
     addon.loraProfile !== null &&
-    ["stable-diffusion-3", "flux-2", "krea-2"].includes(
-      model.architecture ?? "",
-    ) &&
+    [
+      "stable-diffusion-3",
+      "flux-2",
+      "krea-2",
+      "krea-2-raw",
+      "krea-2-turbo",
+    ].includes(model.architecture ?? "") &&
     addon.loraProfile.convolutionTargetCount > 0
   ) {
     return {

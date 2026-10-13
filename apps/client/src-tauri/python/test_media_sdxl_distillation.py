@@ -26,7 +26,7 @@ class SDXLStudentTests(unittest.TestCase):
         rocm = SimpleNamespace(version=SimpleNamespace(hip="7.14"),
                                backends=SimpleNamespace(cudnn=SimpleNamespace(enabled=False)))
         evidence = worker._configure_large_image_vae_decode(
-            SimpleNamespace(vae=vae), "stable-diffusion-xl-dmad-4step", rocm, 1024, 768,
+            SimpleNamespace(vae=vae), "stable-diffusion-xl-dmad-4step", rocm, 1024, 768, 16 * 1024 ** 3,
         )
         tile_shapes = []
         handle = vae.decoder.register_forward_pre_hook(

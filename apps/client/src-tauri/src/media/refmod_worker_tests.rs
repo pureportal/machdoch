@@ -15,7 +15,7 @@ fn refmod_worker_request(python: &Path, request: serde_json::Value) -> serde_jso
         process,
         "refmod",
         Some(&input),
-        crate::media::provider_local_diffusers::GENERATION_TIMEOUT,
+        crate::media::provider_local_diffusers::IMAGE_GENERATION_TIMEOUT,
         None,
     )
     .unwrap_or_else(|error| panic!("RefMod {operation} worker failed: {error}"));

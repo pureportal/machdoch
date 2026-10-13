@@ -8,6 +8,193 @@ use serde_json::json;
 use super::{inspect, inventory};
 
 #[test]
+fn qwen_quantized_packages_require_a_valid_declared_transformer() {
+    let package = TestPackage::new();
+    fs::remove_file(
+        package
+            .0
+            .join("transformer/diffusion_pytorch_model.safetensors"),
+    )
+    .unwrap();
+    fs::write(
+        package.0.join("transformer/model.gguf"),
+        super::super::gguf_weights::fixture("qwen_image21", 12, 256, 144),
+    )
+    .unwrap();
+    let mut index = json!({
+        "_class_name": "QwenImage21Pipeline",
+        "transformer": ["diffusers", "QwenImage21Transformer2DModel"],
+        "machdoch_quantization": {"transformer": {"format": "gguf", "file": "transformer/model.gguf"}}
+    });
+    let index_path = package.0.join("model_index.json");
+    fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
+    let review = inspect(&package.0).unwrap();
+    assert!(review.can_import);
+    assert_eq!(
+        review.detected_architecture.as_deref(),
+        Some("qwen-image-2.1")
+    );
+    assert_eq!(review.tensor_count, 1);
+    index["machdoch_quantization"]["transformer"]["file"] = json!("../model.gguf");
+    fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
+    assert!(inventory(&package.0).is_err());
+    index
+        .as_object_mut()
+        .unwrap()
+        .remove("machdoch_quantization");
+    fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
+    assert!(inventory(&package.0).is_err());
+}
+
+#[test]
+fn original_qwen_gguf_packages_reject_other_transformer_architectures() {
+    let package = TestPackage::new();
+    fs::remove_file(
+        package
+            .0
+            .join("transformer/diffusion_pytorch_model.safetensors"),
+    )
+    .unwrap();
+    let checkpoint = package.0.join("transformer/model.gguf");
+    let index = json!({
+        "_class_name": "QwenImagePipeline",
+        "transformer": ["diffusers", "QwenImageTransformer2DModel"],
+        "machdoch_quantization": {"transformer": {"format": "gguf", "file": "transformer/model.gguf"}}
+    });
+    fs::write(
+        package.0.join("model_index.json"),
+        serde_json::to_vec(&index).unwrap(),
+    )
+    .unwrap();
+    for architecture in ["qwen_image21", "flux"] {
+        fs::write(
+            &checkpoint,
+            super::super::gguf_weights::fixture(architecture, 12, 256, 144),
+        )
+        .unwrap();
+        assert!(inventory(&package.0)
+            .err()
+            .unwrap()
+            .contains("does not match"));
+    }
+    fs::write(
+        &checkpoint,
+        super::super::gguf_weights::fixture("qwen_image", 12, 256, 144),
+    )
+    .unwrap();
+    let review = inspect(&package.0).unwrap();
+    assert!(review.can_import);
+    assert_eq!(review.tensor_count, 1);
+    assert!(review.detected_architecture.is_none());
+}
+
+#[test]
+fn qwen_packages_require_complete_generative_encoder_weights() {
+    let package = TestPackage::new();
+    fs::create_dir(package.0.join("text_encoder")).unwrap();
+    fs::write(package.0.join("text_encoder/config.json"), b"{}").unwrap();
+    let index = json!({
+        "_class_name": "QwenImage21Pipeline",
+        "transformer": ["diffusers", "QwenImage21Transformer2DModel"],
+        "text_encoder": ["transformers", "Qwen3VLForConditionalGeneration"]
+    });
+    fs::write(
+        package.0.join("model_index.json"),
+        serde_json::to_vec(&index).unwrap(),
+    )
+    .unwrap();
+    assert!(inventory(&package.0)
+        .err()
+        .unwrap()
+        .contains("Missing safetensors weights for text_encoder"));
+    fs::copy(
+        package
+            .0
+            .join("transformer/diffusion_pytorch_model.safetensors"),
+        package.0.join("text_encoder/model.safetensors"),
+    )
+    .unwrap();
+    assert!(inventory(&package.0).is_ok());
+}
+
+#[test]
+#[ignore = "imports a real image package into the explicitly selected model store"]
+fn external_image_model_package_import() {
+    let root = PathBuf::from(
+        std::env::var_os("MACHDOCH_IMAGE_MODEL_STORE").expect("Set MACHDOCH_IMAGE_MODEL_STORE"),
+    );
+    let request_path = PathBuf::from(
+        std::env::var_os("MACHDOCH_IMAGE_MODEL_IMPORT_REQUEST")
+            .expect("Set MACHDOCH_IMAGE_MODEL_IMPORT_REQUEST"),
+    );
+    let mut request: super::ImportMediaLocalModelRequest =
+        serde_json::from_slice(&fs::read(request_path).unwrap()).unwrap();
+    let paths = super::MediaRuntimePaths {
+        _storage_lease: None,
+        database: root.join("media.sqlite3"),
+        blobs: root.join("blobs").join("sha256"),
+    };
+    super::database::initialize(&paths).unwrap();
+    let review = inspect(Path::new(&request.source_path)).unwrap();
+    assert!(review.can_import);
+    assert!(review.tensor_count > 500);
+    if let Some(detected) = review.detected_architecture {
+        assert_eq!(detected, request.architecture);
+    }
+    request.source_path = review.source_path;
+    request.review_token = review.review_token;
+    let result = super::model_import::import_reviewed(&paths, &request).unwrap();
+    let catalog = super::database::get_model_catalog(&paths, &Default::default()).unwrap();
+    let model = catalog
+        .models
+        .iter()
+        .find(|model| model.id == result.model_id)
+        .unwrap();
+    assert_eq!(
+        model.architecture.as_deref(),
+        Some(request.architecture.as_str())
+    );
+    println!("{}", serde_json::to_string(&result).unwrap());
+}
+
+#[test]
+fn qwen_21_packages_identify_the_published_turbo_schedule() {
+    let package = TestPackage::new();
+    let profile: serde_json::Value =
+        serde_json::from_str(include_str!("../../python/open_media_models.json")).unwrap();
+    let turbo = profile
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|profile| profile["architecture"] == "qwen-image-2.1-turbo")
+        .unwrap();
+    let mut index = json!({"_class_name": "QwenImage21Pipeline", "transformer": ["diffusers", "QwenImage21Transformer2DModel"]});
+    let index_path = package.0.join("model_index.json");
+    fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
+    assert_eq!(
+        inspect(&package.0)
+            .unwrap()
+            .detected_architecture
+            .as_deref(),
+        Some("qwen-image-2.1")
+    );
+    index["sample_sigmas"] = turbo["sampleSigmas"].clone();
+    fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
+    assert_eq!(
+        inspect(&package.0)
+            .unwrap()
+            .detected_architecture
+            .as_deref(),
+        Some("qwen-image-2.1-turbo")
+    );
+    index["sample_sigmas"] = json!([1.0, 0.5]);
+    fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
+    assert!(inspect(&package.0)
+        .unwrap_err()
+        .contains("sampling schedule"));
+}
+
+#[test]
 fn sdxl_student_import_rejects_unpublished_binary_weights() {
     for architecture in [
         "stable-diffusion-xl-dmad-4step",
@@ -653,8 +840,8 @@ fn incomplete_shards_and_truncated_weights_are_rejected() {
 #[test]
 fn krea_packages_distinguish_raw_and_turbo_and_reject_incorrect_import_types() {
     for (distilled, architecture, mismatch) in [
-        (false, "krea-2-raw", "krea-2"),
-        (true, "krea-2", "krea-2-raw"),
+        (false, "krea-2-raw", "krea-2-turbo"),
+        (true, "krea-2-turbo", "krea-2-raw"),
     ] {
         let package = TestPackage::new();
         let index = json!({

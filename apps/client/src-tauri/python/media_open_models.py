@@ -19,6 +19,12 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
     index = json.loads((root / "model_index.json").read_text(encoding="utf-8"))
     if index.get("_class_name") != profile["pipeline"]:
         raise ValueError(f"The model folder does not match {profile['displayName']}")
+    if profile["architecture"] == "hunyuan-image-3":
+        from media_hunyuan_image3 import HunyuanImage3Pipeline
+
+        return HunyuanImage3Pipeline.from_pretrained(root, dtype)
+    if profile.get("sampleSigmas") is not None and index.get("sample_sigmas") != profile["sampleSigmas"]:
+        raise ValueError(f"The model folder is missing the published {profile['displayName']} sampling schedule")
     if profile.get("distillation", {}).get("sampler") == "lcm":
         from media_sdxl_distillation import load_pipeline as load_sdxl_student
 
@@ -32,6 +38,10 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
     if pipeline_class is None:
         raise ValueError(f"The media runtime does not expose {class_name}. Repair runtime setup.")
     options = {}
+    if profile["pipeline"] in ("QwenImagePipeline", "QwenImage21Pipeline"):
+        from media_qwen_quantization import transformer_arguments
+
+        options.update(transformer_arguments(diffusers, root, index, dtype))
     if profile["architecture"] == "audioldm-2":
         from transformers import GPT2LMHeadModel
 
@@ -43,6 +53,8 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
         options["is_distilled"] = profile["fixedSteps"]
     if profile["architecture"] == "krea-2-raw":
         options["is_distilled"] = False
+    if profile["architecture"] == "krea-2-turbo":
+        options["is_distilled"] = True
     if profile["architecture"] == "sana":
         import torch
 
@@ -77,21 +89,29 @@ def image_arguments(architecture: str, sampling: dict[str, Any], images: list[An
         raise ValueError(f"Choose a reference image for {profile['displayName']}")
     if len(images) > profile.get("maxReferences", 1):
         raise ValueError(f"{profile['displayName']} accepts at most {profile.get('maxReferences', 1)} reference images")
+    if profile.get("negativePrompt") is False and negative_prompt.strip():
+        raise ValueError(f"{profile['displayName']} does not use negative prompts")
     guidance = sampling.get("guidanceScale")
-    if guidance is None:
-        guidance = profile["guidance"]
-    arguments = {profile["guidanceParameter"]: guidance}
+    published_guidance_schedule = architecture == "ideogram-4" and guidance is None and sampling.get("numInferenceSteps") in (None, profile["steps"])
+    arguments = {}
+    if not published_guidance_schedule:
+        arguments[profile["guidanceParameter"]] = profile["guidance"] if guidance is None else guidance
+        if architecture == "ideogram-4":
+            arguments["guidance_schedule"] = None
     if profile.get("distillation", {}).get("sampler") == "lcm":
         if negative_prompt.strip():
             raise ValueError(f"{profile['displayName']} does not use negative prompts")
         arguments["timesteps"] = profile["distillation"]["timesteps"]
-    if profile["guidanceParameter"] == "true_cfg_scale":
+    if profile["guidanceParameter"] == "true_cfg_scale" and profile.get("negativePrompt") is not False:
         arguments["negative_prompt"] = negative_prompt or " "
-    if architecture == "ideogram-4":
-        arguments["guidance_schedule"] = None
     if architecture == "sana":
         arguments["complex_human_instruction"] = None
         arguments["use_resolution_binning"] = False
+    if architecture == "sana-sprint" and sampling.get("numInferenceSteps", profile["steps"]) != 2:
+        arguments["intermediate_timesteps"] = None
+    if profile.get("sampleSigmas") is not None:
+        arguments["sigmas"] = profile["sampleSigmas"]
+        arguments["use_kv_cache"] = True
     if images:
         arguments["image"] = images[0] if len(images) == 1 else images
     return arguments

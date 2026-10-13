@@ -44,6 +44,7 @@ const WORKER_SCHEMA_VERSION: u32 = 5;
 // unrelated global Python installation.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 pub(super) const GENERATION_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+pub(super) const IMAGE_GENERATION_TIMEOUT: Duration = Duration::from_secs(4 * 60 * 60);
 const VIDEO_GENERATION_TIMEOUT: Duration = Duration::from_secs(4 * 60 * 60);
 const MAX_IMAGE_BYTES: usize = 64 * 1_024 * 1_024;
 const MAX_VIDEO_BYTES: usize = 512 * 1_024 * 1_024;
@@ -181,6 +182,7 @@ struct WorkerGenerationRequest<'a> {
     aspect_ratio: &'a str,
     seed: u64,
     output_directory: &'a Path,
+    model_cache_directory: PathBuf,
     addons: Vec<WorkerAddon<'a>>,
     reference_images: Vec<WorkerReferenceImage<'a>>,
     ip_adapter_path: Option<&'a Path>,
@@ -274,6 +276,8 @@ struct WorkerGenerationResponse {
     model_policy: String,
     aspect_ratio: String,
     num_inference_steps: u32,
+    sampler: Option<String>,
+    scheduler_class: Option<String>,
     #[serde(default)]
     addons: Vec<serde_json::Value>,
     #[serde(default)]
@@ -803,8 +807,15 @@ pub(crate) fn annotate_catalog_readiness(
         {
             model.runtime_readiness = "runtime-unavailable".to_string();
             model.runtime_readiness_diagnostic = Some(
-                "The installed runtime cannot load this model architecture. Set up Media Studio again."
-                    .to_string(),
+                match model.architecture.as_deref() {
+                    Some("hunyuan-image-3") => {
+                        "Install Tencent's original HunyuanImage 3 runtime in the Media Studio Python environment."
+                    }
+                    _ => {
+                        "The installed runtime cannot load this model architecture. Set up Media Studio again."
+                    }
+                }
+                .to_string(),
             );
             model.runtime_readiness_checked_at = None;
             continue;
@@ -1030,7 +1041,10 @@ fn resolve_addons(
             .optional()
             .map_err(|error| format!("failed to resolve model add-on: {error}"))?
             .ok_or_else(|| format!("model add-on {addon_id} is not installed"))?;
-        if row.0 != selection.kind() || row.1 != model.architecture {
+        if row.0 != selection.kind()
+            || model_import::pipeline_architecture(&row.1)
+                != model_import::pipeline_architecture(&model.architecture)
+        {
             return Err(format!(
                 "model add-on {addon_id} does not match the selected model architecture"
             ));
@@ -2128,8 +2142,7 @@ fn expected_image_inference_steps(architecture: &str, model_policy: &str) -> Med
     match (architecture, model_policy) {
         ("flux-2", "fast" | "balanced" | "quality") => Ok(4),
         ("krea-2", "fast") => Ok(8),
-        ("krea-2", "balanced") => Ok(10),
-        ("krea-2", "quality") => Ok(12),
+        ("krea-2", "balanced" | "quality") => Ok(12),
         ("qwen-image-2.1", "fast") => Ok(20),
         ("qwen-image-2.1", "balanced") => Ok(30),
         ("qwen-image-2.1", "quality") => Ok(40),
@@ -2138,6 +2151,48 @@ fn expected_image_inference_steps(architecture: &str, model_policy: &str) -> Med
         (_, "quality") => Ok(32),
         _ => Err("local Diffusers request has an invalid model policy".to_string()),
     }
+}
+
+fn validate_image_sampling_evidence(
+    response: &WorkerGenerationResponse,
+    architecture: &str,
+    model_policy: &str,
+    aspect_ratio: &str,
+    sampling: &super::image_sampling::ImageSampling,
+) -> MediaResult<()> {
+    if let Some(sampler) = &sampling.sampler {
+        let expected_class = match sampler.as_str() {
+            "euler" => "EulerDiscreteScheduler",
+            "euler-ancestral" => "EulerAncestralDiscreteScheduler",
+            "heun" => "HeunDiscreteScheduler",
+            "dpmpp-2m" | "dpmpp-2m-karras" | "dpmpp-2m-sde-karras" => "DPMSolverMultistepScheduler",
+            "ddim" => "DDIMScheduler",
+            "deis" => "DEISMultistepScheduler",
+            "unipc" => "UniPCMultistepScheduler",
+            "flow-euler" => "FlowMatchEulerDiscreteScheduler",
+            "lcm" => "LCMScheduler",
+            "scm" => "SCMScheduler",
+            "hunyuan-euler" => "FlowMatchDiscreteScheduler",
+            _ => return Err("The requested image sampler is invalid".to_string()),
+        };
+        if response.sampler.as_deref() != Some(sampler.as_str())
+            || response.scheduler_class.as_deref() != Some(expected_class)
+        {
+            return Err("The image worker returned inconsistent sampler evidence".to_string());
+        }
+    }
+    let expected_steps = sampling
+        .num_inference_steps
+        .unwrap_or(expected_image_inference_steps(architecture, model_policy)?);
+    if response.model_policy != model_policy
+        || response.aspect_ratio != aspect_ratio
+        || response.num_inference_steps != expected_steps
+    {
+        return Err(
+            "local Diffusers generation returned inconsistent sampling evidence".to_string(),
+        );
+    }
+    Ok(())
 }
 
 pub(crate) fn generate(
@@ -2306,6 +2361,7 @@ pub(crate) fn generate(
         .sampling
         .validate_architecture(&model.architecture)?;
     let worker_request = WorkerGenerationRequest {
+        model_cache_directory: paths.database.with_file_name("cache").join("image-models"),
         control_net: request
             .control_net
             .as_ref()
@@ -2372,7 +2428,7 @@ pub(crate) fn generate(
         &script,
         "generate",
         Some(&encoded),
-        GENERATION_TIMEOUT,
+        IMAGE_GENERATION_TIMEOUT,
         Some((paths, &request.run_id)),
     )?;
     let response = decode_generation_response(&output)?;
@@ -2383,22 +2439,13 @@ pub(crate) fn generate(
         &request.negative_prompt,
         &addons,
     )?;
-    let expected_inference_steps =
-        request
-            .sampling
-            .num_inference_steps
-            .unwrap_or(expected_image_inference_steps(
-                model.architecture.as_str(),
-                request.model_policy.as_str(),
-            )?);
-    if response.model_policy != request.model_policy
-        || response.aspect_ratio != request.aspect_ratio
-        || response.num_inference_steps != expected_inference_steps
-    {
-        return Err(
-            "local Diffusers generation returned inconsistent sampling evidence".to_string(),
-        );
-    }
+    validate_image_sampling_evidence(
+        &response,
+        &model.architecture,
+        &request.model_policy,
+        &request.aspect_ratio,
+        &request.sampling,
+    )?;
     if response.edit_conditioning.is_some() != has_conditioning {
         return Err(
             "local Diffusers generation returned inconsistent reference-edit evidence".to_string(),
@@ -4647,6 +4694,74 @@ time.sleep(60)
     }
 
     #[test]
+    fn krea_extended_sampling_evidence_matches_the_worker_for_every_policy() {
+        for (policy, steps) in [("fast", 8), ("balanced", 12), ("quality", 12)] {
+            assert_eq!(
+                expected_image_inference_steps("krea-2", policy).unwrap(),
+                steps
+            );
+        }
+        assert!(expected_image_inference_steps("krea-2", "invalid").is_err());
+    }
+
+    #[test]
+    fn every_selectable_sampler_accepts_its_worker_scheduler_evidence() {
+        let profiles: serde_json::Value =
+            serde_json::from_str(include_str!("../../python/image_sampling_profiles.json"))
+                .unwrap();
+        let classes = [
+            ("euler", "EulerDiscreteScheduler"),
+            ("euler-ancestral", "EulerAncestralDiscreteScheduler"),
+            ("heun", "HeunDiscreteScheduler"),
+            ("dpmpp-2m", "DPMSolverMultistepScheduler"),
+            ("dpmpp-2m-karras", "DPMSolverMultistepScheduler"),
+            ("dpmpp-2m-sde-karras", "DPMSolverMultistepScheduler"),
+            ("ddim", "DDIMScheduler"),
+            ("deis", "DEISMultistepScheduler"),
+            ("unipc", "UniPCMultistepScheduler"),
+            ("flow-euler", "FlowMatchEulerDiscreteScheduler"),
+            ("lcm", "LCMScheduler"),
+            ("scm", "SCMScheduler"),
+            ("hunyuan-euler", "FlowMatchDiscreteScheduler"),
+        ];
+        for profile in profiles.as_array().unwrap() {
+            let architecture = profile["architecture"].as_str().unwrap();
+            for sampler in profile["samplers"].as_array().unwrap() {
+                let sampler = sampler.as_str().unwrap();
+                let class = classes.iter().find(|entry| entry.0 == sampler).unwrap().1;
+                let mut response: WorkerGenerationResponse = serde_json::from_value(serde_json::json!({
+                    "schemaVersion": WORKER_SCHEMA_VERSION, "workerVersion": "test",
+                    "device": "cpu", "deviceLabel": "CPU", "prompt": "A red teapot",
+                    "negativePrompt": "", "modelPolicy": "quality", "aspectRatio": "1:1",
+                    "numInferenceSteps": expected_image_inference_steps(architecture, "quality").unwrap(),
+                    "sampler": sampler, "schedulerClass": class, "addons": [], "outputs": []
+                })).unwrap();
+                let sampling = super::super::image_sampling::ImageSampling {
+                    sampler: Some(sampler.into()),
+                    ..Default::default()
+                };
+                assert!(validate_image_sampling_evidence(
+                    &response,
+                    architecture,
+                    "quality",
+                    "1:1",
+                    &sampling
+                )
+                .is_ok());
+                response.scheduler_class = Some("WrongScheduler".into());
+                assert!(validate_image_sampling_evidence(
+                    &response,
+                    architecture,
+                    "quality",
+                    "1:1",
+                    &sampling
+                )
+                .is_err());
+            }
+        }
+    }
+
+    #[test]
     fn open_models_use_their_distilled_and_base_sampling_schedules() {
         for policy in ["fast", "balanced", "quality"] {
             assert_eq!(
@@ -4789,6 +4904,7 @@ time.sleep(60)
             end: 0.8,
         };
         let request = WorkerGenerationRequest {
+            model_cache_directory: output_path.join("model-cache"),
             control_net: None,
             sampling: &Default::default(),
             schema_version: WORKER_SCHEMA_VERSION,
@@ -4978,6 +5094,8 @@ time.sleep(60)
             model_policy: "balanced".to_string(),
             aspect_ratio: "1:1".to_string(),
             num_inference_steps: 24,
+            sampler: None,
+            scheduler_class: None,
             addons: vec![
                 serde_json::json!({
                     "kind": "lora",
@@ -5095,6 +5213,8 @@ time.sleep(60)
             model_policy: "balanced".to_string(),
             aspect_ratio: "1:1".to_string(),
             num_inference_steps: 4,
+            sampler: None,
+            scheduler_class: None,
             addons: Vec::new(),
             performance: None,
             require_chroma_background: false,
@@ -5257,6 +5377,8 @@ time.sleep(60)
             model_policy: "balanced".to_string(),
             aspect_ratio: "1:1".to_string(),
             num_inference_steps: 24,
+            sampler: None,
+            scheduler_class: None,
             addons: Vec::new(),
             performance: None,
             require_chroma_background: false,

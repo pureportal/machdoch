@@ -1,6 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { assert, describe, expect, it } from "vitest";
 import { createMediaModelCatalogSnapshot } from "../../../core/media/catalog.js";
-import { defaultMediaImageSteps } from "../../../core/media/image-sampling.js";
+import {
+  defaultMediaImageSteps,
+  mediaImageSamplingError,
+} from "../../../core/media/image-sampling.js";
 import type {
   MediaLocalModelArchitecture,
   MediaModelDescriptor,
@@ -38,6 +41,36 @@ const reference = {
 };
 
 describe("Basic image model options", () => {
+  it.each(["krea-2-turbo", "qwen-image-2.1-turbo"] as const)(
+    "clears incompatible custom sampling when switching to %s",
+    (architecture) => {
+      const selected = model(architecture, ["text-to-image"]);
+      const settings = {
+        ...DEFAULT_IMAGE_RECIPE_SETTINGS,
+        sampling: {
+          sampler: "dpmpp-2m-karras" as const,
+          numInferenceSteps: 32,
+          guidanceScale: 6,
+          width: 1344,
+          height: 768,
+        },
+      };
+      const result = reconcileBasicImageModelSettings(settings, selected);
+      assert.isDefined(result.settings.sampling);
+      expect(result.settings.sampling).toEqual({
+        sampler: null,
+        numInferenceSteps: architecture === "krea-2-turbo" ? 32 : null,
+        guidanceScale: null,
+        width: 1344,
+        height: 768,
+      });
+      expect(
+        mediaImageSamplingError(result.settings.sampling, architecture),
+      ).toBeNull();
+      expect(settings.sampling.numInferenceSteps).toBe(32);
+    },
+  );
+
   it("resets remote-only incompatibilities without changing the input", () => {
     const settings = {
       ...DEFAULT_IMAGE_RECIPE_SETTINGS,
@@ -88,7 +121,7 @@ describe("Basic image model options", () => {
         width: 512,
         height: 768,
         numInferenceSteps: architecture === "flux-2" ? null : 20,
-        guidanceScale: architecture === "stable-diffusion-xl" ? 5 : null,
+        guidanceScale: architecture === "flux-2" ? null : 5,
       });
       expect(result.settings.seed).toBe(42);
       expect(result.settings.memoryProfile).toBe(
@@ -116,7 +149,7 @@ describe("Basic image model options", () => {
   it.each(["fast", "balanced", "quality"] as const)(
     "keeps Krea Turbo's distilled recipe for the %s policy",
     (policy) => {
-      expect(defaultMediaImageSteps("krea-2", policy)).toBe(8);
+      expect(defaultMediaImageSteps("krea-2-turbo", policy)).toBe(8);
     },
   );
 

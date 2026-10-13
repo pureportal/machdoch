@@ -1,0 +1,6 @@
+Tencent Hunyuan is licensed under the Tencent Hunyuan Community License Agreement, Copyright © 2025 Tencent. All Rights Reserved. The trademark rights of “Tencent Hunyuan” are owned by Tencent or its affiliate.
+
+Machdoch's HunyuanImage 3.0 adapter calls the upstream runtime without modifying or bundling Tencent's source code or model weights.
+Upstream source: https://github.com/Tencent-Hunyuan/HunyuanImage-3.0/tree/6e9113a692a27a0751d82aba3b2015a876646c03
+The community licence excludes the European Union, United Kingdom and South Korea. Separate rights are required there.
+Tencent is not affiliated with, sponsoring, or endorsing Machdoch.

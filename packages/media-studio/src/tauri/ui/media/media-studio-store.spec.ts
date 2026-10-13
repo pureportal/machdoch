@@ -39,6 +39,7 @@ it("round-trips complete image, video, SVG and add-on settings", () => {
     requireChromaBackground: true,
     memoryProfile: "memory-saver",
     sampling: {
+      sampler: "dpmpp-2m-karras",
       width: 768,
       height: 1024,
       numInferenceSteps: 28,

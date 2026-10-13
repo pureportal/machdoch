@@ -18,6 +18,7 @@ mod fleet_store;
 pub(crate) mod fleet_transfer;
 pub(crate) mod fleet_worker;
 mod flow;
+mod gguf_weights;
 mod hardware;
 mod image_sampling;
 mod ingest;

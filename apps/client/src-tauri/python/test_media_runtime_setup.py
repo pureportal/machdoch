@@ -65,6 +65,18 @@ class RuntimeReadinessTests(unittest.TestCase):
         self.assertIn("vp9-alpha", result["capabilities"])
         operations.assert_called_once()
 
+    def test_optional_hunyuan_runtime_controls_architecture_availability(self):
+        for available in (False, True):
+            with self.subTest(available=available), \
+                 mock.patch.object(WORKER, "_package_versions", return_value=self.versions()), \
+                 mock.patch.object(WORKER, "_runtime", return_value=(object(), object())), \
+                 mock.patch.object(WORKER, "_device", return_value=("cuda", "Test GPU", 16 * 1024**3)), \
+                 mock.patch.object(WORKER.importlib.util, "find_spec", return_value=object() if available else None):
+                result = WORKER.probe()
+            self.assertTrue(result["ready"])
+            self.assertEqual("hunyuan-image-3" in result["architectures"], available)
+            self.assertIn("qwen-image-2.1-turbo", result["architectures"])
+
 
 if __name__ == "__main__":
     unittest.main()

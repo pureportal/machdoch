@@ -23,13 +23,16 @@ def fake_torch():
     cuda.memory_allocated.return_value = 128
     cuda.memory_reserved.return_value = 256
     cuda.current_device.return_value = 0
-    return SimpleNamespace(cuda=cuda, Generator=mock.Mock(), version=SimpleNamespace(hip=None))
+    return SimpleNamespace(cuda=cuda, Generator=mock.Mock(), version=SimpleNamespace(hip=None),
+                           device=mock.Mock(side_effect=lambda kind, index=None: (kind, index)))
 
 
 class Pipeline:
     def __init__(self):
         self.enable_model_cpu_offload = mock.Mock()
         self.vae = SimpleNamespace(dtype="float16")
+        self.scheduler = SimpleNamespace(config={})
+        self._execution_device = "cuda"
         self.prompts = []
 
     def __call__(self, prompt, width, height, num_inference_steps, generator, num_images_per_prompt, guidance_scale=7.5, negative_prompt=None):
@@ -109,6 +112,7 @@ class ModelMemoryTests(unittest.TestCase):
             apply = stack.enter_context(mock.patch.object(worker, "_apply_addons", return_value=("first prompt, style_token", "style_token", addons, [], [], [])))
             stack.enter_context(mock.patch.object(worker, "_verify_embedding_prompt_tokens"))
             stack.enter_context(mock.patch.object(worker, "_package_versions", return_value={}))
+            conditioning = stack.enter_context(mock.patch("media_sd_conditioning.encode_sd_prompt_pair", return_value={}))
             first = Path(directory) / "first"
             second = Path(directory) / "second"
             first.mkdir()
@@ -119,6 +123,10 @@ class ModelMemoryTests(unittest.TestCase):
             self.assertEqual(apply.call_count, 1)
             self.assertEqual(pipeline.enable_model_cpu_offload.call_count, 1)
             self.assertEqual(pipeline.prompts, [("first prompt, style_token", "style_token"), ("second prompt, style_token", "style_token")])
+            self.assertEqual(conditioning.call_args_list, [
+                mock.call(pipeline, "first prompt, style_token", "style_token", "cuda"),
+                mock.call(pipeline, "second prompt, style_token", "style_token", "cuda"),
+            ])
             self.assertEqual(response["outputs"][0]["seed"], 2)
             self.assertTrue((first / "output-0000.png").is_file())
             self.assertTrue((second / "output-0000.png").is_file())
@@ -155,6 +163,34 @@ class ModelMemoryTests(unittest.TestCase):
                 torch.cuda.empty_cache.assert_called()
                 if is_gpu_out_of_memory(failure or Exception()):
                     self.assertEqual(json.loads(stdout.getvalue())["error"], GPU_MEMORY_ERROR)
+
+    def test_flux_variants_offload_blocks_before_generation_on_a_16_gib_gpu(self):
+        for architecture in ("flux-1", "flux-1-dev", "flux-1-schnell"):
+            with self.subTest(architecture=architecture), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+                torch = fake_torch()
+                pipeline = Pipeline()
+                pipeline.enable_group_offload = mock.Mock()
+                stack.enter_context(mock.patch.object(worker, "_runtime", return_value=(torch, mock.Mock())))
+                stack.enter_context(mock.patch.object(worker, "_device", return_value=("cuda", "Test GPU", 16 * 1024**3)))
+                stack.enter_context(mock.patch.object(worker, "_progress"))
+                stack.enter_context(mock.patch.object(worker, "_load_pipeline", return_value=pipeline))
+                stack.enter_context(mock.patch.object(worker, "_configure_large_image_vae_decode", return_value={"device": "pipeline"}))
+                stack.enter_context(mock.patch.object(worker, "_package_versions", return_value={}))
+                request = {
+                    "schemaVersion": worker.SCHEMA_VERSION,
+                    "model": {"architecture": architecture, "digest": "flux"},
+                    "prompt": "A ceramic teapot", "negativePrompt": "", "outputCount": 1,
+                    "outputFormat": "png", "modelPolicy": "quality", "seed": 1,
+                    "aspectRatio": "1:1", "outputDirectory": directory,
+                }
+                response = worker.generate(request)
+                pipeline.enable_model_cpu_offload.assert_not_called()
+                pipeline.enable_group_offload.assert_called_once_with(
+                    onload_device=torch.device("cuda", 0), offload_device=torch.device("cpu"),
+                    offload_type="block_level", num_blocks_per_group=1,
+                    non_blocking=True, use_stream=True, record_stream=True, low_cpu_mem_usage=True,
+                )
+                self.assertEqual(response["outputs"][0]["seed"], 1)
 
     def test_oom_detection_does_not_classify_unrelated_words(self):
         for diagnostic in ("CUDA out of memory", "HIP out of memory", "MPS backend out of memory", "hipErrorOutOfMemory"):

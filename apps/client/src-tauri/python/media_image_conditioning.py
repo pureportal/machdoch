@@ -65,8 +65,8 @@ def krea_vision_text(prompt: str, references: list[dict[str, Any]]) -> str:
     return KREA_PREFIX + images + "\n" + instructions + "\n" + prompt + KREA_SUFFIX
 
 
-def encode_krea_prompt(
-    torch: Any, text_root: Path, prompt: str, references: list[dict[str, Any]]
+def encode_krea_prompts(
+    torch: Any, text_root: Path, prompts: list[str], references: list[dict[str, Any]]
 ) -> tuple[Any, Any]:
     from transformers import AutoProcessor, AutoTokenizer, Qwen3VLForConditionalGeneration
 
@@ -85,17 +85,17 @@ def encode_krea_prompt(
             image.thumbnail((384, 384), Image.Resampling.LANCZOS)
             images.append(image)
         inputs = processor(
-            text=[krea_vision_text(prompt, references)], images=images, return_tensors="pt"
+            text=[krea_vision_text(prompt, references) for prompt in prompts], images=images, return_tensors="pt"
         ).to(device)
         if inputs.input_ids.shape[1] > 2048:
             raise ValueError("Shorten the prompt or remove a reference image")
         del processor, images
     else:
         text_tokens = tokenizer(
-            [KREA_PREFIX + prompt], truncation=True, padding="max_length",
+            [KREA_PREFIX + prompt for prompt in prompts], truncation=True, padding="max_length",
             max_length=512 + prefix_tokens - 5, return_tensors="pt",
         ).to(device)
-        suffix_tokens = tokenizer([KREA_SUFFIX], return_tensors="pt").to(device)
+        suffix_tokens = tokenizer([KREA_SUFFIX] * len(prompts), return_tensors="pt").to(device)
         attention_mask = torch.cat(
             (text_tokens.attention_mask, suffix_tokens.attention_mask), dim=1
         ).bool()

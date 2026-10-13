@@ -34,6 +34,8 @@ pub(super) const SUPPORTED_ARCHITECTURES: &[&str] = &[
     "flux-1",
     "flux-2",
     "krea-2",
+    "krea-2-raw",
+    "krea-2-turbo",
     "qwen-image-2.1",
     "wan-2.2-ti2v",
 ];
@@ -169,6 +171,7 @@ pub(crate) fn capabilities_for_architecture(architecture: &str) -> &'static [&'s
 pub(super) fn pipeline_architecture(architecture: &str) -> &str {
     match architecture {
         "pony" => "stable-diffusion-xl",
+        "krea-2-raw" | "krea-2-turbo" => "krea-2",
         "flux-1-dev" | "flux-1-schnell" => "flux-1",
         "flux-2-klein-base-4b" | "flux-2-klein-9b" | "flux-2-klein-base-9b" => "flux-2",
         "z-image-turbo" => "z-image",
@@ -696,7 +699,7 @@ pub(super) fn prepare_model_config(
             include_str!("wan_components.json"),
         )
         .map(Some),
-        "krea-2" => {
+        "krea-2" | "krea-2-raw" | "krea-2-turbo" => {
             let runtime = krea_runtime_descriptor(paths)?;
             super::runtime_setup::installer::validate_directory(&config_root)?;
             crate::atomic_file::write_file_atomic(
@@ -863,35 +866,22 @@ pub(super) fn persist_import(
     let source_url = validated_source_url(request.source_url.as_deref())?;
     let requested_license_name =
         validated_optional_text("licenseName", request.license_name.as_deref(), 256)?;
-    let student_profile = super::open_models::by_architecture(&request.architecture)
-        .filter(|profile| profile.distillation.is_some());
-    let license_name = if let Some(student) = student_profile {
-        student.license.name.clone()
-    } else if request.architecture == "qwen-image-2.1" {
-        "Qwen Research License Agreement".to_string()
-    } else {
-        requested_license_name
-    };
-    let commercial_use = if let Some(student) = student_profile {
-        student.license.commercial_use.as_str()
-    } else if request.architecture == "qwen-image-2.1" {
-        "review-required"
-    } else {
-        request.commercial_use.as_deref().unwrap_or("unknown")
-    };
-    let license_source_url = if let Some(student) = student_profile {
-        student
-            .license
+    let required_license = super::open_models::required_import_license(&request.architecture);
+    let license_name =
+        required_license.map_or(requested_license_name, |license| license.name.clone());
+    let commercial_use = required_license.map_or(
+        request.commercial_use.as_deref().unwrap_or("unknown"),
+        |license| license.commercial_use.as_str(),
+    );
+    let license_source_url = if let Some(license) = required_license {
+        license
             .source_url
             .as_deref()
-            .ok_or("Student model profile has no licence source")?
-    } else if request.architecture == "qwen-image-2.1" {
-        "https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE"
+            .ok_or("Model profile has no licence source")?
     } else {
         source_url.as_deref().unwrap_or("")
     };
-    let license_requires_acceptance =
-        i64::from(student_profile.is_some() || request.architecture == "qwen-image-2.1");
+    let license_requires_acceptance = i64::from(required_license.is_some());
     let display_name = validated_text("displayName", &request.display_name, 120)?;
     let model_id = format!("{USER_MODEL_ID_PREFIX}{digest}");
     let capabilities = serde_json::to_string(capabilities_for_architecture(&request.architecture))
@@ -1219,6 +1209,113 @@ mod tests {
         (root, paths)
     }
 
+    #[test]
+    #[ignore = "imports the real INT8 reference checkpoint into the explicitly selected model store"]
+    fn external_krea_int8_checkpoint_import() {
+        let root = PathBuf::from(
+            std::env::var_os("MACHDOCH_IMAGE_MODEL_STORE").expect("Set MACHDOCH_IMAGE_MODEL_STORE"),
+        );
+        let source = PathBuf::from(
+            std::env::var_os("MACHDOCH_IMAGE_MODEL_SOURCE")
+                .expect("Set MACHDOCH_IMAGE_MODEL_SOURCE"),
+        );
+        let header = parse_header(source.to_str().unwrap()).unwrap();
+        assert_eq!(
+            header
+                .tensor_dtypes
+                .iter()
+                .filter(|dtype| dtype.as_str() == "I8")
+                .count(),
+            224
+        );
+        let quantization: Value =
+            serde_json::from_str(header.metadata["_quantization_metadata"].as_str().unwrap())
+                .unwrap();
+        assert!(quantization["layers"]
+            .as_object()
+            .unwrap()
+            .values()
+            .all(|layer| layer["format"] == "int8_tensorwise"));
+        let paths = MediaRuntimePaths {
+            _storage_lease: None,
+            database: root.join("media.sqlite3"),
+            blobs: root.join("blobs").join("sha256"),
+        };
+        database::initialize(&paths).unwrap();
+        let inspection = inspect(source.to_str().unwrap()).unwrap();
+        let result = import_reviewed(
+            &paths,
+            &ImportMediaLocalModelRequest {
+                source_path: inspection.source_path,
+                review_token: inspection.review_token,
+                display_name: "JANK2 Anime Krea 2 Turbo INT8".into(),
+                architecture: "krea-2-turbo".into(),
+                source_url: Some(
+                    "https://civitai.com/models/2897086?modelVersionId=3275395".into(),
+                ),
+                license_name: Some("Krea 2 Community License".into()),
+                commercial_use: Some("review-required".into()),
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            result.digest,
+            "ed1ea73c0e4f659f7cf4abbc1eb341ab66b1c9121b3465f820b19ade7ced147d"
+        );
+        fs::write(
+            root.join("verification/2026-10-11/image-engines/jank2-native-import.json"),
+            serde_json::to_vec_pretty(&result).unwrap(),
+        )
+        .unwrap();
+        println!("{}", serde_json::to_string(&result).unwrap());
+    }
+
+    #[test]
+    #[ignore = "imports a real checkpoint into the explicitly selected model store"]
+    fn external_image_checkpoint_import() {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct CheckpointFixture {
+            request: ImportMediaLocalModelRequest,
+            expected_digest: String,
+        }
+
+        let root = PathBuf::from(
+            std::env::var_os("MACHDOCH_IMAGE_MODEL_STORE").expect("Set MACHDOCH_IMAGE_MODEL_STORE"),
+        );
+        let fixture_path = PathBuf::from(
+            std::env::var_os("MACHDOCH_IMAGE_MODEL_IMPORT_FIXTURE")
+                .expect("Set MACHDOCH_IMAGE_MODEL_IMPORT_FIXTURE"),
+        );
+        let fixture: CheckpointFixture =
+            serde_json::from_slice(&fs::read(fixture_path).unwrap()).unwrap();
+        let mut request = fixture.request;
+        let paths = MediaRuntimePaths {
+            _storage_lease: None,
+            database: root.join("media.sqlite3"),
+            blobs: root.join("blobs").join("sha256"),
+        };
+        database::initialize(&paths).unwrap();
+        let inspection = inspect(&request.source_path).unwrap();
+        assert!(inspection.can_import);
+        request.source_path = inspection.source_path;
+        request.review_token = inspection.review_token;
+        let result = import_reviewed(&paths, &request).unwrap();
+        let catalog = database::get_model_catalog(&paths, &Default::default()).unwrap();
+        assert_eq!(
+            catalog
+                .models
+                .iter()
+                .find(|model| model.id == result.model_id)
+                .unwrap()
+                .architecture
+                .as_deref(),
+            Some(request.architecture.as_str())
+        );
+        assert_eq!(result.digest, fixture.expected_digest);
+        println!("{}", serde_json::to_string(&result).unwrap());
+    }
+
     fn write_safetensors(path: &Path, entries: Value, data: &[u8]) {
         let mut header = serde_json::to_vec(&entries).expect("header should encode");
         while !(8 + header.len()).is_multiple_of(8) {
@@ -1384,6 +1481,74 @@ mod tests {
                 ).unwrap();
                 assert_eq!(terms.0, student.license.name);
                 assert_eq!(terms.1, student.license.source_url.as_deref().unwrap());
+                assert_eq!(terms.2, "review-required");
+                assert!(terms.3);
+            }
+        }
+        fs::remove_file(source).unwrap();
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn qwen_21_imports_and_edits_retain_publisher_terms() {
+        let source = temp_path("qwen-terms");
+        let (root, paths) = test_paths("qwen-terms");
+        fs::create_dir_all(&root).unwrap();
+        write_safetensors(
+            &source,
+            serde_json::json!({"weight": {
+                "dtype": "F32", "shape": [1], "data_offsets": [0, 4]
+            }}),
+            &[0; 4],
+        );
+        database::initialize(&paths).unwrap();
+        let inspection = inspect(source.to_str().unwrap()).unwrap();
+        for architecture in ["qwen-image-2.1", "qwen-image-2.1-turbo"] {
+            let digest = format!("{:x}", Sha256::digest(architecture.as_bytes()));
+            let request = ImportMediaLocalModelRequest {
+                source_path: inspection.source_path.clone(),
+                review_token: inspection.review_token.clone(),
+                display_name: architecture.to_string(),
+                architecture: architecture.to_string(),
+                source_url: Some("https://civitai.com/models/1".to_string()),
+                license_name: Some("Apache-2.0".to_string()),
+                commercial_use: Some("allowed".to_string()),
+            };
+            persist_import(
+                &paths,
+                &request,
+                &inspection,
+                &digest,
+                "synthetic",
+                &database::now(),
+                "diffusers",
+            )
+            .unwrap();
+            let model_id = format!("{USER_MODEL_ID_PREFIX}{digest}");
+            for edited in [false, true] {
+                if edited {
+                    crate::media::model_resource_edit::update(
+                        &paths,
+                        &crate::media::model_resource_edit::UpdateMediaModelResourceRequest {
+                            resource_id: model_id.clone(),
+                            display_name: "Renamed Qwen".to_string(),
+                            architecture: architecture.to_string(),
+                            source_url: Some("https://civitai.com/models/2".to_string()),
+                            license_name: Some("MIT".to_string()),
+                            commercial_use: Some("allowed".to_string()),
+                            trigger_words: Vec::new(),
+                        },
+                    )
+                    .unwrap();
+                }
+                let expected =
+                    super::super::open_models::required_import_license(architecture).unwrap();
+                let terms: (String, String, String, bool) = database::open(&paths).unwrap().query_row(
+                    "SELECT license_name, license_source_url, license_commercial_use, license_requires_acceptance FROM media_models WHERE id = ?1",
+                    [&model_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                ).unwrap();
+                assert_eq!(terms.0, "Qwen Research License Agreement");
+                assert_eq!(terms.1, expected.source_url.as_deref().unwrap());
                 assert_eq!(terms.2, "review-required");
                 assert!(terms.3);
             }

@@ -17,6 +17,7 @@ export interface OpenMediaModelProfile {
   guidance: number;
   fixedSteps: boolean;
   fixedGuidance: boolean;
+  sampleSigmas?: readonly number[];
   maxReferences?: number;
   audio?: boolean;
   negativePrompt?: boolean;
