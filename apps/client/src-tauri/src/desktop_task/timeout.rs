@@ -142,9 +142,7 @@ mod tests {
         let timeout = DesktopTaskTimeout::new("main".to_string(), 20);
         elapse(&timeout, 1199);
         let mut published = Value::Null;
-        let enforced = timeout
-            .reset(None, |state| published = state)
-            .unwrap();
+        let enforced = timeout.reset(None, |state| published = state).unwrap();
         assert_eq!(enforced["idleTimeoutMs"], 1_200_000);
         assert_eq!(enforced, published);
         elapse(&timeout, 2);
