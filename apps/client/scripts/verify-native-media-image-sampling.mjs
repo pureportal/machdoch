@@ -27,6 +27,7 @@ const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));
 page.setDefaultTimeout(30_000);
 try {
+  await page.reload();
   await page.waitForFunction(() => window.__TAURI__?.core?.invoke);
   const catalog = await page.evaluate(() =>
     window.__TAURI__.core.invoke("media_get_model_catalog", {
