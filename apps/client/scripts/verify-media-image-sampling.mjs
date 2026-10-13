@@ -28,7 +28,7 @@ try {
   await sampler.waitFor();
   assert.equal(await sampler.locator("option").count(), 10);
   await sampler
-    .getByRole("option", { name: "DEIS", exact: true })
+    .getByRole("option", { name: /^DEIS/ })
     .waitFor({ state: "attached" });
   await sampler.selectOption("dpmpp-2m-karras");
   await page.getByLabel("Sampling steps", { exact: true }).fill("10");
@@ -130,7 +130,7 @@ try {
   const engineFixtures = await page.evaluate(
     () => window.imageSamplingEngineFixtures,
   );
-  assert.equal(engineFixtures.length, 31);
+  assert.equal(engineFixtures.length, 40);
   for (const {
     id,
     name,
@@ -162,6 +162,15 @@ try {
         .count(),
       samplerChoices,
     );
+    if (samplerChoices > 1)
+      assert.ok(
+        await page
+          .getByLabel("Sampler", { exact: true })
+          .locator("option")
+          .filter({ hasText: "Recommended" })
+          .count(),
+        `Missing sampler recommendation for ${architecture}`,
+      );
     assert.equal(
       await page
         .getByRole("img", { name: /Sampling steps outside suggested range/ })

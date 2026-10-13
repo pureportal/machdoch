@@ -6,6 +6,8 @@ import { chromium } from "playwright-core";
 const endpoint = process.argv[2];
 const fixture = JSON.parse(await readFile(process.argv[3], "utf8"));
 const output = path.resolve(process.argv[4]);
+const mode = process.argv[5];
+assert.ok(["basic", "advanced"].includes(mode), "Pass basic or advanced");
 await mkdir(output, { recursive: true });
 const browser = await chromium.connectOverCDP(endpoint);
 const page = browser
@@ -40,19 +42,34 @@ try {
   await page.getByLabel("Height", { exact: true }).fill(String(fixture.height));
   await page.getByRole("combobox", { name: /^Seed/ }).selectOption("fixed");
   await page.getByLabel("Value", { exact: true }).fill(String(fixture.seed));
+  if (mode === "advanced") {
+    await page
+      .getByRole("button", { name: "Convert to Advanced", exact: true })
+      .click();
+    await page.locator('.react-flow__node[data-id="generate"]').click();
+    await page.getByRole("tab", { name: "Creative", exact: true }).click();
+    assert.equal(
+      await page.getByLabel("Sampler", { exact: true }).inputValue(),
+      fixture.sampler,
+    );
+  }
   const previous = await page.evaluate(() =>
     window.__TAURI__.core.invoke("media_list_runs", { limit: 100 }),
   );
   await page.screenshot({
-    path: path.join(output, "basic-request.png"),
+    path: path.join(output, `${mode}-request.png`),
     fullPage: true,
   });
   await page
-    .getByRole("button", { name: "Generate image", exact: true })
+    .getByRole("button", {
+      name: mode === "basic" ? "Generate image" : "Run",
+      exact: true,
+    })
     .click();
   console.log(
     JSON.stringify({
       phase: "submitted",
+      mode,
       modelId: fixture.modelId,
       referenceId: fixture.referenceId,
     }),
@@ -87,7 +104,7 @@ try {
         JSON.stringify(detail, null, 2) + "\n",
       );
       await page.screenshot({
-        path: path.join(output, "basic-result.png"),
+        path: path.join(output, `${mode}-result.png`),
         fullPage: true,
       });
       await writeFile(
@@ -95,6 +112,7 @@ try {
         JSON.stringify(
           {
             actualTauriIPC: true,
+            mode,
             fixture,
             runId: run.id,
             status: run.status,

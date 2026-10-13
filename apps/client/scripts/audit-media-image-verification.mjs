@@ -80,8 +80,7 @@ for (const record of records.filter(
 const coverage = profiles.map((profile) => {
   const previous = original.coverage.find(
     (entry) => entry.architecture === profile.architecture,
-  );
-  assert.ok(previous, profile.architecture);
+  ) ?? { architecture: profile.architecture };
   const realRuns = records
     .filter((record) => record.architecture === profile.architecture)
     .map((record) => {
