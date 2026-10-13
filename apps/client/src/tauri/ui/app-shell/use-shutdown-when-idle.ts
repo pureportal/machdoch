@@ -64,6 +64,7 @@ export const useShutdownWhenIdle = (options: ShutdownWhenIdleOptions) => {
     let unlisten: (() => void) | undefined;
     let currentCheck: AbortController | undefined;
     let currentTimer: ReturnType<typeof setTimeout> | undefined;
+    let shutdownRequested = false;
 
     const synchronize = async (
       signal: AbortSignal,
@@ -75,27 +76,50 @@ export const useShutdownWhenIdle = (options: ShutdownWhenIdleOptions) => {
         hasPendingMediaGeneration() ||
         latest.current.state !== inspected.state ||
         latest.current.settings !== inspected.settings;
-      const work = await chatWorkInspector.current.inspect(
-        () => latest.current,
-      );
-      if (disposed || signal.aborted) return;
       await invoke("set_window_pending_chat_work", {
-        pending:
-          work.busy ||
-          hasPendingLocalChatWork(latest.current) ||
-          latest.current.state !== inspected.state ||
-          latest.current.settings !== inspected.settings,
+        pending: hasPendingLocalChatWork(latest.current),
       });
-      if (disposed || signal.aborted) return;
-      if (mode.current.generation !== arm.generation) return;
+      if (
+        disposed ||
+        signal.aborted ||
+        !arm.enabled ||
+        mode.current.generation !== arm.generation
+      )
+        return;
       const finished = await monitor.current.check(
-        async () => ({
-          busy:
-            work.busy ||
+        async () => {
+          if (
             busy() ||
-            (await invoke<boolean>("has_pending_shutdown_work")),
-          revision: work.revision,
-        }),
+            (await invoke<boolean>("has_pending_shutdown_work")) ||
+            disposed ||
+            signal.aborted ||
+            mode.current.generation !== arm.generation
+          )
+            return { busy: true, revision: 0 };
+          const work = await chatWorkInspector.current.inspect(
+            () => latest.current,
+          );
+          if (
+            disposed ||
+            signal.aborted ||
+            mode.current.generation !== arm.generation
+          )
+            return { busy: true, revision: 0 };
+          await invoke("set_window_pending_chat_work", {
+            pending:
+              work.busy ||
+              hasPendingLocalChatWork(latest.current) ||
+              latest.current.state !== inspected.state ||
+              latest.current.settings !== inspected.settings,
+          });
+          return {
+            busy:
+              work.busy ||
+              busy() ||
+              (await invoke<boolean>("has_pending_shutdown_work")),
+            revision: work.revision,
+          };
+        },
         async (expectedRevision) => {
           if (
             disposed ||
@@ -104,6 +128,7 @@ export const useShutdownWhenIdle = (options: ShutdownWhenIdleOptions) => {
             mode.current.generation !== arm.generation
           )
             return false;
+          shutdownRequested = true;
           return invoke<boolean>("shutdown_if_idle", {
             expectedRevision,
             expectedGeneration: arm.generation,
@@ -118,6 +143,7 @@ export const useShutdownWhenIdle = (options: ShutdownWhenIdleOptions) => {
     const pump = startAutomaticWorkPump(
       async () => {
         const arm = mode.current;
+        shutdownRequested = false;
         const controller = new AbortController();
         currentCheck = controller;
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -135,9 +161,11 @@ export const useShutdownWhenIdle = (options: ShutdownWhenIdleOptions) => {
         } catch (error) {
           if (disposed) return;
           console.error("Failed to check shutdown activity", error);
+          if (!arm.enabled) return;
           if (
             mode.current.generation !== arm.generation &&
-            (mode.current.enabled ||
+            (!shutdownRequested ||
+              mode.current.enabled ||
               mode.current.generation !== arm.generation + 1)
           )
             return;

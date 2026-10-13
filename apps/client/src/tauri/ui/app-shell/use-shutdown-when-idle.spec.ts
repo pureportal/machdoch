@@ -160,6 +160,87 @@ const setup = async (autoEnable = true) => {
 };
 
 describe("shutdown monitoring across chat and image work", () => {
+  it("does not inspect storage or report activity timeouts while shutdown is off", async () => {
+    const view = await setup(false);
+    const pending = createDeferred<void>();
+    view.update({ flush: vi.fn(() => pending.promise) });
+    vi.mocked(loadShellStateRevision).mockRejectedValue(
+      new Error("Storage unavailable"),
+    );
+
+    await advance(31_000);
+
+    expect(view.options.flush).not.toHaveBeenCalled();
+    expect(loadShellStateRevision).not.toHaveBeenCalled();
+    expect(loadShellStateSnapshot).not.toHaveBeenCalled();
+    expect(view.result.current.error).toBeNull();
+    expect(view.result.current.enabled).toBe(false);
+    expect(shutdownCalls()).toEqual([]);
+    pending.resolve();
+  });
+
+  it("keeps local chat activity synchronized while shutdown is off", async () => {
+    const view = await setup(false);
+    let unsettled = true;
+    view.update({ hasUnsettledWork: () => unsettled });
+
+    await advance(1000);
+    expect(activity.chat).toBe(true);
+    unsettled = false;
+    await advance(1000);
+
+    expect(activity.chat).toBe(false);
+    expect(loadShellStateRevision).not.toHaveBeenCalled();
+    expect(view.result.current.error).toBeNull();
+  });
+
+  it.each(["media", "native"] as const)(
+    "waits for %s work to drain before inspecting chat storage",
+    async (kind) => {
+      activity[kind] = true;
+      const view = await setup();
+      const pending = createDeferred<void>();
+      view.update({ flush: vi.fn(() => pending.promise) });
+
+      await advance(31_000);
+
+      expect(view.options.flush).not.toHaveBeenCalled();
+      expect(loadShellStateRevision).not.toHaveBeenCalled();
+      expect(loadShellStateSnapshot).not.toHaveBeenCalled();
+      expect(view.result.current.enabled).toBe(true);
+      expect(view.result.current.error).toBeNull();
+      expect(shutdownCalls()).toEqual([]);
+
+      activity[kind] = false;
+      pending.resolve();
+      await advance(5000);
+      expect(shutdownCalls()).toEqual([]);
+      await advance(1000);
+      expect(shutdownCalls()).toHaveLength(1);
+    },
+  );
+
+  it("does not report a timed-out inspection after shutdown is cancelled", async () => {
+    const view = await setup();
+    const pending = createDeferred<number>();
+    vi.mocked(loadShellStateRevision).mockImplementationOnce(
+      () => pending.promise,
+    );
+    await advance(1000);
+    await act(async () => {
+      await view.result.current.toggle();
+    });
+
+    await advance(31_000);
+
+    expect(view.result.current.enabled).toBe(false);
+    expect(view.result.current.error).toBeNull();
+    expect(shutdownCalls()).toEqual([]);
+    pending.resolve(10);
+    await advance(1000);
+    expect(shutdownCalls()).toEqual([]);
+  });
+
   it("shuts down only after queued messages, retries, image jobs and settlement have all drained", async () => {
     const view = await setup();
     const background = createSession({ id: "background" });
