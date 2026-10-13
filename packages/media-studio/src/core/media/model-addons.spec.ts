@@ -366,6 +366,28 @@ describe("media model add-on compatibility", () => {
     ).toBe("incompatible");
   });
 
+  it.each(["krea-2-raw", "krea-2-turbo"])(
+    "accepts Krea denoiser LoRAs for %s",
+    (architecture) => {
+      const model = {
+        ...fluxModel,
+        architecture,
+        family: "Krea 2",
+        addonCapabilities: getMediaModelAddonCapabilities(
+          "local-diffusers",
+          architecture,
+        ),
+      };
+      expect(
+        inspectMediaModelAddonCompatibility(model, {
+          ...addon,
+          architecture: "krea-2",
+          baseModelHint: "Krea 2",
+        }).status,
+      ).toBe("compatible");
+    },
+  );
+
   it("uses tensor evidence instead of a stale publisher hint", () => {
     expect(
       inspectMediaModelAddonCompatibility(fluxModel, {

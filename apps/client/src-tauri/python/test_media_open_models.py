@@ -19,6 +19,32 @@ import media_open_video as video
 
 
 class OpenMediaModelTests(unittest.TestCase):
+    def test_ideogram_auto_preserves_the_published_guidance_schedule(self):
+        for sampling in ({}, {"numInferenceSteps": 48}, {"numInferenceSteps": None, "guidanceScale": None}):
+            with self.subTest(sampling=sampling):
+                arguments = models.image_arguments("ideogram-4", sampling, [], "")
+                self.assertNotIn("guidance_scale", arguments)
+                self.assertNotIn("guidance_schedule", arguments)
+
+    def test_ideogram_manual_sampling_uses_a_valid_constant_guidance(self):
+        for sampling, guidance in [({"guidanceScale": 5}, 5), ({"numInferenceSteps": 20}, 7), ({"guidanceScale": 0, "numInferenceSteps": 48}, 0)]:
+            with self.subTest(sampling=sampling):
+                arguments = models.image_arguments("ideogram-4", sampling, [], "")
+                self.assertEqual(arguments["guidance_scale"], guidance)
+                self.assertIsNone(arguments["guidance_schedule"])
+
+    def test_unavailable_native_hunyuan_runtime_is_not_advertised(self):
+        versions = {name.lower(): None for name in worker.REQUIRED_PACKAGES}
+        with mock.patch.object(worker, "_package_versions", return_value=versions), mock.patch.object(worker.importlib.util, "find_spec", return_value=None):
+            result = worker.probe()
+        self.assertNotIn("hunyuan-image-3", result["architectures"])
+        self.assertIn("qwen-image-2.1-turbo", result["architectures"])
+        self.assertEqual(len(result["architectures"]), len(set(result["architectures"])))
+
+    def test_turbo_qwen_rejects_unused_negative_prompt(self):
+        with self.assertRaisesRegex(ValueError, "negative prompt"):
+            models.image_arguments("qwen-image-2.1-turbo", {}, [], "blur")
+
     def test_catalog_model_ids_and_architectures_are_unique(self):
         profiles = json.loads(Path(__file__).with_name("open_media_models.json").read_text(encoding="utf-8"))
         for field in ("id", "architecture"):
@@ -49,6 +75,19 @@ class OpenMediaModelTests(unittest.TestCase):
                 diffusers = SimpleNamespace(Flux2KleinPipeline=SimpleNamespace(from_pretrained=loader))
                 models.load_pipeline(diffusers, {"architecture": architecture, "path": directory, "packageKind": "diffusers-directory"}, "bf16")
                 self.assertEqual(loader.call_args.kwargs, {"dtype": "bf16", "local_files_only": True, "use_safetensors": True, "trust_remote_code": False, "is_distilled": distilled})
+
+    def test_original_qwen_variants_inject_the_declared_quantized_transformer(self):
+        transformer = object()
+        for architecture in ("qwen-image", "qwen-image-2512"):
+            with self.subTest(architecture=architecture), tempfile.TemporaryDirectory() as directory:
+                index = {"_class_name": "QwenImagePipeline", "machdoch_quantization": {"transformer": {"format": "gguf", "file": "transformer/model.gguf"}}}
+                Path(directory, "model_index.json").write_text(json.dumps(index), encoding="utf-8")
+                loader = mock.Mock(return_value=SimpleNamespace())
+                diffusers = SimpleNamespace(QwenImagePipeline=SimpleNamespace(from_pretrained=loader))
+                with mock.patch("media_qwen_quantization.transformer_arguments", return_value={"transformer": transformer}) as quantized:
+                    models.load_pipeline(diffusers, {"architecture": architecture, "path": directory, "packageKind": "diffusers-directory"}, "bf16")
+                quantized.assert_called_once_with(diffusers, Path(directory), index, "bf16")
+                self.assertIs(loader.call_args.kwargs["transformer"], transformer)
 
     def test_wrong_pipeline_folder_is_rejected_before_loading(self):
         with tempfile.TemporaryDirectory() as directory:

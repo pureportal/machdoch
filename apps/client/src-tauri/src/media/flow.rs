@@ -4063,6 +4063,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         "height",
                         "numInferenceSteps",
                         "guidanceScale",
+                        "sampler",
                     ]
                 } else {
                     &[
@@ -4089,6 +4090,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                         "height",
                         "numInferenceSteps",
                         "guidanceScale",
+                        "sampler",
                     ]
                 },
             )?;
@@ -5752,6 +5754,36 @@ mod tests {
             fs::read_dir(root.join("flow-revisions")).unwrap().count(),
             1
         );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn image_sampling_survives_native_revision_persistence() {
+        let paths = test_paths("image-sampler-revision");
+        let mut source = request(
+            "save-sampler",
+            None,
+            "A painted robot beside a white-haired woman",
+        );
+        let node = &mut source.flow.nodes[1];
+        node.config
+            .insert("sampler".into(), json!("dpmpp-2m-karras"));
+        node.config.insert("numInferenceSteps".into(), json!(32));
+        node.config.insert("guidanceScale".into(), json!(6));
+        let saved = save(&paths, &source).unwrap();
+        let history = get(&paths, &source.flow.id).unwrap();
+        assert_eq!(history.revisions[0].revision_id, saved.revision.revision_id);
+        assert_eq!(
+            history.revisions[0].flow.nodes[1].config["sampler"],
+            "dpmpp-2m-karras"
+        );
+        let mut edit = source.flow.nodes[1].clone();
+        edit.r#type = "task.edit-image".into();
+        edit.config.insert("editStrength".into(), json!(0.65));
+        validate_node_config(&edit).unwrap();
+        edit.config.insert("sampler".into(), json!("unrecognized"));
+        assert!(validate_node_config(&edit).is_err());
+        let root = paths.database.parent().unwrap().to_path_buf();
         let _ = fs::remove_dir_all(root);
     }
 

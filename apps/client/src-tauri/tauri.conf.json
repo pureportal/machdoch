@@ -68,6 +68,16 @@
       "resources/whisper/LICENSE-whisper-model.txt": "whisper/LICENSE-whisper-model.txt",
       "python/media_diffusers_worker.py": "python/media_diffusers_worker.py",
       "python/media_open_models.py": "python/media_open_models.py",
+      "python/media_image_sampling.py": "python/media_image_sampling.py",
+      "python/media_sdxl_conditioning.py": "python/media_sdxl_conditioning.py",
+      "python/media_sd_conditioning.py": "python/media_sd_conditioning.py",
+      "python/media_clip_windows.py": "python/media_clip_windows.py",
+      "python/media_qwen_quantization.py": "python/media_qwen_quantization.py",
+      "python/LICENSE-gguf.txt": "python/LICENSE-gguf.txt",
+      "python/media_krea_quantization.py": "python/media_krea_quantization.py",
+      "python/media_krea_cache.py": "python/media_krea_cache.py",
+      "python/media_hunyuan_image3.py": "python/media_hunyuan_image3.py",
+      "python/image_sampling_profiles.json": "python/image_sampling_profiles.json",
       "python/media_sdxl_distillation.py": "python/media_sdxl_distillation.py",
       "python/media_student_checkpoints.py": "python/media_student_checkpoints.py",
       "python/media_open_video.py": "python/media_open_video.py",
@@ -139,7 +149,9 @@
       "python/media_visual_check.py": "python/media_visual_check.py",
       "python/media_diffusers_requirements.txt": "python/media_diffusers_requirements.txt",
       "python/media_runtime_manifest.json": "python/media_runtime_manifest.json",
-      "../scripts/build_source_anchored_loop.py": "python/build_source_anchored_loop.py"
+      "../scripts/build_source_anchored_loop.py": "python/build_source_anchored_loop.py",
+      "python/LICENSE-HunyuanImage-3.txt": "python/LICENSE-HunyuanImage-3.txt",
+      "python/NOTICE-HunyuanImage-3.txt": "python/NOTICE-HunyuanImage-3.txt"
     },
     "targets": ["msi", "nsis", "deb", "rpm", "appimage"],
     "windows": {

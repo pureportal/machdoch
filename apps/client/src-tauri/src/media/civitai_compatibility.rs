@@ -23,7 +23,10 @@ pub(super) const BASE_MODELS: &[(&str, &str)] = &[
     ("Flux.1 Krea", "flux-1"),
     ("Flux.2 Klein 4B", "flux-2"),
     ("Krea 2", "krea-2"),
+    ("Krea 2 Raw", "krea-2-raw"),
+    ("Krea 2 Turbo", "krea-2-turbo"),
     ("Qwen 2", "qwen-image-2.1"),
+    ("Qwen 2.1", "qwen-image-2.1"),
     ("Wan Video 2.2 TI2V-5B", "wan-2.2-ti2v"),
     ("LTXV", "ltx-video"),
 ];
@@ -59,6 +62,8 @@ pub(super) fn supports_resource(model_type: &str, base_model: Option<&str>) -> b
                 | "stable-diffusion-xl"
                 | "pony"
                 | "krea-2"
+                | "krea-2-raw"
+                | "krea-2-turbo"
                 | "qwen-image-2.1"
                 | "wan-2.2-ti2v"
         );
@@ -85,11 +90,48 @@ pub(super) fn supports_version_type(base_model_type: Option<&str>) -> bool {
     base_model_type.is_none_or(|value| value.eq_ignore_ascii_case("Standard"))
 }
 
+pub(super) fn architecture_for_version(
+    model_type: &str,
+    model_name: &str,
+    version_name: &str,
+    base_model: Option<&str>,
+) -> Option<&'static str> {
+    let architecture = architecture_for_base_model(base_model)?;
+    if model_type == "Checkpoint"
+        && architecture == "qwen-image-2.1"
+        && [model_name, version_name]
+            .iter()
+            .any(|name| name.to_ascii_lowercase().contains("turbo"))
+    {
+        return None;
+    }
+    if model_type != "Checkpoint" || architecture != "krea-2" {
+        return Some(architecture);
+    }
+    for name in [version_name, model_name] {
+        let words = name.to_ascii_lowercase();
+        let tokens = words
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .collect::<Vec<_>>();
+        match (
+            tokens.contains(&"raw") || tokens.contains(&"krea2raw"),
+            tokens.contains(&"turbo") || tokens.contains(&"krea2turbo"),
+        ) {
+            (true, false) => return Some("krea-2-raw"),
+            (false, true) => return Some("krea-2-turbo"),
+            (true, true) => return None,
+            (false, false) => {}
+        }
+    }
+    None
+}
+
 pub(super) fn supports_file(
     file_type: &str,
     name: &str,
     format: Option<&str>,
     precision: Option<&str>,
+    architecture: Option<&str>,
 ) -> bool {
     file_type.eq_ignore_ascii_case("Model")
         && name.to_ascii_lowercase().ends_with(".safetensors")
@@ -98,12 +140,110 @@ pub(super) fn supports_file(
             ["fp16", "fp32", "bf16"]
                 .iter()
                 .any(|fp| value.eq_ignore_ascii_case(fp))
+                || (["fp8", "int8"]
+                    .iter()
+                    .any(|precision| value.eq_ignore_ascii_case(precision))
+                    && matches!(architecture, Some("krea-2-raw" | "krea-2-turbo")))
         })
+        && !["mxfp8", "nvfp4", "convrot", "svdquant"]
+            .iter()
+            .any(|format| name.to_ascii_lowercase().contains(format))
+        && (!name.to_ascii_lowercase().contains("int8")
+            || matches!(architecture, Some("krea-2-raw" | "krea-2-turbo")))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolves_checkpoint_variants_before_selecting_a_runtime() {
+        for (model, version, expected) in [
+            (
+                "Krea 2 Turbo Official",
+                "krea2_raw_bf16",
+                Some("krea-2-raw"),
+            ),
+            (
+                "Mixed Krea Raw and Turbo",
+                "Krea 2 Turbo v1.4",
+                Some("krea-2-turbo"),
+            ),
+            ("Krea 2 Turbo", "BF16", Some("krea-2-turbo")),
+            ("JANK2 Anime Krea2Turbo", "v1.0", Some("krea-2-turbo")),
+            ("Krea 2", "v1", None),
+            ("Krea 2 Raw and Turbo", "v1", None),
+        ] {
+            assert_eq!(
+                architecture_for_version("Checkpoint", model, version, Some("Krea 2")),
+                expected
+            );
+        }
+        assert_eq!(
+            architecture_for_version("LORA", "Style", "v1", Some("Krea 2")),
+            Some("krea-2")
+        );
+        assert_eq!(
+            architecture_for_version(
+                "Checkpoint",
+                "Qwen Image 2.1 Turbo GGUF",
+                "v1",
+                Some("Qwen 2")
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn admits_scaled_krea_formats_without_admitting_other_quantization_formats() {
+        for architecture in [
+            Some("krea-2-raw"),
+            Some("krea-2-turbo"),
+            Some("stable-diffusion-xl"),
+            None,
+        ] {
+            assert_eq!(
+                supports_file(
+                    "Model",
+                    "krea2TurboFp8.safetensors",
+                    Some("SafeTensor"),
+                    Some("fp8"),
+                    architecture
+                ),
+                matches!(architecture, Some("krea-2-raw" | "krea-2-turbo"))
+            );
+        }
+        for architecture in [
+            Some("krea-2-raw"),
+            Some("krea-2-turbo"),
+            Some("stable-diffusion-xl"),
+            None,
+        ] {
+            assert_eq!(
+                supports_file(
+                    "Model",
+                    "krea2TurboInt8.safetensors",
+                    Some("SafeTensor"),
+                    Some("int8"),
+                    architecture
+                ),
+                matches!(architecture, Some("krea-2-raw" | "krea-2-turbo"))
+            );
+        }
+        for name in [
+            "krea2TurboMxfp8.safetensors",
+            "krea2TurboInt8Convrot.safetensors",
+            "krea2TurboNvfp4.safetensors",
+        ] {
+            assert!(!supports_file(
+                "Model",
+                name,
+                Some("SafeTensor"),
+                Some("bf16"),
+                Some("krea-2-turbo")
+            ));
+        }
+    }
 
     #[test]
     fn maps_civitai_families_without_guessing_variants() {
@@ -139,7 +279,7 @@ mod tests {
     fn limits_types_to_their_importer_and_runtime() {
         assert!(!supports_resource("DoRA", Some("SDXL 1.0")));
         assert!(supports_resource("TextualInversion", Some("Pony")));
-        assert!(!supports_resource("TextualInversion", Some("SD 3.5")));
+        assert!(supports_resource("TextualInversion", Some("SD 3.5")));
         assert!(!supports_resource("VAE", Some("SDXL 1.0")));
         assert!(supports_resource(
             "Checkpoint",
@@ -158,7 +298,11 @@ mod tests {
         for name in ["LTXV", "Flux.2 Klein 4B"] {
             assert!(supports_resource("LORA", Some(name)), "{name}");
             assert!(!supports_resource("Checkpoint", Some(name)), "{name}");
-            assert!(!supports_resource("TextualInversion", Some(name)), "{name}");
+            assert_eq!(
+                supports_resource("TextualInversion", Some(name)),
+                name == "Flux.2 Klein 4B",
+                "{name}"
+            );
         }
         assert!(!supports_resource("Checkpoint", Some("Flux.2 D")));
         assert!(!supports_resource("LORA", Some("Flux.2 D")));
@@ -247,20 +391,29 @@ mod tests {
             "Model",
             "test.safetensors",
             Some("SafeTensor"),
-            Some("bf16")
+            Some("bf16"),
+            None
         ));
         assert!(!supports_file(
             "VAE",
             "test.safetensors",
             Some("SafeTensor"),
+            None,
             None
         ));
-        assert!(!supports_file("Model", "test.gguf", Some("GGUF"), None));
+        assert!(!supports_file(
+            "Model",
+            "test.gguf",
+            Some("GGUF"),
+            None,
+            None
+        ));
         assert!(!supports_file(
             "Model",
             "test.safetensors",
             Some("SafeTensor"),
-            Some("nf4")
+            Some("nf4"),
+            None
         ));
     }
 }

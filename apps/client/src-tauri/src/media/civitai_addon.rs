@@ -461,7 +461,7 @@ fn validated_download_url(value: &str) -> Option<Url> {
     .then_some(url)
 }
 
-fn safe_file(file: &CivitaiFile) -> Option<SelectedFile> {
+fn safe_file(file: &CivitaiFile, architecture: Option<&str>) -> Option<SelectedFile> {
     let byte_size = verified_file_size(
         file.size_kb,
         file.hashes
@@ -484,6 +484,7 @@ fn safe_file(file: &CivitaiFile) -> Option<SelectedFile> {
         &file.name,
         Some(format),
         file.metadata.as_ref()?.fp.as_deref(),
+        architecture,
     ) {
         return None;
     }
@@ -501,10 +502,10 @@ fn safe_file(file: &CivitaiFile) -> Option<SelectedFile> {
     })
 }
 
-fn select_file(files: &[CivitaiFile]) -> MediaResult<SelectedFile> {
+fn select_file(files: &[CivitaiFile], architecture: Option<&str>) -> MediaResult<SelectedFile> {
     let candidates = files
         .iter()
-        .filter_map(|file| safe_file(file).map(|selected| (file.primary, selected)))
+        .filter_map(|file| safe_file(file, architecture).map(|selected| (file.primary, selected)))
         .collect::<Vec<_>>();
     let primary = candidates
         .iter()
@@ -595,16 +596,20 @@ fn build_inspection(
     version: CivitaiModelVersionResponse,
 ) -> ResolvedInspection {
     let kind = civitai_compatibility::kind_for_model_type(&model.model_type).map(ToOwned::to_owned);
-    let architecture =
-        civitai_compatibility::architecture_for_base_model(version.base_model.as_deref())
-            .map(ToOwned::to_owned);
+    let architecture = civitai_compatibility::architecture_for_version(
+        &model.model_type,
+        &model.name,
+        &version.name,
+        version.base_model.as_deref(),
+    )
+    .map(ToOwned::to_owned);
     let license_claims = MediaCivitaiLicenseClaims {
         allow_no_credit: model.allow_no_credit,
         allow_commercial_use: commercial_use_claim(model.allow_commercial_use.as_ref()),
         allow_derivatives: model.allow_derivatives,
         allow_different_license: model.allow_different_license,
     };
-    let selected_file_result = select_file(&version.files);
+    let selected_file_result = select_file(&version.files, architecture.as_deref());
     let selected_file = selected_file_result.as_ref().ok().cloned();
     let mut blocking_reason = selected_file_result.err();
     if kind.is_none() {
@@ -621,7 +626,8 @@ fn build_inspection(
         &model.name,
         &model.model_type,
         version.base_model.as_deref(),
-    ) || !civitai_compatibility::supports_version_type(version.base_model_type.as_deref())
+    ) || architecture.is_none()
+        || !civitai_compatibility::supports_version_type(version.base_model_type.as_deref())
     {
         blocking_reason = Some(
             "This Civitai version cannot be used in Machdoch. Choose another version.".to_string(),
@@ -1046,7 +1052,7 @@ mod tests {
             ("LORA", "Flux.1 Kontext", "Standard", false),
             ("LORA", "Flux.2 Klein 9B", "Standard", false),
             ("LORA", "Pony V7", "Standard", false),
-            ("TextualInversion", "SD 3.5", "Standard", false),
+            ("TextualInversion", "SD 3.5", "Standard", true),
             ("Checkpoint", "Wan Video 2.2 TI2V-5B", "Standard", true),
             ("LORA", "Wan Video 2.2 TI2V-5B", "Standard", true),
             ("DoRA", "Wan Video 2.2 TI2V-5B", "Standard", false),
@@ -1065,7 +1071,7 @@ mod tests {
             .unwrap();
             let mut version: CivitaiModelVersionResponse =
                 serde_json::from_value(serde_json::json!({
-                    "id": 2, "modelId": 1, "name": "Version", "baseModel": base_model,
+                    "id": 2, "modelId": 1, "name": "Raw Version", "baseModel": base_model,
                     "baseModelType": version_type
                 }))
                 .unwrap();
@@ -1087,7 +1093,7 @@ mod tests {
         }
         let mut file = fixture_file(1, true);
         file.metadata.as_mut().unwrap().fp = Some("nf4".into());
-        assert!(safe_file(&file).is_none());
+        assert!(safe_file(&file, None).is_none());
     }
 
     #[test]
@@ -1276,7 +1282,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(
-            safe_file(&file).unwrap().public.byte_size,
+            safe_file(&file, None).unwrap().public.byte_size,
             6 * 1024 * 1024 * 1024
         );
         assert_eq!(
@@ -1291,19 +1297,19 @@ mod tests {
 
     #[test]
     fn selects_only_scanned_safetensors_model_files() {
-        let selected = select_file(&[fixture_file(135_867, true)])
+        let selected = select_file(&[fixture_file(135_867, true)], None)
             .expect("safe primary file should be selected");
         assert_eq!(selected.public.byte_size, 2_097_152);
 
         let mut unsafe_file = fixture_file(135_867, true);
         unsafe_file.pickle_scan_result = Some("Danger".to_string());
-        assert!(select_file(&[unsafe_file]).is_err());
+        assert!(select_file(&[unsafe_file], None).is_err());
     }
 
     #[test]
     fn requires_unique_primary_when_multiple_safe_files_exist() {
-        assert!(select_file(&[fixture_file(1, false), fixture_file(2, false)]).is_err());
-        let selected = select_file(&[fixture_file(1, true), fixture_file(2, false)])
+        assert!(select_file(&[fixture_file(1, false), fixture_file(2, false)], None).is_err());
+        let selected = select_file(&[fixture_file(1, true), fixture_file(2, false)], None)
             .expect("unique primary should win");
         assert_eq!(selected.public.id, 1);
     }

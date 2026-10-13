@@ -289,11 +289,18 @@ fn filter_previews(model: &mut CivitaiCatalogModel, nsfw: bool) {
 
 fn filter_resources(model: &mut CivitaiCatalogModel, base_model: &str) {
     model.model_versions.retain_mut(|version| {
+        let architecture = civitai_compatibility::architecture_for_version(
+            &model.model_type,
+            &model.name,
+            &version.name,
+            version.base_model.as_deref(),
+        );
         if !civitai_compatibility::supports_catalog_resource(
             &model.name,
             &model.model_type,
             version.base_model.as_deref(),
-        ) || !civitai_compatibility::supports_version_type(version.base_model_type.as_deref())
+        ) || architecture.is_none()
+            || !civitai_compatibility::supports_version_type(version.base_model_type.as_deref())
             || (!base_model.is_empty()
                 && !version
                     .base_model
@@ -321,6 +328,7 @@ fn filter_resources(model: &mut CivitaiCatalogModel, base_model: &str) {
                     file.metadata
                         .as_ref()
                         .and_then(|metadata| metadata.fp.as_deref()),
+                    architecture,
                 )
         });
         !version.files.is_empty()
@@ -737,6 +745,7 @@ mod tests {
                 model.model_type = model_type.to_string();
                 for version in &mut model.model_versions {
                     version.base_model = Some(base.into());
+                    version.name = "Raw Version".into();
                 }
                 filter_resources(&mut model, base);
                 assert_eq!(

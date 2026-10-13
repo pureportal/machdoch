@@ -41,18 +41,15 @@ pub(crate) fn update(
     }
     let profile = model_import::architecture_profile(&request.architecture)
         .ok_or_else(|| "Choose a supported model type.".to_string())?;
-    let student_profile = super::open_models::by_architecture(&request.architecture)
-        .filter(|profile| profile.distillation.is_some());
-    let license_name = student_profile.map_or(license_name, |student| student.license.name.clone());
-    let commercial_use = student_profile.map_or(commercial_use, |student| {
-        student.license.commercial_use.as_str()
-    });
-    let license_source_url = if let Some(student) = student_profile {
-        student
-            .license
+    let required_license = super::open_models::required_import_license(&request.architecture);
+    let license_name = required_license.map_or(license_name, |license| license.name.clone());
+    let commercial_use =
+        required_license.map_or(commercial_use, |license| license.commercial_use.as_str());
+    let license_source_url = if let Some(license) = required_license {
+        license
             .source_url
             .as_deref()
-            .ok_or("Student model profile has no licence source")?
+            .ok_or("Model profile has no licence source")?
     } else {
         source_url.as_deref().unwrap_or("")
     };
@@ -110,7 +107,7 @@ pub(crate) fn update(
                 profile.speed_score,
                 profile.quality_score,
                 database::now(),
-                student_profile.is_some()
+                required_license.is_some()
             ],
         )
         .map_err(|error| format!("failed to save model: {error}"))?;

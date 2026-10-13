@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager, redirect_stdout
+from contextlib import ExitStack, contextmanager, redirect_stdout
 import gc
 import hashlib
 import importlib.metadata
@@ -29,11 +29,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import numpy as np
 from PIL import Image, ImageOps
 import media_open_models
+import media_image_sampling
 
-WORKER_VERSION = "media-diffusers-worker/1.77.0"
-# Disk group files contain only checkpoint/adapter tensors. Keep their
-# compatibility identity independent from response/provenance releases until
-# that serialization contract itself changes.
+WORKER_VERSION = "media-diffusers-worker/1.96.0"
 OFFLOAD_CACHE_COMPATIBILITY_VERSION = "media-diffusers-worker/1.19.0"
 SCHEMA_VERSION = 5
 MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES = 15 * 1024**3
@@ -179,6 +177,11 @@ def _runtime() -> tuple[Any, Any]:
         import diffusers
     except Exception as error:  # import failures are a readiness result
         raise WorkerError(f"The pinned Diffusers runtime could not be imported: {error}") from error
+    if os.name == "nt":
+        import safetensors.torch as safe_torch
+        from fizgig.utils.safetensors import load_owned_safetensors_file
+
+        safe_torch.load_file = load_owned_safetensors_file
     return torch, diffusers
 
 
@@ -249,6 +252,9 @@ def _pipeline_dtype(torch: Any, device: str) -> Any:
 def probe(verify_operations: bool = False) -> dict[str, Any]:
     versions = _package_versions()
     capabilities = _runtime_capabilities(versions)
+    architectures = list(dict.fromkeys(SUPPORTED_ARCHITECTURES))
+    if importlib.util.find_spec("hunyuan_image_3") is None:
+        architectures.remove("hunyuan-image-3")
     physical_memory = _physical_memory_bytes()
     missing = [name for name in REQUIRED_PACKAGES if versions[name.lower()] is None]
     mismatched = [
@@ -280,7 +286,7 @@ def probe(verify_operations: bool = False) -> dict[str, Any]:
             "deviceLabel": None,
             "deviceMemoryBytes": None,
             "physicalMemoryBytes": physical_memory,
-            "architectures": list(SUPPORTED_ARCHITECTURES),
+            "architectures": architectures,
             "capabilities": capabilities,
             "diagnostic": "Pinned Python runtime is not ready: " + "; ".join(problems),
         }
@@ -305,7 +311,7 @@ def probe(verify_operations: bool = False) -> dict[str, Any]:
             "deviceLabel": None,
             "deviceMemoryBytes": None,
             "physicalMemoryBytes": physical_memory,
-            "architectures": list(SUPPORTED_ARCHITECTURES),
+            "architectures": architectures,
             "capabilities": capabilities,
             "diagnostic": str(error),
         }
@@ -319,7 +325,7 @@ def probe(verify_operations: bool = False) -> dict[str, Any]:
         "deviceLabel": label,
         "deviceMemoryBytes": memory,
         "physicalMemoryBytes": physical_memory,
-        "architectures": list(SUPPORTED_ARCHITECTURES),
+        "architectures": architectures,
         "capabilities": capabilities,
         "diagnostic": "Media Studio imports, computation, and video encoding passed." if verify_operations else "Media Studio runtime is ready.",
     }
@@ -547,10 +553,6 @@ def _krea_scaled_fp8_linear_forward(module: Any, input_tensor: Any) -> Any:
 
     original_shape = input_tensor.shape
     input_2d = input_tensor.reshape(-1, original_shape[-1])
-    # The checkpoint stores Wq and one FP32 scale such that W = Wq * scale.
-    # gfx1201 exposes the scaled FP8 GEMM directly. Dynamically quantizing the
-    # activation avoids materializing a BF16 copy of projections as large as
-    # 100M parameters (roughly 200 MB each).
     activation_scale = (
         input_2d.detach().abs().amax().to(torch.float32) / 448.0
     ).clamp_min(1e-12)
@@ -574,8 +576,8 @@ def _krea_scaled_fp8_linear_forward(module: Any, input_tensor: Any) -> Any:
 
 def _load_krea_transformer(diffusers: Any, torch: Any, checkpoint: Path) -> Any:
     from accelerate import init_empty_weights
-    from accelerate.utils import set_module_tensor_to_device
-    from safetensors import safe_open
+    from fizgig.utils.safetensors import MemoryEfficientSafeOpen
+    from media_krea_quantization import quantized_layers, layer_configuration, dequantized_linear_forward
 
     with init_empty_weights():
         transformer = diffusers.Krea2Transformer2DModel()
@@ -584,8 +586,13 @@ def _load_krea_transformer(diffusers: Any, torch: Any, checkpoint: Path) -> Any:
     }
     expected = set(expected_shapes)
     observed: set[str] = set()
-    scaled_modules: list[tuple[str, Any]] = []
-    with safe_open(str(checkpoint), framework="pt", device="cpu") as tensor_file:
+    scaled_modules: list[tuple[str, Any, bool]] = []
+    fp8_dtypes = {"F8_E4M3": torch.float8_e4m3fn, "F8_E5M2": torch.float8_e5m2}
+    with MemoryEfficientSafeOpen(checkpoint, disable_numpy_memmap=True) as tensor_file:
+        try:
+            layer_configurations = quantized_layers(tensor_file)
+        except (ValueError, TypeError) as error:
+            raise WorkerError("KREA checkpoint has invalid quantization metadata") from error
         checkpoint_keys = tensor_file.keys()
         checkpoint_key_set = set(checkpoint_keys)
         source_keys = [
@@ -602,58 +609,79 @@ def _load_krea_transformer(diffusers: Any, torch: Any, checkpoint: Path) -> Any:
                 ) from error
             if destination in observed:
                 raise WorkerError(f"KREA checkpoint maps duplicate tensor {destination}")
-            value = tensor_file.get_tensor(source_key)
-            if destination.endswith("scale_shift_table") and value.ndim == 1:
-                value = value.reshape(-1, 6144)
-            if tuple(value.shape) != expected_shapes.get(destination):
+            metadata = tensor_file.header[source_key]
+            if metadata["dtype"] not in ("F32", "F16", "BF16", "I8", *fp8_dtypes):
+                raise WorkerError("KREA requires floating-point or declared scaled INT8 checkpoint weights")
+            shape = tuple(metadata["shape"])
+            if destination.endswith("scale_shift_table") and len(shape) == 1 and shape[0] % 6144 == 0:
+                shape = (shape[0] // 6144, 6144)
+            if shape != expected_shapes.get(destination):
                 raise WorkerError(
                     f"KREA tensor {source_key} has an incompatible shape for {destination}"
                 )
-            is_fp8 = value.dtype in (torch.float8_e4m3fn, torch.float8_e5m2)
-            set_module_tensor_to_device(
-                transformer,
-                destination,
-                "cpu",
-                value=value,
-                # Accelerate treats dtype=None as "cast to the meta
-                # parameter's default" (FP32); pass FP8 explicitly so the
-                # 13.1 GB checkpoint does not expand to roughly 50 GB.
-                dtype=value.dtype if is_fp8 else torch.bfloat16,
-            )
+            is_fp8 = metadata["dtype"] in fp8_dtypes
+            is_int8 = metadata["dtype"] == "I8"
+            dtype = torch.int8 if is_int8 else fp8_dtypes.get(metadata["dtype"], torch.bfloat16)
+            module_name, _, attribute = destination.rpartition(".")
+            module = transformer.get_submodule(module_name)
+            value = torch.empty(0, dtype=dtype)
+            if isinstance(getattr(module, attribute), torch.nn.Parameter):
+                value = torch.nn.Parameter(value, requires_grad=False)
+            value._machdoch_krea_source = (checkpoint, source_key, shape)
+            setattr(module, attribute, value)
             observed.add(destination)
-            if is_fp8:
+            if is_fp8 or is_int8:
                 scale_key = source_key.removesuffix(".weight") + ".weight_scale"
-                quant_key = source_key.removesuffix(".weight") + ".comfy_quant"
-                if scale_key not in checkpoint_key_set or quant_key not in checkpoint_key_set:
-                    raise WorkerError(f"KREA FP8 tensor {source_key} has no scale metadata")
+                if scale_key not in checkpoint_key_set:
+                    raise WorkerError(f"KREA tensor {source_key} has no scale metadata")
                 try:
-                    quant = json.loads(
-                        bytes(tensor_file.get_tensor(quant_key).tolist()).decode("utf-8")
-                    )
-                except (UnicodeDecodeError, json.JSONDecodeError) as error:
-                    raise WorkerError(
-                        f"KREA FP8 tensor {source_key} has invalid quantization metadata"
-                    ) from error
-                if quant.get("format") != "float8_e4m3fn":
-                    raise WorkerError(
-                        f"KREA tensor {source_key} uses unsupported {quant.get('format')} quantization"
-                    )
+                    expected_format = "int8_tensorwise" if is_int8 else "float8_e4m3fn" if metadata["dtype"] == "F8_E4M3" else "float8_e5m2"
+                    quant = layer_configuration(tensor_file, source_key, layer_configurations, expected_format)
+                except (UnicodeDecodeError, ValueError, TypeError) as error:
+                    raise WorkerError(str(error)) from error
                 module_name = destination.removesuffix(".weight")
-                scaled_modules.append((module_name, tensor_file.get_tensor(scale_key)))
+                scale = tensor_file.get_tensor(scale_key)
+                valid_shape = scale.numel() == 1 or (is_int8 and len(shape) == 2 and tuple(scale.shape) == (shape[0], 1))
+                if scale.dtype != torch.float32 or not valid_shape or not torch.isfinite(scale).all() or not (scale > 0).all():
+                    raise WorkerError(f"KREA tensor {source_key} has an invalid weight scale")
+                scaled_modules.append((module_name, scale, is_int8 or quant.get("full_precision_matrix_mult", False)))
     if observed != expected:
         missing = sorted(expected - observed)
         raise WorkerError(
             "KREA checkpoint does not cover the complete transformer"
             + (f"; missing {', '.join(missing[:8])}" if missing else "")
         )
-    for module_name, scale in scaled_modules:
+    for module_name, scale, full_precision in scaled_modules:
         module = transformer.get_submodule(module_name)
         if not isinstance(module, torch.nn.Linear):
-            raise WorkerError(f"KREA FP8 target {module_name} is not a linear layer")
+            raise WorkerError(f"KREA quantized target {module_name} is not a linear layer")
         module.register_buffer("_machdoch_weight_scale", scale.to(torch.float32))
-        module.forward = types.MethodType(_krea_scaled_fp8_linear_forward, module)
+        module.forward = types.MethodType(dequantized_linear_forward if full_precision else _krea_scaled_fp8_linear_forward, module)
     transformer.eval().requires_grad_(False)
     return transformer
+
+
+def _krea_tensor_value(tensor: Any, readers: dict[Path, Any], stack: ExitStack) -> Any:
+    from fizgig.utils.safetensors import MemoryEfficientSafeOpen
+
+    source = getattr(tensor, "_machdoch_krea_source", None)
+    if source is None:
+        return tensor.data.to("cpu")
+    path, key, shape = source
+    if path not in readers:
+        readers[path] = stack.enter_context(MemoryEfficientSafeOpen(path, disable_numpy_memmap=True))
+    return readers[path].get_tensor(key).reshape(shape).to(tensor.dtype)
+
+
+def _materialize_krea_transformer(transformer: Any, device: Any = "cpu") -> None:
+    with ExitStack() as stack:
+        readers: dict[Path, Any] = {}
+        for tensor in (*transformer.parameters(), *transformer.buffers()):
+            if hasattr(tensor, "_machdoch_krea_source"):
+                tensor.data = _krea_tensor_value(tensor, readers, stack).to(device)
+                del tensor._machdoch_krea_source
+            else:
+                tensor.data = tensor.data.to(device)
 
 
 def _load_krea_pipeline(
@@ -687,7 +715,7 @@ def _load_krea_pipeline(
         text_encoder=None,
         tokenizer=None,
         transformer=transformer,
-        is_distilled=True,
+        is_distilled=model["architecture"] != "krea-2-raw",
     )
     pipeline._machdoch_krea_text_root = text_root
     pipeline._machdoch_krea_runtime_root = text_root.parent
@@ -735,6 +763,7 @@ def _krea_disk_cache_directory(
     pipeline: Any,
     model: dict[str, Any],
     addons: list[dict[str, Any]],
+    storage_cache_root: Path,
 ) -> tuple[Path, str]:
     model_digest = _required_text(model, "digest", 64)
     enabled_addons = [
@@ -760,9 +789,12 @@ def _krea_disk_cache_directory(
             sort_keys=True,
         ).encode("utf-8")
     ).hexdigest()
-    model_root = _absolute_existing_path(model.get("path"), file=True).parent
-    cache_root = model_root / "transformer-offload"
-    return cache_root / signature, signature
+    cache_root = Path(tempfile.gettempdir()) / "machdoch-media-studio" / "transformer-offload"
+    required_bytes = int(sum(tensor.numel() * tensor.element_size() for tensor in (*pipeline.transformer.parameters(), *pipeline.transformer.buffers())) * 1.05) + 512 * 1024**2
+    from media_krea_cache import select_cache_directory
+
+    directory = select_cache_directory(signature, cache_root, storage_cache_root, required_bytes, _validated_krea_disk_cache)
+    return directory, signature
 
 
 def _validated_krea_disk_cache(cache_directory: Path, signature: str) -> bool:
@@ -815,9 +847,7 @@ def _remove_incomplete_krea_disk_cache(
     resolved_root = runtime_root.resolve(strict=True)
     resolved_cache = cache_directory.resolve(strict=False)
     if (
-        resolved_cache.parent != (resolved_root / "transformer-offload").resolve(
-            strict=False
-        )
+        resolved_cache.parent != resolved_root
         or not re.fullmatch(r"[0-9a-f]{64}", resolved_cache.name)
     ):
         raise WorkerError("Refusing to replace an unsafe KREA offload cache path")
@@ -830,27 +860,10 @@ def _install_windows_krea_disk_offload_fixes(torch: Any) -> bool:
         return False
     import functools
     import safetensors.torch as safe_torch
+    from fizgig.utils.safetensors import load_owned_safetensors_file
     from diffusers.hooks.group_offloading import ModuleGroup
 
-    selected_device = int(torch.cuda.current_device())
-    original_load_file = getattr(
-        safe_torch.load_file,
-        "_machdoch_original",
-        safe_torch.load_file,
-    )
-
-    @functools.wraps(original_load_file)
-    def load_file_on_selected_device(
-        filename: str,
-        device: str = "cpu",
-    ) -> Any:
-        # Diffusers 0.39 reduces cuda:1 to "cuda" at this boundary.
-        if device == "cuda":
-            device = f"cuda:{selected_device}"
-        return original_load_file(filename, device=device)
-
-    load_file_on_selected_device._machdoch_original = original_load_file
-    safe_torch.load_file = load_file_on_selected_device
+    safe_torch.load_file = load_owned_safetensors_file
 
     original_offload = getattr(
         ModuleGroup._offload_to_disk,
@@ -866,11 +879,13 @@ def _install_windows_krea_disk_offload_fixes(torch: Any) -> bool:
             and not os.path.exists(group.safetensors_file_path)
         ):
             os.makedirs(os.path.dirname(group.safetensors_file_path), exist_ok=True)
-            tensors_to_save = {
-                key: tensor.data.to(group.offload_device)
-                for tensor, key in group.tensor_to_key.items()
-            }
-            safe_torch.save_file(tensors_to_save, group.safetensors_file_path)
+            with ExitStack() as stack:
+                readers: dict[Path, Any] = {}
+                tensors_to_save = {
+                    key: _krea_tensor_value(tensor, readers, stack)
+                    for tensor, key in group.tensor_to_key.items()
+                }
+                safe_torch.save_file(tensors_to_save, group.safetensors_file_path)
         group._is_offloaded_to_disk = True
         # Upstream uses empty_like() here. On Windows that reserves the entire
         # 12.2 GB model again and WDDM counts it against the page-file commit,
@@ -895,6 +910,7 @@ def _configure_krea_offload(
     model: dict[str, Any],
     addons: list[dict[str, Any]],
     requested_profile: Any,
+    storage_cache_root: Path,
 ) -> dict[str, Any]:
     if requested_profile is None:
         requested_profile = "auto"
@@ -937,14 +953,18 @@ def _configure_krea_offload(
             pipeline,
             model,
             addons,
+            storage_cache_root,
         )
-        runtime_root = _absolute_existing_path(model.get("path"), file=True).parent
+        runtime_root = cache_directory.parent
+        runtime_root.mkdir(parents=True, exist_ok=True)
         disk_cache_hit = _validated_krea_disk_cache(cache_directory, signature)
         if cache_directory.exists() and not disk_cache_hit:
             _remove_incomplete_krea_disk_cache(cache_directory, runtime_root)
         cache_directory.mkdir(parents=True, exist_ok=True)
         windows_disk_fixes = _install_windows_krea_disk_offload_fixes(torch)
         arguments["offload_to_disk_path"] = str(cache_directory)
+    if effective_profile != "memory-saver" or not windows_disk_fixes:
+        _materialize_krea_transformer(pipeline.transformer)
     pipeline.enable_group_offload(**arguments)
     cache_size = None
     cache_files = None
@@ -1008,15 +1028,21 @@ def _load_pipeline(
     model_path = _absolute_existing_path(model.get("path"), file=package_kind == "single-file")
     device, _, _ = _device(torch)
     dtype = torch_dtype if torch_dtype is not None else _pipeline_dtype(torch, device)
-    if torch_dtype is None and architecture in ("z-image", "z-image-turbo", "flux-2",
-            "flux-2-klein-base-4b", "flux-2-klein-9b", "flux-2-klein-base-9b"):
+    if torch_dtype is None and architecture in (
+        "stable-diffusion-3",
+        "z-image", "z-image-turbo",
+        "flux-1", "flux-1-dev", "flux-1-schnell", "flux-2", "flux-2-dev",
+        "flux-2-klein-base-4b", "flux-2-klein-9b", "flux-2-klein-base-9b",
+        "qwen-image", "qwen-image-2512", "qwen-image-edit-2511", "qwen-image-2.1", "qwen-image-2.1-turbo",
+        "krea-2-raw", "krea-2-turbo", "hunyuan-image-3", "glm-image", "hidream-i1-full", "ideogram-4", "sana-sprint",
+    ):
         dtype = torch.bfloat16 if device == "cuda" and torch.cuda.is_bf16_supported() else torch.float32
     common = {
         "torch_dtype": dtype,
         "local_files_only": True,
         "use_safetensors": True,
     }
-    if architecture in media_open_models.PROFILES:
+    if architecture in media_open_models.PROFILES and not (architecture in ("krea-2-raw", "krea-2-turbo") and package_kind == "single-file"):
         try:
             return media_open_models.load_pipeline(diffusers, model, dtype)
         except ValueError as error:
@@ -1045,11 +1071,17 @@ def _load_pipeline(
             str(runtime_root), transformer=transformer, dtype=dtype,
             local_files_only=True, use_safetensors=True,
         )
-    elif architecture == "krea-2" and package_kind == "single-file":
+    elif architecture in ("krea-2", "krea-2-raw", "krea-2-turbo") and package_kind == "single-file":
         pipeline = _load_krea_pipeline(diffusers, torch, model, model_path)
     elif package_kind == "diffusers-directory":
+        components = {}
+        if architecture == "qwen-image-2.1":
+            from media_qwen_quantization import transformer_arguments
+
+            index = json.loads((model_path / "model_index.json").read_text(encoding="utf-8"))
+            components = transformer_arguments(diffusers, model_path, index, dtype)
         pipeline = diffusers.DiffusionPipeline.from_pretrained(
-            str(model_path), trust_remote_code=False, **common
+            str(model_path), trust_remote_code=False, **common, **components
         )
     elif package_kind == "single-file":
         class_names = {
@@ -1945,16 +1977,31 @@ def _steps(architecture: str, policy: str) -> int:
         # move the sample away from the checkpoint's trained trajectory.
         return 4
     if architecture == "krea-2":
-        return 8
+        return 8 if policy == "fast" else 12
     if architecture == "qwen-image-2.1":
         return {"fast": 20, "balanced": 30, "quality": 40}[policy]
     return {"fast": 16, "balanced": 24, "quality": 32}[policy]
+
+
+def _qwen_image21_guidance_arguments(guidance: float, negative_prompt: str) -> dict[str, Any]:
+    if guidance < 1:
+        raise WorkerError("Qwen-Image 2.1 guidance must be at least 1")
+    if guidance == 1 and negative_prompt.strip():
+        raise WorkerError("Qwen-Image 2.1 needs guidance above 1 for a negative prompt")
+    arguments: dict[str, Any] = {"true_cfg_scale": guidance}
+    if guidance > 1:
+        arguments["negative_prompt"] = negative_prompt
+    return arguments
 
 
 def _image_sampling(request: dict[str, Any], architecture: str, policy: str) -> tuple[int, int, int, float | None]:
     sampling = request.get("sampling", {})
     if not isinstance(sampling, dict):
         raise WorkerError("Image sampling settings must be an object")
+    try:
+        media_image_sampling.validate_sampler(architecture, sampling.get("sampler"))
+    except ValueError as error:
+        raise WorkerError(str(error)) from error
     width, height = _dimensions(architecture, request.get("aspectRatio"), policy)
     requested_width, requested_height = sampling.get("width"), sampling.get("height")
     if (requested_width is None) != (requested_height is None):
@@ -1971,10 +2018,12 @@ def _image_sampling(request: dict[str, Any], architecture: str, policy: str) -> 
     if architecture == "flux-2" and steps != 4:
         raise WorkerError("FLUX.2 Klein requires 4 sampling steps")
     guidance = sampling.get("guidanceScale")
+    if guidance is None and architecture not in media_open_models.PROFILES:
+        guidance = media_image_sampling.SAMPLING_PROFILES[architecture]["defaultGuidance"]
     if guidance is not None:
         if not isinstance(guidance, (int, float)) or isinstance(guidance, bool) or not math.isfinite(guidance) or not 0 <= guidance <= 20:
             raise WorkerError("Guidance must be between 0 and 20")
-        fixed = {"flux-2": 1.0, "krea-2": 0.0}.get(architecture)
+        fixed = {"flux-2": 1.0}.get(architecture)
         if fixed is not None and guidance != fixed:
             raise WorkerError(f"{architecture} requires guidance {fixed}")
     if architecture in media_open_models.PROFILES:
@@ -1988,6 +2037,7 @@ def _configure_large_image_vae_decode(
     torch: Any,
     width: int,
     height: int,
+    device_memory: int | None,
 ) -> dict[str, Any]:
     """Bound VAE decode memory with the model's overlapping tiles."""
     native_sdxl_decode = (
@@ -1998,15 +2048,28 @@ def _configure_large_image_vae_decode(
         and getattr(torch.version, "hip", None) is not None
         and not torch.backends.cudnn.enabled
     )
+    qwen_decode = architecture in ("qwen-image-2.1", "qwen-image-2.1-turbo")
     tile_size = 512 if native_sdxl_decode else 1_024
-    enabled = max(width, height) > tile_size
+    if qwen_decode and (device_memory is None or device_memory < 15 * 1024 ** 3):
+        tile_size = 512
+    enabled = width * height > tile_size ** 2 if qwen_decode else max(width, height) > tile_size
     vae = getattr(pipeline, "vae", None)
     enable_tiling = getattr(vae, "enable_tiling", None)
     if enabled and not callable(enable_tiling):
         raise WorkerError(
             "The selected model cannot decode its quality canvas with bounded VAE tiles"
         )
-    if enabled:
+    if qwen_decode:
+        if enabled:
+            enable_tiling(
+                tile_sample_min_height=tile_size,
+                tile_sample_min_width=tile_size,
+                tile_sample_stride_height=tile_size * 3 // 4,
+                tile_sample_stride_width=tile_size * 3 // 4,
+            )
+        else:
+            vae.disable_tiling()
+    elif enabled:
         enable_tiling()
         if architecture == "flux-2" or native_sdxl_decode:
             vae.tile_sample_min_size = 512
@@ -2042,6 +2105,11 @@ def _configure_large_image_vae_decode(
         ),
         "enabled": enabled,
         "thresholdPixels": tile_size,
+        **({
+            "fullFrameMaxPixels": tile_size ** 2,
+            "tileSize": tile_size if enabled else None,
+            "tileStride": tile_size * 3 // 4 if enabled else None,
+        } if qwen_decode else {}),
         "postQuantBackend": post_quant_backend,
         "device": (
             "cpu"
@@ -2547,7 +2615,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
     if request.get("schemaVersion") != SCHEMA_VERSION:
         raise WorkerError("Unsupported worker request schema")
     torch, diffusers = _runtime()
-    runtime_device, _, _ = _device(torch)
+    runtime_device, device_label, device_memory = _device(torch)
     convolution_backend = _configure_amd_convolution_backend(torch, runtime_device)
     model = request.get("model")
     if not isinstance(model, dict):
@@ -2573,6 +2641,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         raise WorkerError("seed is invalid")
     architecture = _required_text(model, "architecture", 64)
     profile = media_open_models.PROFILES.get(architecture)
+    krea_checkpoint = architecture in ("krea-2", "krea-2-raw", "krea-2-turbo") and model.get("packageKind") == "single-file"
     if profile is not None and profile.get("distillation", {}).get("sampler") == "lcm":
         from media_sdxl_distillation import validate_request
 
@@ -2774,14 +2843,19 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         "width": width,
         "height": height,
         "memoryProfile": request.get("memoryProfile"),
+        "sampler": request.get("sampling", {}).get("sampler"),
     }) if cache is not None else None
-    if architecture == "krea-2":
+    if krea_checkpoint:
         config_path = _absolute_existing_path(model.get("configPath"), file=False)
         krea_text_root, _ = _krea_runtime_paths(config_path)
-        krea_prompt_embeds, krea_prompt_mask = _load_image_conditioning().encode_krea_prompt(
+        krea_guidance = requested_guidance if requested_guidance is not None else profile["guidance"] if profile else 0.0
+        if negative_prompt.strip() and krea_guidance <= 0:
+            raise WorkerError("Krea 2 needs guidance above 0 for a negative prompt")
+        krea_prompts = [prompt, negative_prompt] if krea_guidance > 0 else [prompt]
+        krea_prompt_embeds, krea_prompt_mask = _load_image_conditioning().encode_krea_prompts(
             torch,
             krea_text_root,
-            prompt,
+            krea_prompts,
             references,
         )
     if cached is None:
@@ -2792,6 +2866,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             model,
             flux2_inpainting=flux2_inpainting,
         )
+        media_image_sampling.configure_sampler(pipeline, diffusers, architecture, request.get("sampling", {}).get("sampler"))
         if control_image is not None and controlnet_path is not None:
             pipeline = _controlnet_pipeline(
                 diffusers,
@@ -2825,6 +2900,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             torch,
             width,
             height,
+            device_memory,
         )
         vae_decode_evidence["convolutionBackend"] = convolution_backend
         (
@@ -2832,9 +2908,14 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         ) = _apply_addons(
             pipeline, addons, prompt, negative_prompt
         )
-        if architecture != "krea-2":
+        if not krea_checkpoint and architecture != "hunyuan-image-3":
             if runtime_device == "cuda":
-                if architecture in ("z-image", "z-image-turbo"):
+                if architecture in (
+                    "z-image", "z-image-turbo", "qwen-image", "qwen-image-2512",
+                    "qwen-image-2.1", "qwen-image-2.1-turbo",
+                    "flux-1", "flux-1-dev", "flux-1-schnell",
+                    "krea-2-raw", "krea-2-turbo",
+                ):
                     pipeline.enable_group_offload(
                         onload_device=torch.device("cuda", torch.cuda.current_device()),
                         offload_device=torch.device("cpu"), offload_type="block_level",
@@ -2845,9 +2926,10 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                     pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
             else:
                 pipeline.to(runtime_device)
-        else:
+        elif krea_checkpoint:
             krea_performance_evidence = _configure_krea_offload(
                 pipeline, torch, model, addons, request.get("memoryProfile"),
+                Path(_required_text(request, "modelCacheDirectory", 32768)),
             )
         if cache is not None:
             cache.store({
@@ -2897,7 +2979,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             references=references,
             require_visible_change=requires_visible_reference_change,
         )
-    device, device_label, device_memory = _device(torch)
+    device = runtime_device
     call_parameters = inspect.signature(pipeline.__call__).parameters
     has_lora_schedule = any(schedule is not None for schedule in lora_schedules)
     if has_lora_schedule and "callback_on_step_end" not in call_parameters:
@@ -2915,7 +2997,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         destination = output_directory / filename
         save_format = {"png": "PNG", "jpeg": "JPEG", "webp": "WEBP"}[output_format]
         image = generated_image.convert(
-            "RGBA" if architecture == "qwen-image-2.1" and output_format == "png" and "A" in generated_image.getbands() else "RGB"
+            "RGBA" if architecture in ("qwen-image-2.1", "qwen-image-2.1-turbo") and output_format == "png" and "A" in generated_image.getbands() else "RGB"
         )
         if masked_context is not None:
             image = _composite_masked_result(masked_context, image)
@@ -2965,24 +3047,21 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         if architecture in media_open_models.PROFILES:
             arguments.update(media_open_models.image_arguments(architecture, request.get("sampling", {}), conditioned_images, negative_prompt))
         elif requested_guidance is not None and architecture == "qwen-image-2.1":
-            if requested_guidance < 1:
-                raise WorkerError("Qwen-Image 2.1 guidance must be at least 1")
-            if requested_guidance > 1 and not negative_prompt.strip():
-                raise WorkerError("Qwen-Image 2.1 needs a negative prompt for guidance above 1")
-            arguments["true_cfg_scale"] = requested_guidance
+            arguments.update(_qwen_image21_guidance_arguments(requested_guidance, negative_prompt))
         elif requested_guidance is not None:
             if "guidance_scale" not in call_parameters:
                 raise WorkerError(f"{architecture} does not support manual guidance")
             arguments["guidance_scale"] = requested_guidance
         step_callbacks: list[Any] = [_sampling_progress(index, output_count)] if "callback_on_step_end" in call_parameters else []
-        if architecture == "krea-2":
+        if krea_checkpoint:
             cuda_device = torch.device(f"cuda:{torch.cuda.current_device()}")
             arguments["prompt"] = None
-            arguments["prompt_embeds"] = krea_prompt_embeds.to(cuda_device)
-            arguments["prompt_embeds_mask"] = krea_prompt_mask.to(cuda_device)
-            # Community KREA 2 accelerated checkpoints document CFG=1. In the
-            # Diffusers KREA convention the conditional-only equivalent is 0.
-            arguments["guidance_scale"] = 0.0
+            arguments["prompt_embeds"] = krea_prompt_embeds[:1].to(cuda_device)
+            arguments["prompt_embeds_mask"] = krea_prompt_mask[:1].to(cuda_device)
+            arguments["guidance_scale"] = krea_guidance
+            if krea_guidance > 0:
+                arguments["negative_prompt_embeds"] = krea_prompt_embeds[1:].to(cuda_device)
+                arguments["negative_prompt_embeds_mask"] = krea_prompt_mask[1:].to(cuda_device)
             if primary_reference_image is not None:
                 edit_arguments, mask_callback = _load_image_conditioning().prepare_krea_edit(
                     pipeline, torch, primary_reference_image,
@@ -3048,7 +3127,9 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                 arguments["control_guidance_start"] = control_start
             if "control_guidance_end" in call_parameters:
                 arguments["control_guidance_end"] = control_end
-        if architecture in ("flux-2", "flux-2-klein-base-4b", "flux-2-klein-9b", "flux-2-klein-base-9b") and (negative_prompt.strip() or any(addon["kind"] == "textual-inversion" for addon in applied)):
+        if krea_checkpoint:
+            arguments["negative_prompt"] = None
+        elif architecture in ("flux-2", "flux-2-klein-base-4b", "flux-2-klein-9b", "flux-2-klein-base-9b") and (negative_prompt.strip() or any(addon["kind"] == "textual-inversion" for addon in applied)):
             from media_flux2_conditioning import embedding_arguments
 
             guidance = arguments.get("guidance_scale", call_parameters["guidance_scale"].default)
@@ -3058,10 +3139,6 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                 pipeline, effective_prompt, negative_prompt, pipeline._execution_device, guidance,
             ))
         elif "negative_prompt" in call_parameters and negative_prompt.strip():
-            if architecture == "qwen-image-2.1":
-                if requested_guidance == 1:
-                    raise WorkerError("Qwen-Image 2.1 needs guidance above 1 for a negative prompt")
-                arguments["true_cfg_scale"] = requested_guidance or 4.0
             if any(addon["kind"] == "textual-inversion" and addon["placement"] != "positive" for addon in applied):
                 guidance = arguments.get("guidance_scale", call_parameters["guidance_scale"].default)
                 if guidance <= 1:
@@ -3071,6 +3148,18 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             raise WorkerError(
                 f"{architecture} does not expose negative-prompt conditioning in this pipeline"
             )
+        if architecture in ("stable-diffusion-1", "stable-diffusion-2"):
+            from media_sd_conditioning import encode_sd_prompt_pair
+
+            arguments.update(encode_sd_prompt_pair(
+                pipeline, effective_prompt, negative_prompt, pipeline._execution_device,
+            ))
+        if architecture in ("stable-diffusion-xl", "pony"):
+            from media_sdxl_conditioning import encode_sdxl_prompt_pair
+
+            arguments.update(encode_sdxl_prompt_pair(
+                pipeline, effective_prompt, negative_prompt, pipeline._execution_device,
+            ))
         if architecture == "sana" and any(addon["kind"] == "textual-inversion" for addon in applied):
             guidance = arguments.get("guidance_scale", call_parameters["guidance_scale"].default)
             arguments.update(_sana_embedding_arguments(
@@ -3103,6 +3192,8 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         if cpu_vae_decode:
             arguments["output_type"] = "latent"
         result = pipeline(**arguments)
+        if any(getattr(result, "nsfw_content_detected", None) or []):
+            raise WorkerError("The model withheld an image. Adjust the prompt or seed, then retry.")
         if cpu_vae_decode:
             if result.images is None:
                 raise WorkerError(f"Pipeline returned no latent for output {index + 1}")
@@ -3144,6 +3235,8 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         "modelPolicy": policy,
         "aspectRatio": request.get("aspectRatio"),
         "numInferenceSteps": step_count,
+        "sampler": request.get("sampling", {}).get("sampler"),
+        "schedulerClass": type(pipeline.scheduler).__name__,
         "vaeDecode": vae_decode_evidence,
         "addons": applied,
         "performance": krea_performance_evidence,

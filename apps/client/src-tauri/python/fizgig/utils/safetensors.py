@@ -20,6 +20,15 @@ logger = logging.getLogger(__name__)
 MAX_SAFETENSORS_HEADER_SIZE = 100_000_000
 
 
+def _unique_header_fields(fields):
+    result = {}
+    for key, value in fields:
+        if key in result:
+            raise ValueError(f"Invalid safetensors header: duplicate field {key!r}")
+        result[key] = value
+    return result
+
+
 def warm_file_cache(path: str) -> None:
     """Stream a model file once so the safetensors mmap hits page cache.
 
@@ -162,8 +171,11 @@ class MemoryEfficientSafeOpen:
         if header_size > MAX_SAFETENSORS_HEADER_SIZE:
             raise ValueError("Invalid safetensors file: header is too large")
 
+        encoded_header = self.file.read(header_size)
+        if not encoded_header.startswith(b"{"):
+            raise ValueError("Invalid safetensors file: header must start with an object")
         try:
-            header = json.loads(self.file.read(header_size).decode("utf-8"))
+            header = json.loads(encoded_header.decode("utf-8"), object_pairs_hook=_unique_header_fields)
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ValueError("Invalid safetensors file: malformed header") from error
         if not isinstance(header, dict):
@@ -308,6 +320,12 @@ class MemoryEfficientSafeOpen:
         elif dtype_str == "F8_E4M3" and hasattr(torch, "float8_e4m3fn"):
             return byte_tensor.view(torch.float8_e4m3fn).reshape(shape)
         raise ValueError(f"Unsupported float8 type: {dtype_str} (upgrade PyTorch)")
+
+
+def load_owned_safetensors_file(filename, device="cpu"):
+    destination = torch.device(device)
+    with MemoryEfficientSafeOpen(filename, disable_numpy_memmap=True) as reader:
+        return {key: reader.get_tensor(key).to(destination) for key in reader.keys()}
 
 
 def load_safetensors(

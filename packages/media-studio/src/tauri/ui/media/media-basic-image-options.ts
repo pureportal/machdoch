@@ -12,6 +12,7 @@ import {
 import {
   defaultMediaImageSteps,
   mediaImageSamplingConstraints,
+  compatibleMediaImageSamplers,
 } from "../../../core/media/image-sampling.js";
 
 export const basicPosePresetSelectionStillCurrent = (
@@ -41,6 +42,15 @@ export const reconcileBasicImageModelSettings = (
     }
   } else {
     const sampling = { ...settings.sampling };
+    if (
+      sampling.sampler != null &&
+      !compatibleMediaImageSamplers(model.architecture).some(
+        (sampler) => sampler.value === sampling.sampler,
+      )
+    ) {
+      sampling.sampler = null;
+      changes.push("Sampler reset to model defaults.");
+    }
     const constraints = mediaImageSamplingConstraints(model.architecture);
     if (
       constraints.fixedSteps !== null &&

@@ -2,7 +2,57 @@ use std::{fs, path::PathBuf, time::Instant};
 
 use serde::Deserialize;
 
-use super::{run_worker, verify_python_runtime, GENERATION_TIMEOUT};
+use super::{run_worker, verify_python_runtime, IMAGE_GENERATION_TIMEOUT};
+
+#[test]
+#[ignore = "requires the installed Basic image model sweep results"]
+fn external_basic_image_generations_pass_native_sampling_validation() {
+    let root = PathBuf::from(
+        std::env::var_os("MACHDOCH_BASIC_IMAGE_VERIFICATION")
+            .expect("Set MACHDOCH_BASIC_IMAGE_VERIFICATION to the sweep output directory"),
+    );
+    let summary: serde_json::Value =
+        serde_json::from_slice(&fs::read(root.join("results.json")).unwrap()).unwrap();
+    assert_eq!(summary["passed"], true);
+    let models = summary["models"].as_array().unwrap();
+    assert!(!models.is_empty());
+    for model in models {
+        let directory = PathBuf::from(model["directory"].as_str().unwrap());
+        let request: serde_json::Value =
+            serde_json::from_slice(&fs::read(directory.join("request.json")).unwrap()).unwrap();
+        let response: super::WorkerGenerationResponse =
+            serde_json::from_slice(&fs::read(directory.join("response.json")).unwrap()).unwrap();
+        let architecture = request["model"]["architecture"].as_str().unwrap();
+        let policy = request["modelPolicy"].as_str().unwrap();
+        let aspect_ratio = request["aspectRatio"].as_str().unwrap();
+        let sampling = serde_json::from_value(request["sampling"].clone()).unwrap();
+        super::validate_image_sampling_evidence(
+            &response,
+            architecture,
+            policy,
+            aspect_ratio,
+            &sampling,
+        )
+        .unwrap_or_else(|error| panic!("{}: {error}", model["name"]));
+        assert_eq!(response.prompt, request["prompt"].as_str().unwrap());
+        assert_eq!(
+            response.outputs.len(),
+            request["outputCount"].as_u64().unwrap() as usize
+        );
+        let rejected = super::super::image_sampling::ImageSampling {
+            num_inference_steps: Some(response.num_inference_steps + 1),
+            ..Default::default()
+        };
+        assert!(super::validate_image_sampling_evidence(
+            &response,
+            architecture,
+            policy,
+            aspect_ratio,
+            &rejected,
+        )
+        .is_err());
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,7 +131,7 @@ fn verify_managed_generation(command: &str) {
             &fixture.worker,
             command,
             Some(&serde_json::to_vec(&request).unwrap()),
-            GENERATION_TIMEOUT,
+            IMAGE_GENERATION_TIMEOUT,
             None,
         );
         let seconds = started.elapsed().as_secs_f64();

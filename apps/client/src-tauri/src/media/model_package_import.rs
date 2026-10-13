@@ -91,10 +91,7 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
                     .and_then(|extension| extension.to_str())
                     .is_some_and(|extension| {
                         student_profile.is_none()
-                            && matches!(
-                                extension,
-                                "py" | "pyc" | "bin" | "pt" | "pth" | "ckpt" | "gguf"
-                            )
+                            && matches!(extension, "py" | "pyc" | "bin" | "pt" | "pth" | "ckpt")
                     })
                 {
                     return Err(format!(
@@ -146,6 +143,31 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
         .and_then(Value::as_str)
         .ok_or("The model folder has no pipeline class")?
         .to_string();
+    let gguf_files = files
+        .iter()
+        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("gguf"))
+        .collect::<Vec<_>>();
+    if index.get("machdoch_quantization").is_some() || !gguf_files.is_empty() {
+        let expected = serde_json::json!({"transformer": {"format": "gguf", "file": "transformer/model.gguf"}});
+        let (transformer_class, architecture) = match pipeline.as_str() {
+            "QwenImagePipeline" => ("QwenImageTransformer2DModel", "qwen_image"),
+            "QwenImage21Pipeline" => ("QwenImage21Transformer2DModel", "qwen_image21"),
+            _ => return Err("Choose a Qwen folder with its declared GGUF transformer.".to_string()),
+        };
+        if index.get("machdoch_quantization") != Some(&expected)
+            || index["transformer"] != serde_json::json!(["diffusers", transformer_class])
+            || gguf_files != vec![&root.join("transformer/model.gguf")]
+        {
+            return Err("Choose a Qwen folder with its declared GGUF transformer.".to_string());
+        }
+        let quantized = super::gguf_weights::validate(gguf_files[0])?;
+        if quantized.architecture != architecture {
+            return Err("The GGUF transformer does not match the Qwen pipeline.".to_string());
+        }
+        tensor_count = tensor_count
+            .checked_add(quantized.tensor_count)
+            .ok_or("The model folder contains too many tensors")?;
+    }
     if !matches!(
         pipeline.as_str(),
         "StableDiffusionPipeline"
@@ -192,6 +214,9 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
         }
     }
     for (name, specification) in index.as_object().ok_or("Invalid model index")? {
+        if pipeline == "QwenImage21Pipeline" && name == "sample_sigmas" {
+            continue;
+        }
         let Some(component) = specification.as_array() else {
             continue;
         };
@@ -231,8 +256,13 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
                     "AudioLDM2ProjectionModel"
                 ) | ("unet", Some("audioldm2"), "AudioLDM2UNet2DConditionModel")
             );
+        let native_hunyuan_component = pipeline == "HunyuanImage3Pipeline"
+            && name == "model"
+            && component[0] == "hunyuan_image_3"
+            && class == "HunyuanImage3ForCausalMM";
         if !matches!(component[0].as_str(), Some("diffusers" | "transformers"))
             && !native_audio_component
+            && !native_hunyuan_component
         {
             return Err(format!("Component {name} requires custom repository code."));
         }
@@ -253,10 +283,19 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
         }
         if class.contains("Model")
             || class.starts_with("Autoencoder")
+            || class.ends_with("ForConditionalGeneration")
+            || class.ends_with("ForCausalLM")
             || class == "SpeechT5HifiGan"
+            || native_hunyuan_component
             || (h3_student && name == "text_encoder")
         {
             let config = read_json(&component_root.join("config.json"))?;
+            if native_hunyuan_component
+                && (config["model_type"] != "hunyuan_image_3_moe"
+                    || config["model_version"] != "HunyuanImage-3.0")
+            {
+                return Err("Choose the original HunyuanImage 3.0 model package.".to_string());
+            }
             if h3_student
                 && name == "text_encoder"
                 && (config["model_type"].as_str() != Some("qwen3_vl")
@@ -274,7 +313,18 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
                             == Some("safetensors")
                 })
                 .collect::<Vec<_>>();
-            if weights.is_empty() && !(sdxl_student && name == "unet") {
+            let quantized_transformer = matches!(
+                pipeline.as_str(),
+                "QwenImagePipeline" | "QwenImage21Pipeline"
+            ) && name == "transformer"
+                && index.get("machdoch_quantization").is_some();
+            if quantized_transformer && !weights.is_empty() {
+                return Err(
+                    "A quantized transformer folder must contain only its GGUF weights."
+                        .to_string(),
+                );
+            }
+            if weights.is_empty() && !(sdxl_student && name == "unet") && !quantized_transformer {
                 return Err(format!("Missing safetensors weights for {name}"));
             }
             for path in files.iter().filter(|path| {
@@ -455,11 +505,25 @@ fn inspect_package(package: &PackageInventory) -> MediaResult<MediaLocalModelImp
             "Krea2Pipeline" => {
                 let index = read_json(&package.root.join("model_index.json"))?;
                 match index["is_distilled"].as_bool() {
-                    Some(true) => Some("krea-2".to_string()),
+                    Some(true) => Some("krea-2-turbo".to_string()),
                     Some(false) => Some("krea-2-raw".to_string()),
                     None => {
                         return Err("The KREA 2 model index is missing is_distilled.".to_string())
                     }
+                }
+            }
+            "QwenImage21Pipeline" => {
+                let index = read_json(&package.root.join("model_index.json"))?;
+                let turbo = open_models::by_architecture("qwen-image-2.1-turbo")
+                    .expect("bundled Qwen Turbo profile must exist");
+                let published_sigmas = serde_json::to_value(&turbo.sample_sigmas)
+                    .expect("bundled Qwen Turbo schedule must be valid");
+                match index.get("sample_sigmas") {
+                    None => Some("qwen-image-2.1".to_string()),
+                    Some(sigmas) if sigmas == &published_sigmas => {
+                        Some("qwen-image-2.1-turbo".to_string())
+                    }
+                    _ => return Err("The Qwen Image 2.1 sampling schedule is invalid.".to_string()),
                 }
             }
             "FluxPipeline" => {
@@ -591,6 +655,7 @@ pub(super) fn import_reviewed(
         "flux-1" | "flux-1-dev" | "flux-1-schnell" => "FluxPipeline",
         "flux-2" => "Flux2KleinPipeline",
         "krea-2" => "Krea2Pipeline",
+        "qwen-image-2.1" => "QwenImage21Pipeline",
         _ => {
             &open_models::by_architecture(&request.architecture)
                 .ok_or("Select a model architecture")?
@@ -629,8 +694,10 @@ pub(super) fn import_reviewed(
                 | "stable-diffusion-2"
                 | "flux-1-dev"
                 | "flux-1-schnell"
-                | "krea-2"
+                | "krea-2-turbo"
                 | "krea-2-raw"
+                | "qwen-image-2.1"
+                | "qwen-image-2.1-turbo"
                 | "cogvideox-2b"
                 | "cogvideox-1.5-5b"
                 | "cogvideox-1.5-5b-i2v"

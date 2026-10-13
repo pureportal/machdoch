@@ -60,6 +60,33 @@ class SafetensorsReaderTests(unittest.TestCase):
                 reader._read_header()
         reader.file.read.assert_called_once_with(8)
 
+    def test_opening_a_large_checkpoint_reads_only_the_header(self):
+        payload_size = 26_000_000_000
+        self.write_file({"weights": {
+            "dtype": "BF16", "shape": [payload_size // 2], "data_offsets": [0, payload_size],
+        }})
+        header_size = self.path.stat().st_size
+        with patch("fizgig.utils.safetensors.os.fstat", return_value=SimpleNamespace(st_size=header_size + payload_size)), \
+                patch("numpy.fromfile", side_effect=AssertionError("payload read")), \
+                patch("numpy.memmap", side_effect=AssertionError("file mapping")), \
+                patch.object(torch.UntypedStorage, "from_file", side_effect=AssertionError("storage mapping")):
+            with MemoryEfficientSafeOpen(self.path) as reader:
+                self.assertEqual(reader.keys(), ["weights"])
+                self.assertEqual(reader.file.tell(), header_size)
+
+    def test_duplicate_header_fields_fail(self):
+        tensor = '{"dtype":"F32","shape":[1],"data_offsets":[0,4]}'
+        for encoded in (
+            f'{{"weights":{tensor},"weights":{tensor}}}',
+            '{"weights":{"dtype":"F32","dtype":"BF16","shape":[1],"data_offsets":[0,4]}}',
+            '{"__metadata__":{"source":"first","source":"second"}}',
+        ):
+            with self.subTest(header=encoded):
+                header = encoded.encode("utf-8")
+                self.path.write_bytes(struct.pack("<Q", len(header)) + header + b"\x00" * 4)
+                with self.assertRaisesRegex(ValueError, "duplicate field"):
+                    MemoryEfficientSafeOpen(self.path)
+
     def test_malformed_header_and_metadata_fail(self):
         self.path.write_bytes(struct.pack("<Q", 1) + b"{")
         with self.assertRaisesRegex(ValueError, "malformed header"):

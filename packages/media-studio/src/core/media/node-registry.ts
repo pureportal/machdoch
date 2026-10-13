@@ -11,6 +11,7 @@ import { VIDEO_COMPOSITION_NODE_DEFINITIONS } from "./video-composition-nodes.js
 import { DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY } from "./subject-cutout-policy.js";
 import { isMediaImageMask } from "./image-mask.js";
 import { readRefMods } from "./refmods.js";
+import { MEDIA_IMAGE_SAMPLERS } from "./image-sampling.js";
 import {
   WORKFLOW_NODE_DEFINITIONS,
   WORKFLOW_GATE_FIELDS,
@@ -251,7 +252,13 @@ const backgroundVideoInput: MediaNodePortDefinition = {
 };
 
 const poseGuidanceFields: readonly MediaNodeFieldDefinition[] = [
-  { id: "poseStrength", label: "Pose strength", defaultValue: 1, min: 0, max: 2 },
+  {
+    id: "poseStrength",
+    label: "Pose strength",
+    defaultValue: 1,
+    min: 0,
+    max: 2,
+  },
   { id: "poseStart", label: "Pose start", defaultValue: 0, min: 0, max: 1 },
   { id: "poseEnd", label: "Pose end", defaultValue: 1, min: 0, max: 1 },
 ].map((field) => ({
@@ -687,6 +694,23 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: null,
         examples: [null],
       },
+      {
+        id: "sampler",
+        label: "Sampler",
+        description: "",
+        group: "Creative",
+        kind: "select",
+        required: false,
+        defaultValue: null,
+        examples: [],
+        options: [
+          { value: "", label: "Automatic", description: "" },
+          ...MEDIA_IMAGE_SAMPLERS.map((sampler) => ({
+            ...sampler,
+            description: "",
+          })),
+        ],
+      },
       ...[
         { id: "width", label: "Width", min: 256, max: 2048, step: 32 },
         { id: "height", label: "Height", min: 256, max: 2048, step: 32 },
@@ -935,6 +959,23 @@ export const MEDIA_NODE_DEFINITIONS = [
         defaultValue: null,
         examples: [null],
       },
+      {
+        id: "sampler",
+        label: "Sampler",
+        description: "",
+        group: "Creative",
+        kind: "select",
+        required: false,
+        defaultValue: null,
+        examples: [],
+        options: [
+          { value: "", label: "Automatic", description: "" },
+          ...MEDIA_IMAGE_SAMPLERS.map((sampler) => ({
+            ...sampler,
+            description: "",
+          })),
+        ],
+      },
       ...[
         { id: "width", label: "Width", min: 256, max: 2048, step: 32 },
         { id: "height", label: "Height", min: 256, max: 2048, step: 32 },
@@ -1022,8 +1063,31 @@ export const MEDIA_NODE_DEFINITIONS = [
     inputs: [promptPort, firstFrameInput, lastFrameInput],
     outputs: [videoOutput],
     fields: [
-      { id: "refMods", label: "RefMods", description: "", group: "Basic", kind: "refmods", required: false, defaultValue: [], examples: [[]], visibleWhen: { fieldId: "modelId", equals: "local:minimax-h3-ref2va" } },
-      { id: "refModMaxTokens", label: "Reference tokens", description: "", group: "Expert", kind: "number", required: false, defaultValue: 65536, examples: [65536], integer: true, min: 0, max: 1048576, visibleWhen: { fieldId: "modelId", equals: "local:minimax-h3-ref2va" } },
+      {
+        id: "refMods",
+        label: "RefMods",
+        description: "",
+        group: "Basic",
+        kind: "refmods",
+        required: false,
+        defaultValue: [],
+        examples: [[]],
+        visibleWhen: { fieldId: "modelId", equals: "local:minimax-h3-ref2va" },
+      },
+      {
+        id: "refModMaxTokens",
+        label: "Reference tokens",
+        description: "",
+        group: "Expert",
+        kind: "number",
+        required: false,
+        defaultValue: 65536,
+        examples: [65536],
+        integer: true,
+        min: 0,
+        max: 1048576,
+        visibleWhen: { fieldId: "modelId", equals: "local:minimax-h3-ref2va" },
+      },
       {
         id: "modelAddons",
         label: "Video LoRAs",
@@ -2684,8 +2748,10 @@ const validateFieldValue = (
       break;
     case "select":
       isValid =
-        typeof value === "string" &&
-        field.options?.some((candidate) => candidate.value === value) === true;
+        (!field.required && field.defaultValue === null && value === null) ||
+        (typeof value === "string" &&
+          field.options?.some((candidate) => candidate.value === value) ===
+            true);
       break;
     case "model":
       isValid =
@@ -2710,7 +2776,12 @@ const validateFieldValue = (
       isValid = isModelAddonSelectionList(value);
       break;
     case "refmods":
-      try { readRefMods(value); isValid = true; } catch { isValid = false; }
+      try {
+        readRefMods(value);
+        isValid = true;
+      } catch {
+        isValid = false;
+      }
       break;
   }
   return isValid
@@ -3814,7 +3885,12 @@ const synchronizeMediaFlowAssetCounts = (flow: MediaFlow): MediaFlow => {
       videoRoles.set(output.id, "composited");
     } else if (
       sourceNode &&
-      ["operation.video-sequence", "operation.video-audio", "operation.lip-sync", "source.video"].includes(sourceNode.type)
+      [
+        "operation.video-sequence",
+        "operation.video-audio",
+        "operation.lip-sync",
+        "source.video",
+      ].includes(sourceNode.type)
     ) {
       videoRoles.set(output.id, "opaque");
     } else if (

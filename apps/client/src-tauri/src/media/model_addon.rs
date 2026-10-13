@@ -81,7 +81,7 @@ pub(crate) fn capabilities_for_model(
                 supports_denoising_schedules: false,
             },
         ],
-        Some("krea-2") => {
+        Some("krea-2" | "krea-2-raw" | "krea-2-turbo") => {
             vec![MediaModelAddonCapability {
                 kind: "lora".to_string(),
                 target_components: vec!["denoiser".to_string()],
@@ -150,22 +150,24 @@ pub(crate) fn capabilities_for_model(
                 supports_denoising_schedules: false,
             }]
         }
-        Some("cogvideox-2b" | "cogvideox-1.5-5b" | "cogvideox-1.5-5b-i2v" | "wan-2.1-t2v-1.3b") => vec![
-            MediaModelAddonCapability {
-                kind: "lora".into(),
-                target_components: vec!["denoiser".into()],
-                max_active: 8,
-                supports_separate_component_strengths: false,
-                supports_denoising_schedules: false,
-            },
-            MediaModelAddonCapability {
-                kind: "textual-inversion".into(),
-                target_components: vec!["text-encoder".into()],
-                max_active: 16,
-                supports_separate_component_strengths: false,
-                supports_denoising_schedules: false,
-            },
-        ],
+        Some("cogvideox-2b" | "cogvideox-1.5-5b" | "cogvideox-1.5-5b-i2v" | "wan-2.1-t2v-1.3b") => {
+            vec![
+                MediaModelAddonCapability {
+                    kind: "lora".into(),
+                    target_components: vec!["denoiser".into()],
+                    max_active: 8,
+                    supports_separate_component_strengths: false,
+                    supports_denoising_schedules: false,
+                },
+                MediaModelAddonCapability {
+                    kind: "textual-inversion".into(),
+                    target_components: vec!["text-encoder".into()],
+                    max_active: 16,
+                    supports_separate_component_strengths: false,
+                    supports_denoising_schedules: false,
+                },
+            ]
+        }
         Some("flux-1" | "flux-1-dev" | "flux-1-schnell") => vec![
             MediaModelAddonCapability {
                 kind: "lora".to_string(),
@@ -756,11 +758,16 @@ fn detect_embedding_architecture(
 }
 
 fn detect_lora_architecture(header: &ParsedSafetensorsHeader) -> (Option<String>, &'static str) {
-    if has_lora_key_fragment(header, "transformer.noise_refiner.")
+    let z_image_refiners = has_lora_key_fragment(header, "transformer.noise_refiner.")
         && has_lora_key_fragment(header, "transformer.context_refiner.")
         && has_lora_key_fragment(header, ".attention.to_q")
-        && has_lora_key_fragment(header, "transformer.layers.")
-    {
+        && has_lora_key_fragment(header, "transformer.layers.");
+    let z_image_main_layers = has_lora_key_fragment(header, ".layers.")
+        && lora_pair_dimensions(header, ".attention.to_q").contains(&(3_840, 3_840))
+        && lora_pair_dimensions(header, ".adaln_modulation.0").contains(&(256, 15_360))
+        && lora_pair_dimensions(header, ".feed_forward.w1").contains(&(3_840, 10_240))
+        && lora_pair_dimensions(header, ".feed_forward.w2").contains(&(10_240, 3_840));
+    if z_image_refiners || z_image_main_layers {
         return (Some("z-image".to_string()), "high");
     }
     if has_lora_key_fragment(header, "transformer.transformer_blocks.")
@@ -2308,16 +2315,16 @@ mod tests {
         for asset in fixture["assets"].as_array().unwrap() {
             let inspection = inspect(asset["sourcePath"].as_str().unwrap()).unwrap();
             assert!(inspection.can_import, "{:?}", inspection.blocking_reason);
+            assert_eq!(
+                inspection.architecture_confidence, "high",
+                "{}: {:?}",
+                asset["displayName"], inspection.detected_architecture
+            );
             let mut request = asset.clone();
             request["reviewToken"] = Value::String(inspection.review_token.clone());
             let request: ImportMediaModelAddonRequest = serde_json::from_value(request).unwrap();
             let imported = import_reviewed_with_source(&paths, &request, None).unwrap();
             assert_eq!(imported.architecture, request.architecture);
-            assert_eq!(
-                inspection.architecture_confidence, "high",
-                "{}: {:?}",
-                request.display_name, inspection.detected_architecture
-            );
             imports.push(serde_json::json!({"inspection": inspection, "imported": imported}));
         }
         fs::write(
@@ -2676,6 +2683,44 @@ mod tests {
                 );
             }
             let _ = fs::remove_file(path);
+        }
+    }
+
+    #[test]
+    fn detects_z_image_main_layer_loras_by_tensor_dimensions() {
+        for prefix in ["transformer", "diffusion_model"] {
+            for attention_width in [3_840, 3_072] {
+                let path = temp_path("z-image-main-layers");
+                let mut header = serde_json::Map::new();
+                let mut offset = 0;
+                for (module, input, output) in [
+                    ("attention.to_q", attention_width, attention_width),
+                    ("adaLN_modulation.0", 256, 15_360),
+                    ("feed_forward.w1", 3_840, 10_240),
+                    ("feed_forward.w2", 10_240, 3_840),
+                ] {
+                    for (matrix, shape) in [("A", [2, input]), ("B", [output, 2])] {
+                        let size = shape[0] * shape[1] * 4;
+                        header.insert(
+                            format!("{prefix}.layers.0.{module}.lora_{matrix}.weight"),
+                            serde_json::json!({"dtype": "F32", "shape": shape, "data_offsets": [offset, offset + size]}),
+                        );
+                        offset += size;
+                    }
+                }
+                write_safetensors(&path, Value::Object(header), &vec![0; offset]);
+                let inspection = inspect(path.to_string_lossy().as_ref()).unwrap();
+                assert!(inspection.can_import);
+                if attention_width == 3_840 {
+                    assert_eq!(inspection.detected_architecture.as_deref(), Some("z-image"));
+                    assert_eq!(inspection.architecture_confidence, "high");
+                    assert_eq!(inspection.target_components, ["denoiser"]);
+                } else {
+                    assert_eq!(inspection.detected_architecture, None);
+                    assert_eq!(inspection.architecture_confidence, "unknown");
+                }
+                fs::remove_file(path).unwrap();
+            }
         }
     }
 

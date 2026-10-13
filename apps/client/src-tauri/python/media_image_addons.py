@@ -26,7 +26,7 @@ def load_text_encoder_lora(
         prefix
         for prefix in ("text_encoder", "text_encoder_2")
         if type(getattr(pipeline, prefix, None)).__name__
-        in ("CLIPTextModel", "CLIPTextModelWithProjection")
+        == "CLIPTextModel"
     ]
 
     def runtime_key(key: str) -> str:

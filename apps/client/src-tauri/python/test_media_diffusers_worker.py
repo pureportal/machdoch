@@ -23,10 +23,36 @@ SPEC.loader.exec_module(WORKER)
 
 
 class MediaDiffusersQualityTests(unittest.TestCase):
-    def test_z_image_and_flux2_precision_preserves_publisher_range_on_amd(self) -> None:
+    def test_qwen_guidance_uses_empty_negative_conditioning_for_basic_generation(self) -> None:
+        self.assertEqual(WORKER._qwen_image21_guidance_arguments(1, ""), {"true_cfg_scale": 1})
+        guided = WORKER._qwen_image21_guidance_arguments(2, "")
+        self.assertEqual(guided, {"true_cfg_scale": 2, "negative_prompt": ""})
+        self.assertTrue(guided["true_cfg_scale"] > 1 and guided["negative_prompt"] is not None)
+        self.assertEqual(
+            WORKER._qwen_image21_guidance_arguments(2, "blurred"),
+            {"true_cfg_scale": 2, "negative_prompt": "blurred"},
+        )
+        with self.assertRaisesRegex(WORKER.WorkerError, "at least 1"):
+            WORKER._qwen_image21_guidance_arguments(0.5, "")
+        with self.assertRaisesRegex(WORKER.WorkerError, "above 1"):
+            WORKER._qwen_image21_guidance_arguments(1, "blurred")
+
+    def test_automatic_guidance_matches_the_visible_engine_defaults(self) -> None:
+        request = {"aspectRatio": "1:1"}
+        for architecture, guidance in (
+            ("stable-diffusion-1", 7.5), ("stable-diffusion-xl", 5.0),
+            ("pony", 6.0), ("qwen-image-2.1", 1.0), ("krea-2", 0.5),
+        ):
+            with self.subTest(architecture=architecture):
+                self.assertEqual(WORKER._image_sampling(request, architecture, "quality")[3], guidance)
+        self.assertIsNone(WORKER._image_sampling(request, "ideogram-4", "quality")[3])
+
+    def test_image_precision_preserves_publisher_range_on_amd(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             pipeline = SimpleNamespace()
-            for architecture in ("z-image", "z-image-turbo", "flux-2-klein-base-4b",
+            for architecture in ("flux-1-dev", "flux-1-schnell", "qwen-image", "qwen-image-2512",
+                                 "qwen-image-edit-2511", "flux-2-dev", "glm-image", "hidream-i1-full", "ideogram-4", "sana-sprint",
+                                 "z-image", "z-image-turbo", "flux-2-klein-base-4b",
                                  "flux-2-klein-9b", "flux-2-klein-base-9b"):
                 model = {"architecture": architecture, "packageKind": "diffusers-directory", "path": temporary}
                 for device, supported, expected in (("cuda", True, "bf16"), ("cuda", False, "float32"), ("cpu", False, "float32")):
@@ -39,6 +65,42 @@ class MediaDiffusersQualityTests(unittest.TestCase):
                         self.assertEqual(loader.call_args.args[2], expected)
                         WORKER._load_pipeline(None, torch, model, torch_dtype="explicit precision")
                         self.assertEqual(loader.call_args.args[2], "explicit precision")
+
+    def test_single_file_flux_preserves_bfloat16_on_amd(self) -> None:
+        loader = mock.Mock(return_value=SimpleNamespace())
+        diffusers = SimpleNamespace(FluxPipeline=SimpleNamespace(from_single_file=loader))
+        torch = SimpleNamespace(bfloat16="bf16", float32="float32",
+                                cuda=SimpleNamespace(is_bf16_supported=lambda: True))
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "flux.safetensors"
+            checkpoint.write_bytes(b"fixture")
+            model = {"architecture": "flux-1", "packageKind": "single-file", "path": str(checkpoint)}
+            with mock.patch.object(WORKER, "_device", return_value=("cuda", "AMD GPU", 0)), \
+                    mock.patch.object(WORKER, "_pipeline_dtype", return_value="float16"):
+                self.assertIs(WORKER._load_pipeline(diffusers, torch, model), loader.return_value)
+            self.assertEqual(loader.call_args.kwargs["torch_dtype"], "bf16")
+
+    def test_sd3_preserves_bfloat16_publisher_inference_precision(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            checkpoint = Path(temporary, "model.safetensors")
+            checkpoint.touch()
+            pipeline = SimpleNamespace()
+            for package_kind in ("diffusers-directory", "single-file"):
+                model = {"architecture": "stable-diffusion-3", "packageKind": package_kind,
+                         "path": temporary if package_kind == "diffusers-directory" else str(checkpoint)}
+                for device, supported, expected in (("cuda", True, "bf16"), ("cuda", False, "float32"), ("cpu", False, "float32")):
+                    with self.subTest(package_kind=package_kind, device=device, bf16_supported=supported):
+                        loader = mock.Mock(return_value=pipeline)
+                        pipeline_class = SimpleNamespace(from_pretrained=loader, from_single_file=loader)
+                        diffusers = SimpleNamespace(DiffusionPipeline=pipeline_class, StableDiffusion3Pipeline=pipeline_class)
+                        torch = SimpleNamespace(bfloat16="bf16", float32="float32",
+                                                cuda=SimpleNamespace(is_bf16_supported=lambda: supported))
+                        with mock.patch.object(WORKER, "_device", return_value=(device, "test device", None)), \
+                                mock.patch.object(WORKER, "_pipeline_dtype", return_value="float16"):
+                            self.assertIs(WORKER._load_pipeline(diffusers, torch, model), pipeline)
+                            self.assertEqual(loader.call_args.kwargs["torch_dtype"], expected)
+                            WORKER._load_pipeline(diffusers, torch, model, torch_dtype="explicit precision")
+                            self.assertEqual(loader.call_args.kwargs["torch_dtype"], "explicit precision")
 
     def test_svg_worker_selects_and_configures_the_gpu_before_loading_the_model(self) -> None:
         torch = object()
@@ -102,7 +164,7 @@ class MediaDiffusersQualityTests(unittest.TestCase):
                 mock.patch.object(WORKER, "_pipeline_dtype", return_value="float32"),
                 mock.patch.object(WORKER, "_physical_memory_bytes", return_value=64 * 1024**3),
             ):
-                pipeline = WORKER._load_pipeline(diffusers, SimpleNamespace(), {
+                pipeline = WORKER._load_pipeline(diffusers, SimpleNamespace(float32="float32"), {
                     "architecture": "qwen-image-2.1",
                     "packageKind": "single-file",
                     "path": str(checkpoint),
@@ -175,7 +237,7 @@ class MediaDiffusersQualityTests(unittest.TestCase):
                 mock.patch.object(WORKER, "_physical_memory_bytes", return_value=32 * 1024**3),
             ):
                 with self.assertRaisesRegex(WORKER.WorkerError, "at least 48 GiB"):
-                    WORKER._load_pipeline(SimpleNamespace(), SimpleNamespace(), {
+                    WORKER._load_pipeline(SimpleNamespace(), SimpleNamespace(float32="float32"), {
                         "architecture": "qwen-image-2.1",
                         "packageKind": "single-file",
                         "path": str(checkpoint),
@@ -234,22 +296,22 @@ class MediaDiffusersQualityTests(unittest.TestCase):
                     )
                     pipeline_loader.assert_called_once_with(pipeline, controlnet=controlnet)
 
-    def test_krea_offload_cache_belongs_to_the_removable_model_package(self) -> None:
+    def test_krea_offload_cache_uses_the_system_temporary_disk(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             checkpoint = root / "model" / "checkpoint.safetensors"
             checkpoint.parent.mkdir()
             checkpoint.write_bytes(b"fixture")
-            pipeline = SimpleNamespace(_machdoch_krea_runtime_root=str(root / "shared"))
+            pipeline = SimpleNamespace(transformer=SimpleNamespace(parameters=lambda: [], buffers=lambda: []))
             packages = {
                 "torch": SimpleNamespace(__version__="test"),
                 "diffusers": SimpleNamespace(__version__="test"),
             }
-            with mock.patch.dict("sys.modules", packages):
+            with mock.patch.dict("sys.modules", packages), mock.patch.object(WORKER.tempfile, "gettempdir", return_value=str(root)):
                 cache, signature = WORKER._krea_disk_cache_directory(
-                    pipeline, {"path": str(checkpoint), "digest": "a" * 64}, []
+                    pipeline, {"path": str(checkpoint), "digest": "a" * 64}, [], root / "storage-cache"
                 )
-            self.assertEqual(cache.parent, checkpoint.parent.resolve() / "transformer-offload")
+            self.assertEqual(cache.parent, root / "machdoch-media-studio" / "transformer-offload")
             self.assertEqual(cache.name, signature)
 
     def test_framepack_prompt_subprocess_preserves_embeddings_and_excludes_credentials(self) -> None:
@@ -360,6 +422,7 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             SimpleNamespace(version=SimpleNamespace(hip=None)),
             1_024,
             1_024,
+            16 * 1024 ** 3,
         )
         large_evidence = WORKER._configure_large_image_vae_decode(
             large,
@@ -367,6 +430,7 @@ class MediaDiffusersQualityTests(unittest.TestCase):
             SimpleNamespace(version=SimpleNamespace(hip=None)),
             1_408,
             768,
+            16 * 1024 ** 3,
         )
         self.assertFalse(small.vae.enabled)
         self.assertEqual(small_evidence["mode"], "native-full-frame")
@@ -379,12 +443,49 @@ class MediaDiffusersQualityTests(unittest.TestCase):
         self.assertEqual(WORKER._steps("flux-2", "balanced"), 4)
         self.assertEqual(WORKER._steps("flux-2", "quality"), 4)
 
-    def test_krea_turbo_quality_policies_keep_the_distilled_eight_step_recipe(self) -> None:
-        for policy in ("fast", "balanced", "quality"):
+    def test_qwen_decoder_avoids_small_tile_seams_and_bounds_larger_canvases(self) -> None:
+        torch = SimpleNamespace(version=SimpleNamespace(hip=None))
+        for architecture in ("qwen-image-2.1", "qwen-image-2.1-turbo"):
+            for width, height in ((768, 1344), (896, 1120), (1024, 1024)):
+                with self.subTest(architecture=architecture, canvas=(width, height)):
+                    vae = SimpleNamespace(enable_tiling=mock.Mock(), disable_tiling=mock.Mock())
+                    evidence = WORKER._configure_large_image_vae_decode(
+                        SimpleNamespace(vae=vae), architecture, torch, width, height, 16 * 1024 ** 3,
+                    )
+                    vae.enable_tiling.assert_not_called()
+                    vae.disable_tiling.assert_called_once_with()
+                    self.assertEqual(evidence["mode"], "native-full-frame")
+                    self.assertEqual(evidence["fullFrameMaxPixels"], 1024 ** 2)
+            vae = SimpleNamespace(enable_tiling=mock.Mock(), disable_tiling=mock.Mock())
+            evidence = WORKER._configure_large_image_vae_decode(
+                SimpleNamespace(vae=vae), architecture, torch, 2048, 2048, 16 * 1024 ** 3,
+            )
+            vae.enable_tiling.assert_called_once_with(
+                tile_sample_min_height=1024, tile_sample_min_width=1024,
+                tile_sample_stride_height=768, tile_sample_stride_width=768,
+            )
+            vae.disable_tiling.assert_not_called()
+            self.assertEqual(evidence["mode"], "native-overlap-tiled")
+            self.assertEqual(evidence["tileStride"], 768)
+
+    def test_qwen_decoder_bounds_tiles_on_cpu_and_smaller_gpus(self) -> None:
+        for device_memory in (None, 8 * 1024 ** 3, 12 * 1024 ** 3):
+            with self.subTest(device_memory=device_memory):
+                vae = SimpleNamespace(enable_tiling=mock.Mock(), disable_tiling=mock.Mock())
+                evidence = WORKER._configure_large_image_vae_decode(
+                    SimpleNamespace(vae=vae), "qwen-image-2.1",
+                    SimpleNamespace(version=SimpleNamespace(hip=None)), 896, 1120, device_memory,
+                )
+                self.assertEqual(evidence["tileSize"], 512)
+                self.assertEqual(evidence["tileStride"], 384)
+                self.assertEqual(evidence["fullFrameMaxPixels"], 512 ** 2)
+
+    def test_krea_extended_quality_policies_use_the_publisher_twelve_step_recipe(self) -> None:
+        for policy, steps in (("fast", 8), ("balanced", 12), ("quality", 12)):
             with self.subTest(policy=policy):
                 self.assertEqual(
                     WORKER._image_sampling({"aspectRatio": "1:1"}, "krea-2", policy)[2],
-                    8,
+                    steps,
                 )
 
     def test_flux2_accepts_generic_reference_images(self) -> None:

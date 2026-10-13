@@ -82,7 +82,12 @@
     "negativePrompt": false,
     "audio": true,
     "spatialMultiple": 32,
-    "video": { "minimum": 124, "maximum": 345, "stride": 17, "fps": 24 },
+    "video": {
+      "minimum": 124,
+      "maximum": 345,
+      "stride": 17,
+      "fps": 24
+    },
     "license": {
       "name": "MiniMax H3 Community License Agreement",
       "spdxId": null,
@@ -118,7 +123,12 @@
     "negativePrompt": false,
     "audio": true,
     "spatialMultiple": 32,
-    "video": { "minimum": 124, "maximum": 345, "stride": 17, "fps": 24 },
+    "video": {
+      "minimum": 124,
+      "maximum": 345,
+      "stride": 17,
+      "fps": 24
+    },
     "license": {
       "name": "MiniMax H3 Community License Agreement",
       "spdxId": null,
@@ -154,7 +164,12 @@
     "negativePrompt": false,
     "audio": true,
     "spatialMultiple": 32,
-    "video": { "minimum": 124, "maximum": 345, "stride": 17, "fps": 24 },
+    "video": {
+      "minimum": 124,
+      "maximum": 345,
+      "stride": 17,
+      "fps": 24
+    },
     "license": {
       "name": "MiniMax H3 Community License Agreement; PDMD publisher Apache-2.0 declaration",
       "spdxId": null,
@@ -190,7 +205,12 @@
     "negativePrompt": false,
     "audio": true,
     "spatialMultiple": 32,
-    "video": { "minimum": 124, "maximum": 345, "stride": 17, "fps": 24 },
+    "video": {
+      "minimum": 124,
+      "maximum": 345,
+      "stride": 17,
+      "fps": 24
+    },
     "license": {
       "name": "MiniMax H3 Community License Agreement; PDMD publisher Apache-2.0 declaration",
       "spdxId": null,
@@ -339,10 +359,10 @@
     "pipeline": "SanaSprintPipeline",
     "capabilities": ["text-to-image"],
     "revision": "19683c58b7ea290e55cedd8950ae1d86ada7ef96",
-    "steps": 1,
+    "steps": 2,
     "guidance": 4.5,
     "guidanceParameter": "guidance_scale",
-    "fixedSteps": true,
+    "fixedSteps": false,
     "fixedGuidance": false,
     "license": {
       "name": "Apache License 2.0",
@@ -442,7 +462,7 @@
     "pipeline": "FluxPipeline",
     "capabilities": ["text-to-image"],
     "revision": "3de623fc3c33e44ffbe2bad470d0f45bccf2eb21",
-    "steps": 28,
+    "steps": 50,
     "guidance": 3.5,
     "guidanceParameter": "guidance_scale",
     "fixedSteps": false,
@@ -547,15 +567,16 @@
     "pipeline": "Krea2Pipeline",
     "capabilities": ["text-to-image"],
     "revision": "6b0ece7fffb640c5e3bcbe0a7f10f66b8e60a603",
-    "steps": 28,
-    "guidance": 4.5,
+    "steps": 52,
+    "guidance": 3.5,
     "guidanceParameter": "guidance_scale",
     "fixedSteps": false,
     "fixedGuidance": false,
     "license": {
-      "name": "Krea 2 Raw model license",
+      "name": "Krea 2 Community License",
       "spdxId": null,
-      "commercialUse": "review-required"
+      "commercialUse": "review-required",
+      "sourceUrl": "https://huggingface.co/krea/Krea-2-Raw"
     }
   },
   {
@@ -958,5 +979,82 @@
     "audio": true,
     "imagePipeline": "LTX2ImageToVideoPipeline",
     "spatialMultiple": 32
+  },
+  {
+    "id": "local:qwen-image-2.1-turbo",
+    "architecture": "qwen-image-2.1-turbo",
+    "displayName": "Qwen-Image 2.1 Turbo",
+    "family": "Qwen Image 2.1",
+    "repository": "Qwen/Qwen-Image-2.1-Turbo",
+    "revision": "d65dbc9a7e8f6b5479e33dee6030eaab2a906509",
+    "pipeline": "QwenImage21Pipeline",
+    "capabilities": [
+      "text-to-image",
+      "image-to-image",
+      "multi-reference-edit",
+      "transparent-output"
+    ],
+    "steps": 8,
+    "guidance": 1,
+    "guidanceParameter": "true_cfg_scale",
+    "fixedSteps": true,
+    "fixedGuidance": true,
+    "maxReferences": 10,
+    "spatialMultiple": 32,
+    "sampleSigmas": [
+      1.0, 0.978453, 0.95418, 0.926626, 0.89508, 0.845148, 0.704534, 0.414568
+    ],
+    "license": {
+      "name": "Qwen Research License Agreement",
+      "spdxId": null,
+      "commercialUse": "review-required",
+      "sourceUrl": "https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo/blob/main/LICENSE"
+    },
+    "negativePrompt": false
+  },
+  {
+    "id": "local:krea-2-turbo",
+    "architecture": "krea-2-turbo",
+    "displayName": "Krea 2 Turbo",
+    "family": "Krea 2",
+    "repository": "krea/Krea-2-Turbo",
+    "revision": "98e0fe118d17c9e3547fbb2e25acdbae2cadf7c7",
+    "pipeline": "Krea2Pipeline",
+    "capabilities": ["text-to-image"],
+    "steps": 8,
+    "guidance": 0,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": true,
+    "spatialMultiple": 16,
+    "license": {
+      "name": "Krea 2 Community License",
+      "spdxId": null,
+      "commercialUse": "review-required",
+      "sourceUrl": "https://huggingface.co/krea/Krea-2-Turbo"
+    }
+  },
+  {
+    "id": "local:hunyuan-image-3",
+    "architecture": "hunyuan-image-3",
+    "displayName": "HunyuanImage 3.0",
+    "family": "Hunyuan Image 3",
+    "repository": "tencent/HunyuanImage-3.0",
+    "revision": "36f21fe74b65614451cc50ffd8a35a5f662dac70",
+    "pipeline": "HunyuanImage3Pipeline",
+    "capabilities": ["text-to-image"],
+    "steps": 50,
+    "guidance": 5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "negativePrompt": false,
+    "spatialMultiple": 32,
+    "license": {
+      "name": "Tencent Hunyuan Community License",
+      "spdxId": null,
+      "commercialUse": "review-required",
+      "sourceUrl": "https://github.com/Tencent-Hunyuan/HunyuanImage-3.0/blob/6e9113a692a27a0751d82aba3b2015a876646c03/LICENSE"
+    }
   }
 ]
