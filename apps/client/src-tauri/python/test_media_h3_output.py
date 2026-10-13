@@ -98,7 +98,7 @@ class StudentOutputTests(unittest.TestCase):
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             self.assertEqual(decoded.returncode, 0, decoded.stderr)
             self.assertFalse(destination.with_suffix(".wav").exists())
-            for field, value, message in [("negativePrompt", "blur", "negative prompt"), ("addons", [{"addonId": "unrelated"}], "LoRAs")]:
+            for field, value, message in [("negativePrompt", "blur", "negative prompt"), ("addons", [{"addonId": "unrelated"}], "add-ons")]:
                 with mock.patch.object(student_runtime, "render") as rejected_render:
                     with self.assertRaisesRegex(ValueError, message):
                         video.generate({**request, field: value}, runtime)
