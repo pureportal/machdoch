@@ -1,0 +1,117 @@
+[
+  {
+    "url": "https://civitai.com/api/v1/model-versions/983611",
+    "status": 404
+  },
+  {
+    "url": "https://civitai.com/api/v1/model-versions/by-hash/fb64610bf8d73eb064b8d528eef85d062bf2b4b1204ff7bc73e57ad28b24489c",
+    "status": 404
+  },
+  {
+    "url": "https://civitai.com/api/download/models/983611",
+    "status": 404
+  },
+  {
+    "url": "https://huggingface.co/api/models/calcuis/sd3.5-large-turbo?blobs=true",
+    "status": 200,
+    "revision": "d2af168b4274084fc98cb512b764b6326c1aca20",
+    "files": [
+      {
+        "rfilename": ".gitattributes",
+        "blobId": "f2b0b5cd5f09f5cdd5e21c86e0c2fbf1e5bf8c66",
+        "size": 1902
+      },
+      {
+        "rfilename": "LICENSE",
+        "blobId": "b07f871a39b333819b9a986ac2dbb7f6fcb7a95e",
+        "size": 11726
+      },
+      {
+        "rfilename": "README.md",
+        "blobId": "40ad617d22745237ccac71ce00db6927ac94d433",
+        "size": 2276
+      },
+      {
+        "rfilename": "sd3.5_large_turbo-f16.gguf",
+        "blobId": "7917fed9e447611a9e35d1af657dcdee008e5d4f",
+        "size": 16292633312,
+        "lfs": {
+          "sha256": "9dd9ee34dba9ad15181a3bf340518ec9f66b164f873f3c9daf45fa161b020745",
+          "size": 16292633312,
+          "pointerSize": 136
+        }
+      },
+      {
+        "rfilename": "sd3.5_large_turbo-q4_0.gguf",
+        "blobId": "690ced3b67499c53a641caeb90fd61886a1159fe",
+        "size": 4772054752,
+        "lfs": {
+          "sha256": "5f924f492535ffaec48359b7fe6e1a621eed16fb8de4e1b408132d90b1039382",
+          "size": 4772054752,
+          "pointerSize": 135
+        }
+      },
+      {
+        "rfilename": "sd3.5_large_turbo-q4_1.gguf",
+        "blobId": "1b2e5c9ecef754855b4f6fe372241e961c042a26",
+        "size": 5272949472,
+        "lfs": {
+          "sha256": "8d1f245221f29c7191b3d0196d374fdf0e360867d99c09ae9359ac43c251d724",
+          "size": 5272949472,
+          "pointerSize": 135
+        }
+      },
+      {
+        "rfilename": "sd3.5_large_turbo-q5_0.gguf",
+        "blobId": "1e7988179c3b07510cc1bf86c7e2554b1168dad0",
+        "size": 5773844192,
+        "lfs": {
+          "sha256": "cd23e0e710b9aac74368094bebd26597cdab58af65e351211ec82421a5fb5ab8",
+          "size": 5773844192,
+          "pointerSize": 135
+        }
+      },
+      {
+        "rfilename": "sd3.5_large_turbo-q5_1.gguf",
+        "blobId": "1a9a33096e6277847d3963e95541089740df1fb4",
+        "size": 6274738912,
+        "lfs": {
+          "sha256": "1be4d45c95132de63f9290a3655e73d5f202c0908aab8cc452dbc6ab6f23e3f3",
+          "size": 6274738912,
+          "pointerSize": 135
+        }
+      },
+      {
+        "rfilename": "sd3.5_large_turbo-q8_0.gguf",
+        "blobId": "f46fd702fa5d28b6c17734f44f261f2aa33bcce2",
+        "size": 8779212512,
+        "lfs": {
+          "sha256": "9522fa5a77e5d87a5331749625660ab916f319284e74c6c67af71a9a9269a755",
+          "size": 8779212512,
+          "pointerSize": 135
+        }
+      },
+      {
+        "rfilename": "sd3.5_large_turbo.safetensors",
+        "blobId": "04522a75630eb8712ce351e7403620e9dda51998",
+        "size": 16460374454,
+        "lfs": {
+          "sha256": "fb64610bf8d73eb064b8d528eef85d062bf2b4b1204ff7bc73e57ad28b24489c",
+          "size": 16460374454,
+          "pointerSize": 136
+        }
+      },
+      {
+        "rfilename": "workflow-sd3.5t-gguf.json",
+        "blobId": "b9455f0550b2f0391adfb2a51885ed580e2bec4e",
+        "size": 12641
+      },
+      {
+        "rfilename": "workflow-sd3.5t-safetensors.json",
+        "blobId": "d92f61133660d362f18e521f50edb0bba2750408",
+        "size": 12123
+      }
+    ],
+    "gated": false
+  }
+]

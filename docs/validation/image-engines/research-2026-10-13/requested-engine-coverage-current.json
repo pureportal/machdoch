@@ -1,0 +1,929 @@
+{
+  "checkedAt": "2026-10-13T17:57:42.263065+00:00",
+  "requestedEngines": 24,
+  "currentTechnicalRuns": 80,
+  "currentVisualReviews": 74,
+  "historicalQualityImagesHashVerified": 42,
+  "fullGoalComplete": false,
+  "matrix": [
+    {
+      "engine": "SDXL",
+      "architectures": ["stable-diffusion-xl"],
+      "samplingProfiles": [
+        {
+          "architecture": "stable-diffusion-xl",
+          "steps": [20, 50],
+          "guidance": [5, 8],
+          "defaultGuidance": 5.0,
+          "samplers": [
+            "euler",
+            "euler-ancestral",
+            "heun",
+            "dpmpp-2m",
+            "dpmpp-2m-karras",
+            "dpmpp-2m-sde-karras",
+            "ddim",
+            "deis",
+            "unipc"
+          ],
+          "sources": [
+            "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_xl",
+            "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
+          ],
+          "recommendedSamplers": ["dpmpp-2m-karras"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+          "architecture": "stable-diffusion-xl",
+          "display_name": "Stable Diffusion XL 1.0 Base"
+        },
+        {
+          "id": "local:user:6327eca98bfb6538dd7a4edce22484a1bbc57a8cff6b11d075d40da1afb847ac",
+          "architecture": "stable-diffusion-xl",
+          "display_name": "Animagine XL 4.0 Opt \u00b7 Cagliostro Research Lab"
+        }
+      ],
+      "currentTechnicalReferences": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "currentTechnicalRuns": 6,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [144594528],
+      "remainingReferenceAssessments": [
+        144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "Illustrious XL",
+      "architectures": ["illustrious-xl"],
+      "samplingProfiles": [
+        {
+          "architecture": "illustrious-xl",
+          "steps": [20, 28],
+          "guidance": [5, 7.5],
+          "defaultGuidance": 7,
+          "samplers": [
+            "euler",
+            "euler-ancestral",
+            "heun",
+            "dpmpp-2m",
+            "dpmpp-2m-karras",
+            "dpmpp-2m-sde-karras",
+            "ddim",
+            "deis",
+            "unipc"
+          ],
+          "recommendedSamplers": ["euler-ancestral"],
+          "sources": [
+            "https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0"
+          ]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:3e15ba00387db678ab4a099f75771c4f5ac67fda9e7100a01d263eaf30145aa9",
+          "architecture": "illustrious-xl",
+          "display_name": "Illustrious XL v0.1 \u00b7 OnomaAI Research"
+        }
+      ],
+      "currentTechnicalReferences": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "currentTechnicalRuns": 12,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [],
+      "remainingReferenceAssessments": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "Anima",
+      "architectures": ["anima"],
+      "samplingProfiles": [
+        {
+          "architecture": "anima",
+          "steps": [30, 50],
+          "guidance": [4, 5],
+          "defaultGuidance": 4,
+          "samplers": ["flow-euler"],
+          "recommendedSamplers": ["flow-euler"],
+          "sources": ["https://huggingface.co/circlestone-labs/Anima"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:73d565bf50024dabb3b57f64382bc07c794735c7f3c0601d5ba19b74bec1b7ce",
+          "architecture": "anima",
+          "display_name": "Anima Base v1.0 \u00b7 CircleStone Labs / Comfy Org"
+        }
+      ],
+      "currentTechnicalReferences": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "currentTechnicalRuns": 6,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [
+        144594528, 144599398, 144655944, 144697438
+      ],
+      "remainingReferenceAssessments": [145095967, 145177887],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "Pony",
+      "architectures": ["pony"],
+      "samplingProfiles": [
+        {
+          "architecture": "pony",
+          "steps": [20, 40],
+          "guidance": [5, 7],
+          "defaultGuidance": 6.0,
+          "samplers": [
+            "euler",
+            "euler-ancestral",
+            "heun",
+            "dpmpp-2m",
+            "dpmpp-2m-karras",
+            "dpmpp-2m-sde-karras",
+            "ddim",
+            "deis",
+            "unipc"
+          ],
+          "sources": [
+            "https://civitai.com/models/257749/pony-diffusion-v6-xl",
+            "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
+          ],
+          "recommendedSamplers": ["euler-ancestral"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:b5e68becf7cf2d4202598a9824a3a14c1e654bfc28c3592067471cf1c0dd9c67",
+          "architecture": "pony",
+          "display_name": "CyberRealistic Pony Catalyst \u00b7 Catalyst v5.0"
+        },
+        {
+          "id": "local:user:67ab2fd8ec439a89b3fedb15cc65f54336af163c7eb5e4f2acc98f090a29b0b3",
+          "architecture": "pony",
+          "display_name": "Pony Diffusion V6 XL \u00b7 AstraliteHeart / PurpleSmartAI"
+        }
+      ],
+      "currentTechnicalReferences": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "currentTechnicalRuns": 6,
+      "historicalQualityImagesHashVerified": 2,
+      "referencesWithNearReferenceAssessment": [144594528, 144599398],
+      "remainingReferenceAssessments": [
+        144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "Stable Diffusion 1.5",
+      "architectures": ["stable-diffusion-1"],
+      "samplingProfiles": [
+        {
+          "architecture": "stable-diffusion-1",
+          "steps": [20, 50],
+          "guidance": [5, 9],
+          "defaultGuidance": 7.5,
+          "samplers": [
+            "euler",
+            "euler-ancestral",
+            "heun",
+            "dpmpp-2m",
+            "dpmpp-2m-karras",
+            "dpmpp-2m-sde-karras",
+            "ddim",
+            "deis",
+            "unipc"
+          ],
+          "sources": [
+            "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/text2img",
+            "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
+          ],
+          "recommendedSamplers": ["dpmpp-2m-karras"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "architecture": "stable-diffusion-1",
+          "display_name": "Stable Diffusion 1.5"
+        },
+        {
+          "id": "local:user:879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd",
+          "architecture": "stable-diffusion-1",
+          "display_name": "DreamShaper 8 \u00b7 Lykon"
+        }
+      ],
+      "currentTechnicalReferences": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "currentTechnicalRuns": 6,
+      "historicalQualityImagesHashVerified": 1,
+      "referencesWithNearReferenceAssessment": [144599398],
+      "remainingReferenceAssessments": [
+        144594528, 144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "Z-Image Turbo",
+      "architectures": ["z-image-turbo"],
+      "samplingProfiles": [
+        {
+          "architecture": "z-image-turbo",
+          "steps": [9, 9],
+          "guidance": [0, 0],
+          "defaultGuidance": 0,
+          "samplers": ["flow-euler"],
+          "sources": ["https://huggingface.co/Tongyi-MAI/Z-Image-Turbo"],
+          "recommendedSamplers": ["flow-euler"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:5ae9b7d780d6ab09015c3c1a45946d3b2de41331a06752454219f39338dd7b60",
+          "architecture": "z-image-turbo",
+          "display_name": "Tongyi-MAI Z-Image Turbo BF16"
+        }
+      ],
+      "currentTechnicalReferences": [145177887],
+      "currentTechnicalRuns": 1,
+      "historicalQualityImagesHashVerified": 7,
+      "referencesWithNearReferenceAssessment": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "remainingReferenceAssessments": [],
+      "allSixReferenceQualityVerified": true
+    },
+    {
+      "engine": "FLUX.1",
+      "architectures": ["flux-1", "flux-1-dev"],
+      "samplingProfiles": [
+        {
+          "architecture": "flux-1",
+          "steps": [20, 50],
+          "guidance": [3.5, 3.5],
+          "defaultGuidance": 3.5,
+          "samplers": ["flow-euler"],
+          "sources": ["https://huggingface.co/black-forest-labs/FLUX.1-dev"],
+          "recommendedSamplers": ["flow-euler"]
+        },
+        {
+          "architecture": "flux-1-dev",
+          "steps": [50, 50],
+          "guidance": [3.5, 3.5],
+          "defaultGuidance": 3.5,
+          "samplers": ["flow-euler"],
+          "sources": [
+            "https://huggingface.co/black-forest-labs/FLUX.1-dev",
+            "https://huggingface.co/docs/diffusers/api/pipelines/flux#guidance-distilled"
+          ],
+          "recommendedSamplers": ["flow-euler"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:3fc5ed773ffaee5d18b6a191da9cb684b151f2cf13bf6b55fe36fddfcdd0365c",
+          "architecture": "flux-1-dev",
+          "display_name": "FLUX.1 Dev BF16 \u00b7 Black Forest Labs"
+        }
+      ],
+      "currentTechnicalReferences": [],
+      "currentTechnicalRuns": 0,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [],
+      "remainingReferenceAssessments": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "Krea 2",
+      "architectures": ["krea-2", "krea-2-raw"],
+      "samplingProfiles": [
+        {
+          "architecture": "krea-2",
+          "steps": [8, 20],
+          "guidance": [0, 1.5],
+          "defaultGuidance": 0.5,
+          "samplers": ["flow-euler"],
+          "sources": [
+            "https://civitai.com/models/2786499?modelVersionId=3329215"
+          ],
+          "recommendedSamplers": ["flow-euler"]
+        },
+        {
+          "architecture": "krea-2-raw",
+          "steps": [52, 52],
+          "guidance": [3.5, 3.5],
+          "defaultGuidance": 3.5,
+          "samplers": ["flow-euler"],
+          "sources": ["https://huggingface.co/krea/Krea-2-Raw"],
+          "recommendedSamplers": ["flow-euler"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:3ec3c673d467e0832ad1324fafa8eed5cde9e9f2e250b399d07245e63c904191",
+          "architecture": "krea-2",
+          "display_name": "realismByStableYogi v30INT8FP8Extended fp8Scaled"
+        },
+        {
+          "id": "local:user:8a50afe6a29e4dea9c2390a0765b506d4ad17de055dee758a0b0a0216d95c8a0",
+          "architecture": "krea-2-raw",
+          "display_name": "SNOFS (Sex, Nudes, and Other Fun Stuff) Merged \u00b7 Krea 2 Raw v1.4"
+        }
+      ],
+      "currentTechnicalReferences": [],
+      "currentTechnicalRuns": 0,
+      "historicalQualityImagesHashVerified": 5,
+      "referencesWithNearReferenceAssessment": [
+        144594528, 144599398, 144655944
+      ],
+      "remainingReferenceAssessments": [144697438, 145095967, 145177887],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "Krea 2 Turbo",
+      "architectures": ["krea-2-turbo"],
+      "samplingProfiles": [
+        {
+          "architecture": "krea-2-turbo",
+          "steps": [8, 8],
+          "guidance": [0, 0],
+          "defaultGuidance": 0.0,
+          "samplers": ["flow-euler"],
+          "sources": ["https://huggingface.co/krea/Krea-2-Turbo"],
+          "recommendedSamplers": ["flow-euler"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+          "architecture": "krea-2-turbo",
+          "display_name": "Krea 2 Turbo Official FP8"
+        },
+        {
+          "id": "local:user:ed1ea73c0e4f659f7cf4abbc1eb341ab66b1c9121b3465f820b19ade7ced147d",
+          "architecture": "krea-2-turbo",
+          "display_name": "JANK2 Anime Krea 2 Turbo INT8"
+        }
+      ],
+      "currentTechnicalReferences": [144594528],
+      "currentTechnicalRuns": 1,
+      "historicalQualityImagesHashVerified": 7,
+      "referencesWithNearReferenceAssessment": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "remainingReferenceAssessments": [],
+      "allSixReferenceQualityVerified": true
+    },
+    {
+      "engine": "Z-Image",
+      "architectures": ["z-image"],
+      "samplingProfiles": [
+        {
+          "architecture": "z-image",
+          "steps": [28, 50],
+          "guidance": [3, 5],
+          "defaultGuidance": 4,
+          "samplers": ["flow-euler"],
+          "sources": ["https://huggingface.co/Tongyi-MAI/Z-Image"],
+          "recommendedSamplers": ["flow-euler"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:b19790e5ac48a7e111429e4866de2e779f9cd7e18f94004cf826ad0d8d4db44b",
+          "architecture": "z-image",
+          "display_name": "Tongyi-MAI Z-Image Base BF16"
+        }
+      ],
+      "currentTechnicalReferences": [],
+      "currentTechnicalRuns": 0,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [],
+      "remainingReferenceAssessments": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "NoobAI XL",
+      "architectures": ["noobai-xl"],
+      "samplingProfiles": [
+        {
+          "architecture": "noobai-xl",
+          "steps": [25, 30],
+          "guidance": [5, 6],
+          "defaultGuidance": 5.5,
+          "samplers": [
+            "euler",
+            "euler-ancestral",
+            "heun",
+            "dpmpp-2m",
+            "dpmpp-2m-karras",
+            "dpmpp-2m-sde-karras",
+            "ddim",
+            "deis",
+            "unipc"
+          ],
+          "recommendedSamplers": ["euler-ancestral"],
+          "sources": ["https://huggingface.co/Laxhar/noobai-XL-1.0"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:ff827fc34584853257d6de64b8bc3e34156814f6b0cfd1a5112a5e9164806df1",
+          "architecture": "noobai-xl",
+          "display_name": "NoobAI XL Epsilon 1.0 \u00b7 Laxhar Dream Lab"
+        }
+      ],
+      "currentTechnicalReferences": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "currentTechnicalRuns": 12,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [],
+      "remainingReferenceAssessments": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "Juggernaut XL",
+      "architectures": ["juggernaut-xl"],
+      "samplingProfiles": [
+        {
+          "architecture": "juggernaut-xl",
+          "steps": [30, 40],
+          "guidance": [3, 7],
+          "defaultGuidance": 5,
+          "samplers": [
+            "euler",
+            "euler-ancestral",
+            "heun",
+            "dpmpp-2m",
+            "dpmpp-2m-karras",
+            "dpmpp-2m-sde-karras",
+            "ddim",
+            "deis",
+            "unipc"
+          ],
+          "recommendedSamplers": ["dpmpp-2m-karras"],
+          "sources": ["https://huggingface.co/RunDiffusion/Juggernaut-XL-v9"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:33e58e86686f6b386c526682b5da9228ead4f91d994abd4b053442dc5b42719e",
+          "architecture": "juggernaut-xl",
+          "display_name": "Juggernaut XI \u00b7 KandooAI / RunDiffusion"
+        }
+      ],
+      "currentTechnicalReferences": [],
+      "currentTechnicalRuns": 0,
+      "historicalQualityImagesHashVerified": 3,
+      "referencesWithNearReferenceAssessment": [144594528, 144599398],
+      "remainingReferenceAssessments": [
+        144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "FLUX.2",
+      "architectures": ["flux-2", "flux-2-klein-base-4b"],
+      "samplingProfiles": [
+        {
+          "architecture": "flux-2",
+          "steps": [4, 4],
+          "guidance": [1, 1],
+          "defaultGuidance": 1.0,
+          "samplers": ["flow-euler"],
+          "sources": [
+            "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B"
+          ],
+          "recommendedSamplers": ["flow-euler"]
+        },
+        {
+          "architecture": "flux-2-klein-base-4b",
+          "steps": [50, 50],
+          "guidance": [4, 4],
+          "defaultGuidance": 4,
+          "samplers": ["flow-euler"],
+          "sources": [
+            "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B"
+          ],
+          "recommendedSamplers": ["flow-euler"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:648fd53bd26440e200b79bad9a6bf33b81de0455cf96e02acaa12e61175f8623",
+          "architecture": "flux-2",
+          "display_name": "FLUX.2 Klein 4B Clear BF16"
+        },
+        {
+          "id": "local:user:db396aab8c15beb5173f87cb50c865459f91df43543e79921f21fde863a1c513",
+          "architecture": "flux-2-klein-base-4b",
+          "display_name": "FLUX.2 Klein Base 4B BF16"
+        }
+      ],
+      "currentTechnicalReferences": [144599398, 144655944, 144697438],
+      "currentTechnicalRuns": 3,
+      "historicalQualityImagesHashVerified": 4,
+      "referencesWithNearReferenceAssessment": [
+        144594528, 144599398, 144655944, 145177887
+      ],
+      "remainingReferenceAssessments": [144697438, 145095967],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "SDXL Turbo",
+      "architectures": ["sdxl-turbo"],
+      "samplingProfiles": [
+        {
+          "architecture": "sdxl-turbo",
+          "steps": [1, 4],
+          "guidance": [0, 0],
+          "defaultGuidance": 0,
+          "samplers": [
+            "euler",
+            "euler-ancestral",
+            "heun",
+            "dpmpp-2m",
+            "dpmpp-2m-karras",
+            "dpmpp-2m-sde-karras",
+            "ddim",
+            "deis",
+            "unipc"
+          ],
+          "recommendedSamplers": ["euler-ancestral"],
+          "sources": ["https://huggingface.co/stabilityai/sdxl-turbo"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:2e58e3704b4c0831bf848e0507c9b5ff2cd8d007b8d0719dba3874156f631050",
+          "architecture": "sdxl-turbo",
+          "display_name": "SDXL Turbo \u00b7 Stability AI"
+        }
+      ],
+      "currentTechnicalReferences": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "currentTechnicalRuns": 6,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [144594528, 144599398],
+      "remainingReferenceAssessments": [
+        144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "Qwen-Image 2.1",
+      "architectures": ["qwen-image-2.1"],
+      "samplingProfiles": [
+        {
+          "architecture": "qwen-image-2.1",
+          "steps": [30, 40],
+          "guidance": [1, 1],
+          "defaultGuidance": 1.0,
+          "samplers": ["flow-euler"],
+          "sources": ["https://huggingface.co/Qwen/Qwen-Image-2.1"],
+          "recommendedSamplers": ["flow-euler"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:75c1b4d45c0b134af0c43d71a19318837fdf2bbc779de42b3e4f5f3c4e12644b",
+          "architecture": "qwen-image-2.1",
+          "display_name": "Qwen-Image 2.1 GGUF"
+        }
+      ],
+      "currentTechnicalReferences": [],
+      "currentTechnicalRuns": 0,
+      "historicalQualityImagesHashVerified": 4,
+      "referencesWithNearReferenceAssessment": [
+        144594528, 144655944, 144697438
+      ],
+      "remainingReferenceAssessments": [144599398, 145095967, 145177887],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "Qwen-Image 2.1 Turbo",
+      "architectures": ["qwen-image-2.1-turbo"],
+      "samplingProfiles": [
+        {
+          "architecture": "qwen-image-2.1-turbo",
+          "steps": [8, 8],
+          "guidance": [1, 1],
+          "defaultGuidance": 1,
+          "samplers": ["flow-euler"],
+          "sources": ["https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo"],
+          "recommendedSamplers": ["flow-euler"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:5fc80891e28870d540fba30271ec02b4fe83e88acb3ae0e5f72bf1171ef63c1e",
+          "architecture": "qwen-image-2.1-turbo",
+          "display_name": "Qwen-Image 2.1 Turbo GGUF"
+        }
+      ],
+      "currentTechnicalReferences": [144655944],
+      "currentTechnicalRuns": 1,
+      "historicalQualityImagesHashVerified": 9,
+      "referencesWithNearReferenceAssessment": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "remainingReferenceAssessments": [],
+      "allSixReferenceQualityVerified": true
+    },
+    {
+      "engine": "RealVisXL",
+      "architectures": ["realvis-xl"],
+      "samplingProfiles": [
+        {
+          "architecture": "realvis-xl",
+          "steps": [50, 60],
+          "guidance": [5, 8],
+          "defaultGuidance": 5,
+          "samplers": [
+            "euler",
+            "euler-ancestral",
+            "heun",
+            "dpmpp-2m",
+            "dpmpp-2m-karras",
+            "dpmpp-2m-sde-karras",
+            "ddim",
+            "deis",
+            "unipc"
+          ],
+          "recommendedSamplers": ["dpmpp-2m-karras"],
+          "sources": ["https://huggingface.co/SG161222/RealVisXL_V5.0"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:6a35a7855770ae9820a3c931d4964c3817b6d9e3c6f9c4dabb5b3a94e5643b80",
+          "architecture": "realvis-xl",
+          "display_name": "RealVisXL V5.0 \u00b7 SG161222"
+        }
+      ],
+      "currentTechnicalReferences": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "currentTechnicalRuns": 6,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [144594528, 144599398],
+      "remainingReferenceAssessments": [
+        144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "DreamShaper XL",
+      "architectures": ["dreamshaper-xl"],
+      "samplingProfiles": [
+        {
+          "architecture": "dreamshaper-xl",
+          "steps": [25, 30],
+          "guidance": [5, 8],
+          "defaultGuidance": 7.5,
+          "samplers": [
+            "euler",
+            "euler-ancestral",
+            "heun",
+            "dpmpp-2m",
+            "dpmpp-2m-karras",
+            "dpmpp-2m-sde-karras",
+            "ddim",
+            "deis",
+            "unipc"
+          ],
+          "recommendedSamplers": ["deis"],
+          "sources": ["https://huggingface.co/Lykon/dreamshaper-xl-1-0"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:0f1b80cfe81b9c3bde7fdcbf6898897b2811b27be1df684583c3d85cbc9b1fa4",
+          "architecture": "dreamshaper-xl",
+          "display_name": "DreamShaper XL Alpha 2 \u00b7 Lykon"
+        }
+      ],
+      "currentTechnicalReferences": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "currentTechnicalRuns": 8,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [144594528, 144599398],
+      "remainingReferenceAssessments": [
+        144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "FLUX.1 Schnell",
+      "architectures": ["flux-1-schnell"],
+      "samplingProfiles": [
+        {
+          "architecture": "flux-1-schnell",
+          "steps": [4, 4],
+          "guidance": [0, 0],
+          "defaultGuidance": 0,
+          "samplers": ["flow-euler"],
+          "sources": [
+            "https://huggingface.co/black-forest-labs/FLUX.1-schnell"
+          ],
+          "recommendedSamplers": ["flow-euler"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:ecf7ddb963c9deee056e67b3370de9358b9ba3762dbee77e027454c1616820f1",
+          "architecture": "flux-1-schnell",
+          "display_name": "FLUX.1 Schnell BF16"
+        }
+      ],
+      "currentTechnicalReferences": [],
+      "currentTechnicalRuns": 0,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [],
+      "remainingReferenceAssessments": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "Qwen-Image",
+      "architectures": ["qwen-image"],
+      "samplingProfiles": [
+        {
+          "architecture": "qwen-image",
+          "steps": [50, 50],
+          "guidance": [4, 4],
+          "defaultGuidance": 4,
+          "samplers": ["flow-euler"],
+          "sources": ["https://huggingface.co/Qwen/Qwen-Image"],
+          "recommendedSamplers": ["flow-euler"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:57787a0edb66e92ddcbc8e71c614d81eac96f4f9d192cde68d59e54487afac11",
+          "architecture": "qwen-image",
+          "display_name": "Jib Mix Qwen v5"
+        }
+      ],
+      "currentTechnicalReferences": [],
+      "currentTechnicalRuns": 0,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [],
+      "remainingReferenceAssessments": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "Stable Diffusion 3.5",
+      "architectures": ["stable-diffusion-3"],
+      "samplingProfiles": [
+        {
+          "architecture": "stable-diffusion-3",
+          "steps": [28, 40],
+          "guidance": [4.5, 7],
+          "defaultGuidance": 7.0,
+          "samplers": ["flow-euler"],
+          "sources": [
+            "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_3",
+            "https://huggingface.co/stabilityai/stable-diffusion-3.5-medium",
+            "https://huggingface.co/stabilityai/stable-diffusion-3.5-large"
+          ],
+          "recommendedSamplers": ["flow-euler"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:62d1eb3e10df764cfeff0163b5aaab2e5775aac3987632f6428dd2bad1074e30",
+          "architecture": "stable-diffusion-3",
+          "display_name": "Nekofantasia Alpha \u00b7 SD3.5 Medium"
+        }
+      ],
+      "currentTechnicalReferences": [],
+      "currentTechnicalRuns": 0,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [],
+      "remainingReferenceAssessments": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "Stable Diffusion 3.5 Large Turbo",
+      "architectures": ["stable-diffusion-3.5-large-turbo"],
+      "samplingProfiles": [
+        {
+          "architecture": "stable-diffusion-3.5-large-turbo",
+          "steps": [4, 4],
+          "guidance": [0, 0],
+          "defaultGuidance": 0,
+          "samplers": ["flow-euler"],
+          "recommendedSamplers": ["flow-euler"],
+          "sources": [
+            "https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo"
+          ]
+        }
+      ],
+      "installedModels": [],
+      "currentTechnicalReferences": [],
+      "currentTechnicalRuns": 0,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [],
+      "remainingReferenceAssessments": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "HiDream-I1",
+      "architectures": ["hidream-i1-full"],
+      "samplingProfiles": [
+        {
+          "architecture": "hidream-i1-full",
+          "steps": [50, 50],
+          "guidance": [5, 5],
+          "defaultGuidance": 5,
+          "samplers": ["unipc", "flow-euler"],
+          "sources": ["https://huggingface.co/HiDream-ai/HiDream-I1-Full"],
+          "recommendedSamplers": ["unipc"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:571f5143321fd0339c03e12518bf1e435d7346149fe66d6ab0291e8d9e994aa3",
+          "architecture": "hidream-i1-full",
+          "display_name": "HiDream-I1 Full NF4 \u00b7 HiDream.ai / hykilpikonna"
+        }
+      ],
+      "currentTechnicalReferences": [],
+      "currentTechnicalRuns": 0,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [],
+      "remainingReferenceAssessments": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    },
+    {
+      "engine": "SD-Turbo",
+      "architectures": ["sd-turbo"],
+      "samplingProfiles": [
+        {
+          "architecture": "sd-turbo",
+          "steps": [1, 4],
+          "guidance": [0, 0],
+          "defaultGuidance": 0,
+          "samplers": [
+            "euler",
+            "euler-ancestral",
+            "heun",
+            "dpmpp-2m",
+            "dpmpp-2m-karras",
+            "dpmpp-2m-sde-karras",
+            "ddim",
+            "deis",
+            "unipc"
+          ],
+          "recommendedSamplers": ["euler"],
+          "sources": ["https://huggingface.co/stabilityai/sd-turbo"]
+        }
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:3f067a1b943cf162f2b8f8588f6cf5824bd5b4c7d1d88d87164b9ca123616549",
+          "architecture": "sd-turbo",
+          "display_name": "SD-Turbo \u00b7 Stability AI"
+        }
+      ],
+      "currentTechnicalReferences": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "currentTechnicalRuns": 6,
+      "historicalQualityImagesHashVerified": 0,
+      "referencesWithNearReferenceAssessment": [],
+      "remainingReferenceAssessments": [
+        144594528, 144599398, 144655944, 144697438, 145095967, 145177887
+      ],
+      "allSixReferenceQualityVerified": false
+    }
+  ]
+}

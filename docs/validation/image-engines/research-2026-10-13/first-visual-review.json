@@ -1,0 +1,836 @@
+{
+  "reviewedAt": "2026-10-13T19:05:51.823Z",
+  "reviewed": [
+    {
+      "engine": "flux-1-schnell",
+      "batch": "flux-1-schnell",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\flux-1-schnell\\03-flux-1-schnell-reference-144594528\\images\\output-0000.png",
+      "sha256": "4522ce6dbcffe0ac4d643f6bc9222d32f813029589f6794532201e0a6d5d9da5",
+      "verdict": "near-reference",
+      "observation": "Detailed photographic subject, windblown hair and white skirt, blue blouse, sneakers and colorful wall; pose and wall motifs differ.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "flux-1-schnell",
+      "batch": "flux-1-schnell",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\flux-1-schnell\\05-flux-1-schnell-reference-144599398\\images\\output-0000.png",
+      "sha256": "511204a1dda052f23c1331f9dbfbaf54a3e3060e99a7b7ff6345bcdf630f0953",
+      "verdict": "below-reference",
+      "observation": "Detailed patterned pink swimwear and warm stone-wall setting; smooth rendered skin and generated footer text weaken the photographic treatment.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "flux-1-schnell",
+      "batch": "flux-1-schnell",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\flux-1-schnell\\01-flux-1-schnell-reference-144655944\\images\\output-0000.png",
+      "sha256": "1f06e4c16893db2f64198605c40c05ccbe631770c48d98254c54b1cbd6c81a37",
+      "verdict": "below-reference",
+      "observation": "Clean detailed anime face and warm doorway light; foreground hand anatomy and ownership are unclear, with weaker painted texture.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "flux-1-schnell",
+      "batch": "flux-1-schnell",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\flux-1-schnell\\02-flux-1-schnell-reference-144697438\\images\\output-0000.png",
+      "sha256": "51e36465846a336c112ebe1839e40ae71453f914a285ddcdf10347fe2a4efdc5",
+      "verdict": "near-reference",
+      "observation": "Detailed painted woman in right profile, two rusty robots, ruins and concentric colored sky; lighter palette and cleaner texture than source.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "flux-1-schnell",
+      "batch": "flux-1-schnell",
+      "referenceId": 145095967,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\flux-1-schnell\\04-flux-1-schnell-reference-145095967\\images\\output-0000.png",
+      "sha256": "6fca1979cee5183ecbbc02a434fbd18daa24170885a7454188c99c3e65baaa2c",
+      "verdict": "below-reference",
+      "observation": "Detailed raised-arm photographic subject and Alpine landscape; mountains appear printed on an opaque shirt rather than through a transparent torso.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "flux-1-schnell",
+      "batch": "flux-1-schnell",
+      "referenceId": 145177887,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\flux-1-schnell\\06-flux-1-schnell-reference-145177887\\images\\output-0000.png",
+      "sha256": "ccf1e9571339e812180818edbb1b7d522d16969e4baefe220c383924eca9deda",
+      "verdict": "near-reference",
+      "observation": "Detailed frilled dress, concealed face, teddy, dark room and watching eyes create a similar uncanny aesthetic; warmer floor light and teddy position differ.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "flux-2",
+      "batch": "flux-2",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\flux-2\\05-flux-2-reference-144599398\\images\\output-0000.png",
+      "sha256": "69bc6515682dd70fd25114d144f6a78b0203cf6ede5614ba4a4fb2636eabeb03",
+      "verdict": "near-reference",
+      "observation": "Detailed photographic subject and patterned pink swimsuit against warm stone and white wall; pose, framing and wall texture differ.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "flux-2",
+      "batch": "flux-2",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\flux-2\\01-flux-2-reference-144655944\\images\\output-0000.png",
+      "sha256": "8c8b62d8a7af6ebdd49ab7bfb0b09e1da46ce909ade3cb94eeb0dcfa162a5740",
+      "verdict": "below-reference",
+      "observation": "Detailed anime face, doorway and warm light, but two overlapping hands create an anatomical defect and the painted atmosphere is weaker.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "flux-2",
+      "batch": "flux-2",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\flux-2\\02-flux-2-reference-144697438\\images\\output-0000.png",
+      "sha256": "fe76da01f1852183ccfd6b6a88d5becfda92b9172bde5f75e2b24430b92e9378",
+      "verdict": "near-reference",
+      "observation": "White-bob blindfolded woman on the right, two rusty robots left, ruined city and concentric colored sky; cleaner graphic texture than the source painting.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "pony",
+      "batch": "pony",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\pony\\03-pony-reference-144594528\\images\\output-0000.png",
+      "sha256": "b3c0254e6fc5c37b750b9a4f09ab99b37800c7bdd056b334bfeda1a3c73963be",
+      "verdict": "below-reference",
+      "observation": "Colorful illustration with white skirt and sneakers, but the photographic subject, blouse and street wall are missing.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "pony",
+      "batch": "pony",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\pony\\05-pony-reference-144599398\\images\\output-0000.png",
+      "sha256": "8f6865c5e397c9f2874b78ff374fe27218eca6e5a55659671b403322927083bd",
+      "verdict": "below-reference",
+      "observation": "Soft illustrated swimsuit figure; weak skin detail, different pose and setting, absent chevron pattern.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "pony",
+      "batch": "pony",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\pony\\01-pony-reference-144655944\\images\\output-0000.png",
+      "sha256": "2072bb95b13ca48624c1e7becbc8cde18591296cfc8b0fba64de7e00c5eb21d7",
+      "verdict": "below-reference",
+      "observation": "Smooth anime face and shirt/tie, but raised arms replace the reaching hand; weak painted lighting and texture.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "pony",
+      "batch": "pony",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\pony\\02-pony-reference-144697438\\images\\output-0000.png",
+      "sha256": "20d0b4815677ea243aaf85ee18b5c4d580d07afdeb4d43e06819ec5572930b19",
+      "verdict": "below-reference",
+      "observation": "Muted ruin landscape only; woman and two robots are absent.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "pony",
+      "batch": "pony",
+      "referenceId": 145095967,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\pony\\04-pony-reference-145095967\\images\\output-0000.png",
+      "sha256": "4003da13363125902f8c2b3d2d6f36c264e2fd2e52c1f48bcb705eeaee764943",
+      "verdict": "below-reference",
+      "observation": "Painted subject and mountain path, but no transparent torso, blouse outlines or frontal double exposure.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "pony",
+      "batch": "pony",
+      "referenceId": 145177887,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\pony\\06-pony-reference-145177887\\images\\output-0000.png",
+      "sha256": "910b6e8632210db5b622faaa218fa68b163807a04f17f34e78862baa22ed0943",
+      "verdict": "below-reference",
+      "observation": "Clean adult anime dress portrait on gray background; teddy, child subject and black-room atmosphere are absent.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "krea-2-turbo",
+      "batch": "krea-2-turbo-accepted-regression",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\krea-2-turbo-accepted-regression\\01-krea-2-turbo-reference-144594528\\images\\output-0000.png",
+      "sha256": "114179bbdca8f2afae7862fae204d211e3921399e54b330f23cdb27249ff7acf",
+      "verdict": "near-reference",
+      "observation": "Detailed smiling photographic subject, blue off-shoulder blouse, flowing white skirt, wind and vivid flower-painted wall; pose and framing differ.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "qwen-image-2.1-turbo",
+      "batch": "qwen-image-2.1-turbo-accepted-regression",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\qwen-image-2.1-turbo-accepted-regression\\01-qwen-image-2.1-turbo-reference-144655944\\images\\output-0000.png",
+      "sha256": "6823c308895011cb0a96cea03448da49c4d2d9507b242e327a6aa220fa8b527d",
+      "verdict": "near-reference",
+      "observation": "Detailed painterly red-haired subject, amber eyes, shirt/tie, golden doorway light and foreshortened reaching hand; exact pose and texture differ.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "stable-diffusion-xl",
+      "batch": "stable-diffusion-xl",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\stable-diffusion-xl\\03-stable-diffusion-xl-reference-144594528\\images\\output-0000.png",
+      "sha256": "60ae7dc85035cd580645d3aa5c50c4aa8ef1e3aff37e666a16866a8c1652ad1e",
+      "verdict": "near-reference",
+      "observation": "Detailed photographic subject, white skirt, sneakers and colorful wall; pose is static and blouse/flower motifs differ.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "stable-diffusion-xl",
+      "batch": "stable-diffusion-xl",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\stable-diffusion-xl\\05-stable-diffusion-xl-reference-144599398\\images\\output-0000.png",
+      "sha256": "26d409c02798cfa63bcec08414c013e94d6dea9d2e34e519af5bef00994df46c",
+      "verdict": "below-reference",
+      "observation": "Plausible warm photo and pink swimwear, but distant small subject and smooth wall lose the reference's close skin detail and framing.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "stable-diffusion-xl",
+      "batch": "stable-diffusion-xl",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\stable-diffusion-xl\\01-stable-diffusion-xl-reference-144655944\\images\\output-0000.png",
+      "sha256": "5d75d0d85601dda483cf640c5d6c61f7a830cd08f619aab3f7b52aa239eeff63",
+      "verdict": "below-reference",
+      "observation": "Recognizable anime shirt-and-tie subject and doorway, but weaker painted detail, hand perspective and dramatic light.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "stable-diffusion-xl",
+      "batch": "stable-diffusion-xl",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\stable-diffusion-xl\\02-stable-diffusion-xl-reference-144697438\\images\\output-0000.png",
+      "sha256": "51d12b9b37d1e03afc155702d02645e8749b87a82c47834bda1702b2cd0c2df3",
+      "verdict": "below-reference",
+      "observation": "Muted robot-themed painting, but intended woman, two small robots and circular glitch composition are absent.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "stable-diffusion-xl",
+      "batch": "stable-diffusion-xl",
+      "referenceId": 145095967,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\stable-diffusion-xl\\04-stable-diffusion-xl-reference-145095967\\images\\output-0000.png",
+      "sha256": "abaea1cc27e463bf125b5c22cdcaccdb84be91b1bd7ca2d29dd65e344502081e",
+      "verdict": "below-reference",
+      "observation": "Raised-arm woman and Alpine scene, but opaque back-view subject replaces transparent frontal collage.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "stable-diffusion-xl",
+      "batch": "stable-diffusion-xl",
+      "referenceId": 145177887,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\stable-diffusion-xl\\06-stable-diffusion-xl-reference-145177887\\images\\output-0000.png",
+      "sha256": "5d165d203007ea77cb4595cc0bb8772bf605a15c8c4e8f6ea53cd99b75a09914",
+      "verdict": "below-reference",
+      "observation": "Detailed dress/floor painting and teddy, but bright room and sideways subject miss the near-black photographic atmosphere.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "stable-diffusion-1",
+      "batch": "stable-diffusion-1",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\stable-diffusion-1\\03-stable-diffusion-1-reference-144594528\\images\\output-0000.png",
+      "sha256": "70492891cef6dc4b012af95841a4af2f64a135346c3e2ea829d7db36177e4649",
+      "verdict": "below-reference",
+      "observation": "Photographic street/wall motif, but rear-view subject, black blouse and static pose differ; limited fine detail.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "stable-diffusion-1",
+      "batch": "stable-diffusion-1",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\stable-diffusion-1\\05-stable-diffusion-1-reference-144599398\\images\\output-0000.png",
+      "sha256": "ce338f2417505a9611894f50f3828ea7b9a0e4ba35a83fd338dfeb4f2949fb43",
+      "verdict": "below-reference",
+      "observation": "Woman and pink swimwear are present; distorted crouching anatomy, weak detail and different scene.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "stable-diffusion-1",
+      "batch": "stable-diffusion-1",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\stable-diffusion-1\\01-stable-diffusion-1-reference-144655944\\images\\output-0000.png",
+      "sha256": "15107871cebcd1099ddd87487853b2d3f76e3c6e286c61564246942ea04bcc10",
+      "verdict": "below-reference",
+      "observation": "Simple anime face with red hair and amber eyes; shirt/tie, reaching hand, doorway and painterly light largely missing.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "stable-diffusion-1",
+      "batch": "stable-diffusion-1",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\stable-diffusion-1\\02-stable-diffusion-1-reference-144697438\\images\\output-0000.png",
+      "sha256": "1ed1271edd194f02b2dc79765ce8041f94d25c9946a2281b3547492b60343681",
+      "verdict": "below-reference",
+      "observation": "Abstract geometric composition replaces the requested woman, robots and textured ruins.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "stable-diffusion-1",
+      "batch": "stable-diffusion-1",
+      "referenceId": 145095967,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\stable-diffusion-1\\04-stable-diffusion-1-reference-145095967\\images\\output-0000.png",
+      "sha256": "667cc57e4fa4baae220167c7d57e605bf988879161758f1be34afa0a23b6ac3e",
+      "verdict": "below-reference",
+      "observation": "Disembodied upside-down face/arm and mountains; composition and anatomy fail the requested collage.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "stable-diffusion-1",
+      "batch": "stable-diffusion-1",
+      "referenceId": 145177887,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\stable-diffusion-1\\06-stable-diffusion-1-reference-145177887\\images\\output-0000.png",
+      "sha256": "5c02c7d8bd840d455079d14ecfdb521950584073c6bd878630cc67cfc0991634",
+      "verdict": "below-reference",
+      "observation": "Two old-fashioned portrait figures replace the single dark-room child holding a teddy.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "illustrious-xl",
+      "batch": "illustrious-xl-tag-refinement",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\illustrious-xl-tag-refinement\\03-illustrious-xl-reference-144594528\\images\\output-0000.png",
+      "sha256": "a6e6c904bf8b3fafe3b81eab934b783ab40f4db54c1ecb729320961ffe2fb1d6",
+      "verdict": "below-reference",
+      "observation": "Clean anime subject and sneakers, but muted clothing and a flower hedge replace the photograph's flowing skirt and painted wall.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "illustrious-xl",
+      "batch": "illustrious-xl-tag-refinement",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\illustrious-xl-tag-refinement\\05-illustrious-xl-reference-144599398\\images\\output-0000.png",
+      "sha256": "1bf1986d9255847faaf2914c61d218f63be7e563f150fe3e4efa4db1d4c69631",
+      "verdict": "below-reference",
+      "observation": "Seated illustrated swimsuit subject on stone steps; distant framing, different pattern and smooth texture miss the photographic aesthetic.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "illustrious-xl",
+      "batch": "illustrious-xl-tag-refinement",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\illustrious-xl-tag-refinement\\01-illustrious-xl-reference-144655944\\images\\output-0000.png",
+      "sha256": "21523e744bea62e54eb3b7d8efa4c22261fcad36e15b2a18b27aa6c85fd563c8",
+      "verdict": "below-reference",
+      "observation": "Improved single reaching-hand composition and rich backlit clothing; still weaker hand anatomy, texture and atmosphere than the reference.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "illustrious-xl",
+      "batch": "illustrious-xl-tag-refinement",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\illustrious-xl-tag-refinement\\02-illustrious-xl-reference-144697438\\images\\output-0000.png",
+      "sha256": "76ddb69c1553bd27f3ca903f767d0c79b0ec866f22d279e524a37646e07571f6",
+      "verdict": "below-reference",
+      "observation": "Detailed dress and ruined towers, but robots and circular/glitch motif remain absent.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "illustrious-xl",
+      "batch": "illustrious-xl-tag-refinement",
+      "referenceId": 145095967,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\illustrious-xl-tag-refinement\\04-illustrious-xl-reference-145095967\\images\\output-0000.png",
+      "sha256": "bf003346cbe81e64a3a299d5e801f770d668fb3d023a246165b2ac7eb9601644",
+      "verdict": "below-reference",
+      "observation": "Pleasing sunset illustration, but face is blank and the landscape-through-torso effect is absent.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "illustrious-xl",
+      "batch": "illustrious-xl-tag-refinement",
+      "referenceId": 145177887,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\illustrious-xl-tag-refinement\\06-illustrious-xl-reference-145177887\\images\\output-0000.png",
+      "sha256": "6dddd1b09f703a94592622dd9c5123e0c058e3b561ac813c3a46fcf9e35a5684",
+      "verdict": "below-reference",
+      "observation": "Chibi dress-and-teddy illustration on a dark floor; simplified proportions and visible face differ from the detailed uncanny reference.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "noobai-xl",
+      "batch": "noobai-xl-tag-refinement",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\noobai-xl-tag-refinement\\03-noobai-xl-reference-144594528\\images\\output-0000.png",
+      "sha256": "15dc7b60eb1e9994492f9d12242578413cf11daf67f1c29b1c35bd931bbc80fb",
+      "verdict": "below-reference",
+      "observation": "Detailed windblown anime portrait and blue blouse; close crop and illustrated texture lose the photographic motion and flower-painted wall.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "noobai-xl",
+      "batch": "noobai-xl-tag-refinement",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\noobai-xl-tag-refinement\\05-noobai-xl-reference-144599398\\images\\output-0000.png",
+      "sha256": "36901d158bd15f23ad7456bfeb8325c259f5680fd4b44ddecbde16860b6a924f",
+      "verdict": "below-reference",
+      "observation": "Clean seated anime figure on stone steps; blue swimsuit and smooth skin lack the patterned pink photographic treatment.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "noobai-xl",
+      "batch": "noobai-xl-tag-refinement",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\noobai-xl-tag-refinement\\01-noobai-xl-reference-144655944\\images\\output-0000.png",
+      "sha256": "200c3554631f79cbcb42a88e7551f3a90294c014fcce76fa307d46b89378e2bb",
+      "verdict": "below-reference",
+      "observation": "Improved amber eyes and perspective, but foreground hands are blurred and the image lacks the reference's detailed painted depth.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "noobai-xl",
+      "batch": "noobai-xl-tag-refinement",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\noobai-xl-tag-refinement\\02-noobai-xl-reference-144697438\\images\\output-0000.png",
+      "sha256": "e5e26c4bf89d19c7815068f5372d6e4fc41c86727dbaf3030be31f282672b703",
+      "verdict": "below-reference",
+      "observation": "Woman and a large robot shape appear, but two small robots, ruined-city detail and circular motif remain missing.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "noobai-xl",
+      "batch": "noobai-xl-tag-refinement",
+      "referenceId": 145095967,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\noobai-xl-tag-refinement\\04-noobai-xl-reference-145095967\\images\\output-0000.png",
+      "sha256": "e9cb839564a46a977992e67f18457488d63008050af640361e6efc0e2bd16515",
+      "verdict": "below-reference",
+      "observation": "Detailed anime subject and pink landscape, but opaque blouse, missing torso collage and different pose.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "noobai-xl",
+      "batch": "noobai-xl-tag-refinement",
+      "referenceId": 145177887,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\noobai-xl-tag-refinement\\06-noobai-xl-reference-145177887\\images\\output-0000.png",
+      "sha256": "37f85153615ceda2efda6efb310d995e37cdfdecd23424dd5fa9a293d17f7898",
+      "verdict": "below-reference",
+      "observation": "Improved dark background, concealed face, white clothing and held teddy; plain dress and strong floor spotlight lose the reference's fine frills and faint light.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "sd-turbo",
+      "batch": "sd-turbo",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\sd-turbo\\03-sd-turbo-reference-144594528\\images\\output-0000.png",
+      "sha256": "76e364f9d84750eb0f7ef84120e2664d661329ed04efa9996c257d74cd74842a",
+      "verdict": "below-reference",
+      "observation": "Graffiti, skirt and motion are present, but subject faces away; coarse texture, wrong clothing and no floral motifs.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "sd-turbo",
+      "batch": "sd-turbo",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\sd-turbo\\05-sd-turbo-reference-144599398\\images\\output-0000.png",
+      "sha256": "c74f5792a75db303e374c07bed36a7feecc72f8becf850d91170fa53ac306dac",
+      "verdict": "below-reference",
+      "observation": "Pink patterned swimwear and stone steps, but frontal pose, coarse skin detail and pattern differ.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "sd-turbo",
+      "batch": "sd-turbo",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\sd-turbo\\01-sd-turbo-reference-144655944\\images\\output-0000.png",
+      "sha256": "cb3bc6acd5ac175ebba6ec47c06258f63a70e30e976b2743a3633d7d7a4968ee",
+      "verdict": "below-reference",
+      "observation": "Recognizable red-haired shirt-and-tie portrait, but weak hand perspective and coarse illustrated texture.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "sd-turbo",
+      "batch": "sd-turbo",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\sd-turbo\\02-sd-turbo-reference-144697438\\images\\output-0000.png",
+      "sha256": "b09702c352334d2acc978c7fe763fb3dab5d113bee7627108dfad7e3654a92a5",
+      "verdict": "below-reference",
+      "observation": "Several robots are present, but the woman is missing and pixel-like painted texture lacks the source detail and composition.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "sd-turbo",
+      "batch": "sd-turbo",
+      "referenceId": 145095967,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\sd-turbo\\04-sd-turbo-reference-145095967\\images\\output-0000.png",
+      "sha256": "82c300195581c3526ce7d9f50b90d8f4d85d24005a725d41689ce0e195909de7",
+      "verdict": "below-reference",
+      "observation": "Woman, jeans and mountains are present, but no transparent torso or fine outlines; detail is coarse.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "sd-turbo",
+      "batch": "sd-turbo",
+      "referenceId": 145177887,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\sd-turbo\\06-sd-turbo-reference-145177887\\images\\output-0000.png",
+      "sha256": "e1e376b8095ada780d57fb6a322504adb5e7d38870c906933da9cce5b100b403",
+      "verdict": "below-reference",
+      "observation": "White dress and teddy are present, but the seated illustrated portrait lacks the black-room photographic atmosphere.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "sdxl-turbo",
+      "batch": "sdxl-turbo",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\sdxl-turbo\\03-sdxl-turbo-reference-144594528\\images\\output-0000.png",
+      "sha256": "5f1ac26ea9183b44ced1758ea82d6c236d47b1a9b788ddc92377aa0f708ceb30",
+      "verdict": "near-reference",
+      "observation": "Convincing smiling photographic subject, blue off-shoulder blouse and colorful graffiti; skirt pattern, pose and framing differ.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "sdxl-turbo",
+      "batch": "sdxl-turbo",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\sdxl-turbo\\05-sdxl-turbo-reference-144599398\\images\\output-0000.png",
+      "sha256": "84a2b8ace94d57be5a3dbf3a90629a3d71af1a1e6715b8cedd06672211847883",
+      "verdict": "near-reference",
+      "observation": "Natural photographic face/skin, pink chevron swimsuit and warm weathered stone wall; crop, seated pose and gaze differ.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "sdxl-turbo",
+      "batch": "sdxl-turbo",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\sdxl-turbo\\01-sdxl-turbo-reference-144655944\\images\\output-0000.png",
+      "sha256": "6f5f32f0e77111a7506363883f7d3ce300d42ca40cd4ffc1c68908ddff6e5629",
+      "verdict": "below-reference",
+      "observation": "Clean anime face and reaching-hand motif, but weaker painterly depth, lighting and anatomical detail than source.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "sdxl-turbo",
+      "batch": "sdxl-turbo",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\sdxl-turbo\\02-sdxl-turbo-reference-144697438\\images\\output-0000.png",
+      "sha256": "7e3d9698847bb2dd901a02ecdba8374ab9b97cb1d9eac401786c04093bc5c743",
+      "verdict": "below-reference",
+      "observation": "Pleasing muted painting with robots and ruined city; woman and concentric glitch motif are absent.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "sdxl-turbo",
+      "batch": "sdxl-turbo",
+      "referenceId": 145095967,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\sdxl-turbo\\04-sdxl-turbo-reference-145095967\\images\\output-0000.png",
+      "sha256": "abfc6b8c265b2784a36893e558d4432a59b8a06301f743f93c55f33e089e7464",
+      "verdict": "below-reference",
+      "observation": "Pleasing Alpine photograph, but back-view subject and opaque blouse replace the transparent frontal collage.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "sdxl-turbo",
+      "batch": "sdxl-turbo",
+      "referenceId": 145177887,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\sdxl-turbo\\06-sdxl-turbo-reference-145177887\\images\\output-0000.png",
+      "sha256": "4d60aa692da23baef371fc0969dd11ee27e4056c98ed9c8c5248b623d9cdf6f3",
+      "verdict": "below-reference",
+      "observation": "Detailed painted dress and floorboards, but teddy is absent and the side-view figure in a bright room misses the photographic horror atmosphere.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "anima",
+      "batch": "anima",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\anima\\03-anima-reference-144594528\\images\\output-0000.png",
+      "sha256": "99d588b4bf8d9fc605c8cca966263fca7646528444ad2fa0f0b120344b1a2611",
+      "verdict": "near-reference",
+      "observation": "Detailed smiling subject, blue blouse, flowing white skirt, moving hair and colorful street wall; face has a slightly rendered appearance.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "anima",
+      "batch": "anima",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\anima\\05-anima-reference-144599398\\images\\output-0000.png",
+      "sha256": "f5c7f2c5e3b0eef0b2de827b999c5209198b06c414e75557617ef374e04e2e5b",
+      "verdict": "near-reference",
+      "observation": "Detailed skin and patterned pink swimsuit, side pose and warm stone-wall photo. Orange cast, vertical black borders and framing differ.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "anima",
+      "batch": "anima",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\anima\\01-anima-reference-144655944\\images\\output-0000.png",
+      "sha256": "9f9ab44841e818c1981585ec9813a8cf4069fb8aa58fa5b214d321fc006f778b",
+      "verdict": "near-reference",
+      "observation": "Strong golden backlight, detailed fabric/hair, amber eyes and a clearly foreshortened reaching hand; color is more yellow than the source.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "anima",
+      "batch": "anima",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\anima\\02-anima-reference-144697438\\images\\output-0000.png",
+      "sha256": "44083c7287f404348666a03368aad54f1e6e55c00bbfbb8465485938f1ca96e7",
+      "verdict": "near-reference",
+      "observation": "Two rusty robots on the left, white-haired blindfolded woman on the right, textured ruins and concentric colored/glitch sky. Rendering is more graphic than the source painting.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "anima",
+      "batch": "anima",
+      "referenceId": 145095967,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\anima\\04-anima-reference-145095967\\images\\output-0000.png",
+      "sha256": "703f80a6afe4ea89e14bd01e34a7807a844a30dcde2e47292573fd3ca2a33ecf",
+      "verdict": "below-reference",
+      "observation": "Clear landscape-through-torso effect and fine blouse outlines, but subject becomes a faceless back-view silhouette on a plain background.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "anima",
+      "batch": "anima",
+      "referenceId": 145177887,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\anima\\06-anima-reference-145177887\\images\\output-0000.png",
+      "sha256": "84b19c14a339b0869f22eaaca63eefa832dda3807df98afa0c047556336c3086",
+      "verdict": "below-reference",
+      "observation": "Dark room, white dress, teddy and illuminated floor are present, but figure is too small and extra eyes appear above it; less photographic detail than source.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "realvis-xl",
+      "batch": "realvis-xl",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\realvis-xl\\03-realvis-xl-reference-144594528\\images\\output-0000.png",
+      "sha256": "e81490e6cb9a3d4b8216d4df8ca89bb07548e759f3788061321eb2e991e9b675",
+      "verdict": "near-reference",
+      "observation": "Convincing photographic subject, cheerful expression, moving hair/skirt and colorful street wall; clothing colors and wall motifs differ.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "realvis-xl",
+      "batch": "realvis-xl",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\realvis-xl\\05-realvis-xl-reference-144599398\\images\\output-0000.png",
+      "sha256": "497093b3625245273154aae9f680426de88454021e1b9a86c4c4851911d94517",
+      "verdict": "near-reference",
+      "observation": "Natural photographed skin, pink zigzag swimsuit, warm sun and stone steps; pose and wall framing differ.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "realvis-xl",
+      "batch": "realvis-xl",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\realvis-xl\\01-realvis-xl-reference-144655944\\images\\output-0000.png",
+      "sha256": "f6390b147881c3c4b73efa2826550f45c6eb654b270148f08538c4a563a9b615",
+      "verdict": "below-reference",
+      "observation": "Photographic face, shirt and doorway, but the painterly anime style and dramatic reaching hand are absent.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "realvis-xl",
+      "batch": "realvis-xl",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\realvis-xl\\02-realvis-xl-reference-144697438\\images\\output-0000.png",
+      "sha256": "c7e7c45a52bce5e1847bbd61a7f84c9a7dbde6ef626ac2c47a53d05d2c6aec69",
+      "verdict": "below-reference",
+      "observation": "Detailed ruined buildings, but the woman becomes a helmeted robot and the composition is dominated by three mismatched figures.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "realvis-xl",
+      "batch": "realvis-xl",
+      "referenceId": 145095967,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\realvis-xl\\04-realvis-xl-reference-145095967\\images\\output-0000.png",
+      "sha256": "10b5e6d1d2f50e5a53dcd47b44909f9d895a82bed55dcbee955b182cf0833f7a",
+      "verdict": "below-reference",
+      "observation": "Detailed mountain photo and raised-arm pose, but no double exposure, transparent torso or outline blouse.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "realvis-xl",
+      "batch": "realvis-xl",
+      "referenceId": 145177887,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\realvis-xl\\06-realvis-xl-reference-145177887\\images\\output-0000.png",
+      "sha256": "becc781baee12804dc1baba641b3dd7d9c8fedd05090e0f6738f1512a8bc48d2",
+      "verdict": "below-reference",
+      "observation": "Detailed photographic dress and floorboards; teddy is on the head and the bright room misses the black-background horror lighting.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "dreamshaper-xl",
+      "batch": "dreamshaper-xl",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\dreamshaper-xl\\03-dreamshaper-xl-reference-144594528\\images\\output-0000.png",
+      "sha256": "ef2c2d2ee5ebf54b1c20031d94a12c5852245880f8528095e2ebb1d88c84fa54",
+      "verdict": "near-reference",
+      "observation": "Credible photographic face, clothing, street and colorful wall. Pose is more static and the flower motifs are absent.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "dreamshaper-xl",
+      "batch": "dreamshaper-xl",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\dreamshaper-xl\\05-dreamshaper-xl-reference-144599398-attempt-2\\images\\output-0000.png",
+      "sha256": "9d319e006108a5c34eb7422ac85237b02ff64d68ef8adc447aae638f0080d27a",
+      "verdict": "near-reference",
+      "observation": "Photographic skin, warm sun, pink patterned swimsuit and stone steps. Frontal pose and smooth wall differ from the source.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "dreamshaper-xl",
+      "batch": "dreamshaper-xl",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\dreamshaper-xl\\01-dreamshaper-xl-reference-144655944\\images\\output-0000.png",
+      "sha256": "43d89e9dde6de7a4eae6e3a0c96c8b144c5fe7a7b26f37284421af0531b694dd",
+      "verdict": "below-reference",
+      "observation": "Detailed painted clothing and warm light; weak foreshortening, atmosphere and hand anatomy.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "dreamshaper-xl",
+      "batch": "dreamshaper-xl",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\dreamshaper-xl\\02-dreamshaper-xl-reference-144697438\\images\\output-0000.png",
+      "sha256": "df8bbf832e5812f6172a3b4e0e15dfacb6bf33f2c8837451e622a2a1949b5e12",
+      "verdict": "below-reference",
+      "observation": "Painted texture and a white-haired woman; both robots and circular glitch composition are missing.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "dreamshaper-xl",
+      "batch": "dreamshaper-xl",
+      "referenceId": 145095967,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\dreamshaper-xl\\04-dreamshaper-xl-reference-145095967\\images\\output-0000.png",
+      "sha256": "32b15d33715aaee9f8494aa8c69d619d8917728f981c4f32dff2eb5c175fb0d7",
+      "verdict": "below-reference",
+      "observation": "Pleasing Alpine photo, but there is no transparent torso or white blouse outline; arms are lowered.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "dreamshaper-xl",
+      "batch": "dreamshaper-xl",
+      "referenceId": 145177887,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\dreamshaper-xl\\06-dreamshaper-xl-reference-145177887-attempt-2\\images\\output-0000.png",
+      "sha256": "6f2c54157f65af28d64fca13f8ce0fea95687179f9b0bac631995287fcefacf5",
+      "verdict": "below-reference",
+      "observation": "Dark painted figure and detailed dress; teddy bear is missing and the bright corridor differs from the near-black photograph.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "illustrious-xl",
+      "batch": "illustrious-xl",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\illustrious-xl\\03-illustrious-xl-reference-144594528\\images\\output-0000.png",
+      "sha256": "0d6400da5b9ff460fa7edcd7cf56f27484cba40ebf3460d7db6bab359d606413",
+      "verdict": "below-reference",
+      "observation": "Bold colorful illustration, but the reference is a detailed photograph and the wall design and pose differ.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "illustrious-xl",
+      "batch": "illustrious-xl",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\illustrious-xl\\05-illustrious-xl-reference-144599398\\images\\output-0000.png",
+      "sha256": "72740ce05e2885c4306a5c4a54426f86b89dc78a15eff16f56021236341d4616",
+      "verdict": "below-reference",
+      "observation": "Smooth rendered skin and swimsuit; large foreground stone occludes the body and face is turned away.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "illustrious-xl",
+      "batch": "illustrious-xl",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\illustrious-xl\\01-illustrious-xl-reference-144655944\\images\\output-0000.png",
+      "sha256": "e82de13374e338b4ab054e0af0f04665fe1fe9af9107a7b7598568ead6de5fb3",
+      "verdict": "below-reference",
+      "observation": "Strong golden doorway light, hair and cloth texture, but arms merge into one malformed foreground hand.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "illustrious-xl",
+      "batch": "illustrious-xl",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\illustrious-xl\\02-illustrious-xl-reference-144697438\\images\\output-0000.png",
+      "sha256": "59f55d159636d4b6cae46cdd8ab1b2103613e5c182d67b89b5ac8533adbd8468",
+      "verdict": "below-reference",
+      "observation": "Oil texture and ruined buildings, but no robots or concentric glitch circles; subject is frontal.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "illustrious-xl",
+      "batch": "illustrious-xl",
+      "referenceId": 145095967,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\illustrious-xl\\04-illustrious-xl-reference-145095967\\images\\output-0000.png",
+      "sha256": "ce87d6a540f795f482d76b727194114b2166738b5cc5855892cfada9b357c882",
+      "verdict": "below-reference",
+      "observation": "Two flat faceless figures replace the single photographic double exposure; transparent torso is absent.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "illustrious-xl",
+      "batch": "illustrious-xl",
+      "referenceId": 145177887,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\illustrious-xl\\06-illustrious-xl-reference-145177887\\images\\output-0000.png",
+      "sha256": "0d1f75974f922c4e586546e01a5f3be6745ea65e78aef1bad2000bc6349d7e2b",
+      "verdict": "below-reference",
+      "observation": "Clean doll-like illustration with dress and teddy, but the room is light gray and photographic horror atmosphere is absent.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "noobai-xl",
+      "batch": "noobai-xl",
+      "referenceId": 144594528,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\noobai-xl\\03-noobai-xl-reference-144594528\\images\\output-0000.png",
+      "sha256": "7fb42fd4f89d199e874b5b9ab14722339fb62856b110a575f051e44611c6a516",
+      "verdict": "below-reference",
+      "observation": "Competent illustration, but wrong clothing colors and no colorful wall; photographic motion and realism are absent.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "noobai-xl",
+      "batch": "noobai-xl",
+      "referenceId": 144599398,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\noobai-xl\\05-noobai-xl-reference-144599398\\images\\output-0000.png",
+      "sha256": "97cbb631749ec75a9d80cdc2b7c1a7a855b9b8e8d409c239ae9dde63ebf4babd",
+      "verdict": "below-reference",
+      "observation": "Smooth illustrated skin and stone stairs; lower body is occluded, pose differs and photographic texture is weak.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "noobai-xl",
+      "batch": "noobai-xl",
+      "referenceId": 144655944,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\noobai-xl\\01-noobai-xl-reference-144655944\\images\\output-0000.png",
+      "sha256": "593453ed38e28593a17a2ba8abf77d1f032a32f431cbdf2272cca9dfa7d67f05",
+      "verdict": "below-reference",
+      "observation": "Good hair, clothing and backlight, with cropped foreground hands; less dramatic depth and dark atmosphere than the reference.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "noobai-xl",
+      "batch": "noobai-xl",
+      "referenceId": 144697438,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\noobai-xl\\02-noobai-xl-reference-144697438\\images\\output-0000.png",
+      "sha256": "ca962c11f004e0c0aeabc5499f5c65bc1d8cc12c90bcad5e2dae431f07607e5b",
+      "verdict": "below-reference",
+      "observation": "Very simplified painted figure; robots, circles, detail and intended composition are missing.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "noobai-xl",
+      "batch": "noobai-xl",
+      "referenceId": 145095967,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\noobai-xl\\04-noobai-xl-reference-145095967\\images\\output-0000.png",
+      "sha256": "91d2a47cea650f8a53c7a28dd6a660407c8e26cc677752de7fb1c87b2d269705",
+      "verdict": "below-reference",
+      "observation": "Pleasing anime landscape and profile, but no landscape-through-torso effect or fine white contour drawing.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    },
+    {
+      "engine": "noobai-xl",
+      "batch": "noobai-xl",
+      "referenceId": 145177887,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\noobai-xl\\06-noobai-xl-reference-145177887\\images\\output-0000.png",
+      "sha256": "672ffe005e1f7e3014a9d3f4f3c406c5c982ab72812058e4f5f89e58ed219287",
+      "verdict": "below-reference",
+      "observation": "Dress and teddy are present, but flat anime treatment and a bright spotlight replace the photographic black-room atmosphere.",
+      "method": "Direct visual inspection against the downloaded reference; qualitative judgment, not an objective quality score."
+    }
+  ],
+  "fullGoalComplete": false
+}
