@@ -131,6 +131,7 @@ export const MediaBasicSamplingOptions = ({
                 {compatibleMediaImageSamplers(architecture).map((sampler) => (
                   <option key={sampler.value} value={sampler.value}>
                     {sampler.label}
+                    {sampler.recommended ? " · Recommended" : ""}
                   </option>
                 ))}
               </select>

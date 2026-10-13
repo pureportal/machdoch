@@ -51,6 +51,26 @@ const addon: MediaModelAddonDescriptor = {
 };
 
 describe("media model add-on search", () => {
+  it("keeps SDXL style adapters available on its named derivatives", () => {
+    const model = createMediaModelCatalogSnapshot({
+      isLocalFluxInstalled: true,
+      isOpenAiConfigured: false,
+    }).models.find((model) => model.architecture === "illustrious-xl")!;
+    expect(
+      model.addonCapabilities.some((capability) => capability.kind === "lora"),
+    ).toBe(true);
+    const style = {
+      ...addon,
+      architecture: "stable-diffusion-xl",
+      baseModelHint: "SDXL",
+    };
+    expect(inspectMediaModelAddonCompatibility(model, style).status).toBe(
+      "compatible",
+    );
+    expect(inspectMediaModelAddonCompatibility(model, addon).status).toBe(
+      "incompatible",
+    );
+  });
   it("matches multiple terms across names, architecture, targets, and triggers", () => {
     expect(
       matchesMediaResourceQuery(addon, undefined, [], "character flux-2"),

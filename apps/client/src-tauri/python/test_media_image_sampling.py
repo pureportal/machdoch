@@ -11,6 +11,38 @@ import media_open_models as models
 
 
 class ImageSamplerTests(unittest.TestCase):
+    def test_hidream_samplers_preserve_the_published_flow_shift(self):
+        for sampler in (None, "unipc", "flow-euler"):
+            with self.subTest(sampler=sampler):
+                original = diffusers.UniPCMultistepScheduler(use_flow_sigmas=True, prediction_type="flow_prediction", flow_shift=3.0)
+                pipeline = SimpleNamespace(scheduler=original)
+                sampling.configure_sampler(pipeline, diffusers, "hidream-i1-full", sampler)
+                scheduler = pipeline.scheduler
+                if sampler == "flow-euler":
+                    self.assertEqual(scheduler.config.shift, 3.0)
+                else:
+                    self.assertEqual(scheduler.config.flow_shift, 3.0)
+                    self.assertTrue(scheduler.config.use_flow_sigmas)
+                    self.assertEqual(scheduler.config.prediction_type, "flow_prediction")
+                scheduler.set_timesteps(50)
+                self.assertTrue(torch.isfinite(scheduler.sigmas).all())
+                self.assertTrue(torch.all(scheduler.sigmas[:-1] >= scheduler.sigmas[1:]))
+
+    def test_turbo_automatic_and_manual_samplers_keep_trailing_timesteps(self):
+        for architecture in ("sd-turbo", "sdxl-turbo"):
+            for sampler in (None, "euler", "euler-ancestral", "dpmpp-2m-karras"):
+                with self.subTest(architecture=architecture, sampler=sampler):
+                    pipeline = SimpleNamespace(scheduler=diffusers.EulerDiscreteScheduler(timestep_spacing="leading"))
+                    sampling.configure_sampler(pipeline, diffusers, architecture, sampler)
+                    self.assertEqual(pipeline.scheduler.config.timestep_spacing, "trailing")
+                    pipeline.scheduler.set_timesteps(4)
+                    self.assertEqual(int(pipeline.scheduler.timesteps[0]), 999)
+                    latent = torch.randn(1, 4, 8, 8)
+                    for timestep in pipeline.scheduler.timesteps:
+                        pipeline.scheduler.scale_model_input(latent, timestep)
+                        latent = pipeline.scheduler.step(torch.zeros_like(latent), timestep, latent).prev_sample
+                    self.assertTrue(torch.isfinite(latent).all())
+
     def test_deis_uses_second_order_for_guided_latent_diffusion(self):
         original = diffusers.PNDMScheduler(
             beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear",

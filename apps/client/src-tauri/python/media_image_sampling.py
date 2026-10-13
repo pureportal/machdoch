@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from media_open_models import PROFILES
+
 
 SAMPLING_PROFILES = {
     profile["architecture"]: profile
@@ -40,14 +42,23 @@ def configure_sampler(pipeline: Any, diffusers: Any, architecture: str, sampler:
     if not hasattr(pipeline, "_machdoch_default_scheduler"):
         pipeline._machdoch_default_scheduler = pipeline.scheduler
     original = pipeline._machdoch_default_scheduler
-    if sampler is None:
-        pipeline.scheduler = original
-        return
-    class_name, options = SAMPLERS[sampler]
-    if architecture == "hunyuan-image-3":
-        from hunyuan_image_3.hunyuan_image_3_pipeline import FlowMatchDiscreteScheduler
-
-        scheduler_class = FlowMatchDiscreteScheduler
+    profile = PROFILES.get(architecture, {})
+    recommended = SAMPLING_PROFILES[architecture]["recommendedSamplers"]
+    scheduler_options = profile.get("schedulerOptions", {})
+    if sampler is None and not scheduler_options and not profile.get("baseArchitecture"):
+        scheduler = original
     else:
-        scheduler_class = getattr(diffusers, class_name)
-    pipeline.scheduler = scheduler_class.from_config(original.config, **options)
+        class_name, options = SAMPLERS[sampler if sampler is not None else recommended[0]]
+        if architecture == "hidream-i1-full" and sampler == "flow-euler":
+            options = {**options, "shift": original.config["flow_shift"]}
+        if architecture == "hunyuan-image-3":
+            from hunyuan_image_3.hunyuan_image_3_pipeline import FlowMatchDiscreteScheduler
+
+            scheduler_class = FlowMatchDiscreteScheduler
+        else:
+            scheduler_class = getattr(diffusers, class_name)
+        scheduler = scheduler_class.from_config(original.config, **options, **scheduler_options)
+    if architecture == "anima":
+        pipeline.update_components(scheduler=scheduler)
+    else:
+        pipeline.scheduler = scheduler

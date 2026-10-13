@@ -12,6 +12,34 @@ import {
 } from "./image-sampling.js";
 
 describe("image samplers", () => {
+  it("distinguishes the requested SDXL derivatives and Turbo recipes", () => {
+    expect(defaultMediaImageSteps("noobai-xl", "quality")).toBe(28);
+    expect(defaultMediaImageSteps("juggernaut-xl", "quality")).toBe(35);
+    expect(defaultMediaImageSteps("sdxl-turbo", "quality")).toBe(4);
+    expect(mediaImageSamplingProfile("sd-turbo")?.guidance).toEqual([0, 0]);
+    expect(
+      mediaImageSamplingError({ guidanceScale: 7 }, "sdxl-turbo"),
+    ).toContain("guidance 0");
+    expect(
+      mediaImageSamplingError(
+        { numInferenceSteps: 32 },
+        "stable-diffusion-3.5-large-turbo",
+      ),
+    ).toContain("4 sampling steps");
+    expect(
+      compatibleMediaImageSamplers("noobai-xl").find(
+        (sampler) => sampler.recommended,
+      )?.value,
+    ).toBe("euler-ancestral");
+    expect(
+      compatibleMediaImageSamplers("dreamshaper-xl").find(
+        (sampler) => sampler.recommended,
+      )?.value,
+    ).toBe("deis");
+    expect(
+      compatibleMediaImageSamplers("anima").map((sampler) => sampler.value),
+    ).toEqual(["flow-euler"]);
+  });
   it("uses editable guidance and quality defaults for extended Krea", () => {
     expect(defaultMediaImageSteps("krea-2", "fast")).toBe(8);
     expect(defaultMediaImageSteps("krea-2", "quality")).toBe(12);

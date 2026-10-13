@@ -12,6 +12,9 @@ export interface OpenMediaModelProfile {
   repository: string;
   revision: string;
   pipeline: string;
+  baseArchitecture?: string;
+  defaultResolution?: number;
+  schedulerOptions?: Record<string, unknown>;
   capabilities: readonly MediaCapability[];
   steps: number;
   guidance: number;

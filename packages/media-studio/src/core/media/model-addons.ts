@@ -6,6 +6,13 @@ import type {
   MediaModelAddonSelection,
   MediaModelDescriptor,
 } from "./contracts.js";
+import profiles from "../../../../../apps/client/src-tauri/python/open_media_models.json" with { type: "json" };
+
+const modelRuntimeArchitecture = <T extends string | null>(
+  architecture: T,
+): string | T =>
+  profiles.find((profile) => profile.architecture === architecture)
+    ?.baseArchitecture ?? architecture;
 
 const capability = (
   kind: MediaModelAddonKind,
@@ -115,6 +122,7 @@ export const getMediaModelAddonCapabilities = (
     architecture === null
   )
     return [];
+  architecture = modelRuntimeArchitecture(architecture);
   return (
     ARCHITECTURE_ADDON_CAPABILITIES[
       architecture === "pony"
@@ -254,7 +262,8 @@ export const inspectMediaModelAddonCompatibility = (
   }
   const kreaArchitectures = ["krea-2", "krea-2-raw", "krea-2-turbo"];
   if (
-    model.architecture !== addon.architecture &&
+    modelRuntimeArchitecture(model.architecture) !==
+      modelRuntimeArchitecture(addon.architecture) &&
     !(
       kreaArchitectures.includes(model.architecture ?? "") &&
       kreaArchitectures.includes(addon.architecture)
@@ -296,7 +305,7 @@ export const inspectMediaModelAddonCompatibility = (
       "krea-2",
       "krea-2-raw",
       "krea-2-turbo",
-    ].includes(model.architecture ?? "") &&
+    ].includes(modelRuntimeArchitecture(model.architecture) ?? "") &&
     addon.loraProfile.convolutionTargetCount > 0
   ) {
     return {

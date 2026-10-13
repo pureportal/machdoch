@@ -41,6 +41,11 @@ pub(crate) fn capabilities_for_model(
     provider_id: &str,
     architecture: Option<&str>,
 ) -> Vec<MediaModelAddonCapability> {
+    let architecture = architecture.map(|architecture| {
+        super::open_models::by_architecture(architecture)
+            .and_then(|profile| profile.base_architecture.as_deref())
+            .unwrap_or(architecture)
+    });
     if !matches!(provider_id, "local-diffusers" | "local-video" | "local-wan") {
         return Vec::new();
     }

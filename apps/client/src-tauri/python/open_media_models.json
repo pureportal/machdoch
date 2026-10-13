@@ -407,9 +407,10 @@
     "fixedSteps": false,
     "fixedGuidance": false,
     "license": {
-      "name": "MIT License",
-      "spdxId": "MIT",
-      "commercialUse": "allowed"
+      "name": "MIT and Llama 3.1 Community License",
+      "spdxId": null,
+      "commercialUse": "review-required",
+      "sourceUrl": "https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE"
     }
   },
   {
@@ -1055,6 +1056,229 @@
       "spdxId": null,
       "commercialUse": "review-required",
       "sourceUrl": "https://github.com/Tencent-Hunyuan/HunyuanImage-3.0/blob/6e9113a692a27a0751d82aba3b2015a876646c03/LICENSE"
+    }
+  },
+  {
+    "id": "local:illustrious-xl",
+    "architecture": "illustrious-xl",
+    "displayName": "Illustrious XL",
+    "family": "Stable Diffusion XL",
+    "repository": "OnomaAIResearch/Illustrious-xl-early-release-v0",
+    "revision": "dca0dac303e6dc4b0c31d8001bc685b89b5d0204",
+    "pipeline": "StableDiffusionXLPipeline",
+    "capabilities": ["text-to-image"],
+    "steps": 28,
+    "guidance": 7,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "negativePrompt": true,
+    "spatialMultiple": 8,
+    "license": {
+      "name": "Fair AI Public License 1.0-SD",
+      "spdxId": null,
+      "commercialUse": "review-required",
+      "sourceUrl": "https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0"
+    },
+    "baseArchitecture": "stable-diffusion-xl"
+  },
+  {
+    "id": "local:noobai-xl",
+    "architecture": "noobai-xl",
+    "displayName": "NoobAI XL",
+    "family": "Stable Diffusion XL",
+    "repository": "Laxhar/noobai-XL-1.0",
+    "revision": "70dee4d903b83cc6d1e8d12e65051cfdbcf54ab3",
+    "pipeline": "StableDiffusionXLPipeline",
+    "capabilities": ["text-to-image"],
+    "steps": 28,
+    "guidance": 5.5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "negativePrompt": true,
+    "spatialMultiple": 8,
+    "license": {
+      "name": "Fair AI Public License 1.0-SD with NoobAI restrictions",
+      "spdxId": null,
+      "commercialUse": "review-required",
+      "sourceUrl": "https://huggingface.co/Laxhar/noobai-XL-1.0"
+    },
+    "baseArchitecture": "stable-diffusion-xl"
+  },
+  {
+    "id": "local:juggernaut-xl",
+    "architecture": "juggernaut-xl",
+    "displayName": "Juggernaut XL",
+    "family": "Stable Diffusion XL",
+    "repository": "RunDiffusion/Juggernaut-XI-v11",
+    "revision": "f836518c7a75f47a9e26bc661ff9509ef2ceb7c0",
+    "pipeline": "StableDiffusionXLPipeline",
+    "capabilities": ["text-to-image"],
+    "steps": 35,
+    "guidance": 5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "negativePrompt": true,
+    "spatialMultiple": 8,
+    "license": {
+      "name": "CC BY-NC-ND 4.0 with RunDiffusion publisher restrictions",
+      "spdxId": "CC-BY-NC-ND-4.0",
+      "commercialUse": "review-required",
+      "sourceUrl": "https://huggingface.co/RunDiffusion/Juggernaut-XI-v11"
+    },
+    "baseArchitecture": "stable-diffusion-xl"
+  },
+  {
+    "id": "local:realvis-xl",
+    "architecture": "realvis-xl",
+    "displayName": "RealVisXL",
+    "family": "Stable Diffusion XL",
+    "repository": "SG161222/RealVisXL_V5.0",
+    "revision": "ac93e0dda1f6d448cae19bbfab8c5e720a5e48bc",
+    "pipeline": "StableDiffusionXLPipeline",
+    "capabilities": ["text-to-image"],
+    "steps": 50,
+    "guidance": 5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "negativePrompt": true,
+    "spatialMultiple": 8,
+    "license": {
+      "name": "CreativeML Open RAIL++-M",
+      "spdxId": null,
+      "commercialUse": "review-required",
+      "sourceUrl": "https://huggingface.co/SG161222/RealVisXL_V5.0"
+    },
+    "baseArchitecture": "stable-diffusion-xl"
+  },
+  {
+    "id": "local:dreamshaper-xl",
+    "architecture": "dreamshaper-xl",
+    "displayName": "DreamShaper XL",
+    "family": "Stable Diffusion XL",
+    "repository": "Lykon/dreamshaper-xl-1-0",
+    "revision": "41e6644752a8c9aa63930e6043c4fd83c7708420",
+    "pipeline": "StableDiffusionXLPipeline",
+    "capabilities": ["text-to-image"],
+    "steps": 25,
+    "guidance": 7.5,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "negativePrompt": true,
+    "spatialMultiple": 8,
+    "license": {
+      "name": "CreativeML Open RAIL++-M",
+      "spdxId": null,
+      "commercialUse": "review-required",
+      "sourceUrl": "https://huggingface.co/Lykon/dreamshaper-xl-1-0"
+    },
+    "baseArchitecture": "stable-diffusion-xl"
+  },
+  {
+    "id": "local:sdxl-turbo",
+    "architecture": "sdxl-turbo",
+    "displayName": "SDXL Turbo",
+    "family": "Stable Diffusion XL",
+    "repository": "stabilityai/sdxl-turbo",
+    "revision": "71153311d3dbb46851df1931d3ca6e939de83304",
+    "pipeline": "StableDiffusionXLPipeline",
+    "capabilities": ["text-to-image"],
+    "steps": 4,
+    "guidance": 0,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": true,
+    "negativePrompt": false,
+    "spatialMultiple": 8,
+    "license": {
+      "name": "Stability AI Community License",
+      "spdxId": null,
+      "commercialUse": "review-required",
+      "sourceUrl": "https://huggingface.co/stabilityai/sdxl-turbo"
+    },
+    "baseArchitecture": "stable-diffusion-xl",
+    "defaultResolution": 512,
+    "schedulerOptions": {
+      "timestep_spacing": "trailing"
+    }
+  },
+  {
+    "id": "local:sd-turbo",
+    "architecture": "sd-turbo",
+    "displayName": "SD-Turbo",
+    "family": "Stable Diffusion 2.1",
+    "repository": "stabilityai/sd-turbo",
+    "revision": "b261bac6fd2cf515557d5d0707481eafa0485ec2",
+    "pipeline": "StableDiffusionPipeline",
+    "capabilities": ["text-to-image"],
+    "steps": 4,
+    "guidance": 0,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": true,
+    "negativePrompt": false,
+    "spatialMultiple": 8,
+    "license": {
+      "name": "Stability AI Community License",
+      "spdxId": null,
+      "commercialUse": "review-required",
+      "sourceUrl": "https://huggingface.co/stabilityai/sd-turbo"
+    },
+    "baseArchitecture": "stable-diffusion-2",
+    "defaultResolution": 512,
+    "schedulerOptions": {
+      "timestep_spacing": "trailing"
+    }
+  },
+  {
+    "id": "local:stable-diffusion-3.5-large-turbo",
+    "architecture": "stable-diffusion-3.5-large-turbo",
+    "displayName": "Stable Diffusion 3.5 Large Turbo",
+    "family": "Stable Diffusion 3.5",
+    "repository": "stabilityai/stable-diffusion-3.5-large-turbo",
+    "revision": "ec07796fc06b096cc56de9762974a28f4c632eda",
+    "pipeline": "StableDiffusion3Pipeline",
+    "capabilities": ["text-to-image"],
+    "steps": 4,
+    "guidance": 0,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": true,
+    "fixedGuidance": true,
+    "negativePrompt": false,
+    "spatialMultiple": 16,
+    "license": {
+      "name": "Stability AI Community License",
+      "spdxId": null,
+      "commercialUse": "review-required",
+      "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo"
+    },
+    "baseArchitecture": "stable-diffusion-3"
+  },
+  {
+    "id": "local:anima",
+    "architecture": "anima",
+    "displayName": "Anima",
+    "family": "Anima",
+    "repository": "circlestone-labs/Anima-Base-v1.0-Diffusers",
+    "revision": "073c3a9db359c31ad0e8aa268d15775473c2176c",
+    "pipeline": "AnimaModularPipeline",
+    "capabilities": ["text-to-image"],
+    "steps": 40,
+    "guidance": 4,
+    "guidanceParameter": "guidance_scale",
+    "fixedSteps": false,
+    "fixedGuidance": false,
+    "negativePrompt": true,
+    "spatialMultiple": 16,
+    "license": {
+      "name": "CircleStone Labs Non-Commercial License and NVIDIA Open Model License",
+      "spdxId": null,
+      "commercialUse": "review-required",
+      "sourceUrl": "https://huggingface.co/circlestone-labs/Anima"
     }
   }
 ]

@@ -1703,7 +1703,11 @@ const NodeFieldEditor = ({
           ? [
               { value: "", label: "Automatic", description: "" },
               ...compatibleMediaImageSamplers(selectedModel?.architecture).map(
-                (sampler) => ({ ...sampler, description: "" }),
+                (sampler) => ({
+                  value: sampler.value,
+                  label: `${sampler.label}${sampler.recommended ? " · Recommended" : ""}`,
+                  description: "",
+                }),
               ),
             ]
           : field.id === "referenceRole" && referenceRoleValues
