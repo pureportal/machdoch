@@ -20,6 +20,10 @@ function updater(
     error: null,
     progress: { downloaded: 50, total: 100 },
     saving: false,
+    canceling: false,
+    cancel: vi.fn(async () => {}),
+    show: vi.fn(),
+    hide: vi.fn(),
     defer: vi.fn(async () => {}),
     install: vi.fn(async () => {}),
     restart: vi.fn(async () => {}),
@@ -42,7 +46,7 @@ describe("update dialog", () => {
     expect(state.install).not.toHaveBeenCalled();
   });
 
-  it("shows download progress and prevents closing during installation", () => {
+  it("shows download progress and allows hiding or canceling the download", () => {
     const state = updater("downloading");
     render(
       React.createElement(UpdateDialog, { updater: state, blocked: false }),
@@ -55,9 +59,28 @@ describe("update dialog", () => {
     expect(
       screen.queryByRole("button", { name: "Update and restart" }),
     ).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+    expect(state.hide).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel download" }));
+    expect(state.cancel).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(state.hide).toHaveBeenCalledTimes(2);
+    expect(state.close).not.toHaveBeenCalled();
+  });
+
+  it("prevents closing or canceling during installation", () => {
+    const state = updater("installing");
+    render(
+      React.createElement(UpdateDialog, { updater: state, blocked: false }),
+    );
+    expect(screen.queryByRole("button", { name: "Hide" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Cancel download" }),
+    ).toBeNull();
     expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(state.close).not.toHaveBeenCalled();
+    expect(state.hide).not.toHaveBeenCalled();
   });
 
   it("retries a failed check without offering an earlier cached update", () => {

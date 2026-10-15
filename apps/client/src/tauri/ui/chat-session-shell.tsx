@@ -72,6 +72,7 @@ import {
   useDesktopUpdate,
 } from "./update/use-desktop-update";
 import { UpdateDialog } from "./update/update-dialog";
+import { UpdateStatus } from "./update/update-status";
 
 const SettingsDialog = lazy(async () => {
   const module = await import("./chat-session/components/settings-dialog");
@@ -897,7 +898,12 @@ export const ChatSession = (): JSX.Element => {
       >
         <ApplicationShell
           className="app-shell rounded-xl border border-slate-800 antialiased"
-          topbar={<ShellTitlebar {...controller.titlebar} />}
+          topbar={
+            <ShellTitlebar
+              {...controller.titlebar}
+              updateStatus={<UpdateStatus updater={updater} />}
+            />
+          }
           navigation={
             <AppRail
               activeApp={activeApp}

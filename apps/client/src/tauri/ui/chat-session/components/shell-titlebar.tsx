@@ -1,5 +1,5 @@
 import { Power, TerminalSquare } from "lucide-react";
-import type { JSX, MouseEventHandler } from "react";
+import type { JSX, MouseEventHandler, ReactNode } from "react";
 import {
   ControlTooltip,
   Tooltip,
@@ -13,6 +13,7 @@ import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import type { RuntimeProviderAvailability } from "../../runtime";
 
 export interface ShellTitlebarProps {
+  updateStatus?: ReactNode;
   shutdownWhenIdle: {
     enabled: boolean;
     available: boolean;
@@ -27,6 +28,7 @@ export interface ShellTitlebarProps {
 }
 
 export const ShellTitlebar = ({
+  updateStatus,
   shutdownWhenIdle,
   providerStatuses,
   onMinimizeWindow,
@@ -67,6 +69,7 @@ export const ShellTitlebar = ({
           </span>
         ) : null}
       </div>
+      {updateStatus}
       <div className="min-w-0 flex-1" data-tauri-drag-region />
       <div className="relative z-10 flex items-center gap-1" data-tauri-no-drag>
         {SUPPORTED_PROVIDER_ORDER.map((provider) => {
