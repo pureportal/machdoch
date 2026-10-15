@@ -1,12 +1,11 @@
 import argparse
 import json
 from pathlib import Path
-import subprocess
-import sys
 import time
 import traceback
 
 from media_reference_verification import save_results
+from verify_media_reference_sweep import verify
 
 
 def run_batches(manifest_path: Path, results_path: Path, hip_device: str) -> bool:
@@ -24,14 +23,13 @@ def run_batches(manifest_path: Path, results_path: Path, hip_device: str) -> boo
         print(json.dumps({"startingBatch": batch["name"]}), flush=True)
         started = time.monotonic()
         try:
-            command = [sys.executable, "-B", str(Path(__file__).with_name("verify_media_reference_sweep.py")),
-                       "--template", batch["template"], "--cases", batch["cases"],
-                       "--output-root", batch["outputRoot"], "--hip-device", hip_device]
-            if batch.get("captureDecoderLatents", False):
-                command.append("--capture-decoder-latents")
-            result = subprocess.run(command, check=False)
-            record["exitCode"] = result.returncode
-            record["passed"] = result.returncode == 0
+            record["passed"] = verify(
+                Path(batch["template"]), Path(batch["cases"]),
+                Path(batch["outputRoot"]), hip_device,
+                batch.get("captureDecoderLatents", False),
+                batch.get("stopOnFailure", False),
+            )
+            record["exitCode"] = 0 if record["passed"] else 1
         except Exception as error:
             traceback.print_exc()
             record["error"] = f"{type(error).__name__}: {error}"
