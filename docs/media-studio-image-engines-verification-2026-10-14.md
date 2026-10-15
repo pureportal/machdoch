@@ -28,4 +28,6 @@ HiDream completed the six reference subjects, including the previously failing l
 
 Small-model numerical tests do not establish the speed, memory requirements or quality of full models. No claim is made that every engine matches all six reference aesthetics.
 
+Commit verification on 2026-10-15 passed 438 native media tests, with 26 live or fixture-dependent tests ignored. The GPU decoder regression passed on the RX 9070. The small Qwen NF4 encoder regression failed with a ROCm launch error during block offloading; the same encoder passed when kept on the GPU. Its CPU round trip passed, but the encoder's GPU block-offload path remains blocked on the local PyTorch 2.12.0 / ROCm 7.14.0 and bitsandbytes 0.50.2 runtime.
+
 Raw render files, machine-specific manifests and transient research remain local under `docs/validation/image-engines` and `D:\Models\machdoch`. The installed production desktop was not replaced during the earlier isolated validation.
