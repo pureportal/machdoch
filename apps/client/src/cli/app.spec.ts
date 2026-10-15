@@ -1,4 +1,5 @@
 import type { TaskExecutionProgress } from "../core/types.ts";
+import { describe, expect, it } from "vitest";
 import { parseCliArgs } from "./_helpers/cli-args.ts";
 import { formatExecutionProgressLines } from "./_helpers/cli-output.ts";
 import { createUserConfigSummaryLines } from "./_helpers/cli-output.ts";
@@ -13,7 +14,7 @@ describe("parseCliArgs", () => {
       command: "chat",
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -58,7 +59,7 @@ describe("parseCliArgs", () => {
       task: "show status",
       json: false,
       verbose: true,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -72,7 +73,7 @@ describe("parseCliArgs", () => {
       task: "--literal task",
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -96,7 +97,7 @@ describe("parseCliArgs", () => {
       model: "gpt-4.5",
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -122,7 +123,7 @@ describe("parseCliArgs", () => {
       contextPaths: ["README.md", "src/core"],
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -148,7 +149,7 @@ describe("parseCliArgs", () => {
       imagePaths: ["screen.png", "mockup.webp"],
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -163,7 +164,7 @@ describe("parseCliArgs", () => {
       contextPaths: ["src/core"],
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -202,7 +203,7 @@ describe("parseCliArgs", () => {
       task: "create a dockerfile for nginx",
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -216,7 +217,7 @@ describe("parseCliArgs", () => {
       contextPaths: ["docs/brief.md"],
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -243,7 +244,7 @@ describe("parseCliArgs", () => {
       globalMemoryEnabled: false,
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
 
     expect(
@@ -256,7 +257,7 @@ describe("parseCliArgs", () => {
       model: "gpt-4.5",
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -286,7 +287,7 @@ describe("parseCliArgs", () => {
       },
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
 
     expect(
@@ -301,7 +302,7 @@ describe("parseCliArgs", () => {
       },
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -330,7 +331,7 @@ describe("parseCliArgs", () => {
       mode: "ask",
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
 
     expect(
@@ -343,7 +344,7 @@ describe("parseCliArgs", () => {
       mode: "machdoch",
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -370,7 +371,7 @@ describe("parseCliArgs", () => {
       model: "claude-sonnet-4-20250514",
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -1254,7 +1255,7 @@ describe("parseCliArgs", () => {
       model: "gpt-4.5",
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 
@@ -1271,7 +1272,7 @@ describe("parseCliArgs", () => {
       conversationContextFile: "C:/workspace/.machdoch/context.json",
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
   });
 

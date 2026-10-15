@@ -112,9 +112,12 @@ export const parseCliArgs = (
   if (values?.check && positionals[0] !== "update")
     fail("--check is only valid for machdoch update.");
   const quickRunRequested = values?.quick === true;
+  const taskWorkspaceRoot = normalizeOptionalString(values?.cwd) ?? "";
+  if (values?.cwd !== undefined && !taskWorkspaceRoot)
+    fail("Expected --cwd to be followed by a path.");
   const workspaceRoot =
-    normalizeOptionalString(values?.cwd) ??
-    normalizeOptionalString(currentWorkingDirectory) ??
+    taskWorkspaceRoot ||
+    normalizeOptionalString(currentWorkingDirectory) ||
     fail("Expected --cwd to be followed by a path.");
 
   const rawMode = normalizeOptionalString(values?.mode);
@@ -677,6 +680,7 @@ export const parseCliArgs = (
         {
           ...sharedOptions,
           command: quickRunRequested ? "run" : "chat",
+          workspaceRoot: taskWorkspaceRoot,
         },
         { task: rawTask },
       );
@@ -691,6 +695,7 @@ export const parseCliArgs = (
     return createParsedArgs({
       ...sharedOptions,
       command: "chat",
+      workspaceRoot: taskWorkspaceRoot,
     });
   }
 
@@ -1201,7 +1206,11 @@ export const parseCliArgs = (
       fail("Use `machdoch run <task>` for a one-shot task.");
     const task = rawTask ?? rest.join(" ").trim();
     return createParsedArgs(
-      { ...sharedOptions, command: "chat" },
+      {
+        ...sharedOptions,
+        command: "chat",
+        workspaceRoot: taskWorkspaceRoot,
+      },
       task ? { task } : undefined,
     );
   }
@@ -1215,6 +1224,7 @@ export const parseCliArgs = (
           {
             ...sharedOptions,
             command: "run",
+            workspaceRoot: taskWorkspaceRoot,
           },
           { task: rawTask },
         );
@@ -1227,6 +1237,7 @@ export const parseCliArgs = (
       {
         ...sharedOptions,
         command: "run",
+        workspaceRoot: taskWorkspaceRoot,
       },
       { task },
     );
@@ -1238,6 +1249,7 @@ export const parseCliArgs = (
     {
       ...sharedOptions,
       command: quickRunRequested ? "run" : "chat",
+      workspaceRoot: taskWorkspaceRoot,
     },
     { task },
   );

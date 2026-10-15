@@ -28,7 +28,7 @@ Automation and integration:
   fleet          Connect this CLI host to Fleet Manager
 
 Examples:
-  machdoch run "summarize the changes in this repository"
+  machdoch run "summarize the changes in this repository" --cwd .
   machdoch --mode ask --context README.md "explain the setup"
   machdoch config list
   machdoch config edit
@@ -36,7 +36,7 @@ Examples:
   machdoch scheduler list --json
 
 Global options:
-  --cwd <path>            Use a different workspace root
+  --cwd <path>            Select a workspace folder
   --json                  Print machine-readable JSON where supported
   --verbose, -v           Print task progress
   -h, --help              Show help for the current command
@@ -50,6 +50,7 @@ Usage:
   machdoch --quick --task <task> [options]
 
 Task options:
+  --cwd <path>                  Select a workspace folder (default: Not Set)
   --task -                      Read the complete UTF-8 task from stdin
   --mode <ask|machdoch>          Override the execution mode
   --runtime-provider <provider> Override the model provider
@@ -83,6 +84,7 @@ Usage:
 
 Chat accepts the same model, mode, context, image, and memory overrides as
 machdoch run. It requires an interactive terminal and does not support --json.
+The workspace defaults to Not Set. Use --cwd . to select the current folder.
 
 Interactive commands:
 ${INTERACTIVE_CHAT_HELP}

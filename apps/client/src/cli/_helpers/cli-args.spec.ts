@@ -3,6 +3,29 @@ import { describe, expect, it } from "vitest";
 import { CliUsageError } from "./cli-error.js";
 
 describe("cli args public parser", () => {
+  it.each(
+    [
+      [],
+      ["chat"],
+      ["Hello"],
+      ["--task", "Hello"],
+      ["run", "Hello"],
+      ["--quick", "--task", "Hello"],
+    ].map((argv) => ({ argv })),
+  )("defaults task workspace selection to Not Set for $argv", ({ argv }) => {
+    expect(
+      parseCliArgs(argv, { currentWorkingDirectory: "C:/launch-folder" })
+        .workspaceRoot,
+    ).toBe("");
+    expect(parseCliArgs([...argv, "--cwd", "."]).workspaceRoot).toBe(".");
+  });
+
+  it("rejects a blank explicit workspace", () => {
+    expect(() => parseCliArgs(["--cwd", " "])).toThrow(
+      "Expected --cwd to be followed by a path.",
+    );
+  });
+
   it("routes Media Studio assistant input without accepting task arguments", () => {
     expect(
       parseCliArgs([
@@ -249,7 +272,7 @@ describe("cli args public parser", () => {
       command: "chat",
       json: false,
       verbose: false,
-      workspaceRoot: "C:/workspace",
+      workspaceRoot: "",
     });
 
     expect(
@@ -323,7 +346,7 @@ describe("cli args public parser", () => {
       ),
     ).toMatchObject({
       command: "run",
-      workspaceRoot: "C:/Users/example",
+      workspaceRoot: "",
       skipFileChangeDetection: true,
     });
   });

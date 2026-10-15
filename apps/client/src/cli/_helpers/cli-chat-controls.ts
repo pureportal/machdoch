@@ -26,6 +26,7 @@ import {
   type InteractivePrompter,
 } from "./cli-prompter.js";
 import { CliUsageError } from "./cli-error.js";
+import { resolveCliWorkspaceRoot } from "./cli-workspace.js";
 
 export interface ChatState {
   args: ParsedCliArgs;
@@ -38,7 +39,7 @@ export const loadChatConfig = async (
   args: ParsedCliArgs,
 ): Promise<RuntimeConfig> =>
   await loadRuntimeConfig(
-    args.workspaceRoot,
+    resolveCliWorkspaceRoot(args.workspaceRoot),
     args.mode,
     args.model,
     args.runtimeProvider,
@@ -51,7 +52,7 @@ export const showChatStatus = (
   write: (line: string) => void,
 ): void => {
   write(
-    `${state.args.workspaceRoot}\n${state.config.mode} · ${state.config.provider} / ${state.config.model} · reasoning ${state.config.reasoning} · parallel ${state.session.parallelAgentMode}`,
+    `${state.args.workspaceRoot || "Not Set"}\n${state.config.mode} · ${state.config.provider} / ${state.config.model} · reasoning ${state.config.reasoning} · parallel ${state.session.parallelAgentMode}`,
   );
 };
 

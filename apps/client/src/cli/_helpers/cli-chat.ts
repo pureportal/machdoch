@@ -38,6 +38,7 @@ import { editPrompt } from "./cli-editor.js";
 import { loadUserConfigFile } from "../../core/env.js";
 import { DEFAULT_USER_DESKTOP_SETTINGS } from "../../core/runtime-contract.generated.js";
 import { showWorkspaceDiff } from "./cli-chat-diff.js";
+import { resolveCliWorkspaceRoot } from "./cli-workspace.js";
 
 const MANAGEMENT_COMMANDS = new Set([
   "config",
@@ -70,7 +71,10 @@ export const runInteractiveChat = async (
   const write = options.write ?? writeStdoutLine;
   const executeTask = options.executeTask ?? printTaskPreview;
   const style = createCliStyle();
-  const initialArgs = { ...args, workspaceRoot: resolve(args.workspaceRoot) };
+  const initialArgs = {
+    ...args,
+    workspaceRoot: args.workspaceRoot ? resolve(args.workspaceRoot) : "",
+  };
   const config = await loadChatConfig(initialArgs);
   const context = await resolveConversationContext(args);
   const state: ChatState = {
@@ -214,6 +218,8 @@ export const runInteractiveChat = async (
     if (name === "diff") {
       if (values.length > 1 || (values[0] && values[0] !== "staged"))
         throw new CliUsageError("Usage: /diff [staged]");
+      if (!state.args.workspaceRoot)
+        throw new CliUsageError("Select a workspace with /workspace <folder>.");
       await showWorkspaceDiff(
         state.args.workspaceRoot,
         values[0] === "staged",
@@ -289,7 +295,7 @@ export const runInteractiveChat = async (
             name,
             ...commandArgs,
             "--cwd",
-            state.args.workspaceRoot,
+            resolveCliWorkspaceRoot(state.args.workspaceRoot),
           ]);
         });
       } finally {
@@ -306,9 +312,15 @@ export const runInteractiveChat = async (
     ) {
       if (name === "export") unsaved = false;
       else if (
-        ["model", "mode", "parallel", "reasoning", "memory", "forget"].includes(
-          name,
-        )
+        [
+          "workspace",
+          "model",
+          "mode",
+          "parallel",
+          "reasoning",
+          "memory",
+          "forget",
+        ].includes(name)
       )
         await persist();
       return true;

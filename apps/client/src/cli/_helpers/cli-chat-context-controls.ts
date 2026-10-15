@@ -89,6 +89,8 @@ export const handleChatContextControl = async (
     )
       usage("<session|workspace|global> [on|off|inherit]");
     const context = state.session.context;
+    if (scope === "workspace" && !state.args.workspaceRoot)
+      throw new CliUsageError("Select a workspace with /workspace <folder>.");
     if (command === "forget") {
       if (values.length !== 2) usage("<session|workspace|global> <id>");
       let removed: boolean;

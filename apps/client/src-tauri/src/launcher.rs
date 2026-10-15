@@ -5,7 +5,6 @@ use crate::{desktop_shell, shared_cli};
 const CLI_FLAG: &str = "--cli";
 const UI_FLAG: &str = "--ui";
 const QUICK_FLAG: &str = "--quick";
-const CWD_FLAG: &str = "--cwd";
 
 pub(crate) enum LaunchAction {
     Cli(Vec<String>),
@@ -58,9 +57,7 @@ pub(crate) fn resolve_launch_action() -> Result<LaunchAction, String> {
     }
 
     if has_cli_flag || has_quick_flag || has_non_ui_startup_args(&forwarded_args) {
-        return Ok(LaunchAction::Cli(args_with_current_working_directory(
-            forwarded_args,
-        )?));
+        return Ok(LaunchAction::Cli(forwarded_args));
     }
 
     if is_ui_supported() {
@@ -69,9 +66,7 @@ pub(crate) fn resolve_launch_action() -> Result<LaunchAction, String> {
         )));
     }
 
-    Ok(LaunchAction::Cli(args_with_current_working_directory(
-        forwarded_args,
-    )?))
+    Ok(LaunchAction::Cli(forwarded_args))
 }
 
 pub(crate) fn run_cli(args: &[String]) -> Result<i32, String> {
@@ -79,6 +74,11 @@ pub(crate) fn run_cli(args: &[String]) -> Result<i32, String> {
 
     cli_command
         .command
+        .current_dir(
+            env::current_dir().map_err(|error| {
+                format!("Unable to resolve the current working directory: {error}")
+            })?,
+        )
         .env(
             "MACHDOCH_NATIVE_EXECUTABLE",
             env::current_exe().map_err(|error| error.to_string())?,
@@ -120,25 +120,6 @@ fn strip_launcher_mode_flags(args: &[String]) -> Vec<String> {
         })
         .cloned()
         .collect()
-}
-
-fn args_with_current_working_directory(args: Vec<String>) -> Result<Vec<String>, String> {
-    if args
-        .iter()
-        .any(|arg| arg == CWD_FLAG || arg.starts_with("--cwd="))
-    {
-        return Ok(args);
-    }
-
-    let current_dir = env::current_dir()
-        .map_err(|error| format!("Unable to resolve the current working directory: {error}"))?;
-    let mut resolved_args = Vec::with_capacity(args.len() + 2);
-
-    resolved_args.push("--cwd".to_string());
-    resolved_args.push(current_dir.display().to_string());
-    resolved_args.extend(args);
-
-    Ok(resolved_args)
 }
 
 fn has_non_ui_startup_args(args: &[String]) -> bool {

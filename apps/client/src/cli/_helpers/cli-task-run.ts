@@ -36,6 +36,7 @@ import {
 import { createDiscoveryOptions } from "./cli-output.js";
 import { loadUserConfigFile } from "../../core/env.js";
 import { DEFAULT_USER_DESKTOP_SETTINGS } from "../../core/runtime-contract.generated.js";
+import { resolveCliWorkspaceRoot } from "./cli-workspace.js";
 
 const fail = (message: string): never => {
   throw new CliUsageError(message);
@@ -147,7 +148,10 @@ export const createImageInputsFromPaths = async (
 
   const codexImageInput =
     config.provider === "codex-cli"
-      ? await probeCodexCliImageInput(config.model, workspaceRoot)
+      ? await probeCodexCliImageInput(
+          config.model,
+          resolveCliWorkspaceRoot(workspaceRoot),
+        )
       : undefined;
   if (codexImageInput === false) {
     fail(
@@ -251,6 +255,9 @@ export const resolveConversationContext = async (
       : {}),
     ...baseContext,
     history: baseContext?.history ?? [],
+    ...(args.workspaceRoot === "" && !baseContext?.workspace
+      ? { workspace: { selection: "not-set" as const } }
+      : {}),
     ...(args.sessionMemoryEnabled !== undefined
       ? { sessionMemoryEnabled: args.sessionMemoryEnabled }
       : {}),
@@ -281,7 +288,7 @@ export const printTaskPreview = async (
   );
 
   const config = await loadRuntimeConfig(
-    args.workspaceRoot,
+    resolveCliWorkspaceRoot(args.workspaceRoot),
     args.mode,
     args.model,
     args.runtimeProvider,
@@ -294,7 +301,7 @@ export const printTaskPreview = async (
     config,
   );
   const customizations = await discoverCustomizations(
-    args.workspaceRoot,
+    config.workspaceRoot,
     createDiscoveryOptions(config.compatibility.discoverGithubCustomizations),
   );
   const { config: preferences } = await loadUserConfigFile();
@@ -340,7 +347,10 @@ export const printTaskPreview = async (
       ...(args.deterministicAction
         ? { deterministicAction: args.deterministicAction }
         : {}),
-      ...(args.skipFileChangeDetection ? { captureFileChanges: false } : {}),
+      ...(args.skipFileChangeDetection ||
+      conversationContext?.workspace?.selection === "not-set"
+        ? { captureFileChanges: false }
+        : {}),
       ...(process.env.MACHDOCH_DESKTOP_MANAGES_TASK_TIMEOUT === "true"
         ? { idleTimeoutMs: null }
         : {

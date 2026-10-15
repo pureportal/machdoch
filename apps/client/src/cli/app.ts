@@ -5,6 +5,7 @@ import { writeStderrLine, writeStdoutLine } from "./_helpers/cli-io.js";
 import { createCliStyle } from "./_helpers/cli-terminal.js";
 import { readTaskFromStdin } from "./_helpers/cli-task-stdin.js";
 import { trackCliCommand } from "./_helpers/cli-analytics.js";
+import { resolveCliWorkspaceRoot } from "./_helpers/cli-workspace.js";
 
 const AGENT_RUNTIME_COMMANDS = new Set<CommandName>([
   "run",
@@ -81,15 +82,15 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
   ) {
     const { ensureAutomaticProviderSync } =
       await import("./_helpers/cli-provider-sync-commands.js");
-    await ensureAutomaticProviderSync(args.workspaceRoot).catch(
-      (error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        const style = createCliStyle({ isTTY: process.stderr.isTTY === true });
-        writeStderrLine(
-          `${style.warning("Warning:")} provider synchronization failed: ${message}`,
-        );
-      },
-    );
+    await ensureAutomaticProviderSync(
+      resolveCliWorkspaceRoot(args.workspaceRoot),
+    ).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      const style = createCliStyle({ isTTY: process.stderr.isTTY === true });
+      writeStderrLine(
+        `${style.warning("Warning:")} provider synchronization failed: ${message}`,
+      );
+    });
   }
 
   switch (args.command) {
