@@ -26,6 +26,7 @@ export function UpdateDialog({
     updater.phase,
   );
   const available = updater.release && updater.phase === "available";
+  const downloading = updater.phase === "downloading";
   const title =
     updater.phase === "current"
       ? "You're up to date"
@@ -38,13 +39,15 @@ export function UpdateDialog({
     <Dialog
       open={updater.open && !blocked}
       onOpenChange={(open) => {
-        if (!open && !working) updater.close();
+        if (!open && downloading) updater.hide();
+        else if (!open && !working) updater.close();
       }}
       commandOverlayId="app-update"
     >
       <DialogContent
         className="sm:max-w-md"
-        showCloseButton={!working && !updater.saving}
+        id="app-update-dialog"
+        showCloseButton={(!working || downloading) && !updater.saving}
         onInteractOutside={(event) => event.preventDefault()}
         aria-describedby={updater.release ? "update-description" : undefined}
       >
@@ -75,7 +78,7 @@ export function UpdateDialog({
         {updater.phase === "downloading" ? (
           <div className="grid gap-2" role="status">
             <div className="flex justify-between text-sm">
-              <span>Downloading</span>
+              <span>{updater.canceling ? "Canceling…" : "Downloading"}</span>
               {updater.progress.total ? (
                 <span>
                   {Math.min(
@@ -128,7 +131,20 @@ export function UpdateDialog({
           </label>
         ) : null}
         <DialogFooter>
-          {updater.phase === "installed" ? (
+          {downloading ? (
+            <>
+              <Button
+                variant="outline"
+                disabled={updater.canceling}
+                onClick={() => void updater.cancel()}
+              >
+                {updater.canceling ? "Canceling…" : "Cancel download"}
+              </Button>
+              <Button variant="outline" onClick={updater.hide}>
+                Hide
+              </Button>
+            </>
+          ) : updater.phase === "installed" ? (
             <Button
               className="bg-sky-600 text-white hover:bg-sky-500"
               onClick={() => {

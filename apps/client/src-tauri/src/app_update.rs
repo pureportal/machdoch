@@ -5,9 +5,19 @@ use tauri::{
     utils::platform::{bundle_type, current_exe},
     AppHandle, Manager as _,
 };
+use tokio_util::sync::CancellationToken;
+
+pub(crate) mod download;
+
+struct AppUpdateSession {
+    _lock: CooperativeFileLock,
+    cancellation: CancellationToken,
+    downloading: bool,
+    downloaded: Option<(tauri::ResourceId, Vec<u8>)>,
+}
 
 #[derive(Default)]
-pub(crate) struct AppUpdateState(Mutex<Option<CooperativeFileLock>>);
+pub(crate) struct AppUpdateState(Mutex<Option<AppUpdateSession>>);
 
 #[tauri::command]
 pub(crate) fn app_update_available() -> bool {
@@ -48,10 +58,13 @@ pub(crate) async fn prepare_app_update(app: AppHandle) -> Result<(), String> {
                 "machdoch-update-{:x}",
                 Sha256::digest(identity.as_bytes())
             ));
-            *guard = Some(
-                acquire_cooperative_file_lock(&lock_path)
+            *guard = Some(AppUpdateSession {
+                _lock: acquire_cooperative_file_lock(&lock_path)
                     .map_err(|error| format!("Another update may be running. {error}"))?,
-            );
+                cancellation: CancellationToken::new(),
+                downloading: false,
+                downloaded: None,
+            });
         }
         crate::idle_shutdown::disable_shutdown_when_idle(&app)
     })
@@ -61,10 +74,14 @@ pub(crate) async fn prepare_app_update(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub(crate) fn finish_app_update(app: AppHandle) -> Result<(), String> {
-    app.state::<AppUpdateState>()
+    if let Some(session) = app
+        .state::<AppUpdateState>()
         .0
         .lock()
         .map_err(|_| "Update state is unavailable.".to_string())?
-        .take();
+        .take()
+    {
+        session.cancellation.cancel();
+    }
     Ok(())
 }

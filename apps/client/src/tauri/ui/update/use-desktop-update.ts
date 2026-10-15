@@ -1,5 +1,9 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
-import { check, type Update } from "@tauri-apps/plugin-updater";
+import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
+import {
+  check,
+  type DownloadEvent,
+  type Update,
+} from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { LazyStore } from "@tauri-apps/plugin-store";
 import { useEffect, useRef, useState } from "react";
@@ -33,6 +37,8 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
     total?: number;
   }>({ downloaded: 0 });
   const [saving, setSaving] = useState(false);
+  const [canceling, setCanceling] = useState(false);
+  const download = useRef<{ canceled: boolean } | null>(null);
   const update = useRef<Update | null>(null);
   const preference = useRef<UpdateNotificationPreference>({});
   const store = useRef<LazyStore | null>(null);
@@ -51,6 +57,8 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
     const showPending = () => {
       if (
         !disposed &&
+        !installing.current &&
+        !installed.current &&
         update.current &&
         shouldNotifyForUpdate(
           update.current.version,
@@ -123,6 +131,10 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
       }
     };
     const manualCheck = () => {
+      if (installing.current || installed.current) {
+        setOpen(true);
+        return;
+      }
       void checkForUpdate(true);
     };
     const resumeCheck = () => {
@@ -161,9 +173,15 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
       clearInterval(reminder);
       window.removeEventListener(CHECK_FOR_UPDATES_EVENT, manualCheck);
       document.removeEventListener("visibilitychange", resumeCheck);
+      if (download.current) {
+        download.current.canceled = true;
+        void invoke("cancel_app_update_download").catch((failure: unknown) =>
+          console.error("Could not cancel the update download", failure),
+        );
+      }
       const current = update.current;
       update.current = null;
-      if (current && !installing.current)
+      if (current && (!installing.current || download.current))
         void current
           .close()
           .catch((failure: unknown) =>
@@ -210,44 +228,87 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
     )
       return;
     installing.current = true;
+    const attempt = { canceled: false };
+    download.current = attempt;
     setError(null);
+    setCanceling(false);
+    setPhase("downloading");
+    setProgress({ downloaded: 0 });
     try {
       await latest.current.flush();
+      if (attempt.canceled) return;
       await invoke("prepare_app_update");
-      setPhase("downloading");
-      setProgress({ downloaded: 0 });
-      await trackOperation("update.download", () =>
-        selected.download(
-          (event) => {
-            if (event.event === "Started")
-              setProgress({ downloaded: 0, total: event.data.contentLength });
-            else if (event.event === "Progress")
-              setProgress((value) => ({
-                ...value,
-                downloaded: value.downloaded + event.data.chunkLength,
-              }));
-          },
-          { timeout: 30 * 60_000 },
-        ),
+      if (attempt.canceled) return;
+      const onEvent = new Channel<DownloadEvent>();
+      onEvent.onmessage = (event) => {
+        if (attempt.canceled) return;
+        if (event.event === "Started")
+          setProgress({ downloaded: 0, total: event.data.contentLength });
+        else if (event.event === "Progress")
+          setProgress((value) => ({
+            ...value,
+            downloaded: value.downloaded + event.data.chunkLength,
+          }));
+      };
+      const completed = await trackOperation("update.download", () =>
+        invoke<boolean>("download_app_update", { rid: selected.rid, onEvent }),
       );
+      if (!completed || attempt.canceled) {
+        attempt.canceled = true;
+        return;
+      }
       await latest.current.flush();
+      if (attempt.canceled) return;
       await invoke("prepare_app_update");
+      if (attempt.canceled) return;
+      download.current = null;
       setPhase("installing");
-      await trackOperation("update.install", () => selected.install());
+      await trackOperation("update.install", () =>
+        invoke("install_app_update", { rid: selected.rid }),
+      );
       installed.current = true;
       setPhase("installed");
       await relaunch();
     } catch (failure) {
-      setPhase((value) => (value === "installed" ? "installed" : "available"));
-      setError(failure instanceof Error ? failure.message : String(failure));
+      if (!attempt.canceled) {
+        setPhase((value) =>
+          value === "installed" ? "installed" : "available",
+        );
+        setError(failure instanceof Error ? failure.message : String(failure));
+        setOpen(true);
+      }
     } finally {
-      installing.current = false;
+      download.current = null;
       await invoke("finish_app_update").catch((failure: unknown) => {
         console.error("Could not release the update lock", failure);
         setError(
           "Could not release the update lock. Restart Machdoch before trying again.",
         );
+        setOpen(true);
       });
+      if (attempt.canceled) {
+        setPhase("available");
+        setProgress({ downloaded: 0 });
+      }
+      setCanceling(false);
+      installing.current = false;
+    }
+  }
+
+  async function cancel() {
+    const attempt = download.current;
+    if (!attempt || canceling) return;
+    attempt.canceled = true;
+    setCanceling(true);
+    setError(null);
+    try {
+      await invoke("cancel_app_update_download");
+    } catch (failure) {
+      setCanceling(false);
+      setError(
+        `Could not cancel the download. Try again. ${failure instanceof Error ? failure.message : String(failure)}`,
+      );
+      setOpen(true);
     }
   }
 
@@ -258,8 +319,12 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
     error,
     progress,
     saving,
+    canceling,
     defer,
     install,
+    cancel,
+    show: () => setOpen(true),
+    hide: () => setOpen(false),
     check: () => window.dispatchEvent(new Event(CHECK_FOR_UPDATES_EVENT)),
     restart: async () => {
       try {

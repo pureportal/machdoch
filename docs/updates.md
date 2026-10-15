@@ -2,6 +2,8 @@
 
 The desktop app checks GitHub's latest stable release on startup and every six hours. Install with **Update and restart**, or silence the dialog for one hour, one day, one week, or the displayed release. Skipping a release does not suppress the next one. Desktop settings also include **Check for updates**, which ignores reminder preferences for that check.
 
+During a download, **Hide** keeps it running in the background. Progress appears in the title bar beside the logo; click it to reopen the dialog. **Cancel download** stops the download without installing. Installation still restarts the app when complete.
+
 In a terminal:
 
 ```sh
