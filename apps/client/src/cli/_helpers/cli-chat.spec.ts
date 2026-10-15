@@ -1,5 +1,5 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeConfig } from "../../core/runtime-contract.generated.js";
@@ -85,6 +85,7 @@ const runChat = async (
     result(args.task!),
   ),
   initialArgs: string[] = [],
+  selectedWorkspace = workspace,
 ) => {
   const input: ChatInput = {
     readLine: vi.fn(async () => {
@@ -98,15 +99,150 @@ const runChat = async (
   };
   const lines: string[] = [];
   await runInteractiveChat(
-    parseCliArgs(["chat", ...initialArgs], {
-      currentWorkingDirectory: workspace,
-    }),
+    parseCliArgs(
+      [
+        "chat",
+        ...(selectedWorkspace ? ["--cwd", selectedWorkspace] : []),
+        ...initialArgs,
+      ],
+      {
+        currentWorkingDirectory: workspace,
+      },
+    ),
     { input, executeTask, write: (line) => lines.push(line) },
   );
   return { input, lines, executeTask };
 };
 
 describe("interactive chat workflows", () => {
+  it("starts with Not Set and saves that workspace state", async () => {
+    const executeTask = vi.fn<typeof printTaskPreview>(async (args) =>
+      result(args.task!),
+    );
+    const { lines } = await runChat(["Hello", "/exit"], executeTask, [], "");
+    expect(lines.some((line) => line.startsWith("Not Set\n"))).toBe(true);
+    expect(loadRuntimeConfig).toHaveBeenCalledWith(
+      homedir(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect(executeTask.mock.calls[0]?.[0].workspaceRoot).toBe("");
+    expect(
+      executeTask.mock.calls[0]?.[1]?.conversationContext?.workspace,
+    ).toEqual({ selection: "not-set" });
+    const { sessions } = await listChatSessions();
+    expect(sessions[0]?.workspaceRoot).toBe(homedir());
+    expect(sessions[0]?.context.workspace).toEqual({ selection: "not-set" });
+  });
+
+  it("selects a workspace only when --cwd is provided", async () => {
+    const executeTask = vi.fn<typeof printTaskPreview>(async (args) =>
+      result(args.task!),
+    );
+    await runChat(["Hello", "/exit"], executeTask);
+    expect(executeTask.mock.calls[0]?.[0].workspaceRoot).toBe(workspace);
+    expect(
+      executeTask.mock.calls[0]?.[1]?.conversationContext?.workspace,
+    ).toEqual({ selection: "selected", root: workspace });
+  });
+
+  it("selects and clears the workspace without losing conversation history", async () => {
+    const snapshots: unknown[] = [];
+    const executeTask = vi.fn<typeof printTaskPreview>(
+      async (args, options) => {
+        snapshots.push(structuredClone(options?.conversationContext));
+        return result(args.task!);
+      },
+    );
+    await runChat(
+      [
+        "First",
+        `/workspace "${workspace}"`,
+        "Second",
+        "/workspace none",
+        "Third",
+        "/exit",
+      ],
+      executeTask,
+      [],
+      "",
+    );
+    expect(snapshots[1]).toMatchObject({
+      workspace: { selection: "selected", root: workspace },
+      earlierWorkspace: null,
+      history: [
+        { role: "user", content: "First" },
+        { role: "assistant", content: "Done: First" },
+      ],
+    });
+    expect(snapshots[2]).toMatchObject({
+      workspace: { selection: "not-set" },
+      earlierWorkspace: workspace,
+    });
+    expect(executeTask.mock.calls.map(([args]) => args.workspaceRoot)).toEqual([
+      "",
+      workspace,
+      "",
+    ]);
+    expect((await listChatSessions()).sessions[0]?.context.workspace).toEqual({
+      selection: "not-set",
+    });
+  });
+
+  it("defaults new conversations to Not Set and accepts an explicit workspace", async () => {
+    const executeTask = vi.fn<typeof printTaskPreview>(async (args) =>
+      result(args.task!),
+    );
+    await runChat(
+      ["First", "/new", "Second", `/new "${workspace}"`, "Third", "/exit"],
+      executeTask,
+    );
+    expect(executeTask.mock.calls.map(([args]) => args.workspaceRoot)).toEqual([
+      workspace,
+      "",
+      workspace,
+    ]);
+    expect(
+      executeTask.mock.calls[1]?.[1]?.conversationContext?.history,
+    ).toEqual([]);
+  });
+
+  it("resumes a saved conversation with Not Set", async () => {
+    await runChat(["Saved task", "/exit"], undefined, [], "");
+    const session = (await listChatSessions()).sessions[0]!;
+    menuMocks.select.mockResolvedValueOnce(session.id);
+    const executeTask = vi.fn<typeof printTaskPreview>(async (args) =>
+      result(args.task!),
+    );
+    const { lines } = await runChat(
+      ["/sessions Saved task", "Continue", "/exit"],
+      executeTask,
+    );
+    expect(lines.some((line) => line === "Conversation resumed.")).toBe(true);
+    expect(executeTask.mock.calls[0]?.[0].workspaceRoot).toBe("");
+    expect(
+      executeTask.mock.calls[0]?.[1]?.conversationContext?.workspace,
+    ).toEqual({ selection: "not-set" });
+    expect(menuMocks.select.mock.calls[0]?.[1][0].label).toContain("Not Set");
+  });
+
+  it("requires a workspace for Git changes and workspace memory", async () => {
+    const { lines } = await runChat(
+      ["/diff", "/memory workspace", "/forget workspace fact", "/exit"],
+      undefined,
+      [],
+      "",
+    );
+    expect(
+      lines.filter((line) =>
+        line.includes("Select a workspace with /workspace <folder>."),
+      ).length,
+    ).toBe(3);
+  });
+
   it("passes full history while limiting only the prompt window", async () => {
     await saveUserDesktopSettingsPatch({ aiContextMaxMessages: 1 });
     const snapshots: unknown[] = [];

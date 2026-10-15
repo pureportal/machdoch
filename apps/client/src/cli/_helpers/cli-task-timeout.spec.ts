@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { homedir } from "node:os";
+import { loadRuntimeConfig } from "../../core/config.js";
+import { discoverCustomizations } from "../../core/customizations.js";
 import { createTaskExecutionController } from "../../core/execution.js";
 import { parseCliArgs } from "./cli-args.js";
 import { printTaskPreview } from "./cli-task-run.js";
 
 vi.mock("../../core/config.js", () => ({
-  loadRuntimeConfig: vi.fn(async () => ({
+  loadRuntimeConfig: vi.fn(async (workspaceRoot) => ({
+    workspaceRoot,
     mode: "machdoch",
     compatibility: { discoverGithubCustomizations: false },
   })),
@@ -28,6 +32,68 @@ vi.mock("../../core/execution.js", () => ({
 }));
 
 afterEach(() => vi.clearAllMocks());
+
+describe("CLI task workspace selection", () => {
+  it("uses Not Set without loading the launch folder or capturing its changes", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await printTaskPreview(parseCliArgs(["run", "Hello", "--json"]));
+    expect(loadRuntimeConfig).toHaveBeenCalledWith(
+      homedir(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect(discoverCustomizations).toHaveBeenCalledWith(
+      homedir(),
+      expect.anything(),
+    );
+    expect(
+      vi.mocked(createTaskExecutionController).mock.calls[0]?.[3],
+    ).toMatchObject({
+      captureFileChanges: false,
+      conversationContext: { workspace: { selection: "not-set" } },
+    });
+  });
+
+  it("uses the selected folder when --cwd is provided", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await printTaskPreview(
+      parseCliArgs(["run", "Hello", "--cwd", process.cwd(), "--json"]),
+    );
+    expect(loadRuntimeConfig).toHaveBeenCalledWith(
+      process.cwd(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect(
+      vi.mocked(createTaskExecutionController).mock.calls[0]?.[3],
+    ).not.toHaveProperty("captureFileChanges");
+  });
+
+  it("keeps desktop Not Set context when the bridge supplies a runtime directory", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await printTaskPreview(
+      parseCliArgs(["run", "Hello", "--cwd", homedir(), "--json"]),
+      {
+        conversationContext: {
+          history: [],
+          workspace: { selection: "not-set" },
+        },
+      },
+    );
+    expect(
+      vi.mocked(createTaskExecutionController).mock.calls[0]?.[3],
+    ).toMatchObject({
+      captureFileChanges: false,
+      conversationContext: { workspace: { selection: "not-set" } },
+    });
+  });
+});
 
 describe("desktop task timeout ownership", () => {
   it.each([

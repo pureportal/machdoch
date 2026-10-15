@@ -6,7 +6,7 @@ import type {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ParsedCliArgs } from "./cli-args.ts";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   applyContextPathsToTask,
@@ -77,9 +77,9 @@ afterEach(async () => {
 
 describe("resolveConversationContext", () => {
   it("starts an empty context when neither a base context nor CLI overrides exist", async () => {
-    await expect(
-      resolveConversationContext(createArgs()),
-    ).resolves.toEqual({ history: [] });
+    await expect(resolveConversationContext(createArgs())).resolves.toEqual({
+      history: [],
+    });
   });
 
   it("preserves explicit conversation state when no CLI overrides are provided", async () => {
@@ -301,6 +301,21 @@ describe("createImageInputsFromPaths", () => {
     expect(probeCodexCliImageInput).toHaveBeenCalledWith(
       "gpt-6-sol",
       workspaceRoot,
+    );
+  });
+
+  it("probes Codex image support from the runtime directory when no workspace is selected", async () => {
+    const directory = await createWorkspace();
+    const imagePath = join(directory, "screen.png");
+    await writeFile(imagePath, Buffer.from("image"));
+    probeCodexCliImageInput.mockResolvedValue(true);
+    await createImageInputsFromPaths([imagePath], "", {
+      provider: "codex-cli",
+      model: "gpt-6-sol",
+    });
+    expect(probeCodexCliImageInput).toHaveBeenCalledWith(
+      "gpt-6-sol",
+      homedir(),
     );
   });
 

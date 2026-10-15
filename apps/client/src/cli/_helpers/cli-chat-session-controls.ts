@@ -14,7 +14,18 @@ import {
   type ChatState,
 } from "./cli-chat-controls.js";
 import { CliUsageError } from "./cli-error.js";
+import { resolveCliWorkspaceRoot } from "./cli-workspace.js";
 import { resolveConversationContext } from "./cli-task-run.js";
+
+const resolveChatWorkspace = async (
+  root: string,
+  path: string,
+): Promise<string> => {
+  const workspaceRoot = await realpath(resolve(root, path));
+  if (!(await stat(workspaceRoot)).isDirectory())
+    throw new CliUsageError("Choose a workspace folder.");
+  return workspaceRoot;
+};
 
 export const handleChatSessionControl = async (
   command: string,
@@ -28,11 +39,9 @@ export const handleChatSessionControl = async (
   };
   if (command === "new") {
     if (values.length > 1) usage("[workspace]");
-    const workspaceRoot = await realpath(
-      resolve(state.args.workspaceRoot, values[0] ?? "."),
-    );
-    if (!(await stat(workspaceRoot)).isDirectory())
-      throw new CliUsageError("Choose a workspace folder.");
+    const workspaceRoot = values[0]
+      ? await resolveChatWorkspace(state.args.workspaceRoot, values[0])
+      : "";
     const {
       contextPaths: _context,
       imagePaths: _images,
@@ -52,6 +61,33 @@ export const handleChatSessionControl = async (
     showChatStatus(state, write);
     return true;
   }
+  if (command === "workspace") {
+    if (values.length > 1) usage("[folder|none]");
+    if (!values.length) {
+      write(state.args.workspaceRoot || "Not Set");
+      return true;
+    }
+    const workspaceRoot =
+      values[0] === "none"
+        ? ""
+        : await resolveChatWorkspace(state.args.workspaceRoot, values[0]!);
+    const args = { ...state.args, workspaceRoot };
+    const config = await loadChatConfig(args);
+    state.session.context.earlierWorkspace = state.args.workspaceRoot || null;
+    state.session.context.workspace = workspaceRoot
+      ? { selection: "selected", root: workspaceRoot }
+      : { selection: "not-set" };
+    delete state.session.context.workspaceRun;
+    delete state.session.context.workspaceMemoryEnabled;
+    state.session.workspaceRoot = resolveCliWorkspaceRoot(workspaceRoot);
+    state.args = args;
+    state.config = config;
+    delete state.args.contextPaths;
+    delete state.args.imagePaths;
+    delete state.lastTask;
+    showChatStatus(state, write);
+    return true;
+  }
   if (command === "sessions") {
     const { sessions, errors } = await listChatSessions();
     for (const error of errors) write(`Could not read session: ${error}`);
@@ -59,7 +95,7 @@ export const handleChatSessionControl = async (
     const matches = sessions.filter(
       (session) =>
         session.id !== state.session.id &&
-        `${session.workspaceRoot} ${session.context.history.map((entry) => entry.content).join(" ")}`
+        `${session.context.workspace?.selection === "not-set" ? "Not Set" : session.workspaceRoot} ${session.context.history.map((entry) => entry.content).join(" ")}`
           .toLowerCase()
           .includes(search),
     );
@@ -77,7 +113,7 @@ export const handleChatSessionControl = async (
               .find((entry) => entry.role === "user")
               ?.content.replace(/\s+/gu, " ")
               .slice(0, 65) ?? "Conversation"
-          } · ${session.workspaceRoot}`,
+          } · ${session.context.workspace?.selection === "not-set" ? "Not Set" : session.workspaceRoot}`,
         })),
       ),
     );
@@ -91,7 +127,10 @@ export const handleChatSessionControl = async (
       command: "chat",
       json: false,
       verbose: state.args.verbose,
-      workspaceRoot: session.workspaceRoot,
+      workspaceRoot:
+        session.context.workspace?.selection === "not-set"
+          ? ""
+          : session.workspaceRoot,
       ...(session.provider ? { runtimeProvider: session.provider } : {}),
       ...(session.model ? { model: session.model } : {}),
       ...(session.mode ? { mode: session.mode } : {}),

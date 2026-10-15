@@ -19,6 +19,7 @@ import type {
   TaskConversationContext,
 } from "../../core/types.js";
 import { CliUsageError } from "./cli-error.js";
+import { resolveCliWorkspaceRoot } from "./cli-workspace.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -173,7 +174,7 @@ export const createChatSession = (
   return {
     id,
     revision: 0,
-    workspaceRoot,
+    workspaceRoot: workspaceRoot || resolveCliWorkspaceRoot(""),
     updatedAt: Date.now(),
     parallelAgentMode: context.parallelAgentMode ?? "disabled",
     context: {
@@ -183,7 +184,9 @@ export const createChatSession = (
       sessionMemory: context.sessionMemory ?? [],
       sessionMemoryEnabled: context.sessionMemoryEnabled ?? true,
       sessionId: id,
-      workspace: { selection: "selected", root: workspaceRoot },
+      workspace: workspaceRoot
+        ? { selection: "selected", root: workspaceRoot }
+        : { selection: "not-set" },
     },
   };
 };

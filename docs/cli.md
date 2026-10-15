@@ -1,6 +1,6 @@
 # Terminal
 
-Start an interactive session with `machdoch --cli`, or run a single task with `machdoch run "your task"`. Use `--cwd <folder>` to choose the workspace.
+Start an interactive session with `machdoch --cli`, or run a single task with `machdoch run "your task"`. The workspace defaults to **Not Set**. Use `--cwd .` to select the current folder, or `--cwd <folder>` to select another workspace.
 
 Run `machdoch update` to install the latest release, or `machdoch update --check` to check first. See [Updating Machdoch](updates.md).
 
@@ -31,6 +31,8 @@ Bracketed paste keeps a whole block editable, including newlines and tabs. In a 
 ## Conversation
 
 Use `/commands` to search the command menu, `/model` to switch models, `/sessions` to resume a saved conversation, and `/retry` to repeat the last task. `/diff` shows unstaged Git changes; `/diff staged` shows staged changes. `/verbose on` shows full tool output. `/export <file>` saves conversation context.
+
+Use `/workspace <folder>` to select a workspace and `/workspace none` to clear it. `/new` starts a conversation with **Not Set**; `/new <folder>` selects a workspace for the new conversation.
 
 Activity stays above the prompt, with live elapsed time, tool output, completion or failure, and formatted answers. `NO_COLOR` disables colors. Piped and JSON output remain suitable for scripts.
 

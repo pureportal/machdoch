@@ -23,6 +23,7 @@ export const CHAT_COMMANDS = [
   ],
   ["reasoning", "[level]", "Change reasoning"],
   ["new", "[workspace]", "Start a conversation"],
+  ["workspace", "[folder|none]", "Choose or clear the workspace"],
   ["sessions", "[search]", "Resume a saved CLI conversation"],
   ["history", "[search]", "Show conversation messages"],
   ["export", "<file>", "Export conversation context"],
@@ -77,6 +78,7 @@ export const completeChatCommand = (line: string): [string[], string] => {
       "aeon",
     ],
     verbose: ["on", "off"],
+    workspace: ["none"],
     memory: ["session", "workspace", "global"],
     config: ["edit", "list", "show", "get", "set", "unset"],
   };
