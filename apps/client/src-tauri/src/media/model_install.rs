@@ -838,15 +838,15 @@ fn delete_model_data(paths: &MediaRuntimePaths, removal_id: &str) -> MediaResult
     }
     let shared_components: Option<String> = connection
         .query_row(
-            "SELECT CASE architecture
-               WHEN 'krea-2' THEN 'components/krea-2'
-               WHEN 'qwen-image-2.1' THEN 'components/qwen-image-2.1'
-               END
-             FROM media_models WHERE id = ?1 AND NOT EXISTS (
+            "SELECT CASE WHEN NOT EXISTS (
                SELECT 1 FROM media_models m JOIN media_model_installations i ON i.model_id = m.id
                WHERE m.architecture = media_models.architecture AND m.id != ?1
                  AND i.status IN ('installed', 'removing')
-             )",
+             ) THEN CASE architecture
+               WHEN 'krea-2' THEN 'components/krea-2'
+               WHEN 'qwen-image-2.1' THEN 'components/qwen-image-2.1'
+               END END
+             FROM media_models WHERE id = ?1",
             [&model_id],
             |row| row.get(0),
         )
@@ -1927,7 +1927,7 @@ mod tests {
     }
 
     #[test]
-    fn reviewed_removal_atomically_detaches_revision_and_updates_catalog_state() {
+    fn reviewed_removal_detaches_revision_and_retains_other_models_of_the_same_architecture() {
         let (root, paths) = test_paths("remove");
         database::initialize(&paths).expect("database should initialize");
         let relative_path = format!(
@@ -1955,6 +1955,28 @@ mod tests {
             )
             .expect("installation should be recorded");
 
+        let retained_relative_path = format!(
+            "packages/{}/revisions/{}",
+            BIREFNET_MANIFEST.slug, BIREFNET_MANIFEST.revision
+        );
+        let retained_root = paths.models_root().unwrap().join(&retained_relative_path);
+        fs::create_dir_all(&retained_root).unwrap();
+        fs::write(retained_root.join("fixture.bin"), b"retained").unwrap();
+        let connection = database::open(&paths).unwrap();
+        connection
+            .execute(
+                "UPDATE media_models SET architecture = (SELECT architecture FROM media_models WHERE id = ?1) WHERE id = ?2",
+                params![FLUX_MANIFEST.model_id, BIREFNET_MANIFEST.model_id],
+            )
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO media_model_installations(model_id, revision, status, manifest_digest, bytes_on_disk, installed_at, verified_at, updated_at, relative_path) VALUES (?1, ?2, 'installed', ?3, 8, ?4, ?4, ?4, ?5)",
+                params![BIREFNET_MANIFEST.model_id, BIREFNET_MANIFEST.revision, manifest_digest(&BIREFNET_MANIFEST), database::now(), retained_relative_path],
+            )
+            .unwrap();
+        drop(connection);
+
         let plan = plan_removal(&paths, FLUX_MANIFEST.model_id).expect("removal should be planned");
         let result = remove(
             &paths,
@@ -1970,6 +1992,10 @@ mod tests {
         assert!(!revision_root.exists());
         assert!(!package_root.join("active.json").exists());
         assert!(!package_root.exists());
+        assert_eq!(
+            fs::read(retained_root.join("fixture.bin")).unwrap(),
+            b"retained"
+        );
         let remaining: u32 = database::open(&paths)
             .expect("database should open")
             .query_row(
@@ -1979,6 +2005,15 @@ mod tests {
             )
             .expect("installation state should be deleted");
         assert_eq!(remaining, 0);
+        let retained_status: String = database::open(&paths)
+            .unwrap()
+            .query_row(
+                "SELECT status FROM media_model_installations WHERE model_id = ?1",
+                [BIREFNET_MANIFEST.model_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(retained_status, "installed");
         let _ = fs::remove_dir_all(root);
     }
 }
