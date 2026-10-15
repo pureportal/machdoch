@@ -1,4 +1,6 @@
-use machdoch_fleet_protocol::{HostRequest, HostResponse, ProductCommand, MAX_COMPOSER_TEXT_CHARACTERS};
+use machdoch_fleet_protocol::{
+    HostRequest, HostResponse, ProductCommand, MAX_COMPOSER_TEXT_CHARACTERS,
+};
 use serde_json::{json, Value};
 
 fn fixtures() -> Value {
@@ -134,7 +136,10 @@ fn composer_text_limits_count_utf16_units_and_preserve_blank_queue_edits() {
         "image input reason at limit",
     );
     assert_snapshot_acceptance(
-        snapshot_with_composer(&fixtures, &json!({"imageInputDisabledReason": reason + "x"})),
+        snapshot_with_composer(
+            &fixtures,
+            &json!({"imageInputDisabledReason": reason + "x"}),
+        ),
         false,
         "image input reason exceeds limit",
     );
@@ -145,13 +150,15 @@ fn composer_collection_limits_accept_the_final_slot_and_reject_overflow() {
     let fixtures = fixtures();
     for count in [512, 513] {
         let messages: Vec<_> = (0..count)
-            .map(|index| json!({
-                "id": format!("message-{index}"),
-                "content": "",
-                "attachments": [],
-                "status": "queued",
-                "createdAt": 0,
-            }))
+            .map(|index| {
+                json!({
+                    "id": format!("message-{index}"),
+                    "content": "",
+                    "attachments": [],
+                    "status": "queued",
+                    "createdAt": 0,
+                })
+            })
             .collect();
         assert_snapshot_acceptance(
             snapshot_with_composer(&fixtures, &json!({"queuedMessages": messages})),
@@ -161,10 +168,12 @@ fn composer_collection_limits_accept_the_final_slot_and_reject_overflow() {
     }
     for count in [64, 65] {
         let attachments: Vec<_> = (0..count)
-            .map(|index| json!({
-                "id": format!("attachment-{index}"), "source": "path",
-                "kind": "file", "name": "", "path": "",
-            }))
+            .map(|index| {
+                json!({
+                    "id": format!("attachment-{index}"), "source": "path",
+                    "kind": "file", "name": "", "path": "",
+                })
+            })
             .collect();
         let composer = json!({
             "queuedMessages": [{
