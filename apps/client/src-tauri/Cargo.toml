@@ -1,6 +1,6 @@
 [package]
 name = "machdoch"
-version = "31.0.1"
+version = "32.0.0"
 license = "Apache-2.0"
 description = "Local-first OS AI agent desktop shell"
 authors = ["Andreas Ehrhardt <a.ehrhardt@alphartis.com>"]
