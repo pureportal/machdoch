@@ -70,7 +70,7 @@ fn dev_gguf_folder_is_importable_with_complete_components() {
     assert!(review.can_import);
     assert_eq!(review.detected_architecture.as_deref(), Some("flux-2-dev"));
     fs::remove_file(package.0.join("text_encoder/model.safetensors")).unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("Missing safetensors weights for text_encoder"));
@@ -84,13 +84,13 @@ fn dev_folder_rejects_klein_configuration_and_missing_processor() {
     let mut config: serde_json::Value = serde_json::from_slice(&original).unwrap();
     config["num_attention_heads"] = json!(24);
     fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("32B transformer"));
     fs::write(&path, original).unwrap();
     fs::remove_file(package.0.join("tokenizer/processor_config.json")).unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("processor_config.json"));
@@ -104,7 +104,7 @@ fn dev_folder_rejects_text_only_encoder_and_wrong_gguf_architecture() {
         super::super::super::gguf_weights::fixture("qwen_image", 12, 256, 144),
     )
     .unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("does not match"));
@@ -117,7 +117,7 @@ fn dev_folder_rejects_text_only_encoder_and_wrong_gguf_architecture() {
     let mut config: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     config.as_object_mut().unwrap().remove("vision_config");
     fs::write(path, serde_json::to_vec(&config).unwrap()).unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("complete FLUX.2 Dev Mistral"));

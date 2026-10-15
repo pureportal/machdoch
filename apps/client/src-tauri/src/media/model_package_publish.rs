@@ -44,7 +44,7 @@ fn fingerprint(
             digest,
         });
     }
-    if inventory(&package.root)?.review_token != package.review_token {
+    if inventory(&package.root, true)?.review_token != package.review_token {
         return Err("The model changed during import.".to_string());
     }
     Ok((format!("{:x}", hasher.finalize()), files))
@@ -57,7 +57,7 @@ fn publish_files(
     files: &[PackageFile],
 ) -> MediaResult<()> {
     if destination.exists() {
-        let installed = inventory(destination)?;
+        let installed = inventory(destination, true)?;
         if installed.files.len() != files.len() {
             return Err(
                 "The existing model package is incomplete. Remove it and import again.".to_string(),
@@ -95,7 +95,7 @@ fn publish_files(
                 return Err("The model changed during import.".to_string());
             }
         }
-        if inventory(&package.root)?.review_token != package.review_token {
+        if inventory(&package.root, true)?.review_token != package.review_token {
             return Err("The model changed during import.".to_string());
         }
         fs::create_dir_all(destination.parent().ok_or("Invalid model revision")?)
@@ -126,7 +126,7 @@ pub(super) fn publish(
         [&model_id], |row| row.get::<_, bool>(0)
     ).map_err(|error| error.to_string())?;
     publish_files(&root, &root.join(&relative_path), package, &files)?;
-    if inventory(&package.root)?.review_token != package.review_token {
+    if inventory(&package.root, true)?.review_token != package.review_token {
         return Err("The model changed during import.".to_string());
     }
     let imported_at = database::now();

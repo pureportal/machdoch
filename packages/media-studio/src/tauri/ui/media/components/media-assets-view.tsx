@@ -283,6 +283,9 @@ export const MediaAssetsView = ({
   >();
   const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(
+  const [configureFile, setConfigureFile] = useState<
+    (typeof discoveredFiles)[number] | null
+  >(null);
     openAssetId ?? null,
   );
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(
@@ -429,6 +432,59 @@ export const MediaAssetsView = ({
       : [];
   const visibleMedia = discoverMediaResources(assets, metadata, categories, {
     ...resourceFilters,
+  const visibleFiles =
+    showResources && ["all", "model", "lora", "embedding"].includes(filter)
+      ? discoveredFiles
+          .filter((file) => {
+            const addon = file.kind === "model-addon";
+            const kind = addon
+              ? file.capabilities.includes("textual-inversion")
+                ? "embedding"
+                : "lora"
+              : "model";
+            return (
+              file.kind !== "source-repository" &&
+              !(
+                file.status === "ready" &&
+                catalog.models.some(
+                  (model) =>
+                    model.installed &&
+                    model.architecture === file.architecture &&
+                    model.management.acquisition === "workspace-discovery",
+                )
+              ) &&
+              (filter === "all" || filter === kind) &&
+              resourceMatches(
+                [
+                  file.displayName,
+                  file.relativePath,
+                  file.architecture,
+                  "unconfigured",
+                ],
+                query,
+              ) &&
+              matchesArchitecture(file.architecture) &&
+              matchesCategoryFilter(file.path) &&
+              tagFilter === "all" &&
+              (filter !== "model" ||
+                (modelFilters.target !== "remote" &&
+                  modelFilters.readiness !== "ready"))
+            );
+          })
+          .sort((left, right) => {
+            if (sort === "largest" || sort === "smallest") {
+              return (
+                (left.byteSize - right.byteSize) * (sort === "largest" ? -1 : 1)
+              );
+            }
+            return (
+              left.displayName.localeCompare(right.displayName, undefined, {
+                numeric: true,
+                sensitivity: "base",
+              }) * (sort === "name-desc" ? -1 : 1)
+            );
+          })
+      : [];
     sort: sort === "default" ? "newest" : sort,
   }).filter(
     (asset) =>
@@ -478,16 +534,22 @@ export const MediaAssetsView = ({
             );
   const availableTags = listMediaResourceTags(filteredTypeResources, metadata);
   const architectures = [
-    ...new Set(
-      filteredTypeResources.flatMap((resource) =>
+    ...new Set([
+      ...filteredTypeResources.flatMap((resource) =>
         "architecture" in resource && resource.architecture
           ? [resource.architecture]
           : [],
       ),
-    ),
+      ...discoveredFiles.flatMap((file) =>
+        file.architecture ? [file.architecture] : [],
+      ),
+    ]),
   ].sort();
   const totalVisible =
-    visibleModels.length + visibleAddons.length + visibleMedia.length;
+    visibleModels.length +
+    visibleAddons.length +
+    visibleMedia.length +
+    visibleFiles.length;
   const formats = [
     ...new Set(
       assets
@@ -726,7 +788,7 @@ export const MediaAssetsView = ({
           onClick={onScanModels}
           disabled={importLoading}
         >
-          Scan models
+          Refresh
         </Button>
         <MediaImportJobs onOpen={showResource} />
         {persistenceError ? (
@@ -790,46 +852,6 @@ export const MediaAssetsView = ({
         onClear={clearFilters}
       />
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
-        {discoveredFiles.some((file) => file.status === "importable") &&
-        showResources &&
-        ["all", "model", "lora", "embedding"].includes(filter) ? (
-          <details className="mb-4 rounded-xl border border-slate-800 p-3">
-            <summary className="cursor-pointer text-sm text-slate-300">
-              Workspace files
-            </summary>
-            {discoveredFiles
-              .filter(
-                (file) =>
-                  file.status === "importable" &&
-                  resourceMatches([file.displayName, file.relativePath], query),
-              )
-              .sort((left, right) =>
-                left.displayName.localeCompare(right.displayName, undefined, {
-                  numeric: true,
-                  sensitivity: "base",
-                }),
-              )
-              .map((file) => (
-                <div key={file.path} className="mt-3 flex items-center gap-3">
-                  <span className="min-w-0 flex-1 truncate text-xs text-slate-300">
-                    {file.relativePath}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={importLoading}
-                    onClick={() => {
-                      setImportPath(file.path);
-                      setImportArchitecture(undefined);
-                      setImportOpen(true);
-                    }}
-                  >
-                    Import {file.displayName}
-                  </Button>
-                </div>
-              ))}
-          </details>
-        ) : null}
         {totalVisible === 0 ? (
           <div className="flex min-h-72 items-center justify-center rounded-2xl border border-dashed border-slate-800 text-sm text-slate-500">
             {activeFilterCount > 0 ? "No matching assets" : "Import an asset"}
@@ -971,6 +993,49 @@ export const MediaAssetsView = ({
             })}
             {filter === "all" && visibleAddons.length > 0 ? (
               <h2 className="col-span-full text-sm font-medium text-slate-300">
+            {visibleFiles.map((file) => (
+              <article
+                key={file.path}
+                className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/55 p-3"
+              >
+                <h2 className="truncate text-sm font-semibold text-slate-100">
+                  {file.displayName}
+                </h2>
+                <p className="mt-1 truncate text-xs text-slate-500">
+                  {file.relativePath}
+                </p>
+                <p className="mt-2 text-xs text-slate-400">
+                  {file.status === "importable" || file.status === "ready"
+                    ? "Unconfigured"
+                    : file.status === "incomplete"
+                      ? "Incomplete"
+                      : "Unsupported"}
+                </p>
+                {file.status === "importable" || file.status === "ready" ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="mt-3 w-full"
+                    disabled={importLoading || !importSupported}
+                    aria-label={`Configure ${file.displayName}`}
+                    onClick={() => {
+                      setConfigureFile(file);
+                      setImportPath(file.path);
+                      setImportArchitecture(file.architecture ?? undefined);
+                      setImportOpen(true);
+                    }}
+                  >
+                    Configure
+                  </Button>
+                ) : (
+                  <details className="mt-3 text-xs text-slate-400">
+                    <summary className="cursor-pointer">Show details</summary>
+                    <p className="mt-2 break-words">{file.diagnostic}</p>
+                  </details>
+                )}
+              </article>
+            ))}
                 LoRAs and embeddings
               </h2>
             ) : null}
@@ -1489,6 +1554,17 @@ export const MediaAssetsView = ({
           onInspectModel={onInspectModel}
           onInspectAddon={onInspectAddon}
           onInspectCivitai={onInspectCivitai}
+          initialType={
+            configureFile
+              ? configureFile.kind === "model-addon"
+                ? configureFile.capabilities.includes("textual-inversion")
+                  ? "embedding"
+                  : "lora"
+                : "model"
+              : undefined
+          }
+          configure={configureFile !== null}
+          initialDisplayName={configureFile?.displayName}
           onImportMedia={onImportMedia}
           onImportModel={onImportModel}
           onImportAddon={onImportAddon}
@@ -1507,6 +1583,7 @@ export const MediaAssetsView = ({
             onDismissImport();
           }}
         />
+              setConfigureFile(null);
       ) : null}
       {categoryManagerOpen ? (
         <MediaCategoryManagerDialog
@@ -1514,6 +1591,7 @@ export const MediaAssetsView = ({
           metadata={metadata}
           onChange={onCategoryStateChange}
           onClose={() => setCategoryManagerOpen(false)}
+            setConfigureFile(null);
         />
       ) : null}
       <Dialog

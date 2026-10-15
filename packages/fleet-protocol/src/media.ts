@@ -3,6 +3,7 @@ import { z } from "zod";
 export const mediaCommands = [
   "media_get_asset_storage",
   "media_move_asset_storage",
+  "media_use_model_storage",
   "media_resume_asset_storage",
   "media_read_studio_state",
   "media_write_studio_state",
@@ -91,7 +92,8 @@ export const mediaRequestSchema = z.discriminatedUnion("kind", [
     })
     .superRefine(({ command, args }, context) => {
       const schema =
-        command === "media_move_asset_storage"
+        command === "media_move_asset_storage" ||
+        command === "media_use_model_storage"
           ? z.strictObject({
               folder: z
                 .string()

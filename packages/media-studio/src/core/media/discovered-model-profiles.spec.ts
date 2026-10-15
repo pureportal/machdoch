@@ -85,6 +85,17 @@ const runtime = (
   diagnostic: "Ready.",
 });
 
+it("keeps new library packages unconfigured even when a runtime is ready", () => {
+  const catalog = baseCatalog();
+  expect(
+    extendMediaCatalogWithWorkspaceDiscovery({
+      catalog,
+      discovery: discovery("importable"),
+      runtime: runtime(),
+    }),
+  ).toBe(catalog);
+});
+
 const ltxDiscovery = (): MediaWorkspaceModelDiscovery => ({
   ...discovery(),
   entries: [
@@ -127,7 +138,9 @@ it("reports a failed runtime probe before checking hardware limits", () => {
     discovery: ltxDiscovery(),
     runtime: unavailable,
   });
-  const models = catalog.models.filter((model) => model.architecture === "ltx-video");
+  const models = catalog.models.filter(
+    (model) => model.architecture === "ltx-video",
+  );
   expect(models).toHaveLength(2);
   for (const model of models) {
     expect(model.configured).toBe(false);

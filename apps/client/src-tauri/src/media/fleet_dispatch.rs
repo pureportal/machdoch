@@ -51,12 +51,20 @@ pub(crate) async fn invoke(
             )
             .map_err(|error| json!(error.to_string()))?
         }
-        "media_move_asset_storage" => {
+        "media_move_asset_storage" | "media_use_model_storage" => {
             check_arguments(&args, &["folder"])?;
             serde_json::to_value(
-                super::storage::media_move_asset_storage(app.clone(), argument(&args, "folder")?)
+                if command == "media_move_asset_storage" {
+                    super::storage::media_move_asset_storage(
+                        app.clone(),
+                        argument(&args, "folder")?,
+                    )
                     .await
-                    .map_err(error_value)?,
+                } else {
+                    super::storage::media_use_model_storage(app.clone(), argument(&args, "folder")?)
+                        .await
+                }
+                .map_err(error_value)?,
             )
             .map_err(|error| json!(error.to_string()))?
         }
@@ -533,9 +541,12 @@ pub(crate) async fn invoke(
         "media_discover_workspace_models" => {
             check_arguments(&args, &["workspaceRoot"])?;
             serde_json::to_value(
-                super::media_discover_workspace_models(argument(&args, "workspaceRoot")?)
-                    .await
-                    .map_err(error_value)?,
+                super::media_discover_workspace_models(
+                    app.clone(),
+                    argument(&args, "workspaceRoot")?,
+                )
+                .await
+                .map_err(error_value)?,
             )
             .map_err(|error| json!(error.to_string()))?
         }

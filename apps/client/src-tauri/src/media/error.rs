@@ -154,7 +154,11 @@ impl MediaError {
             category,
             message: if let Some((_, message)) = recovery {
                 message.to_string()
-            } else if operation.contains("training") || operation.contains("civitai") {
+            } else if operation.contains("training")
+                || operation.contains("civitai")
+                || operation.ends_with("_asset_storage")
+                || operation == "media_use_model_storage"
+            {
                 sanitize_diagnostic(&diagnostic)
             } else if cause.contains("cannot fit all vectors for") {
                 "Prompt is too long for the selected embeddings. Shorten it or remove an embedding."
@@ -200,6 +204,23 @@ pub(crate) fn command_result<T>(
 }
 
 fn classify(operation: &str, diagnostic: &str) -> MediaErrorCode {
+    if operation.ends_with("_asset_storage") || operation == "media_use_model_storage" {
+        if diagnostic.contains("not enough free space")
+            || diagnostic.contains("no space")
+            || diagnostic.contains("disk full")
+            || diagnostic.contains("insufficient space")
+        {
+            return MediaErrorCode::DiskFull;
+        }
+        if diagnostic.starts_with("choose ")
+            || diagnostic.starts_with("the destination is not empty")
+            || diagnostic.starts_with("resume the existing")
+            || diagnostic.starts_with("finish the asset move")
+        {
+            return MediaErrorCode::InvalidRequest;
+        }
+        return MediaErrorCode::StorageUnavailable;
+    }
     if diagnostic.contains("install the media studio python runtime") {
         return MediaErrorCode::RuntimeNotInstalled;
     }
@@ -758,6 +779,30 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn asset_storage_errors_keep_the_reason_and_recovery_instruction() {
+        let diagnostic = "The destination is not empty. Choose an empty folder to move assets, or use its model folder without moving files.";
+        let error = MediaError::from_internal("media_move_asset_storage", diagnostic);
+        assert_eq!(error.code, MediaErrorCode::InvalidRequest);
+        assert_eq!(error.message, diagnostic);
+        for operation in [
+            "media_move_asset_storage",
+            "media_resume_asset_storage",
+            "media_use_model_storage",
+        ] {
+            let diagnostic =
+                "Media Studio is busy. Wait for downloads and generation to finish, then retry.";
+            let error = MediaError::from_internal(operation, diagnostic);
+            assert_eq!(error.code, MediaErrorCode::StorageUnavailable);
+            assert_eq!(error.message, diagnostic);
+            let error = MediaError::from_internal(
+                operation,
+                "Not enough free space. Free up space and retry.",
+            );
+            assert_eq!(error.code, MediaErrorCode::DiskFull);
+        }
+    }
 
     #[test]
     fn gpu_memory_errors_offer_recovery_without_matching_unrelated_words() {

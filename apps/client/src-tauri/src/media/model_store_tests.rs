@@ -31,11 +31,16 @@ fn playwright_model_store() {
                         .map_err(|error| error.to_string())?,
                 )?),
                 "media_get_model_catalog" => {
-                    let status = runtime.get_or_insert_with(|| probe_python(&python, &script));
                     let mut catalog = database::get_model_catalog(&paths, &HashSet::new())?;
-                    annotate_catalog_readiness(status, &mut catalog.models);
+                    if args["includeRuntimeReadiness"].as_bool().unwrap_or(true) {
+                        let status = runtime.get_or_insert_with(|| probe_python(&python, &script));
+                        annotate_catalog_readiness(status, &mut catalog.models);
+                    }
                     serde_json::to_value(catalog)
                 }
+                "media_discover_workspace_models" => serde_json::to_value(
+                    super::super::model_library::discover(&paths, args["workspaceRoot"].as_str())?,
+                ),
                 "media_initialize_runtime" => {
                     let status = runtime.get_or_insert_with(|| probe_python(&python, &script));
                     let models = runnable_model_ids(&paths, status)?;

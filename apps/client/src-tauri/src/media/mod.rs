@@ -26,11 +26,14 @@ mod local_flow;
 mod model_addon;
 mod model_components;
 mod model_discovery;
+mod model_library;
+mod model_library_source;
 mod model_import;
 mod model_install;
 pub(crate) mod model_memory;
 mod model_package_import;
 mod model_resource_edit;
+mod model_storage;
 mod model_worker;
 mod open_models;
 mod pose_map;
@@ -88,8 +91,14 @@ impl MediaRuntimePaths {
     fn models_root(&self) -> MediaResult<PathBuf> {
         self.database
             .parent()
-            .map(|root| root.join("models"))
             .ok_or_else(|| "Media Studio storage path has no parent directory".to_string())
+            .and_then(model_storage::folder)
+    }
+
+    fn configured_models_root(&self) -> MediaResult<PathBuf> {
+        self.database.parent()
+            .ok_or_else(|| "Media Studio storage path has no parent directory".to_string())
+            .and_then(model_storage::configured_folder)
     }
 }
 
@@ -5295,10 +5304,13 @@ pub(crate) async fn media_get_model_catalog(
 
 #[tauri::command]
 pub(crate) async fn media_discover_workspace_models(
-    workspace_root: String,
+    app: AppHandle,
+    workspace_root: Option<String>,
 ) -> MediaCommandResult<MediaWorkspaceModelDiscovery> {
     let result =
-        tauri::async_runtime::spawn_blocking(move || model_discovery::discover(&workspace_root))
+        tauri::async_runtime::spawn_blocking(move || {
+            model_library::discover(&MediaRuntimePaths::resolve(&app)?, workspace_root.as_deref())
+        })
             .await
             .map_err(|error| {
                 format!("workspace model discovery worker could not be joined: {error}")

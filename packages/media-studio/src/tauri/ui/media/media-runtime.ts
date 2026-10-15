@@ -1582,20 +1582,17 @@ export const getMediaModelCatalog = async (
 };
 
 export const discoverMediaWorkspaceModels = async (
-  workspaceRoot: string,
+  workspaceRoot?: string,
 ): Promise<MediaWorkspaceModelDiscovery> => {
-  if (!workspaceRoot.trim()) {
-    throw new Error("A workspace root is required for model discovery.");
-  }
   if (canInvokeNativeRuntime()) {
     return invoke<MediaWorkspaceModelDiscovery>(
       "media_discover_workspace_models",
-      { workspaceRoot },
+      { workspaceRoot: workspaceRoot?.trim() || null },
     );
   }
   return {
     schemaVersion: 1,
-    rootPath: `${workspaceRoot}/models`,
+    rootPath: workspaceRoot ? `${workspaceRoot}/models` : "",
     scannedAt: new Date().toISOString(),
     entries: [],
     truncated: false,

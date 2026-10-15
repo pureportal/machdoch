@@ -1385,6 +1385,9 @@ fn imported_duplicate(
     paths: &MediaRuntimePaths,
     digest: &str,
 ) -> MediaResult<Option<MediaAssetImportDuplicate>> {
+    if !stored_addon_exists(paths, digest)? {
+        return Ok(None);
+    }
     database::open(paths)?
         .query_row(
             "SELECT id, display_name, kind FROM media_model_addons WHERE digest = ?1 LIMIT 1",
@@ -1639,15 +1642,27 @@ fn validate_request(
 }
 
 fn stored_addon_exists(paths: &MediaRuntimePaths, digest: &str) -> MediaResult<bool> {
-    database::open(paths)?
+    let expected_bytes = database::open(paths)?
         .query_row(
-            "SELECT 1 FROM media_model_addons WHERE digest = ?1",
+            "SELECT byte_size FROM media_model_addons WHERE digest = ?1",
             params![digest],
-            |_| Ok(true),
+            |row| row.get::<_, i64>(0),
         )
         .optional()
-        .map(|value| value.unwrap_or(false))
-        .map_err(|error| format!("failed to inspect imported model add-on state: {error}"))
+        .map_err(|error| format!("failed to inspect imported model add-on state: {error}"))?;
+    let root = paths.configured_models_root()?;
+    Ok(expected_bytes.is_some_and(|bytes| {
+        fs::symlink_metadata(
+            root.join("addons/sha256")
+                .join(digest)
+                .join("addon.safetensors"),
+        )
+        .is_ok_and(|metadata| {
+            metadata.is_file()
+                && !metadata.file_type().is_symlink()
+                && metadata.len() == bytes as u64
+        })
+    }))
 }
 
 #[derive(Debug, Clone)]
@@ -2062,36 +2077,24 @@ pub(crate) fn recover_removals(paths: &MediaRuntimePaths) -> MediaResult<()> {
     Ok(())
 }
 
-pub(crate) fn import_reviewed_with_source(
-    paths: &MediaRuntimePaths,
-    request: &ImportMediaModelAddonRequest,
-    source_metadata: Option<&Value>,
-) -> MediaResult<MediaModelAddonImportResult> {
-    let inspection = inspect(&request.source_path)?;
-    if !inspection.can_import {
-        return Err(inspection.blocking_reason.clone().unwrap_or_else(|| {
-            "the selected safetensors file cannot be imported as a model add-on".to_string()
-        }));
-    }
-    if request.review_token != inspection.review_token {
-        return Err(
-            "the selected add-on file changed; inspect it again before importing".to_string(),
-        );
-    }
-    let ValidatedAddonRequest {
-        display_name,
-        license_name,
-        commercial_use,
-        trigger_words,
-        token,
-        source_url,
-    } = validate_request(request, &inspection)?;
-    let (source_size, source_digest) = model_import::hash_file(Path::new(&inspection.source_path))?;
-    if source_size != inspection.byte_size {
-        return Err("the file changed; select it again before importing".to_string());
+fn publish_addon_file(
+    models_root: &Path,
+    inspection: &MediaModelAddonImportInspection,
+    digest: &str,
+) -> MediaResult<MediaModelAddonImportInspection> {
+    let existing = models_root
+        .join("addons/sha256")
+        .join(digest)
+        .join("addon.safetensors");
+    if existing.is_file() {
+        let canonical = fs::canonicalize(&existing).map_err(|error| error.to_string())?;
+        if canonical == Path::new(&inspection.source_path)
+            || model_import::hash_file(&existing)? == (inspection.byte_size, digest.to_string())
+        {
+            return inspect(existing.to_string_lossy().as_ref());
+        }
     }
     let required_bytes = inspection.byte_size.saturating_mul(105).div_ceil(100);
-    let models_root = paths.models_root()?;
     let addons_root = models_root.join("addons");
     fs::create_dir_all(&addons_root)
         .map_err(|error| format!("failed to prepare model add-on storage: {error}"))?;
@@ -2106,7 +2109,7 @@ pub(crate) fn import_reviewed_with_source(
     fs::create_dir_all(&stage_root)
         .map_err(|error| format!("failed to prepare add-on import staging: {error}"))?;
     let staged_addon = stage_root.join("addon.safetensors");
-    let digest = match model_import::copy_and_hash(
+    let copied_digest = match model_import::copy_and_hash(
         Path::new(&inspection.source_path),
         &staged_addon,
         inspection.byte_size,
@@ -2117,7 +2120,7 @@ pub(crate) fn import_reviewed_with_source(
             return Err(error);
         }
     };
-    if digest != source_digest {
+    if copied_digest != digest {
         let _ = fs::remove_dir_all(&stage_root);
         return Err(
             "the selected add-on file changed; inspect it again before importing".to_string(),
@@ -2146,15 +2149,14 @@ pub(crate) fn import_reviewed_with_source(
         }
     };
 
-    let relative_path = format!("addons/sha256/{digest}");
     let revision_root = models_root.join("addons").join("sha256").join(&digest);
-    let already_installed = stored_addon_exists(paths, &digest)?;
     if revision_root.exists() {
         let existing = revision_root.join("addon.safetensors");
-        let (existing_bytes, existing_digest) = model_import::hash_file(&existing)?;
-        if existing_bytes != inspection.byte_size || existing_digest != digest {
-            let _ = fs::remove_dir_all(&stage_root);
-            return Err("the managed add-on conflicts with the imported digest".to_string());
+        let stored_matches = existing.is_file()
+            && model_import::hash_file(&existing)? == (inspection.byte_size, digest.to_string());
+        if !stored_matches {
+            fs::rename(&staged_addon, &existing)
+                .map_err(|error| format!("Could not restore the add-on file: {error}"))?;
         }
         fs::remove_dir_all(&stage_root)
             .map_err(|error| format!("failed to clean duplicate add-on staging data: {error}"))?;
@@ -2168,6 +2170,44 @@ pub(crate) fn import_reviewed_with_source(
         fs::rename(&stage_root, &revision_root)
             .map_err(|error| format!("failed to atomically activate imported add-on: {error}"))?;
     }
+
+    Ok(copied_inspection)
+}
+
+pub(crate) fn import_reviewed_with_source(
+    paths: &MediaRuntimePaths,
+    request: &ImportMediaModelAddonRequest,
+    source_metadata: Option<&Value>,
+) -> MediaResult<MediaModelAddonImportResult> {
+    let inspection = inspect(&request.source_path)?;
+    if !inspection.can_import {
+        return Err(inspection.blocking_reason.clone().unwrap_or_else(|| {
+            "the selected safetensors file cannot be imported as a model add-on".to_string()
+        }));
+    }
+    if request.review_token != inspection.review_token {
+        return Err(
+            "the selected add-on file changed; inspect it again before importing".to_string(),
+        );
+    }
+    let ValidatedAddonRequest {
+        display_name,
+        license_name,
+        commercial_use,
+        trigger_words,
+        token,
+        source_url,
+    } = validate_request(request, &inspection)?;
+    let (source_size, source_digest) = model_import::hash_file(Path::new(&inspection.source_path))?;
+    if source_size != inspection.byte_size {
+        return Err("the file changed; select it again before importing".to_string());
+    }
+    let digest = source_digest;
+    let models_root = paths.models_root()?;
+    let copied_inspection = publish_addon_file(&models_root, &inspection, &digest)?;
+    let relative_path = format!("addons/sha256/{digest}");
+    let revision_root = models_root.join(&relative_path);
+    let already_installed = stored_addon_exists(paths, &digest)?;
 
     let addon_id = format!("{MODEL_ADDON_ID_PREFIX}{digest}");
     let imported_at = database::now();
@@ -2247,6 +2287,7 @@ pub(crate) fn import_reviewed_with_source(
         .commit()
         .map_err(|error| format!("failed to commit imported model add-on: {error}"))?;
 
+    super::model_library_source::record(paths, &revision_root, Path::new(&request.source_path))?;
     Ok(MediaModelAddonImportResult {
         schema_version: 1,
         addon_id,

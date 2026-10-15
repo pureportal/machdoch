@@ -63,7 +63,7 @@ fn anima_modular_packages_validate_conditioner_weights_and_component_paths() {
     }
     let index_path = package.0.join("modular_model_index.json");
     fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("Missing safetensors weights for text_conditioner"));
@@ -83,9 +83,13 @@ fn anima_modular_packages_validate_conditioner_weights_and_component_paths() {
             .as_deref(),
         Some("anima")
     );
+    let discovery = crate::media::model_discovery::discover_folder(&package.0, &[]).unwrap();
+    assert_eq!(discovery.entries.len(), 1);
+    assert_eq!(discovery.entries[0].kind, "diffusers-model");
+    assert_eq!(discovery.entries[0].architecture.as_deref(), Some("anima"));
     index["text_conditioner"][2]["subfolder"] = json!("../external");
     fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
-    assert!(inventory(&package.0).is_err());
+    assert!(inventory(&package.0, true).is_err());
 }
 
 #[test]
@@ -118,13 +122,13 @@ fn qwen_quantized_packages_require_a_valid_declared_transformer() {
     assert_eq!(review.tensor_count, 1);
     index["machdoch_quantization"]["transformer"]["file"] = json!("../model.gguf");
     fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
-    assert!(inventory(&package.0).is_err());
+    assert!(inventory(&package.0, true).is_err());
     index
         .as_object_mut()
         .unwrap()
         .remove("machdoch_quantization");
     fs::write(&index_path, serde_json::to_vec(&index).unwrap()).unwrap();
-    assert!(inventory(&package.0).is_err());
+    assert!(inventory(&package.0, true).is_err());
 }
 
 #[test]
@@ -153,7 +157,7 @@ fn original_qwen_gguf_packages_reject_other_transformer_architectures() {
             super::super::gguf_weights::fixture(architecture, 12, 256, 144),
         )
         .unwrap();
-        assert!(inventory(&package.0)
+        assert!(inventory(&package.0, true)
             .err()
             .unwrap()
             .contains("does not match"));
@@ -184,7 +188,7 @@ fn qwen_packages_require_complete_generative_encoder_weights() {
         serde_json::to_vec(&index).unwrap(),
     )
     .unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("Missing safetensors weights for text_encoder"));
@@ -195,7 +199,7 @@ fn qwen_packages_require_complete_generative_encoder_weights() {
         package.0.join("text_encoder/model.safetensors"),
     )
     .unwrap();
-    assert!(inventory(&package.0).is_ok());
+    assert!(inventory(&package.0, true).is_ok());
 }
 
 #[test]
@@ -295,7 +299,7 @@ fn sdxl_student_import_rejects_unpublished_binary_weights() {
             .join(&profile.distillation.as_ref().unwrap().checkpoint_file);
         fs::create_dir_all(target.parent().unwrap()).unwrap();
         fs::write(target, b"different student weights").unwrap();
-        assert!(inventory(&package.0)
+        assert!(inventory(&package.0, true)
             .err()
             .unwrap()
             .contains("published student checkpoint"));
@@ -308,7 +312,7 @@ fn live_sdxl_student_folder_passes_import_review() {
     let root = PathBuf::from(
         std::env::var("MACHDOCH_SDXL_DMAD_TEST_ROOT").expect("set the live SDXL DMAD folder"),
     );
-    let package = inventory(&root).unwrap();
+    let package = inventory(&root, true).unwrap();
     let inspection = inspect(&root).unwrap();
     assert!(inspection.can_import);
     assert_eq!(
@@ -411,7 +415,7 @@ fn h3_student_package() -> TestPackage {
 #[test]
 fn h3_student_import_uses_native_modular_components_without_the_reference_partition() {
     let package = h3_student_package();
-    assert!(inventory(&package.0).is_ok());
+    assert!(inventory(&package.0, true).is_ok());
     assert!(inspect(&package.0).unwrap().detected_architecture.is_none());
 }
 
@@ -424,7 +428,7 @@ fn h3_student_import_requires_original_text_encoder_weights() {
             .join("text_encoder/diffusion_pytorch_model.safetensors"),
     )
     .unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("weights for text_encoder"));
@@ -446,14 +450,14 @@ fn h3_student_import_rejects_an_incompatible_conditioner() {
         let mut config = original.clone();
         config["text_config"][field] = value;
         fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
-        assert!(inventory(&package.0)
+        assert!(inventory(&package.0, true)
             .err()
             .unwrap()
             .contains("original MiniMax-H3 Qwen3-VL"));
     }
     for config in [json!({}), json!({"text_config": null}), json!([])] {
         fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
-        assert!(inventory(&package.0)
+        assert!(inventory(&package.0, true)
             .err()
             .unwrap()
             .contains("original MiniMax-H3 Qwen3-VL"));
@@ -494,7 +498,7 @@ fn h3_student_import_rejects_modified_remote_component_specifications() {
     let mut index: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     index["transformer"][2]["pretrained_model_name_or_path"] = json!("untrusted/custom-code");
     fs::write(path, serde_json::to_vec(&index).unwrap()).unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("Invalid modular component"));
@@ -507,7 +511,7 @@ fn h3_student_import_rejects_missing_audio_components() {
     let mut index: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     index.as_object_mut().unwrap().remove("audio_vae");
     fs::write(path, serde_json::to_vec(&index).unwrap()).unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("Missing MiniMax-H3 component: audio_vae"));
@@ -785,7 +789,7 @@ fn audioldm_namespace_does_not_accept_other_repository_classes() {
     let mut index: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
     index["projection_model"][1] = json!("CustomProjectionModel");
     fs::write(&path, serde_json::to_vec(&index).unwrap()).unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("custom repository code"));
@@ -800,7 +804,7 @@ fn audioldm_requires_vocoder_weights() {
             .join("vocoder/diffusion_pytorch_model.safetensors"),
     )
     .unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("Missing safetensors weights for vocoder"));
@@ -910,7 +914,7 @@ fn incomplete_shards_and_truncated_weights_are_rejected() {
         serde_json::to_vec(&json!({"weight_map": {"weight": "missing.safetensors"}})).unwrap(),
     )
     .unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("Missing or unsafe weight shard"));
@@ -922,7 +926,7 @@ fn incomplete_shards_and_truncated_weights_are_rejected() {
         [0_u8; 16],
     )
     .unwrap();
-    assert!(inventory(&package.0).is_err());
+    assert!(inventory(&package.0, true).is_err());
 }
 
 #[test]
@@ -982,7 +986,7 @@ fn krea_packages_distinguish_raw_and_turbo_and_reject_incorrect_import_types() {
 fn executable_files_and_external_shard_paths_are_rejected() {
     let package = TestPackage::new();
     fs::write(package.0.join("modeling.py"), "pass").unwrap();
-    assert!(inventory(&package.0)
+    assert!(inventory(&package.0, true)
         .err()
         .unwrap()
         .contains("executable or unsupported"));
@@ -992,7 +996,7 @@ fn executable_files_and_external_shard_paths_are_rejected() {
         serde_json::to_vec(&json!({"weight_map": {"weight": "../outside.safetensors"}})).unwrap(),
     )
     .unwrap();
-    assert!(inventory(&package.0).is_err());
+    assert!(inventory(&package.0, true).is_err());
 }
 
 #[test]

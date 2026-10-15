@@ -1,6 +1,9 @@
 use std::{
+    collections::{hash_map::DefaultHasher, HashMap},
     fs,
+    hash::{Hash, Hasher},
     path::{Component, Path, PathBuf},
+    sync::{LazyLock, Mutex},
 };
 
 use serde_json::Value;
@@ -110,12 +113,17 @@ const WAN_REQUIRED_FILES: &[&str] = &[
     "vae/diffusion_pytorch_model.safetensors",
 ];
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct DirectoryInventory {
     byte_size: u64,
     file_count: u32,
     truncated: bool,
+    fingerprint: u64,
 }
+
+static ARTIFACT_CACHE: LazyLock<
+    Mutex<HashMap<PathBuf, (DirectoryInventory, MediaDiscoveredModelArtifact)>>,
+> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
 fn relative_display(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
@@ -136,11 +144,13 @@ fn directory_inventory(
             byte_size: 0,
             file_count: 0,
             truncated: true,
+            fingerprint: 0,
         });
     }
     let mut bytes = 0_u64;
     let mut files = 0_usize;
     let mut truncated = false;
+    let mut fingerprint = 0;
     let mut pending = vec![(root.to_path_buf(), 0_usize)];
     while let Some((directory, depth)) = pending.pop() {
         if depth > max_depth {
@@ -165,6 +175,11 @@ fn directory_inventory(
             if metadata.is_dir() {
                 pending.push((entry.path(), depth + 1));
             } else if metadata.is_file() {
+                let mut hasher = DefaultHasher::new();
+                entry.path().hash(&mut hasher);
+                metadata.len().hash(&mut hasher);
+                metadata.modified().ok().hash(&mut hasher);
+                fingerprint ^= hasher.finish();
                 files += 1;
                 bytes = bytes.saturating_add(metadata.len());
                 if files >= max_files {
@@ -179,6 +194,7 @@ fn directory_inventory(
         byte_size: bytes,
         file_count: files.min(u32::MAX as usize) as u32,
         truncated,
+        fingerprint,
     })
 }
 
@@ -401,6 +417,7 @@ fn hunyuan_video_15_artifact(
         byte_size,
         file_count,
         truncated,
+        ..
     } = inventory;
     let transformer_config = read_json(
         &directory.join("transformer").join("config.json"),
@@ -499,6 +516,7 @@ fn framepack_artifact(
         byte_size,
         file_count,
         truncated,
+        ..
     } = inventory;
     let transformer_config = read_json(
         &directory.join("transformer").join("config.json"),
@@ -610,6 +628,7 @@ fn ltx_artifact(
         byte_size,
         file_count,
         truncated,
+        ..
     } = inventory;
     let class_name = model_index.get("_class_name").and_then(Value::as_str);
     let two_b_config = read_json(
@@ -721,6 +740,7 @@ fn wan_artifact(
         byte_size,
         file_count,
         truncated,
+        ..
     } = inventory;
     let transformer_config_path = directory.join("transformer").join("config.json");
     let transformer_config = match read_json(&transformer_config_path, "Wan transformer config") {
@@ -837,12 +857,49 @@ fn wan_artifact(
     })
 }
 
+fn cached_artifact(
+    models_root: &Path,
+    artifact_path: &Path,
+    inventory: DirectoryInventory,
+    inspect: impl FnOnce() -> MediaResult<MediaDiscoveredModelArtifact>,
+) -> MediaResult<MediaDiscoveredModelArtifact> {
+    let cached = ARTIFACT_CACHE
+        .lock()
+        .map_err(|error| format!("Could not read model scan cache: {error}"))?
+        .get(artifact_path)
+        .filter(|(previous, _)| previous == &inventory)
+        .map(|(_, artifact)| artifact.clone());
+    if let Some(mut artifact) = cached {
+        artifact.relative_path = relative_display(models_root, artifact_path);
+        return Ok(artifact);
+    }
+    let artifact = inspect()?;
+    let mut cache = ARTIFACT_CACHE
+        .lock()
+        .map_err(|error| format!("Could not update model scan cache: {error}"))?;
+    if cache.len() >= 256 {
+        cache.clear();
+    }
+    cache.insert(artifact_path.to_path_buf(), (inventory, artifact.clone()));
+    Ok(artifact)
+}
+
 fn diffusers_artifact(
     models_root: &Path,
     directory: &Path,
     inventory: DirectoryInventory,
 ) -> MediaResult<MediaDiscoveredModelArtifact> {
-    let model_index_path = directory.join("model_index.json");
+    cached_artifact(models_root, directory, inventory, || {
+        inspect_diffusers_artifact(models_root, directory, inventory)
+    })
+}
+
+fn inspect_diffusers_artifact(
+    models_root: &Path,
+    directory: &Path,
+    inventory: DirectoryInventory,
+) -> MediaResult<MediaDiscoveredModelArtifact> {
+    let model_index_path = super::model_package_import::index_path(directory);
     let model_index = match read_json(&model_index_path, "Diffusers model index") {
         Ok(index) => index,
         Err(error) => {
@@ -895,7 +952,7 @@ fn diffusers_artifact(
             .iter()
             .any(|profile| profile.pipeline == class_name)
     {
-        let inspection = super::model_package_import::inspect(directory);
+        let inspection = super::model_package_import::inspect_discovered(directory);
         let architecture = inspection
             .as_ref()
             .ok()
@@ -905,14 +962,31 @@ fn diffusers_artifact(
             .and_then(super::open_models::by_architecture)
             .map(|profile| profile.capabilities.clone())
             .unwrap_or_default();
+        let folder_name = directory
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(class_name);
+        let display_name = if folder_name.len() == 64
+            && folder_name.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            architecture
+                .as_deref()
+                .and_then(super::open_models::by_architecture)
+                .map(|profile| profile.display_name.clone())
+                .or_else(|| {
+                    architecture
+                        .as_deref()
+                        .and_then(model_import::architecture_profile)
+                        .map(|profile| profile.family.to_string())
+                })
+                .unwrap_or_else(|| "Model folder".into())
+        } else {
+            folder_name.replace(['_', '-'], " ")
+        };
         return Ok(MediaDiscoveredModelArtifact {
             path: directory.display().to_string(),
             relative_path: relative_display(models_root, directory),
-            display_name: directory
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or(class_name)
-                .replace(['_', '-'], " "),
+            display_name,
             kind: "diffusers-model".to_string(),
             status: if inspection.is_ok() {
                 "importable"
@@ -1033,6 +1107,27 @@ fn safetensors_artifact(
     if metadata.file_type().is_symlink() || !metadata.is_file() {
         return Err("model discovery accepts only regular safetensors files".to_string());
     }
+    let mut fingerprint = DefaultHasher::new();
+    metadata
+        .modified()
+        .map_err(|error| error.to_string())?
+        .hash(&mut fingerprint);
+    let inventory = DirectoryInventory {
+        byte_size: metadata.len(),
+        file_count: 1,
+        truncated: false,
+        fingerprint: fingerprint.finish(),
+    };
+    cached_artifact(models_root, path, inventory, || {
+        inspect_safetensors_artifact(models_root, path, metadata.len())
+    })
+}
+
+fn inspect_safetensors_artifact(
+    models_root: &Path,
+    path: &Path,
+    byte_size: u64,
+) -> MediaResult<MediaDiscoveredModelArtifact> {
     let relative = relative_display(models_root, path);
     let header = model_import::parse_header(path.to_string_lossy().as_ref());
     let addon_inspection = header
@@ -1055,7 +1150,7 @@ fn safetensors_artifact(
                 }
                 .to_string(),
                 architecture: inspection.detected_architecture.clone(),
-                byte_size: metadata.len(),
+                byte_size: byte_size,
                 file_count: 1,
                 capabilities: inspection
                     .detected_kind
@@ -1094,7 +1189,7 @@ fn safetensors_artifact(
             }
             .to_string(),
             architecture: inspection.detected_architecture,
-            byte_size: metadata.len(),
+            byte_size: byte_size,
             file_count: 1,
             capabilities: vec!["checkpoint".to_string()],
             diagnostic: inspection
@@ -1120,7 +1215,7 @@ fn safetensors_artifact(
         kind: "checkpoint".to_string(),
         status: "unsupported".to_string(),
         architecture: None,
-        byte_size: metadata.len(),
+        byte_size: byte_size,
         file_count: 1,
         capabilities: Vec::new(),
         diagnostic: format!(
@@ -1168,6 +1263,22 @@ fn discover_with_limits(
 ) -> MediaResult<MediaWorkspaceModelDiscovery> {
     let workspace_root = crate::runtime_snapshot::resolve_workspace_root_path(workspace_root)?;
     let models_root = workspace_root.join("models");
+    discover_folder_with_limits(&models_root, &[], max_files, max_depth)
+}
+
+pub(super) fn discover_folder(
+    root: &Path,
+    excluded: &[PathBuf],
+) -> MediaResult<MediaWorkspaceModelDiscovery> {
+    discover_folder_with_limits(root, excluded, MAX_FILES, MAX_DEPTH)
+}
+
+fn discover_folder_with_limits(
+    models_root: &Path,
+    excluded: &[PathBuf],
+    max_files: usize,
+    max_depth: usize,
+) -> MediaResult<MediaWorkspaceModelDiscovery> {
     if !models_root.is_dir() {
         return Ok(MediaWorkspaceModelDiscovery {
             schema_version: 1,
@@ -1175,17 +1286,24 @@ fn discover_with_limits(
             scanned_at: super::database::now(),
             entries: Vec::new(),
             truncated: false,
-            warnings: vec!["The workspace has no models directory.".to_string()],
+            warnings: Vec::new(),
         });
     }
     let models_root = fs::canonicalize(&models_root)
         .map_err(|error| format!("failed to resolve the workspace models directory: {error}"))?;
+    let mut excluded = excluded
+        .iter()
+        .filter_map(|path| fs::canonicalize(path).ok())
+        .collect::<Vec<_>>();
     let mut entries = Vec::new();
     let mut pending = vec![(models_root.clone(), 0_usize)];
     let mut visited_files = 0_usize;
     let mut truncated = false;
     let mut warnings = Vec::new();
     while let Some((directory, depth)) = pending.pop() {
+        if excluded.iter().any(|path| directory.starts_with(path)) {
+            continue;
+        }
         if depth > max_depth || visited_files >= max_files {
             truncated = true;
             continue;
@@ -1194,6 +1312,59 @@ fn discover_with_limits(
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("");
+        if matches!(directory_name, ".cache" | ".git") {
+            continue;
+        }
+        if regular_file(&directory.join("machdoch-source.json")) {
+            match super::model_library_source::resolve(&models_root, &directory) {
+                Ok(Some(source)) => {
+                    if let Ok(source) = fs::canonicalize(source) {
+                        excluded.push(source);
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => push_warning(&mut warnings, error),
+            }
+        }
+        if regular_file(&directory.join("active.json")) {
+            let active = read_json(&directory.join("active.json"), "active model");
+            let target = active.and_then(|active| {
+                let relative = active["relativePath"]
+                    .as_str()
+                    .ok_or("The active model has no path")?;
+                let target = safe_relative_path(&models_root, Path::new(relative))?;
+                if !target.starts_with(&directory) || target == directory {
+                    return Err("The active model path is outside its package".into());
+                }
+                Ok(target)
+            });
+            match target {
+                Ok(target) if target.is_dir() => match fs::canonicalize(target) {
+                    Ok(target) if target.starts_with(&directory) => {
+                        pending.push((target, depth + 1))
+                    }
+                    Ok(_) => push_warning(
+                        &mut warnings,
+                        "The active model path is outside its package".into(),
+                    ),
+                    Err(error) => push_warning(
+                        &mut warnings,
+                        format!("Could not open active model: {error}"),
+                    ),
+                },
+                Ok(_) => {}
+                Err(error) => push_warning(&mut warnings, error),
+            }
+            continue;
+        }
+        if regular_file(&directory.join("checkpoint.safetensors")) {
+            match safetensors_artifact(&models_root, &directory.join("checkpoint.safetensors")) {
+                Ok(artifact) => entries.push(artifact),
+                Err(error) => push_warning(&mut warnings, error),
+            }
+            visited_files += 1;
+            continue;
+        }
         if directory_name.eq_ignore_ascii_case("minimax-h3-ref2va") {
             let inventory = directory_inventory(
                 &directory,
@@ -1243,7 +1414,7 @@ fn discover_with_limits(
             }
             continue;
         }
-        if regular_file(&directory.join("model_index.json")) {
+        if regular_file(&super::model_package_import::index_path(&directory)) {
             let inventory = match directory_inventory(
                 &directory,
                 max_files.saturating_sub(visited_files),
@@ -1341,6 +1512,9 @@ fn discover_with_limits(
                 }
             };
             let path = entry.path();
+            if excluded.iter().any(|excluded| path.starts_with(excluded)) {
+                continue;
+            }
             let metadata = match entry.metadata() {
                 Ok(metadata) => metadata,
                 Err(error) => {
@@ -1380,6 +1554,11 @@ fn discover_with_limits(
             }
         }
     }
+    entries.retain(|entry| {
+        !excluded
+            .iter()
+            .any(|excluded| Path::new(&entry.path).starts_with(excluded))
+    });
     entries.sort_by(|left, right| {
         left.relative_path
             .to_ascii_lowercase()
@@ -1752,6 +1931,22 @@ mod tests {
             .expect("malformed artifact should remain discoverable");
         assert_eq!(malformed.status, "unsupported");
         assert!(malformed.diagnostic.contains("rest of the workspace"));
+
+        fs::write(
+            models.join("character-style.safetensors"),
+            b"replaced with an incomplete file",
+        )
+        .unwrap();
+        let refreshed = discover(root.to_string_lossy().as_ref()).unwrap();
+        assert_eq!(
+            refreshed
+                .entries
+                .iter()
+                .find(|entry| entry.relative_path.ends_with("character-style.safetensors"))
+                .unwrap()
+                .status,
+            "unsupported"
+        );
 
         fs::remove_dir_all(root).expect("test workspace should be removed");
     }

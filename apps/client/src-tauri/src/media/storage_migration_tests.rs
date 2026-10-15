@@ -49,6 +49,28 @@ impl Fixture {
         prepare(&self.control, &mut config, &self.target).unwrap();
         config
     }
+
+    fn share_models(&self) -> PathBuf {
+        let shared = self.root.join("shared-models");
+        let link = self.control.join("media-studio/models");
+        fs::rename(&link, &shared).unwrap();
+        #[cfg(windows)]
+        {
+            let result = std::process::Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-Command", "New-Item -ItemType Junction -Path $env:MACHDOCH_TEST_LINK -Target $env:MACHDOCH_TEST_MODELS | Out-Null"])
+                .env("MACHDOCH_TEST_LINK", &link)
+                .env("MACHDOCH_TEST_MODELS", &shared)
+                .output().unwrap();
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&shared, &link).unwrap();
+        shared
+    }
 }
 
 impl Drop for Fixture {
@@ -225,6 +247,144 @@ fn storage_leases_exclude_moves_until_all_clones_finish() {
     assert!(storage::lock(&fixture.control, true).is_err());
     drop(exclusive);
     assert!(storage::resolve(&fixture.control).is_ok());
+}
+
+#[test]
+fn production_and_development_can_share_models_with_separate_databases() {
+    let fixture = Fixture::new();
+    let production = fixture.control.join("media-studio");
+    let development_control = fixture.root.join("development");
+    let development = development_control.join("media-studio");
+    fs::create_dir_all(&development).unwrap();
+    super::super::model_storage::select(&development, &production).unwrap();
+    let prod = storage::resolve(&fixture.control).unwrap();
+    let dev = storage::resolve(&development_control).unwrap();
+    assert_ne!(prod.database, dev.database);
+    assert_eq!(
+        fs::canonicalize(prod.models_root().unwrap()).unwrap(),
+        dev.models_root().unwrap()
+    );
+    assert_eq!(
+        fs::read(dev.models_root().unwrap().join("addons/lora.safetensors")).unwrap(),
+        b"lora bytes"
+    );
+    fs::write(
+        prod.models_root().unwrap().join("new-model.safetensors"),
+        b"new model",
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read(dev.models_root().unwrap().join("new-model.safetensors")).unwrap(),
+        b"new model"
+    );
+    let offline = fixture.root.join("offline-models");
+    fs::rename(production.join("models"), &offline).unwrap();
+    assert!(dev.models_root().is_err());
+    assert!(!production.join("models").exists());
+    assert!(!development.join("models").exists());
+    super::super::model_storage::select(&development, &offline).unwrap();
+    assert!(dev
+        .models_root()
+        .unwrap()
+        .join("new-model.safetensors")
+        .is_file());
+}
+
+#[test]
+fn moving_assets_preserves_external_model_storage() {
+    let fixture = Fixture::new();
+    let shared = fixture.root.join("shared-models");
+    fs::create_dir(&shared).unwrap();
+    fs::write(shared.join("shared.safetensors"), b"shared model").unwrap();
+    super::super::model_storage::select(&fixture.control.join("media-studio"), &shared).unwrap();
+    let mut config = fixture.prepare();
+    execute(&fixture.control, &mut config).unwrap();
+    assert_eq!(
+        storage::resolve(&fixture.control)
+            .unwrap()
+            .models_root()
+            .unwrap(),
+        fs::canonicalize(&shared).unwrap()
+    );
+    assert_eq!(
+        fs::read(shared.join("shared.safetensors")).unwrap(),
+        b"shared model"
+    );
+}
+
+#[test]
+fn rejects_invalid_model_folder_without_changing_the_existing_setting() {
+    let fixture = Fixture::new();
+    let source = fixture.control.join("media-studio");
+    let models = source.join("models");
+    for invalid in [
+        PathBuf::from("relative"),
+        fixture.root.join("missing"),
+        source.join("blobs"),
+    ] {
+        assert!(super::super::model_storage::select(&source, &invalid).is_err());
+        assert_eq!(
+            super::super::model_storage::folder(&source).unwrap(),
+            models
+        );
+    }
+}
+
+#[test]
+fn moves_assets_with_a_linked_model_folder_without_copying_or_deleting_models() {
+    let fixture = Fixture::new();
+    let source = fixture.control.join("media-studio");
+    let shared = fixture.share_models();
+    let mut config = fixture.prepare();
+    assert!(config.migration.as_ref().unwrap().linked_models.is_some());
+    execute(&fixture.control, &mut config).unwrap();
+    assert!(!source.exists());
+    assert!(!fixture.target.join("models").exists());
+    assert_eq!(
+        storage::resolve(&fixture.control)
+            .unwrap()
+            .models_root()
+            .unwrap(),
+        fs::canonicalize(&shared).unwrap()
+    );
+    assert_eq!(
+        fs::read(shared.join("addons/lora.safetensors")).unwrap(),
+        b"lora bytes"
+    );
+}
+
+#[test]
+fn linked_models_survive_interrupted_cleanup_and_changed_destination_settings() {
+    for changed_settings in [false, true] {
+        let fixture = Fixture::new();
+        let shared = fixture.share_models();
+        let source = fixture.control.join("media-studio");
+        let mut config = fixture.prepare();
+        commit_copies(&fixture, &mut config);
+        super::super::model_storage::save(&fixture.target, &fs::canonicalize(&shared).unwrap())
+            .unwrap();
+        if changed_settings {
+            let other = fixture.root.join("other-models");
+            fs::create_dir(&other).unwrap();
+            super::super::model_storage::save(&fixture.target, &other).unwrap();
+            assert!(execute(&fixture.control, &mut config).is_err());
+            assert!(source.join("models").is_dir());
+            super::super::model_storage::save(&fixture.target, &fs::canonicalize(&shared).unwrap())
+                .unwrap();
+        } else {
+            #[cfg(windows)]
+            fs::remove_dir(source.join("models")).unwrap();
+            #[cfg(unix)]
+            fs::remove_file(source.join("models")).unwrap();
+        }
+        let mut restarted = read_config(&fixture.control).unwrap();
+        execute(&fixture.control, &mut restarted).unwrap();
+        assert!(!source.exists());
+        assert_eq!(
+            fs::read(shared.join("addons/lora.safetensors")).unwrap(),
+            b"lora bytes"
+        );
+    }
 }
 
 #[test]

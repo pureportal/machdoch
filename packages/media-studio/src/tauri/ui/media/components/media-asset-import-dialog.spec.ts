@@ -265,6 +265,21 @@ describe("MediaAssetImportDialog", () => {
   });
 });
 
+it("keeps the discovered model name when configuring a stored package", async () => {
+  const props = createProps({
+    initialPath: inspection.sourcePath,
+    initialDisplayName: "Shared XL",
+    initialType: "model",
+    configure: true,
+    modelInspection: { ...inspection, suggestedDisplayName: "a".repeat(64) },
+  });
+  render(createElement(MediaAssetImportDialog, props));
+  await waitFor(() =>
+    expect(screen.getByDisplayValue("Shared XL")).toBeTruthy(),
+  );
+  expect(screen.getByRole("button", { name: /Configure model/u })).toBeTruthy();
+});
+
 it("inspects a complete model folder selected through the directory picker", async () => {
   const props = createProps();
   runtimeMocks.openDialog.mockResolvedValue("C:\\models\\z-image-turbo");

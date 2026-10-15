@@ -41,6 +41,7 @@ struct ManifestFile {
     sha256: &'static str,
 }
 
+#[derive(Clone)]
 struct BuiltinModelManifest {
     model_id: &'static str,
     slug: &'static str,
@@ -213,6 +214,10 @@ const BIREFNET_MANIFEST: BuiltinModelManifest = BuiltinModelManifest {
     files: Cow::Borrowed(BIREFNET_FILES),
     excluded_paths: Cow::Borrowed(BIREFNET_EXCLUDED_PATHS),
 };
+
+#[path = "model_install_library.rs"]
+mod library;
+pub(super) use library::{reconcile_library, verify_library_model};
 
 #[path = "model_install_open.rs"]
 mod open;
@@ -429,6 +434,30 @@ fn managed_installation(
     })
 }
 
+pub(super) fn library_path(paths: &MediaRuntimePaths, model_id: &str) -> MediaResult<PathBuf> {
+    let installation = managed_installation(paths, model_id)?;
+    safe_relative_path(&paths.models_root()?, &installation.relative_path)
+}
+
+pub(super) fn library_files_present(
+    paths: &MediaRuntimePaths,
+    model_id: &str,
+) -> MediaResult<bool> {
+    let root = library_path(paths, model_id)?;
+    if let Ok(manifest) = builtin_manifest(model_id) {
+        return Ok(manifest.files.iter().all(|file| {
+            safe_relative_path(&root, file.path).is_ok_and(|path| {
+                fs::symlink_metadata(path).is_ok_and(|metadata| {
+                    metadata.is_file()
+                        && !metadata.file_type().is_symlink()
+                        && metadata.len() == file.byte_size
+                })
+            })
+        }));
+    }
+    Ok(root.is_dir())
+}
+
 pub(crate) fn installed_builtin_file(
     paths: &MediaRuntimePaths,
     model_id: &str,
@@ -438,6 +467,7 @@ pub(crate) fn installed_builtin_file(
     if !installation_exists(paths, manifest)? {
         return Err("the model is not currently installed".to_string());
     }
+    verify_library_model(paths, model_id)?;
     let expected = manifest
         .files
         .iter()
@@ -465,7 +495,7 @@ pub(crate) fn installed_builtin_file(
     Ok(path)
 }
 
-fn safe_relative_path(root: &Path, value: &str) -> MediaResult<PathBuf> {
+pub(super) fn safe_relative_path(root: &Path, value: &str) -> MediaResult<PathBuf> {
     if value.is_empty() || value.contains('\\') {
         return Err("model manifest contains an unsafe file path".to_string());
     }
@@ -496,13 +526,14 @@ fn installation_exists(
     paths: &MediaRuntimePaths,
     manifest: &BuiltinModelManifest,
 ) -> MediaResult<bool> {
-    database::open(paths)?
+    let registered: bool = database::open(paths)?
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM media_model_installations WHERE model_id = ?1 AND status = 'installed' AND revision = ?2)",
             params![manifest.model_id, manifest.revision],
             |row| row.get(0),
         )
-        .map_err(|error| format!("failed to inspect model installation: {error}"))
+        .map_err(|error| format!("failed to inspect model installation: {error}"))?;
+    Ok(registered && library_files_present(paths, manifest.model_id)?)
 }
 
 pub(crate) fn plan(

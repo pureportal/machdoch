@@ -15,6 +15,7 @@ import type {
   MediaAssetDeletionImpact,
   MediaAssetRecord,
   MediaModelAddonDescriptor,
+  MediaDiscoveredModelArtifact,
 } from "../../../../core/media/contracts.js";
 import { MediaAssetsView } from "./media-assets-view";
 import { EMPTY_MEDIA_RUNTIME_SETUP } from "../media-runtime-setup";
@@ -129,6 +130,101 @@ const createProps = (overrides: Partial<Props> = {}): Props => ({
 
 describe("MediaAssetsView discovery", () => {
   it("opens setup for the PDMD variant selected in the library", () => {
+  const copiedModel: MediaDiscoveredModelArtifact = {
+    path: "D:/models/copied.safetensors",
+    relativePath: "copied.safetensors",
+    displayName: "Copied XL",
+    kind: "checkpoint",
+    status: "importable",
+    architecture: "stable-diffusion-xl",
+    byteSize: 4096,
+    fileCount: 1,
+    capabilities: ["checkpoint"],
+    diagnostic: "",
+  };
+
+  it("shows copied models in All and opens their configuration directly", () => {
+    importDialog.mockClear();
+    render(
+      createElement(
+        MediaAssetsView,
+        createProps({ discoveredFiles: [copiedModel], assets: [] }),
+      ),
+    );
+    expect(screen.getByText("Unconfigured")).toBeTruthy();
+    expect(screen.queryByText("Import an asset")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Configure Copied XL" }),
+    );
+    expect(importDialog).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        initialPath: copiedModel.path,
+        initialArchitecture: "stable-diffusion-xl",
+        initialType: "model",
+        configure: true,
+      }),
+      undefined,
+    );
+  });
+
+  it("filters copied add-ons by their inspected kind and opens the embedding form", () => {
+    importDialog.mockClear();
+    const embedding = {
+      ...copiedModel,
+      kind: "model-addon" as const,
+      displayName: "Character",
+      capabilities: ["textual-inversion"],
+    };
+    render(
+      createElement(
+        MediaAssetsView,
+        createProps({ discoveredFiles: [copiedModel, embedding] }),
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Embeddings" }));
+    expect(
+      screen.queryByRole("button", { name: "Configure Copied XL" }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Configure Character" }),
+    );
+    expect(importDialog).toHaveBeenLastCalledWith(
+      expect.objectContaining({ initialType: "embedding" }),
+      undefined,
+    );
+  });
+
+  it("shows incomplete copies with details until the scan recognizes a complete model", () => {
+    const props = createProps({
+      assets: [],
+      discoveredFiles: [
+        {
+          ...copiedModel,
+          status: "unsupported",
+          diagnostic: "File is incomplete.",
+        },
+      ],
+    });
+    const view = render(createElement(MediaAssetsView, props));
+    expect(screen.getByText("Unsupported")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Configure Copied XL" }),
+    ).toBeNull();
+    view.rerender(
+      createElement(MediaAssetsView, {
+        ...props,
+        discoveredFiles: [copiedModel],
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Configure Copied XL" }),
+    ).toBeTruthy();
+    view.rerender(
+      createElement(MediaAssetsView, { ...props, discoveredFiles: [] }),
+    );
+    expect(screen.queryByText("Copied XL")).toBeNull();
+  });
+
     importDialog.mockClear();
     const props = createProps();
     const model = createOpenMediaModels("test").find(
