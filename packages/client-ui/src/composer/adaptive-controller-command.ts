@@ -14,6 +14,7 @@ export const createAdaptiveControllerCommand = (
   defaultEnabled: boolean | null,
   onChange: (override: boolean | null) => void,
   disabled = false,
+  disabledReason?: string,
 ): CommandDefinition => ({
   id: "chat.session.adaptive-controller.select",
   title: "Choose adaptive context & compute",
@@ -23,8 +24,11 @@ export const createAdaptiveControllerCommand = (
   palette: "visible",
   overlayPolicy: "replace-non-modal",
   availability: () =>
-    disabled
-      ? { state: "disabled", reason: "Wait for the current action to finish." }
+    disabled || disabledReason
+      ? {
+          state: "disabled",
+          reason: disabledReason ?? "Wait for the current action to finish.",
+        }
       : { state: "enabled" },
   children: () => ({
     id: "chat-session-adaptive-controller",
@@ -42,8 +46,19 @@ export const createAdaptiveControllerCommand = (
                 ? `Default (${defaultEnabled ? "Enabled" : "Disabled"})`
                 : option.label,
             current: override === option.override,
+            availability:
+              disabled || disabledReason
+                ? {
+                    state: "disabled",
+                    reason:
+                      disabledReason ??
+                      "Wait for the current action to finish.",
+                  }
+                : { state: "enabled" },
             numericKey: String(index + 1) as CommandPageItem["numericKey"],
-            execute: () => onChange(option.override),
+            execute: () => {
+              if (!disabled && !disabledReason) onChange(option.override);
+            },
           }),
         ),
       },

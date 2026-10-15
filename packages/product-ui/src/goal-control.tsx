@@ -177,14 +177,20 @@ export function GoalControl({
                       className="m-goal-mode-option"
                       value={value}
                       disabled={!modes.includes(value)}
+                      aria-describedby={
+                        !modes.includes(value)
+                          ? `${id}-${value}-unavailable`
+                          : undefined
+                      }
                     >
                       <Select.ItemText>
-                        {value === "machdoch"
-                          ? "Machdoch"
-                          : modes.includes(value)
-                            ? "Native"
-                            : "Native (unavailable)"}
+                        {value === "machdoch" ? "Machdoch" : "Native"}
                       </Select.ItemText>
+                      {!modes.includes(value) ? (
+                        <small id={`${id}-${value}-unavailable`}>
+                          Unavailable for this provider.
+                        </small>
+                      ) : null}
                       <Select.ItemIndicator>
                         <Check aria-hidden="true" />
                       </Select.ItemIndicator>

@@ -9,6 +9,7 @@ import { DropdownMenu } from "radix-ui";
 import {
   useCallback,
   useEffect,
+  useId,
   useState,
   type ComponentType,
   type ReactElement,
@@ -34,6 +35,7 @@ export interface OptionMenuItem {
   icon: ComponentType<ComposerIconProps>;
   tone: ControlTone;
   disabled?: boolean;
+  disabledReason?: string | null;
 }
 
 function ComposerMenu({
@@ -41,6 +43,7 @@ function ComposerMenu({
   className,
   contentClassName,
   disabled,
+  disabledReason,
   trigger,
   children,
 }: {
@@ -48,6 +51,7 @@ function ComposerMenu({
   className: string;
   contentClassName: string;
   disabled: boolean;
+  disabledReason?: string | null;
   trigger: ReactElement;
   children: ReactNode;
 }): ReactElement {
@@ -61,7 +65,16 @@ function ComposerMenu({
   }, [disabled]);
   return (
     <DropdownMenu.Root open={open && !disabled} onOpenChange={setOpen}>
-      <div ref={mount} className={className}>
+      <div
+        ref={mount}
+        className={className}
+        role={disabled && disabledReason ? "group" : undefined}
+        title={disabledReason ?? undefined}
+        tabIndex={disabled && disabledReason ? 0 : undefined}
+        aria-label={
+          disabled && disabledReason ? `${label}: ${disabledReason}` : undefined
+        }
+      >
         <DropdownMenu.Trigger asChild disabled={disabled}>
           {trigger}
         </DropdownMenu.Trigger>
@@ -92,6 +105,7 @@ export function OptionMenu({
   activeTone,
   options,
   disabled,
+  disabledReason,
   onSelect,
 }: {
   label: string;
@@ -101,19 +115,23 @@ export function OptionMenu({
   activeTone: ControlTone;
   options: OptionMenuItem[];
   disabled: boolean;
+  disabledReason?: string | null;
   onSelect: (value: string) => void;
 }): ReactElement {
+  const reasonId = useId();
   return (
     <ComposerMenu
       label={label}
       className="m-product-option-menu"
       contentClassName="m-product-option-popover"
       disabled={disabled}
+      disabledReason={disabledReason ?? null}
       trigger={
         <button
           type="button"
           aria-label={`${label}: ${activeLabel}`}
-          title={`${label}: ${activeLabel}`}
+          aria-description={disabledReason ?? undefined}
+          title={disabledReason ?? `${label}: ${activeLabel}`}
           data-tone={activeTone}
         >
           <ActiveIcon aria-hidden="true" />
@@ -123,29 +141,51 @@ export function OptionMenu({
       <DropdownMenu.Label asChild>
         <strong>{label}</strong>
       </DropdownMenu.Label>
-      <DropdownMenu.RadioGroup value={activeValue} onValueChange={onSelect}>
+      <DropdownMenu.RadioGroup
+        value={activeValue}
+        onValueChange={(value) => {
+          const option = options.find((item) => item.value === value);
+          if (!disabled && option && !option.disabled && !option.disabledReason)
+            onSelect(value);
+        }}
+      >
         {options.map((option) => {
           const Icon = option.icon;
           return (
             <DropdownMenu.RadioItem
               key={option.value}
               value={option.value}
-              disabled={disabled || option.disabled === true}
+              disabled={
+                disabled ||
+                option.disabled === true ||
+                Boolean(option.disabledReason)
+              }
               asChild
             >
               <button
                 type="button"
                 data-active={option.value === activeValue}
                 data-tone={option.tone}
-                disabled={disabled || option.disabled}
+                disabled={
+                  disabled || option.disabled || Boolean(option.disabledReason)
+                }
                 aria-label={`Choose ${option.label}`}
+                aria-describedby={
+                  option.disabledReason
+                    ? `${reasonId}-${option.value}`
+                    : undefined
+                }
               >
                 <span>
                   <Icon aria-hidden="true" />
                 </span>
                 <span>
                   <strong>{option.label}</strong>
-                  {option.description ? (
+                  {option.disabledReason ? (
+                    <small id={`${reasonId}-${option.value}`}>
+                      {option.disabledReason}
+                    </small>
+                  ) : option.description ? (
                     <small>{option.description}</small>
                   ) : null}
                 </span>

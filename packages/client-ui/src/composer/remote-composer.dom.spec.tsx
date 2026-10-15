@@ -114,6 +114,8 @@ function harness(
     adaptiveController?: NonNullable<
       ProductShell["composer"]
     >["adaptiveController"];
+    composer?: Partial<NonNullable<ProductShell["composer"]>>;
+    specialKind?: ProductSession["specialKind"];
   } = {},
 ) {
   const drafts = createComposerDraftStore();
@@ -135,9 +137,11 @@ function harness(
         ...(options.availableParallelAgentModes
           ? { availableParallelAgentModes: options.availableParallelAgentModes }
           : {}),
+        ...options.composer,
       }}
       session={{
         ...session(id),
+        ...(options.specialKind ? { specialKind: options.specialKind } : {}),
         ...(options.runningTaskId
           ? { runningTaskId: options.runningTaskId }
           : {}),
@@ -178,6 +182,63 @@ afterEach(() => {
 });
 
 describe("composer adaptive control", () => {
+  it("explains the Goal restriction and restores the saved adaptive preference when Goal is hidden", () => {
+    const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
+    harness(onCommand, "", {
+      adaptiveController: { override: true, defaultEnabled: false },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", {
+        name: "Adaptive context & compute: Enabled",
+      }).disabled,
+    ).toBe(false);
+    fireEvent.change(screen.getByRole("textbox", { name: "Goal objective" }), {
+      target: { value: "Fix auth" },
+    });
+    const adaptive = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Adaptive context & compute: Unavailable",
+    });
+    expect(adaptive.disabled).toBe(true);
+    expect(adaptive.getAttribute("aria-description")).toBe(
+      "Unavailable while using Goal.",
+    );
+    fireEvent.click(adaptive);
+    expect(onCommand).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Hide goal" }));
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", {
+        name: "Adaptive context & compute: Enabled",
+      }).disabled,
+    ).toBe(false);
+  });
+
+  it("keeps adaptive compute disabled while a running Goal is hidden", () => {
+    harness(vi.fn(), "", {
+      adaptiveController: { override: true, defaultEnabled: false },
+      composer: {
+        isExecuting: true,
+        goal: {
+          id: "goal",
+          objective: "Fix auth",
+          mode: "native",
+          status: "active",
+          turns: 1,
+          tokensUsed: 10,
+          elapsedMs: 1,
+          reason: "",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+    });
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", {
+        name: "Adaptive context & compute: Unavailable",
+      }).disabled,
+    ).toBe(true);
+  });
+
   it("dispatches a session override and restores the device default", async () => {
     const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
     harness(onCommand, "", {
@@ -453,9 +514,60 @@ describe("composer submission guards", () => {
     });
   });
 
-  it("shows Native only when the selected provider and model support it", async () => {
+  it("disables Native parallel agents with a hint while allowing managed agents with Native Goal", async () => {
     const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
     harness(onCommand, "", {
+      composer: {
+        provider: "codex-cli",
+        goalMode: "native",
+        availableGoalModes: ["machdoch", "native"],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: "Parallel agents: Disabled" }),
+      { key: "ArrowDown" },
+    );
+    const native = screen.getByRole<HTMLButtonElement>("menuitemradio", {
+      name: "Choose Native",
+    });
+    expect(native.disabled).toBe(true);
+    expect(
+      document.getElementById(native.getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toBe("Unavailable for this provider and model.");
+    fireEvent.click(native);
+    expect(onCommand).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("menuitemradio", { name: "Choose Full Mode" }),
+      );
+    });
+    expect(onCommand).toHaveBeenCalledWith({
+      kind: "set-parallel-agent-mode",
+      sessionId: "A",
+      mode: "machdoch",
+    });
+  });
+
+  it("disables parallel agents in Pose chats with a combination hint", () => {
+    harness(vi.fn(), "", {
+      specialKind: "pose",
+      composer: { parallelAgentMode: "machdoch" },
+    });
+    const parallel = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Parallel agents: Disabled",
+    });
+    expect(parallel.disabled).toBe(true);
+    expect(parallel.getAttribute("aria-description")).toBe(
+      "Unavailable in Pose chats.",
+    );
+  });
+
+  it("allows Native parallel agents when the host confirms availability", async () => {
+    const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
+    harness(onCommand, "", {
+      specialKind: "pose",
       availableParallelAgentModes: [
         "disabled",
         "read-only",
