@@ -15,6 +15,62 @@ const context: CommandContextSnapshot = {
 };
 
 describe("session toolbar commands", () => {
+  it("blocks adaptive keyboard commands while using Goal", async () => {
+    const onChange = vi.fn();
+    const command = createAdaptiveControllerCommand(
+      true,
+      false,
+      onChange,
+      false,
+      "Unavailable while using Goal.",
+    );
+    expect(command.availability?.(context)).toEqual({
+      state: "disabled",
+      reason: "Unavailable while using Goal.",
+    });
+    const page = await command.children?.(
+      context,
+      new AbortController().signal,
+    );
+    for (const item of page?.groups[0]?.items ?? []) {
+      expect(item.availability).toEqual({
+        state: "disabled",
+        reason: "Unavailable while using Goal.",
+      });
+      await item.execute(context, new AbortController().signal);
+    }
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("blocks parallel keyboard commands in Pose chats", async () => {
+    const onChange = vi.fn();
+    const command = createParallelAgentCommand(
+      "disabled",
+      ["disabled", "read-only", "machdoch"],
+      onChange,
+      "pose",
+    );
+    expect(command.availability?.(context)).toEqual({
+      state: "disabled",
+      reason: "Unavailable in Pose chats.",
+    });
+    const page = await command.children?.(
+      context,
+      new AbortController().signal,
+    );
+    const items = page?.groups[0]?.items ?? [];
+    for (const item of items.filter(
+      (item) => item.id === "read-only" || item.id === "machdoch",
+    )) {
+      expect(item.availability).toEqual({
+        state: "disabled",
+        reason: "Unavailable in Pose chats.",
+      });
+      await item.execute(context, new AbortController().signal);
+    }
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("offers the resolved adaptive default and both explicit overrides", async () => {
     const onChange = vi.fn();
     const command = createAdaptiveControllerCommand(null, true, onChange);
@@ -52,7 +108,7 @@ describe("session toolbar commands", () => {
     ]);
   });
 
-  it("offers only supported parallel agent modes and selects the requested mode", async () => {
+  it("explains unavailable parallel modes and selects a supported mode", async () => {
     const onChange = vi.fn();
     const command = createParallelAgentCommand(
       "read-only",
@@ -70,7 +126,14 @@ describe("session toolbar commands", () => {
       { id: "disabled", current: false },
       { id: "read-only", current: true },
       { id: "machdoch", current: false },
+      { id: "native", current: false },
     ]);
+    expect(items[3]?.availability).toEqual({
+      state: "disabled",
+      reason: "Unavailable for this provider and model.",
+    });
+    await items[3]?.execute(context, new AbortController().signal);
+    expect(onChange).not.toHaveBeenCalled();
     await items[2]?.execute(context, new AbortController().signal);
     expect(onChange).toHaveBeenCalledWith("machdoch");
   });
@@ -84,7 +147,7 @@ describe("session toolbar commands", () => {
 
     expect(command.availability?.(context)).toEqual({
       state: "disabled",
-      reason: "Parallel agents unavailable",
+      reason: "Unavailable for this provider and model.",
     });
   });
 

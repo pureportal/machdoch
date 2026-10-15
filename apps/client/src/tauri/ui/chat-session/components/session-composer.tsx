@@ -15,6 +15,7 @@ import {
   GoalTrigger,
   MemoryDialog,
   useGoalDraft,
+  GOAL_ADAPTIVE_CONTROLLER_DISABLED_REASON,
 } from "@machdoch/product-ui";
 import {
   getAvailableGoalModes,
@@ -52,14 +53,25 @@ import {
   createMemoryManagementEntries,
   type MemorySourceSession,
 } from "../../components/memory-management-entries";
-import { isQuickVoiceSession, type ChatSessionRecord } from "../../chat-session.model";
+import {
+  isQuickVoiceSession,
+  type ChatSessionRecord,
+} from "../../chat-session.model";
 import { type SmartContextPack } from "@machdoch/client-ui/context-packs/model";
-import type { AttachmentSelectionKind, ChatSessionContextAttachment, RequestIterationMode } from "@machdoch/client-ui/composer/model";
+import type {
+  AttachmentSelectionKind,
+  ChatSessionContextAttachment,
+  RequestIterationMode,
+} from "@machdoch/client-ui/composer/model";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { RunningTaskMessageAction } from "../../lib/shell-store";
 import type { RuntimeProvider } from "../../model-catalog";
 import { type PromptEnhancementMode } from "@machdoch/client-ui/composer/prompt-enhancement-options";
-import { type SaveSmartContextPackInput, type SmartContextPackScope, type SmartContextPackScopeFilter } from "@machdoch/client-ui/context-packs/model";
+import {
+  type SaveSmartContextPackInput,
+  type SmartContextPackScope,
+  type SmartContextPackScopeFilter,
+} from "@machdoch/client-ui/context-packs/model";
 import type { RUN_MODE_META } from "../_helpers/session-shell";
 import {
   AgentComposer,
@@ -77,7 +89,8 @@ import { SmartContextPackPicker } from "@machdoch/client-ui/context-packs/picker
 import { loadRalphContextPackUsage } from "@machdoch/client-ui/context-packs/ralph-usage";
 import { listRalphFlows, showRalphFlow } from "../../runtime";
 
-const loadContextPackUsage = (workspaceRoot: string) => loadRalphContextPackUsage(workspaceRoot, listRalphFlows, showRalphFlow);
+const loadContextPackUsage = (workspaceRoot: string) =>
+  loadRalphContextPackUsage(workspaceRoot, listRalphFlows, showRalphFlow);
 import { WorkspacePicker } from "./workspace-picker";
 
 export interface SessionComposerProps {
@@ -322,6 +335,9 @@ export const SessionComposer = ({
     showGoalControl && goalOpen && !editingMessageId,
     isExecuting,
   );
+  const goalEnabled =
+    Boolean(goalDraft.submissionObjective) ||
+    (isExecuting && activeSession.goal?.status === "active");
 
   useEffect(() => {
     setGoalOpen(false);
@@ -449,9 +465,13 @@ export const SessionComposer = ({
         override={activeSession.adaptiveControllerOverride ?? null}
         defaultEnabled={defaultAdaptiveControllerEnabled}
         onChange={onAdaptiveControllerOverrideChange}
+        disabledReason={
+          goalEnabled ? GOAL_ADAPTIVE_CONTROLLER_DISABLED_REASON : null
+        }
       />
 
       <SessionParallelAgentPicker
+        specialKind={activeSession.specialSession}
         mode={resolveParallelAgentMode(
           activeSession.provider,
           activeSession.model,
@@ -735,7 +755,14 @@ export const SessionComposer = ({
             ? "Update the message and its options"
             : "What should machdoch do next?"
         }
-        modelPicker={<SessionModelPicker chooserProviders={chooserProviders} activeProvider={activeSession.provider} activeModel={activeSession.model} onSessionModelSelection={onSessionModelSelection} />}
+        modelPicker={
+          <SessionModelPicker
+            chooserProviders={chooserProviders}
+            activeProvider={activeSession.provider}
+            activeModel={activeSession.model}
+            onSessionModelSelection={onSessionModelSelection}
+          />
+        }
         contextAttachments={contextAttachments}
         imageInputSupported={imageInputSupported}
         imageInputDisabledReason={imageInputDisabledReason}

@@ -109,10 +109,15 @@ describe("goal control", () => {
     expect(
       screen
         .getByRole("option", {
-          name: "Native (unavailable)",
+          name: "Native",
         })
         .getAttribute("aria-disabled"),
     ).toBe("true");
+    const native = screen.getByRole("option", { name: "Native" });
+    expect(
+      document.getElementById(native.getAttribute("aria-describedby")!)
+        ?.textContent,
+    ).toBe("Unavailable for this provider.");
   });
   it("starts in the newly selected mode instead of resuming the saved mode", () => {
     const onCommand = vi.fn();

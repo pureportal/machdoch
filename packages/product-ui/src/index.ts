@@ -51,6 +51,10 @@ export {
 } from "./application-navigation";
 export { GoalControl, GoalTrigger } from "./goal-control";
 export { useGoalDraft } from "./use-goal-draft";
+export {
+  getParallelAgentOptions,
+  GOAL_ADAPTIVE_CONTROLLER_DISABLED_REASON,
+} from "./composer-feature-options";
 export { Ralph } from "./ralph";
 export {
   createDefaultRalphVariableValues,
@@ -76,13 +80,21 @@ export {
 } from "./markdown";
 export { PromptEnhancementIndicator } from "./prompt-enhancement";
 export {
-  ALL_SESSION_PROJECTS_FILTER, calculateSessionSearchScore,
-  compareSessionsBySidebarGroup, getSessionProjectId,
-  getUnpinnedSessionDividerIndex, isSessionPinnedInSidebar,
-  normalizeSessionSearchText, tokenizeSessionSearchQuery,
-  type SessionSidebarGroup, type SessionSearchEntry,
+  ALL_SESSION_PROJECTS_FILTER,
+  calculateSessionSearchScore,
+  compareSessionsBySidebarGroup,
+  getSessionProjectId,
+  getUnpinnedSessionDividerIndex,
+  isSessionPinnedInSidebar,
+  normalizeSessionSearchText,
+  tokenizeSessionSearchQuery,
+  type SessionSidebarGroup,
+  type SessionSearchEntry,
 } from "./session-sidebar-model";
-export { useConversationControls, type ConversationControls } from "./conversation-controls";
+export {
+  useConversationControls,
+  type ConversationControls,
+} from "./conversation-controls";
 export {
   getOriginalPromptContent,
   OriginalPromptPanel,
@@ -110,4 +122,8 @@ export {
 } from "./fleet-operation-transport";
 export type { SessionDataSource } from "./session-data";
 
-export type { SessionSidebarCommandState, SessionSidebarAction, SessionSidebarStatus } from "./session-sidebar-commands-state";
+export type {
+  SessionSidebarCommandState,
+  SessionSidebarAction,
+  SessionSidebarStatus,
+} from "./session-sidebar-commands-state";

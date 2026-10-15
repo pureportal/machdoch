@@ -153,6 +153,124 @@ const createProps = (
   ...overrides,
 });
 
+describe("SessionComposer feature availability", () => {
+  it.each([
+    "openai",
+    "anthropic",
+    "google",
+    "langdock",
+    "codex-cli",
+    "claude-cli",
+    "copilot-cli",
+  ] as const)(
+    "shows unavailable Native parallel agents for %s without blocking managed modes",
+    (provider) => {
+      const onChange = vi.fn();
+      render(
+        createElement(
+          SessionComposer,
+          createProps({
+            editingMessageId: null,
+            isExecuting: false,
+            activeSession: createSession({
+              id: "features",
+              provider,
+              model: "model",
+              goalMode: "native",
+            }),
+            onParallelAgentModeSelection: onChange,
+          }),
+        ),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Parallel agents: Disabled" }),
+      );
+      const native = screen.getByRole<HTMLButtonElement>("menuitemradio", {
+        name: "Native",
+      });
+      expect(native.disabled).toBe(true);
+      expect(
+        document.getElementById(native.getAttribute("aria-describedby")!)
+          ?.textContent,
+      ).toBe("Unavailable for this provider and model.");
+      fireEvent.click(native);
+      expect(onChange).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("menuitemradio", { name: "Full Mode" }));
+      expect(onChange).toHaveBeenCalledExactlyOnceWith("machdoch");
+    },
+  );
+
+  it("disables adaptive compute only while Goal is enabled and restores the saved setting", () => {
+    const onChange = vi.fn();
+    render(
+      createElement(
+        SessionComposer,
+        createProps({
+          editingMessageId: null,
+          isExecuting: false,
+          defaultAdaptiveControllerEnabled: true,
+          onAdaptiveControllerOverrideChange: onChange,
+        }),
+      ),
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", {
+        name: "Adaptive context & compute: Enabled (workspace default)",
+      }).disabled,
+    ).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", {
+        name: "Adaptive context & compute: Enabled (workspace default)",
+      }).disabled,
+    ).toBe(false);
+    fireEvent.change(screen.getByRole("textbox", { name: "Goal objective" }), {
+      target: { value: "Fix auth" },
+    });
+    const adaptive = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Adaptive context & compute: Unavailable",
+    });
+    expect(adaptive.disabled).toBe(true);
+    expect(adaptive.getAttribute("aria-description")).toBe(
+      "Unavailable while using Goal.",
+    );
+    expect(adaptive.getAttribute("data-active")).toBe("false");
+    fireEvent.click(adaptive);
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Hide goal" }));
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", {
+        name: "Adaptive context & compute: Enabled (workspace default)",
+      }).disabled,
+    ).toBe(false);
+  });
+
+  it("disables parallel agents in Pose chats with a combination hint", () => {
+    render(
+      createElement(
+        SessionComposer,
+        createProps({
+          activeSession: createSession({
+            id: "pose",
+            provider: "openai",
+            model: "model",
+            specialSession: "pose",
+            parallelAgentMode: "machdoch",
+          }),
+        }),
+      ),
+    );
+    const parallel = screen.getByRole<HTMLButtonElement>("button", {
+      name: "Parallel agents: Disabled",
+    });
+    expect(parallel.disabled).toBe(true);
+    expect(parallel.getAttribute("aria-description")).toBe(
+      "Unavailable in Pose chats.",
+    );
+  });
+});
+
 describe("SessionComposer goal", () => {
   it("restores an unstarted goal after reopening with the goal disabled", () => {
     const onSend = vi.fn();

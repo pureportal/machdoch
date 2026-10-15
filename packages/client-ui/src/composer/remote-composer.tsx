@@ -14,6 +14,8 @@ import {
   StopIcon,
   UiControlIcon,
   WorkspaceMemoryIcon,
+  getParallelAgentOptions,
+  GOAL_ADAPTIVE_CONTROLLER_DISABLED_REASON,
 } from "@machdoch/product-ui";
 import { ReasoningIcons } from "@machdoch/product-ui";
 import { GoalControl, GoalTrigger } from "@machdoch/product-ui";
@@ -129,6 +131,13 @@ const MODE_OPTION_BY_VALUE: Record<"ask" | "machdoch", OptionMenuItem> = {
 
 const MODE_OPTIONS = [MODE_OPTION_BY_VALUE.machdoch, MODE_OPTION_BY_VALUE.ask];
 
+const PARALLEL_AGENT_ICONS = {
+  disabled: OffIcon,
+  "read-only": ReadOnlyIcon,
+  machdoch: FullAccessIcon,
+  native: ModelIcon,
+} as const;
+
 export function RemoteComposer({
   composer,
   session,
@@ -185,11 +194,22 @@ export function RemoteComposer({
 
   const canSubmit =
     composer.canSend && !pending && !submitting && failedSubmission === null;
-  const parallelAgentMode = composer.availableParallelAgentModes?.includes(
-    composer.parallelAgentMode ?? "disabled",
+  const parallelOptions = getParallelAgentOptions(
+    composer.availableParallelAgentModes ?? [],
+    session.specialKind,
+  );
+  const parallelAvailable = parallelOptions.some(
+    (option) => option.value !== "disabled" && !option.disabledReason,
+  );
+  const parallelAgentMode = parallelOptions.some(
+    (option) =>
+      option.value === composer.parallelAgentMode && !option.disabledReason,
   )
     ? (composer.parallelAgentMode ?? "disabled")
     : "disabled";
+  const goalEnabled =
+    Boolean(goalDraft.submissionObjective) ||
+    (composer.isExecuting && composer.goal?.status === "active");
 
   const defaultReasoning = REASONING_OPTIONS[composer.defaultReasoning];
   const reasoningOptions = [
@@ -331,9 +351,9 @@ export function RemoteComposer({
               }
             />
             <OptionMenu
-              disabled={
-                pending ||
-                (composer.availableParallelAgentModes?.length ?? 0) < 2
+              disabled={pending || !parallelAvailable}
+              disabledReason={
+                parallelAvailable ? null : parallelOptions[1]!.disabledReason
               }
               label="Parallel agents"
               activeValue={parallelAgentMode}
@@ -347,44 +367,15 @@ export function RemoteComposer({
               }
               activeIcon={ParallelAgentsIcon}
               activeTone="violet"
-              options={(
-                [
-                  {
-                    value: "disabled",
-                    label: "Disabled",
-                    description: "",
-                    icon: OffIcon,
-                    tone: "neutral",
-                  },
-                  {
-                    value: "read-only",
-                    label: "Read Only",
-                    description: "",
-                    icon: ReadOnlyIcon,
-                    tone: "neutral",
-                  },
-                  {
-                    value: "machdoch",
-                    label: "Full Mode",
-                    description: "",
-                    icon: FullAccessIcon,
-                    tone: "violet",
-                  },
-                  {
-                    value: "native",
-                    label: "Native",
-                    description: "",
-                    icon: ModelIcon,
-                    tone: "violet",
-                  },
-                ] satisfies OptionMenuItem[]
-              ).filter((option) =>
-                composer.availableParallelAgentModes?.includes(
-                  option.value as NonNullable<
-                    ProductComposer["parallelAgentMode"]
-                  >,
-                ),
-              )}
+              options={parallelOptions.map((option) => ({
+                ...option,
+                description: "",
+                icon: PARALLEL_AGENT_ICONS[option.value],
+                tone:
+                  option.value === "machdoch" || option.value === "native"
+                    ? "violet"
+                    : "neutral",
+              }))}
               onSelect={(value) =>
                 void onCommand({
                   kind: "set-parallel-agent-mode",
@@ -400,6 +391,9 @@ export function RemoteComposer({
                 override={composer.adaptiveController.override}
                 defaultEnabled={composer.adaptiveController.defaultEnabled}
                 disabled={pending}
+                disabledReason={
+                  goalEnabled ? GOAL_ADAPTIVE_CONTROLLER_DISABLED_REASON : null
+                }
                 onChange={(override) =>
                   void onCommand({
                     kind: "set-adaptive-controller",
