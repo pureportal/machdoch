@@ -1,6 +1,19 @@
-import { Boxes, FileClock, FolderGit2, ImagePlus, Sparkles } from "lucide-react";
+import {
+  Expand,
+  Boxes,
+  FileClock,
+  FolderGit2,
+  ImagePlus,
+  Sparkles,
+} from "lucide-react";
 
-export type MediaStudioSection = "generate" | "flow" | "train" | "library" | "runs";
+export type MediaStudioSection =
+  | "upscale"
+  | "generate"
+  | "flow"
+  | "train"
+  | "library"
+  | "runs";
 
 const sections: readonly {
   id: MediaStudioSection;
@@ -10,6 +23,7 @@ const sections: readonly {
 }[] = [
   { id: "generate", label: "Basic", icon: ImagePlus },
   { id: "flow", label: "Advanced", icon: FolderGit2 },
+  { id: "upscale", label: "Upscale", icon: Expand },
   { id: "train", label: "Train", icon: Sparkles },
   { id: "library", label: "Assets", icon: Boxes, separated: true },
   { id: "runs", label: "Activity", icon: FileClock },

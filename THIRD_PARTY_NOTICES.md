@@ -2,6 +2,8 @@
 
 The Apache licence in the repository root applies to Machdoch-owned material. It does not replace the following upstream licences or the licences of dependencies and downloaded models.
 
+Local upscaling uses [Spandrel](https://github.com/chaiNNer-org/spandrel) (MIT) and separately downloaded [SPAN](https://github.com/hongyuanyu/SPAN) by Cheng Wan, Hongyuan Yu and collaborators (Apache-2.0), [SwinIR](https://github.com/JingyunLiang/SwinIR) by Jingyun Liang and collaborators (Apache-2.0), and [ai-forever's Real-ESRGAN](https://github.com/ai-forever/Real-ESRGAN) (BSD-3-Clause). Full model license copies are retained in [legal/third-party/upscalers](legal/third-party/upscalers) and downloaded beside the unmodified weights. Video encoding uses the existing FFmpeg runtime. No ComfyUI code or upscaler weights are bundled.
+
 The Qwen GGUF integration uses GGML's `gguf` 0.19.0 package, Copyright (c) 2023 Georgi Gerganov, under the [MIT licence](apps/client/src-tauri/python/LICENSE-gguf.txt). Quantized inference uses Diffusers' existing GGUF implementation, credited upstream to the Hugging Face team and City96. No ComfyUI GGUF node code is bundled.
 
 Separately downloaded FLUX.2 Dev packages retain the [Black Forest Labs model licence](https://github.com/black-forest-labs/flux2/blob/main/model_licenses/LICENSE-FLUX-DEV) and attribution notice. The GGUF transformer is by City96; the NF4 companion encoder is packaged by the Hugging Face Diffusers team. Mistral Small 3.2 is by Mistral AI under Apache-2.0. Machdoch assembles the local folder without changing weight bytes. These weights are not bundled.

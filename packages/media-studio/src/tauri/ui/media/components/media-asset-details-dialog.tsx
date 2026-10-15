@@ -17,6 +17,7 @@ export const MediaAssetDetailsDialog = ({
   onEdit,
   onUseAsReference,
   onAnimate,
+  onUpscale,
   onInspectSettings,
   onReuseSettings,
   children,
@@ -26,6 +27,7 @@ export const MediaAssetDetailsDialog = ({
   onEdit: (asset: MediaAssetRecord) => void;
   onUseAsReference: (asset: MediaAssetRecord) => void;
   onAnimate: (asset: MediaAssetRecord) => void;
+  onUpscale: (asset: MediaAssetRecord) => void;
   onInspectSettings: (runId: string) => void;
   onReuseSettings: (runId: string) => void;
   children: ReactNode;
@@ -53,7 +55,20 @@ export const MediaAssetDetailsDialog = ({
           className="h-[min(65dvh,720px)] min-h-48 w-full bg-slate-950"
         />
         <div className="min-w-0 space-y-4 border-t border-slate-800 p-4 lg:border-l lg:border-t-0">
-          {asset.kind !== "audio" ? <p className="text-xs text-slate-400">{asset.width} × {asset.height}</p> : null}
+          {asset.kind !== "audio" ? (
+            <p className="text-xs text-slate-400">
+              {asset.width} × {asset.height}
+            </p>
+          ) : null}
+          {["image", "video"].includes(asset.kind) ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onUpscale(asset)}
+            >
+              Upscale
+            </Button>
+          ) : null}
           <MediaSaveAssetButton key={`save-${asset.id}`} asset={asset} />
           {asset.kind === "image" ? (
             <div className="grid gap-2">

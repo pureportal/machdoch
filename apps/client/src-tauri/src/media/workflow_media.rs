@@ -1,5 +1,36 @@
 use super::*;
 
+pub(super) fn upscale(
+    app: &AppHandle,
+    paths: &MediaRuntimePaths,
+    request: &ExecuteMediaWorkflowRequest,
+    flow: &MediaFlowDocument,
+    values: &Values,
+    node: &MediaFlowNode,
+    iteration: u32,
+) -> MediaResult<String> {
+    let WorkflowValue::Video(source) = input(flow, values, node, "video")? else {
+        return Err("Connect a video to Upscale video".into());
+    };
+    let (details, asset) = provider_local_diffusers::upscale_video(
+        app,
+        paths,
+        &request.run_id,
+        source,
+        Value::Object(node.config.clone()),
+    )?;
+    database::workflow::publish(
+        paths,
+        &request.run_id,
+        &node.id,
+        iteration,
+        &asset,
+        "video",
+        &[source.clone()],
+        details,
+    )
+}
+
 pub(super) fn compose(
     app: &AppHandle,
     paths: &MediaRuntimePaths,

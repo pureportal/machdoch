@@ -1,10 +1,11 @@
+import { MediaUpscaleView } from "./components/media-upscale-view";
 import {
   OPEN_MEDIA_MODEL_PROFILES,
   openMediaModelProfile,
 } from "../../../core/media/open-model-profiles.js";
 import { useMediaStudioAutosave } from "./use-media-studio-autosave";
-import { selectMediaAddonImageModel } from "./media-addon-model";
 import { useMediaModelLibraryRefresh } from "./use-media-model-library-refresh";
+import { selectMediaAddonImageModel } from "./media-addon-model";
 import {
   createAudioRecipeFlow,
   readAudioRecipeSettings,
@@ -287,6 +288,7 @@ const NAVIGATION_ITEMS: readonly {
 }[] = [
   { id: "generate", label: "Basic" },
   { id: "flow", label: "Advanced" },
+  { id: "upscale", label: "Upscale" },
   { id: "train", label: "Train" },
   { id: "library", label: "Assets" },
   { id: "runs", label: "Activity" },
@@ -852,13 +854,13 @@ export const MediaStudio = ({
         );
         if (requestSequence === modelCatalogRequestSequence.current) {
           setModelCatalog(snapshot);
-          return snapshot;
-        }
           setRuntimeError((current) =>
             current?.context.operation === "get_media_model_catalog"
               ? null
               : current,
           );
+          return snapshot;
+        }
       } catch (error: unknown) {
         if (requestSequence === modelCatalogRequestSequence.current) {
           setRuntimeError(
@@ -890,18 +892,18 @@ export const MediaStudio = ({
       .then((discovery) => {
         if (requestSequence === workspaceDiscoveryRequestSequence.current) {
           setWorkspaceModelDiscovery(discovery);
-        }
-      })
           setRuntimeError((current) =>
             current?.context.operation === "discover_workspace_models"
               ? null
               : current,
           );
+        }
+      })
       .catch((error: unknown) => {
         if (requestSequence === workspaceDiscoveryRequestSequence.current) {
+          setWorkspaceModelDiscovery(null);
           setRuntimeError(
             normalizeMediaError(error, "discover_workspace_models"),
-          setWorkspaceModelDiscovery(null);
           );
         }
       });
@@ -919,9 +921,9 @@ export const MediaStudio = ({
             normalizeMediaError(error, "refresh_imported_models"),
           ),
         );
+        void refreshWorkspaceModels();
       }),
     [refreshModelCatalog, refreshWorkspaceModels],
-        void refreshWorkspaceModels();
   );
 
   const inspectModelImportPath = useCallback(
@@ -1124,10 +1126,10 @@ export const MediaStudio = ({
     void refreshWorkspaceModels();
   }, [refreshWorkspaceModels]);
 
-  useEffect(() => {
-    let disposed = false;
   useMediaModelLibraryRefresh(refreshModelCatalog, refreshWorkspaceModels);
 
+  useEffect(() => {
+    let disposed = false;
     let unsubscribe: (() => void) | undefined;
 
     void subscribeToUserSettingsChanged((kind) => {
@@ -1724,6 +1726,11 @@ export const MediaStudio = ({
       }),
     [flow, plan, runtimeAssets, runtimeStatus],
   );
+  const [upscaleAssetId, setUpscaleAssetId] = useState<string | null>(null);
+  const useAssetForUpscale = useCallback((asset: MediaAssetRecord) => {
+    setUpscaleAssetId(asset.id);
+    setState((current) => ({ ...current, activeSection: "upscale" }));
+  }, []);
   const selectSection = useCallback((activeSection: MediaStudioSection) => {
     setState((current) => ({ ...current, activeSection }));
   }, []);
@@ -1748,13 +1755,16 @@ export const MediaStudio = ({
                 ? "activity"
                 : item.id === "train"
                   ? "train"
-                  : "assets"
+                  : item.id === "upscale"
+                    ? "upscale"
+                    : "assets"
         }` as
           | "media.section.create"
           | "media.section.assets"
           | "media.section.graph"
           | "media.section.activity"
-          | "media.section.train";
+          | "media.section.train"
+          | "media.section.upscale";
         return {
           id: commandId,
           title: `Open Media ${item.label}`,
@@ -3939,6 +3949,90 @@ export const MediaStudio = ({
       true,
     );
   }, [basicVideoDraft, localFlowPending, runVideoFlowDocument]);
+  const runUpscaleFlow = useCallback(
+    async (source: MediaFlow): Promise<string> => {
+      const saved = await persistBasicFlowRevision(
+        source,
+        createMediaFlowLayout(source),
+        "Upscale",
+      );
+      const flow = saved.revision.flow;
+      const plan = compileMediaFlow({
+        flow,
+        models,
+        addons: activeModelCatalog.addons,
+        compiledAt: new Date().toISOString(),
+      });
+      if (
+        plan.status !== "ready" ||
+        plan.flowFingerprint !== saved.revision.executionDigest
+      ) {
+        throw new Error(
+          plan.diagnostics.find((item) => item.severity === "error")?.message ??
+            "Check the upscale settings and retry.",
+        );
+      }
+      const runId = createRunId();
+      const video = flow.nodes.some(
+        (node) => node.type === "operation.upscale-video",
+      );
+      enqueueMediaGeneration({
+        runId,
+        recipe: {
+          schemaVersion: 1,
+          mode: "advanced",
+          target: video ? "video" : "image",
+          flowId: flow.id,
+          flowName: flow.name,
+          flowRevisionId: saved.revision.revisionId,
+          flowRevisionNumber: saved.revision.revisionNumber,
+          planId: plan.id,
+          prompt: "",
+          modelId: null,
+          modelLabel: "Upscale",
+          modelAddons: [],
+          outputBranches: [],
+          imageSettings: null,
+          videoSettings: null,
+          resultDestination: "assets",
+        },
+        execute: () =>
+          invoke<MediaRunDetail>("media_execute_workflow", {
+            request: {
+              schemaVersion: 1,
+              runId,
+              flowId: flow.id,
+              flowRevisionId: saved.revision.revisionId,
+              planId: plan.id,
+              workspaceRoot,
+              modelBindings: {},
+              planSnapshot: {
+                schemaVersion: 1,
+                planId: plan.id,
+                flowId: flow.id,
+                flowFingerprint: plan.flowFingerprint,
+                compiledAt: plan.compiledAt,
+                nodes: flow.nodes.map(({ id, type, label, layer }) => ({
+                  id,
+                  type,
+                  label,
+                  layer,
+                })),
+                steps: plan.steps.map((step) => ({ ...step })),
+              },
+            },
+          }),
+        cancel: () => cancelMediaRun(runId),
+      });
+      return runId;
+    },
+    [
+      models,
+      activeModelCatalog.addons,
+      persistBasicFlowRevision,
+      workspaceRoot,
+    ],
+  );
   const runAudioFlowDocument = useCallback(
     (
       sourceFlow: MediaFlow,
@@ -4854,6 +4948,53 @@ export const MediaStudio = ({
               Loading Media Studio…
             </div>
           ) : null}
+          {loaded ? (
+            <div hidden={state.activeSection !== "upscale"} className="h-full">
+              <MediaUpscaleView
+                assets={runtimeAssets}
+                selectedAssetId={upscaleAssetId}
+                memoryBytes={
+                  runtimeStatus?.localDiffusers.deviceMemoryBytes ?? null
+                }
+                onSelectAsset={setUpscaleAssetId}
+                ready={
+                  runtimeStatus?.mode === "native" &&
+                  runtimeStatus.localDiffusers.ready
+                }
+                onRun={runUpscaleFlow}
+                onOpenActivity={inspectRunSettings}
+                jobs={generationJobs}
+                onCancel={cancelRun}
+                onOpenFlow={(next) => {
+                  applySemanticFlow(next);
+                  changeFlowLayout(createMediaFlowLayout(next));
+                  setFlowHistory(null);
+                  setFlowRunOverlayId(null);
+                  setState((current) => ({
+                    ...current,
+                    activeSection: "flow",
+                  }));
+                }}
+                onImport={async () => {
+                  const path = await openDialog({
+                    multiple: false,
+                    filters: [
+                      {
+                        name: "Image or video",
+                        extensions: ["png", "jpg", "jpeg", "webp", "webm"],
+                      },
+                    ],
+                  });
+                  if (typeof path !== "string") return null;
+                  const result = await importMediaAsset(path);
+                  if (!["image", "video"].includes(result.asset.kind))
+                    throw new Error("Choose an image or video.");
+                  await refreshRuntime();
+                  return result.asset;
+                }}
+              />
+            </div>
+          ) : null}
           {loaded && state.activeSection === "generate" ? (
             <MediaGenerateView
               workspaceRoot={workspaceRoot ?? ""}
@@ -4941,6 +5082,7 @@ export const MediaStudio = ({
               poseInstallPending={poseInstallPending}
               onEditResult={useAssetAsBaseImage}
               onAnimateResult={useAssetAsBasicVideoReference}
+              onUpscaleResult={useAssetForUpscale}
               onOpenResult={openAssetInLibrary}
               generationPending={generationPending || localFlowPending}
             />
@@ -5261,6 +5403,7 @@ export const MediaStudio = ({
               onUseAsPose={useAssetAsPose}
               onEditImage={useAssetAsBaseImage}
               onAnimateImage={useAssetAsBasicVideoReference}
+              onUpscale={useAssetForUpscale}
               onOpenVideoAsFlow={openAssetAsVideoFlow}
               onInspectSettings={inspectRunSettings}
               onReuseSettings={reuseRunSettings}

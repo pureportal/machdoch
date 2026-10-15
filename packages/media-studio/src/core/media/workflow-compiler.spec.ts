@@ -16,7 +16,10 @@ import type {
   MediaFlowNode,
   MediaModelDescriptor,
 } from "./contracts.js";
-import { createAudioRecipeFlow, DEFAULT_AUDIO_RECIPE_SETTINGS } from "./audio-flow.js";
+import {
+  createAudioRecipeFlow,
+  DEFAULT_AUDIO_RECIPE_SETTINGS,
+} from "./audio-flow.js";
 
 const models = createMediaModelCatalogSnapshot({
   isOpenAiConfigured: false,
@@ -61,7 +64,9 @@ const imageVariantVideoFlow = (): MediaFlow => {
     toPortId,
   });
   return {
-    ...structuredClone(templates[0]!.flow),
+    ...structuredClone(
+      templates.find((item) => item.id === "replace-selected-object")!.flow,
+    ),
     nodes: [
       workflowNode("base", "source.image", { assetId: "asset:base" }),
       workflowNode("brief", "source.prompt", { prompt: "A forest at sunrise" }),
@@ -117,7 +122,11 @@ describe("connected workflows", () => {
     const audioFlow = createAudioRecipeFlow({
       id: "mixed-audio-video",
       createdAt: compiledAt,
-      settings: { ...DEFAULT_AUDIO_RECIPE_SETTINGS, prompt: "Ocean waves", modelId: audioModel.id },
+      settings: {
+        ...DEFAULT_AUDIO_RECIPE_SETTINGS,
+        prompt: "Ocean waves",
+        modelId: audioModel.id,
+      },
     });
     const flow: MediaFlow = {
       ...audioFlow,
@@ -130,22 +139,55 @@ describe("connected workflows", () => {
       ],
       edges: [
         ...audioFlow.edges.filter((edge) => edge.toNodeId !== "output"),
-        { id: "a", fromNodeId: "opening", fromPortId: "video", toNodeId: "sequence", toPortId: "scene-1" },
-        { id: "b", fromNodeId: "closing", fromPortId: "video", toNodeId: "sequence", toPortId: "scene-2" },
-        { id: "c", fromNodeId: "generate", fromPortId: "audio", toNodeId: "sequence", toPortId: "audio" },
-        { id: "d", fromNodeId: "sequence", fromPortId: "video", toNodeId: "save-video", toPortId: "video" },
+        {
+          id: "a",
+          fromNodeId: "opening",
+          fromPortId: "video",
+          toNodeId: "sequence",
+          toPortId: "scene-1",
+        },
+        {
+          id: "b",
+          fromNodeId: "closing",
+          fromPortId: "video",
+          toNodeId: "sequence",
+          toPortId: "scene-2",
+        },
+        {
+          id: "c",
+          fromNodeId: "generate",
+          fromPortId: "audio",
+          toNodeId: "sequence",
+          toPortId: "audio",
+        },
+        {
+          id: "d",
+          fromNodeId: "sequence",
+          fromPortId: "video",
+          toNodeId: "save-video",
+          toPortId: "video",
+        },
       ],
     };
     const plan = compileMediaFlow({ flow, models: [audioModel], compiledAt });
     expect(plan.diagnostics).toEqual([]);
     expect(plan.status).toBe("ready");
-    expect(plan.runtimeBindings.map((binding) => binding.modality)).toEqual(["audio"]);
-    expect(plan.steps.filter((step) => step.kind === "generate-audio")).toHaveLength(1);
-    expect(plan.steps.find((step) => step.sourceNodeId === "sequence")?.kind).toBe("sequence-video");
+    expect(plan.runtimeBindings.map((binding) => binding.modality)).toEqual([
+      "audio",
+    ]);
+    expect(
+      plan.steps.filter((step) => step.kind === "generate-audio"),
+    ).toHaveLength(1);
+    expect(
+      plan.steps.find((step) => step.sourceNodeId === "sequence")?.kind,
+    ).toBe("sequence-video");
     const wrongType = structuredClone(flow);
     wrongType.edges.find((edge) => edge.id === "c")!.fromNodeId = "opening";
     wrongType.edges.find((edge) => edge.id === "c")!.fromPortId = "video";
-    expect(compileMediaFlow({ flow: wrongType, models: [audioModel], compiledAt }).status).toBe("blocked");
+    expect(
+      compileMediaFlow({ flow: wrongType, models: [audioModel], compiledAt })
+        .status,
+    ).toBe("blocked");
   });
 
   it("runs user audio and video without a generation model and requires two scenes", () => {
@@ -155,20 +197,61 @@ describe("connected workflows", () => {
       nodes: [
         workflowNode("clip", "source.video", { assetId: "asset:clip" }),
         workflowNode("song", "source.audio", { assetId: "asset:song" }),
-        workflowNode("soundtrack", "operation.video-audio", { audioStartSeconds: 1.5 }),
+        workflowNode("soundtrack", "operation.video-audio", {
+          audioStartSeconds: 1.5,
+        }),
         workflowNode("save", "output.video", { role: "opaque" }),
       ],
       edges: [
-        { id: "clip", fromNodeId: "clip", fromPortId: "video", toNodeId: "soundtrack", toPortId: "video" },
-        { id: "song", fromNodeId: "song", fromPortId: "audio", toNodeId: "soundtrack", toPortId: "audio" },
-        { id: "save", fromNodeId: "soundtrack", fromPortId: "video", toNodeId: "save", toPortId: "video" },
+        {
+          id: "clip",
+          fromNodeId: "clip",
+          fromPortId: "video",
+          toNodeId: "soundtrack",
+          toPortId: "video",
+        },
+        {
+          id: "song",
+          fromNodeId: "song",
+          fromPortId: "audio",
+          toNodeId: "soundtrack",
+          toPortId: "audio",
+        },
+        {
+          id: "save",
+          fromNodeId: "soundtrack",
+          fromPortId: "video",
+          toNodeId: "save",
+          toPortId: "video",
+        },
       ],
     };
-    expect(compileMediaFlow({ flow, models: [], compiledAt }).status).toBe("ready");
+    expect(compileMediaFlow({ flow, models: [], compiledAt }).status).toBe(
+      "ready",
+    );
     flow.nodes.find((node) => node.id === "song")!.config.assetId = "";
-    expect(compileMediaFlow({ flow, models: [], compiledAt }).status).toBe("blocked");
-    const sequence = { ...base, nodes: [workflowNode("sequence", "operation.video-sequence"), workflowNode("save", "output.video", { role: "opaque" })], edges: [{ id: "save", fromNodeId: "sequence", fromPortId: "video", toNodeId: "save", toPortId: "video" }] };
-    expect(compileMediaFlow({ flow: sequence, models: [], compiledAt }).status).toBe("blocked");
+    expect(compileMediaFlow({ flow, models: [], compiledAt }).status).toBe(
+      "blocked",
+    );
+    const sequence = {
+      ...base,
+      nodes: [
+        workflowNode("sequence", "operation.video-sequence"),
+        workflowNode("save", "output.video", { role: "opaque" }),
+      ],
+      edges: [
+        {
+          id: "save",
+          fromNodeId: "sequence",
+          fromPortId: "video",
+          toNodeId: "save",
+          toPortId: "video",
+        },
+      ],
+    };
+    expect(
+      compileMediaFlow({ flow: sequence, models: [], compiledAt }).status,
+    ).toBe("blocked");
   });
   it("compiles base image generation, resize, a variant, and distinct video endpoints", () => {
     const flow = imageVariantVideoFlow();
@@ -457,7 +540,9 @@ describe("connected workflows", () => {
     expect(plan.steps.some((step) => step.kind === "prepare-mask")).toBe(true);
   });
   it("selects a mask-capable model before ranking automatic edit candidates", () => {
-    const flow = structuredClone(templates[0]!.flow);
+    const flow = structuredClone(
+      templates.find((item) => item.id === "replace-selected-object")!.flow,
+    );
     flow.nodes.find((node) => node.id === "select")!.config.modelPath =
       "C:/models/sam3";
     flow.nodes.find((node) => node.id === "edit")!.config.modelId = null;
@@ -487,7 +572,9 @@ describe("connected workflows", () => {
       [{ outputFormat: "jpeg" }, "Choose PNG"],
       [{ transparentBackground: true }, "Turn off background removal"],
     ] as const) {
-      const flow = structuredClone(templates[0]!.flow);
+      const flow = structuredClone(
+        templates.find((item) => item.id === "replace-selected-object")!.flow,
+      );
       flow.nodes.find((node) => node.id === "select")!.config.modelPath =
         "C:/models/sam3";
       Object.assign(
@@ -553,7 +640,9 @@ describe("connected workflows", () => {
       expect(validateMediaFlowDocument(template.flow), template.name).toEqual(
         [],
       );
-    const flow = templates[0]!.flow;
+    const flow = templates.find(
+      (item) => item.id === "replace-selected-object",
+    )!.flow;
     const edit = flow.nodes.find((node) => node.id === "edit")!;
     const task = workflowTaskFlow(flow, edit);
     expect(
@@ -566,7 +655,8 @@ describe("connected workflows", () => {
 
   it("requires a SAM3 model before running a targeted edit", () => {
     const result = compileMediaFlow({
-      flow: templates[0]!.flow,
+      flow: templates.find((item) => item.id === "replace-selected-object")!
+        .flow,
       models,
       compiledAt,
     });
@@ -580,7 +670,9 @@ describe("connected workflows", () => {
   });
 
   it("compiles generation followed by SAM3 and an independently configured edit", () => {
-    const flow = structuredClone(templates[0]!.flow);
+    const flow = structuredClone(
+      templates.find((item) => item.id === "replace-selected-object")!.flow,
+    );
     flow.nodes.find((node) => node.id === "select")!.config.modelPath =
       "C:/models/sam3";
     const plan = compileMediaFlow({ flow, models, compiledAt });

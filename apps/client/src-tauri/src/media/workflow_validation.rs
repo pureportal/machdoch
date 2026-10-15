@@ -195,6 +195,7 @@ pub(super) fn preflight(
                 | "operation.prepare-mask"
                 | "operation.visual-check"
                 | "operation.upscale"
+                | "operation.upscale-video"
                 | "operation.crop"
                 | "operation.resize"
                 | "operation.color-adjust"
@@ -243,8 +244,14 @@ pub(super) fn preflight(
         }
         if matches!(
             node.r#type.as_str(),
+            "operation.upscale" | "operation.upscale-video"
+        ) && !std::path::Path::new(config_text(node, "modelPath")).is_file()
+        {
+            return Err("The upscaler model is not installed. Choose an existing model file or download a model.".into());
+        }
+        if matches!(
+            node.r#type.as_str(),
             "operation.segment"
-                | "operation.upscale"
                 | "task.generate-prompt"
                 | "operation.visual-check"
                 | "operation.lip-sync"

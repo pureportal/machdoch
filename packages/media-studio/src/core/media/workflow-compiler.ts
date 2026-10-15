@@ -23,6 +23,7 @@ export const requiresWorkflowCompilation = (flow: MediaFlow): boolean =>
       "operation.visual-check",
       "operation.prepare-mask",
       "operation.upscale",
+      "operation.upscale-video",
       "operation.canny",
       "operation.image-mask",
       "operation.mask-composite",
@@ -38,8 +39,11 @@ export const requiresWorkflowCompilation = (flow: MediaFlow): boolean =>
   ) ||
   flow.nodes.filter((node) => node.type === "task.generate-video").length > 1 ||
   (flow.nodes.some((node) => node.type === "task.generate-audio") &&
-    flow.nodes.some((node) =>
-      !["source.prompt", "task.generate-audio", "output.audio"].includes(node.type),
+    flow.nodes.some(
+      (node) =>
+        !["source.prompt", "task.generate-audio", "output.audio"].includes(
+          node.type,
+        ),
     )) ||
   flow.nodes.filter((node) =>
     ["task.generate-image", "task.edit-image"].includes(node.type),
@@ -80,6 +84,7 @@ export const WORKFLOW_EXECUTABLE_TYPES = new Set([
   "operation.visual-check",
   "operation.prepare-mask",
   "operation.upscale",
+  "operation.upscale-video",
   "operation.canny",
   "operation.image-mask",
   "operation.mask-composite",
@@ -401,6 +406,7 @@ export function compileConnectedMediaFlow(
         "operation.prepare-mask": "prepare-mask",
         "operation.visual-check": "check-image",
         "operation.upscale": "upscale-image",
+        "operation.upscale-video": "upscale-video",
         "operation.canny": "prepare-control-image",
         "operation.image-mask": "prepare-mask",
         "operation.mask-composite": "prepare-mask",
@@ -435,6 +441,7 @@ export function compileConnectedMediaFlow(
         "operation.segment",
         "operation.visual-check",
         "operation.upscale",
+        "operation.upscale-video",
         "operation.lip-sync",
       ].includes(node.type) &&
       !String(node.config.modelPath ?? "").trim()

@@ -152,6 +152,7 @@ interface MediaAssetsViewProps {
   onUseAsPose: (asset: MediaAssetRecord) => void;
   onEditImage: (asset: MediaAssetRecord) => void;
   onAnimateImage: (asset: MediaAssetRecord) => void;
+  onUpscale: (asset: MediaAssetRecord) => void;
   onOpenVideoAsFlow: (asset: MediaAssetRecord) => void;
   onInspectSettings: (runId: string) => void;
   onReuseSettings: (runId: string) => void;
@@ -234,6 +235,7 @@ export const MediaAssetsView = ({
   onUseAsPose,
   onEditImage,
   onAnimateImage,
+  onUpscale,
   onOpenVideoAsFlow,
   onInspectSettings,
   onReuseSettings,
@@ -281,11 +283,11 @@ export const MediaAssetsView = ({
   const [importArchitecture, setImportArchitecture] = useState<
     string | undefined
   >();
-  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
-  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(
   const [configureFile, setConfigureFile] = useState<
     (typeof discoveredFiles)[number] | null
   >(null);
+  const [categoryManagerOpen, setCategoryManagerOpen] = useState(false);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(
     openAssetId ?? null,
   );
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(
@@ -430,8 +432,6 @@ export const MediaAssetsView = ({
                 : addon.kind === "textual-inversion")),
         )
       : [];
-  const visibleMedia = discoverMediaResources(assets, metadata, categories, {
-    ...resourceFilters,
   const visibleFiles =
     showResources && ["all", "model", "lora", "embedding"].includes(filter)
       ? discoveredFiles
@@ -485,6 +485,8 @@ export const MediaAssetsView = ({
             );
           })
       : [];
+  const visibleMedia = discoverMediaResources(assets, metadata, categories, {
+    ...resourceFilters,
     sort: sort === "default" ? "newest" : sort,
   }).filter(
     (asset) =>
@@ -991,8 +993,6 @@ export const MediaAssetsView = ({
                 </ContextActionMenu>
               );
             })}
-            {filter === "all" && visibleAddons.length > 0 ? (
-              <h2 className="col-span-full text-sm font-medium text-slate-300">
             {visibleFiles.map((file) => (
               <article
                 key={file.path}
@@ -1036,6 +1036,8 @@ export const MediaAssetsView = ({
                 )}
               </article>
             ))}
+            {filter === "all" && visibleAddons.length > 0 ? (
+              <h2 className="col-span-full text-sm font-medium text-slate-300">
                 LoRAs and embeddings
               </h2>
             ) : null}
@@ -1144,6 +1146,14 @@ export const MediaAssetsView = ({
                           icon: Copy,
                           onSelect: () => copyText(asset.id),
                         },
+                        ...(["image", "video"].includes(asset.kind)
+                          ? [
+                              {
+                                label: "Upscale",
+                                onSelect: () => onUpscale(asset),
+                              },
+                            ]
+                          : []),
                         ...(asset.kind === "image"
                           ? [
                               ...(isMediaOpenPoseAsset(asset)
@@ -1469,6 +1479,7 @@ export const MediaAssetsView = ({
           onEdit={onEditImage}
           onUseAsReference={onUseAsReference}
           onAnimate={onAnimateImage}
+          onUpscale={onUpscale}
           onInspectSettings={onInspectSettings}
           onReuseSettings={onReuseSettings}
         >
@@ -1543,17 +1554,6 @@ export const MediaAssetsView = ({
         <MediaAssetImportDialog
           initialPath={importPath}
           initialArchitecture={importArchitecture}
-          assets={assets}
-          categories={categories}
-          loading={importLoading}
-          progress={importProgress}
-          modelInspection={modelImportInspection}
-          addonInspection={addonImportInspection}
-          civitaiInspection={civitaiInspection}
-          error={importError}
-          onInspectModel={onInspectModel}
-          onInspectAddon={onInspectAddon}
-          onInspectCivitai={onInspectCivitai}
           initialType={
             configureFile
               ? configureFile.kind === "model-addon"
@@ -1565,6 +1565,17 @@ export const MediaAssetsView = ({
           }
           configure={configureFile !== null}
           initialDisplayName={configureFile?.displayName}
+          assets={assets}
+          categories={categories}
+          loading={importLoading}
+          progress={importProgress}
+          modelInspection={modelImportInspection}
+          addonInspection={addonImportInspection}
+          civitaiInspection={civitaiInspection}
+          error={importError}
+          onInspectModel={onInspectModel}
+          onInspectAddon={onInspectAddon}
+          onInspectCivitai={onInspectCivitai}
           onImportMedia={onImportMedia}
           onImportModel={onImportModel}
           onImportAddon={onImportAddon}
@@ -1572,6 +1583,7 @@ export const MediaAssetsView = ({
           onViewResource={(resourceId) => {
             if (showResource(resourceId)) {
               setImportOpen(false);
+              setConfigureFile(null);
               setImportArchitecture(undefined);
             }
           }}
@@ -1579,11 +1591,11 @@ export const MediaAssetsView = ({
           onManageCategories={() => setCategoryManagerOpen(true)}
           onClose={() => {
             setImportOpen(false);
+            setConfigureFile(null);
             setImportArchitecture(undefined);
             onDismissImport();
           }}
         />
-              setConfigureFile(null);
       ) : null}
       {categoryManagerOpen ? (
         <MediaCategoryManagerDialog
@@ -1591,7 +1603,6 @@ export const MediaAssetsView = ({
           metadata={metadata}
           onChange={onCategoryStateChange}
           onClose={() => setCategoryManagerOpen(false)}
-            setConfigureFile(null);
         />
       ) : null}
       <Dialog

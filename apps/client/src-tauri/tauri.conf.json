@@ -144,6 +144,8 @@
       "python/media_svg_refinement.py": "python/media_svg_refinement.py",
       "python/media_image_addons.py": "python/media_image_addons.py",
       "python/media_workflow_worker.py": "python/media_workflow_worker.py",
+      "python/media_upscale.py": "python/media_upscale.py",
+      "python/media_upscale_settings.py": "python/media_upscale_settings.py",
       "python/media_video_composition.py": "python/media_video_composition.py",
       "python/media_lip_sync.py": "python/media_lip_sync.py",
       "python/media_musetalk.py": "python/media_musetalk.py",

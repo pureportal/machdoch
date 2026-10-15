@@ -141,6 +141,26 @@ export function createConnectedWorkflowTemplates(): MediaFlowTemplateDescriptor[
     ),
   );
   return [
+    create(
+      "upscale-image",
+      "Upscale image",
+      [
+        node("image", "source.image", "Source image"),
+        node("upscale", "operation.upscale", "AI upscale"),
+        node("save", "output.asset", "Save image"),
+      ],
+      [edge("image", "upscale"), edge("upscale", "save")],
+    ),
+    create(
+      "upscale-video",
+      "Upscale video",
+      [
+        node("video", "source.video", "Source video"),
+        node("upscale", "operation.upscale-video", "Upscale video"),
+        node("save", "output.video", "Save video"),
+      ],
+      [edge("video", "upscale", "video"), edge("upscale", "save", "video")],
+    ),
     selection(false),
     selection(true),
     create(

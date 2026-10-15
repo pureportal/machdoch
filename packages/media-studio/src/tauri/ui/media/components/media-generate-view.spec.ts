@@ -180,6 +180,7 @@ const createProps = (
   onInstallPoseControl: noop,
   poseInstallPending: false,
   onEditResult: noop,
+  onUpscaleResult: noop,
   onAnimateResult: noop,
   onOpenResult: noop,
   generationPending: false,

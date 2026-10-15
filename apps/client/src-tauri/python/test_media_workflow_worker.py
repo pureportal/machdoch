@@ -156,7 +156,9 @@ class WorkflowWorkerTests(unittest.TestCase):
                 return torch.nn.functional.interpolate(image, scale_factor=2, mode="nearest")
 
         pixels = np.random.default_rng(17).integers(0, 255, (91, 139, 3), dtype=np.uint8)
-        actual = worker.tiled_upscale(Image.fromarray(pixels), Upscaler(), torch, "cpu", 64)
+        from media_upscale import tiled_upscale
+
+        actual = tiled_upscale(Image.fromarray(pixels), Upscaler(), torch, "cpu", 64)
         expected = np.repeat(np.repeat(pixels, 2, axis=0), 2, axis=1)
         np.testing.assert_array_equal(np.asarray(actual), expected)
 

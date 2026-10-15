@@ -214,6 +214,7 @@ export type MediaNodeType =
   | "task.generate-prompt"
   | "operation.segment"
   | "operation.upscale"
+  | "operation.upscale-video"
   | "control.repeat"
   | "source.prompt"
   | "source.image"
@@ -1327,6 +1328,7 @@ export interface MediaExecutionStep {
     | "prepare-mask"
     | "check-image"
     | "upscale-image"
+    | "upscale-video"
     | "prepare-control-image"
     | "apply-controlnet"
     | "repeat-flow"
@@ -1445,6 +1447,7 @@ export interface MediaRunPlanSnapshot {
 }
 
 export type MediaStudioSection =
+  | "upscale"
   | "generate"
   | "flow"
   | "train"
