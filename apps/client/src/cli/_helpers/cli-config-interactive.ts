@@ -1,3 +1,4 @@
+import { requestDesktopSettings } from "./cli-desktop-settings-bridge.js";
 import process from "node:process";
 import { VALID_MODEL_PROVIDERS } from "../../core/runtime-contract.generated.js";
 import {
@@ -17,10 +18,7 @@ import type {
 } from "./cli-prompter.js";
 import { InteractiveInputCancelledError } from "./cli-interactive-commands.js";
 import { getProviderModelMetadata } from "../../core/provider-model-registry.js";
-import {
-  DESKTOP_CONFIG_DEFINITIONS,
-  requestDesktopSettings,
-} from "./cli-desktop-config.js";
+import { DESKTOP_CONFIG_DEFINITIONS } from "./cli-desktop-config.js";
 import { editPrompt } from "./cli-editor.js";
 import {
   loadConfigDocument,

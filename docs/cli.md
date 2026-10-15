@@ -40,7 +40,9 @@ Activity stays above the prompt, with live elapsed time, tool output, completion
 
 Workspace settings include provider, model, mode, reasoning, context window, memory, adaptive behavior, agent limits, and MCP connections. Global settings include credentials, provider integration, agent settings, memory, voice, desktop behavior, appearance, asset storage, and workspace-run timing. Defaults include session policy and new-chat choices.
 
-Desktop-stored defaults, appearance, asset operations, startup registration, and settings transfer require the desktop app to be running. Other settings can be edited with the desktop closed.
+Provider, model, mode, reasoning, memory, and desktop-control defaults are shared with desktop and can be edited with the app closed. Explicit CLI options, environment values, and workspace settings take precedence over global defaults. Each provider remembers its own default model.
+
+Appearance, asset operations, startup registration, and settings transfer require the desktop app to be running.
 
 Transfer settings supports encrypted files and transfers between computers. Imports show the categories that will be replaced or cleared before applying them. Network transfers require confirmation of the matching pairing code on both computers.
 
@@ -49,6 +51,9 @@ For scripts:
 ```sh
 machdoch config list --json
 machdoch config get workspace.model
+machdoch config set defaults.provider codex-cli
+machdoch config set defaults.model gpt-6-astra
+machdoch config set defaults.reasoning high
 machdoch config set agent.adaptive on
 machdoch config set desktop.ai-context-max-messages 80
 machdoch config set desktop.chat-idle-timeout-minutes 30

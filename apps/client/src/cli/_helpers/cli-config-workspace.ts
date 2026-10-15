@@ -32,9 +32,6 @@ import {
 } from "./cli-config-values.js";
 const BOOLEAN_CHOICES = ["on", "off"] as const;
 
-const savedFirstSource = (persisted: unknown, envValue?: string): string =>
-  persisted !== undefined ? "saved" : envValue ? "environment" : "default";
-
 export const WORKSPACE_CONFIG_DEFINITIONS: readonly CliConfigSettingDefinition[] =
   [
     {
@@ -295,6 +292,7 @@ const resolveEntry = (
           snapshot.env.MACHDOCH_MODE === "machdoch"
           ? snapshot.env.MACHDOCH_MODE
           : undefined,
+        snapshot.chatDefaults.mode ? "global defaults" : "default",
       );
       break;
     case "workspace.provider":
@@ -304,13 +302,19 @@ const resolveEntry = (
           .provider as (typeof VALID_MODEL_PROVIDERS)[number],
       )
         ? "saved"
-        : "auto-detected";
+        : snapshot.chatDefaults.provider
+          ? "global defaults"
+          : "auto-detected";
       break;
     case "workspace.model":
       value = snapshot.runtime.model;
-      source = savedFirstSource(
+      source = configSource(
         snapshot.workspaceConfig.model,
         snapshot.env.MACHDOCH_MODEL,
+        snapshot.runtime.provider !== "unconfigured" &&
+          snapshot.chatDefaults.models[snapshot.runtime.provider]
+          ? "global defaults"
+          : "default",
       );
       break;
     case "workspace.reasoning":
@@ -327,6 +331,7 @@ const resolveEntry = (
         )
           ? snapshot.env.MACHDOCH_REASONING
           : undefined,
+        snapshot.chatDefaults.reasoning ? "global defaults" : "default",
       );
       break;
     case "workspace.reasoning-mode":

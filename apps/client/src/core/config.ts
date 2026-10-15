@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadFleetManagedProfile } from "./fleet-settings.js";
+import { loadChatDefaults } from "./chat-defaults.js";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import {
   assertContextWindowSupportedForProviderModel,
@@ -540,6 +541,7 @@ export const loadRuntimeConfig = async (
     await loadUserInternalTaskModelSettings();
   const { config, path } = await loadWorkspaceConfigFile(workspaceRoot);
   const managedDefaults = (await loadFleetManagedProfile())?.document.defaults;
+  const chatDefaults = await loadChatDefaults();
   const providerAvailability = getProviderAvailability(env);
   const webSearchProviderAvailability = getWebSearchProviderAvailability(env);
   const modeFromEnv = isRunMode(env.MACHDOCH_MODE)
@@ -552,6 +554,7 @@ export const loadRuntimeConfig = async (
     overrideMode ??
     modeFromEnv ??
     configuredMode ??
+    chatDefaults.mode ??
     managedDefaults?.mode ??
     "machdoch";
   const rawReasoningFromEnv = normalizeOptionalString(env.MACHDOCH_REASONING);
@@ -582,6 +585,7 @@ export const loadRuntimeConfig = async (
     overrideReasoning ??
     reasoningFromEnv ??
     configuredReasoning ??
+    chatDefaults.reasoning ??
     managedDefaults?.reasoning ??
     "default";
   const rawReasoningModeFromEnv = normalizeOptionalString(
@@ -643,6 +647,7 @@ export const loadRuntimeConfig = async (
   const provider = resolveProvider(
     overrideProvider ??
       config.provider ??
+      chatDefaults.provider ??
       managedDefaults?.provider ??
       undefined,
     providerAvailability,
@@ -653,6 +658,7 @@ export const loadRuntimeConfig = async (
     normalizeOptionalString(overrideModel) ??
     normalizeOptionalString(env.MACHDOCH_MODEL) ??
     config.model ??
+    (provider === "unconfigured" ? undefined : chatDefaults.models[provider]) ??
     managedModel ??
     getDefaultModelForRuntimeProvider(provider);
 
