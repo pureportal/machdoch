@@ -5,6 +5,7 @@ import { CliUsageError } from "./cli-error.js";
 import { probeCodexCliImageInput } from "./codex-cli-image-capability.js";
 import { parseConversationContext } from "./cli-chat-sessions.js";
 import { loadRuntimeConfig } from "../../core/config.js";
+import { loadChatDefaults } from "../../core/chat-defaults.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import { createTaskExecutionController } from "../../core/execution.js";
 import {
@@ -224,7 +225,7 @@ export const resolveConversationContext = async (
   args: Pick<
     ParsedCliArgs,
     "conversationContextFile" | "globalMemoryEnabled" | "sessionMemoryEnabled"
-  >,
+  > & { workspaceRoot?: string },
   explicitContext?: TaskConversationContext,
 ): Promise<TaskConversationContext | undefined> => {
   const baseContext =
@@ -233,15 +234,21 @@ export const resolveConversationContext = async (
       ? await loadConversationContextFromFile(args.conversationContextFile)
       : undefined);
 
-  if (
-    !baseContext &&
-    args.sessionMemoryEnabled === undefined &&
-    args.globalMemoryEnabled === undefined
-  ) {
-    return undefined;
-  }
+  const defaults = await loadChatDefaults();
 
   return {
+    ...(defaults.sessionMemoryEnabled !== undefined
+      ? { sessionMemoryEnabled: defaults.sessionMemoryEnabled }
+      : {}),
+    ...(defaults.useWorkspaceMemory !== undefined
+      ? { workspaceMemoryEnabled: defaults.useWorkspaceMemory }
+      : {}),
+    ...(defaults.useGlobalMemory !== undefined
+      ? { globalMemoryEnabled: defaults.useGlobalMemory }
+      : {}),
+    ...(defaults.uiControlEnabled !== undefined
+      ? { uiControlEnabled: defaults.uiControlEnabled }
+      : {}),
     ...baseContext,
     history: baseContext?.history ?? [],
     ...(args.sessionMemoryEnabled !== undefined

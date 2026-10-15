@@ -26,7 +26,7 @@ afterEach(async () => {
 });
 
 describe("configuration family mutations", () => {
-  it("preserves environment-first mode and agent limits, and saved-first model sources", async () => {
+  it("reports environment overrides for mode, model and agent limits", async () => {
     vi.stubEnv("OPENAI_API_KEY", "sk-source-precedence-123456");
     vi.stubEnv("MACHDOCH_MODE", "ask");
     vi.stubEnv("MACHDOCH_MODEL", "environment-model");
@@ -41,7 +41,7 @@ describe("configuration family mutations", () => {
     ).toMatchObject({ source: "environment" });
     expect(
       entries.find((entry) => entry.setting === "workspace.model"),
-    ).toMatchObject({ source: "saved" });
+    ).toMatchObject({ source: "environment", value: "environment-model" });
     expect(
       entries.find((entry) => entry.setting === "agent-limits.executor-turns"),
     ).toMatchObject({ source: "environment", value: 31 });

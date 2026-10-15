@@ -1,8 +1,15 @@
-import { createConnection } from "node:net";
-import { readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { getUserConfigPath } from "../../core/env.js";
 import {
+  requestDesktopSettings,
+  readDesktopSettingsDescriptor,
+} from "./cli-desktop-settings-bridge.js";
+import {
+  CHAT_DEFAULT_SHELL_KEYS,
+  loadChatDefaultState,
+  saveChatPreference,
+} from "../../core/chat-defaults.js";
+import {
+  DEFAULT_MODEL_BY_PROVIDER,
+  DEFAULT_MODEL_PROVIDER,
   REASONING_MODES,
   VALID_MODEL_PROVIDERS,
 } from "../../core/runtime-contract.generated.js";
@@ -207,145 +214,56 @@ export const DESKTOP_CONFIG_DEFINITIONS: readonly DesktopConfigDefinition[] = [
   },
 ];
 
-interface DesktopBridgeDescriptor {
-  version: 1;
-  pid: number;
-  port: number;
-  token: string;
-}
+const isChatPreference = (setting: string): boolean =>
+  setting.startsWith("defaults.") || setting.startsWith("spoken-reply.");
 
-const readDescriptor = async (): Promise<
-  DesktopBridgeDescriptor | undefined
-> => {
-  let raw: string;
-  try {
-    raw = await readFile(
-      join(dirname(getUserConfigPath()), "cli-settings-bridge.json"),
-      "utf8",
-    );
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
-    throw error;
-  }
-  const descriptor: DesktopBridgeDescriptor = JSON.parse(raw);
-  if (
-    descriptor.version !== 1 ||
-    !Number.isInteger(descriptor.pid) ||
-    !Number.isInteger(descriptor.port) ||
-    descriptor.port < 1 ||
-    descriptor.port > 65535 ||
-    !/^[0-9a-f]{64}$/u.test(descriptor.token)
-  )
-    throw new Error(
-      "Desktop settings connection is invalid. Restart the desktop app.",
-    );
-  try {
-    process.kill(descriptor.pid, 0);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ESRCH") return undefined;
-    throw error;
-  }
-  return descriptor;
-};
-
-export const requestDesktopSettings = async (
-  action: "snapshot" | "set" | "action" | "transfer",
-  setting = "",
-  value?: unknown,
-): Promise<unknown> => {
-  const descriptor = await readDescriptor();
-  if (!descriptor)
-    throw new CliUsageError("Open the desktop app to edit this setting.");
-  return await new Promise<unknown>((resolve, reject) => {
-    const socket = createConnection({
-      host: "127.0.0.1",
-      port: descriptor.port,
-    });
-    let data = "";
-    let settled = false;
-    const finish = (error?: Error, value?: unknown): void => {
-      if (settled) return;
-      settled = true;
-      socket.destroy();
-      if (error) reject(error);
-      else resolve(value);
-    };
-    socket.setEncoding("utf8");
-    socket.setTimeout(action === "snapshot" ? 2_000 : 120_000, () =>
-      finish(
-        new Error(
-          "Desktop settings timed out. Restart the desktop app and try again.",
-        ),
-      ),
-    );
-    socket.once("error", () =>
-      finish(
-        new Error(
-          "Desktop settings are unavailable. Restart the desktop app and try again.",
-        ),
-      ),
-    );
-    socket.once("connect", () =>
-      socket.write(
-        JSON.stringify({
-          token: descriptor.token,
-          action,
-          setting,
-          ...(value === undefined ? {} : { value }),
-        }) + "\n",
-      ),
-    );
-    socket.on("data", (chunk: string) => {
-      data += chunk;
-      if (data.length > 1_000_000) {
-        finish(new Error("Desktop settings response is too large."));
-        return;
-      }
-      if (!data.includes("\n")) return;
-      try {
-        const response = JSON.parse(data.slice(0, data.indexOf("\n"))) as {
-          ok: boolean;
-          data?: unknown;
-          error?: string;
-        };
-        finish(
-          response.ok
-            ? undefined
-            : new Error(response.error ?? "Desktop settings failed."),
-          response.data,
-        );
-      } catch (error) {
-        finish(error instanceof Error ? error : new Error(String(error)));
-      }
-    });
-    socket.once("end", () =>
-      finish(new Error("Desktop settings connection ended before responding.")),
-    );
-  });
+const chatPreferencePath = (
+  setting: string,
+  state: Record<string, unknown>,
+): readonly string[] => {
+  if (setting.startsWith("spoken-reply."))
+    return ["voice", setting.slice("spoken-reply.".length)];
+  const key = setting.slice(
+    "defaults.".length,
+  ) as keyof typeof CHAT_DEFAULT_SHELL_KEYS;
+  return key === "model"
+    ? [
+        CHAT_DEFAULT_SHELL_KEYS.model,
+        String(state.lastSelectedProvider ?? DEFAULT_MODEL_PROVIDER),
+      ]
+    : [CHAT_DEFAULT_SHELL_KEYS[key]];
 };
 
 export const loadDesktopConfigEntries = async (): Promise<CliConfigEntry[]> => {
+  const chatState = await loadChatDefaultState();
   let snapshot: unknown;
   let unavailable: string | undefined;
   try {
-    const descriptor = await readDescriptor();
+    const descriptor = await readDesktopSettingsDescriptor();
     if (descriptor) snapshot = await requestDesktopSettings("snapshot");
     else unavailable = "Open the desktop app to edit this setting.";
   } catch (error) {
     unavailable = error instanceof Error ? error.message : String(error);
   }
   return DESKTOP_CONFIG_DEFINITIONS.map((definition) => {
-    const provider = getObjectValue(snapshot, [
-      "defaults",
-      "newChat",
-      "provider",
-    ]);
-    const raw = getObjectValue(
-      snapshot,
-      definition.setting === "defaults.model"
-        ? ["defaults", "newChat", "models", String(provider)]
-        : definition.path,
-    );
+    if (isChatPreference(definition.nativeSetting)) {
+      const raw = getObjectValue(
+        chatState,
+        chatPreferencePath(definition.nativeSetting, chatState),
+      );
+      const provider = String(
+        chatState.lastSelectedProvider ?? DEFAULT_MODEL_PROVIDER,
+      ) as keyof typeof DEFAULT_MODEL_BY_PROVIDER;
+      return {
+        ...definition,
+        value: (raw ??
+          (definition.setting === "defaults.model"
+            ? DEFAULT_MODEL_BY_PROVIDER[provider]
+            : definition.defaultValue)) as string | number | boolean,
+        source: raw === undefined ? "default" : "saved",
+      };
+    }
+    const raw = getObjectValue(snapshot, definition.path);
     const value = !snapshot
       ? "unavailable"
       : definition.secret
@@ -381,11 +299,43 @@ const writeDesktopConfigSetting = async (
       throw new CliUsageError("Enter a number.");
   } else if (definition.choices && !definition.choices.includes(raw))
     throw new CliUsageError(`Choose ${definition.choices.join(", ")}.`);
-  await requestDesktopSettings("set", definition.nativeSetting, value);
+  if (definition.setting === "defaults.model" && text !== undefined) {
+    value = raw.trim();
+    if (
+      typeof value !== "string" ||
+      !value ||
+      [...value].length > 512 ||
+      /\p{Cc}/u.test(value)
+    )
+      throw new CliUsageError(
+        "Enter a model id of up to 512 characters without control characters.",
+      );
+  }
+  if (
+    definition.setting === "spoken-reply.rate" &&
+    (Number(value) < 0.8 || Number(value) > 1.4)
+  )
+    throw new CliUsageError("Enter a speech rate from 0.8 to 1.4.");
+  let configPath = "desktop";
+  if (
+    isChatPreference(definition.nativeSetting) &&
+    !(await readDesktopSettingsDescriptor())
+  )
+    configPath = await saveChatPreference(definition.nativeSetting, value);
+  else {
+    if (definition.setting === "defaults.model" && text === undefined) {
+      const state = await loadChatDefaultState();
+      const provider = String(
+        state.lastSelectedProvider ?? DEFAULT_MODEL_PROVIDER,
+      ) as keyof typeof DEFAULT_MODEL_BY_PROVIDER;
+      value = DEFAULT_MODEL_BY_PROVIDER[provider];
+    }
+    await requestDesktopSettings("set", definition.nativeSetting, value);
+  }
   return {
     setting: definition.setting,
     scope: "user",
-    configPath: "desktop",
+    configPath,
     status: text === undefined ? "reset" : "configured",
     ...(text !== undefined && !definition.secret ? { value: text } : {}),
   };

@@ -1,12 +1,12 @@
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { requestDesktopSettings } from "./cli-desktop-settings-bridge.js";
+import { mkdtemp, writeFile, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer, type Server } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  loadDesktopConfigEntries,
-  requestDesktopSettings,
-} from "./cli-desktop-config.js";
+import { getChatDefaultsPath } from "../../core/chat-defaults.js";
+import { dirname } from "node:path";
+import { loadDesktopConfigEntries } from "./cli-desktop-config.js";
 import {
   clearConfigSetting,
   saveConfigSetting,
@@ -27,25 +27,48 @@ afterEach(async () => {
 });
 
 describe("desktop settings bridge", () => {
-  it("keeps desktop controls visible when the desktop is closed", async () => {
+  it("makes chat defaults editable when the desktop is closed", async () => {
     const entries = await loadDesktopConfigEntries();
     expect(
       entries.find((entry) => entry.setting === "defaults.provider"),
     ).toMatchObject({
-      source: "unavailable",
-      unavailable: expect.stringContaining("Open the desktop"),
+      source: "default",
+      value: "openai",
     });
+    expect(
+      entries.find((entry) => entry.setting === "defaults.provider"),
+    ).not.toHaveProperty("unavailable");
+    expect(
+      entries.find((entry) => entry.setting === "assets.folder"),
+    ).toHaveProperty("unavailable");
   });
 
   it("isolates a stale or invalid descriptor from the rest of configuration", async () => {
     await writeFile(join(root, "cli-settings-bridge.json"), "{}");
     const entries = await loadDesktopConfigEntries();
     expect(
-      entries.every((entry) => entry.unavailable?.includes("Restart")),
+      entries
+        .filter(
+          (entry) =>
+            !entry.setting.startsWith("defaults.") &&
+            !entry.setting.startsWith("spoken-reply."),
+        )
+        .every((entry) => entry.unavailable?.includes("Restart")),
     ).toBe(true);
   });
 
   it("authenticates a local request and masks secret settings", async () => {
+    await mkdir(dirname(getChatDefaultsPath()), { recursive: true });
+    await writeFile(
+      getChatDefaultsPath(),
+      JSON.stringify({
+        state: {
+          lastSelectedProvider: "openai",
+          lastSelectedModelByProvider: { openai: "test-model" },
+        },
+        revision: 1,
+      }),
+    );
     const requests: unknown[] = [];
     server = createServer((socket) => {
       socket.setEncoding("utf8");

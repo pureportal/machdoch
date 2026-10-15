@@ -76,10 +76,10 @@ afterEach(async () => {
 });
 
 describe("resolveConversationContext", () => {
-  it("returns undefined when neither a base context nor CLI overrides exist", async () => {
+  it("starts an empty context when neither a base context nor CLI overrides exist", async () => {
     await expect(
       resolveConversationContext(createArgs()),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual({ history: [] });
   });
 
   it("preserves explicit conversation state when no CLI overrides are provided", async () => {

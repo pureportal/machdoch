@@ -177,10 +177,6 @@ async fn load_cached_snapshot(
     cache: &mut Option<ShellStateSnapshot>,
     fallback: Value,
 ) -> Result<ShellStateSnapshot, String> {
-    if let Some(snapshot) = cache.as_ref() {
-        return Ok(snapshot.clone());
-    }
-
     let app_handle = app_handle.clone();
     let snapshot = run_snapshot_io(move || {
         let path = snapshot_path(&app_handle)?;
@@ -196,10 +192,6 @@ fn load_cached_snapshot_blocking<R: Runtime>(
     cache: &mut Option<ShellStateSnapshot>,
     fallback: Value,
 ) -> Result<ShellStateSnapshot, String> {
-    if let Some(snapshot) = cache.as_ref() {
-        return Ok(snapshot.clone());
-    }
-
     let path = snapshot_path(app_handle)?;
     let snapshot = with_cooperative_file_lock(&path, || load_snapshot(app_handle, fallback))?;
     *cache = Some(snapshot.clone());
@@ -552,6 +544,11 @@ fn prepare_chat_voice_preference_replacement(
 }
 
 fn snapshot_path<R: Runtime>(app_handle: &AppHandle<R>) -> Result<std::path::PathBuf, String> {
+    if std::env::var("MACHDOCH_USER_CONFIG_DIR").is_ok_and(|value| !value.trim().is_empty()) {
+        return Ok(crate::runtime_snapshot::get_user_config_directory()?
+            .join("desktop")
+            .join(SNAPSHOT_FILE));
+    }
     app_handle
         .path()
         .resolve(SNAPSHOT_FILE, BaseDirectory::AppData)
@@ -616,10 +613,7 @@ fn apply_shell_state_patch(current: &Value, patch: ShellStatePatchRequest) -> Va
 fn snapshot_revision_path<R: Runtime>(
     app_handle: &AppHandle<R>,
 ) -> Result<std::path::PathBuf, String> {
-    app_handle
-        .path()
-        .resolve(SNAPSHOT_REVISION_FILE, BaseDirectory::AppData)
-        .map_err(|error| format!("Failed to resolve the shell-state revision path: {error}"))
+    Ok(snapshot_path(app_handle)?.with_file_name(SNAPSHOT_REVISION_FILE))
 }
 
 fn persist_snapshot_revision<R: Runtime>(
@@ -884,13 +878,7 @@ pub async fn load_shell_state_revision(
     app_handle: AppHandle,
     lock: tauri::State<'_, ShellStateStoreLock>,
 ) -> Result<u64, String> {
-    let cache = lock.0.lock().await;
-
-    if let Some(snapshot) = cache.as_ref() {
-        return Ok(snapshot.revision);
-    }
-
-    drop(cache);
+    let _cache = lock.0.lock().await;
     run_snapshot_io(move || load_snapshot_revision(&app_handle)).await
 }
 

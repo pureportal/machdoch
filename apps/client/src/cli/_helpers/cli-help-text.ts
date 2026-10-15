@@ -141,6 +141,8 @@ Setting groups:
 Examples:
   machdoch config set answer-language German
   machdoch config unset answer-language
+  machdoch config set defaults.provider codex-cli
+  machdoch config set defaults.model gpt-6-astra
   machdoch config get workspace.model
   machdoch config set workspace.mode ask
   machdoch config set workspace.github-customizations on

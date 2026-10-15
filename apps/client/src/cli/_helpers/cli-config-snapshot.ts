@@ -4,6 +4,10 @@ import {
 } from "../../core/config.js";
 import { loadFleetConnectionStatus } from "../../core/fleet-connection.js";
 import {
+  loadChatDefaults,
+  type ChatDefaults,
+} from "../../core/chat-defaults.js";
+import {
   loadUserAgentCliPaths,
   loadUserConfigFile,
   loadUserMemorySettings,
@@ -26,6 +30,7 @@ export interface ConfigSnapshot {
   agentCliPaths: Awaited<ReturnType<typeof loadUserAgentCliPaths>>;
   workspaceRun: Awaited<ReturnType<typeof loadUserWorkspaceRunSettings>>;
   fleet: Awaited<ReturnType<typeof loadFleetConnectionStatus>>;
+  chatDefaults: ChatDefaults;
 }
 
 export const loadConfigSnapshot = async (
@@ -41,6 +46,7 @@ export const loadConfigSnapshot = async (
     agentCliPaths,
     workspaceRun,
     fleet,
+    chatDefaults,
   ] = await Promise.all([
     loadRuntimeConfig(workspaceRoot),
     loadWorkspaceConfigFile(workspaceRoot),
@@ -51,6 +57,7 @@ export const loadConfigSnapshot = async (
     loadUserAgentCliPaths(),
     loadUserWorkspaceRunSettings(),
     loadFleetConnectionStatus(),
+    loadChatDefaults(),
   ]);
 
   return {
@@ -63,5 +70,6 @@ export const loadConfigSnapshot = async (
     agentCliPaths,
     workspaceRun,
     fleet,
+    chatDefaults,
   };
 };

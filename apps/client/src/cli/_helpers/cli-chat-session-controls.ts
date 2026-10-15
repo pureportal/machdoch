@@ -14,6 +14,7 @@ import {
   type ChatState,
 } from "./cli-chat-controls.js";
 import { CliUsageError } from "./cli-error.js";
+import { resolveConversationContext } from "./cli-task-run.js";
 
 export const handleChatSessionControl = async (
   command: string,
@@ -42,13 +43,10 @@ export const handleChatSessionControl = async (
     const config = await loadChatConfig(nextArgs);
     state.args = nextArgs;
     state.config = config;
-    state.session = createChatSession(workspaceRoot, {
-      history: [],
-      sessionMemoryEnabled: state.session.context.sessionMemoryEnabled ?? true,
-      ...(state.session.context.globalMemoryEnabled !== undefined
-        ? { globalMemoryEnabled: state.session.context.globalMemoryEnabled }
-        : {}),
-    });
+    state.session = createChatSession(
+      workspaceRoot,
+      await resolveConversationContext(nextArgs),
+    );
     delete state.lastTask;
     write("New conversation.");
     showChatStatus(state, write);
