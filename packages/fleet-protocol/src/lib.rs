@@ -1633,7 +1633,10 @@ impl ProductCommand {
                     && self.history.as_ref().is_some_and(|history| {
                         history.index <= 10_000
                             && valid_text(Some(&history.prompt), MAX_COMPOSER_TEXT_CHARACTERS)
-                            && valid_text(Some(&history.previous_draft), MAX_COMPOSER_TEXT_CHARACTERS)
+                            && valid_text(
+                                Some(&history.previous_draft),
+                                MAX_COMPOSER_TEXT_CHARACTERS,
+                            )
                             && history.attachment_ids.len() <= 64
                             && history.previous_attachment_ids.len() <= 64
                             && history
