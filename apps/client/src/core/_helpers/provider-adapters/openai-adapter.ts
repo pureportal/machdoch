@@ -24,6 +24,7 @@ import { assertReasoningExecutionModeSupportedForProviderModel } from "../../rea
 import { assertReasoningModeSupportedForProviderModel } from "../../reasoning-modes.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
+import { decodeOpenAIToolArguments } from "./tool-arguments.js";
 import { normalizeOpenAIStrictInputSchema } from "./schema-normalization.js";
 import {
   emitProviderStreamError,
@@ -718,20 +719,6 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
         continue;
       }
 
-      let parsedArguments: Record<string, unknown> = {};
-
-      if (typeof outputItem.arguments === "string") {
-        try {
-          const parsed = JSON.parse(outputItem.arguments) as unknown;
-
-          if (typeof parsed === "object" && parsed !== null) {
-            parsedArguments = parsed as Record<string, unknown>;
-          }
-        } catch {
-          parsedArguments = {};
-        }
-      }
-
       toolCalls.push({
         id:
           typeof outputItem.call_id === "string" &&
@@ -739,10 +726,10 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
             ? outputItem.call_id
             : crypto.randomUUID(),
         name: outputItem.name ?? "unknown_tool",
-        arguments: parsedArguments,
-        ...(typeof outputItem.arguments === "string"
-          ? { rawArguments: outputItem.arguments }
-          : {}),
+        ...decodeOpenAIToolArguments(
+          outputItem.arguments,
+          this.tools.find((tool) => tool.name === outputItem.name),
+        ),
       });
     }
 

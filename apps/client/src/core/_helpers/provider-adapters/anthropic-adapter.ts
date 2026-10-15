@@ -1,3 +1,4 @@
+import { decodeToolArguments } from "./tool-arguments.js";
 import type Anthropic from "@anthropic-ai/sdk";
 import type {
   Message as AnthropicMessage,
@@ -510,10 +511,7 @@ export class AnthropicMessagesAdapter implements AgentModelAdapter {
       toolCalls.push({
         id: contentBlock.id ?? crypto.randomUUID(),
         name: contentBlock.name ?? "unknown_tool",
-        arguments:
-          typeof contentBlock.input === "object" && contentBlock.input !== null
-            ? (contentBlock.input as Record<string, unknown>)
-            : {},
+        ...decodeToolArguments(contentBlock.input),
       });
     }
 

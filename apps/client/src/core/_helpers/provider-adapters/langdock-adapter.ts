@@ -23,6 +23,7 @@ import type { ReasoningMode } from "../../runtime-contract.generated.js";
 import { assertReasoningModeSupportedForProviderModel } from "../../reasoning-modes.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
+import { decodeOpenAIToolArguments } from "./tool-arguments.js";
 import { normalizeOpenAIStrictInputSchema } from "./schema-normalization.js";
 import {
   emitProviderStreamError,
@@ -145,24 +146,6 @@ const createLangdockUserMessage = (
       })),
     ],
   };
-};
-
-const parseToolArguments = (
-  rawArguments: string | undefined,
-): Record<string, unknown> => {
-  if (!rawArguments) {
-    return {};
-  }
-
-  try {
-    const parsed = JSON.parse(rawArguments) as unknown;
-
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : {};
-  } catch {
-    return {};
-  }
 };
 
 const createLangdockToolMessageContent = (
@@ -500,10 +483,10 @@ export class LangdockChatCompletionsAdapter implements AgentModelAdapter {
       toolCalls.push({
         id: toolCall.id || crypto.randomUUID(),
         name: toolCall.function.name || "unknown_tool",
-        arguments: parseToolArguments(toolCall.function.arguments),
-        ...(toolCall.function.arguments
-          ? { rawArguments: toolCall.function.arguments }
-          : {}),
+        ...decodeOpenAIToolArguments(
+          toolCall.function.arguments,
+          this.tools.find((tool) => tool.name === toolCall.function.name),
+        ),
       });
     }
 

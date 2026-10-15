@@ -2709,6 +2709,9 @@ export const maybeExecuteExternalAgentProviderTask = async (
     ...(params.onScopedWorkerToolResult
       ? { onToolResult: params.onScopedWorkerToolResult }
       : {}),
+    ...(params.onScopedWorkerToolCall
+      ? { onToolCall: params.onScopedWorkerToolCall }
+      : {}),
     onResult: (definition, result) => {
       params.onStreamActivity?.();
       if (!toolState.executedTools.includes(definition.backingTool))

@@ -1,735 +1,28 @@
 import { randomUUID } from "node:crypto";
-import { isAbsolute, sep } from "node:path";
-import { createFilesystemToolDefinitions } from "./filesystem-tool-definitions.js";
-import { createGitToolDefinitions } from "./git-tool-definitions.js";
-import { createShellNetworkToolDefinitions } from "./shell-network-tool-definitions.js";
-import {
-  createToolErrorResult,
-  resolveWorkspaceTarget,
-  type AgentToolDefinition,
-} from "./agent-tools-shared.js";
-import { executeToolCall } from "./agent-tools.js";
-import { createProviderAdapter } from "./provider-adapters.js";
-import { isAgentCliProvider } from "./agent-cli-providers.js";
-import { maybeExecuteExternalAgentProviderTask } from "./external-agent-provider.js";
+import { createToolErrorResult } from "./agent-tools-shared.js";
 import {
   createManagedTaskExecutionTimeout,
   resolveTaskExecutionTimeouts,
 } from "./task-execution-timeouts.js";
-import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
-import type { InstructionDeliveryPlan } from "../instruction-system/index.js";
-import { observeAgentModelCall } from "../model-usage.js";
-import { assertInstructionInvocationBudget } from "../instruction-system/index.js";
+import {
+  WorkerBoundaryError,
+  workerResult,
+  type ParallelWorkerState,
+} from "./parallel-agent-worker-state.js";
+import { runWorker, reportWorkerProgress } from "./parallel-agent-worker.js";
+import { normalizePlan, validatePlans } from "./parallel-agent-plans.js";
 import type {
-  AgentModelAdapter,
-  AgentModelToolResult,
-  AgentModelTurn,
-  ParallelAgentMode,
-  ResolvedTaskContext,
-  TaskExecutionTimelineEvent,
-} from "../types.js";
-import type { RuntimeConfig } from "../runtime-contract.generated.js";
+  ParallelAgentSessionOptions,
+  ParallelAgentSessionTool,
+  ValidatedWorker,
+} from "./parallel-agent-types.js";
+export type {
+  ParallelAgentSessionOptions,
+  ParallelAgentSessionTool,
+  ParallelWorkerPlan,
+} from "./parallel-agent-types.js";
 
 const MAX_WORKERS = 3;
-const MAX_WORKER_TURNS = 8;
-const MAX_WORKER_TOOL_CALLS = 24;
-const MAX_WORKER_TEXT = 12_000;
-const READ_TOOLS = new Set([
-  "list_directory",
-  "read_file",
-  "search_workspace",
-  "get_git_status",
-  "get_git_diff_summary",
-  "get_git_log",
-  "fetch_url",
-  "search_web",
-]);
-const SCOPED_TOOLS = new Set(["read_file", "create_file", "replace_in_file"]);
-const WRITE_TOOLS = new Set(["create_file", "replace_in_file"]);
-
-class WorkerBoundaryError extends Error {}
-
-const awaitModelCall = async <T>(
-  operation: Promise<T>,
-  signal: AbortSignal,
-): Promise<T> => {
-  return await new Promise<T>((resolve, reject) => {
-    let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      signal.removeEventListener("abort", onAbort);
-    };
-    const onAbort = () => {
-      if (settled) return;
-      finish();
-      reject(signal.reason ?? new Error("Parallel work was cancelled."));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    operation.then(
-      (value) => {
-        if (settled) return;
-        finish();
-        resolve(value);
-      },
-      (error: unknown) => {
-        if (settled) return;
-        finish();
-        reject(error);
-      },
-    );
-    if (signal.aborted) onAbort();
-  });
-};
-
-export interface ParallelWorkerPlan {
-  id: string;
-  objective: string;
-  access: "read-only" | "write";
-  readPaths: string[];
-  writePaths: string[];
-}
-
-interface ValidatedWorker extends ParallelWorkerPlan {
-  canonicalReadPaths: string[];
-  canonicalWritePaths: string[];
-}
-
-export interface ParallelAgentSessionOptions {
-  config: RuntimeConfig;
-  task: string;
-  taskContext: ResolvedTaskContext;
-  instructionDeliveryPlan?: InstructionDeliveryPlan;
-  preparedConversationContext?: PreparedConversationPromptContext;
-  mode: ParallelAgentMode;
-  maxWorkers?: number;
-  signal?: AbortSignal;
-  createWorkerAdapter?: () => Promise<AgentModelAdapter>;
-  onProgress?: (event: TaskExecutionTimelineEvent) => void | Promise<void>;
-  onStreamActivity?: () => void;
-}
-
-export interface ParallelAgentSessionTool {
-  definition: AgentToolDefinition;
-  hasWorkerFailure(): boolean;
-}
-
-const reportWorkerProgress = (
-  options: ParallelAgentSessionOptions,
-  event: TaskExecutionTimelineEvent,
-): void => {
-  if (options.signal?.aborted) return;
-  options.onStreamActivity?.();
-  if (!options.onProgress) return;
-  try {
-    void Promise.resolve(options.onProgress(event)).catch((error: unknown) => {
-      console.warn("Could not report parallel agent progress:", error);
-    });
-  } catch (error) {
-    console.warn("Could not report parallel agent progress:", error);
-  }
-};
-
-const workerModelEvent = (
-  worker: ValidatedWorker,
-  pass: number,
-  phase: "started" | "completed" | "failed",
-): TaskExecutionTimelineEvent => ({
-  kind: "model-call",
-  phase,
-  label: `Agent ${worker.id} · AI pass ${pass}`,
-  tone:
-    phase === "failed" ? "danger" : phase === "completed" ? "success" : "info",
-});
-
-const workerToolEvent = (
-  worker: ValidatedWorker,
-  call: AgentModelTurn["toolCalls"][number],
-  phase: "started" | "completed" | "failed",
-): TaskExecutionTimelineEvent => {
-  const target =
-    call.arguments.path ?? call.arguments.query ?? call.arguments.url;
-  return {
-    kind: "tool-call",
-    phase,
-    label: `Agent ${worker.id} · ${call.name.replaceAll("_", " ")}`,
-    ...(typeof target === "string" ? { detail: target.slice(0, 240) } : {}),
-    tone:
-      phase === "failed"
-        ? "danger"
-        : phase === "completed"
-          ? "success"
-          : "info",
-    toolName: call.name,
-    callId: `${worker.id}:${call.id}`,
-  };
-};
-
-const canonicalPath = (path: string): string =>
-  process.platform === "win32" ? path.toLocaleLowerCase("en-US") : path;
-
-const pathsOverlap = (first: string, second: string): boolean =>
-  first === second ||
-  first.startsWith(`${second}${sep}`) ||
-  second.startsWith(`${first}${sep}`);
-
-const normalizePlan = (
-  value: unknown,
-  maxWorkers: number,
-): ParallelWorkerPlan[] => {
-  if (!Array.isArray(value) || value.length < 2 || value.length > maxWorkers) {
-    throw new Error(
-      `Choose ${maxWorkers === 2 ? "two" : "two or three"} independent workers.`,
-    );
-  }
-  const ids = new Set<string>();
-  return value.map((entry: unknown) => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-      throw new Error("Every worker needs an objective and path claims.");
-    }
-    const worker = entry as Record<string, unknown>;
-    const id = typeof worker.id === "string" ? worker.id.trim() : "";
-    const objective =
-      typeof worker.objective === "string" ? worker.objective.trim() : "";
-    if (
-      !/^[a-z][a-z0-9_-]{0,31}$/u.test(id) ||
-      ids.has(id) ||
-      !objective ||
-      objective.length > 2_000
-    ) {
-      throw new Error(
-        "Worker ids must be unique and objectives must be self-contained.",
-      );
-    }
-    if (worker.access !== "read-only" && worker.access !== "write") {
-      throw new Error(`Worker ${id} has an invalid access mode.`);
-    }
-    if (
-      !Array.isArray(worker.readPaths) ||
-      !Array.isArray(worker.writePaths) ||
-      [...worker.readPaths, ...worker.writePaths].some(
-        (path) =>
-          typeof path !== "string" || !path.trim() || path.length > 1_000,
-      ) ||
-      worker.readPaths.length > 32 ||
-      worker.writePaths.length > 32
-    ) {
-      throw new Error(`Worker ${id} has invalid path claims.`);
-    }
-    if (worker.access === "read-only" && worker.writePaths.length > 0) {
-      throw new Error(`Read-only worker ${id} cannot claim write paths.`);
-    }
-    if (worker.access === "write" && worker.writePaths.length === 0) {
-      throw new Error(`Write worker ${id} needs explicit file paths.`);
-    }
-    ids.add(id);
-    return {
-      id,
-      objective,
-      access: worker.access,
-      readPaths: worker.readPaths as string[],
-      writePaths: worker.writePaths as string[],
-    };
-  });
-};
-
-const validatePlans = async (
-  workers: ParallelWorkerPlan[],
-  options: ParallelAgentSessionOptions,
-): Promise<ValidatedWorker[]> => {
-  if (options.mode === "disabled" || options.mode === "native") {
-    throw new Error("Parallel agents are disabled for this session.");
-  }
-  if (
-    workers.some((worker) => worker.access === "write") &&
-    (options.mode !== "machdoch" || options.config.mode !== "machdoch")
-  ) {
-    throw new Error(
-      "Write workers require Full Mode and Machdoch execution mode.",
-    );
-  }
-  const validated = await Promise.all(
-    workers.map(async (worker) => {
-      const resolveClaims = async (paths: string[]): Promise<string[]> => {
-        const claims = await Promise.all(
-          paths.map(async (path) => {
-            const target = await resolveWorkspaceTarget(
-              options.config.workspaceRoot,
-              path,
-            );
-            if (
-              !target.insideWorkspace ||
-              !target.workspacePath ||
-              isAbsolute(path)
-            ) {
-              throw new Error(
-                `Worker ${worker.id} claims a path outside the workspace or its root.`,
-              );
-            }
-            return canonicalPath(target.resolvedPath);
-          }),
-        );
-        return [...new Set(claims)];
-      };
-      return {
-        ...worker,
-        canonicalReadPaths: await resolveClaims(worker.readPaths),
-        canonicalWritePaths: await resolveClaims(worker.writePaths),
-      };
-    }),
-  );
-
-  for (let index = 0; index < validated.length; index += 1) {
-    const current = validated[index]!;
-    for (const other of validated.slice(index + 1)) {
-      if (
-        (current.canonicalWritePaths.length > 0 &&
-          other.access === "read-only" &&
-          other.canonicalReadPaths.length === 0) ||
-        (other.canonicalWritePaths.length > 0 &&
-          current.access === "read-only" &&
-          current.canonicalReadPaths.length === 0)
-      ) {
-        throw new Error(
-          "A worker with unrestricted reads cannot run alongside a write worker.",
-        );
-      }
-      const conflicts =
-        current.canonicalWritePaths.some((path) =>
-          [...other.canonicalWritePaths, ...other.canonicalReadPaths].some(
-            (claim) => pathsOverlap(path, claim),
-          ),
-        ) ||
-        other.canonicalWritePaths.some((path) =>
-          current.canonicalReadPaths.some((claim) => pathsOverlap(path, claim)),
-        );
-      if (conflicts) {
-        throw new Error(
-          `Workers ${current.id} and ${other.id} have overlapping paths.`,
-        );
-      }
-    }
-  }
-  return validated;
-};
-
-const createWorkerTools = (
-  options: ParallelAgentSessionOptions,
-  worker: ValidatedWorker,
-  scopedReads: boolean,
-): AgentToolDefinition[] => {
-  const definitions = [
-    ...createFilesystemToolDefinitions(),
-    ...createGitToolDefinitions(),
-    ...createShellNetworkToolDefinitions(options.config),
-  ];
-  const allowed =
-    worker.access === "write"
-      ? SCOPED_TOOLS
-      : scopedReads
-        ? new Set(["read_file"])
-        : READ_TOOLS;
-  return definitions
-    .filter((definition) => allowed.has(definition.spec.name))
-    .map((definition) => ({
-      ...definition,
-      execute: async (args, context) => {
-        const path = args.path;
-        if (scopedReads && typeof path !== "string") {
-          return createToolErrorResult(
-            randomUUID(),
-            definition.spec.name,
-            "This worker can only use scoped file paths.",
-          );
-        }
-        if (typeof path === "string" && scopedReads) {
-          const target = await resolveWorkspaceTarget(
-            context.workspaceRoot,
-            path,
-          );
-          const claim = canonicalPath(target.resolvedPath);
-          const allowedPaths = WRITE_TOOLS.has(definition.spec.name)
-            ? worker.canonicalWritePaths
-            : [...worker.canonicalReadPaths, ...worker.canonicalWritePaths];
-          const claimed = WRITE_TOOLS.has(definition.spec.name)
-            ? allowedPaths.includes(claim)
-            : allowedPaths.some(
-                (path) => claim === path || claim.startsWith(`${path}${sep}`),
-              );
-          if (!target.insideWorkspace || !claimed) {
-            throw new WorkerBoundaryError(
-              `Worker ${worker.id} attempted to access an unclaimed path.`,
-            );
-          }
-        }
-        return definition.execute(args, context);
-      },
-    }));
-};
-
-const runCliWorker = async (
-  worker: ValidatedWorker,
-  options: ParallelAgentSessionOptions,
-  signal: AbortSignal,
-  tools: AgentToolDefinition[],
-  onBoundaryViolation: (error: WorkerBoundaryError) => void,
-): Promise<{
-  id: string;
-  status: "completed";
-  answer: string;
-  toolCalls: number;
-}> => {
-  if (
-    !options.instructionDeliveryPlan ||
-    !options.preparedConversationContext
-  ) {
-    throw new Error("The CLI worker instruction plan is missing.");
-  }
-  reportWorkerProgress(options, workerModelEvent(worker, 1, "started"));
-  let toolCalls = 0;
-  let successfulWrites = 0;
-  let failedTool: string | undefined;
-  const trackedTools = tools.map((tool) => ({
-    ...tool,
-    execute: async (...args: Parameters<typeof tool.execute>) => {
-      if (signal.aborted)
-        throw signal.reason ?? new Error("Parallel work was cancelled.");
-      toolCalls += 1;
-      const call = {
-        id: randomUUID(),
-        name: tool.spec.name,
-        arguments: args[0],
-      };
-      reportWorkerProgress(options, workerToolEvent(worker, call, "started"));
-      try {
-        if (signal.aborted)
-          throw signal.reason ?? new Error("Parallel work was cancelled.");
-        const result = await tool.execute(...args);
-        if (signal.aborted)
-          throw signal.reason ?? new Error("Parallel work was cancelled.");
-        reportWorkerProgress(
-          options,
-          workerToolEvent(
-            worker,
-            call,
-            result.toolResult.isError ? "failed" : "completed",
-          ),
-        );
-        if (result.toolResult.isError) {
-          failedTool ??= `${tool.spec.name}: ${result.toolResult.output.slice(0, 300)}`;
-        } else if (WRITE_TOOLS.has(tool.spec.name)) {
-          successfulWrites += 1;
-        }
-        return result;
-      } catch (error) {
-        reportWorkerProgress(options, workerToolEvent(worker, call, "failed"));
-        failedTool ??= `${tool.spec.name}: ${error instanceof Error ? error.message : String(error)}`;
-        if (error instanceof WorkerBoundaryError) onBoundaryViolation(error);
-        throw error;
-      }
-    },
-  }));
-  try {
-    const result = await maybeExecuteExternalAgentProviderTask({
-      task: `Original task: ${options.task}\n\nYour objective: ${worker.objective}`,
-      config: {
-        ...options.config,
-        mode: worker.access === "write" ? "machdoch" : "ask",
-      },
-      taskContext: {
-        ...options.taskContext,
-        executionRole: worker.access === "write" ? "executor" : "generator",
-      },
-      contextSections: [],
-      systemPromptSections: [
-        "You are one parallel worker. Complete only your objective. Do not delegate or write memory.",
-        worker.access === "write"
-          ? `You may edit only these workspace-relative files: ${worker.writePaths.join(", ")}. Use only the scoped Machdoch MCP tools for edits.`
-          : "Read only. Do not modify files or external resources.",
-        worker.readPaths.length > 0
-          ? `Read paths: ${worker.readPaths.join(", ")}.`
-          : "",
-      ].filter(Boolean),
-      preparedConversationContext: {
-        wasQueued: options.preparedConversationContext.wasQueued,
-        workspace: options.preparedConversationContext.workspace,
-        parallelAgentMode: "disabled",
-        sections: [],
-        uiControlEnabled: false,
-        memory: {
-          sessionEnabled: false,
-          sessionEntries: [],
-          workspaceEnabled: false,
-          workspaceEntries: [],
-          globalEnabled: false,
-          globalEntries: [],
-        },
-      },
-      instructionDeliveryPlan: options.instructionDeliveryPlan,
-      scopedWorkerToolDefinitions: trackedTools,
-      onScopedWorkerToolResult: (name, result) => {
-        options.onStreamActivity?.();
-        if (result.toolResult.isError)
-          failedTool ??= `${name}: ${result.toolResult.output.slice(0, 300)}`;
-      },
-      ...(options.onStreamActivity
-        ? { onStreamActivity: options.onStreamActivity }
-        : {}),
-      onActionOutput: ({ chunk }) => {
-        if (chunk.trim()) options.onStreamActivity?.();
-      },
-      signal,
-    });
-    if (signal.aborted)
-      throw signal.reason ?? new Error("Parallel work was cancelled.");
-    if (!result || result.status !== "executed") {
-      throw new Error(
-        result?.summary ?? `Worker ${worker.id} could not start.`,
-      );
-    }
-    if (failedTool) {
-      throw new Error(
-        `Worker ${worker.id} had a failed tool call: ${failedTool}`,
-      );
-    }
-    if (worker.access === "write" && successfulWrites === 0) {
-      throw new Error(
-        `Worker ${worker.id} did not complete a scoped file edit.`,
-      );
-    }
-    const answer = result.response?.markdown?.trim() || result.summary;
-    if (!answer) throw new Error(`Worker ${worker.id} returned no result.`);
-    reportWorkerProgress(options, workerModelEvent(worker, 1, "completed"));
-    return {
-      id: worker.id,
-      status: "completed",
-      answer: answer.slice(0, MAX_WORKER_TEXT),
-      toolCalls,
-    };
-  } catch (error) {
-    reportWorkerProgress(options, workerModelEvent(worker, 1, "failed"));
-    throw error;
-  }
-};
-
-const runWorker = async (
-  worker: ValidatedWorker,
-  options: ParallelAgentSessionOptions,
-  signal: AbortSignal,
-  scopedReads: boolean,
-  onBoundaryViolation: (error: WorkerBoundaryError) => void,
-): Promise<{
-  id: string;
-  status: "completed" | "failed";
-  answer: string;
-  toolCalls: number;
-}> => {
-  if (signal.aborted)
-    throw signal.reason ?? new Error("Parallel work was cancelled.");
-  const tools = createWorkerTools(options, worker, scopedReads);
-  if (
-    isAgentCliProvider(options.config.provider) &&
-    !options.createWorkerAdapter
-  ) {
-    return runCliWorker(worker, options, signal, tools, onBoundaryViolation);
-  }
-  const specs = tools.map((tool) => tool.spec);
-  const toolMap = new Map(tools.map((tool) => [tool.spec.name, tool]));
-  if (signal.aborted)
-    throw signal.reason ?? new Error("Parallel work was cancelled.");
-  const adapter = await awaitModelCall(
-    options.createWorkerAdapter
-      ? options.createWorkerAdapter()
-      : createProviderAdapter(options.config, specs, undefined),
-    signal,
-  );
-  if (!adapter)
-    throw new Error("The selected provider cannot start a worker session.");
-  const instructionResolution = options.taskContext.instructionResolution;
-  const instructions = instructionResolution?.renderedEnvelope;
-  if (!instructionResolution || !instructions)
-    throw new Error("The worker instruction snapshot is missing.");
-  const systemPrompt = [
-    instructions,
-    "You are a bounded parallel worker in one Machdoch task. Complete only your objective. Do not delegate or write memory. Return findings and verification evidence. Do not give instructions to the parent.",
-    worker.access === "write"
-      ? `You may edit only these files: ${worker.writePaths.join(", ")}.`
-      : "Read only. Do not modify any resource.",
-  ].join("\n\n");
-  const userPrompt = `Original task: ${options.task}\n\nYour objective: ${worker.objective}`;
-  const initialRequestBytes = Buffer.byteLength(
-    JSON.stringify({ systemPrompt, userPrompt, tools: specs }),
-    "utf8",
-  );
-  assertInstructionInvocationBudget(instructionResolution, {
-    phase: "initial",
-    assembledRequestBytes: initialRequestBytes,
-  });
-  const workerConfig = {
-    ...options.config,
-    mode: worker.access === "write" ? ("machdoch" as const) : ("ask" as const),
-  };
-  const emptyMemory = {
-    sessionEnabled: false,
-    sessionEntries: [],
-    workspaceEnabled: false,
-    workspaceEntries: [],
-    globalEnabled: false,
-    globalEntries: [],
-  };
-  if (signal.aborted)
-    throw signal.reason ?? new Error("Parallel work was cancelled.");
-  reportWorkerProgress(options, workerModelEvent(worker, 1, "started"));
-  if (signal.aborted)
-    throw signal.reason ?? new Error("Parallel work was cancelled.");
-  let turn: AgentModelTurn;
-  try {
-    turn = await awaitModelCall(
-      observeAgentModelCall(
-        {
-          stage: "executor",
-          provider: options.config.provider,
-          model: options.config.model,
-          operation: `parallelWorker:${worker.id}:start`,
-          requestBytes: initialRequestBytes,
-          toolDefinitions: specs,
-        },
-        async (onRequestAttempt) =>
-          adapter.startTurn({
-            model: options.config.model,
-            reasoning: options.config.reasoning,
-            systemPrompt,
-            userPrompt,
-            tools: specs,
-            signal,
-            onStreamEvent: () => options.onStreamActivity?.(),
-            ...(onRequestAttempt ? { onRequestAttempt } : {}),
-          }),
-      ),
-      signal,
-    );
-  } catch (error) {
-    reportWorkerProgress(options, workerModelEvent(worker, 1, "failed"));
-    throw error;
-  }
-  if (signal.aborted)
-    throw signal.reason ?? new Error("Parallel work was cancelled.");
-  reportWorkerProgress(options, workerModelEvent(worker, 1, "completed"));
-  let toolCalls = 0;
-  let answer = "";
-  let successfulWrites = 0;
-  let failedTool: string | undefined;
-  for (let index = 0; index <= MAX_WORKER_TURNS; index += 1) {
-    if (signal.aborted) throw new Error("Parallel work was cancelled.");
-    answer = turn.text.trim() || answer;
-    if (turn.toolCalls.length === 0) {
-      if (!answer) throw new Error(`Worker ${worker.id} returned no result.`);
-      if (failedTool)
-        throw new Error(
-          `Worker ${worker.id} had a failed tool call: ${failedTool}`,
-        );
-      if (worker.access === "write" && successfulWrites === 0)
-        throw new Error(
-          `Worker ${worker.id} did not complete a scoped file edit.`,
-        );
-      return {
-        id: worker.id,
-        status: "completed",
-        answer: answer.slice(0, MAX_WORKER_TEXT),
-        toolCalls,
-      };
-    }
-    if (index === MAX_WORKER_TURNS) break;
-    toolCalls += turn.toolCalls.length;
-    if (toolCalls > MAX_WORKER_TOOL_CALLS)
-      throw new Error(`Worker ${worker.id} exceeded its tool limit.`);
-    const results: AgentModelToolResult[] = [];
-    for (const call of turn.toolCalls) {
-      if (signal.aborted) throw new Error("Parallel work was cancelled.");
-      reportWorkerProgress(options, workerToolEvent(worker, call, "started"));
-      if (signal.aborted)
-        throw signal.reason ?? new Error("Parallel work was cancelled.");
-      const outcome = await executeToolCall(
-        workerConfig,
-        emptyMemory,
-        undefined,
-        toolMap,
-        call,
-        undefined,
-        undefined,
-        signal,
-      ).catch(async (error: unknown) => {
-        reportWorkerProgress(options, workerToolEvent(worker, call, "failed"));
-        throw error;
-      });
-      if (!outcome.result) {
-        reportWorkerProgress(options, workerToolEvent(worker, call, "failed"));
-        throw new Error(`Worker ${worker.id} produced no tool result.`);
-      }
-      if (signal.aborted)
-        throw signal.reason ?? new Error("Parallel work was cancelled.");
-      reportWorkerProgress(
-        options,
-        workerToolEvent(
-          worker,
-          call,
-          outcome.result.toolResult.isError ? "failed" : "completed",
-        ),
-      );
-      if (outcome.result.toolResult.isError) {
-        failedTool ??= `${call.name}: ${outcome.result.toolResult.output.slice(0, 300)}`;
-      } else if (WRITE_TOOLS.has(call.name)) {
-        successfulWrites += 1;
-      }
-      results.push(outcome.result.toolResult);
-    }
-    if (signal.aborted)
-      throw signal.reason ?? new Error("Parallel work was cancelled.");
-    reportWorkerProgress(
-      options,
-      workerModelEvent(worker, index + 2, "started"),
-    );
-    if (signal.aborted)
-      throw signal.reason ?? new Error("Parallel work was cancelled.");
-    try {
-      turn = await awaitModelCall(
-        observeAgentModelCall(
-          {
-            stage: "executor",
-            provider: options.config.provider,
-            model: options.config.model,
-            operation: `parallelWorker:${worker.id}:continue`,
-            requestBytes: Buffer.byteLength(JSON.stringify(results), "utf8"),
-            toolDefinitions: specs,
-          },
-          async (onRequestAttempt) =>
-            adapter.continueTurn({
-              toolResults: results,
-              signal,
-              onStreamEvent: () => options.onStreamActivity?.(),
-              ...(onRequestAttempt ? { onRequestAttempt } : {}),
-            }),
-        ),
-        signal,
-      );
-    } catch (error) {
-      reportWorkerProgress(
-        options,
-        workerModelEvent(worker, index + 2, "failed"),
-      );
-      throw error;
-    }
-    if (signal.aborted)
-      throw signal.reason ?? new Error("Parallel work was cancelled.");
-    reportWorkerProgress(
-      options,
-      workerModelEvent(worker, index + 2, "completed"),
-    );
-    if (signal.aborted)
-      throw signal.reason ?? new Error("Parallel work was cancelled.");
-  }
-  throw new Error(`Worker ${worker.id} exceeded its turn limit.`);
-};
 
 export const createParallelAgentSessionTool = (
   options: ParallelAgentSessionOptions,
@@ -737,13 +30,16 @@ export const createParallelAgentSessionTool = (
   const maxWorkers = Number.isSafeInteger(options.maxWorkers)
     ? Math.min(MAX_WORKERS, Math.max(2, options.maxWorkers!))
     : MAX_WORKERS;
-  let workerFailure = false;
+  const workerFailures = new Set<string>();
+  let running = false;
+  let boundaryFailure = false;
   return {
-    hasWorkerFailure: () => workerFailure,
+    hasWorkerFailure: () =>
+      running || boundaryFailure || workerFailures.size > 0,
     definition: {
       spec: {
         name: "run_parallel_agents",
-        description: `Run ${maxWorkers === 2 ? "two" : "two or three"} independent objectives in fresh concurrent agent sessions, then inspect their ordered results before completing the parent task. Use only when independent work saves time. Full Mode permits explicitly scoped file edits.`,
+        description: `Run ${maxWorkers === 2 ? "two" : "two or three"} independent objectives in fresh concurrent agent sessions, then inspect their ordered results and toolErrors before completing the parent task. Use only when independent work saves time. Full Mode permits explicitly scoped file edits. Failed workers retain partial findings; retry the same worker plan to resolve its failure.`,
         inputSchema: {
           type: "object",
           additionalProperties: false,
@@ -756,8 +52,8 @@ export const createParallelAgentSessionTool = (
                 type: "object",
                 additionalProperties: false,
                 properties: {
-                  id: { type: "string" },
-                  objective: { type: "string" },
+                  id: { type: "string", pattern: "^[a-z][a-z0-9_-]{0,31}$" },
+                  objective: { type: "string", minLength: 1, maxLength: 2_000 },
                   access: {
                     type: "string",
                     enum:
@@ -766,8 +62,16 @@ export const createParallelAgentSessionTool = (
                         ? ["read-only", "write"]
                         : ["read-only"],
                   },
-                  readPaths: { type: "array", items: { type: "string" } },
-                  writePaths: { type: "array", items: { type: "string" } },
+                  readPaths: {
+                    type: "array",
+                    maxItems: 32,
+                    items: { type: "string", minLength: 1, maxLength: 1_000 },
+                  },
+                  writePaths: {
+                    type: "array",
+                    maxItems: 32,
+                    items: { type: "string", minLength: 1, maxLength: 1_000 },
+                  },
                 },
                 required: [
                   "id",
@@ -786,141 +90,177 @@ export const createParallelAgentSessionTool = (
       riskLevel: "low",
       effect: "read",
       execute: async (args) => {
-        if (options.signal?.aborted) {
+        if (running)
           return createToolErrorResult(
             randomUUID(),
             "run_parallel_agents",
-            "Parallel work was cancelled.",
+            "Parallel agents are already running. Wait for their results before starting another group.",
           );
-        }
-        let workers: ValidatedWorker[];
+        running = true;
         try {
-          workers = await validatePlans(
-            normalizePlan(args.workers, maxWorkers),
-            options,
-          );
-        } catch (error) {
-          return createToolErrorResult(
-            randomUUID(),
-            "run_parallel_agents",
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-        if (options.signal?.aborted) {
-          return createToolErrorResult(
-            randomUUID(),
-            "run_parallel_agents",
-            "Parallel work was cancelled.",
-          );
-        }
-        const controller = new AbortController();
-        const onAbort = () => controller.abort(options.signal?.reason);
-        options.signal?.addEventListener("abort", onAbort, { once: true });
-        if (options.signal?.aborted) onAbort();
-        try {
-          const scopedReads = workers.some(
-            (worker) => worker.access === "write",
-          );
-          const outcomes = await Promise.allSettled(
-            workers.map(async (worker) => {
-              const workerController = new AbortController();
-              const onGroupAbort = () =>
-                workerController.abort(controller.signal.reason);
-              controller.signal.addEventListener("abort", onGroupAbort, {
-                once: true,
-              });
-              if (controller.signal.aborted) onGroupAbort();
-              const timeout = createManagedTaskExecutionTimeout(
-                workerController.signal,
-                resolveTaskExecutionTimeouts({}),
-              );
-              const markActivity = () => {
-                if (timeout.signal.aborted) return;
-                timeout.markActivity();
-                options.onStreamActivity?.();
-              };
-              const workerOptions: ParallelAgentSessionOptions = {
-                ...options,
-                onStreamActivity: markActivity,
-              };
-              try {
-                reportWorkerProgress(workerOptions, {
-                  kind: "agent",
-                  phase: "started",
-                  label: `Agent ${worker.id}`,
-                  detail: worker.objective,
-                  tone: "info",
+          if (options.signal?.aborted) {
+            return createToolErrorResult(
+              randomUUID(),
+              "run_parallel_agents",
+              "Parallel work was cancelled.",
+            );
+          }
+          let workers: ValidatedWorker[];
+          try {
+            workers = await validatePlans(
+              normalizePlan(args.workers, maxWorkers),
+              options,
+            );
+          } catch (error) {
+            return createToolErrorResult(
+              randomUUID(),
+              "run_parallel_agents",
+              error instanceof Error ? error.message : String(error),
+            );
+          }
+          if (options.signal?.aborted) {
+            return createToolErrorResult(
+              randomUUID(),
+              "run_parallel_agents",
+              "Parallel work was cancelled.",
+            );
+          }
+          const attempts = workers.map((worker) => {
+            const key = JSON.stringify([
+              worker.id,
+              worker.objective,
+              worker.access,
+              [...worker.canonicalReadPaths].sort(),
+              [...worker.canonicalWritePaths].sort(),
+            ]);
+            workerFailures.add(key);
+            return key;
+          });
+          const controller = new AbortController();
+          const onAbort = () => controller.abort(options.signal?.reason);
+          options.signal?.addEventListener("abort", onAbort, { once: true });
+          if (options.signal?.aborted) onAbort();
+          try {
+            const scopedReads = workers.some(
+              (worker) => worker.access === "write",
+            );
+            const states: ParallelWorkerState[] = workers.map(() => ({
+              toolCalls: 0,
+              successfulWrites: 0,
+              answer: "",
+              toolErrors: [],
+            }));
+            const outcomes = await Promise.allSettled(
+              workers.map(async (worker, index) => {
+                const state = states[index]!;
+                const attempt = attempts[index]!;
+                const workerController = new AbortController();
+                const onGroupAbort = () =>
+                  workerController.abort(controller.signal.reason);
+                controller.signal.addEventListener("abort", onGroupAbort, {
+                  once: true,
                 });
-                const result = await runWorker(
-                  worker,
-                  workerOptions,
-                  timeout.signal,
-                  scopedReads,
-                  (error) => controller.abort(error),
+                if (controller.signal.aborted) onGroupAbort();
+                const timeout = createManagedTaskExecutionTimeout(
+                  workerController.signal,
+                  resolveTaskExecutionTimeouts({}),
                 );
-                reportWorkerProgress(options, {
-                  kind: "agent",
-                  phase: "completed",
-                  label: `Agent ${worker.id}`,
-                  tone: "success",
-                });
-                return result;
-              } catch (error) {
-                if (error instanceof WorkerBoundaryError)
-                  controller.abort(error);
-                reportWorkerProgress(options, {
-                  kind: "agent",
-                  phase: "failed",
-                  label: `Agent ${worker.id}`,
-                  detail:
-                    error instanceof Error ? error.message : String(error),
-                  tone: "danger",
-                });
-                throw error;
-              } finally {
-                controller.signal.removeEventListener("abort", onGroupAbort);
-                workerController.abort();
-                timeout.cleanup();
-              }
-            }),
-          );
-          const results = outcomes.map((outcome, index) =>
-            outcome.status === "fulfilled"
-              ? outcome.value
-              : {
-                  id: workers[index]!.id,
-                  status: "failed" as const,
-                  answer:
-                    outcome.reason instanceof Error
-                      ? outcome.reason.message.slice(0, MAX_WORKER_TEXT)
-                      : String(outcome.reason).slice(0, MAX_WORKER_TEXT),
-                  toolCalls: 0,
-                },
-          );
-          if (results.some((result) => result.status === "failed"))
-            workerFailure = true;
-          return {
-            toolResult: {
-              callId: randomUUID(),
-              name: "run_parallel_agents",
-              isError: results.some((result) => result.status === "failed"),
-              output: JSON.stringify(results),
-            },
-            sections: [
-              {
-                title: "Parallel agents",
-                lines: results.map(
-                  (result) => `${result.id}: ${result.status}`,
-                ),
+                const markActivity = () => {
+                  if (timeout.signal.aborted) return;
+                  timeout.markActivity();
+                  options.onStreamActivity?.();
+                };
+                const workerOptions: ParallelAgentSessionOptions = {
+                  ...options,
+                  onStreamActivity: markActivity,
+                };
+                try {
+                  reportWorkerProgress(workerOptions, {
+                    kind: "agent",
+                    phase: "started",
+                    label: `Agent ${worker.id}`,
+                    detail: worker.objective,
+                    tone: "info",
+                  });
+                  await runWorker(
+                    worker,
+                    workerOptions,
+                    timeout.signal,
+                    scopedReads,
+                    (error) => {
+                      boundaryFailure = true;
+                      controller.abort(error);
+                    },
+                    state,
+                  );
+                  timeout.signal.throwIfAborted();
+                  workerFailures.delete(attempt);
+                  reportWorkerProgress(options, {
+                    kind: "agent",
+                    phase: "completed",
+                    label: `Agent ${worker.id}`,
+                    tone: "success",
+                  });
+                  return workerResult(worker.id, state);
+                } catch (error) {
+                  if (error instanceof WorkerBoundaryError) {
+                    boundaryFailure = true;
+                    controller.abort(error);
+                  }
+                  reportWorkerProgress(options, {
+                    kind: "agent",
+                    phase: "failed",
+                    label: `Agent ${worker.id}`,
+                    detail:
+                      error instanceof Error ? error.message : String(error),
+                    tone: "danger",
+                  });
+                  return workerResult(
+                    worker.id,
+                    state,
+                    error ?? new Error("Worker failed."),
+                  );
+                } finally {
+                  controller.signal.removeEventListener("abort", onGroupAbort);
+                  workerController.abort();
+                  timeout.cleanup();
+                }
+              }),
+            );
+            const results = outcomes.map((outcome, index) =>
+              outcome.status === "fulfilled"
+                ? outcome.value
+                : workerResult(
+                    workers[index]!.id,
+                    states[index]!,
+                    outcome.reason ?? new Error("Worker failed."),
+                  ),
+            );
+            return {
+              toolResult: {
+                callId: randomUUID(),
+                name: "run_parallel_agents",
+                isError: results.some((result) => result.status === "failed"),
+                output: JSON.stringify(results),
               },
-            ],
-            traceLines: [
-              `parallel agents: ${results.map((result) => `${result.id} ${result.status}`).join(", ")}`,
-            ],
-          };
+              sections: [
+                {
+                  title: "Parallel agents",
+                  lines: results.map(
+                    (result) => `${result.id}: ${result.status}`,
+                  ),
+                },
+              ],
+              traceLines: [
+                `parallel agents: ${results.map((result) => `${result.id} ${result.status}`).join(", ")}`,
+              ],
+            };
+          } finally {
+            options.signal?.removeEventListener("abort", onAbort);
+            controller.abort();
+          }
         } finally {
-          options.signal?.removeEventListener("abort", onAbort);
-          controller.abort();
+          running = false;
         }
       },
     },

@@ -5,6 +5,32 @@ import { validateToolArguments } from "./tool-argument-validation.js";
 afterEach(() => vi.restoreAllMocks());
 
 describe("Tool schema dialects", () => {
+  it.each([NaN, Infinity, -Infinity])(
+    "rejects non-finite numeric arguments: %s",
+    (value) => {
+      expect(
+        validateToolArguments(
+          { type: "object", properties: { value: { type: "number" } } },
+          { value },
+        ),
+      ).toContain("must be number");
+    },
+  );
+
+  it("requires own properties and names unexpected arguments", () => {
+    const schema = {
+      type: "object",
+      properties: { query: { type: "string" } },
+      required: ["query"],
+      additionalProperties: false,
+    };
+    expect(
+      validateToolArguments(schema, Object.create({ query: "inherited" })),
+    ).toContain("required property");
+    expect(
+      validateToolArguments(schema, { query: "ok", wrongArgument: 1 }),
+    ).toContain('unexpected property "wrongArgument"');
+  });
   it.each([
     "http://json-schema.org/draft-07/schema#",
     "http://json-schema.org/draft-07/schema",

@@ -7,11 +7,39 @@ import { createInstructionDeliveryPlan } from "../instruction-system/index.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { TaskExecutionResult } from "../types.js";
 import { maybeExecuteExternalAgentProviderTask } from "./external-agent-provider.js";
+import { createLocalToolRuntime } from "../local-mcp/runtime.js";
 import { createParallelAgentSessionTool } from "./parallel-agent-sessions.js";
 
 vi.mock("./external-agent-provider.js", () => ({
   maybeExecuteExternalAgentProviderTask: vi.fn(),
 }));
+
+type ExternalParams = Parameters<
+  typeof maybeExecuteExternalAgentProviderTask
+>[0];
+const runtimes = new WeakMap<
+  ExternalParams,
+  ReturnType<typeof createLocalToolRuntime>
+>();
+const scopedTool = (params: ExternalParams, name: string) => {
+  let runtime = runtimes.get(params);
+  if (!runtime) {
+    runtime = createLocalToolRuntime({
+      config: params.config,
+      memory: params.preparedConversationContext.memory,
+      scopedToolDefinitions: params.scopedWorkerToolDefinitions!,
+      signal: params.signal!,
+      onToolCall: params.onScopedWorkerToolCall!,
+      onToolResult: params.onScopedWorkerToolResult!,
+    });
+    runtimes.set(params, runtime);
+  }
+  const activeRuntime = runtime;
+  return {
+    execute: (args: Record<string, unknown>, _context?: unknown) =>
+      activeRuntime.call(name, args),
+  };
+};
 
 let workspaceRoot: string | undefined;
 
@@ -48,9 +76,7 @@ it.each(["codex-cli", "claude-cli", "copilot-cli"] as const)(
     vi.mocked(maybeExecuteExternalAgentProviderTask).mockImplementation(
       async (params) => {
         if (params.config.mode === "machdoch") {
-          const createFile = params.scopedWorkerToolDefinitions?.find(
-            (tool) => tool.spec.name === "create_file",
-          );
+          const createFile = scopedTool(params, "create_file");
           const result = await createFile?.execute(
             { path: "report.txt", content: "Worker report" },
             {
@@ -168,9 +194,7 @@ it.each(["codex-cli", "claude-cli", "copilot-cli"] as const)(
     vi.mocked(maybeExecuteExternalAgentProviderTask).mockImplementation(
       async (params) => {
         if (params.config.mode === "machdoch") {
-          const createFile = params.scopedWorkerToolDefinitions?.find(
-            (tool) => tool.spec.name === "create_file",
-          );
+          const createFile = scopedTool(params, "create_file");
           const failed = await createFile?.execute(
             { path: "report.txt", content: "Overwritten" },
             {
@@ -202,7 +226,9 @@ it.each(["codex-cli", "claude-cli", "copilot-cli"] as const)(
       expect.objectContaining({
         id: "writer",
         status: "failed",
-        answer: expect.stringContaining("failed tool call"),
+        error: expect.stringContaining("did not complete a scoped file edit"),
+        toolCalls: 1,
+        toolErrors: [expect.objectContaining({ name: "create_file" })],
       }),
     ]);
 
@@ -224,27 +250,21 @@ it.each(["codex-cli", "claude-cli", "copilot-cli"] as const)(
       expect.objectContaining({
         id: "writer",
         status: "failed",
-        answer: expect.stringContaining("did not complete a scoped file edit"),
+        error: expect.stringContaining("did not complete a scoped file edit"),
       }),
     ]);
 
     vi.mocked(maybeExecuteExternalAgentProviderTask).mockImplementation(
       async (params) => {
         if (params.config.mode === "ask") {
-          params.onScopedWorkerToolResult?.("read_file", {
-            toolResult: {
-              callId: "invalid-read",
-              name: "read_file",
-              isError: true,
-              output: "Invalid tool arguments.",
-            },
-            sections: [],
-            traceLines: [],
+          const invalid = await scopedTool(params, "read_file").execute({
+            path: "notes.txt",
+            startLine: 0,
+            endLine: 1,
           });
+          expect(invalid.toolResult.isError).toBe(true);
         } else {
-          const replaceFile = params.scopedWorkerToolDefinitions?.find(
-            (entry) => entry.spec.name === "replace_in_file",
-          );
+          const replaceFile = scopedTool(params, "replace_in_file");
           const edited = await replaceFile?.execute(
             {
               path: "report.txt",
@@ -267,12 +287,17 @@ it.each(["codex-cli", "claude-cli", "copilot-cli"] as const)(
       },
     );
     const invalidRead = await tool.definition.execute(plan, context);
-    expect(invalidRead.toolResult.isError).toBe(true);
+    expect(invalidRead.toolResult.isError).toBe(false);
+    expect(tool.hasWorkerFailure()).toBe(false);
     expect(JSON.parse(invalidRead.toolResult.output)).toEqual([
       expect.objectContaining({
         id: "reader",
-        status: "failed",
-        answer: expect.stringContaining("Invalid tool arguments"),
+        status: "completed",
+        toolErrors: [
+          expect.objectContaining({
+            output: expect.stringContaining("must be >= 1"),
+          }),
+        ],
       }),
       expect.objectContaining({ id: "writer", status: "completed" }),
     ]);
@@ -303,9 +328,7 @@ it.each(["codex-cli", "claude-cli", "copilot-cli"] as const)(
           });
         } else {
           await writerStarted;
-          const readFile = params.scopedWorkerToolDefinitions?.find(
-            (entry) => entry.spec.name === "read_file",
-          );
+          const readFile = scopedTool(params, "read_file");
           await expect(
             readFile?.execute(
               { path: "report.txt", startLine: 1, endLine: 1 },

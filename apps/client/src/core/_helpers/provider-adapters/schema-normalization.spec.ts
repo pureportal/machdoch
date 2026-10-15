@@ -1,6 +1,41 @@
+import { describe, expect, it } from "vitest";
 import { normalizeOpenAIStrictInputSchema } from "./schema-normalization.js";
 
 describe("normalizeOpenAIStrictInputSchema", () => {
+  it("normalizes referenced definitions and tuple objects recursively", () => {
+    const normalized = normalizeOpenAIStrictInputSchema({
+      type: "object",
+      $defs: {
+        row: { type: "object", properties: { count: { type: "integer" } } },
+      },
+      properties: {
+        rows: {
+          type: "array",
+          prefixItems: [
+            { type: "object", properties: { label: { type: "string" } } },
+          ],
+        },
+      },
+    });
+    expect(normalized.$defs).toMatchObject({
+      row: {
+        required: ["count"],
+        additionalProperties: false,
+        properties: { count: { type: ["integer", "null"] } },
+      },
+    });
+    expect(normalized.properties).toMatchObject({
+      rows: {
+        prefixItems: [
+          {
+            required: ["label"],
+            additionalProperties: false,
+            properties: { label: { type: ["string", "null"] } },
+          },
+        ],
+      },
+    });
+  });
   it("makes optional properties nullable while requiring every declared key", () => {
     const normalized = normalizeOpenAIStrictInputSchema({
       type: "object",

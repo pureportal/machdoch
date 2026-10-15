@@ -1,3 +1,4 @@
+import { decodeToolArguments } from "./tool-arguments.js";
 import {
   createFunctionResponsePartFromBase64,
   createPartFromFunctionResponse,
@@ -250,10 +251,7 @@ export const normalizeGeminiResponse = (
     toolCalls.push({
       id: functionCall.id ?? crypto.randomUUID(),
       name: functionCall.name ?? "unknown_tool",
-      arguments:
-        typeof functionCall.args === "object" && functionCall.args !== null
-          ? (functionCall.args as Record<string, unknown>)
-          : {},
+      ...decodeToolArguments(functionCall.args),
     });
   }
 
@@ -483,11 +481,8 @@ export class GeminiChatAdapter implements AgentModelAdapter {
           const name = functionCall.name ?? "unknown_tool";
           const id = functionCall.id ?? crypto.randomUUID();
           const key = functionCall.id ?? `${name}:${toolCallsByKey.size}`;
-          const parsedArguments =
-            typeof functionCall.args === "object" && functionCall.args !== null
-              ? (functionCall.args as Record<string, unknown>)
-              : {};
-          const rawArguments = JSON.stringify(parsedArguments);
+          const decoded = decodeToolArguments(functionCall.args);
+          const rawArguments = JSON.stringify(functionCall.args ?? {});
 
           if (!toolCallsByKey.has(key)) {
             emitProviderStreamEvent(onStreamEvent, {
@@ -508,7 +503,7 @@ export class GeminiChatAdapter implements AgentModelAdapter {
           toolCallsByKey.set(key, {
             id,
             name,
-            arguments: parsedArguments,
+            ...decoded,
             rawArguments,
           });
         }
