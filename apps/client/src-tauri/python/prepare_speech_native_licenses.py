@@ -31,10 +31,13 @@ def legal_files(archive):
 
 
 def retain_files(files, destination, legal):
+    destination.mkdir(parents=True, exist_ok=True)
+    destination = destination.resolve()
+    legal = legal.resolve()
     records = []
     for relative, content in sorted(files.items()):
         target = destination / relative
-        if not target.resolve().is_relative_to(destination.resolve()):
+        if not target.resolve().is_relative_to(destination):
             raise ValueError("Invalid native dependency licence path.")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)

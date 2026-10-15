@@ -1,15 +1,41 @@
 import hashlib
 import io
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import tarfile
 import tempfile
 import unittest
 
-from prepare_speech_native_licenses import legal_files, verify_native_licenses
+from prepare_speech_native_licenses import legal_files, retain_files, verify_native_licenses
 
 
 class NativeLicenseTests(unittest.TestCase):
+    def test_retains_licenses_concurrently_in_new_package_directories(self):
+        with tempfile.TemporaryDirectory(prefix="machdoch-native-licenses-") as directory:
+            legal = Path(directory) / "legal"
+            grants = {"LICENSE-MIT": b"MIT grant", "licenses/NOTICE": b"Notice"}
+            destinations = [legal / "python-native" / "cargo" / f"library-{index}" for index in range(32)]
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                jobs = [executor.submit(retain_files, grants, destination, legal) for destination in destinations]
+                records = [job.result() for job in jobs]
+            for destination, files in zip(destinations, records):
+                self.assertEqual(len(files), len(grants))
+                for entry in files:
+                    path = legal / entry["path"]
+                    self.assertTrue(path.resolve().is_relative_to(destination.resolve()))
+                    self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), entry["sha256"])
+
+    def test_rejects_license_paths_outside_package(self):
+        with tempfile.TemporaryDirectory(prefix="machdoch-native-licenses-") as directory:
+            legal = Path(directory)
+            destination = legal / "package"
+            for relative in ("../LICENSE", str(legal / "LICENSE")):
+                with self.subTest(path=relative):
+                    with self.assertRaisesRegex(ValueError, "licence path"):
+                        retain_files({relative: b"MIT grant"}, destination, legal)
+                    self.assertFalse((legal / "LICENSE").exists())
+
     def test_rejects_archive_paths_outside_package(self):
         data = io.BytesIO()
         with tarfile.open(fileobj=data, mode="w") as archive:
