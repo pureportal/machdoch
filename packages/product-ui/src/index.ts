@@ -79,6 +79,7 @@ export {
   type MarkdownUrlTransform,
 } from "./markdown";
 export { PromptEnhancementIndicator } from "./prompt-enhancement";
+export { LoadingState, type LoadingStateProps } from "./loading-state";
 export {
   ALL_SESSION_PROJECTS_FILTER,
   calculateSessionSearchScore,
