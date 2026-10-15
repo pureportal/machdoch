@@ -8087,7 +8087,7 @@ mod tests {
         assert_eq!(initial.schema_version, 1);
         assert_eq!(initial.catalog_revision, catalog::CATALOG_REVISION);
         assert_eq!(initial.providers.len(), 8);
-        assert_eq!(initial.models.len(), 54);
+        assert_eq!(initial.models.len(), 63);
         for profile in super::super::open_models::profiles() {
             let model = initial
                 .models
