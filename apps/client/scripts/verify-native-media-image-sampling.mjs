@@ -98,6 +98,48 @@ try {
         await page.getByLabel("Guidance", { exact: true }).isEnabled(),
         true,
       );
+    if (model.architecture === "stable-diffusion-3") {
+      const guidanceRange = page.locator('[data-sampling-range="guidance"]');
+      assert.equal(
+        await guidanceRange.locator("span[title]").getAttribute("title"),
+        "Suggested guidance: 3.5–7",
+      );
+      assert.equal(
+        await guidanceRange
+          .locator("span.absolute")
+          .evaluate((marker) => marker.style.left),
+        "22.5%",
+      );
+      const guidance = page.getByLabel("Guidance", { exact: true });
+      await guidance.fill("3");
+      await page
+        .getByRole("img", { name: /Guidance outside suggested range/ })
+        .waitFor();
+      await guidance.fill("4.5");
+      await page
+        .getByRole("img", { name: /Guidance outside suggested range/ })
+        .waitFor({ state: "detached" });
+      assert.ok(samplers.includes("Flow Heun"));
+      await page
+        .getByLabel("Sampler", { exact: true })
+        .selectOption("flow-heun");
+      assert.equal(
+        await page.getByLabel("Sampler", { exact: true }).inputValue(),
+        "flow-heun",
+      );
+    }
+    if (model.architecture === "stable-diffusion-3.5-large-turbo") {
+      assert.equal(steps, 4);
+      assert.equal(
+        await page.getByLabel("Sampling steps", { exact: true }).isDisabled(),
+        true,
+      );
+      assert.equal(
+        await page.getByLabel("Guidance", { exact: true }).count(),
+        0,
+      );
+      assert.ok(!samplers.includes("Flow Heun"));
+    }
     if (
       ["stable-diffusion-1", "stable-diffusion-xl", "pony"].includes(
         model.architecture,

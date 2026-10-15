@@ -2,10 +2,13 @@ import argparse
 from contextlib import ExitStack, redirect_stdout, redirect_stderr
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
+import sys
 import time
 import traceback
+from typing import TextIO
 from unittest.mock import patch
 
 import media_diffusers_worker as worker
@@ -20,7 +23,14 @@ READER_DIGEST = hashlib.sha256(READER_PATH.read_bytes()).hexdigest()
 RUNTIME_DIGEST = runtime_digest(WORKER_PATH.parent)
 
 
-def verify(template_path: Path, cases_path: Path, output_root: Path, hip_device: str, capture_decoder_latents: bool) -> bool:
+def _route_library_logs(stream: TextIO) -> None:
+    for name in ("diffusers", "transformers", "peft", "huggingface_hub"):
+        for handler in logging.getLogger(name).handlers:
+            if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+                handler.setStream(stream)
+
+
+def verify(template_path: Path, cases_path: Path, output_root: Path, hip_device: str, capture_decoder_latents: bool, stop_on_failure: bool = False) -> bool:
     template = json.loads(template_path.read_text(encoding="utf-8"))
     cases = json.loads(cases_path.read_text(encoding="utf-8"))
     if not isinstance(cases, list) or not cases:
@@ -32,11 +42,15 @@ def verify(template_path: Path, cases_path: Path, output_root: Path, hip_device:
         "stable-diffusion-3": "AutoencoderKL",
         "stable-diffusion-xl": "AutoencoderKL",
         "pony": "AutoencoderKL",
+        "qwen-image": "AutoencoderKLQwenImage",
+        "qwen-image-2512": "AutoencoderKLQwenImage",
         "qwen-image-2.1": "AutoencoderKLQwenImage21",
         "qwen-image-2.1-turbo": "AutoencoderKLQwenImage21",
         "krea-2": "AutoencoderKLQwenImage",
         "krea-2-raw": "AutoencoderKLQwenImage",
         "krea-2-turbo": "AutoencoderKLQwenImage",
+        "flux-2-dev": "AutoencoderKLFlux2",
+        "stable-diffusion-3.5-large-turbo": "AutoencoderKL",
     }
     if capture_decoder_latents and architecture not in decoder_classes:
         raise ValueError(f"Decoder latent capture is unavailable for {architecture}")
@@ -122,6 +136,7 @@ def verify(template_path: Path, cases_path: Path, output_root: Path, hip_device:
                             torch, diffusers = worker._runtime()
                         device, _, _ = worker._device(torch)
                         cache = ModelPipelineCache(torch, device, worker.PROCESS_STARTED_AT)
+                    _route_library_logs(log)
                     if capture_decoder_latents:
                         from safetensors.torch import save_file
 
@@ -134,6 +149,14 @@ def verify(template_path: Path, cases_path: Path, output_root: Path, hip_device:
 
                         generation_stack.enter_context(patch.object(vae_class, "decode", capture_decode))
                     response = worker.generate(request, cache)
+                    if architecture in ("qwen-image", "qwen-image-2512"):
+                        encoder = cache.value["pipeline"].text_encoder
+                        record["textEncoder"] = {
+                            "class": type(encoder).__name__,
+                            "loadedIn4Bit": encoder.is_loaded_in_4bit,
+                            "quantizationTypes": sorted({parameter.quant_type for parameter in encoder.parameters() if hasattr(parameter, "quant_type")}),
+                            "parameterAndBufferBytes": encoder.get_memory_footprint(),
+                        }
                     release_allocator(cache.torch, cache.device)
                     (directory / "response.json").write_text(json.dumps(response), encoding="utf-8")
                     record.update(validate_response(request, response))
@@ -147,6 +170,8 @@ def verify(template_path: Path, cases_path: Path, output_root: Path, hip_device:
             completed.append(record)
             save_results(summary_path, summary)
             print(json.dumps(record), flush=True)
+            if stop_on_failure and not record["passed"]:
+                break
         summary["passed"] = len(completed) == len(cases) and all(item["passed"] for item in completed)
         save_results(summary_path, summary)
     finally:
@@ -154,7 +179,10 @@ def verify(template_path: Path, cases_path: Path, output_root: Path, hip_device:
             if cache is not None:
                 cache.clear()
         finally:
-            log_stack.close()
+            try:
+                _route_library_logs(sys.stderr)
+            finally:
+                log_stack.close()
     return summary["passed"]
 
 
@@ -165,8 +193,9 @@ def main() -> int:
     parser.add_argument("--output-root", type=Path, required=True)
     parser.add_argument("--hip-device", default="1")
     parser.add_argument("--capture-decoder-latents", action="store_true")
+    parser.add_argument("--stop-on-failure", action="store_true")
     arguments = parser.parse_args()
-    return 0 if verify(arguments.template, arguments.cases, arguments.output_root, arguments.hip_device, arguments.capture_decoder_latents) else 1
+    return 0 if verify(arguments.template, arguments.cases, arguments.output_root, arguments.hip_device, arguments.capture_decoder_latents, arguments.stop_on_failure) else 1
 
 
 if __name__ == "__main__":

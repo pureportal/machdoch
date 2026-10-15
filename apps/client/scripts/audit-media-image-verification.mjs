@@ -5,6 +5,12 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 const root = path.resolve(process.argv[2]);
+const evidenceRoots = [
+  ...new Set([
+    root,
+    ...process.argv.slice(5).map((directory) => path.resolve(directory)),
+  ]),
+];
 const destination = path.resolve(process.argv[3]);
 assert.ok(process.argv[4], "Pass the current model store directory");
 const database = new DatabaseSync(
@@ -26,23 +32,53 @@ const profiles = await readJson(
   "apps/client/src-tauri/python/image_sampling_profiles.json",
 );
 const original = await readJson(path.join(root, "engine-coverage-audit.json"));
-const assessments = (await readJson(path.join(root, "visual-assessments.json")))
-  .assessments;
+const assessments = [];
+for (const directory of evidenceRoots) {
+  try {
+    assessments.push(
+      ...(await readJson(path.join(directory, "visual-assessments.json")))
+        .assessments,
+    );
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+}
+const assessmentByDigest = new Map(
+  assessments.map((assessment) => [
+    `${assessment.referenceId}:${assessment.sha256}`,
+    assessment,
+  ]),
+);
+const imageDigests = new Map();
+const imageDigest = async (file) => {
+  const resolved = path.resolve(file);
+  if (!imageDigests.has(resolved)) {
+    imageDigests.set(
+      resolved,
+      createHash("sha256")
+        .update(await readFile(resolved))
+        .digest("hex"),
+    );
+  }
+  return imageDigests.get(resolved);
+};
 const workerBytes = await readFile(
   "apps/client/src-tauri/python/media_diffusers_worker.py",
 );
 const workerSha256 = createHash("sha256").update(workerBytes).digest("hex");
-const files = await readdir(root, { recursive: true });
 const records = [];
 const seen = new Set();
-for (const file of files
-  .filter((file) => path.basename(file) === "results.json")
-  .sort()) {
-  const summary = await readJson(path.join(root, file));
-  for (const model of summary.models ?? []) {
-    if (!model.directory || seen.has(model.directory)) continue;
-    seen.add(model.directory);
-    records.push(model);
+for (const directory of evidenceRoots) {
+  const files = await readdir(directory, { recursive: true });
+  for (const file of files
+    .filter((file) => path.basename(file) === "results.json")
+    .sort()) {
+    const summary = await readJson(path.join(directory, file));
+    for (const model of summary.models ?? []) {
+      if (!model.directory || seen.has(model.directory)) continue;
+      seen.add(model.directory);
+      records.push(model);
+    }
   }
 }
 const installedArchitectures = new Map(
@@ -55,10 +91,16 @@ for (const record of records.filter(
 )) {
   const request = await readJson(path.join(record.directory, "request.json"));
   const response = await readJson(path.join(record.directory, "response.json"));
-  const digest = createHash("sha256")
-    .update(await readFile(record.image))
-    .digest("hex");
+  const digest = await imageDigest(record.image);
   assert.equal(digest, record.sha256, record.directory);
+  const referenceId = Number(
+    record.referenceId ?? /reference-(\d+)/u.exec(record.directory)?.[1],
+  );
+  const assessment = assessmentByDigest.get(`${referenceId}:${digest}`);
+  if (assessment) {
+    const assessedDigest = await imageDigest(assessment.image);
+    assert.equal(assessedDigest, digest, assessment.image);
+  }
   const classificationChanged =
     installedArchitectures.get(record.id) !== record.architecture;
   const supersededKreaDefaults =
@@ -77,6 +119,7 @@ for (const record of records.filter(
   }
   accepted.push(record);
 }
+const acceptedDirectories = new Set(accepted.map((record) => record.directory));
 const coverage = profiles.map((profile) => {
   const previous = original.coverage.find(
     (entry) => entry.architecture === profile.architecture,
@@ -87,14 +130,18 @@ const coverage = profiles.map((profile) => {
       const referenceId = Number(
         record.referenceId ?? /reference-(\d+)/u.exec(record.directory)?.[1],
       );
-      const assessment = assessments.find(
-        (entry) => entry.sha256 === record.sha256,
+      const assessment = assessmentByDigest.get(
+        `${referenceId}:${record.sha256}`,
       );
+      const validEvidence = acceptedDirectories.has(record.directory);
       return {
         ...record,
         referenceId: Number.isFinite(referenceId) ? referenceId : null,
-        qualityVerdict: assessment?.referenceQualityVerdict ?? "not-assessed",
-        observations: assessment?.observations ?? null,
+        validEvidence,
+        qualityVerdict: validEvidence
+          ? (assessment?.referenceQualityVerdict ?? "not-assessed")
+          : "not-assessed",
+        observations: validEvidence ? (assessment?.observations ?? null) : null,
         currentClassification:
           installedArchitectures.get(record.id) === record.architecture,
       };
@@ -102,10 +149,7 @@ const coverage = profiles.map((profile) => {
   const referencesWithTechnicalPass = [
     ...new Set(
       realRuns
-        .filter(
-          (record) =>
-            record.passed && record.referenceId && record.currentClassification,
-        )
+        .filter((record) => record.validEvidence && record.referenceId)
         .map((record) => record.referenceId),
     ),
   ];
@@ -114,8 +158,8 @@ const coverage = profiles.map((profile) => {
       realRuns
         .filter(
           (record) =>
-            record.passed &&
-            record.currentClassification &&
+            record.validEvidence &&
+            record.referenceId &&
             record.qualityVerdict === "near-reference",
         )
         .map((record) => record.referenceId),
@@ -150,6 +194,7 @@ const coverage = profiles.map((profile) => {
 });
 const audit = {
   modelStoreDirectory: path.resolve(process.argv[4]),
+  evidenceRoots,
   workerSha256,
   samplingArchitectures: profiles.length,
   requiredReferences: original.requiredReferences,
@@ -181,7 +226,7 @@ console.log(
   JSON.stringify({
     architectures: profiles.length,
     installed: installedArchitectures.size,
-    inspected: assessments.length,
+    inspected: assessmentByDigest.size,
     nativeValidationRecords: accepted.length,
     excluded,
   }),
