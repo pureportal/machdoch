@@ -176,7 +176,10 @@ pub(crate) fn get_model_catalog(
     configured_provider_ids: &HashSet<String>,
 ) -> MediaResult<MediaModelCatalogSnapshot> {
     let connection = open(paths)?;
-    catalog::snapshot(&connection, configured_provider_ids)
+    super::model_install::reconcile_library(paths, &connection)?;
+    let mut snapshot = catalog::snapshot(&connection, configured_provider_ids)?;
+    super::model_library::annotate(paths, &mut snapshot)?;
+    Ok(snapshot)
 }
 
 fn recover_interrupted_runs(connection: &mut Connection) -> MediaResult<RecoverySummary> {
@@ -8167,12 +8170,9 @@ mod tests {
             .iter()
             .find(|model| model.id == "local:flux-2-klein-4b")
             .unwrap();
-        assert!(flux.installed);
-        assert_eq!(flux.installation_status, "installed");
-        assert_eq!(
-            flux.installed_revision.as_deref(),
-            Some("flux-test-revision")
-        );
+        assert!(!flux.installed);
+        assert_eq!(flux.installation_status, "not-installed");
+        assert!(flux.installed_revision.is_none());
         let lifecycle_snapshots = open(&paths)
             .unwrap()
             .query_row(

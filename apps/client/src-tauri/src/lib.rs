@@ -326,6 +326,7 @@ pub fn run() {
             media::storage::media_resume_asset_storage,
             media::media_cancel_run,
             media::media_analyze_image_quality,
+            media::storage::media_use_model_storage,
             media::media_enqueue_fixture_run,
             media::media_generate_images,
             media::media_generate_video,

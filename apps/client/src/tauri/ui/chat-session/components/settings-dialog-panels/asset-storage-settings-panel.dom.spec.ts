@@ -24,6 +24,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({ open: native.open }));
 
 const ready = {
   folder: "C:\\Media",
+  modelsFolder: "C:\\Media\\models",
   destination: null,
   phase: "ready",
   completedBytes: 0,
@@ -47,6 +48,49 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("asset storage settings", () => {
+  it("uses models from an existing library without moving assets", async () => {
+    const shared = { ...ready, modelsFolder: "D:\\Media\\models" };
+    native.invoke.mockImplementation(async (command: string) =>
+      command === "media_use_model_storage" ? shared : ready,
+    );
+    render(createElement(AssetStorageSettingsPanel));
+    await screen.findByText("C:\\Media");
+    fireEvent.click(screen.getByRole("button", { name: "Choose folder" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Use models" }));
+    await screen.findByText("D:\\Media\\models");
+    expect(native.invoke).toHaveBeenCalledWith("media_use_model_storage", {
+      folder: "D:\\Media",
+    });
+    expect(screen.getByText("C:\\Media")).toBeDefined();
+    expect(
+      native.invoke.mock.calls.some(
+        ([command]) => command === "media_move_asset_storage",
+      ),
+    ).toBe(false);
+  });
+
+  it("selects a model folder directly", async () => {
+    native.invoke.mockImplementation(async (command: string) =>
+      command === "media_use_model_storage"
+        ? { ...ready, modelsFolder: "D:\\Media" }
+        : ready,
+    );
+    render(createElement(AssetStorageSettingsPanel));
+    await screen.findByText("C:\\Media");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose model folder" }),
+    );
+    await screen.findByRole("button", { name: "Use models" });
+    expect(screen.queryByRole("button", { name: "Move assets" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Use models" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Use models" })).toBeNull(),
+    );
+    expect(native.invoke).toHaveBeenCalledWith("media_use_model_storage", {
+      folder: "D:\\Media",
+    });
+  });
+
   it("reviews the destination before starting the move and shows native progress", async () => {
     native.invoke.mockImplementation(async (command: string) =>
       command === "media_move_asset_storage" ? moving : ready,

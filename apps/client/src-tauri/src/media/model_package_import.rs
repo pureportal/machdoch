@@ -35,7 +35,16 @@ struct PackageInventory {
     student_architectures: Vec<String>,
 }
 
-fn inventory(source: &Path) -> MediaResult<PackageInventory> {
+pub(super) fn index_path(root: &Path) -> PathBuf {
+    let modular = root.join("modular_model_index.json");
+    if modular.is_file() {
+        modular
+    } else {
+        root.join("model_index.json")
+    }
+}
+
+fn inventory(source: &Path, verify_pinned_weights: bool) -> MediaResult<PackageInventory> {
     if fs::symlink_metadata(source)
         .map_err(|error| error.to_string())?
         .file_type()
@@ -76,11 +85,12 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
                 });
                 if let Some(profile) = student_profile {
                     let student = profile.distillation.as_ref().unwrap();
-                    if model_import::hash_file(&path)?
-                        != (
-                            student.checkpoint_byte_size,
-                            student.checkpoint_sha256.clone(),
-                        )
+                    if verify_pinned_weights
+                        && model_import::hash_file(&path)?
+                            != (
+                                student.checkpoint_byte_size,
+                                student.checkpoint_sha256.clone(),
+                            )
                     {
                         return Err(format!(
                             "Import the published student checkpoint at {}",
@@ -140,12 +150,9 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
             .map_err(|error| error.to_string())?;
         hasher.update(modified.as_nanos().to_le_bytes());
     }
-    let modular = root.join("modular_model_index.json").is_file();
-    let index = read_json(&root.join(if modular {
-        "modular_model_index.json"
-    } else {
-        "model_index.json"
-    }))?;
+    let index_path = index_path(&root);
+    let modular = index_path.ends_with("modular_model_index.json");
+    let index = read_json(&index_path)?;
     let pipeline = index
         .get("_class_name")
         .and_then(Value::as_str)
@@ -502,8 +509,12 @@ fn cogvideo_architecture(root: &Path, pipeline: &str) -> MediaResult<String> {
 }
 
 pub(super) fn inspect(source: &Path) -> MediaResult<MediaLocalModelImportInspection> {
-    let package = inventory(source)?;
+    let package = inventory(source, true)?;
     inspect_package(&package)
+}
+
+pub(super) fn inspect_discovered(source: &Path) -> MediaResult<MediaLocalModelImportInspection> {
+    inspect_package(&inventory(source, false)?)
 }
 
 fn inspect_package(package: &PackageInventory) -> MediaResult<MediaLocalModelImportInspection> {
@@ -707,7 +718,7 @@ pub(super) fn import_reviewed(
     model_import::validated_text("displayName", &request.display_name, 120)?;
     model_import::validated_source_url(request.source_url.as_deref())?;
     model_import::validated_optional_text("licenseName", request.license_name.as_deref(), 256)?;
-    let package = inventory(Path::new(&request.source_path))?;
+    let package = inventory(Path::new(&request.source_path), true)?;
     let inspection = inspect_package(&package)?;
     if request.review_token != inspection.review_token {
         return Err("The model folder changed. Inspect it again.".to_string());

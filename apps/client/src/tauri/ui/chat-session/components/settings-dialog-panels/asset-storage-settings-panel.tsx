@@ -11,6 +11,7 @@ import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js"
 
 interface AssetStorageStatus {
   folder: string;
+  modelsFolder: string;
   destination: string | null;
   phase: "ready" | "moving" | "cleaning" | "paused";
   completedBytes: number;
@@ -26,6 +27,7 @@ const errorMessage = (error: unknown): string =>
 export function AssetStorageSettingsPanel() {
   const [status, setStatus] = useState<AssetStorageStatus | null>(null);
   const [folder, setFolder] = useState<string | null>(null);
+  const [folderKind, setFolderKind] = useState<"assets" | "models">("assets");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,17 +62,35 @@ export function AssetStorageSettingsPanel() {
     );
   }
 
-  const chooseFolder = async () => {
+  const chooseFolder = async (kind: "assets" | "models") => {
     setBusy(true);
     setError(null);
     try {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: "Choose asset folder",
+        title:
+          kind === "models" ? "Choose model folder" : "Choose asset folder",
       });
-      if (typeof selected === "string" && selected !== status?.folder)
+      if (typeof selected === "string") {
+        setFolderKind(kind);
         setFolder(selected);
+      }
+    } catch (failure) {
+      setError(errorMessage(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const useModels = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      setStatus(
+        await invoke<AssetStorageStatus>("media_use_model_storage", { folder }),
+      );
+      setFolder(null);
     } catch (failure) {
       setError(errorMessage(failure));
     } finally {
@@ -159,15 +179,24 @@ export function AssetStorageSettingsPanel() {
           {!isRemoteMedia() ? (
             <p className="break-all text-sm text-slate-200">{folder}</p>
           ) : null}
-          <p className="text-sm text-slate-400">
-            Move all models, LoRAs, and other Media Studio assets here. Media
-            Studio pauses until the move finishes; interrupted moves resume on
-            restart.
-          </p>
+          {folderKind === "assets" && (
+            <p className="text-sm text-slate-400">
+              Moving assets pauses Media Studio until the move finishes.
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
-            <Button disabled={busy} onClick={() => void move(false)}>
-              {busy && <LoaderCircle className="h-4 w-4 animate-spin" />}Move
-              assets
+            {folderKind === "assets" && (
+              <Button disabled={busy} onClick={() => void move(false)}>
+                {busy && <LoaderCircle className="h-4 w-4 animate-spin" />}Move
+                assets
+              </Button>
+            )}
+            <Button
+              disabled={busy}
+              variant={folderKind === "assets" ? "outline" : "default"}
+              onClick={() => void useModels()}
+            >
+              Use models
             </Button>
             <Button
               variant="outline"
@@ -189,21 +218,52 @@ export function AssetStorageSettingsPanel() {
           Move assets to
           <Input
             aria-label="Move assets to"
-            value={folder ?? ""}
+            value={folderKind === "assets" ? (folder ?? "") : ""}
             disabled={busy || !status}
-            onChange={(event) => setFolder(event.target.value || null)}
+            onChange={(event) => {
+              setFolderKind("assets");
+              setFolder(event.target.value || null);
+            }}
           />
         </label>
       ) : !moving ? (
         <Button
           variant="outline"
           disabled={busy || !status}
-          onClick={() => void chooseFolder()}
+          onClick={() => void chooseFolder("assets")}
         >
           <FolderOpen className="h-4 w-4" />
           Choose folder
         </Button>
       ) : null}
+      {!moving && status && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium text-slate-200">Model folder</h3>
+          <p className="break-all rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-slate-300">
+            {status.modelsFolder}
+          </p>
+          {isRemoteMedia() ? (
+            <Input
+              aria-label="Model folder"
+              value={folderKind === "models" ? (folder ?? "") : ""}
+              disabled={busy}
+              onChange={(event) => {
+                setFolderKind("models");
+                setFolder(event.target.value || null);
+              }}
+            />
+          ) : (
+            <Button
+              variant="outline"
+              disabled={busy}
+              onClick={() => void chooseFolder("models")}
+            >
+              <FolderOpen className="h-4 w-4" />
+              Choose model folder
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

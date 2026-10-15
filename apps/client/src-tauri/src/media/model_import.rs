@@ -1048,6 +1048,72 @@ pub(crate) fn import_reviewed(
     if source_size != inspection.byte_size {
         return Err("the file changed; select it again before importing".to_string());
     }
+    let models_root = paths.models_root()?;
+    let existing_relative = format!(
+        "packages/user-{}/revisions/{source_digest}",
+        &source_digest[..32]
+    );
+    let existing_root = super::model_install::safe_relative_path(&models_root, &existing_relative)?;
+    if existing_root.is_dir() {
+        let existing_checkpoint = existing_root.join("checkpoint.safetensors");
+        let same_source = fs::canonicalize(&existing_checkpoint).ok().as_deref()
+            == Some(Path::new(&inspection.source_path));
+        let stored_matches = same_source
+            || (fs::metadata(&existing_checkpoint)
+                .is_ok_and(|metadata| metadata.len() == source_size)
+                && hash_file(&existing_checkpoint)? == (source_size, source_digest.clone()));
+        if !stored_matches {
+            let staged = existing_root.join(format!("repair-{}.tmp", new_import_id()?));
+            let repair = (|| -> MediaResult<()> {
+                let copied_digest =
+                    copy_and_hash(Path::new(&inspection.source_path), &staged, source_size)?;
+                if copied_digest != source_digest {
+                    return Err("The model changed during configuration. Select it again.".into());
+                }
+                fs::rename(&staged, &existing_checkpoint)
+                    .map_err(|error| format!("Could not restore the model file: {error}"))
+            })();
+            if staged.exists() {
+                fs::remove_file(&staged).map_err(|error| {
+                    format!("Could not remove the incomplete model copy: {error}")
+                })?;
+            }
+            repair?;
+        }
+        prepare_model_config(paths, &existing_root, &request.architecture)?;
+        let imported_at = database::now();
+        let model_id = format!("{USER_MODEL_ID_PREFIX}{source_digest}");
+        let already_installed = stored_installation_exists(paths, &model_id)?;
+        persist_import(
+            paths,
+            request,
+            &inspection,
+            &source_digest,
+            &existing_relative,
+            &imported_at,
+            "safetensors",
+        )?;
+        super::model_library_source::record(
+            paths,
+            &existing_root,
+            Path::new(&request.source_path),
+        )?;
+        return Ok(MediaLocalModelImportResult {
+            schema_version: 1,
+            model_id,
+            display_name: request.display_name.trim().into(),
+            family: architecture_profile(&request.architecture)
+                .ok_or("Unknown architecture")?
+                .family
+                .into(),
+            revision: source_digest.clone(),
+            digest: source_digest,
+            byte_size: source_size,
+            target_label: format!("models/{existing_relative}/checkpoint.safetensors"),
+            imported_at,
+            already_installed,
+        });
+    }
     let component_bytes = match request.architecture.as_str() {
         "stable-diffusion-1" => {
             super::model_components::manifest_bytes(include_str!("sd15_components.json"))?
@@ -1065,7 +1131,6 @@ pub(crate) fn import_reviewed(
         .saturating_mul(105)
         .div_ceil(100)
         .saturating_add(component_bytes);
-    let models_root = paths.models_root()?;
     fs::create_dir_all(&models_root)
         .map_err(|error| format!("failed to prepare model storage: {error}"))?;
     if hardware::available_storage_bytes(&models_root).map(|available| available < required_bytes)
@@ -1187,6 +1252,7 @@ pub(crate) fn import_reviewed(
         &imported_at,
         "safetensors",
     )?;
+    super::model_library_source::record(paths, &revision_root, Path::new(&request.source_path))?;
     let profile = architecture_profile(&request.architecture)
         .ok_or_else(|| "architecture is not a supported local model family".to_string())?;
     Ok(MediaLocalModelImportResult {

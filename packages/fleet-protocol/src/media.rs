@@ -9,6 +9,7 @@ const MAX_RESPONSE_CHUNK: usize = 262_144;
 const MEDIA_COMMANDS: &[&str] = &[
     "media_get_asset_storage",
     "media_move_asset_storage",
+    "media_use_model_storage",
     "media_resume_asset_storage",
     "media_read_studio_state",
     "media_write_studio_state",
@@ -120,7 +121,7 @@ where
                 && valid_json_args(&args)
                 && match command.as_str() {
                     "media_get_asset_storage" | "media_resume_asset_storage" => args.is_empty(),
-                    "media_move_asset_storage" => {
+                    "media_move_asset_storage" | "media_use_model_storage" => {
                         args.len() == 1
                             && args
                                 .get("folder")

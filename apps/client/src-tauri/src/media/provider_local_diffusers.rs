@@ -959,6 +959,9 @@ pub(super) fn installed_model(
         .5
         .ok_or_else(|| "the selected local diffusion model has no managed path".to_string())?;
     let package_root = safe_managed_path(&paths.models_root()?, &relative_path)?;
+    if super::model_install::has_manifest(&row.0) {
+        super::model_install::verify_library_model(paths, &row.0)?;
+    }
     let (package_kind, path, config_path) = match row.2.as_str() {
         "diffusers" => ("diffusers-directory".to_string(), package_root, None),
         "transformers" => ("transformers-directory".to_string(), package_root, None),

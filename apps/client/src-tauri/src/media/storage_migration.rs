@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::{
-    hardware,
+    hardware, model_storage,
     storage::{save_config, StorageConfig},
     MediaResult,
 };
@@ -23,6 +23,7 @@ pub(super) struct Migration {
     pub target: PathBuf,
     pub identity: String,
     pub source_identity: Option<String>,
+    pub linked_models: Option<PathBuf>,
     pub files: Vec<MoveFile>,
     directories: Vec<PathBuf>,
     pub cleaning: bool,
@@ -61,23 +62,24 @@ fn io_error(error: std::io::Error) -> String {
 
 fn ordinary_metadata(path: &Path) -> MediaResult<fs::Metadata> {
     let metadata = fs::symlink_metadata(path).map_err(io_error)?;
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        if metadata.file_attributes() & 0x400 != 0 {
-            return Err(format!(
-                "Linked folders and files cannot be moved: {}",
-                path.display()
-            ));
-        }
-    }
-    if metadata.file_type().is_symlink() || (!metadata.is_file() && !metadata.is_dir()) {
+    if is_link(&metadata) || (!metadata.is_file() && !metadata.is_dir()) {
         return Err(format!(
             "Linked or special files cannot be moved: {}",
             path.display()
         ));
     }
     Ok(metadata)
+}
+
+fn is_link(metadata: &fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return true;
+        }
+    }
+    metadata.file_type().is_symlink()
 }
 
 fn scan(
@@ -89,6 +91,12 @@ fn scan(
     for entry in fs::read_dir(root.join(relative)).map_err(io_error)? {
         let entry = entry.map_err(io_error)?;
         if relative.as_os_str().is_empty() && entry.file_name() == MARKER {
+            continue;
+        }
+        if relative.as_os_str().is_empty()
+            && entry.file_name() == "models"
+            && is_link(&fs::symlink_metadata(entry.path()).map_err(io_error)?)
+        {
             continue;
         }
         if entry
@@ -168,11 +176,26 @@ pub(super) fn prepare(
         return Err("Choose a separate empty folder outside the current asset folder.".into());
     }
     if fs::read_dir(&target).map_err(io_error)?.next().is_some() {
-        return Err("The destination is not empty. Choose an empty folder.".into());
+        return Err("The destination is not empty. Choose an empty folder to move assets, or use its model folder without moving files.".into());
     }
     if let Some(identity) = &config.identity {
         check_identity(&source, identity)?;
     }
+    let linked_models = match fs::symlink_metadata(source.join("models")) {
+        Ok(metadata) if is_link(&metadata) => {
+            let models = fs::canonicalize(source.join("models"))
+                .map_err(|_| "The linked model folder is unavailable. Choose an existing model folder in Settings → Asset storage.".to_string())?;
+            if !models.is_dir() || models.starts_with(&source) || source.starts_with(&models) {
+                return Err(
+                    "Choose a model folder outside the asset folder before moving assets.".into(),
+                );
+            }
+            Some(models)
+        }
+        Ok(_) => None,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(io_error(error)),
+    };
     let database = source.join("media.sqlite3");
     if database.exists() {
         let connection =
@@ -196,6 +219,7 @@ pub(super) fn prepare(
         target,
         identity,
         source_identity: config.identity.clone(),
+        linked_models,
         files,
         directories,
         cleaning: false,
@@ -373,6 +397,14 @@ pub(super) fn execute(control: &Path, config: &mut StorageConfig) -> MediaResult
     }
     if !migration.cleaning {
         ordinary_metadata(&migration.source)?;
+        if let Some(models) = &migration.linked_models {
+            if fs::canonicalize(migration.source.join("models")).map_err(io_error)? != *models {
+                return Err(
+                    "The linked model folder has changed. Restore it before resuming the move."
+                        .into(),
+                );
+            }
+        }
         for directory in &migration.directories {
             let path = checked_path(&migration.target, directory, true)?;
             if !path.exists() {
@@ -387,12 +419,27 @@ pub(super) fn execute(control: &Path, config: &mut StorageConfig) -> MediaResult
             save_config(control, config)?;
         }
         let migration = config.migration.as_mut().unwrap();
+        if let Some(models) = &migration.linked_models {
+            if !migration.target.join(model_storage::SETTINGS_FILE).exists() {
+                model_storage::save(&migration.target, models)?;
+            }
+        }
         config.root = migration.target.clone();
         config.identity = Some(migration.identity.clone());
         migration.cleaning = true;
         save_config(control, config)?;
     }
     let migration = config.migration.as_ref().unwrap();
+    if let Some(models) = &migration.linked_models {
+        if !migration
+            .files
+            .iter()
+            .any(|file| file.relative == Path::new(model_storage::SETTINGS_FILE))
+            && model_storage::folder(&migration.target)? != *models
+        {
+            return Err("The destination model folder setting has changed. Restore it before resuming the move.".into());
+        }
+    }
     for entry in &migration.files {
         let destination = checked_path(&migration.target, &entry.relative, false)?;
         if Some(digest_file(&destination, entry.bytes)?) != entry.digest {
@@ -402,6 +449,23 @@ pub(super) fn execute(control: &Path, config: &mut StorageConfig) -> MediaResult
         }
     }
     if migration.source.exists() {
+        if let Some(models) = &migration.linked_models {
+            let link = migration.source.join("models");
+            if fs::symlink_metadata(&link).is_ok() {
+                if !is_link(&fs::symlink_metadata(&link).map_err(io_error)?)
+                    || fs::canonicalize(&link).map_err(io_error)? != *models
+                {
+                    return Err(
+                        "The linked model folder has changed. Restore it before resuming the move."
+                            .into(),
+                    );
+                }
+                #[cfg(windows)]
+                fs::remove_dir(&link).map_err(io_error)?;
+                #[cfg(unix)]
+                fs::remove_file(&link).map_err(io_error)?;
+            }
+        }
         for entry in &migration.files {
             let source = checked_path(&migration.source, &entry.relative, false)?;
             if !source.exists() {

@@ -8,6 +8,7 @@ const destination = "D:\\Media library\\Models and generated images";
 let status = {
   folder:
     "C:\\Users\\Example\\AppData\\Roaming\\com.machdoch.app\\media-studio",
+  modelsFolder: "D:\\Models\\models",
   destination: null as string | null,
   phase: "ready",
   completedBytes: 0,

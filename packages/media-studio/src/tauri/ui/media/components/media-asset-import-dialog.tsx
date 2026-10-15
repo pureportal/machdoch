@@ -47,6 +47,9 @@ import { MediaExternalLink } from "./media-external-link";
 interface MediaAssetImportDialogProps {
   initialPath?: string;
   initialArchitecture?: MediaLocalModelArchitecture;
+  initialType?: MediaAssetImportType;
+  initialDisplayName?: string;
+  configure?: boolean;
   assets: readonly MediaAssetRecord[];
   categories: readonly MediaAssetCategory[];
   loading: boolean;
@@ -125,6 +128,9 @@ const IMPORT_PROGRESS_LABELS: Record<
 export const MediaAssetImportDialog = ({
   initialPath,
   initialArchitecture,
+  initialType,
+  initialDisplayName,
+  configure = false,
   assets,
   categories,
   loading,
@@ -226,11 +232,17 @@ export const MediaAssetImportDialog = ({
         : inspection?.duplicate?.kind === "embedding"
           ? "View embedding"
           : importType === "model"
-            ? "Import model"
+            ? configure
+              ? "Configure model"
+              : "Import model"
             : importType === "lora"
-              ? "Import LoRA"
+              ? configure
+                ? "Configure LoRA"
+                : "Import LoRA"
               : importType === "embedding"
-                ? "Import embedding"
+                ? configure
+                  ? "Configure embedding"
+                  : "Import embedding"
                 : "Import asset";
 
   const resetFields = useCallback((): void => {
@@ -267,18 +279,32 @@ export const MediaAssetImportDialog = ({
       const prefill = parseMediaAssetImportFilename(
         pickedFileName(selectedPath),
       );
-      setDisplayName(prefill.displayName);
+      setDisplayName(
+        selectedPath === initialPath && initialDisplayName
+          ? initialDisplayName
+          : prefill.displayName,
+      );
+      if (selectedPath === initialPath && initialDisplayName)
+        dirtyEnrichmentFields.current.add("displayName");
       setArchitecture(initialArchitecture ?? prefill.architecture);
-      const inferredType = folder
-        ? "model"
-        : inferMediaAssetImportType(selectedPath);
+      const inferredType =
+        initialType ??
+        (folder ? "model" : inferMediaAssetImportType(selectedPath));
       setImportType(inferredType);
       if (inferredType === "model") onInspectModel(selectedPath);
       if (inferredType === "lora" || inferredType === "embedding") {
         onInspectAddon(selectedPath);
       }
     },
-    [initialArchitecture, onInspectAddon, onInspectModel, resetFields],
+    [
+      initialArchitecture,
+      initialType,
+      initialDisplayName,
+      initialPath,
+      onInspectAddon,
+      onInspectModel,
+      resetFields,
+    ],
   );
 
   const chooseFile = async (): Promise<void> => {
@@ -587,7 +613,8 @@ export const MediaAssetImportDialog = ({
               id="media-import-title"
               className="text-base font-semibold text-slate-100"
             >
-              {studentProfile?.displayName ?? "Import"}
+              {studentProfile?.displayName ??
+                (configure ? "Configure" : "Import")}
             </h1>
             <ControlTooltip content="Close">
               <button

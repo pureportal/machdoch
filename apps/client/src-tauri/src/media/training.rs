@@ -544,7 +544,7 @@ fn validate_job_model(paths: &MediaRuntimePaths, spec: &JobSpec) -> MediaResult<
 }
 
 pub(super) fn ensure_idle(storage_root: &Path) -> MediaResult<()> {
-    let directory = storage_root.join("models").join("training");
+    let directory = super::model_storage::configured_folder(storage_root)?.join("training");
     if !directory.is_dir() {
         return Ok(());
     }

@@ -4,6 +4,7 @@ import {
 } from "../../../core/media/open-model-profiles.js";
 import { useMediaStudioAutosave } from "./use-media-studio-autosave";
 import { selectMediaAddonImageModel } from "./media-addon-model";
+import { useMediaModelLibraryRefresh } from "./use-media-model-library-refresh";
 import {
   createAudioRecipeFlow,
   readAudioRecipeSettings,
@@ -853,6 +854,11 @@ export const MediaStudio = ({
           setModelCatalog(snapshot);
           return snapshot;
         }
+          setRuntimeError((current) =>
+            current?.context.operation === "get_media_model_catalog"
+              ? null
+              : current,
+          );
       } catch (error: unknown) {
         if (requestSequence === modelCatalogRequestSequence.current) {
           setRuntimeError(
@@ -877,23 +883,25 @@ export const MediaStudio = ({
     setRuntimeError(null);
   });
 
-  const refreshWorkspaceModels = useCallback((): void => {
+  const refreshWorkspaceModels = useCallback(async (): Promise<void> => {
     const normalizedWorkspaceRoot = workspaceRoot?.trim();
     const requestSequence = ++workspaceDiscoveryRequestSequence.current;
-    if (!normalizedWorkspaceRoot) {
-      setWorkspaceModelDiscovery(null);
-      return;
-    }
-    void discoverMediaWorkspaceModels(normalizedWorkspaceRoot)
+    await discoverMediaWorkspaceModels(normalizedWorkspaceRoot)
       .then((discovery) => {
         if (requestSequence === workspaceDiscoveryRequestSequence.current) {
           setWorkspaceModelDiscovery(discovery);
         }
       })
+          setRuntimeError((current) =>
+            current?.context.operation === "discover_workspace_models"
+              ? null
+              : current,
+          );
       .catch((error: unknown) => {
         if (requestSequence === workspaceDiscoveryRequestSequence.current) {
           setRuntimeError(
             normalizeMediaError(error, "discover_workspace_models"),
+          setWorkspaceModelDiscovery(null);
           );
         }
       });
@@ -912,7 +920,8 @@ export const MediaStudio = ({
           ),
         );
       }),
-    [refreshModelCatalog],
+    [refreshModelCatalog, refreshWorkspaceModels],
+        void refreshWorkspaceModels();
   );
 
   const inspectModelImportPath = useCallback(
@@ -1112,11 +1121,13 @@ export const MediaStudio = ({
   }, [refreshModelCatalog]);
 
   useEffect(() => {
-    refreshWorkspaceModels();
+    void refreshWorkspaceModels();
   }, [refreshWorkspaceModels]);
 
   useEffect(() => {
     let disposed = false;
+  useMediaModelLibraryRefresh(refreshModelCatalog, refreshWorkspaceModels);
+
     let unsubscribe: (() => void) | undefined;
 
     void subscribeToUserSettingsChanged((kind) => {
@@ -5218,7 +5229,10 @@ export const MediaStudio = ({
                 await refreshModelCatalog();
                 setRuntimeStatus(await initializeMediaRuntime());
               }}
-              onScanModels={refreshWorkspaceModels}
+              onScanModels={() => {
+                void refreshModelCatalog();
+                void refreshWorkspaceModels();
+              }}
               runtimeSetup={runtimeSetup.status}
               runtimeReady={runtimeStatus?.localDiffusers.ready ?? false}
               onUseAddon={useAddonInCreate}

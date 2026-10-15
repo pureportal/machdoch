@@ -423,6 +423,36 @@
         }
       },
       "accepted": false
+    },
+    {
+      "name": "shared model storage",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "media_use_model_storage",
+        "args": { "folder": "D:\\Models\\machdoch" }
+      },
+      "accepted": true
+    },
+    {
+      "name": "shared model storage missing folder",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "media_use_model_storage",
+        "args": {}
+      },
+      "accepted": false
+    },
+    {
+      "name": "shared model storage cannot force a switch",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "media_use_model_storage",
+        "args": { "folder": "D:\\Models\\machdoch", "force": true }
+      },
+      "accepted": false
     }
   ]
 }

@@ -9,7 +9,7 @@ use tauri::{AppHandle, Manager};
 
 use super::{
     error::{command_result, MediaCommandResult},
-    storage_migration, training, MediaResult, MediaRuntimePaths,
+    model_storage, storage_migration, training, MediaResult, MediaRuntimePaths,
 };
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -24,6 +24,7 @@ pub(super) struct StorageConfig {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct StorageStatus {
     folder: String,
+    models_folder: String,
     destination: Option<String>,
     phase: &'static str,
     completed_bytes: u64,
@@ -106,13 +107,25 @@ pub(super) fn resolve(control: &Path) -> MediaResult<MediaRuntimePaths> {
     })
 }
 
+fn display_folder(path: &Path) -> String {
+    let value = path.display().to_string();
+    if let Some(unc) = value.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else if let Some(local) = value.strip_prefix(r"\\?\") {
+        local.to_string()
+    } else {
+        value
+    }
+}
+
 fn status(control: &Path) -> MediaResult<StorageStatus> {
     let config = read_config(control)?;
     let migration = config.migration.as_ref();
     let interrupted = migration.is_some() && lock(control, true).is_ok();
     Ok(StorageStatus {
-        folder: config.root.display().to_string(),
-        destination: migration.map(|value| value.target.display().to_string()),
+        folder: display_folder(&config.root),
+        models_folder: display_folder(&model_storage::configured_folder(&config.root)?),
+        destination: migration.map(|value| display_folder(&value.target)),
         phase: migration.map_or("ready", |value| {
             if value.error.is_some() || interrupted {
                 "paused"
@@ -227,4 +240,33 @@ pub(crate) fn media_resume_asset_storage(app: AppHandle) -> MediaCommandResult<S
             .and_then(|_| control_root(&app))
             .and_then(|root| status(&root)),
     )
+}
+
+#[tauri::command]
+pub(crate) async fn media_use_model_storage(
+    app: AppHandle,
+    folder: String,
+) -> MediaCommandResult<StorageStatus> {
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let control = control_root(&app)?;
+        let _lease = lock(&control, true)?;
+        let config = read_config(&control)?;
+        if config.migration.is_some() {
+            return Err("Finish the asset move before changing the model folder.".into());
+        }
+        if control.join("media-storage.json").exists() && !config.root.is_dir() {
+            return Err("The asset folder is unavailable. Reconnect its disk and retry.".into());
+        }
+        if let Some(identity) = &config.identity {
+            storage_migration::check_identity(&config.root, identity)?;
+        }
+        training::ensure_idle(&config.root)?;
+        super::model_memory::release_idle()?;
+        model_storage::select(&config.root, Path::new(&folder))?;
+        status(&control)
+    })
+    .await
+    .map_err(|error| error.to_string())
+    .and_then(|result| result);
+    command_result("media_use_model_storage", result)
 }

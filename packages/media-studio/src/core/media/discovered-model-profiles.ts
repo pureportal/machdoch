@@ -119,7 +119,8 @@ export const MEDIA_DISCOVERED_RUNTIME_PROFILES: readonly MediaDiscoveredRuntimeP
         license: {
           name: "MiniMax H3 Community License",
           spdxId: null,
-          sourceUrl: "https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE",
+          sourceUrl:
+            "https://huggingface.co/MiniMaxAI/MiniMax-H3/blob/main/LICENSE",
           commercialUse: "review-required",
           requiresAcceptance: true,
         },
@@ -497,7 +498,8 @@ const selectArtifact = (
   const candidates = discovery.entries.filter(
     (entry) =>
       entry.kind === profile.artifactKind &&
-      entry.architecture === profile.architecture,
+      entry.architecture === profile.architecture &&
+      entry.status !== "importable",
   );
   const ready = candidates.filter((entry) => entry.status === "ready");
   const preferred = profile.preferredRelativePath

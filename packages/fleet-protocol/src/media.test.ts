@@ -64,7 +64,8 @@ void test("all declared media commands are valid invoke requests", () => {
         id: "123e4567-e89b-42d3-a456-426614174000",
         command,
         args:
-          command === "media_move_asset_storage"
+          command === "media_move_asset_storage" ||
+          command === "media_use_model_storage"
             ? { folder: "C:\\Assets" }
             : {},
       }).success,
