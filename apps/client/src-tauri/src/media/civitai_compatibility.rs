@@ -97,6 +97,17 @@ pub(super) fn architecture_for_version(
     base_model: Option<&str>,
 ) -> Option<&'static str> {
     let architecture = architecture_for_base_model(base_model)?;
+    if model_type == "Checkpoint" {
+        match base_model.map(str::trim) {
+            Some(base) if base.eq_ignore_ascii_case("Illustrious") => {
+                return Some("illustrious-xl");
+            }
+            Some(base) if base.eq_ignore_ascii_case("NoobAI") => {
+                return Some("noobai-xl");
+            }
+            _ => {}
+        }
+    }
     if model_type == "Checkpoint"
         && architecture == "qwen-image-2.1"
         && [model_name, version_name]
@@ -155,6 +166,29 @@ pub(super) fn supports_file(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn declared_sdxl_checkpoint_families_keep_their_sampling_profiles() {
+        for (base, architecture) in [("Illustrious", "illustrious-xl"), (" noobai ", "noobai-xl")] {
+            assert_eq!(
+                architecture_for_version("Checkpoint", "Custom model", "Version 1", Some(base)),
+                Some(architecture)
+            );
+            assert_eq!(
+                super::super::model_import::pipeline_architecture(architecture),
+                "stable-diffusion-xl"
+            );
+            assert!(supports_resource("Checkpoint", Some(base)));
+            assert_eq!(
+                architecture_for_version("LORA", "Custom style", "Version 1", Some(base)),
+                Some("stable-diffusion-xl")
+            );
+        }
+        assert_eq!(
+            architecture_for_version("Checkpoint", "NoobAI style", "Version 1", Some("SDXL 1.0")),
+            Some("stable-diffusion-xl")
+        );
+    }
 
     #[test]
     fn resolves_checkpoint_variants_before_selecting_a_runtime() {

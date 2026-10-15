@@ -31,7 +31,7 @@ from PIL import Image, ImageOps
 import media_open_models
 import media_image_sampling
 
-WORKER_VERSION = "media-diffusers-worker/1.101.0"
+WORKER_VERSION = "media-diffusers-worker/1.112.0"
 OFFLOAD_CACHE_COMPATIBILITY_VERSION = "media-diffusers-worker/1.19.0"
 SCHEMA_VERSION = 5
 MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES = 15 * 1024**3
@@ -1902,7 +1902,6 @@ def _scheduled_lora_callback(
     names: list[str],
     weights: list[float | dict[str, float]],
     schedules: list[dict[str, float] | None],
-    step_count: int,
 ) -> Any:
     current_weights = [_lora_weights_at_progress(weights, schedules, 0.0)]
 
@@ -1912,7 +1911,7 @@ def _scheduled_lora_callback(
         _timestep: Any,
         callback_kwargs: dict[str, Any],
     ) -> dict[str, Any]:
-        progress = min(1.0, (step_index + 1) / step_count)
+        progress = min(1.0, (step_index + 1) / callback_pipeline.num_timesteps)
         next_weights = _lora_weights_at_progress(weights, schedules, progress)
         if next_weights != current_weights[0]:
             callback_pipeline.set_adapters(names, adapter_weights=next_weights)
@@ -2160,11 +2159,13 @@ def _configure_image_group_offload(pipeline: Any, torch: Any) -> None:
         and model_bytes > 0
         and physical_memory >= 2 * model_bytes
     )
+    onload_device = torch.device("cuda", torch.cuda.current_device())
+    pipeline.vae.to(onload_device)
     pipeline.enable_group_offload(
-        onload_device=torch.device("cuda", torch.cuda.current_device()),
+        onload_device=onload_device,
         offload_device=torch.device("cpu"), offload_type="block_level",
         num_blocks_per_group=1, non_blocking=use_stream, use_stream=use_stream,
-        record_stream=use_stream, low_cpu_mem_usage=use_stream,
+        record_stream=use_stream, low_cpu_mem_usage=use_stream, exclude_modules="vae",
     )
 
 
@@ -2966,7 +2967,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                 elif architecture in (
                     "z-image", "z-image-turbo", "qwen-image", "qwen-image-2512",
                     "qwen-image-2.1", "qwen-image-2.1-turbo",
-                    "flux-1",
+                    "flux-1", "flux-2-dev",
                     "krea-2-raw", "krea-2-turbo",
                 ) or sampling_architecture == "stable-diffusion-3.5-large-turbo":
                     _configure_image_group_offload(pipeline, torch)
@@ -3093,6 +3094,10 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             "generator": generator,
             "num_images_per_prompt": 1,
         }
+        if architecture == "hidream-i1-full":
+            from media_hidream import configure_image_dimensions
+
+            configure_image_dimensions(pipeline, width, height)
         if architecture in media_open_models.PROFILES:
             arguments.update(media_open_models.image_arguments(architecture, request.get("sampling", {}), conditioned_images, negative_prompt))
         elif requested_guidance is not None and architecture == "qwen-image-2.1":
@@ -3232,7 +3237,6 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
                     lora_names,
                     lora_weights,
                     lora_schedules,
-                    step_count,
                 )
             )
         if step_callbacks:

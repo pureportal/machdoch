@@ -70,6 +70,7 @@
       "python/media_open_models.py": "python/media_open_models.py",
       "python/media_anima.py": "python/media_anima.py",
       "python/media_hidream.py": "python/media_hidream.py",
+      "python/media_flux2.py": "python/media_flux2.py",
       "python/media_image_sampling.py": "python/media_image_sampling.py",
       "python/media_sdxl_conditioning.py": "python/media_sdxl_conditioning.py",
       "python/media_sd_conditioning.py": "python/media_sd_conditioning.py",

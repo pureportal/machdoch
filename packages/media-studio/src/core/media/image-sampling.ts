@@ -16,6 +16,7 @@ export const MEDIA_IMAGE_SAMPLERS = [
   { value: "deis", label: "DEIS" },
   { value: "unipc", label: "UniPC" },
   { value: "flow-euler", label: "Flow Euler" },
+  { value: "flow-heun", label: "Flow Heun" },
   { value: "lcm", label: "LCM" },
   { value: "scm", label: "SCM" },
   { value: "hunyuan-euler", label: "Hunyuan Euler" },
