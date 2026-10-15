@@ -23,6 +23,7 @@ SAMPLERS = {
     "deis": ("DEISMultistepScheduler", {"algorithm_type": "deis", "solver_order": 2, "use_karras_sigmas": False}),
     "unipc": ("UniPCMultistepScheduler", {"solver_order": 2}),
     "flow-euler": ("FlowMatchEulerDiscreteScheduler", {}),
+    "flow-heun": ("FlowMatchHeunDiscreteScheduler", {}),
     "lcm": ("LCMScheduler", {}),
     "scm": ("SCMScheduler", {}),
     "hunyuan-euler": ("FlowMatchDiscreteScheduler", {"solver": "euler"}),

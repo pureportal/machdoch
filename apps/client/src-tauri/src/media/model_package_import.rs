@@ -18,6 +18,9 @@ use super::database;
 #[path = "model_package_publish.rs"]
 mod publisher;
 
+#[path = "model_package_flux2.rs"]
+mod flux2;
+
 #[cfg(test)]
 #[path = "model_package_import_tests.rs"]
 mod tests;
@@ -160,21 +163,27 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
         let (transformer_class, architecture) = match pipeline.as_str() {
             "QwenImagePipeline" => ("QwenImageTransformer2DModel", "qwen_image"),
             "QwenImage21Pipeline" => ("QwenImage21Transformer2DModel", "qwen_image21"),
-            _ => return Err("Choose a Qwen folder with its declared GGUF transformer.".to_string()),
+            "Flux2Pipeline" => ("Flux2Transformer2DModel", "flux"),
+            _ => {
+                return Err("Choose a model folder with its declared GGUF transformer.".to_string())
+            }
         };
         if index.get("machdoch_quantization") != Some(&expected)
             || index["transformer"] != serde_json::json!(["diffusers", transformer_class])
             || gguf_files != vec![&root.join("transformer/model.gguf")]
         {
-            return Err("Choose a Qwen folder with its declared GGUF transformer.".to_string());
+            return Err("Choose a model folder with its declared GGUF transformer.".to_string());
         }
         let quantized = super::gguf_weights::validate(gguf_files[0])?;
         if quantized.architecture != architecture {
-            return Err("The GGUF transformer does not match the Qwen pipeline.".to_string());
+            return Err("The GGUF transformer does not match the pipeline.".to_string());
         }
         tensor_count = tensor_count
             .checked_add(quantized.tensor_count)
             .ok_or("The model folder contains too many tensors")?;
+    }
+    if pipeline == "Flux2Pipeline" {
+        flux2::validate_dev(&root, &index)?;
     }
     if !matches!(
         pipeline.as_str(),
@@ -348,7 +357,7 @@ fn inventory(source: &Path) -> MediaResult<PackageInventory> {
                 .collect::<Vec<_>>();
             let quantized_transformer = matches!(
                 pipeline.as_str(),
-                "QwenImagePipeline" | "QwenImage21Pipeline"
+                "QwenImagePipeline" | "QwenImage21Pipeline" | "Flux2Pipeline"
             ) && name == "transformer"
                 && index.get("machdoch_quantization").is_some();
             if quantized_transformer && !weights.is_empty() {

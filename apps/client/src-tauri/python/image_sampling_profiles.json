@@ -283,13 +283,14 @@
   {
     "architecture": "stable-diffusion-3",
     "steps": [28, 40],
-    "guidance": [4.5, 7],
-    "defaultGuidance": 7.0,
-    "samplers": ["flow-euler"],
+    "guidance": [3.5, 7],
+    "defaultGuidance": 4.5,
+    "samplers": ["flow-euler", "flow-heun"],
     "sources": [
       "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_3",
       "https://huggingface.co/stabilityai/stable-diffusion-3.5-medium",
-      "https://huggingface.co/stabilityai/stable-diffusion-3.5-large"
+      "https://huggingface.co/stabilityai/stable-diffusion-3.5-large",
+      "https://huggingface.co/docs/diffusers/api/schedulers/flow_match_heun_discrete"
     ],
     "recommendedSamplers": ["flow-euler"]
   },
@@ -407,7 +408,7 @@
       "unipc"
     ],
     "recommendedSamplers": ["dpmpp-2m-karras"],
-    "sources": ["https://huggingface.co/RunDiffusion/Juggernaut-XL-v9"]
+    "sources": ["https://huggingface.co/RunDiffusion/Juggernaut-XI-v11"]
   },
   {
     "architecture": "realvis-xl",

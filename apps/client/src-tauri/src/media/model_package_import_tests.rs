@@ -7,6 +7,9 @@ use serde_json::json;
 
 use super::{inspect, inventory};
 
+#[path = "model_package_flux2_tests.rs"]
+mod flux2;
+
 #[test]
 fn anima_modular_packages_validate_conditioner_weights_and_component_paths() {
     let package = TestPackage::new();
@@ -217,7 +220,14 @@ fn external_image_model_package_import() {
     assert!(review.can_import);
     assert!(review.tensor_count > 500);
     if let Some(detected) = review.detected_architecture {
-        assert_eq!(detected, request.architecture);
+        assert!(
+            detected == request.architecture
+                || super::open_models::by_architecture(&request.architecture).is_some_and(
+                    |profile| profile.base_architecture.as_deref() == Some(detected.as_str())
+                ),
+            "Detected family {detected} does not match {}",
+            request.architecture
+        );
     }
     request.source_path = review.source_path;
     request.review_token = review.review_token;

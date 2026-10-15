@@ -28,6 +28,10 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
         from media_hidream import load_pipeline as load_hidream
 
         return load_hidream(diffusers, root, dtype)
+    if profile["architecture"] == "flux-2-dev":
+        from media_flux2 import load_pipeline as load_flux2
+
+        return load_flux2(diffusers, root, index, dtype)
     if profile["architecture"] == "hunyuan-image-3":
         from media_hunyuan_image3 import HunyuanImage3Pipeline
 
@@ -55,6 +59,10 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
             quant_kwargs={"load_in_4bit": True, "bnb_4bit_quant_type": "nf4", "bnb_4bit_compute_dtype": dtype},
             components_to_quantize=["transformer", "text_encoder_2"],
         )
+    if profile["architecture"] in ("qwen-image", "qwen-image-2512"):
+        from media_qwen_quantization import load_text_encoder
+
+        options["text_encoder"] = load_text_encoder(root, dtype)
     if profile["pipeline"] in ("QwenImagePipeline", "QwenImage21Pipeline"):
         from media_qwen_quantization import transformer_arguments
 

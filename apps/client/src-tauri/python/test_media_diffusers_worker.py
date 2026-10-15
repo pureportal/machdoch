@@ -41,6 +41,7 @@ class MediaDiffusersQualityTests(unittest.TestCase):
         request = {"aspectRatio": "1:1"}
         for architecture, guidance in (
             ("stable-diffusion-1", 7.5), ("stable-diffusion-xl", 5.0),
+            ("stable-diffusion-3", 4.5),
             ("pony", 6.0), ("qwen-image-2.1", 1.0), ("krea-2", 0.5),
         ):
             with self.subTest(architecture=architecture):

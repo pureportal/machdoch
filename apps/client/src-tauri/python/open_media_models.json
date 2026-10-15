@@ -552,6 +552,7 @@
     "guidanceParameter": "guidance_scale",
     "fixedSteps": false,
     "fixedGuidance": false,
+    "negativePrompt": false,
     "license": {
       "name": "FLUX.2 dev model license",
       "spdxId": null,

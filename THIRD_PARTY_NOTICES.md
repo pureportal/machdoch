@@ -4,11 +4,19 @@ The Apache licence in the repository root applies to Machdoch-owned material. It
 
 The Qwen GGUF integration uses GGML's `gguf` 0.19.0 package, Copyright (c) 2023 Georgi Gerganov, under the [MIT licence](apps/client/src-tauri/python/LICENSE-gguf.txt). Quantized inference uses Diffusers' existing GGUF implementation, credited upstream to the Hugging Face team and City96. No ComfyUI GGUF node code is bundled.
 
+Separately downloaded FLUX.2 Dev packages retain the [Black Forest Labs model licence](https://github.com/black-forest-labs/flux2/blob/main/model_licenses/LICENSE-FLUX-DEV) and attribution notice. The GGUF transformer is by City96; the NF4 companion encoder is packaged by the Hugging Face Diffusers team. Mistral Small 3.2 is by Mistral AI under Apache-2.0. Machdoch assembles the local folder without changing weight bytes. These weights are not bundled.
+
+Separately downloaded [Aesthetic Quality Modifiers - Masterpiece](https://civitai.com/models/929497), by motimalu, retain their Civitai version metadata and local attribution notices. The LoRA weights are unchanged and are not bundled.
+
+Double-exposure adapters used for local comparisons are by [runew0lf](https://civitai.com/models/187387), [BixBit11](https://civitai.com/models/132494), [App1e17](https://civitai.com/models/1253670), [Jedas](https://civitai.com/models/678461) and [Ethanar](https://civitai.com/models/685432). Their unmodified files retain publisher metadata and attribution notices.
+
 Separately downloaded Qwen-Image 2.1 and Turbo weights use the [Qwen Research License Agreement](https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE). The local packages retain the agreement and its required NOTICE: Qwen is licensed under the Qwen RESEARCH LICENSE AGREEMENT, Copyright (c) 2026 Hangzhou Tongyi Laboratory Technology Co., Ltd. All Rights Reserved. The weights are not bundled.
 
 Separately downloaded Krea 2 weights retain the publisher's [Krea 2 Community License Agreement](https://www.krea.ai/krea-2-licensing) and required NOTICE at their local package roots. These weights are not bundled.
 
 Powered by Stability AI. Separately downloaded [Nekofantasia Alpha](https://civitai.com/models/2460560), by Kangel / the Nekofantasia project, is based on Stable Diffusion 3.5 Medium and uses the [Stability AI Community License](https://huggingface.co/Nekofantasia/Nekofantasia-alpha/blob/main/LICENSE). Its source and converted packages retain the full agreement and required attribution notice, with conversion changes identified. The checkpoint and accompanying CLIP/OpenCLIP/T5 encoders are not bundled with the application; their publisher agreements and MIT/Apache-2.0 notices accompany the local package.
+
+Separately downloaded Stable Diffusion 3.5 Medium and Large Turbo are by Stability AI under the [Stability AI Community License](https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo/blob/main/LICENSE.md). The public copies of [Medium](https://huggingface.co/adamo1139/stable-diffusion-3.5-medium-ungated) and [Large Turbo](https://huggingface.co/adamo1139/stable-diffusion-3.5-large-turbo-ungated) by adamo1139 are checked against the publisher's file hashes. Local packages retain the complete agreement, Stability AI attribution and CLIP/OpenCLIP/T5 notices. Their weight bytes are unchanged and are not bundled.
 
 The HunyuanImage 3.0 adapter calls Tencent's separately installed runtime. Tencent's [community licence](apps/client/src-tauri/python/LICENSE-HunyuanImage-3.txt) and [copyright notice](apps/client/src-tauri/python/NOTICE-HunyuanImage-3.txt) are retained in source and desktop licence bundles. Tencent's runtime source and weights are not bundled. Research of [PedroMarinhoDev's ComfyUI implementation](https://github.com/PedroMarinhoDev/ComfyUI-HunyuanImage3) informed the hardware assessment; its GPL-3.0 code is not included.
 
@@ -49,4 +57,4 @@ Illustrious XL is by OnomaAI Research; NoobAI XL is by Laxhar Dream Lab. Their s
 
 Juggernaut XI is by KandooAI and RunDiffusion. Its separately acquired checkpoint retains [CC BY-NC-ND 4.0 and the publisher's additional restrictions](https://huggingface.co/RunDiffusion/Juggernaut-XI-v11). HiDream-I1 is by HiDream.ai under MIT; its required Meta Llama 3.1 encoder has a separate [Llama 3.1 Community License](https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE). A complete HiDream package must retain both sets of terms. These weights are not bundled.
 
-HiDream's separately acquired NF4 checkpoint is by [hykilpikonna](https://github.com/hykilpikonna/HiDream-I1-nf4); quantized companion weights and layout are published by [szwagros](https://huggingface.co/szwagros/HiDream-I1-Full-4bit). This encoder integration is built with Llama. Package notices retain the original model and Llama terms.
+HiDream's separately acquired quantized checkpoint is by [hykilpikonna](https://github.com/hykilpikonna/HiDream-I1-nf4); quantized companion weights and layout are published by [szwagros](https://huggingface.co/szwagros/HiDream-I1-Full-4bit). This encoder integration is built with Llama. Package notices retain the original model and Llama terms.

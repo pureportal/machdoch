@@ -19,6 +19,17 @@ import media_open_video as video
 
 
 class OpenMediaModelTests(unittest.TestCase):
+    def test_full_flux2_dev_uses_its_local_encoder_and_quantized_loader(self):
+        with tempfile.TemporaryDirectory() as directory:
+            index = {"_class_name": "Flux2Pipeline", "machdoch_quantization": {"transformer": {"format": "gguf", "file": "transformer/model.gguf"}}}
+            Path(directory, "model_index.json").write_text(json.dumps(index), encoding="utf-8")
+            runtime = SimpleNamespace()
+            pipeline = object()
+            with mock.patch("media_flux2.load_pipeline", return_value=pipeline) as load:
+                result = models.load_pipeline(runtime, {"architecture": "flux-2-dev", "path": directory, "packageKind": "diffusers-directory"}, "bf16")
+            self.assertIs(result, pipeline)
+            load.assert_called_once_with(runtime, Path(directory), index, "bf16")
+
     def test_flux_loads_transformer_and_t5_with_nf4(self):
         for architecture in ("flux-1-dev", "flux-1-schnell"):
             with self.subTest(architecture=architecture), tempfile.TemporaryDirectory() as directory:
@@ -54,9 +65,10 @@ class OpenMediaModelTests(unittest.TestCase):
         self.assertIn("qwen-image-2.1-turbo", result["architectures"])
         self.assertEqual(len(result["architectures"]), len(set(result["architectures"])))
 
-    def test_turbo_qwen_rejects_unused_negative_prompt(self):
-        with self.assertRaisesRegex(ValueError, "negative prompt"):
-            models.image_arguments("qwen-image-2.1-turbo", {}, [], "blur")
+    def test_guidance_distilled_models_reject_unused_negative_prompt(self):
+        for architecture in ("qwen-image-2.1-turbo", "flux-2-dev"):
+            with self.subTest(architecture=architecture), self.assertRaisesRegex(ValueError, "negative prompt"):
+                models.image_arguments(architecture, {}, [], "blur")
 
     def test_catalog_model_ids_and_architectures_are_unique(self):
         profiles = json.loads(Path(__file__).with_name("open_media_models.json").read_text(encoding="utf-8"))
@@ -97,10 +109,14 @@ class OpenMediaModelTests(unittest.TestCase):
                 Path(directory, "model_index.json").write_text(json.dumps(index), encoding="utf-8")
                 loader = mock.Mock(return_value=SimpleNamespace())
                 diffusers = SimpleNamespace(QwenImagePipeline=SimpleNamespace(from_pretrained=loader))
-                with mock.patch("media_qwen_quantization.transformer_arguments", return_value={"transformer": transformer}) as quantized:
+                encoder = object()
+                with mock.patch("media_qwen_quantization.transformer_arguments", return_value={"transformer": transformer}) as quantized, mock.patch("media_qwen_quantization.load_text_encoder", return_value=encoder) as load_encoder:
                     models.load_pipeline(diffusers, {"architecture": architecture, "path": directory, "packageKind": "diffusers-directory"}, "bf16")
                 quantized.assert_called_once_with(diffusers, Path(directory), index, "bf16")
+                load_encoder.assert_called_once_with(Path(directory), "bf16")
                 self.assertIs(loader.call_args.kwargs["transformer"], transformer)
+                self.assertIs(loader.call_args.kwargs["text_encoder"], encoder)
+                self.assertNotIn("quantization_config", loader.call_args.kwargs)
 
     def test_wrong_pipeline_folder_is_rejected_before_loading(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -60,6 +60,26 @@ describe("image samplers", () => {
       mediaImageSamplingError({ guidanceScale: 0 }, "qwen-image-2.1"),
     ).toContain("at least 1");
   });
+  it("offers flow Heun for SD3 without changing distilled trajectories", () => {
+    expect(
+      compatibleMediaImageSamplers("stable-diffusion-3").find(
+        (sampler) => sampler.value === "flow-heun",
+      ),
+    ).toEqual({ value: "flow-heun", label: "Flow Heun", recommended: false });
+    expect(
+      mediaImageSamplingError({ sampler: "flow-heun" }, "stable-diffusion-3"),
+    ).toBeNull();
+    for (const architecture of [
+      "stable-diffusion-3.5-large-turbo",
+      "qwen-image-2.1-turbo",
+      "flux-1-dev",
+      "stable-diffusion-xl",
+    ] as const) {
+      expect(
+        mediaImageSamplingError({ sampler: "flow-heun" }, architecture),
+      ).toContain("compatible sampler");
+    }
+  });
   it("compiles Automatic sampling without blocking Basic generation", () => {
     const catalog = createMediaModelCatalogSnapshot({
       isOpenAiConfigured: false,

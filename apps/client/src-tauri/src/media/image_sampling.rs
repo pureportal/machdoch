@@ -49,6 +49,14 @@ mod tests {
             .validate_architecture("stable-diffusion-xl")
             .is_ok());
         assert!(sampling.validate_architecture("krea-2-turbo").is_err());
+        sampling.sampler = Some("flow-heun".into());
+        assert!(sampling.validate_architecture("stable-diffusion-3").is_ok());
+        assert!(sampling
+            .validate_architecture("stable-diffusion-3.5-large-turbo")
+            .is_err());
+        assert!(sampling
+            .validate_architecture("stable-diffusion-xl")
+            .is_err());
         sampling.sampler = Some("flow-euler".into());
         assert!(sampling
             .validate_architecture("qwen-image-2.1-turbo")

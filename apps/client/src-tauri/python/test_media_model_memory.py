@@ -31,7 +31,7 @@ class Pipeline:
     def __init__(self):
         self.enable_model_cpu_offload = mock.Mock()
         self.components = {}
-        self.vae = SimpleNamespace(dtype="float16")
+        self.vae = SimpleNamespace(dtype="float16", to=mock.Mock())
         self.scheduler = SimpleNamespace(config={})
         self._execution_device = "cuda"
         self.prompts = []
@@ -47,6 +47,7 @@ class ModelMemoryTests(unittest.TestCase):
         pipeline = SimpleNamespace(
             components={"transformer": SimpleNamespace(parameters=lambda: [parameter])},
             enable_group_offload=mock.Mock(),
+            vae=mock.Mock(),
         )
         for memory, expected in ((32 * 1024**3, False), (64 * 1024**3, True), (None, False)):
             with self.subTest(memory=memory), mock.patch.object(worker, "_physical_memory_bytes", return_value=memory):
@@ -55,11 +56,13 @@ class ModelMemoryTests(unittest.TestCase):
             self.assertEqual(options["use_stream"], expected)
             self.assertEqual(options["record_stream"], expected)
             self.assertEqual(options["non_blocking"], expected)
+            self.assertEqual(options["exclude_modules"], "vae")
+            pipeline.vae.to.assert_called_with(("cuda", 0))
 
     def test_image_stream_budget_counts_shared_parameters_once(self):
         parameter = SimpleNamespace(numel=lambda: 20 * 1024**3, element_size=lambda: 1)
         component = SimpleNamespace(parameters=lambda: [parameter])
-        pipeline = SimpleNamespace(components={"encoder": component, "decoder": component}, enable_group_offload=mock.Mock())
+        pipeline = SimpleNamespace(components={"encoder": component, "decoder": component}, enable_group_offload=mock.Mock(), vae=mock.Mock())
         with mock.patch.object(worker, "_physical_memory_bytes", return_value=48 * 1024**3):
             worker._configure_image_group_offload(pipeline, fake_torch())
         self.assertTrue(pipeline.enable_group_offload.call_args.kwargs["use_stream"])
@@ -219,7 +222,7 @@ class ModelMemoryTests(unittest.TestCase):
                 pipeline.enable_group_offload.assert_called_once_with(
                     onload_device=torch.device("cuda", 0), offload_device=torch.device("cpu"),
                     offload_type="block_level", num_blocks_per_group=1,
-                    non_blocking=False, use_stream=False, record_stream=False, low_cpu_mem_usage=False,
+                    non_blocking=False, use_stream=False, record_stream=False, low_cpu_mem_usage=False, exclude_modules="vae",
                 )
                 self.assertEqual(response["outputs"][0]["seed"], 1)
 
