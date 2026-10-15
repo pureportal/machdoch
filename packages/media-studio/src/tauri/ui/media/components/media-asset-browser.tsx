@@ -7,6 +7,7 @@ import type {
 } from "../../../../core/media/contracts.js";
 import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import { cn } from "../../lib/utils";
+import { SearchField } from "../../components/ui/search-field";
 import { MediaAssetPreview } from "./media-visual-preview";
 import { MediaPagination } from "./media-pagination";
 import {
@@ -49,39 +50,63 @@ export const MediaAssetBrowser = ({
   const [selectedOnly, setSelectedOnly] = useState(false);
   const [query, setQuery] = useState("");
   const matching = discovery.visibleResources.filter(
-    (asset) => (!selectedOnly || selectedIds.includes(asset.id)) &&
-      (!compact || mediaAssetLabel(asset).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())),
+    (asset) =>
+      (!selectedOnly || selectedIds.includes(asset.id)) &&
+      (!compact ||
+        mediaAssetLabel(asset)
+          .toLocaleLowerCase()
+          .includes(query.trim().toLocaleLowerCase())),
   );
   const pageCount = Math.ceil(matching.length / PAGE_SIZE);
   const currentPage = Math.min(page, Math.max(1, pageCount));
   const offset = (currentPage - 1) * PAGE_SIZE;
   return (
     <div className="space-y-3">
-      {compact ? <input type="search" aria-label={`Search ${label}`} placeholder={`Search ${label}`} value={query}
-        onChange={(event) => { setQuery(event.target.value); setPage(1); }}
-        className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-100" /> : <MediaResourceFilters
-        label={label}
-        filters={discovery.filters}
-        onChange={(filters) => {
-          discovery.setFilters(filters);
-          setPage(1);
-        }}
-        categories={categories}
-        tags={discovery.tags}
-        allowNewest
-      />}
-      {!compact && selectedIds.length > 0 ? <label className="flex items-center gap-2 text-xs text-slate-300">
-        <input
-          type="checkbox"
-          checked={selectedOnly}
+      {compact ? (
+        <SearchField
+          aria-label={`Search ${label}`}
+          placeholder={`Search ${label}`}
+          value={query}
           onChange={(event) => {
-            setSelectedOnly(event.target.checked);
+            setQuery(event.target.value);
             setPage(1);
           }}
+          className="border-slate-700 bg-slate-900 text-xs text-slate-100"
         />
-        Selected only
-      </label> : null}
-      <div className="grid max-h-96 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+      ) : (
+        <MediaResourceFilters
+          label={label}
+          filters={discovery.filters}
+          onChange={(filters) => {
+            discovery.setFilters(filters);
+            setPage(1);
+          }}
+          categories={categories}
+          tags={discovery.tags}
+          allowNewest
+        />
+      )}
+      {!compact && selectedIds.length > 0 ? (
+        <label className="flex items-center gap-2 text-xs text-slate-300">
+          <input
+            type="checkbox"
+            checked={selectedOnly}
+            onChange={(event) => {
+              setSelectedOnly(event.target.checked);
+              setPage(1);
+            }}
+          />
+          Selected only
+        </label>
+      ) : null}
+      <div
+        className={cn(
+          "grid overflow-y-auto",
+          compact
+            ? "max-h-[32rem] grid-cols-[repeat(auto-fill,minmax(8rem,1fr))] gap-3"
+            : "max-h-96 grid-cols-2 gap-2 sm:grid-cols-3",
+        )}
+      >
         {matching.slice(offset, offset + PAGE_SIZE).map((asset) => {
           const selected = selectedIds.includes(asset.id);
           const reason = disabledReason?.(asset);
@@ -126,15 +151,17 @@ export const MediaAssetBrowser = ({
           No matching {label}
         </p>
       ) : null}
-      {(!compact || pageCount > 1) ? <MediaPagination
-        page={currentPage}
-        pageCount={pageCount}
-        firstItemNumber={offset + 1}
-        lastItemNumber={Math.min(offset + PAGE_SIZE, matching.length)}
-        totalItems={matching.length}
-        itemLabel={label}
-        onPageChange={setPage}
-      /> : null}
+      {!compact || pageCount > 1 ? (
+        <MediaPagination
+          page={currentPage}
+          pageCount={pageCount}
+          firstItemNumber={offset + 1}
+          lastItemNumber={Math.min(offset + PAGE_SIZE, matching.length)}
+          totalItems={matching.length}
+          itemLabel={label}
+          onPageChange={setPage}
+        />
+      ) : null}
     </div>
   );
 };

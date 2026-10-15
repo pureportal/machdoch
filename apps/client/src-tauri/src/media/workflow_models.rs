@@ -20,6 +20,7 @@ pub(crate) async fn media_install_workflow_model(
             Ok(match kind.as_str() {
                 "upscale" => installed.join("RealESRGAN_x4.pth"),
                 "upscale-span" => installed.join("4x-spanx4_ch48.safetensors"),
+                "upscale-swinir" => installed.join("002_lightweightSR_DIV2K_s64w8_SwinIR-S_x4.pth"),
                 _ => installed,
             }
             .to_string_lossy()

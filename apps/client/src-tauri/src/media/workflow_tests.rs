@@ -1,6 +1,74 @@
 use super::*;
 
 #[test]
+fn upscale_schema_validates_sizing_and_tile_modes() {
+    let mut node: MediaFlowNode = serde_json::from_value(json!({
+        "id":"upscale", "type":"operation.upscale", "version":1, "label":"AI upscale", "layer":"operation",
+        "config": {"modelPath":"model.safetensors", "sizeMode":"dimensions", "scale":2.75,
+            "minWidth":1920, "minHeight":1024, "minLongEdge":1920, "minShortEdge":1024,
+            "tileMode":"automatic", "tileSize":256, "tileFactor":4}
+    })).unwrap();
+    for mode in ["automatic", "manual", "factor", "full"] {
+        node.config.insert("tileMode".into(), json!(mode));
+        assert!(workflow_schema::validate_node(&node).is_ok());
+    }
+    node.config.insert("minWidth".into(), json!(0));
+    node.config.insert("minHeight".into(), json!(0));
+    assert!(workflow_schema::validate_node(&node)
+        .unwrap_err()
+        .contains("minimum size"));
+    node.config.insert("sizeMode".into(), json!("edges"));
+    assert!(workflow_schema::validate_node(&node).is_ok());
+    node.config.insert("scale".into(), json!(8.1));
+    assert!(workflow_schema::validate_node(&node).is_err());
+    node.config.insert("scale".into(), json!(1.25));
+    node.config.insert("tileFactor".into(), json!(1));
+    assert!(workflow_schema::validate_node(&node).is_err());
+}
+
+#[test]
+fn upscale_preflight_requires_a_model_file_and_reports_missing_models() {
+    let root = std::env::temp_dir().join(format!(
+        "machdoch-upscale-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+    ));
+    std::fs::create_dir(&root).unwrap();
+    let model = root.join("model.safetensors");
+    let request: ExecuteMediaWorkflowRequest = serde_json::from_value(json!({
+        "schemaVersion": 1, "runId": "run:upscale", "flowId": "flow:upscale",
+        "flowRevisionId": "revision:upscale", "planId": "plan:upscale",
+        "planSnapshot": {"schemaVersion": 1, "planId": "plan:upscale", "flowId": "flow:upscale",
+            "flowFingerprint": "digest", "compiledAt": "2026-10-15T00:00:00Z", "nodes": [], "steps": []},
+        "workspaceRoot": null, "modelBindings": {}
+    })).unwrap();
+    let mut flow: MediaFlowDocument = serde_json::from_value(json!({
+        "schemaVersion": 1, "id": "flow:upscale", "name": "Upscale video", "description": "",
+        "createdAt": "2026-10-15T00:00:00Z", "updatedAt": "2026-10-15T00:00:00Z",
+        "nodes": [
+            {"id":"video","type":"source.video","version":1,"label":"Video","layer":"source","config":{"assetId":"asset:video"}},
+            {"id":"upscale","type":"operation.upscale-video","version":1,"label":"Upscale video","layer":"operation","config":{"modelPath":model,"scale":2,"sizeMode":"scale","minWidth":1920,"minHeight":1024,"minLongEdge":1920,"minShortEdge":1024,"tileMode":"automatic","tileSize":64,"tileFactor":4}},
+            {"id":"save","type":"output.video","version":1,"label":"Save","layer":"output","config":{"format":"webm","role":"opaque"}}
+        ], "edges": []
+    })).unwrap();
+    assert!(preflight(&flow, &request)
+        .unwrap_err()
+        .contains("model is not installed"));
+    flow.nodes[1].config.insert("modelPath".into(), json!(root));
+    assert!(preflight(&flow, &request).is_err());
+    flow.nodes[1]
+        .config
+        .insert("modelPath".into(), json!(model));
+    std::fs::write(&model, b"model presence fixture").unwrap();
+    assert!(preflight(&flow, &request).is_ok());
+    std::fs::remove_file(&model).unwrap();
+    std::fs::remove_dir(&root).unwrap();
+}
+
+#[test]
 fn scene_workflows_accept_no_workspace_but_video_generation_requires_one() {
     let request: ExecuteMediaWorkflowRequest = serde_json::from_value(json!({
         "schemaVersion": 1, "runId": "run:scenes", "flowId": "flow:scenes",

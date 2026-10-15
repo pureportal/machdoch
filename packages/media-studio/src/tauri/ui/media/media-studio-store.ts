@@ -102,14 +102,18 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null;
 };
 
-const normalizeAudioRecipeSettings = (value: unknown): MediaAudioRecipeSettings => {
+const normalizeAudioRecipeSettings = (
+  value: unknown,
+): MediaAudioRecipeSettings => {
   if (!isRecord(value)) return { ...DEFAULT_AUDIO_RECIPE_SETTINGS };
   return {
     prompt: typeof value.prompt === "string" ? value.prompt.slice(0, 8000) : "",
     modelId: typeof value.modelId === "string" ? value.modelId.slice(0, 128) : null,
     negativePrompt: typeof value.negativePrompt === "string" ? value.negativePrompt.slice(0, 8000) : "",
     durationSeconds: normalizeBoundedNumber(value.durationSeconds, 5, 1, 30),
-    numInferenceSteps: Math.round(normalizeBoundedNumber(value.numInferenceSteps, 100, 1, 200)),
+    numInferenceSteps: Math.round(
+      normalizeBoundedNumber(value.numInferenceSteps, 100, 1, 200),
+    ),
     guidanceScale: normalizeBoundedNumber(value.guidanceScale, 3.5, 0, 20),
     seed: typeof value.seed === "number" && Number.isSafeInteger(value.seed) && value.seed >= 0 ? value.seed : null,
   };
@@ -278,7 +282,9 @@ const normalizeVideoRecipeSettings = (
           : modelId
         : null,
     refMods: readRefMods(value.refMods),
-    refModMaxTokens: Math.round(normalizeBoundedNumber(value.refModMaxTokens, 65536, 0, 1048576)),
+    refModMaxTokens: Math.round(
+      normalizeBoundedNumber(value.refModMaxTokens, 65536, 0, 1048576),
+    ),
     modelAddons: normalizeModelAddons(value.modelAddons),
     aspectRatio: normalizeOneOf(
       value.aspectRatio,
@@ -901,7 +907,7 @@ export const normalizeMediaStudioState = (value: unknown): MediaStudioState => {
     version: 5,
     activeSection: normalizeOneOf<MediaStudioSection>(
       value.activeSection,
-      ["generate", "flow", "train", "library", "runs"],
+      ["generate", "flow", "upscale", "train", "library", "runs"],
       DEFAULT_MEDIA_STUDIO_STATE.activeSection,
     ),
     target: normalizeOneOf<MediaGenerationTarget>(

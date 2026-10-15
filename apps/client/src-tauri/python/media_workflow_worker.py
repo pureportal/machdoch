@@ -147,53 +147,6 @@ def segment(request, torch, device):
     return {"width": source.width, "height": source.height, "detections": [{"score": float(score), "box": box} for score, box in zip(scores, result["boxes"].float().cpu().tolist())], "selectedPixels": int((np.asarray(mask) > 0).sum())}
 
 
-def tiled_upscale(source, model, torch, device, tile_size):
-    factor = model.scale
-    width, height = source.size
-    if width * height * factor * factor > 64_000_000:
-        raise ValueError("Upscaled image is too large. Resize the input first.")
-    pixels = np.asarray(source.convert("RGB"), dtype=np.float32) / 255.0
-    output = np.empty((height * factor, width * factor, 3), dtype=np.uint8)
-    overlap = 32
-    total = ((width + tile_size - 1) // tile_size) * ((height + tile_size - 1) // tile_size)
-    completed = 0
-    for top in range(0, height, tile_size):
-        for left in range(0, width, tile_size):
-            right, bottom = min(left + tile_size, width), min(top + tile_size, height)
-            x0, y0 = max(0, left - overlap), max(0, top - overlap)
-            x1, y1 = min(width, right + overlap), min(height, bottom + overlap)
-            tensor = torch.from_numpy(pixels[y0:y1, x0:x1].copy()).permute(2, 0, 1).unsqueeze(0).to(device)
-            with torch.inference_mode():
-                tile = model(tensor).clamp(0, 1).float().cpu()[0].permute(1, 2, 0).numpy()
-            if tile.shape[:2] != ((y1 - y0) * factor, (x1 - x0) * factor) or not np.isfinite(tile).all():
-                raise ValueError("Upscaler returned invalid pixels or dimensions.")
-            output[top*factor:bottom*factor, left*factor:right*factor] = np.round(tile[(top-y0)*factor:(bottom-y0)*factor, (left-x0)*factor:(right-x0)*factor] * 255).astype(np.uint8)
-            completed += 1
-            progress(f"Upscaling tile {completed}/{total}", 0.25 + 0.7 * completed / total)
-    return Image.fromarray(output)
-
-
-def upscale(request, torch, device):
-    from spandrel import ImageModelDescriptor, ModelLoader
-
-    progress("Loading upscaler", 0.1)
-    source = load_image(request["imagePath"])
-    model = ModelLoader().load_from_file(request["modelPath"])
-    if not isinstance(model, ImageModelDescriptor) or model.input_channels != 3 or model.output_channels != 3 or model.scale < 2:
-        raise ValueError("Choose a three-channel image super-resolution model.")
-    scale = int(request["scale"])
-    if scale > model.scale:
-        raise ValueError(f"This model supports up to {model.scale}×. Choose a smaller scale.")
-    model = model.to(device).eval()
-    result = tiled_upscale(source, model, torch, device, request["tileSize"])
-    size = (source.width * scale, source.height * scale)
-    if result.size != size:
-        result = result.resize(size, Image.Resampling.LANCZOS)
-    result.putalpha(source.getchannel("A").resize(size, Image.Resampling.LANCZOS))
-    result.save(Path(request["outputDirectory"]) / "output.png")
-    return {"width": result.width, "height": result.height, "architecture": model.architecture.id, "nativeScale": model.scale, "scale": scale, "tileSize": request["tileSize"]}
-
-
 def generate_prompt(request, torch, device):
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -252,7 +205,15 @@ def main():
         _configure_amd_convolution_backend(torch, device)
         print(json.dumps({"schemaVersion": 1, **preprocess(request, command, torch, device)}))
         return
-    handlers = {"segment": segment, "visual-check": check_image, "upscale": upscale, "generate-prompt": generate_prompt}
+    if command in ("upscale", "upscale-video"):
+        from media_upscale import upscale, upscale_video
+        from media_diffusers_worker import _configure_amd_convolution_backend
+
+        _configure_amd_convolution_backend(torch, device)
+        result = (upscale if command == "upscale" else upscale_video)(request, torch, device, progress)
+        print(json.dumps({"schemaVersion": 1, **result}))
+        return
+    handlers = {"segment": segment, "visual-check": check_image, "generate-prompt": generate_prompt}
     if command not in handlers:
         raise ValueError("Unknown workflow operation")
     result = handlers[command](request, torch, device)

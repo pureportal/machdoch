@@ -6,6 +6,10 @@ import { readRefMods, isActiveRefMod } from "../../../../core/media/refmods.js";
 import { MediaGenerationEstimate } from "./media-generation-estimate";
 import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import { countMediaRunOutputs } from "../../../../core/media/run-library.js";
+import {
+  summarizeUpscaleSize,
+  type MediaUpscaleSettings,
+} from "../../../../core/media/upscale-settings.js";
 import { MediaWorkflowModelField } from "./media-workflow-model-field";
 import { MediaSamplingRange } from "./media-sampling-range";
 import {
@@ -552,8 +556,8 @@ const readNodeDetail = (
   if (typeof config.query === "string") return config.query;
   if (typeof config.maxIterations === "number")
     return `Up to ${config.maxIterations} attempts`;
-  if (typeof config.scale === "string" && config.modelPath !== undefined)
-    return `${config.scale}\u00d7`;
+  if (typeof config.sizeMode === "string")
+    return summarizeUpscaleSize(config as unknown as MediaUpscaleSettings);
   if (
     typeof config.minWidth === "number" &&
     typeof config.minHeight === "number"

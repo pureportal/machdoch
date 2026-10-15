@@ -2805,6 +2805,7 @@ fn is_supported_node(node_type: &str, version: u32) -> bool {
                 | "operation.controlnet"
                 | "operation.segment"
                 | "operation.upscale"
+                | "operation.upscale-video"
                 | "control.repeat"
                 | "operation.visual-check"
                 | "operation.prepare-mask"
@@ -3672,6 +3673,7 @@ impl MediaFlowNode {
             | "operation.prepare-mask"
             | "operation.segment"
             | "operation.upscale"
+            | "operation.upscale-video"
             | "operation.crop"
             | "operation.resize"
             | "operation.text-overlay"
@@ -3977,6 +3979,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
         | "operation.controlnet"
         | "operation.segment"
         | "operation.upscale"
+        | "operation.upscale-video"
         | "control.repeat"
         | "operation.visual-check"
         | "operation.prepare-mask"
@@ -5073,6 +5076,7 @@ fn port_type(node_type: &str, port_id: &str, output: bool) -> Option<&'static st
         ("source.image", true, "image") => Some("image"),
         ("source.audio", true, "audio") => Some("audio"),
         ("source.video", true, "video") => Some("video"),
+        ("operation.upscale-video", _, "video") => Some("video"),
         ("operation.video-audio", false, "audio")
         | ("operation.lip-sync", false, "audio" | "voice")
         | ("operation.video-sequence", false, "audio") => Some("audio"),
@@ -5162,6 +5166,7 @@ fn required_input_ports(node_type: &str, is_svg_vectorization: bool) -> &'static
         | "operation.prepare-mask"
         | "operation.segment"
         | "operation.upscale" => &["image"],
+        "operation.upscale-video" => &["video"],
         "source.prompt"
         | "source.image"
         | "source.audio"
@@ -5202,6 +5207,7 @@ fn required_output_ports(node_type: &str) -> &'static [&'static str] {
         "operation.controlnet" => &["controlnet"],
         "task.generate-prompt" => &["prompt"],
         "operation.upscale" => &["image"],
+        "operation.upscale-video" => &["video"],
         "source.prompt" => &["prompt"],
         "source.image" => &["image"],
         "source.audio" => &["audio"],

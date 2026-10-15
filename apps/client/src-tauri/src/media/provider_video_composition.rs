@@ -10,6 +10,57 @@ pub(super) fn media_worker(app: &AppHandle) -> MediaResult<(PathBuf, PathBuf)> {
     Ok((script, python))
 }
 
+pub(crate) fn upscale_video(
+    app: &AppHandle,
+    paths: &MediaRuntimePaths,
+    run_id: &str,
+    video_asset_id: &str,
+    mut request: serde_json::Value,
+) -> MediaResult<(serde_json::Value, GeneratedImageAsset)> {
+    let model = request["modelPath"]
+        .as_str()
+        .ok_or("Choose an upscaler model")?;
+    let model = fs::canonicalize(model).map_err(|_| "Choose an existing upscaler model file")?;
+    if !model.is_file() {
+        return Err("Choose an upscaler model file".into());
+    }
+    let (script, python) = media_worker(app)?;
+    let staging = create_staging_directory(paths)?;
+    request["modelPath"] = serde_json::json!(model);
+    request["inputPath"] = serde_json::json!(stage_media(
+        paths,
+        &staging.0,
+        video_asset_id,
+        "video",
+        "input.webm"
+    )?);
+    request["outputDirectory"] = serde_json::json!(staging.0.join("output"));
+    let output = run_worker(
+        &python,
+        &script,
+        "upscale-video",
+        Some(&serde_json::to_vec(&request).map_err(|error| error.to_string())?),
+        VIDEO_GENERATION_TIMEOUT,
+        Some((paths, run_id)),
+    )?;
+    let result: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|error| {
+        worker_failure_with_diagnostics(
+            format!("Video upscaler returned invalid JSON: {error}"),
+            &output.stderr,
+        )
+    })?;
+    if !output.status.success() || result.get("error").is_some() {
+        return Err(worker_failure_with_diagnostics(
+            result["error"]
+                .as_str()
+                .unwrap_or("Video upscaling failed")
+                .to_string(),
+            &output.stderr,
+        ));
+    }
+    publish_video_output(paths, &staging.0, result, false)
+}
+
 pub(crate) fn inspect_video(
     app: &AppHandle,
     path: &Path,

@@ -20,7 +20,7 @@ mod audio;
 pub(crate) use audio::generate_audio;
 #[path = "provider_video_composition.rs"]
 mod video_composition;
-pub(crate) use video_composition::{compose_video, inspect_video};
+pub(crate) use video_composition::{compose_video, inspect_video, upscale_video};
 #[path = "provider_lip_sync.rs"]
 mod lip_sync;
 pub(crate) use lip_sync::{lip_sync_video, LipSyncRequest};

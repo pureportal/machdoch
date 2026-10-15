@@ -1,3 +1,5 @@
+import { LoadingState } from "@machdoch/product-ui";
+import { ContextActionMenu } from "../../components/ui/context-action-menu";
 import { useMediaViewPreference } from "../use-media-view-preference";
 import { openMediaModelProfile } from "../../../../core/media/open-model-profiles.js";
 import { MediaAssetBrowser } from "./media-asset-browser";
@@ -127,6 +129,7 @@ interface MediaGenerateViewProps {
   poseInstallPending: boolean;
   onEditResult: (asset: MediaAssetRecord) => void;
   onAnimateResult: (asset: MediaAssetRecord) => void;
+  onUpscaleResult: (asset: MediaAssetRecord) => void;
   onOpenResult: (asset: MediaAssetRecord) => void;
   generationPending: boolean;
 }
@@ -188,6 +191,7 @@ export const MediaGenerateView = ({
   poseInstallPending,
   onEditResult,
   onAnimateResult,
+  onUpscaleResult,
   onOpenResult,
   generationPending,
 }: MediaGenerateViewProps): JSX.Element => {
@@ -1672,22 +1676,19 @@ export const MediaGenerateView = ({
           </section>
 
           <section className="flex min-h-[360px] flex-col p-5 xl:min-h-0 xl:overflow-y-auto xl:p-6">
-            {generationPending ? (
-              <div
-                role="status"
-                className="mb-3 flex items-center gap-2 text-sm text-slate-300"
-              >
-                <LoaderCircle className="h-4 w-4 animate-spin" /> Preparing{" "}
-                {target}
-              </div>
+            {generationJobs.length > 0 ? (
+              <MediaGenerationJobs
+                jobs={generationJobs}
+                selectedJobId={generationJob?.id ?? null}
+                onSelect={onSelectGenerationJob}
+                onOpenActivity={onOpenActivity}
+                onCancel={onCancelGeneration}
+              />
             ) : null}
-            <MediaGenerationJobs
-              jobs={generationJobs}
-              selectedJobId={generationJob?.id ?? null}
-              onSelect={onSelectGenerationJob}
-              onOpenActivity={onOpenActivity}
-              onCancel={onCancelGeneration}
-            />
+
+            {generationPending ? (
+              <LoadingState label={`Preparing ${target}`} />
+            ) : null}
 
             {resultAssets.length > 0 ? (
               <>
@@ -1725,64 +1726,85 @@ export const MediaGenerateView = ({
                 ) : null}
                 <div className="grid items-start gap-4 sm:grid-cols-2">
                   {resultAssets.map((asset) => (
-                    <article
+                    <ContextActionMenu
                       key={asset.id}
-                      className="group overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/50"
+                      label="Generated media actions"
+                      actions={
+                        ["image", "video"].includes(asset.kind)
+                          ? [
+                              {
+                                label: "Upscale",
+                                onSelect: () => onUpscaleResult(asset),
+                              },
+                            ]
+                          : []
+                      }
                     >
-                      <div
-                        className={cn(
-                          "w-full bg-slate-950",
-                          asset.height > asset.width
-                            ? "aspect-[3/4]"
-                            : asset.width > asset.height
-                              ? "aspect-video"
-                              : "aspect-square",
-                        )}
-                      >
-                        <MediaAssetPreview
-                          asset={asset}
-                          className="h-full w-full"
-                          controls={asset.kind === "video"}
-                          fit="contain"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-1 p-2">
-                        <MediaSaveAssetButton asset={asset} />
-                        {asset.kind === "image" ? (
-                          <>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onEditResult(asset)}
-                            >
-                              Edit image
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => onAnimateResult(asset)}
-                            >
-                              Animate
-                            </Button>
-                          </>
-                        ) : null}
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => onOpenResult(asset)}
-                          className="col-span-2"
+                      <article className="group overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/50">
+                        <div
+                          className={cn(
+                            "w-full bg-slate-950",
+                            asset.height > asset.width
+                              ? "aspect-[3/4]"
+                              : asset.width > asset.height
+                                ? "aspect-video"
+                                : "aspect-square",
+                          )}
                         >
-                          View in Assets
-                        </Button>
-                      </div>
-                    </article>
+                          <MediaAssetPreview
+                            asset={asset}
+                            className="h-full w-full"
+                            controls={asset.kind === "video"}
+                            fit="contain"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-1 p-2">
+                          <MediaSaveAssetButton asset={asset} />
+                          {["image", "video"].includes(asset.kind) ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => onUpscaleResult(asset)}
+                            >
+                              Upscale
+                            </Button>
+                          ) : null}
+                          {asset.kind === "image" ? (
+                            <>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onEditResult(asset)}
+                              >
+                                Edit image
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onAnimateResult(asset)}
+                              >
+                                Animate
+                              </Button>
+                            </>
+                          ) : null}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onOpenResult(asset)}
+                            className="col-span-2"
+                          >
+                            View in Assets
+                          </Button>
+                        </div>
+                      </article>
+                    </ContextActionMenu>
                   ))}
                 </div>
               </>
-            ) : showGenerationProgress ? null : runFailed ||
+            ) : generationPending || showGenerationProgress ? null : runFailed ||
               runNeedsReview ||
               runCanceled ||
               generationJob?.status === "completed" ? (

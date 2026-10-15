@@ -1,3 +1,4 @@
+import { MEDIA_UPSCALERS } from "../../../../core/media/upscale.js";
 import { useEffect, useRef, useState } from "react";
 import { open } from "../media-platform";
 import { invoke } from "../media-platform";
@@ -98,8 +99,11 @@ export function MediaWorkflowModelField({
               onChange={(event) => setUpscaler(event.target.value)}
               className="min-w-0 rounded-md border border-input bg-background p-2 text-xs"
             >
-              <option value="upscale">Real-ESRGAN · 67 MB</option>
-              <option value="upscale-span">SPAN · 9 MB</option>
+              {MEDIA_UPSCALERS.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name} · {model.size}
+                </option>
+              ))}
             </select>
           ) : null}
           <Button

@@ -207,6 +207,12 @@ fn execute_started(
                         app, paths, request, flow, &values, node, iteration,
                     )?))
                 }
+                "operation.upscale-video" => {
+                    output_port = "video";
+                    Some(WorkflowValue::Video(av::upscale(
+                        app, paths, request, flow, &values, node, iteration,
+                    )?))
+                }
                 "operation.lip-sync" => {
                     output_port = "video";
                     Some(WorkflowValue::Video(av::lip_sync(

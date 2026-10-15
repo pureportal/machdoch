@@ -24,6 +24,8 @@ describe("built-in media flow templates", () => {
     });
 
     expect(templates.map((template) => template.id)).toEqual([
+      "upscale-image",
+      "upscale-video",
       "replace-selected-object",
       "replace-background",
       "refine-until-pass",
@@ -204,23 +206,26 @@ describe("built-in media flow templates", () => {
       (candidate) => candidate.id === "local:flux-2-klein-4b",
     );
     expect(flux).toBeDefined();
-    Object.assign(models.find((model) => model.id === "local:wan2.2-ti2v-5b")!, {
-      ...flux!,
-      id: "local:wan2.2-ti2v-5b",
-      providerId: "local-wan",
-      displayName: "Wan2.2 TI2V 5B",
-      family: "Wan2.2",
-      capabilities: [
-        "image-to-video",
-        "start-end-to-video",
-        "transparent-output",
-        "alpha-video",
-        "video-composite",
-      ],
-      architecture: "wan-2.2-ti2v",
-      addonCapabilities: [],
-      installedRevision: "b8fff7315c768468a5333511427288870b2e9635",
-    });
+    Object.assign(
+      models.find((model) => model.id === "local:wan2.2-ti2v-5b")!,
+      {
+        ...flux!,
+        id: "local:wan2.2-ti2v-5b",
+        providerId: "local-wan",
+        displayName: "Wan2.2 TI2V 5B",
+        family: "Wan2.2",
+        capabilities: [
+          "image-to-video",
+          "start-end-to-video",
+          "transparent-output",
+          "alpha-video",
+          "video-composite",
+        ],
+        architecture: "wan-2.2-ti2v",
+        addonCapabilities: [],
+        installedRevision: "b8fff7315c768468a5333511427288870b2e9635",
+      },
+    );
 
     const plan = compileMediaFlow({
       flow: template!.flow,

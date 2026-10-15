@@ -13,6 +13,10 @@ import { isMediaImageMask } from "./image-mask.js";
 import { readRefMods } from "./refmods.js";
 import { MEDIA_IMAGE_SAMPLERS } from "./image-sampling.js";
 import {
+  validateUpscaleSettings,
+  type MediaUpscaleSettings,
+} from "./upscale-settings.js";
+import {
   WORKFLOW_NODE_DEFINITIONS,
   WORKFLOW_GATE_FIELDS,
   workflowMaskPort,
@@ -44,7 +48,7 @@ export interface MediaNodeFieldOption {
 
 export interface MediaNodeFieldVisibility {
   fieldId: string;
-  equals: string | number | boolean | null;
+  equals: string | number | boolean | null | readonly string[];
 }
 
 export interface MediaNodeFieldDefinition {
@@ -2633,7 +2637,9 @@ const isFieldVisible = (
   config: Record<string, unknown>,
 ): boolean =>
   !field.visibleWhen ||
-  config[field.visibleWhen.fieldId] === field.visibleWhen.equals;
+  (Array.isArray(field.visibleWhen.equals)
+    ? field.visibleWhen.equals.includes(config[field.visibleWhen.fieldId])
+    : config[field.visibleWhen.fieldId] === field.visibleWhen.equals);
 
 export const listVisibleMediaNodeFields = (
   definition: MediaNodeDefinition,
@@ -2859,6 +2865,23 @@ export const validateMediaFlowNode = (
   for (const field of definition.fields) {
     const issue = validateFieldValue(node, field);
     if (issue) issues.push(issue);
+  }
+  if (
+    (node.type === "operation.upscale" ||
+      node.type === "operation.upscale-video") &&
+    issues.length === 0
+  ) {
+    const message = validateUpscaleSettings(
+      node.config as unknown as MediaUpscaleSettings,
+    );
+    if (message)
+      issues.push({
+        code: "INVALID_CONFIG_VALUE",
+        severity: "error",
+        nodeId: node.id,
+        fieldId: "sizeMode",
+        message,
+      });
   }
   if (
     (node.type === "task.generate-image" || node.type === "task.edit-image") &&

@@ -45,6 +45,7 @@ export const DEFAULT_COMMAND_SHORTCUTS = {
   "media.section.graph": "Alt+3",
   "media.section.activity": "Alt+4",
   "media.section.train": "Alt+5",
+  "media.section.upscale": "Alt+6",
   "media.create.generate": "Mod+Enter",
   "media.flow.run": "Mod+Enter",
   "media.library.import": "Mod+O",

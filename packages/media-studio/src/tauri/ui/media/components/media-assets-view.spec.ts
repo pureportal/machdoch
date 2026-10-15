@@ -114,6 +114,7 @@ const createProps = (overrides: Partial<Props> = {}): Props => ({
   onUseAsReference: vi.fn(),
   onUseAsPose: vi.fn(),
   onEditImage: vi.fn(),
+  onUpscale: vi.fn(),
   onAnimateImage: vi.fn(),
   onOpenVideoAsFlow: vi.fn(),
   onInspectSettings: vi.fn(),
@@ -129,7 +130,6 @@ const createProps = (overrides: Partial<Props> = {}): Props => ({
 });
 
 describe("MediaAssetsView discovery", () => {
-  it("opens setup for the PDMD variant selected in the library", () => {
   const copiedModel: MediaDiscoveredModelArtifact = {
     path: "D:/models/copied.safetensors",
     relativePath: "copied.safetensors",
@@ -225,6 +225,7 @@ describe("MediaAssetsView discovery", () => {
     expect(screen.queryByText("Copied XL")).toBeNull();
   });
 
+  it("opens setup for the PDMD variant selected in the library", () => {
     importDialog.mockClear();
     const props = createProps();
     const model = createOpenMediaModels("test").find(

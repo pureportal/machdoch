@@ -79,10 +79,15 @@ describe("media node registry", () => {
         poseImageAssetId: "asset:pose",
         poseStrength: 1.1,
       };
-      const input = { id: "flow:pose", createdAt: "2026-10-05T00:00:00Z", settings };
-      const flow = kind === "edit"
-        ? createImageEditFlow({ ...input, sourceAssetId: "asset:base" })
-        : createImageRecipeFlow(input);
+      const input = {
+        id: "flow:pose",
+        createdAt: "2026-10-05T00:00:00Z",
+        settings,
+      };
+      const flow =
+        kind === "edit"
+          ? createImageEditFlow({ ...input, sourceAssetId: "asset:base" })
+          : createImageRecipeFlow(input);
       const taskId = kind === "edit" ? "edit" : "generate";
       const edited = updateMediaFlowNodeConfigs({
         flow,
@@ -90,7 +95,7 @@ describe("media node registry", () => {
         updatedAt: "2026-10-05T00:01:00Z",
         values: { poseStrength: 0.73, poseStart: 0.12, poseEnd: 0.87 },
       });
-      const poseSource = edited.nodes.find(node => node.id === "pose-image")!;
+      const poseSource = edited.nodes.find((node) => node.id === "pose-image")!;
       expect(poseSource.config.influence).toBe(1);
       expect(validateMediaFlowNodes(edited)).toEqual([]);
       expect(readImageRecipeSettings(edited)).toMatchObject({
@@ -107,7 +112,10 @@ describe("media node registry", () => {
         updatedAt: "2026-10-05T00:02:00Z",
       });
       expect(validateMediaFlowNodes(invalid)).toContainEqual(
-        expect.objectContaining({ fieldId: "poseStart", code: "INVALID_CONFIG_VALUE" }),
+        expect.objectContaining({
+          fieldId: "poseStart",
+          code: "INVALID_CONFIG_VALUE",
+        }),
       );
     },
   );
@@ -115,7 +123,7 @@ describe("media node registry", () => {
     const flow = createFlow();
 
     expect(validateMediaFlowNodes(flow)).toEqual([]);
-    expect(listMediaNodeDefinitions()).toHaveLength(43);
+    expect(listMediaNodeDefinitions()).toHaveLength(44);
     for (const definition of listMediaNodeDefinitions()) {
       expect(definition.version).toBe(1);
       expect(definition.fields.every((field) => "defaultValue" in field)).toBe(
@@ -159,7 +167,9 @@ describe("media node registry", () => {
       type: "source.seed",
       updatedAt: "2026-07-14T10:00:01.000Z",
     });
-    const seedNode = withSeed.flow.nodes.find((node) => node.type === "source.seed")!;
+    const seedNode = withSeed.flow.nodes.find(
+      (node) => node.type === "source.seed",
+    )!;
     const fixedFlow = updateMediaFlowNodeConfig({
       flow: withSeed.flow,
       nodeId: seedNode.id,
@@ -171,7 +181,11 @@ describe("media node registry", () => {
     expect(seedNode.config.seed).toBeNull();
     expect(validateMediaFlowNode(seedNode)).toEqual([]);
     expect(validateMediaFlowGraph(withSeed.flow)).toEqual([]);
-    expect(validateMediaFlowNode(fixedFlow.nodes.find((node) => node.id === seedNode.id)!)).toEqual([]);
+    expect(
+      validateMediaFlowNode(
+        fixedFlow.nodes.find((node) => node.id === seedNode.id)!,
+      ),
+    ).toEqual([]);
     expect(getMediaNodeDefinition("source.seed")).toMatchObject({
       outputs: [expect.objectContaining({ id: "seed", required: false })],
     });

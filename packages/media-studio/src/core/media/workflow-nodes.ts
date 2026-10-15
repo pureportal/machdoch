@@ -3,6 +3,7 @@ import type {
   MediaNodeFieldDefinition,
   MediaNodePortDefinition,
 } from "./node-registry.js";
+import { UPSCALE_NODE_FIELDS } from "./upscale-node-fields.js";
 
 const image: MediaNodePortDefinition = {
   id: "image",
@@ -383,24 +384,21 @@ export const WORKFLOW_NODE_DEFINITIONS: readonly MediaNodeDefinition[] = [
     outputs: [image],
     privacyEffects: [],
     costEffects: [],
-    fields: [
-      field("modelPath", "Upscaler model", "file", "", {
-        allowEmpty: true,
-        maxLength: 2048,
-        description:
-          "Choose a Spandrel model, such as Real-ESRGAN, SwinIR, HAT, or SPAN.",
-      }),
-      field("scale", "Scale", "select", "2", {
-        options: choices(["2", "2×"], ["4", "4×"]),
-      }),
-      field("tileSize", "Tile size", "number", 256, {
-        group: "Expert",
-        min: 64,
-        max: 512,
-        step: 64,
-        integer: true,
-      }),
-    ],
+    fields: UPSCALE_NODE_FIELDS,
+  },
+  {
+    type: "operation.upscale-video",
+    version: 1,
+    displayName: "Upscale video",
+    summary: "",
+    layer: "operation",
+    category: "Transform",
+    paletteVisibility: "advanced",
+    inputs: [{ ...image, id: "video", label: "Video", dataType: "video" }],
+    outputs: [{ ...image, id: "video", label: "Video", dataType: "video" }],
+    privacyEffects: [],
+    costEffects: [],
+    fields: UPSCALE_NODE_FIELDS,
   },
   {
     type: "control.repeat",

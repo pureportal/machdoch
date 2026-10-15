@@ -37,7 +37,18 @@ pub(crate) fn validate_node(node: &MediaFlowNode) -> MediaResult<()> {
             "grow",
             "feather",
         ],
-        "operation.upscale" => &["modelPath", "scale", "tileSize"],
+        "operation.upscale" | "operation.upscale-video" => &[
+            "modelPath",
+            "sizeMode",
+            "scale",
+            "minWidth",
+            "minHeight",
+            "minLongEdge",
+            "minShortEdge",
+            "tileMode",
+            "tileSize",
+            "tileFactor",
+        ],
         "task.generate-prompt" => &["instructions", "modelPath", "maxTokens"],
         "control.repeat" => &[
             "startNodeId",
@@ -108,7 +119,17 @@ pub(crate) fn validate_node(node: &MediaFlowNode) -> MediaResult<()> {
             "selection" => value
                 .as_str()
                 .is_some_and(|v| ["all", "largest", "best"].contains(&v)),
-            "scale" => value.as_str().is_some_and(|v| ["2", "4"].contains(&v)),
+            "scale" => in_range(value, 1.0, 8.0, false),
+            "sizeMode" => value
+                .as_str()
+                .is_some_and(|v| ["scale", "dimensions", "edges", "short-edge"].contains(&v)),
+            "minWidth" | "minHeight" | "minLongEdge" | "minShortEdge" => {
+                in_range(value, 0.0, 16384.0, true)
+            }
+            "tileMode" => value
+                .as_str()
+                .is_some_and(|v| ["automatic", "manual", "factor", "full"].contains(&v)),
+            "tileFactor" => in_range(value, 2.0, 16.0, true),
             "region" => value
                 .as_str()
                 .is_some_and(|v| ["selection", "surroundings", "boundary"].contains(&v)),
@@ -120,7 +141,7 @@ pub(crate) fn validate_node(node: &MediaFlowNode) -> MediaResult<()> {
             "feather" => in_range(value, 0.0, 32.0, true),
             "boundaryWidth" => in_range(value, 1.0, 64.0, true),
             "reviewPasses" => in_range(value, 1.0, 3.0, true),
-            "tileSize" => in_range(value, 64.0, 512.0, true),
+            "tileSize" => in_range(value, 32.0, 2048.0, true),
             "maxTokens" if node.r#type == "operation.visual-check" => {
                 in_range(value, 128.0, 2048.0, true)
             }
@@ -132,6 +153,22 @@ pub(crate) fn validate_node(node: &MediaFlowNode) -> MediaResult<()> {
         };
         if !valid {
             return Err(format!("{} has an invalid {key}", node.label));
+        }
+    }
+    if matches!(
+        node.r#type.as_str(),
+        "operation.upscale" | "operation.upscale-video"
+    ) {
+        let config = &node.config;
+        let positive = |key: &str| config[key].as_f64().is_some_and(|value| value > 0.0);
+        let has_minimum = match config["sizeMode"].as_str() {
+            Some("dimensions") => positive("minWidth") || positive("minHeight"),
+            Some("edges") => positive("minLongEdge") || positive("minShortEdge"),
+            Some("short-edge") => positive("minShortEdge"),
+            _ => true,
+        };
+        if !has_minimum {
+            return Err("Enter at least one minimum size.".into());
         }
     }
     if node.r#type == "operation.canny"
