@@ -84,6 +84,26 @@ export const normalizeOpenAIStrictInputSchema = (
   const normalizedSchema: Record<string, unknown> = { ...schema };
   delete normalizedSchema.propertyNames;
 
+  for (const key of ["$defs", "definitions"] as const) {
+    const definitions = schema[key];
+    if (isSchemaRecord(definitions)) {
+      normalizedSchema[key] = Object.fromEntries(
+        Object.entries(definitions).map(([name, definition]) => [
+          name,
+          isSchemaRecord(definition)
+            ? normalizeOpenAIStrictInputSchema(definition)
+            : definition,
+        ]),
+      );
+    }
+  }
+
+  if (Array.isArray(schema.prefixItems)) {
+    normalizedSchema.prefixItems = schema.prefixItems.map((item) =>
+      isSchemaRecord(item) ? normalizeOpenAIStrictInputSchema(item) : item,
+    );
+  }
+
   if (Array.isArray(schema.items)) {
     normalizedSchema.items = schema.items.map((item) =>
       isSchemaRecord(item) ? normalizeOpenAIStrictInputSchema(item) : item,

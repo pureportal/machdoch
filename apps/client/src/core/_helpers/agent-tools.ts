@@ -131,6 +131,7 @@ export const executeToolCall = async (
 ): Promise<{
   result?: AgentToolExecutionResult;
 }> => {
+  signal?.throwIfAborted();
   const toolDefinition = toolDefinitions.get(call.name);
 
   if (!toolDefinition) {
@@ -139,6 +140,25 @@ export const executeToolCall = async (
         call.id,
         call.name,
         `The tool \`${call.name}\` is not registered in this runtime.`,
+      ),
+    };
+  }
+
+  if (call.argumentError) {
+    return {
+      result: createToolErrorResult(call.id, call.name, call.argumentError),
+    };
+  }
+  if (
+    call.arguments === null ||
+    typeof call.arguments !== "object" ||
+    Array.isArray(call.arguments)
+  ) {
+    return {
+      result: createToolErrorResult(
+        call.id,
+        call.name,
+        "Tool arguments must be a JSON object. Correct the arguments and retry.",
       ),
     };
   }
@@ -196,6 +216,7 @@ export const executeToolCall = async (
         }
       : {}),
   });
+  signal?.throwIfAborted();
   if (!result.toolResult.isError) {
     recordMacroToolCall({
       toolName: call.name,

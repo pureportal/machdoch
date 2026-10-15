@@ -214,6 +214,7 @@ export interface AgentModelToolCall {
   name: string;
   arguments: Record<string, unknown>;
   rawArguments?: string;
+  argumentError?: string;
 }
 
 export interface AgentModelToolTextContent {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type {
+  AgentModelToolCall,
   TaskActionOutputHandler,
   UiControlRuntimeInfo,
 } from "../types.js";
@@ -30,6 +31,7 @@ export interface LocalToolRuntimeOptions {
     result: AgentToolExecutionResult,
   ) => void;
   onToolResult?: (name: string, result: AgentToolExecutionResult) => void;
+  onToolCall?: (call: AgentModelToolCall) => void;
 }
 
 export const createLocalToolRuntime = (options: LocalToolRuntimeOptions) => {
@@ -54,12 +56,15 @@ export const createLocalToolRuntime = (options: LocalToolRuntimeOptions) => {
         );
         const combinedSignal = AbortSignal.any(signals);
         combinedSignal.throwIfAborted();
+        const call = { id: randomUUID(), name, arguments: args };
+        options.onToolCall?.(call);
+        combinedSignal.throwIfAborted();
         const { result } = await executeToolCall(
           options.config,
           options.memory,
           options.uiControl,
           tools,
-          { id: randomUUID(), name, arguments: args },
+          call,
           options.onActionOutput
             ? (output) => {
                 if (!combinedSignal.aborted)

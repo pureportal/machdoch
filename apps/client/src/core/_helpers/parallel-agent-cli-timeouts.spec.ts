@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createInstructionResolutionFixture } from "../__test__/instruction-test-helpers.js";
 import { createInstructionDeliveryPlan } from "../instruction-system/index.js";
 import type { TaskExecutionTimelineEvent } from "../types.js";
+import { createLocalToolRuntime } from "../local-mcp/runtime.js";
 import { maybeExecuteExternalAgentProviderTask } from "./external-agent-provider.js";
 import {
   createParallelAgentSessionTool,
@@ -191,17 +192,19 @@ it.each(["stdout", "stderr", "mcp", "scoped-tool"] as const)(
         if (activity === "mcp") {
           params.onStreamActivity?.();
         } else if (activity === "scoped-tool") {
-          const read = params.scopedWorkerToolDefinitions!.find(
-            (definition) => definition.spec.name === "read_file",
-          )!;
-          await read.execute(
-            { path: "notes.txt", startLine: 1, endLine: 1 },
-            {
-              workspaceRoot: options.config.workspaceRoot,
-              memory: params.preparedConversationContext.memory,
-              signal: params.signal!,
-            },
-          );
+          const runtime = createLocalToolRuntime({
+            config: params.config,
+            memory: params.preparedConversationContext.memory,
+            scopedToolDefinitions: params.scopedWorkerToolDefinitions!,
+            signal: params.signal!,
+            onToolCall: params.onScopedWorkerToolCall!,
+            onToolResult: params.onScopedWorkerToolResult!,
+          });
+          await runtime.call("read_file", {
+            path: "notes.txt",
+            startLine: 1,
+            endLine: 1,
+          });
         } else {
           await params.onActionOutput?.({
             toolName: "shell",

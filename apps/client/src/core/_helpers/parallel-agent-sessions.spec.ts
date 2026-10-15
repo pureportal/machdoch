@@ -1,20 +1,18 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createInstructionResolutionFixture } from "../__test__/instruction-test-helpers.js";
-import type { RuntimeConfig } from "../runtime-contract.generated.js";
+import {
+  createParallelAgentTestOptions,
+  parallelWorker as worker,
+  executeParallelWorkers as execute,
+} from "../__test__/parallel-agent-test-helpers.js";
 import type {
   AgentModelAdapter,
   AgentModelToolCall,
   ParallelAgentMode,
-  ResolvedTaskContext,
   TaskExecutionTimelineEvent,
 } from "../types.js";
-import {
-  createParallelAgentSessionTool,
-  type ParallelWorkerPlan,
-} from "./parallel-agent-sessions.js";
+import { createParallelAgentSessionTool } from "./parallel-agent-sessions.js";
 import { TASK_EXECUTION_IDLE_TIMEOUT_MS } from "./task-execution-timeouts.js";
 
 const workspaces: string[] = [];
@@ -29,67 +27,10 @@ afterEach(async () => {
 });
 
 const createOptions = async (mode: ParallelAgentMode = "read-only") => {
-  const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-parallel-"));
-  workspaces.push(workspaceRoot);
-  const config: RuntimeConfig = {
-    workspaceRoot,
-    mode: "machdoch",
-    provider: "openai",
-    model: "test-model",
-    reasoning: "default",
-    contextWindow: "default",
-    offline: false,
-    compatibility: { discoverGithubCustomizations: false },
-    providerAvailability: [{ provider: "openai", configured: true }],
-    webSearch: { activeProvider: "none", providerAvailability: [] },
-    reviewModel: { mode: "base" },
-    internalTaskModel: {
-      provider: "openai",
-      model: "test-model",
-      reasoning: "default",
-    },
-  };
-  const taskContext: ResolvedTaskContext = {
-    task: "Inspect the workspace",
-    effectiveTask: "Inspect the workspace",
-    taskContextText: "",
-    workspacePaths: [],
-    suggestedTools: [],
-    executionRole: "executor",
-    applicableInstructions: [],
-    instructionResolution: createInstructionResolutionFixture(),
-  };
-  return { config, task: "Inspect the workspace", taskContext, mode };
+  const options = await createParallelAgentTestOptions(mode);
+  workspaces.push(options.config.workspaceRoot);
+  return options;
 };
-
-const worker = (
-  id: string,
-  overrides: Partial<ParallelWorkerPlan> = {},
-): ParallelWorkerPlan => ({
-  id,
-  objective: `Inspect ${id}`,
-  access: "read-only",
-  readPaths: [],
-  writePaths: [],
-  ...overrides,
-});
-
-const execute = async (
-  tool: ReturnType<typeof createParallelAgentSessionTool>,
-  workers: ParallelWorkerPlan[],
-) =>
-  tool.definition.execute(
-    { workers },
-    {
-      workspaceRoot: "unused",
-      memory: {
-        sessionEnabled: false,
-        sessionEntries: [],
-        globalEnabled: false,
-        globalEntries: [],
-      },
-    },
-  );
 
 describe("parallel agent sessions", () => {
   it("reports each worker's model, tool, and completion activity", async () => {
@@ -482,17 +423,19 @@ describe("parallel agent sessions", () => {
       {
         id: "first",
         status: "failed",
-        answer: "Worker first did not complete a scoped file edit.",
+        answer: "Done",
+        error: "Worker first did not complete a scoped file edit.",
       },
       {
         id: "second",
         status: "failed",
-        answer: "Worker second did not complete a scoped file edit.",
+        answer: "Done",
+        error: "Worker second did not complete a scoped file edit.",
       },
     ]);
   });
 
-  it("keeps an earlier tool failure after a later successful call", async () => {
+  it("preserves tool diagnostics without failing a recovered worker", async () => {
     const options = await createOptions();
     await writeFile(
       join(options.config.workspaceRoot, "notes.txt"),
@@ -539,17 +482,22 @@ describe("parallel agent sessions", () => {
 
     const result = await execute(tool, [worker("first"), worker("second")]);
 
-    expect(result.toolResult.isError).toBe(true);
+    expect(result.toolResult.isError).toBe(false);
+    expect(tool.hasWorkerFailure()).toBe(false);
     expect(JSON.parse(result.toolResult.output)).toEqual([
       expect.objectContaining({
         id: "first",
-        status: "failed",
-        answer: expect.stringContaining("read_file"),
+        status: "completed",
+        answer: "Done",
+        toolCalls: 2,
+        toolErrors: [expect.objectContaining({ name: "read_file" })],
       }),
       expect.objectContaining({
         id: "second",
-        status: "failed",
-        answer: expect.stringContaining("read_file"),
+        status: "completed",
+        answer: "Done",
+        toolCalls: 2,
+        toolErrors: [expect.objectContaining({ name: "read_file" })],
       }),
     ]);
   });

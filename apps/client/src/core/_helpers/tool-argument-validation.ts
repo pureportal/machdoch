@@ -6,6 +6,8 @@ import { createHash } from "node:crypto";
 const validatorOptions = {
   allErrors: false,
   strict: false,
+  strictNumbers: true,
+  ownProperties: true,
   validateFormats: false,
 };
 const DEFAULT_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema";
@@ -23,6 +25,9 @@ const compiledSchemas = new Map<string, ValidateFunction | string>();
 
 const formatError = (error: ErrorObject): string => {
   const location = error.instancePath || "/";
+  if (error.keyword === "additionalProperties") {
+    return `${location} contains unexpected property ${JSON.stringify(error.params.additionalProperty)}`;
+  }
   return `${location} ${error.message ?? "is invalid"}`;
 };
 
@@ -77,8 +82,10 @@ export const validateToolArguments = (
     }`;
   }
 
-  if (validate(args)) {
-    return undefined;
+  try {
+    if (validate(args)) return undefined;
+  } catch (error) {
+    return `The tool arguments could not be validated: ${error instanceof Error ? error.message : String(error)}`;
   }
 
   const details = (validate.errors ?? []).map(formatError).join("; ");

@@ -1,5 +1,6 @@
 import type {
   AgentModelAdapter,
+  AgentModelToolCall,
   AgentModelStructuredOutput,
   ResolvedTaskContext,
   TaskConversationContext,
@@ -130,6 +131,7 @@ export interface ModelDrivenExecutionParams {
   monitorModelAdapter?: AgentModelAdapter;
   additionalToolDefinitions?: AgentToolDefinition[];
   scopedWorkerToolDefinitions?: AgentToolDefinition[];
+  onScopedWorkerToolCall?: (call: AgentModelToolCall) => void;
   onScopedWorkerToolResult?: (
     name: string,
     result: AgentToolExecutionResult,

@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, relative } from "node:path";
 import { sortEntryNames } from "../../helpers/sort-entry-names.helper.js";
@@ -470,16 +469,28 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
           );
         }
 
-        if (existsSync(target.resolvedPath)) {
+        context.signal?.throwIfAborted();
+        try {
+          await mkdir(dirname(target.resolvedPath), { recursive: true });
+          context.signal?.throwIfAborted();
+          await writeFile(target.resolvedPath, content, {
+            encoding: "utf8",
+            flag: "wx",
+          });
+        } catch (error) {
+          context.signal?.throwIfAborted();
+          const alreadyExists =
+            error instanceof Error &&
+            "code" in error &&
+            error.code === "EEXIST";
           return createToolErrorResult(
             crypto.randomUUID(),
             "create_file",
-            `The path \`${requestedPath}\` already exists. Use replace_in_file for edits instead.`,
+            alreadyExists
+              ? `The path \`${requestedPath}\` already exists. Use replace_in_file for edits instead.`
+              : `The file \`${requestedPath}\` could not be created: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
-
-        await mkdir(dirname(target.resolvedPath), { recursive: true });
-        await writeFile(target.resolvedPath, content, "utf8");
 
         return {
           toolResult: {
@@ -633,6 +644,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
                 selectedCandidate.replacement,
               );
 
+          context.signal?.throwIfAborted();
           await writeFile(target.resolvedPath, updated, "utf8");
 
           return {
@@ -657,6 +669,7 @@ export const createFilesystemToolDefinitions = (): AgentToolDefinition[] => {
             ],
           };
         } catch {
+          context.signal?.throwIfAborted();
           return createToolErrorResult(
             crypto.randomUUID(),
             "replace_in_file",

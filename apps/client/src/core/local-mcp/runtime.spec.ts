@@ -16,6 +16,7 @@ const createRuntime = (execute: AgentToolDefinition["execute"]) => {
   const controller = new AbortController();
   const onResult = vi.fn();
   const onToolResult = vi.fn();
+  const onToolCall = vi.fn();
   const onActionOutput = vi.fn();
   const runtime = createLocalToolRuntime({
     config: runtimeConfig,
@@ -28,6 +29,7 @@ const createRuntime = (execute: AgentToolDefinition["execute"]) => {
     signal: controller.signal,
     onResult,
     onToolResult,
+    onToolCall,
     onActionOutput,
     scopedToolDefinitions: [
       {
@@ -43,12 +45,47 @@ const createRuntime = (execute: AgentToolDefinition["execute"]) => {
       },
     ],
   });
-  return { runtime, controller, onResult, onToolResult, onActionOutput };
+  return {
+    runtime,
+    controller,
+    onResult,
+    onToolResult,
+    onToolCall,
+    onActionOutput,
+  };
 };
 
 afterEach(() => vi.useRealTimers());
 
 describe("local MCP tool shutdown", () => {
+  it.each(["fixture_wait", "missing_tool"])(
+    "reports calls rejected before execution: %s",
+    async (name) => {
+      const execute = vi.fn();
+      const { runtime, onToolCall, onToolResult } = createRuntime(execute);
+      const result = await runtime.call(name, { invalid: true });
+      expect(result.toolResult.isError).toBe(true);
+      expect(execute).not.toHaveBeenCalled();
+      expect(onToolCall).toHaveBeenCalledOnce();
+      expect(onToolCall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: result.toolResult.callId,
+          name,
+          arguments: { invalid: true },
+        }),
+      );
+      expect(onToolResult).toHaveBeenCalledWith(name, result);
+    },
+  );
+
+  it("does not report or execute calls after cancellation", async () => {
+    const execute = vi.fn();
+    const { runtime, controller, onToolCall } = createRuntime(execute);
+    controller.abort();
+    await expect(runtime.call("fixture_wait", {})).rejects.toThrow();
+    expect(onToolCall).not.toHaveBeenCalled();
+    expect(execute).not.toHaveBeenCalled();
+  });
   it("drains a cooperative tool after cancellation", async () => {
     const { runtime, controller, onResult } = createRuntime(
       async (_args, context) =>
