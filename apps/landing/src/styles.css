@@ -63,7 +63,10 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
-a:focus-visible {
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+pre:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 4px;
 }
@@ -746,11 +749,100 @@ h2 {
   line-height: 1.65;
 }
 
+.install-commands {
+  display: grid;
+  gap: 16px;
+  margin-top: clamp(40px, 5vw, 64px);
+}
+
+.install-command {
+  min-width: 0;
+  padding: clamp(18px, 3vw, 28px);
+  border: 1px solid var(--night-line);
+  background: var(--night-raised);
+}
+
+.install-command-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.install-command h3 {
+  font-size: 20px;
+  letter-spacing: -0.025em;
+}
+
+.copy-command {
+  flex: none;
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--night-line-strong);
+  color: var(--accent);
+  background: var(--night-soft);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.copy-command:hover {
+  border-color: var(--accent);
+}
+
+.copy-command:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.install-command > p,
+.install-finish {
+  margin-top: 16px;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.install-command pre {
+  overflow-x: auto;
+  margin: 18px 0 0;
+  padding: 18px;
+  border: 1px solid var(--night-line);
+  color: var(--text);
+  background: var(--night);
+  font-size: 13px;
+  line-height: 1.7;
+  tab-size: 2;
+}
+
+.install-command code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.copy-status:empty {
+  margin-top: 0;
+}
+
+.installer-downloads {
+  margin-top: 32px;
+}
+
+.installer-downloads summary {
+  width: fit-content;
+  min-height: 44px;
+  padding-block: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .download-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
-  margin-top: clamp(56px, 7vw, 90px);
+  margin-top: 16px;
 }
 
 .download-card {
@@ -1153,7 +1245,6 @@ footer {
 
   .download-grid {
     grid-template-columns: 1fr;
-    margin-top: 48px;
   }
 
   .download-card {

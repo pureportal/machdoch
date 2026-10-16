@@ -5,6 +5,9 @@ import {
   subscribeConsent,
 } from "@machdoch/analytics/browser";
 import packageManifest from "../package.json";
+import { initializeInstallCommands } from "./install-commands";
+
+initializeInstallCommands();
 
 for (const element of document.querySelectorAll<HTMLElement>(".download-card"))
   element.dataset.analyticsFeature = "landing.download";
