@@ -21,17 +21,55 @@ Machdoch works in a folder you choose, called a **workspace**. Ask it to explain
 
 ## Download and install
 
-Get the latest package for your system from [Machdoch releases](https://github.com/pureportal/machdoch/releases/latest):
+Copy the whole command for your system, paste it into the window described below, and press **Enter**. Each command downloads the latest version and installs it.
 
-| System | Package |
-| --- | --- |
-| Windows x64 | [Setup installer](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64-setup.exe) or [MSI](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64.msi) |
-| Debian/Ubuntu x64 | [`.deb`](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.deb) |
-| Debian/Ubuntu ARM64 | [`.deb`](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-arm64.deb) |
-| Fedora/RHEL x64 | [`.rpm`](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-x86_64.rpm) |
-| Portable Linux x64 | [AppImage](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.AppImage) |
+### Windows (x64)
 
-Run the Windows installer or open a Linux package with your package manager. From a terminal, use `sudo apt install ./machdoch-linux-amd64.deb` (replace `amd64` with `arm64` on ARM) or `sudo dnf install ./machdoch-linux-x86_64.rpm`. Make an AppImage executable with `chmod +x machdoch-linux-amd64.AppImage`, then run it. Linux desktop use requires a graphical session.
+Open the **Start** menu, type **PowerShell**, and open **Windows PowerShell**. Paste this command, then follow the installer:
+
+```powershell
+& {
+  $machdochInstaller = Join-Path $env:TEMP ("machdoch-" + [guid]::NewGuid() + "-setup.exe")
+  Invoke-WebRequest "https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64-setup.exe" -UseBasicParsing -OutFile $machdochInstaller -ErrorAction Stop
+  Start-Process -FilePath $machdochInstaller -Wait
+}
+```
+
+### Ubuntu / Debian (x64 and ARM64)
+
+Open **Terminal** from your applications menu and paste this command:
+
+```bash
+sudo apt update && sudo apt install -y curl &&
+curl -fL "https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-$(dpkg --print-architecture).deb" -o machdoch-linux.deb &&
+sudo apt install -y ./machdoch-linux.deb
+```
+
+### Fedora / RHEL (x64)
+
+Open **Terminal** from your applications menu and paste this command:
+
+```bash
+sudo dnf install -y curl &&
+curl -fL "https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-x86_64.rpm" -o machdoch-linux.rpm &&
+sudo dnf install -y ./machdoch-linux.rpm
+```
+
+On Linux, enter your computer password if asked; no characters appear as you type. When installation finishes, open **Machdoch** from your Start or applications menu.
+
+### Download installers
+
+You can also download a package from [Machdoch releases](https://github.com/pureportal/machdoch/releases/latest):
+
+| System              | Package                                                                                                                                                                                                              |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows x64         | [Setup installer](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64-setup.exe) or [MSI](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64.msi) |
+| Debian/Ubuntu x64   | [`.deb`](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.deb)                                                                                                                   |
+| Debian/Ubuntu ARM64 | [`.deb`](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-arm64.deb)                                                                                                                   |
+| Fedora/RHEL x64     | [`.rpm`](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-x86_64.rpm)                                                                                                                  |
+| Portable Linux x64  | [AppImage](https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.AppImage)                                                                                                            |
+
+Run the Windows installer or open a Linux package with your package manager. Make an AppImage executable with `chmod +x machdoch-linux-amd64.AppImage`, then run it. Linux desktop use requires a graphical session.
 
 There is no published macOS package. AI tasks need either a key for a supported model provider or an installed, signed-in **Codex CLI**, **Claude CLI**, or **Copilot CLI**. Provider usage may cost money; Machdoch does not include model credits.
 
@@ -50,9 +88,9 @@ Try this in **Ask** mode:
 
 When you want Machdoch to act, switch to **Machdoch** mode and describe the outcome and limits clearly. For example: “Copy the text files into a new `organized` folder, leave the originals in place, and list what you changed.”
 
-| Mode | What it can do |
-| --- | --- |
-| **Ask** | Inspect and answer using read-only tool calls. |
+| Mode         | What it can do                                                          |
+| ------------ | ----------------------------------------------------------------------- |
+| **Ask**      | Inspect and answer using read-only tool calls.                          |
 | **Machdoch** | Use available tools to make changes, run commands, and complete a task. |
 
 Machdoch mode is the workspace default unless you change it. Ask mode still sends relevant context to the selected model provider and is not a filesystem sandbox.
@@ -106,14 +144,14 @@ A workspace is a working folder, not a security boundary. Before using Machdoch 
 
 ## Help and updates
 
-| Problem | What to check |
-| --- | --- |
-| No model is available | Add a key in **Settings > Providers**, or confirm a supported CLI is installed and signed in. Check the provider account's model access. |
-| Browser automation will not start | Install Edge or Chrome, then restart Machdoch. |
-| An image attachment is rejected | Select a model with image input and check the image format and size. |
-| A scheduled job did not run | Check that the job is enabled, its workspace exists, and the computer and scheduler were running. Review the job history. |
-| Shutdown after work does not occur | Resolve or remove failed queued messages and finish pending media reviews. If the power button turns off with an error, fix the reported problem and enable it again. |
-| Local media generation is unavailable | Check model and runtime details in **Media Studio** and follow any readiness guidance. |
+| Problem                               | What to check                                                                                                                                                         |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| No model is available                 | Add a key in **Settings > Providers**, or confirm a supported CLI is installed and signed in. Check the provider account's model access.                              |
+| Browser automation will not start     | Install Edge or Chrome, then restart Machdoch.                                                                                                                        |
+| An image attachment is rejected       | Select a model with image input and check the image format and size.                                                                                                  |
+| A scheduled job did not run           | Check that the job is enabled, its workspace exists, and the computer and scheduler were running. Review the job history.                                             |
+| Shutdown after work does not occur    | Resolve or remove failed queued messages and finish pending media reviews. If the power button turns off with an error, fix the reported problem and enable it again. |
+| Local media generation is unavailable | Check model and runtime details in **Media Studio** and follow any readiness guidance.                                                                                |
 
 Use `machdoch --help` or `machdoch config` for terminal diagnostics. For updates, see [all releases](https://github.com/pureportal/machdoch/releases). To report a problem, open a [GitHub issue](https://github.com/pureportal/machdoch/issues) with the app version, operating system, steps to reproduce, and the error message. Remove keys and private data first.
 

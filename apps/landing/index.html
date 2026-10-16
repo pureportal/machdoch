@@ -124,7 +124,7 @@
             </p>
             <div class="hero-actions">
               <a class="button button-primary" href="#download">
-                View downloads
+                Install Machdoch
                 <svg aria-hidden="true" viewBox="0 0 20 20">
                   <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
                 </svg>
@@ -335,75 +335,172 @@
           <div class="download-heading">
             <p class="section-index"><span>06</span> Get Machdoch</p>
             <div>
-              <h2 id="download-title">Download for your system</h2>
+              <h2 id="download-title">Install Machdoch</h2>
               <p>
-                After installing, connect a model provider with an API key or
-                use an installed, signed-in Codex, Claude, or Copilot CLI.
+                Copy the command for your system to download and install the
+                latest version.
               </p>
             </div>
           </div>
-          <div class="download-grid">
-            <a
-              class="download-card"
-              href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64-setup.exe"
+          <div class="install-commands">
+            <article
+              class="install-command"
+              aria-labelledby="install-windows-title"
             >
-              <span>
-                <strong>Windows installer</strong>
-                <small>x64 &middot; EXE</small>
-              </span>
-              <svg aria-hidden="true" viewBox="0 0 20 20">
-                <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
-              </svg>
-            </a>
-            <a
-              class="download-card"
-              href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.deb"
+              <div class="install-command-heading">
+                <h3 id="install-windows-title">Windows (x64)</h3>
+                <button
+                  type="button"
+                  class="copy-command"
+                  data-copy-command="install-windows"
+                  aria-controls="install-windows"
+                >
+                  Copy command
+                </button>
+              </div>
+              <p>
+                Open Start, type <strong>PowerShell</strong>, and open
+                <strong>Windows PowerShell</strong>. Paste the command, press
+                Enter, and follow the installer.
+              </p>
+              <pre
+                tabindex="0"
+                aria-label="Windows installation command"
+              ><code id="install-windows">&amp; {
+  $machdochInstaller = Join-Path $env:TEMP ("machdoch-" + [guid]::NewGuid() + "-setup.exe")
+  Invoke-WebRequest "https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64-setup.exe" -UseBasicParsing -OutFile $machdochInstaller -ErrorAction Stop
+  Start-Process -FilePath $machdochInstaller -Wait
+}</code></pre>
+              <p class="copy-status" role="status"></p>
+            </article>
+            <article
+              class="install-command"
+              aria-labelledby="install-debian-title"
             >
-              <span>
-                <strong>Debian / Ubuntu</strong>
-                <small>amd64 &middot; DEB</small>
-              </span>
-              <svg aria-hidden="true" viewBox="0 0 20 20">
-                <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
-              </svg>
-            </a>
-            <a
-              class="download-card"
-              href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-arm64.deb"
+              <div class="install-command-heading">
+                <h3 id="install-debian-title">
+                  Ubuntu / Debian (x64 and ARM64)
+                </h3>
+                <button
+                  type="button"
+                  class="copy-command"
+                  data-copy-command="install-debian"
+                  aria-controls="install-debian"
+                >
+                  Copy command
+                </button>
+              </div>
+              <p>
+                Open <strong>Terminal</strong> from your applications menu,
+                paste the command, and press Enter. Enter your computer password
+                if asked; no characters appear as you type.
+              </p>
+              <pre
+                tabindex="0"
+                aria-label="Ubuntu or Debian installation command"
+              ><code id="install-debian">sudo apt update &amp;&amp; sudo apt install -y curl &amp;&amp;
+curl -fL "https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-$(dpkg --print-architecture).deb" -o machdoch-linux.deb &amp;&amp;
+sudo apt install -y ./machdoch-linux.deb</code></pre>
+              <p class="copy-status" role="status"></p>
+            </article>
+            <article
+              class="install-command"
+              aria-labelledby="install-fedora-title"
             >
-              <span>
-                <strong>Raspberry Pi / ARM64</strong>
-                <small>64-bit &middot; DEB</small>
-              </span>
-              <svg aria-hidden="true" viewBox="0 0 20 20">
-                <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
-              </svg>
-            </a>
-            <a
-              class="download-card"
-              href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-x86_64.rpm"
-            >
-              <span>
-                <strong>Fedora / RHEL</strong>
-                <small>x86_64 &middot; RPM</small>
-              </span>
-              <svg aria-hidden="true" viewBox="0 0 20 20">
-                <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
-              </svg>
-            </a>
-            <a
-              class="download-card"
-              href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.AppImage"
-            >
-              <span>
-                <strong>Linux AppImage</strong>
-                <small>amd64 &middot; Portable</small>
-              </span>
-              <svg aria-hidden="true" viewBox="0 0 20 20">
-                <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
-              </svg>
-            </a>
+              <div class="install-command-heading">
+                <h3 id="install-fedora-title">Fedora / RHEL (x64)</h3>
+                <button
+                  type="button"
+                  class="copy-command"
+                  data-copy-command="install-fedora"
+                  aria-controls="install-fedora"
+                >
+                  Copy command
+                </button>
+              </div>
+              <p>
+                Open <strong>Terminal</strong> from your applications menu,
+                paste the command, and press Enter. Enter your computer password
+                if asked; no characters appear as you type.
+              </p>
+              <pre
+                tabindex="0"
+                aria-label="Fedora or RHEL installation command"
+              ><code id="install-fedora">sudo dnf install -y curl &amp;&amp;
+curl -fL "https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-x86_64.rpm" -o machdoch-linux.rpm &amp;&amp;
+sudo dnf install -y ./machdoch-linux.rpm</code></pre>
+              <p class="copy-status" role="status"></p>
+            </article>
           </div>
+          <p class="install-finish">
+            When installation finishes, open <strong>Machdoch</strong> from your
+            Start or applications menu.
+          </p>
+          <details class="installer-downloads">
+            <summary>Download installers</summary>
+            <div class="download-grid">
+              <a
+                class="download-card"
+                href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-windows-x64-setup.exe"
+              >
+                <span>
+                  <strong>Windows installer</strong>
+                  <small>x64 &middot; EXE</small>
+                </span>
+                <svg aria-hidden="true" viewBox="0 0 20 20">
+                  <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
+                </svg>
+              </a>
+              <a
+                class="download-card"
+                href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.deb"
+              >
+                <span>
+                  <strong>Debian / Ubuntu</strong>
+                  <small>amd64 &middot; DEB</small>
+                </span>
+                <svg aria-hidden="true" viewBox="0 0 20 20">
+                  <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
+                </svg>
+              </a>
+              <a
+                class="download-card"
+                href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-arm64.deb"
+              >
+                <span>
+                  <strong>Raspberry Pi / ARM64</strong>
+                  <small>64-bit &middot; DEB</small>
+                </span>
+                <svg aria-hidden="true" viewBox="0 0 20 20">
+                  <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
+                </svg>
+              </a>
+              <a
+                class="download-card"
+                href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-x86_64.rpm"
+              >
+                <span>
+                  <strong>Fedora / RHEL</strong>
+                  <small>x86_64 &middot; RPM</small>
+                </span>
+                <svg aria-hidden="true" viewBox="0 0 20 20">
+                  <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
+                </svg>
+              </a>
+              <a
+                class="download-card"
+                href="https://github.com/pureportal/machdoch/releases/latest/download/machdoch-linux-amd64.AppImage"
+              >
+                <span>
+                  <strong>Linux AppImage</strong>
+                  <small>amd64 &middot; Portable</small>
+                </span>
+                <svg aria-hidden="true" viewBox="0 0 20 20">
+                  <path d="M4 10h11M10.5 5.5 15 10l-4.5 4.5" />
+                </svg>
+              </a>
+            </div>
+          </details>
           <aside class="warning">
             <strong>Machdoch is under active development.</strong>
             <span>
