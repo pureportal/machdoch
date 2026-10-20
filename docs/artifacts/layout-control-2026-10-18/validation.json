@@ -1,0 +1,40 @@
+{
+  "researchDate": "2026-10-18",
+  "status": "passed",
+  "method": "Node.js assertions over the research artifacts and current catalog source",
+  "referenceSha256": "822fee8e56c8bb656b286cab9ed015266c2e48e75d4268ca0d6d44d5918c5893",
+  "canonicalElements": 4,
+  "nativeInputRepresentationsChecked": 4,
+  "currentImageProfilesCovered": 31,
+  "totalMatrixRows": 46,
+  "localDocumentTargetsCheckedBeforeThisSummaryWasAdded": 28,
+  "checks": [
+    "All example JSON parses",
+    "Canvas dimensions are positive multiples of 16",
+    "Element IDs are unique and relation IDs resolve",
+    "Canonical boxes are finite, positive-area and within the canvas",
+    "MOSS centered-pixel yxyx conversion matches canonical coordinates",
+    "Ideogram and FLUX API integer-normalized yxyx conversions match",
+    "FLUX local floating-point normalized yxyx conversion matches",
+    "Integer-normalized round trips stay within half a normalized unit",
+    "Native example element counts and FLUX IDs match the canonical scene",
+    "Ideogram top-level, style and element field orders match the published schema",
+    "Example prompt strings fit the current 8000-character worker limit",
+    "Every current image profile has exactly one named-profile matrix row",
+    "Source-declared capabilities match the model matrix",
+    "No matrix row claims a validated inference run",
+    "Reference image SHA-256 matches the original attachment",
+    "Workspace document link targets exist"
+  ],
+  "notVerified": [
+    "Native model inference or placement accuracy",
+    "Official Python CaptionVerifier execution",
+    "Virtual guidance, sequential editing or compositing output quality",
+    "Actual VRAM, RAM, generation latency or provider cost",
+    "Model availability and readiness on the installed desktop application"
+  ],
+  "productionCodeChanged": false,
+  "modelWeightsAcquired": false,
+  "generationRequestsSubmitted": false,
+  "applicationServicesStarted": false
+}

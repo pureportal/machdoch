@@ -1,0 +1,50 @@
+{
+  "summary": {
+    "canvas": "single",
+    "caption": "A blue robot on the left, a small orange cube in the center, and a green potted plant on the right, all on a white table. Soft studio lighting and a plain pale background."
+  },
+  "items": [
+    {
+      "label": "object",
+      "caption": "A white table extending beneath the three objects.",
+      "bbox": [
+        136,
+        -400,
+        352,
+        448
+      ]
+    },
+    {
+      "label": "object",
+      "caption": "A blue toy robot standing on the left side of the table.",
+      "bbox": [
+        -224,
+        -352,
+        176,
+        -112
+      ]
+    },
+    {
+      "label": "object",
+      "caption": "A small orange cube resting in the center of the table.",
+      "bbox": [
+        88,
+        -32,
+        240,
+        128
+      ]
+    },
+    {
+      "label": "object",
+      "caption": "A green leafy plant in a small white pot on the right side of the table.",
+      "bbox": [
+        -192,
+        224,
+        176,
+        416
+      ]
+    }
+  ],
+  "bbox_coord_space": "abs_centralized",
+  "bbox_format": "yxyx"
+}

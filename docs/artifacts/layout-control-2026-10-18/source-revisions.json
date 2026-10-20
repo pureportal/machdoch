@@ -1,0 +1,52 @@
+{
+  "researchDate": "2026-10-18",
+  "workspaceCommit": "8c631d0f8a1f95bf5d3fe684c446875f4654e25d",
+  "pinnedDiffusers": {
+    "revision": "4295ee3ec58efa6577bc459e9b84ca3f63aa9a96",
+    "commitDate": "2026-09-24T16:11:42Z",
+    "flux3ModularModuleProbe": "HTTP 404 at src/diffusers/modular_pipelines/flux3/__init__.py"
+  },
+  "observedUpstream": [
+    {
+      "repository": "OpenMOSS/MOSS-Image",
+      "revision": "c1355e6b1986dfe8fba3c0455783a05899212342",
+      "commitDate": "2026-10-16T19:33:19Z"
+    },
+    {
+      "repository": "black-forest-labs/flux-3-image-klein",
+      "revision": "bfc8889a4497f846416f253a3972a1941ac698b9",
+      "commitDate": "2026-10-17T11:05:33Z"
+    },
+    {
+      "repository": "ideogram-oss/ideogram4",
+      "revision": "990fe1c4e950bb9e9dc90e01c0ad98ba434f83c2",
+      "commitDate": "2026-06-30T18:01:52Z"
+    },
+    {
+      "repository": "huggingface/diffusers",
+      "revision": "b800f828f3951c4d206e154411bcbfa693cd322e",
+      "commitDate": "2026-10-16T23:34:11Z"
+    },
+    {
+      "repository": "OpenMOSS-Team/MOSS-Image-Base",
+      "host": "huggingface.co",
+      "revision": "1ceede80badddd6a7812069619edaa5633587192"
+    },
+    {
+      "repository": "OpenMOSS-Team/MOSS-Image-SFT",
+      "host": "huggingface.co",
+      "revision": "fc5de0d56fc910cbca6f6625a70f5f582b26deb1"
+    },
+    {
+      "repository": "black-forest-labs/flux-3-image-klein",
+      "host": "huggingface.co",
+      "revision": "337337621b8526e120f2275d250242f4a6bedd75"
+    }
+  ],
+  "limitations": [
+    "No model weights downloaded",
+    "No image generation or API submission",
+    "No installed application verification",
+    "Native provider output quality and virtual strategies are not benchmarked"
+  ]
+}

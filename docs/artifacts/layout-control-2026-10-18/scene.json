@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "canvas": {
+    "width": 1024,
+    "height": 768
+  },
+  "caption": "A blue robot on the left, a small orange cube in the center, and a green potted plant on the right, all on a white table. Soft studio lighting and a plain pale background.",
+  "elements": [
+    {
+      "id": "table_1",
+      "kind": "object",
+      "description": "A white table extending beneath the three objects.",
+      "box": [
+        112,
+        520,
+        960,
+        736
+      ],
+      "zIndex": 0
+    },
+    {
+      "id": "robot_1",
+      "kind": "object",
+      "description": "A blue toy robot standing on the left side of the table.",
+      "box": [
+        160,
+        160,
+        400,
+        560
+      ],
+      "zIndex": 1
+    },
+    {
+      "id": "cube_1",
+      "kind": "object",
+      "description": "A small orange cube resting in the center of the table.",
+      "box": [
+        480,
+        472,
+        640,
+        624
+      ],
+      "zIndex": 2
+    },
+    {
+      "id": "plant_1",
+      "kind": "object",
+      "description": "A green leafy plant in a small white pot on the right side of the table.",
+      "box": [
+        736,
+        192,
+        928,
+        560
+      ],
+      "zIndex": 1
+    }
+  ],
+  "relations": [
+    {
+      "kind": "left-of",
+      "subjectId": "robot_1",
+      "objectId": "cube_1"
+    },
+    {
+      "kind": "left-of",
+      "subjectId": "cube_1",
+      "objectId": "plant_1"
+    },
+    {
+      "kind": "on",
+      "subjectId": "robot_1",
+      "objectId": "table_1"
+    },
+    {
+      "kind": "on",
+      "subjectId": "cube_1",
+      "objectId": "table_1"
+    },
+    {
+      "kind": "on",
+      "subjectId": "plant_1",
+      "objectId": "table_1"
+    }
+  ]
+}
