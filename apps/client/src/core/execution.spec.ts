@@ -1333,10 +1333,15 @@ describe("executeTask", () => {
     });
   });
 
-  it("emits final response markdown on terminal progress", async () => {
+  it("emits full final response markdown on terminal progress", async () => {
     const workspaceRoot = await createWorkspace();
-    const finalMarkdown =
-      "Implementation completed.\n\n- Changed the target file.\n- Ran focused verification.";
+    const finalMarkdown = [
+      "Implementation completed.",
+      "x".repeat(3_999),
+      "🦊",
+      "- Changed the target file.\n".repeat(800),
+      "Ran focused verification.",
+    ].join("\n");
     const terminalProgress: TaskExecutionProgress[] = [];
     const finalResponseAdapter: AgentModelAdapter = {
       startTurn: async () => ({
@@ -1379,9 +1384,9 @@ describe("executeTask", () => {
     );
   });
 
-  it("emits unstructured assistant answers on terminal progress", async () => {
+  it("emits full unstructured assistant answers on terminal progress", async () => {
     const workspaceRoot = await createWorkspace();
-    const assistantAnswer = "Fetched and summarized the current weather.";
+    const assistantAnswer = `${"x".repeat(3_999)}🦊${"y".repeat(4_000)}\nFetched and summarized the current weather.`;
     const terminalProgress: TaskExecutionProgress[] = [];
     const unstructuredAdapter: AgentModelAdapter = {
       startTurn: async () => ({

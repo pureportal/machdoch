@@ -9,7 +9,6 @@ import type {
 } from "../types.js";
 import type { RuntimeConfig, ToolName } from "../runtime-contract.generated.js";
 import { isTerminalTaskExecutionState } from "./execution-progress.js";
-import { limitText } from "./runtime-text.js";
 import { isTaskExecutionTimeoutReason } from "./task-execution-timeouts.js";
 
 export interface TaskExecutionRuntime {
@@ -19,8 +18,6 @@ export interface TaskExecutionRuntime {
   pendingResult: TaskExecutionResult | undefined;
   executedTools: ToolName[];
 }
-
-const PROGRESS_ASSISTANT_TEXT_LIMIT = 4_000;
 
 const stripPreviewLineNumber = (line: string): string => {
   return line.replace(/^\d+:\s?/, "");
@@ -118,14 +115,7 @@ const createProgressSnapshot = (
       runtime.contextSections,
     cancellable: !isTerminalTaskExecutionState(state),
     ...(result?.reason ? { reason: result.reason } : {}),
-    ...(assistantText
-      ? {
-          assistantText: limitText(
-            assistantText,
-            PROGRESS_ASSISTANT_TEXT_LIMIT,
-          ),
-        }
-      : {}),
+    ...(assistantText ? { assistantText } : {}),
   };
 };
 
