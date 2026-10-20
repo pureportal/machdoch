@@ -53,6 +53,7 @@ export function createInstanceRuntime(
   };
   const runtime: ProductRuntime = {
     mediaHref: `/media-studio/index.html?instance=${encodeURIComponent(instanceId)}`,
+    speechHref: `/instances/${encodeURIComponent(instanceId)}/speech`,
     ralphHref: `/media-studio/ralph.html?instance=${encodeURIComponent(instanceId)}`,
     schedulerHref: `/media-studio/scheduler.html?instance=${encodeURIComponent(instanceId)}`,
     instructionsHref: `/media-studio/instructions.html?instance=${encodeURIComponent(instanceId)}`,

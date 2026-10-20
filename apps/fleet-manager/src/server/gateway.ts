@@ -43,6 +43,7 @@ const gatewayPingIntervalMilliseconds = 15_000;
 const gatewayCloseTimeoutMilliseconds = 5_000;
 const maximumGatewayBufferedBytes = 2 * maximumGatewayMessageBytes;
 const responseTypes = {
+  speech: "speech",
   deviceSettings: "deviceSettings",
   getProductSnapshot: "productSnapshot",
   getWorkspaceRuns: "workspaceRuns",

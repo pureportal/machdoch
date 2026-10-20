@@ -173,6 +173,14 @@ export interface AppearanceSettingsControls {
 }
 
 export interface VoiceSettingsControls {
+  answerMode?:"completed"|"streaming";
+  streamingSupported?:boolean;
+  onAnswerModeChange?:(mode:"completed"|"streaming")=>void;
+  conversationAutoSpeak?: "default" | "manual" | "auto";
+  onConversationAutoSpeakChange?: (value: "default" | "manual" | "auto") => void;
+  conversationProfileId?: string;
+  conversationProfiles?: Array<{id:string;name:string}>;
+  onConversationProfileChange?: (value: string | undefined) => void;
   supported: boolean;
   systemVoicesSupported: boolean;
   autoSpeakResponses: boolean;

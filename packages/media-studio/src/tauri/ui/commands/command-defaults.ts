@@ -7,6 +7,7 @@ export const DEFAULT_COMMAND_SHORTCUTS = {
   "app.view.chat": "Mod+1",
   "app.view.ralph": "Mod+2",
   "app.view.media": "Mod+3",
+  "app.view.tts": "Mod+4",
   "app.view.instructions": "Mod+5",
   "app.view.workspaces": "Mod+6",
   "chat.composer.focus": "Mod+Shift+M",

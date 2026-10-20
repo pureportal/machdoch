@@ -149,6 +149,7 @@ async fn connect_once(
         protocol_version: GATEWAY_PROTOCOL_VERSION,
         product_version: app_handle.package_info().version.to_string(),
         capabilities: vec![
+            "speech.v1".to_string(),
             PRODUCT_CAPABILITY.to_string(),
             "ralph-editor.v1".to_string(),
             "scheduler-editor.v1".to_string(),

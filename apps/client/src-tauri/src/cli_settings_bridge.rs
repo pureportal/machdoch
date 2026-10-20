@@ -80,7 +80,7 @@ pub(crate) fn initialize(app: &AppHandle) -> Result<(), String> {
                         }
                         let end = bytes.iter().position(|byte| *byte == b'\n');
                         let count = end.map_or(bytes.len(), |end| end + 1);
-                        if line.len() + count > 65_536 {
+                        if line.len() + count > 4_300_000 {
                             return Err("Settings request is too large".to_string());
                         }
                         line.extend_from_slice(&bytes[..count]);
@@ -93,6 +93,9 @@ pub(crate) fn initialize(app: &AppHandle) -> Result<(), String> {
                         .map_err(|_| "Invalid settings request".to_string())?;
                     if request.token != *token {
                         return Err("Settings authentication failed".to_string());
+                    }
+                    if !matches!(request.action.as_str(), "speech" | "speech-remote") && line.len() > 65_536 {
+                        return Err("Settings request is too large".to_string());
                     }
                     Ok(request)
                 })
@@ -129,6 +132,12 @@ fn snapshot(app: &AppHandle) -> Result<Value, String> {
 }
 
 async fn execute(app: AppHandle, request: SettingsRequest) -> Result<Value, String> {
+    if request.action == "speech-remote" {
+        return crate::speech_remote::invoke(&app, "speech_execute", &request.value.ok_or("Supply a remote speech request.")?).await.map_err(|error| error.as_str().unwrap_or("Remote speech failed.").to_string());
+    }
+    if request.action == "speech" {
+        return crate::speech::execute_internal(&app, &request.setting, request.value.ok_or("Supply a speech operation input.")?).await;
+    }
     if request.action == "transfer" {
         return transfer(app, request.setting, request.value.unwrap_or(json!({}))).await;
     }

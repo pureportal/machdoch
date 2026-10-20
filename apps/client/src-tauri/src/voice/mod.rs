@@ -1,25 +1,16 @@
 use common::{
-    build_http_client, decode_audio_base64, normalize_mime_type, normalize_text,
+    build_http_client, decode_audio_base64, normalize_mime_type,
     validate_audio_base64_encoded_size,
 };
 use serde::Serialize;
 
 mod common;
 mod google;
-mod google_response;
 mod local_audio;
 mod local_speech;
 mod openai;
 mod requests;
 mod whisper;
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SynthesizedVoiceAudio {
-    provider: String,
-    mime_type: String,
-    audio_base64: String,
-}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -76,34 +67,6 @@ impl SpeechTranscriptionProvider {
             | Self::WhistleTiny
             | Self::Phonon2 => whisper::WHISPER_MAX_AUDIO_BYTES,
         }
-    }
-}
-
-#[tauri::command]
-pub async fn synthesize_user_voice_audio(
-    provider: String,
-    text: String,
-    language_code: Option<String>,
-    rate: Option<f64>,
-) -> Result<SynthesizedVoiceAudio, String> {
-    let normalized_provider = provider.trim().to_lowercase();
-    let normalized_text = normalize_text(&text)?;
-    let env = crate::runtime_snapshot::load_global_env()?;
-    let client = build_http_client()?;
-
-    match normalized_provider.as_str() {
-        "openai" => openai::synthesize_openai(&client, &env, &normalized_text, rate).await,
-        "google" => {
-            google::synthesize_google(
-                &client,
-                &env,
-                &normalized_text,
-                language_code.as_deref(),
-                rate,
-            )
-            .await
-        }
-        _ => Err("Expected provider to be one of openai or google.".to_string()),
     }
 }
 

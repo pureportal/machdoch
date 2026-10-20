@@ -11,6 +11,17 @@ const bumpKinds = new Set(["patch", "minor", "major"]);
 const usage = `Usage:\n  pnpm version:bump -- <patch|minor|major|x.y.z> [--dry-run]\n\nExamples:\n  pnpm version:bump -- patch\n  pnpm version:bump -- minor --dry-run\n  pnpm version:bump -- 2.3.0\n`;
 
 const targetFiles = [
+  ...["packages/speech/package.json", "packages/text-to-speech/package.json"].map(
+    (path) => ({
+      path,
+      update: (content, currentVersion, nextVersion) => {
+        const packageJson = JSON.parse(content);
+        assertVersion(packageJson.version, currentVersion, path);
+        packageJson.version = nextVersion;
+        return `${JSON.stringify(packageJson, null, 2)}\n`;
+      },
+    }),
+  ),
   {
     path: "apps/fleet-android/package.json",
     update: (content, currentVersion, nextVersion) => {

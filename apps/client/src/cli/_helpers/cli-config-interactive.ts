@@ -1,4 +1,4 @@
-import { requestDesktopSettings } from "./cli-desktop-settings-bridge.js";
+import { requestDesktopSettings } from "../../core/desktop-bridge.js";
 import process from "node:process";
 import { VALID_MODEL_PROVIDERS } from "../../core/runtime-contract.generated.js";
 import {

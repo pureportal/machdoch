@@ -217,6 +217,9 @@ pub(super) fn get_audio_provider_availability(
     USER_AUDIO_AI_PROVIDERS
         .iter()
         .filter_map(|provider| {
+            if *provider == "fish" {
+                return Some(AudioProviderAvailability { provider: "fish".to_string(), configured: crate::speech::fish_configured() });
+            }
             let env_key = PROVIDER_ENV_KEYS
                 .iter()
                 .find_map(|(entry_provider, env_key)| {

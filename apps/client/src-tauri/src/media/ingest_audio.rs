@@ -4,6 +4,7 @@ pub(super) fn import_audio(
     paths: &MediaRuntimePaths,
     staged: &StagedAsset,
     source_path: &Path,
+    speech_provenance: Option<serde_json::Value>,
 ) -> MediaResult<MediaAssetImportResult> {
     let mut reader = hound::WavReader::open(&staged.path)
         .map_err(|error| format!("Could not decode WAV audio: {error}"))?;
@@ -44,7 +45,7 @@ pub(super) fn import_audio(
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("audio.wav");
-    let operation = serde_json::json!({
+    let mut operation = serde_json::json!({
         "kind": "local-import",
         "mediaType": "audio",
         "sourceFileName": source_file_name,
@@ -54,7 +55,9 @@ pub(super) fn import_audio(
         "sampleFormat": match specification.sample_format { hound::SampleFormat::Float => "float", hound::SampleFormat::Int => "pcm" },
         "sampleFrames": frames,
         "durationSeconds": f64::from(frames) / f64::from(specification.sample_rate),
-    }).to_string();
+    });
+    if let Some(provenance) = speech_provenance { operation["speech"] = provenance; }
+    let operation = operation.to_string();
     let relative_path = promote_to_cas(paths, staged)?;
     database::record_imported_asset(
         paths,

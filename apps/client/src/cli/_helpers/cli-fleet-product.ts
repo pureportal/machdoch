@@ -15,6 +15,8 @@ import { FleetRalphEditor } from "./cli-fleet-ralph-editor.js";
 import { FleetSchedulerRuntime } from "./cli-fleet-scheduler.js";
 import { FleetInstructionRuntime } from "./cli-fleet-instructions.js";
 import { FleetMediaWorker } from "./cli-fleet-media.js";
+import { requestDesktopSettings } from "../../core/desktop-bridge.js";
+import { FleetOperationStore } from "../../core/fleet-operations.js";
 import {
   isMediaPoseMap,
   renderMediaPoseSvg,
@@ -351,6 +353,7 @@ export class FleetCliProductRuntime {
     () => this.state.workspaceRoot,
   );
   private readonly media = new FleetMediaWorker();
+  private readonly speech = new FleetOperationStore();
   private readonly ralph = new FleetRalphRuntime();
   private readonly ralphEditor = new FleetRalphEditor((workspace) =>
     this.assertWorkspace(workspace),
@@ -434,6 +437,13 @@ export class FleetCliProductRuntime {
       };
     try {
       switch (request.type) {
+        case "speech":
+          return {
+            type: "speech",
+            response: await this.speech.handle(request.request, () => request.request.kind === "invoke"
+              ? requestDesktopSettings("speech-remote", "", request.request.args)
+              : Promise.reject(new Error("Choose a speech invocation.")), true),
+          };
         case "deviceSettings":
           return {
             type: "error",

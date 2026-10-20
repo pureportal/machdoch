@@ -237,6 +237,9 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
     group: "App",
     description: "Theme, density, and accent.",
     keywords: [
+      "changed files",
+      "file changes",
+      "prompt",
       "accent",
       "compact",
       "comfortable",

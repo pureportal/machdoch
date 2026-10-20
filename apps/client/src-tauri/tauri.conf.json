@@ -6,11 +6,11 @@
   "build": {
     "beforeDevCommand": {
       "cwd": "..",
-      "script": "node scripts/prepare-whisper-model.mjs && node scripts/prepare-local-speech.mjs && pnpm run build:cli-bundle && pnpm run dev:ui"
+      "script": "node scripts/prepare-whisper-model.mjs && node scripts/prepare-local-speech.mjs && node scripts/prepare-drama3.mjs && pnpm run build:cli-bundle && pnpm run dev:ui"
     },
     "beforeBuildCommand": {
       "cwd": "..",
-      "script": "node scripts/prepare-whisper-model.mjs && node scripts/prepare-local-speech.mjs && pnpm run build:cli-bundle && pnpm run build:ui && node ../../scripts/licensing/generate.mjs desktop"
+      "script": "node scripts/prepare-whisper-model.mjs && node scripts/prepare-local-speech.mjs && node scripts/prepare-drama3.mjs && pnpm run build:cli-bundle && pnpm run build:ui && node ../../scripts/licensing/generate.mjs desktop"
     },
     "devUrl": "http://127.0.0.1:4173",
     "frontendDist": "../dist/ui-preview"
@@ -59,6 +59,7 @@
       "resources/whisper/ggml-base-q5_1.bin": "whisper/ggml-base-q5_1.bin",
       "resources/whisper/ggml-tiny-q5_1.bin": "whisper/ggml-tiny-q5_1.bin",
       "resources/speech/bin": "speech/bin",
+      "resources/speech/drama3": "speech/drama3",
       "resources/speech/whistle.cact": "speech/whistle.cact",
       "resources/speech/phonon2/model": "speech/phonon2/model",
       "resources/speech/runtime": "speech/runtime",

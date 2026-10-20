@@ -24,6 +24,7 @@ import { assertReasoningExecutionModeSupportedForProviderModel } from "../../rea
 import { assertReasoningModeSupportedForProviderModel } from "../../reasoning-modes.js";
 import { hasImageInputs } from "./image-inputs.js";
 import { withProviderRequest } from "./request.js";
+import {OpenAIFinalAnswerStream} from "./openai-answer-stream.js";
 import { decodeOpenAIToolArguments } from "./tool-arguments.js";
 import { normalizeOpenAIStrictInputSchema } from "./schema-normalization.js";
 import {
@@ -477,6 +478,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
       ? await this.createMultiAgentResponseStream(request, requestSignal)
       : this.createStandardResponseStream(request, requestSignal);
     const toolNamesByItemId = new Map<string, string>();
+    const finalAnswers=new OpenAIFinalAnswerStream();
     const abortStream = (): void => stream.abort();
     let didEmitFinalUsage = false;
 
@@ -496,6 +498,7 @@ export class OpenAIResponsesAdapter implements AgentModelAdapter {
     try {
       stream.on("event", (event) => {
         const rawEvent = event as unknown as Record<string, unknown>;
+        if(isRootOpenAIStreamEvent(event))for(const snapshot of finalAnswers.consume(rawEvent))emitProviderStreamEvent(onStreamEvent,{type:"final-answer",provider:"openai",snapshot});
 
         switch (event.type) {
           case "response.created":

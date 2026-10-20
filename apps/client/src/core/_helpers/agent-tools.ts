@@ -33,6 +33,7 @@ import { createWorkspaceAgentPresenceToolDefinition } from "./workspace-agent-pr
 import { validateToolArguments } from "./tool-argument-validation.js";
 import { createWorkflowToolDefinitions } from "./workflow-tool-definitions.js";
 import { createPoseSceneToolDefinitions } from "./pose-scene-tool-definitions.js";
+import { createSpeechToolDefinitions } from "./speech-tool-definitions.js";
 
 const READ_ONLY_EFFECTS: ReadonlySet<ToolCallEffect> = new Set([
   "read",
@@ -109,6 +110,7 @@ export const createToolDefinitions = (
     ...createMemoryToolDefinitions(memory),
     ...createSchedulerToolDefinitions(),
     ...createWorkflowToolDefinitions(config),
+    ...createSpeechToolDefinitions(),
     ...createDesktopUiToolDefinitions(uiControl),
   ];
 

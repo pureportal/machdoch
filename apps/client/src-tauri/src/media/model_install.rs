@@ -12,7 +12,7 @@ use rusqlite::{params, OptionalExtension as _};
 use sha2::{Digest as _, Sha256};
 
 use super::{
-    catalog, database, error::MediaError, hardware, model_import, MediaModelInstallJob,
+    catalog, database, error::MediaError, model_import, MediaModelInstallJob,
     MediaModelInstallManifestFile, MediaModelInstallPlan, MediaModelLicense, MediaModelRemovalPlan,
     MediaModelRemovalResult, MediaResult, MediaRuntimePaths, RemoveMediaModelRequest,
     StartMediaModelInstallRequest,
@@ -546,7 +546,7 @@ pub(crate) fn plan(
         .map_err(|error| format!("failed to prepare model storage: {error}"))?;
     let total_bytes = total_bytes(manifest);
     let required_working_bytes = total_bytes.saturating_mul(112).div_ceil(100);
-    let available_bytes = hardware::available_storage_bytes(&models_root);
+    let available_bytes = crate::storage_space::available_storage_bytes(&models_root);
     let has_sufficient_space = available_bytes.map(|available| available >= required_working_bytes);
     let manifest_digest = manifest_digest(manifest);
     let mut warnings = vec![

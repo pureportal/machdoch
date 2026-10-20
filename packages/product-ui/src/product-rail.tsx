@@ -1,5 +1,6 @@
 import {
   Aperture,
+  AudioLines,
   FolderKanban,
   FolderGit2,
   CalendarClock,
@@ -17,6 +18,7 @@ import {
 export type ProductView =
   | "chat"
   | "media"
+  | "tts"
   | "scheduler"
   | "instructions"
   | "workspaces"
@@ -29,6 +31,7 @@ export function ProductRail({
   inspectorOpen,
   activeView,
   mediaAvailable,
+  speechAvailable = false,
   schedulerAvailable,
   instructionsAvailable = false,
   workspaceAvailable = false,
@@ -42,6 +45,7 @@ export function ProductRail({
   inspectorOpen: boolean;
   activeView: ProductView;
   mediaAvailable: boolean;
+  speechAvailable?: boolean;
   schedulerAvailable: boolean;
   instructionsAvailable?: boolean;
   workspaceAvailable?: boolean;
@@ -66,6 +70,12 @@ export function ProductRail({
       available: mediaAvailable,
     },
     {
+      id: "tts",
+      label: "Text to Speech",
+      icon: AudioLines,
+      available: speechAvailable,
+    },
+    {
       id: "scheduler",
       label: "Smart Scheduler",
       icon: CalendarClock,
@@ -75,12 +85,14 @@ export function ProductRail({
       id: "instructions",
       label: "Instructions",
       icon: BookOpenText,
+      group: "management",
       available: instructionsAvailable,
     },
     {
       id: "workspaces",
       label: "Workspace Management",
       icon: FolderGit2,
+      group: "management",
       available: workspaceAvailable,
     },
   ] as const;

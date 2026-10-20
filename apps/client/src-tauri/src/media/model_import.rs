@@ -14,7 +14,7 @@ use sha2::{Digest as _, Sha256};
 #[cfg(test)]
 use super::MediaAssetImportDuplicate;
 use super::{
-    catalog, database, hardware, model_addon, ImportMediaLocalModelRequest,
+    catalog, database, model_addon, ImportMediaLocalModelRequest,
     MediaLocalModelImportInspection, MediaLocalModelImportResult, MediaResult, MediaRuntimePaths,
 };
 
@@ -1133,7 +1133,7 @@ pub(crate) fn import_reviewed(
         .saturating_add(component_bytes);
     fs::create_dir_all(&models_root)
         .map_err(|error| format!("failed to prepare model storage: {error}"))?;
-    if hardware::available_storage_bytes(&models_root).map(|available| available < required_bytes)
+    if crate::storage_space::available_storage_bytes(&models_root).map(|available| available < required_bytes)
         == Some(true)
     {
         return Err("the Media Studio model volume does not have enough free space".to_string());

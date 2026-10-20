@@ -53,6 +53,7 @@ export function useFleetDeviceUiSettings(options: Options): void {
               request.args,
             );
           const voice = current.current.voice;
+          if(preferences.answerMode==="streaming"&&!voice.streamingSupported)throw new Error("Choose a Fish Cloud speech profile on this device before streaming replies.");
           if (preferences.autoSpeakResponses && !voice.supported)
             throw new Error(
               "Configure voice playback before enabling automatic speech.",
@@ -67,6 +68,7 @@ export function useFleetDeviceUiSettings(options: Options): void {
             throw new Error("Choose a voice listed on this device.");
           flushSync(() => {
             voice.setAutoSpeakResponses(preferences.autoSpeakResponses);
+            if(preferences.answerMode)voice.setAnswerMode(preferences.answerMode);
             voice.setPreferredVoiceURI(preferences.preferredVoiceURI);
             voice.setRate(preferences.rate);
           });

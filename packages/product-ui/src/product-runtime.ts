@@ -6,6 +6,7 @@ import type {
 
 export interface ProductRuntime {
   mediaHref?: string;
+  speechHref?: string;
   ralphHref?: string;
   schedulerHref?: string;
   instructionsHref?: string;

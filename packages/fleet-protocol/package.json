@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./speech": "./src/speech.ts",
     "./task-file-changes": "./src/task-file-changes.ts",
     "./task-execution-insight": "./src/task-execution-insight.ts",
     "./task-thinking": "./src/task-thinking.ts",

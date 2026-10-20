@@ -74,7 +74,7 @@ import {
   type PromptEnhancementAttempt,
 } from "./chat-session/_helpers/prompt-enhancement-attempt";
 import { retainTaskActionOutput } from "@machdoch/client-ui/conversation/task-action-output";
-import { taskThinkingActionOutputSummarySchema } from "@machdoch/fleet-protocol/task-thinking";
+import { taskThinkingActionOutputSummarySchema,finalAnswerStreamSchema } from "@machdoch/fleet-protocol/task-thinking";
 
 export type ChatSessionMessageSource =
   | { kind: "preview"; preview: TaskRunPreview }
@@ -238,6 +238,8 @@ export const getActivePromptEnhancementEditMessageId = (
 };
 
 export interface ChatSessionRecord {
+  voiceAutoSpeakOverride?: boolean;
+  voiceProfileOverride?: string;
   id: string;
   createdAt: number;
   updatedAt: number;
@@ -279,6 +281,8 @@ export interface ChatSessionRecord {
 
 export interface ShellVoiceSettings {
   autoSpeakResponses: boolean;
+  answerMode?:"completed"|"streaming";
+  speechProfileId?: string;
   preferredVoiceURI?: string;
   rate: number;
 }
@@ -472,6 +476,7 @@ const clampVoiceRate = (value: unknown): number => {
 export const createDefaultShellVoiceSettings = (): ShellVoiceSettings => {
   return {
     autoSpeakResponses: false,
+    answerMode: "completed",
     rate: DEFAULT_VOICE_RATE,
   };
 };
@@ -1323,6 +1328,8 @@ export const createSession = (
     useWorkspaceMemory: overrides.useWorkspaceMemory ?? true,
     useGlobalMemory: overrides.useGlobalMemory ?? true,
     uiControlEnabled: overrides.uiControlEnabled ?? false,
+    ...(typeof overrides.voiceAutoSpeakOverride === "boolean" ? { voiceAutoSpeakOverride: overrides.voiceAutoSpeakOverride } : {}),
+    ...(typeof overrides.voiceProfileOverride === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(overrides.voiceProfileOverride) ? { voiceProfileOverride: overrides.voiceProfileOverride } : {}),
     sessionMemory: isQuickTaskSession ? [] : (overrides.sessionMemory ?? []),
   };
 };
@@ -1853,6 +1860,7 @@ const normalizeThinkingTrace = (
       ? (value.status as TaskThinkingTrace["status"])
       : "complete";
   const modelStream = normalizeThinkingModelStream(value.modelStream);
+  const answerStream=finalAnswerStreamSchema.safeParse(value.finalAnswerStream);
   const actionOutputLines = normalizeThinkingActionOutputLines(
     value.actionOutputLines,
   );
@@ -1896,6 +1904,7 @@ const normalizeThinkingTrace = (
         }
       : {}),
     ...(modelStream ? { modelStream } : {}),
+    ...(answerStream.success?{finalAnswerStream:answerStream.data}:{}),
     ...retainTaskActionOutput(
       { actionOutputLines, actionOutputSummaries, timelineEvents },
       status === "complete"
@@ -2439,6 +2448,8 @@ const normalizeSessionRecord = (
     useWorkspaceMemory: session.useWorkspaceMemory !== false,
     useGlobalMemory: session.useGlobalMemory !== false,
     uiControlEnabled: session.uiControlEnabled === true,
+    ...(typeof session.voiceAutoSpeakOverride === "boolean" ? { voiceAutoSpeakOverride: session.voiceAutoSpeakOverride } : {}),
+    ...(typeof session.voiceProfileOverride === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(session.voiceProfileOverride) ? { voiceProfileOverride: session.voiceProfileOverride } : {}),
     adaptiveControllerOverride:
       typeof session.adaptiveControllerOverride === "boolean"
         ? session.adaptiveControllerOverride
@@ -2776,7 +2787,11 @@ export const normalizeShellState = (
       : undefined;
   const normalizedVoice: ShellVoiceSettings = {
     autoSpeakResponses: voiceCandidate?.autoSpeakResponses === true,
+    answerMode:voiceCandidate?.answerMode==="streaming"?"streaming":"completed",
     rate: clampVoiceRate(voiceCandidate?.rate),
+    ...(typeof voiceCandidate?.speechProfileId === "string" && voiceCandidate.speechProfileId.trim()
+      ? { speechProfileId: voiceCandidate.speechProfileId.trim() }
+      : {}),
     ...(normalizedPreferredVoiceURI
       ? { preferredVoiceURI: normalizedPreferredVoiceURI }
       : {}),

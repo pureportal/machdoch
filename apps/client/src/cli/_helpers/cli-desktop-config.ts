@@ -1,7 +1,7 @@
 import {
   requestDesktopSettings,
   readDesktopSettingsDescriptor,
-} from "./cli-desktop-settings-bridge.js";
+} from "../../core/desktop-bridge.js";
 import {
   CHAT_DEFAULT_SHELL_KEYS,
   loadChatDefaultState,

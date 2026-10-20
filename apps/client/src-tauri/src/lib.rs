@@ -27,6 +27,10 @@ mod sleep_inhibition;
 mod ui_control;
 mod ui_operation;
 mod voice;
+mod speech;
+mod speech_error;
+mod speech_remote;
+mod storage_space;
 mod workspace_git;
 mod workspace_run;
 mod workspace_storage;
@@ -489,7 +493,7 @@ pub fn run() {
             runtime_snapshot::save_workspace_context_window,
             runtime_snapshot::save_workspace_reasoning_execution_mode,
             runtime_snapshot::save_workspace_mcp_config_document,
-            voice::synthesize_user_voice_audio,
+            speech::speech_execute,
             voice::transcribe_user_speech_audio,
             voice::begin_user_speech_transcription,
             voice::cancel_user_speech_transcription,

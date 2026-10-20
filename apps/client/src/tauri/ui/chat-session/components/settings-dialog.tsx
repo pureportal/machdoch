@@ -1271,7 +1271,7 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
                     title:
                       provider === "none"
                         ? "System voices only"
-                        : getProviderLabel(provider),
+                        : provider === "fish" ? "Fish Audio · Drama 3" : getProviderLabel(provider),
                     current: state().props.voiceSetup.aiProvider === provider,
                     numericKey: numericKey(index),
                     availability: configured

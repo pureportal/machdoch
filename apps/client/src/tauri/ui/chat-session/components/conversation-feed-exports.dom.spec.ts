@@ -17,7 +17,7 @@ import { ConversationFeed } from "./conversation-feed";
 const writeText = vi.fn<(text: string) => Promise<void>>();
 const saveAsPack = vi.fn();
 
-const renderFeed = (message: ChatSessionMessage) =>
+const renderFeed = (message: ChatSessionMessage, onOpenInStudio?: (message: ChatSessionMessage) => void) =>
   render(
     createElement(ConversationFeed, {
       visibleMessages: [message],
@@ -30,6 +30,7 @@ const renderFeed = (message: ChatSessionMessage) =>
         supported: false,
         speakingMessageId: null,
         onSpeakMessage: vi.fn(),
+        onOpenInStudio,
         onStopSpeaking: vi.fn(),
       },
     }),
@@ -64,6 +65,17 @@ afterEach(() => {
 });
 
 describe("ConversationFeed message exports", () => {
+  it("opens only completed final answers in Text to Speech without requiring a configured voice", () => {
+    const open = vi.fn();
+    const message: ChatSessionMessage = {id:"answer",role:"agent",content:"Final answer",source:{kind:"execution",execution:{task:"Task",mode:"machdoch",status:"executed",summary:"Summary",executedTools:[],outputSections:[],response:{markdown:"Final answer",highlights:[],relatedFiles:[],verification:[],followUps:[]}}}};
+    renderFeed(message,open);
+    fireEvent.click(screen.getByRole("button",{name:"Open in Text to Speech"}));
+    expect(open).toHaveBeenCalledExactlyOnceWith(message);
+    cleanup();
+    if(message.source?.kind!=="execution")throw new Error("Invalid fixture");
+    renderFeed({...message,source:{kind:"execution",execution:{...message.source.execution,status:"failed"}}},open);
+    expect(screen.queryByRole("button",{name:"Open in Text to Speech"})).toBeNull();
+  });
   it.each(["user", "agent"] as const)(
     "offers all copy formats for %s messages",
     (role) => {

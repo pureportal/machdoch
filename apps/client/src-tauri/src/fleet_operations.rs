@@ -17,6 +17,7 @@ const CHUNK_BYTES: usize = 262_144;
 
 #[derive(Clone, Copy, serde::Serialize)]
 pub(crate) enum OperationDomain {
+    Speech,
     Media,
     Ralph,
     Scheduler,
@@ -212,6 +213,9 @@ fn handle_request(
             tauri::async_runtime::spawn(async move {
                 let worker = tauri::async_runtime::spawn(async move {
                     match domain {
+                        OperationDomain::Speech => {
+                            crate::speech_remote::invoke(&app, &command, &args).await
+                        }
                         OperationDomain::DeviceSettings => {
                             crate::fleet_control::device_settings::invoke(&app, &command, &args)
                                 .await
@@ -302,6 +306,7 @@ fn handle_request(
             "state": "events", "cursor": inner.cursor,
             "events": inner.events.iter().filter(|(cursor, name, _)| *cursor > after && match domain {
                 OperationDomain::Media => name.starts_with("media-"),
+                OperationDomain::Speech => name == "machdoch://speech-job" || name == "machdoch://speech-error",
                 OperationDomain::Ralph | OperationDomain::Scheduler => name == "desktop-task-progress",
                 OperationDomain::DeviceSettings => matches!(name.as_str(), "machdoch://user-settings-changed" | "machdoch://desktop-settings-changed" | "machdoch://settings-imported"),
                 OperationDomain::Workspace | OperationDomain::Instructions => false,

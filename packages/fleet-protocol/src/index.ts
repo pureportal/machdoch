@@ -31,6 +31,8 @@ import {
 export * from "@machdoch/fleet-protocol/device-settings";
 export { createFleetSessionId } from "@machdoch/fleet-protocol/session-routing";
 import { z } from "zod";
+import { speechRequestSchema, speechResponseSchema } from "@machdoch/fleet-protocol/speech";
+export * from "@machdoch/fleet-protocol/speech";
 import { taskTimeoutSchema } from "@machdoch/fleet-protocol/task-thinking";
 import {
   modelProviderSchema,
@@ -1695,6 +1697,7 @@ export const hostRequestSchema = z.discriminatedUnion("type", [
     type: z.literal("instructions"),
     request: instructionRequestSchema,
   }),
+  z.strictObject({ type: z.literal("speech"), request: speechRequestSchema }),
   z.strictObject({ type: z.literal("media"), request: mediaRequestSchema }),
   z.strictObject({ type: z.literal("ralph"), request: ralphRequestSchema }),
   z.strictObject({
@@ -1743,6 +1746,7 @@ export const hostResponseSchema = z.discriminatedUnion("type", [
     type: z.literal("instructions"),
     response: instructionResponseSchema,
   }),
+  z.strictObject({ type: z.literal("speech"), response: speechResponseSchema }),
   z.strictObject({ type: z.literal("media"), response: mediaResponseSchema }),
   z.strictObject({ type: z.literal("ralph"), response: ralphResponseSchema }),
   z.strictObject({

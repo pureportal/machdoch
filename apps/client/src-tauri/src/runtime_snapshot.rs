@@ -33,6 +33,10 @@ pub(crate) use desktop_settings_commands::{
     load_user_desktop_launch_preferences, load_user_desktop_settings,
 };
 pub(crate) use env::load_global_env;
+pub(crate) fn save_shared_speech_key(provider: &str, secret: Option<&str>) -> Result<(), String> {
+    if !matches!(provider, "openai" | "google") { return Err("Choose an existing shared API provider.".to_string()); }
+    match secret { Some(secret) => settings_commands::save_user_api_key(provider,secret), None => settings_commands::delete_user_api_key(provider) }.map(|_| ())
+}
 pub(crate) use env_commands::resolve_agent_cli_binary;
 pub use mcp_config::McpConfigWriteLock;
 use mcp_config::{

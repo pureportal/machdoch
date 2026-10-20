@@ -481,12 +481,6 @@ export interface FilePreviewReadResult {
   lossy: boolean;
 }
 
-export interface SynthesizedVoiceAudio {
-  provider: UserVoiceAiProvider;
-  mimeType: string;
-  audioBase64: string;
-}
-
 export interface TranscribedSpeechText {
   provider: UserSpeechToTextProvider;
   text: string;
@@ -4014,43 +4008,6 @@ export const saveUserSpeechToTextProcessing = async (options: {
     );
     await emitUserSettingsChanged("speech-to-text");
     return result;
-  } catch (error) {
-    throw error instanceof Error ? error : new Error(String(error));
-  }
-};
-
-export const synthesizeUserVoiceAudio = async (options: {
-  provider: UserVoiceAiProvider;
-  text: string;
-  languageCode?: string;
-  rate?: number;
-}): Promise<SynthesizedVoiceAudio> => {
-  const normalizedText = options.text.trim();
-
-  if (!normalizedText) {
-    throw new Error("Expected non-empty text to synthesize.");
-  }
-
-  if (!canInvokeTauriCommands()) {
-    throw new Error(
-      "AI voice synthesis is only available in the desktop runtime.",
-    );
-  }
-
-  try {
-    return await analyticsInvoke<SynthesizedVoiceAudio>(
-      "synthesize_user_voice_audio",
-      {
-        provider: options.provider,
-        text: normalizedText,
-        ...(options.languageCode?.trim()
-          ? { languageCode: options.languageCode.trim() }
-          : {}),
-        ...(typeof options.rate === "number" && Number.isFinite(options.rate)
-          ? { rate: options.rate }
-          : {}),
-      },
-    );
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
   }

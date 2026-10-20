@@ -36,13 +36,20 @@ function useDevice(supported = true): void {
     null,
   );
   const voice: ChatSessionVoiceController = {
+    answerMode:"completed",streamingSupported:true,setAnswerMode:vi.fn(),
     supported,
     systemVoicesSupported: true,
     autoSpeakResponses,
+    conversationAutoSpeak: "default",
+    setConversationAutoSpeak: vi.fn(),
+    conversationProfileId: undefined,
+    conversationProfiles: [],
+    setConversationProfile: vi.fn(),
     preferredVoiceURI,
     rate,
     availabilityDescription: "Voice configured",
     speakingMessageId: null,
+    errorText: null,
     voiceOptions: [
       {
         voiceURI: "device-voice",
@@ -55,6 +62,12 @@ function useDevice(supported = true): void {
     setAutoSpeakResponses,
     setPreferredVoiceURI,
     speakMessage: vi.fn(),
+    speakSelection: vi.fn(),
+    openInStudio: vi.fn(),
+    saveAudio: vi.fn(),
+    canSaveAudio: false,
+    pauseSpeaking: vi.fn(),
+    resumeSpeaking: vi.fn(),
     stopSpeaking: vi.fn(),
   };
   const speechInput: ChatSessionSpeechInputController = {

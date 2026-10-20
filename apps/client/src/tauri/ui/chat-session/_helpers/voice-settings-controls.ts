@@ -14,6 +14,8 @@ export function createDeviceVoicePreferences(
     supported: voice.supported,
     systemVoicesSupported: voice.systemVoicesSupported,
     autoSpeakResponses: voice.autoSpeakResponses,
+    answerMode:voice.answerMode,
+    streamingSupported:voice.streamingSupported,
     availabilityDescription: voice.availabilityDescription,
     speechToTextAvailabilityDescription: speechInput.availabilityDescription,
     preferredVoiceURI: voice.preferredVoiceURI,
@@ -29,9 +31,15 @@ export function createDeviceVoicePreferences(
 type VoiceActions = Pick<
   VoiceSettingsControls,
   | "onAutoSpeakResponsesChange"
+  | "onAnswerModeChange"
   | "onPreferredVoiceChange"
   | "onRateChange"
   | "onRefreshSpeechInputDevices"
+  | "conversationAutoSpeak"
+  | "onConversationAutoSpeakChange"
+  | "conversationProfileId"
+  | "conversationProfiles"
+  | "onConversationProfileChange"
 >;
 
 export function createRuntimeVoiceSettingsControls(

@@ -33,7 +33,7 @@ export function maximumRequestBodyBytes(
   if (/^\/api\/instances\/[^/]+\/product\/workspace$/u.test(pathname))
     return maximumWorkspaceRequestBodyBytes;
   if (
-    /^\/api\/instances\/[^/]+\/product\/(?:media|ralph|scheduler|instructions)$/u.test(
+    /^\/api\/instances\/[^/]+\/product\/(?:speech|media|ralph|scheduler|instructions)$/u.test(
       pathname,
     )
   ) {

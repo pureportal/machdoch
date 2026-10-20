@@ -461,6 +461,7 @@ const createModelStreamProgressEmitter = (
 } => {
   let assistantText = loopState.lastAssistantText ?? "";
   let reasoningText = "";
+  let finalAnswerStream:TaskExecutionProgress["finalAnswerStream"];
   let modelStream:
     | NonNullable<TaskExecutionProgress["modelStream"]>
     | undefined;
@@ -502,6 +503,7 @@ const createModelStreamProgressEmitter = (
       onStateChange,
       undefined,
       {
+        ...(finalAnswerStream?{finalAnswerStream}:{}),
         ...(assistantText
           ? { assistantText: limitStreamContent(assistantText) }
           : {}),
@@ -522,6 +524,12 @@ const createModelStreamProgressEmitter = (
       onStreamActivity?.();
 
       switch (event.type) {
+        case "final-answer":{
+          if(finalAnswerStream?.responseId===event.snapshot.responseId&&finalAnswerStream.answerId===event.snapshot.answerId&&event.snapshot.sequence<=finalAnswerStream.sequence)return;
+          finalAnswerStream=event.snapshot;
+          emit(event.snapshot.status!=="streaming");
+          return;
+        }
         case "text-delta": {
           if (!event.delta) {
             return;
@@ -664,7 +672,7 @@ const createModelStreamProgressEmitter = (
       }
     },
     flush: async (): Promise<void> => {
-      if (!hasPendingEmit && !assistantText && !modelStream) {
+      if (!hasPendingEmit && !assistantText && !modelStream && !finalAnswerStream) {
         return;
       }
 
@@ -686,6 +694,7 @@ const createModelStreamProgressEmitter = (
           onStateChange,
           undefined,
           {
+            ...(finalAnswerStream?{finalAnswerStream}:{}),
             ...(assistantText
               ? { assistantText: limitStreamContent(assistantText) }
               : {}),
