@@ -15,6 +15,8 @@ COPY packages/fleet-protocol/package.json packages/fleet-protocol/package.json
 COPY packages/product-ui/package.json packages/product-ui/package.json
 COPY packages/media-studio/package.json packages/media-studio/package.json
 COPY packages/analytics/package.json packages/analytics/package.json
+COPY packages/speech/package.json packages/speech/package.json
+COPY packages/text-to-speech/package.json packages/text-to-speech/package.json
 
 RUN pnpm install --frozen-lockfile
 
@@ -27,6 +29,8 @@ COPY packages/fleet-protocol packages/fleet-protocol
 COPY packages/product-ui packages/product-ui
 COPY packages/media-studio packages/media-studio
 COPY packages/analytics packages/analytics
+COPY packages/speech packages/speech
+COPY packages/text-to-speech packages/text-to-speech
 COPY LICENSE NOTICE EULA.md THIRD_PARTY_NOTICES.md ./
 COPY legal legal
 COPY docs/licensing docs/licensing
@@ -44,6 +48,8 @@ COPY packages/fleet-protocol/package.json packages/fleet-protocol/package.json
 COPY packages/product-ui/package.json packages/product-ui/package.json
 COPY packages/media-studio/package.json packages/media-studio/package.json
 COPY packages/analytics/package.json packages/analytics/package.json
+COPY packages/speech/package.json packages/speech/package.json
+COPY packages/text-to-speech/package.json packages/text-to-speech/package.json
 
 RUN pnpm install --prod --frozen-lockfile
 
@@ -64,6 +70,8 @@ COPY --from=build --chown=node:node /workspace/packages/fleet-protocol/src packa
 COPY --from=build --chown=node:node /workspace/packages/product-ui/src packages/product-ui/src
 COPY --from=build --chown=node:node /workspace/packages/media-studio/src packages/media-studio/src
 COPY --from=build --chown=node:node /workspace/packages/analytics/src packages/analytics/src
+COPY --from=build --chown=node:node /workspace/packages/speech/src packages/speech/src
+COPY --from=build --chown=node:node /workspace/packages/text-to-speech/src packages/text-to-speech/src
 COPY --from=build /workspace/apps/fleet-manager/dist/legal legal-release
 
 RUN mkdir -p /config/data \
@@ -77,6 +85,8 @@ RUN test -f .next/BUILD_ID \
     && test -L node_modules/@machdoch/fleet-protocol \
     && test -L node_modules/@machdoch/media-studio \
     && test -L node_modules/@machdoch/product-ui \
+    && test -L node_modules/@machdoch/speech \
+    && test -L node_modules/@machdoch/text-to-speech \
     && node --import @oxc-node/core/register --input-type=module --eval "await import('@machdoch/fleet-protocol')"
 
 USER node

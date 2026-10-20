@@ -41,6 +41,10 @@
 !packages/media-studio/**
 !packages/analytics/
 !packages/analytics/**
+!packages/speech/
+!packages/speech/**
+!packages/text-to-speech/
+!packages/text-to-speech/**
 
 apps/fleet-manager/.next/
 apps/fleet-manager/.env*
