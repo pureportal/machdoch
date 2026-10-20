@@ -22,7 +22,7 @@ const staging = await mkdtemp(join(resources, "drama3-extract-"));
 try {
   if (process.platform === "win32") {
     await new Promise((done, reject) => {
-      const command = spawn("tar.exe", ["-xf", archive, "-C", staging], { stdio: "inherit", windowsHide: true });
+      const command = spawn(join(process.env.SystemRoot, "System32", "tar.exe"), ["-xf", archive, "-C", staging], { stdio: "inherit", windowsHide: true });
       command.once("error", reject);
       command.once("exit", code => code === 0 ? done() : reject(new Error(`Drama 3 extraction exited with ${code}.`)));
     });
