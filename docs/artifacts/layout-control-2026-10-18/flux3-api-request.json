@@ -1,0 +1,4 @@
+{
+  "prompt": "A blue toy robot <robot_1> stands on the left of a white table <table_1>. A small orange cube <cube_1> rests in the center, and a green plant in a white pot <plant_1> sits on the right. Soft studio lighting and a plain pale background. [{\"id\":\"table_1\",\"bbox\":[677,109,958,938],\"desc\":\"A white table extending beneath the three objects.\"},{\"id\":\"robot_1\",\"bbox\":[208,156,729,391],\"desc\":\"A blue toy robot standing on the left side of the table.\"},{\"id\":\"cube_1\",\"bbox\":[615,469,813,625],\"desc\":\"A small orange cube resting in the center of the table.\"},{\"id\":\"plant_1\",\"bbox\":[250,719,729,906],\"desc\":\"A green leafy plant in a small white pot on the right side of the table.\"}]",
+  "aspect_ratio": "4:3"
+}

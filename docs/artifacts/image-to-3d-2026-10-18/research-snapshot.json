@@ -1,0 +1,138 @@
+{
+  "researchDate": "2026-10-18",
+  "purpose": "Observed source and public metadata for the 3D Studio application plan; not an installation manifest or evidence of successful inference.",
+  "machdochHead": "8c631d0f8a1f95bf5d3fe684c446875f4654e25d",
+  "engineSource": {
+    "repository": "https://github.com/xibushu/UniForge3D",
+    "revision": "8b6094780e202b8a6b1d239e0997552e18547026",
+    "commitDate": "2026-10-17T09:15:35Z",
+    "licenseStatement": "MIT source; model weights and third-party components retain separate terms.",
+    "projectPage": "https://xishuxishu.github.io/uniforge3d-project/",
+    "paper": "https://arxiv.org/html/2610.15357v1",
+    "inspectedFiles": [
+      "README.md",
+      "setup.sh",
+      "infer.py",
+      "uniforge3d/configs/pipeline.json",
+      "uniforge3d/pipelines/uniforge3d_image_to_3d.py",
+      "uniforge3d/models/loaders.py",
+      "uniforge3d/utils/preprocessing.py",
+      "uniforge3d/utils/mesh.py",
+      "uniforge3d/utils/texture_baking.py"
+    ]
+  },
+  "engineWeights": {
+    "repository": "xibushu/UniForge3D",
+    "revision": "a084333f2aae0213e85b9a4541752d1221d618db",
+    "metadataUrl": "https://huggingface.co/api/models/xibushu/UniForge3D?blobs=true",
+    "licenseMetadata": "cc-by-nc-4.0",
+    "gatedMetadata": false,
+    "files": [
+      { "path": "uniforge3d/shape1024/uniforge3d_stage2_shape1024_denoiser.pt", "bytes": 5468197230, "sha256": "dbe0699d7c197cc17c63c64240af72b88f4d502cedd584a60f9e0bd2fd9e1d04" },
+      { "path": "uniforge3d/shape1024/uniforge3d_stage2_shape1024_vggt_adapter.pt", "bytes": 256108930, "sha256": "591eae22500e4e537c1e0f4d504efc61868847894406f9f41cca54cb38b41dde" },
+      { "path": "uniforge3d/shape512/uniforge3d_stage2_shape512_denoiser.pt", "bytes": 5468197230, "sha256": "121abea6b1fc1ec2e1c47ef0f102089574a6a718e8ca8dbc2426ebee738e0f51" },
+      { "path": "uniforge3d/shape512/uniforge3d_stage2_shape512_vggt_adapter.pt", "bytes": 251868386, "sha256": "dcaffa7cbea19b0670ae0fded3864a65e151ac0d663c338f374492d20d65e55d" },
+      { "path": "uniforge3d/stage1/uniforge3d_stage1_structure_joint_model.pt", "bytes": 1234004742, "sha256": "a4079cc6f0b0748d3afb301717eddf532ed4f5ddb80f37bb9294a290ee89f824" },
+      { "path": "uniforge3d/texture/uniforge3d_stage3_texture1024_denoiser.pt", "bytes": 5468533342, "sha256": "302c5ac4ae5ebae31fee4cd78704953b4fe578594a66e93a5a655fb36b5b786e" },
+      { "path": "uniforge3d/texture/uniforge3d_stage3_texture1024_vggt_adapter.pt", "bytes": 256109038, "sha256": "30b4946d8a6cc22dac68695e078ab198cb6380e337674f414e7e70638e9ebbbb" },
+      { "path": "uniforge3d/vggt/uniforge3d_shape_texture_vggt_conditioner.pt", "bytes": 3898562754, "sha256": "ecc0915beb86ee0b027ac65ca78e2abb29ad6fe140d904e487c9c3f4120f6902" },
+      { "path": "uniforge3d/vggt/uniforge3d_stage1_structure_vggt_backbone.pt", "bytes": 4632306609, "sha256": "a3844cfc95b5ab6d4f002e0bce967bb7184489169531963b45134cb51eb3c5c1" }
+    ],
+    "checkpointBytes": 26933888261
+  },
+  "externalModelWeights": [
+    {
+      "repository": "microsoft/TRELLIS.2-4B",
+      "revision": "af44b45f2e35a493886929c6d786e563ec68364d",
+      "metadataUrl": "https://huggingface.co/api/models/microsoft/TRELLIS.2-4B?blobs=true",
+      "licenseMetadata": "mit",
+      "gatedMetadata": false,
+      "files": [
+        { "path": "ckpts/ss_flow_img_dit_1_3B_64_bf16.safetensors", "bytes": 2584426920 },
+        { "path": "ckpts/shape_dec_next_dc_f16c32_fp16.safetensors", "bytes": 948490494 },
+        { "path": "ckpts/tex_dec_next_dc_f16c32_fp16.safetensors", "bytes": 948458812 }
+      ]
+    },
+    {
+      "repository": "microsoft/TRELLIS-image-large",
+      "revision": "25e0d31ffbebe4b5a97464dd851910efc3002d96",
+      "metadataUrl": "https://huggingface.co/api/models/microsoft/TRELLIS-image-large?blobs=true",
+      "licenseMetadata": "mit",
+      "gatedMetadata": false,
+      "files": [
+        { "path": "ckpts/ss_dec_conv3d_16l8_fp16.safetensors", "bytes": 147591972 }
+      ]
+    },
+    {
+      "repository": "facebook/dinov3-vitl16-pretrain-lvd1689m",
+      "revision": "ea8dc2863c51be0a264bab82070e3e8836b02d51",
+      "metadataUrl": "https://huggingface.co/api/models/facebook/dinov3-vitl16-pretrain-lvd1689m?blobs=true",
+      "licenseMetadata": "other",
+      "modelCardLicense": "dinov3-license",
+      "gatedMetadata": "manual",
+      "revisionPinnedByInspectedUniForgeConfig": false,
+      "files": [
+        { "path": "model.safetensors", "bytes": 1212559808 }
+      ]
+    },
+    {
+      "repository": "briaai/RMBG-2.0",
+      "revision": "5df4c9c76d8170882c34f6986e848ee07fd0ba43",
+      "metadataUrl": "https://huggingface.co/api/models/briaai/RMBG-2.0?blobs=true",
+      "licenseMetadata": "other",
+      "modelCardLicense": "bria-rmbg-2.0",
+      "gatedMetadata": "auto",
+      "revisionPinnedByInspectedUniForgeConfig": false,
+      "files": [
+        { "path": "model.safetensors", "bytes": 884878856 }
+      ]
+    }
+  ],
+  "weightPayload": {
+    "externalBytes": 6726406862,
+    "totalBytes": 33660295123,
+    "decimalGigabytesRounded": 33.66,
+    "gibibytesRounded": 31.35,
+    "excludes": ["configuration", "source code", "Python environment", "Torch and CUDA libraries", "native modules", "installer archives", "staging copies", "caches", "working tensors", "generated assets"],
+    "isInstalledSizeEstimate": false
+  },
+  "upstreamSetup": {
+    "python": "3.10",
+    "torch": "2.6.0",
+    "torchvision": "0.21.0",
+    "torchWheelIndex": "https://download.pytorch.org/whl/cu124",
+    "transformers": "4.57.3",
+    "peft": "0.17.1",
+    "flashAttention": "2.7.3",
+    "trimesh": "4.6.3",
+    "nvdiffrast": "v0.4.0",
+    "nativeSourceRevisions": {
+      "TRELLIS.2": "75fbf0183001ed9876c8dbb35de6b68552ee08bd",
+      "CuMesh": "12289e1062f0603f2f0d0771b02e1395d247f26f",
+      "FlexGEMM": "6dd94a859c26ee8246888502eada3dd8ad85532e"
+    },
+    "isCompleteDependencyLock": false
+  },
+  "observedDefaults": {
+    "seed": 42,
+    "anchorViewIndex": 0,
+    "lowVramCliDefault": true,
+    "sparseStructure": { "steps": 12, "guidance": 7.5 },
+    "shape512": { "steps": 20, "guidance": 3.0 },
+    "shape1024": { "steps": 20, "guidance": 6.5 },
+    "texture": { "steps": 20, "guidance": 2.5, "textureSize": 2048 },
+    "meshDecimationTarget": 1000000,
+    "materialAlphaMode": "OPAQUE",
+    "glbExportUsesWebpExtension": true
+  },
+  "verificationLimits": {
+    "modelWeightsDownloaded": false,
+    "runtimeInstalled": false,
+    "inferenceRun": false,
+    "singleImageQualityVerified": false,
+    "minimumHardwareMeasured": false,
+    "windowsWslInferenceVerified": false,
+    "targetToolRoundTripsPerformed": false,
+    "commercialRightsCleared": false
+  }
+}

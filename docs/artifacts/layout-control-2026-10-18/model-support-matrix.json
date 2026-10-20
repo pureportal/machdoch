@@ -1,0 +1,711 @@
+{
+  "researchDate": "2026-10-18",
+  "basis": "Current source catalog and inspected adapter code; not installed-model inventory or inference results",
+  "currentImageProfileCount": 31,
+  "excluded": "Video, audio, SVG-only and utility models",
+  "rows": [
+    {
+      "id": "local:stable-diffusion-xl-dmad-4step",
+      "displayName": "SDXL DMAD 4-step",
+      "architecture": "stable-diffusion-xl-dmad-4step",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/ZhengmingYu/DMAD",
+      "sourceRevision": "b1fa1f8745fd6563bf922e6be4b4b03125aaabdd",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:stable-diffusion-xl-dmad-1step",
+      "displayName": "SDXL DMAD 1-step",
+      "architecture": "stable-diffusion-xl-dmad-1step",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/ZhengmingYu/DMAD",
+      "sourceRevision": "b1fa1f8745fd6563bf922e6be4b4b03125aaabdd",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:z-image-turbo",
+      "displayName": "Z-Image-Turbo",
+      "architecture": "z-image-turbo",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo",
+      "sourceRevision": "f332072aa78be7aecdf3ee76d5c247082da564a6",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:z-image",
+      "displayName": "Z-Image Base",
+      "architecture": "z-image",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/Tongyi-MAI/Z-Image",
+      "sourceRevision": "04cc4abb7c5069926f75c9bfde9ef43d49423021",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:qwen-image",
+      "displayName": "Qwen-Image",
+      "architecture": "qwen-image",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/Qwen/Qwen-Image",
+      "sourceRevision": "75e0b4be04f60ec59a75f475837eced720f823b6",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:qwen-image-2512",
+      "displayName": "Qwen-Image-2512",
+      "architecture": "qwen-image-2512",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/Qwen/Qwen-Image-2512",
+      "sourceRevision": "25468b98e3276ca6700de15c6628e51b7de54a26",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:qwen-image-edit-2511",
+      "displayName": "Qwen-Image-Edit-2511",
+      "architecture": "qwen-image-edit-2511",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "image-to-image",
+        "multi-reference-edit"
+      ],
+      "source": "https://huggingface.co/Qwen/Qwen-Image-Edit-2511",
+      "sourceRevision": "6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance and deterministic assembly",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:sana",
+      "displayName": "SANA 1.6B",
+      "architecture": "sana",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/Efficient-Large-Model/Sana_1600M_1024px_diffusers",
+      "sourceRevision": "ac0da2ff55fbe434795be0dce883042e4d49e2fc",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:sana-sprint",
+      "displayName": "SANA-Sprint 1.6B",
+      "architecture": "sana-sprint",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers",
+      "sourceRevision": "19683c58b7ea290e55cedd8950ae1d86ada7ef96",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:glm-image",
+      "displayName": "GLM-Image",
+      "architecture": "glm-image",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image",
+        "image-to-image",
+        "multi-reference-edit"
+      ],
+      "source": "https://huggingface.co/zai-org/GLM-Image",
+      "sourceRevision": "2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance and deterministic assembly",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:hidream-i1-full",
+      "displayName": "HiDream-I1 Full",
+      "architecture": "hidream-i1-full",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/HiDream-ai/HiDream-I1-Full",
+      "sourceRevision": "8ccbbfb270ccdae26d6bb0081df67dc81e4033bf",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:ideogram-4",
+      "displayName": "Ideogram 4 NF4",
+      "architecture": "ideogram-4",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/ideogram-ai/ideogram-4-nf4",
+      "sourceRevision": "f664347839e0a87bc495f5c9483cc0014b8e344e",
+      "nativeLayoutEvidence": "Documented native JSON boxes; no Machdoch layout compiler or verified layout run",
+      "proposedRoute": "Compile native Ideogram JSON; optionally compose exact text",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:flux-1-schnell",
+      "displayName": "FLUX.1 schnell",
+      "architecture": "flux-1-schnell",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+      "sourceRevision": "741f7c3ce8b383c54771c7003378a50191e9efe9",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:flux-1-dev",
+      "displayName": "FLUX.1 dev",
+      "architecture": "flux-1-dev",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/black-forest-labs/FLUX.1-dev",
+      "sourceRevision": "3de623fc3c33e44ffbe2bad470d0f45bccf2eb21",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:flux-2-klein-base-4b",
+      "displayName": "FLUX.2 klein Base 4B",
+      "architecture": "flux-2-klein-base-4b",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image",
+        "image-to-image",
+        "multi-reference-edit"
+      ],
+      "source": "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B",
+      "sourceRevision": "a3b4f4849157f664bdbc776fd7453c2783562f4d",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance and deterministic assembly",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:flux-2-klein-9b",
+      "displayName": "FLUX.2 klein 9B",
+      "architecture": "flux-2-klein-9b",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image",
+        "image-to-image",
+        "multi-reference-edit"
+      ],
+      "source": "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B",
+      "sourceRevision": "92196c8e11f7b6cf2b7493e037d8c5345c559216",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance and deterministic assembly",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:flux-2-klein-base-9b",
+      "displayName": "FLUX.2 klein Base 9B",
+      "architecture": "flux-2-klein-base-9b",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image",
+        "image-to-image",
+        "multi-reference-edit"
+      ],
+      "source": "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9B",
+      "sourceRevision": "32773329fbe7e81a90ef971740e8ba4b0364ecf3",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance and deterministic assembly",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:flux-2-dev",
+      "displayName": "FLUX.2 dev",
+      "architecture": "flux-2-dev",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image",
+        "image-to-image",
+        "multi-reference-edit"
+      ],
+      "source": "https://huggingface.co/black-forest-labs/FLUX.2-dev",
+      "sourceRevision": "26afe3a78bb242c0a8bb181dcc8937bb16e5c66c",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance and deterministic assembly",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:krea-2-raw",
+      "displayName": "Krea 2 Raw",
+      "architecture": "krea-2-raw",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/krea/Krea-2-Raw",
+      "sourceRevision": "6b0ece7fffb640c5e3bcbe0a7f10f66b8e60a603",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:qwen-image-2.1-turbo",
+      "displayName": "Qwen-Image 2.1 Turbo",
+      "architecture": "qwen-image-2.1-turbo",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image",
+        "image-to-image",
+        "multi-reference-edit",
+        "transparent-output"
+      ],
+      "source": "https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo",
+      "sourceRevision": "d65dbc9a7e8f6b5479e33dee6030eaab2a906509",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance and deterministic assembly",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:krea-2-turbo",
+      "displayName": "Krea 2 Turbo",
+      "architecture": "krea-2-turbo",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/krea/Krea-2-Turbo",
+      "sourceRevision": "98e0fe118d17c9e3547fbb2e25acdbae2cadf7c7",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:hunyuan-image-3",
+      "displayName": "HunyuanImage 3.0",
+      "architecture": "hunyuan-image-3",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/tencent/HunyuanImage-3.0",
+      "sourceRevision": "36f21fe74b65614451cc50ffd8a35a5f662dac70",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:illustrious-xl",
+      "displayName": "Illustrious XL",
+      "architecture": "illustrious-xl",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0",
+      "sourceRevision": "dca0dac303e6dc4b0c31d8001bc685b89b5d0204",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:noobai-xl",
+      "displayName": "NoobAI XL",
+      "architecture": "noobai-xl",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/Laxhar/noobai-XL-1.0",
+      "sourceRevision": "70dee4d903b83cc6d1e8d12e65051cfdbcf54ab3",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:juggernaut-xl",
+      "displayName": "Juggernaut XL",
+      "architecture": "juggernaut-xl",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/RunDiffusion/Juggernaut-XI-v11",
+      "sourceRevision": "f836518c7a75f47a9e26bc661ff9509ef2ceb7c0",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:realvis-xl",
+      "displayName": "RealVisXL",
+      "architecture": "realvis-xl",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/SG161222/RealVisXL_V5.0",
+      "sourceRevision": "ac93e0dda1f6d448cae19bbfab8c5e720a5e48bc",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:dreamshaper-xl",
+      "displayName": "DreamShaper XL",
+      "architecture": "dreamshaper-xl",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/Lykon/dreamshaper-xl-1-0",
+      "sourceRevision": "41e6644752a8c9aa63930e6043c4fd83c7708420",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:sdxl-turbo",
+      "displayName": "SDXL Turbo",
+      "architecture": "sdxl-turbo",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/stabilityai/sdxl-turbo",
+      "sourceRevision": "71153311d3dbb46851df1931d3ca6e939de83304",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:sd-turbo",
+      "displayName": "SD-Turbo",
+      "architecture": "sd-turbo",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/stabilityai/sd-turbo",
+      "sourceRevision": "b261bac6fd2cf515557d5d0707481eafa0485ec2",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:stable-diffusion-3.5-large-turbo",
+      "displayName": "Stable Diffusion 3.5 Large Turbo",
+      "architecture": "stable-diffusion-3.5-large-turbo",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo",
+      "sourceRevision": "ec07796fc06b096cc56de9762974a28f4c632eda",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:anima",
+      "displayName": "Anima",
+      "architecture": "anima",
+      "scope": "current-named-profile",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "source": "https://huggingface.co/circlestone-labs/Anima-Base-v1.0-Diffusers",
+      "sourceRevision": "073c3a9db359c31ad0e8aa268d15775473c2176c",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "currentMaskReadiness": "Not advertised by current native-mask architecture allowlist for this exact profile",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "architecture:stable-diffusion-1",
+      "displayName": "Stable Diffusion 1 import",
+      "architecture": "stable-diffusion-1",
+      "scope": "current-built-in-architecture",
+      "currentSource": "apps/client/src-tauri/src/media/provider_local_diffusers.rs:1344",
+      "currentReferencePath": true,
+      "currentMaskReadiness": "Path exists; depends on installed runtime/model; no layout run validated",
+      "source": "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/overview",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance, supported masked edits and deterministic assembly",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "architecture:stable-diffusion-2",
+      "displayName": "Stable Diffusion 2 import",
+      "architecture": "stable-diffusion-2",
+      "scope": "current-built-in-architecture",
+      "currentSource": "apps/client/src-tauri/src/media/provider_local_diffusers.rs:1344",
+      "currentReferencePath": true,
+      "currentMaskReadiness": "Path exists; depends on installed runtime/model; no layout run validated",
+      "source": "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion_2",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance, supported masked edits and deterministic assembly",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "architecture:stable-diffusion-xl",
+      "displayName": "SDXL import",
+      "architecture": "stable-diffusion-xl",
+      "scope": "current-built-in-architecture",
+      "currentSource": "apps/client/src-tauri/src/media/provider_local_diffusers.rs:1344",
+      "currentReferencePath": true,
+      "currentMaskReadiness": "Path exists; depends on installed runtime/model; no layout run validated",
+      "source": "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_xl",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance, supported masked edits and deterministic assembly",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "architecture:pony",
+      "displayName": "Pony SDXL import",
+      "architecture": "pony",
+      "scope": "current-built-in-architecture",
+      "currentSource": "apps/client/src-tauri/src/media/provider_local_diffusers.rs:1344",
+      "currentReferencePath": true,
+      "currentMaskReadiness": "Path exists; depends on installed runtime/model; no layout run validated",
+      "source": null,
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance, supported masked edits and deterministic assembly",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "architecture:stable-diffusion-3",
+      "displayName": "Stable Diffusion 3 import",
+      "architecture": "stable-diffusion-3",
+      "scope": "current-built-in-architecture",
+      "currentSource": "apps/client/src-tauri/src/media/provider_local_diffusers.rs:1344",
+      "currentReferencePath": false,
+      "currentMaskReadiness": "Not included in current native-mask architecture allowlist",
+      "source": "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_3",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Generate assets and deterministically assemble",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "architecture:flux-1",
+      "displayName": "FLUX.1 import",
+      "architecture": "flux-1",
+      "scope": "current-built-in-architecture",
+      "currentSource": "apps/client/src-tauri/src/media/provider_local_diffusers.rs:1344",
+      "currentReferencePath": true,
+      "currentMaskReadiness": "Path exists; depends on installed runtime/model; no layout run validated",
+      "source": "https://huggingface.co/docs/diffusers/api/pipelines/flux",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance, supported masked edits and deterministic assembly",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "local:flux-2-klein-4b",
+      "displayName": "FLUX.2 klein 4B built-in",
+      "architecture": "flux-2",
+      "scope": "current-built-in-architecture",
+      "currentSource": "apps/client/src-tauri/src/media/provider_local_diffusers.rs:1344",
+      "currentReferencePath": true,
+      "currentMaskReadiness": "Path exists; depends on installed runtime/model; no layout run validated",
+      "source": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance, supported masked edits and deterministic assembly",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "architecture:krea-2",
+      "displayName": "Krea 2 import",
+      "architecture": "krea-2",
+      "scope": "current-built-in-architecture",
+      "currentSource": "apps/client/src-tauri/src/media/provider_local_diffusers.rs:1344",
+      "currentReferencePath": true,
+      "currentMaskReadiness": "Path exists; depends on installed runtime/model; no layout run validated",
+      "source": null,
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance, supported masked edits and deterministic assembly",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "architecture:qwen-image-2.1",
+      "displayName": "Qwen-Image 2.1 import",
+      "architecture": "qwen-image-2.1",
+      "scope": "current-built-in-architecture",
+      "currentSource": "apps/client/src-tauri/src/media/provider_local_diffusers.rs:1344",
+      "currentReferencePath": true,
+      "currentMaskReadiness": "Not included in current native-mask architecture allowlist",
+      "source": "https://huggingface.co/Qwen/Qwen-Image-2.1",
+      "nativeLayoutEvidence": "No native box contract established in this investigation",
+      "proposedRoute": "Composition-reference guidance, supported masked edits and deterministic assembly",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "openai:gpt-image-2.5-sunburst",
+      "displayName": "GPT Image 2.5 Sunburst",
+      "architecture": null,
+      "scope": "current-provider",
+      "currentSource": "apps/client/src-tauri/src/media/provider_openai.rs",
+      "nativeLayoutEvidence": "No native box-generation contract established in inspected guide",
+      "currentReferencePath": true,
+      "currentMaskReadiness": "Provider supports masks; Machdoch edit adapter does not currently upload them",
+      "proposedRoute": "Composition-reference guidance and deterministic assembly; add mask transport separately",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "codex-cli:image-generation",
+      "displayName": "Codex CLI image generation",
+      "architecture": null,
+      "scope": "current-provider",
+      "currentDeclaredCapabilities": [
+        "text-to-image"
+      ],
+      "currentSource": "packages/media-studio/src/core/media/catalog.ts:178",
+      "nativeLayoutEvidence": "No exposed native box contract established",
+      "proposedRoute": "Prompt approximation or asset generation and deterministic assembly",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "candidate:moss-base",
+      "displayName": "MOSS-Image Base",
+      "scope": "proposed-addition",
+      "source": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-Base",
+      "nativeLayoutEvidence": "Documented native boxes",
+      "proposedRoute": "Add explicit native adapter; model and runtime not integrated",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "candidate:moss-sft",
+      "displayName": "MOSS-Image SFT",
+      "scope": "proposed-addition",
+      "source": "https://huggingface.co/OpenMOSS-Team/MOSS-Image-SFT",
+      "nativeLayoutEvidence": "Documented native boxes",
+      "proposedRoute": "Add explicit native adapter; model and runtime not integrated",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "candidate:flux3-klein",
+      "displayName": "FLUX 3 Image Klein / Base",
+      "scope": "proposed-addition",
+      "source": "https://github.com/black-forest-labs/flux-3-image-klein",
+      "nativeLayoutEvidence": "Documented native boxes",
+      "proposedRoute": "Add explicit native adapter; model and runtime not integrated",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    },
+    {
+      "id": "candidate:flux3-api",
+      "displayName": "FLUX 3 Image API",
+      "scope": "proposed-addition",
+      "source": "https://docs.bfl.ai/flux_3/flux3_image_bounding_boxes",
+      "nativeLayoutEvidence": "Documented native boxes",
+      "proposedRoute": "Add explicit native adapter; model and runtime not integrated",
+      "layoutIntegrationStatus": "Not implemented",
+      "inferenceValidated": false
+    }
+  ]
+}

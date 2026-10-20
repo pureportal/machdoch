@@ -1,0 +1,54 @@
+{
+  "high_level_description": "A blue toy robot, a small orange cube and a green potted plant arranged on a white table.",
+  "style_description": {
+    "aesthetics": "Clean, minimal studio scene",
+    "lighting": "Soft diffused studio light",
+    "medium": "illustration",
+    "art_style": "Polished three-dimensional toy illustration"
+  },
+  "compositional_deconstruction": {
+    "background": "A plain pale studio background with soft shadows.",
+    "elements": [
+      {
+        "type": "obj",
+        "bbox": [
+          677,
+          109,
+          958,
+          938
+        ],
+        "desc": "A white table extending beneath the three objects."
+      },
+      {
+        "type": "obj",
+        "bbox": [
+          208,
+          156,
+          729,
+          391
+        ],
+        "desc": "A blue toy robot standing on the left side of the table."
+      },
+      {
+        "type": "obj",
+        "bbox": [
+          615,
+          469,
+          813,
+          625
+        ],
+        "desc": "A small orange cube resting in the center of the table."
+      },
+      {
+        "type": "obj",
+        "bbox": [
+          250,
+          719,
+          729,
+          906
+        ],
+        "desc": "A green leafy plant in a small white pot on the right side of the table."
+      }
+    ]
+  }
+}

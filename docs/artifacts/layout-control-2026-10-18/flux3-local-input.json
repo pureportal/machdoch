@@ -1,0 +1,47 @@
+{
+  "prompt": "A blue robot on the left, a small orange cube in the center, and a green potted plant on the right, all on a white table. Soft studio lighting and a plain pale background.",
+  "width": 1024,
+  "height": 768,
+  "boxes": [
+    {
+      "id": "table_1",
+      "desc": "A white table extending beneath the three objects.",
+      "bbox": [
+        0.6770833333333334,
+        0.109375,
+        0.9583333333333334,
+        0.9375
+      ]
+    },
+    {
+      "id": "robot_1",
+      "desc": "A blue toy robot standing on the left side of the table.",
+      "bbox": [
+        0.20833333333333334,
+        0.15625,
+        0.7291666666666666,
+        0.390625
+      ]
+    },
+    {
+      "id": "cube_1",
+      "desc": "A small orange cube resting in the center of the table.",
+      "bbox": [
+        0.6145833333333334,
+        0.46875,
+        0.8125,
+        0.625
+      ]
+    },
+    {
+      "id": "plant_1",
+      "desc": "A green leafy plant in a small white pot on the right side of the table.",
+      "bbox": [
+        0.25,
+        0.71875,
+        0.7291666666666666,
+        0.90625
+      ]
+    }
+  ]
+}
