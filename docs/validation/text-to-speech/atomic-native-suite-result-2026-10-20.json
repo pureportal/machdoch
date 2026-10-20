@@ -1,0 +1,13 @@
+{
+  "scope": "Focused speech native harness; atomic schema and reduced hash-pass checkpoint",
+  "command": "cargo test --offline --manifest-path docs/validation/text-to-speech/native/Cargo.toml --lib",
+  "passed": 259,
+  "failed": 0,
+  "ignored": 3,
+  "testSeconds": 406.23,
+  "log": "D:/Models/machdoch/speech/verification/atomic-native-suite-2026-10-20.log",
+  "rootTestOptimization": 2,
+  "sha2TestOptimization": 3,
+  "providerExecution": false,
+  "excludesSubsequentChanges": ["measured reading bookmark persistence", "asset reservations and staging outside the shared metadata lock"]
+}

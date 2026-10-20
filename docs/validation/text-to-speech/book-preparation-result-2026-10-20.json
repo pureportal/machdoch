@@ -1,0 +1,15 @@
+{
+  "syntheticAudio": true,
+  "providerExecution": false,
+  "chapters": 48,
+  "segments": 48,
+  "characters": 352541,
+  "utf8Bytes": 414749,
+  "unchangedSegments": 47,
+  "changedSegments": 1,
+  "oldSelectionRejectedForChangedSegment": true,
+  "intendedAudioHours": 8,
+  "sampleRate": 8000,
+  "channels": 1,
+  "completeAssemblyVerified": false
+}

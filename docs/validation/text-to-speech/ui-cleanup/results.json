@@ -1,0 +1,21 @@
+{
+  "status": "passed",
+  "browser": "Edge / Playwright",
+  "runtime": "Existing synthetic speech fixture; no native or paid synthesis",
+  "checks": [
+    "Project creation, editing, saving, and default disclosure",
+    "Voice search recovery, favorite filtering, and compact options menus",
+    "Script errors appear for missing speakers and clear immediately after correction",
+    "Voice picking cancels without changes, assigns on selection, and restores keyboard focus",
+    "Advanced profile controls and project actions remain accessible",
+    "Generation options reach the render request and queue controls work",
+    "Take playback and timeline handoff work with review tools collapsed",
+    "Export presets keep their selection, custom changes are reflected, and clip settings stay collapsed",
+    "Settings save hidden defaults and the script passes WCAG A/AA checks",
+    "Light theme uses the app palette and passes WCAG A/AA checks",
+    "Responsive layouts at 1024, 768, 390, and 320px, mobile project switching, and generation visible without scrolling",
+    "Project content survives reload and reopening",
+    "Owned voice editing and cancellation work inside the compact options menu"
+  ],
+  "errors": []
+}

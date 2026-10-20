@@ -1,0 +1,22 @@
+{
+  "syntheticAudio": true,
+  "providerExecution": false,
+  "encoderBinarySha256": "3256173f3f8bffd7df12227c68adf68025edb1832273a9530688a7bb1ed8edec",
+  "sourceBytes": 4608000138,
+  "durationSeconds": 6000,
+  "sampleRate": 192000,
+  "channels": 2,
+  "frames": 1152000000,
+  "trimFirstFrame": 1151808000,
+  "trimByteOffsetExcludingHeader": 4607232000,
+  "trimmedFrames": 192000,
+  "exactSamplesMatched": 384000,
+  "crossingsPerSecond": 997,
+  "trimTiming": {
+    "baselineMilliseconds": 7097.0262,
+    "bufferedMilliseconds": 332.42670000000004,
+    "observationsEach": 1
+  },
+  "probePeakWorkingSetBytes": 13549568,
+  "probeScope": "Production reader and reference trimmer against an actual encoder-written RF64 file; full book assembly and ZIP64 are separate checks."
+}

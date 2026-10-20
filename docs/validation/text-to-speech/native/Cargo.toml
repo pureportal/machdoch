@@ -1,0 +1,47 @@
+[package]
+name = "machdoch-speech-verification"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "lib.rs"
+
+[[bin]]
+name = "keyring-probe"
+path = "keyring_probe.rs"
+
+[dependencies]
+base64 = "0.22"
+chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
+futures-util = "0.3"
+getrandom = "0.3"
+hound = "3.5"
+keyring = { version = "4.2", features = ["v1"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls-native-roots", "stream"] }
+rmp-serde = "1.3"
+rmpv = { version = "1.3", features = ["with-serde"] }
+rusqlite = { version = "0.39.0", default-features = false, features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
+tokio-tungstenite = { version = "0.28.0", default-features = false, features = ["connect", "rustls-tls-native-roots"] }
+tokio-util = { version = "=0.7.18", features = ["rt"] }
+url = "2"
+zip = { version = "2.4", default-features = false, features = ["deflate"] }
+
+[workspace]
+
+[profile.test.package.machdoch-speech-verification]
+debug = 0
+opt-level = 0
+
+[profile.test.package.sha2]
+opt-level = 3
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

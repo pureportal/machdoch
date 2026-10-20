@@ -1,0 +1,16 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "fakeAudioHandle": true,
+  "realAudioPlayback": false,
+  "clock": "Playwright virtual timers",
+  "checks": [
+    "requires active project reading",
+    "timer pauses only its reading item",
+    "foreground replacement cancels the timer",
+    "reading controls do not pause another owner",
+    "explicit timer cancellation",
+    "oversized import rejected before file.text"
+  ],
+  "errors": []
+}

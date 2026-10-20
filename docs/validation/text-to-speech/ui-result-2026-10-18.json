@@ -1,0 +1,17 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "checks": [
+    "create project",
+    "cast/profile selection",
+    "Unicode editor",
+    "source/structured editing round-trip",
+    "undo structured edits",
+    "undo across view switches",
+    "save/reopen after reload",
+    "durable crash-draft recovery",
+    "malformed scope diagnostic",
+    "narrow viewport"
+  ],
+  "errors": []
+}

@@ -1,0 +1,13 @@
+{
+  "archiveBytes": 4608055042,
+  "channels": 2,
+  "durationSeconds": 6000.0,
+  "nativePeakWorkingSetBytes": 28147712,
+  "providerExecution": false,
+  "roundtripAssetDigestPreserved": true,
+  "sampleRate": 192000,
+  "sourceBytes": 4608000138,
+  "sourceSha256": "342e344f2947ec3c3512ec01d6c9f5963a632d379a550f53ff3932988858ee15",
+  "syntheticAudio": true,
+  "zip64AssetBytes": 4608000138
+}

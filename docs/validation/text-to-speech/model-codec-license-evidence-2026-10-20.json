@@ -1,0 +1,27 @@
+{
+  "modelAssetsDownloaded": false,
+  "deploymentRightsVerified": false,
+  "sources": [
+    {
+      "role": "model",
+      "repository": "fishaudio/drama-3",
+      "revision": "b2b5ee998034b2975720906c815e7fb0e9f007bd",
+      "file": "LICENSE",
+      "source": "https://huggingface.co/fishaudio/drama-3/resolve/b2b5ee998034b2975720906c815e7fb0e9f007bd/LICENSE",
+      "bytes": 19685,
+      "sha256": "733a32442087acbda12ecafe8e71eb8ee5890c89b50ce7ac4ea3777faa3c823e",
+      "title": "FISH AUDIO COMMUNITY LICENSE AGREEMENT"
+    },
+    {
+      "role": "codec",
+      "repository": "fishaudio/s2-pro",
+      "revision": "1de9996b6be38b745688de084d87a5633f714e4e",
+      "file": "LICENSE.md",
+      "source": "https://huggingface.co/fishaudio/s2-pro/resolve/1de9996b6be38b745688de084d87a5633f714e4e/LICENSE.md",
+      "bytes": 10360,
+      "sha256": "aa7d9206e9d710590987a3636934f643529c00cd490323594e6206aaa0c32d80",
+      "title": "FISH AUDIO RESEARCH LICENSE AGREEMENT"
+    }
+  ],
+  "limitation": "These are accompanying files from exact repository revisions. No conclusion that the model license grants rights to the separately sourced codec, or that either license permits the intended Machdoch distribution, has been made."
+}

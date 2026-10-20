@@ -1,0 +1,17 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "syntheticStorage": true,
+  "checks": [
+    "bounded project metadata pages",
+    "open a project beyond the first forty results",
+    "bounded revision metadata without automatic source reads",
+    "pin an older selection across pages",
+    "fetch only the two compared sources",
+    "restore creates another revision",
+    "focus returns to History",
+    "zero tested axe A/AA violations",
+    "no generation"
+  ],
+  "errors": []
+}

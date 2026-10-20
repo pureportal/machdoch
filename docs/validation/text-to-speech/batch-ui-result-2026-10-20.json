@@ -1,0 +1,20 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "syntheticProvider": true,
+  "checks": [
+    "ordered profile reference selection, local preview, save and reopen after reload",
+    "worker batch review",
+    "explicit CSV speaker mapping",
+    "cloud consent gate",
+    "one fresh canonical job per saved script",
+    "reviewed profile and total cost inputs",
+    "source cast/script/selection preserved",
+    "no autoplay",
+    "reopen independent batch projects after reload",
+    "bounded cross-project listening-review pages, language/verdict search and source project navigation",
+    "older saved comparison discovery beyond twenty jobs and replay after reload without generation",
+    "WCAG A/AA affected view"
+  ],
+  "errors": []
+}

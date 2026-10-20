@@ -1,0 +1,24 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "providerExecution": false,
+  "transport": "deterministic project fixture; excludes native audio/history identity remapping",
+  "checks": [
+    "latest source saved before explicit revision-bound duplication",
+    "Unicode source retained and copy opened with title focus",
+    "copy edits leave original source unchanged",
+    "cancelled name entry performs no duplicate operation",
+    "no generation requested"
+  ],
+  "accessibility": [
+    {
+      "state": "collapsed",
+      "violations": []
+    },
+    {
+      "state": "expanded",
+      "violations": []
+    }
+  ],
+  "errors": []
+}

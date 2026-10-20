@@ -1,0 +1,14 @@
+{
+  "checks": [
+    "Model download requires acceptance and sends a structured native request",
+    "Progress, pause and resume update without a server configuration",
+    "Verification completion refreshes speech settings",
+    "Model removal requires confirmation and returns to download state",
+    "Download errors expose recovery and the card fits a narrow viewport",
+    "Reopening settings recognizes a model installed in the background",
+    "Studio queues local speech without a voice recording, API key or cloud consent"
+  ],
+  "browser": "Edge",
+  "backend": "fixture",
+  "errors": []
+}

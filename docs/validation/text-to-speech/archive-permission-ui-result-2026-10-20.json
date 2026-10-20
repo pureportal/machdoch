@@ -1,0 +1,13 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "syntheticReferences": true,
+  "checks": [
+    "cloning permission does not authorize bundling",
+    "reference inventory displayed at export",
+    "explicit redistribution evidence and exact inventory hash",
+    "saved revision pinned",
+    "changed reference inventory resets approval"
+  ],
+  "errors": []
+}

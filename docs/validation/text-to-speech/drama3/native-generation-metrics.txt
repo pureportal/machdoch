@@ -1,0 +1,20 @@
+family=fish_drama3
+task=tts
+mode=offline
+request_index=0
+request_id=request_0
+[TIMING] request.request_0.wall_ms 122131
+custom_schema_output={"schema":"drama3_generation_v1","data":{"frames":130,"reached_limit":false,"wall_ms":122128.9229}}
+artifacts=1
+artifact=drama3_take kind=acoustic_tokens bytes=5292
+metrics[request_0].wall_ms=122131
+metrics[request_0].memory.peak_rss_mb=14719
+metrics[request_0].memory.peak_footprint_mb=20806
+metrics[request_0].memory.peak_footprint_source=windows_commit
+metrics[request_0].audio_duration_ms=6037.19
+metrics[request_0].rtf=20.2298
+metrics[request_0].x_realtime=0.049432
+metrics[request_0].audio_duration_source=output
+metrics[request_0].sample_rate=44100
+metrics[request_0].channels=1
+merged_audio_out=.machdoch/drama3/amd-speech.wav

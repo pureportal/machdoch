@@ -1,0 +1,13 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "providerExecution": false,
+  "transport": "deterministic cleanup receipts; native filesystem/refcount tests are separate",
+  "checks": [
+    "one action drains bounded cleanup batches",
+    "progress and disabled action while a request is pending",
+    "a partial storage failure stops the loop and clears stale progress",
+    "explicit retry completes and clears the error"
+  ],
+  "errors": []
+}

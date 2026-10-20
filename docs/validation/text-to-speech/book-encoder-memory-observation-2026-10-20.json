@@ -1,0 +1,25 @@
+{
+  "peaksByProcessId": {
+    "12748": 18579456,
+    "11432": 18845696,
+    "39540": 18780160,
+    "36684": 18743296,
+    "40236": 18882560,
+    "31736": 18784256,
+    "39252": 18649088,
+    "14040": 18784256,
+    "30824": 17944576,
+    "38604": 18665472,
+    "26376": 18952192,
+    "43012": 18747392,
+    "35400": 18935808,
+    "11528": 20410368,
+    "34764": 18706432
+  },
+  "sampledMaximumEncoderPeakWorkingSetBytes": 20410368.0,
+  "coversAllEncoderProcesses": false,
+  "parentProcessId": 36084,
+  "sampleIntervalMs": 250,
+  "observedEncoderProcesses": 15,
+  "samplingStartedDuringAssembly": true
+}

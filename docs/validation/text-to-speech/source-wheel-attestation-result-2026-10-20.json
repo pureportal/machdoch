@@ -1,0 +1,21 @@
+{
+  "sourceOnlyPackaging": true,
+  "runtimeInstalled": false,
+  "runtimeExecuted": false,
+  "modelAssetsDownloaded": false,
+  "pipCommandOutcome": "timed-out after 180 seconds; owned PEP517 build continued",
+  "backendResult": {
+    "unsupported": false,
+    "return_val": "sglang_omni-0.1.8-py3-none-any.whl"
+  },
+  "sourceBytes": 50005911,
+  "sourceSha256": "f279b95235aaadefbe3b0e6f7f22977fbc5ce6448fd9436a08556a04e6cb4647",
+  "wheelBytes": 2678270,
+  "wheelSha256": "c0573464b4bf9d3e3f19f7f61c26ea655d77fa244e02695cd17e7656a2935cef",
+  "evidence": {
+    "commit": "b98a2893618fa790d03774d7199dd11adb01388e",
+    "packageContentSha256": "95272bc0cd822e109b262265eff86a42790567325d6dab833c3e18cbe22361e6",
+    "packageFiles": 905,
+    "pythonFiles": 893
+  }
+}

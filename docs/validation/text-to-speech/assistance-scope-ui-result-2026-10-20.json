@@ -1,0 +1,18 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "syntheticTaskModel": true,
+  "realModelExecution": false,
+  "chapters": 48,
+  "sourceBytes": 454445,
+  "requestBytes": 9455,
+  "checks": [
+    "oversized whole-book request rejected before dispatch",
+    "explicit chapter target below local request guard",
+    "review before apply",
+    "unchanged book outside target",
+    "parallel translation retains original book",
+    "stale project cannot apply old proposal"
+  ],
+  "errors": []
+}

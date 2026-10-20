@@ -1,0 +1,18 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "syntheticStorage": true,
+  "checks": [
+    "take history pages of 20,20,3",
+    "old selected and timeline take resolved independently",
+    "A/B choices pinned across pages",
+    "actual synthetic audio audition",
+    "older active jobs remain visible beside history",
+    "bounded active-state filtering",
+    "cancel all reaches older active job",
+    "old production reading works on any history page",
+    "zero tested axe A/AA violations",
+    "no generation"
+  ],
+  "errors": []
+}

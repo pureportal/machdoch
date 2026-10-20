@@ -1,0 +1,19 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "syntheticStorage": true,
+  "realProviderMutation": false,
+  "checks": [
+    "uncertain deletion remains visible and does not remove the voice",
+    "explicit status check does not retry deletion or clear uncertainty",
+    "restart preserves unresolved deletion without replay",
+    "deliberate retry preserves attempt lineage",
+    "bounded history",
+    "focus restores to deletion region",
+    "zero tested axe A/AA violations",
+    "rename and unlisting with access consequence",
+    "uncertain update recovery and deliberate exact retry",
+    "no speech generation"
+  ],
+  "errors": []
+}

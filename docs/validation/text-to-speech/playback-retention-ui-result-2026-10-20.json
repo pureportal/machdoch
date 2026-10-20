@@ -1,0 +1,13 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "syntheticProvider": true,
+  "checks": [
+    "explicit asset lease before comparison playback",
+    "renewal while paused",
+    "release on stop",
+    "no renewal after stop",
+    "deliberate cached replay without regeneration"
+  ],
+  "errors": []
+}

@@ -1,0 +1,18 @@
+{
+  "command": "cargo test --offline --manifest-path docs/validation/text-to-speech/native/Cargo.toml --lib project_duplication",
+  "passed": 2,
+  "failed": 0,
+  "compileSeconds": 939,
+  "testSeconds": 6.79,
+  "rootTestOptimization": 1,
+  "sha2TestOptimization": 3,
+  "providerExecution": false,
+  "log": "D:/Models/machdoch/speech/verification/project-copy-native-2026-10-20.log",
+  "checks": [
+    "Independent project and revision identity with the exact source preserved",
+    "Selected takes, timeline clips, parent-take lineage and measured bookmarks remap together",
+    "Immutable audio, generation request and original project remain unchanged",
+    "Copied project history survives and deleting the copy retains the original audio",
+    "Stale source revisions and invalid names create no project"
+  ]
+}

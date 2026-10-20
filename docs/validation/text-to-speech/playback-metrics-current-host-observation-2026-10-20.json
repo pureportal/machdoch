@@ -1,0 +1,44 @@
+{
+  "scope": "All retained browser events from the failed current-host benchmark, recomputed without rerunning it",
+  "providerExecution": false,
+  "physicalOutputMeasured": false,
+  "thresholdsChanged": false,
+  "errors": [],
+  "summaries": [
+    {
+      "transport": "pcm",
+      "retainedCount": 20,
+      "firstAudioMs": {
+        "first": 665.2999999970198,
+        "maximum": 665.2999999970198,
+        "p50": 79.5,
+        "p95": 342.70000000298023
+      },
+      "observationsAtOrAbove300ms": [
+        {
+          "timeToFirstAudioMs": 665.2999999970198,
+          "openToFirstAudioMs": 415.8999999985099,
+          "openLatencyMs": 249.39999999850988,
+          "timeToFirstSamplesMs": 22.299999997019768
+        },
+        {
+          "timeToFirstAudioMs": 342.70000000298023,
+          "openToFirstAudioMs": 245.20000000298023,
+          "openLatencyMs": 97.5,
+          "timeToFirstSamplesMs": 16.100000001490116
+        }
+      ]
+    },
+    {
+      "transport": "html-audio",
+      "retainedCount": 20,
+      "firstAudioMs": {
+        "first": 32.30000000447035,
+        "maximum": 116.40000000596046,
+        "p50": 59.70000000298023,
+        "p95": 110
+      },
+      "observationsAtOrAbove300ms": []
+    }
+  ]
+}

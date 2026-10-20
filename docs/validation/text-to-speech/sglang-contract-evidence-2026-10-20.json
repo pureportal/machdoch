@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/sgl-project/sglang-omni",
+  "commit": "b98a2893618fa790d03774d7199dd11adb01388e",
+  "sources": ["sglang_omni/serve/openai_api.py", "sglang_omni/serve/protocol.py", "sglang_omni/serve/speech_service.py", "sglang_omni/models/fishaudio_drama3/speech_request.py", "tests/unit_test/fishaudio_drama3/test_http_e2e.py"],
+  "contract": {
+    "route": "/v1/audio/speech",
+    "model": "fishaudio/drama-3",
+    "textField": "input",
+    "stream": true,
+    "streamFormat": "sse",
+    "responseFormat": "pcm",
+    "formatHeaders": ["X-Sample-Rate", "X-Channels", "X-Bit-Depth", "X-Request-Id"],
+    "channels": 1,
+    "bitDepth": 16,
+    "audioEvent": "speech.audio.delta",
+    "terminalEvent": "speech.audio.done",
+    "normalFinishReason": "stop",
+    "nativePreprocessorSpeakerSlots": 1,
+    "nativeContinuityEditingVerified": false
+  },
+  "verification": { "sourceInspection": true, "loopbackWireFixturesPassed": true, "realModelExecuted": false, "sourceWheelAttestation": "separate managed-runtime verification" },
+  "limitations": ["Cookbook speaker-token/model capacity does not establish this pinned preprocessor supports all slots.", "Response format is negotiated from actual headers; the example codec rate is not invented as a universal constant.", "Code inspection and transport fixtures do not prove installed weights, audible quality, GPU allocations or native acoustic continuity."]
+}
