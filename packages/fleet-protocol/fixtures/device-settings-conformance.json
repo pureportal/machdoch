@@ -137,7 +137,8 @@
             "version": 1,
             "theme": "light",
             "density": "compact",
-            "accent": "violet"
+            "accent": "violet",
+            "showChangedFiles": false
           }
         }
       },
@@ -154,7 +155,8 @@
             "version": 1,
             "theme": "dark",
             "density": "comfortable",
-            "accent": "red"
+            "accent": "red",
+            "showChangedFiles": true
           }
         }
       },

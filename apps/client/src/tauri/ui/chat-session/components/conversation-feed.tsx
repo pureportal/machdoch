@@ -86,6 +86,7 @@ export interface ConversationFeedProps {
   poseScenePreview?: ReactNode;
   promptEnhancementPreview?: {
     id: string;
+  showChangedFiles?: boolean;
     content: string;
     originalContent?: string;
     contextAttachments: ChatSessionContextAttachment[];
@@ -135,6 +136,7 @@ interface ConversationMessageRowProps {
   editContent: string;
   isEditing: boolean;
   isActiveEditing: boolean;
+  showChangedFiles: boolean;
   isDimmedForEditing: boolean;
   isPromptEnhancing: boolean;
   isAiContextStart: boolean;
@@ -187,6 +189,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   isDimmedForEditing,
   isEditing,
   isAiContextStart,
+  showChangedFiles,
   isNavigationHighlighted,
   isNavigationTarget,
   isOriginalPromptExpanded,
@@ -539,6 +542,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
               <div className="app-message-actions flex max-w-[90%] min-w-0 flex-wrap items-center gap-2">
                 <Button
                   type="button"
+                showChangedFiles={showChangedFiles}
                   variant="outline"
                   size="sm"
                   onClick={retryMessage}
@@ -585,6 +589,7 @@ export const ConversationFeed = ({
   editingPromptEnhancement = null,
   onCancelPromptEnhancement,
   onContinueTask,
+  showChangedFiles = true,
   onSaveMessageAsContextPack,
   onOpenWorkspaceFile,
   onOpenLocalFile,
@@ -1153,6 +1158,7 @@ export const ConversationFeed = ({
             isDimmedForEditing={
               hasActiveMessageEdit && activeEditingId !== message.id
             }
+            showChangedFiles={showChangedFiles}
             isPromptEnhancing={
               editingPromptEnhancement?.messageId === message.id
             }

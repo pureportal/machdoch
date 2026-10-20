@@ -596,6 +596,10 @@ export const saveAppearanceSettings = async (
           normalizedSettings.accent !== normalizedBase.accent
             ? normalizedSettings.accent
             : latest.accent,
+        showChangedFiles:
+          normalizedSettings.showChangedFiles !== normalizedBase.showChangedFiles
+            ? normalizedSettings.showChangedFiles
+            : latest.showChangedFiles,
       };
 
       await saveRequiredStoredValueUnlocked({

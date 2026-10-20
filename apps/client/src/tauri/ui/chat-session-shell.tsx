@@ -1079,6 +1079,7 @@ export const ChatSession = (): JSX.Element => {
                                   controller.composer.activeSession.id,
                                   scene,
                                 )
+                        showChangedFiles={appearance.settings.showChangedFiles}
                               }
                             />
                           ) : undefined

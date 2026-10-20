@@ -378,9 +378,17 @@ pub async fn run_desktop_task(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, DesktopTaskCancelMap>,
     window: tauri::WebviewWindow,
+    request: DesktopTaskRunRequest,
+) -> Result<DesktopTaskRunResponse, DesktopTaskRunError> {
+    run_desktop_task_internal(app_handle, state, window.label().to_string(), request).await
+}
+
+pub(crate) async fn run_desktop_task_internal(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, DesktopTaskCancelMap>,
+    window_label: String,
     mut request: DesktopTaskRunRequest,
 ) -> Result<DesktopTaskRunResponse, DesktopTaskRunError> {
-    let window_label = window.label().to_string();
     let task_timeout = Arc::new(timeout::DesktopTaskTimeout::new(
         window_label.clone(),
         crate::runtime_snapshot::load_chat_idle_timeout_minutes()
