@@ -19,7 +19,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.ts";
-import type { TaskExecutionRole, TaskExecutionSection } from "../types.ts";
+import type {
+  TaskExecutionProgress,
+  TaskExecutionRole,
+  TaskExecutionSection,
+} from "../types.ts";
 import { createInstructionResolutionFixture } from "../__test__/instruction-test-helpers.ts";
 import { createInstructionDeliveryPlan } from "../instruction-system/index.ts";
 import { createCliInstructionCapabilityFromProbe } from "../provider-enrollment/instruction-delivery-preflight.ts";
@@ -930,6 +934,44 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.child.listenerCount("close")).toBe(0);
     expect(call?.child.listenerCount("error")).toBe(0);
   });
+
+  it.each([
+    ["codex-cli", "MACHDOCH_CODEX_CLI_PATH", "gpt-5.5"],
+    ["claude-cli", "MACHDOCH_CLAUDE_CLI_PATH", "claude-sonnet-4-6"],
+    ["copilot-cli", "MACHDOCH_COPILOT_CLI_PATH", "auto"],
+  ] as const)(
+    "emits the full answer in completed model progress for %s",
+    async (provider, binaryKey, model) => {
+      const workspaceRoot = await createWorkspace();
+      process.env[binaryKey] = process.execPath;
+      const progress: TaskExecutionProgress[] = [];
+      const answer = `${"x".repeat(3_999)}🦊${"y".repeat(16_000)}\nComplete answer.`;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot, {
+          provider,
+          model,
+          onStateChange: (snapshot) => {
+            progress.push(snapshot);
+          },
+        }),
+      );
+
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      writeStructuredAnswer(call, answer);
+      call.child.emit("close", 0, null);
+
+      const result = await resultPromise;
+
+      expect(result?.status).toBe("executed");
+      expect(result?.response?.markdown).toBe(answer);
+      expect(
+        progress.find(
+          (snapshot) => snapshot.timelineEvent?.phase === "completed",
+        )?.assistantText,
+      ).toBe(answer);
+    },
+  );
 
   it("reads original chat text, returns MCP memory updates, and closes the delegated endpoint", async () => {
     const workspaceRoot = await createWorkspace();

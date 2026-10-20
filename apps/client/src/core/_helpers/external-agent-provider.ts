@@ -2629,7 +2629,7 @@ const executeExternalAgentCliTask = async (
     params.onStateChange,
     undefined,
     {
-      assistantText: limitText(answer, 4_000),
+      assistantText: answer,
       timelineEvent: {
         kind: "model-call",
         phase: "completed",
