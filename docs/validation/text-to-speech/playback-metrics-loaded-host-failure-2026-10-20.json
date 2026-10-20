@@ -1,0 +1,58 @@
+{
+  "stage": "pcm 1",
+  "error": "Error: page.evaluate: Error: Missing playback measurement: first-render\n    at file:///D:/Models/machdoch/speech/verification/playback-metrics-ui/dist/assets/index-DBewjM5z.js:1169:27",
+  "errors": [
+    "Missing playback measurement: first-render"
+  ],
+  "snapshot": {
+    "samples": [
+      {
+        "id": "cd966452-66fc-40f7-a2c0-1e1cb972dbec",
+        "sessionId": "38cdf9d7-1125-49e3-890c-42e118ce5894",
+        "atMs": 2185.7999999970198,
+        "event": "intent"
+      },
+      {
+        "id": "b79b7435-782f-442d-a7ab-8a124e0634ad",
+        "sessionId": "38cdf9d7-1125-49e3-890c-42e118ce5894",
+        "atMs": 22262.70000000298,
+        "event": "opened",
+        "openLatencyMs": 20076.90000000596,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "3a28e41b-7d71-4d64-928a-41150626955b",
+        "sessionId": "38cdf9d7-1125-49e3-890c-42e118ce5894",
+        "atMs": 2212.89999999851,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 27.100000001490116
+      },
+      {
+        "id": "1db8a3b6-ee44-401f-8ec8-8a68823403a5",
+        "sessionId": "38cdf9d7-1125-49e3-890c-42e118ce5894",
+        "atMs": 22265.39999999851,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      }
+    ],
+    "state": {
+      "owner": "verification",
+      "itemId": "502d4da6-6cee-4798-b38a-40093abd6c10",
+      "status": "playing",
+      "position": 0,
+      "duration": null,
+      "error": null,
+      "seekable": false,
+      "loop": null,
+      "loopAvailable": false,
+      "outputDeviceSupported": true,
+      "outputDeviceId": ""
+    }
+  }
+}

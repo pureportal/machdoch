@@ -1,0 +1,30 @@
+import {build} from "vite";
+import react from "@vitejs/plugin-react";
+import {chromium} from "playwright-core";
+import {readFile,mkdir,writeFile} from "node:fs/promises";
+import path from "node:path";
+import {fileURLToPath} from "node:url";
+import {createRequire} from "node:module";
+import assert from "node:assert/strict";
+
+const root=fileURLToPath(new URL("./ui",import.meta.url));const workspace=path.resolve(root,"../../../..");const output="D:/Models/machdoch/speech/verification/archive-permission-ui";
+await mkdir(output,{recursive:true});
+await build({configFile:false,root,plugins:[react()],logLevel:"error",resolve:{dedupe:["react","react-dom"],alias:[{find:/^@machdoch\/text-to-speech$/,replacement:path.join(workspace,"packages/text-to-speech/src/index.ts")},{find:/^@machdoch\/speech$/,replacement:path.join(workspace,"packages/speech/src/index.ts")}]},build:{outDir:output,emptyOutDir:true,minify:false}});
+const browserTemporary=path.join(output,"browser-temporary");await mkdir(browserTemporary,{recursive:true});process.env.TEMP=browserTemporary;process.env.TMP=browserTemporary;
+const browser=await chromium.launch({channel:"msedge",headless:true});const page=await browser.newPage({viewport:{width:1365,height:900}});const errors=[];page.on("pageerror",error=>errors.push(error.message));
+await page.route("https://speech.test/**",async route=>{
+  const pathname=decodeURIComponent(new URL(route.request().url()).pathname);const target=path.resolve(output,pathname==="/"?"index.html":`.${pathname}`);
+  if(!target.startsWith(path.resolve(output)+path.sep)){await route.abort();return;}
+  const contentType={".html":"text/html",".js":"text/javascript",".css":"text/css"}[path.extname(target)]??"application/octet-stream";
+  try{await route.fulfill({body:await readFile(target),contentType});}catch{await route.fulfill({status:404,body:"Missing verification asset"});}
+});
+let stage="project";
+try{
+  await page.goto("https://speech.test/");await page.getByLabel("Project name",{exact:true}).fill("Archive permissions");await page.getByRole("button",{name:"Create project",exact:true}).click();stage="prepare references";await page.evaluate(()=>window.speechFixture.prepareArchiveReferences());stage="open saved project";await page.getByRole("button",{name:"Archive permissions",exact:true}).click();stage="open timeline";await page.getByRole("button",{name:"Timeline",exact:true}).click();
+  stage="configure export";const form=page.locator("form").filter({has:page.getByRole("heading",{name:"Export",exact:true})});await form.getByLabel("Format",{exact:true}).selectOption("archive");await form.getByLabel("Output path",{exact:true}).fill("D:/Models/machdoch/speech/verification/archive-permission-ui/project.zip");stage="request first export";await form.getByRole("button",{name:"Export",exact:true}).click();
+  stage="review";const approval=form.getByRole("checkbox",{name:"I have permission to include these recordings in the archive",exact:true});await approval.waitFor();assert.equal(await approval.isChecked(),false);assert.equal(await page.evaluate(()=>window.speechFixture.calls.filter(call=>call.operation==="export").length),0);assert.equal(await form.locator("fieldset").filter({has:page.locator("legend",{hasText:/^Reference recordings$/u})}).locator("li").count(),2);
+  stage="approved export";await approval.check();await form.getByLabel("Redistribution permission",{exact:true}).fill("Synthetic owner permits bundling both recordings in this portable archive.");await form.getByRole("button",{name:"Export",exact:true}).click();await page.waitForFunction(()=>window.speechFixture.calls.some(call=>call.operation==="export"));
+  const sent=await page.evaluate(()=>window.speechFixture.calls.find(call=>call.operation==="export").input);const reviewed=await page.evaluate(()=>window.speechFixture.calls.filter(call=>call.operation==="archiveReferences").at(-1).input);assert.equal(sent.revisionId,reviewed.revisionId);assert.equal(sent.referencePermission.assetIds.length,2);assert.match(sent.referencePermission.inventorySha256,/^[a-f0-9]{64}$/u);assert.match(sent.referencePermission.rightsEvidence,/permits bundling/u);
+  stage="changed references";await page.evaluate(()=>window.speechFixture.prepareArchiveReferences());await page.getByRole("button",{name:"Archive permissions",exact:true}).click();await page.getByRole("button",{name:"Timeline",exact:true}).click();await form.getByRole("button",{name:"Export",exact:true}).click();await page.waitForFunction(()=>window.speechFixture.calls.filter(call=>call.operation==="archiveReferences").length>=3);await page.waitForFunction(()=>{const label=[...document.querySelectorAll("label")].find(label=>label.textContent.includes("I have permission to include these recordings"));return label?.querySelector("input")?.checked===false;});assert.equal(await page.evaluate(()=>window.speechFixture.calls.filter(call=>call.operation==="export").length),1);assert.equal(await form.getByLabel("Redistribution permission",{exact:true}).inputValue(),"");assert.deepEqual(errors,[]);
+  await writeFile(path.join(workspace,"docs/validation/text-to-speech/archive-permission-ui-result-2026-10-20.json"),JSON.stringify({browser:"Microsoft Edge Chromium",serverStarted:false,syntheticReferences:true,checks:["cloning permission does not authorize bundling","reference inventory displayed at export","explicit redistribution evidence and exact inventory hash","saved revision pinned","changed reference inventory resets approval"],errors},null,2));process.stdout.write("Archive reference permission UI checks passed.\n");
+}catch(error){await writeFile("D:/Models/machdoch/speech/verification/archive-permission-ui-failure.json",JSON.stringify({stage,error:String(error).slice(0,4096),errors,operations:await page.evaluate(()=>window.speechFixture.calls.slice(-20).map(call=>call.operation)),alerts:await page.getByRole("alert").allTextContents()},null,2));throw new Error(stage+": "+String(error).split("\n")[0]);}finally{await browser.close();}

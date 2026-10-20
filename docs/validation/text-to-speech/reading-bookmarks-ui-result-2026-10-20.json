@@ -1,0 +1,15 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "audioHandle": "synthetic measured coordinator fixture",
+  "realAudioPlayback": false,
+  "checks": [
+    "capture only the active project reading clock",
+    "bookmark binds immutable take hash and local seconds",
+    "earlier chapter duration changes preserve position",
+    "replacement disables stale bookmark with recovery",
+    "foreground answer hides capture controls",
+    "20-item pages and focus after add, paging and removal"
+  ],
+  "errors": []
+}

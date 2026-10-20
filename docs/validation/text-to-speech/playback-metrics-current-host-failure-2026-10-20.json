@@ -1,0 +1,2223 @@
+{
+  "stage": "html-audio 20",
+  "error": "AssertionError [ERR_ASSERTION]: {\"transport\":\"pcm\",\"count\":20,\"firstAudioMs\":{\"first\":665.2999999970198,\"maximum\":665.2999999970198,\"p50\":79.5,\"p95\":342.70000000298023},\"pauseAcknowledgmentMs\":{\"maximum\":6.199999995529652,\"p50\":4.5,\"p95\":6.100000001490116},\"stopAcknowledgmentMs\":{\"maximum\":1.6999999955296516,\"p50\":0.6000000014901161,\"p95\":1.2000000029802322}}",
+  "errors": [],
+  "snapshot": {
+    "samples": [
+      {
+        "id": "588ffd4e-b321-4633-a9d7-76569b8c9f52",
+        "sessionId": "c1319f0d-dcf7-4f6e-8187-2cc538ed6e25",
+        "atMs": 1739.2999999970198,
+        "event": "intent"
+      },
+      {
+        "id": "97687dc1-9f9c-4e2a-854c-0c8bfb1f06b7",
+        "sessionId": "c1319f0d-dcf7-4f6e-8187-2cc538ed6e25",
+        "atMs": 1988.6999999955297,
+        "event": "opened",
+        "openLatencyMs": 249.39999999850988,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "825eb239-f8ab-41ef-8fe5-58ca69512c28",
+        "sessionId": "c1319f0d-dcf7-4f6e-8187-2cc538ed6e25",
+        "atMs": 1761.5999999940395,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 22.299999997019768
+      },
+      {
+        "id": "5b2bec2d-92d9-40a5-bc29-88db93e47902",
+        "sessionId": "c1319f0d-dcf7-4f6e-8187-2cc538ed6e25",
+        "atMs": 1993.5,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "7e479a3c-2cc4-4d53-bf05-7eb819be1340",
+        "sessionId": "c1319f0d-dcf7-4f6e-8187-2cc538ed6e25",
+        "atMs": 2404.5999999940395,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 665.2999999970198,
+        "openToFirstAudioMs": 415.8999999985099
+      },
+      {
+        "id": "b19bbc76-da85-44e2-acea-025564f107f5",
+        "sessionId": "c1319f0d-dcf7-4f6e-8187-2cc538ed6e25",
+        "atMs": 2413.5999999940395,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 6.199999995529652
+      },
+      {
+        "id": "1f46ca42-bff1-42c9-98a0-e6729bcf7ae9",
+        "sessionId": "c1319f0d-dcf7-4f6e-8187-2cc538ed6e25",
+        "atMs": 2460.5,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "c576608b-1545-43ba-b859-0df9682fb441",
+        "sessionId": "c1319f0d-dcf7-4f6e-8187-2cc538ed6e25",
+        "atMs": 2461.0999999940395,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.8999999985098839
+      },
+      {
+        "id": "16ffa1aa-933a-4662-a32d-85e92cc7ab27",
+        "sessionId": "2166f34d-368b-4783-bf6e-ebf63da8e009",
+        "atMs": 2468.1999999955297,
+        "event": "intent"
+      },
+      {
+        "id": "4bc7d607-1558-46fa-b076-4cff1d8149f9",
+        "sessionId": "2166f34d-368b-4783-bf6e-ebf63da8e009",
+        "atMs": 2504.0999999940395,
+        "event": "opened",
+        "openLatencyMs": 35.899999998509884,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "1959c378-c8d9-4d12-8e55-069fac179dea",
+        "sessionId": "2166f34d-368b-4783-bf6e-ebf63da8e009",
+        "atMs": 2481.6999999955297,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 13.5
+      },
+      {
+        "id": "ebee1754-14f1-4ab4-b4ae-0284cc2f449d",
+        "sessionId": "2166f34d-368b-4783-bf6e-ebf63da8e009",
+        "atMs": 2506,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "bf99fa0b-1c0f-425b-adb4-9d3c436f7acf",
+        "sessionId": "2166f34d-368b-4783-bf6e-ebf63da8e009",
+        "atMs": 2540,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 71.80000000447035,
+        "openToFirstAudioMs": 35.900000005960464
+      },
+      {
+        "id": "0411d935-9211-46a8-9840-d29e78662423",
+        "sessionId": "2166f34d-368b-4783-bf6e-ebf63da8e009",
+        "atMs": 2546.2999999970198,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 4.200000002980232
+      },
+      {
+        "id": "5510ce71-48a9-4941-ad54-1a3130e0ffc1",
+        "sessionId": "2166f34d-368b-4783-bf6e-ebf63da8e009",
+        "atMs": 2583.2999999970198,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "d5b71594-d834-4a5b-9d72-24f5955fec74",
+        "sessionId": "2166f34d-368b-4783-bf6e-ebf63da8e009",
+        "atMs": 2583.7999999970198,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 1.2000000029802322
+      },
+      {
+        "id": "f4d61b66-f652-4dd8-ae4d-2b0cad7d992e",
+        "sessionId": "9cff9674-6aff-4345-8f0d-4311528623cb",
+        "atMs": 2588.89999999851,
+        "event": "intent"
+      },
+      {
+        "id": "126a3142-86c9-49a1-967b-770f5c722aca",
+        "sessionId": "9cff9674-6aff-4345-8f0d-4311528623cb",
+        "atMs": 2625.39999999851,
+        "event": "opened",
+        "openLatencyMs": 36.5,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "b400a0e5-7825-4f56-8093-35ba9f1aa0ed",
+        "sessionId": "9cff9674-6aff-4345-8f0d-4311528623cb",
+        "atMs": 2599.6999999955297,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 10.799999997019768
+      },
+      {
+        "id": "05ace255-b3c9-4b8f-a387-08ba9857a112",
+        "sessionId": "9cff9674-6aff-4345-8f0d-4311528623cb",
+        "atMs": 2627.0999999940395,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "0550fdb2-3ce8-4841-8ec5-fe39140db6b4",
+        "sessionId": "9cff9674-6aff-4345-8f0d-4311528623cb",
+        "atMs": 2658.1999999955297,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 69.29999999701977,
+        "openToFirstAudioMs": 32.79999999701977
+      },
+      {
+        "id": "e2548446-2d1e-4ff6-b85a-5a0206f15c8b",
+        "sessionId": "9cff9674-6aff-4345-8f0d-4311528623cb",
+        "atMs": 2663.89999999851,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 3.5
+      },
+      {
+        "id": "5fe1d513-a9fc-4bcd-b6d8-b63887f4950a",
+        "sessionId": "9cff9674-6aff-4345-8f0d-4311528623cb",
+        "atMs": 2703.89999999851,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "8f7b713f-ff01-4773-a96a-cd717b71dd26",
+        "sessionId": "9cff9674-6aff-4345-8f0d-4311528623cb",
+        "atMs": 2704.2999999970198,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.5
+      },
+      {
+        "id": "95b3e70f-7022-4cbc-b218-2c337d611256",
+        "sessionId": "f249ad1a-8a83-4c34-922a-6c658043557e",
+        "atMs": 2708.39999999851,
+        "event": "intent"
+      },
+      {
+        "id": "a68ce6f2-9b6f-433b-af77-293cb5668dd5",
+        "sessionId": "f249ad1a-8a83-4c34-922a-6c658043557e",
+        "atMs": 2747.5999999940395,
+        "event": "opened",
+        "openLatencyMs": 39.19999999552965,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "387ca88c-025c-40ce-8a11-c2a29949c113",
+        "sessionId": "f249ad1a-8a83-4c34-922a-6c658043557e",
+        "atMs": 2724,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 15.600000001490116
+      },
+      {
+        "id": "ab597299-889a-407a-af05-d70305a8c3b9",
+        "sessionId": "f249ad1a-8a83-4c34-922a-6c658043557e",
+        "atMs": 2750,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "6eac95cf-ef00-45f1-992b-f27ad0ea4d98",
+        "sessionId": "f249ad1a-8a83-4c34-922a-6c658043557e",
+        "atMs": 2779.7999999970198,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 71.39999999850988,
+        "openToFirstAudioMs": 32.20000000298023
+      },
+      {
+        "id": "05f3d0ab-5301-437d-ad12-bd68bb59800f",
+        "sessionId": "f249ad1a-8a83-4c34-922a-6c658043557e",
+        "atMs": 2787.1999999955297,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 5.100000001490116
+      },
+      {
+        "id": "f5d1f82a-1e37-417b-bd37-a69e1a198313",
+        "sessionId": "f249ad1a-8a83-4c34-922a-6c658043557e",
+        "atMs": 2914.5,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "7f73a3c1-b04b-4bbe-be59-10ca51b5ea2f",
+        "sessionId": "f249ad1a-8a83-4c34-922a-6c658043557e",
+        "atMs": 2915,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.6000000014901161
+      },
+      {
+        "id": "a2c8efd0-bebd-40a8-af61-8b4cfa901d37",
+        "sessionId": "d3d7a3f3-17f1-4922-928d-527df52f9356",
+        "atMs": 2921.5999999940395,
+        "event": "intent"
+      },
+      {
+        "id": "c152b615-16ad-4246-bfce-d47a6cb47b88",
+        "sessionId": "d3d7a3f3-17f1-4922-928d-527df52f9356",
+        "atMs": 2960.0999999940395,
+        "event": "opened",
+        "openLatencyMs": 38.5,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "144d74a9-c821-4775-8541-5d9b0583a807",
+        "sessionId": "d3d7a3f3-17f1-4922-928d-527df52f9356",
+        "atMs": 2935.6999999955297,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 14.100000001490116
+      },
+      {
+        "id": "8c9e97fc-59a1-497d-979f-4e5d015e6266",
+        "sessionId": "d3d7a3f3-17f1-4922-928d-527df52f9356",
+        "atMs": 2961.7999999970198,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "3c218d2a-e68b-45de-984a-a6da29f09997",
+        "sessionId": "d3d7a3f3-17f1-4922-928d-527df52f9356",
+        "atMs": 3045,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 123.40000000596046,
+        "openToFirstAudioMs": 84.90000000596046
+      },
+      {
+        "id": "d31e6c4a-745f-4280-a9cf-3c9d35ad33c4",
+        "sessionId": "d3d7a3f3-17f1-4922-928d-527df52f9356",
+        "atMs": 3053.7999999970198,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 6.100000001490116
+      },
+      {
+        "id": "0a8c0fb4-857d-450e-82ee-3abb4fe8eda6",
+        "sessionId": "d3d7a3f3-17f1-4922-928d-527df52f9356",
+        "atMs": 3154.5,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "38e77f04-2e42-4946-9d20-297ec6b63072",
+        "sessionId": "d3d7a3f3-17f1-4922-928d-527df52f9356",
+        "atMs": 3155,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.6000000014901161
+      },
+      {
+        "id": "934cb67a-7919-42d2-bad3-7fbe128c39d7",
+        "sessionId": "6638771b-41f6-48eb-800a-bb525ec1260f",
+        "atMs": 3159,
+        "event": "intent"
+      },
+      {
+        "id": "ef632e3b-2ae7-4855-95f2-61f767e3b956",
+        "sessionId": "6638771b-41f6-48eb-800a-bb525ec1260f",
+        "atMs": 3241.0999999940395,
+        "event": "opened",
+        "openLatencyMs": 82.09999999403954,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "5f1862e1-e423-424f-b83a-1a04de9a66fe",
+        "sessionId": "6638771b-41f6-48eb-800a-bb525ec1260f",
+        "atMs": 3200.1999999955297,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 41.19999999552965
+      },
+      {
+        "id": "a3cf2adf-078d-42e5-8c42-8b7b071bab84",
+        "sessionId": "6638771b-41f6-48eb-800a-bb525ec1260f",
+        "atMs": 3243,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "0359f82a-835a-4906-b0c3-9e6542469d4b",
+        "sessionId": "6638771b-41f6-48eb-800a-bb525ec1260f",
+        "atMs": 3331.1999999955297,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 172.19999999552965,
+        "openToFirstAudioMs": 90.10000000149012
+      },
+      {
+        "id": "5be425f1-001a-4981-90cf-7b00fe268869",
+        "sessionId": "6638771b-41f6-48eb-800a-bb525ec1260f",
+        "atMs": 3338.7999999970198,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 5.399999998509884
+      },
+      {
+        "id": "fd4c2225-0a85-48c9-a7e9-61ffd53be449",
+        "sessionId": "6638771b-41f6-48eb-800a-bb525ec1260f",
+        "atMs": 3438.6999999955297,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "7c84e6f7-431d-4768-8965-f3508cfcfcc3",
+        "sessionId": "6638771b-41f6-48eb-800a-bb525ec1260f",
+        "atMs": 3439.1999999955297,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.6000000014901161
+      },
+      {
+        "id": "d2d627f9-d6c9-4060-8ea5-2be09ad04c3d",
+        "sessionId": "2154f919-a911-43b6-a336-4ec9ef20a122",
+        "atMs": 3446.2999999970198,
+        "event": "intent"
+      },
+      {
+        "id": "2824089f-ded4-44db-9d39-82d78fab246b",
+        "sessionId": "2154f919-a911-43b6-a336-4ec9ef20a122",
+        "atMs": 3484.1999999955297,
+        "event": "opened",
+        "openLatencyMs": 37.899999998509884,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "da60e41c-7b8a-4432-8096-0d88d0090efc",
+        "sessionId": "2154f919-a911-43b6-a336-4ec9ef20a122",
+        "atMs": 3460.2999999970198,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 14
+      },
+      {
+        "id": "10a893d8-17ca-4284-b55d-82647f6f9463",
+        "sessionId": "2154f919-a911-43b6-a336-4ec9ef20a122",
+        "atMs": 3487.5999999940395,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "363b6618-bbff-4673-a2a8-92e37f8d7b42",
+        "sessionId": "2154f919-a911-43b6-a336-4ec9ef20a122",
+        "atMs": 3525.1999999955297,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 78.89999999850988,
+        "openToFirstAudioMs": 41
+      },
+      {
+        "id": "6e8e3147-fe0a-4496-a6a5-185371cdeea0",
+        "sessionId": "2154f919-a911-43b6-a336-4ec9ef20a122",
+        "atMs": 3531.5999999940395,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 4.299999997019768
+      },
+      {
+        "id": "fad87b0c-2333-43ce-a479-de01bf99d75d",
+        "sessionId": "2154f919-a911-43b6-a336-4ec9ef20a122",
+        "atMs": 3568,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "4347b493-28f9-447a-b878-697e04509d6d",
+        "sessionId": "2154f919-a911-43b6-a336-4ec9ef20a122",
+        "atMs": 3568.39999999851,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.5
+      },
+      {
+        "id": "443bc989-f292-4f96-b40b-2575231bc844",
+        "sessionId": "075c441f-2eb4-4d8b-a79f-3fcdd01e8c91",
+        "atMs": 3572.39999999851,
+        "event": "intent"
+      },
+      {
+        "id": "2b9f1f97-80b5-45f9-85d6-12e12a91fcbe",
+        "sessionId": "075c441f-2eb4-4d8b-a79f-3fcdd01e8c91",
+        "atMs": 3609.2999999970198,
+        "event": "opened",
+        "openLatencyMs": 36.899999998509884,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "5db11c26-d68b-4251-b166-e0d4acb4a1b0",
+        "sessionId": "075c441f-2eb4-4d8b-a79f-3fcdd01e8c91",
+        "atMs": 3585.1999999955297,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 12.799999997019768
+      },
+      {
+        "id": "7399aaaa-5ce6-4724-bfe4-b0e2a6cc5835",
+        "sessionId": "075c441f-2eb4-4d8b-a79f-3fcdd01e8c91",
+        "atMs": 3611.7999999970198,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "f9f78841-9d74-4a86-a284-0d7dd7493b25",
+        "sessionId": "075c441f-2eb4-4d8b-a79f-3fcdd01e8c91",
+        "atMs": 3644.5,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 72.10000000149012,
+        "openToFirstAudioMs": 35.20000000298023
+      },
+      {
+        "id": "48700dad-4d1c-4967-a753-74f9e8093fc1",
+        "sessionId": "075c441f-2eb4-4d8b-a79f-3fcdd01e8c91",
+        "atMs": 3651.0999999940395,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 4.5
+      },
+      {
+        "id": "d832c344-b903-46b0-b040-d570ef982a01",
+        "sessionId": "075c441f-2eb4-4d8b-a79f-3fcdd01e8c91",
+        "atMs": 3681,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "10277d39-0051-40e4-8ae4-bde2a8bebd52",
+        "sessionId": "075c441f-2eb4-4d8b-a79f-3fcdd01e8c91",
+        "atMs": 3681.5,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.6000000014901161
+      },
+      {
+        "id": "dd46a452-6754-4e0d-a877-ba9546b6e60e",
+        "sessionId": "0f426ea4-2ac6-4399-8442-ef96e44c2faa",
+        "atMs": 3686.39999999851,
+        "event": "intent"
+      },
+      {
+        "id": "1060ea13-fe56-4e5f-bc71-fd9091007798",
+        "sessionId": "0f426ea4-2ac6-4399-8442-ef96e44c2faa",
+        "atMs": 3738,
+        "event": "opened",
+        "openLatencyMs": 51.600000001490116,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "424c24ef-172b-4ace-91c1-ce6e25badb95",
+        "sessionId": "0f426ea4-2ac6-4399-8442-ef96e44c2faa",
+        "atMs": 3701.0999999940395,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 14.699999995529652
+      },
+      {
+        "id": "1a133d03-2709-48ca-9cc4-37b5d35666d1",
+        "sessionId": "0f426ea4-2ac6-4399-8442-ef96e44c2faa",
+        "atMs": 3739.7999999970198,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "27c144df-c17c-4032-9480-5dcd4714fac9",
+        "sessionId": "0f426ea4-2ac6-4399-8442-ef96e44c2faa",
+        "atMs": 3780.89999999851,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 94.5,
+        "openToFirstAudioMs": 42.899999998509884
+      },
+      {
+        "id": "bd8a9bd3-714a-4865-82f7-6e8dd4e25789",
+        "sessionId": "0f426ea4-2ac6-4399-8442-ef96e44c2faa",
+        "atMs": 3788.1999999955297,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 5.199999995529652
+      },
+      {
+        "id": "ffbd8a52-becf-4eed-a443-be988b8cc19b",
+        "sessionId": "0f426ea4-2ac6-4399-8442-ef96e44c2faa",
+        "atMs": 3851,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "da5965a1-5107-43e2-bb9e-825dc7e6e1a6",
+        "sessionId": "0f426ea4-2ac6-4399-8442-ef96e44c2faa",
+        "atMs": 3851.5999999940395,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.6999999955296516
+      },
+      {
+        "id": "fd028307-f609-4ddc-ac7e-29085fdd901b",
+        "sessionId": "a35fcd26-29f6-437f-9ea1-4d2ec4103514",
+        "atMs": 3856.6999999955297,
+        "event": "intent"
+      },
+      {
+        "id": "9dbb03de-0504-4bf1-b088-8a07dc845f43",
+        "sessionId": "a35fcd26-29f6-437f-9ea1-4d2ec4103514",
+        "atMs": 3897.39999999851,
+        "event": "opened",
+        "openLatencyMs": 40.70000000298023,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "11b8647e-fc14-4ebb-8f9d-cd96a4f314a1",
+        "sessionId": "a35fcd26-29f6-437f-9ea1-4d2ec4103514",
+        "atMs": 3869.7999999970198,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 13.100000001490116
+      },
+      {
+        "id": "eda1f3ef-535c-4fa9-a369-263e881be84e",
+        "sessionId": "a35fcd26-29f6-437f-9ea1-4d2ec4103514",
+        "atMs": 3899.1999999955297,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "73a57bac-4f2f-4d2d-a93b-f6892b8f4b34",
+        "sessionId": "a35fcd26-29f6-437f-9ea1-4d2ec4103514",
+        "atMs": 3942.1999999955297,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 85.5,
+        "openToFirstAudioMs": 44.79999999701977
+      },
+      {
+        "id": "ddc8876a-986c-4480-8fde-61dff8fb8826",
+        "sessionId": "a35fcd26-29f6-437f-9ea1-4d2ec4103514",
+        "atMs": 3949.0999999940395,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 4.699999995529652
+      },
+      {
+        "id": "e3484983-6cc3-4d3a-ae78-3ae9b4b15366",
+        "sessionId": "a35fcd26-29f6-437f-9ea1-4d2ec4103514",
+        "atMs": 4003.89999999851,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "d6f11535-e102-48bd-b3cd-3b330a409ce5",
+        "sessionId": "a35fcd26-29f6-437f-9ea1-4d2ec4103514",
+        "atMs": 4004.39999999851,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.7000000029802322
+      },
+      {
+        "id": "e1855220-868a-49c2-9a7b-b81650b4a631",
+        "sessionId": "8ca354dc-8392-4207-9c99-4153732db4fa",
+        "atMs": 4011,
+        "event": "intent"
+      },
+      {
+        "id": "a6de1f72-a56a-47d7-a255-5d05e1b5eb94",
+        "sessionId": "8ca354dc-8392-4207-9c99-4153732db4fa",
+        "atMs": 4048,
+        "event": "opened",
+        "openLatencyMs": 37,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "e06fef85-3dd8-4c2c-8756-ed84ec07b0c7",
+        "sessionId": "8ca354dc-8392-4207-9c99-4153732db4fa",
+        "atMs": 4023.6999999955297,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 12.699999995529652
+      },
+      {
+        "id": "61d07eeb-4bb3-4451-80f2-607d02871747",
+        "sessionId": "8ca354dc-8392-4207-9c99-4153732db4fa",
+        "atMs": 4049.7999999970198,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "4bc33113-e582-40c0-bdc2-4acad0abc7c7",
+        "sessionId": "8ca354dc-8392-4207-9c99-4153732db4fa",
+        "atMs": 4086.0999999940395,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 75.09999999403954,
+        "openToFirstAudioMs": 38.099999994039536
+      },
+      {
+        "id": "0cc471cd-d98e-46b0-9d15-a26d24085950",
+        "sessionId": "8ca354dc-8392-4207-9c99-4153732db4fa",
+        "atMs": 4092.6999999955297,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 4.5
+      },
+      {
+        "id": "d27e5432-7533-4ffa-ab22-57692d179326",
+        "sessionId": "8ca354dc-8392-4207-9c99-4153732db4fa",
+        "atMs": 4128.19999999553,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "e6a01321-ded1-4580-a722-03695177fa7d",
+        "sessionId": "8ca354dc-8392-4207-9c99-4153732db4fa",
+        "atMs": 4128.69999999553,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.6000000014901161
+      },
+      {
+        "id": "0482f739-ce3b-4b42-91c4-bf319b5106f3",
+        "sessionId": "6f194454-7f8c-46ea-aef0-f8a1c15386c4",
+        "atMs": 4133.0999999940395,
+        "event": "intent"
+      },
+      {
+        "id": "bc3eb047-6ff7-494b-8fc7-2702dd0b1b2a",
+        "sessionId": "6f194454-7f8c-46ea-aef0-f8a1c15386c4",
+        "atMs": 4175.19999999553,
+        "event": "opened",
+        "openLatencyMs": 42.100000001490116,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "8bc55458-8478-4431-b034-e3f11e42bfe1",
+        "sessionId": "6f194454-7f8c-46ea-aef0-f8a1c15386c4",
+        "atMs": 4148.79999999702,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 15.700000002980232
+      },
+      {
+        "id": "016d382a-131a-4144-856d-df0336d14c8d",
+        "sessionId": "6f194454-7f8c-46ea-aef0-f8a1c15386c4",
+        "atMs": 4176.89999999851,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "97713ee3-1112-4941-ba6e-148ffde06963",
+        "sessionId": "6f194454-7f8c-46ea-aef0-f8a1c15386c4",
+        "atMs": 4211.5999999940395,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 78.5,
+        "openToFirstAudioMs": 36.399999998509884
+      },
+      {
+        "id": "49cb2edf-086e-459c-a05c-785d29a1c55f",
+        "sessionId": "6f194454-7f8c-46ea-aef0-f8a1c15386c4",
+        "atMs": 4218.0999999940395,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 4.199999995529652
+      },
+      {
+        "id": "e6e3f848-f3b8-4714-9279-67d98242294b",
+        "sessionId": "6f194454-7f8c-46ea-aef0-f8a1c15386c4",
+        "atMs": 4277.19999999553,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "830faaff-8f19-4c84-aebb-90d96866875b",
+        "sessionId": "6f194454-7f8c-46ea-aef0-f8a1c15386c4",
+        "atMs": 4277.5999999940395,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.5999999940395355
+      },
+      {
+        "id": "736b9f6a-1018-44bd-9a2e-cb374a8de6e6",
+        "sessionId": "5d8325d7-53e3-4371-99ce-4dc6cc798131",
+        "atMs": 4281.0999999940395,
+        "event": "intent"
+      },
+      {
+        "id": "0389f32a-40c0-45de-a330-c3578ed47a4f",
+        "sessionId": "5d8325d7-53e3-4371-99ce-4dc6cc798131",
+        "atMs": 4339.19999999553,
+        "event": "opened",
+        "openLatencyMs": 58.100000001490116,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "291db196-d6fc-47ee-be7c-8d59fb3b2596",
+        "sessionId": "5d8325d7-53e3-4371-99ce-4dc6cc798131",
+        "atMs": 4294.0999999940395,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 13
+      },
+      {
+        "id": "6b2f8f20-cfa1-4e94-bfea-e97955f8a99f",
+        "sessionId": "5d8325d7-53e3-4371-99ce-4dc6cc798131",
+        "atMs": 4340.69999999553,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "22aaafcc-b291-4e68-9a7d-da41b7ac67da",
+        "sessionId": "5d8325d7-53e3-4371-99ce-4dc6cc798131",
+        "atMs": 4387.5999999940395,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 106.5,
+        "openToFirstAudioMs": 48.399999998509884
+      },
+      {
+        "id": "9b0715a0-c6c3-49ef-9a40-292dfa583e32",
+        "sessionId": "5d8325d7-53e3-4371-99ce-4dc6cc798131",
+        "atMs": 4393.89999999851,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 4.300000004470348
+      },
+      {
+        "id": "8a9611c1-a318-4f35-a32d-abbd2ff6bef4",
+        "sessionId": "5d8325d7-53e3-4371-99ce-4dc6cc798131",
+        "atMs": 4465.39999999851,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "3d6e7536-0ae3-4e00-9c55-dbbde5030671",
+        "sessionId": "5d8325d7-53e3-4371-99ce-4dc6cc798131",
+        "atMs": 4465.79999999702,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.5
+      },
+      {
+        "id": "73cd33e0-885c-476b-a106-a85d0187924b",
+        "sessionId": "84b78e3f-f129-4a2e-adf7-5818d24154c9",
+        "atMs": 4470.39999999851,
+        "event": "intent"
+      },
+      {
+        "id": "15ca24d9-1737-4760-88f1-a3319f0c40f5",
+        "sessionId": "84b78e3f-f129-4a2e-adf7-5818d24154c9",
+        "atMs": 4513.29999999702,
+        "event": "opened",
+        "openLatencyMs": 42.899999998509884,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "ab916b2d-76a4-4d2f-a6f3-85230def8169",
+        "sessionId": "84b78e3f-f129-4a2e-adf7-5818d24154c9",
+        "atMs": 4484.0999999940395,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 13.699999995529652
+      },
+      {
+        "id": "5819773f-d4b9-428f-9ba5-aeacec80a2f9",
+        "sessionId": "84b78e3f-f129-4a2e-adf7-5818d24154c9",
+        "atMs": 4514.89999999851,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "00d2ac78-13c9-4880-88f0-99ca750ae306",
+        "sessionId": "84b78e3f-f129-4a2e-adf7-5818d24154c9",
+        "atMs": 4548.5999999940395,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 78.19999999552965,
+        "openToFirstAudioMs": 35.29999999701977
+      },
+      {
+        "id": "afab23a3-30cc-49da-82fe-37b315122aa3",
+        "sessionId": "84b78e3f-f129-4a2e-adf7-5818d24154c9",
+        "atMs": 4556.5,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 5.4000000059604645
+      },
+      {
+        "id": "56e5a2a6-ed8f-4442-ba2d-5274a321ce1c",
+        "sessionId": "84b78e3f-f129-4a2e-adf7-5818d24154c9",
+        "atMs": 4594.5999999940395,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "fffb13ed-5651-45e1-96dc-d1e716d38abc",
+        "sessionId": "84b78e3f-f129-4a2e-adf7-5818d24154c9",
+        "atMs": 4595.0999999940395,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.5999999940395355
+      },
+      {
+        "id": "9115e255-669f-48ea-9c20-aa7b721004ee",
+        "sessionId": "63c38516-b0a8-4fbd-b4e1-7b41ef3c0812",
+        "atMs": 4598.69999999553,
+        "event": "intent"
+      },
+      {
+        "id": "3ef7b74b-369f-4960-82cf-e4008005e9b5",
+        "sessionId": "63c38516-b0a8-4fbd-b4e1-7b41ef3c0812",
+        "atMs": 4642.29999999702,
+        "event": "opened",
+        "openLatencyMs": 43.600000001490116,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "0a9b99be-0ca9-40a3-bd3d-512b61bebb10",
+        "sessionId": "63c38516-b0a8-4fbd-b4e1-7b41ef3c0812",
+        "atMs": 4611.5,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 12.800000004470348
+      },
+      {
+        "id": "f73a4d37-3cc8-4b8e-b146-581c671a15ba",
+        "sessionId": "63c38516-b0a8-4fbd-b4e1-7b41ef3c0812",
+        "atMs": 4644.0999999940395,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "dd6f119b-7151-4d18-9877-80918437fcbb",
+        "sessionId": "63c38516-b0a8-4fbd-b4e1-7b41ef3c0812",
+        "atMs": 4682.89999999851,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 84.20000000298023,
+        "openToFirstAudioMs": 40.600000001490116
+      },
+      {
+        "id": "c12d49a4-6db0-45ea-9224-ef004067fc54",
+        "sessionId": "63c38516-b0a8-4fbd-b4e1-7b41ef3c0812",
+        "atMs": 4689.5,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 4.200000002980232
+      },
+      {
+        "id": "52d8eb45-0609-42a9-b2b2-69488c80867b",
+        "sessionId": "63c38516-b0a8-4fbd-b4e1-7b41ef3c0812",
+        "atMs": 4728.29999999702,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "ac8da3ab-6eee-4058-b82b-f714e56764aa",
+        "sessionId": "63c38516-b0a8-4fbd-b4e1-7b41ef3c0812",
+        "atMs": 4728.79999999702,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.6000000014901161
+      },
+      {
+        "id": "80960b16-90a0-430e-a792-9a18ecd01d76",
+        "sessionId": "09b7ea2f-d796-42d1-8cb6-7d4910a2dd98",
+        "atMs": 4732,
+        "event": "intent"
+      },
+      {
+        "id": "79f98b37-065b-4e82-8efb-5320424d4c0e",
+        "sessionId": "09b7ea2f-d796-42d1-8cb6-7d4910a2dd98",
+        "atMs": 4769.0999999940395,
+        "event": "opened",
+        "openLatencyMs": 37.099999994039536,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "857d8850-df57-4a60-8bb7-e90769c43c9c",
+        "sessionId": "09b7ea2f-d796-42d1-8cb6-7d4910a2dd98",
+        "atMs": 4745.0999999940395,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 13.099999994039536
+      },
+      {
+        "id": "914a9e13-619c-4c40-a3d4-824cb8a76f64",
+        "sessionId": "09b7ea2f-d796-42d1-8cb6-7d4910a2dd98",
+        "atMs": 4771.29999999702,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "8d1cd6d5-904c-4705-bc5b-6427b4cff965",
+        "sessionId": "09b7ea2f-d796-42d1-8cb6-7d4910a2dd98",
+        "atMs": 4804.5999999940395,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 72.59999999403954,
+        "openToFirstAudioMs": 35.5
+      },
+      {
+        "id": "529ec959-7100-4fc2-9850-6de3879c36b7",
+        "sessionId": "09b7ea2f-d796-42d1-8cb6-7d4910a2dd98",
+        "atMs": 4811.39999999851,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 4.800000004470348
+      },
+      {
+        "id": "b8b6f7f2-776f-4926-8575-9cba811e79e2",
+        "sessionId": "09b7ea2f-d796-42d1-8cb6-7d4910a2dd98",
+        "atMs": 4855.69999999553,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "f49e44e5-2b79-4d4c-a1ac-cf7968e5000d",
+        "sessionId": "09b7ea2f-d796-42d1-8cb6-7d4910a2dd98",
+        "atMs": 4856.19999999553,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.7999999970197678
+      },
+      {
+        "id": "8d945073-a914-4fbb-a927-096e1409ce73",
+        "sessionId": "99d118c7-dad7-4e13-821c-a32d7edbae00",
+        "atMs": 4860.69999999553,
+        "event": "intent"
+      },
+      {
+        "id": "1112e712-4968-4702-8a27-a80abde2ceff",
+        "sessionId": "99d118c7-dad7-4e13-821c-a32d7edbae00",
+        "atMs": 4898.19999999553,
+        "event": "opened",
+        "openLatencyMs": 37.5,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "7518df02-79bb-41c7-9293-95b8d633e48e",
+        "sessionId": "99d118c7-dad7-4e13-821c-a32d7edbae00",
+        "atMs": 4873.79999999702,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 13.100000001490116
+      },
+      {
+        "id": "d03a1ed5-5f99-4522-a0d1-64f63eae3cb7",
+        "sessionId": "99d118c7-dad7-4e13-821c-a32d7edbae00",
+        "atMs": 4899.79999999702,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "3ea03747-7330-4ba1-b9b9-d76cf93f5533",
+        "sessionId": "99d118c7-dad7-4e13-821c-a32d7edbae00",
+        "atMs": 4940.19999999553,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 79.5,
+        "openToFirstAudioMs": 42
+      },
+      {
+        "id": "c2e5882e-8c2c-49c9-8f71-b1a8d1a131f6",
+        "sessionId": "99d118c7-dad7-4e13-821c-a32d7edbae00",
+        "atMs": 4946.5,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 4.200000002980232
+      },
+      {
+        "id": "6a154948-d384-46eb-868b-08f62d7ac035",
+        "sessionId": "99d118c7-dad7-4e13-821c-a32d7edbae00",
+        "atMs": 5051.89999999851,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "8a755873-38ef-4454-8428-64ebf99981d3",
+        "sessionId": "99d118c7-dad7-4e13-821c-a32d7edbae00",
+        "atMs": 5053.19999999553,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 1.6999999955296516
+      },
+      {
+        "id": "fae33399-89ef-4ec5-9928-85e1d8272f6d",
+        "sessionId": "bc39fcdf-99df-4791-be26-a0a677f81b68",
+        "atMs": 5059.0999999940395,
+        "event": "intent"
+      },
+      {
+        "id": "bbe5c693-d31c-4946-8aaa-6b82ce21713c",
+        "sessionId": "bc39fcdf-99df-4791-be26-a0a677f81b68",
+        "atMs": 5156.5999999940395,
+        "event": "opened",
+        "openLatencyMs": 97.5,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "9524597d-4489-4faf-bd16-cec36ec24c0e",
+        "sessionId": "bc39fcdf-99df-4791-be26-a0a677f81b68",
+        "atMs": 5075.19999999553,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 16.100000001490116
+      },
+      {
+        "id": "2c5e515e-e895-401b-8bd9-2d93378d2f2c",
+        "sessionId": "bc39fcdf-99df-4791-be26-a0a677f81b68",
+        "atMs": 5159.19999999553,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "9dfce71e-7c1d-4168-8231-fb9cd6265596",
+        "sessionId": "bc39fcdf-99df-4791-be26-a0a677f81b68",
+        "atMs": 5401.79999999702,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 342.70000000298023,
+        "openToFirstAudioMs": 245.20000000298023
+      },
+      {
+        "id": "db821c65-b978-4a62-a2bc-06c724eb942d",
+        "sessionId": "bc39fcdf-99df-4791-be26-a0a677f81b68",
+        "atMs": 5404.19999999553,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.3999999985098839
+      },
+      {
+        "id": "8e46a3b1-fd2c-4af8-ad89-4c512550f30b",
+        "sessionId": "bc39fcdf-99df-4791-be26-a0a677f81b68",
+        "atMs": 5700.89999999851,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "5e256cd6-e8a0-4147-b965-ad8642d42749",
+        "sessionId": "bc39fcdf-99df-4791-be26-a0a677f81b68",
+        "atMs": 5701.5999999940395,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.6999999955296516
+      },
+      {
+        "id": "0e66bceb-081a-4166-bd75-6191b88b25f1",
+        "sessionId": "48db92b9-766b-4c7f-bcc9-cf148a5ba8fc",
+        "atMs": 5715.79999999702,
+        "event": "intent"
+      },
+      {
+        "id": "f6a8ae55-aab3-482a-8463-47016c26bfa2",
+        "sessionId": "48db92b9-766b-4c7f-bcc9-cf148a5ba8fc",
+        "atMs": 5794.39999999851,
+        "event": "opened",
+        "openLatencyMs": 78.60000000149012,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "9552a1e4-d592-4162-bc6a-fb9797189b37",
+        "sessionId": "48db92b9-766b-4c7f-bcc9-cf148a5ba8fc",
+        "atMs": 5732.29999999702,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 16.5
+      },
+      {
+        "id": "205c7024-3df9-45ae-8e3b-6f29d9bff4f3",
+        "sessionId": "48db92b9-766b-4c7f-bcc9-cf148a5ba8fc",
+        "atMs": 5796.39999999851,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "d621a0a7-5685-43f2-a68d-89ea58a89996",
+        "sessionId": "48db92b9-766b-4c7f-bcc9-cf148a5ba8fc",
+        "atMs": 5864.29999999702,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 148.5,
+        "openToFirstAudioMs": 69.89999999850988
+      },
+      {
+        "id": "26e57de5-cf26-4aa8-bab4-0c214b610800",
+        "sessionId": "48db92b9-766b-4c7f-bcc9-cf148a5ba8fc",
+        "atMs": 5871.29999999702,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 5.200000002980232
+      },
+      {
+        "id": "39cb9d1d-c405-4902-918e-058baf430b16",
+        "sessionId": "48db92b9-766b-4c7f-bcc9-cf148a5ba8fc",
+        "atMs": 5914.19999999553,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "41466132-4b28-411b-9342-3e1921364091",
+        "sessionId": "48db92b9-766b-4c7f-bcc9-cf148a5ba8fc",
+        "atMs": 5914.69999999553,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.6000000014901161
+      },
+      {
+        "id": "2d24948f-f8f8-4c45-91ba-50c5300f3d3e",
+        "sessionId": "39e074cc-f000-4392-89a7-de1c8c1d4a5f",
+        "atMs": 5921.39999999851,
+        "event": "intent"
+      },
+      {
+        "id": "d6a58407-4823-4976-83d1-15f4668657f7",
+        "sessionId": "39e074cc-f000-4392-89a7-de1c8c1d4a5f",
+        "atMs": 5993.0999999940395,
+        "event": "opened",
+        "openLatencyMs": 71.69999999552965,
+        "outputTransport": "pcm"
+      },
+      {
+        "id": "4f9f9676-d8bc-46ad-9dd2-f9a348245432",
+        "sessionId": "39e074cc-f000-4392-89a7-de1c8c1d4a5f",
+        "atMs": 5935.39999999851,
+        "event": "first-samples",
+        "outputTransport": "pcm",
+        "timeToFirstSamplesMs": 14
+      },
+      {
+        "id": "096cf3f0-da3d-4c5f-b869-6e3954a7d901",
+        "sessionId": "39e074cc-f000-4392-89a7-de1c8c1d4a5f",
+        "atMs": 5995.19999999553,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "f28b73b6-aa19-48d8-9451-808d4270dc1c",
+        "sessionId": "39e074cc-f000-4392-89a7-de1c8c1d4a5f",
+        "atMs": 6083.69999999553,
+        "event": "first-render",
+        "outputTransport": "pcm",
+        "timeToFirstAudioMs": 162.29999999701977,
+        "openToFirstAudioMs": 90.60000000149012
+      },
+      {
+        "id": "f7f24776-80c2-4cd7-a96c-97cf2b05b679",
+        "sessionId": "39e074cc-f000-4392-89a7-de1c8c1d4a5f",
+        "atMs": 6090.69999999553,
+        "event": "pause-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 4.899999998509884
+      },
+      {
+        "id": "131e8883-3df1-4813-b642-0f58f0fffc46",
+        "sessionId": "39e074cc-f000-4392-89a7-de1c8c1d4a5f",
+        "atMs": 6146.5,
+        "event": "pcm-buffer",
+        "outputTransport": "pcm",
+        "sampleRate": 24000,
+        "maxBufferedFrames": 32768,
+        "maxBufferedAudioMs": 1365.3333333333333,
+        "underrunFrames": 0,
+        "underrunCount": 0
+      },
+      {
+        "id": "c2657a58-857b-4530-925e-47c5e876a2b6",
+        "sessionId": "39e074cc-f000-4392-89a7-de1c8c1d4a5f",
+        "atMs": 6147.0999999940395,
+        "event": "stop-ack",
+        "outputTransport": "pcm",
+        "latencyMs": 0.6999999955296516
+      },
+      {
+        "id": "f151a545-2da4-4d68-a113-740c1d3521c8",
+        "sessionId": "78449935-bc41-4d31-aabc-8cefba5862f7",
+        "atMs": 6150.19999999553,
+        "event": "intent"
+      },
+      {
+        "id": "20315d4a-d8a5-4e7e-8420-782ab7f5311b",
+        "sessionId": "78449935-bc41-4d31-aabc-8cefba5862f7",
+        "atMs": 6151,
+        "event": "opened",
+        "openLatencyMs": 0.8000000044703484,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "914ee4ac-d3fe-4b96-9977-0012b74aa81e",
+        "sessionId": "78449935-bc41-4d31-aabc-8cefba5862f7",
+        "atMs": 6182.5,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 32.30000000447035,
+        "openToFirstAudioMs": 31.5
+      },
+      {
+        "id": "e38b93d1-b716-4110-9ac4-7897ed309da8",
+        "sessionId": "78449935-bc41-4d31-aabc-8cefba5862f7",
+        "atMs": 6182.69999999553,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0
+      },
+      {
+        "id": "f671b4eb-e9c0-4dfb-8673-15ddf1ca98f1",
+        "sessionId": "78449935-bc41-4d31-aabc-8cefba5862f7",
+        "atMs": 6183.79999999702,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.5
+      },
+      {
+        "id": "dfdb0fd3-0ba2-4a32-aa82-40bc7d6d74bc",
+        "sessionId": "edce3860-3441-4b41-b461-aee4e6ba6d55",
+        "atMs": 6187.5999999940395,
+        "event": "intent"
+      },
+      {
+        "id": "2bcf5034-ec39-48c8-a0ba-6976c8cea321",
+        "sessionId": "edce3860-3441-4b41-b461-aee4e6ba6d55",
+        "atMs": 6188,
+        "event": "opened",
+        "openLatencyMs": 0.4000000059604645,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "5b6f553c-6e02-430c-ace0-34bab87b74b1",
+        "sessionId": "edce3860-3441-4b41-b461-aee4e6ba6d55",
+        "atMs": 6247.29999999702,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 59.70000000298023,
+        "openToFirstAudioMs": 59.29999999701977
+      },
+      {
+        "id": "14344811-504b-49d6-afb9-2d224a886d22",
+        "sessionId": "edce3860-3441-4b41-b461-aee4e6ba6d55",
+        "atMs": 6247.5,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.10000000149011612
+      },
+      {
+        "id": "16bee25b-f0f0-4b8c-b68f-717a4c9d5fdf",
+        "sessionId": "edce3860-3441-4b41-b461-aee4e6ba6d55",
+        "atMs": 6248.0999999940395,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.29999999701976776
+      },
+      {
+        "id": "c9d078e6-44fc-45b5-a3eb-78e8cd4b2449",
+        "sessionId": "004088e4-e80a-4971-839e-d9ac5df68b19",
+        "atMs": 6252,
+        "event": "intent"
+      },
+      {
+        "id": "41dc0cbb-8b23-4531-a7b3-1fb121d4f824",
+        "sessionId": "004088e4-e80a-4971-839e-d9ac5df68b19",
+        "atMs": 6252.29999999702,
+        "event": "opened",
+        "openLatencyMs": 0.29999999701976776,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "39a8d8e7-692b-4931-b5ac-c8409c66e8e7",
+        "sessionId": "004088e4-e80a-4971-839e-d9ac5df68b19",
+        "atMs": 6289.69999999553,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 37.69999999552965,
+        "openToFirstAudioMs": 37.399999998509884
+      },
+      {
+        "id": "0c172cee-ec0e-4c06-9805-fb9f63b9bc14",
+        "sessionId": "004088e4-e80a-4971-839e-d9ac5df68b19",
+        "atMs": 6289.89999999851,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0
+      },
+      {
+        "id": "fcbdde0d-5fcc-4c8f-bfa2-7917a3def3fa",
+        "sessionId": "004088e4-e80a-4971-839e-d9ac5df68b19",
+        "atMs": 6290.5,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.30000000447034836
+      },
+      {
+        "id": "c6357d5a-e42d-47e7-99b1-e08e2e2872cf",
+        "sessionId": "d6e25693-2eb3-4541-84a5-f5803b5c9309",
+        "atMs": 6293.19999999553,
+        "event": "intent"
+      },
+      {
+        "id": "c22f9418-ed20-498b-a2fe-eeeab3278dff",
+        "sessionId": "d6e25693-2eb3-4541-84a5-f5803b5c9309",
+        "atMs": 6293.39999999851,
+        "event": "opened",
+        "openLatencyMs": 0.20000000298023224,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "0c4c4475-bdbd-4967-855c-cc88a2124f7e",
+        "sessionId": "d6e25693-2eb3-4541-84a5-f5803b5c9309",
+        "atMs": 6332.5,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 39.30000000447035,
+        "openToFirstAudioMs": 39.100000001490116
+      },
+      {
+        "id": "dd219511-0be8-43ff-b253-12e2b845b14b",
+        "sessionId": "d6e25693-2eb3-4541-84a5-f5803b5c9309",
+        "atMs": 6332.69999999553,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0
+      },
+      {
+        "id": "97081ac9-7b1d-4919-8e34-10e7ac32b42a",
+        "sessionId": "d6e25693-2eb3-4541-84a5-f5803b5c9309",
+        "atMs": 6333.39999999851,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.3999999985098839
+      },
+      {
+        "id": "ff19393b-414b-4c35-8a5f-c0338483949c",
+        "sessionId": "542e754f-5ecb-4636-af15-422f1447e1f6",
+        "atMs": 6336.89999999851,
+        "event": "intent"
+      },
+      {
+        "id": "7749aaa7-1057-45c9-abb6-3ab649425b7b",
+        "sessionId": "542e754f-5ecb-4636-af15-422f1447e1f6",
+        "atMs": 6337.0999999940395,
+        "event": "opened",
+        "openLatencyMs": 0.19999999552965164,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "f3c4785c-57c2-4442-bf91-0232aa324e7b",
+        "sessionId": "542e754f-5ecb-4636-af15-422f1447e1f6",
+        "atMs": 6434.79999999702,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 97.89999999850988,
+        "openToFirstAudioMs": 97.70000000298023
+      },
+      {
+        "id": "305aeb92-2c74-40fe-b4c3-9e7b1a61958a",
+        "sessionId": "542e754f-5ecb-4636-af15-422f1447e1f6",
+        "atMs": 6435.0999999940395,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.09999999403953552
+      },
+      {
+        "id": "34a3e7ed-a797-4e6c-8401-1bbc3c02a72d",
+        "sessionId": "542e754f-5ecb-4636-af15-422f1447e1f6",
+        "atMs": 6436.39999999851,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 1.1000000014901161
+      },
+      {
+        "id": "0e64c009-41ad-4768-8afe-43da86643277",
+        "sessionId": "1030104b-5a99-4390-9402-2673cf16d00c",
+        "atMs": 6439.79999999702,
+        "event": "intent"
+      },
+      {
+        "id": "cc715c55-85d1-435e-ac87-7e78eaf7899f",
+        "sessionId": "1030104b-5a99-4390-9402-2673cf16d00c",
+        "atMs": 6440.0999999940395,
+        "event": "opened",
+        "openLatencyMs": 0.29999999701976776,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "576dd5d5-b688-4f24-b0c1-c608584219ec",
+        "sessionId": "1030104b-5a99-4390-9402-2673cf16d00c",
+        "atMs": 6549.79999999702,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 110,
+        "openToFirstAudioMs": 109.70000000298023
+      },
+      {
+        "id": "ff7f3938-21bf-4b0f-a613-0ca7d347dd99",
+        "sessionId": "1030104b-5a99-4390-9402-2673cf16d00c",
+        "atMs": 6550.0999999940395,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.09999999403953552
+      },
+      {
+        "id": "9adfd427-8dc0-433d-8576-0911d7e9accc",
+        "sessionId": "1030104b-5a99-4390-9402-2673cf16d00c",
+        "atMs": 6551.79999999702,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.5
+      },
+      {
+        "id": "12527576-4562-4a59-a825-b898598c0146",
+        "sessionId": "f0f0e7b1-b446-4899-9cf9-1567345a7a04",
+        "atMs": 6562.0999999940395,
+        "event": "intent"
+      },
+      {
+        "id": "a2d19670-ffce-4339-8822-dbfa3c6e7c52",
+        "sessionId": "f0f0e7b1-b446-4899-9cf9-1567345a7a04",
+        "atMs": 6562.29999999702,
+        "event": "opened",
+        "openLatencyMs": 0.20000000298023224,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "f28e34e1-8a9c-4613-8571-77f027a0b472",
+        "sessionId": "f0f0e7b1-b446-4899-9cf9-1567345a7a04",
+        "atMs": 6678.5,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 116.40000000596046,
+        "openToFirstAudioMs": 116.20000000298023
+      },
+      {
+        "id": "fa78fca4-1134-4935-a18e-44a7bfcd7c27",
+        "sessionId": "f0f0e7b1-b446-4899-9cf9-1567345a7a04",
+        "atMs": 6678.69999999553,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.10000000149011612
+      },
+      {
+        "id": "2473705a-0893-4779-bf17-a5abdb14d5d8",
+        "sessionId": "f0f0e7b1-b446-4899-9cf9-1567345a7a04",
+        "atMs": 6679.5,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.5
+      },
+      {
+        "id": "00877af1-091e-4dd1-b24b-70e49ac4bdf6",
+        "sessionId": "5dd3d330-ce6a-44fa-a780-5faf38727e89",
+        "atMs": 6684.89999999851,
+        "event": "intent"
+      },
+      {
+        "id": "bce8dce5-60b1-40c7-ac3d-1145d25f01ab",
+        "sessionId": "5dd3d330-ce6a-44fa-a780-5faf38727e89",
+        "atMs": 6685.19999999553,
+        "event": "opened",
+        "openLatencyMs": 0.29999999701976776,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "5bddd94e-7b29-426e-82b7-e8d4ce5dfccb",
+        "sessionId": "5dd3d330-ce6a-44fa-a780-5faf38727e89",
+        "atMs": 6734.79999999702,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 49.899999998509884,
+        "openToFirstAudioMs": 49.600000001490116
+      },
+      {
+        "id": "a062e14b-2c64-46c8-83bc-72c142d3c644",
+        "sessionId": "5dd3d330-ce6a-44fa-a780-5faf38727e89",
+        "atMs": 6735,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0
+      },
+      {
+        "id": "87cb4d23-8289-4287-922d-4af50936f8ae",
+        "sessionId": "5dd3d330-ce6a-44fa-a780-5faf38727e89",
+        "atMs": 6736.5999999940395,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 1.0999999940395355
+      },
+      {
+        "id": "7c298a22-1ecf-47f0-8be9-caca22a520fd",
+        "sessionId": "c5bf8305-17db-47bd-8618-24edbf71e7d3",
+        "atMs": 6741.39999999851,
+        "event": "intent"
+      },
+      {
+        "id": "dc86ad8c-59a4-43c8-b294-b8e0107f9ad8",
+        "sessionId": "c5bf8305-17db-47bd-8618-24edbf71e7d3",
+        "atMs": 6741.5999999940395,
+        "event": "opened",
+        "openLatencyMs": 0.19999999552965164,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "3e11660d-fe30-429d-adee-3876b569f895",
+        "sessionId": "c5bf8305-17db-47bd-8618-24edbf71e7d3",
+        "atMs": 6837.39999999851,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 96,
+        "openToFirstAudioMs": 95.80000000447035
+      },
+      {
+        "id": "a35768cb-52f3-4d04-b30f-3c51c0586048",
+        "sessionId": "c5bf8305-17db-47bd-8618-24edbf71e7d3",
+        "atMs": 6837.89999999851,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.20000000298023224
+      },
+      {
+        "id": "62d31eda-d1d0-4ae3-b8f9-0d87ad0b4559",
+        "sessionId": "c5bf8305-17db-47bd-8618-24edbf71e7d3",
+        "atMs": 6839.79999999702,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 1.1000000014901161
+      },
+      {
+        "id": "a08d486c-c42c-4f2f-9714-7f0884899287",
+        "sessionId": "70370134-cc0f-4d9c-a7bd-77eb5efcd83c",
+        "atMs": 6854.0999999940395,
+        "event": "intent"
+      },
+      {
+        "id": "6190a96f-a3d3-484b-9a17-764324809da5",
+        "sessionId": "70370134-cc0f-4d9c-a7bd-77eb5efcd83c",
+        "atMs": 6854.29999999702,
+        "event": "opened",
+        "openLatencyMs": 0.20000000298023224,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "86a7898d-48db-4021-9120-be3243a976f7",
+        "sessionId": "70370134-cc0f-4d9c-a7bd-77eb5efcd83c",
+        "atMs": 6960,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 105.90000000596046,
+        "openToFirstAudioMs": 105.70000000298023
+      },
+      {
+        "id": "2e12ee0f-2a81-4973-9eca-68810b7211e2",
+        "sessionId": "70370134-cc0f-4d9c-a7bd-77eb5efcd83c",
+        "atMs": 6960.19999999553,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.10000000149011612
+      },
+      {
+        "id": "c073e9a2-5963-4708-a98a-6dca5196662f",
+        "sessionId": "70370134-cc0f-4d9c-a7bd-77eb5efcd83c",
+        "atMs": 6961.0999999940395,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.3999999985098839
+      },
+      {
+        "id": "743b5349-a7ce-470e-aa9a-f8a7150637a8",
+        "sessionId": "373edb54-780d-458d-93a8-ab75ae524bab",
+        "atMs": 6978.39999999851,
+        "event": "intent"
+      },
+      {
+        "id": "fde217df-10ec-4984-a181-9d3f8376b28a",
+        "sessionId": "373edb54-780d-458d-93a8-ab75ae524bab",
+        "atMs": 6978.5999999940395,
+        "event": "opened",
+        "openLatencyMs": 0.19999999552965164,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "6eb7640b-b4b2-4fa9-a028-175f2c57b123",
+        "sessionId": "373edb54-780d-458d-93a8-ab75ae524bab",
+        "atMs": 7082.29999999702,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 103.89999999850988,
+        "openToFirstAudioMs": 103.70000000298023
+      },
+      {
+        "id": "353db589-b480-45b4-a5bb-79ba0e64e77b",
+        "sessionId": "373edb54-780d-458d-93a8-ab75ae524bab",
+        "atMs": 7082.5,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0
+      },
+      {
+        "id": "b12a89dd-1394-4f27-962e-769e5a50c723",
+        "sessionId": "373edb54-780d-458d-93a8-ab75ae524bab",
+        "atMs": 7083.19999999553,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.3999999985098839
+      },
+      {
+        "id": "49bab8b4-ef49-4f65-bd1f-3751a8017a6c",
+        "sessionId": "2b0c35be-4b7f-4374-a038-4fd1757d41a6",
+        "atMs": 7089,
+        "event": "intent"
+      },
+      {
+        "id": "387fbba6-377e-47a1-a9fc-db78a0073dba",
+        "sessionId": "2b0c35be-4b7f-4374-a038-4fd1757d41a6",
+        "atMs": 7089.89999999851,
+        "event": "opened",
+        "openLatencyMs": 0.8999999985098839,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "036cba98-ddfe-4523-8b52-25770a375fd4",
+        "sessionId": "2b0c35be-4b7f-4374-a038-4fd1757d41a6",
+        "atMs": 7133.89999999851,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 44.899999998509884,
+        "openToFirstAudioMs": 44
+      },
+      {
+        "id": "5852b4f0-33e5-4a9d-bdc9-bdfb9f78da93",
+        "sessionId": "2b0c35be-4b7f-4374-a038-4fd1757d41a6",
+        "atMs": 7134.0999999940395,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.09999999403953552
+      },
+      {
+        "id": "53d846fd-e0a2-486d-82d3-7526aebb8b9f",
+        "sessionId": "2b0c35be-4b7f-4374-a038-4fd1757d41a6",
+        "atMs": 7134.89999999851,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.5
+      },
+      {
+        "id": "e358c868-9ba3-42e9-bff2-8c0070cfa0af",
+        "sessionId": "72f1f592-13bf-4d57-9e12-694eb9f9220d",
+        "atMs": 7141.5,
+        "event": "intent"
+      },
+      {
+        "id": "8b1e2d1e-51d5-4276-ab88-345e43960e48",
+        "sessionId": "72f1f592-13bf-4d57-9e12-694eb9f9220d",
+        "atMs": 7141.69999999553,
+        "event": "opened",
+        "openLatencyMs": 0.19999999552965164,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "4ce97ddf-e2d8-4287-9cac-3cac0c317fe5",
+        "sessionId": "72f1f592-13bf-4d57-9e12-694eb9f9220d",
+        "atMs": 7185.39999999851,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 43.899999998509884,
+        "openToFirstAudioMs": 43.70000000298023
+      },
+      {
+        "id": "d302b117-c8ee-4bc1-89c8-5b70d28d20c3",
+        "sessionId": "72f1f592-13bf-4d57-9e12-694eb9f9220d",
+        "atMs": 7185.69999999553,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.10000000149011612
+      },
+      {
+        "id": "6f67fe8c-e417-43dd-b22a-ab9c8674b621",
+        "sessionId": "72f1f592-13bf-4d57-9e12-694eb9f9220d",
+        "atMs": 7186.69999999553,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.5
+      },
+      {
+        "id": "950cf3ab-ce21-4b33-b062-a5a27a1b31ff",
+        "sessionId": "692999e0-ba9b-466c-a2d0-a1eb0d568ca3",
+        "atMs": 7192.19999999553,
+        "event": "intent"
+      },
+      {
+        "id": "86126bc9-8e71-4c02-b6ff-338e17723841",
+        "sessionId": "692999e0-ba9b-466c-a2d0-a1eb0d568ca3",
+        "atMs": 7192.39999999851,
+        "event": "opened",
+        "openLatencyMs": 0.20000000298023224,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "28bee2b0-60db-41f7-899c-985e401cf4ca",
+        "sessionId": "692999e0-ba9b-466c-a2d0-a1eb0d568ca3",
+        "atMs": 7238.0999999940395,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 45.899999998509884,
+        "openToFirstAudioMs": 45.69999999552965
+      },
+      {
+        "id": "59a2ed99-8979-4440-867a-664955ef760d",
+        "sessionId": "692999e0-ba9b-466c-a2d0-a1eb0d568ca3",
+        "atMs": 7238.39999999851,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.10000000149011612
+      },
+      {
+        "id": "570a12a2-8b22-412f-9c43-2eefdae48499",
+        "sessionId": "692999e0-ba9b-466c-a2d0-a1eb0d568ca3",
+        "atMs": 7239,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.4000000059604645
+      },
+      {
+        "id": "e0171ade-2fbe-4ddf-b1a1-c068cadf7613",
+        "sessionId": "1c305639-b88f-4cd4-9014-a6d0bdd8e647",
+        "atMs": 7246.5,
+        "event": "intent"
+      },
+      {
+        "id": "2edb39a6-e535-4f1f-bf64-7f1c336b49c6",
+        "sessionId": "1c305639-b88f-4cd4-9014-a6d0bdd8e647",
+        "atMs": 7246.69999999553,
+        "event": "opened",
+        "openLatencyMs": 0.19999999552965164,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "e1134654-901e-4b9e-b8a2-635766ccd1a7",
+        "sessionId": "1c305639-b88f-4cd4-9014-a6d0bdd8e647",
+        "atMs": 7283.79999999702,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 37.29999999701977,
+        "openToFirstAudioMs": 37.100000001490116
+      },
+      {
+        "id": "4a257bbe-5d36-4709-9c78-510bb213a538",
+        "sessionId": "1c305639-b88f-4cd4-9014-a6d0bdd8e647",
+        "atMs": 7284.0999999940395,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.09999999403953552
+      },
+      {
+        "id": "9a25018d-89cc-45df-a24f-81d9a710197f",
+        "sessionId": "1c305639-b88f-4cd4-9014-a6d0bdd8e647",
+        "atMs": 7284.69999999553,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.3999999985098839
+      },
+      {
+        "id": "f9692136-16a6-4610-85ce-725b3febdfaa",
+        "sessionId": "1b3957d2-48c5-4c7a-82e5-7c9890090b95",
+        "atMs": 7289,
+        "event": "intent"
+      },
+      {
+        "id": "a0d0f2fa-645d-45a9-9b0c-759ba9fe2921",
+        "sessionId": "1b3957d2-48c5-4c7a-82e5-7c9890090b95",
+        "atMs": 7290.69999999553,
+        "event": "opened",
+        "openLatencyMs": 1.6999999955296516,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "01eadddc-a223-43ad-9051-b088196de632",
+        "sessionId": "1b3957d2-48c5-4c7a-82e5-7c9890090b95",
+        "atMs": 7359.89999999851,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 70.89999999850988,
+        "openToFirstAudioMs": 69.20000000298023
+      },
+      {
+        "id": "be3ec37a-774b-45bf-9897-afa4ee6380df",
+        "sessionId": "1b3957d2-48c5-4c7a-82e5-7c9890090b95",
+        "atMs": 7360.29999999702,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.10000000149011612
+      },
+      {
+        "id": "dc0be29d-45e4-44e2-ae76-4503fb19f17b",
+        "sessionId": "1b3957d2-48c5-4c7a-82e5-7c9890090b95",
+        "atMs": 7361.39999999851,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.7000000029802322
+      },
+      {
+        "id": "bc0ae698-99d8-4be8-be23-74f58ee049c9",
+        "sessionId": "1fa18ddf-2f6d-4d27-9881-f20ccc51847e",
+        "atMs": 7364.69999999553,
+        "event": "intent"
+      },
+      {
+        "id": "197bc548-0bc6-404e-a302-7660ddafce3c",
+        "sessionId": "1fa18ddf-2f6d-4d27-9881-f20ccc51847e",
+        "atMs": 7364.89999999851,
+        "event": "opened",
+        "openLatencyMs": 0.20000000298023224,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "cc29d57e-1159-4ef2-b7ac-9e814710a837",
+        "sessionId": "1fa18ddf-2f6d-4d27-9881-f20ccc51847e",
+        "atMs": 7418.5999999940395,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 53.899999998509884,
+        "openToFirstAudioMs": 53.69999999552965
+      },
+      {
+        "id": "8c2cf123-7d25-403f-a4a2-bb38c7af8b79",
+        "sessionId": "1fa18ddf-2f6d-4d27-9881-f20ccc51847e",
+        "atMs": 7418.69999999553,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0
+      },
+      {
+        "id": "187cc65b-fa39-4432-89e0-3f2785cd2b35",
+        "sessionId": "1fa18ddf-2f6d-4d27-9881-f20ccc51847e",
+        "atMs": 7419.5,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.4000000059604645
+      },
+      {
+        "id": "5f8a2728-dba3-4b2d-ab22-a38f0431fe26",
+        "sessionId": "eac18609-a657-47a0-bfc3-9e47f3cd1753",
+        "atMs": 7426,
+        "event": "intent"
+      },
+      {
+        "id": "15770522-f4e3-407f-931c-1f3b208ce7d2",
+        "sessionId": "eac18609-a657-47a0-bfc3-9e47f3cd1753",
+        "atMs": 7426.29999999702,
+        "event": "opened",
+        "openLatencyMs": 0.29999999701976776,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "3bf2912f-5a23-490b-8628-a43c28dcde25",
+        "sessionId": "eac18609-a657-47a0-bfc3-9e47f3cd1753",
+        "atMs": 7517.69999999553,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 91.69999999552965,
+        "openToFirstAudioMs": 91.39999999850988
+      },
+      {
+        "id": "53a193a0-2d35-41aa-8ed5-44a59ca5929f",
+        "sessionId": "eac18609-a657-47a0-bfc3-9e47f3cd1753",
+        "atMs": 7517.79999999702,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0
+      },
+      {
+        "id": "f5d0e233-9ec7-4974-9451-a1a38a5ab81f",
+        "sessionId": "eac18609-a657-47a0-bfc3-9e47f3cd1753",
+        "atMs": 7518.5999999940395,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.5
+      },
+      {
+        "id": "65ebd06e-71d4-4ecb-a9fb-6b17b1070b5a",
+        "sessionId": "d13230fe-aa47-4dd6-b92f-df4a66dd3e34",
+        "atMs": 7525.89999999851,
+        "event": "intent"
+      },
+      {
+        "id": "ae70757f-b24a-4d01-b1b2-687863402ca6",
+        "sessionId": "d13230fe-aa47-4dd6-b92f-df4a66dd3e34",
+        "atMs": 7526.19999999553,
+        "event": "opened",
+        "openLatencyMs": 0.29999999701976776,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "5f689ee0-c585-4141-927c-f48e188437d7",
+        "sessionId": "d13230fe-aa47-4dd6-b92f-df4a66dd3e34",
+        "atMs": 7624.19999999553,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 98.29999999701977,
+        "openToFirstAudioMs": 98
+      },
+      {
+        "id": "f6630523-14af-4f56-9f6e-93828091a3c1",
+        "sessionId": "d13230fe-aa47-4dd6-b92f-df4a66dd3e34",
+        "atMs": 7624.39999999851,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0
+      },
+      {
+        "id": "6e486f33-fe4a-4216-b4e3-775981f4e017",
+        "sessionId": "d13230fe-aa47-4dd6-b92f-df4a66dd3e34",
+        "atMs": 7625,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.4000000059604645
+      },
+      {
+        "id": "f43f211d-c583-493a-a1db-a12da8dd4f85",
+        "sessionId": "e15cd7b8-0077-4eb6-beff-bf4eebccc2ee",
+        "atMs": 7630.39999999851,
+        "event": "intent"
+      },
+      {
+        "id": "638b5b92-83e6-4d3f-9300-ebe5b375133c",
+        "sessionId": "e15cd7b8-0077-4eb6-beff-bf4eebccc2ee",
+        "atMs": 7630.5999999940395,
+        "event": "opened",
+        "openLatencyMs": 0.19999999552965164,
+        "outputTransport": "html-audio"
+      },
+      {
+        "id": "173e256b-4436-43e2-88c1-94d877671ad2",
+        "sessionId": "e15cd7b8-0077-4eb6-beff-bf4eebccc2ee",
+        "atMs": 7696.5999999940395,
+        "event": "first-render",
+        "outputTransport": "html-audio",
+        "timeToFirstAudioMs": 66.19999999552965,
+        "openToFirstAudioMs": 66
+      },
+      {
+        "id": "45bec9af-6b8e-4a7e-bedf-b422d8fb88be",
+        "sessionId": "e15cd7b8-0077-4eb6-beff-bf4eebccc2ee",
+        "atMs": 7696.89999999851,
+        "event": "pause-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.10000000149011612
+      },
+      {
+        "id": "4d486b15-d11d-40c9-999c-6a66aa4d9449",
+        "sessionId": "e15cd7b8-0077-4eb6-beff-bf4eebccc2ee",
+        "atMs": 7697.89999999851,
+        "event": "stop-ack",
+        "outputTransport": "html-audio",
+        "latencyMs": 0.7000000029802322
+      }
+    ],
+    "state": {
+      "owner": null,
+      "itemId": null,
+      "status": "idle",
+      "position": 0,
+      "duration": null,
+      "error": null,
+      "seekable": false,
+      "loop": null,
+      "loopAvailable": false,
+      "outputDeviceSupported": false,
+      "rate": 1,
+      "volume": 1
+    }
+  }
+}

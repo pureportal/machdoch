@@ -1,0 +1,11 @@
+{
+  "command": "node docs/validation/text-to-speech/check-desktop.mjs",
+  "check": "cargo check --manifest-path apps/client/src-tauri/Cargo.toml --lib",
+  "result": "Finished dev profile in 5m41s",
+  "packagedResourcesExcluded": true,
+  "packagingVerified": false,
+  "runtimeExecuted": false,
+  "log": "D:/Models/machdoch/speech/verification/desktop-check.log",
+  "warnings": "Six desktop library warnings, including an unused PublishedAsset import and helpers used only by tests; one Fleet protocol warning",
+  "scope": "Asset staging/reservations, measured bookmarks, recording finish claims and project duplication"
+}

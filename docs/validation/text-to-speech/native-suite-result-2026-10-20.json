@@ -1,0 +1,19 @@
+{
+  "command": "cargo test --offline --manifest-path docs/validation/text-to-speech/native/Cargo.toml --lib -- --test-threads=4",
+  "result": "passed",
+  "passed": 255,
+  "failed": 0,
+  "ignored": 2,
+  "testSeconds": 551.49,
+  "compileSeconds": 404,
+  "checkpoint": "SGLang SSE/PCM extraction, durable voice mutations, archive admission and playback/generation measurement storage; before subsequent retention correction and additional gated first-audio test",
+  "testProfile": {
+    "machdoch-speech-verification": { "optLevel": 2, "debug": 0 },
+    "sha2": { "optLevel": 3 },
+    "debugAssertions": true
+  },
+  "ignoredTests": ["full_book_assembly_preserves_all_48_chapters_and_selective_replacement_with_bounded_native_memory", "actual_large_rf64_asset_survives_zip64_project_export_and_import"],
+  "log": "D:/Models/machdoch/speech/verification/current-native-suite-2026-10-20.log",
+  "realProviderExecution": false,
+  "packagedDesktopExecution": false
+}

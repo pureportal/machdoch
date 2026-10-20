@@ -1,0 +1,45 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "syntheticAudio": true,
+  "providerExecution": false,
+  "assetTransport": "built local files with explicit test file-access flag",
+  "autoplayPolicy": "test launch override",
+  "measurementScope": "browser render and API acknowledgment; physical output latency unmeasured",
+  "pcmRenderedBeforeSourceCompletion": true,
+  "summaries": [
+    {
+      "transport": "pcm",
+      "count": 20,
+      "firstAudioMs": {
+        "p50": 107,
+        "p95": 230.80000000447035
+      },
+      "pauseAcknowledgmentMs": {
+        "p50": 0.5,
+        "p95": 0.8999999985098839
+      },
+      "stopAcknowledgmentMs": {
+        "p50": 0.5999999940395355,
+        "p95": 1.2000000029802322
+      }
+    },
+    {
+      "transport": "html-audio",
+      "count": 20,
+      "firstAudioMs": {
+        "p50": 52.69999999552965,
+        "p95": 110.20000000298023
+      },
+      "pauseAcknowledgmentMs": {
+        "p50": 0,
+        "p95": 0.10000000149011612
+      },
+      "stopAcknowledgmentMs": {
+        "p50": 0.4000000059604645,
+        "p95": 0.7999999970197678
+      }
+    }
+  ],
+  "errors": []
+}

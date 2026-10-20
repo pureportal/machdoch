@@ -1,0 +1,274 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "observationOnly": true,
+  "providerExecution": false,
+  "physicalOutputMeasured": false,
+  "clocks": "milliseconds from each benchmark run start; render notification is main-thread receipt",
+  "instrumentation": "verification-only subclasses forward actual AudioContext and AudioWorkletNode calls",
+  "thresholdsChanged": false,
+  "summaries": [
+    {
+      "transport": "pcm",
+      "count": 20,
+      "firstAudioMs": {
+        "first": 575.3999999985099,
+        "maximum": 575.3999999985099,
+        "p50": 220.30000000447035,
+        "p95": 434.90000000596046
+      },
+      "pauseAcknowledgmentMs": {
+        "maximum": 7,
+        "p50": 4.799999997019768,
+        "p95": 6.700000002980232
+      },
+      "stopAcknowledgmentMs": {
+        "maximum": 0.8000000044703484,
+        "p50": 0.6000000014901161,
+        "p95": 0.8000000044703484
+      }
+    },
+    {
+      "transport": "html-audio",
+      "count": 20,
+      "firstAudioMs": {
+        "first": 111.10000000149012,
+        "maximum": 350.3999999985099,
+        "p50": 110.79999999701977,
+        "p95": 228.09999999403954
+      },
+      "pauseAcknowledgmentMs": {
+        "maximum": 0.10000000149011612,
+        "p50": 0,
+        "p95": 0.10000000149011612
+      },
+      "stopAcknowledgmentMs": {
+        "maximum": 1.7000000029802322,
+        "p50": 0.5,
+        "p95": 0.8999999985098839
+      }
+    }
+  ],
+  "startupPhases": [
+    {
+      "contextConstructorRequested": 22.299999997019768,
+      "contextConstructed": 204.89999999850988,
+      "workletModuleRequested": 205.29999999701977,
+      "workletModuleResolved": 222.29999999701977,
+      "resumeRequested": 223.89999999850988,
+      "resumeResolved": 224,
+      "firstAppendPosted": 224.29999999701977,
+      "firstAppendAcknowledged": 229.39999999850988,
+      "firstRenderNotification": 575.7999999970198
+    },
+    {
+      "contextConstructorRequested": 16.19999999552965,
+      "contextConstructed": 70.69999999552965,
+      "workletModuleRequested": 70.79999999701977,
+      "workletModuleResolved": 87.5,
+      "resumeRequested": 87.79999999701977,
+      "resumeResolved": 87.89999999850988,
+      "firstAppendPosted": 88,
+      "firstAppendAcknowledged": 89.60000000149012,
+      "firstRenderNotification": 205.39999999850988
+    },
+    {
+      "contextConstructorRequested": 13.099999994039536,
+      "contextConstructed": 139.79999999701977,
+      "workletModuleRequested": 139.89999999850988,
+      "workletModuleResolved": 159.89999999850988,
+      "resumeRequested": 160.39999999850988,
+      "resumeResolved": 160.39999999850988,
+      "firstAppendPosted": 160.39999999850988,
+      "firstAppendAcknowledged": 162.09999999403954,
+      "firstRenderNotification": 320.09999999403954
+    },
+    {
+      "contextConstructorRequested": 13.199999995529652,
+      "contextConstructed": 77.39999999850988,
+      "workletModuleRequested": 77.5,
+      "workletModuleResolved": 106,
+      "resumeRequested": 106.5,
+      "resumeResolved": 106.5,
+      "firstAppendPosted": 106.5,
+      "firstAppendAcknowledged": 108.5,
+      "firstRenderNotification": 435
+    },
+    {
+      "contextConstructorRequested": 15.200000002980232,
+      "contextConstructed": 50.70000000298023,
+      "workletModuleRequested": 50.70000000298023,
+      "workletModuleResolved": 129.30000000447035,
+      "resumeRequested": 129.60000000149012,
+      "resumeResolved": 129.70000000298023,
+      "firstAppendPosted": 129.70000000298023,
+      "firstAppendAcknowledged": 131.40000000596046,
+      "firstRenderNotification": 215.5
+    },
+    {
+      "contextConstructorRequested": 15.100000001490116,
+      "contextConstructed": 52,
+      "workletModuleRequested": 52,
+      "workletModuleResolved": 82.60000000149012,
+      "resumeRequested": 83,
+      "resumeResolved": 83.10000000149012,
+      "firstAppendPosted": 83.10000000149012,
+      "firstAppendAcknowledged": 84.79999999701977,
+      "firstRenderNotification": 250.20000000298023
+    },
+    {
+      "contextConstructorRequested": 13.700000002980232,
+      "contextConstructed": 50.399999998509884,
+      "workletModuleRequested": 50.5,
+      "workletModuleResolved": 60.899999998509884,
+      "resumeRequested": 61.20000000298023,
+      "resumeResolved": 61.30000000447035,
+      "firstAppendPosted": 61.30000000447035,
+      "firstAppendAcknowledged": 63,
+      "firstRenderNotification": 121.60000000149012
+    },
+    {
+      "contextConstructorRequested": 12.399999998509884,
+      "contextConstructed": 43.29999999701977,
+      "workletModuleRequested": 43.29999999701977,
+      "workletModuleResolved": 66.29999999701977,
+      "resumeRequested": 66.69999999552965,
+      "resumeResolved": 66.69999999552965,
+      "firstAppendPosted": 66.69999999552965,
+      "firstAppendAcknowledged": 68.29999999701977,
+      "firstRenderNotification": 315.3999999985099
+    },
+    {
+      "contextConstructorRequested": 11.699999995529652,
+      "contextConstructed": 124.89999999850988,
+      "workletModuleRequested": 124.89999999850988,
+      "workletModuleResolved": 162.79999999701977,
+      "resumeRequested": 163.09999999403954,
+      "resumeResolved": 163.19999999552965,
+      "firstAppendPosted": 163.19999999552965,
+      "firstAppendAcknowledged": 165.19999999552965,
+      "firstRenderNotification": 367
+    },
+    {
+      "contextConstructorRequested": 15.399999998509884,
+      "contextConstructed": 87,
+      "workletModuleRequested": 87.10000000149012,
+      "workletModuleResolved": 99.39999999850988,
+      "resumeRequested": 99.79999999701977,
+      "resumeResolved": 99.79999999701977,
+      "firstAppendPosted": 99.89999999850988,
+      "firstAppendAcknowledged": 101.89999999850988,
+      "firstRenderNotification": 175.89999999850988
+    },
+    {
+      "contextConstructorRequested": 12.600000001490116,
+      "contextConstructed": 58.19999999552965,
+      "workletModuleRequested": 58.19999999552965,
+      "workletModuleResolved": 68.29999999701977,
+      "resumeRequested": 68.60000000149012,
+      "resumeResolved": 68.69999999552965,
+      "firstAppendPosted": 68.79999999701977,
+      "firstAppendAcknowledged": 70.39999999850988,
+      "firstRenderNotification": 135.69999999552965
+    },
+    {
+      "contextConstructorRequested": 13.299999997019768,
+      "contextConstructed": 106.89999999850988,
+      "workletModuleRequested": 107,
+      "workletModuleResolved": 120.60000000149012,
+      "resumeRequested": 120.79999999701977,
+      "resumeResolved": 120.89999999850988,
+      "firstAppendPosted": 120.89999999850988,
+      "firstAppendAcknowledged": 122.60000000149012,
+      "firstRenderNotification": 188.10000000149012
+    },
+    {
+      "contextConstructorRequested": 17,
+      "contextConstructed": 80.39999999850988,
+      "workletModuleRequested": 80.5,
+      "workletModuleResolved": 102.39999999850988,
+      "resumeRequested": 102.89999999850988,
+      "resumeResolved": 102.89999999850988,
+      "firstAppendPosted": 102.89999999850988,
+      "firstAppendAcknowledged": 104.79999999701977,
+      "firstRenderNotification": 221.10000000149012
+    },
+    {
+      "contextConstructorRequested": 14.300000004470348,
+      "contextConstructed": 94.20000000298023,
+      "workletModuleRequested": 94.20000000298023,
+      "workletModuleResolved": 112.30000000447035,
+      "resumeRequested": 112.80000000447035,
+      "resumeResolved": 112.80000000447035,
+      "firstAppendPosted": 112.80000000447035,
+      "firstAppendAcknowledged": 114.70000000298023,
+      "firstRenderNotification": 200.10000000149012
+    },
+    {
+      "contextConstructorRequested": 13.100000001490116,
+      "contextConstructed": 93.60000000149012,
+      "workletModuleRequested": 93.60000000149012,
+      "workletModuleResolved": 138.80000000447035,
+      "resumeRequested": 139.10000000149012,
+      "resumeResolved": 139.10000000149012,
+      "firstAppendPosted": 139.10000000149012,
+      "firstAppendAcknowledged": 140.70000000298023,
+      "firstRenderNotification": 211.80000000447035
+    },
+    {
+      "contextConstructorRequested": 13.5,
+      "contextConstructed": 68.39999999850988,
+      "workletModuleRequested": 68.39999999850988,
+      "workletModuleResolved": 76.29999999701977,
+      "resumeRequested": 76.59999999403954,
+      "resumeResolved": 76.59999999403954,
+      "firstAppendPosted": 76.59999999403954,
+      "firstAppendAcknowledged": 78.29999999701977,
+      "firstRenderNotification": 209.29999999701977
+    },
+    {
+      "contextConstructorRequested": 13.899999998509884,
+      "contextConstructed": 74.60000000149012,
+      "workletModuleRequested": 74.70000000298023,
+      "workletModuleResolved": 96.79999999701977,
+      "resumeRequested": 97.20000000298023,
+      "resumeResolved": 97.29999999701977,
+      "firstAppendPosted": 97.29999999701977,
+      "firstAppendAcknowledged": 100.5,
+      "firstRenderNotification": 222.60000000149012
+    },
+    {
+      "contextConstructorRequested": 13.099999994039536,
+      "contextConstructed": 70.39999999850988,
+      "workletModuleRequested": 70.5,
+      "workletModuleResolved": 97.5,
+      "resumeRequested": 97.79999999701977,
+      "resumeResolved": 97.89999999850988,
+      "firstAppendPosted": 97.89999999850988,
+      "firstAppendAcknowledged": 100.09999999403954,
+      "firstRenderNotification": 312.69999999552965
+    },
+    {
+      "contextConstructorRequested": 14,
+      "contextConstructed": 114.40000000596046,
+      "workletModuleRequested": 114.5,
+      "workletModuleResolved": 162.40000000596046,
+      "resumeRequested": 162.70000000298023,
+      "resumeResolved": 162.70000000298023,
+      "firstAppendPosted": 162.80000000447035,
+      "firstAppendAcknowledged": 164.5,
+      "firstRenderNotification": 309.5
+    },
+    {
+      "contextConstructorRequested": 13.400000005960464,
+      "contextConstructed": 57.100000001490116,
+      "workletModuleRequested": 57.20000000298023,
+      "workletModuleResolved": 106.90000000596046,
+      "resumeRequested": 107.30000000447035,
+      "resumeResolved": 107.30000000447035,
+      "firstAppendPosted": 107.40000000596046,
+      "firstAppendAcknowledged": 109,
+      "firstRenderNotification": 413.20000000298023
+    }
+  ],
+  "errors": []
+}

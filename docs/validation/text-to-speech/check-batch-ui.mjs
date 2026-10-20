@@ -1,0 +1,69 @@
+import {build} from "vite";
+import react from "@vitejs/plugin-react";
+import {chromium} from "playwright-core";
+import {readFile,mkdir,writeFile} from "node:fs/promises";
+import path from "node:path";
+import {fileURLToPath} from "node:url";
+import {createRequire} from "node:module";
+import assert from "node:assert/strict";
+
+const root=fileURLToPath(new URL("./ui",import.meta.url));const workspace=path.resolve(root,"../../../..");const output="D:/Models/machdoch/speech/verification/batch-ui";
+await mkdir(output,{recursive:true});
+await build({configFile:false,root,plugins:[react()],logLevel:"error",resolve:{dedupe:["react","react-dom"],alias:[{find:/^@machdoch\/text-to-speech$/,replacement:path.join(workspace,"packages/text-to-speech/src/index.ts")},{find:/^@machdoch\/speech$/,replacement:path.join(workspace,"packages/speech/src/index.ts")}]},build:{outDir:output,emptyOutDir:true,minify:false}});
+const browser=await chromium.launch({channel:"msedge",headless:true});const page=await browser.newPage({viewport:{width:1365,height:900}});const errors=[];page.on("pageerror",error=>errors.push(error.message));
+await page.route("https://speech.test/**",async route=>{
+  const pathname=decodeURIComponent(new URL(route.request().url()).pathname);const target=path.resolve(output,pathname==="/"?"index.html":`.${pathname}`);
+  if(!target.startsWith(path.resolve(output)+path.sep)){await route.abort();return;}
+  const contentType={".html":"text/html",".js":"text/javascript",".css":"text/css"}[path.extname(target)]??"application/octet-stream";
+  try{await route.fulfill({body:await readFile(target),contentType});}catch{await route.fulfill({status:404,body:"Missing verification asset"});}
+});
+try{
+  await page.goto("https://speech.test/");await page.getByLabel("Project name",{exact:true}).fill("Batch cast source");await page.getByRole("button",{name:"Create project",exact:true}).click();
+  await page.getByLabel("Profile",{exact:true}).selectOption("fixture-fish");await page.getByRole("button",{name:"Add speaker",exact:true}).click();await page.getByLabel("Speaker name",{exact:true}).fill("Narrator");
+  await page.locator('.cm-content[contenteditable="true"]').fill("Keep the original script.");await page.getByRole("button",{name:"Save",exact:true}).click();
+  await page.waitForFunction(()=>window.speechFixture.projects[0]?.source==="Keep the original script.");const original=await page.evaluate(()=>structuredClone(window.speechFixture.projects[0]));
+  const defaultReferences=await page.evaluate(()=>window.speechFixture.prepareProfileReferences());await page.getByRole("button",{name:"Profiles",exact:true}).click();const profilesPanel=page.locator(".tts-panel").filter({has:page.getByRole("heading",{name:"Profiles",exact:true})});
+  await profilesPanel.getByLabel("Name",{exact:true}).fill("Reference narrator");await profilesPanel.getByLabel("Voice source",{exact:true}).selectOption("references");const referencePicker=profilesPanel.locator("details").filter({has:page.locator("summary",{hasText:/^Default reference recordings$/u})});await referencePicker.locator("summary").click();
+  await referencePicker.getByRole("checkbox",{name:/^Default reference 1/u}).check();await referencePicker.getByRole("checkbox",{name:/^Default reference 2/u}).check();await referencePicker.getByRole("button",{name:"Move reference 2 up",exact:true}).click();await profilesPanel.getByRole("button",{name:"Save profile",exact:true}).click();
+  await page.waitForFunction(()=>window.speechFixture.calls.some(call=>call.operation==="saveProfile"&&call.input.profile.name==="Reference narrator"));const referenceProfile=await page.evaluate(()=>window.speechFixture.calls.findLast(call=>call.operation==="saveProfile").input.profile);assert.deepEqual(referenceProfile.referenceAssetIds,defaultReferences.toReversed());assert.equal(referenceProfile.voiceId,undefined);
+  await page.reload();await page.getByRole("button",{name:"Batch cast source",exact:true}).click();await page.getByRole("button",{name:"Profiles",exact:true}).click();await profilesPanel.getByLabel("Edit profile",{exact:true}).selectOption(referenceProfile.id);assert.equal(await profilesPanel.getByLabel("Voice source",{exact:true}).inputValue(),"references");await referencePicker.locator("summary").click();
+  assert.equal(await referencePicker.getByRole("checkbox",{name:/^Default reference 1/u}).isChecked(),true);assert.equal(await referencePicker.getByRole("checkbox",{name:/^Default reference 2/u}).isChecked(),true);assert.match(await referencePicker.locator("ol li").first().innerText(),new RegExp(defaultReferences[1]));
+  await referencePicker.getByRole("button",{name:"Play reference",exact:true}).first().click();await page.waitForFunction(id=>window.speechFixture.playback.itemId===`profile-reference:${id}`,defaultReferences[0]);await page.getByRole("button",{name:"Stop audio",exact:true}).click();await page.getByRole("button",{name:"Script",exact:true}).click();
+  await page.evaluate(()=>window.speechFixture.enableRenderTargets());
+  const batch=page.locator("details").filter({has:page.locator("summary",{hasText:/^Script batch$/u})});await batch.locator("summary").first().click();
+  await batch.getByLabel("Batch files",{exact:true}).setInputFiles([{name:"English.txt",mimeType:"text/plain",buffer:Buffer.from("One shared cast. Hello 世界 🚀.")},{name:"Dialogue.csv",mimeType:"text/csv",buffer:Buffer.from('Speaker,Text\nGuest,"Grüß dich, 東京."\n')}]);
+  const dialogue=batch.getByRole("group",{name:"Dialogue.csv",exact:true});await dialogue.getByLabel("Text column",{exact:true}).fill("2");await dialogue.getByLabel("Speaker column",{exact:true}).fill("1");
+  await batch.getByRole("button",{name:"Review batch",exact:true}).click();await batch.getByLabel("Cast for Guest",{exact:true}).waitFor();
+  assert.equal(await batch.getByRole("button",{name:"Render batch",exact:true}).isDisabled(),true);
+  await batch.getByLabel("Cast for Guest",{exact:true}).selectOption(original.cast[0].id);await batch.getByRole("button",{name:"Review batch",exact:true}).click();await batch.getByText(/Batch cost unavailable/u).waitFor();
+  assert.equal(await batch.getByRole("button",{name:"Render batch",exact:true}).isDisabled(),true);await batch.getByLabel("Allow batch scripts and references in the selected cloud provider",{exact:true}).check();
+  await batch.getByRole("button",{name:"Render batch",exact:true}).click();await page.waitForFunction(()=>window.speechFixture.calls.filter(call=>call.operation==="render"&&call.input.owner.startsWith("text-to-speech:batch:")).length===2);
+  const rendered=await page.evaluate(()=>window.speechFixture.calls.filter(call=>call.operation==="render"&&call.input.owner.startsWith("text-to-speech:batch:")).map(call=>call.input));
+  assert.equal(new Set(rendered.map(input=>input.projectId)).size,2);assert.equal(new Set(rendered.map(input=>input.owner)).size,1);assert.equal(rendered.every(input=>input.expectedProfile.id==="fixture-fish"&&input.reuseCache===false&&input.cloudConsent===true),true);
+  assert.match(rendered[0].segments[0].spokenText,/Hello 世界 🚀/u);assert.equal(rendered[1].segments[0].spokenText,"Grüß dich, 東京.");assert.deepEqual(rendered[1].segments[0].voiceIds,["fixture-voice"]);
+  assert.deepEqual(await page.evaluate(id=>window.speechFixture.projects.find(project=>project.id===id),original.id),original);assert.equal(await page.evaluate(()=>window.speechFixture.playback.status),"idle");
+  const batchProjects=await page.evaluate(id=>window.speechFixture.projects.filter(project=>project.id!==id).map(project=>({id:project.id,title:project.title})),original.id);await page.reload();
+  for(const project of batchProjects)assert.equal(await page.getByRole("button",{name:project.title,exact:true}).isVisible(),true);
+  await page.getByRole("button",{name:"Dialogue",exact:true}).click();assert.match(await page.locator('.cm-content[contenteditable="true"]').innerText(),/^<\|speaker:[^|]+\|>Grüß dich, 東京\./u);
+  await page.evaluate(()=>{
+    const fixture=window.speechFixture;const project=fixture.projects.find(project=>project.title==="Batch cast source");const other=fixture.projects.find(project=>project.title==="English");
+    const review=(index,language,verdict)=>({id:`review-${index}`,takeId:`synthetic-take-${index}`,voiceId:"fixture-voice",language,reviewer:"Synthetic fixture listener",reviewedAt:"2026-10-20T00:00:01.000Z",listened:true,verdict,note:"Synthetic UI metadata; no model listening claim",assetId:"a".repeat(64),audioSha256:"a".repeat(64),requestHash:"b".repeat(64),backend:"fish-cloud",model:"drama-3",generatedAt:"2026-10-20T00:00:00.000Z"});
+    project.voiceAuditions=[review(0,"de-DE","rejected")];other.voiceAuditions=Array.from({length:21},(_,index)=>review(index+1,"en-US","approved"));localStorage.setItem("speech-fixture-projects",JSON.stringify(fixture.projects));
+  });
+  await page.getByRole("button",{name:"Voices",exact:true}).click();const history=page.locator("details").filter({has:page.locator("summary",{hasText:/^Listening review history$/u})});await history.locator("summary").first().click();
+  await history.getByText("Page 1 · 22 reviews",{exact:true}).waitFor();assert.equal(await history.locator("tbody tr").count(),20);await history.getByRole("button",{name:"Next reviews",exact:true}).click();await history.getByText("Page 2 · 22 reviews",{exact:true}).waitFor();assert.equal(await history.locator("tbody tr").count(),2);
+  await history.getByLabel("Reviewed language",{exact:true}).fill("DE");await history.getByLabel("Review verdict",{exact:true}).selectOption("rejected");await history.getByRole("button",{name:"Search reviews",exact:true}).click();await history.getByText("Page 1 · 1 reviews",{exact:true}).waitFor();assert.equal(await history.locator("tbody tr").count(),1);
+  assert.match(await history.locator("tbody").innerText(),/fixture-voice.*de-DE.*Needs work/su);await history.getByRole("button",{name:"Open Batch cast source",exact:true}).click();await page.waitForFunction(()=>document.querySelector('.cm-content')?.textContent==="Keep the original script.");await page.getByRole("button",{name:"Voices",exact:true}).click();
+  for(const name of ["Comparison voice 1","Comparison voice 2"])await page.locator("article.tts-voice").filter({has:page.getByRole("heading",{name,exact:true})}).getByRole("button",{name:"Compare voice",exact:true}).click();
+  const comparison=page.locator("details").filter({has:page.locator("summary",{hasText:/^Voice comparison$/u})});await comparison.locator("summary").first().click();await comparison.getByLabel("Comparison passage",{exact:true}).fill("Saved comparison history 世界.");await comparison.getByLabel("Allow comparison passage in Fish Cloud",{exact:true}).check();await comparison.getByRole("button",{name:"Render voices",exact:true}).click();await comparison.getByRole("button",{name:"Play voice A",exact:true}).waitFor();
+  const savedComparison=await comparison.getByLabel("Saved voice comparison",{exact:true}).inputValue();const savedTake=await comparison.getByLabel("A comparison voice",{exact:true}).inputValue();
+  await page.evaluate(id=>{
+    const fixture=window.speechFixture;const original=fixture.jobs.find(job=>job.id===id);for(let index=0;index<21;index++){const createdAt=new Date(Date.UTC(2026,9,21,0,0,index)).toISOString();fixture.jobs.push({...structuredClone(original),id:`history-${index}`,revisionId:`comparison-history-${index}`,state:"cancelled",completedSegments:0,takeIds:[],createdAt,updatedAt:createdAt});}localStorage.setItem("speech-fixture-rehearsal-jobs",JSON.stringify(fixture.jobs.filter(job=>job.revisionId.startsWith("comparison-")||job.revisionId.startsWith("rehearsal-"))));
+  },savedComparison);
+  await page.reload();await page.getByRole("button",{name:"Batch cast source",exact:true}).click();await page.getByRole("button",{name:"Voices",exact:true}).click();await comparison.locator("summary").first().click();await comparison.getByRole("button",{name:"Next auditions",exact:true}).click();await comparison.getByText("Audition page 2",{exact:true}).waitFor();await comparison.getByLabel("Saved voice comparison",{exact:true}).selectOption(savedComparison);
+  await comparison.getByRole("button",{name:"Play voice A",exact:true}).click();await page.waitForFunction(id=>window.speechFixture.playback.itemId===id,savedTake);await page.getByRole("button",{name:"Stop audio",exact:true}).click();assert.equal(await page.evaluate(()=>window.speechFixture.calls.filter(call=>call.operation==="compareVoices"||call.operation==="render").length),0);
+  const axe=createRequire(path.join(workspace,"apps/client/package.json"))("axe-core");await page.addScriptTag({content:axe.source});await batch.locator("summary").first().click();
+  const accessibility=await page.evaluate(()=>window.axe.run(document.querySelector(".tts-studio"),{runOnly:{type:"tag",values:["wcag2a","wcag2aa"]}}));assert.deepEqual(accessibility.violations.map(item=>item.id),[]);assert.deepEqual(errors,[]);
+  const result={browser:"Microsoft Edge Chromium",serverStarted:false,syntheticProvider:true,checks:["ordered profile reference selection, local preview, save and reopen after reload","worker batch review","explicit CSV speaker mapping","cloud consent gate","one fresh canonical job per saved script","reviewed profile and total cost inputs","source cast/script/selection preserved","no autoplay","reopen independent batch projects after reload","bounded cross-project listening-review pages, language/verdict search and source project navigation","older saved comparison discovery beyond twenty jobs and replay after reload without generation","WCAG A/AA affected view"],errors};
+  await writeFile(new URL("./batch-ui-result-2026-10-20.json",import.meta.url),JSON.stringify(result,null,2));console.log("Focused script-batch browser checks passed; no development server started.");
+}finally{await browser.close();}

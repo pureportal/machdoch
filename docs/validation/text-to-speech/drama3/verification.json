@@ -1,0 +1,71 @@
+{
+  "validatedAt": "2026-10-20T21:15:54.300Z",
+  "runtime": {
+    "version": "0.9.2-drama3-base-small",
+    "platform": "win32-x64",
+    "backend": "vulkan",
+    "gpu": "AMD Radeon RX 9070",
+    "cpuExpertLayers": 8,
+    "contextLength": 2048,
+    "bundledFiles": [
+      "audiocpp_cli.exe",
+      "LICENSE",
+      "msvcp140.dll",
+      "msvcp140_1.dll",
+      "msvcp140_2.dll",
+      "msvcp140_atomic_wait.dll",
+      "msvcp140_codecvt_ids.dll",
+      "vcomp140.dll",
+      "vcruntime140.dll",
+      "vcruntime140_1.dll",
+      "vcruntime140_threads.dll"
+    ]
+  },
+  "model": {
+    "bytes": 17053639872,
+    "sha256": "041be86fbb53bf4002d59bf7d5f0c99c321e0b21f5aa3b53fec380eec6f892d3",
+    "seconds": 179.195,
+    "installedPath": "D:\\Models\\machdoch\\speech\\drama3\\drama-3-backbone-8bit-experts-Q2_K.gguf"
+  },
+  "synthesis": {
+    "requestedText": "Hello. This is Drama Three running locally on an AMD graphics card.",
+    "transcript": "Hello, this is Drama3 running locally on an AMD graphics card.",
+    "transcriptMatches": true,
+    "rate": 44100,
+    "channels": 1,
+    "frames": 266240,
+    "seconds": 6.03718820861678,
+    "sampleWidth": 2,
+    "peak": 0.27703857421875,
+    "rms": 0.03050254293407452,
+    "inferenceSeconds": 122.131,
+    "realTimeFactor": 20.2298,
+    "peakProcessRssMb": 14719,
+    "approximateInitialLoadSeconds": 280,
+    "sample": "amd-smoke.wav"
+  },
+  "verification": {
+    "playwright": [
+      "Model download requires acceptance and sends a structured native request",
+      "Progress, pause and resume update without a server configuration",
+      "Verification completion refreshes speech settings",
+      "Model removal requires confirmation and returns to download state",
+      "Download errors expose recovery and the card fits a narrow viewport",
+      "Reopening settings recognizes a model installed in the background",
+      "Studio queues local speech without a voice recording, API key or cloud consent"
+    ],
+    "nodeSpeechTestsPassed": 12,
+    "nativeRustTestsPassed": 4,
+    "nativeTestsIncludedRealModelInstallation": true,
+    "clientCoreTypecheck": "passed",
+    "clientUiTypecheck": "passed",
+    "speechUiPackageTypecheck": "passed",
+    "desktopRustCheck": "passed",
+    "bundleInventoryAndTauriResourceMapping": "passed"
+  },
+  "unverified": [
+    "Full installer build and live desktop launch",
+    "Voice cloning quality and multilingual speech",
+    "Other GPUs and operating systems"
+  ]
+}

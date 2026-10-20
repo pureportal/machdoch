@@ -1,0 +1,16 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "syntheticStorage": true,
+  "checks": [
+    "favorite voices across catalog pages",
+    "local favorite discovery without provider ranking or lookup",
+    "local search",
+    "favorite persistence after reload",
+    "remove local favorite without remote deletion",
+    "bounded favorite pages",
+    "zero tested axe A/AA violations",
+    "no generation or remote voice mutation"
+  ],
+  "errors": []
+}

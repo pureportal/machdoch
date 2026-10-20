@@ -1,0 +1,1381 @@
+{
+  "capturedAt": "2026-10-19T16:55:02.943Z",
+  "modelRoot": "D:\\Models\\machdoch",
+  "schema": {
+    "url": "https://docs.fish.audio/api-reference/openapi.json",
+    "sha256": "4482b160d34f1d4fd1af96c3e8b3e9781fa4ed4059ba31f1178c6b5d1987a65e",
+    "info": {
+      "title": "FishAudio OpenAPI",
+      "version": "1"
+    },
+    "endpoints": {
+      "/v1/tts": {
+        "post": {
+          "parameters": [
+            {
+              "in": "header",
+              "name": "model",
+              "description": "Specify which TTS model to use. Use `s2.1-pro-free` for the free developer tier. If omitted or set to an unrecognized value, the request falls back to `s2.1-pro`.",
+              "required": false,
+              "schema": {
+                "default": "s2.1-pro",
+                "enum": [
+                  "s1",
+                  "s2-pro",
+                  "s2.1-pro",
+                  "s2.1-pro-free",
+                  "drama-3"
+                ],
+                "title": "Model",
+                "type": "string"
+              },
+              "deprecated": false
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TTSRequest"
+                }
+              },
+              "application/msgpack": {
+                "schema": {
+                  "$ref": "#/components/schemas/TTSRequest"
+                }
+              }
+            }
+          },
+          "responseStatuses": [
+            "200",
+            "401",
+            "402",
+            "503"
+          ]
+        }
+      },
+      "/v1/tts/stream/with-timestamp": {
+        "post": {
+          "parameters": [
+            {
+              "in": "header",
+              "name": "model",
+              "description": "Specify which TTS model to use. Use `s2.1-pro-free` for the free developer tier. If omitted or set to an unrecognized value, the request falls back to `s2.1-pro`.",
+              "required": false,
+              "schema": {
+                "default": "s2.1-pro",
+                "enum": [
+                  "s1",
+                  "s2-pro",
+                  "s2.1-pro",
+                  "s2.1-pro-free",
+                  "drama-3"
+                ],
+                "title": "Model",
+                "type": "string"
+              },
+              "deprecated": false
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TTSStreamWithTimestampRequest"
+                }
+              },
+              "application/msgpack": {
+                "schema": {
+                  "$ref": "#/components/schemas/TTSStreamWithTimestampRequest"
+                }
+              }
+            }
+          },
+          "responseStatuses": [
+            "200",
+            "401",
+            "402",
+            "503"
+          ]
+        }
+      },
+      "/v1/tts/live/with-timestamp": {
+        "get": {
+          "parameters": [
+            {
+              "in": "header",
+              "name": "model",
+              "description": "Specify which TTS model to use. Use `s2.1-pro-free` for the free developer tier. If omitted or set to an unrecognized value, the request falls back to `s2.1-pro`.",
+              "required": false,
+              "schema": {
+                "default": "s2.1-pro",
+                "enum": [
+                  "s1",
+                  "s2-pro",
+                  "s2.1-pro",
+                  "s2.1-pro-free",
+                  "drama-3"
+                ],
+                "title": "Model",
+                "type": "string"
+              },
+              "deprecated": false
+            }
+          ],
+          "responseStatuses": [
+            "200",
+            "401",
+            "402",
+            "503"
+          ]
+        }
+      },
+      "/v1/voice-design": {
+        "post": {
+          "parameters": [
+            {
+              "in": "header",
+              "name": "model",
+              "description": "Specify which voice-design model to use.",
+              "required": true,
+              "schema": {
+                "const": "voice-design-1",
+                "default": "voice-design-1",
+                "title": "Model",
+                "type": "string"
+              },
+              "deprecated": false
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceDesignRequest"
+                }
+              }
+            }
+          },
+          "responseStatuses": [
+            "200",
+            "401",
+            "402",
+            "503"
+          ]
+        }
+      },
+      "/model": {
+        "get": {
+          "parameters": [
+            {
+              "in": "query",
+              "name": "page_size",
+              "description": "Page size",
+              "required": false,
+              "schema": {
+                "default": 10,
+                "maximum": 100,
+                "minimum": 1,
+                "title": "Page Size",
+                "type": "integer"
+              },
+              "deprecated": false
+            },
+            {
+              "in": "query",
+              "name": "page_number",
+              "description": "Page number",
+              "required": false,
+              "schema": {
+                "default": 1,
+                "minimum": 1,
+                "title": "Page Number",
+                "type": "integer"
+              },
+              "deprecated": false
+            },
+            {
+              "in": "query",
+              "name": "title",
+              "description": "Title to filter models",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Title"
+              },
+              "deprecated": false
+            },
+            {
+              "in": "query",
+              "name": "tag",
+              "description": "Tag to filter models",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Tag"
+              },
+              "deprecated": false
+            },
+            {
+              "in": "query",
+              "name": "self",
+              "description": "If True, return models owned by the active workspace",
+              "required": false,
+              "schema": {
+                "default": false,
+                "title": "Self",
+                "type": "boolean"
+              },
+              "deprecated": false
+            },
+            {
+              "in": "query",
+              "name": "author_id",
+              "description": "Author ID to filter public models; ignored if self is True",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Author Id"
+              },
+              "deprecated": false
+            },
+            {
+              "in": "query",
+              "name": "language",
+              "description": "Language to filter models",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Language"
+              },
+              "deprecated": false
+            },
+            {
+              "in": "query",
+              "name": "title_language",
+              "description": "Title language to filter models",
+              "required": false,
+              "schema": {
+                "anyOf": [
+                  {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Title Language"
+              },
+              "deprecated": false
+            },
+            {
+              "in": "query",
+              "name": "licensed",
+              "description": "If True, only voices licensed by Fish Audio (rights secured from the voice owner) are returned; ignored if self is True",
+              "required": false,
+              "schema": {
+                "default": false,
+                "title": "Licensed",
+                "type": "boolean"
+              },
+              "deprecated": false
+            },
+            {
+              "in": "query",
+              "name": "sort_by",
+              "description": "",
+              "required": false,
+              "schema": {
+                "default": "score",
+                "enum": [
+                  "score",
+                  "task_count",
+                  "created_at"
+                ],
+                "title": "Sort By",
+                "type": "string"
+              },
+              "deprecated": false
+            }
+          ],
+          "responseStatuses": [
+            "200"
+          ]
+        },
+        "post": {
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "visibility": {
+                      "default": "private",
+                      "description": "Model visibility. Public requests are downgraded to private; use the web publish flow to publish publicly. Unlist allows anyone with the link to access, while private is visible only to the creator.",
+                      "enum": [
+                        "public",
+                        "unlist",
+                        "private"
+                      ],
+                      "title": "Visibility",
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "tts",
+                      "description": "Model type, tts is for text to speech",
+                      "title": "Type",
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Model title or name",
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "description": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Model description",
+                      "title": "Description"
+                    },
+                    "cover_image": {
+                      "anyOf": [
+                        {
+                          "format": "binary",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Model cover image, this is required if the model is public",
+                      "title": "Cover Image"
+                    },
+                    "train_mode": {
+                      "const": "fast",
+                      "description": "Model train mode, for TTS model, fast means model instantly available after creation",
+                      "title": "Train Mode",
+                      "type": "string"
+                    },
+                    "voices": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "format": "binary",
+                            "type": "string"
+                          },
+                          "maxItems": 20,
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        {
+                          "format": "binary",
+                          "type": "string"
+                        }
+                      ],
+                      "description": "Upload voices files that will be used to tune the model",
+                      "title": "Voices"
+                    },
+                    "texts": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Texts corresponding to the voices, if unspecified, ASR will be performed on the voices",
+                      "title": "Texts"
+                    },
+                    "voice_design_signatures": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Signatures from /v1/voice-design candidates, one per voice in the same order. When every uploaded voice verifies, the model is stamped source=voice_design; an invalid signature rejects the request.",
+                      "title": "Voice Design Signatures"
+                    },
+                    "tags": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Model tags",
+                      "title": "Tags"
+                    },
+                    "enhance_audio_quality": {
+                      "default": true,
+                      "description": "Enhance audio quality",
+                      "title": "Enhance Audio Quality",
+                      "type": "boolean"
+                    },
+                    "generate_sample": {
+                      "default": false,
+                      "description": "Generate default text",
+                      "title": "Generate Sample",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "train_mode",
+                    "voices"
+                  ],
+                  "type": "object"
+                }
+              },
+              "application/x-www-form-urlencoded": {
+                "schema": {
+                  "properties": {
+                    "visibility": {
+                      "default": "private",
+                      "description": "Model visibility. Public requests are downgraded to private; use the web publish flow to publish publicly. Unlist allows anyone with the link to access, while private is visible only to the creator.",
+                      "enum": [
+                        "public",
+                        "unlist",
+                        "private"
+                      ],
+                      "title": "Visibility",
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "tts",
+                      "description": "Model type, tts is for text to speech",
+                      "title": "Type",
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Model title or name",
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "description": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Model description",
+                      "title": "Description"
+                    },
+                    "cover_image": {
+                      "anyOf": [
+                        {
+                          "format": "binary",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Model cover image, this is required if the model is public",
+                      "title": "Cover Image"
+                    },
+                    "train_mode": {
+                      "const": "fast",
+                      "description": "Model train mode, for TTS model, fast means model instantly available after creation",
+                      "title": "Train Mode",
+                      "type": "string"
+                    },
+                    "voices": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "format": "binary",
+                            "type": "string"
+                          },
+                          "maxItems": 20,
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        {
+                          "format": "binary",
+                          "type": "string"
+                        }
+                      ],
+                      "description": "Upload voices files that will be used to tune the model",
+                      "title": "Voices"
+                    },
+                    "texts": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Texts corresponding to the voices, if unspecified, ASR will be performed on the voices",
+                      "title": "Texts"
+                    },
+                    "voice_design_signatures": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Signatures from /v1/voice-design candidates, one per voice in the same order. When every uploaded voice verifies, the model is stamped source=voice_design; an invalid signature rejects the request.",
+                      "title": "Voice Design Signatures"
+                    },
+                    "tags": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Model tags",
+                      "title": "Tags"
+                    },
+                    "enhance_audio_quality": {
+                      "default": true,
+                      "description": "Enhance audio quality",
+                      "title": "Enhance Audio Quality",
+                      "type": "boolean"
+                    },
+                    "generate_sample": {
+                      "default": false,
+                      "description": "Generate default text",
+                      "title": "Generate Sample",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "train_mode",
+                    "voices"
+                  ],
+                  "type": "object"
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "properties": {
+                    "visibility": {
+                      "default": "private",
+                      "description": "Model visibility. Public requests are downgraded to private; use the web publish flow to publish publicly. Unlist allows anyone with the link to access, while private is visible only to the creator.",
+                      "enum": [
+                        "public",
+                        "unlist",
+                        "private"
+                      ],
+                      "title": "Visibility",
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "tts",
+                      "description": "Model type, tts is for text to speech",
+                      "title": "Type",
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Model title or name",
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "description": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Model description",
+                      "title": "Description"
+                    },
+                    "cover_image": {
+                      "anyOf": [
+                        {
+                          "format": "binary",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Model cover image, this is required if the model is public",
+                      "title": "Cover Image"
+                    },
+                    "train_mode": {
+                      "const": "fast",
+                      "description": "Model train mode, for TTS model, fast means model instantly available after creation",
+                      "title": "Train Mode",
+                      "type": "string"
+                    },
+                    "voices": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "format": "binary",
+                            "type": "string"
+                          },
+                          "maxItems": 20,
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        {
+                          "format": "binary",
+                          "type": "string"
+                        }
+                      ],
+                      "description": "Upload voices files that will be used to tune the model",
+                      "title": "Voices"
+                    },
+                    "texts": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Texts corresponding to the voices, if unspecified, ASR will be performed on the voices",
+                      "title": "Texts"
+                    },
+                    "voice_design_signatures": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Signatures from /v1/voice-design candidates, one per voice in the same order. When every uploaded voice verifies, the model is stamped source=voice_design; an invalid signature rejects the request.",
+                      "title": "Voice Design Signatures"
+                    },
+                    "tags": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Model tags",
+                      "title": "Tags"
+                    },
+                    "enhance_audio_quality": {
+                      "default": true,
+                      "description": "Enhance audio quality",
+                      "title": "Enhance Audio Quality",
+                      "type": "boolean"
+                    },
+                    "generate_sample": {
+                      "default": false,
+                      "description": "Generate default text",
+                      "title": "Generate Sample",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "train_mode",
+                    "voices"
+                  ],
+                  "type": "object"
+                }
+              },
+              "application/msgpack": {
+                "schema": {
+                  "properties": {
+                    "visibility": {
+                      "default": "private",
+                      "description": "Model visibility. Public requests are downgraded to private; use the web publish flow to publish publicly. Unlist allows anyone with the link to access, while private is visible only to the creator.",
+                      "enum": [
+                        "public",
+                        "unlist",
+                        "private"
+                      ],
+                      "title": "Visibility",
+                      "type": "string"
+                    },
+                    "type": {
+                      "const": "tts",
+                      "description": "Model type, tts is for text to speech",
+                      "title": "Type",
+                      "type": "string"
+                    },
+                    "title": {
+                      "description": "Model title or name",
+                      "title": "Title",
+                      "type": "string"
+                    },
+                    "description": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Model description",
+                      "title": "Description"
+                    },
+                    "cover_image": {
+                      "anyOf": [
+                        {
+                          "format": "binary",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Model cover image, this is required if the model is public",
+                      "title": "Cover Image"
+                    },
+                    "train_mode": {
+                      "const": "fast",
+                      "description": "Model train mode, for TTS model, fast means model instantly available after creation",
+                      "title": "Train Mode",
+                      "type": "string"
+                    },
+                    "voices": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "format": "binary",
+                            "type": "string"
+                          },
+                          "maxItems": 20,
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        {
+                          "format": "binary",
+                          "type": "string"
+                        }
+                      ],
+                      "description": "Upload voices files that will be used to tune the model",
+                      "title": "Voices"
+                    },
+                    "texts": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Texts corresponding to the voices, if unspecified, ASR will be performed on the voices",
+                      "title": "Texts"
+                    },
+                    "voice_design_signatures": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "description": "Signatures from /v1/voice-design candidates, one per voice in the same order. When every uploaded voice verifies, the model is stamped source=voice_design; an invalid signature rejects the request.",
+                      "title": "Voice Design Signatures"
+                    },
+                    "tags": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "description": "Model tags",
+                      "title": "Tags"
+                    },
+                    "enhance_audio_quality": {
+                      "default": true,
+                      "description": "Enhance audio quality",
+                      "title": "Enhance Audio Quality",
+                      "type": "boolean"
+                    },
+                    "generate_sample": {
+                      "default": false,
+                      "description": "Generate default text",
+                      "title": "Generate Sample",
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "title",
+                    "train_mode",
+                    "voices"
+                  ],
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "responseStatuses": [
+            "201",
+            "401",
+            "503"
+          ]
+        }
+      },
+      "/model/{id}": {
+        "get": {
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "description": "",
+              "required": true,
+              "schema": {
+                "title": "Id",
+                "type": "string"
+              },
+              "deprecated": false
+            }
+          ],
+          "responseStatuses": [
+            "200",
+            "403",
+            "404"
+          ]
+        },
+        "patch": {
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "description": "",
+              "required": true,
+              "schema": {
+                "title": "Id",
+                "type": "string"
+              },
+              "deprecated": false
+            }
+          ],
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "title": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Title"
+                    },
+                    "description": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Description"
+                    },
+                    "cover_image": {
+                      "anyOf": [
+                        {
+                          "format": "binary",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Cover Image"
+                    },
+                    "visibility": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "public",
+                            "unlist",
+                            "private"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Visibility"
+                    },
+                    "tags": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ],
+                      "title": "Tags"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "application/x-www-form-urlencoded": {
+                "schema": {
+                  "properties": {
+                    "title": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Title"
+                    },
+                    "description": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Description"
+                    },
+                    "cover_image": {
+                      "anyOf": [
+                        {
+                          "format": "binary",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Cover Image"
+                    },
+                    "visibility": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "public",
+                            "unlist",
+                            "private"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Visibility"
+                    },
+                    "tags": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ],
+                      "title": "Tags"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "multipart/form-data": {
+                "schema": {
+                  "properties": {
+                    "title": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Title"
+                    },
+                    "description": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Description"
+                    },
+                    "cover_image": {
+                      "anyOf": [
+                        {
+                          "format": "binary",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Cover Image"
+                    },
+                    "visibility": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "public",
+                            "unlist",
+                            "private"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Visibility"
+                    },
+                    "tags": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ],
+                      "title": "Tags"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "application/msgpack": {
+                "schema": {
+                  "properties": {
+                    "title": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Title"
+                    },
+                    "description": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Description"
+                    },
+                    "cover_image": {
+                      "anyOf": [
+                        {
+                          "format": "binary",
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Cover Image"
+                    },
+                    "visibility": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "public",
+                            "unlist",
+                            "private"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ],
+                      "default": null,
+                      "title": "Visibility"
+                    },
+                    "tags": {
+                      "anyOf": [
+                        {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        {
+                          "type": "string"
+                        }
+                      ],
+                      "title": "Tags"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "responseStatuses": [
+            "200",
+            "401",
+            "503"
+          ]
+        },
+        "delete": {
+          "parameters": [
+            {
+              "in": "path",
+              "name": "id",
+              "description": "",
+              "required": true,
+              "schema": {
+                "title": "Id",
+                "type": "string"
+              },
+              "deprecated": false
+            }
+          ],
+          "responseStatuses": [
+            "200",
+            "401",
+            "503"
+          ]
+        }
+      }
+    }
+  },
+  "gpu": {
+    "available": false,
+    "reason": "ENOENT"
+  },
+  "existingSpeechAssets": [
+    {
+      "name": "speech",
+      "directory": true
+    }
+  ],
+  "environmentCredentials": {
+    "FISH_API_KEY": false,
+    "FISH_AUDIO_API_KEY": false,
+    "OPENAI_API_KEY": true,
+    "GOOGLE_API_KEY": true
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "providerExecution": false,
+  "rootTestOptimization": 1,
+  "sha2TestOptimization": 3,
+  "baselineRun": {
+    "passed": 263,
+    "failed": 1,
+    "ignored": 3,
+    "compileSeconds": 232,
+    "testSeconds": 209.51,
+    "failure": "New fixture tried to set a Windows timestamp using a read-only file handle; permission denied",
+    "log": "D:/Models/machdoch/speech/verification/staged-native-suite-2026-10-20.log"
+  },
+  "affectedReruns": {
+    "referenceUploadFilter": { "passed": 4, "failed": 0, "testSeconds": 6.24 },
+    "assetStagingFilter": { "passed": 3, "failed": 0, "testSeconds": 3.45 },
+    "log": "D:/Models/machdoch/speech/verification/recording-staged-native-2026-10-20.log"
+  },
+  "observedBookmarkNativeCases": 2,
+  "checks": [
+    "Measured bookmarks survive restart and immutable revision pinning",
+    "Portable bookmarks remap take IDs while retaining audio hashes and take-local positions",
+    "Malformed, forged, missing and out-of-duration bookmark evidence is rejected",
+    "A gated audio source leaves shared metadata controls available",
+    "Asset reservations prevent cleanup only until release",
+    "Cancelled or invalid staging leaves user source files intact and publishes no asset",
+    "Recording finish claims block concurrent write, cancellation and duplicate finish",
+    "Expired recording claims recover without replaying a completed import",
+    "Reference integrity failure retains owned upload recovery",
+    "Trim preserves the original recording and its lineage"
+  ],
+  "fullSuiteRerunClaimed": false,
+  "physicalStagedZip64Result": "Pending separate ignored physical-file run",
+  "desktopIntegration": "Requires updated desktop Rust check"
+}

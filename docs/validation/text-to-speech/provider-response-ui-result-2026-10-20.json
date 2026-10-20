@@ -1,0 +1,16 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "syntheticProviders": true,
+  "checks": [
+    "returned Google model version and response ID",
+    "actual zero token count",
+    "absent usage stays omitted",
+    "OpenAI request ID and reported processing time",
+    "pinned voice source, author, visibility and metadata hash",
+    "absent voice rights and model attestation remain omitted",
+    "no generation or full-request lookup",
+    "zero tested axe A/AA violations"
+  ],
+  "errors": []
+}

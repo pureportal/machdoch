@@ -1,0 +1,13 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "syntheticRuntime": true,
+  "checks": [
+    "explicit preparation",
+    "review before save",
+    "download equals previewed snapshot",
+    "unsaved API key and project title excluded",
+    "no credential mutation or generation"
+  ],
+  "errors": []
+}

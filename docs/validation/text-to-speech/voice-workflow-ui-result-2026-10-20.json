@@ -1,0 +1,18 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "syntheticProviders": true,
+  "checks": [
+    "explicit design consent and per-request quote",
+    "queue survives panel navigation",
+    "saved candidates reopen after reload",
+    "same preview text and matched A/B playback",
+    "signed candidate selected without separate recordings",
+    "permission and explicit private upload consent",
+    "saved created voice opens",
+    "queued cancellation",
+    "no production mutation or generation",
+    "zero tested axe A/AA violations"
+  ],
+  "errors": []
+}

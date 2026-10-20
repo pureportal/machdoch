@@ -1,0 +1,30 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "syntheticMicrophone": true,
+  "checks": [
+    "cancel pending acquisition",
+    "stop late microphone tracks",
+    "leave panel during setup",
+    "resume context under original user activation",
+    "capture after cancellation",
+    "close contexts and tracks",
+    "recover encoded draft after reload",
+    "integrity-checked local reference import without synthesis"
+  ],
+  "contexts": [
+    {
+      "activation": true,
+      "state": "closed"
+    },
+    {
+      "activation": true,
+      "state": "closed"
+    },
+    {
+      "activation": true,
+      "state": "closed"
+    }
+  ],
+  "errors": []
+}

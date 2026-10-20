@@ -1,0 +1,30 @@
+{
+  "browser": "Microsoft Edge Chromium",
+  "serverStarted": false,
+  "utf8Bytes": 404429,
+  "characters": 322829,
+  "chapters": 48,
+  "initialLoadAndSaveMs": 5385.419099999999,
+  "mainThread": {
+    "tickP50Ms": 20.100000001490116,
+    "tickP95Ms": 114.39999999850988,
+    "maximumTickMs": 1336.1999999955297,
+    "longTaskCount": 12,
+    "maximumLongTaskMs": 981,
+    "observedHeapBytes": 65183826
+  },
+  "typing": {
+    "tickP50Ms": 20.200000002980232,
+    "tickP95Ms": 120.5,
+    "maximumLongTaskMs": 162,
+    "persistedRecoveryWrites": 2
+  },
+  "checks": [
+    "bounded recovery writes retain the final edit under storage backpressure",
+    "large file import, editing and worker-produced chapter outline",
+    "Unicode and RTL source preservation",
+    "trusted browser IME composition replacement and commit",
+    "exact persistence and reopen without temporary composition text"
+  ],
+  "errors": []
+}
