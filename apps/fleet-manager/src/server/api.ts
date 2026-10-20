@@ -1,4 +1,6 @@
 import {
+  speechRequestSchema,
+  speechCapability,
   mediaRequestSchema,
   ralphRequestSchema,
   ralphEditorCapability,
@@ -25,6 +27,8 @@ import {
   type FleetManagedSettingsSyncReport,
 } from "@machdoch/fleet-protocol";
 import { z } from "zod";
+import { streamSpeechAudio } from "./speech-audio";
+import { scopeSpeechRequest } from "./speech-identity";
 import {
   captureEnrollmentSettings,
   listEnrollmentSettings,
@@ -83,6 +87,7 @@ import {
 
 const maximumAuthenticationBodyBytes = 16 * 1024;
 const productOperationSchemas = {
+  speech: speechRequestSchema,
   deviceSettings: deviceSettingsRequestSchema,
   media: mediaRequestSchema,
   ralph: ralphRequestSchema,
@@ -96,6 +101,10 @@ const productOperationCapabilities: Partial<
     { capability: string; message: string }
   >
 > = {
+  speech: {
+    capability: speechCapability,
+    message: "Update this device to use Text to Speech remotely.",
+  },
   deviceSettings: {
     capability: deviceSettingsCapability,
     message: "Device settings require a native client.",
@@ -297,6 +306,9 @@ async function routeApi(
   if (method === "DELETE" && path[0] === "instances" && path.length === 2) {
     return revokeInstance(runtime, request, path[1] ?? "");
   }
+  if (method === "GET" && path[0] === "instances" && path[1] && path[2] === "product" && path[3] === "speech" && path[4] === "assets" && path[5] && path.length === 6) {
+    return streamSpeechAudio(runtime, request, path[1], path[5]);
+  }
   if (
     path[0] === "instances" &&
     path[2] === "product" &&
@@ -336,7 +348,7 @@ async function routeApi(
       const response = await relay(
         runtime,
         path[1],
-        hostRequestSchema.parse({ type: operation, request: input }),
+        hostRequestSchema.parse({ type: operation, request: operation === "speech" ? scopeSpeechRequest(speechRequestSchema.parse(input), requireOwner(runtime,request).sessionHash, path[1]) : input }),
         request.signal,
       );
       requireOwner(runtime, request);

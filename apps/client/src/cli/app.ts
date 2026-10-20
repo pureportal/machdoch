@@ -77,6 +77,7 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
     args.command !== "help" &&
     args.command !== "update" &&
     args.command !== "memory" &&
+    args.command !== "speech" &&
     !isInternalProviderProcess &&
     !isLocalRalphCommand
   ) {
@@ -94,6 +95,11 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
   }
 
   switch (args.command) {
+    case "speech": {
+      const { runSpeechCommand } = await import("./_helpers/cli-speech.js");
+      await runSpeechCommand(args);
+      return;
+    }
     case "update": {
       const { runUpdateCommand } =
         await import("./_helpers/cli-update-commands.js");

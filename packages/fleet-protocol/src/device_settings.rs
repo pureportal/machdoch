@@ -86,7 +86,7 @@ pub fn valid_device_settings_invocation(command: &str, args: &Value) -> bool {
             fields(
                 args,
                 &["preferredVoiceURI", "rate", "autoSpeakResponses"],
-                &[],
+                &["answerMode"],
             )
             .is_some()
                 && (args["preferredVoiceURI"].is_null()
@@ -95,6 +95,7 @@ pub fn valid_device_settings_invocation(command: &str, args: &Value) -> bool {
                     .as_f64()
                     .is_some_and(|value| (0.8..=1.4).contains(&value))
                 && args["autoSpeakResponses"].is_boolean()
+                && args.get("answerMode").is_none_or(|mode|matches!(mode.as_str(),Some("completed"|"streaming")))
         }
         "get_global_provider_availability"
         | "get_provider_model_catalog"
@@ -237,4 +238,22 @@ pub fn deserialize_device_settings_request<'de, D: Deserializer<'de>>(
         return Err(D::Error::custom("Invalid device settings operation."));
     }
     Ok(value)
+}
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn voice_preferences_validate_explicit_answer_modes_and_reject_unknown_fields(){
+        let base=json!({"preferredVoiceURI":null,"rate":1.0,"autoSpeakResponses":false});
+        assert!(valid_device_settings_invocation("save_device_voice_preferences",&base));
+        for mode in ["completed","streaming"]{
+            let mut value=base.clone();value["answerMode"]=json!(mode);assert!(valid_device_settings_invocation("save_device_voice_preferences",&value));
+        }
+        for mode in [Value::Null,json!(false),json!("draft"),json!("automatic-fallback")]{
+            let mut value=base.clone();value["answerMode"]=mode;assert!(!valid_device_settings_invocation("save_device_voice_preferences",&value));
+        }
+        let mut unknown=base;unknown["secret"]=json!("not-a-preference");assert!(!valid_device_settings_invocation("save_device_voice_preferences",&unknown));
+    }
 }

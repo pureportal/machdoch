@@ -17,6 +17,7 @@ import {
 } from "./speech-audio";
 import { useSpeechRecorder } from "./use-speech-recorder";
 import { useSpeechTranscription } from "./use-speech-transcription";
+import { speechPlayback } from "@machdoch/speech";
 
 export type SpeechInputStatusTone = "success" | "error" | "info";
 
@@ -199,6 +200,7 @@ export const useChatSessionSpeechInput = (
   }, [options, recorder, transcription]);
 
   const startRecording = useCallback(async (): Promise<boolean> => {
+    speechPlayback.pause();
     if (
       startInFlightRef.current !== null ||
       finalizingRef.current ||

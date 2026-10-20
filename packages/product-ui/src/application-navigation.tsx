@@ -1,6 +1,6 @@
 import { Menu, TerminalSquare, type LucideIcon } from "lucide-react";
 import { DropdownMenu } from "radix-ui";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { navigationFeature } from "@machdoch/analytics/catalog";
 
 export type ApplicationActivity =
@@ -13,6 +13,7 @@ export interface ApplicationNavigationItem {
   id: string;
   label: string;
   icon: LucideIcon;
+  group?: string;
   active?: boolean;
   pressed?: boolean;
   activity?: ApplicationActivity | undefined;
@@ -101,31 +102,36 @@ export function ApplicationNavigation({
               align="start"
               sideOffset={4}
             >
-              {entries.map((item) => (
-                <DropdownMenu.Item key={item.id} asChild>
-                  {item.href ? (
-                    <a
-                      href={item.href}
-                      data-analytics-feature={navigationFeature(item.id)}
-                      aria-current={item.active ? "page" : undefined}
-                    >
-                      <item.icon aria-hidden="true" />
-                      {item.label}
-                      <ActivityIndicator activity={item.activity} />
-                    </a>
-                  ) : (
-                    <button
-                      type="button"
-                      data-analytics-feature={navigationFeature(item.id)}
-                      onClick={item.onSelect}
-                      aria-current={item.active ? "page" : undefined}
-                    >
-                      <item.icon aria-hidden="true" />
-                      {item.label}
-                      <ActivityIndicator activity={item.activity} />
-                    </button>
+              {entries.map((item, index) => (
+                <Fragment key={item.id}>
+                  {index > 0 && item.group !== entries[index - 1]?.group && (
+                    <DropdownMenu.Separator className="m-navigation-menu-separator" />
                   )}
-                </DropdownMenu.Item>
+                  <DropdownMenu.Item asChild>
+                    {item.href ? (
+                      <a
+                        href={item.href}
+                        data-analytics-feature={navigationFeature(item.id)}
+                        aria-current={item.active ? "page" : undefined}
+                      >
+                        <item.icon aria-hidden="true" />
+                        {item.label}
+                        <ActivityIndicator activity={item.activity} />
+                      </a>
+                    ) : (
+                      <button
+                        type="button"
+                        data-analytics-feature={navigationFeature(item.id)}
+                        onClick={item.onSelect}
+                        aria-current={item.active ? "page" : undefined}
+                      >
+                        <item.icon aria-hidden="true" />
+                        {item.label}
+                        <ActivityIndicator activity={item.activity} />
+                      </button>
+                    )}
+                  </DropdownMenu.Item>
+                </Fragment>
               ))}
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
@@ -140,7 +146,14 @@ export function ApplicationNavigation({
             <TerminalSquare />
           </div>
           <div className="m-navigation-separator" />
-          {items.map(renderItem)}
+          {items.map((item, index) => (
+            <Fragment key={item.id}>
+              {index > 0 && item.group !== items[index - 1]?.group && (
+                <div className="m-navigation-separator" role="separator" />
+              )}
+              {renderItem(item)}
+            </Fragment>
+          ))}
         </div>
         <div className="m-navigation-group">
           {actions.map(renderItem)}

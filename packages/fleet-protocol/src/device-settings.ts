@@ -23,6 +23,8 @@ export const deviceVoicePreferencesSchema = z.strictObject({
   supported: z.boolean(),
   systemVoicesSupported: z.boolean(),
   autoSpeakResponses: z.boolean(),
+  answerMode:z.enum(["completed","streaming"]).optional(),
+  streamingSupported:z.boolean().optional(),
   availabilityDescription: z.string(),
   speechToTextAvailabilityDescription: z.string(),
   preferredVoiceURI: z.string().nullable(),
@@ -108,6 +110,7 @@ export const deviceSettingsCommands = {
   get_device_voice_preferences: noArgs,
   refresh_device_speech_input_devices: noArgs,
   save_device_voice_preferences: z.strictObject({
+    answerMode:z.enum(["completed","streaming"]).optional(),
     preferredVoiceURI: text.nullable(),
     rate: z.number().min(0.8).max(1.4),
     autoSpeakResponses: z.boolean(),

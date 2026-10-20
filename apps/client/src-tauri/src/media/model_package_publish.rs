@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use sha2::{Digest, Sha256};
 
-use super::super::{database, hardware};
+use super::super::{database};
 use super::{
     inventory, model_import, ImportMediaLocalModelRequest, MediaLocalModelImportInspection,
     MediaLocalModelImportResult, MediaResult, MediaRuntimePaths, PackageInventory,
@@ -75,7 +75,7 @@ fn publish_files(
         }
         return Ok(());
     }
-    if hardware::available_storage_bytes(root)
+    if crate::storage_space::available_storage_bytes(root)
         .is_some_and(|available| available < package.bytes.saturating_mul(105).div_ceil(100))
     {
         return Err("There is not enough free space to import this model.".to_string());

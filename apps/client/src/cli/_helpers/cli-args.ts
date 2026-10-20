@@ -705,6 +705,14 @@ export const parseCliArgs = (
 
   validateInstructionCommand(first!, values);
 
+  if (first === "speech") {
+    assertNoAdditionalPositionals(first, rest);
+    if (quickRunRequested || rawTask || rawRalphInputJson || !rawRalphInputJsonFile) {
+      fail("`machdoch speech` expects --input-json-file.");
+    }
+    return { ...sharedOptions, command: "speech", speech: { inputJsonFile: rawRalphInputJsonFile ?? fail("Missing --input-json-file.") } };
+  }
+
   if (first === "media-flow-agent") {
     assertNoAdditionalPositionals(first, rest);
     if (

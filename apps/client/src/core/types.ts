@@ -1,4 +1,6 @@
 import type { TaskExecutionFileChanges } from "@machdoch/fleet-protocol/task-file-changes";
+import type {FinalAnswerStreamSnapshot} from "@machdoch/fleet-protocol/task-thinking";
+export type {FinalAnswerStreamSnapshot} from "@machdoch/fleet-protocol/task-thinking";
 export type {
   TaskExecutionChangedLineRange,
   TaskExecutionFileChange,
@@ -290,6 +292,7 @@ export type AgentModelRequestAttemptHandler = (
 ) => void;
 
 export type AgentModelStreamEvent =
+  | {type:"final-answer";provider?:ModelProvider;snapshot:FinalAnswerStreamSnapshot}
   | {
       type: "status";
       provider?: ModelProvider;
@@ -597,6 +600,7 @@ export interface TaskExecutionTimeoutState {
 }
 
 export interface TaskExecutionProgress {
+  finalAnswerStream?:FinalAnswerStreamSnapshot;
   goal?: SessionGoal | null;
   task: string;
   mode: RunMode;

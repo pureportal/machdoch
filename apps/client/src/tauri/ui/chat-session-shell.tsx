@@ -73,6 +73,7 @@ import {
 } from "./update/use-desktop-update";
 import { UpdateDialog } from "./update/update-dialog";
 import { UpdateStatus } from "./update/update-status";
+import { speechRuntime, speechAssetUrl } from "./speech-runtime";
 
 const SettingsDialog = lazy(async () => {
   const module = await import("./chat-session/components/settings-dialog");
@@ -107,6 +108,11 @@ const MediaStudio = lazy(async () => {
     await import("@machdoch/media-studio/tauri/ui/media/media-studio.js");
 
   return { default: module.MediaStudio };
+});
+
+const TextToSpeechStudio = lazy(async () => {
+  const module = await import("@machdoch/text-to-speech");
+  return { default: module.TextToSpeechStudio };
 });
 
 const InstructionManager = lazy(async () => {
@@ -328,6 +334,17 @@ export const ChatSession = (): JSX.Element => {
     [activeApp, unsavedChangesMessage],
   );
 
+  const [pendingSpeechProjectId, setPendingSpeechProjectId] = useState<string | null>(null);
+  const speechProjectOpened = useCallback(() => setPendingSpeechProjectId(null), []);
+  useEffect(() => {
+    const open = (event: Event): void => {
+      const id = (event as CustomEvent<{ id?: unknown }>).detail?.id;
+      if (typeof id !== "string" || !/^[A-Za-z0-9_-]{1,128}$/u.test(id)) return;
+      if (selectApp("tts")) setPendingSpeechProjectId(id);
+    };
+    window.addEventListener("machdoch:open-speech-project", open);
+    return () => window.removeEventListener("machdoch:open-speech-project", open);
+  }, [selectApp]);
   const fileManagerStateRef = useRef({
     controller: controller.fileManager,
     selectApp,
@@ -416,6 +433,7 @@ export const ChatSession = (): JSX.Element => {
       { id: "app.view.chat", app: "chat", title: "Open Chat" },
       { id: "app.view.ralph", app: "ralph", title: "Open Ralph" },
       { id: "app.view.media", app: "media", title: "Open Media Studio" },
+      { id: "app.view.tts", app: "tts", title: "Open Text to Speech" },
       {
         id: "app.view.instructions",
         app: "instructions",
@@ -1061,6 +1079,7 @@ export const ChatSession = (): JSX.Element => {
                       <ConversationFeed
                         key={controller.composer.activeSession.id}
                         {...controller.conversation}
+                        showChangedFiles={appearance.settings.showChangedFiles}
                         hideEmptyState={
                           controller.composer.activeSession.specialSession ===
                           "pose"
@@ -1079,7 +1098,6 @@ export const ChatSession = (): JSX.Element => {
                                   controller.composer.activeSession.id,
                                   scene,
                                 )
-                        showChangedFiles={appearance.settings.showChangedFiles}
                               }
                             />
                           ) : undefined
@@ -1159,6 +1177,15 @@ export const ChatSession = (): JSX.Element => {
                   draftPrompt={pendingMediaDraftPrompt}
                   onDraftPromptHandled={() => setPendingMediaDraftPrompt(null)}
                 />
+              </Suspense>
+            </div>
+          ) : null}
+
+          {activeApp === "tts" ? (
+            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+              <Suspense fallback={appLoadingFallback}>
+                <TextToSpeechStudio runtime={speechRuntime} assetUrl={speechAssetUrl} openProjectId={pendingSpeechProjectId} onProjectOpened={speechProjectOpened}
+                  onMediaHandoff={handoff => { setPendingMediaAssetId(handoff.assetId);setPendingMediaSection("library");selectApp("media"); }} />
               </Suspense>
             </div>
           ) : null}

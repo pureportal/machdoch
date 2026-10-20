@@ -39,6 +39,7 @@ export function ProductShell({
   initialView = "projects",
   instanceName,
   mediaHref,
+  speechHref,
   ralphHref,
   schedulerHref,
   instructionsHref,
@@ -61,6 +62,7 @@ export function ProductShell({
   initialView?: ProductView;
   instanceName: string;
   mediaHref?: string | undefined;
+  speechHref?: string | undefined;
   ralphHref?: string | undefined;
   schedulerHref?: string | undefined;
   instructionsHref?: string | undefined;
@@ -81,6 +83,7 @@ export function ProductShell({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsFrameRef = useRef<HTMLIFrameElement>(null);
   const [mediaOpened, setMediaOpened] = useState(false);
+  const [speechOpened, setSpeechOpened] = useState(initialView === "tts");
   const [ralphOpened, setRalphOpened] = useState(initialView === "ralph");
   const [schedulerOpened, setSchedulerOpened] = useState(
     initialView === "scheduler",
@@ -158,6 +161,7 @@ export function ProductShell({
   }, [compact]);
   const selectView = (view: ProductView): void => {
     setRequestedView(view);
+    if (view === "tts") setSpeechOpened(true);
     if (view === "media") setMediaOpened(true);
     if (view === "ralph") setRalphOpened(true);
     if (view === "scheduler") setSchedulerOpened(true);
@@ -191,6 +195,8 @@ export function ProductShell({
   const activeView: ProductView =
     requestedView === "projects" && !shell?.projectLibrary
       ? "chat"
+      : requestedView === "tts" && !speechHref
+        ? "chat"
       : requestedView === "media" && !mediaHref
         ? "chat"
         : requestedView === "scheduler" && !schedulerHref
@@ -411,6 +417,7 @@ export function ProductShell({
             inspectorOpen={inspectorOpen}
             activeView={activeView}
             mediaAvailable={Boolean(mediaHref)}
+            speechAvailable={Boolean(speechHref)}
             schedulerAvailable={Boolean(schedulerHref)}
             instructionsAvailable={Boolean(instructionsHref)}
             workspaceAvailable={Boolean(workspaceHref)}
@@ -603,6 +610,11 @@ export function ProductShell({
                 onCommand={onCommand}
                 onOpenChat={() => selectView("chat")}
               />
+            </main>
+          ) : null}
+          {speechHref && (speechOpened || activeView === "tts") ? (
+            <main className="m-product-feature-main" hidden={activeView !== "tts"} style={activeView !== "tts" ? { display: "none" } : undefined}>
+              <iframe src={speechHref} title="Text to Speech" className="m-product-media-frame" allow="autoplay; microphone" onLoad={() => setSpeechOpened(true)} />
             </main>
           ) : null}
           {mediaHref && mediaOpened ? (

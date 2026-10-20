@@ -3,6 +3,7 @@ import type { ChatSessionMessage } from "../../chat-session.model";
 import type { TaskThinkingTrace } from "../../task-thinking.model";
 import { stripContextAttachmentsTaskBlock } from "./session-context-attachments";
 import { getTaskActionDisplayContent } from "./task-action-prompts";
+import { answerSpeechRevision, markdownToSpeech, type FinalAnswerEvent } from "@machdoch/speech";
 
 export const createFallbackExecutionMarkdown = (
   execution: TaskExecutionResult,
@@ -106,35 +107,25 @@ export const getExecutionMessageRenderKey = (
 };
 
 export const normalizeMarkdownForSpeech = (content: string): string => {
-  const normalized = content
-    .replace(/```[\s\S]*?```/g, " Code sample omitted. ")
-    .replace(/!\[([^\]]*)\]\(([^)]+)\)/g, "$1")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/^\s{0,3}>\s?/gm, "")
-    .replace(/^\s*[-*+]\s+/gm, "")
-    .replace(/^\s*\d+\.\s+/gm, "")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/__([^_]+)__/g, "$1")
-    .replace(/~~([^~]+)~~/g, "$1")
-    .replace(/\|/g, " ")
-    .replace(/\n{2,}/g, ". ")
-    .replace(/\n/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return markdownToSpeech(content);
+};
 
-  if (normalized.length > 0) {
-    return normalized;
-  }
-
-  return content.replace(/\s+/g, " ").trim();
+export const getFinalSpeechAnswer = (
+  message: ChatSessionMessage,
+  sessionId: string,
+): FinalAnswerEvent | null => {
+  if (message.role !== "agent" || message.source?.kind !== "execution") return null;
+  if (!["executed", "planned"].includes(message.source.execution.status)) return null;
+  const markdown = message.source.execution.response?.markdown?.trim();
+  if (!markdown) return null;
+  return { kind: "answer", channel: "final", audience: "user", sessionId, answerId: message.taskId ?? message.id, revision: answerSpeechRevision(markdown), markdown, complete: true };
 };
 
 export const getSpeechMessageContent = (
   message: ChatSessionMessage,
 ): string => {
-  return normalizeMarkdownForSpeech(getRenderedMessageContent(message));
+  const answer = getFinalSpeechAnswer(message, "");
+  return answer ? markdownToSpeech(answer.markdown) : "";
 };
 
 const createExecutionThinkingTone = (

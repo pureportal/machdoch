@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use super::{hardware, model_import, runtime_setup::installer, MediaResult, MediaRuntimePaths};
+use super::{model_import, runtime_setup::installer, MediaResult, MediaRuntimePaths};
 use reqwest::{blocking::Client, header, StatusCode};
 use serde::Deserialize;
 
@@ -181,7 +181,7 @@ pub(super) fn ensure_components(root: &Path, manifest: &str) -> MediaResult<Path
         if matches_file(&destination, &component)? {
             continue;
         }
-        if hardware::available_storage_bytes(&root).is_some_and(|free| free < component.bytes) {
+        if crate::storage_space::available_storage_bytes(&root).is_some_and(|free| free < component.bytes) {
             return Err("Free up disk space for model components, then retry import.".to_string());
         }
         download(&client, &destination, &component)?;

@@ -36,7 +36,7 @@ pub(crate) fn import_asset(
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("wav"))
     {
-        let result = audio::import_audio(paths, &staged, &source_path);
+        let result = audio::import_audio(paths, &staged, &source_path, None);
         let _ = fs::remove_file(&staged.path);
         return result;
     }
@@ -81,6 +81,14 @@ pub(crate) fn import_asset(
     if result.is_err() {
         let _ = fs::remove_file(&staged.path);
     }
+    result
+}
+
+pub(crate) fn import_speech(paths: &MediaRuntimePaths, source_path: &str, provenance: serde_json::Value) -> MediaResult<MediaAssetImportResult> {
+    let source_path = validate_source_path(source_path)?;
+    let staged = stage_and_hash(paths, &source_path)?;
+    let result = audio::import_audio(paths, &staged, &source_path, Some(provenance));
+    fs::remove_file(&staged.path).map_err(|error| format!("Speech import working file could not be removed: {error}"))?;
     result
 }
 

@@ -63,12 +63,26 @@ function BrowserPreferences(): React.ReactElement {
 
 it("persists appearance changes and reapplies them after navigation", () => {
   const first = render(<BrowserPreferences />);
+  const changedFiles = screen.getByRole<HTMLInputElement>("checkbox", {
+    name: "Show changed files after each prompt",
+  });
+  expect(changedFiles.checked).toBe(true);
+  fireEvent.click(changedFiles);
   fireEvent.click(screen.getByRole("button", { name: "Light" }));
   fireEvent.click(screen.getByRole("button", { name: "Violet" }));
   expect(document.documentElement.dataset.theme).toBe("light");
   expect(document.documentElement.dataset.accent).toBe("violet");
   first.unmount();
   render(<BrowserPreferences />);
+  const restoredChangedFiles = screen.getByRole<HTMLInputElement>("checkbox", {
+    name: "Show changed files after each prompt",
+  });
+  expect(restoredChangedFiles.checked).toBe(false);
+  fireEvent.click(restoredChangedFiles);
+  expect(
+    JSON.parse(localStorage.getItem("machdoch.desktop.appearance-state")!)
+      .showChangedFiles,
+  ).toBe(true);
   expect(
     screen.getByRole("button", { name: "Light" }).getAttribute("aria-pressed"),
   ).toBe("true");

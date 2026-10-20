@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::{
-    hardware, model_storage,
+    model_storage,
     storage::{save_config, StorageConfig},
     MediaResult,
 };
@@ -230,7 +230,7 @@ pub(super) fn prepare(
 }
 
 fn require_space(target: &Path, bytes: u64) -> MediaResult<()> {
-    let free = hardware::available_storage_bytes(target)
+    let free = crate::storage_space::available_storage_bytes(target)
         .ok_or("Could not check free space on the destination disk.")?;
     if free < bytes.saturating_add(16 * 1024 * 1024) {
         return Err(format!("Not enough free space: {:.2} GB available; {:.2} GB needed. Free up space on the destination disk.", free as f64 / 1073741824.0, bytes.saturating_add(16 * 1024 * 1024) as f64 / 1073741824.0));

@@ -964,8 +964,31 @@ export const useChatSessionController = (
   const retrySettingsRef = useRef(runtime.userAgentLimitsSettings);
   retrySettingsRef.current = runtime.userAgentLimitsSettings;
   const voice = useChatSessionVoice({
+    refreshKey: settingsSurfaceOpen,
     activeSessionId: state.activeSession.id,
     settings: state.shellState.voice,
+    conversationAutoSpeakOverride: state.activeSession.voiceAutoSpeakOverride,
+    conversationProfileId: state.activeSession.voiceProfileOverride,
+    onConversationProfileChange: value => state.applyShellState(previous => ({
+      ...previous,
+      sessions: previous.sessions.map(session => {
+        if (session.id !== state.activeSession.id) return session;
+        const updated = { ...session, updatedAt: Date.now() };
+        if (value === undefined) delete updated.voiceProfileOverride;
+        else updated.voiceProfileOverride = value;
+        return updated;
+      }),
+    })),
+    onConversationAutoSpeakChange: value => state.applyShellState(previous => ({
+      ...previous,
+      sessions: previous.sessions.map(session => {
+        if (session.id !== state.activeSession.id) return session;
+        const updated = { ...session, updatedAt: Date.now() };
+        if (value === undefined) delete updated.voiceAutoSpeakOverride;
+        else updated.voiceAutoSpeakOverride = value;
+        return updated;
+      }),
+    })),
     aiVoiceSettings: runtime.userVoiceSettings,
     visibleMessages: state.visibleMessages,
     onSettingsChange: (updater) => {
@@ -8742,8 +8765,11 @@ export const useChatSessionController = (
       onOpenAttachment: handleOpenAttachment,
       voicePlayback: {
         supported: voice.supported,
+        errorText: voice.errorText,
         speakingMessageId: voice.speakingMessageId,
         onSpeakMessage: voice.speakMessage,
+        onOpenInStudio: voice.openInStudio,
+        onSaveSpeech: voice.canSaveAudio ? voice.saveAudio : undefined,
         onStopSpeaking: voice.stopSpeaking,
       },
     },
@@ -9046,6 +9072,12 @@ export const useChatSessionController = (
         {
           onRefreshSpeechInputDevices: speechInputDevices.refresh,
           onAutoSpeakResponsesChange: voice.setAutoSpeakResponses,
+          onAnswerModeChange:voice.setAnswerMode,
+          conversationAutoSpeak: voice.conversationAutoSpeak,
+          conversationProfileId: voice.conversationProfileId,
+          conversationProfiles: voice.conversationProfiles,
+          onConversationProfileChange: voice.setConversationProfile,
+          onConversationAutoSpeakChange: voice.setConversationAutoSpeak,
           onPreferredVoiceChange: voice.setPreferredVoiceURI,
           onRateChange: voice.setRate,
         },

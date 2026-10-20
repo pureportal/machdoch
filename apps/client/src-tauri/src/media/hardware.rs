@@ -6,6 +6,7 @@ use std::{
 };
 
 use serde::Serialize;
+use crate::storage_space::available_storage_bytes;
 
 use super::{database, MediaResult};
 
@@ -285,34 +286,6 @@ fn memory_bytes() -> (Option<u64>, Option<u64>) {
 #[cfg(not(windows))]
 fn memory_bytes() -> (Option<u64>, Option<u64>) {
     (None, None)
-}
-
-#[cfg(windows)]
-pub(crate) fn available_storage_bytes(path: &Path) -> Option<u64> {
-    use std::{ffi::OsStr, os::windows::ffi::OsStrExt};
-    use windows::{core::PCWSTR, Win32::Storage::FileSystem::GetDiskFreeSpaceExW};
-
-    let path: Vec<u16> = OsStr::new(path)
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect();
-    let mut available = 0_u64;
-    unsafe { GetDiskFreeSpaceExW(PCWSTR(path.as_ptr()), Some(&mut available), None, None) }
-        .ok()
-        .map(|_| available)
-}
-
-#[cfg(unix)]
-pub(crate) fn available_storage_bytes(path: &Path) -> Option<u64> {
-    use std::{ffi::CString, mem::MaybeUninit, os::unix::ffi::OsStrExt};
-
-    let path = CString::new(path.as_os_str().as_bytes()).ok()?;
-    let mut storage = MaybeUninit::<libc::statvfs>::uninit();
-    if unsafe { libc::statvfs(path.as_ptr(), storage.as_mut_ptr()) } != 0 {
-        return None;
-    }
-    let storage = unsafe { storage.assume_init() };
-    Some((storage.f_bavail as u64).saturating_mul(storage.f_frsize as u64))
 }
 
 #[cfg(test)]

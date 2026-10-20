@@ -46,6 +46,17 @@ export const taskThinkingModelStreamSchema = z.strictObject({
 export type TaskThinkingModelStream = z.infer<
   typeof taskThinkingModelStreamSchema
 >;
+export const finalAnswerStreamSchema=z.strictObject({
+  source:z.literal("openai-responses"),
+  channel:z.literal("final_answer"),
+  responseId:z.string().min(1).max(512),
+  answerId:z.string().min(1).max(512),
+  sequence:z.number().int().nonnegative().safe(),
+  text:z.string().max(1_048_576).refine(value=>new TextEncoder().encode(value).byteLength<=1_048_576,"Final answer text exceeds the stream byte limit."),
+  status:z.enum(["streaming","completed","retracted","limited"]),
+  reason:z.string().max(512).optional(),
+});
+export type FinalAnswerStreamSnapshot=z.infer<typeof finalAnswerStreamSchema>;
 export const taskThinkingActionOutputLineSchema = z.strictObject({
   id: z.string(),
   toolName: z.string(),
@@ -118,6 +129,7 @@ export const taskThinkingTraceSchema = z.strictObject({
   completedAt: timestamp.optional(),
   assistantText: z.string().optional(),
   modelStream: taskThinkingModelStreamSchema.optional(),
+  finalAnswerStream:finalAnswerStreamSchema.optional(),
   actionOutputLines: z.array(taskThinkingActionOutputLineSchema).optional(),
   actionOutputSummaries: z
     .array(taskThinkingActionOutputSummarySchema)

@@ -118,11 +118,11 @@
     },
     "AudioProvider": {
       "type": "string",
-      "enum": ["openai", "google"]
+      "enum": ["openai", "google", "fish"]
     },
     "VoiceAiProvider": {
       "type": "string",
-      "enum": ["none", "openai", "google"]
+      "enum": ["none", "openai", "google", "fish"]
     },
     "SpeechToTextProvider": {
       "type": "string",

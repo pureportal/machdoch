@@ -9,7 +9,7 @@ use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
 use super::{
-    database, hardware,
+    database,
     model_import::{self, ParsedSafetensorsHeader},
     ImportMediaModelAddonRequest, MediaAssetImportDuplicate, MediaEmbeddingVectorProfile,
     MediaLoraTensorProfile, MediaModelAddonCapability, MediaModelAddonImportInspection,
@@ -2098,7 +2098,7 @@ fn publish_addon_file(
     let addons_root = models_root.join("addons");
     fs::create_dir_all(&addons_root)
         .map_err(|error| format!("failed to prepare model add-on storage: {error}"))?;
-    if hardware::available_storage_bytes(&addons_root).map(|available| available < required_bytes)
+    if crate::storage_space::available_storage_bytes(&addons_root).map(|available| available < required_bytes)
         == Some(true)
     {
         return Err("the Media Studio model volume does not have enough free space".to_string());

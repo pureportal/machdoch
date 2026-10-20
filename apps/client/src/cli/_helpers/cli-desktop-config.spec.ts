@@ -1,4 +1,4 @@
-import { requestDesktopSettings } from "./cli-desktop-settings-bridge.js";
+import { requestDesktopSettings } from "../../core/desktop-bridge.js";
 import { mkdtemp, writeFile, rm, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

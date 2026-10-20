@@ -39,10 +39,10 @@ export type WebSearchProvider = (typeof VALID_WEB_SEARCH_PROVIDERS)[number];
 export const USER_WEB_SEARCH_PROVIDERS = ["perplexity", "tavily", "serper"] as const;
 export type UserWebSearchProvider = (typeof USER_WEB_SEARCH_PROVIDERS)[number];
 
-export const USER_AUDIO_AI_PROVIDERS = ["openai", "google"] as const;
+export const USER_AUDIO_AI_PROVIDERS = ["openai", "google", "fish"] as const;
 export type AudioProvider = (typeof USER_AUDIO_AI_PROVIDERS)[number];
 
-export const VALID_AUDIO_AI_PROVIDERS = ["none", "openai", "google"] as const;
+export const VALID_AUDIO_AI_PROVIDERS = ["none", "openai", "google", "fish"] as const;
 export type VoiceAiProvider = (typeof VALID_AUDIO_AI_PROVIDERS)[number];
 export const VALID_SPEECH_TO_TEXT_PROVIDERS = ["none", "openai", "google", "whisper", "whisper-tiny", "whistle", "whistle-tiny", "phonon2"] as const;
 export type SpeechToTextProvider = (typeof VALID_SPEECH_TO_TEXT_PROVIDERS)[number];

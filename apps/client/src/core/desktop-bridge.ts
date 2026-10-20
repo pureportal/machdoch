@@ -1,8 +1,7 @@
 import { createConnection } from "node:net";
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { getUserConfigPath } from "../../core/env.js";
-import { CliUsageError } from "./cli-error.js";
+import { getUserConfigPath } from "./env.js";
 
 interface DesktopBridgeDescriptor {
   version: 1;
@@ -46,13 +45,13 @@ export const readDesktopSettingsDescriptor = async (): Promise<
 };
 
 export const requestDesktopSettings = async (
-  action: "snapshot" | "set" | "action" | "transfer",
+  action: "snapshot" | "set" | "action" | "transfer" | "speech" | "speech-remote",
   setting = "",
   value?: unknown,
 ): Promise<unknown> => {
   const descriptor = await readDesktopSettingsDescriptor();
   if (!descriptor)
-    throw new CliUsageError("Open the desktop app to edit this setting.");
+    throw new Error(action === "speech" ? "Start the owning device's native Machdoch runtime to use speech automation." : "Open the desktop app to edit this setting.");
   return await new Promise<unknown>((resolve, reject) => {
     const socket = createConnection({
       host: "127.0.0.1",
@@ -94,7 +93,7 @@ export const requestDesktopSettings = async (
     );
     socket.on("data", (chunk: string) => {
       data += chunk;
-      if (data.length > 1_000_000) {
+      if (data.length > (action.startsWith("speech") ? 16 * 1024 * 1024 : 1_000_000)) {
         finish(new Error("Desktop settings response is too large."));
         return;
       }

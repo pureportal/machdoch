@@ -27,6 +27,7 @@ export type MainAppId =
   | "chat"
   | "ralph"
   | "media"
+  | "tts"
   | "instructions"
   | "workspaces";
 export type RunningTaskMessageAction = "steer" | "stop-and-send" | "queue";
@@ -74,6 +75,7 @@ export const DEFAULT_APP_SHELL_STATE = {
     chat: 0,
     ralph: 0,
     media: 0,
+    tts: 0,
     instructions: 0,
     workspaces: 0,
   },
@@ -150,7 +152,7 @@ const normalizeStringHistory = (value: unknown, limit: number): string[] => {
 const normalizeMainAppId = (value: unknown): MainAppId => {
   return normalizeOneOf(
     value,
-    ["chat", "ralph", "media", "instructions", "workspaces"],
+    ["chat", "ralph", "media", "tts", "instructions", "workspaces"],
     "chat",
   );
 };
@@ -188,6 +190,7 @@ export const normalizeAppShellState = (value: unknown): AppShellState => {
         typeof lastViewedAt.media === "number"
           ? lastViewedAt.media
           : DEFAULT_APP_SHELL_STATE.lastViewedAt.media,
+      tts: typeof lastViewedAt.tts === "number" ? lastViewedAt.tts : 0,
       instructions:
         typeof lastViewedAt.instructions === "number"
           ? lastViewedAt.instructions

@@ -20,6 +20,7 @@ Core commands:
   update         Install the latest Machdoch release
 
 Automation and integration:
+  speech         Render projects, observe jobs, cancel, and export speech
   ralph          Create, validate, run, and inspect RALPH flows
   scheduler      Manage scheduled and event-triggered work
   instructions   Manage central instruction files and assignments
@@ -327,6 +328,19 @@ Use --timezone for cron schedules, --prompt-file for file input, and --json for
 automation. Run 'machdoch scheduler create --help' to return to this reference.`;
 
 const HELP_BY_TOPIC: Readonly<Record<string, string>> = {
+  speech: `machdoch speech - use the native speech service
+
+Usage:
+  machdoch speech --input-json-file <path> [--json]
+
+The file contains {"operation":"produce","input":{...}}. Operations include:
+produce, renderProject, listProjects, getProject, revisions, getRevision,
+listProfiles, listJobs, listTakes, archiveReferences, cancel, export.
+listProjects and revisions require offset and limit (1–100); use getProject
+or getRevision to read a script. Render input specifies projectId, revisionId,
+profileId, owner, takes, reuseCache, cloudConsent, and budgetLimit.
+Produce also specifies output (path, format, overwrite and encoder settings).
+The owning device's native Machdoch runtime must be running.`,
   update: `machdoch update - install the latest stable GitHub release
 
 Usage:

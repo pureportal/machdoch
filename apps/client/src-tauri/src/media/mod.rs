@@ -70,6 +70,14 @@ use tauri::{AppHandle, Manager as _};
 
 pub(crate) type MediaResult<T> = Result<T, String>;
 
+pub(crate) async fn import_speech_asset(app: &AppHandle, take: &serde_json::Value, project_id: &str) -> MediaResult<String> {
+    let paths = MediaRuntimePaths::resolve(app)?;
+    database::ensure_initialized(&paths)?;
+    let path = take["asset"]["path"].as_str().ok_or("Speech take has no audio asset")?.to_string();
+    let provenance = serde_json::json!({"sourceProjectId":project_id,"takeId":take["id"],"revisionId":take["revisionId"],"backend":take["backend"],"model":take["model"],"requestHash":take["requestHash"],"alignment":take["alignment"],"timingEvidence":take["timingEvidence"]});
+    tauri::async_runtime::spawn_blocking(move || ingest::import_speech(&paths, &path, provenance).map(|result| result.asset.id)).await.map_err(|error|format!("Speech handoff failed: {error}"))?
+}
+
 const MAX_IMAGE_GENERATION_SEED: u64 = 9_007_199_254_740_991;
 const IMAGE_TASK_NODE_TYPES: &[&str] = &["task.generate-image", "task.edit-image"];
 

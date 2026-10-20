@@ -2,7 +2,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::{hardware, MediaResult, MediaRuntimePaths};
+use super::{MediaResult, MediaRuntimePaths};
 
 const LOW_STORAGE_BYTES: u64 = 5 * 1024 * 1024 * 1024;
 
@@ -42,7 +42,7 @@ pub(super) fn assess(free_bytes: u64, file_bytes: u64, received: u64) -> Civitai
 }
 
 pub(super) fn check(path: &Path, file_bytes: u64, received: u64) -> MediaResult<CivitaiStorage> {
-    let free_bytes = hardware::available_storage_bytes(path).ok_or_else(|| {
+    let free_bytes = crate::storage_space::available_storage_bytes(path).ok_or_else(|| {
         "Could not check free disk space. Check that the model folder is accessible and retry."
             .to_string()
     })?;

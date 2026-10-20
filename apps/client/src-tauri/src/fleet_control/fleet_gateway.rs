@@ -12,6 +12,13 @@ pub(crate) fn handle_fleet_request(
     request: HostRequest,
 ) -> HostResponse {
     match request {
+        HostRequest::Speech { request } => HostResponse::Speech {
+            response: crate::fleet_operations::handle(
+                app_handle,
+                request,
+                crate::fleet_operations::OperationDomain::Speech,
+            ),
+        },
         HostRequest::DeviceSettings { request } => HostResponse::DeviceSettings {
             response: crate::fleet_operations::handle(
                 app_handle,

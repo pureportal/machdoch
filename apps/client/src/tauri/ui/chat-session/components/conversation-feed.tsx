@@ -10,6 +10,8 @@ import {
   Square,
   User,
   Volume2,
+  AudioLines,
+  Save,
   WandSparkles,
 } from "lucide-react";
 import {
@@ -55,6 +57,7 @@ import {
   createExecutionThinkingTrace,
   getExecutionMessageRenderKey,
   getRenderedMessageContent,
+  getFinalSpeechAnswer,
 } from "../_helpers/execution-message.tsx";
 import {
   getConversationMessageNavigationState,
@@ -83,10 +86,10 @@ const taskFileChangeReader = {
 export interface ConversationFeedProps {
   visibleMessages: ChatSessionMessage[];
   hideEmptyState?: boolean;
+  showChangedFiles?: boolean;
   poseScenePreview?: ReactNode;
   promptEnhancementPreview?: {
     id: string;
-  showChangedFiles?: boolean;
     content: string;
     originalContent?: string;
     contextAttachments: ChatSessionContextAttachment[];
@@ -118,8 +121,11 @@ export interface ConversationFeedProps {
   ) => void;
   voicePlayback: {
     supported: boolean;
+    errorText?: string | null;
     speakingMessageId: string | null;
     onSpeakMessage: (message: ChatSessionMessage) => void;
+    onOpenInStudio?: (message: ChatSessionMessage) => void;
+    onSaveSpeech?: (message: ChatSessionMessage) => void;
     onStopSpeaking: () => void;
   };
 }
@@ -130,13 +136,13 @@ const MESSAGE_NAVIGATION_HIGHLIGHT_DURATION_MS = 1_800;
 const MESSAGE_NAVIGATION_SCROLL_EDGE_EPSILON_PX = 8;
 
 interface ConversationMessageRowProps {
+  showChangedFiles: boolean;
   aiContextMessageLimit: number;
   canContinueMessage: boolean;
   canRetryMessage: boolean;
   editContent: string;
   isEditing: boolean;
   isActiveEditing: boolean;
-  showChangedFiles: boolean;
   isDimmedForEditing: boolean;
   isPromptEnhancing: boolean;
   isAiContextStart: boolean;
@@ -174,6 +180,8 @@ interface ConversationMessageRowProps {
   onRetryMessage?: (message: ChatSessionMessage) => void;
   onSaveMessageAsContextPack?: (message: ChatSessionMessage) => void;
   onSpeakMessage: (message: ChatSessionMessage) => void;
+  onOpenInStudio?: (message: ChatSessionMessage) => void;
+  onSaveSpeech?: (message: ChatSessionMessage) => void;
   onStopSpeaking: () => void;
   onToggleOriginalPrompt: (messageId: string) => void;
   voicePlaybackSupported: boolean;
@@ -181,6 +189,7 @@ interface ConversationMessageRowProps {
 }
 
 const ConversationMessageRow = memo(function ConversationMessageRow({
+  showChangedFiles,
   aiContextMessageLimit,
   canContinueMessage,
   canRetryMessage,
@@ -189,7 +198,6 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   isDimmedForEditing,
   isEditing,
   isAiContextStart,
-  showChangedFiles,
   isNavigationHighlighted,
   isNavigationTarget,
   isOriginalPromptExpanded,
@@ -210,6 +218,8 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   onRetryMessage,
   onSaveMessageAsContextPack,
   onSpeakMessage,
+  onOpenInStudio,
+  onSaveSpeech,
   onStopSpeaking,
   onToggleOriginalPrompt,
   voicePlaybackSupported,
@@ -390,7 +400,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                 }
               >
                 {message.role === "agent" &&
-                voicePlaybackSupported &&
+                voicePlaybackSupported && getFinalSpeechAnswer(message, "") !== null &&
                 renderedContent.trim().length > 0 ? (
                   <Button
                     type="button"
@@ -428,6 +438,10 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                   </Button>
                 ) : null}
 
+                {onOpenInStudio && getFinalSpeechAnswer(message, "") !== null && <Button type="button" variant="ghost" size="icon" aria-label="Open in Text to Speech"
+                  className="absolute top-3 right-12 h-7 w-7" onClick={() => onOpenInStudio(message)}><AudioLines className="h-3.5 w-3.5" /></Button>}
+                {onSaveSpeech && getFinalSpeechAnswer(message, "") !== null && <Button type="button" variant="ghost" size="icon" aria-label="Save speech in Text to Speech"
+                  className="absolute top-3 right-[5.25rem] h-7 w-7" onClick={() => onSaveSpeech(message)}><Save className="h-3.5 w-3.5" /></Button>}
                 {message.role === "user" &&
                 originalPromptContent &&
                 !isEditing ? (
@@ -528,6 +542,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
 
             {message.source?.kind === "execution" ? (
               <ExecutionInsightRow
+                showChangedFiles={showChangedFiles}
                 fileChangeReader={taskFileChangeReader}
                 execution={message.source.execution}
                 onRetryTask={canRetryMessage ? retryMessage : undefined}
@@ -542,7 +557,6 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
               <div className="app-message-actions flex max-w-[90%] min-w-0 flex-wrap items-center gap-2">
                 <Button
                   type="button"
-                showChangedFiles={showChangedFiles}
                   variant="outline"
                   size="sm"
                   onClick={retryMessage}
@@ -575,6 +589,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
 export const ConversationFeed = ({
   visibleMessages,
   hideEmptyState = false,
+  showChangedFiles = true,
   poseScenePreview,
   promptEnhancementPreview = null,
   workspaceRoot,
@@ -589,7 +604,6 @@ export const ConversationFeed = ({
   editingPromptEnhancement = null,
   onCancelPromptEnhancement,
   onContinueTask,
-  showChangedFiles = true,
   onSaveMessageAsContextPack,
   onOpenWorkspaceFile,
   onOpenLocalFile,
@@ -1075,6 +1089,7 @@ export const ConversationFeed = ({
 
   return (
     <div className="app-conversation-feed mx-auto flex w-full max-w-6xl min-w-0 flex-col gap-6 pb-2 px-4 pt-8 lg:px-6">
+      {voicePlayback.errorText ? <p role="alert" className="text-sm text-red-400">{voicePlayback.errorText}</p> : null}
       {activeNavigationMessageId && currentNavigationPosition ? (
         <nav
           aria-label="Message navigation"
@@ -1143,6 +1158,7 @@ export const ConversationFeed = ({
 
         return (
           <ConversationMessageRow
+            showChangedFiles={showChangedFiles}
             key={getExecutionMessageRenderKey(message)}
             message={message}
             aiContextMessageLimit={normalizedAiContextMessageLimit}
@@ -1158,7 +1174,6 @@ export const ConversationFeed = ({
             isDimmedForEditing={
               hasActiveMessageEdit && activeEditingId !== message.id
             }
-            showChangedFiles={showChangedFiles}
             isPromptEnhancing={
               editingPromptEnhancement?.messageId === message.id
             }
@@ -1196,6 +1211,8 @@ export const ConversationFeed = ({
             onMessageElementChange={setMessageElement}
             onOpenAttachment={onOpenAttachment ? openAttachment : undefined}
             onSpeakMessage={voicePlayback.onSpeakMessage}
+            onOpenInStudio={voicePlayback.onOpenInStudio}
+            onSaveSpeech={voicePlayback.onSaveSpeech}
             onStopSpeaking={voicePlayback.onStopSpeaking}
             onOpenMessageContextMenu={openMessageContextMenu}
             onToggleOriginalPrompt={toggleOriginalPrompt}

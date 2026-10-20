@@ -3,6 +3,7 @@ import {
   hostMessageSchema,
   maximumGatewayMessageBytes,
   productCapability,
+  speechCapability,
   ralphEditorCapability,
   schedulerEditorCapability,
   instructionEditorCapability,
@@ -240,6 +241,7 @@ export const runFleetGatewayConnection = async (options: {
         protocolVersion: gatewayProtocolVersion,
         productVersion: options.productVersion,
         capabilities: [
+          speechCapability,
           productCapability,
           ralphEditorCapability,
           schedulerEditorCapability,

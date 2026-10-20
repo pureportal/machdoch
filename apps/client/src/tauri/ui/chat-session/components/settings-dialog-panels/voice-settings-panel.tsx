@@ -21,6 +21,7 @@ import { useSettingsNavigationGuard } from "./navigation-guard";
 import type { VoiceSettingsControls } from "./types";
 
 const getVoiceAiProviderLabel = (provider: VoiceAiProvider): string => {
+  if (provider === "fish") return "Fish Audio · Drama 3";
   return provider === "none"
     ? "System voices only"
     : getProviderLabel(provider);
@@ -280,7 +281,7 @@ export const VoiceSettingsPanel = ({
       <SettingsCard title="Speech output">
         <div className="grid gap-0">
           <SettingsProviderChoice
-            label="Voice provider"
+            label="Default provider"
             detail={
               voiceOutputAvailable ? undefined : setup.availabilityDescription
             }
@@ -325,11 +326,26 @@ export const VoiceSettingsPanel = ({
             />
           </SettingPanel>
 
-          {setup.systemVoicesSupported ? (
+          {setup.onConversationAutoSpeakChange && <SettingPanel label="This conversation">
+            <ChoiceButtons label="Conversation spoken replies" value={setup.conversationAutoSpeak ?? "default"}
+              options={[{value:"default",label:"Use default"},{value:"manual",label:"Manual"},{value:"auto",label:"Automatic"}]}
+              onChange={value => setup.onConversationAutoSpeakChange?.(value as "default" | "manual" | "auto")} />
+          </SettingPanel>}
+          {setup.onAnswerModeChange&&<SettingPanel label="Answer playback" detail={!setup.streamingSupported?"Choose a Fish Cloud speech profile to enable streaming replies.":undefined}>
+            <ChoiceButtons label="Answer playback mode" value={setup.answerMode??"completed"} options={[{value:"completed",label:"Completed reply"},{value:"streaming",label:"Stream final reply",disabled:!setup.streamingSupported}]} onChange={value=>setup.onAnswerModeChange?.(value as "completed"|"streaming")} />
+          </SettingPanel>}
+          {setup.onConversationProfileChange && <SettingPanel label="Conversation voice">
+            <select aria-label="Conversation speech profile" value={setup.conversationProfileId ?? ""} onChange={event=>setup.onConversationProfileChange?.(event.target.value||undefined)}>
+              <option value="">Use default</option>
+              {setup.conversationProfileId && !setup.conversationProfiles?.some(profile=>profile.id===setup.conversationProfileId) && <option value={setup.conversationProfileId}>Unavailable profile</option>}
+              {setup.conversationProfiles?.map(profile=><option key={profile.id} value={profile.id}>{profile.name}</option>)}
+            </select>
+          </SettingPanel>}
+          {setup.systemVoicesSupported || setup.voiceOptions.length > 0 ? (
             <>
-              <SettingPanel label="System voice">
+              <SettingPanel label="Voice override">
                 <select
-                  aria-label="System voice"
+                  aria-label="Voice"
                   value={setup.preferredVoiceURI ?? ""}
                   onChange={(event) => {
                     const nextValue = event.target.value.trim();
@@ -340,7 +356,7 @@ export const VoiceSettingsPanel = ({
                   }}
                   className="h-10 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm text-slate-100 outline-none transition-colors focus:border-sky-500/40"
                 >
-                  <option value="">System default</option>
+                  <option value="">{setup.aiProvider === "none" ? "System default" : "Provider default"}</option>
                   {selectedSystemVoiceMissing ? (
                     <option value={setup.preferredVoiceURI ?? ""}>
                       Selected voice unavailable

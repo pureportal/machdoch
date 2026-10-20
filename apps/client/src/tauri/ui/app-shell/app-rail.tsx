@@ -7,6 +7,7 @@ import {
   MessageSquareText,
   Server,
   Workflow,
+  AudioLines,
 } from "lucide-react";
 import {
   ApplicationNavigation,
@@ -46,6 +47,7 @@ export function AppRail({
   const chatShortcut = useCommandShortcut("app.view.chat");
   const ralphShortcut = useCommandShortcut("app.view.ralph");
   const mediaShortcut = useCommandShortcut("app.view.media");
+  const speechShortcut = useCommandShortcut("app.view.tts");
   const instructionsShortcut = useCommandShortcut("app.view.instructions");
   const workspacesShortcut = useCommandShortcut("app.view.workspaces");
   const settingsShortcut = useCommandShortcut("app.settings.open");
@@ -78,9 +80,18 @@ export function AppRail({
       onSelect: () => onSelectApp("media"),
     },
     {
+      id: "tts",
+      label: "Text to Speech",
+      icon: AudioLines,
+      shortcut: speechShortcut,
+      active: activeApp === "tts",
+      onSelect: () => onSelectApp("tts"),
+    },
+    {
       id: "instructions",
       label: "Instructions",
       icon: FileSliders,
+      group: "management",
       shortcut: instructionsShortcut,
       active: activeApp === "instructions",
       onSelect: () => onSelectApp("instructions"),
@@ -89,6 +100,7 @@ export function AppRail({
       id: "workspaces",
       label: "Workspace Management",
       icon: FolderGit2,
+      group: "management",
       shortcut: workspacesShortcut,
       active: activeApp === "workspaces",
       onSelect: () => onSelectApp("workspaces"),

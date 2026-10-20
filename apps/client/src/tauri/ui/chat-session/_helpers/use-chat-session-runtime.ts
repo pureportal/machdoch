@@ -1614,8 +1614,8 @@ export const useChatSessionRuntime = (
         const settings = await saveUserVoiceActiveProvider(provider);
         const providerLabel =
           provider === "none"
-            ? "System voice fallback"
-            : getProviderLabel(provider);
+            ? "System voices"
+            : provider === "fish" ? "Fish Audio · Drama 3" : getProviderLabel(provider);
 
         if (voiceMutationRevisionRef.current !== mutationRevision) {
           return;
@@ -1625,12 +1625,12 @@ export const useChatSessionRuntime = (
           tone: "success",
           text:
             provider === "none"
-              ? "AI voice playback is disabled. System voices remain available when supported."
+              ? "System voices selected."
               : settings.providerAvailability.some(
                     (entry) => entry.provider === provider && entry.configured,
                   )
                 ? `${providerLabel} will handle new spoken replies.`
-                : `${providerLabel} was selected, but replies will keep falling back until its API key is configured.`,
+                : `Configure ${providerLabel} before playing replies.`,
         });
       } catch (error) {
         setVoiceSetupMessage({

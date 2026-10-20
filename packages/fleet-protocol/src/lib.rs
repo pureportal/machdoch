@@ -6,6 +6,7 @@ use std::{error::Error, fmt};
 
 pub mod context_packs;
 pub mod device_settings;
+pub mod speech;
 pub mod identifiers;
 pub mod instructions;
 mod media;
@@ -718,6 +719,10 @@ pub fn deserialize_host_message(
     deny_unknown_fields
 )]
 pub enum HostRequest {
+    Speech {
+        #[serde(deserialize_with = "speech::deserialize_speech_request")]
+        request: Value,
+    },
     DeviceSettings {
         #[serde(deserialize_with = "device_settings::deserialize_device_settings_request")]
         request: Value,
@@ -773,6 +778,10 @@ pub enum HostRequest {
     deny_unknown_fields
 )]
 pub enum HostResponse {
+    Speech {
+        #[serde(deserialize_with = "media::deserialize_media_response")]
+        response: Value,
+    },
     DeviceSettings {
         #[serde(deserialize_with = "media::deserialize_media_response")]
         response: Value,

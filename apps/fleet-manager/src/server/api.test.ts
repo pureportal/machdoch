@@ -28,6 +28,36 @@ afterEach(() => {
 });
 
 describe("Fleet Manager API", () => {
+  it("binds speech client ownership and response receipts to the authenticated browser session",async()=>{
+    runtime=testRuntime();setRuntimeForTests(runtime);
+    const first=await authenticateTestOwner();
+    const instance=enrollTestInstance(runtime);
+    vi.spyOn(runtime.gateways,"supportsCapability").mockReturnValue(true);
+    const relay=vi.spyOn(runtime.gateways,"relay").mockResolvedValue({type:"speech",response:{state:"pending"}});
+    const path=`/api/instances/${instance.instanceId}/product/speech`;
+    const request={kind:"invoke",id:crypto.randomUUID(),command:"speech_execute",args:{clientId:crypto.randomUUID(),disconnectPolicy:"cancel",request:{operation:"listJobs",input:{owner:"remote:spoofed"}}}};
+    expect((await apiRequest(path,"POST",request)).status).toBe(401);
+    expect((await apiRequest(path,"POST",request,first.cookie)).status).toBe(403);
+    expect((await apiRequest(path,"POST",request,first.cookie,first.csrf)).status).toBe(200);
+    const invocation=relay.mock.calls.at(-1)![1];
+    expect(invocation.type).toBe("speech");
+    if(invocation.type!=="speech"||invocation.request.kind!=="invoke")throw new Error("Expected speech invocation");
+    expect(invocation.request.args.clientId).not.toBe(request.args.clientId);
+    expect(invocation.request.args.request.input.owner).toBe(`remote:${invocation.request.args.clientId}`);
+    expect((await apiRequest(path,"POST",{kind:"read",id:request.id,offset:0},first.cookie,first.csrf)).status).toBe(200);
+    const receipt=relay.mock.calls.at(-1)![1];
+    if(receipt.type!=="speech")throw new Error("Expected speech receipt");
+    expect(receipt.request.id).toBe(invocation.request.id);
+    const login=await apiRequest("/api/auth/login","POST",{username:"owner",password:"a secure test password"});
+    const cookies=login.headers.getSetCookie();
+    const cookie=cookies.map(value=>value.split(";",1)[0]).join("; ");
+    const csrf=/^__Host-machdoch_fleet_csrf=([^;]+)/mu.exec(cookies.join("\n"))?.[1];
+    expect((await apiRequest(path,"POST",request,cookie,csrf)).status).toBe(200);
+    const other=relay.mock.calls.at(-1)![1];
+    if(other.type!=="speech"||other.request.kind!=="invoke")throw new Error("Expected speech invocation");
+    expect(other.request.id).not.toBe(invocation.request.id);
+    expect(other.request.args.clientId).not.toBe(invocation.request.args.clientId);
+  });
   it.each([
     {
       domain: "deviceSettings",

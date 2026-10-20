@@ -162,6 +162,7 @@ export function RemoteProductApp({
       {...(initialView ? { initialView } : {})}
       drafts={drafts}
       mediaHref={runtime.mediaHref}
+      speechHref={runtime.speechHref}
       workspaceHref={runtime.workspaceHref}
       ralphHref={runtime.ralphHref}
       schedulerHref={runtime.schedulerHref}

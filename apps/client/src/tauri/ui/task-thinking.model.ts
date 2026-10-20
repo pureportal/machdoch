@@ -1,5 +1,6 @@
 import type {
   TaskExecutionProgress,
+  FinalAnswerStreamSnapshot,
   TaskExecutionResult,
   TaskExecutionState,
   TaskExecutionTimeoutState,
@@ -124,6 +125,7 @@ export interface TaskThinkingTrace {
   completedAt?: number;
   assistantText?: string;
   modelStream?: TaskThinkingModelStream;
+  finalAnswerStream?:FinalAnswerStreamSnapshot;
   actionOutputLines?: TaskThinkingActionOutputLine[];
   actionOutputSummaries?: TaskThinkingActionOutputSummary[];
   tokenUsage?: TaskExecutionTokenUsage;
@@ -545,6 +547,7 @@ export const appendThinkingProgress = (
   const hasProgressExtras =
     progress.assistantText !== undefined ||
     progress.modelStream !== undefined ||
+    progress.finalAnswerStream !== undefined ||
     progress.actionOutput !== undefined ||
     progress.timelineEvent !== undefined ||
     progress.timeout !== undefined ||
@@ -570,6 +573,9 @@ export const appendThinkingProgress = (
         content: limitStreamText(progress.modelStream.content),
       }
     : trace.modelStream;
+  const incomingAnswer=progress.finalAnswerStream;
+  const previousAnswer=trace.finalAnswerStream;
+  const nextAnswer=incomingAnswer&&!(previousAnswer?.responseId===incomingAnswer.responseId&&previousAnswer.answerId===incomingAnswer.answerId&&incomingAnswer.sequence<=previousAnswer.sequence)?incomingAnswer:previousAnswer;
   const nextActionOutputLines = createActionOutputLines(
     trace,
     progress,
@@ -594,6 +600,7 @@ export const appendThinkingProgress = (
     timelineEvents: nextTimelineEvents,
     ...(nextAssistantText ? { assistantText: nextAssistantText } : {}),
     ...(nextModelStream ? { modelStream: nextModelStream } : {}),
+    ...(nextAnswer?{finalAnswerStream:nextAnswer}:{}),
     ...retainTaskActionOutput(
       {
         ...trace,

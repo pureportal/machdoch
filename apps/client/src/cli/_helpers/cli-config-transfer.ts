@@ -9,7 +9,7 @@ import type {
   SettingsTransferStatus,
 } from "../../shared/settings-transfer.js";
 import type { InteractivePrompter } from "./cli-prompter.js";
-import { requestDesktopSettings } from "./cli-desktop-settings-bridge.js";
+import { requestDesktopSettings } from "../../core/desktop-bridge.js";
 import { InteractiveInputCancelledError } from "./cli-interactive-commands.js";
 
 const chooseCategories = async (

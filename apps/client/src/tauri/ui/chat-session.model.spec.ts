@@ -41,6 +41,15 @@ import {
 
 const SESSION_DAY_MS = 24 * 60 * 60 * 1_000;
 
+it("persists conversation speech overrides without changing the global voice profile", () => {
+  const state=createInitialShellState();
+  const session=createSession({voiceAutoSpeakOverride:true,voiceProfileOverride:"profile-narrator"});
+  const normalized=normalizeShellState({...state,activeSessionId:session.id,sessions:[session]});
+  expect(normalized.sessions[0]?.voiceAutoSpeakOverride).toBe(true);
+  expect(normalized.sessions[0]?.voiceProfileOverride).toBe("profile-narrator");
+  expect(normalized.voice).toEqual(state.voice);
+});
+
 describe("session goal state", () => {
   it("preserves a submitted goal in saved message settings and queued tasks", () => {
     const session = createSession();
@@ -842,6 +851,7 @@ describe("normalizeShellState", () => {
     expect(normalized.lastSelectedModelByProvider.openai).toBe("gpt-custom");
     expect(normalized.voice).toEqual({
       autoSpeakResponses: true,
+      answerMode: "completed",
       preferredVoiceURI: "voice-default",
       rate: 1.4,
     });
