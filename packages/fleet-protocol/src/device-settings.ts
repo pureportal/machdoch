@@ -16,6 +16,7 @@ export const deviceAppearanceSchema = z.strictObject({
   theme: z.enum(["dark", "light"]),
   density: z.enum(["comfortable", "compact"]),
   accent: z.enum(["sky", "emerald", "violet", "amber"]),
+  showChangedFiles: z.boolean(),
 });
 
 export const deviceVoicePreferencesSchema = z.strictObject({

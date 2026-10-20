@@ -7,6 +7,7 @@ export interface AppearanceSettings {
   theme: AppearanceTheme;
   density: AppearanceDensity;
   accent: AppearanceAccent;
+  showChangedFiles: boolean;
 }
 
 export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
@@ -14,6 +15,7 @@ export const DEFAULT_APPEARANCE_SETTINGS: AppearanceSettings = {
   theme: "dark",
   density: "comfortable",
   accent: "sky",
+  showChangedFiles: true,
 };
 
 export function normalizeAppearanceSettings(
@@ -37,6 +39,7 @@ export function normalizeAppearanceSettings(
       settings.accent === "amber"
         ? settings.accent
         : "sky",
+    showChangedFiles: settings.showChangedFiles !== false,
   };
 }
 

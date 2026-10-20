@@ -21,6 +21,7 @@ export interface ExecutionInsightRowProps {
   onOpenWorkspaceFile: (relativePath: string) => void;
   onRetryTask?: () => void;
   onContinueTask?: () => void;
+  showChangedFiles?: boolean;
 }
 
 export const ExecutionInsightRow = ({
@@ -29,6 +30,7 @@ export const ExecutionInsightRow = ({
   onOpenWorkspaceFile,
   onRetryTask,
   onContinueTask,
+  showChangedFiles = true,
 }: ExecutionInsightRowProps): JSX.Element | null => {
   const fileChanges = useMemo(
     () => normalizeTaskExecutionFileChanges(execution.fileChanges),
@@ -56,7 +58,7 @@ export const ExecutionInsightRow = ({
   if (
     !canRetryTask &&
     !canContinueTask &&
-    !fileChanges &&
+    !(showChangedFiles && fileChanges) &&
     relatedFiles.length === 0 &&
     verification.length === 0 &&
     continuationCount === 0 &&
@@ -91,7 +93,7 @@ export const ExecutionInsightRow = ({
         </ControlTooltip>
       ) : null}
 
-      {fileChanges ? (
+      {showChangedFiles && fileChanges ? (
         <ExecutionFileChanges
           reader={fileChangeReader}
           fileChanges={fileChanges}

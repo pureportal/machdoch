@@ -54,6 +54,19 @@ export function AppearanceOptions({
           </div>
         </fieldset>
       ))}
+      <fieldset disabled={disabled}>
+        <legend>Conversation</legend>
+        <label>
+          <input
+            type="checkbox"
+            checked={settings.showChangedFiles}
+            onChange={(event) =>
+              onChange({ ...settings, showChangedFiles: event.target.checked })
+            }
+          />
+          Show changed files after each prompt
+        </label>
+      </fieldset>
     </div>
   );
 }

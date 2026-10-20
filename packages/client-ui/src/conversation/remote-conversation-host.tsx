@@ -5,6 +5,7 @@ import {
   type RemoteConversationProps,
   getOriginalPromptContent,
   useConversationControls,
+  useBrowserAppearance,
 } from "@machdoch/product-ui";
 import type { ProductMessage } from "@machdoch/fleet-protocol";
 import type { FleetMediaTransport } from "@machdoch/media-studio/fleet-transport.js";
@@ -48,6 +49,7 @@ export function RemoteConversationHost({
   mediaTransport: FleetMediaTransport;
 }): React.ReactElement {
   const controls = useConversationControls();
+  const appearance = useBrowserAppearance();
   const history = useRemoteConversationHistory({
     sessionId: session.id,
     messages: snapshotMessages,
@@ -264,6 +266,7 @@ export function RemoteConversationHost({
           if (!execution) return undefined;
           return (
             <RemoteExecutionInsight
+              showChangedFiles={appearance.settings.showChangedFiles}
               sessionId={session.id}
               message={message}
               execution={execution}

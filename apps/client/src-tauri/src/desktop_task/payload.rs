@@ -24,6 +24,17 @@ pub(super) struct CliCommandOptions<'a> {
     pub(super) deterministic_action_json: Option<&'a str>,
 }
 
+pub(super) fn is_file_change_detection_enabled(
+    workspace_root: &str,
+    appearance: Option<&Value>,
+) -> bool {
+    !workspace_root.trim().is_empty()
+        && appearance
+            .and_then(|settings| settings.get("showChangedFiles"))
+            .and_then(Value::as_bool)
+            != Some(false)
+}
+
 pub(super) fn build_cli_args(options: CliCommandOptions<'_>) -> Vec<String> {
     let mut args = vec![
         "--quick".to_string(),
@@ -172,7 +183,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        build_cli_args, cleanup_temporary_file, write_conversation_context_file, CliCommandOptions,
+        build_cli_args, cleanup_temporary_file, is_file_change_detection_enabled,
+        write_conversation_context_file, CliCommandOptions,
     };
 
     #[cfg(unix)]
@@ -255,6 +267,38 @@ mod tests {
         });
 
         assert!(args.contains(&"--skip-file-change-detection".to_string()));
+    }
+
+    #[test]
+    fn desktop_cli_args_respect_changed_file_settings() {
+        for (workspace_root, appearance, expected_enabled) in [
+            ("C:/workspace", None, true),
+            ("C:/workspace", Some(json!({ "showChangedFiles": true })), true),
+            ("C:/workspace", Some(json!({ "showChangedFiles": false })), false),
+            ("", Some(json!({ "showChangedFiles": true })), false),
+            ("   ", None, false),
+        ] {
+            let args = build_cli_args(CliCommandOptions {
+                workspace_root,
+                file_change_detection_enabled: is_file_change_detection_enabled(
+                    workspace_root,
+                    appearance.as_ref(),
+                ),
+                mode: Some("machdoch"),
+                provider: None,
+                model: None,
+                reasoning: None,
+                conversation_context_file: None,
+                image_paths: &[],
+                deterministic_action_json: None,
+            });
+
+            assert_eq!(
+                args.contains(&"--skip-file-change-detection".to_string()),
+                !expected_enabled,
+                "workspace: {workspace_root:?}, appearance: {appearance:?}",
+            );
+        }
     }
 
     #[test]

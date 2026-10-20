@@ -9,6 +9,7 @@ use std::{
     time::Duration,
 };
 use tauri::Manager as _;
+use tauri_plugin_store::StoreExt as _;
 
 use crate::{
     child_process::{SupervisedChild, SupervisedChildSpawnError},
@@ -19,7 +20,7 @@ use super::{
     diagnostics::{format_command_failure, format_timeout_duration},
     payload::{
         build_cli_args, cleanup_temporary_file, enrich_ui_control_conversation_context,
-        write_conversation_context_file, CliCommandOptions,
+        is_file_change_detection_enabled, write_conversation_context_file, CliCommandOptions,
     },
     process::{join_cli_output_and_cleanup, read_stderr_with_timeout, read_stdout},
     progress::{create_bridge_progress, create_bridge_warning_progress, emit_progress_event},
@@ -198,7 +199,12 @@ pub(super) fn execute_desktop_task(
         operation_kind: _,
         deterministic_action,
     } = request;
-    let file_change_detection_enabled = !workspace_root.trim().is_empty();
+    let appearance = app_handle
+        .store("machdoch-shell-state.json")
+        .map_err(|error| format!("Failed to load appearance settings: {error}"))?
+        .get("machdoch.desktop.appearance-state");
+    let file_change_detection_enabled =
+        is_file_change_detection_enabled(&workspace_root, appearance.as_ref());
     let workspace_path = resolve_workspace_root_path(&workspace_root)?;
     let normalized_workspace_root = workspace_path.display().to_string();
     let mut resolved_image_paths = image_paths.unwrap_or_default();

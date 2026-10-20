@@ -64,10 +64,16 @@ pub fn valid_device_settings_invocation(command: &str, args: &Value) -> bool {
         "save_device_appearance" => {
             let value = &args["settings"];
             fields(args, &["settings"], &[]).is_some()
-                && fields(value, &["version", "theme", "density", "accent"], &[]).is_some()
+                && fields(
+                    value,
+                    &["version", "theme", "density", "accent", "showChangedFiles"],
+                    &[],
+                )
+                .is_some()
                 && value["version"] == 1
                 && matches!(value["theme"].as_str(), Some("dark" | "light"))
                 && matches!(value["density"].as_str(), Some("comfortable" | "compact"))
+                && value["showChangedFiles"].is_boolean()
                 && matches!(
                     value["accent"].as_str(),
                     Some("sky" | "emerald" | "violet" | "amber")

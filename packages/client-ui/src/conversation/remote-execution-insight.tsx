@@ -19,6 +19,7 @@ export function RemoteExecutionInsight({
   transport,
   onCommand,
   enabled,
+  showChangedFiles = true,
   onOpenWorkspaceFile,
 }: {
   sessionId: string;
@@ -27,6 +28,7 @@ export function RemoteExecutionInsight({
   transport: FleetOperationTransport;
   onCommand: ProductCommandHandler;
   enabled: boolean;
+  showChangedFiles?: boolean;
   onOpenWorkspaceFile: (path: string) => void;
 }): React.ReactElement {
   const messageId = message.id;
@@ -58,6 +60,7 @@ export function RemoteExecutionInsight({
   );
   return (
     <ExecutionInsightRow
+      showChangedFiles={showChangedFiles}
       execution={execution}
       fileChangeReader={reader}
       onOpenWorkspaceFile={onOpenWorkspaceFile}

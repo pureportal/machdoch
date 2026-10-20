@@ -17,6 +17,36 @@ const message: ProductMessage = { id: "native-message", role: "agent", taskId: "
 const execution = { task: "Native task", status: "executed", fileChanges: changes, response: { relatedFiles: [{ path: "notes/related.md", description: "Native reference" }], verification: ["Checked"] }, metadata: { instructionResolutionId: "resolution", instructionSources: [{ id: "source", name: "Workspace instructions", scopePath: "." }] } } as const;
 afterEach(cleanup);
 
+it("toggles changed files without hiding task actions or verification", () => {
+  const invoke = vi.fn();
+  const props = {
+    sessionId: "native-session",
+    message,
+    execution: {
+      task: "Native task",
+      status: "executed" as const,
+      fileChanges: changes,
+      response: { relatedFiles: [], verification: ["Checked"] },
+    },
+    transport: { invoke, listen: vi.fn() },
+    onCommand: vi.fn(),
+    enabled: true,
+    onOpenWorkspaceFile: vi.fn(),
+  };
+  const view = render(<RemoteExecutionInsight {...props} />);
+  expect(screen.getByRole("button", { name: /Open file changes/u })).toBeTruthy();
+
+  view.rerender(<RemoteExecutionInsight {...props} showChangedFiles={false} />);
+  expect(screen.queryByRole("button", { name: /Open file changes/u })).toBeNull();
+  expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Continue" })).toBeTruthy();
+  expect(screen.getByText("1 check")).toBeTruthy();
+  expect(invoke).not.toHaveBeenCalled();
+
+  view.rerender(<RemoteExecutionInsight {...props} showChangedFiles />);
+  expect(screen.getByRole("button", { name: /Open file changes/u })).toBeTruthy();
+});
+
 it("pages native changed files and line ranges with the owning session and message", async () => {
   const invoke = vi.fn().mockImplementation(async (command, args) => {
     if (command === "get_session_file_change_hunks") return { ranges: [{ ...range, oldStart: 9, newStart: 10 }], nextCursor: null };

@@ -75,6 +75,24 @@ describe("CLI task workspace selection", () => {
     ).not.toHaveProperty("captureFileChanges");
   });
 
+  it("skips capture when the desktop disables changed files for a selected workspace", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    await printTaskPreview(
+      parseCliArgs([
+        "run",
+        "Hello",
+        "--cwd",
+        process.cwd(),
+        "--skip-file-change-detection",
+        "--json",
+      ]),
+    );
+
+    expect(
+      vi.mocked(createTaskExecutionController).mock.calls[0]?.[3],
+    ).toMatchObject({ captureFileChanges: false });
+  });
+
   it("keeps desktop Not Set context when the bridge supplies a runtime directory", async () => {
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     await printTaskPreview(

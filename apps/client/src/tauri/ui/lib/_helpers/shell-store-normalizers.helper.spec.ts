@@ -22,7 +22,12 @@ describe("Shell store normalizers", () => {
       theme: "light",
       density: "compact",
       accent: "violet",
+      showChangedFiles: true,
     });
+    expect(
+      normalizeAppearanceSettings({ version: 1, showChangedFiles: false })
+        .showChangedFiles,
+    ).toBe(false);
   });
 
   it("returns shared defaults for invalid persisted records", () => {
