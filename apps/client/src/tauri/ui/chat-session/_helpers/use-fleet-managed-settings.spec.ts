@@ -123,7 +123,7 @@ describe("Fleet managed settings", () => {
     const exported = createEnrollmentSettingsDocument(
       local,
       state,
-      { version: 1, theme: "dark", density: "compact", accent: "sky" },
+      { version: 1, theme: "dark", density: "compact", accent: "sky", showChangedFiles: true },
       {
         infinite: false,
         executorTurns: 42,

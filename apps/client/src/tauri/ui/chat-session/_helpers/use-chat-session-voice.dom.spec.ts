@@ -1,7 +1,9 @@
-import {JSDOM} from "jsdom";
+// @vitest-environment jsdom
+
 import {act,cleanup,renderHook,waitFor} from "@testing-library/react";
 import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import type {SpeechProfile} from "@machdoch/speech";
+import type {FinalAnswerStreamSnapshot} from "@machdoch/fleet-protocol/task-thinking";
 import type {ChatSessionMessage,ShellVoiceSettings} from "../../chat-session.model";
 import type {UserVoiceSettings} from "../../runtime";
 import {useChatSessionVoice,type UseChatSessionVoiceOptions} from "./use-chat-session-voice";
@@ -17,11 +19,8 @@ vi.mock("@machdoch/speech",async importOriginal=>{
   };
 });
 
-let dom:JSDOM;
 const profile:SpeechProfile={id:"fish",name:"Fish",backend:"fish-cloud",model:"drama-3",voiceId:"voice",direction:"",temperature:0.7,topP:0.7,chunkLength:300,minChunkLength:50,latency:"normal",dictionaryIds:[],playbackRate:1};
 beforeEach(()=>{
-  dom=new JSDOM("<!doctype html><html><body></body></html>",{url:"https://speech.test"});
-  vi.stubGlobal("window",dom.window);vi.stubGlobal("document",dom.window.document);vi.stubGlobal("navigator",dom.window.navigator);
   mocks.players.length=0;vi.clearAllMocks();
   mocks.execute.mockImplementation(async(operation:string)=>{
     if(operation==="listProfiles")return [profile,{...profile,id:"openai",backend:"openai",model:"gpt-4o-mini-tts"}];
@@ -32,10 +31,10 @@ beforeEach(()=>{
   mocks.play.mockImplementation(async(item:{open(signal:AbortSignal):Promise<unknown>})=>item.open(new AbortController().signal));
   mocks.render.mockResolvedValue({});mocks.cached.mockReturnValue({});
 });
-afterEach(()=>{cleanup();dom.window.close();vi.unstubAllGlobals();});
+afterEach(()=>{cleanup();vi.unstubAllGlobals();});
 
 function options(messages:ChatSessionMessage[]=[],settings:Partial<ShellVoiceSettings>={}):UseChatSessionVoiceOptions{return {activeSessionId:crypto.randomUUID(),settings:{autoSpeakResponses:true,speechProfileId:"fish",rate:1,answerMode:"streaming",...settings},aiVoiceSettings:{activeProvider:"fish",providerAvailability:[{provider:"fish",configured:true}]} as UserVoiceSettings,visibleMessages:messages,onSettingsChange:vi.fn(),onConversationAutoSpeakChange:vi.fn(),onConversationProfileChange:vi.fn()};}
-function thinking(text:string,sequence=1,status="streaming",explicit=true):ChatSessionMessage{return {id:"thinking",taskId:"task",role:"agent",content:"Internal draft must not be spoken.",source:{kind:"thinking",thinking:{modelStream:{text:"Internal model stream."},...(explicit?{finalAnswerStream:{source:"openai-responses",channel:"final_answer",responseId:"response",answerId:"item",sequence,text,status}}:{})}}} as ChatSessionMessage;}
+function thinking(text:string,sequence=1,status:FinalAnswerStreamSnapshot["status"]="streaming",explicit=true):ChatSessionMessage{return {id:"thinking",taskId:"task",role:"agent",content:"Internal draft must not be spoken.",source:{kind:"thinking",thinking:{status:"running",mode:"machdoch",startedAt:0,timelineEvents:[],modelStream:{kind:"assistant",label:"Draft",content:"Internal model stream."},...(explicit?{finalAnswerStream:{source:"openai-responses",channel:"final_answer",responseId:"response",answerId:"item",sequence,text,status}}:{})}}} as ChatSessionMessage;}
 function completed(markdown:string):ChatSessionMessage{return {id:"complete",taskId:"task",role:"agent",content:"Untrusted content.",source:{kind:"execution",execution:{status:"executed",response:{markdown}}}} as ChatSessionMessage;}
 
 describe("Chat speech consumes explicit final snapshots",()=>{
