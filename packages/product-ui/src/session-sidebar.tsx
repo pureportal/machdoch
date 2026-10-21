@@ -21,14 +21,13 @@ import {
 import { useMemo, useState, type ComponentType } from "react";
 import { formatRelativeTime } from "./format";
 import type { SessionDataSource } from "./session-data";
-import { useSessionIndex } from "./use-session-index";
+import type { useSessionSidebarIndex } from "./use-session-sidebar-index";
 import { SessionArchiveControls } from "./session-archive-controls";
 import { useSessionArchive } from "./use-session-archive";
 import type {
   SessionSidebarCommandState,
   SessionSidebarStatus,
 } from "./session-sidebar-commands-state";
-import type { SessionIndexQuery } from "@machdoch/fleet-protocol/session-data";
 import type { ProductCommandHandler } from "./product-runtime";
 import {
   ALL_SESSION_PROJECTS_FILTER,
@@ -64,8 +63,6 @@ const sessionStatusFilters = [
   { id: "crashed", label: "Crashed", icon: ServerCrash },
 ] as const;
 
-type SessionScope = (typeof sessionScopeFilters)[number]["id"];
-
 const statusIconById = new Map<string, LucideIcon>(
   sessionStatusFilters.map(({ id, icon }) => [id, icon]),
 );
@@ -78,6 +75,7 @@ export function SessionSidebar({
   pending,
   onCommand,
   dataSource,
+  index,
 }: {
   Commands?: ComponentType<SessionSidebarCommandState> | undefined;
   activeSessionId: string | undefined;
@@ -86,39 +84,22 @@ export function SessionSidebar({
   pending: boolean;
   onCommand: ProductCommandHandler;
   dataSource?: SessionDataSource | undefined;
+  index: ReturnType<typeof useSessionSidebarIndex>;
 }): React.ReactElement {
-  const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [scope, setScope] = useState<SessionScope>("all");
-  const [selectedStatuses, setSelectedStatuses] = useState<
-    SessionIndexQuery["statuses"]
-  >([]);
-  const [project, setProject] = useState(ALL_SESSION_PROJECTS_FILTER);
-  const [tags, setTags] = useState<string[]>([]);
-  const remote = useSessionIndex(
-    dataSource,
-    {
-      offset: 0,
-      limit: 80,
-      query,
-      scope,
-      statuses: selectedStatuses,
-      project,
-      tags,
-    },
-    JSON.stringify(
-      sessions.map(
-        ({ id, updatedAt, messageCount, unread, archivedAt, pinnedAt }) => [
-          id,
-          updatedAt,
-          messageCount,
-          unread,
-          archivedAt,
-          pinnedAt,
-        ],
-      ),
-    ),
-  );
+  const {
+    query,
+    setQuery,
+    scope,
+    setScope,
+    selectedStatuses,
+    setSelectedStatuses,
+    project,
+    setProject,
+    tags,
+    setTags,
+    remote,
+  } = index;
   const queryTokens = useMemo(() => tokenizeSessionSearchQuery(query), [query]);
   const execute: ProductCommandHandler = async (command) => {
     if (pending) return false;
@@ -481,18 +462,20 @@ export function SessionSidebar({
               </span>
               <span className="m-product-session-meta">
                 <span>
-                  {session.provider || "Provider"} · {session.effectiveMode}
+                  {session.provider || "Provider"} ·{" "}
+                  {session.workspace?.split(/[\\/]/u).filter(Boolean).at(-1) ??
+                    session.workspace ??
+                    "No workspace"}
                 </span>
                 <span>{formatRelativeTime(session.updatedAt)}</span>
               </span>
             </button>
           );
         })}
-        {remote.loading ? (
-          <LoaderCircle
-            className="m-product-spin"
-            aria-label="Loading sessions"
-          />
+        {remote.loading && !remote.page ? (
+          <div role="status" aria-label="Loading sessions">
+            <LoaderCircle className="m-product-spin" aria-hidden="true" />
+          </div>
         ) : null}
         {dataSource && remote.page?.nextOffset !== null && remote.page ? (
           <button

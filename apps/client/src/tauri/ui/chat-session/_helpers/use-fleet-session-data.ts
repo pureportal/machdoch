@@ -145,6 +145,7 @@ export function useFleetSessionData(options: Options): void {
           const index = createSessionHistoryIndex(
             current.state.sessions,
             indexCache,
+            { includeContent: args.query.trim().length > 0 },
           );
           const filtered = filterSessionHistoryIndex(index, {
             scope: args.scope,

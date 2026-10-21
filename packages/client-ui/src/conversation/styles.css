@@ -1,3 +1,7 @@
+.app-thinking-panel {
+  container: execution / inline-size;
+}
+
 .app-thinking-panel,
 .app-thinking-panel :where(*) {
   -webkit-user-select: text;
@@ -145,4 +149,100 @@
   background: white !important;
   border-color: var(--app-border) !important;
   color: var(--app-text-soft) !important;
+}
+
+@container execution (max-width: 768px) {
+  .app-thinking-panel .app-thinking-header {
+    padding: 8px 10px !important;
+  }
+
+  .app-thinking-panel .app-thinking-main-icon {
+    display: none;
+  }
+
+  .app-thinking-panel .app-thinking-scroll {
+    padding: 10px !important;
+    scrollbar-gutter: auto;
+  }
+
+  .app-thinking-panel .app-thinking-entry {
+    display: block;
+  }
+
+  .app-thinking-entry-time {
+    float: right;
+    margin-left: 8px;
+  }
+
+  .app-thinking-entry-marker {
+    display: none;
+  }
+
+  .app-thinking-entry-heading {
+    display: block;
+  }
+
+  .app-thinking-panel .app-thinking-entry-detail {
+    font-size: 14px !important;
+    line-height: 1.6 !important;
+    overflow-wrap: anywhere;
+  }
+
+  .app-thinking-disclosure {
+    clear: both;
+  }
+
+  .app-thinking-disclosure > summary {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+  }
+
+  .app-thinking-disclosure > summary::before {
+    content: "\203a";
+    font-size: 18px;
+  }
+
+  .app-thinking-disclosure[open] > summary::before {
+    transform: rotate(90deg);
+  }
+
+  .app-thinking-details {
+    margin-top: 0;
+    border: 0;
+    background: transparent;
+    padding: 0;
+  }
+
+  .app-thinking-panel .app-thinking-code {
+    padding: 8px !important;
+    font-size: 13px;
+    line-height: 1.6 !important;
+    overflow-wrap: anywhere;
+  }
+
+  .app-thinking-output-line {
+    display: block;
+  }
+
+  .app-thinking-output-line > :first-child {
+    display: block;
+  }
+
+  .app-thinking-output-line[data-stream="stdout"] > :first-child {
+    display: none;
+  }
+
+  .app-thinking-output-line > :last-child {
+    display: block;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .app-thinking-panel .app-thinking-toggle {
+    min-height: 44px !important;
+    font-size: 12px !important;
+  }
 }

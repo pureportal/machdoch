@@ -1,0 +1,97 @@
+.m-product-topbar:has(> .m-navigation-mobile) {
+  display: grid;
+  min-height: 44px;
+  grid-template-columns: 44px 44px minmax(0, 1fr) auto;
+  gap: 0 4px;
+}
+
+.m-product-topbar > .m-navigation-mobile {
+  display: block;
+  grid-column: 2;
+  grid-row: 1;
+  border: 0;
+  padding: 0;
+}
+
+.m-product-topbar .m-navigation-trigger {
+  width: 44px;
+  padding: 0;
+  justify-content: center;
+}
+
+.m-product-topbar .m-navigation-trigger span,
+.m-product-topbar > .m-application-navigation,
+.m-product-topbar:has(> .m-navigation-mobile) > .m-product-brand,
+.m-product-topbar:has(> .m-navigation-mobile) > .m-product-topbar-divider {
+  display: none;
+}
+
+.m-product-topbar:has(> .m-navigation-mobile) > .m-product-instance {
+  grid-column: 3;
+}
+
+.m-product-topbar:has(> .m-navigation-mobile) > .m-product-topbar-actions {
+  grid-column: 4;
+}
+
+@media (max-width: 760px) {
+  .machdoch-product .m-product-session-header {
+    height: 48px;
+    min-height: 48px;
+    flex-basis: 48px;
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  .machdoch-product .m-product-session-heading h1 {
+    font-size: 16px;
+    line-height: 1.4;
+  }
+
+  .machdoch-product .m-product-session-header[data-editing-tags="true"] {
+    height: auto;
+    padding-block: 4px;
+  }
+
+  .machdoch-product .m-product-conversation {
+    padding: 16px 12px;
+  }
+
+  .machdoch-product .m-product-message {
+    display: block;
+    margin-bottom: 20px;
+  }
+
+  .machdoch-product .m-product-message-avatar {
+    display: none;
+  }
+
+  .machdoch-product .m-product-message-meta {
+    font-size: 12px;
+  }
+
+  .machdoch-product .m-product-message-meta span {
+    font-size: 12px;
+  }
+
+  .machdoch-product .m-product-message-bubble {
+    max-width: 100%;
+    padding: 10px 12px;
+    border-radius: 16px;
+    font-size: 15px;
+    line-height: 1.65;
+    box-shadow: none;
+  }
+
+  .machdoch-product .m-product-message[data-role="agent"] .m-product-message-bubble {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    padding: 0;
+  }
+
+  .machdoch-product .m-product-composer-wrap {
+    padding: 6px max(8px, env(safe-area-inset-right))
+      max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  }
+}

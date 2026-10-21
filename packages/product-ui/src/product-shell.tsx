@@ -25,6 +25,7 @@ import { ProductRail, type ProductView } from "./product-rail";
 import { Ralph } from "./ralph";
 import { SessionHeader } from "./session-header";
 import { SessionSidebar } from "./session-sidebar";
+import { useSessionSidebarIndex } from "./use-session-sidebar-index";
 import { ProductPanel } from "./product-panel";
 import { useMediaQuery } from "./responsive-layout";
 import { ProjectLibrary } from "./project-library";
@@ -156,6 +157,9 @@ export function ProductShell({
     return () => window.removeEventListener("message", receiveSettings);
   }, [settingsHref]);
   const compact = useMediaQuery("(max-width: 1100px)");
+  const navigationInTopbar = useMediaQuery(
+    "(max-width: 900px), (max-height: 500px)",
+  );
   useEffect(() => {
     setSessionsOpen(false);
   }, [compact]);
@@ -172,6 +176,10 @@ export function ProductShell({
   };
 
   const shell = snapshot?.shell;
+  const sessionIndex = useSessionSidebarIndex(
+    shell ? sessionData : undefined,
+    shell?.sessions ?? [],
+  );
   const commandsBlocked = error !== null || pendingCommands > 0;
   const activeSession = shell?.sessions.find(
     (session) => session.id === shell.activeSessionId,
@@ -268,6 +276,24 @@ export function ProductShell({
     })();
   }, [pendingPoseChat, snapshot?.shell?.activeSessionId, onCommand]);
 
+  const navigation = shell ? (
+    <ProductRail
+      settingsAvailable={Boolean(settingsHref)}
+      onOpenSettings={() => setSettingsOpen(true)}
+      inspectorOpen={inspectorOpen}
+      activeView={activeView}
+      mediaAvailable={Boolean(mediaHref)}
+      speechAvailable={Boolean(speechHref)}
+      schedulerAvailable={Boolean(schedulerHref)}
+      instructionsAvailable={Boolean(instructionsHref)}
+      workspaceAvailable={Boolean(workspaceHref)}
+      ralphAvailable={shell.ralph !== undefined}
+      projectsAvailable={shell.projectLibrary !== undefined}
+      onSelectView={selectView}
+      onToggleInspector={() => setInspectorOpen((current) => !current)}
+    />
+  ) : null;
+
   return (
     <ApplicationShell
       className="machdoch-product"
@@ -280,6 +306,7 @@ export function ProductShell({
           >
             <ArrowLeft aria-hidden="true" />
           </a>
+          {navigationInTopbar ? navigation : null}
           <div className="m-product-brand" aria-label="Machdoch">
             <TerminalSquare aria-hidden="true" />
             <span>Machdoch</span>
@@ -345,7 +372,7 @@ export function ProductShell({
                 <MessageSquare aria-hidden="true" />
               </button>
             ) : null}
-            {shell ? (
+            {shell && !navigationInTopbar ? (
               <button
                 type="button"
                 className="m-product-icon-button m-product-inspector-toggle"
@@ -409,25 +436,7 @@ export function ProductShell({
           </div>
         </header>
       }
-      navigation={
-        shell ? (
-          <ProductRail
-            settingsAvailable={Boolean(settingsHref)}
-            onOpenSettings={() => setSettingsOpen(true)}
-            inspectorOpen={inspectorOpen}
-            activeView={activeView}
-            mediaAvailable={Boolean(mediaHref)}
-            speechAvailable={Boolean(speechHref)}
-            schedulerAvailable={Boolean(schedulerHref)}
-            instructionsAvailable={Boolean(instructionsHref)}
-            workspaceAvailable={Boolean(workspaceHref)}
-            ralphAvailable={shell.ralph !== undefined}
-            projectsAvailable={shell.projectLibrary !== undefined}
-            onSelectView={selectView}
-            onToggleInspector={() => setInspectorOpen((current) => !current)}
-          />
-        ) : null
-      }
+      navigation={navigationInTopbar ? null : navigation}
       notices={
         <>
           {error && snapshot ? (
@@ -490,6 +499,7 @@ export function ProductShell({
                   side="left"
                 >
                   <SessionSidebar
+                    index={sessionIndex}
                     Commands={SidebarCommands}
                     activeSessionId={shell.activeSessionId}
                     dataSource={sessionData}
@@ -505,6 +515,7 @@ export function ProductShell({
                 </ProductPanel>
               ) : (
                 <SessionSidebar
+                  index={sessionIndex}
                   Commands={SidebarCommands}
                   activeSessionId={shell.activeSessionId}
                   dataSource={sessionData}

@@ -79,6 +79,8 @@ export function useSessionIndex(
   useEffect(() => {
     currentPage.current = null;
     setPage(null);
+    setError(null);
+    setLoading(false);
     void load("reset");
     return () => {
       generation.current += 1;
@@ -99,5 +101,11 @@ export function useSessionIndex(
   }, [source, load]);
   const reload = useCallback(() => load(), [load]);
   const loadEarlier = useCallback(() => load("more"), [load]);
-  return { page, loading, error, reload, loadEarlier };
+  return {
+    page,
+    loading: Boolean(source) && (loading || (page === null && error === null)),
+    error,
+    reload,
+    loadEarlier,
+  };
 }
