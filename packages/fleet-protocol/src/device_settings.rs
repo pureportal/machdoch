@@ -97,8 +97,12 @@ pub fn valid_device_settings_invocation(command: &str, args: &Value) -> bool {
                 && args["autoSpeakResponses"].is_boolean()
                 && args.get("answerMode").is_none_or(|mode|matches!(mode.as_str(),Some("completed"|"streaming")))
         }
+        "get_provider_model_catalog" => {
+            fields(args, &[], &["provider", "forceRefresh"]).is_some()
+                && args.get("provider").is_none_or(|value| matches!(value.as_str(), Some("openai" | "anthropic" | "google" | "langdock" | "codex-cli" | "claude-cli" | "copilot-cli")))
+                && args.get("forceRefresh").is_none_or(Value::is_boolean)
+        }
         "get_global_provider_availability"
-        | "get_provider_model_catalog"
         | "get_user_provider_api_keys"
         | "get_user_answer_language"
         | "get_user_web_search_settings"

@@ -4,6 +4,7 @@ import {
   invokeDeviceSettingsCommand,
 } from "./device-settings-platform";
 import { deviceSettingsCommands } from "@machdoch/fleet-protocol/device-settings";
+import { ProviderModelCatalogStore } from "./provider-model-catalog-store";
 import { observeDesktopTasks } from "./lib/task-analytics.js";
 import {
   taskTimeoutSchema,
@@ -946,6 +947,7 @@ const FLEET_CONTROL_COMMAND_KINDS = [
   "clear-session-reasoning",
   "update-draft",
   "set-session-model",
+  "refresh-provider-models",
   "set-session-mode",
   "set-adaptive-controller",
   "set-parallel-agent-mode",
@@ -2827,32 +2829,85 @@ export const loadGlobalProviderAvailability = async (): Promise<
   );
 };
 
-export const loadProviderModelCatalog =
-  async (): Promise<ProviderModelCatalogSnapshot> => {
-    if (getRemoteDeviceSettingsPlatform()) {
-      const snapshot =
-        await invokeDeviceSettingsCommand<ProviderModelCatalogSnapshot>(
-          "get_provider_model_catalog",
-        );
-      for (const provider of snapshot.providers)
-        replaceDiscoveredModelCapabilities(provider.provider, provider.models);
-      return snapshot;
-    }
-    const remote = getRemoteRalphPlatform();
-    if (remote) return remote.catalog;
-
-    const snapshot = await loadTauriValueOrFallback(
+const fetchProviderModelCatalog = async (
+  provider: RuntimeProvider,
+  forceRefresh: boolean,
+  devicePlatform: ReturnType<typeof getRemoteDeviceSettingsPlatform>,
+  ralphPlatform: ReturnType<typeof getRemoteRalphPlatform>,
+): Promise<ProviderModelCatalogSnapshot> => {
+  if (devicePlatform) {
+    const snapshot = await devicePlatform.invoke<ProviderModelCatalogSnapshot>(
       "get_provider_model_catalog",
-      createUnavailableProviderModelCatalog,
-      "Failed to load provider model catalog",
+      { provider, forceRefresh },
     );
-
-    for (const provider of snapshot.providers) {
-      replaceDiscoveredModelCapabilities(provider.provider, provider.models);
-    }
-
     return snapshot;
-  };
+  }
+  const remote = ralphPlatform;
+  if (remote) return remote.catalog;
+
+  const snapshot = canInvokeTauriCommands()
+    ? await analyticsInvoke<ProviderModelCatalogSnapshot>(
+        "get_provider_model_catalog",
+        { provider, forceRefresh },
+      )
+    : createUnavailableProviderModelCatalog();
+
+  return snapshot;
+};
+
+const localModelCatalogScope = {};
+const providerModelCatalogStores = new WeakMap<
+  object,
+  ProviderModelCatalogStore
+>();
+let activeModelCatalogScope: object | undefined;
+
+export const getProviderModelCatalogStore = (): ProviderModelCatalogStore => {
+  const devicePlatform = getRemoteDeviceSettingsPlatform();
+  const ralphPlatform = getRemoteRalphPlatform();
+  const scope = devicePlatform ?? ralphPlatform ?? localModelCatalogScope;
+  let store = providerModelCatalogStores.get(scope);
+  if (!store) {
+    store = new ProviderModelCatalogStore(
+      (provider, forceRefresh) =>
+        fetchProviderModelCatalog(
+          provider,
+          forceRefresh,
+          devicePlatform,
+          ralphPlatform,
+        ),
+      (provider) => {
+        const currentScope =
+          getRemoteDeviceSettingsPlatform() ??
+          getRemoteRalphPlatform() ??
+          localModelCatalogScope;
+        if (currentScope === scope) {
+          replaceDiscoveredModelCapabilities(
+            provider.provider,
+            provider.models,
+          );
+        }
+      },
+    );
+    providerModelCatalogStores.set(scope, store);
+  }
+  if (activeModelCatalogScope !== scope) {
+    activeModelCatalogScope = scope;
+    const catalog = store.getSnapshot().catalog;
+    for (const provider of SUPPORTED_PROVIDER_ORDER) {
+      replaceDiscoveredModelCapabilities(
+        provider,
+        catalog?.providers.find((entry) => entry.provider === provider)
+          ?.models ?? [],
+      );
+    }
+  }
+  return store;
+};
+
+export const loadProviderModelCatalog =
+  (): Promise<ProviderModelCatalogSnapshot> =>
+    getProviderModelCatalogStore().load();
 
 export const loadUserProviderApiKeys =
   async (): Promise<UserProviderApiKeys> => {
@@ -2892,6 +2947,7 @@ export const saveUserProviderApiKey = async (
       provider,
       apiKey: normalizedApiKey,
     });
+    getProviderModelCatalogStore().invalidate();
     await emitUserSettingsChanged("provider-keys");
     return result;
   } catch (error) {
@@ -2908,6 +2964,7 @@ export const deleteUserProviderApiKey = async (
   const result = await invokeDeviceSettingsCommand<
     RuntimeProviderAvailability[]
   >("delete_user_provider_api_key", { provider });
+  getProviderModelCatalogStore().invalidate();
   await emitUserSettingsChanged("provider-keys");
   return result;
 };

@@ -288,6 +288,9 @@ fn normalize_command_fields(
     }
 
     let provider = optional_truncated_text(request.provider.as_deref(), MAX_FLEET_SHORT_TEXT_CHARS);
+    if kind == "refresh-provider-models" && provider.is_none() {
+        return Err("Model refresh requires a provider.".to_string());
+    }
     let model = optional_truncated_text(request.model.as_deref(), MAX_FLEET_SHORT_TEXT_CHARS);
     if matches!(kind, "set-session-model" | "ralph-run" | "ralph-resume-run")
         && (provider.is_none() || model.is_none())

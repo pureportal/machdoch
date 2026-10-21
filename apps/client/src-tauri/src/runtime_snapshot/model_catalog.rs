@@ -48,6 +48,55 @@ pub(super) async fn fetch_provider_model_catalog(
     env: &HashMap<String, String>,
     provider: &str,
 ) -> ProviderModelCatalogProvider {
+    let mut result = fetch_provider_model_catalog_once(client, env, provider).await;
+    if result
+        .error
+        .as_deref()
+        .is_some_and(is_retryable_provider_error)
+    {
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        result = fetch_provider_model_catalog_once(client, env, provider).await;
+    }
+    result
+}
+
+pub(super) fn is_retryable_provider_error(error: &str) -> bool {
+    let error = error.to_ascii_lowercase();
+    if [
+        "http 401",
+        "http 403",
+        "unauthorized",
+        "forbidden",
+        "not configured",
+        "not found",
+    ]
+    .iter()
+    .any(|pattern| error.contains(pattern))
+    {
+        return false;
+    }
+    [
+        "timed out",
+        "timeout",
+        "before a response was received",
+        "connection",
+        "temporarily unavailable",
+        "http 408",
+        "http 429",
+        "http 500",
+        "http 502",
+        "http 503",
+        "http 504",
+    ]
+    .iter()
+    .any(|pattern| error.contains(pattern))
+}
+
+async fn fetch_provider_model_catalog_once(
+    client: &reqwest::Client,
+    env: &HashMap<String, String>,
+    provider: &str,
+) -> ProviderModelCatalogProvider {
     let (api_key_name, fetch_result) = match provider {
         "openai" => {
             let api_key = env.get("OPENAI_API_KEY").map(String::as_str);

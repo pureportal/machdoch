@@ -116,7 +116,10 @@ export const deviceSettingsCommands = {
     autoSpeakResponses: z.boolean(),
   }),
   get_global_provider_availability: noArgs,
-  get_provider_model_catalog: noArgs,
+  get_provider_model_catalog: z.strictObject({
+    provider: z.enum(["openai", "anthropic", "google", "langdock", "codex-cli", "claude-cli", "copilot-cli"]).optional(),
+    forceRefresh: z.boolean().optional(),
+  }),
   get_user_provider_api_keys: noArgs,
   get_user_answer_language: noArgs,
   get_user_web_search_settings: noArgs,

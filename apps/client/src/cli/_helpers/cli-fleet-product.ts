@@ -1031,6 +1031,7 @@ export class FleetCliProductRuntime {
       case "cancel-prompt-enhancement":
       case "generate-media":
       case "cancel-media-run":
+      case "refresh-provider-models":
         throw new FleetProductError(
           "unavailable",
           "This operation is not available in the Fleet CLI service.",

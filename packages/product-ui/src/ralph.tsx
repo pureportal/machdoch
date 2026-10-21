@@ -210,6 +210,7 @@ export function Ralph({
                   id: entry.provider,
                   label: entry.label,
                   available: entry.available,
+                  loading: entry.loading,
                   ...(entry.error ? { error: entry.error } : {}),
                   models: entry.models,
                 }))}
@@ -218,6 +219,7 @@ export function Ralph({
                 activeModel={model}
                 activeModelLabel={selectedModel?.label ?? model}
                 loading={composer.modelCatalogLoading}
+                onRetry={(provider) => void onCommand({ kind: "refresh-provider-models", provider })}
                 onSelect={(nextProvider, nextModel) => {
                   const nextReasoningOptions = composer.modelCatalog
                     .find((entry) => entry.provider === nextProvider)

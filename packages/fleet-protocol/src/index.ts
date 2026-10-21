@@ -906,6 +906,11 @@ export const productCommandSchema = z
       model: shortText,
     }),
     z.strictObject({
+      ...baseCommandShape,
+      kind: z.literal("refresh-provider-models"),
+      provider: shortText,
+    }),
+    z.strictObject({
       ...sessionCommandShape,
       kind: z.literal("set-session-mode"),
       mode: z.enum(["ask", "machdoch"]),
@@ -1240,6 +1245,7 @@ const productModelProviderSchema = z.strictObject({
   provider: z.string().max(240),
   label: text,
   available: z.boolean(),
+  loading: z.boolean().optional(),
   error: text.optional(),
   models: z
     .array(

@@ -369,44 +369,13 @@ pub(super) fn fetch_codex_cli_model_catalog(
                 .to_string(),
         );
     };
-    let attempts: [(&[&str], &str); 2] = [
-        (&["debug", "models"], "codex debug models"),
-        (
-            &["debug", "models", "--bundled"],
-            "codex debug models --bundled",
-        ),
-    ];
-    let mut failures = Vec::new();
-
-    for (args, label) in attempts {
-        match run_agent_cli_command(&binary, args, env, Duration::from_secs(12)) {
-            Ok(output) if output.exit_code == Some(0) => {
-                match parse_codex_cli_model_catalog(&output.stdout) {
-                    Ok(models) => return Ok(models),
-                    Err(error) => failures.push(format!("{label}: {error}")),
-                }
-            }
-            Ok(output) => {
-                let detail = normalize_optional_string(Some(output.stderr.as_str()))
-                    .or_else(|| normalize_optional_string(Some(output.stdout.as_str())))
-                    .unwrap_or_else(|| {
-                        format!(
-                            "exited with code {}",
-                            output
-                                .exit_code
-                                .map(|code| code.to_string())
-                                .unwrap_or_else(|| "unknown".to_string())
-                        )
-                    });
-
-                failures.push(format!("{label}: {detail}"));
-            }
-            Err(error) => failures.push(format!("{label}: {error}")),
-        }
+    let output =
+        run_agent_cli_command(&binary, &["debug", "models"], env, Duration::from_secs(30))?;
+    if output.exit_code == Some(0) {
+        return parse_codex_cli_model_catalog(&output.stdout);
     }
-
-    Err(format!(
-        "Codex CLI model discovery failed. {}",
-        failures.join(" ")
-    ))
+    let detail = normalize_optional_string(Some(output.stderr.as_str()))
+        .or_else(|| normalize_optional_string(Some(output.stdout.as_str())))
+        .unwrap_or_else(|| format!("exited with code {:?}", output.exit_code));
+    Err(format!("Codex CLI model discovery failed: {detail}"))
 }

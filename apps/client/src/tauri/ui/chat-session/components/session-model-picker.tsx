@@ -2,16 +2,21 @@ import {
   ComposerModelPicker,
   type ComposerModelProvider,
 } from "@machdoch/product-ui";
-import { useEffect, useMemo, useState, type JSX } from "react";
+import { useMemo, type JSX } from "react";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import type {
   CommandDefinition,
   CommandPage,
   CommandPageGroup,
 } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
-import { getCatalogModelsForProvider, getModelLabelForProvider, type ProviderModelCatalogSnapshot, type RuntimeProvider } from "../../model-catalog";
+import {
+  getCatalogModelsForProvider,
+  getModelLabelForProvider,
+  type RuntimeProvider,
+} from "../../model-catalog";
 import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import { loadProviderModelCatalog } from "../../runtime";
+import { useProviderModelCatalog } from "../../use-provider-model-catalog";
 
 export interface SessionModelPickerProps {
   chooserProviders: RuntimeProvider[];
@@ -30,28 +35,7 @@ export const SessionModelPicker = ({
   onSessionModelSelection,
   registerCommand = true,
 }: SessionModelPickerProps): JSX.Element => {
-  const [open, setOpen] = useState(false);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [catalog, setCatalog] = useState<ProviderModelCatalogSnapshot | null>(
-    null,
-  );
-
-  useEffect(() => {
-    if (!open) return;
-
-    let cancelled = false;
-    setCatalogLoading(true);
-    void loadProviderModelCatalog()
-      .then((nextCatalog) => {
-        if (!cancelled) setCatalog(nextCatalog);
-      })
-      .finally(() => {
-        if (!cancelled) setCatalogLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open]);
+  const { catalog, loadingProviders, refresh } = useProviderModelCatalog();
 
   const providers = useMemo<ComposerModelProvider[]>(
     () =>
@@ -63,13 +47,14 @@ export const SessionModelPicker = ({
           id: provider,
           label: getProviderLabel(provider),
           available: runtimeProvider?.available === true,
+          loading: loadingProviders.has(provider),
           ...(runtimeProvider?.error ? { error: runtimeProvider.error } : {}),
           models: getCatalogModelsForProvider(provider, catalog).map(
             (model) => ({ id: model.id, label: model.label }),
           ),
         };
       }),
-    [catalog, chooserProviders],
+    [catalog, chooserProviders, loadingProviders],
   );
 
   const modelCommands = useMemo<readonly CommandDefinition[]>(
@@ -163,8 +148,8 @@ export const SessionModelPicker = ({
         activeModel,
         catalog,
       )}
-      loading={catalogLoading}
-      onOpenChange={setOpen}
+      loading={loadingProviders.size > 0}
+      onRetry={(provider) => void refresh(provider as RuntimeProvider, true)}
       onSelect={(provider, model) =>
         onSessionModelSelection(provider as RuntimeProvider, model)
       }

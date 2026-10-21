@@ -1,4 +1,10 @@
-import { Check, Search } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  LoaderCircle,
+  RotateCw,
+  Search,
+} from "lucide-react";
 import { ModelIcon, DropdownIcon } from "./composer-icons";
 import {
   useEffect,
@@ -20,6 +26,7 @@ export interface ComposerModelProvider {
   id: string;
   label: string;
   available: boolean;
+  loading?: boolean | undefined;
   error?: string;
   models: readonly ComposerModelOption[];
 }
@@ -35,6 +42,7 @@ export interface ComposerModelPickerProps {
   loading: boolean;
   disabled?: boolean;
   onOpenChange?: (open: boolean) => void;
+  onRetry?: (provider: string) => void;
   onSelect: (provider: string, model: string) => void;
 }
 
@@ -45,6 +53,20 @@ const normalizeSearchText = (value: string): string =>
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim()
     .replace(/\s+/gu, " ");
+
+const discoveryErrorMessage = (label: string, error: string): string => {
+  if (/timed out|timeout/iu.test(error))
+    return `${label} took too long to respond. Try again.`;
+  if (/not configured|not found|install.*PATH/iu.test(error))
+    return `Connect ${label} in Settings to load models.`;
+  if (
+    /401|403|unauthorized|forbidden|sign.?in|log.?in|authenticat/iu.test(error)
+  )
+    return `Check your ${label} connection in Settings, then retry.`;
+  if (/429|rate.?limit/iu.test(error))
+    return `${label} is busy. Try again shortly.`;
+  return `Couldn’t refresh ${label} models. Try again.`;
+};
 
 const scoreSearchCandidate = (
   candidate: string,
@@ -93,6 +115,7 @@ export function ComposerModelPicker({
   loading,
   disabled = false,
   onOpenChange,
+  onRetry,
   onSelect,
 }: ComposerModelPickerProps): React.ReactElement {
   const [open, setOpen] = useState(false);
@@ -178,15 +201,23 @@ export function ComposerModelPicker({
     event.preventDefault();
     selectModel(selectedProvider.id, bestMatch.id);
   };
-  const availability = loading
-    ? "Checking availability"
-    : selectedProvider?.available
-      ? `${selectedProvider.models.length} available`
-      : "Unavailable";
-  const emptyState = loading
+  const providerLoading = selectedProvider?.loading ?? loading;
+  const hasCachedModels =
+    selectedProvider?.available && selectedProvider.models.length > 0;
+  const providerError = selectedProvider?.error;
+  const availability = providerLoading
+    ? hasCachedModels
+      ? "Refreshing…"
+      : "Checking availability"
+    : providerError && hasCachedModels
+      ? "Saved models"
+      : selectedProvider?.available
+        ? `${selectedProvider.models.length} available`
+        : "Unavailable";
+  const emptyState = providerLoading
     ? `Checking ${selectedProvider?.label ?? "provider"} models…`
     : !selectedProvider?.available
-      ? (selectedProvider?.error ?? "Model discovery is unavailable.")
+      ? "Couldn’t load models. Try again."
       : selectedProvider.models.length === 0
         ? "No models are available."
         : "No matching models.";
@@ -279,7 +310,43 @@ export function ComposerModelPicker({
                 <span aria-live="polite">{availability}</span>
               </div>
               <div className="m-composer-model-list">
-                {visibleModels.length === 0 ? (
+                {providerError && !providerLoading ? (
+                  <div className="m-composer-model-error" role="status">
+                    <AlertCircle aria-hidden="true" />
+                    <div>
+                      <strong>
+                        {hasCachedModels
+                          ? "Models couldn’t be refreshed"
+                          : "Models couldn’t be loaded"}
+                      </strong>
+                      <p>
+                        {discoveryErrorMessage(
+                          selectedProvider?.label ?? "Provider",
+                          providerError,
+                        )}
+                      </p>
+                      {onRetry && selectedProvider ? (
+                        <button
+                          type="button"
+                          onClick={() => onRetry(selectedProvider.id)}
+                        >
+                          <RotateCw aria-hidden="true" />
+                          Retry
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                {providerLoading && !hasCachedModels ? (
+                  <div
+                    className="m-composer-model-empty m-composer-model-loading"
+                    role="status"
+                  >
+                    <LoaderCircle aria-hidden="true" />
+                    {emptyState}
+                  </div>
+                ) : visibleModels.length === 0 &&
+                  (!providerError || hasCachedModels) ? (
                   <div className="m-composer-model-empty" role="status">
                     {emptyState}
                   </div>

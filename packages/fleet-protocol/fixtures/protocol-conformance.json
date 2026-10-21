@@ -2,6 +2,18 @@
   "version": 1,
   "cases": [
     {
+      "id": "command/refresh-provider-models",
+      "target": "command",
+      "accepted": true,
+      "payload": { "kind": "refresh-provider-models", "provider": "codex-cli" }
+    },
+    {
+      "id": "command/refresh-provider-models-missing-provider",
+      "target": "command",
+      "accepted": false,
+      "payload": { "kind": "refresh-provider-models" }
+    },
+    {
       "id": "command/voice/0",
       "target": "command",
       "accepted": true,
