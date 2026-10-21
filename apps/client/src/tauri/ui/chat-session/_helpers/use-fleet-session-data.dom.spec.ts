@@ -134,6 +134,40 @@ it("exports full native sessions outside the live snapshot without truncating dr
   });
 });
 
+it("does not read transcript content until a session search is entered", async () => {
+  const session = createSession({
+    id: "session",
+    manualTitle: "Named session",
+    messages: [{ id: "message", role: "user", content: "Hidden transcript" }],
+  });
+  const readContent = vi.fn(() => "Hidden transcript");
+  Object.defineProperty(session.messages[0], "content", {
+    configurable: true,
+    get: readContent,
+  });
+  const { send } = setup([session]);
+  const query = {
+    offset: 0,
+    limit: 80,
+    query: "  ",
+    scope: "all",
+    statuses: [],
+    project: ALL_SESSION_PROJECTS_FILTER,
+    tags: [],
+  };
+  const listing = await send("get_session_index", query);
+  expect(listing.error).toBeNull();
+  expect(listing.result).toMatchObject({ sessions: [{ id: "session" }] });
+  expect(readContent).not.toHaveBeenCalled();
+  const search = await send("get_session_index", {
+    ...query,
+    query: "Hidden transcript",
+  });
+  expect(search.error).toBeNull();
+  expect(search.result).toMatchObject({ sessions: [{ id: "session" }] });
+  expect(readContent).toHaveBeenCalled();
+});
+
 it("uses native content search across the full session index", async () => {
   const sessions = Array.from({ length: 90 }, (_, index) =>
     createSession({

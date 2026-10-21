@@ -2,6 +2,7 @@
 @import "./application-shell.css";
 @import "./primitives.css";
 @import "./goal-control.css";
+@import "./chat-responsive.css";
 
 .machdoch-product {
   --m-topbar-height: 40px;

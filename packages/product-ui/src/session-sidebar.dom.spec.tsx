@@ -2,6 +2,7 @@ import type { ProductSession } from "@machdoch/fleet-protocol";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { SessionSidebar } from "./session-sidebar";
+import { useSessionSidebarIndex } from "./use-session-sidebar-index";
 import { getSessionProjectId } from "./session-sidebar-model";
 
 afterEach(cleanup);
@@ -32,16 +33,22 @@ const session = (
   ...values,
 });
 
-const renderSessions = (sessions: ProductSession[]) =>
-  render(
+function Sidebar({ sessions }: { sessions: ProductSession[] }) {
+  const index = useSessionSidebarIndex(undefined, sessions);
+  return (
     <SessionSidebar
+      index={index}
       sessions={sessions}
       activeSessionId={undefined}
       workspace={undefined}
       pending={false}
       onCommand={vi.fn().mockResolvedValue(true)}
-    />,
+    />
   );
+}
+
+const renderSessions = (sessions: ProductSession[]) =>
+  render(<Sidebar sessions={sessions} />);
 
 it("combines workspace and every selected tag while keeping Quick Chat visible", () => {
   renderSessions([

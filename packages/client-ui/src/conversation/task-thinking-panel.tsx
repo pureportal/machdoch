@@ -225,7 +225,7 @@ const StoryItemDetails = ({
       >
         {summary}
       </summary>
-      <div className="mt-2 grid min-w-0 gap-2 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+      <div className="app-thinking-details mt-2 grid min-w-0 gap-2 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
         {hasStartedDetail ? (
           <div className="min-w-0">
             <p className="m-0 text-[10px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
@@ -277,8 +277,9 @@ const StoryItemDetails = ({
                 {item.outputLines.map((line, index) => (
                   <div
                     key={`${line.id}\0${index}`}
+                    data-stream={line.stream}
                     className={cn(
-                      "grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-2",
+                      "app-thinking-output-line grid min-w-0 grid-cols-[3.5rem_minmax(0,1fr)] gap-2",
                       outputLineClasses[line.stream],
                     )}
                   >
@@ -325,10 +326,10 @@ const StoryRow = ({
 
   return (
     <li className="app-thinking-entry grid grid-cols-[4.25rem_auto_minmax(0,1fr)] gap-3">
-      <span className="pt-0.5 text-right font-mono text-[11px] text-slate-500">
+      <span className="app-thinking-entry-time pt-0.5 text-right font-mono text-[11px] text-slate-500">
         +{formatElapsedTime(item.elapsedMs)}
       </span>
-      <div className="flex min-h-full flex-col items-center">
+      <div className="app-thinking-entry-marker flex min-h-full flex-col items-center">
         <span
           className={cn(
             "flex h-6 w-6 items-center justify-center rounded-lg border bg-slate-950/60",
@@ -344,7 +345,7 @@ const StoryRow = ({
       </div>
 
       <div className="min-w-0 pb-2">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
+        <div className="app-thinking-entry-heading flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <p
             className={cn(
               "m-0 text-sm font-semibold leading-5",
@@ -672,10 +673,10 @@ export const TaskThinkingPanel = ({
 
                 {visibleModelStream ? (
                   <li className="app-thinking-entry grid grid-cols-[4.25rem_auto_minmax(0,1fr)] gap-3">
-                    <span className="pt-0.5 text-right font-mono text-[11px] text-slate-500">
+                    <span className="app-thinking-entry-time pt-0.5 text-right font-mono text-[11px] text-slate-500">
                       +{formatElapsedTime(elapsedMs)}
                     </span>
-                    <div className="flex min-h-full flex-col items-center">
+                    <div className="app-thinking-entry-marker flex min-h-full flex-col items-center">
                       <span className="flex h-6 w-6 items-center justify-center rounded-lg border border-sky-500/35 bg-slate-950/60 text-sky-200">
                         <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
                       </span>
@@ -703,10 +704,10 @@ export const TaskThinkingPanel = ({
 
                 {assistantText ? (
                   <li className="app-thinking-entry grid grid-cols-[4.25rem_auto_minmax(0,1fr)] gap-3">
-                    <span className="pt-0.5 text-right font-mono text-[11px] text-slate-500">
+                    <span className="app-thinking-entry-time pt-0.5 text-right font-mono text-[11px] text-slate-500">
                       +{formatElapsedTime(elapsedMs)}
                     </span>
-                    <div className="flex min-h-full flex-col items-center">
+                    <div className="app-thinking-entry-marker flex min-h-full flex-col items-center">
                       <span className="flex h-6 w-6 items-center justify-center rounded-lg border border-sky-500/35 bg-slate-950/60 text-sky-200">
                         <MessageSquareText className="h-3.5 w-3.5" />
                       </span>

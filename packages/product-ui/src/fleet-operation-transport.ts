@@ -107,11 +107,9 @@ export function createFleetOperationTransport(
           ) as T;
         } finally {
           if (complete) {
-            try {
-              await exchange({ kind: "release", id });
-            } catch (error) {
+            void exchange({ kind: "release", id }).catch((error: unknown) => {
               console.error("Could not release remote operation", error);
-            }
+            });
           }
         }
       });
