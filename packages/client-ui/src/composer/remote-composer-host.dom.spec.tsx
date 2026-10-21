@@ -41,7 +41,7 @@ vi.mock("./remote-composer", () => ({
 
 afterEach(cleanup);
 
-function harness() {
+function harness(workspace: string | null = "/workspace") {
   const invoke = vi
     .fn()
     .mockResolvedValue({ path: "", entries: [], nextOffset: null });
@@ -49,7 +49,7 @@ function harness() {
   const upload = vi.fn().mockResolvedValue("/transfer/photo.png");
   const release = vi.fn().mockResolvedValue(undefined);
   const props = {
-    session: { id: "session-1", workspace: "/workspace" },
+    session: { id: "session-1", workspace },
     onCommand,
     workspaceTransport: { invoke, listen: vi.fn() },
     mediaTransport: { upload, release },
@@ -66,6 +66,163 @@ function harness() {
 }
 
 describe("remote attachments", () => {
+  it("starts with source choices and opens the local file picker without confirmation", () => {
+    const { invoke, onCommand } = harness();
+    fireEvent.click(screen.getByText("Files"));
+    expect(screen.queryByRole("button", { name: "Attach" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
+    const input = screen.getByLabelText("Upload attachments");
+    const click = vi.spyOn(input, "click");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Upload from this device" }),
+    );
+    expect(click).toHaveBeenCalledOnce();
+    expect(invoke).not.toHaveBeenCalled();
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it("shows directory loading, counts selections, and retries attachment errors", async () => {
+    const { invoke, onCommand } = harness();
+    let finishBrowse!: (page: unknown) => void;
+    invoke.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishBrowse = resolve;
+      }),
+    );
+    fireEvent.click(screen.getByText("Files"));
+    fireEvent.click(screen.getByText("Browse workspace"));
+    expect(screen.getByRole("status").textContent).toBe("Loading files…");
+    expect(screen.queryByText("Attaching…")).toBeNull();
+    await act(async () =>
+      finishBrowse({
+        path: "",
+        entries: [{ path: "report.txt", name: "report.txt", kind: "file" }],
+        nextOffset: null,
+      }),
+    );
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Attach",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select report.txt" }),
+    );
+    onCommand.mockResolvedValueOnce(false);
+    fireEvent.click(screen.getByRole("button", { name: "Attach (1)" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "The attachments could not be added. Try again.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Attach (1)" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(onCommand).toHaveBeenLastCalledWith({
+      kind: "add-context-attachments",
+      sessionId: "session-1",
+      paths: ["/workspace/report.txt"],
+    });
+  });
+
+  it("returns to source choices without leaving hidden workspace selections", async () => {
+    const { invoke } = harness();
+    invoke.mockResolvedValue({
+      path: "",
+      entries: [{ path: "report.txt", name: "report.txt", kind: "file" }],
+      nextOffset: null,
+    });
+    fireEvent.click(screen.getByText("Files"));
+    fireEvent.click(screen.getByText("Browse workspace"));
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select report.txt" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to attachment sources" }),
+    );
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Attach \(/ })).toBeNull();
+    fireEvent.click(screen.getByText("Browse workspace"));
+    expect(
+      (
+        (await screen.findByRole("checkbox", {
+          name: "Select report.txt",
+        })) as HTMLInputElement
+      ).checked,
+    ).toBe(false);
+  });
+
+  it("shows an empty image folder and omits files that cannot be selected", async () => {
+    const { invoke } = harness();
+    invoke.mockResolvedValue({
+      path: "",
+      entries: [{ path: "report.txt", name: "report.txt", kind: "file" }],
+      nextOffset: null,
+    });
+    fireEvent.click(screen.getByText("Images"));
+    fireEvent.click(screen.getByText("Browse workspace"));
+    await screen.findByText("No images in this folder.");
+    expect(screen.queryByText("report.txt")).toBeNull();
+  });
+
+  it("lets a failed directory load be retried", async () => {
+    const { invoke } = harness();
+    invoke.mockRejectedValueOnce(new Error("Device disconnected. Try again."));
+    fireEvent.click(screen.getByText("Files"));
+    fireEvent.click(screen.getByText("Browse workspace"));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("No files in this folder.");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps more files available when the first page contains no images", async () => {
+    const { invoke } = harness();
+    invoke.mockResolvedValueOnce({
+      path: ".",
+      entries: [{ path: "report.txt", name: "report.txt", kind: "file" }],
+      nextOffset: 1,
+    });
+    fireEvent.click(screen.getByText("Images"));
+    fireEvent.click(screen.getByText("Browse workspace"));
+    const more = await screen.findByRole("button", { name: "More files" });
+    expect(screen.queryByText("No images in this folder.")).toBeNull();
+    invoke.mockResolvedValueOnce({
+      path: ".",
+      entries: [{ path: "photo.png", name: "photo.png", kind: "file" }],
+      nextOffset: null,
+    });
+    fireEvent.click(more);
+    await screen.findByRole("checkbox", { name: "Select photo.png" });
+    expect(invoke).toHaveBeenLastCalledWith("list_workspace_directory", {
+      workspaceRoot: "/workspace",
+      relativePath: ".",
+      offset: 1,
+    });
+  });
+
+  it("keeps uploads available and explains browsing when there is no workspace", () => {
+    harness(null);
+    fireEvent.click(screen.getByText("Files"));
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Upload from this device",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Browse workspace",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      screen.getByText("Choose a workspace to browse files."),
+    ).toBeTruthy();
+  });
+
   it("unblocks the new session and discards an old directory request error", async () => {
     const { invoke, switchSession } = harness();
     let rejectBrowse!: (error: Error) => void;
@@ -114,8 +271,13 @@ describe("remote attachments", () => {
     await act(async () => rejectOld(new Error("Old device disconnected")));
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("status").textContent).toBe("Uploading…");
     expect(
-      (screen.getByText("Upload files") as HTMLButtonElement).disabled,
+      (
+        screen.getByRole("button", {
+          name: "Upload from this device",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
     finishNew("/transfer/new-photo.png");
     await waitFor(() =>
@@ -132,7 +294,7 @@ describe("remote attachments", () => {
       nextOffset: null,
     });
     fireEvent.click(screen.getByText("Files"));
-    fireEvent.click(screen.getByText("Browse device"));
+    fireEvent.click(screen.getByText("Browse workspace"));
     await screen.findByText("photos/");
     expect(invoke).toHaveBeenLastCalledWith("list_workspace_directory", {
       workspaceRoot: "/workspace",
@@ -146,11 +308,15 @@ describe("remote attachments", () => {
     });
     fireEvent.click(screen.getByText("photos/"));
     await waitFor(() =>
-      expect((screen.getByText("Up") as HTMLButtonElement).disabled).toBe(
-        false,
-      ),
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Up",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
     );
-    fireEvent.click(screen.getByText("Up"));
+    fireEvent.click(screen.getByRole("button", { name: "Up" }));
     await waitFor(() =>
       expect(invoke).toHaveBeenLastCalledWith("list_workspace_directory", {
         workspaceRoot: "/workspace",
@@ -212,7 +378,11 @@ describe("remote attachments", () => {
     await screen.findByRole("alert");
     expect(release).toHaveBeenCalledWith("/transfer/photo.png");
     expect(
-      (screen.getByText("Upload files") as HTMLButtonElement).disabled,
+      (
+        screen.getByRole("button", {
+          name: "Upload from this device",
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(false);
   });
 });

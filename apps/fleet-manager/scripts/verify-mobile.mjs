@@ -165,7 +165,7 @@ try {
   await setVisibleViewport(page, 420, 40);
   await openAttachments(page, "Images");
   await insideVisibleViewport(page, page.getByRole("dialog"));
-  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
   await restoreVisibleViewport(page);
   process.stdout.write("Checking attachment browsing by touch\n");
   const attachmentBrowsing = await verifyMobileAttachmentBrowsing(
@@ -177,7 +177,7 @@ try {
   await page.setViewportSize({ width: 390, height: 844 });
   await openAttachments(page, "Images");
   await page
-    .getByRole("button", { name: "Browse device", exact: true })
+    .getByRole("button", { name: "Browse workspace", exact: true })
     .click();
   await page.getByRole("button", { name: "photos/", exact: true }).waitFor();
   assert.equal(fixture.browsed.at(-1), ".");
@@ -186,8 +186,13 @@ try {
   await page.getByRole("button", { name: "photos/", exact: true }).waitFor();
   assert.equal(fixture.browsed.at(-1), ".");
   await insideViewport(page, page.getByRole("dialog"));
+  await page
+    .getByRole("button", { name: "Back to attachment sources", exact: true })
+    .click();
   const chooserPromise = page.waitForEvent("filechooser");
-  await page.getByRole("button", { name: "Upload files", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Upload from this device", exact: true })
+    .click();
   const chooser = await chooserPromise;
   await chooser.setFiles(images);
   await page.getByRole("dialog").waitFor({ state: "hidden" });

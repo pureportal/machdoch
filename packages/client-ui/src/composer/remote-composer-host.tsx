@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import "./remote-attachments.css";
 import type {
   FleetOperationTransport,
   RemoteComposerProps,
@@ -7,14 +6,10 @@ import type {
 import { useRemoteFilePreview } from "../file-preview/use-remote-file-preview";
 import type { FleetMediaTransport } from "@machdoch/media-studio/fleet-transport.js";
 import type { WorkspaceDirectoryPage } from "@machdoch/fleet-protocol/workspace-contract";
-import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
+  RemoteAttachmentDialog,
+  type AttachmentActivity,
+} from "./remote-attachment-dialog";
 import { RemoteComposer } from "./remote-composer";
 import { useRemoteComposerHistory } from "./use-remote-composer-history";
 import { RemoteContextPackPicker } from "../context-packs/remote-picker";
@@ -51,7 +46,9 @@ export function RemoteComposerHost(
     null,
   );
   const [selected, setSelected] = useState<string[]>([]);
-  const [busy, setBusy] = useState(false);
+  const [activity, setActivity] = useState<AttachmentActivity>(null);
+  const [browsing, setBrowsing] = useState(false);
+  const busy = activity !== null;
   const [error, setError] = useState<string | null>(null);
   const filePreview = useRemoteFilePreview({
     sessionId: session.id,
@@ -60,14 +57,14 @@ export function RemoteComposerHost(
     mediaTransport,
   });
   const requestVersion = useRef(0);
-  const uploadInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     requestVersion.current++;
     setSelection(null);
     setDirectory(null);
     setSelected([]);
     setError(null);
-    setBusy(false);
+    setActivity(null);
+    setBrowsing(false);
   }, [session.id, session.workspace]);
 
   const report = (reason: unknown): void =>
@@ -93,7 +90,7 @@ export function RemoteComposerHost(
       ...(messageId ? { messageId } : {}),
     };
     setError(null);
-    setBusy(true);
+    setActivity("upload");
     try {
       for (const file of files) {
         const transferPath = await mediaTransport.upload(file, file.name);
@@ -111,7 +108,7 @@ export function RemoteComposerHost(
     } catch (reason) {
       if (version === requestVersion.current) report(reason);
     } finally {
-      if (version === requestVersion.current) setBusy(false);
+      if (version === requestVersion.current) setActivity(null);
     }
   };
   const browse = async (
@@ -120,11 +117,12 @@ export function RemoteComposerHost(
     offset = 0,
   ): Promise<void> => {
     if (!target.workspace) {
-      setError("Choose a workspace before browsing device files.");
+      setError("Choose a workspace before browsing files.");
       return;
     }
     const version = ++requestVersion.current;
-    setBusy(true);
+    setActivity("browse");
+    setBrowsing(true);
     setError(null);
     try {
       const page = await workspaceTransport.invoke<WorkspaceDirectoryPage>(
@@ -144,7 +142,7 @@ export function RemoteComposerHost(
     } catch (reason) {
       if (version === requestVersion.current) report(reason);
     } finally {
-      if (version === requestVersion.current) setBusy(false);
+      if (version === requestVersion.current) setActivity(null);
     }
   };
   const select = async (
@@ -158,6 +156,7 @@ export function RemoteComposerHost(
       ...(messageId ? { messageId } : {}),
     };
     setSelection(target);
+    setBrowsing(kind === "folders");
     setDirectory(null);
     setSelected([]);
     setError(null);
@@ -178,6 +177,10 @@ export function RemoteComposerHost(
         workspace: session.workspace ?? null,
       };
       setSelection(target);
+      setBrowsing(true);
+      setDirectory(null);
+      setSelected([]);
+      setError(null);
       const workspace = target.workspace?.replace(/[\\/]+$/u, "");
       const relative =
         workspace &&
@@ -217,207 +220,51 @@ export function RemoteComposerHost(
           {error}
         </p>
       ) : null}
-      <Dialog
-        open={selection !== null}
-        onOpenChange={(opened) => {
-          if (!opened && !busy) {
+      {selection ? (
+        <RemoteAttachmentDialog
+          kind={selection.kind}
+          workspace={selection.workspace}
+          browsing={browsing}
+          directory={directory}
+          selected={selected}
+          activity={activity}
+          error={error}
+          onClose={() => {
             requestVersion.current++;
             setSelection(null);
+          }}
+          onBack={() => {
+            setBrowsing(false);
+            setDirectory(null);
+            setSelected([]);
+            setError(null);
+          }}
+          onBrowse={(path, offset) => void browse(selection, path, offset)}
+          onUpload={(files) => void upload(files, selection.messageId)}
+          onSelect={(path, checked) =>
+            setSelected((current) =>
+              checked
+                ? [...current, path]
+                : current.filter((item) => item !== path),
+            )
           }
-        }}
-      >
-        <DialogContent
-          aria-describedby={undefined}
-          className="m-attachment-dialog"
-        >
-          <DialogHeader>
-            <DialogTitle>
-              {selection?.kind === "folders"
-                ? "Attach folders"
-                : selection?.kind === "images"
-                  ? "Attach images"
-                  : "Attach files"}
-            </DialogTitle>
-          </DialogHeader>
-          {selection?.kind !== "folders" ? (
-            <div className="flex flex-wrap gap-2">
-              <input
-                ref={uploadInput}
-                type="file"
-                multiple
-                accept={selection?.kind === "images" ? "image/*" : undefined}
-                aria-label="Upload attachments"
-                className="hidden"
-                disabled={busy}
-                onChange={(event) => {
-                  const files = Array.from(event.currentTarget.files ?? []);
-                  event.currentTarget.value = "";
-                  void upload(files, selection?.messageId);
-                }}
-              />
-              <Button
-                disabled={busy}
-                onClick={() => uploadInput.current?.click()}
-              >
-                Upload files
-              </Button>
-              <Button
-                variant="outline"
-                disabled={busy || !selection?.workspace}
-                onClick={() => {
-                  if (selection) void browse(selection);
-                }}
-              >
-                Browse device
-              </Button>
-            </div>
-          ) : null}
-          {directory && selection ? (
-            <div className="m-attachment-directory min-h-0 overflow-auto space-y-1">
-              <div className="flex gap-2 items-center">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={busy || !directory.path || directory.path === "."}
-                  onClick={() =>
-                    void browse(
-                      selection,
-                      directory.path.split(/[\\/]/u).slice(0, -1).join("/"),
-                    )
-                  }
-                >
-                  Up
-                </Button>
-                <span className="truncate text-sm">
-                  {directory.path && directory.path !== "."
-                    ? directory.path
-                    : selection.workspace}
-                </span>
-              </div>
-              {selection.kind === "folders" &&
-              (!directory.path || directory.path === ".") ? (
-                <label className="m-attachment-file">
-                  <input
-                    type="checkbox"
-                    checked={selected.includes("")}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setSelected((current) =>
-                        event.target.checked
-                          ? [...current, ""]
-                          : current.filter((path) => path !== ""),
-                      )
-                    }
-                  />
-                  <span>{selection.workspace}</span>
-                </label>
-              ) : null}
-              {directory.entries.map((entry) => {
-                const selectable =
-                  selection.kind === "folders"
-                    ? entry.kind === "directory"
-                    : entry.kind === "file" &&
-                      (selection.kind !== "images" ||
-                        /\.(?:png|jpe?g|webp|gif|bmp|tiff?|svg|avif)$/iu.test(
-                          entry.name,
-                        ));
-                const checkbox = selectable ? (
-                  <input
-                    type="checkbox"
-                    aria-label={`Select ${entry.name}`}
-                    checked={selected.includes(entry.path)}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setSelected((current) =>
-                        event.target.checked
-                          ? [...current, entry.path]
-                          : current.filter((path) => path !== entry.path),
-                      )
-                    }
-                  />
-                ) : null;
-                const FileRow = selectable ? "label" : "div";
-                return (
-                  <div key={entry.path} className="m-attachment-entry">
-                    {entry.kind === "directory" ? (
-                      <>
-                        {checkbox ? (
-                          <label className="m-attachment-directory-select">
-                            {checkbox}
-                          </label>
-                        ) : null}
-                        <Button
-                          variant="ghost"
-                          className="m-attachment-folder justify-start min-w-0"
-                          disabled={busy}
-                          onClick={() => void browse(selection, entry.path)}
-                        >
-                          <span>{entry.name}/</span>
-                        </Button>
-                      </>
-                    ) : (
-                      <FileRow className="m-attachment-file">
-                        {checkbox}
-                        <span>{entry.name}</span>
-                      </FileRow>
-                    )}
-                  </div>
-                );
-              })}
-              {directory.nextOffset !== null ? (
-                <Button
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() =>
-                    void browse(
-                      selection,
-                      directory.path,
-                      directory.nextOffset ?? 0,
-                    )
-                  }
-                >
-                  More files
-                </Button>
-              ) : null}
-            </div>
-          ) : null}
-          {error ? (
-            <p role="alert" className="m-product-inline-error">
-              {error}
-            </p>
-          ) : null}
-          <DialogFooter className="m-attachment-dialog-footer">
-            <Button
-              variant="outline"
-              disabled={busy}
-              onClick={() => setSelection(null)}
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={busy || !selected.length}
-              onClick={() => {
-                if (!selection) return;
-                const version = ++requestVersion.current;
-                setBusy(true);
-                setError(null);
-                void attach(selection, selectedPaths)
-                  .then(() => {
-                    if (version === requestVersion.current) setSelection(null);
-                  })
-                  .catch((reason: unknown) => {
-                    if (version === requestVersion.current) report(reason);
-                  })
-                  .finally(() => {
-                    if (version === requestVersion.current) setBusy(false);
-                  });
-              }}
-            >
-              {busy ? "Attaching…" : "Attach"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          onAttach={() => {
+            const version = ++requestVersion.current;
+            setActivity("attach");
+            setError(null);
+            void attach(selection, selectedPaths)
+              .then(() => {
+                if (version === requestVersion.current) setSelection(null);
+              })
+              .catch((reason: unknown) => {
+                if (version === requestVersion.current) report(reason);
+              })
+              .finally(() => {
+                if (version === requestVersion.current) setActivity(null);
+              });
+          }}
+        />
+      ) : null}
       {filePreview.error ? (
         <p role="alert" className="m-product-inline-error">
           {filePreview.error}
