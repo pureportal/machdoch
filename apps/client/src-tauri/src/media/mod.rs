@@ -1,6 +1,7 @@
 mod analysis;
 pub(crate) mod audio;
 mod catalog;
+mod canonical_json;
 mod civitai_addon;
 mod civitai_catalog;
 pub(crate) mod civitai_commands;
@@ -21,6 +22,9 @@ mod flow;
 mod gguf_weights;
 mod hardware;
 mod image_sampling;
+mod image_layout;
+mod image_layout_compositor;
+mod layout_asset_store;
 mod ingest;
 mod local_flow;
 mod model_addon;
@@ -385,6 +389,7 @@ pub(crate) struct MediaModelDescriptor {
     runtime_readiness: String,
     runtime_readiness_diagnostic: Option<String>,
     runtime_readiness_checked_at: Option<String>,
+    layout_verifications: Vec<serde_json::Value>,
     license: MediaModelLicense,
     recommended: bool,
     speed_score: u32,
@@ -1344,6 +1349,10 @@ pub(crate) enum MediaImagePostProcessingOperation {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct GenerateMediaImagesRequest {
+    #[serde(default)]
+    image_layout: Option<image_layout::MediaImageLayout>,
+    #[serde(default)]
+    layout_method: Option<image_layout::LayoutMethod>,
     schema_version: u32,
     run_id: String,
     flow_id: String,
@@ -1967,6 +1976,15 @@ impl GenerateMediaImagesRequest {
     }
 
     fn validate(&mut self) -> MediaResult<()> {
+        if let Some(layout) = &self.image_layout {
+            layout.validate()?;
+            if self.layout_method.is_none() { return Err("Choose a layout method.".into()); }
+            if provider_images::is_remote_image_model(&self.model_id) {
+                return Err("Choose a local image model for layouts.".into());
+            }
+        } else if self.layout_method.is_some() {
+            return Err("Choose a layout before selecting a layout method.".into());
+        }
         if self.schema_version != 1 {
             return Err("direct image generation requires schemaVersion 1".to_string());
         }
@@ -2059,6 +2077,15 @@ impl GenerateMediaImagesRequest {
         }
         if !matches!(self.output_format.as_str(), "png" | "jpeg" | "webp") {
             return Err("outputFormat must be png, jpeg, or webp".to_string());
+        }
+        if self.layout_method == Some(image_layout::LayoutMethod::Masked)
+            && (self.output_format != "png" || self.output_branches.iter().any(|branch| {
+                branch.format != "png" || branch.operations.iter().any(|operation| {
+                    !matches!(operation, MediaImagePostProcessingOperation::MetadataStrip { .. })
+                })
+            }))
+        {
+            return Err("Masked layout output must be PNG without pixel-changing operations. Export or transform the saved image separately.".into());
         }
         if provider_images::is_remote_image_model(&self.model_id)
             && (self.output_branches.len() != 1
@@ -2211,7 +2238,8 @@ impl GenerateMediaImagesRequest {
         }
         let has_image_conditioning = !self.reference_images.is_empty()
             || self.base_image_asset_id.is_some()
-            || self.pose_image_asset_id.is_some();
+            || self.pose_image_asset_id.is_some()
+            || (self.image_layout.is_some() && matches!(self.layout_method, Some(image_layout::LayoutMethod::Reference | image_layout::LayoutMethod::Masked)));
         if has_image_conditioning {
             let edit_strength = self.edit_strength.get_or_insert(0.5);
             if !edit_strength.is_finite() || !(0.0..=1.0).contains(edit_strength) {
@@ -2224,6 +2252,7 @@ impl GenerateMediaImagesRequest {
             );
         }
         if self.prompt.is_empty()
+            && self.image_layout.is_none()
             && (provider_images::is_remote_image_model(&self.model_id) || !has_image_conditioning)
         {
             return Err("prompt or supported local image conditioning is required".to_string());
@@ -2755,6 +2784,7 @@ impl MediaRunPlanSnapshot {
             if !matches!(
                 node.r#type.as_str(),
                 "source.prompt"
+                    | "source.image-layout"
                     | "task.generate-prompt"
                     | "operation.canny"
                     | "operation.image-mask"
@@ -2837,6 +2867,7 @@ impl MediaRunPlanSnapshot {
                     | "prepare-mask"
                     | "resolve-asset"
                     | "resolve-seed"
+                    | "resolve-layout"
                     | "resolve-animated-background"
                     | "resolve-model"
                     | "resolve-model-addons"
@@ -2949,6 +2980,8 @@ mod run_plan_contract_tests {
 
     fn image_request() -> GenerateMediaImagesRequest {
         GenerateMediaImagesRequest {
+            image_layout: None,
+            layout_method: None,
             schema_version: 1,
             run_id: "run:image-contract".to_string(),
             flow_id: "flow:plan-contract".to_string(),
@@ -4458,7 +4491,7 @@ async fn generate_local_diffusers(
     database::transition_nodes_by_type(
         &paths,
         &request.run_id,
-        &["source.prompt", "source.image", "source.seed"],
+        &["source.prompt", "source.image-layout", "source.image", "source.seed"],
         "completed",
         Some("local-diffusers.resolve-inputs"),
         Some("Local model and immutable add-on inputs resolved"),

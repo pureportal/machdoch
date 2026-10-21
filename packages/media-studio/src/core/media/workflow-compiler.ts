@@ -64,10 +64,11 @@ export const requiresWorkflowCompilation = (flow: MediaFlow): boolean =>
 
 export const isConnectedMediaFlow = (flow: MediaFlow): boolean =>
   requiresWorkflowCompilation(flow) ||
-  flow.nodes.some((node) => node.type === "control.quality-gate");
+  flow.nodes.some((node) => ["control.quality-gate", "source.image-layout"].includes(node.type));
 
 export const WORKFLOW_EXECUTABLE_TYPES = new Set([
   "source.prompt",
+  "source.image-layout",
   "source.image",
   "source.audio",
   "source.video",
@@ -120,6 +121,8 @@ export function workflowTaskFlow(
     const type =
       edge.toPortId === "prompt"
         ? "source.prompt"
+        : edge.toPortId === "layout"
+          ? "source.image-layout"
         : edge.toPortId === "seed"
           ? "source.seed"
           : "source.image";
@@ -154,6 +157,8 @@ export function workflowTaskFlow(
       fromPortId:
         type === "source.prompt"
           ? "prompt"
+          : type === "source.image-layout"
+            ? "layout"
           : type === "source.seed"
             ? "seed"
             : "image",
@@ -394,6 +399,7 @@ export function compileConnectedMediaFlow(
         Record<MediaFlowNode["type"], MediaExecutionStep["kind"]>
       > = {
         "source.prompt": "normalize-prompt",
+        "source.image-layout": "resolve-layout",
         "source.image": "resolve-asset",
         "source.audio": "resolve-asset",
         "source.video": "resolve-asset",

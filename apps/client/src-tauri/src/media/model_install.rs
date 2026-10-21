@@ -1398,7 +1398,13 @@ async fn download_file(
         return Err(CANCELED_SENTINEL.to_string());
     }
 
-    if offset < file.byte_size {
+    if let Some(content) = open::file_content(manifest.model_id, file.path) {
+        fs::write(&partial, content.as_bytes())
+            .map_err(|error| format!("failed to stage {}: {error}", file.path))?;
+        offset = content.len() as u64;
+        hasher = Sha256::new();
+        hasher.update(content.as_bytes());
+    } else if offset < file.byte_size {
         let cancellation = wait_for_cancellation(paths, job_id);
         tokio::pin!(cancellation);
         let url = if let Some(url) = open::file_download_url(manifest.model_id, file.path) {

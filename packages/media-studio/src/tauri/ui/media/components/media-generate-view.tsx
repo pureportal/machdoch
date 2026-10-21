@@ -5,6 +5,9 @@ import { openMediaModelProfile } from "../../../../core/media/open-model-profile
 import { MediaAssetBrowser } from "./media-asset-browser";
 import { MediaBasicImageOutputOptions } from "./media-basic-image-output-options";
 import { MediaBasicSamplingOptions } from "./media-basic-sampling-options";
+import { MediaImageLayoutEditor, emptyMediaImageLayout } from "./media-image-layout-editor";
+import { mediaImageLayoutCapabilityError } from "../../../../core/media/image-layout-capabilities.js";
+import type { MediaImageLayoutMethod } from "../../../../core/media/image-layout.js";
 import {
   basicImageModelError,
   basicImageReferenceLimit,
@@ -385,7 +388,7 @@ export const MediaGenerateView = ({
   );
   const imageModelError =
     target === "image" && selectedModel
-      ? basicImageModelError(settings, selectedModel)
+      ? (settings.imageLayout ? mediaImageLayoutCapabilityError(selectedModel, catalog.models, settings.imageLayout, settings.layoutMethod) : null) ?? basicImageModelError(settings, selectedModel)
       : null;
   const baseImageSupported =
     selectedModel?.capabilities.includes("image-to-image") === true &&
@@ -436,6 +439,7 @@ export const MediaGenerateView = ({
     (target === "video" &&
       openMediaModelProfile(selectedModel?.architecture)?.prompt === false) ||
     settings.prompt.trim().length > 0 ||
+    (target === "image" && Boolean(settings.imageLayout)) ||
     (target === "image" &&
       mediaModelSupportsPromptlessConditioning(
         selectedModel,
@@ -1537,6 +1541,19 @@ export const MediaGenerateView = ({
                         onChange={onChange}
                         onVideoChange={onVideoSettingsChange}
                       />
+                        {target === "image" && <details className="space-y-3" open={settings.imageLayout ? true : undefined}>
+                          <summary className="cursor-pointer font-medium">Layout</summary>
+                          <label className="flex items-center gap-2"><input type="checkbox" checked={Boolean(settings.imageLayout)} onChange={(event) => {
+                          if (event.target.checked) onChange({ ...settings, modelId: selectedModel?.id ?? null, imageLayout: emptyMediaImageLayout(), layoutMethod: "composition" });
+                          else { const { imageLayout: _, layoutMethod: __, ...remaining } = settings; onChange(remaining); }
+                        }} />Use layout</label>
+                        {settings.imageLayout && <>
+                            <label className="block space-y-1 text-sm">Method<select className="block w-full rounded-md border bg-background px-3 py-2" value={settings.layoutMethod ?? ""} onChange={(event) => onChange({ ...settings, layoutMethod: event.target.value as MediaImageLayoutMethod })}>
+                            <option value="native">Native</option><option value="composition">Composition</option><option value="reference">Reference guidance</option><option value="masked">Masked insertion</option>
+                          </select></label>
+                          <MediaImageLayoutEditor value={settings.imageLayout} onChange={(imageLayout) => onChange({ ...settings, imageLayout })} assets={referenceAssets.filter((asset) => asset.kind === "image").map((asset) => ({ id: asset.id, label: asset.id }))} />
+                        </>}
+                      </details>}
                     </div>
                     {target === "video" &&
                     settings.referenceImages.length === 0 ? (

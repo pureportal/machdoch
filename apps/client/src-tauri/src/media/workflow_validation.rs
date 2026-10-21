@@ -174,6 +174,7 @@ pub(super) fn preflight(
         if !matches!(
             node.r#type.as_str(),
             "source.prompt"
+                | "source.image-layout"
                 | "source.image"
                 | "source.audio"
                 | "source.video"

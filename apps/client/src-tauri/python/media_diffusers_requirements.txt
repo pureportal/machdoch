@@ -1,4 +1,4 @@
-diffusers @ https://github.com/huggingface/diffusers/archive/4295ee3ec58efa6577bc459e9b84ca3f63aa9a96.tar.gz#sha256=b8797a69784b365643a1935b5b82df679873068c8a3077e363a266a8f62f5c8f
+diffusers @ https://github.com/huggingface/diffusers/archive/1ddaf8f4e7c33afaa7c6c2c3be9e56f2c2a634c8.tar.gz#sha256=2e35b54a8c8390fa809830ce097dfb1d804a6426e34bc0b9bd0d87f9642a2caf
 transformers==5.17.0
 sentencepiece==0.2.2
 protobuf==7.35.1

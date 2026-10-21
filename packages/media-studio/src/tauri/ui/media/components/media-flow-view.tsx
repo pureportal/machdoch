@@ -1,4 +1,5 @@
 import { MediaFlowAgentPanel } from "./media-flow-agent-panel";
+import { mediaImageLayoutInputPorts } from "../../../../core/media/image-layout-nodes.js";
 import { MediaAssetBrowser } from "./media-asset-browser";
 import { MediaNodeAddonField } from "./media-node-addon-field";
 import { MediaRefModControls } from "./media-refmod-controls";
@@ -6,6 +7,8 @@ import { readRefMods, isActiveRefMod } from "../../../../core/media/refmods.js";
 import { MediaGenerationEstimate } from "./media-generation-estimate";
 import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
 import { countMediaRunOutputs } from "../../../../core/media/run-library.js";
+import { MediaImageLayoutEditor, emptyMediaImageLayout } from "./media-image-layout-editor.js";
+import type { MediaImageLayout } from "../../../../core/media/image-layout.js";
 import {
   summarizeUpscaleSize,
   type MediaUpscaleSettings,
@@ -472,6 +475,7 @@ const LAYER_STYLES: Record<MediaNodeLayer, string> = {
 };
 
 const PORT_TONES: Record<MediaPortDataType, FlowPortTone> = {
+  "image-layout": "sky",
   controlnet: "violet",
   mask: "violet",
   prompt: "sky",
@@ -483,6 +487,7 @@ const PORT_TONES: Record<MediaPortDataType, FlowPortTone> = {
 };
 
 const PORT_LABELS: Record<MediaPortDataType, string> = {
+  "image-layout": "Layout",
   controlnet: "ControlNet",
   mask: "Mask",
   prompt: "Text",
@@ -1226,6 +1231,13 @@ const NodeFieldEditor = ({
 
   let control: JSX.Element;
   switch (field.kind) {
+    case "image-layout":
+      control = <MediaImageLayoutEditor
+        value={value == null ? emptyMediaImageLayout() : value as MediaImageLayout}
+        assets={assets.filter((asset) => asset.kind === "image").map((asset) => ({ id: asset.id, label: asset.id }))}
+        onChange={(layout) => onChange(field.id, layout)}
+      />;
+      break;
     case "file":
     case "directory":
       control = (
@@ -2832,6 +2844,7 @@ const NodeInspector = ({
           event.kind === "workflow_visual"),
     ) ?? [];
   const incoming = flow.edges.filter((edge) => edge.toNodeId === node.id);
+  const inputPorts = mediaImageLayoutInputPorts(node, definition?.inputs ?? [], flow.edges);
   const outgoing = flow.edges.filter((edge) => edge.fromNodeId === node.id);
   const diagnostics = plan.diagnostics.filter(
     (diagnostic) =>
@@ -3010,6 +3023,8 @@ const NodeInspector = ({
                   ? "guided-svg-generation"
                   : "text-to-svg",
             ]
+          : incoming.some(edge => edge.toPortId === "layout") && ["reference", "masked"].includes(String(node.config.layoutMethod))
+            ? ["image-to-image"]
           : [
               ...(hasPoseInput ? (["pose-control"] as const) : []),
               ...(hasMaskInput ? (["masked-image-edit"] as const) : []),
@@ -3055,6 +3070,7 @@ const NodeInspector = ({
     ? listVisibleMediaNodeFields(definition, node.config, activeGroup).filter(
         (field) =>
           !(field.id === "providerPolicy" && field.readOnly) &&
+          (field.id !== "layoutMethod" || incoming.some((edge) => edge.toPortId === "layout")) &&
           (!["poseStrength", "poseStart", "poseEnd"].includes(field.id) ||
             hasPoseInput) &&
           (field.kind !== "mask" ||
@@ -3382,7 +3398,7 @@ const NodeInspector = ({
         )}
       </section>
 
-      {definition && definition.inputs.length > 0 ? (
+      {definition && inputPorts.length > 0 ? (
         <section className="mt-6" aria-labelledby="node-connections-heading">
           <h3
             id="node-connections-heading"
@@ -3391,7 +3407,7 @@ const NodeInspector = ({
             Connections
           </h3>
           <div className="mt-3 space-y-4">
-            {definition.inputs.map((inputPort) => {
+            {inputPorts.map((inputPort) => {
               const currentEdges = incoming.filter(
                 (edge) => edge.toPortId === inputPort.id,
               );
@@ -4316,7 +4332,7 @@ export const MediaFlowView = ({
             : configuredAsset
               ? mediaAssetLabel(configuredAsset, assetIndex)
               : null,
-          inputs: definition?.inputs ?? [],
+          inputs: mediaImageLayoutInputPorts(node, definition?.inputs ?? [], flow.edges),
           outputs: definition?.outputs ?? [],
           runOverlay:
             visualRunOverlayProjection?.observations.get(node.id) ?? null,

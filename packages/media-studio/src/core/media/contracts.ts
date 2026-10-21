@@ -12,6 +12,8 @@ export type {
   MediaSavedPoseScene,
 } from "./pose-map.js";
 
+export type { MediaImageLayout, MediaImageLayoutElement, MediaImageLayoutMethod, MediaImageBox } from "./image-layout.js";
+
 export type MediaAssetKind =
   | "prompt"
   | "image"
@@ -204,6 +206,7 @@ export type MediaNodeLayer =
   | "runtime";
 
 export type MediaNodeType =
+  | "source.image-layout"
   | "operation.image-mask"
   | "operation.mask-composite"
   | "operation.canny"
@@ -250,6 +253,7 @@ export type MediaNodeType =
   | "output.audio";
 
 export type MediaPortDataType =
+  | "image-layout"
   | "controlnet"
   | "mask"
   | "prompt"
@@ -637,6 +641,15 @@ export interface MediaModelDescriptor {
     | "runtime-unavailable";
   runtimeReadinessDiagnostic?: string;
   runtimeReadinessCheckedAt?: string;
+  layoutVerifications?: readonly {
+    method: import("./image-layout.js").MediaImageLayoutMethod;
+    revision: string;
+    workerVersion: string;
+    assetId: string;
+    runId: string;
+    deviceLabel: string;
+    createdAt: string;
+  }[];
   license: MediaModelLicense;
   recommended: boolean;
   speedScore: number;
@@ -1059,6 +1072,8 @@ export interface MediaImageMask {
 }
 
 export interface ImageRecipeSettings {
+  imageLayout?: import("./image-layout.js").MediaImageLayout;
+  layoutMethod?: import("./image-layout.js").MediaImageLayoutMethod;
   sampling?: import("./image-sampling.js").MediaImageSamplingSettings;
   prompt: string;
   providerPolicy: MediaProviderPolicy;
@@ -1323,6 +1338,7 @@ export interface MediaExecutionStep {
   id: string;
   sourceNodeId: string;
   kind:
+    | "resolve-layout"
     | "generate-prompt"
     | "segment-image"
     | "prepare-mask"
@@ -2517,6 +2533,8 @@ export interface EnqueueFixtureRunRequest {
 }
 
 export interface GenerateMediaImagesRequest {
+  imageLayout?: import("./image-layout.js").MediaImageLayout;
+  layoutMethod?: import("./image-layout.js").MediaImageLayoutMethod;
   sampling?: import("./image-sampling.js").MediaImageSamplingSettings;
   schemaVersion: 1;
   runId: string;

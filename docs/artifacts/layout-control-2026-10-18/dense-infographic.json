@@ -1,0 +1,449 @@
+{
+  "schemaVersion": 1,
+  "canvas": {
+    "width": 1280,
+    "height": 960
+  },
+  "caption": "A polished editorial infographic with three evenly spaced cards: a blue toy robot on the left, an orange cube in the center, and a green potted plant on the right. Pale blue, orange and green panels. Large clear headings, arrows connecting three short steps, dark footer. Clean flat graphic design with realistic generated object imagery.",
+  "background": "#ffffff",
+  "elements": [
+    {
+      "id": "title",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "THREE OBJECTS, ONE SCENE",
+      "box": [
+        48,
+        24,
+        1232,
+        100
+      ],
+      "font": "Arial",
+      "fontSize": 42,
+      "color": "#16233b",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 5
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "Color • Shape • Position",
+      "box": [
+        48,
+        96,
+        1232,
+        140
+      ],
+      "font": "Arial",
+      "fontSize": 24,
+      "color": "#56667f",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 5
+    },
+    {
+      "id": "robot_card",
+      "kind": "shape",
+      "shape": "rectangle",
+      "description": "rectangle graphic",
+      "box": [
+        48,
+        174,
+        416,
+        664
+      ],
+      "color": "#dcecff",
+      "zIndex": 0
+    },
+    {
+      "id": "robot_number",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "01",
+      "box": [
+        68,
+        194,
+        148,
+        242
+      ],
+      "font": "Arial",
+      "fontSize": 32,
+      "color": "#16233b",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 2
+    },
+    {
+      "id": "robot_image",
+      "kind": "object",
+      "description": "A friendly blue toy robot, fully visible.",
+      "box": [
+        80,
+        264,
+        384,
+        514
+      ],
+      "zIndex": 1,
+      "fit": "contain",
+      "cutout": true
+    },
+    {
+      "id": "robot_label",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "BLUE ROBOT",
+      "box": [
+        68,
+        544,
+        396,
+        585
+      ],
+      "font": "Arial",
+      "fontSize": 26,
+      "color": "#16233b",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 3
+    },
+    {
+      "id": "robot_detail",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "LEFT • Friendly form",
+      "box": [
+        68,
+        602,
+        396,
+        644
+      ],
+      "font": "Arial",
+      "fontSize": 18,
+      "color": "#16233b",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 3
+    },
+    {
+      "id": "cube_card",
+      "kind": "shape",
+      "shape": "rectangle",
+      "description": "rectangle graphic",
+      "box": [
+        456,
+        174,
+        824,
+        664
+      ],
+      "color": "#fff0dd",
+      "zIndex": 0
+    },
+    {
+      "id": "cube_number",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "02",
+      "box": [
+        476,
+        194,
+        556,
+        242
+      ],
+      "font": "Arial",
+      "fontSize": 32,
+      "color": "#16233b",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 2
+    },
+    {
+      "id": "cube_image",
+      "kind": "object",
+      "description": "A small orange cube with rounded edges.",
+      "box": [
+        488,
+        264,
+        792,
+        514
+      ],
+      "zIndex": 1,
+      "fit": "contain",
+      "cutout": true
+    },
+    {
+      "id": "cube_label",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "ORANGE CUBE",
+      "box": [
+        476,
+        544,
+        804,
+        585
+      ],
+      "font": "Arial",
+      "fontSize": 26,
+      "color": "#16233b",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 3
+    },
+    {
+      "id": "cube_detail",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "CENTER • Simple geometry",
+      "box": [
+        476,
+        602,
+        804,
+        644
+      ],
+      "font": "Arial",
+      "fontSize": 18,
+      "color": "#16233b",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 3
+    },
+    {
+      "id": "plant_card",
+      "kind": "shape",
+      "shape": "rectangle",
+      "description": "rectangle graphic",
+      "box": [
+        864,
+        174,
+        1232,
+        664
+      ],
+      "color": "#e4f4e8",
+      "zIndex": 0
+    },
+    {
+      "id": "plant_number",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "03",
+      "box": [
+        884,
+        194,
+        964,
+        242
+      ],
+      "font": "Arial",
+      "fontSize": 32,
+      "color": "#16233b",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 2
+    },
+    {
+      "id": "plant_image",
+      "kind": "object",
+      "description": "A green leafy plant in a simple terracotta pot.",
+      "box": [
+        896,
+        264,
+        1200,
+        514
+      ],
+      "zIndex": 1,
+      "fit": "contain",
+      "cutout": true
+    },
+    {
+      "id": "plant_label",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "GREEN PLANT",
+      "box": [
+        884,
+        544,
+        1212,
+        585
+      ],
+      "font": "Arial",
+      "fontSize": 26,
+      "color": "#16233b",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 3
+    },
+    {
+      "id": "plant_detail",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "RIGHT • Natural texture",
+      "box": [
+        884,
+        602,
+        1212,
+        644
+      ],
+      "font": "Arial",
+      "fontSize": 18,
+      "color": "#16233b",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 3
+    },
+    {
+      "id": "arrow_left",
+      "kind": "shape",
+      "shape": "arrow",
+      "description": "arrow graphic",
+      "box": [
+        390,
+        700,
+        442,
+        736
+      ],
+      "color": "#6d7d95",
+      "zIndex": 1
+    },
+    {
+      "id": "arrow_right",
+      "kind": "shape",
+      "shape": "arrow",
+      "description": "arrow graphic",
+      "box": [
+        798,
+        700,
+        850,
+        736
+      ],
+      "color": "#6d7d95",
+      "zIndex": 1
+    },
+    {
+      "id": "step_card_0",
+      "kind": "shape",
+      "shape": "rectangle",
+      "description": "rectangle graphic",
+      "box": [
+        48,
+        682,
+        376,
+        760
+      ],
+      "color": "#e9edf4",
+      "zIndex": 0
+    },
+    {
+      "id": "step_0",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "1  GENERATE",
+      "box": [
+        66,
+        700,
+        358,
+        746
+      ],
+      "font": "Arial",
+      "fontSize": 24,
+      "color": "#16233b",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 2
+    },
+    {
+      "id": "step_card_1",
+      "kind": "shape",
+      "shape": "rectangle",
+      "description": "rectangle graphic",
+      "box": [
+        456,
+        682,
+        784,
+        760
+      ],
+      "color": "#e9edf4",
+      "zIndex": 0
+    },
+    {
+      "id": "step_1",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "2  PLACE",
+      "box": [
+        474,
+        700,
+        766,
+        746
+      ],
+      "font": "Arial",
+      "fontSize": 24,
+      "color": "#16233b",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 2
+    },
+    {
+      "id": "step_card_2",
+      "kind": "shape",
+      "shape": "rectangle",
+      "description": "rectangle graphic",
+      "box": [
+        864,
+        682,
+        1192,
+        760
+      ],
+      "color": "#e9edf4",
+      "zIndex": 0
+    },
+    {
+      "id": "step_2",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "3  COMPOSE",
+      "box": [
+        882,
+        700,
+        1174,
+        746
+      ],
+      "font": "Arial",
+      "fontSize": 24,
+      "color": "#16233b",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 2
+    },
+    {
+      "id": "footer_card",
+      "kind": "shape",
+      "shape": "rectangle",
+      "description": "rectangle graphic",
+      "box": [
+        48,
+        802,
+        1232,
+        920
+      ],
+      "color": "#16233b",
+      "zIndex": 0
+    },
+    {
+      "id": "footer",
+      "kind": "text",
+      "description": "Clear infographic lettering",
+      "text": "Three subjects. Stable positions. Clear labels.",
+      "box": [
+        76,
+        828,
+        1200,
+        882
+      ],
+      "font": "Arial",
+      "fontSize": 30,
+      "color": "#ffffff",
+      "align": "left",
+      "direction": "ltr",
+      "zIndex": 2
+    }
+  ]
+}

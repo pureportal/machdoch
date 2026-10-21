@@ -3022,6 +3022,8 @@ export const MediaStudio = ({
           outputFormat: "png",
           modelPolicy: settings.modelPolicy,
           sampling: settings.sampling,
+          imageLayout: settings.imageLayout,
+          layoutMethod: settings.layoutMethod,
           modelAddons: settings.modelAddons,
           transparentBackground: settings.transparentBackground,
           subjectCutoutModelPriority: settings.transparentBackground
@@ -3389,6 +3391,8 @@ export const MediaStudio = ({
                       : "png",
                   modelPolicy: settings.modelPolicy,
                   sampling: settings.sampling,
+                  imageLayout: settings.imageLayout,
+                  layoutMethod: settings.layoutMethod,
                   modelAddons: settings.modelAddons,
                   transparentBackground: settings.transparentBackground,
                   subjectCutoutModelPriority:
@@ -3835,6 +3839,8 @@ export const MediaStudio = ({
           baseImageAssetId: localConditionedGeneration
             ? pinnedRecipe.baseImageAssetId
             : null,
+          imageLayout: pinnedRecipe.imageLayout,
+          layoutMethod: pinnedRecipe.layoutMethod,
           editMask:
             localConditionedGeneration && pinnedRecipe.baseImageAssetId
               ? (normalizeMediaImageMask(pinnedRecipe.editMask) ?? null)

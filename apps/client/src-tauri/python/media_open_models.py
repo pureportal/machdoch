@@ -16,10 +16,18 @@ def load_pipeline(diffusers: Any, model: dict[str, Any], dtype: Any, *, image_co
     if model.get("packageKind") != "diffusers-directory":
         raise ValueError(f"{profile['displayName']} requires a complete Diffusers model folder")
     root = Path(model["path"])
-    index_name = "modular_model_index.json" if profile["architecture"] == "anima" else "model_index.json"
+    index_name = "modular_model_index.json" if profile["architecture"] in ("anima", "flux-3-image-klein") else "model_index.json"
     index = json.loads((root / index_name).read_text(encoding="utf-8"))
     if index.get("_class_name") != profile["pipeline"]:
         raise ValueError(f"The model folder does not match {profile['displayName']}")
+    if profile["architecture"] in ("moss-image-base", "moss-image-sft"):
+        from media_moss import load_pipeline as load_moss
+
+        return load_moss(root, dtype)
+    if profile["architecture"] == "flux-3-image-klein":
+        from media_flux3 import load_pipeline as load_flux3
+
+        return load_flux3(diffusers, root, dtype)
     if profile["architecture"] == "anima":
         from media_anima import load_pipeline as load_anima
 
@@ -119,7 +127,7 @@ def image_arguments(architecture: str, sampling: dict[str, Any], images: list[An
     guidance = sampling.get("guidanceScale")
     published_guidance_schedule = architecture == "ideogram-4" and guidance is None and sampling.get("numInferenceSteps") in (None, profile["steps"])
     arguments = {}
-    if not published_guidance_schedule:
+    if not published_guidance_schedule and profile["guidanceParameter"] is not None:
         arguments[profile["guidanceParameter"]] = profile["guidance"] if guidance is None else guidance
         if architecture == "ideogram-4":
             arguments["guidance_schedule"] = None

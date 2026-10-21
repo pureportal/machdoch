@@ -935,7 +935,7 @@ pub(crate) fn snapshot(
             .map_err(|error| format!("failed to decode media model catalog: {error}"))?;
         rows
     };
-    let models = models
+    let mut models = models
         .into_iter()
         .map(
             |(
@@ -1049,6 +1049,7 @@ pub(crate) fn snapshot(
                     },
                     runtime_readiness_diagnostic: None,
                     runtime_readiness_checked_at: None,
+                    layout_verifications: Vec::new(),
                     license: MediaModelLicense {
                         name: license_name,
                         spdx_id: license_spdx_id,
@@ -1070,6 +1071,37 @@ pub(crate) fn snapshot(
         )
         .collect::<MediaResult<Vec<_>>>()?;
 
+    let mut layout_statement = connection.prepare(
+        "SELECT a.id,a.run_id,a.created_at,a.operation_json FROM assets a JOIN runs r ON r.id=a.run_id JOIN blobs b ON b.digest=a.blob_digest
+         WHERE a.deleted_at IS NULL AND b.available=1 AND r.status='completed' AND (json_extract(a.operation_json,'$.imageLayout.method') IS NOT NULL OR json_extract(a.operation_json,'$.details.provenance.imageLayout.method') IS NOT NULL)
+         ORDER BY a.created_at DESC LIMIT 512"
+    ).map_err(|error| error.to_string())?;
+    let layout_rows = layout_statement.query_map([], |row| Ok((row.get::<_,String>(0)?,row.get::<_,String>(1)?,row.get::<_,String>(2)?,row.get::<_,String>(3)?)))
+        .map_err(|error| error.to_string())?;
+    for row in layout_rows {
+        let (asset_id, run_id, created_at, operation) = row.map_err(|error| error.to_string())?;
+        let operation: serde_json::Value = serde_json::from_str(&operation).map_err(|error| error.to_string())?;
+        let model_id = operation["modelId"].as_str().or_else(|| operation.pointer("/details/modelId").and_then(serde_json::Value::as_str));
+        let generation = if operation["kind"] == "workflow" { &operation["details"]["provenance"] } else { &operation };
+        let operation = generation;
+        if operation["imageLayout"]["method"] != "native" && !operation["imageLayout"]["variants"].as_array().is_some_and(|variants|
+            variants.iter().all(|variant| variant.pointer("/composition/renderer").and_then(serde_json::Value::as_str) == Some(super::image_layout_compositor::RENDERER_ID)
+                && (operation["imageLayout"]["method"] != "reference" || variant.pointer("/refinement/guidance/composition/renderer").and_then(serde_json::Value::as_str) == Some(super::image_layout_compositor::RENDERER_ID)))) { continue; }
+        if operation["imageLayout"]["method"] == "composition" && !operation["imageLayout"]["variants"].as_array().is_some_and(|variants|
+            variants.iter().any(|variant| variant["inputs"].as_array().is_some_and(|inputs| inputs.iter().any(|input|
+                input.pointer("/source/generation/generation/workerVersion").is_some())))) { continue; }
+          if operation["imageLayout"]["method"] == "reference" && !operation["imageLayout"]["variants"].as_array().is_some_and(|variants|
+              variants.iter().all(|variant| variant.pointer("/refinement/guidance/adapter").and_then(serde_json::Value::as_str) == Some("composition-reference-regions-v1"))) { continue; }
+          if matches!(operation["imageLayout"]["method"].as_str(), Some("reference" | "masked"))
+              && !operation["imageLayout"]["variants"].as_array().is_some_and(|variants|
+                  variants.iter().any(|variant| variant["refinement"]["steps"].as_array().is_some_and(|steps|
+                      steps.iter().any(|step| step.pointer("/generation/workerVersion").is_some())))) { continue; }
+        let Some(model) = models.iter_mut().find(|model| Some(model.id.as_str()) == model_id && model.installed_revision.as_deref() == operation["modelRevision"].as_str()) else { continue; };
+        let method = &operation["imageLayout"]["method"];
+        if model.layout_verifications.iter().any(|entry| &entry["method"] == method) { continue; }
+        model.layout_verifications.push(serde_json::json!({"method":method,"revision":operation["modelRevision"],"workerVersion":operation["workerVersion"],
+            "assetId":asset_id,"runId":run_id,"deviceLabel":operation["deviceLabel"],"createdAt":created_at}));
+    }
     let addons = {
         let mut statement = connection
             .prepare(

@@ -31,7 +31,7 @@ from PIL import Image, ImageOps
 import media_open_models
 import media_image_sampling
 
-WORKER_VERSION = "media-diffusers-worker/1.112.0"
+WORKER_VERSION = "media-diffusers-worker/1.113.0"
 OFFLOAD_CACHE_COMPATIBILITY_VERSION = "media-diffusers-worker/1.19.0"
 SCHEMA_VERSION = 5
 MIN_EXPERIMENTAL_VIDEO_MEMORY_BYTES = 15 * 1024**3
@@ -116,7 +116,7 @@ ACCEPTED_PACKAGE_VERSIONS = {
     if "==" in line and not line.startswith("#")
     for name, version in [line.strip().split("==", 1)]
 }
-ACCEPTED_PACKAGE_VERSIONS["diffusers"] = ("0.41.0.dev0",)
+ACCEPTED_PACKAGE_VERSIONS["diffusers"] = ("0.42.0.dev0",)
 for package in ("torch", "torchvision"):
     ACCEPTED_PACKAGE_VERSIONS[package] = tuple(bundle[package] for bundle in RUNTIME_MANIFEST["accelerators"].values())
 REQUIRED_PACKAGES = tuple(ACCEPTED_PACKAGE_VERSIONS)
@@ -1033,7 +1033,7 @@ def _load_pipeline(
     device, _, _ = _device(torch)
     dtype = torch_dtype if torch_dtype is not None else _pipeline_dtype(torch, device)
     if torch_dtype is None and architecture in (
-        "stable-diffusion-3", "anima",
+        "stable-diffusion-3", "anima", "moss-image-base", "moss-image-sft", "flux-3-image-klein",
         "z-image", "z-image-turbo",
         "flux-1", "flux-1-dev", "flux-1-schnell", "flux-2", "flux-2-dev",
         "flux-2-klein-base-4b", "flux-2-klein-9b", "flux-2-klein-base-9b",
@@ -2659,11 +2659,14 @@ def _run_worker_command(arguments: list[str], *, input: str, timeout: float, env
 
 
 def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
+    started_at = time.perf_counter()
     _progress("Starting image runtime", 0.02)
     if request.get("schemaVersion") != SCHEMA_VERSION:
         raise WorkerError("Unsupported worker request schema")
     torch, diffusers = _runtime()
     runtime_device, device_label, device_memory = _device(torch)
+    if runtime_device == "cuda":
+        torch.cuda.reset_peak_memory_stats()
     convolution_backend = _configure_amd_convolution_backend(torch, runtime_device)
     model = request.get("model")
     if not isinstance(model, dict):
@@ -2698,6 +2701,17 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         except ValueError as error:
             raise WorkerError(str(error)) from error
     width, height, step_count, requested_guidance = _image_sampling(request, architecture, policy)
+    layout_compilation = None
+    if request.get("imageLayout") is not None:
+        from media_image_layout import compile_native_layout
+
+        if request.get("layoutMethod") != "native":
+            raise WorkerError("This worker requires an explicitly selected native layout method")
+        if any(request.get(key) for key in ("baseImagePath", "referenceImages", "maskImagePath", "editMask", "poseImagePath", "controlNet")):
+            raise WorkerError("Native layout conditioning requires text generation. Use layer assets with composition or a compatible guidance method for editing.")
+        layout_compilation = compile_native_layout(request["imageLayout"], architecture)
+        width = request["imageLayout"]["canvas"]["width"]
+        height = request["imageLayout"]["canvas"]["height"]
     sampling_architecture = architecture
     if profile is not None and profile.get("baseArchitecture"):
         media_open_models.image_arguments(architecture, request.get("sampling", {}), [], negative_prompt)
@@ -2827,7 +2841,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         raise WorkerError(f"{architecture} accepts at most three reference images")
     if architecture == "qwen-image-2.1" and len(conditioned_images) > 10:
         raise WorkerError("Qwen-Image 2.1 accepts at most ten input images")
-    if not prompt and not conditioned_images and control_image is None:
+    if not prompt and not conditioned_images and control_image is None and layout_compilation is None:
         raise WorkerError("prompt or image conditioning is required")
     edit_mask = request.get("editMask")
     _validate_edit_mask_request(
@@ -2960,7 +2974,7 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         )
         if architecture == "anima":
             pipeline.to(runtime_device)
-        elif not krea_checkpoint and architecture != "hunyuan-image-3":
+        elif not krea_checkpoint and architecture not in ("hunyuan-image-3", "flux-3-image-klein"):
             if runtime_device == "cuda":
                 if architecture in ("flux-1-dev", "flux-1-schnell"):
                     pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
@@ -3021,6 +3035,15 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         architecture == "flux-2" and base_image is not None and bool(references)
     )
     effective_prompt = prompt
+    if layout_compilation is not None:
+        effective_prompt = layout_compilation["prompt"]
+    if architecture in ("moss-image-base", "moss-image-sft"):
+        from media_moss import check_prompt_tokens, enable_progress
+
+        enable_progress(pipeline, _progress)
+        counts = check_prompt_tokens(pipeline, effective_prompt, negative_prompt)
+        if layout_compilation is not None:
+            layout_compilation["tokens"] = counts
     reference_prompt_bindings: list[dict[str, Any]] = []
     if architecture == "flux-2" and references:
         effective_prompt, reference_prompt_bindings = _flux2_reference_prompt(
@@ -3250,6 +3273,12 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
             from media_anima import generate_image
 
             result = generate_image(pipeline, arguments)
+        elif architecture == "flux-3-image-klein":
+            from media_flux3 import generate_image
+
+            result = generate_image(pipeline, arguments, lambda completed, total: _progress(
+                f"Sampling {completed}/{total}", 0.25 + 0.6 * (index + completed / total) / output_count,
+            ))
         else:
             result = pipeline(**arguments)
         if any(getattr(result, "nsfw_content_detected", None) or []):
@@ -3283,6 +3312,23 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         pipeline.vae.to(dtype=vae_dtype)
         pipeline.enable_model_cpu_offload(gpu_id=torch.cuda.current_device(), device="cuda")
     outputs.sort(key=lambda output: output["index"])
+    if runtime_device == "cuda":
+        torch.cuda.synchronize()
+    image_performance = {
+        **(krea_performance_evidence or {}),
+        "elapsedSeconds": time.perf_counter() - started_at,
+        "gpuPeakAllocatedBytes": torch.cuda.max_memory_allocated() if runtime_device == "cuda" else None,
+        "gpuPeakReservedBytes": torch.cuda.max_memory_reserved() if runtime_device == "cuda" else None,
+        "quantization": {name: {"fourBit": bool(getattr(getattr(pipeline, name, None), "is_loaded_in_4bit", False)),
+            "dtype": str(getattr(getattr(pipeline, name, None), "dtype", "not-applicable")),
+            "method": str(getattr(getattr(getattr(getattr(pipeline, name, None), "hf_quantizer", None), "quantization_config", None), "quant_method", "none")),
+        } for name in ("text_encoder", "transformer", "vae")},
+        "cpuOffloadHooks": sum(1 for name in ("text_encoder", "text_encoder_2", "text_encoder_3", "text_encoder_4", "transformer", "unet", "vae")
+            for component in [getattr(pipeline, name, None)] if isinstance(component, torch.nn.Module)
+            for module in component.modules() if getattr(module, "_hf_hook", None) is not None),
+        "vaeTiling": {"enabled": bool(getattr(getattr(pipeline, "vae", None), "use_tiling", False)),
+            "sampleSize": getattr(getattr(pipeline, "vae", None), "tile_sample_min_size", None)},
+    }
     return {
         "schemaVersion": SCHEMA_VERSION,
         "workerVersion": WORKER_VERSION,
@@ -3299,7 +3345,8 @@ def generate(request: dict[str, Any], cache: Any = None) -> dict[str, Any]:
         "schedulerClass": type(pipeline.scheduler).__name__,
         "vaeDecode": vae_decode_evidence,
         "addons": applied,
-        "performance": krea_performance_evidence,
+        "performance": image_performance,
+        "imageLayout": {"layout": request["imageLayout"], "method": "native", "compiled": layout_compilation} if layout_compilation is not None else None,
         "requireChromaBackground": require_chroma_background,
         "editConditioning": (
             {

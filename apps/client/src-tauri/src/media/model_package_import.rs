@@ -158,8 +158,8 @@ fn inventory(source: &Path, verify_pinned_weights: bool) -> MediaResult<PackageI
         .and_then(Value::as_str)
         .ok_or("The model folder has no pipeline class")?
         .to_string();
-    if modular && pipeline != "AnimaModularPipeline" {
-        return Err("Select an Anima modular model folder.".to_string());
+    if modular && !matches!(pipeline.as_str(), "AnimaModularPipeline" | "Flux3DistilledModularPipeline") {
+        return Err("Select a supported modular model folder.".to_string());
     }
     let gguf_files = files
         .iter()
@@ -171,12 +171,13 @@ fn inventory(source: &Path, verify_pinned_weights: bool) -> MediaResult<PackageI
             "QwenImagePipeline" => ("QwenImageTransformer2DModel", "qwen_image"),
             "QwenImage21Pipeline" => ("QwenImage21Transformer2DModel", "qwen_image21"),
             "Flux2Pipeline" => ("Flux2Transformer2DModel", "flux"),
+            "Flux3DistilledModularPipeline" => ("Flux3Transformer2DModel", "flux"),
             _ => {
                 return Err("Choose a model folder with its declared GGUF transformer.".to_string())
             }
         };
         if index.get("machdoch_quantization") != Some(&expected)
-            || index["transformer"] != serde_json::json!(["diffusers", transformer_class])
+            || index["transformer"][0] != "diffusers" || index["transformer"][1] != transformer_class
             || gguf_files != vec![&root.join("transformer/model.gguf")]
         {
             return Err("Choose a model folder with its declared GGUF transformer.".to_string());
@@ -208,6 +209,37 @@ fn inventory(source: &Path, verify_pinned_weights: bool) -> MediaResult<PackageI
     }
     let h3_student = pipeline == "MiniMaxH3ModularPipeline";
     let anima = pipeline == "AnimaModularPipeline";
+    let flux3 = pipeline == "Flux3DistilledModularPipeline";
+    let moss = pipeline == "MOSSImagePipeline";
+    if flux3 {
+        for (name, library, class, folder) in [
+            ("transformer", "diffusers", "Flux3Transformer2DModel", "transformer"),
+            ("text_encoder", "transformers", "Qwen3VLForConditionalGeneration", "text_encoder"),
+            ("tokenizer", "transformers", "AutoProcessor", "text_encoder"),
+            ("vae", "diffusers", "AutoencoderKLFlux2", "vae"),
+        ] {
+            if index[name][0] != library || index[name][1] != class
+                || index[name][2]["subfolder"] != folder
+            {
+                return Err(format!("Missing or incompatible FLUX 3 component: {name}"));
+            }
+        }
+        read_json(&root.join("text_encoder/tokenizer_config.json"))?;
+        read_json(&root.join("text_encoder/preprocessor_config.json"))?;
+    }
+    if moss {
+        for (name, library, class) in [
+            ("scheduler", "pipeline_moss_image", "MOSSImageScheduler"),
+            ("transformer", "pipeline_moss_image", "MOSSImageTransformer"),
+            ("text_encoder", "transformers", "Qwen3_5Model"),
+            ("tokenizer", "transformers", "Qwen2Tokenizer"),
+            ("vae", "diffusers", "AutoencoderKLFlux2"),
+        ] {
+            if index.get(name) != Some(&serde_json::json!([library, class])) {
+                return Err(format!("Invalid MOSS component: {name}"));
+            }
+        }
+    }
     if anima {
         for (name, library, class) in [
             ("scheduler", "diffusers", "FlowMatchEulerDiscreteScheduler"),
@@ -261,25 +293,28 @@ fn inventory(source: &Path, verify_pinned_weights: bool) -> MediaResult<PackageI
         }
     }
     for (name, specification) in index.as_object().ok_or("Invalid model index")? {
+        if flux3 && matches!(name.as_str(), "prompt_upsampler" | "prompt_upsampler_processor") {
+            continue;
+        }
         if pipeline == "QwenImage21Pipeline" && name == "sample_sigmas" {
             continue;
         }
         let Some(component) = specification.as_array() else {
             continue;
         };
-        if component.len() != if h3_student || anima { 3 } else { 2 } {
+        if component.len() != if h3_student || anima || flux3 { 3 } else { 2 } {
             return Err(format!("Invalid component {name}"));
         }
         if component[0].is_null() && component[1].is_null() {
             continue;
         }
         let class = component[1].as_str().ok_or("Invalid component class")?;
-        if h3_student || anima {
+        if h3_student || anima || flux3 {
             let loading = component[2]
                 .as_object()
                 .ok_or("Invalid modular component specification")?;
             if loading.get("type_hint") != Some(&Value::Array(component[..2].to_vec()))
-                || loading.get("subfolder").and_then(Value::as_str) != Some(name.as_str())
+                || loading.get("subfolder").and_then(Value::as_str) != Some(if flux3 && name == "tokenizer" { "text_encoder" } else { name.as_str() })
                 || (h3_student
                     && loading
                         .get("pretrained_model_name_or_path")
@@ -308,13 +343,20 @@ fn inventory(source: &Path, verify_pinned_weights: bool) -> MediaResult<PackageI
             && name == "model"
             && component[0] == "hunyuan_image_3"
             && class == "HunyuanImage3ForCausalMM";
+        let native_moss_component = moss && component[0] == "pipeline_moss_image"
+            && matches!((name.as_str(), class), ("scheduler", "MOSSImageScheduler") | ("transformer", "MOSSImageTransformer"));
+        let native_sd_safety_checker = pipeline == "StableDiffusionPipeline"
+            && name == "safety_checker" && component[0] == "stable_diffusion"
+            && class == "StableDiffusionSafetyChecker";
         if !matches!(component[0].as_str(), Some("diffusers" | "transformers"))
             && !native_audio_component
             && !native_hunyuan_component
+            && !native_moss_component
+            && !native_sd_safety_checker
         {
             return Err(format!("Component {name} requires custom repository code."));
         }
-        let relative = Path::new(name);
+        let relative = Path::new(if flux3 && name == "tokenizer" { "text_encoder" } else { name.as_str() });
         if relative.components().count() != 1
             || !matches!(relative.components().next(), Some(Component::Normal(_)))
         {
@@ -336,6 +378,8 @@ fn inventory(source: &Path, verify_pinned_weights: bool) -> MediaResult<PackageI
             || class == "SpeechT5HifiGan"
             || (anima && name == "text_conditioner")
             || native_hunyuan_component
+            || native_sd_safety_checker
+            || (moss && name == "transformer")
             || (h3_student && name == "text_encoder")
         {
             let config = read_json(&component_root.join("config.json"))?;
@@ -364,7 +408,7 @@ fn inventory(source: &Path, verify_pinned_weights: bool) -> MediaResult<PackageI
                 .collect::<Vec<_>>();
             let quantized_transformer = matches!(
                 pipeline.as_str(),
-                "QwenImagePipeline" | "QwenImage21Pipeline" | "Flux2Pipeline"
+                "QwenImagePipeline" | "QwenImage21Pipeline" | "Flux2Pipeline" | "Flux3DistilledModularPipeline"
             ) && name == "transformer"
                 && index.get("machdoch_quantization").is_some();
             if quantized_transformer && !weights.is_empty() {

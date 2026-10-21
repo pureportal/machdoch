@@ -422,7 +422,7 @@ export const resolveMediaFlowVariables = (
       return Object.fromEntries(
         Object.entries(value).map(([key, entry]) => [
           key,
-          resolveValue(entry, nodeId),
+          key === "imageLayout" ? structuredClone(entry) : resolveValue(entry, nodeId),
         ]),
       );
     }
