@@ -441,7 +441,9 @@ describe("scoped speech agent tools", () => {
   it.each(["foreign-job","wrong-revision","wrong-response","injected-owner","missing-run"])("rejects %s archive reference discovery",async failure=>{
     const test=fixture();await submitSpeechProject(renderRequest(),test.runtime);test.handlers.archiveReferences=()=>({projectId:"project-1",revisionId:failure==="wrong-response"?"other":"revision-1",inventorySha256:"a".repeat(64),references:[]});const args:Record<string,unknown>={jobId:test.job.id,projectId:"project-1",revisionId:"revision-1"};
     if(failure==="foreign-job")test.job.owner="automation:other";if(failure==="wrong-revision")args.revisionId="other";if(failure==="injected-owner")args.owner="automation:run-1";test.execute.mockClear();
-    const result=await findTool(test.runtime,"speech_archive_references").execute(args,failure==="missing-run"?{...toolContext(),runId:undefined}:toolContext());expect(result.toolResult.isError).toBe(true);expect(test.execute).not.toHaveBeenCalledWith("export",expect.anything());if(failure!=="wrong-response")expect(test.execute).not.toHaveBeenCalledWith("archiveReferences",expect.anything());
+    const context = toolContext();
+    if (failure === "missing-run") delete context.runId;
+    const result=await findTool(test.runtime,"speech_archive_references").execute(args,context);expect(result.toolResult.isError).toBe(true);expect(test.execute).not.toHaveBeenCalledWith("export",expect.anything());if(failure!=="wrong-response")expect(test.execute).not.toHaveBeenCalledWith("archiveReferences",expect.anything());
   });
   it("exports explicitly ordered owned takes without rendering again", async () => {
     const test = fixture();
