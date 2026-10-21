@@ -77,7 +77,9 @@ export function mediaImageLayoutError(value: unknown): string | null {
     if (!text(element.description, 4000) || !integer(element.zIndex, -10000, 10000))
       return `Invalid description or layer for ${element.id}.`;
     const box = element.box;
-    if (!Array.isArray(box) || box.length !== 4 || !box.every((coordinate) => integer(coordinate, 0, 8192)) ||
+    if (!Array.isArray(box) || box.length !== 4 ||
+        !integer(box[0], 0, 8192) || !integer(box[1], 0, 8192) ||
+        !integer(box[2], 0, 8192) || !integer(box[3], 0, 8192) ||
         box[0] >= box[2] || box[1] >= box[3] || box[2] > value.canvas.width || box[3] > value.canvas.height)
       return `Keep ${element.id} inside the canvas with positive width and height.`;
     if (element.opacity !== undefined && (typeof element.opacity !== "number" || !Number.isFinite(element.opacity) || element.opacity < 0 || element.opacity > 1))
