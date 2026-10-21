@@ -1,0 +1,20 @@
+[
+  {
+    "component": "text_encoder",
+    "source": "clip_l.safetensors",
+    "parameters": 123650304,
+    "dtype": "torch.float16",
+    "strictStateLoadPassed": true,
+    "identityProjectionAdded": true,
+    "device": "cpu"
+  },
+  {
+    "component": "text_encoder_2",
+    "source": "clip_g.safetensors",
+    "parameters": 694659840,
+    "dtype": "torch.float16",
+    "strictStateLoadPassed": true,
+    "identityProjectionAdded": false,
+    "device": "cpu"
+  }
+]

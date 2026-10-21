@@ -1,0 +1,118 @@
+{
+  "checkedAt": "2026-10-14T20:39:59.361089+00:00",
+  "choices": [
+    {
+      "version": 3325972,
+      "file": {
+        "id": 3214390,
+        "sizeKB": 6775430.5703125,
+        "name": "unnamedixlRealisticModel_v7.safetensors",
+        "type": "Model",
+        "pickleScanResult": "Success",
+        "pickleScanMessage": null,
+        "virusScanResult": "Success",
+        "virusScanMessage": null,
+        "scannedAt": "2026-09-15T11:54:21.107",
+        "metadata": {
+          "format": "SafeTensor",
+          "fp": "fp16"
+        },
+        "hashes": {
+          "AutoV1": "6634516A",
+          "AutoV2": "5DE8513766",
+          "SHA256": "5DE851376608D77AC5FCA529BA727897860D187AD66108DD15DA3C800CBD1A2F",
+          "CRC32": "8633FCFD",
+          "BLAKE3": "C8E47AF55D7BCD8F87B64DF49B50731AE0E6586F46A1F80CB19073F6A3473AC7",
+          "AutoV3": "3AE99E3917B7",
+          "SHA256_12": "5DE851376608"
+        },
+        "primary": true,
+        "downloadUrl": "https://civitai.com/api/download/models/3325972?fileId=3214390"
+      },
+      "architecture": "illustrious-xl",
+      "modelId": 1490179,
+      "name": "V7",
+      "baseModel": "Illustrious",
+      "availability": null,
+      "earlyAccessEndsAt": null,
+      "monetization": null,
+      "modelUrl": "https://civitai.com/models/1490179?modelVersionId=3325972"
+    },
+    {
+      "version": 2884631,
+      "file": {
+        "id": 2764472,
+        "sizeKB": 6775430.9453125,
+        "name": "cyberrealisticPony_v180Coreshift_2764472.safetensors",
+        "type": "Model",
+        "pickleScanResult": "Success",
+        "pickleScanMessage": "No Pickle imports",
+        "virusScanResult": "Success",
+        "virusScanMessage": null,
+        "scannedAt": "2026-04-23T16:02:44.141",
+        "metadata": {
+          "format": "SafeTensor",
+          "size": "pruned",
+          "fp": "fp16"
+        },
+        "hashes": {
+          "AutoV1": "6DA62168",
+          "AutoV2": "1D580C1C3F",
+          "SHA256": "1D580C1C3F3612FA4DB88AF65372255582D5509CA0B28F85387273368301941B",
+          "CRC32": "2E8F7CBE",
+          "BLAKE3": "21FBD48846095EA24E9B22BB579C5E7F06BAED99100D10406B1ECE106DA60744",
+          "AutoV3": "9547B5EC713A",
+          "SHA256_12": "1D580C1C3F36"
+        },
+        "primary": true,
+        "downloadUrl": "https://civitai.com/api/download/models/2884631?fileId=2764472"
+      },
+      "architecture": "pony",
+      "modelId": 443821,
+      "name": "v18.0 CoreShift",
+      "baseModel": "Pony",
+      "availability": null,
+      "earlyAccessEndsAt": null,
+      "monetization": null,
+      "modelUrl": "https://civitai.com/models/443821?modelVersionId=2884631"
+    },
+    {
+      "version": 2371131,
+      "file": {
+        "id": 2261951,
+        "sizeKB": 6775436.087890625,
+        "name": "noobaicyberfixUpdated_cyberfixv70E.safetensors",
+        "type": "Model",
+        "pickleScanResult": "Success",
+        "pickleScanMessage": "No Pickle imports",
+        "virusScanResult": "Success",
+        "virusScanMessage": null,
+        "scannedAt": "2025-11-03T00:30:15.382",
+        "metadata": {
+          "format": "SafeTensor",
+          "size": "pruned",
+          "fp": "fp16"
+        },
+        "hashes": {
+          "AutoV1": "E54E05B5",
+          "AutoV2": "21E6EF057D",
+          "SHA256": "21E6EF057DF1C9DD5722CCE766830F746D865A28DFC81AB2A33DF04F00334002",
+          "CRC32": "36AB77BE",
+          "BLAKE3": "0B5A59C5DDF0B932D5D0F7FA4E1AA79962AF857037FEB6FEC660A3AFA0C6C03F",
+          "AutoV3": "65A5F2B73287",
+          "SHA256_12": "21E6EF057DF1"
+        },
+        "primary": true,
+        "downloadUrl": "https://civitai.com/api/download/models/2371131?fileId=2261951"
+      },
+      "architecture": "noobai-xl",
+      "modelId": 1705238,
+      "name": "CyberFixV70_e",
+      "baseModel": "NoobAI",
+      "availability": null,
+      "earlyAccessEndsAt": null,
+      "monetization": null,
+      "modelUrl": "https://civitai.com/models/1705238?modelVersionId=2371131"
+    }
+  ]
+}

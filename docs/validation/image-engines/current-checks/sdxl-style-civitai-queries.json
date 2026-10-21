@@ -1,0 +1,22 @@
+[
+  {
+    "query": "Double Exposure",
+    "sourceUrl": "https://civitai.com/api/v1/models?query=Double+Exposure&types=LORA&limit=10",
+    "httpStatus": 500
+  },
+  {
+    "query": "Niji",
+    "sourceUrl": "https://civitai.com/api/v1/models?query=Niji&types=LORA&limit=10",
+    "httpStatus": 500
+  },
+  {
+    "query": "Watercolor",
+    "sourceUrl": "https://civitai.com/api/v1/models?query=Watercolor&types=LORA&limit=10",
+    "httpStatus": 500
+  },
+  {
+    "query": "Painterly",
+    "sourceUrl": "https://civitai.com/api/v1/models?query=Painterly&types=LORA&limit=10",
+    "httpStatus": 500
+  }
+]

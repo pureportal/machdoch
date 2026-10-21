@@ -1,0 +1,644 @@
+{
+  "method": "Manual inspection of completed PNGs alongside the recovered reference images",
+  "assessments": [
+    {
+      "referenceId": 144655944,
+      "referenceUrl": "https://civitai.red/images/144655944",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-144655944\\images\\output-0000.png",
+      "sha256": "a945858bed26c3f7df2fcfcaf7b67a2e4b688b0063b66945fdcbca457efddc54",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Sharp realistic red-haired adult in a white shirt and black tie; anime style, reaching hand and strong backlighting are absent."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-144697438\\images\\output-0000.png",
+      "sha256": "eee302ab5984d2a995e8d97ad7b49de8073d1202b31cb524e9f2500a87a71ee8",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Single robot in a sunny field; woman, ruins, second robot and painted circular effects are absent."
+    },
+    {
+      "referenceId": 144655944,
+      "referenceUrl": "https://civitai.red/images/144655944",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144655944\\images\\output-0000.png",
+      "sha256": "908ec102b0815c9a1c79654a0f4ae76d36c610bf7dcf17acd790a7c580ed5e80",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Extreme photographic face with blue eyes and yellow-painted lip; wrong style, character and hand composition."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144697438\\images\\output-0000.png",
+      "sha256": "e421af14445a3795ad5bed06c3ef6cdbbb754d2e1a00ea0250da284bf6d69f0a",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Orange artwork crops the character head; requested robot is absent."
+    },
+    {
+      "referenceId": 144594528,
+      "referenceUrl": "https://civitai.red/images/144594528",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144594528\\images\\output-0000.png",
+      "sha256": "c825ac5ab05f82a1165a741b7aca8f701516116426970ea9e2c35db8f351517b",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Woman and graffiti appear after the encoding fix; clothing colors, feet and hands are incorrect."
+    },
+    {
+      "referenceId": 145095967,
+      "referenceUrl": "https://civitai.red/images/145095967",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-145095967\\images\\output-0000.png",
+      "sha256": "5d3229ffaafffd74bcf7740771994c907be39a7ab152a9c3f3914e368ce3c7df",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Vertically duplicated woman and severe anatomy defects; no landscape double exposure."
+    },
+    {
+      "referenceId": 144599398,
+      "referenceUrl": "https://civitai.red/images/144599398",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144599398\\images\\output-0000.png",
+      "sha256": "490dcf54c628bae0abdfbe541653a49b56a8c54cd865e0c73af1e47882328505",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Adult in a pink bikini against rough stone; wall, lighting and framing differ from the white-wall reference."
+    },
+    {
+      "referenceId": 145177887,
+      "referenceUrl": "https://civitai.red/images/145177887",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-145177887\\images\\output-0000.png",
+      "sha256": "28b08727599f081d9c262a5a85c3cd2352823b24d6ac7784c9cfaf9534deff6c",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Child appears after the encoding fix, but the face is visible; teddy, distant eyes and required dark negative space are missing."
+    },
+    {
+      "referenceId": 144655944,
+      "referenceUrl": "https://civitai.red/images/144655944",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-144655944\\images\\output-0000.png",
+      "sha256": "8bcdbb4b4b0e2c6611c7bcf56d782bd19da63ad35277d5614d52ab6794923bb0",
+      "workerVersion": "media-diffusers-worker/1.84.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Sharp photographic/anime hybrid with dark hair and yellow eyes; wrong character style and reaching-hand composition."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-144697438\\images\\output-0000.png",
+      "sha256": "7d4fb8b067fb2597051b616dad6fc4a1d566436d599de68d13db99c75b5833e4",
+      "workerVersion": "media-diffusers-worker/1.84.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Detailed white-haired blindfolded woman and ruins; robot is absent, pose and circular visual effects differ."
+    },
+    {
+      "referenceId": 144594528,
+      "referenceUrl": "https://civitai.red/images/144594528",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-144594528\\images\\output-0000.png",
+      "sha256": "271ee2aebe570bacf5070409ee12fc1b2db8dbf994134a883656fd4b957b74ea",
+      "workerVersion": "media-diffusers-worker/1.84.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Strong photographic detail, motion, graffiti and white skirt; top is pink instead of blue and pose differs."
+    },
+    {
+      "referenceId": 145095967,
+      "referenceUrl": "https://civitai.red/images/145095967",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-145095967\\images\\output-0000.png",
+      "sha256": "1d6f749240fb898ced8ad55a7da6231718f9254bf6dd3bebd7406caed86c2925",
+      "workerVersion": "media-diffusers-worker/1.84.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Clean mountain portrait, but landscape is printed on clothing instead of filling the silhouette; subject and framing differ."
+    },
+    {
+      "referenceId": 144599398,
+      "referenceUrl": "https://civitai.red/images/144599398",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-144599398\\images\\output-0000.png",
+      "sha256": "688596368bc8739f1233397e56c120faec48252cc283c9af0dd46e9d65bb0ff5",
+      "workerVersion": "media-diffusers-worker/1.84.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Strong realistic adult portrait, coral zigzag bikini, white stucco and natural lighting; framing and fine detail differ."
+    },
+    {
+      "referenceId": 145177887,
+      "referenceUrl": "https://civitai.red/images/145177887",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-145177887\\images\\output-0000.png",
+      "sha256": "1cd0f2bd73bbc07f9c262daa121037fd08a0ccf7b31848ef10dfc8c1a292c261",
+      "workerVersion": "media-diffusers-worker/1.84.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Clothed child has a visible face and a large floating teddy above the head; missing distant eyes and required dark composition."
+    },
+    {
+      "referenceId": 144655944,
+      "referenceUrl": "https://civitai.red/images/144655944",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-144655944\\images\\output-0000.png",
+      "sha256": "e0fb3fdfed3b57c214a8f06911f81077a238cb5c466d26b48195122bbfe30290",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Clean red-haired anime character in a white shirt and black tie; malformed hand placement and weak foreshortening/backlighting."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-144697438\\images\\output-0000.png",
+      "sha256": "03b8b695059a1eea6f14a658cb321324735987efdeb72de7ffdcd8764ac085d6",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Two white-haired human profiles with headphones replace the robots and requested blindfolded woman."
+    },
+    {
+      "referenceId": 144594528,
+      "referenceUrl": "https://civitai.red/images/144594528",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-144594528\\images\\output-0000.png",
+      "sha256": "f91bbb0f24012fcd28e433e1a8a719eb4845e66cb4144b59b0e744b5a7553aff",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Clean photographic portrait and graffiti, but white top replaces blue; clothing, pose and wall geometry differ."
+    },
+    {
+      "referenceId": 145095967,
+      "referenceUrl": "https://civitai.red/images/145095967",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-145095967\\images\\output-0000.png",
+      "sha256": "b826f778e24be08b49a58259ce770abc53462cf4e35eee17d276f40836e9b609",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Conventional rear-view mountain photograph, with no silhouette double exposure."
+    },
+    {
+      "referenceId": 144599398,
+      "referenceUrl": "https://civitai.red/images/144599398",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-144599398\\images\\output-0000.png",
+      "sha256": "aafb89132414208d718c845d9a4b5071ee4257b33d54af143125ce38a88452a2",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Clean adult bikini photograph with warm light and white wall; seated pose, framing and swimsuit shape differ."
+    },
+    {
+      "referenceId": 145177887,
+      "referenceUrl": "https://civitai.red/images/145177887",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-145177887\\images\\output-0000.png",
+      "sha256": "3688994cdb57a829d487ff112da36efa30dac2932db208604cc2b1123dbbd8e2",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Clothed child in a dark corridor; face visible, teddy and distant eyes absent, upper dark space insufficient."
+    },
+    {
+      "referenceId": 144594528,
+      "referenceUrl": "https://civitai.red/images/144594528",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-144594528\\images\\output-0000.png",
+      "sha256": "d5741d0dab80aa61b53aca56e8be2b54bcb105fbb30c1bbeed8caa00d0277eaf",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Sharp adult portrait with blue off-shoulder blouse, white skirt, sneakers and graffiti; static frontal pose and wall composition differ."
+    },
+    {
+      "referenceId": 145095967,
+      "referenceUrl": "https://civitai.red/images/145095967",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-145095967\\images\\output-0000.png",
+      "sha256": "8a2de9d9088e4080dbff582111b986d62e59148932dfdc5fd09db1141fa085d9",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Sharp realistic woman with raised arms, blue jeans and alpine background; landscape double exposure and downward gaze are absent."
+    },
+    {
+      "referenceId": 144655944,
+      "referenceUrl": "https://civitai.red/images/144655944",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-rx9070-reference-144655944\\01-stable-diffusion-1-879db523c30d\\images\\output-0000.png",
+      "sha256": "66ad2c8cf77f6175cf168421a02c3ae6f641b51acb4dada33e514cc4dfa29f0a",
+      "workerVersion": "media-diffusers-worker/1.86.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Sharp woman in a white shirt and tie, but black hair, photographic style and hand framing miss the anime reference."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-rx9070-reference-144697438\\01-stable-diffusion-1-879db523c30d\\images\\output-0000.png",
+      "sha256": "95bc33c44112e1ba932ad4e9be0f8147e98b757e6dbd759f924669a8e4a9e8cb",
+      "workerVersion": "media-diffusers-worker/1.86.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Detailed white-haired woman in desaturated ruins; robot absent, subject placement and painterly color differ."
+    },
+    {
+      "referenceId": 144594528,
+      "referenceUrl": "https://civitai.red/images/144594528",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-refined-reference-144594528\\01-stable-diffusion-1-879db523c30d\\images\\output-0000.png",
+      "sha256": "c08748a066635fb63451a37bd74a15d535654abb195a89fdad68b874b20eef6b",
+      "workerVersion": "media-diffusers-worker/1.86.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Clean full-body street portrait and graffiti; blouse and skirt colors are reversed and the walking pose is lost."
+    },
+    {
+      "referenceId": 145095967,
+      "referenceUrl": "https://civitai.red/images/145095967",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-refined-reference-145095967\\01-stable-diffusion-1-879db523c30d\\images\\output-0000.png",
+      "sha256": "ac0b8948d779abd888b11d808179102a868dda5f375dbde0f99792d0bb7365fd",
+      "workerVersion": "media-diffusers-worker/1.86.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Sharp woman with raised arms and mountain landscape; landscape remains outside the silhouette, missing double exposure."
+    },
+    {
+      "referenceId": 145177887,
+      "referenceUrl": "https://civitai.red/images/145177887",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-refined-reference-145177887\\01-stable-diffusion-1-879db523c30d\\images\\output-0000.png",
+      "sha256": "bc96fec9295e11df352533ea5d132dfa37a5c80068d54a1370648ca4aa35485f",
+      "workerVersion": "media-diffusers-worker/1.86.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Visible face and cyan shapes replace the teddy and distant eyes; framing and dark negative space differ."
+    },
+    {
+      "referenceId": 145177887,
+      "referenceUrl": "https://civitai.red/images/145177887",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\pony-adapted-final-reference-145177887\\01-pony-b5e68becf7cf\\images\\output-0000.png",
+      "sha256": "ddebd4dad1dffbe73f080c8dde6985f81684732f5ca95c7b38b6d8cdc7da1032",
+      "workerVersion": "media-diffusers-worker/1.86.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Sharp clothed subject in a lit room, with blue eyes on her face; teddy, concealed face, distant eyes and dark upper frame are missing."
+    },
+    {
+      "referenceId": 144594528,
+      "referenceUrl": "https://civitai.red/images/144594528",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-complete-reference-144594528\\01-krea-2-turbo-eb4dd8c612cf\\images\\output-0000.png",
+      "sha256": "114179bbdca8f2afae7862fae204d211e3921399e54b330f23cdb27249ff7acf",
+      "workerVersion": "media-diffusers-worker/1.86.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Comparable detail, warm light, flowing blue blouse and white skirt, graffiti and painted flowers. Arm pose and framing differ; visual quality and aesthetic are close."
+    },
+    {
+      "referenceId": 145095967,
+      "referenceUrl": "https://civitai.red/images/145095967",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-complete-reference-145095967\\01-krea-2-turbo-eb4dd8c612cf\\images\\output-0000.png",
+      "sha256": "0e1a43d3bdf0a35197c4419b33d60e1874f0c1775125c58000ee330ba1feaf32",
+      "workerVersion": "media-diffusers-worker/1.87.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Melancholy LoRA produces the raised-arm silhouette, white line-art blouse and landscape double exposure with pink sky and mountain valley. Comparable detail and aesthetic; face, hand arrangement and framing differ."
+    },
+    {
+      "referenceId": 144599398,
+      "referenceUrl": "https://civitai.red/images/144599398",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-complete-reference-144599398\\01-krea-2-turbo-eb4dd8c612cf\\images\\output-0000.png",
+      "sha256": "b0b22fc72af8ddc9f7c57d25562716502317b9badafdc45ab4ba8f65340c0e76",
+      "workerVersion": "media-diffusers-worker/1.87.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Detailed adult swimwear photograph with natural skin, direct warm sunlight and a white wall. Clothing pattern, model identity and pose differ; lighting, texture and photographic aesthetic are close. The source prompt is unavailable; this uses the recorded observational description."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-style-reference-144697438\\01-krea-2-turbo-eb4dd8c612cf\\images\\output-0000.png",
+      "sha256": "2ff65f7375afaacbf4afda652c8b6b3b3538926d1dadd3c71a140dba378fac84",
+      "workerVersion": "media-diffusers-worker/1.82.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Comparable painterly ruins with lush greenery, colorful patterned accents, white-haired character on the right and metal robots on the left. Brighter lighting, framing and robot arrangement differ."
+    },
+    {
+      "referenceId": 145177887,
+      "referenceUrl": "https://civitai.red/images/145177887",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-complete-reference-145177887\\01-krea-2-turbo-eb4dd8c612cf\\images\\output-0000.png",
+      "sha256": "22411e2b0ebca2d22ececd7c0fe26fe00271012a81fda7a5996c992708fd71a5",
+      "workerVersion": "media-diffusers-worker/1.88.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Cold painterly scene with a small clothed subject, teddy bear, wooden floor and tall dark negative space. Detail and general aesthetic are close; the distant eye points are absent and the lower face is partly visible."
+    },
+    {
+      "referenceId": 144655944,
+      "referenceUrl": "https://civitai.red/images/144655944",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\jank2-source-reference-144655944\\01-krea-2-turbo-ed1ea73c0e4f\\images\\output-0000.png",
+      "sha256": "56f10e764b8602a10fb1e46ce28d47a3edfd77d691e76b1bc2440e382c8e6f03",
+      "workerVersion": "media-diffusers-worker/1.83.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Comparable anime detail, red hair, amber eyes, white shirt, tie, strong backlighting and reaching hand. Finger framing and background swirls differ."
+    },
+    {
+      "referenceId": 144594528,
+      "referenceUrl": "https://civitai.red/images/144594528",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\stable-diffusion-1-3312cc8b309759e0.png",
+      "sha256": "3312cc8b309759e069231c2e5cb8babf439b757ea9fe6204c3c9904fe3645e0b",
+      "workerVersion": "media-diffusers-worker/1.84.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Sharp smiling portrait on a park path; graffiti, walking pose and blue blouse with white skirt are absent."
+    },
+    {
+      "referenceId": 144599398,
+      "referenceUrl": "https://civitai.red/images/144599398",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\pony-9aa38492c39a0968.png",
+      "sha256": "9aa38492c39a09682afac5781267acafae6bf527fceafbb7d9b18b5af275e248",
+      "workerVersion": "media-diffusers-worker/1.85.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Detailed adult in a pink patterned bikini with natural sunlight. Beach rocks replace the white wall; photographic quality is comparable with a different setting."
+    },
+    {
+      "referenceId": 144599398,
+      "referenceUrl": "https://civitai.red/images/144599398",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\stable-diffusion-1-a5b70b6fcd2f57e7.png",
+      "sha256": "a5b70b6fcd2f57e7045b0b9e364a32a81036b4534d9a388b7aa34f29c5711a24",
+      "workerVersion": "media-diffusers-worker/1.84.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Pink bikini and gray stone wall are present, but anatomy, texture and detail are noticeably weaker."
+    },
+    {
+      "referenceId": 144655944,
+      "referenceUrl": "https://civitai.red/images/144655944",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\stable-diffusion-1-44baa4df1bc4543a.png",
+      "sha256": "44baa4df1bc4543a0c166e0c4ad52f853bb41a6c891d5441c4817ffee36b9698",
+      "workerVersion": "media-diffusers-worker/1.84.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Distorted anime face, black hair and irregular hands; the reference character, lighting and clothing are absent."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\pony-f4b03bf81d15bf61.png",
+      "sha256": "f4b03bf81d15bf6183de22ea798ca88b9494de6eb6c3119214341c1b827cac4d",
+      "workerVersion": "media-diffusers-worker/1.81.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Sharp blindfolded white-haired woman with robots in desaturated photographic ruins; painterly style and composition differ."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\pony-101fd84ace64b3f2.png",
+      "sha256": "101fd84ace64b3f2089eeba9cb94aaa56d285e69c46ef8f1ba016e825ea821d6",
+      "workerVersion": "media-diffusers-worker/1.78.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Empty aerial city with blue towers; the woman and robots are absent."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\krea-2-turbo-dbd20c5e845625b7.png",
+      "sha256": "dbd20c5e845625b701e20b5c22d8bcadd62453da1d22163daf29f75e8d5ef241",
+      "workerVersion": "media-diffusers-worker/1.81.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Detailed painted white-haired woman on the right, robots on the left and colorful geometric ruins. Pose and robot spacing differ."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\qwen-image-2.1-0f6b4b6b68027e4c.png",
+      "sha256": "0f6b4b6b68027e4c1440d23fa70aa96683dd71ba3298a406defc04bb3098b369",
+      "workerVersion": "media-diffusers-worker/1.82.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Sharp textured painting with the white-haired woman and multiple metal robots in ruins; brushwork and placement differ."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\qwen-image-2.1-turbo-72c0a291476aa98d.png",
+      "sha256": "72c0a291476aa98d906351efada0a108c8f8b4934a6e8d0af446500785551edd",
+      "workerVersion": "media-diffusers-worker/1.81.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Detailed painted figure on the right and two robots on the left with grassy ruins and colorful geometry; framing differs."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\krea-2-21e2e79659ba92e2.png",
+      "sha256": "21e2e79659ba92e2676d356822bfa337e2877afa36e53c2b42c8f62d03d42699",
+      "workerVersion": "media-diffusers-worker/1.78.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Detailed photographic woman and robot in a green city; the painterly reference style is absent. This used the earlier eight-step, zero-guidance recipe."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\krea-2-raw-083e4b6d864dc269.png",
+      "sha256": "083e4b6d864dc269d96bb97883cf0a4d8a21f1b3b49774ea0a50f49e02580dc8",
+      "workerVersion": "media-diffusers-worker/1.78.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Figure and robots are present, but the RAW 52-step output is oversaturated with embossed triangular textures."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\krea-2-4ae782cc310993b5.png",
+      "sha256": "4ae782cc310993b58db17fa59f62bddb3409d41202f10e0074389995fb86352b",
+      "workerVersion": "media-diffusers-worker/1.78.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Historical RAW checkpoint was incorrectly treated as distilled Krea at eight steps and zero guidance. The blurred embossed output is superseded by corrected classification."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\stable-diffusion-1-469b15fd9e6098f4.png",
+      "sha256": "469b15fd9e6098f4e96179484eef85b2029fa74b81698fa21e17760751720eab",
+      "workerVersion": "media-diffusers-worker/1.84.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Cropped dark android in gray ruins; the human woman is absent and the shapes are distorted."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\stable-diffusion-xl-1d9869b25da90b96.png",
+      "sha256": "1d9869b25da90b96ee5e3982ab3bd8f4578668b7f5a768e82f5dd46cc0689e96",
+      "workerVersion": "media-diffusers-worker/1.78.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Painted ruined city and back-facing woman near the center; the robot and requested subject placement are absent."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\stable-diffusion-xl-2bdafed789ab75bc.png",
+      "sha256": "2bdafed789ab75bc674bf8d35d317c920fe75581e7cf31eef7c55198d1496cf8",
+      "workerVersion": "media-diffusers-worker/1.81.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Detailed white-haired woman in painted ruins; the robot is absent and close framing differs."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\stable-diffusion-xl-03c692bf008ee58f.png",
+      "sha256": "03c692bf008ee58fb0ae11655e57173a7b2aa4bdaece99d8e9b0464a4bbfbd45",
+      "workerVersion": "media-diffusers-worker/1.82.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Painted white-haired woman near the center with inconsistent proportions; the robot is absent."
+    },
+    {
+      "referenceId": 145095967,
+      "referenceUrl": "https://civitai.red/images/145095967",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\stable-diffusion-1-d1c9d2c438a0a17b.png",
+      "sha256": "d1c9d2c438a0a17b842b62fcd5363cf7922092b61d60efa00972bf84294cf64a",
+      "workerVersion": "media-diffusers-worker/1.84.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Grayscale woman in a windswept black dress; raised arms, mountains and double exposure are absent."
+    },
+    {
+      "referenceId": 145177887,
+      "referenceUrl": "https://civitai.red/images/145177887",
+      "image": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\comparison\\stable-diffusion-1-17b23f7f8282d8b2.png",
+      "sha256": "17b23f7f8282d8b2ade0eefc5fac75be0e49fefee92e868c070b109c8b2228e7",
+      "workerVersion": "media-diffusers-worker/1.84.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Empty wooden room; the girl, teddy and distant eyes are absent."
+    },
+    {
+      "referenceId": 144599398,
+      "referenceUrl": "https://civitai.red/images/144599398",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-extended-best-reference-144599398\\01-krea-2-3ec3c673d467\\images\\output-0000.png",
+      "sha256": "def3c404717c228749ae1707588a2957e7fbe1c09fe6e346bae88f9e6d86c01c",
+      "workerVersion": "media-diffusers-worker/1.89.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Detailed adult in a pink zigzag swimsuit against a sunlit white wall. Skin, fabric, shadows and hand anatomy are clean; pose, framing and background grain differ. This used the current automatic twelve-step, guidance-0.5 recipe."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-base-basic-guidance-2-retry-reference-144697438\\01-qwen-image-2.1-75c1b4d45c0b\\images\\output-0000.png",
+      "sha256": "5bf094aa010cf728a01bfc70c698ff3b47fc735808259a73e631d83230444693",
+      "workerVersion": "media-diffusers-worker/1.89.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Functional probe at four steps, guidance 2 and 512 by 288; outside the published quality recipe. The call succeeds with empty negative conditioning, but the image has a dark white-haired profile with strong crosshatch artifacts and no clearly resolved robot. This is not a quality benchmark."
+    },
+    {
+      "referenceId": 144655944,
+      "referenceUrl": "https://civitai.red/images/144655944",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\01-qwen-image-2.1-turbo-reference-144655944\\images\\output-0000.png",
+      "sha256": "3eda5bed8f3f3adf8f1e0b5edc4702720f320f52113262572ee644cf11eaef74",
+      "workerVersion": "media-diffusers-worker/1.89.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Detailed red-haired anime adult in a white shirt and dark tie, with amber ringed eyes and fine hair and fabric shading. It retains the saliva trail from the source prompt, but the reaching hand and strong golden backlighting are absent; the higher camera angle and dark background change the reference aesthetic."
+    },
+    {
+      "referenceId": 144594528,
+      "referenceUrl": "https://civitai.red/images/144594528",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\02-qwen-image-2.1-turbo-reference-144594528\\images\\output-0000.png",
+      "sha256": "2488d82eb9e26f05c9481c61251b90c76eb1a04ea516faafe1190c820cbecaf9",
+      "workerVersion": "media-diffusers-worker/1.89.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Sharp adult street photograph with a light-blue off-shoulder blouse, flowing white skirt, white sneakers and colourful graffiti. Detail and sunlight approach the reference, but faint magenta vertical streaks on the white skirt prevent a clean quality pass. Pose and flower density differ. Decoder tile boundaries are under investigation."
+    },
+    {
+      "referenceId": 145095967,
+      "referenceUrl": "https://civitai.red/images/145095967",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\03-qwen-image-2.1-turbo-reference-145095967\\images\\output-0000.png",
+      "sha256": "15b39c2409995a74a053649d4aeb227c68b96d4c5a2574170e3cf17a43980c62",
+      "workerVersion": "media-diffusers-worker/1.89.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Detailed surreal mountain portrait with raised arms, lowered gaze, white line-art blouse and a landscape double exposure, framed against a pink evening sky and valley road. Skin, hair, clothing outlines and landscape detail are clean. The fingers meet at the top, the road curves, and the inner landscape and face differ from the reference composition."
+    },
+    {
+      "referenceId": 144599398,
+      "referenceUrl": "https://civitai.red/images/144599398",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\04-qwen-image-2.1-turbo-reference-144599398\\images\\output-0000.png",
+      "sha256": "8d229a3601ec87ac12daed3914115afbcd01638080e999cd80964e81fbed41ff",
+      "workerVersion": "media-diffusers-worker/1.89.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Detailed adult beach portrait with pink zigzag bikini, natural skin and hair, a relaxed pose and warm sunlight against a white wall. A faint magenta vertical stripe crosses the abdomen, with smaller streaks on the wall; the output fails the clean quality requirement. The observed prompt was used because the original prompt is unavailable."
+    },
+    {
+      "referenceId": 145177887,
+      "referenceUrl": "https://civitai.red/images/145177887",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\05-qwen-image-2.1-turbo-reference-145177887\\images\\output-0000.png",
+      "sha256": "693f8a08d0e7337c24daef55825a068ee73979917a56de902bb7bd87974b55a9",
+      "workerVersion": "media-diffusers-worker/1.89.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "The covered face, white dress, held teddy, distant glowing eyes and pool of light on wooden flooring closely approach the horror reference. The figure is smaller in the frame and a faint green vertical line appears on the right side of the dark background, preventing a clean quality pass."
+    },
+    {
+      "referenceId": 144599398,
+      "referenceUrl": "https://civitai.red/images/144599398",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-decoder-reruns\\01-qwen-image-2.1-turbo-reference-144599398\\images\\output-0000.png",
+      "sha256": "b35f7abd2f6e9ecfa296d6908d303d2a99a49d989c0efcb5a30aa5c06a90adee",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Clean sunlight, skin texture, patterned swimwear, wall detail and coherent hand anatomy. Full-frame decoding removes the magenta stripe on the abdomen and the colored wall marks seen with 256-pixel tiling. Pose, framing, hair and fabric pattern differ from the reference; the prompt is an observed description."
+    },
+    {
+      "referenceId": 144594528,
+      "referenceUrl": "https://civitai.red/images/144594528",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-decoder-reruns\\02-qwen-image-2.1-turbo-reference-144594528\\images\\output-0000.png",
+      "sha256": "b41c984f7a722c0b8a7593b16b6da4a66c66b5c5a548c0a41ce4176d20c5b326",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Clean, detailed summer street photograph with a blue off-shoulder blouse, flowing white skirt, painted wall and coherent mid-stride anatomy. The faint magenta skirt lines are absent after full-frame decoding. Camera angle, sleeve design, pose and the reference flower illusion differ."
+    },
+    {
+      "referenceId": 145177887,
+      "referenceUrl": "https://civitai.red/images/145177887",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-decoder-reruns\\03-qwen-image-2.1-turbo-reference-145177887\\images\\output-0000.png",
+      "sha256": "5a158e7d731ae17f64cafc2d888f0678a92166907613f69276c1997f259c93b4",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Clean dark horror painting with a fully clothed girl, face hidden by long black hair, teddy bear, pale nightgown, wooden floor and distant glowing eyes. The green seam on the right side of the backdrop is absent. The figure is smaller and lower in the frame, the gown and teddy differ, and the distant eyes are simpler."
+    },
+    {
+      "referenceId": 144655944,
+      "referenceUrl": "https://civitai.red/images/144655944",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\z-image-six-reference-sweep\\01-z-image-turbo-reference-144655944\\images\\output-0000.png",
+      "sha256": "788ffa1bce5aca814c8f38f1cd8c1740cfbc75438dac5674a77cf23f4db46ae8",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Coherent anime portrait with red hair, amber eyes, white shirt, black tie, golden doorway and a large reaching hand with five fingers. The simple cel shading, even face lighting and missing dark nails do not approach the reference painted texture and dramatic light."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\z-image-six-reference-sweep\\02-z-image-turbo-reference-144697438\\images\\output-0000.png",
+      "sha256": "19fcf7117f756f809fb724aaa6d583e237aaa8ce790e83a9156e2876f729efa2",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Correct side-profile woman on the right, two rusty robots on the left, ruined buildings, grass and colored circles. Flat graphic shading, sparse vegetation and bright peach tones miss the reference dense dark painted texture; the robots are upright and the dress lacks the reference detail."
+    },
+    {
+      "referenceId": 144594528,
+      "referenceUrl": "https://civitai.red/images/144594528",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\z-image-six-reference-sweep\\03-z-image-turbo-reference-144594528\\images\\output-0000.png",
+      "sha256": "2e650f9234ad5c90c9b50a42481341ea3aa931297fbedca1e61a1e9285278214",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Clean detailed summer street photograph of an adult in a blue off-shoulder blouse, flowing white skirt and white sneakers against colorful graffiti. Natural skin, fabric, hair, lighting and anatomy approach the reference aesthetic; pose, camera angle and the flower illusion differ."
+    },
+    {
+      "referenceId": 145095967,
+      "referenceUrl": "https://civitai.red/images/145095967",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\z-image-six-reference-sweep\\04-z-image-turbo-reference-145095967\\images\\output-0000.png",
+      "sha256": "441a2c608e9da3ba3b5feb28dc6b09c05ad8552cf34434947136f3f5c00aa069",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "The raised arms, long-haired woman, jeans, mountains and torso landscape are present. A rectangular dark overlay crosses the face and elbows and the shirt outline is weak; the reference has a cleaner blouse-shaped double exposure."
+    },
+    {
+      "referenceId": 144599398,
+      "referenceUrl": "https://civitai.red/images/144599398",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\z-image-six-reference-sweep\\05-z-image-turbo-reference-144599398\\images\\output-0000.png",
+      "sha256": "38fc11ca17ecf402ec0870a397dfcbe6120656875d1a3d13eeca5b0892840aba",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Clean adult swimwear photograph with ribbed pink patterned fabric, warm sunlight, natural skin, detailed white wall and coherent five-finger hand. Pose, face, framing and fabric pattern differ; the prompt is an observed description because the original is unavailable."
+    },
+    {
+      "referenceId": 145177887,
+      "referenceUrl": "https://civitai.red/images/145177887",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\z-image-six-reference-sweep\\06-z-image-turbo-reference-145177887\\images\\output-0000.png",
+      "sha256": "425377dc7aa1939acef6f7d85fd974c3fb1f4446eced6e4043b05d6423a24aac",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Clean dark horror painting with covered face, fully clothed girl in a pale dress, held teddy, wooden floor and distant glowing eyes. The painterly detail and atmosphere approach the reference; lighting is flatter, sleeves shorter and the teddy more upright."
+    },
+    {
+      "referenceId": 144655944,
+      "referenceUrl": "https://civitai.red/images/144655944",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\z-image-visual-refinements\\01-z-image-turbo-reference-144655944\\images\\output-0000.png",
+      "sha256": "2c9570ce918c9dc9f58cb4645886b460f0131f9a2d0bb81f59331b6945900513",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Detailed painted anime portrait of an adult red-haired woman with amber eyes, white shirt, dark tie, strong golden backlight and a foreshortened five-finger reaching hand with dark nails. Deep shadows and visible hatching approach the reference aesthetic. Hand size, added rings and choker, pose and framing differ. This combines an adapted lighting prompt with Anime art Variant 7 at strength 0.7; it is not an adapter-only ablation."
+    },
+    {
+      "referenceId": 144697438,
+      "referenceUrl": "https://civitai.red/images/144697438",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\z-image-visual-refinements\\02-z-image-turbo-reference-144697438\\images\\output-0000.png",
+      "sha256": "2cf98e1a11ae467f1cb7932601de43e6be686de6b3286409bf2235fe19c745a6",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "referenceQualityVerdict": "near-reference",
+      "observations": "Detailed painterly illustration with a white-haired blindfolded woman in an ornate black dress on the right, two weathered slumped robots on the left, overgrown ruins, rusty machinery and pale circular sky motifs. Layered brush texture and subject detail approach the reference aesthetic. The brighter mint and peach sky, larger woman and robots, stone buildings and finer grass differ. This combines a revised visual prompt with Painterly - CE at strength 0.6."
+    },
+    {
+      "referenceId": 145095967,
+      "referenceUrl": "https://civitai.red/images/145095967",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\z-image-visual-refinements\\03-z-image-turbo-reference-145095967\\images\\output-0000.png",
+      "sha256": "d8504f957b3233c51ae9736428d2711b9b7722a00cbf938d569cded12eb33fd7",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "referenceQualityVerdict": "below-reference",
+      "observations": "Clean detailed mountain portrait with raised arms, long black hair, blue jeans, belt and a pastel pink sky. The unwanted rectangular overlay is gone. Fine white clothing outlines and a faint valley image appear on the shirt, but opaque white fabric dominates; the central transparent double-exposure effect remains too weak compared with the reference."
+    }
+  ]
+}

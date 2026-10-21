@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "sameImageDigest": true,
+  "records": [
+    {
+      "mode": "basic",
+      "runId": "34cc56c8-ac79-4cd1-bf72-91b1b620dbf8",
+      "digest": "701ee16d959b1cf14aae0e61ad14d9f6a22907dcf85d23d932ec8940f8b65977",
+      "width": 512,
+      "height": 512,
+      "workerVersion": "media-diffusers-worker/1.103.0"
+    },
+    {
+      "mode": "advanced",
+      "runId": "dfb94832-e69c-4c4f-9fe5-806e38b49a6e",
+      "digest": "701ee16d959b1cf14aae0e61ad14d9f6a22907dcf85d23d932ec8940f8b65977",
+      "width": 512,
+      "height": 512,
+      "workerVersion": "media-diffusers-worker/1.103.0"
+    }
+  ]
+}

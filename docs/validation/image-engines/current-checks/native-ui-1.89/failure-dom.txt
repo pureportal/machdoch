@@ -1,0 +1,42 @@
+MACHDOCH
+v30.3.0
+Basic
+Advanced
+Train
+Assets
+Activity
+Create image
+Unsaved changes
+
+Basic setup converted to Advanced.
+
+Select
+Create image
+Draft
+AI assistant
+Templates
+Variables · 0
+Add node
+Import
+Save first revision
+Run
+Runtime plan · 5
+SOURCE
+Creative brief
+zidiusArt, This is a digital collage/photo manipulation artwork with a surreal and emotional atmosphere. • Figure-centered composition: a long-haired black woman is posing with her arms raised high above her head. With its head slightly bowed and gaze downward, it gives off a quiet yet emotional impression. A casual style with jeans and a belt. • Double Exposure and Transparent Clothing Effect (Double Exposure): This is the most distinctive feature, where the shirt worn by the subject is made transparent. The shape of the clothing is rendered in simple white line art, through which the massive mountain range and landscape in the background are projected into the inner space of the garment instead of the figure's body. • Background: The scenery behind the figure and through the clothing is an exotic Swiss countryside landscape featuring towering snow-capped mountains and dark rocky cliffs, with green fields and a small hut stretching below. The figure stands on an asphalt road stretching straight through the fields. • Color and tone: Overall, the sky has a pastel sunset hue tinged with pink and purple, while the mountains and roads are rendered in calm, weighty tones, creating a dreamy and surreal mood.
+Prompt
+SOURCE
+Seed
+Seed
+TASK
+Generate image
+1 output
+Prompt *
+References
+Seed
+ControlNet
+Image
+OUTPUT
+Save assets
+1 output
+Image *

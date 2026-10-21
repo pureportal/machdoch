@@ -1,0 +1,63 @@
+{
+  "model": "D:\\Models\\machdoch\\models\\components\\krea-2\\qwen-image",
+  "source": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-2-refined-reference-sweep\\01-krea-2-reference-144655944\\decoder-latents.safetensors",
+  "sourceSha256": "aefc84f76e2f8b425ac0c1474272c4ce9fd90a178c85bb6560325a4e51686fa1",
+  "sourceKind": "generated-latents",
+  "vaeClass": "AutoencoderKLQwenImage",
+  "spatialCompressionRatio": 8,
+  "dtype": "bfloat16",
+  "canvas": [
+    832,
+    1216
+  ],
+  "sameLatents": true,
+  "convolutionBackend": "native",
+  "device": "AMD Radeon RX 9070",
+  "records": [
+    {
+      "tile": 0,
+      "stride": null,
+      "seconds": 29.82800000000134,
+      "peakAllocatedBytes": 9081634304,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0,
+      "maxAbsoluteErrorAgainstFullFrame": 0.0,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-redhair-decoder-comparison\\tile-0.png"
+    },
+    {
+      "tile": 256,
+      "stride": 192,
+      "seconds": 6.35899999999674,
+      "peakAllocatedBytes": 911855104,
+      "meanAbsoluteErrorAgainstFullFrame": 0.010432898066937923,
+      "maxAbsoluteErrorAgainstFullFrame": 1.24609375,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-redhair-decoder-comparison\\tile-256.png"
+    },
+    {
+      "tile": 512,
+      "stride": 384,
+      "seconds": 2.438000000001921,
+      "peakAllocatedBytes": 2605993472,
+      "meanAbsoluteErrorAgainstFullFrame": 0.007931414991617203,
+      "maxAbsoluteErrorAgainstFullFrame": 1.080078125,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-redhair-decoder-comparison\\tile-512.png"
+    },
+    {
+      "tile": 1024,
+      "stride": 768,
+      "seconds": 4.125,
+      "peakAllocatedBytes": 7699557888,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0030580756720155478,
+      "maxAbsoluteErrorAgainstFullFrame": 0.54052734375,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-redhair-decoder-comparison\\tile-1024.png"
+    },
+    {
+      "tile": 1536,
+      "stride": 1152,
+      "seconds": 15.702999999994063,
+      "peakAllocatedBytes": 9081634304,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0,
+      "maxAbsoluteErrorAgainstFullFrame": 0.0,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-redhair-decoder-comparison\\tile-1536.png"
+    }
+  ]
+}

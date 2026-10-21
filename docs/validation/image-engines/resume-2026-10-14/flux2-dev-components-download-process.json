@@ -1,0 +1,7 @@
+{
+    "pid":  30920,
+    "startedAt":  "2026-10-14T23:21:45.1691958Z",
+    "script":  "C:\\Development\\machdoch\\docs\\validation\\image-engines\\resume-2026-10-14\\download-flux2-dev-components.py",
+    "stdout":  "C:\\Development\\machdoch\\docs\\validation\\image-engines\\resume-2026-10-14\\flux2-dev-components-download-stdout.log",
+    "stderr":  "C:\\Development\\machdoch\\docs\\validation\\image-engines\\resume-2026-10-14\\flux2-dev-components-download-stderr.log"
+}

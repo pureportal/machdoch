@@ -1,0 +1,9 @@
+{
+  "sourcePath": "D:\\Models\\machdoch\\downloads\\sd35-large-turbo-publisher-matched",
+  "architecture": "stable-diffusion-3.5-large-turbo",
+  "displayName": "Stable Diffusion 3.5 Large Turbo - Stability AI",
+  "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo",
+  "commercialUse": "review-required",
+  "licenseName": "Stability AI Community License",
+  "reviewToken": ""
+}

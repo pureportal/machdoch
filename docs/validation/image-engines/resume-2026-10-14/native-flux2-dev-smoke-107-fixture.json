@@ -1,0 +1,14 @@
+{
+  "referenceId": 144655944,
+  "aspectRatio": "1:1",
+  "modelName": "FLUX.2 Dev Q4_K_M - Black Forest Labs / City96",
+  "modelId": "local:user:1dcd2e59a71071de6905c2bd0cb5d6799cb76c7af38bfe00bcbc5239e4545f80",
+  "width": 256,
+  "sampler": "flow-euler",
+  "height": 256,
+  "seed": 41791,
+  "promptFile": "D:/Models/machdoch/verification/2026-10-11/image-engines/prompt-144655944-visual-adaptation.txt",
+  "workerVersion": "media-diffusers-worker/1.107.0",
+  "numInferenceSteps": 2,
+  "guidanceScale": 4
+}

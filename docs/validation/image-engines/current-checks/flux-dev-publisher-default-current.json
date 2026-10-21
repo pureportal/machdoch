@@ -1,0 +1,27 @@
+{
+  "checkedAt": "2026-10-13T03:49:03.715482+00:00",
+  "architecture": "flux-1-dev",
+  "previousSteps": 28,
+  "defaultSteps": 50,
+  "suggestedSteps": [
+    50,
+    50
+  ],
+  "guidance": 3.5,
+  "sources": [
+    "https://huggingface.co/black-forest-labs/FLUX.1-dev",
+    "https://huggingface.co/docs/diffusers/api/pipelines/flux#guidance-distilled",
+    "https://github.com/black-forest-labs/flux/blob/main/src/flux/cli.py"
+  ],
+  "pythonTests": 29,
+  "typescriptTests": 33,
+  "fixturePlaywrightProfiles": 31,
+  "fixturePageErrors": [],
+  "fullModelExecutionVerified": false,
+  "runtimeDigest": "1d1b4c7597ede91a9742749a2378d8e79963ff61aa2ff42f748ac97dc1b44344",
+  "files": {
+    "media_diffusers_worker.py": "74174ca619570839c831fa810066556cf2de71b2e784e8ec69a50ac5e4516de9",
+    "open_media_models.json": "0851a4771c347d132f102c30a3ceaf9108170fac6267f75c8c4c1f4267eab59a",
+    "image_sampling_profiles.json": "8ba0b0c4e78f7d18415c8aa1d6cd771f8dad6a5cf94752c051fe20a4f99ef0cf"
+  }
+}

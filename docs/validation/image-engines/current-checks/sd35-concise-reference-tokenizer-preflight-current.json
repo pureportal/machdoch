@@ -1,0 +1,148 @@
+{
+  "localFilesOnly": true,
+  "tokenizersLoaded": 3,
+  "cases": [
+    {
+      "referenceId": 144655944,
+      "promptFile": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\prompt-144655944-sd35-concise-adaptation.txt",
+      "promptSha256": "906392579d6f795ec132569f1e9bd06cbad934b34fb6db42c70f0936c7f154bb",
+      "tokenCounts": [
+        {
+          "encoder": "clip-l",
+          "tokens": 53,
+          "maximum": 77
+        },
+        {
+          "encoder": "clip-g",
+          "tokens": 53,
+          "maximum": 77
+        },
+        {
+          "encoder": "t5",
+          "tokens": 57,
+          "maximum": 256
+        }
+      ],
+      "truncated": false
+    },
+    {
+      "referenceId": 144697438,
+      "promptFile": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\prompt-144697438-sd35-concise-adaptation.txt",
+      "promptSha256": "f3b15c1f5b5c487dc5055fd271215bb9ec4623aa41f4e63866762ca68eba41cb",
+      "tokenCounts": [
+        {
+          "encoder": "clip-l",
+          "tokens": 51,
+          "maximum": 77
+        },
+        {
+          "encoder": "clip-g",
+          "tokens": 51,
+          "maximum": 77
+        },
+        {
+          "encoder": "t5",
+          "tokens": 60,
+          "maximum": 256
+        }
+      ],
+      "truncated": false
+    },
+    {
+      "referenceId": 144594528,
+      "promptFile": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\prompt-144594528-sd35-concise-adaptation.txt",
+      "promptSha256": "f67c440ed150312a012ff23ebc2776e32331a6901af52b3bcf77d1ac61672220",
+      "tokenCounts": [
+        {
+          "encoder": "clip-l",
+          "tokens": 43,
+          "maximum": 77
+        },
+        {
+          "encoder": "clip-g",
+          "tokens": 43,
+          "maximum": 77
+        },
+        {
+          "encoder": "t5",
+          "tokens": 42,
+          "maximum": 256
+        }
+      ],
+      "truncated": false
+    },
+    {
+      "referenceId": 145095967,
+      "promptFile": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\prompt-145095967-sd35-concise-adaptation.txt",
+      "promptSha256": "a3fdde7a7221865e9c55ade756e7c13f5198202e982b20fec74061db3a6ee605",
+      "tokenCounts": [
+        {
+          "encoder": "clip-l",
+          "tokens": 52,
+          "maximum": 77
+        },
+        {
+          "encoder": "clip-g",
+          "tokens": 52,
+          "maximum": 77
+        },
+        {
+          "encoder": "t5",
+          "tokens": 59,
+          "maximum": 256
+        }
+      ],
+      "truncated": false
+    },
+    {
+      "referenceId": 144599398,
+      "promptFile": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\prompt-144599398-sd35-concise-adaptation.txt",
+      "promptSha256": "e5efea366530ad0f11a3d5113b65596fe96e9264bdd6f3f0d75262d2acb30726",
+      "tokenCounts": [
+        {
+          "encoder": "clip-l",
+          "tokens": 48,
+          "maximum": 77
+        },
+        {
+          "encoder": "clip-g",
+          "tokens": 48,
+          "maximum": 77
+        },
+        {
+          "encoder": "t5",
+          "tokens": 55,
+          "maximum": 256
+        }
+      ],
+      "truncated": false
+    },
+    {
+      "referenceId": 145177887,
+      "promptFile": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\prompt-145177887-sd35-concise-adaptation.txt",
+      "promptSha256": "61f447b3d3fa215d92c65a5fa2382eff466a606641ab2f4f26466367cbbcb50b",
+      "tokenCounts": [
+        {
+          "encoder": "clip-l",
+          "tokens": 50,
+          "maximum": 77
+        },
+        {
+          "encoder": "clip-g",
+          "tokens": 50,
+          "maximum": 77
+        },
+        {
+          "encoder": "t5",
+          "tokens": 59,
+          "maximum": 256
+        }
+      ],
+      "truncated": false
+    }
+  ],
+  "allThreeEncodersUntruncated": true,
+  "originalPromptsRetained": true,
+  "weightsLoaded": false,
+  "inferenceVerified": false
+}

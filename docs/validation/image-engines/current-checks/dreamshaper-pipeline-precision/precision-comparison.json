@@ -1,0 +1,21 @@
+{
+  "diagnosticOnly": true,
+  "pipelineDtypeOverridden": true,
+  "request": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-decoder-capture\\01-stable-diffusion-1-reference-144594528\\request.json",
+  "workerSha256": "faeef7866d4d0d6d9f409cf18741f3524867b81c829e0ada24024538ea64eb33",
+  "sameRequestAndSeed": true,
+  "records": [
+    {
+      "dtype": "float32",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-pipeline-precision\\float32\\images\\output-0000.png",
+      "sha256": "7b9fe1c6790f914a01f5bd9a0d44ad81a961c879baf24f069418e360dc38925e",
+      "seconds": 48.75
+    },
+    {
+      "dtype": "bfloat16",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-pipeline-precision\\bfloat16\\images\\output-0000.png",
+      "sha256": "cb046fc4a059285bf5c37e7714c9a447f2c53aed5efbf7f56ea4f0bdcc848f1b",
+      "seconds": 15.7970000000023
+    }
+  ]
+}

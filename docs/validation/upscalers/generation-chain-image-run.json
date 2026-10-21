@@ -1,0 +1,706 @@
+{
+  "id": "71d537c8-1764-484f-a6b7-74f7827837f8",
+  "flowId": "upscale-chain-image-cf0055dd-3713-4245-8b3e-d46f63d48336",
+  "flowRevisionId": "mfr-81748ab12f504b2ab534a48034a549b7",
+  "flowName": "Upscale image",
+  "planId": "upscale-chain-image-cf0055dd-3713-4245-8b3e-d46f63d48336:3f9ce2f582f",
+  "status": "completed",
+  "createdAt": "2026-10-15T17:50:36.482Z",
+  "updatedAt": "2026-10-15T17:53:29.891Z",
+  "prompt": "A red ball on a white tabletop, studio photograph",
+  "modelLabel": "Workflow",
+  "target": "local",
+  "outputCount": 1,
+  "diagnosticCount": 0,
+  "progress": 1,
+  "currentStep": "Completed",
+  "executor": "media-workflow",
+  "error": null,
+  "failure": null,
+  "events": [
+    {
+      "id": 1580,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 1,
+      "kind": "run_started",
+      "createdAt": "2026-10-15T17:50:36.483Z",
+      "message": "The pinned local utility graph started.",
+      "progress": 0,
+      "stepId": null,
+      "nodeId": null
+    },
+    {
+      "id": 1581,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 2,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:50:36.569Z",
+      "message": "Attempt 1/1 · Prompt",
+      "progress": 0,
+      "stepId": "prompt:normalize-prompt",
+      "nodeId": "prompt"
+    },
+    {
+      "id": 1582,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 3,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:50:36.585Z",
+      "message": "Attempt 1/1 · Prompt completed",
+      "progress": 1,
+      "stepId": "prompt:normalize-prompt",
+      "nodeId": "prompt"
+    },
+    {
+      "id": 1583,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 4,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:50:36.604Z",
+      "message": "Attempt 1/1 · Generate image",
+      "progress": 0,
+      "stepId": "resolve-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1584,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 5,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:51:39.275Z",
+      "message": "Starting image runtime",
+      "progress": 0.02,
+      "stepId": "resolve-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1585,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 6,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:51:39.846Z",
+      "message": "Loading image model",
+      "progress": 0.08,
+      "stepId": "resolve-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1586,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 7,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:08.073Z",
+      "message": "Sampling 1/2",
+      "progress": 0.55,
+      "stepId": "resolve-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1587,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 8,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:08.100Z",
+      "message": "Sampling 2/2",
+      "progress": 0.85,
+      "stepId": "resolve-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1588,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 9,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:09.989Z",
+      "message": "Saving image",
+      "progress": 0.9,
+      "stepId": "resolve-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1589,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 10,
+      "kind": "asset_published",
+      "createdAt": "2026-10-15T17:53:11.320Z",
+      "message": "Attempt 1: output saved",
+      "progress": null,
+      "stepId": null,
+      "nodeId": "source"
+    },
+    {
+      "id": 1590,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 11,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:11.339Z",
+      "message": "Attempt 1/1 · Generate image completed",
+      "progress": 1,
+      "stepId": "generate-image:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1591,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 12,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:11.356Z",
+      "message": "Attempt 1/1 · AI upscale",
+      "progress": 0,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1592,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 13,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:15.431Z",
+      "message": "Loading upscaler",
+      "progress": 0.05,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1593,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 14,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:23.037Z",
+      "message": "Upscaling tile 1/16",
+      "progress": 0.153125,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1594,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 15,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:23.157Z",
+      "message": "Upscaling tile 2/16",
+      "progress": 0.20625,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1595,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 16,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:23.316Z",
+      "message": "Upscaling tile 3/16",
+      "progress": 0.259375,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1596,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 17,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:23.435Z",
+      "message": "Upscaling tile 4/16",
+      "progress": 0.3125,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1597,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 18,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:23.644Z",
+      "message": "Upscaling tile 5/16",
+      "progress": 0.365625,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1598,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 19,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:23.801Z",
+      "message": "Upscaling tile 6/16",
+      "progress": 0.41874999999999996,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1599,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 20,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:23.962Z",
+      "message": "Upscaling tile 7/16",
+      "progress": 0.47187500000000004,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1600,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 21,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:24.129Z",
+      "message": "Upscaling tile 8/16",
+      "progress": 0.525,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1601,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 22,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:24.235Z",
+      "message": "Upscaling tile 9/16",
+      "progress": 0.578125,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1602,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 23,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:24.393Z",
+      "message": "Upscaling tile 10/16",
+      "progress": 0.63125,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1603,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 24,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:24.575Z",
+      "message": "Upscaling tile 11/16",
+      "progress": 0.684375,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1604,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 25,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:24.695Z",
+      "message": "Upscaling tile 12/16",
+      "progress": 0.7374999999999999,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1605,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 26,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:24.803Z",
+      "message": "Upscaling tile 13/16",
+      "progress": 0.7906249999999999,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1606,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 27,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:24.972Z",
+      "message": "Upscaling tile 14/16",
+      "progress": 0.84375,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1607,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 28,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:25.102Z",
+      "message": "Upscaling tile 15/16",
+      "progress": 0.896875,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1608,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 29,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:25.280Z",
+      "message": "Upscaling tile 16/16",
+      "progress": 0.95,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1609,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 30,
+      "kind": "asset_published",
+      "createdAt": "2026-10-15T17:53:26.729Z",
+      "message": "Attempt 1: output saved",
+      "progress": null,
+      "stepId": null,
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1610,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 31,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:26.749Z",
+      "message": "Attempt 1/1 · AI upscale completed",
+      "progress": 1,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1611,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 32,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:26.767Z",
+      "message": "Attempt 1/1 · Save assets",
+      "progress": 0,
+      "stepId": "output:ingest-asset",
+      "nodeId": "output"
+    },
+    {
+      "id": 1612,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 33,
+      "kind": "asset_published",
+      "createdAt": "2026-10-15T17:53:29.815Z",
+      "message": "Attempt 1: output saved",
+      "progress": null,
+      "stepId": null,
+      "nodeId": "output"
+    },
+    {
+      "id": 1613,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 34,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:53:29.865Z",
+      "message": "Attempt 1/1 · Save assets completed",
+      "progress": 1,
+      "stepId": "output:ingest-asset",
+      "nodeId": "output"
+    },
+    {
+      "id": 1614,
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "sequence": 35,
+      "kind": "run_completed",
+      "createdAt": "2026-10-15T17:53:29.891Z",
+      "message": "Workflow completed",
+      "progress": 1,
+      "stepId": "finalize",
+      "nodeId": null
+    }
+  ],
+  "assets": [
+    {
+      "id": "asset:71d537c8-1764-484f-a6b7-74f7827837f8:0",
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "digest": "a4c1864893e223a0cf1cd139276b6d377091c4ffc45639e7212097be69470a28",
+      "kind": "image",
+      "mimeType": "image/png",
+      "byteSize": 490301,
+      "width": 512,
+      "height": 512,
+      "createdAt": "2026-10-15T17:53:11.300Z",
+      "outputIndex": 0,
+      "fixture": false,
+      "operation": {
+        "details": {
+          "modelId": "local:user:3f067a1b943cf162f2b8f8588f6cf5824bd5b4c7d1d88d87164b9ca123616549",
+          "prompt": "A red ball on a white tabletop, studio photograph",
+          "provenance": {
+            "addons": [],
+            "aspectRatio": "1:1",
+            "conditioningSources": [],
+            "device": "cuda",
+            "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+            "deviceMemoryBytes": 17095983104,
+            "editConditioning": null,
+            "modelDigest": "3f067a1b943cf162f2b8f8588f6cf5824bd5b4c7d1d88d87164b9ca123616549",
+            "modelPolicy": "fast",
+            "modelRevision": "3f067a1b943cf162f2b8f8588f6cf5824bd5b4c7d1d88d87164b9ca123616549",
+            "negativePrompt": "",
+            "numInferenceSteps": 2,
+            "outputs": [
+              {
+                "branchId": "source",
+                "format": "png",
+                "index": 0,
+                "jpegBackground": "#ffffff",
+                "outputNodeId": "source",
+                "postProcessing": [],
+                "quality": 95,
+                "seed": 2609874878994472,
+                "sourceIndex": 0
+              }
+            ],
+            "packages": {
+              "accelerate": "1.14.0",
+              "bitsandbytes": "0.50.2",
+              "datasets": "5.0.1",
+              "diffusers": "0.41.0.dev0",
+              "ftfy": "6.3.1",
+              "gguf": "0.19.0",
+              "imageio-ffmpeg": "0.6.0",
+              "numpy": "2.5.2",
+              "opencv-python-headless": "4.13.0.92",
+              "peft": "0.19.1",
+              "pillow": "12.3.0",
+              "protobuf": "7.35.1",
+              "resvg_py": "0.5.0",
+              "safetensors": "0.8.0",
+              "scipy": "1.18.1",
+              "sentencepiece": "0.2.2",
+              "spandrel": "0.4.2",
+              "torch": "2.12.0+rocm7.14.0",
+              "torchvision": "0.27.0+rocm7.14.0",
+              "transformers": "5.17.0"
+            },
+            "performance": null,
+            "prompt": "A red ball on a white tabletop, studio photograph",
+            "requireChromaBackground": false,
+            "workerVersion": "media-diffusers-worker/1.112.0"
+          },
+          "seed": 2609874878994472
+        },
+        "iteration": 1,
+        "kind": "workflow",
+        "sourceNodeId": "source"
+      },
+      "sourceAssetIds": [],
+      "tags": []
+    },
+    {
+      "id": "asset:71d537c8-1764-484f-a6b7-74f7827837f8:1",
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "digest": "867a5c40231ac93189572b5457461962a2efa188701f9ea0a175f68f972315b3",
+      "kind": "image",
+      "mimeType": "image/png",
+      "byteSize": 1532539,
+      "width": 1024,
+      "height": 1024,
+      "createdAt": "2026-10-15T17:53:26.715Z",
+      "outputIndex": 1,
+      "fixture": false,
+      "operation": {
+        "details": {
+          "architecture": "SPAN",
+          "device": "cuda",
+          "height": 1024,
+          "nativeScale": 4,
+          "scale": 2,
+          "schemaVersion": 1,
+          "tileSize": 128,
+          "width": 1024
+        },
+        "iteration": 1,
+        "kind": "workflow",
+        "sourceNodeId": "upscale"
+      },
+      "sourceAssetIds": [
+        "asset:71d537c8-1764-484f-a6b7-74f7827837f8:0"
+      ],
+      "tags": []
+    },
+    {
+      "id": "asset:71d537c8-1764-484f-a6b7-74f7827837f8:2",
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "digest": "ba6e3ea1593ba99e5bfb31469b7bed683e21e1c673161ab2c1a9f221001045a0",
+      "kind": "image",
+      "mimeType": "image/png",
+      "byteSize": 1535601,
+      "width": 1024,
+      "height": 1024,
+      "createdAt": "2026-10-15T17:53:29.814Z",
+      "outputIndex": 2,
+      "fixture": false,
+      "operation": {
+        "details": {
+          "finalOutput": true,
+          "operation": "output.asset",
+          "settings": {
+            "format": "png",
+            "outputCount": 1
+          }
+        },
+        "iteration": 1,
+        "kind": "workflow",
+        "sourceNodeId": "output"
+      },
+      "sourceAssetIds": [
+        "asset:71d537c8-1764-484f-a6b7-74f7827837f8:1"
+      ],
+      "tags": []
+    }
+  ],
+  "providerJobs": [],
+  "humanReviews": [],
+  "nodeExecutions": [
+    {
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "nodeId": "prompt",
+      "nodeType": "source.prompt",
+      "nodeLabel": "Prompt",
+      "ordinal": 0,
+      "status": "completed",
+      "activeStepId": "prompt:normalize-prompt",
+      "runtimePhase": "workflow.execute",
+      "attempt": 1,
+      "progress": 1,
+      "message": "Attempt 1/1 · Prompt completed",
+      "startedAt": "2026-10-15T17:50:36.568Z",
+      "updatedAt": "2026-10-15T17:50:36.585Z",
+      "finishedAt": "2026-10-15T17:50:36.585Z",
+      "stateSequence": 2
+    },
+    {
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "nodeId": "source",
+      "nodeType": "task.generate-image",
+      "nodeLabel": "Generate image",
+      "ordinal": 1,
+      "status": "completed",
+      "activeStepId": "generate-image:source",
+      "runtimePhase": "workflow.execute",
+      "attempt": 1,
+      "progress": 1,
+      "message": "Attempt 1/1 · Generate image completed",
+      "startedAt": "2026-10-15T17:50:36.603Z",
+      "updatedAt": "2026-10-15T17:53:11.339Z",
+      "finishedAt": "2026-10-15T17:53:11.339Z",
+      "stateSequence": 7
+    },
+    {
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "nodeId": "upscale",
+      "nodeType": "operation.upscale",
+      "nodeLabel": "AI upscale",
+      "ordinal": 2,
+      "status": "completed",
+      "activeStepId": "upscale:upscale-image",
+      "runtimePhase": "workflow.execute",
+      "attempt": 1,
+      "progress": 1,
+      "message": "Attempt 1/1 · AI upscale completed",
+      "startedAt": "2026-10-15T17:53:11.356Z",
+      "updatedAt": "2026-10-15T17:53:26.749Z",
+      "finishedAt": "2026-10-15T17:53:26.749Z",
+      "stateSequence": 19
+    },
+    {
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "nodeId": "output",
+      "nodeType": "output.asset",
+      "nodeLabel": "Save assets",
+      "ordinal": 3,
+      "status": "completed",
+      "activeStepId": "output:ingest-asset",
+      "runtimePhase": "workflow.execute",
+      "attempt": 1,
+      "progress": 1,
+      "message": "Attempt 1/1 · Save assets completed",
+      "startedAt": "2026-10-15T17:53:26.767Z",
+      "updatedAt": "2026-10-15T17:53:29.864Z",
+      "finishedAt": "2026-10-15T17:53:29.864Z",
+      "stateSequence": 2
+    }
+  ],
+  "planSnapshot": {
+    "schemaVersion": 1,
+    "planId": "upscale-chain-image-cf0055dd-3713-4245-8b3e-d46f63d48336:3f9ce2f582f",
+    "flowId": "upscale-chain-image-cf0055dd-3713-4245-8b3e-d46f63d48336",
+    "flowFingerprint": "sha256:3f9ce2f582fe85a1da4f5f4ede87a1b48cf88371d103630de8c8eea13f6329a3",
+    "compiledAt": "2026-10-15T17:50:36.371Z",
+    "nodes": [
+      {
+        "id": "prompt",
+        "type": "source.prompt",
+        "label": "Prompt",
+        "layer": "source"
+      },
+      {
+        "id": "source",
+        "type": "task.generate-image",
+        "label": "Generate image",
+        "layer": "task"
+      },
+      {
+        "id": "upscale",
+        "type": "operation.upscale",
+        "label": "AI upscale",
+        "layer": "operation"
+      },
+      {
+        "id": "output",
+        "type": "output.asset",
+        "label": "Save assets",
+        "layer": "output"
+      }
+    ],
+    "steps": [
+      {
+        "id": "prompt:normalize-prompt",
+        "sourceNodeId": "prompt",
+        "kind": "normalize-prompt",
+        "label": "Prompt",
+        "target": "local",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      },
+      {
+        "id": "resolve-model:source",
+        "sourceNodeId": "source",
+        "kind": "resolve-model",
+        "label": "Resolve provider, model, and capability constraints",
+        "target": "orchestrator",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      },
+      {
+        "id": "generate-image:source",
+        "sourceNodeId": "source",
+        "kind": "generate-image",
+        "label": "Generate with SD-Turbo · Stability AI",
+        "target": "local",
+        "cacheable": true,
+        "sideEffect": null,
+        "review": null
+      },
+      {
+        "id": "upscale:upscale-image",
+        "sourceNodeId": "upscale",
+        "kind": "upscale-image",
+        "label": "AI upscale",
+        "target": "local",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      },
+      {
+        "id": "output:ingest-asset",
+        "sourceNodeId": "output",
+        "kind": "ingest-asset",
+        "label": "Save assets",
+        "target": "local",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      }
+    ]
+  }
+}

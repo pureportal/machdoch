@@ -1,0 +1,19 @@
+[
+  {
+    "version": 3325972,
+    "architecture": "illustrious-xl",
+    "source": "https://civitai.com/models/1490179?modelVersionId=3325972",
+    "imported": {
+      "schemaVersion": 1,
+      "modelId": "local:user:5de851376608d77ac5fca529ba727897860d187ad66108dd15da3c800cbd1a2f",
+      "displayName": "UnNamedIXL - Realistic model - IllustriousXL V2.0 based V7 · n_Arno",
+      "family": "Stable Diffusion XL",
+      "revision": "5de851376608d77ac5fca529ba727897860d187ad66108dd15da3c800cbd1a2f",
+      "digest": "5de851376608d77ac5fca529ba727897860d187ad66108dd15da3c800cbd1a2f",
+      "byteSize": 6938040904,
+      "targetLabel": "models/packages/user-5de851376608d77ac5fca529ba727897/revisions/5de851376608d77ac5fca529ba727897860d187ad66108dd15da3c800cbd1a2f/checkpoint.safetensors",
+      "importedAt": "2026-10-14T20:52:30.803Z",
+      "alreadyInstalled": false
+    }
+  }
+]

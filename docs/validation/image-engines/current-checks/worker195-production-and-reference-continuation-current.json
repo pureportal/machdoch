@@ -1,0 +1,69 @@
+{
+  "goalComplete": false,
+  "nativeValidationRecords": 144,
+  "desktopBuildExitCode": 0,
+  "processes": [
+    {
+      "ProcessId": 3464,
+      "ParentProcessId": 12300,
+      "CreationDate": "2026-10-12T21:54:35.122533+02:00",
+      "Name": "pwsh.exe"
+    },
+    {
+      "ProcessId": 20964,
+      "ParentProcessId": 23420,
+      "CreationDate": "2026-10-12T23:14:41.948511+02:00",
+      "Name": "python.exe"
+    },
+    {
+      "ProcessId": 20048,
+      "ParentProcessId": 29120,
+      "CreationDate": "2026-10-12T23:53:59.924043+02:00",
+      "Name": "pwsh.exe"
+    },
+    {
+      "ProcessId": 18668,
+      "ParentProcessId": 21808,
+      "CreationDate": "2026-10-13T01:09:33.30565+02:00",
+      "Name": "pwsh.exe"
+    },
+    {
+      "ProcessId": 27824,
+      "ParentProcessId": 28248,
+      "CreationDate": "2026-10-13T01:21:34.585579+02:00",
+      "Name": "pwsh.exe"
+    }
+  ],
+  "desktopBuildComplete": true,
+  "queueCases": 68,
+  "queueBatches": 17,
+  "runtimeFiles": 119,
+  "desktopBinarySha256": "9ff4825b8690fcff8a7c55649022cdd190b2ca0a84f0ee2bd1dcce2de0b9b54c",
+  "rawCompletedReferences": [
+    144655944,
+    144697438,
+    144594528,
+    145095967
+  ],
+  "rawCurrentReference": 144599398,
+  "rawBelowReferenceSubjects": [
+    144697438,
+    145095967
+  ],
+  "continuationState": "verified-wait",
+  "checkedAt": "2026-10-13T05:21:09.1361483Z",
+  "pendingNativeUiReason": "Recorded automatic approval rejection: blocked by policy",
+  "installedApplicationReplaced": false,
+  "legalFiles": 4814,
+  "galleryRenders": 139,
+  "nativeUiExecuted": false,
+  "rawNearReferenceSubjects": [
+    144655944,
+    144594528
+  ],
+  "rawProgress": [
+    "MACHDOCH_PROGRESS {\"stage\": \"Sampling 18/52\", \"progress\": 0.4576923076923077}",
+    "",
+    "MACHDOCH_PROGRESS {\"stage\": \"Sampling 19/52\", \"progress\": 0.46923076923076923}"
+  ]
+}

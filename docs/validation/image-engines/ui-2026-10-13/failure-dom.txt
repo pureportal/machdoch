@@ -1,0 +1,53 @@
+Basic
+Advanced
+Train
+Assets
+Activity
+
+Media Studio is ready
+
+Image
+Video
+SVG
+Audio
+Assistant
+Convert to Advanced
+Model
+Ideogram 4 NF4
+Ideogram · Local
+Prompt
+Pose map
+No pose map
+Create pose map
+More options
+Output
+Aspect ratio
+1:1
+4:5
+16:9
+9:16
+Outputs
+Quality
+Draft
+Balanced
+High
+Format
+PNG
+WebP
+JPEG
+Transparent background
+Sampling
+Sampler
+Automatic
+Resolution
+Automatic
+Custom
+Sampling steps
+48
+Guidance
+7
+Seed
+Random
+Fixed
+Generate image
+Image output

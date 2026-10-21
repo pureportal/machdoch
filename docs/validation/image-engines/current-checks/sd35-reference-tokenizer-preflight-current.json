@@ -1,0 +1,152 @@
+{
+  "localFilesOnly": true,
+  "tokenizersLoaded": 3,
+  "cases": [
+    {
+      "referenceId": 144655944,
+      "promptFile": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\prompt-144655944-visual-adaptation.txt",
+      "tokenCounts": [
+        {
+          "encoder": "clip-l",
+          "tokens": 80,
+          "maximum": 77,
+          "truncatedByPipelineLimit": true
+        },
+        {
+          "encoder": "clip-g",
+          "tokens": 80,
+          "maximum": 77,
+          "truncatedByPipelineLimit": true
+        },
+        {
+          "encoder": "t5",
+          "tokens": 98,
+          "maximum": 256,
+          "truncatedByPipelineLimit": false
+        }
+      ]
+    },
+    {
+      "referenceId": 144697438,
+      "promptFile": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\prompt-144697438-visual-adaptation.txt",
+      "tokenCounts": [
+        {
+          "encoder": "clip-l",
+          "tokens": 94,
+          "maximum": 77,
+          "truncatedByPipelineLimit": true
+        },
+        {
+          "encoder": "clip-g",
+          "tokens": 94,
+          "maximum": 77,
+          "truncatedByPipelineLimit": true
+        },
+        {
+          "encoder": "t5",
+          "tokens": 110,
+          "maximum": 256,
+          "truncatedByPipelineLimit": false
+        }
+      ]
+    },
+    {
+      "referenceId": 144594528,
+      "promptFile": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\prompt-144594528-visual-adaptation.txt",
+      "tokenCounts": [
+        {
+          "encoder": "clip-l",
+          "tokens": 83,
+          "maximum": 77,
+          "truncatedByPipelineLimit": true
+        },
+        {
+          "encoder": "clip-g",
+          "tokens": 83,
+          "maximum": 77,
+          "truncatedByPipelineLimit": true
+        },
+        {
+          "encoder": "t5",
+          "tokens": 89,
+          "maximum": 256,
+          "truncatedByPipelineLimit": false
+        }
+      ]
+    },
+    {
+      "referenceId": 145095967,
+      "promptFile": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\prompt-145095967-visual-adaptation.txt",
+      "tokenCounts": [
+        {
+          "encoder": "clip-l",
+          "tokens": 81,
+          "maximum": 77,
+          "truncatedByPipelineLimit": true
+        },
+        {
+          "encoder": "clip-g",
+          "tokens": 81,
+          "maximum": 77,
+          "truncatedByPipelineLimit": true
+        },
+        {
+          "encoder": "t5",
+          "tokens": 93,
+          "maximum": 256,
+          "truncatedByPipelineLimit": false
+        }
+      ]
+    },
+    {
+      "referenceId": 144599398,
+      "promptFile": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\prompt-144599398-visual-adaptation.txt",
+      "tokenCounts": [
+        {
+          "encoder": "clip-l",
+          "tokens": 80,
+          "maximum": 77,
+          "truncatedByPipelineLimit": true
+        },
+        {
+          "encoder": "clip-g",
+          "tokens": 80,
+          "maximum": 77,
+          "truncatedByPipelineLimit": true
+        },
+        {
+          "encoder": "t5",
+          "tokens": 92,
+          "maximum": 256,
+          "truncatedByPipelineLimit": false
+        }
+      ]
+    },
+    {
+      "referenceId": 145177887,
+      "promptFile": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\prompt-145177887-visual-adaptation.txt",
+      "tokenCounts": [
+        {
+          "encoder": "clip-l",
+          "tokens": 104,
+          "maximum": 77,
+          "truncatedByPipelineLimit": true
+        },
+        {
+          "encoder": "clip-g",
+          "tokens": 104,
+          "maximum": 77,
+          "truncatedByPipelineLimit": true
+        },
+        {
+          "encoder": "t5",
+          "tokens": 122,
+          "maximum": 256,
+          "truncatedByPipelineLimit": false
+        }
+      ]
+    }
+  ],
+  "weightsLoaded": false,
+  "inferenceVerified": false
+}

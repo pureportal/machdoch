@@ -1,0 +1,27 @@
+{
+  "nativeImportComplete": false,
+  "publisherDownloadExitCode": 0,
+  "t5CopyExitCode": 0,
+  "packageValidation": "sd35-nekofantasia-package-validation-current.json",
+  "checkedAtUtc": "2026-10-13T06:50:42.4340616Z",
+  "nativeImportProcess": [
+    {
+      "ProcessId": 6260,
+      "ParentProcessId": 7972,
+      "CreationDate": "2026-10-13T08:49:25.51163+02:00",
+      "CommandLine": "\"C:\\Development\\machdoch\\.cache\\rust\\debug\\deps\\machdoch_lib-e83b0fc15a4f2ae0.exe\" media::model_package_import::tests::external_image_model_package_import --exact --ignored --nocapture"
+    }
+  ],
+  "rawWorker": [
+    {
+      "ProcessId": 20964,
+      "ParentProcessId": 23420,
+      "CreationDate": "2026-10-12T23:14:41.948511+02:00",
+      "CommandLine": "\"C:\\Users\\ehrha\\AppData\\Roaming\\com.machdoch.desktop\\media-studio\\runtime\\python\\cpython-3.12.10-windows-x86_64-none\\python.exe\" -B C:\\Development\\machdoch\\apps\\client\\src-tauri\\python\\verify_media_reference_sweep.py --template D:/Models/machdoch/verification/2026-10-11/image-engines/krea-2-raw-refined-request-template.json --cases D:/Models/machdoch/verification/2026-10-11/image-engines/krea-2-raw-refined-reference-cases.json --output-root D:/Models/machdoch/verification/2026-10-11/image-engines/krea-2-raw-refined-reference-sweep-continuation --hip-device 1 --capture-decoder-latents"
+    }
+  ],
+  "classification": "progress-and-verified-wait",
+  "sd3References": "sd35-reference-preflight-current.json",
+  "packageVerificationExitCode": 0,
+  "fullGoalComplete": false
+}

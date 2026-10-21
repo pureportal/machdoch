@@ -1,0 +1,274 @@
+{
+  "_id": "682c49c4311e78ce31b4135a",
+  "id": "szwagros/HiDream-I1-Full-4bit",
+  "private": false,
+  "library_name": "diffusers",
+  "tags": [
+    "diffusers",
+    "safetensors",
+    "diffusers:HiDreamImagePipeline",
+    "8-bit",
+    "region:us"
+  ],
+  "downloads": 9,
+  "likes": 0,
+  "modelId": "szwagros/HiDream-I1-Full-4bit",
+  "author": "szwagros",
+  "sha": "a26dcad3a4f184c3ade9304ee385192c00d655ec",
+  "lastModified": "2025-05-20T11:44:30.000Z",
+  "gated": false,
+  "disabled": false,
+  "config": {
+    "diffusers": {
+      "_class_name": "HiDreamImagePipeline"
+    }
+  },
+  "siblings": [
+    {
+      "rfilename": ".gitattributes",
+      "blobId": "7d9edcfe68e1aa7a93b22b3b1a9c3ca54bba13e8",
+      "size": 1585
+    },
+    {
+      "rfilename": "model_index.json",
+      "blobId": "18589f63f4ee02f49bd6c874eb100ff29fd04319",
+      "size": 838
+    },
+    {
+      "rfilename": "scheduler/scheduler_config.json",
+      "blobId": "9d8a9d8b3438f2834064e1f3720c80b006410f7a",
+      "size": 750
+    },
+    {
+      "rfilename": "text_encoder/config.json",
+      "blobId": "d68d36da7f20b4a8e64e8fefb7be314bb0f322f4",
+      "size": 580
+    },
+    {
+      "rfilename": "text_encoder/model.safetensors",
+      "blobId": "0dc34026903d637dd152175bf16f9d9b5645474e",
+      "size": 495149872,
+      "lfs": {
+        "sha256": "b70c11ad5d7e9abf6109348908f599ea382f8019e1f36910bbc8ebecde936633",
+        "size": 495149872,
+        "pointerSize": 134
+      }
+    },
+    {
+      "rfilename": "text_encoder_2/config.json",
+      "blobId": "5185426f6460342e76740ed5f391b5465d0efb52",
+      "size": 576
+    },
+    {
+      "rfilename": "text_encoder_2/model.safetensors",
+      "blobId": "73f56e012694ab826564b0ce2a3346a09b302d5a",
+      "size": 2779424184,
+      "lfs": {
+        "sha256": "4d6effa7a5e600cabf7528ed7234146a13ead1b2c151211d706b293a060b112a",
+        "size": 2779424184,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder_3/config.json",
+      "blobId": "0273adfec21da47187808730919e068073dedb83",
+      "size": 1301
+    },
+    {
+      "rfilename": "text_encoder_3/model-00001-of-00002.safetensors",
+      "blobId": "7c65f6d0bc1d54797ac3d15646837aad0edbf498",
+      "size": 4897241034,
+      "lfs": {
+        "sha256": "3a4b559411fbef7373773f43600bd2fe7761c4bf167b9652685ff66d21e86d62",
+        "size": 4897241034,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder_3/model-00002-of-00002.safetensors",
+      "blobId": "cb18ce02c667430604581c1cc9871eea54180473",
+      "size": 1431426998,
+      "lfs": {
+        "sha256": "bd6f84c01f1105e5899d70a9944d86bf4b2e8b9063b994884d05ab86090f3220",
+        "size": 1431426998,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder_3/model.safetensors.index.json",
+      "blobId": "e5b5e3f37c2c26d96b3bd160ba2dc7e6fda6549f",
+      "size": 66361
+    },
+    {
+      "rfilename": "text_encoder_4/.gitattributes",
+      "blobId": "52373fe24473b1aa44333d318f578ae6bf04b49b",
+      "size": 1570
+    },
+    {
+      "rfilename": "text_encoder_4/README.md",
+      "blobId": "33c5ea6295964958a17271ef835ba9449c402ab0",
+      "size": 31658
+    },
+    {
+      "rfilename": "text_encoder_4/config.json",
+      "blobId": "81908b43afe3fe6bf0560546fe4f9742cea84ba0",
+      "size": 1532
+    },
+    {
+      "rfilename": "text_encoder_4/generation_config.json",
+      "blobId": "36757c2d3b16784e61fee3bd00b157719f22e809",
+      "size": 239
+    },
+    {
+      "rfilename": "text_encoder_4/model.safetensors",
+      "blobId": "9163e724fc73c6d908bc31babf6e9d1cad4e179b",
+      "size": 5702746383,
+      "lfs": {
+        "sha256": "f6c8ab7a8b2790ce56f3ae3946ad39866fc5250b51b277c9d0eee83ac4f26a92",
+        "size": 5702746383,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder_4/special_tokens_map.json",
+      "blobId": "3c1d04911c269b925af977a3151c9704e990e4d0",
+      "size": 454
+    },
+    {
+      "rfilename": "text_encoder_4/tokenizer.json",
+      "blobId": "1c1d8d5c9024994f1d3b00f9662b8dd89ca13cf2",
+      "size": 17209920,
+      "lfs": {
+        "sha256": "6b9e4e7fb171f92fd137b777cc2714bf87d11576700a1dcd7a399e7bbe39537b",
+        "size": 17209920,
+        "pointerSize": 133
+      }
+    },
+    {
+      "rfilename": "text_encoder_4/tokenizer_config.json",
+      "blobId": "df9f7c982cc0add6ab016b5d8e42e2609f59dec8",
+      "size": 55493
+    },
+    {
+      "rfilename": "tokenizer/merges.txt",
+      "blobId": "76e821f1b6f0a9709293c3b6b51ed90980b3166b",
+      "size": 524619
+    },
+    {
+      "rfilename": "tokenizer/special_tokens_map.json",
+      "blobId": "2c2130b544c0c5a72d5d00da071ba130a9800fb2",
+      "size": 472
+    },
+    {
+      "rfilename": "tokenizer/tokenizer_config.json",
+      "blobId": "2e8612a429492973fe60635b3f44a28b065cfac0",
+      "size": 737
+    },
+    {
+      "rfilename": "tokenizer/vocab.json",
+      "blobId": "469be27c5c010538f845f518c4f5e8574c78f7c8",
+      "size": 1059962
+    },
+    {
+      "rfilename": "tokenizer_2/merges.txt",
+      "blobId": "76e821f1b6f0a9709293c3b6b51ed90980b3166b",
+      "size": 524619
+    },
+    {
+      "rfilename": "tokenizer_2/special_tokens_map.json",
+      "blobId": "ae0c5be6f35217e51c4c000fd325d8de0294e99c",
+      "size": 460
+    },
+    {
+      "rfilename": "tokenizer_2/tokenizer_config.json",
+      "blobId": "a8438e020c4497a429240d6b89e0bf9a6e2ffa92",
+      "size": 725
+    },
+    {
+      "rfilename": "tokenizer_2/vocab.json",
+      "blobId": "469be27c5c010538f845f518c4f5e8574c78f7c8",
+      "size": 1059962
+    },
+    {
+      "rfilename": "tokenizer_3/special_tokens_map.json",
+      "blobId": "17ade346a1042cbe0c1436f5bedcbd85c099d582",
+      "size": 2543
+    },
+    {
+      "rfilename": "tokenizer_3/spiece.model",
+      "blobId": "317a5ccbde45300f5d1d970d4d449af2108b147e",
+      "size": 791656,
+      "lfs": {
+        "sha256": "d60acb128cf7b7f2536e8f38a5b18a05535c9e14c7a355904270e15b0945ea86",
+        "size": 791656,
+        "pointerSize": 131
+      }
+    },
+    {
+      "rfilename": "tokenizer_3/tokenizer.json",
+      "blobId": "21ed409afa3df5a822caa0fd5da30d13941f90b5",
+      "size": 2424235
+    },
+    {
+      "rfilename": "tokenizer_3/tokenizer_config.json",
+      "blobId": "b336fa236135e6c87e246485e4d69e415cc57da0",
+      "size": 20817
+    },
+    {
+      "rfilename": "transformer/config.json",
+      "blobId": "e3612ef3ce5b421761aae1e4c4d584761a8f0aa8",
+      "size": 1575
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+      "blobId": "89125c36aaae5d4915bc9de90990ddc14e1b04ed",
+      "size": 9992131760,
+      "lfs": {
+        "sha256": "5df91fa6891b51b283ac7caeb96d190af528c26dee6a611d42e4e74b67394273",
+        "size": 9992131760,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+      "blobId": "31716acd6944f54a0d896e02e1b2dc720a718c4e",
+      "size": 419432664,
+      "lfs": {
+        "sha256": "4b048d8a817c4937f2cd6d4ad5e449ce07d2b104467f2a87464df1ac2b66cd99",
+        "size": 419432664,
+        "pointerSize": 134
+      }
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model.safetensors.index.json",
+      "blobId": "25df48c0702a91118189e77a44a8607495f63a4f",
+      "size": 600021
+    },
+    {
+      "rfilename": "vae/config.json",
+      "blobId": "4f7c628fc8e59fc842c9846ed74414249052ba0b",
+      "size": 820
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.safetensors",
+      "blobId": "3557b83a132d75a1f71bde9963021e667b1a0d2d",
+      "size": 167666902,
+      "lfs": {
+        "sha256": "f5b59a26851551b67ae1fe58d32e76486e1e812def4696a4bea97f16604d40a3",
+        "size": 167666902,
+        "pointerSize": 134
+      }
+    }
+  ],
+  "spaces": [],
+  "createdAt": "2025-05-20T09:22:12.000Z",
+  "safetensors": {
+    "parameters": {
+      "F32": 258720512,
+      "BF16": 548718144,
+      "U8": 8278595472
+    },
+    "total": 9086034128
+  },
+  "usedStorage": 25903221373
+}

@@ -1,0 +1,63 @@
+{
+  "model": "D:\\Models\\machdoch\\models\\components\\krea-2\\qwen-image",
+  "source": "docs\\validation\\image-engines\\comparison\\reference-144594528-image.png",
+  "sourceSha256": "63f63a987f6bad98f404de024e9798ccceaeff91674e5efe749684ddd98a5720",
+  "sourceKind": "encoded-reference",
+  "vaeClass": "AutoencoderKLQwenImage",
+  "spatialCompressionRatio": 8,
+  "dtype": "bfloat16",
+  "canvas": [
+    896,
+    1120
+  ],
+  "sameLatents": true,
+  "convolutionBackend": "native",
+  "device": "AMD Radeon RX 9070",
+  "records": [
+    {
+      "tile": 0,
+      "stride": null,
+      "seconds": 16.704000000001543,
+      "peakAllocatedBytes": 9011029504,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0,
+      "maxAbsoluteErrorAgainstFullFrame": 0.0,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-vae-tile-comparison-bfloat16\\tile-0.png"
+    },
+    {
+      "tile": 256,
+      "stride": 192,
+      "seconds": 3.827999999997701,
+      "peakAllocatedBytes": 911074816,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0015131653053686023,
+      "maxAbsoluteErrorAgainstFullFrame": 0.1259765625,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-vae-tile-comparison-bfloat16\\tile-256.png"
+    },
+    {
+      "tile": 512,
+      "stride": 384,
+      "seconds": 1.2809999999990396,
+      "peakAllocatedBytes": 2610324992,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0010482171783223748,
+      "maxAbsoluteErrorAgainstFullFrame": 0.185791015625,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-vae-tile-comparison-bfloat16\\tile-512.png"
+    },
+    {
+      "tile": 1024,
+      "stride": 768,
+      "seconds": 7.639999999999418,
+      "peakAllocatedBytes": 8266950144,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0007748788921162486,
+      "maxAbsoluteErrorAgainstFullFrame": 0.07080078125,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-vae-tile-comparison-bfloat16\\tile-1024.png"
+    },
+    {
+      "tile": 1536,
+      "stride": 1152,
+      "seconds": 14.045999999998457,
+      "peakAllocatedBytes": 9011029504,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0,
+      "maxAbsoluteErrorAgainstFullFrame": 0.0,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-vae-tile-comparison-bfloat16\\tile-1536.png"
+    }
+  ]
+}

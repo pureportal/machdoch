@@ -1,0 +1,19 @@
+{
+  "checkedAt": "2026-10-11T12:32:21.969Z",
+  "results": [
+    {
+      "query": "Sana Sprint",
+      "url": "https://civitai.com/api/v1/models?limit=20&types=Checkpoint&query=Sana%20Sprint",
+      "status": 200,
+      "totalReturned": 0,
+      "models": []
+    },
+    {
+      "query": "Sana 1600M",
+      "url": "https://civitai.com/api/v1/models?limit=20&types=Checkpoint&query=Sana%201600M",
+      "status": 200,
+      "totalReturned": 0,
+      "models": []
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "fullGoalComplete": false,
+  "sources": [
+    "https://github.com/PedroMarinhoDev/ComfyUI-HunyuanImage3",
+    "https://github.com/Tencent-Hunyuan/HunyuanImage-3.0",
+    "https://huggingface.co/Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers"
+  ],
+  "checkedAtUtc": "2026-10-13T06:53:32.3304400Z",
+  "implementedProfilesRemoved": 0,
+  "hunyuanCompressed": {
+    "nativeRuntimeGenerationVerified": false,
+    "hostGpu": "AMD RX 9070 16 GB",
+    "license": "GPL-3.0 plus Tencent model terms",
+    "publisherRecommendedWeightBytesApprox": 44000000000,
+    "codeCopied": false,
+    "publisherTestedHardware": "NVIDIA",
+    "hostRamBytesApprox": 34359738368,
+    "publisherObservedSystemRamBytesApprox": 50000000000,
+    "runtime": "Unintegrated ComfyUI native quantized-expert bank runtime"
+  },
+  "sanaSprint": {
+    "revision": "aa76e7f4f4928f378716b6716a2130fba3caf5b1",
+    "baseLicense": "Apache-2.0",
+    "bytes": 7703534462,
+    "downloaded": false,
+    "civitaiDistributionVerified": false,
+    "gated": false,
+    "publicPublisher": "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
+    "companionLicense": "Gemma Terms of Use and Prohibited Use Policy"
+  }
+}

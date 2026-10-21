@@ -1,0 +1,112 @@
+{
+  "repository": "RunDiffusion/Juggernaut-XL-v9",
+  "revision": "cf419233522daa0b9ea36c3aff98fa2cab1fb0fb",
+  "gated": false,
+  "card": {
+    "license": "creativeml-openrail-m",
+    "language": [
+      "en"
+    ],
+    "library_name": "diffusers",
+    "pipeline_tag": "text-to-image",
+    "base_model": "stabilityai/stable-diffusion-xl-base-1.0",
+    "tags": [
+      "stable-diffusion",
+      "stable-diffusion-xl",
+      "sdxl",
+      "text-to-image",
+      "photorealistic",
+      "photography",
+      "cinematic",
+      "portrait",
+      "juggernaut",
+      "rundiffusion",
+      "kandooai"
+    ]
+  },
+  "files": [
+    {
+      "rfilename": ".gitattributes"
+    },
+    {
+      "rfilename": "Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors"
+    },
+    {
+      "rfilename": "README.md"
+    },
+    {
+      "rfilename": "assets/Juggernaut_v9_banner.png"
+    },
+    {
+      "rfilename": "assets/Juggernaut_v9_banner.webp"
+    },
+    {
+      "rfilename": "model_index.json"
+    },
+    {
+      "rfilename": "scheduler/scheduler_config.json"
+    },
+    {
+      "rfilename": "text_encoder/config.json"
+    },
+    {
+      "rfilename": "text_encoder/model.fp16.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_2/config.json"
+    },
+    {
+      "rfilename": "text_encoder_2/model.fp16.safetensors"
+    },
+    {
+      "rfilename": "tokenizer/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer/vocab.json"
+    },
+    {
+      "rfilename": "tokenizer_2/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer_2/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer_2/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer_2/vocab.json"
+    },
+    {
+      "rfilename": "unet/config.json"
+    },
+    {
+      "rfilename": "unet/diffusion_pytorch_model.fp16.safetensors"
+    },
+    {
+      "rfilename": "vae/config.json"
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.fp16.safetensors"
+    }
+  ],
+  "documents": {
+    "README.md": {
+      "status": 200,
+      "content": "---\nlicense: creativeml-openrail-m\nlanguage:\n- en\nlibrary_name: diffusers\npipeline_tag: text-to-image\nbase_model: stabilityai/stable-diffusion-xl-base-1.0\ntags:\n- stable-diffusion\n- stable-diffusion-xl\n- sdxl\n- text-to-image\n- photorealistic\n- photography\n- cinematic\n- portrait\n- juggernaut\n- rundiffusion\n- kandooai\n---\n\n<div align=\"center\">\n\n<a href=\"https://www.rundiffusion.com/juggernaut?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=header_banner\">\n  <img src=\"https://huggingface.co/RunDiffusion/Juggernaut-XL-v9/resolve/main/assets/Juggernaut_v9_banner.webp\" alt=\"Juggernaut XL v9 — by RunDiffusion\" />\n</a>\n\n<h1>Juggernaut XL v9 by RunDiffusion</h1>\n\n<p><i>The world's most-downloaded SDXL model — purpose-built for photorealism.</i></p>\n\n<p><b>6M+ downloads on Hugging Face · Overwhelmingly Positive on Civitai · 26 months in production</b></p>\n\n<p>\n  <a href=\"https://app.rundiffusion.com/login?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=hero_cta\"><img alt=\"Try Juggernaut XL v9 — Free\" src=\"https://img.shields.io/badge/%E2%96%B6%20Try%20Juggernaut%20XL%20v9%20%E2%80%94%20Free-7C3AED?style=for-the-badge&labelColor=7C3AED\"></a>\n</p>\n\n<p>\n  <a href=\"https://www.rundiffusion.com/prompting?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=prompting_resource\"><img alt=\"Prompting Guides\" src=\"https://img.shields.io/badge/%F0%9F%93%96%20Prompting%20Guides-1f1f23?style=for-the-badge\"></a>&nbsp;<a href=\"https://www.rundiffusion.com/juggernaut?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=lineup_compare\"><img alt=\"Compare the Lineup\" src=\"https://img.shields.io/badge/Compare%20the%20Lineup-1971c2?style=for-the-badge&labelColor=1f1f23\"></a>&nbsp;<a href=\"https://civitai.com/models/133005/juggernaut-xl\"><img alt=\"Civitai\" src=\"https://img.shields.io/badge/Civitai-Overwhelmingly%20Positive-EAB308?style=for-the-badge&labelColor=1f1f23\"></a>&nbsp;<img alt=\"License: CreativeML Open RAIL-M\" src=\"https://img.shields.io/badge/License-OpenRAIL--M-2ea44f?style=for-the-badge\">\n</p>\n\n</div>\n\n> Juggernaut XL is the most popular SDXL fine-tune in the world. Version 9 — co-developed by **KandooAI** and **RunDiffusion**, integrating **RunDiffusion Photo v2** — is the proven photorealism workhorse trusted by **hundreds of thousands of creators**: 6M+ all-time downloads on Hugging Face, 1.5M+ on Civitai, and an *Overwhelmingly Positive* rating across 7,780+ reviews.\n\n## Why Juggernaut XL v9 in 2026?\n\nThe SDXL ecosystem is the single most mature corner of open image generation, and v9 is its most refined photorealism checkpoint. Choose Juggernaut XL v9 when you want:\n\n- 📸 **Photorealism that holds up under scrutiny** — skin texture, micro-contrast, and natural lighting that translates from concept to print.\n- 💻 **Reasonable hardware** — runs comfortably on 8 GB of VRAM, unlike newer DiT-based models that demand 16+ GB.\n- 🧰 **The full SDXL toolbox** — drop-in compatibility with the thousands of SDXL ControlNets, IP-Adapter variants, AnimateDiff, regional prompting tools, and LoRAs already in your workflow.\n- 🏆 **Battle-tested reliability** — 26+ months in production, used in agencies, studios, and shipping products around the world.\n\nFor experimental and frontier work, see the rest of the [Juggernaut family](#looking-for-something-newer). For SDXL photorealism, this is the king of the hill.\n\n---\n\n<div align=\"center\">\n\n<h3>🚀 Skip the setup. Try Juggernaut XL v9 in your browser.</h3>\n\n<p>No installs. No GPU rental. No model downloads. <b>Just generate.</b></p>\n\n<a href=\"https://app.rundiffusion.com/login?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=midpage_cta\"><img alt=\"Launch Juggernaut on RunDiffusion\" src=\"https://img.shields.io/badge/%E2%96%B6%20Launch%20on%20RunDiffusion-7C3AED?style=for-the-badge&labelColor=7C3AED\"></a>\n\n<p><i>Pre-loaded into ComfyUI · Forge · Automatic1111 · Fooocus · InvokeAI · SwarmUI</i></p>\n\n</div>\n\n---\n\n## What V9 Brought Over V8\n\n- **RunDiffusion Photo v2** integration — a substantial upgrade to the photographic backbone of the model\n- Improved **skin detail** and micro-texture rendering\n- Stronger **lighting** and **contrast** control\n- Better consistency across **portrait**, **architecture**, **automotive**, **wildlife**, **food**, **interior**, and **landscape** photography\n\n## Two Ways to Run Juggernaut XL v9\n\n### 🚀 Easiest — Run it on RunDiffusion (recommended)\n\nOne-click access to Juggernaut XL v9 inside the UI you already know — ComfyUI, Forge, Automatic1111, Fooocus, InvokeAI, or SwarmUI. No setup, no model downloads, no GPU to rent. **Free trial included.**\n\n<div align=\"center\">\n  <a href=\"https://app.rundiffusion.com/login?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=quickstart_try\"><img alt=\"Get Started Free\" src=\"https://img.shields.io/badge/Get%20Started%20Free%20%E2%86%92-7C3AED?style=for-the-badge&labelColor=7C3AED\"></a>\n</div>\n\n### 💻 Or run it locally — Diffusers\n\n```python\nimport torch\nfrom diffusers import DiffusionPipeline\n\npipe = DiffusionPipeline.from_pretrained(\n    \"RunDiffusion/Juggernaut-XL-v9\",\n    torch_dtype=torch.float16,\n    variant=\"fp16\",\n    use_safetensors=True,\n).to(\"cuda\")\n\nprompt = \"Cinematic mid shot photo of an astronaut walking through a neon-lit Tokyo alley at night, hyperdetailed photography, skin details, shallow depth of field\"\n\nimage = pipe(\n    prompt,\n    width=832, height=1216,\n    num_inference_steps=35,\n    guidance_scale=5.0,\n).images[0]\n\nimage.save(\"juggernaut_xl_v9.png\")\n```\n\nFor ComfyUI / Forge / InvokeAI / SwarmUI: download `Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors` and drop it into your `models/checkpoints/` directory.\n\n## Recommended Settings\n\n| Parameter | Value |\n| --- | --- |\n| Resolution | `832 × 1216` (portrait) · `1216 × 832` (landscape) |\n| Sampler | `DPM++ 2M Karras` |\n| Steps | `30 – 40` |\n| CFG scale | `3 – 7` (lower = more realistic) |\n| VAE | **Already baked in** — no external VAE required |\n| Hi-Res fix | `4xNMKD-Siax_200k` upscaler · 15 steps · 0.3 denoise · 1.5× upscale |\n\n> **Negative prompts:** start with **none**. Add specific things you don't want as you iterate. Heavy negatives often hurt more than they help on this model.\n\n### Useful Prompt Keywords\n\nThese tokens reliably steer output:\n\n```\nArchitecture Photography · Wildlife Photography · Car Photography\nFood Photography · Interior Photography · Landscape Photography\nHyperdetailed Photography · Cinematic Movie · Still Mid Shot Photo\nFull Body Photo · Skin Details\n```\n\n📖 **For deeper prompting technique** — sampler choices, multi-subject framing, lighting language, negative-prompt strategy — see the [**RunDiffusion prompting library**](https://www.rundiffusion.com/prompting?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=prompting_inline). Free to read, no signup.\n\n## Files In This Repo\n\n| File | Purpose |\n| --- | --- |\n| `Juggernaut-XL_v9_RunDiffusionPhoto_v2.safetensors` | Single-file checkpoint for ComfyUI / Forge / InvokeAI / SwarmUI |\n| `unet/`, `text_encoder/`, `text_encoder_2/`, `vae/`, `tokenizer/`, `tokenizer_2/`, `scheduler/`, `model_index.json` | Diffusers-format directory tree (FP16 variant) for `from_pretrained` |\n\n## Looking For Something Newer?\n\nThe Juggernaut family has continued to evolve. Match the model to your project:\n\n| Model | Architecture | Best for |\n| --- | --- | --- |\n| **[Juggernaut Z](https://huggingface.co/RunDiffusion/Juggernaut-Z-Image)** | Lumina-Image-2 | Cinematic, presentation-ready output with stronger lighting and atmosphere |\n| **[Juggernaut Pro Flux](https://www.rundiffusion.com/juggernaut-pro-flux?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=cross_promo_pro_flux)** | FLUX.1 | Highest photo quality with strong consistency and lower token cost |\n| **[Juggernaut XII / XIII Ragnarok](https://www.rundiffusion.com/juggernaut?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=cross_promo_family)** | SDXL | The latest evolutions of the SDXL line, refined for prompt adherence and realism |\n| **Juggernaut XL v9** *(this model)* | SDXL 1.0 | Proven SDXL photorealism workhorse with the broadest tooling ecosystem |\n\nAll of them — and 100+ other SOTA models — are pre-loaded on **[RunDiffusion](https://app.rundiffusion.com/login?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=family_compare)**. Switch between them in two clicks.\n\n## Commercial Use\n\nThis model **may not be deployed behind paid API services** without explicit licensing. For commercial licensing, custom models, business inquiries, or consultation, contact **[juggernaut@rundiffusion.com](mailto:juggernaut@rundiffusion.com)**.\n\nYou are free to use this model for personal and creative work under the terms of the [CreativeML Open RAIL-M license](https://huggingface.co/spaces/CompVis/stable-diffusion-license).\n\n## Credits\n\nJuggernaut XL v9 was created by **[KandooAI](https://twitter.com/Juggernaut_AI)** in collaboration with **[RunDiffusion](https://www.rundiffusion.com/?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=credits)**. The photographic backbone — **RunDiffusion Photo v2** — was developed by the RunDiffusion team. Thanks to **Adam Stewart** for prompting workflow.\n\n---\n\n<div align=\"center\">\n\n<h3>Ready to generate?</h3>\n\n<p>Juggernaut XL v9 is one click away — no setup, no GPU rental, no model downloads.</p>\n\n<a href=\"https://app.rundiffusion.com/login?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=footer_cta\"><img alt=\"Try Juggernaut XL v9 — Free\" src=\"https://img.shields.io/badge/%E2%96%B6%20Try%20Juggernaut%20XL%20v9%20%E2%80%94%20Free-7C3AED?style=for-the-badge&labelColor=7C3AED\"></a>\n\n<p><sub><a href=\"https://www.rundiffusion.com/juggernaut?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=footer_lineup\">Compare the full Juggernaut lineup</a> · <a href=\"https://www.rundiffusion.com/prompting?utm_source=huggingface&utm_medium=model_card&utm_campaign=juggernaut_xl_v9&utm_content=footer_prompting\">Prompting guides</a> · <a href=\"mailto:juggernaut@rundiffusion.com\">Commercial licensing</a></sub></p>\n\n</div>\n"
+    },
+    "model_index.json": {
+      "status": 200,
+      "content": "{\n  \"_class_name\": \"StableDiffusionXLPipeline\",\n  \"_diffusers_version\": \"0.27.0.dev0\",\n  \"feature_extractor\": [\n    null,\n    null\n  ],\n  \"force_zeros_for_empty_prompt\": true,\n  \"image_encoder\": [\n    null,\n    null\n  ],\n  \"scheduler\": [\n    \"diffusers\",\n    \"DDPMScheduler\"\n  ],\n  \"text_encoder\": [\n    \"transformers\",\n    \"CLIPTextModel\"\n  ],\n  \"text_encoder_2\": [\n    \"transformers\",\n    \"CLIPTextModelWithProjection\"\n  ],\n  \"tokenizer\": [\n    \"transformers\",\n    \"CLIPTokenizer\"\n  ],\n  \"tokenizer_2\": [\n    \"transformers\",\n    \"CLIPTokenizer\"\n  ],\n  \"unet\": [\n    \"diffusers\",\n    \"UNet2DConditionModel\"\n  ],\n  \"vae\": [\n    \"diffusers\",\n    \"AutoencoderKL\"\n  ]\n}\n"
+    },
+    "scheduler/scheduler_config.json": {
+      "status": 200,
+      "content": "{\n  \"_class_name\": \"DDPMScheduler\",\n  \"_diffusers_version\": \"0.24.0.dev0\",\n  \"beta_end\": 0.012,\n  \"beta_schedule\": \"scaled_linear\",\n  \"beta_start\": 0.00085,\n  \"clip_sample\": false,\n  \"clip_sample_range\": 1.0,\n  \"dynamic_thresholding_ratio\": 0.995,\n  \"interpolation_type\": \"linear\",\n  \"num_train_timesteps\": 1000,\n  \"prediction_type\": \"epsilon\",\n  \"rescale_betas_zero_snr\": false,\n  \"sample_max_value\": 1.0,\n  \"set_alpha_to_one\": false,\n  \"skip_prk_steps\": true,\n  \"timestep_spacing\": \"trailing\"\n}"
+    }
+  }
+}

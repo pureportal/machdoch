@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "models": [
+    {
+      "name": "Z-Image photograph reference 144599398",
+      "directory": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\z-image\\01-z-image-reference-144599398-attempt-3"
+    },
+    {
+      "name": "Z-Image horror reference 145177887",
+      "directory": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\z-image\\02-z-image-reference-145177887"
+    }
+  ]
+}

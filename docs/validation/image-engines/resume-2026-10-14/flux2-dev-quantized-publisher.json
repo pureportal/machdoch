@@ -1,0 +1,232 @@
+{
+  "_id": "692490d70f9683de3fac50d1",
+  "id": "diffusers/FLUX.2-dev-bnb-4bit",
+  "private": false,
+  "pipeline_tag": "image-to-image",
+  "library_name": "diffusers",
+  "tags": [
+    "diffusers",
+    "safetensors",
+    "image-generation",
+    "image-editing",
+    "flux.2",
+    "image-to-image",
+    "en",
+    "license:other",
+    "diffusers:Flux2Pipeline",
+    "8-bit",
+    "region:us"
+  ],
+  "downloads": 14576,
+  "likes": 33,
+  "modelId": "diffusers/FLUX.2-dev-bnb-4bit",
+  "author": "diffusers",
+  "sha": "c30ad107542e63f222f864a8de510204394fb18a",
+  "lastModified": "2025-11-29T03:17:06.000Z",
+  "gated": false,
+  "disabled": false,
+  "model-index": null,
+  "config": {
+    "diffusers": {
+      "_class_name": "Flux2Pipeline"
+    }
+  },
+  "cardData": {
+    "language": [
+      "en"
+    ],
+    "license": "other",
+    "license_name": "flux-dev-non-commercial-license",
+    "license_link": "https://huggingface.co/black-forest-labs/FLUX.2-dev/blob/main/LICENSE.txt",
+    "extra_gated_prompt": "By clicking \"Agree\", you agree to the [FLUX [dev] Non-Commercial License Agreement](https://huggingface.co/black-forest-labs/FLUX.2-dev/blob/main/LICENSE.txt) and acknowledge the [Acceptable Use Policy](https://bfl.ai/legal/usage-policy).",
+    "tags": [
+      "image-generation",
+      "image-editing",
+      "flux.2"
+    ],
+    "pipeline_tag": "image-to-image",
+    "library_name": "diffusers"
+  },
+  "siblings": [
+    {
+      "rfilename": ".gitattributes",
+      "blobId": "f1ca65ce6a5b0774360fde1ec05157d9f937aaa2",
+      "size": 1580
+    },
+    {
+      "rfilename": "README.md",
+      "blobId": "aa62b309d94dfbdb843701b5041330315849f43e",
+      "size": 785
+    },
+    {
+      "rfilename": "model_index.json",
+      "blobId": "0ef3934d54cbd07f6b97d09899bb600d6ff66797",
+      "size": 431
+    },
+    {
+      "rfilename": "scheduler/scheduler_config.json",
+      "blobId": "17c0b5419f9c1923dddf7b28e2664313fffce40a",
+      "size": 486
+    },
+    {
+      "rfilename": "text_encoder/config.json",
+      "blobId": "13d47fae75f18fb45b69abef2919dd7304c2e78f",
+      "size": 1698
+    },
+    {
+      "rfilename": "text_encoder/generation_config.json",
+      "blobId": "e7cbec0c3d02641108f32fb5ed557c660b2bc3b5",
+      "size": 155
+    },
+    {
+      "rfilename": "text_encoder/model-00001-of-00004.safetensors",
+      "blobId": "ab3c4bff66b1ac8cc673074f7f1a6398512275ad",
+      "size": 4934721590,
+      "lfs": {
+        "sha256": "4875062f3f8a490cc45ac429ccfb1d146c5363542f3693ba77484cc62e7f3097",
+        "size": 4934721590,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder/model-00002-of-00004.safetensors",
+      "blobId": "c83a3bc802810c0199de37ebfd1d5b452d6fe236",
+      "size": 4991630581,
+      "lfs": {
+        "sha256": "6e687a020dc99c4d3ed2f196c8f58c5760544d78b443453d11a6de441ed62006",
+        "size": 4991630581,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder/model-00003-of-00004.safetensors",
+      "blobId": "0f96f85bb38492f797e1b107e035f7067fd256bf",
+      "size": 4169109891,
+      "lfs": {
+        "sha256": "71e0c94eae03c4d9e8511d11f8afded8a057f1805f5f7e3dca01bdf773fbdd30",
+        "size": 4169109891,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder/model-00004-of-00004.safetensors",
+      "blobId": "caf91c3125ca6904fae2681ca52f91d16f4eee9e",
+      "size": 1342177424,
+      "lfs": {
+        "sha256": "5b72834082387ce74af5414bf353165eab35661f3261f7c9c9f16da505b64e93",
+        "size": 1342177424,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder/model.safetensors.index.json",
+      "blobId": "02d113a63736cebf29b588799c45af18fab58aef",
+      "size": 213064
+    },
+    {
+      "rfilename": "tokenizer/chat_template.jinja",
+      "blobId": "ec73d954fdf40966f905d25f3d3f935763d4c0fd",
+      "size": 2670
+    },
+    {
+      "rfilename": "tokenizer/preprocessor_config.json",
+      "blobId": "6a1437bed5ae4f04eb0062aef0731dd1620909fe",
+      "size": 700
+    },
+    {
+      "rfilename": "tokenizer/processor_config.json",
+      "blobId": "0092b0f4fb04cc78378859f013badda71e5262c5",
+      "size": 189
+    },
+    {
+      "rfilename": "tokenizer/special_tokens_map.json",
+      "blobId": "a47054b449916f808ab94e6d2375c00ead78cb8f",
+      "size": 21449
+    },
+    {
+      "rfilename": "tokenizer/tokenizer.json",
+      "blobId": "4135d4bbc86571775430fa644e1bd376590cb74b",
+      "size": 17078037,
+      "lfs": {
+        "sha256": "b76085f9923309d873994d444989f7eb6ec074b06f25b58f1e8d7b7741070949",
+        "size": 17078037,
+        "pointerSize": 133
+      }
+    },
+    {
+      "rfilename": "tokenizer/tokenizer_config.json",
+      "blobId": "c61ab81def9a66ae3c0789385d9587904ca2d840",
+      "size": 198120
+    },
+    {
+      "rfilename": "transformer/config.json",
+      "blobId": "55942806e5328fe2e21764f6c10e5732e9afb5b2",
+      "size": 993
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+      "blobId": "fd7e12e6cb1ff2589aad1ce29cc4f2c8e945ab31",
+      "size": 9992770850,
+      "lfs": {
+        "sha256": "ef849d9660b578db97a3e29a9b99f4cef51ebb6938c11e3905eee46a5dda8d2b",
+        "size": 9992770850,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+      "blobId": "c5a17e1a25f675c353c950d71bbfa5f08aae5618",
+      "size": 8132999253,
+      "lfs": {
+        "sha256": "43bf95cffd68187b9e2097f11f80295433661ff8654d09413c27d1ad87c30107",
+        "size": 8132999253,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model.safetensors.index.json",
+      "blobId": "b95b48110355ffd854d39130462f6537d600dab1",
+      "size": 111137
+    },
+    {
+      "rfilename": "vae/config.json",
+      "blobId": "183bd5fa89fc62dabcd40abfad5fca243407d6e5",
+      "size": 770
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.safetensors",
+      "blobId": "1fd5b4913b6a9147a73b62f1ffcaf6fdc892a0df",
+      "size": 336213556,
+      "lfs": {
+        "sha256": "d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5",
+        "size": 336213556,
+        "pointerSize": 134
+      }
+    }
+  ],
+  "spaces": [
+    "Lakonik/pi-FLUX.2",
+    "Surn/HexaGrid",
+    "Surn/HexGameMaker",
+    "fffiloni/text2any-batch-hf-jobs-orchestration",
+    "rokmr/flux2.0",
+    "chansung/hf-open-source-ai-lab",
+    "Hossshakiba/VETO",
+    "capybara4996/flux2",
+    "yichuan-huang/flux-microscopy-image-enhancement",
+    "chansung/hf-open-source-ai-lab-a100-zerogpu-flux2",
+    "jianxinz/syncSDE-release",
+    "umer1995/NFA-Track-R-FLUX2-Fun-CN-ZeroGPU",
+    "kiel840524/flux2-dev-4bit-studio"
+  ],
+  "createdAt": "2025-11-24T17:07:35.000Z",
+  "safetensors": {
+    "parameters": {
+      "F32": 503491760,
+      "BF16": 16384,
+      "U8": 16111649159
+    },
+    "total": 16615157303
+  },
+  "usedStorage": 33916701182
+}

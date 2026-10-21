@@ -1,0 +1,22 @@
+{
+  "discoveryUrl": "https://civitai.com/models/2460560",
+  "civitaiModelId": 2460560,
+  "civitaiVersionId": 2766595,
+  "civitaiResourceType": "Workflows",
+  "weightHost": "huggingface.co",
+  "repository": "Nekofantasia/Nekofantasia-alpha",
+  "revision": "f612455c90326409330d5fc9578fc2bcafe979bc",
+  "selectedFiles": [
+    "LICENSE",
+    "README.md",
+    "example-workflow.json",
+    "Nekofantasia-01.safetensors",
+    "text_encoders/clip_l.safetensors",
+    "text_encoders/clip_g.safetensors",
+    "text_encoders/t5xxl_fp16.safetensors"
+  ],
+  "downloadBytes": 16530497551,
+  "originalLicenceVerified": true,
+  "nativeImportComplete": false,
+  "generatedImageVerified": false
+}

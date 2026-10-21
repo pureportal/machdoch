@@ -1,0 +1,200 @@
+{
+  "repository": "stabilityai/stable-diffusion-3.5-large-turbo",
+  "revision": "ec07796fc06b096cc56de9762974a28f4c632eda",
+  "gated": "auto",
+  "card": {
+    "license": "other",
+    "license_name": "stabilityai-ai-community",
+    "license_link": "LICENSE.md",
+    "tags": [
+      "text-to-image",
+      "stable-diffusion",
+      "diffusers"
+    ],
+    "inference": true,
+    "extra_gated_prompt": "By clicking \"Agree\", you agree to the [License Agreement](https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo/blob/main/LICENSE.md) and acknowledge Stability AI's [Privacy Policy](https://stability.ai/privacy-policy).",
+    "extra_gated_fields": {
+      "Name": "text",
+      "Email": "text",
+      "Country": "country",
+      "Organization or Affiliation": "text",
+      "Receive email updates and promotions on Stability AI products, services, and research?": {
+        "type": "select",
+        "options": [
+          "Yes",
+          "No"
+        ]
+      },
+      "What do you intend to use the model for?": {
+        "type": "select",
+        "options": [
+          "Research",
+          "Personal use",
+          "Creative Professional",
+          "Startup",
+          "Enterprise"
+        ]
+      },
+      "I agree to the License Agreement and acknowledge Stability AI's Privacy Policy": "checkbox"
+    },
+    "language": [
+      "en"
+    ],
+    "pipeline_tag": "text-to-image"
+  },
+  "files": [
+    {
+      "rfilename": ".gitattributes"
+    },
+    {
+      "rfilename": "LICENSE.md"
+    },
+    {
+      "rfilename": "README.md"
+    },
+    {
+      "rfilename": "SD3.5L_Turbo_example_workflow.json"
+    },
+    {
+      "rfilename": "mmdit.png"
+    },
+    {
+      "rfilename": "model_index.json"
+    },
+    {
+      "rfilename": "scheduler/scheduler_config.json"
+    },
+    {
+      "rfilename": "sd3.5_large_turbo.safetensors"
+    },
+    {
+      "rfilename": "sd3.5_large_turbo_demo.png"
+    },
+    {
+      "rfilename": "text_encoder/config.json"
+    },
+    {
+      "rfilename": "text_encoder/model.fp16.safetensors"
+    },
+    {
+      "rfilename": "text_encoder/model.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_2/config.json"
+    },
+    {
+      "rfilename": "text_encoder_2/model.fp16.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_2/model.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_3/config.json"
+    },
+    {
+      "rfilename": "text_encoder_3/model-00001-of-00002.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_3/model-00002-of-00002.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_3/model.fp16-00001-of-00002.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_3/model.fp16-00002-of-00002.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_3/model.safetensors.index.fp16.json"
+    },
+    {
+      "rfilename": "text_encoder_3/model.safetensors.index.json"
+    },
+    {
+      "rfilename": "text_encoders/README.md"
+    },
+    {
+      "rfilename": "text_encoders/clip_g.safetensors"
+    },
+    {
+      "rfilename": "text_encoders/clip_l.safetensors"
+    },
+    {
+      "rfilename": "text_encoders/t5xxl_fp16.safetensors"
+    },
+    {
+      "rfilename": "text_encoders/t5xxl_fp8_e4m3fn.safetensors"
+    },
+    {
+      "rfilename": "tokenizer/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer/vocab.json"
+    },
+    {
+      "rfilename": "tokenizer_2/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer_2/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer_2/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer_2/vocab.json"
+    },
+    {
+      "rfilename": "tokenizer_3/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer_3/spiece.model"
+    },
+    {
+      "rfilename": "tokenizer_3/tokenizer.json"
+    },
+    {
+      "rfilename": "tokenizer_3/tokenizer_config.json"
+    },
+    {
+      "rfilename": "transformer/config.json"
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00001-of-00002.safetensors"
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00002-of-00002.safetensors"
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model.safetensors.index.json"
+    },
+    {
+      "rfilename": "vae/config.json"
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.safetensors"
+    }
+  ],
+  "documents": {
+    "README.md": {
+      "status": 200,
+      "content": "---\nlicense: other\nlicense_name: stabilityai-ai-community\nlicense_link: LICENSE.md\ntags:\n- text-to-image\n- stable-diffusion\n- diffusers\ninference: true\nextra_gated_prompt: >-\n  By clicking \"Agree\", you agree to the [License\n  Agreement](https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo/blob/main/LICENSE.md)\n  and acknowledge Stability AI's [Privacy\n  Policy](https://stability.ai/privacy-policy).\nextra_gated_fields:\n  Name: text\n  Email: text\n  Country: country\n  Organization or Affiliation: text\n  Receive email updates and promotions on Stability AI products, services, and research?:\n    type: select\n    options:\n    - 'Yes'\n    - 'No'\n  What do you intend to use the model for?: \n    type: select\n    options:\n    - Research\n    - Personal use\n    - Creative Professional\n    - Startup\n    - Enterprise\n  I agree to the License Agreement and acknowledge Stability AI's Privacy Policy: checkbox\n\nlanguage:\n- en\npipeline_tag: text-to-image\n---\n\n# Stable Diffusion 3.5 Large Turbo\n![3.5 Large Turbo Demo Image](sd3.5_large_turbo_demo.png)\n\n## Model\n\n![MMDiT](mmdit.png)\n\n\n[Stable Diffusion 3.5 Large Turbo](https://stability.ai/news/introducing-stable-diffusion-3-5) is a  Multimodal Diffusion Transformer (MMDiT) text-to-image model with [Adversarial Diffusion Distillation (ADD)](https://stability.ai/research/adversarial-diffusion-distillation) that features improved performance in image quality, typography, complex prompt understanding, and resource-efficiency, with a focus on fewer inference steps.\n\nPlease note: This model is released under the [Stability Community License](https://stability.ai/community-license-agreement). Visit [Stability AI](https://stability.ai/license) to learn or [contact us](https://stability.ai/enterprise) for commercial licensing details.\n\n\n### Model Description\n\n- **Developed by:** Stability AI\n- **Model type:** MMDiT text-to-image generative model\n- **Model Description:** This model generates images based on text prompts. It is an ADD-distilled [Multimodal Diffusion Transformer](https://arxiv.org/abs/2403.03206) that use three fixed, pretrained text encoders, and with QK-normalization. \n\n### License\n\n- **Community License:** Free for research, non-commercial, and commercial use for organizations or individuals with less than $1M in total annual revenue. More details can be found in the [Community License Agreement](https://stability.ai/community-license-agreement). Read more at https://stability.ai/license.\n- **For individuals and organizations with annual revenue above $1M**: Please [contact us](https://stability.ai/enterprise) to get an Enterprise License.\n\n### Model Sources\n\nFor local or self-hosted use, we recommend [ComfyUI](https://github.com/comfyanonymous/ComfyUI) for node-based UI inference, or [diffusers](https://github.com/huggingface/diffusers) or [GitHub](https://github.com/Stability-AI/sd3.5) for programmatic use.\n\n- **ComfyUI:** [Github](https://github.com/comfyanonymous/ComfyUI), [Example Workflow](https://comfyanonymous.github.io/ComfyUI_examples/sd3/)\n  \n- **Huggingface Space:** [Space](https://huggingface.co/spaces/stabilityai/stable-diffusion-3.5-large-turbo)\n\n- **Diffusers**: [See below](#using-with-diffusers).\n\n- **GitHub**: [GitHub](https://github.com/Stability-AI/sd3.5).\n\n- **API Endpoints:**\n  - [Stability AI API](https://platform.stability.ai/docs/api-reference#tag/Generate/paths/~1v2beta~1stable-image~1generate~1sd3/post)\n  - [Deepinfra](https://deepinfra.com/stabilityai/sd3.5)\n\n\n\n### Implementation Details\n\n- **QK Normalization:** Implements the QK normalization technique to improve training Stability.\n\n- **Adversarial Diffusion Distillation (ADD)** (see the [technical report](https://stability.ai/research/adversarial-diffusion-distillation)), which allows sampling with 4 steps at high image quality. \n\n- **Text Encoders：**\n    - CLIPs: [OpenCLIP-ViT/G](https://github.com/mlfoundations/open_clip), [CLIP-ViT/L](https://github.com/openai/CLIP/tree/main), context length 77 tokens\n    - T5: [T5-xxl](https://huggingface.co/google/t5-v1_1-xxl), context length 77/256 tokens at different stages of training\n\n- **Training Data and Strategy:**\n    \n    This model was trained on a wide variety of data, including synthetic data and filtered publicly available data. \n\nFor more technical details of the original MMDiT architecture, please refer to the [Research paper](https://stability.ai/news/stable-diffusion-3-research-paper).\n\n\n### Model Performance\n\nSee [blog](https://stability.ai/news/introducing-stable-diffusion-3-5) for our study about comparative performance in prompt adherence and aesthetic quality. \n\n\n## File Structure\n\nClick here to access the [Files and versions tab](https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo/tree/main)\n\n```│\n├── text_encoders/  (text_encoder/text_encoder_1/text_encoder_2 are for diffusers)\n│   ├── README.md\n│   ├── clip_g.safetensors\n│   ├── clip_l.safetensors\n│   ├── t5xxl_fp16.safetensors\n│   └── t5xxl_fp8_e4m3fn.safetensors\n│\n├── README.md\n├── LICENSE\n├── sd3_large_turbo.safetensors\n├── SD3.5L_Turbo_example_workflow.json\n└── sd3_large_turbo_demo.png\n\n** File structure below is for diffusers integration**\n├── scheduler/\n├── text_encoder/\n├── text_encoder_2/\n├── text_encoder_3/\n├── tokenizer/\n├── tokenizer_2/\n├── tokenizer_3/\n├── transformer/\n├── vae/\n└── model_index.json\n\n```\n\n## Using with Diffusers\nUpgrade to the latest version of the [🧨 diffusers library](https://github.com/huggingface/diffusers)\n```\npip install -U diffusers\n```\n\nand then you can run\n```py\nimport torch\nfrom diffusers import StableDiffusion3Pipeline\n\npipe = StableDiffusion3Pipeline.from_pretrained(\"stabilityai/stable-diffusion-3.5-large-turbo\", torch_dtype=torch.bfloat16)\npipe = pipe.to(\"cuda\")\n\nimage = pipe(\n    \"A capybara holding a sign that reads Hello Fast World\",\n    num_inference_steps=4,\n    guidance_scale=0.0,\n).images[0]\nimage.save(\"capybara.png\")\n```\n\n### Quantizing the model with diffusers\n\nReduce your VRAM usage and have the model fit on low VRAM GPUs\n\n```\npip install bitsandbytes\n```\n\n```py\nfrom diffusers import BitsAndBytesConfig, SD3Transformer2DModel\nfrom diffusers import StableDiffusion3Pipeline\nimport torch\n\nmodel_id = \"stabilityai/stable-diffusion-3.5-large-turbo\"\n\nnf4_config = BitsAndBytesConfig(\n    load_in_4bit=True,\n    bnb_4bit_quant_type=\"nf4\",\n    bnb_4bit_compute_dtype=torch.bfloat16\n)\nmodel_nf4 = SD3Transformer2DModel.from_pretrained(\n    model_id,\n    subfolder=\"transformer\",\n    quantization_config=nf4_config,\n    torch_dtype=torch.bfloat16\n)\n\nt5_nf4 = T5EncoderModel.from_pretrained(\"diffusers/t5-nf4\", torch_dtype=torch.bfloat16)\n\npipeline = StableDiffusion3Pipeline.from_pretrained(\n    model_id, \n    transformer=model_nf4,\n    text_encoder_3=t5_nf4,\n    torch_dtype=torch.bfloat16\n)\npipeline.enable_model_cpu_offload()\n\nprompt = \"A whimsical and creative image depicting a hybrid creature that is a mix of a waffle and a hippopotamus, basking in a river of melted butter amidst a breakfast-themed landscape. It features the distinctive, bulky body shape of a hippo. However, instead of the usual grey skin, the creature's body resembles a golden-brown, crispy waffle fresh off the griddle. The skin is textured with the familiar grid pattern of a waffle, each square filled with a glistening sheen of syrup. The environment combines the natural habitat of a hippo with elements of a breakfast table setting, a river of warm, melted butter, with oversized utensils or plates peeking out from the lush, pancake-like foliage in the background, a towering pepper mill standing in for a tree.  As the sun rises in this fantastical world, it casts a warm, buttery glow over the scene. The creature, content in its butter river, lets out a yawn. Nearby, a flock of birds take flight\"\n\nimage = pipeline(\n    prompt=prompt,\n    num_inference_steps=4,\n    guidance_scale=0.0,\n    max_sequence_length=512,\n).images[0]\nimage.save(\"whimsical.png\")\n```\n\n## Uses\n\n### Intended Uses\n\nIntended uses include the following:\n* Generation of artworks and use in design and other artistic processes.\n* Applications in educational or creative tools.\n* Research on generative models, including understanding the limitations of generative models.\n\nAll uses of the model must be in accordance with our [Acceptable Use Policy](https://stability.ai/use-policy).\n\n### Out-of-Scope Uses\n\nThe model was not trained to be factual or true representations of people or events.  As such, using the model to generate such content is out-of-scope of the abilities of this model.\n\n## Safety\n\nAs part of our safety-by-design and responsible AI deployment approach, we take deliberate measures to ensure Integrity starts at the early stages of development. We implement safety measures throughout the development of our models. We have implemented safety mitigations that are intended to reduce the risk of certain harms, however we recommend that developers conduct their own testing and apply additional mitigations based on their specific use cases.  \nFor more about our approach to Safety, please visit our [Safety page](https://stability.ai/safety).\n\n### Integrity Evaluation\n\nOur integrity evaluation methods include structured evaluations and red-teaming testing for certain harms.  Testing was conducted primarily in English and may not cover all possible harms.  \n\n### Risks identified and mitigations:\n\n* Harmful content:  We have used filtered data sets when training our models and implemented safeguards that attempt to strike the right balance between usefulness and preventing harm. However, this does not guarantee that all possible harmful content has been removed. TAll developers and deployers should exercise caution and implement content safety guardrails based on their specific product policies and application use cases.\n* Misuse: Technical limitations and developer and end-user education can help mitigate against malicious applications of models. All users are required to adhere to our [Acceptable Use Policy](https://stability.ai/use-policy), including when applying fine-tuning and prompt engineering mechanisms. Please reference the Stability AI Acceptable Use Policy for information on violative uses of our products.\n* Privacy violations: Developers and deployers are encouraged to adhere to privacy regulations with techniques that respect data privacy.\n\n## Contact\n\nPlease report any issues with the model or contact us:\n\n* Safety issues:  safety@stability.ai\n* Security issues:  security@stability.ai\n* Privacy issues:  privacy@stability.ai\n* License and general: https://stability.ai/license\n* Enterprise license: https://stability.ai/enterprise\n"
+    },
+    "model_index.json": {
+      "status": 401,
+      "content": "Access to model stabilityai/stable-diffusion-3.5-large-turbo is restricted. You must have access to it and be authenticated to access it. Please log in."
+    },
+    "scheduler/scheduler_config.json": {
+      "status": 401,
+      "content": "Access to model stabilityai/stable-diffusion-3.5-large-turbo is restricted. You must have access to it and be authenticated to access it. Please log in."
+    },
+    "LICENSE.md": {
+      "status": 200,
+      "content": "STABILITY AI COMMUNITY LICENSE AGREEMENT\nLast Updated: July 5, 2024\n\n\nI. INTRODUCTION\n\nThis Agreement applies to any individual person or entity (\"You\", \"Your\" or \"Licensee\") that uses or distributes any portion or element of the Stability AI Materials  or Derivative Works thereof for any Research & Non-Commercial or Commercial purpose. Capitalized terms not otherwise defined herein are defined in Section V below.\n\n\nThis Agreement is intended to allow research, non-commercial, and limited commercial uses of the Models free of charge. In order to ensure that certain limited commercial uses of the Models continue to be allowed, this Agreement  preserves free access to the Models for people or organizations  generating annual revenue of less than US $1,000,000 (or local currency equivalent).  \n\n\nBy clicking \"I Accept\"  or by using or distributing or using any portion or element of the Stability Materials or Derivative Works, You agree that You have read, understood and are bound by the terms of this Agreement. If You are acting on behalf of a company, organization or other entity, then \"You\" includes you and that entity, and You agree that You: (i) are an authorized representative of such entity with the authority to bind such entity to this Agreement, and (ii) You agree to the terms of this Agreement on that entity's behalf. \n\nII. RESEARCH & NON-COMMERCIAL USE LICENSE\n\nSubject to the terms of this Agreement, Stability AI grants You a non-exclusive, worldwide, non-transferable, non-sublicensable, revocable and royalty-free limited license under Stability AI's intellectual property or other rights owned by Stability AI embodied in the Stability AI Materials to use, reproduce, distribute, and create Derivative Works of, and make modifications to, the Stability AI Materials for any Research or Non-Commercial Purpose. \"Research Purpose\" means academic or scientific advancement, and in each case, is not primarily intended for commercial advantage or monetary compensation to You or others. \"Non-Commercial Purpose\" means any purpose other than a Research Purpose that is not primarily intended for commercial advantage or monetary compensation to You or others, such as personal use (i.e., hobbyist) or evaluation and testing.  \n\nIII. COMMERCIAL USE LICENSE\n\nSubject to the terms of this Agreement (including the remainder of this Section III), Stability AI grants You a non-exclusive, worldwide, non-transferable, non-sublicensable, revocable and royalty-free limited license under Stability AI's intellectual property or other rights owned by Stability AI embodied in the Stability AI Materials to use, reproduce, distribute, and create Derivative Works of, and make modifications to, the Stability AI Materials for any Commercial Purpose. \"Commercial Purpose\" means any purpose other than a Research Purpose or Non-Commercial Purpose that is primarily intended for commercial advantage or monetary compensation to You or others, including but not limited to, (i) creating, modifying, or distributing Your product or service, including via a hosted service or application programming interface, and (ii) for Your business's or organization's internal operations. \nIf You are using or distributing the Stability AI Materials for a Commercial Purpose, You must register with Stability AI at (https://stability.ai/community-license). If at any time You or Your Affiliate(s), either individually or in aggregate, generate more than USD $1,000,000 in annual revenue (or the equivalent thereof in Your local currency), regardless of whether that revenue is generated directly or indirectly from the Stability AI Materials or Derivative Works, any licenses granted to You under this Agreement shall terminate as of such date. You must request a license from Stability AI at (https://stability.ai/enterprise) , which Stability AI may grant to You in its sole discretion. If you receive Stability AI Materials, or any Derivative Works thereof, from a Licensee as part of an integrated end user product, then Section III of this Agreement will not apply to you.\n\nIV. GENERAL TERMS\n\nYour Research, Non-Commercial, and Commercial License(s) under this Agreement are subject to the following terms.\na.  Distribution & Attribution. If You distribute or make available the Stability AI Materials or a Derivative Work to a third party, or a product or service that uses any portion of them, You shall: (i) provide a copy of this Agreement to that third party, (ii) retain the following attribution notice within a \"Notice\" text file distributed as a part of such copies: \"This Stability AI Model is licensed under the Stability AI Community License, Copyright ©  Stability AI Ltd. All Rights Reserved\", and (iii) prominently display \"Powered by Stability AI\" on a related website, user interface, blogpost, about page, or product documentation.  If You create a Derivative Work, You may add your own attribution notice(s) to the \"Notice\" text file included with that Derivative Work, provided that You clearly indicate which attributions apply to the Stability AI Materials and state in the \"Notice\" text file that You changed the Stability AI Materials and how it was modified.\nb.  Use Restrictions. Your use of the Stability AI Materials and Derivative Works, including any output or results of the Stability AI Materials or Derivative Works, must comply with applicable laws and regulations (including Trade Control Laws and equivalent regulations) and adhere to the Documentation and Stability AI's AUP, which is hereby incorporated by reference. Furthermore, You will not use the Stability AI Materials or Derivative Works, or any output or results of the Stability AI Materials or Derivative Works, to create or improve any foundational generative AI model (excluding the Models or Derivative Works). \nc.  Intellectual Property. \n(i) Trademark License.  No trademark licenses are granted under this Agreement, and in connection with the Stability AI Materials or Derivative Works, You may not use any name or mark owned by or associated with Stability AI or any of its Affiliates, except as required under Section IV(a) herein.\n(ii)  Ownership of Derivative Works.  As between You and Stability AI, You are the owner of Derivative Works You create, subject to Stability AI's ownership of the Stability AI Materials and any Derivative Works made by or for Stability AI.\n(iii)  Ownership of Outputs. As between You and Stability AI, You own any outputs generated from the Models or Derivative Works to the extent permitted by applicable law. \n(iv)  Disputes.  If You or Your Affiliate(s) institute litigation or other proceedings against Stability AI (including a cross-claim or counterclaim in a lawsuit) alleging that the Stability AI Materials, Derivative Works or associated outputs or results, or any portion of any of the foregoing, constitutes infringement of intellectual property or other rights owned or licensable by You, then any licenses granted to You under this Agreement shall terminate as of the date such litigation or claim is filed or instituted. You will indemnify and hold harmless Stability AI from and against any claim by any third party arising out of or related to Your use or distribution of the Stability AI Materials or Derivative Works in violation of this Agreement.\n(v)  Feedback.  From time to time, You may provide Stability AI with verbal and/or written suggestions, comments or other feedback related to Stability AI's existing or prospective technology, products or services (collectively, \"Feedback\"). You are not obligated to provide Stability AI with Feedback, but to the extent that You do, You hereby grant Stability AI a perpetual, irrevocable, royalty-free, fully-paid, sub-licensable, transferable, non-exclusive, worldwide right and license to exploit the Feedback in any manner without restriction. Your Feedback is provided \"AS IS\" and You make no warranties whatsoever about any Feedback.\nd.  Disclaimer Of Warranty. UNLESS REQUIRED BY APPLICABLE LAW, THE STABILITY AI MATERIALS AND ANY OUTPUT AND RESULTS THEREFROM ARE PROVIDED ON AN \"AS IS\" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING, WITHOUT LIMITATION, ANY WARRANTIES OF TITLE, NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE. YOU ARE SOLELY RESPONSIBLE FOR DETERMINING THE APPROPRIATENESS OR LAWFULNESS OF USING OR REDISTRIBUTING THE STABILITY AI MATERIALS, DERIVATIVE WORKS OR ANY OUTPUT OR RESULTS AND ASSUME ANY RISKS ASSOCIATED WITH YOUR USE OF THE STABILITY AI MATERIALS, DERIVATIVE WORKS AND ANY OUTPUT AND RESULTS.\ne.  Limitation Of Liability. IN NO EVENT WILL STABILITY AI OR ITS AFFILIATES BE LIABLE UNDER ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, TORT, NEGLIGENCE, PRODUCTS LIABILITY, OR OTHERWISE, ARISING OUT OF THIS AGREEMENT, FOR ANY LOST PROFITS OR ANY DIRECT, INDIRECT, SPECIAL, CONSEQUENTIAL, INCIDENTAL, EXEMPLARY OR PUNITIVE DAMAGES, EVEN IF STABILITY AI OR ITS AFFILIATES HAVE BEEN ADVISED OF THE POSSIBILITY OF ANY OF THE FOREGOING.\nf.  Term And Termination. The term of this Agreement will commence upon Your acceptance of this Agreement or access to the Stability AI Materials and will continue in full force and effect until terminated in accordance with the terms and conditions herein. Stability AI may terminate this Agreement if You are in breach of any term or condition of this Agreement. Upon termination of this Agreement, You shall delete and cease use of any Stability AI Materials or Derivative Works. Section IV(d), (e), and (g) shall survive the termination of this Agreement.\ng.  Governing Law.  This Agreement will be governed by and constructed in accordance with the laws of the United States and the State of California without regard to choice of law principles, and the UN Convention on Contracts for International Sale of Goods does not apply to this Agreement.\n\nV. DEFINITIONS \n\n\"Affiliate(s)\" means any entity that directly or indirectly controls, is controlled by, or is under common control with the subject entity; for purposes of this definition, \"control\" means direct or indirect ownership or control of more than 50% of the voting interests of the subject entity.\n\"Agreement\" means this Stability AI Community License Agreement.\n\"AUP\" means the Stability AI Acceptable Use Policy available at https://stability.ai/use-policy, as may be updated from time to time.\n\"Derivative Work(s)\" means (a) any derivative work of the Stability AI Materials as recognized by U.S. copyright laws and (b) any modifications to a Model, and any other model created which is based on or derived from the Model or the Model's output, including\"fine tune\" and \"low-rank adaptation\" models derived from a Model or a Model's output, but do not include the output of any Model.\n\"Documentation\" means any specifications, manuals, documentation, and other written information provided by Stability AI related to the Software or Models.\n\"Model(s)\" means, collectively, Stability AI's proprietary models and algorithms, including machine-learning models, trained model weights and other elements of the foregoing listed on Stability's Core Models Webpage available at, https://stability.ai/core-models, as may be updated from time to time.\n\"Stability AI\" or \"we\" means Stability AI Ltd. and its Affiliates.\n\"Software\" means Stability AI's proprietary software made available under this Agreement now or in the future.\n\"Stability AI Materials\" means, collectively, Stability's proprietary Models, Software and Documentation (and any portion or combination thereof) made available under this Agreement. \n\"Trade Control Laws\" means any applicable U.S. and non-U.S. export control and trade sanctions laws and regulations."
+    }
+  }
+}

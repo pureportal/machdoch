@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "realAssets": true,
+  "modes": [
+    {
+      "mode": "basic",
+      "runId": "8d129423-fee7-478c-9398-6c8a40741901",
+      "digest": "5bf3fd6de4ba33ec22ad00752d32f67631d6851ba2c385cc8672c8f5f5b8c10a",
+      "modelId": "local:user:5ae9b7d780d6ab09015c3c1a45946d3b2de41331a06752454219f39338dd7b60",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "device": "AMD Radeon RX 9070 (cuda:0)",
+      "width": 896,
+      "height": 1120,
+      "steps": 9,
+      "seed": 41791
+    },
+    {
+      "mode": "advanced",
+      "runId": "5838bd35-5760-47c0-8204-09a64f70b835",
+      "digest": "5bf3fd6de4ba33ec22ad00752d32f67631d6851ba2c385cc8672c8f5f5b8c10a",
+      "modelId": "local:user:5ae9b7d780d6ab09015c3c1a45946d3b2de41331a06752454219f39338dd7b60",
+      "workerVersion": "media-diffusers-worker/1.90.0",
+      "device": "AMD Radeon RX 9070 (cuda:0)",
+      "width": 896,
+      "height": 1120,
+      "steps": 9,
+      "seed": 41791
+    }
+  ]
+}

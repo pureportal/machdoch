@@ -1,0 +1,28 @@
+{
+  "retainedRequiredAttribution": true,
+  "models": [
+    {
+      "id": "local:user:5fc80891e28870d540fba30271ec02b4fe83e88acb3ae0e5f72bf1171ef63c1e",
+      "architecture": "qwen-image-2.1-turbo",
+      "licenseSource": "https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo/blob/main/LICENSE",
+      "licenseFile": "D:\\Models\\machdoch\\models\\packages\\user-5fc80891e28870d540fba30271ec02b4\\revisions\\5fc80891e28870d540fba30271ec02b4fe83e88acb3ae0e5f72bf1171ef63c1e\\LICENSE",
+      "licenseSha256": "8dc973f024ff95966bea25866efa443fd16776dcb1001e681e3d467ea572b28d",
+      "noticeFile": "D:\\Models\\machdoch\\models\\packages\\user-5fc80891e28870d540fba30271ec02b4\\NOTICE",
+      "noticeSha256": "e7bfa35a2d8c9b873380654128c29f0a8fc550080fe81adc54462c8213d8faa2",
+      "weightChanges": false,
+      "immutableRevisionRestored": true
+    },
+    {
+      "id": "local:user:75c1b4d45c0b134af0c43d71a19318837fdf2bbc779de42b3e4f5f3c4e12644b",
+      "architecture": "qwen-image-2.1",
+      "licenseSource": "https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE",
+      "licenseFile": "D:\\Models\\machdoch\\models\\packages\\user-75c1b4d45c0b134af0c43d71a1931883\\revisions\\75c1b4d45c0b134af0c43d71a19318837fdf2bbc779de42b3e4f5f3c4e12644b\\LICENSE",
+      "licenseSha256": "8dc973f024ff95966bea25866efa443fd16776dcb1001e681e3d467ea572b28d",
+      "noticeFile": "D:\\Models\\machdoch\\models\\packages\\user-75c1b4d45c0b134af0c43d71a1931883\\NOTICE",
+      "noticeSha256": "e7bfa35a2d8c9b873380654128c29f0a8fc550080fe81adc54462c8213d8faa2",
+      "weightChanges": false,
+      "immutableRevisionRestored": true
+    }
+  ],
+  "noticeLocation": "Package root; existing content-addressed revision files remain unchanged."
+}

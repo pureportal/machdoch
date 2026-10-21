@@ -1,0 +1,13 @@
+{
+  "technicalChecksOnly": true,
+  "batches": [
+    {
+      "name": "hidream-fp4-smoke",
+      "outputRoot": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\hidream-fp4-smoke",
+      "passed": true,
+      "exitCode": 0,
+      "seconds": 1327.4219999999987
+    }
+  ],
+  "passed": true
+}

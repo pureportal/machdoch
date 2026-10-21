@@ -1,0 +1,37 @@
+[
+  {
+    "package": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared",
+    "components": [
+      {
+        "component": "transformer",
+        "valid": false,
+        "error": "HiDream quantized layer caption_projection.0.linear is excluded by its configuration. Correct the component configuration and import the package again."
+      },
+      {
+        "component": "text_encoder_3",
+        "valid": true
+      },
+      {
+        "component": "text_encoder_4",
+        "valid": true
+      }
+    ]
+  },
+  {
+    "package": "D:\\Models\\machdoch\\downloads\\hidream-fp4-prepared",
+    "components": [
+      {
+        "component": "transformer",
+        "valid": true
+      },
+      {
+        "component": "text_encoder_3",
+        "valid": true
+      },
+      {
+        "component": "text_encoder_4",
+        "valid": true
+      }
+    ]
+  }
+]

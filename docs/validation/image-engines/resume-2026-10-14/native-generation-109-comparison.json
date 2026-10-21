@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "workerVersion": "media-diffusers-worker/1.109.0",
+  "basicAndAdvanced": true,
+  "imageDigests": [
+    "701ee16d959b1cf14aae0e61ad14d9f6a22907dcf85d23d932ec8940f8b65977",
+    "701ee16d959b1cf14aae0e61ad14d9f6a22907dcf85d23d932ec8940f8b65977"
+  ],
+  "technicalChecksOnly": true
+}

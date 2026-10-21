@@ -1,0 +1,73 @@
+[
+  {
+    "file": "model-00001-of-00004.safetensors",
+    "headerBytes": 148272,
+    "tensors": 1060,
+    "dtypes": {
+      "F32": 494,
+      "BF16": 72,
+      "U8": 494
+    },
+    "nf4States": 247,
+    "fp4States": 0,
+    "layerIndexes": [],
+    "sampleKeys": [
+      "language_model.model.layers.0.mlp.down_proj.weight.absmax",
+      "language_model.model.layers.0.mlp.down_proj.weight.quant_map",
+      "language_model.model.layers.0.mlp.gate_proj.weight.absmax",
+      "language_model.model.layers.0.mlp.gate_proj.weight.quant_map"
+    ]
+  },
+  {
+    "file": "model-00002-of-00004.safetensors",
+    "headerBytes": 64880,
+    "tensors": 477,
+    "dtypes": {
+      "F32": 222,
+      "BF16": 32,
+      "U8": 223
+    },
+    "nf4States": 111,
+    "fp4States": 0,
+    "layerIndexes": [],
+    "sampleKeys": [
+      "language_model.model.layers.10.mlp.down_proj.weight.absmax",
+      "language_model.model.layers.10.mlp.down_proj.weight.quant_map",
+      "language_model.model.layers.11.mlp.down_proj.weight.absmax",
+      "language_model.model.layers.11.mlp.down_proj.weight.quant_map"
+    ]
+  },
+  {
+    "file": "model-00003-of-00004.safetensors",
+    "headerBytes": 54344,
+    "tensors": 400,
+    "dtypes": {
+      "F32": 186,
+      "BF16": 29,
+      "U8": 185
+    },
+    "nf4States": 93,
+    "fp4States": 0,
+    "layerIndexes": [],
+    "sampleKeys": [
+      "language_model.model.layers.26.mlp.down_proj.weight.absmax",
+      "language_model.model.layers.26.mlp.down_proj.weight.quant_map",
+      "language_model.model.layers.26.mlp.up_proj.weight.absmax",
+      "language_model.model.layers.26.mlp.up_proj.weight.quant_map"
+    ]
+  },
+  {
+    "file": "model-00004-of-00004.safetensors",
+    "headerBytes": 136,
+    "tensors": 1,
+    "dtypes": {
+      "BF16": 1
+    },
+    "nf4States": 0,
+    "fp4States": 0,
+    "layerIndexes": [],
+    "sampleKeys": [
+      "language_model.lm_head.weight"
+    ]
+  }
+]

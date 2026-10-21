@@ -1,0 +1,15 @@
+{
+  "pid": 22452,
+  "executable": "C:\\Development\\machdoch\\.cache\\image-engine-native-108-artifact\\machdoch.exe",
+  "endpoint": "http://127.0.0.1:9228",
+  "workerVersion": "media-diffusers-worker/1.108.0",
+  "hashes": {
+    "machdoch.exe": "18e4655369b8135a1d0a2f1518d83b31f62aa8a7ba9324402cef51cb3a66023f",
+    "python/media_diffusers_worker.py": "34b36e962c4db1f9f1d5b76fb208712ef771bd8302a0f61d7bf713d7728db0d4",
+    "python/media_open_models.py": "01a13d526c49fdd848a2e8b4eced2e7154fbd6d64ca9ed4135a9ca9fa6c1446a",
+    "python/media_flux2.py": "17228a18f31c5cbb4d754acfd62a88a1bf4326aebaefeecbb1a4421051f20a39",
+    "python/image_sampling_profiles.json": "0a87ae95f12f219685c4ce5fe76d4e579b2e5868f1f0abb1242ed40d434d7155"
+  },
+  "startedAt": "2026-10-15T02:51:35.359Z",
+  "expectedModelStore": "D:/Models/machdoch"
+}

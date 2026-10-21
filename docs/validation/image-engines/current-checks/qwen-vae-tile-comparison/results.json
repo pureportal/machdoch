@@ -1,0 +1,60 @@
+{
+  "model": "D:\\Models\\machdoch\\models\\packages\\user-5fc80891e28870d540fba30271ec02b4\\revisions\\5fc80891e28870d540fba30271ec02b4fe83e88acb3ae0e5f72bf1171ef63c1e",
+  "sourceImage": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\reference-144599398-image.jpeg",
+  "sourceSha256": "6eb1e5410ec4bd469831a2d21891b42df6502952b4d5f84f84249bcfb7e0d96f",
+  "dtype": "bfloat16",
+  "canvas": [
+    896,
+    1120
+  ],
+  "sameEncodedLatents": true,
+  "convolutionBackend": "native",
+  "device": "AMD Radeon RX 9070",
+  "records": [
+    {
+      "tile": 0,
+      "stride": null,
+      "seconds": 1.0780000000013388,
+      "peakAllocatedBytes": 11262723584,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0,
+      "maxAbsoluteErrorAgainstFullFrame": 0.0,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-vae-tile-comparison-bfloat16\\tile-0.png"
+    },
+    {
+      "tile": 256,
+      "stride": 192,
+      "seconds": 1.5939999999991414,
+      "peakAllocatedBytes": 1461405184,
+      "meanAbsoluteErrorAgainstFullFrame": 0.009202473796904087,
+      "maxAbsoluteErrorAgainstFullFrame": 0.5703125,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-vae-tile-comparison-bfloat16\\tile-256.png"
+    },
+    {
+      "tile": 512,
+      "stride": 384,
+      "seconds": 1.1719999999986612,
+      "peakAllocatedBytes": 3517965824,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0031897311564534903,
+      "maxAbsoluteErrorAgainstFullFrame": 0.26953125,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-vae-tile-comparison-bfloat16\\tile-512.png"
+    },
+    {
+      "tile": 1024,
+      "stride": 768,
+      "seconds": 1.1720000000004802,
+      "peakAllocatedBytes": 10361374208,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0014929291792213917,
+      "maxAbsoluteErrorAgainstFullFrame": 0.189453125,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-vae-tile-comparison-bfloat16\\tile-1024.png"
+    },
+    {
+      "tile": 1536,
+      "stride": 1152,
+      "seconds": 1.1409999999996217,
+      "peakAllocatedBytes": 11262723584,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0,
+      "maxAbsoluteErrorAgainstFullFrame": 0.0,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-vae-tile-comparison-bfloat16\\tile-1536.png"
+    }
+  ]
+}

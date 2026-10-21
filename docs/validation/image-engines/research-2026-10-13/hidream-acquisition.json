@@ -1,0 +1,407 @@
+{
+  "_id": "67f28d37b8141546495f71fc",
+  "id": "HiDream-ai/HiDream-I1-Full",
+  "private": false,
+  "pipeline_tag": "text-to-image",
+  "library_name": "diffusers",
+  "tags": [
+    "diffusers",
+    "safetensors",
+    "image-generation",
+    "HiDream.ai",
+    "text-to-image",
+    "en",
+    "arxiv:2505.22705",
+    "license:mit",
+    "diffusers:HiDreamImagePipeline",
+    "region:us"
+  ],
+  "downloads": 759,
+  "likes": 1007,
+  "modelId": "HiDream-ai/HiDream-I1-Full",
+  "author": "HiDream-ai",
+  "sha": "8ccbbfb270ccdae26d6bb0081df67dc81e4033bf",
+  "lastModified": "2025-07-17T06:11:32.000Z",
+  "gated": false,
+  "disabled": false,
+  "model-index": null,
+  "config": {
+    "diffusers": {
+      "_class_name": "HiDreamImagePipeline"
+    }
+  },
+  "cardData": {
+    "license": "mit",
+    "tags": [
+      "image-generation",
+      "HiDream.ai"
+    ],
+    "language": [
+      "en"
+    ],
+    "pipeline_tag": "text-to-image",
+    "library_name": "diffusers"
+  },
+  "siblings": [
+    {
+      "rfilename": ".gitattributes",
+      "blobId": "9718996098aa3502b5d25e1d88d0e12039d7f762",
+      "size": 1564
+    },
+    {
+      "rfilename": "README.md",
+      "blobId": "1cbe0903fcc5ee4ded31898975b0b0322085a8c1",
+      "size": 7454
+    },
+    {
+      "rfilename": "demo.jpg",
+      "blobId": "e61c165996e4543d9992ebcef569c44e4f2bbbdb",
+      "size": 3020682,
+      "lfs": {
+        "sha256": "0564174e380e48c1122d20f3af541ee0b31a231dbafaabe7b8d31434d7ef1149",
+        "size": 3020682,
+        "pointerSize": 132
+      }
+    },
+    {
+      "rfilename": "model_index.json",
+      "blobId": "18589f63f4ee02f49bd6c874eb100ff29fd04319",
+      "size": 838
+    },
+    {
+      "rfilename": "scheduler/scheduler_config.json",
+      "blobId": "9d8a9d8b3438f2834064e1f3720c80b006410f7a",
+      "size": 750
+    },
+    {
+      "rfilename": "text_encoder/config.json",
+      "blobId": "d68d36da7f20b4a8e64e8fefb7be314bb0f322f4",
+      "size": 580
+    },
+    {
+      "rfilename": "text_encoder/model.safetensors",
+      "blobId": "0dc34026903d637dd152175bf16f9d9b5645474e",
+      "size": 495149872,
+      "lfs": {
+        "sha256": "b70c11ad5d7e9abf6109348908f599ea382f8019e1f36910bbc8ebecde936633",
+        "size": 495149872,
+        "pointerSize": 134
+      }
+    },
+    {
+      "rfilename": "text_encoder_2/config.json",
+      "blobId": "5185426f6460342e76740ed5f391b5465d0efb52",
+      "size": 576
+    },
+    {
+      "rfilename": "text_encoder_2/model.safetensors",
+      "blobId": "73f56e012694ab826564b0ce2a3346a09b302d5a",
+      "size": 2779424184,
+      "lfs": {
+        "sha256": "4d6effa7a5e600cabf7528ed7234146a13ead1b2c151211d706b293a060b112a",
+        "size": 2779424184,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder_3/config.json",
+      "blobId": "cf6c4d78b3b4f575a8b296ee5fccf6ab4e14c686",
+      "size": 741
+    },
+    {
+      "rfilename": "text_encoder_3/model-00001-of-00002.safetensors",
+      "blobId": "fb543745ed2f4aa1105e3a8f97ff89a6ff7b5662",
+      "size": 4994582224,
+      "lfs": {
+        "sha256": "ec87bffd1923e8b2774a6d240c922a41f6143081d52cf83b8fe39e9d838c893e",
+        "size": 4994582224,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder_3/model-00002-of-00002.safetensors",
+      "blobId": "c1596ab4886c9962503f01891b16715d1469fbe5",
+      "size": 4530066360,
+      "lfs": {
+        "sha256": "a5640855b301fcdbceddfa90ae8066cd9414aff020552a201a255ecf2059da00",
+        "size": 4530066360,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder_3/model.safetensors.index.json",
+      "blobId": "c8728bc3dca59d2616a2a594cbac3ddb9eb77d5b",
+      "size": 19885
+    },
+    {
+      "rfilename": "tokenizer/merges.txt",
+      "blobId": "76e821f1b6f0a9709293c3b6b51ed90980b3166b",
+      "size": 524619
+    },
+    {
+      "rfilename": "tokenizer/special_tokens_map.json",
+      "blobId": "2c2130b544c0c5a72d5d00da071ba130a9800fb2",
+      "size": 472
+    },
+    {
+      "rfilename": "tokenizer/tokenizer_config.json",
+      "blobId": "2e8612a429492973fe60635b3f44a28b065cfac0",
+      "size": 737
+    },
+    {
+      "rfilename": "tokenizer/vocab.json",
+      "blobId": "469be27c5c010538f845f518c4f5e8574c78f7c8",
+      "size": 1059962
+    },
+    {
+      "rfilename": "tokenizer_2/merges.txt",
+      "blobId": "76e821f1b6f0a9709293c3b6b51ed90980b3166b",
+      "size": 524619
+    },
+    {
+      "rfilename": "tokenizer_2/special_tokens_map.json",
+      "blobId": "ae0c5be6f35217e51c4c000fd325d8de0294e99c",
+      "size": 460
+    },
+    {
+      "rfilename": "tokenizer_2/tokenizer_config.json",
+      "blobId": "a8438e020c4497a429240d6b89e0bf9a6e2ffa92",
+      "size": 725
+    },
+    {
+      "rfilename": "tokenizer_2/vocab.json",
+      "blobId": "469be27c5c010538f845f518c4f5e8574c78f7c8",
+      "size": 1059962
+    },
+    {
+      "rfilename": "tokenizer_3/special_tokens_map.json",
+      "blobId": "17ade346a1042cbe0c1436f5bedcbd85c099d582",
+      "size": 2543
+    },
+    {
+      "rfilename": "tokenizer_3/spiece.model",
+      "blobId": "317a5ccbde45300f5d1d970d4d449af2108b147e",
+      "size": 791656,
+      "lfs": {
+        "sha256": "d60acb128cf7b7f2536e8f38a5b18a05535c9e14c7a355904270e15b0945ea86",
+        "size": 791656,
+        "pointerSize": 131
+      }
+    },
+    {
+      "rfilename": "tokenizer_3/tokenizer.json",
+      "blobId": "21ed409afa3df5a822caa0fd5da30d13941f90b5",
+      "size": 2424235
+    },
+    {
+      "rfilename": "tokenizer_3/tokenizer_config.json",
+      "blobId": "b336fa236135e6c87e246485e4d69e415cc57da0",
+      "size": 20817
+    },
+    {
+      "rfilename": "transformer/config.json",
+      "blobId": "f99e44fb320546035ca153638f1f2276e0cd2e04",
+      "size": 876
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00001-of-00007.safetensors",
+      "blobId": "d7e8b9506f8dc84a70d18ff592d16ed5c71543b3",
+      "size": 4985892648,
+      "lfs": {
+        "sha256": "3cb3f6d77a3fce19b90fa7f66da0cbe997b0785a38a788b559290d3062f6fd26",
+        "size": 4985892648,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00002-of-00007.safetensors",
+      "blobId": "25252cf7b8397320ecc78111bd377be9165e5b06",
+      "size": 4982937568,
+      "lfs": {
+        "sha256": "6f192e75dc90dd92b4784a6e54cdd4ee46ed6db83afcbabd2b54e0214311c7fc",
+        "size": 4982937568,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00003-of-00007.safetensors",
+      "blobId": "1adea3f6d24f68dbd5d7f6761735449b037c2a78",
+      "size": 4993382144,
+      "lfs": {
+        "sha256": "474e02b3119876680dec43975b050c956e11f094e96c729877f9604021c50e4e",
+        "size": 4993382144,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00004-of-00007.safetensors",
+      "blobId": "c9d3638f6efa91f90fa044cd76afb138a768a704",
+      "size": 4977488288,
+      "lfs": {
+        "sha256": "1ff9be19f7474cbc52ed3c7b2cb50efea111924cc590b79f3136629ec4405e3a",
+        "size": 4977488288,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00005-of-00007.safetensors",
+      "blobId": "34cc4efe55349cd8a639e17515223df6543f117d",
+      "size": 4993217032,
+      "lfs": {
+        "sha256": "0c896b23d2ca6b98144c504df9c9ff3a353868a3f55a3f14264578a749c832d7",
+        "size": 4993217032,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00006-of-00007.safetensors",
+      "blobId": "03afd583f77d424c17c43d77fbb5112c1b489f74",
+      "size": 4993217016,
+      "lfs": {
+        "sha256": "a313e3be734749a6d425096a9aa2d5368aaf359784f9ea44d012eec263df8941",
+        "size": 4993217016,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00007-of-00007.safetensors",
+      "blobId": "36dd12ffd02aeb593084a59c2a7884eb1f5e6429",
+      "size": 4285536488,
+      "lfs": {
+        "sha256": "bcc365028564be0e53537c6cd98cbbf85c2d1164bc5f4c19dfe1bc5bcc000118",
+        "size": 4285536488,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model.safetensors.index.json",
+      "blobId": "f1ecf4952c2076dc9ef09f54814a2d4b3f14bfa9",
+      "size": 181734
+    },
+    {
+      "rfilename": "vae/config.json",
+      "blobId": "4f7c628fc8e59fc842c9846ed74414249052ba0b",
+      "size": 820
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.safetensors",
+      "blobId": "3557b83a132d75a1f71bde9963021e667b1a0d2d",
+      "size": 167666902,
+      "lfs": {
+        "sha256": "f5b59a26851551b67ae1fe58d32e76486e1e812def4696a4bea97f16604d40a3",
+        "size": 167666902,
+        "pointerSize": 134
+      }
+    }
+  ],
+  "spaces": [
+    "RioShiina/ImageGen",
+    "Nymbo/Serverless-ImgGen-Hub",
+    "alxander84/ImageGen-32",
+    "Dekonstruktio/Fluxus",
+    "blanchon/HiDream-ai-full",
+    "wavespeed/hidream-arena",
+    "rahul7star/ai-toolkit",
+    "pierke/HiDream-ai-HiDream-I1-Full",
+    "nazdridoy/inferoxy-hub",
+    "Blessed304/HiDream-ai-HiDream-I1-Full",
+    "Tinchote/ImageGen",
+    "Moebius-pizza/Serverless-ImgGen-Hub",
+    "samsammysammy/Serverless-ImgGen-Hub",
+    "runebloodstone/img_test",
+    "svjack/HiDream-ai-full",
+    "Sarip/FarqonArtV2",
+    "pangolins/HiDream-ai-HiDream-I1-Full",
+    "sakthivelt/HiDream-ai-HiDream-I1-Full",
+    "flowersniffin/HiDream-ai-HiDream-I1-Full",
+    "kosmicoctopus/HiDream-ai-HiDream-I1-Full",
+    "MavrickMixx/HiDream-ai-HiDream-I1-Full",
+    "punit029/HiDream-ai-HiDream-I1-Full",
+    "BlackGoku7/HiDream-ai-HiDream-I1-Full",
+    "Uncrewed/HiDream-ai-HiDream-I1-Full2",
+    "kim112342/HiDream-ai-HiDream-I1-Full",
+    "Kino09/CKV-ai",
+    "Kino09/HiDream-ai-HiDream-I1-Full",
+    "BJHBJBJ/HiDream-ai-HiDream-I1-Full",
+    "hicodo/HiDream-ai-HiDream-I1-Full",
+    "aashish2211/HiDream-ai-HiDream-I1-Full45",
+    "pavalavishal3288/HiDream-ai-HiDream-I1-Full",
+    "Aldid/HiDream-ai-HiDream-I1-Full",
+    "firefive/HiDream-ai-HiDream-I1-Full",
+    "fxbtyrbtyer/HiDream-ai-HiDream-I1-Full",
+    "redaout/HiDream-ai-HiDream-I1-Full",
+    "chethangbd8/HiDream-ai-HiDream-I1-Full",
+    "rothel888/HiDream-ai-HiDream-I1-Full",
+    "bikroid/HiDream-ai-HiDream-I1-Full",
+    "darkspirit010/HiDream-ai-HiDream-I1-Full",
+    "AIstudioclo/HiDream-ai-HiDream-I1-Full",
+    "Kino10/CKV-ai",
+    "rafaelkamp/black-forest-labs-FLUX.1-dev",
+    "Talhazen/HiDream-ai-HiDream-I1-Full",
+    "Thetutorcyber/HiDream-ai-HiDream-I1-Full",
+    "sfilata/HiDream-ai-HiDream-I1-Full",
+    "deltaw/HiDream-ai-HiDream-I1-Full",
+    "Jimzimsalabim/HiDream-ai-HiDream-I1-Full",
+    "Sumitroy89/HiDream-ai-HiDream-I1-Full",
+    "romulo54/HiDream-ai-HiDream-I1-Full",
+    "justShannniii/HiDream-ai-HiDream-I1-Full",
+    "ahmadhidayatatull/HiDream-ai-HiDream-I1-Full",
+    "ActivatedOne/HiDream-ai-HiDream-I1-Full",
+    "RoukTest/HiDream-ai-HiDream-I1-Full",
+    "jkalyan488/HiDream-ai-HiDream-I1-Full",
+    "runas22/HiDream-ai-HiDream-I1-Full",
+    "ivanmar/HiDream-ai-HiDream-I1-Full",
+    "RomSon123/HiDream-ai-HiDream-I1-Full",
+    "ansaritghseen009/Zaftf",
+    "Fakhrihakimm/HiDream-ai-HiDream-I1-Full",
+    "Ehslanju/HiDream-ai-HiDream-I1-Full",
+    "Djambalaja/HiDream-ai-HiDream-I1-Full",
+    "sanvera/HiDream-ai-HiDream-I1-Full",
+    "amiaa88888/HiDream-ai-HiDream-I1-Full",
+    "boobesh2912/HiDream-ai-HiDream-I1-Full",
+    "MAKOTEGT/HiDream-ai-HiDream-I1-Full",
+    "4yu4me4us/HiDream-ai-HiDream-I1-Full",
+    "flary/HiDream-ai-HiDream-I1-Full",
+    "yanengo/HiDream-ai-HiDream-I1-Full",
+    "VishalVijayanNair/First_agent_template",
+    "cake96861/HiDream-ai-HiDream-I1-Full",
+    "mraq1413/HiDream-ai-HiDream-I1-Full",
+    "ohgrss/HiDream-ai-HiDream-I1-Full",
+    "ramimu/LoRa_Streamlit",
+    "OWlysion/HiDream-ai-HiDream-I1-Full",
+    "jackewterg/HiDream-ai-HiDream-I1-Full",
+    "wangoes-dev/HiDream-ai-HiDream-I1-Full",
+    "Dudeicuf/HiDream-ai-HiDream-I1-Full",
+    "koa988/HiDream-ai-HiDream-I1-Full",
+    "dachdude/HiDream-ai-HiDream-I1-Full",
+    "Xiaochengcheng/HiDream-ai-HiDream-I1-Full",
+    "PikaMao/HiDream-ai-HiDream-I1-Full",
+    "fatimah0308/storyboard-generator",
+    "madansa7/HiDream-ai-HiDream-I1-Full",
+    "Igloo77/HiDream-ai-HiDream-I1-Full",
+    "Eerdmann1/HiDream-ai-HiDream-I1-Full",
+    "rtzyxx/HiDream-ai-HiDream-I1-Full",
+    "adithya2211/HiDream-ai-HiDream-I1-Full",
+    "arief24/HiDream-ai-HiDream-I1-Full",
+    "S0ndrikk2/HiDream-ai-HiDream-I1-Full",
+    "alyxsis/img",
+    "jamin1312/HiDream-ai-HiDream-I1-Full",
+    "hypevolve/HiDream-ai-HiDream-I1-Full",
+    "fatimah0308/storyboardgeneratorV2",
+    "Mmthboarder69/HiDream-ai-HiDream-I1-Full",
+    "Memoroeisdead/HiDream-ai-HiDream-I1-Full",
+    "qp521/HiDream-ai-HiDream-I1-Full",
+    "rahul7star/ohamlab-ai-toolkit",
+    "tcfoo0/HiDream-ai-HiDream-I1-Full",
+    "jbilcke-hf/ai-toolkit",
+    "sub314xxl/ai-toolkit"
+  ],
+  "createdAt": "2025-04-06T14:18:31.000Z",
+  "safetensors": {
+    "parameters": {
+      "F16": 17105733184
+    },
+    "total": 17105733184
+  },
+  "usedStorage": 47186202978
+}

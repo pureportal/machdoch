@@ -1,0 +1,98 @@
+[
+  {
+    "fixture": {
+      "request": {
+        "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\112902\\126688\\dreamshaperXL_alpha2Xl10.safetensors",
+        "architecture": "dreamshaper-xl",
+        "displayName": "DreamShaper XL Alpha 2 · Lykon",
+        "sourceUrl": "https://civitai.com/models/112902?modelVersionId=126688",
+        "commercialUse": "review-required",
+        "licenseName": null,
+        "reviewToken": ""
+      },
+      "expectedDigest": "0f1b80cfe81b9c3bde7fdcbf6898897b2811b27be1df684583c3d85cbc9b1fa4"
+    },
+    "exitCode": 0,
+    "seconds": 656.059
+  },
+  {
+    "fixture": {
+      "request": {
+        "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\795765\\889818\\illustriousXL_v01.safetensors",
+        "architecture": "illustrious-xl",
+        "displayName": "Illustrious XL v0.1 · OnomaAI Research",
+        "sourceUrl": "https://civitai.com/models/795765?modelVersionId=889818",
+        "commercialUse": "review-required",
+        "licenseName": null,
+        "reviewToken": ""
+      },
+      "expectedDigest": "3e15ba00387db678ab4a099f75771c4f5ac67fda9e7100a01d263eaf30145aa9"
+    },
+    "exitCode": 0,
+    "seconds": 559.334
+  },
+  {
+    "fixture": {
+      "request": {
+        "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\833294\\1022833\\noobaiXLNAIXL_epsilonPred10Version.safetensors",
+        "architecture": "noobai-xl",
+        "displayName": "NoobAI XL Epsilon 1.0 · Laxhar Dream Lab",
+        "sourceUrl": "https://civitai.com/models/833294?modelVersionId=1022833",
+        "commercialUse": "review-required",
+        "licenseName": null,
+        "reviewToken": ""
+      },
+      "expectedDigest": "ff827fc34584853257d6de64b8bc3e34156814f6b0cfd1a5112a5e9164806df1"
+    },
+    "exitCode": 0,
+    "seconds": 674.562
+  },
+  {
+    "fixture": {
+      "request": {
+        "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\139562\\789646\\realvisxlV50_v50Bakedvae_703211.safetensors",
+        "architecture": "realvis-xl",
+        "displayName": "RealVisXL V5.0 · SG161222",
+        "sourceUrl": "https://civitai.com/models/139562?modelVersionId=789646",
+        "commercialUse": "review-required",
+        "licenseName": null,
+        "reviewToken": ""
+      },
+      "expectedDigest": "6a35a7855770ae9820a3c931d4964c3817b6d9e3c6f9c4dabb5b3a94e5643b80"
+    },
+    "exitCode": 0,
+    "seconds": 433.799
+  },
+  {
+    "fixture": {
+      "request": {
+        "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\220609\\248781\\sdTurbo_v10.safetensors",
+        "architecture": "sd-turbo",
+        "displayName": "SD-Turbo · Stability AI",
+        "sourceUrl": "https://civitai.com/models/220609?modelVersionId=248781",
+        "commercialUse": "review-required",
+        "licenseName": null,
+        "reviewToken": ""
+      },
+      "expectedDigest": "3f067a1b943cf162f2b8f8588f6cf5824bd5b4c7d1d88d87164b9ca123616549"
+    },
+    "exitCode": 0,
+    "seconds": 237.838
+  },
+  {
+    "fixture": {
+      "request": {
+        "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\215478\\242797\\sdxlTurbo_fullVersion.safetensors",
+        "architecture": "sdxl-turbo",
+        "displayName": "SDXL Turbo · Stability AI",
+        "sourceUrl": "https://civitai.com/models/215478?modelVersionId=242797",
+        "commercialUse": "review-required",
+        "licenseName": null,
+        "reviewToken": ""
+      },
+      "expectedDigest": "2e58e3704b4c0831bf848e0507c9b5ff2cd8d007b8d0719dba3874156f631050"
+    },
+    "exitCode": 0,
+    "seconds": 933.733
+  }
+]

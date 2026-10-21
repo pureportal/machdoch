@@ -1,0 +1,410 @@
+[
+  {
+    "id": "stabilityai/stable-diffusion-3.5-medium",
+    "sha": "b940f670f0eda2d07fbb75229e779da1ad11eb80",
+    "gated": "auto",
+    "files": [
+      "SD3.5L_plus_SD3.5M_upscaling_example_workflow.json",
+      "SD3.5M_SLG_example_workflow.json",
+      "SD3.5M_example_workflow.json",
+      "model_index.json",
+      "scheduler/scheduler_config.json",
+      "text_encoder/config.json",
+      "text_encoder_2/config.json",
+      "text_encoder_3/config.json",
+      "text_encoder_3/model.safetensors.index.fp16.json",
+      "text_encoder_3/model.safetensors.index.json",
+      "tokenizer/special_tokens_map.json",
+      "tokenizer/tokenizer_config.json",
+      "tokenizer/vocab.json",
+      "tokenizer_2/special_tokens_map.json",
+      "tokenizer_2/tokenizer_config.json",
+      "tokenizer_2/vocab.json",
+      "tokenizer_3/special_tokens_map.json",
+      "tokenizer_3/tokenizer.json",
+      "tokenizer_3/tokenizer_config.json",
+      "transformer/config.json",
+      "vae/config.json"
+    ]
+  },
+  {
+    "id": "city96/stable-diffusion-3.5-medium-gguf",
+    "sha": "5aeb282c48bfe54f6557062640f65684811536c8",
+    "gated": false,
+    "files": []
+  },
+  {
+    "id": "ND911/stable-diffusion-3.5-medium-GGUF",
+    "sha": "6400da40b45dc91da43781c499a0346fe83683f8",
+    "gated": false,
+    "files": []
+  },
+  {
+    "id": "ckpt/stable-diffusion-3.5-medium",
+    "sha": "e40d4eb633c3afe53cb550f8e9b589972226fc61",
+    "gated": false,
+    "files": [
+      "SD3.5M_SLG_example_workflow.json",
+      "SD3.5M_example_workflow.json",
+      "model_index.json",
+      "scheduler/scheduler_config.json",
+      "text_encoder/config.json",
+      "text_encoder_2/config.json",
+      "text_encoder_3/config.json",
+      "text_encoder_3/model.safetensors.index.fp16.json",
+      "text_encoder_3/model.safetensors.index.json",
+      "tokenizer/special_tokens_map.json",
+      "tokenizer/tokenizer_config.json",
+      "tokenizer/vocab.json",
+      "tokenizer_2/special_tokens_map.json",
+      "tokenizer_2/tokenizer_config.json",
+      "tokenizer_2/vocab.json",
+      "tokenizer_3/special_tokens_map.json",
+      "tokenizer_3/tokenizer.json",
+      "tokenizer_3/tokenizer_config.json",
+      "transformer/config.json",
+      "vae copy/config.json",
+      "vae/config.json"
+    ]
+  },
+  {
+    "id": "adamo1139/stable-diffusion-3.5-medium-ungated",
+    "sha": "1cb9becf522803da9d25c2713d1a82b41bc6198d",
+    "gated": false,
+    "files": [
+      "SD3.5L_plus_SD3.5M_upscaling_example_workflow.json",
+      "SD3.5M_SLG_example_workflow.json",
+      "SD3.5M_example_workflow.json",
+      "model_index.json",
+      "scheduler/scheduler_config.json",
+      "text_encoder/config.json",
+      "text_encoder_2/config.json",
+      "text_encoder_3/config.json",
+      "text_encoder_3/model.safetensors.index.fp16.json",
+      "text_encoder_3/model.safetensors.index.json",
+      "tokenizer/special_tokens_map.json",
+      "tokenizer/tokenizer_config.json",
+      "tokenizer/vocab.json",
+      "tokenizer_2/special_tokens_map.json",
+      "tokenizer_2/tokenizer_config.json",
+      "tokenizer_2/vocab.json",
+      "tokenizer_3/special_tokens_map.json",
+      "tokenizer_3/tokenizer.json",
+      "tokenizer_3/tokenizer_config.json",
+      "transformer/config.json",
+      "vae copy/config.json",
+      "vae/config.json"
+    ]
+  },
+  {
+    "id": "yuvraj108c/stable-diffusion-3.5-medium",
+    "sha": "f4b856c6a0b73cc636ad8662a77fc97d8da03c2b",
+    "gated": false,
+    "files": [
+      "SD3.5L_plus_SD3.5M_upscaling_example_workflow.json",
+      "SD3.5M_SLG_example_workflow.json",
+      "SD3.5M_example_workflow.json",
+      "model_index.json",
+      "scheduler/scheduler_config.json",
+      "text_encoder/config.json",
+      "text_encoder_2/config.json",
+      "text_encoder_3/config.json",
+      "text_encoder_3/model.safetensors.index.fp16.json",
+      "text_encoder_3/model.safetensors.index.json",
+      "tokenizer/special_tokens_map.json",
+      "tokenizer/tokenizer_config.json",
+      "tokenizer/vocab.json",
+      "tokenizer_2/special_tokens_map.json",
+      "tokenizer_2/tokenizer_config.json",
+      "tokenizer_2/vocab.json",
+      "tokenizer_3/special_tokens_map.json",
+      "tokenizer_3/tokenizer.json",
+      "tokenizer_3/tokenizer_config.json",
+      "transformer/config.json",
+      "vae copy/config.json",
+      "vae/config.json"
+    ]
+  },
+  {
+    "id": "frankjoshua/stable-diffusion-3.5-medium",
+    "sha": "b940f670f0eda2d07fbb75229e779da1ad11eb80",
+    "gated": false,
+    "files": [
+      "SD3.5L_plus_SD3.5M_upscaling_example_workflow.json",
+      "SD3.5M_SLG_example_workflow.json",
+      "SD3.5M_example_workflow.json",
+      "model_index.json",
+      "scheduler/scheduler_config.json",
+      "text_encoder/config.json",
+      "text_encoder_2/config.json",
+      "text_encoder_3/config.json",
+      "text_encoder_3/model.safetensors.index.fp16.json",
+      "text_encoder_3/model.safetensors.index.json",
+      "tokenizer/special_tokens_map.json",
+      "tokenizer/tokenizer_config.json",
+      "tokenizer/vocab.json",
+      "tokenizer_2/special_tokens_map.json",
+      "tokenizer_2/tokenizer_config.json",
+      "tokenizer_2/vocab.json",
+      "tokenizer_3/special_tokens_map.json",
+      "tokenizer_3/tokenizer.json",
+      "tokenizer_3/tokenizer_config.json",
+      "transformer/config.json",
+      "vae/config.json"
+    ]
+  },
+  {
+    "id": "second-state/stable-diffusion-3.5-medium-GGUF",
+    "sha": "58b78c305a43ddfcffe1ab54d7022995f61667ac",
+    "gated": false,
+    "files": []
+  },
+  {
+    "id": "gaianet/stable-diffusion-3.5-medium-GGUF",
+    "sha": "f758404d5a1820213121bb8528454710da876087",
+    "gated": false,
+    "files": []
+  },
+  {
+    "id": "ford442/stable-diffusion-3.5-medium-bf16",
+    "sha": "56f94e8d425fafdadbfc01515331ec358179c4a9",
+    "gated": false,
+    "files": [
+      "model_index.json",
+      "scheduler/scheduler_config.json",
+      "text_encoder/config.json",
+      "text_encoder_2/config.json",
+      "text_encoder_3/config.json",
+      "text_encoder_3/model.safetensors.index.json",
+      "tokenizer/special_tokens_map.json",
+      "tokenizer/tokenizer_config.json",
+      "tokenizer/vocab.json",
+      "tokenizer_2/special_tokens_map.json",
+      "tokenizer_2/tokenizer_config.json",
+      "tokenizer_2/vocab.json",
+      "tokenizer_3/special_tokens_map.json",
+      "tokenizer_3/tokenizer.json",
+      "tokenizer_3/tokenizer_config.json",
+      "transformer/config.json",
+      "vae/config.json"
+    ]
+  },
+  {
+    "id": "DDUF/stable-diffusion-3.5-medium-DDUF",
+    "sha": "629315bbf0f9c61790e051b1da32a3c572fdd73a",
+    "gated": false,
+    "files": []
+  },
+  {
+    "id": "tensorart/stable-diffusion-3.5-medium-turbo",
+    "sha": "e89195b004b3fb37c1ca7c6be91ff0114b7ccf38",
+    "gated": false,
+    "files": [
+      "contrast_ckpt_.json",
+      "contrast_lora_.json",
+      "model_index.json",
+      "scheduler/scheduler_config.json",
+      "sd3.5m-4steps-nonstop.json",
+      "text_encoder/config.json",
+      "text_encoder_2/config.json",
+      "text_encoder_3/config.json",
+      "text_encoder_3/model.safetensors.index.json",
+      "tokenizer/special_tokens_map.json",
+      "tokenizer/tokenizer_config.json",
+      "tokenizer/vocab.json",
+      "tokenizer_2/special_tokens_map.json",
+      "tokenizer_2/tokenizer_config.json",
+      "tokenizer_2/vocab.json",
+      "tokenizer_3/special_tokens_map.json",
+      "tokenizer_3/tokenizer.json",
+      "tokenizer_3/tokenizer_config.json",
+      "transformer/config.json",
+      "vae/config.json"
+    ]
+  },
+  {
+    "id": "Godreign/stable-diffusion-3.5-medium-turbo-openvino-int4-model",
+    "sha": "576b008fdfbc325ea5dfffe2748852bf4dafe25a",
+    "gated": false,
+    "files": [
+      "model_index.json",
+      "scheduler/scheduler_config.json",
+      "text_encoder/config.json",
+      "text_encoder_2/config.json",
+      "text_encoder_3/config.json",
+      "tokenizer/special_tokens_map.json",
+      "tokenizer/tokenizer_config.json",
+      "tokenizer/vocab.json",
+      "tokenizer_2/special_tokens_map.json",
+      "tokenizer_2/tokenizer_config.json",
+      "tokenizer_2/vocab.json",
+      "tokenizer_3/special_tokens_map.json",
+      "tokenizer_3/tokenizer.json",
+      "tokenizer_3/tokenizer_config.json",
+      "transformer/config.json",
+      "vae_decoder/config.json",
+      "vae_encoder/config.json"
+    ]
+  },
+  {
+    "id": "stabilityai/stable-diffusion-3.5-medium_amdgpu",
+    "sha": "7fda8db0a85dd26abac622143e948f05ffafc30e",
+    "gated": false,
+    "files": [
+      "stable-diffusion-3.5-medium_io16/config.json",
+      "stable-diffusion-3.5-medium_io16/scheduler/scheduler_config.json",
+      "stable-diffusion-3.5-medium_io16/tokenizer/special_tokens_map.json",
+      "stable-diffusion-3.5-medium_io16/tokenizer/tokenizer_config.json",
+      "stable-diffusion-3.5-medium_io16/tokenizer/vocab.json",
+      "stable-diffusion-3.5-medium_io16/tokenizer_2/special_tokens_map.json",
+      "stable-diffusion-3.5-medium_io16/tokenizer_2/tokenizer_config.json",
+      "stable-diffusion-3.5-medium_io16/tokenizer_2/vocab.json",
+      "stable-diffusion-3.5-medium_io16/tokenizer_3/special_tokens_map.json",
+      "stable-diffusion-3.5-medium_io16/tokenizer_3/tokenizer.json",
+      "stable-diffusion-3.5-medium_io16/tokenizer_3/tokenizer_config.json",
+      "stable-diffusion-3.5-medium_io32/config.json",
+      "stable-diffusion-3.5-medium_io32/scheduler/scheduler_config.json",
+      "stable-diffusion-3.5-medium_io32/tokenizer/special_tokens_map.json",
+      "stable-diffusion-3.5-medium_io32/tokenizer/tokenizer_config.json",
+      "stable-diffusion-3.5-medium_io32/tokenizer/vocab.json",
+      "stable-diffusion-3.5-medium_io32/tokenizer_2/special_tokens_map.json",
+      "stable-diffusion-3.5-medium_io32/tokenizer_2/tokenizer_config.json",
+      "stable-diffusion-3.5-medium_io32/tokenizer_2/vocab.json",
+      "stable-diffusion-3.5-medium_io32/tokenizer_3/special_tokens_map.json",
+      "stable-diffusion-3.5-medium_io32/tokenizer_3/tokenizer.json",
+      "stable-diffusion-3.5-medium_io32/tokenizer_3/tokenizer_config.json"
+    ]
+  },
+  {
+    "id": "armwaheed/stable-diffusion-3.5-medium-onnx",
+    "sha": "71582daf830bd0a6c256681633ee74dd23bf718a",
+    "gated": false,
+    "files": [
+      "model_index.json",
+      "scheduler/scheduler_config.json",
+      "text_encoder/config.json",
+      "text_encoder_2/config.json",
+      "text_encoder_3/config.json",
+      "tokenizer/special_tokens_map.json",
+      "tokenizer/tokenizer_config.json",
+      "tokenizer/vocab.json",
+      "tokenizer_2/special_tokens_map.json",
+      "tokenizer_2/tokenizer_config.json",
+      "tokenizer_2/vocab.json",
+      "tokenizer_3/special_tokens_map.json",
+      "tokenizer_3/tokenizer.json",
+      "tokenizer_3/tokenizer_config.json",
+      "transformer/config.json",
+      "vae_decoder/config.json",
+      "vae_encoder/config.json"
+    ]
+  },
+  {
+    "id": "armwaheed/stable-diffusion-3.5-medium-onnx-int8",
+    "sha": "1d64fe6b636e03e5a6e3e985cdefe7860f4ef7be",
+    "gated": false,
+    "files": [
+      "model_index.json",
+      "scheduler/scheduler_config.json",
+      "text_encoder/config.json",
+      "text_encoder_2/config.json",
+      "text_encoder_3/config.json",
+      "tokenizer/special_tokens_map.json",
+      "tokenizer/tokenizer_config.json",
+      "tokenizer/vocab.json",
+      "tokenizer_2/special_tokens_map.json",
+      "tokenizer_2/tokenizer_config.json",
+      "tokenizer_2/vocab.json",
+      "tokenizer_3/special_tokens_map.json",
+      "tokenizer_3/tokenizer.json",
+      "tokenizer_3/tokenizer_config.json",
+      "transformer/config.json",
+      "vae_decoder/config.json",
+      "vae_encoder/config.json"
+    ]
+  },
+  {
+    "id": "yandex/stable-diffusion-3.5-medium-alchemist",
+    "sha": "bb8b8d0ff07a3f8979cc18b1c1d1ef7efdf9ce0e",
+    "gated": false,
+    "files": [
+      "model_index.json",
+      "scheduler/scheduler_config.json",
+      "text_encoder/config.json",
+      "text_encoder_2/config.json",
+      "text_encoder_3/config.json",
+      "text_encoder_3/model.safetensors.index.json",
+      "tokenizer/special_tokens_map.json",
+      "tokenizer/tokenizer_config.json",
+      "tokenizer/vocab.json",
+      "tokenizer_2/special_tokens_map.json",
+      "tokenizer_2/tokenizer_config.json",
+      "tokenizer_2/vocab.json",
+      "tokenizer_3/special_tokens_map.json",
+      "tokenizer_3/tokenizer.json",
+      "tokenizer_3/tokenizer_config.json",
+      "transformer/config.json",
+      "vae/config.json"
+    ]
+  },
+  {
+    "id": "ControlNetLoRA/stable-diffusion-3.5-medium",
+    "sha": "aa93c34d90d6947e095fb9d21bb774d8cfbf5448",
+    "gated": false,
+    "files": []
+  },
+  {
+    "id": "mingyu-oo/stable-diffusion-3.5-medium-HC",
+    "sha": "8ee85be90c2f1f4cfba47e73489f3b45ad08511e",
+    "gated": false,
+    "files": []
+  },
+  {
+    "id": "stabilityai/stable-diffusion-3.5-medium-tensorrt",
+    "sha": "e21bc075568e0b80a2af4c0f94a330f1f0e28f21",
+    "gated": "auto",
+    "files": []
+  },
+  {
+    "id": "mingyu-oo/stable-diffusion-3.5-medium-HD",
+    "sha": "a631b18793fdc1bd868cd23ac3a2b8d3b1e8b42d",
+    "gated": false,
+    "files": []
+  },
+  {
+    "id": "mingyu-oo/stable-diffusion-3.5-medium-HD2",
+    "sha": "b89c5483cec421cf2164160946d93de69fcf4d6b",
+    "gated": false,
+    "files": []
+  },
+  {
+    "id": "Exploration/stable-diffusion-3.5-medium-gmpo-pickscore",
+    "sha": "e967006cda5d7551dfa484015e674aae792ae724",
+    "gated": false,
+    "files": [
+      "adapter_config.json"
+    ]
+  },
+  {
+    "id": "amd/stable-diffusion-3.5-medium_amdgpu",
+    "sha": "1540f5476b08cc8c3d096c557be1c407d4d0c351",
+    "gated": false,
+    "files": []
+  },
+  {
+    "id": "keras/stable_diffusion_3.5_medium",
+    "sha": "5365165ab096a1416356730ef8067afeaa530975",
+    "gated": false,
+    "files": [
+      "assets/clip_g_tokenizer/vocabulary.json",
+      "assets/clip_l_tokenizer/vocabulary.json",
+      "clip_g_preprocessor.json",
+      "clip_g_tokenizer.json",
+      "clip_l_preprocessor.json",
+      "clip_l_tokenizer.json",
+      "config.json",
+      "metadata.json",
+      "preprocessor.json"
+    ]
+  }
+]

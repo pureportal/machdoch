@@ -1,0 +1,36 @@
+{
+  "observation": "Import has nonzero file I/O; concurrent RAW worker reads offloaded weights. No import stall established.",
+  "disks": [
+    {
+      "Name": "C:",
+      "DiskReadBytesPersec": 300998238,
+      "DiskWriteBytesPersec": 0,
+      "CurrentDiskQueueLength": 1
+    },
+    {
+      "Name": "D:",
+      "DiskReadBytesPersec": 95100955,
+      "DiskWriteBytesPersec": 15478,
+      "CurrentDiskQueueLength": 6
+    }
+  ],
+  "checkedAtUtc": "2026-10-13T06:56:34.8362484Z",
+  "processes": [
+    {
+      "Name": "machdoch_lib-e83b0fc15a4f2ae0",
+      "IDProcess": 6260,
+      "IOReadBytesPersec": 67754997,
+      "IOWriteBytesPersec": 0,
+      "PercentProcessorTime": 0,
+      "WorkingSetPrivate": 7311360
+    },
+    {
+      "Name": "python#5",
+      "IDProcess": 20964,
+      "IOReadBytesPersec": 650447974,
+      "IOWriteBytesPersec": 0,
+      "PercentProcessorTime": 60,
+      "WorkingSetPrivate": 220868608
+    }
+  ]
+}

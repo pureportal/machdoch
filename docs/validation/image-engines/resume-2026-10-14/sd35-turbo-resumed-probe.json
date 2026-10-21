@@ -1,0 +1,30 @@
+{
+  "checkedAt": "2026-10-14T21:45:51.387441+00:00",
+  "configuredCredential": true,
+  "probes": [
+    {
+      "url": "https://civitai.com/api/v1/model-versions/983611",
+      "status": 404
+    },
+    {
+      "url": "https://civitai.com/api/download/models/983611",
+      "status": 404
+    },
+    {
+      "url": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo/resolve/main/model_index.json",
+      "status": 401
+    },
+    {
+      "url": "https://civitai.com/api/v1/models?types=Checkpoint&baseModels=SD+3.5+Large+Turbo&limit=100",
+      "status": 200,
+      "models": [],
+      "hasMore": false
+    },
+    {
+      "url": "https://civitai.com/api/v1/models?types=Checkpoint&baseModels=SD3.5+Large+Turbo&limit=100",
+      "status": 200,
+      "models": [],
+      "hasMore": false
+    }
+  ]
+}

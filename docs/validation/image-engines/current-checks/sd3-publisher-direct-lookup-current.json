@@ -1,0 +1,23 @@
+[
+  {
+    "label": "SD 3.5 Medium base filter",
+    "url": "https://civitai.com/api/v1/models?types=Checkpoint&baseModels=SD%203.5%20Medium&limit=100",
+    "status": 200,
+    "body": {
+      "items": [],
+      "metadata": {}
+    }
+  },
+  {
+    "label": "SD3.5 Medium model 896953",
+    "url": "https://civitai.com/api/v1/models/896953",
+    "status": 404,
+    "error": "Response status code does not indicate success: 404 (Not Found)."
+  },
+  {
+    "label": "SD3.5 FLAN model 900327",
+    "url": "https://civitai.com/api/v1/models/900327",
+    "status": 404,
+    "error": "Response status code does not indicate success: 404 (Not Found)."
+  }
+]

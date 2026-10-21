@@ -1,0 +1,74 @@
+MACHDOCH
+v30.4.0
+Basic
+Advanced
+Train
+Assets
+Activity
+Image
+Video
+SVG
+Audio
+Assistant
+Convert to Advanced
+Model
+SD-Turbo · Stability AI
+Stable Diffusion 2.1 · Local
+Prompt
+Pose map
+Choose pose image
+No pose map
+Create pose map
+More options
+Output
+Aspect ratio
+1:1
+4:5
+16:9
+9:16
+Outputs
+Quality
+Draft
+Balanced
+High
+Format
+PNG
+WebP
+JPEG
+Transparent background
+Sampling
+Reset
+Sampler
+Automatic
+Euler · Recommended
+Euler ancestral
+Heun
+DPM++ 2M
+DPM++ 2M Karras
+DPM++ 2M SDE Karras
+DDIM
+DEIS
+UniPC
+Resolution
+Automatic
+Custom
+Width
+Height
+Sampling steps
+1–4
+Seed
+Random
+Fixed
+Value
+Generate image
+SD-Turbo · Stability AI · image
+Completed
+Candid photograph, smiling adult Japanese woman moving beside colorful flower graffiti, blue off-shoulder blouse, flowing white skirt, white sneakers, windblown dark hair, natural daylight, realistic skin texture.
+Completed · 6:48
+View activity
+Results
+1
+Save image
+Edit image
+Animate
+View in Assets

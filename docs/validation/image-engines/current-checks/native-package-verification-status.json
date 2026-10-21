@@ -1,0 +1,47 @@
+{
+  "processId": 18908,
+  "conversionProcessId": 24952,
+  "state": "running",
+  "operations": [
+    {
+      "finishedAt": "2026-10-11T23:17:48.1113839Z",
+      "exitCode": 0,
+      "startedAt": "2026-10-11T22:33:28.8049045Z",
+      "name": "test",
+      "state": "passed"
+    },
+    {
+      "finishedAt": "2026-10-11T23:33:04.9635336Z",
+      "exitCode": 0,
+      "startedAt": "2026-10-11T23:17:48.1178555Z",
+      "name": "build",
+      "state": "passed"
+    },
+    {
+      "finishedAt": "2026-10-11T23:36:16.9238482Z",
+      "exitCode": 0,
+      "startedAt": "2026-10-11T23:33:05.1564752Z",
+      "name": "stable-diffusion-2",
+      "state": "passed"
+    },
+    {
+      "finishedAt": "2026-10-11T23:57:17.5877970Z",
+      "exitCode": 0,
+      "startedAt": "2026-10-11T23:36:16.9901925Z",
+      "name": "flux-2",
+      "state": "passed"
+    },
+    {
+      "finishedAt": "2026-10-12T00:14:39.8887136Z",
+      "exitCode": 0,
+      "startedAt": "2026-10-11T23:57:17.6542521Z",
+      "name": "flux-2-klein-base-4b",
+      "state": "passed"
+    },
+    {
+      "startedAt": "2026-10-12T00:14:39.9552178Z",
+      "name": "flux-1-schnell",
+      "state": "running"
+    }
+  ]
+}

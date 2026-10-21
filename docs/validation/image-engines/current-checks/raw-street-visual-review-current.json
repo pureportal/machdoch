@@ -1,0 +1,10 @@
+{
+  "referenceId": 144594528,
+  "referenceUrl": "https://civitai.red/images/144594528",
+  "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-2-raw-refined-reference-sweep-continuation\\03-krea-2-raw-reference-144594528\\images\\output-0000.png",
+  "sha256": "f00ca536982dc503a8c023e5fa2216943ba1c12b127a1f0d7317f6075c7d5401",
+  "workerVersion": "media-diffusers-worker/1.94.0",
+  "referenceQualityVerdict": "near-reference",
+  "observations": "Sharp photographic hair strands, skin, fine blue blouse stripes and fabric folds, flowing white skirt, white sneakers, detailed wall texture and coherent turning anatomy approach the reference quality. Stronger golden sunlight, saturated letter graffiti, a necklace and an upright looking-back pose differ from the source soft daylight, leaning pose and painted flower illusion. Fingers overlap naturally; no extra limb, decoder seam or pixel corruption is visible.",
+  "assessedAt": "2026-10-13T02:55:09.297832+00:00"
+}

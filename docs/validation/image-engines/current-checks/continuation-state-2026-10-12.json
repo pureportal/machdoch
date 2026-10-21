@@ -1,0 +1,25 @@
+{
+  "observedAt": "2026-10-12T04:23:04.8824728Z",
+  "goalComplete": false,
+  "workerVersion": "media-diffusers-worker/1.94.0",
+  "activeProcessId": 2052,
+  "activeBatch": "Krea 2 Extended: double-exposure trigger comparison",
+  "runnerLog": "C:/Development/machdoch/docs/validation/image-engines/current-checks/remaining-reference-resume-2026-10-12.log",
+  "manifest": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\remaining-reference-batches.json",
+  "results": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\remaining-reference-batches-results.json",
+  "pendingBatches": [
+    "Qwen-Image 2.1 six references",
+    "Z-Image Base six references",
+    "Krea 2 RAW six references"
+  ],
+  "requestedModelBlocker": "HunyuanImage 3.0: missing optional SDK and weights; publisher runtime exceeds host GPU memory",
+  "otherInstalledUnrenderedArchitectures": [
+    "flux-2-klein-base-4b",
+    "flux-1-schnell",
+    "qwen-image",
+    "qwen-image-2512"
+  ],
+  "downloadReadyForImport": "D:/Models/machdoch/downloads/civitai/257749/290640/ponyDiffusionV6XL_v6StartWithThisOne.safetensors",
+  "report": "docs/media-studio-image-engines-verification-2026-10-12.md",
+  "pendingFollowupManifest": "D:/Models/machdoch/verification/2026-10-11/image-engines/krea-extended-guidance-comparison-batches-2026-10-12.json"
+}

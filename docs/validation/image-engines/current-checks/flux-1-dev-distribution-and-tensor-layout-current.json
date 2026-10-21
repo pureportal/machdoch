@@ -1,0 +1,19 @@
+{
+  "noticePath": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\prepared-flux-1-dev-package-current\\NOTICE",
+  "noticeSha256": "37fff50d7ac56afd6fb9c229379cc4b1841755879938039e87936e14e4fba226",
+  "transformerTensorDtypes": {
+    "BF16": 1160
+  },
+  "indexMatchesTensorKeys": true,
+  "guidanceEmbeds": true,
+  "conversionComplete": true,
+  "transformerBlocks": 19,
+  "singleTransformerBlocks": 38,
+  "guidanceWeights": [
+    "time_text_embed.guidance_embedder.linear_1.bias",
+    "time_text_embed.guidance_embedder.linear_1.weight",
+    "time_text_embed.guidance_embedder.linear_2.bias",
+    "time_text_embed.guidance_embedder.linear_2.weight"
+  ],
+  "conversionExitCode": 0
+}

@@ -1,0 +1,23 @@
+[
+  {
+    "file": "sd35-LICENSE-OpenAI-CLIP.txt",
+    "sourceUrl": "https://raw.githubusercontent.com/openai/CLIP/main/LICENSE",
+    "licence": "MIT",
+    "sha256": "987e63b32f6c89ff5160e429458a872ff048e6860b590a3912e938f9da8f14db",
+    "bytes": 1064
+  },
+  {
+    "file": "sd35-LICENSE-OpenCLIP.txt",
+    "sourceUrl": "https://raw.githubusercontent.com/mlfoundations/open_clip/main/LICENSE",
+    "licence": "MIT",
+    "sha256": "4a5b4f13ea4792a8211a69f32d2b460b6d520e57cd23c6301e707c76a6e97a55",
+    "bytes": 1229
+  },
+  {
+    "file": "sd35-LICENSE-T5.txt",
+    "sourceUrl": "https://raw.githubusercontent.com/google-research/text-to-text-transfer-transformer/main/LICENSE",
+    "licence": "Apache-2.0",
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "bytes": 11358
+  }
+]

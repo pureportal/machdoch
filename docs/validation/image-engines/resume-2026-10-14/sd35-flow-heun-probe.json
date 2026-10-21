@@ -1,0 +1,46 @@
+{
+  "passed": true,
+  "diffusersVersion": "0.41.0.dev0",
+  "schedulerClass": "FlowMatchHeunDiscreteScheduler",
+  "shift": 3,
+  "requestedSteps": 4,
+  "modelEvaluations": 7,
+  "callbacks": [
+    {
+      "step": 0,
+      "timestep": 1000.0
+    },
+    {
+      "step": 1,
+      "timestep": 857.6923217773438
+    },
+    {
+      "step": 2,
+      "timestep": 857.6923217773438
+    },
+    {
+      "step": 3,
+      "timestep": 602.1505737304688
+    },
+    {
+      "step": 4,
+      "timestep": 602.1505737304688
+    },
+    {
+      "step": 5,
+      "timestep": 8.928571701049805
+    },
+    {
+      "step": 6,
+      "timestep": 8.928571701049805
+    }
+  ],
+  "latentShape": [
+    1,
+    4,
+    16,
+    16
+  ],
+  "analyticalOdeError": 3.892183303833008e-05,
+  "fullModelQualityVerified": false
+}

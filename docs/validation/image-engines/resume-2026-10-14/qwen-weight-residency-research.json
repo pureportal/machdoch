@@ -1,0 +1,11 @@
+{
+  "modelId": "local:user:57787a0edb66e92ddcbc8e71c614d81eac96f4f9d192cde68d59e54487afac11",
+  "onDiskWeightBytes": {
+    "text_encoder": 16584414544,
+    "transformer": 14934899232
+  },
+  "physicalMemoryBytes": 33618337792,
+  "inference": "These unquantized encoder and GGUF transformer weights leave little system-memory headroom; paging is a likely contributor to slow sampling. Stored size is not a RAM measurement.",
+  "proposedChange": "Runtime NF4 encoding; GPU quality and performance are unverified.",
+  "source": "https://huggingface.co/docs/diffusers/quantization/bitsandbytes"
+}

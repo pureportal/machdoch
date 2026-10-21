@@ -1,0 +1,240 @@
+{
+  "id": 2342797,
+  "name": "Z Image Base",
+  "description": "<p>Z-Image is a powerful and highly efficient image generation model with <strong>6B</strong> parameters. It is currently has three variants:</p><p></p><ul><li><p>\ud83d\ude80 <strong>Z-Image-Turbo </strong>\u2013 A distilled version of Z-Image that matches or exceeds leading competitors with only <strong>8 NFEs</strong> (Number of Function Evaluations). It offers <strong>\u26a1\ufe0fsub-second inference latency\u26a1\ufe0f</strong> on enterprise-grade H800 GPUs and fits comfortably within <strong>16G VRAM consumer devices</strong>. It excels in photorealistic image generation, bilingual text rendering (English &amp; Chinese), and robust instruction adherence.</p></li><li><p>\ud83e\uddf1 <span style=\"color:rgb(250, 176, 5)\"><strong>Z-Image-Base (this model)</strong> \u2013 The non-distilled foundation model. By releasing this checkpoint, we aim to unlock the full potential for community-driven fine-tuning and custom development.</span></p></li><li><p>\u270d\ufe0f <strong>Z-Image-Edit</strong> \u2013 A variant fine-tuned on Z-Image specifically for image editing tasks. It supports creative image-to-image generation with impressive instruction-following capabilities, allowing for precise edits based on natural language prompts.</p></li></ul><p></p><p>Original ComfyUI Models: <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/Comfy-Org/z_image\">https://huggingface.co/Comfy-Org/z_image</a></p><p>Original HF Repo: <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/Tongyi-MAI/Z-Image\">https://huggingface.co/Tongyi-MAI/Z-Image</a></p>",
+  "allowNoCredit": true,
+  "allowCommercialUse": [
+    "Image",
+    "RentCivit",
+    "Rent",
+    "Sell",
+    "SellMerge"
+  ],
+  "allowDerivatives": true,
+  "allowDifferentLicense": true,
+  "type": "Checkpoint",
+  "minor": false,
+  "sfwOnly": false,
+  "poi": false,
+  "nsfw": false,
+  "nsfwLevel": 1,
+  "availability": "Public",
+  "userId": 12042163,
+  "hasActivePaidAccess": false,
+  "baseModels": [
+    "ZImageBase"
+  ],
+  "cosmetic": null,
+  "eventDecoration": null,
+  "supportsGeneration": true,
+  "stats": {
+    "downloadCount": 19526,
+    "thumbsUpCount": 1288,
+    "thumbsDownCount": 6,
+    "commentCount": 98,
+    "tippedAmountCount": 220
+  },
+  "creator": {
+    "username": "CivitaiOfficial",
+    "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/da8ddaf2-77c7-49f6-add3-d67649cc155a/width=96/CivitaiOfficial.jpeg"
+  },
+  "tags": [
+    "base model"
+  ],
+  "modelVersions": [
+    {
+      "id": 2635223,
+      "index": 0,
+      "name": "Base",
+      "baseModel": "ZImageBase",
+      "baseModelType": "Standard",
+      "createdAt": "2026-01-27T17:03:56.290Z",
+      "publishedAt": "2026-01-27T19:01:33.766Z",
+      "status": "Published",
+      "flags": 8,
+      "availability": "Public",
+      "nsfwLevel": 1,
+      "description": "<p>Comfy Repack <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/Comfy-Org/z_image\">https://huggingface.co/Comfy-Org/z_image</a></p>",
+      "vaeId": 3082494,
+      "covered": true,
+      "coveredNext": true,
+      "stats": {
+        "downloadCount": 19526,
+        "thumbsUpCount": 1288,
+        "thumbsDownCount": 6
+      },
+      "files": [
+        {
+          "id": 2523459,
+          "sizeKB": 12021353.90625,
+          "name": "zImageBase_base.safetensors",
+          "overrideName": null,
+          "type": "Model",
+          "pickleScanResult": "Success",
+          "pickleScanMessage": "No Pickle imports",
+          "virusScanResult": "Success",
+          "virusScanMessage": null,
+          "scannedAt": "2026-01-27T19:05:07.280Z",
+          "metadata": {
+            "format": "SafeTensor",
+            "size": "full",
+            "fp": "bf16"
+          },
+          "hashes": {
+            "AutoV1": "C564EF12",
+            "AutoV2": "996A67D3FF",
+            "SHA256": "996A67D3FF666946B1C25CBC16D1B1918B6CC0AC166309E23FE3B3D830263DEE",
+            "CRC32": "DD72CA0F",
+            "BLAKE3": "01BA03A762C95021CED9229CBC0F4E65FB19F59BEFA0C21E5518C5CFA559851C",
+            "AutoV3": "0A5EE4917EF9",
+            "SHA256_12": "996A67D3FF66"
+          },
+          "downloadUrl": "https://civitai.com/api/download/models/2635223?fileId=2523459",
+          "primary": true
+        },
+        {
+          "id": 2961769,
+          "sizeKB": 327445.69140625,
+          "name": "ae.safetensors",
+          "overrideName": null,
+          "type": "VAE",
+          "pickleScanResult": "Success",
+          "pickleScanMessage": null,
+          "virusScanResult": "Success",
+          "virusScanMessage": null,
+          "scannedAt": "2026-06-29T19:01:03.197Z",
+          "metadata": {
+            "format": "SafeTensor",
+            "fp": "fp32",
+            "isRequired": false
+          },
+          "hashes": {
+            "AutoV1": "EB6DC28C",
+            "AutoV2": "AFC8E28272",
+            "SHA256": "AFC8E28272CD15DB3919BACDB6918CE9C1ED22E96CB12C4D5ED0FBA823529E38",
+            "CRC32": "626AAEF6",
+            "BLAKE3": "CE21CB76364AA6E2421311CF4A4B5EB052A76C4F1CD207B50703D8978198A068",
+            "AutoV3": "DDEC9C299F56",
+            "SHA256_12": "AFC8E28272CD"
+          },
+          "downloadUrl": "https://civitai.com/api/download/models/2635223?type=VAE&format=SafeTensor&fp=fp32"
+        }
+      ],
+      "images": [
+        {
+          "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/6621176c-be67-455f-b84d-b0474f0efaae/original=true/119036219.jpeg",
+          "nsfwLevel": 1,
+          "width": 832,
+          "height": 1216,
+          "hash": "UMKd6y~qI9%2o$-nE3-pI;9F4:xaaIE2%0%1",
+          "type": "image",
+          "minor": false,
+          "poi": false,
+          "hasMeta": true,
+          "hasPositivePrompt": true,
+          "onSite": false,
+          "remixOfId": null
+        },
+        {
+          "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/796c9f30-310e-4062-a9ed-88bc8ba67e6f/original=true/119037658.jpeg",
+          "nsfwLevel": 1,
+          "width": 832,
+          "height": 1216,
+          "hash": "U8A^j^?vxuMc-=8^Mx%#_NMxIUWW?^tRV@Md",
+          "type": "image",
+          "minor": false,
+          "poi": false,
+          "hasMeta": true,
+          "hasPositivePrompt": true,
+          "onSite": false,
+          "remixOfId": null
+        },
+        {
+          "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f1ba1835-e546-4891-a620-0cfef404017b/original=true/119036230.jpeg",
+          "nsfwLevel": 1,
+          "width": 832,
+          "height": 1216,
+          "hash": "U4B3+v0001~oOGE24oRj4-_1IUs+03f6%MNK",
+          "type": "image",
+          "minor": false,
+          "poi": false,
+          "hasMeta": true,
+          "hasPositivePrompt": true,
+          "onSite": false,
+          "remixOfId": null
+        },
+        {
+          "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/4d6ec913-219f-4179-94d2-e42a7c55efe2/original=true/119036231.jpeg",
+          "nsfwLevel": 1,
+          "width": 832,
+          "height": 1216,
+          "hash": "UhHej%kDbIWB~qt7ofWBx_ofofay%hWEofj[",
+          "type": "image",
+          "minor": false,
+          "poi": false,
+          "hasMeta": true,
+          "hasPositivePrompt": true,
+          "onSite": false,
+          "remixOfId": null
+        },
+        {
+          "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/db353674-53b7-4df8-a5e8-113a68686284/original=true/119036261.jpeg",
+          "nsfwLevel": 1,
+          "width": 832,
+          "height": 1216,
+          "hash": "U5C~;s_N8^yE02-:.Snh8^D%nhIU4nRkRP%L",
+          "type": "image",
+          "minor": false,
+          "poi": false,
+          "hasMeta": true,
+          "hasPositivePrompt": true,
+          "onSite": false,
+          "remixOfId": null
+        },
+        {
+          "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/4a709885-c58a-4b70-b62e-446197e47ca2/original=true/119002937.jpeg",
+          "nsfwLevel": 1,
+          "width": 13035,
+          "height": 12145,
+          "hash": "U9HLPJDS?].400}T--IU00-TVY%N5@KkbuxU",
+          "type": "image",
+          "minor": false,
+          "poi": false,
+          "hasMeta": false,
+          "hasPositivePrompt": false,
+          "onSite": false,
+          "remixOfId": null
+        },
+        {
+          "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2d091e0e-de24-4109-911f-512d04153a91/original=true/119003007.jpeg",
+          "nsfwLevel": 1,
+          "width": 13035,
+          "height": 12145,
+          "hash": "U9HLPJDS?].400}T--IU00-TVY%N5@KkbuxU",
+          "type": "image",
+          "minor": false,
+          "poi": false,
+          "hasMeta": false,
+          "hasPositivePrompt": false,
+          "onSite": false,
+          "remixOfId": null
+        },
+        {
+          "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/6680f153-44dc-46ac-ba76-e3ffcd45d748/original=true/119008070.jpeg",
+          "nsfwLevel": 1,
+          "width": 13035,
+          "height": 12145,
+          "hash": "U9HLPJDS?].400}T--IU00-TVY%N5@KkbuxU",
+          "type": "image",
+          "minor": false,
+          "poi": false,
+          "hasMeta": false,
+          "hasPositivePrompt": false,
+          "onSite": false,
+          "remixOfId": null
+        }
+      ],
+      "downloadUrl": "https://civitai.com/api/download/models/2635223"
+    }
+  ]
+}

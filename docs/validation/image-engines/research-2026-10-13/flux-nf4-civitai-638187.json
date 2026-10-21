@@ -1,0 +1,315 @@
+{
+  "id": 638187,
+  "name": "Flux.1-Dev Hyper NF4 + Flux.1-Dev BNB NF4 + Flux.1-Schnell BNB NF4",
+  "description": "<p><u>Flux.1-Dev Hyper NF4:</u><br /><strong>Source: </strong><a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/ZhenyaYang/flux_1_dev_hyper_8steps_nf4/tree/main\">https://huggingface.co/ZhenyaYang/flux_1_dev_hyper_8steps_nf4/tree/main</a> from <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/ZhenyaYang\">ZhenyaYang </a>converted <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/ByteDance/Hyper-SD\">Hyper-SD</a> to NF4 (8 steps)<br /><br /><u>Flux.1-Dev BNB NF4 (v1 &amp; v2):<br /></u><strong>Source:</strong> <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/lllyasviel/flux1-dev-bnb-nf4/tree/main\">https://huggingface.co/lllyasviel/flux1-dev-bnb-nf4/tree/main</a> from <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/lllyasviel\">lllyasviel</a><br /><br /><u>Flux.1-Schnell BNB NF4:</u><br /><strong>Source:</strong> <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/silveroxides/flux1-nf4-weights/tree/main\">https://huggingface.co/silveroxides/flux1-nf4-weights/tree/main</a> from <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/silveroxides\">silveroxides</a><br /><br /><strong>ComfyUI:</strong> <a target=\"_blank\" rel=\"ugc\" href=\"https://github.com/comfyanonymous/ComfyUI_bitsandbytes_NF4\">https://github.com/comfyanonymous/ComfyUI_bitsandbytes_NF4</a><br /><strong>Forge:</strong> <a target=\"_blank\" rel=\"ugc\" href=\"https://github.com/lllyasviel/stable-diffusion-webui-forge/discussions/981\">https://github.com/lllyasviel/stable-diffusion-webui-forge/discussions/981</a><br /><br />\ud83d\udcaaTrain your own model<span style=\"color:rgb(193, 194, 197)\">: </span><a target=\"_blank\" rel=\"ugc\" href=\"https://runpod.io?ref=gased9mt\"><span style=\"color:rgb(64, 192, 87)\">https://runpod.io?ref=gased9mt</span></a><br /><span style=\"color:rgb(193, 194, 197)\">\ud83c\udf7a Join my discord: </span><a target=\"_blank\" rel=\"ugc\" href=\"https://discord.com/invite/pAz4Bt3rqb\"><span style=\"color:rgb(64, 192, 87)\">https://discord.com/invite/pAz4Bt3rqb</span></a></p>",
+  "allowNoCredit": true,
+  "allowCommercialUse": [
+    "RentCivit"
+  ],
+  "allowDerivatives": false,
+  "allowDifferentLicense": true,
+  "type": "Checkpoint",
+  "minor": false,
+  "sfwOnly": false,
+  "poi": false,
+  "nsfw": false,
+  "nsfwLevel": 1,
+  "availability": "Public",
+  "userId": 98099,
+  "hasActivePaidAccess": false,
+  "baseModels": [
+    "Flux.1 D",
+    "Flux.1 S"
+  ],
+  "cosmetic": null,
+  "eventDecoration": null,
+  "supportsGeneration": true,
+  "stats": {
+    "downloadCount": 75858,
+    "thumbsUpCount": 2551,
+    "thumbsDownCount": 10,
+    "commentCount": 190,
+    "tippedAmountCount": 1603
+  },
+  "creator": {
+    "username": "RalFinger",
+    "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e348d8f3-3b3e-4801-8e2d-fb2204ba4b06/width=96/RalFinger.jpeg"
+  },
+  "tags": [
+    "base model",
+    "flux1.s",
+    "flux1.d"
+  ],
+  "modelVersions": [
+    {
+      "id": 819165,
+      "index": 0,
+      "name": "Flux.1-Dev Hyper NF4",
+      "baseModel": "Flux.1 D",
+      "baseModelType": "Standard",
+      "createdAt": "2024-09-08T08:28:02.115Z",
+      "publishedAt": "2024-09-08T09:02:26.074Z",
+      "status": "Published",
+      "flags": 0,
+      "availability": "Public",
+      "nsfwLevel": 1,
+      "covered": false,
+      "coveredNext": true,
+      "stats": {
+        "downloadCount": 45945,
+        "thumbsUpCount": 1336,
+        "thumbsDownCount": 7
+      },
+      "files": [
+        {
+          "id": 732975,
+          "sizeKB": 12057372.48339844,
+          "name": "flux1DevHyperNF4Flux1DevBNB_flux1DevHyperNF4.safetensors",
+          "overrideName": null,
+          "type": "Model",
+          "pickleScanResult": "Success",
+          "pickleScanMessage": "No Pickle imports",
+          "virusScanResult": "Success",
+          "virusScanMessage": null,
+          "scannedAt": "2024-09-08T09:10:21.040Z",
+          "metadata": {
+            "format": "SafeTensor",
+            "size": "full",
+            "fp": "nf4"
+          },
+          "hashes": {
+            "AutoV1": "A005585E",
+            "AutoV2": "7CACD3BA4B",
+            "SHA256": "7CACD3BA4BD1935267E9DC355369B4256B7A6D735416995D0347428EB1A8B9B5",
+            "CRC32": "33942FC6",
+            "BLAKE3": "77EF24372E3076662EC2ED88F5773D0BA8E5B4F4AFFA49B660B175C0CEC7ABF7",
+            "AutoV3": "4C23511B7A1D",
+            "SHA256_12": "7CACD3BA4BD1"
+          },
+          "downloadUrl": "https://civitai.com/api/download/models/819165?fileId=732975",
+          "primary": true
+        }
+      ],
+      "images": [
+        {
+          "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/205a41c4-1883-4158-8a6b-4c867ff36426/original=true/28351013.jpeg",
+          "nsfwLevel": 1,
+          "width": 896,
+          "height": 1152,
+          "hash": "U9A]Q[oz00RQ^+bIE1ae0ce.}]of0xo0%3W=",
+          "type": "image",
+          "minor": false,
+          "poi": false,
+          "hasMeta": false,
+          "hasPositivePrompt": false,
+          "onSite": false,
+          "remixOfId": null
+        }
+      ],
+      "downloadUrl": "https://civitai.com/api/download/models/819165"
+    },
+    {
+      "id": 721627,
+      "index": 1,
+      "name": "Flux.1-Dev BNB NF4 v2",
+      "baseModel": "Flux.1 D",
+      "baseModelType": "Standard",
+      "createdAt": "2024-08-14T08:24:42.030Z",
+      "publishedAt": "2024-08-14T09:00:05.806Z",
+      "status": "Published",
+      "flags": 0,
+      "availability": "Public",
+      "nsfwLevel": 1,
+      "description": "<p>V2 is 0.5 GB larger than the previous version, since the chunk 64 norm is now stored in full precision float32, making it much more precise than the previous version. Also, since V2 does not have second compression stage, it now has less computation overhead for on-the-fly decompression, making the inference a bit faster!</p>",
+      "covered": false,
+      "coveredNext": true,
+      "stats": {
+        "downloadCount": 19477,
+        "thumbsUpCount": 1136,
+        "thumbsDownCount": 3
+      },
+      "files": [
+        {
+          "id": 636270,
+          "sizeKB": 11761992.38964844,
+          "name": "flux1DevHyperNF4Flux1DevBNB_flux1DevBNBNF4V2.safetensors",
+          "overrideName": null,
+          "type": "Model",
+          "pickleScanResult": "Success",
+          "pickleScanMessage": "No Pickle imports",
+          "virusScanResult": "Success",
+          "virusScanMessage": null,
+          "scannedAt": "2024-08-14T09:05:11.394Z",
+          "metadata": {
+            "format": "SafeTensor",
+            "size": "full",
+            "fp": "nf4"
+          },
+          "hashes": {
+            "AutoV1": "F0770152",
+            "AutoV2": "FEF37763B8",
+            "SHA256": "FEF37763B8F2C8CC3463139BBB6D91AA517C605B654D4E5C540DE52813F30306",
+            "CRC32": "8C79CDF3",
+            "BLAKE3": "930CA47FA2A17B4163FB228385A026D6F55C1DEB88D59672F4D69F2D332D9B45",
+            "AutoV3": "8C53267FF96D",
+            "SHA256_12": "FEF37763B8F2"
+          },
+          "downloadUrl": "https://civitai.com/api/download/models/721627?fileId=636270",
+          "primary": true
+        }
+      ],
+      "images": [
+        {
+          "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7653e467-fa11-485f-b83f-a48871546916/original=true/24241851.jpeg",
+          "nsfwLevel": 1,
+          "width": 896,
+          "height": 1152,
+          "hash": "UAAlhebb0dWA-WfkRjax0JjF~CkC56e.%2og",
+          "type": "image",
+          "minor": false,
+          "poi": false,
+          "hasMeta": false,
+          "hasPositivePrompt": false,
+          "onSite": false,
+          "remixOfId": null
+        }
+      ],
+      "downloadUrl": "https://civitai.com/api/download/models/721627"
+    },
+    {
+      "id": 713648,
+      "index": 2,
+      "name": "Flux.1-Dev BNB NF4 v1",
+      "baseModel": "Flux.1 D",
+      "baseModelType": "Standard",
+      "createdAt": "2024-08-11T10:17:25.171Z",
+      "publishedAt": "2024-08-11T10:52:52.920Z",
+      "status": "Published",
+      "flags": 0,
+      "availability": "Public",
+      "nsfwLevel": 1,
+      "description": "<p>Main model in bnb-nf4<br />T5xxl in fp8e4m3fn<br />CLIP-L in fp16<br />VAE in bf16</p>",
+      "covered": false,
+      "coveredNext": true,
+      "stats": {
+        "downloadCount": 3837,
+        "thumbsUpCount": 292,
+        "thumbsDownCount": 1
+      },
+      "files": [
+        {
+          "id": 628354,
+          "sizeKB": 11220589.95410156,
+          "name": "flux1DevHyperNF4Flux1DevBNB_flux1DevBNBNF4V1.safetensors",
+          "overrideName": null,
+          "type": "Model",
+          "pickleScanResult": "Success",
+          "pickleScanMessage": "No Pickle imports",
+          "virusScanResult": "Success",
+          "virusScanMessage": null,
+          "scannedAt": "2024-08-11T11:00:11.309Z",
+          "metadata": {
+            "format": "SafeTensor",
+            "size": "full",
+            "fp": "nf4"
+          },
+          "hashes": {
+            "AutoV1": "0184473B",
+            "AutoV2": "C5E25D12D7",
+            "SHA256": "C5E25D12D720E30A277598CE9DED9DB406EE54F63419FE0C801B283D4EA146E2",
+            "CRC32": "5405541F",
+            "BLAKE3": "83E6D13A5ECEF5BA398C36905CA8597FEBFC7B1D56C70FDA5434FF363A6452BD",
+            "AutoV3": "6487417FEEDD",
+            "SHA256_12": "C5E25D12D720"
+          },
+          "downloadUrl": "https://civitai.com/api/download/models/713648?fileId=628354",
+          "primary": true
+        }
+      ],
+      "images": [
+        {
+          "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5be77c02-9814-404f-9f95-03ea4b65d1fc/original=true/23776236.jpeg",
+          "nsfwLevel": 1,
+          "width": 896,
+          "height": 1152,
+          "hash": "UAAb|,of0dRj-Wa}NGjY0Jae}]oy0yn$%2bc",
+          "type": "image",
+          "minor": false,
+          "poi": false,
+          "hasMeta": true,
+          "hasPositivePrompt": true,
+          "onSite": false,
+          "remixOfId": null
+        }
+      ],
+      "downloadUrl": "https://civitai.com/api/download/models/713648"
+    },
+    {
+      "id": 714460,
+      "index": 3,
+      "name": "Flux.1-Schnell BNB NF4",
+      "baseModel": "Flux.1 S",
+      "baseModelType": "Standard",
+      "createdAt": "2024-08-11T17:35:12.956Z",
+      "publishedAt": "2024-08-11T18:10:53.419Z",
+      "status": "Published",
+      "flags": 0,
+      "availability": "Public",
+      "nsfwLevel": 1,
+      "covered": false,
+      "coveredNext": true,
+      "stats": {
+        "downloadCount": 6599,
+        "thumbsUpCount": 152,
+        "thumbsDownCount": 1
+      },
+      "files": [
+        {
+          "id": 629164,
+          "sizeKB": 11215386.12695312,
+          "name": "flux1DevHyperNF4Flux1DevBNB_flux1SchnellBNBNF4.safetensors",
+          "overrideName": null,
+          "type": "Model",
+          "pickleScanResult": "Success",
+          "pickleScanMessage": "No Pickle imports",
+          "virusScanResult": "Success",
+          "virusScanMessage": null,
+          "scannedAt": "2024-08-11T18:15:26.596Z",
+          "metadata": {
+            "format": "SafeTensor",
+            "size": "full",
+            "fp": "nf4"
+          },
+          "hashes": {
+            "AutoV1": "7D3D1873",
+            "AutoV2": "E6CBA6AFCA",
+            "SHA256": "E6CBA6AFCA8B2F5599879111E1A5F3DABEBE69BCC3EE4A6AF46807447ADC6D09",
+            "CRC32": "CE4D490B",
+            "BLAKE3": "8C858EC36A4C5DEA42A9897D0CD2CB77794F1F0A1D9CC57974E9C75EEF0CCF07",
+            "AutoV3": "0EAEA6DC0D6C",
+            "SHA256_12": "E6CBA6AFCA8B"
+          },
+          "downloadUrl": "https://civitai.com/api/download/models/714460?fileId=629164",
+          "primary": true
+        }
+      ],
+      "images": [
+        {
+          "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/628b899d-4ae7-4fce-9544-65d7c260f8e8/original=true/23824229.jpeg",
+          "nsfwLevel": 1,
+          "width": 896,
+          "height": 1152,
+          "hash": "UVRC_Fxu~pxus:jtt7bH^+a|9ZoLx]fkRPj[",
+          "type": "image",
+          "minor": false,
+          "poi": false,
+          "hasMeta": true,
+          "hasPositivePrompt": true,
+          "onSite": false,
+          "remixOfId": null
+        }
+      ],
+      "downloadUrl": "https://civitai.com/api/download/models/714460"
+    }
+  ]
+}

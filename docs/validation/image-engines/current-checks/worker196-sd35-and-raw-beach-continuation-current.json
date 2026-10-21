@@ -1,0 +1,80 @@
+{
+  "goalComplete": false,
+  "loaderTests": 126,
+  "downloadIntegrityTests": 3,
+  "rawProgress": [
+    "MACHDOCH_PROGRESS {\"stage\": \"Sampling 5/52\", \"progress\": 0.3076923076923077}",
+    "",
+    "MACHDOCH_PROGRESS {\"stage\": \"Sampling 6/52\", \"progress\": 0.3192307692307692}"
+  ],
+  "nativeValidatedRecords": 145,
+  "rawCurrentReference": 145177887,
+  "checkedAt": "2026-10-13T06:36:49.4583114Z",
+  "retainedDesktopWorkerVersion": "media-diffusers-worker/1.95.0",
+  "nativeUiExecuted": false,
+  "sourceWorkerSha256": "17435e5cce914feb1cf49698f87b7b5004a77bdb51e5334f32ce1e20b8c4dcf2",
+  "sd35T5CopyLive": true,
+  "sd35ImageGenerated": false,
+  "processes": [
+    {
+      "ProcessId": 3464,
+      "ParentProcessId": 12300,
+      "CreationDate": "2026-10-12T21:54:35.122533+02:00",
+      "Name": "pwsh.exe"
+    },
+    {
+      "ProcessId": 20964,
+      "ParentProcessId": 23420,
+      "CreationDate": "2026-10-12T23:14:41.948511+02:00",
+      "Name": "python.exe"
+    },
+    {
+      "ProcessId": 20048,
+      "ParentProcessId": 29120,
+      "CreationDate": "2026-10-12T23:53:59.924043+02:00",
+      "Name": "pwsh.exe"
+    },
+    {
+      "ProcessId": 18668,
+      "ParentProcessId": 21808,
+      "CreationDate": "2026-10-13T01:09:33.30565+02:00",
+      "Name": "pwsh.exe"
+    },
+    {
+      "ProcessId": 27824,
+      "ParentProcessId": 28248,
+      "CreationDate": "2026-10-13T01:21:34.585579+02:00",
+      "Name": "pwsh.exe"
+    },
+    {
+      "ProcessId": 11988,
+      "ParentProcessId": 2384,
+      "CreationDate": "2026-10-13T07:48:54.062902+02:00",
+      "Name": "python.exe"
+    },
+    {
+      "ProcessId": 12864,
+      "ParentProcessId": 10864,
+      "CreationDate": "2026-10-13T08:33:24.178024+02:00",
+      "Name": "python.exe"
+    }
+  ],
+  "sourceWorkerVersion": "media-diffusers-worker/1.96.0",
+  "sourceRuntimeDigest": "a23d2e787738247b1b9dc51a31135683045a2a662cb5685b922184af2caa52a4",
+  "sd35TransformerVaeConverted": true,
+  "queueBatches": 17,
+  "sd35T5HeaderNamesAndShapesMatch": true,
+  "sd35DownloadLive": true,
+  "sd35CheckpointAndClipHashesVerified": true,
+  "sd35NativeImportComplete": false,
+  "queueCases": 68,
+  "sd35ClipStrictLoadPassed": true,
+  "continuationState": "progress-and-verified-wait",
+  "galleryRenders": 140,
+  "rawCompletedSubjects": 5,
+  "rawNearReferenceSubjects": [
+    144655944,
+    144594528,
+    144599398
+  ]
+}

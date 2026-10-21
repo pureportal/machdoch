@@ -1,0 +1,12 @@
+[
+  {
+    "baseModel": "SD 3.5 Large Turbo",
+    "status": 200,
+    "models": []
+  },
+  {
+    "baseModel": "SD 3.5 Large",
+    "status": 200,
+    "models": []
+  }
+]

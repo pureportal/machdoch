@@ -1,0 +1,1292 @@
+[
+  {
+    "status": "fulfilled",
+    "value": {
+      "query": {
+        "query": "DMAD"
+      },
+      "url": "https://civitai.com/api/v1/models?query=DMAD&types=Checkpoint&limit=5",
+      "sampledAt": "2026-10-11T22:25:54.466Z",
+      "items": []
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "query": {
+        "query": "Sana"
+      },
+      "url": "https://civitai.com/api/v1/models?query=Sana&types=Checkpoint&limit=5",
+      "sampledAt": "2026-10-11T22:25:54.715Z",
+      "items": [
+        {
+          "id": 647664,
+          "name": "SanaeXL anime V1.0",
+          "versions": [
+            {
+              "id": 859577,
+              "name": "v1.3",
+              "baseModel": "SDXL 1.0",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 768733,
+                  "name": "sanaexlAnimeV10_v13.safetensors",
+                  "sizeKB": 6775429.966796875,
+                  "sha256": "0C89FFC808DDDC8AD2C04844B25EDBAA2741363B317471CF73A351917930D37B",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 811782,
+              "name": "v1.2",
+              "baseModel": "SDXL 1.0",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 726516,
+                  "name": "sanaexlAnimeV10_v12.safetensors",
+                  "sizeKB": 6775429.966796875,
+                  "sha256": "EEC95BDB0F1715FD1405DBC2584F6CE662F0C0D6494CBA588028B7A0D2ECE20E",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 757021,
+              "name": "v1.1",
+              "baseModel": "SDXL 1.0",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 670429,
+                  "name": "sanaexlAnimeV10_v11.safetensors",
+                  "sizeKB": 6775429.966796875,
+                  "sha256": "2BB4CEEFA50BF05B5D4D7150D1C5EBC974AF6150932FF95FA1706041B93B35EE",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 724572,
+              "name": "v1.0",
+              "baseModel": "SDXL 1.0",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 639357,
+                  "name": "sanaexlAnimeV10_v10.safetensors",
+                  "sizeKB": 6775429.982421875,
+                  "sha256": "4490DA48B9EA4401F47DAEF3E25111DD004F49F73F49BCF6C8FC9A9A6087161D",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 113751,
+          "name": "DMFinale",
+          "versions": [
+            {
+              "id": 122916,
+              "name": "v1.0",
+              "baseModel": "Other",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 88558,
+                  "name": "dmfinale_v10.safetensors",
+                  "sizeKB": 3761486.00390625,
+                  "sha256": "24DCE53CEDB32DB255A52EFC1F0C6FF9F174DCDEF5E30A5B68DBF82976C1D581",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 113786,
+          "name": "HalfNhalfF",
+          "versions": [
+            {
+              "id": 122954,
+              "name": "v1.0",
+              "baseModel": "Other",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 88574,
+                  "name": "halfnhalff_v10.safetensors",
+                  "sizeKB": 2323025.072265625,
+                  "sha256": "0F33D6ECDD601A8476E2525BDFDCBFF177F13427F5C2EF623F47415BB6529667",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "query": {
+        "query": "GLM-Image"
+      },
+      "url": "https://civitai.com/api/v1/models?query=GLM-Image&types=Checkpoint&limit=5",
+      "sampledAt": "2026-10-11T22:25:54.386Z",
+      "items": []
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "query": {
+        "modelId": 618692
+      },
+      "url": "https://civitai.com/api/v1/models/618692",
+      "sampledAt": "2026-10-11T22:25:54.408Z",
+      "items": [
+        {
+          "id": 618692,
+          "name": "FLUX",
+          "versions": [
+            {
+              "id": 691639,
+              "name": "Dev",
+              "baseModel": "Flux.1 D",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 1134793,
+                  "name": "flux_dev_1134793.safetensors",
+                  "sizeKB": 23245051.3203125,
+                  "sha256": "4610115BB0C89560703C892C59AC2742FA821E60EF5871B33493BA544683ABD7",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp32"
+                  }
+                },
+                {
+                  "id": 639902,
+                  "name": "flux_dev_639902.safetensors",
+                  "sizeKB": 16678605.42773438,
+                  "sha256": "2EDA627C8AEE140EDC77E28ED8DD3C662928AE60F0F960F36824F8862DCBB713",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp32"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 699279,
+              "name": "Schnell",
+              "baseModel": "Flux.1 D",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 614182,
+                  "name": "flux_schnell.sft",
+                  "sizeKB": 23225104.1875,
+                  "sha256": "9403429E0052277AC2A87AD800ADECE5481EECEFD9ED334E1F348723621D2A0A",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp32"
+                  }
+                },
+                {
+                  "id": 640253,
+                  "name": "flux_schnell.safetensors",
+                  "sizeKB": 16668614.95117188,
+                  "sha256": "1E9040691D8829798F2D4A513EA4B607DB4D3B0BF2A6842F85F11569481FB0B8",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp32"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 699332,
+              "name": "Pro (Legacy)",
+              "baseModel": "Flux.1 D",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 614081,
+                  "name": "flux_proLegacy_trainingData.zip",
+                  "sizeKB": 957.9755859375,
+                  "sha256": "61EB3C02B1779054FF80234274EF9195158F9DCC719D7A4FB1439F128C00E458",
+                  "metadata": {
+                    "format": "Other"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 922358,
+              "name": "Pro 1.1",
+              "baseModel": "Flux.1 D",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 829830,
+                  "name": "flux_pro11_trainingData.zip",
+                  "sizeKB": 957.9755859375,
+                  "sha256": "61EB3C02B1779054FF80234274EF9195158F9DCC719D7A4FB1439F128C00E458",
+                  "metadata": {
+                    "format": "Other"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 1088507,
+              "name": "Pro 1.1 Ultra",
+              "baseModel": "Flux.1 D",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 993601,
+                  "name": "flux_pro11Ultra_trainingData.zip",
+                  "sizeKB": 957.9755859375,
+                  "sha256": "61EB3C02B1779054FF80234274EF9195158F9DCC719D7A4FB1439F128C00E458",
+                  "metadata": {
+                    "format": "Other"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 2068000,
+              "name": "Krea Dev",
+              "baseModel": "Flux.1 Krea",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 1964491,
+                  "name": "flux_kreaDev.safetensors",
+                  "sizeKB": 23245076.390625,
+                  "sha256": "F6315581B7CDDD450B9ABA72B4E9CCF8B6580DC1A6B9538AFF43EE26A1A3B6C2",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "query": {
+        "query": "Klein 9B"
+      },
+      "url": "https://civitai.com/api/v1/models?query=Klein+9B&types=Checkpoint&limit=5",
+      "sampledAt": "2026-10-11T22:25:54.514Z",
+      "items": [
+        {
+          "id": 2663767,
+          "name": "Klein 9B SRX Foundation",
+          "versions": [
+            {
+              "id": 2991192,
+              "name": "v1.0",
+              "baseModel": "Flux.2 Klein 9B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2871201,
+                  "name": "klein9BSRXFoundation_v10.safetensors",
+                  "sizeKB": 17731626.546875,
+                  "sha256": "A6596EEBED1790693C6AD9094C89C45EF75CFFED12F960634ADCE27135416F43",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp16",
+                    "isRequired": false
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 2506972,
+          "name": "Klein 9B KV Cache FP8",
+          "versions": [
+            {
+              "id": 2818008,
+              "name": "v1.0",
+              "baseModel": "Flux.2 Klein 9B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2704054,
+                  "name": "klein9BKVCacheFP8_v10.safetensors",
+                  "sizeKB": 9588804.671875,
+                  "sha256": "33F7DA5625A00798349A719742999D3C7DD20C1A7EDA14663922C363640728F1",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp8"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 2339723,
+          "name": "Flux2-Klein-9B-True",
+          "versions": [
+            {
+              "id": 2805384,
+              "name": "v2.0-bf16",
+              "baseModel": "Flux.2 Klein 9B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2692491,
+                  "name": "flux2Klein9BTrue_v20Bf16.safetensors",
+                  "sizeKB": 18829.25,
+                  "sha256": "3879D6329883FC459AFCE3DAF0086670B1645CD060795AF943E12BF78CA81120",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "nf4"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 2631758,
+              "name": "v1.0-bf16",
+              "baseModel": "Flux.2 Klein 9B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2521034,
+                  "name": "flux2Klein9BTrue_v10Bf16.safetensors",
+                  "sizeKB": 17731626.140625,
+                  "sha256": "F8BBB3328F41B10045CF295881CC2BA6C144884CAE30312DC125596ECB1BBA0E",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "bf16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 2631767,
+              "name": "v1.0-fp8",
+              "baseModel": "Flux.2 Klein 9B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2521089,
+                  "name": "flux2Klein9BTrue_v10Fp8.safetensors",
+                  "sizeKB": 8865824.578125,
+                  "sha256": "4DE8509E7D0B6C43AAF864DFC5CCEED13D1408A211494AB0306A1A3FF68B73B2",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp8"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 2637623,
+              "name": "v1.0-Q8_0",
+              "baseModel": "Flux.2 Klein 9B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2525644,
+                  "name": "flux2Klein9BTrue_v10Q80.gguf",
+                  "sizeKB": 9514018.15625,
+                  "sha256": "D066E58DA5418FABBB9D061596AF086B76D6CDFFC504E3A593B88DE0558EDAEE",
+                  "metadata": {
+                    "format": "GGUF",
+                    "size": "pruned",
+                    "fp": "fp8"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 2526995,
+          "name": "Ray klein 9b BFS 编辑强化",
+          "versions": [
+            {
+              "id": 3194332,
+              "name": "FP8 v2",
+              "baseModel": "Flux.2 Klein 9B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 3075401,
+                  "name": "rayKlein9bBFS_fp8V2.safetensors",
+                  "sizeKB": 9211984.4296875,
+                  "sha256": "8F20B20F2EAB06DEA386AE0F9185933FDD3E844776036483D78F41D0AC3DD30A",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "fp": "fp8",
+                    "isRequired": false
+                  }
+                }
+              ]
+            },
+            {
+              "id": 2840045,
+              "name": "V1",
+              "baseModel": "Flux.2 Klein 9B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2726654,
+                  "name": "rayKlein9bBFS_v1.safetensors",
+                  "sizeKB": 9211984.1015625,
+                  "sha256": "FFB38260D3305683571DAC77CC5CA92B34B525B867F2B890DECE76BF680DA9BB",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp8"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 2363950,
+          "name": "FLUX.2-klein-9b-fp8",
+          "versions": [
+            {
+              "id": 2658598,
+              "name": "fp8",
+              "baseModel": "Flux.2 Klein 9B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2545829,
+                  "name": "flux2Klein9bFp8_fp8.safetensors",
+                  "sizeKB": 9211974.1484375,
+                  "sha256": "865BA09F5B4C3CBD3468A4BD3ACB9FCB2F8740C54317482F0BCD4ED1D3655CEE",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp8"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "query": {
+        "query": "Klein Base 9B"
+      },
+      "url": "https://civitai.com/api/v1/models?query=Klein+Base+9B&types=Checkpoint&limit=5",
+      "sampledAt": "2026-10-11T22:25:54.766Z",
+      "items": [
+        {
+          "id": 2553153,
+          "name": "Flux 2 Klein 4B Base Gogoboy",
+          "versions": [
+            {
+              "id": 3286469,
+              "name": "preview1.6",
+              "baseModel": "Flux.2 Klein 4B-base",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 3170867,
+                  "name": "diffusion_pytorch_model.safetensors",
+                  "sizeKB": 164180.544921875,
+                  "sha256": "CA70D2202AFE6415BDBCB8793BA8CD99FD159CFE6192381504D6C4D3036E0F04",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "fp": "bf16",
+                    "isRequired": true
+                  }
+                },
+                {
+                  "id": 3177088,
+                  "name": "flux2Klein4BBase_preview16_3177088.safetensors",
+                  "sizeKB": 7569439.234375,
+                  "sha256": "5B897E5B256BDBA2CEFAFEAE2ACC2CC41FCA6FB5B48D41E9844B62904BFF51DD",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "fp": "bf16",
+                    "isRequired": false
+                  }
+                },
+                {
+                  "id": 3170935,
+                  "name": "flux2Klein4BBase_preview16_3170935.safetensors",
+                  "sizeKB": 7569443.109375,
+                  "sha256": "4C0D4D3E976B4B2C9DA94F450C609F1E59D18C104932E22129D5D0A48ED8D171",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "fp": "bf16",
+                    "isRequired": false
+                  }
+                }
+              ]
+            },
+            {
+              "id": 3112019,
+              "name": "preview1.3",
+              "baseModel": "Flux.2 Klein 4B-base",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2992271,
+                  "name": "flux2Klein4BBase_preview13.safetensors",
+                  "sizeKB": 7569443.109375,
+                  "sha256": "C00025B98B9EEC2E845347E1766443235E3D6F85ADA867E379B4D517769B6E84",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "bf16",
+                    "isRequired": false
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 2712664,
+          "name": "Klein FinalCut (FP16, FP8, INT8_Convrot)",
+          "versions": [
+            {
+              "id": 3285291,
+              "name": "Universal_Formats",
+              "baseModel": "Flux.2 Klein 9B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 3169551,
+                  "name": "kleinFinalcutFP16FP8_universalFormats_fp8.safetensors",
+                  "sizeKB": 9904164.9921875,
+                  "sha256": "50AFA435B16082975FFA440D5EDEEF376BDB18628E9C05944F8A3C040E2E71DB",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "fp": "fp8",
+                    "isRequired": false
+                  }
+                },
+                {
+                  "id": 3169606,
+                  "name": "kleinFinalcutFP16FP8_universalFormats_fp16.safetensors",
+                  "sizeKB": 18423854.3984375,
+                  "sha256": "1A6AC114FEBE55BD5A3B5A89B8FF0F540DA4F3E68E5DF1F9E5E8076126019CE5",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "fp": "fp16",
+                    "isRequired": false
+                  }
+                }
+              ]
+            },
+            {
+              "id": 3047541,
+              "name": "Comfy_Quant",
+              "baseModel": "Flux.2 Klein 9B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2926294,
+                  "name": "kleinFinalcutFP16FP8_comfyQuant_full_fp8.safetensors",
+                  "sizeKB": 9211967.015625,
+                  "sha256": "9350410AFCF009F2925093B57699FA14648B78C3E5301F3AE1FF53C385ECD6FE",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp8",
+                    "isRequired": false
+                  }
+                },
+                {
+                  "id": 3169507,
+                  "name": "kleinFinalcutFP16FP8_comfyQuant_int8.safetensors",
+                  "sizeKB": 9910902.9375,
+                  "sha256": "6A2807BBFFE13903EEEF85723F34338460A514E9767EB53A86ADED1FF165C02A",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "fp": "int8",
+                    "isRequired": false
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 2337386,
+          "name": "Klein_Center_4B",
+          "versions": [
+            {
+              "id": 3068988,
+              "name": "v3.3 schnell",
+              "baseModel": "Flux.2 Klein 4B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2947720,
+                  "name": "kleinCenter4B_v33Schnell.safetensors",
+                  "sizeKB": 7569465.453125,
+                  "sha256": "4F92D65D81596B71A80AA27A44303B2AD8BF29C290F88D2C2E81631ADD1D2AE7",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "fp": "fp16",
+                    "isRequired": false
+                  }
+                }
+              ]
+            },
+            {
+              "id": 2857878,
+              "name": "v3.1",
+              "baseModel": "Flux.2 Klein 4B-base",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2743757,
+                  "name": "kleinCenter4B_v31.safetensors",
+                  "sizeKB": 7569442.2265625,
+                  "sha256": "900A47CBFB88CA7F05D387D9AC3CA6FD55D4C245FEB0BFEF018EEE91EB5A062B",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "bf16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 2808501,
+              "name": "v3.0",
+              "baseModel": "Flux.2 Klein 4B-base",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2694294,
+                  "name": "kleinCenter4B_v30.safetensors",
+                  "sizeKB": 7569442.375,
+                  "sha256": "E9F86E09DA24C4386976B48FD1A0947F0BAB5133F3D639CAB1CBC671EFC0A811",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "bf16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 2689133,
+              "name": "v2.0",
+              "baseModel": "Flux.2 Klein 4B-base",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2574985,
+                  "name": "kleinCenter4B_v20.safetensors",
+                  "sizeKB": 7569458,
+                  "sha256": "20D70C481950BD04A02B0F69070F93F0742CDA5A808E5C129189B1A39A0CAF8D",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "bf16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 2629232,
+              "name": "v1.0",
+              "baseModel": "Flux.2 Klein 4B-base",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2516971,
+                  "name": "kleinCenter4B_v10.safetensors",
+                  "sizeKB": 7569461.7265625,
+                  "sha256": "6A9693F11A8B012709CAB3F28FEC46F47D422ADF3D8F1416C63748A3878CCCD5",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 2663767,
+          "name": "Klein 9B SRX Foundation",
+          "versions": [
+            {
+              "id": 2991192,
+              "name": "v1.0",
+              "baseModel": "Flux.2 Klein 9B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2871201,
+                  "name": "klein9BSRXFoundation_v10.safetensors",
+                  "sizeKB": 17731626.546875,
+                  "sha256": "A6596EEBED1790693C6AD9094C89C45EF75CFFED12F960634ADCE27135416F43",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp16",
+                    "isRequired": false
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 2506972,
+          "name": "Klein 9B KV Cache FP8",
+          "versions": [
+            {
+              "id": 2818008,
+              "name": "v1.0",
+              "baseModel": "Flux.2 Klein 9B",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 2704054,
+                  "name": "klein9BKVCacheFP8_v10.safetensors",
+                  "sizeKB": 9588804.671875,
+                  "sha256": "33F7DA5625A00798349A719742999D3C7DD20C1A7EDA14663922C363640728F1",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp8"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "query": {
+        "query": "Stable Diffusion 3"
+      },
+      "url": "https://civitai.com/api/v1/models?query=Stable+Diffusion+3&types=Checkpoint&limit=5",
+      "sampledAt": "2026-10-11T22:25:54.769Z",
+      "items": [
+        {
+          "id": 106489,
+          "name": "Hellcoder - (Trying to uncensor Stable Diffusion 2.1)",
+          "versions": [
+            {
+              "id": 116517,
+              "name": "Alpha_Hellcoder_V_0-3",
+              "baseModel": "SD 2.1 768",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 83169,
+                  "name": "hellcoderTryingToUncensor_alphaHellcoderV03.pt",
+                  "sizeKB": 80.955078125,
+                  "sha256": "3F30336EC900615670D84F715C3E1A56967CB93E3A555945F6950C993A4AE3F9",
+                  "metadata": {
+                    "format": "PickleTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                },
+                {
+                  "id": 83171,
+                  "name": "hellcoderTryingToUncensor_alphaHellcoderV03.safetensors",
+                  "sizeKB": 2546251.111328125,
+                  "sha256": "A749DEC725B4F19F1394CB95890C4135CC44600B2A7A8C6DFA4EF54DBF546792",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 114697,
+              "name": "Alpha_Hellcoder_V0.1.1",
+              "baseModel": "SD 2.1",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 81609,
+                  "name": "hellcoderTryingToUncensor_alphaHellcoderV011.safetensors",
+                  "sizeKB": 2546251.134765625,
+                  "sha256": "0DC223634BFFD14EC22559D36D34EF2CF05F66ABB58BD58A47C0BD1297D9FD55",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 114370,
+              "name": "Alpha Hellcoder V0.1",
+              "baseModel": "SD 2.1 768",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 81338,
+                  "name": "hellcoderTryingToUncensor_alphaHellcoderV01.safetensors",
+                  "sizeKB": 2546251.134765625,
+                  "sha256": "E344C0EF5E4C35D7BEA4038BA823F0023AEB178F53AF8E3F0CBD70E9C7F97C78",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 122757,
+          "name": "Stable-Diffusion-XL-Kawaii",
+          "versions": [
+            {
+              "id": 133954,
+              "name": "v1.0_RoundEyes",
+              "baseModel": "SDXL 1.0",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 97697,
+                  "name": "stableDiffusionXL_v10Roundeyes.safetensors",
+                  "sizeKB": 6775430.376953125,
+                  "sha256": "8744A0DC449420BE1EF1CC51588FE4388B395CE1C17166E67EDCCFA7D4A3C40A",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 133743,
+              "name": "v1.0_OvalEyes",
+              "baseModel": "SDXL 1.0",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 97681,
+                  "name": "stableDiffusionXL_v10Ovaleyes.safetensors",
+                  "sizeKB": 6775430.376953125,
+                  "sha256": "20571A9BE1C5489A5A746650FAB020A7967B0AC69DB62CA2092D03A6324F6E84",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 121215,
+          "name": "Stable-Diffusion-XL-Anime-Final",
+          "versions": [
+            {
+              "id": 660179,
+              "name": "final",
+              "baseModel": "SDXL 1.0",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 576661,
+                  "name": "stableDiffusionXL_final.safetensors",
+                  "sizeKB": 6775432.859375,
+                  "sha256": "997FB6AA77125918CDE052E8A1EBBF27BDD1841773EEEAE9E57BD5F9996BDD37",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 520650,
+              "name": "v5.6",
+              "baseModel": "SDXL Hyper",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 437772,
+                  "name": "stableDiffusionXL_v56.safetensors",
+                  "sizeKB": 6775432.859375,
+                  "sha256": "3C9A7A9976C19BE004D02C33DC3431B2FD17932CDB439E0F1F641DBEAD41CA78",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                },
+                {
+                  "id": 233666,
+                  "name": "sdxl_vae.safetensors",
+                  "sizeKB": 326798.009765625,
+                  "sha256": "235745AF8D86BF4A4C1B5B4F529868B37019A10F7C0B2E79AD0ABCA3A22BC6E1",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": null,
+                    "fp": null
+                  }
+                }
+              ]
+            },
+            {
+              "id": 466100,
+              "name": "v5.4",
+              "baseModel": "SDXL Hyper",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 385111,
+                  "name": "stableDiffusionXL_v54.safetensors",
+                  "sizeKB": 6775432.859375,
+                  "sha256": "9AFCB1E6106BFA8BFC5115432DA4974505BB73056D5B88F11478BB49D2983EE9",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp16"
+                  }
+                },
+                {
+                  "id": 233666,
+                  "name": "sdxl_vae.safetensors",
+                  "sizeKB": 326798.009765625,
+                  "sha256": "235745AF8D86BF4A4C1B5B4F529868B37019A10F7C0B2E79AD0ABCA3A22BC6E1",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": null,
+                    "fp": null
+                  }
+                }
+              ]
+            },
+            {
+              "id": 410487,
+              "name": "v5.2",
+              "baseModel": "SDXL 1.0",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 337571,
+                  "name": "stableDiffusionXL_v52.safetensors",
+                  "sizeKB": 6775432.875,
+                  "sha256": "C68E183B6C0B67FC3A438E869E189B1F22D4DC3FFDCAE8071F28B217A937A76A",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 389464,
+              "name": "v4",
+              "baseModel": "SDXL 1.0",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 313154,
+                  "name": "stableDiffusionXL_v4.safetensors",
+                  "sizeKB": 6775432.435546875,
+                  "sha256": "F415DD88C4D3DE86231F108A5C91F4DB55AA20EA8AF77C50B15D99C0D8E8A78B",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                },
+                {
+                  "id": 233666,
+                  "name": "sdxl_vae.safetensors",
+                  "sizeKB": 326798.009765625,
+                  "sha256": "235745AF8D86BF4A4C1B5B4F529868B37019A10F7C0B2E79AD0ABCA3A22BC6E1",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": null,
+                    "fp": null
+                  }
+                }
+              ]
+            },
+            {
+              "id": 147872,
+              "name": "v3.0",
+              "baseModel": "SDXL 1.0",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 109624,
+                  "name": "stableDiffusionXL_v30.safetensors",
+                  "sizeKB": 6775430.376953125,
+                  "sha256": "4E03869138F2F5D1CB4D397E49F91CCFE4D7B515EBFC84CB2A12573C5FCEB4D2",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 141086,
+              "name": "v2.0",
+              "baseModel": "SDXL 1.0",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 103667,
+                  "name": "stableDiffusionXL_v20.safetensors",
+                  "sizeKB": 6775430.376953125,
+                  "sha256": "52CB45113269BC0B7883420CF83D70D1F7D152C3930D18D44677A3949F09D3C4",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 131845,
+              "name": "v1.0",
+              "baseModel": "SDXL 1.0",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 95807,
+                  "name": "stableDiffusionXL_v10.safetensors",
+                  "sizeKB": 6775430.376953125,
+                  "sha256": "0DFC2EC78EFBA40AAFEDB589652E9E32CDCC0DDBE708B9B9AFABD9A211D674D1",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "fp16"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 155256,
+          "name": "Stable Diffusion v1.5 [bf16/fp16] [no-ema/ema-only] [no-vae] [SafeTensors] [Checkpoint]",
+          "versions": [
+            {
+              "id": 174123,
+              "name": "v1.5-no-ema",
+              "baseModel": "SD 1.5",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 132791,
+                  "name": "stableDiffusionV15Bf16Fp16NoEma_v15NoEma_pruned_bf16.safetensors",
+                  "sizeKB": 1919227.2890625,
+                  "sha256": "2DDFB598EB3413E411E4518B862F1F6986F2EDC71F03405B05BCD83DBF4BE901",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "bf16"
+                  }
+                },
+                {
+                  "id": 132794,
+                  "name": "stableDiffusionV15Bf16Fp16NoEma_v15NoEma_pruned_fp16.safetensors",
+                  "sizeKB": 1919226.4296875,
+                  "sha256": "E3FA3670BBC199A5C7DDBCCC3A927FEBA50EF652DB016372699A87C87A0A517D",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                },
+                {
+                  "id": 137706,
+                  "name": "vae-ft-mse-840000-ema-pruned_fp16.safetensors",
+                  "sizeKB": 163411.2607421875,
+                  "sha256": "E852361DA7A57EF5C87A7F551CDD218B2E54458555FF1A89C6AB4468ABED73C2",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": null,
+                    "fp": null
+                  }
+                }
+              ]
+            },
+            {
+              "id": 174136,
+              "name": "v1.5-ema-only",
+              "baseModel": "SD 1.5",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 132808,
+                  "name": "stableDiffusionV15Bf16Fp16NoEma_v15EmaOnly_132808.safetensors",
+                  "sizeKB": 1919226.4296875,
+                  "sha256": "D2F269D3CBBCF63404B69F25046137BE60C0FA061FC7CE1D75F7239EC3544D50",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                },
+                {
+                  "id": 132807,
+                  "name": "stableDiffusionV15Bf16Fp16NoEma_v15EmaOnly_pruned_bf16.safetensors",
+                  "sizeKB": 1919227.2890625,
+                  "sha256": "EA776416ADCC543329C5FB82B8081A7A0724F6D6827AAF27389C2BD27142E619",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "bf16"
+                  }
+                },
+                {
+                  "id": 132801,
+                  "name": "stableDiffusionV15Bf16Fp16NoEma_v15EmaOnly_132801.safetensors",
+                  "sizeKB": 1919226.4296875,
+                  "sha256": "D2F269D3CBBCF63404B69F25046137BE60C0FA061FC7CE1D75F7239EC3544D50",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "fp16"
+                  }
+                },
+                {
+                  "id": 137706,
+                  "name": "vae-ft-mse-840000-ema-pruned_fp16.safetensors",
+                  "sizeKB": 163411.2607421875,
+                  "sha256": "E852361DA7A57EF5C87A7F551CDD218B2E54458555FF1A89C6AB4468ABED73C2",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": null,
+                    "fp": null
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": 718357,
+          "name": "Delgados",
+          "versions": [
+            {
+              "id": 818049,
+              "name": "animalitos",
+              "baseModel": "Flux.1 S",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 731799,
+                  "name": "delgados_animalitos.safetensors",
+                  "sizeKB": 12215452.42382812,
+                  "sha256": "993F711BF247C5B8E4B996B5C1EEDCCD54AC33576B2D9B7F243CC8E78AD0CE80",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "pruned",
+                    "fp": "nf4"
+                  }
+                }
+              ]
+            },
+            {
+              "id": 803285,
+              "name": "unchained-hyfu",
+              "baseModel": "Flux.1 S",
+              "availability": "Public",
+              "files": [
+                {
+                  "id": 716974,
+                  "name": "delgados_unchainedHyfu.safetensors",
+                  "sizeKB": 12215452.42382812,
+                  "sha256": "3515FEA22266F0EE88D1BECB49037DE13DA48326576022D26DE5705EE7B66A23",
+                  "metadata": {
+                    "format": "SafeTensor",
+                    "size": "full",
+                    "fp": "nf4"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+]

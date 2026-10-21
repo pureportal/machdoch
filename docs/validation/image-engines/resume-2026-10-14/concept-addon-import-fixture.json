@@ -1,0 +1,78 @@
+{
+  "database": "D:/Models/machdoch/media.sqlite3",
+  "blobs": "D:/Models/machdoch/blobs/sha256",
+  "outputDirectory": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\resume-2026-10-14\\native-concept-addons",
+  "assets": [
+    {
+      "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\187387\\210432\\Double_Exposure.safetensors",
+      "reviewToken": "",
+      "displayName": "Double Exposure SDXL - runew0lf",
+      "kind": "lora",
+      "architecture": "stable-diffusion-xl",
+      "triggerWords": [
+        "double exposure"
+      ],
+      "token": null,
+      "sourceUrl": "https://civitai.com/models/187387?modelVersionId=210432",
+      "licenseName": null,
+      "commercialUse": "review-required"
+    },
+    {
+      "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\132494\\145734\\w0rld - World Inside Body.safetensors",
+      "reviewToken": "",
+      "displayName": "World Inside Body SD1.5 - BixBit11",
+      "kind": "lora",
+      "architecture": "stable-diffusion-1",
+      "triggerWords": [
+        "w0rld"
+      ],
+      "token": null,
+      "sourceUrl": "https://civitai.com/models/132494?modelVersionId=145734",
+      "licenseName": null,
+      "commercialUse": "review-required"
+    },
+    {
+      "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\1253670\\1413362\\double_exposure.safetensors",
+      "reviewToken": "",
+      "displayName": "Environment Inside Silhouette Illustrious - App1e17",
+      "kind": "lora",
+      "architecture": "stable-diffusion-xl",
+      "triggerWords": [
+        "double exposure, silhouette"
+      ],
+      "token": null,
+      "sourceUrl": "https://civitai.com/models/1253670?modelVersionId=1413362",
+      "licenseName": null,
+      "commercialUse": "review-required"
+    },
+    {
+      "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\678461\\760260\\DoubleExposureP-000006.safetensors",
+      "reviewToken": "",
+      "displayName": "Double Exposure Pony - Jedas",
+      "kind": "lora",
+      "architecture": "stable-diffusion-xl",
+      "triggerWords": [
+        "Jed-dblexpsre",
+        "Jed-dblexpsre effect",
+        "double exposure",
+        "merged"
+      ],
+      "token": null,
+      "sourceUrl": "https://civitai.com/models/678461?modelVersionId=760260",
+      "licenseName": null,
+      "commercialUse": "review-required"
+    },
+    {
+      "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\685432\\767128\\Double_Exposure_for_Flux_-_by_Ethanar.safetensors",
+      "reviewToken": "",
+      "displayName": "Double Exposure FLUX.1 - Ethanar",
+      "kind": "lora",
+      "architecture": "flux-1",
+      "triggerWords": [],
+      "token": null,
+      "sourceUrl": "https://civitai.com/models/685432?modelVersionId=767128",
+      "licenseName": null,
+      "commercialUse": "review-required"
+    }
+  ]
+}

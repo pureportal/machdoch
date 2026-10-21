@@ -1,0 +1,12 @@
+{
+  "request": {
+    "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\139562\\789646\\realvisxlV50_v50Bakedvae_703211.safetensors",
+    "architecture": "realvis-xl",
+    "displayName": "RealVisXL V5.0 \u00b7 SG161222",
+    "sourceUrl": "https://civitai.com/models/139562?modelVersionId=789646",
+    "commercialUse": "review-required",
+    "licenseName": null,
+    "reviewToken": ""
+  },
+  "expectedDigest": "6a35a7855770ae9820a3c931d4964c3817b6d9e3c6f9c4dabb5b3a94e5643b80"
+}

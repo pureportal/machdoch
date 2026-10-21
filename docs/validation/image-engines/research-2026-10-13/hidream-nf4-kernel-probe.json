@@ -1,0 +1,10 @@
+{
+  "torch": "2.12.0+rocm7.14.0",
+  "bitsandbytes": "0.50.2",
+  "device": "AMD Radeon RX 9070",
+  "passed": true,
+  "shape": [
+    2,
+    64
+  ]
+}

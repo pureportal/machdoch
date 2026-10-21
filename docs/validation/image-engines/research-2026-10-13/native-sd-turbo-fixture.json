@@ -1,0 +1,11 @@
+{
+  "referenceId": 144594528,
+  "aspectRatio": "1:1",
+  "modelName": "SD-Turbo · Stability AI",
+  "modelId": "local:user:3f067a1b943cf162f2b8f8588f6cf5824bd5b4c7d1d88d87164b9ca123616549",
+  "width": 512,
+  "sampler": "euler",
+  "height": 512,
+  "seed": 296620512,
+  "promptFile": "D:/Models/machdoch/verification/2026-10-13/image-engines/sd-turbo-concise-144594528.txt"
+}

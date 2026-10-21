@@ -1,0 +1,40 @@
+{
+  "experimentalOffloadStrategy": "model-cpu",
+  "qualityEvidence": false,
+  "progress": [
+    {
+      "stage": "Starting image runtime",
+      "seconds": 11.25
+    },
+    {
+      "stage": "Loading image model",
+      "seconds": 12.264999999999418
+    },
+    {
+      "stage": "Sampling 1/2",
+      "seconds": 450.125
+    },
+    {
+      "stage": "Sampling 2/2",
+      "seconds": 450.34400000000096
+    },
+    {
+      "stage": "Saving image",
+      "seconds": 760.7970000000023
+    }
+  ],
+  "passed": true,
+  "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\z-image-model-offload-benchmark\\images-1792015515510233900\\output-0000.png",
+  "width": 928,
+  "height": 1152,
+  "numInferenceSteps": 2,
+  "workerVersion": "media-diffusers-worker/1.103.0",
+  "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+  "sampler": "flow-euler",
+  "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+  "guidanceScale": 4,
+  "sha256": "c8791c38d2bd0888d1fe8b9f4b6552dcb4457500a09c0042ce501c831e69814f",
+  "peakGpuAllocatedBytes": 13555908608,
+  "seconds": 762.719000000001,
+  "benchmarkSha256": "c6fb4fbe0324111c8ee9d9d6a2e322bd16187ebebb3ffcb9e26a4b4495bee086"
+}

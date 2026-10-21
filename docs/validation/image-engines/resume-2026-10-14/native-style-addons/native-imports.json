@@ -1,0 +1,188 @@
+[
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:8d9ee4bd2a16c2c72c1e176d247d379c59312585ea3d154e55492ca34d0313fe",
+      "alreadyInstalled": false,
+      "architecture": "stable-diffusion-xl",
+      "byteSize": 228509780,
+      "digest": "8d9ee4bd2a16c2c72c1e176d247d379c59312585ea3d154e55492ca34d0313fe",
+      "displayName": "Masterpiece Illustrious v3 - motimalu",
+      "importedAt": "2026-10-15T01:00:19.486Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/8d9ee4bd2a16c2c72c1e176d247d379c59312585ea3d154e55492ca34d0313fe/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "illustriousXL_v01.safetensors",
+      "blockingReason": null,
+      "byteSize": 228509780,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-xl",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "8484a9eaa6d988031c78083cd87c2bcc6e0d51b3ea917c1792e8045b9280522a",
+      "loraProfile": {
+        "algorithm": "lora",
+        "convolutionTargetCount": 0,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 986,
+        "rankMaximum": 32,
+        "rankMinimum": 32,
+        "targetModuleCount": 986
+      },
+      "metadataSummary": [
+        "modelspec.architecture: stable-diffusion-xl-v1-base/lora",
+        "modelspec.title: illustrious_masterpieces_v3",
+        "ss_base_model_version: sdxl_base_v1-0",
+        "ss_sd_model_name: illustriousXL_v01.safetensors"
+      ],
+      "reviewToken": "1dd9c5e1ca23c6d1b28523bafb84e77d7fcafc0777c0d03777c617690d257789",
+      "schemaVersion": 1,
+      "sourceFileName": "illustrious_masterpieces_v3.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\929497\\2247497\\illustrious_masterpieces_v3.safetensors",
+      "suggestedDisplayName": "illustrious_masterpieces_v3",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder",
+        "text-encoder-2"
+      ],
+      "tensorCount": 2958,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  },
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:bc283af9511a60a8c9eb1880dcfffbc43740b32d173471ada5083bfb2d627b2a",
+      "alreadyInstalled": false,
+      "architecture": "stable-diffusion-xl",
+      "byteSize": 228506692,
+      "digest": "bc283af9511a60a8c9eb1880dcfffbc43740b32d173471ada5083bfb2d627b2a",
+      "displayName": "Masterpiece NoobAI Epsilon 1.0 - motimalu",
+      "importedAt": "2026-10-15T01:00:28.022Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/bc283af9511a60a8c9eb1880dcfffbc43740b32d173471ada5083bfb2d627b2a/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "noobaiXLNAIXL_epsilonPred10Version.safetensors",
+      "blockingReason": null,
+      "byteSize": 228506692,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-xl",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "4b022a7d89a122445e52b4ac812069bd456724e9373bd9a2283ab2dd8de4eaf7",
+      "loraProfile": {
+        "algorithm": "lora",
+        "convolutionTargetCount": 0,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 986,
+        "rankMaximum": 32,
+        "rankMinimum": 32,
+        "targetModuleCount": 986
+      },
+      "metadataSummary": [
+        "modelspec.architecture: stable-diffusion-xl-v1-base/lora",
+        "modelspec.title: illustrious_noobai_epsilon_pred_1_masterpieces_v1",
+        "ss_base_model_version: sdxl_base_v1-0",
+        "ss_sd_model_name: noobaiXLNAIXL_epsilonPred10Version.safetensors"
+      ],
+      "reviewToken": "e2d46fe4dcb1e89f153dab3628955fb15f9a17252a1de8aea2a8fac81db67d13",
+      "schemaVersion": 1,
+      "sourceFileName": "illustrious_noobai_epsilon_pred_1_masterpieces_v1.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\929497\\1070123\\illustrious_noobai_epsilon_pred_1_masterpieces_v1.safetensors",
+      "suggestedDisplayName": "illustrious_noobai_epsilon_pred_1_masterpieces_v1",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder",
+        "text-encoder-2"
+      ],
+      "tensorCount": 2958,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  },
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:99ea245d1d69a66489812b5a707fb84c16dd78f103dadf31b145eaf83ec0027b",
+      "alreadyInstalled": false,
+      "architecture": "stable-diffusion-xl",
+      "byteSize": 228506708,
+      "digest": "99ea245d1d69a66489812b5a707fb84c16dd78f103dadf31b145eaf83ec0027b",
+      "displayName": "Masterpiece Pony v1 - motimalu",
+      "importedAt": "2026-10-15T01:00:40.120Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/99ea245d1d69a66489812b5a707fb84c16dd78f103dadf31b145eaf83ec0027b/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "ponyDiffusionV6XL_v6StartWithThisOne.safetensors",
+      "blockingReason": null,
+      "byteSize": 228506708,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-xl",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "25dfeca20e83c91566037682afd729ceb60ae9dd7529318ae4aee874d6b0fc11",
+      "loraProfile": {
+        "algorithm": "lora",
+        "convolutionTargetCount": 0,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 986,
+        "rankMaximum": 32,
+        "rankMinimum": 32,
+        "targetModuleCount": 986
+      },
+      "metadataSummary": [
+        "modelspec.architecture: stable-diffusion-xl-v1-base/lora",
+        "modelspec.title: quality_modifiers_masterpieces_v1",
+        "ss_base_model_version: sdxl_base_v1-0",
+        "ss_sd_model_name: ponyDiffusionV6XL_v6StartWithThisOne.safetensors"
+      ],
+      "reviewToken": "1c8d6ad01590cf8fcdb0b81d8379b6bb385e1213804fc12f191eea9826e869f6",
+      "schemaVersion": 1,
+      "sourceFileName": "quality_modifiers_masterpieces_v1.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\929497\\1040450\\quality_modifiers_masterpieces_v1.safetensors",
+      "suggestedDisplayName": "quality_modifiers_masterpieces_v1",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder",
+        "text-encoder-2"
+      ],
+      "tensorCount": 2958,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  }
+]

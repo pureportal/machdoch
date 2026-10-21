@@ -1,0 +1,105 @@
+{
+  "publisher": "black-forest-labs/FLUX.1-schnell",
+  "publisherRevision": "741f7c3ce8b383c54771c7003378a50191e9efe9",
+  "mirror": "Niansuh/FLUX.1-schnell",
+  "mirrorRevision": "e69accbbbb51bd4722bc6ec9a3a2fa620e7ce7e5",
+  "components": [
+    {
+      "p": "model_index.json",
+      "b": 536,
+      "match": true
+    },
+    {
+      "p": "scheduler/scheduler_config.json",
+      "b": 274,
+      "match": true,
+      "mirrorPath": "scheduler/config.json"
+    },
+    {
+      "p": "text_encoder/config.json",
+      "b": 613,
+      "match": true
+    },
+    {
+      "p": "text_encoder/model.safetensors",
+      "b": 246144352,
+      "match": true
+    },
+    {
+      "p": "text_encoder_2/config.json",
+      "b": 782,
+      "match": true
+    },
+    {
+      "p": "text_encoder_2/model-00001-of-00002.safetensors",
+      "b": 4994582224,
+      "match": true
+    },
+    {
+      "p": "text_encoder_2/model-00002-of-00002.safetensors",
+      "b": 4530066360,
+      "match": true
+    },
+    {
+      "p": "text_encoder_2/model.safetensors.index.json",
+      "b": 19885,
+      "match": true
+    },
+    {
+      "p": "tokenizer/merges.txt",
+      "b": 524619,
+      "match": true
+    },
+    {
+      "p": "tokenizer/special_tokens_map.json",
+      "b": 588,
+      "match": true
+    },
+    {
+      "p": "tokenizer/tokenizer_config.json",
+      "b": 705,
+      "match": true
+    },
+    {
+      "p": "tokenizer/vocab.json",
+      "b": 1059962,
+      "match": true
+    },
+    {
+      "p": "tokenizer_2/special_tokens_map.json",
+      "b": 2543,
+      "match": true
+    },
+    {
+      "p": "tokenizer_2/spiece.model",
+      "b": 791656,
+      "match": true
+    },
+    {
+      "p": "tokenizer_2/tokenizer.json",
+      "b": 2424235,
+      "match": true
+    },
+    {
+      "p": "tokenizer_2/tokenizer_config.json",
+      "b": 20817,
+      "match": true
+    },
+    {
+      "p": "transformer/config.json",
+      "b": 321,
+      "match": true
+    },
+    {
+      "p": "vae/config.json",
+      "b": 774,
+      "match": true
+    },
+    {
+      "p": "vae/diffusion_pytorch_model.safetensors",
+      "b": 167666902,
+      "match": true
+    }
+  ],
+  "allMatch": true
+}

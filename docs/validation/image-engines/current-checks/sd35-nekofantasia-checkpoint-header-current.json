@@ -1,0 +1,742 @@
+{
+  "checkpoint": "D:\\Models\\machdoch\\downloads\\nekofantasia-alpha-civitai-linked-f612455c9032\\Nekofantasia-01.safetensors.part",
+  "metadata": null,
+  "tensorCount": 909,
+  "selectedTensors": {
+    "first_stage_model.decoder.conv_in.weight": {
+      "dtype": "BF16",
+      "shape": [
+        512,
+        16,
+        3,
+        3
+      ],
+      "data_offsets": [
+        1024,
+        148480
+      ]
+    },
+    "first_stage_model.encoder.conv_in.weight": {
+      "dtype": "BF16",
+      "shape": [
+        128,
+        3,
+        3,
+        3
+      ],
+      "data_offsets": [
+        99091206,
+        99098118
+      ]
+    },
+    "model.diffusion_model.context_embedder.weight": {
+      "dtype": "BF16",
+      "shape": [
+        1536,
+        4096
+      ],
+      "data_offsets": [
+        167642438,
+        180225350
+      ]
+    },
+    "model.diffusion_model.final_layer.linear.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64,
+        1536
+      ],
+      "data_offsets": [
+        189668806,
+        189865414
+      ]
+    },
+    "model.diffusion_model.joint_blocks.0.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        218195526,
+        218195654
+      ]
+    },
+    "model.diffusion_model.joint_blocks.0.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        317341510,
+        317341638
+      ]
+    },
+    "model.diffusion_model.joint_blocks.0.x_block.attn2.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        336228422,
+        336228550
+      ]
+    },
+    "model.diffusion_model.joint_blocks.1.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        421209414,
+        421209542
+      ]
+    },
+    "model.diffusion_model.joint_blocks.1.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        520355398,
+        520355526
+      ]
+    },
+    "model.diffusion_model.joint_blocks.1.x_block.attn2.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        539242310,
+        539242438
+      ]
+    },
+    "model.diffusion_model.joint_blocks.10.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        624223302,
+        624223430
+      ]
+    },
+    "model.diffusion_model.joint_blocks.10.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        723369286,
+        723369414
+      ]
+    },
+    "model.diffusion_model.joint_blocks.10.x_block.attn2.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        742256198,
+        742256326
+      ]
+    },
+    "model.diffusion_model.joint_blocks.11.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        827237190,
+        827237318
+      ]
+    },
+    "model.diffusion_model.joint_blocks.11.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        926383174,
+        926383302
+      ]
+    },
+    "model.diffusion_model.joint_blocks.11.x_block.attn2.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        945270086,
+        945270214
+      ]
+    },
+    "model.diffusion_model.joint_blocks.12.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        1030251078,
+        1030251206
+      ]
+    },
+    "model.diffusion_model.joint_blocks.12.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        1129397062,
+        1129397190
+      ]
+    },
+    "model.diffusion_model.joint_blocks.12.x_block.attn2.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        1148283974,
+        1148284102
+      ]
+    },
+    "model.diffusion_model.joint_blocks.13.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        1233264966,
+        1233265094
+      ]
+    },
+    "model.diffusion_model.joint_blocks.13.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        1318245958,
+        1318246086
+      ]
+    },
+    "model.diffusion_model.joint_blocks.14.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        1403226950,
+        1403227078
+      ]
+    },
+    "model.diffusion_model.joint_blocks.14.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        1488207942,
+        1488208070
+      ]
+    },
+    "model.diffusion_model.joint_blocks.15.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        1573188934,
+        1573189062
+      ]
+    },
+    "model.diffusion_model.joint_blocks.15.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        1658169926,
+        1658170054
+      ]
+    },
+    "model.diffusion_model.joint_blocks.16.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        1743150918,
+        1743151046
+      ]
+    },
+    "model.diffusion_model.joint_blocks.16.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        1828131910,
+        1828132038
+      ]
+    },
+    "model.diffusion_model.joint_blocks.17.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        1913112902,
+        1913113030
+      ]
+    },
+    "model.diffusion_model.joint_blocks.17.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        1998093894,
+        1998094022
+      ]
+    },
+    "model.diffusion_model.joint_blocks.18.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        2083074886,
+        2083075014
+      ]
+    },
+    "model.diffusion_model.joint_blocks.18.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        2168055878,
+        2168056006
+      ]
+    },
+    "model.diffusion_model.joint_blocks.19.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        2253036870,
+        2253036998
+      ]
+    },
+    "model.diffusion_model.joint_blocks.19.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        2338017862,
+        2338017990
+      ]
+    },
+    "model.diffusion_model.joint_blocks.2.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        2422998854,
+        2422998982
+      ]
+    },
+    "model.diffusion_model.joint_blocks.2.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        2522144838,
+        2522144966
+      ]
+    },
+    "model.diffusion_model.joint_blocks.2.x_block.attn2.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        2541031750,
+        2541031878
+      ]
+    },
+    "model.diffusion_model.joint_blocks.20.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        2626012742,
+        2626012870
+      ]
+    },
+    "model.diffusion_model.joint_blocks.20.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        2710993734,
+        2710993862
+      ]
+    },
+    "model.diffusion_model.joint_blocks.21.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        2795974726,
+        2795974854
+      ]
+    },
+    "model.diffusion_model.joint_blocks.21.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        2880955718,
+        2880955846
+      ]
+    },
+    "model.diffusion_model.joint_blocks.22.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        2965936710,
+        2965936838
+      ]
+    },
+    "model.diffusion_model.joint_blocks.22.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3050917702,
+        3050917830
+      ]
+    },
+    "model.diffusion_model.joint_blocks.23.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3117012038,
+        3117012166
+      ]
+    },
+    "model.diffusion_model.joint_blocks.23.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3159507270,
+        3159507398
+      ]
+    },
+    "model.diffusion_model.joint_blocks.3.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3244488262,
+        3244488390
+      ]
+    },
+    "model.diffusion_model.joint_blocks.3.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3343634246,
+        3343634374
+      ]
+    },
+    "model.diffusion_model.joint_blocks.3.x_block.attn2.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3362521158,
+        3362521286
+      ]
+    },
+    "model.diffusion_model.joint_blocks.4.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3447502150,
+        3447502278
+      ]
+    },
+    "model.diffusion_model.joint_blocks.4.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3546648134,
+        3546648262
+      ]
+    },
+    "model.diffusion_model.joint_blocks.4.x_block.attn2.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3565535046,
+        3565535174
+      ]
+    },
+    "model.diffusion_model.joint_blocks.5.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3650516038,
+        3650516166
+      ]
+    },
+    "model.diffusion_model.joint_blocks.5.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3749662022,
+        3749662150
+      ]
+    },
+    "model.diffusion_model.joint_blocks.5.x_block.attn2.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3768548934,
+        3768549062
+      ]
+    },
+    "model.diffusion_model.joint_blocks.6.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3853529926,
+        3853530054
+      ]
+    },
+    "model.diffusion_model.joint_blocks.6.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3952675910,
+        3952676038
+      ]
+    },
+    "model.diffusion_model.joint_blocks.6.x_block.attn2.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        3971562822,
+        3971562950
+      ]
+    },
+    "model.diffusion_model.joint_blocks.7.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        4056543814,
+        4056543942
+      ]
+    },
+    "model.diffusion_model.joint_blocks.7.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        4155689798,
+        4155689926
+      ]
+    },
+    "model.diffusion_model.joint_blocks.7.x_block.attn2.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        4174576710,
+        4174576838
+      ]
+    },
+    "model.diffusion_model.joint_blocks.8.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        4259557702,
+        4259557830
+      ]
+    },
+    "model.diffusion_model.joint_blocks.8.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        4358703686,
+        4358703814
+      ]
+    },
+    "model.diffusion_model.joint_blocks.8.x_block.attn2.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        4377590598,
+        4377590726
+      ]
+    },
+    "model.diffusion_model.joint_blocks.9.context_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        4462571590,
+        4462571718
+      ]
+    },
+    "model.diffusion_model.joint_blocks.9.x_block.attn.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        4561717574,
+        4561717702
+      ]
+    },
+    "model.diffusion_model.joint_blocks.9.x_block.attn2.ln_q.weight": {
+      "dtype": "BF16",
+      "shape": [
+        64
+      ],
+      "data_offsets": [
+        4580604486,
+        4580604614
+      ]
+    },
+    "model.diffusion_model.pos_embed": {
+      "dtype": "BF16",
+      "shape": [
+        1,
+        147456,
+        1536
+      ],
+      "data_offsets": [
+        4637255366,
+        5090240198
+      ]
+    },
+    "model.diffusion_model.x_embedder.proj.weight": {
+      "dtype": "BF16",
+      "shape": [
+        1536,
+        16,
+        2,
+        2
+      ],
+      "data_offsets": [
+        5095754438,
+        5095951046
+      ]
+    },
+    "model.diffusion_model.y_embedder.mlp.0.weight": {
+      "dtype": "BF16",
+      "shape": [
+        1536,
+        2048
+      ],
+      "data_offsets": [
+        5095954118,
+        5102245574
+      ]
+    }
+  },
+  "transformerBlocks": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23
+  ],
+  "dualAttentionBlocks": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12
+  ]
+}

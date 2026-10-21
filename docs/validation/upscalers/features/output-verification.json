@@ -1,0 +1,104 @@
+[
+  {
+    "name": "span-custom-2.75x",
+    "dimensions": [
+      440,
+      264
+    ],
+    "digestVerified": true,
+    "differenceFromLanczos": 0.4701474977043159,
+    "alphaVerified": true
+  },
+  {
+    "name": "realesrgan-minimum-dimensions",
+    "dimensions": [
+      384,
+      231
+    ],
+    "digestVerified": true,
+    "differenceFromLanczos": 4.421611952861953,
+    "alphaVerified": true
+  },
+  {
+    "name": "swinir-portrait-minimum-edges",
+    "dimensions": [
+      200,
+      299
+    ],
+    "digestVerified": true,
+    "differenceFromLanczos": 1.9040746934225194,
+    "alphaVerified": true
+  },
+  {
+    "name": "video-minimum-short-edge",
+    "dimensions": [
+      144,
+      96
+    ],
+    "digestVerified": true,
+    "frames": 8,
+    "fps": 8.0,
+    "audioVerified": true,
+    "matchingSourceFrames": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "name": "video-custom-1.1x-full-frame",
+    "dimensions": [
+      106,
+      71
+    ],
+    "digestVerified": true,
+    "frames": 8,
+    "fps": 8.0,
+    "audioVerified": true,
+    "matchingSourceFrames": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "name": "span-8x-multiple-passes",
+    "dimensions": [
+      1280,
+      768
+    ],
+    "digestVerified": true,
+    "differenceFromLanczos": 0.47666015625,
+    "alphaVerified": true
+  },
+  {
+    "name": "already-meets-minimum",
+    "dimensions": [
+      160,
+      96
+    ],
+    "digestVerified": true,
+    "unchangedPixels": true,
+    "alphaVerified": true
+  },
+  {
+    "name": "advanced-minimum-edges",
+    "dimensions": [
+      200,
+      299
+    ],
+    "digestVerified": true,
+    "differenceFromLanczos": 1.9040746934225194,
+    "alphaVerified": true
+  }
+]

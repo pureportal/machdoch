@@ -1,0 +1,66 @@
+{
+  "staticRequestChecksOnly": true,
+  "runtimeExecutionProven": false,
+  "manifest": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\complete-installed-reference-continuation-next.json",
+  "batches": 16,
+  "cases": 67,
+  "addedReferences": [
+    {
+      "referenceId": 144655944,
+      "width": 832,
+      "height": 1216,
+      "steps": 50,
+      "guidance": 3.5,
+      "sampler": "flow-euler",
+      "passed": true
+    },
+    {
+      "referenceId": 144697438,
+      "width": 1344,
+      "height": 768,
+      "steps": 50,
+      "guidance": 3.5,
+      "sampler": "flow-euler",
+      "passed": true
+    },
+    {
+      "referenceId": 144594528,
+      "width": 832,
+      "height": 1248,
+      "steps": 50,
+      "guidance": 3.5,
+      "sampler": "flow-euler",
+      "passed": true
+    },
+    {
+      "referenceId": 145095967,
+      "width": 832,
+      "height": 1248,
+      "steps": 50,
+      "guidance": 3.5,
+      "sampler": "flow-euler",
+      "passed": true
+    },
+    {
+      "referenceId": 144599398,
+      "width": 896,
+      "height": 1120,
+      "steps": 50,
+      "guidance": 3.5,
+      "sampler": "flow-euler",
+      "passed": true
+    },
+    {
+      "referenceId": 145177887,
+      "width": 768,
+      "height": 1344,
+      "steps": 50,
+      "guidance": 3.5,
+      "sampler": "flow-euler",
+      "passed": true
+    }
+  ],
+  "package": "D:\\Models\\machdoch\\models\\packages\\user-3fc5ed773ffaee5d18b6a191da9cb684\\revisions\\3fc5ed773ffaee5d18b6a191da9cb684b151f2cf13bf6b55fe36fddfcdd0365c",
+  "manifestSha256": "f7fdb46026666de5e00e8d96bacb108fc721cce1b03d1a7d58063eaa3eee84f4",
+  "passed": true
+}

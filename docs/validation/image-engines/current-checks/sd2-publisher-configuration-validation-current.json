@@ -1,0 +1,19 @@
+{
+  "publisherSource": "https://civitai.com/models/15303?modelVersionId=46259",
+  "yaml": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\rmadaMergeSD21768_v70.yaml",
+  "yamlSha256": "d8fd9b2863158b46ffe66170e1ed38430bd0ec1f1bbadd0ffbdda9bd03ece04a",
+  "package": "D:\\Models\\machdoch\\models\\packages\\user-bc2169b605081066857862ef8aa8e887\\revisions\\bc2169b605081066857862ef8aa8e887eb086842993d4dacdf2a8715f772d922",
+  "checks": {
+    "prediction": true,
+    "betaStart": true,
+    "betaEnd": true,
+    "trainingTimesteps": true,
+    "openclipLayer": true,
+    "conditioningWidth": true,
+    "linearProjection": true,
+    "latentChannels": true,
+    "latentScale": true
+  },
+  "passed": true,
+  "imageQualityProven": false
+}

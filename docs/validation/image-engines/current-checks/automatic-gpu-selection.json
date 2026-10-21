@@ -1,0 +1,18 @@
+{
+  "device": "cuda",
+  "label": "AMD Radeon RX 9070 (cuda:1)",
+  "memoryBytes": 17095983104,
+  "sum": 120.0,
+  "devices": [
+    {
+      "index": 0,
+      "name": "AMD Radeon(TM) Graphics",
+      "memoryBytes": 13143719936
+    },
+    {
+      "index": 1,
+      "name": "AMD Radeon RX 9070",
+      "memoryBytes": 17095983104
+    }
+  ]
+}

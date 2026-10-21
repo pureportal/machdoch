@@ -1,0 +1,9 @@
+{
+  "sourceRevision": "6e9113a692a27a0751d82aba3b2015a876646c03",
+  "sourcePath": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\hunyuan-source-runtime\\HunyuanImage-3.0-6e9113a692a27a0751d82aba3b2015a876646c03",
+  "diagnosticOnly": true,
+  "runtimeInstalled": false,
+  "weightsLoaded": false,
+  "importPassed": true,
+  "generateSignature": "(self, prompt=None, image=None, message_list=None, seed=None, image_size='auto', use_system_prompt=None, system_prompt=None, bot_task=None, infer_align_image_size=False, use_taylor_cache=False, taylor_cache_interval=None, taylor_cache_order=None, taylor_cache_enable_first_enhance=None, taylor_cache_first_enhance_steps=None, taylor_cache_enable_tailing_enhance=None, taylor_cache_tailing_enhance_steps=None, taylor_cache_low_freqs_order=None, taylor_cache_high_freqs_order=None, **kwargs)"
+}

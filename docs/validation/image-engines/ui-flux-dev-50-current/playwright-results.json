@@ -1,0 +1,201 @@
+{
+  "basicSamplerChoices": 10,
+  "warnings": [
+    "steps",
+    "guidance"
+  ],
+  "warningsCleared": true,
+  "advancedSampler": "dpmpp-2m-karras",
+  "incompatibleSamplerCleared": true,
+  "incompatibleSavedSamplerBlocked": true,
+  "incompatibleSavedSamplerRecovered": true,
+  "engineDefaults": [
+    {
+      "name": "SDXL DMAD 4-step",
+      "architecture": "stable-diffusion-xl-dmad-4step",
+      "steps": 4,
+      "samplerChoices": 2
+    },
+    {
+      "name": "SDXL DMAD 1-step",
+      "architecture": "stable-diffusion-xl-dmad-1step",
+      "steps": 1,
+      "samplerChoices": 2
+    },
+    {
+      "name": "Z-Image-Turbo",
+      "architecture": "z-image-turbo",
+      "steps": 9,
+      "samplerChoices": 2
+    },
+    {
+      "name": "Z-Image Base",
+      "architecture": "z-image",
+      "steps": 50,
+      "samplerChoices": 2
+    },
+    {
+      "name": "Qwen-Image",
+      "architecture": "qwen-image",
+      "steps": 50,
+      "samplerChoices": 2
+    },
+    {
+      "name": "Qwen-Image-2512",
+      "architecture": "qwen-image-2512",
+      "steps": 50,
+      "samplerChoices": 2
+    },
+    {
+      "name": "Qwen-Image-Edit-2511",
+      "architecture": "qwen-image-edit-2511",
+      "steps": 40,
+      "samplerChoices": 2
+    },
+    {
+      "name": "SANA 1.6B",
+      "architecture": "sana",
+      "steps": 20,
+      "samplerChoices": 2
+    },
+    {
+      "name": "SANA-Sprint 1.6B",
+      "architecture": "sana-sprint",
+      "steps": 2,
+      "samplerChoices": 2
+    },
+    {
+      "name": "GLM-Image",
+      "architecture": "glm-image",
+      "steps": 50,
+      "samplerChoices": 2
+    },
+    {
+      "name": "HiDream-I1 Full",
+      "architecture": "hidream-i1-full",
+      "steps": 50,
+      "samplerChoices": 2
+    },
+    {
+      "name": "Ideogram 4 NF4",
+      "architecture": "ideogram-4",
+      "steps": 48,
+      "samplerChoices": 1
+    },
+    {
+      "name": "FLUX.1 schnell",
+      "architecture": "flux-1-schnell",
+      "steps": 4,
+      "samplerChoices": 2
+    },
+    {
+      "name": "FLUX.1 dev",
+      "architecture": "flux-1-dev",
+      "steps": 50,
+      "samplerChoices": 2
+    },
+    {
+      "name": "FLUX.2 klein Base 4B",
+      "architecture": "flux-2-klein-base-4b",
+      "steps": 50,
+      "samplerChoices": 2
+    },
+    {
+      "name": "FLUX.2 klein 9B",
+      "architecture": "flux-2-klein-9b",
+      "steps": 4,
+      "samplerChoices": 2
+    },
+    {
+      "name": "FLUX.2 klein Base 9B",
+      "architecture": "flux-2-klein-base-9b",
+      "steps": 50,
+      "samplerChoices": 2
+    },
+    {
+      "name": "FLUX.2 dev",
+      "architecture": "flux-2-dev",
+      "steps": 50,
+      "samplerChoices": 2
+    },
+    {
+      "name": "Krea 2 Raw",
+      "architecture": "krea-2-raw",
+      "steps": 52,
+      "samplerChoices": 2
+    },
+    {
+      "name": "Qwen-Image 2.1 Turbo",
+      "architecture": "qwen-image-2.1-turbo",
+      "steps": 8,
+      "samplerChoices": 2
+    },
+    {
+      "name": "stable-diffusion-1",
+      "architecture": "stable-diffusion-1",
+      "steps": 32,
+      "samplerChoices": 10
+    },
+    {
+      "name": "stable-diffusion-2",
+      "architecture": "stable-diffusion-2",
+      "steps": 32,
+      "samplerChoices": 10
+    },
+    {
+      "name": "SDXL",
+      "architecture": "stable-diffusion-xl",
+      "steps": 32,
+      "samplerChoices": 10
+    },
+    {
+      "name": "pony",
+      "architecture": "pony",
+      "steps": 32,
+      "samplerChoices": 10
+    },
+    {
+      "name": "stable-diffusion-3",
+      "architecture": "stable-diffusion-3",
+      "steps": 32,
+      "samplerChoices": 2
+    },
+    {
+      "name": "flux-1",
+      "architecture": "flux-1",
+      "steps": 32,
+      "samplerChoices": 2
+    },
+    {
+      "name": "FLUX.2 klein 4B",
+      "architecture": "flux-2",
+      "steps": 4,
+      "samplerChoices": 2
+    },
+    {
+      "name": "krea-2",
+      "architecture": "krea-2",
+      "steps": 12,
+      "samplerChoices": 2
+    },
+    {
+      "name": "Qwen-Image 2.1",
+      "architecture": "qwen-image-2.1",
+      "steps": 40,
+      "samplerChoices": 2
+    },
+    {
+      "name": "Krea 2 Turbo",
+      "architecture": "krea-2-turbo",
+      "steps": 8,
+      "samplerChoices": 2
+    },
+    {
+      "name": "HunyuanImage 3.0",
+      "architecture": "hunyuan-image-3",
+      "steps": 50,
+      "samplerChoices": 2
+    }
+  ],
+  "errors": []
+}

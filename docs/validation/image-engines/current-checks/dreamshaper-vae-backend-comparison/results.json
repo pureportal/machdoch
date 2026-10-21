@@ -1,0 +1,41 @@
+{
+  "request": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-decoder-capture\\01-stable-diffusion-1-reference-144594528\\request.json",
+  "latents": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-decoder-capture\\01-stable-diffusion-1-reference-144594528\\decoder-latents.safetensors",
+  "latentsSha256": "ff1b0aa37e0cc25c68346eedfcd0f010a9d97e6ed65eff722322f9d9494f100d",
+  "originalImage": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-decoder-capture\\01-stable-diffusion-1-reference-144594528\\images\\output-0000.png",
+  "sameLatents": true,
+  "device": "AMD Radeon RX 9070",
+  "convolutionBackend": "native",
+  "records": [
+    {
+      "device": "cuda",
+      "dtype": "torch.float16",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-vae-backend-comparison\\cuda-float16.png",
+      "sha256": "55b1c709f4e69664acccec718eca0d90764fda3083155145010d5258f00cb4dc",
+      "seconds": 3.4690000000009604,
+      "peakAllocatedBytes": 2618202624,
+      "meanAbsolutePixelErrorAgainstOriginal": 0.0,
+      "maxAbsolutePixelErrorAgainstOriginal": 0
+    },
+    {
+      "device": "cuda",
+      "dtype": "torch.float32",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-vae-backend-comparison\\cuda-float32.png",
+      "sha256": "fa2ebf1a9cbfe6ab7a7ce3a00d20fefc6d49feaaf4d6b8fd47add39361aed886",
+      "seconds": 12.360000000000582,
+      "peakAllocatedBytes": 5147516416,
+      "meanAbsolutePixelErrorAgainstOriginal": 0.0349180433485243,
+      "maxAbsolutePixelErrorAgainstOriginal": 1
+    },
+    {
+      "device": "cpu",
+      "dtype": "torch.float32",
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-vae-backend-comparison\\cpu-float32.png",
+      "sha256": "63b26b96f64209279d953e4f7173b6068a0f1696e6e8c9b8b02bae4e65c56a0a",
+      "seconds": 73.48500000000058,
+      "peakAllocatedBytes": 79691776,
+      "meanAbsolutePixelErrorAgainstOriginal": 0.03491634792751736,
+      "maxAbsolutePixelErrorAgainstOriginal": 1
+    }
+  ]
+}

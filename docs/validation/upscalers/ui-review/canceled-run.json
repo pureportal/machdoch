@@ -1,0 +1,214 @@
+{
+  "id": "2d28ef07-a59d-4f74-9f79-083d5c175055",
+  "flowId": "upscale-88b99874-96e5-42f9-8052-de388de5ccd9",
+  "flowRevisionId": "mfr-9758a670c51219ce1fcb41396bf23f6d",
+  "flowName": "Upscale video",
+  "planId": "upscale-88b99874-96e5-42f9-8052-de388de5ccd9:dcdfe20a5c8",
+  "status": "canceled",
+  "createdAt": "2026-10-15T18:58:10.708Z",
+  "updatedAt": "2026-10-15T18:58:11.386Z",
+  "prompt": "",
+  "modelLabel": "Workflow",
+  "target": "local",
+  "outputCount": 1,
+  "diagnosticCount": 0,
+  "progress": 0,
+  "currentStep": "Canceled",
+  "executor": "media-workflow",
+  "error": null,
+  "failure": null,
+  "events": [
+    {
+      "id": 1957,
+      "runId": "2d28ef07-a59d-4f74-9f79-083d5c175055",
+      "sequence": 1,
+      "kind": "run_started",
+      "createdAt": "2026-10-15T18:58:10.708Z",
+      "message": "The pinned local utility graph started.",
+      "progress": 0,
+      "stepId": null,
+      "nodeId": null
+    },
+    {
+      "id": 1958,
+      "runId": "2d28ef07-a59d-4f74-9f79-083d5c175055",
+      "sequence": 2,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:58:10.741Z",
+      "message": "Attempt 1/1 · Video asset",
+      "progress": 0,
+      "stepId": "source:resolve-asset",
+      "nodeId": "source"
+    },
+    {
+      "id": 1959,
+      "runId": "2d28ef07-a59d-4f74-9f79-083d5c175055",
+      "sequence": 3,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:58:10.767Z",
+      "message": "Attempt 1/1 · Video asset completed",
+      "progress": 1,
+      "stepId": "source:resolve-asset",
+      "nodeId": "source"
+    },
+    {
+      "id": 1960,
+      "runId": "2d28ef07-a59d-4f74-9f79-083d5c175055",
+      "sequence": 4,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:58:10.788Z",
+      "message": "Attempt 1/1 · Upscale video",
+      "progress": 0,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1961,
+      "runId": "2d28ef07-a59d-4f74-9f79-083d5c175055",
+      "sequence": 5,
+      "kind": "cancel_requested",
+      "createdAt": "2026-10-15T18:58:11.303Z",
+      "message": "Cancellation will occur at the next safe checkpoint.",
+      "progress": null,
+      "stepId": "cancel",
+      "nodeId": null
+    },
+    {
+      "id": 1962,
+      "runId": "2d28ef07-a59d-4f74-9f79-083d5c175055",
+      "sequence": 6,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:58:11.387Z",
+      "message": "Upscale video",
+      "progress": null,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1963,
+      "runId": "2d28ef07-a59d-4f74-9f79-083d5c175055",
+      "sequence": 7,
+      "kind": "run_canceled",
+      "createdAt": "2026-10-15T18:58:11.387Z",
+      "message": "Media execution stopped at a safe checkpoint.",
+      "progress": null,
+      "stepId": "cancel",
+      "nodeId": null
+    }
+  ],
+  "assets": [],
+  "providerJobs": [],
+  "humanReviews": [],
+  "nodeExecutions": [
+    {
+      "runId": "2d28ef07-a59d-4f74-9f79-083d5c175055",
+      "nodeId": "source",
+      "nodeType": "source.video",
+      "nodeLabel": "Video asset",
+      "ordinal": 0,
+      "status": "completed",
+      "activeStepId": "source:resolve-asset",
+      "runtimePhase": "workflow.execute",
+      "attempt": 1,
+      "progress": 1,
+      "message": "Attempt 1/1 · Video asset completed",
+      "startedAt": "2026-10-15T18:58:10.741Z",
+      "updatedAt": "2026-10-15T18:58:10.767Z",
+      "finishedAt": "2026-10-15T18:58:10.767Z",
+      "stateSequence": 2
+    },
+    {
+      "runId": "2d28ef07-a59d-4f74-9f79-083d5c175055",
+      "nodeId": "upscale",
+      "nodeType": "operation.upscale-video",
+      "nodeLabel": "Upscale video",
+      "ordinal": 1,
+      "status": "canceled",
+      "activeStepId": "upscale:upscale-video",
+      "runtimePhase": "run.finalize",
+      "attempt": 1,
+      "progress": 0,
+      "message": "Attempt 1/1 · Upscale video",
+      "startedAt": "2026-10-15T18:58:10.788Z",
+      "updatedAt": "2026-10-15T18:58:11.386Z",
+      "finishedAt": "2026-10-15T18:58:11.386Z",
+      "stateSequence": 2
+    },
+    {
+      "runId": "2d28ef07-a59d-4f74-9f79-083d5c175055",
+      "nodeId": "output",
+      "nodeType": "output.video",
+      "nodeLabel": "Save video",
+      "ordinal": 2,
+      "status": "pending",
+      "activeStepId": null,
+      "runtimePhase": null,
+      "attempt": 0,
+      "progress": null,
+      "message": null,
+      "startedAt": null,
+      "updatedAt": "2026-10-15T18:58:10.708Z",
+      "finishedAt": null,
+      "stateSequence": 0
+    }
+  ],
+  "planSnapshot": {
+    "schemaVersion": 1,
+    "planId": "upscale-88b99874-96e5-42f9-8052-de388de5ccd9:dcdfe20a5c8",
+    "flowId": "upscale-88b99874-96e5-42f9-8052-de388de5ccd9",
+    "flowFingerprint": "sha256:dcdfe20a5c8355a364a75ec5382dee1db3e7dee950f793d1b26e0bef108f8c1a",
+    "compiledAt": "2026-10-15T18:58:10.630Z",
+    "nodes": [
+      {
+        "id": "source",
+        "type": "source.video",
+        "label": "Video asset",
+        "layer": "source"
+      },
+      {
+        "id": "upscale",
+        "type": "operation.upscale-video",
+        "label": "Upscale video",
+        "layer": "operation"
+      },
+      {
+        "id": "output",
+        "type": "output.video",
+        "label": "Save video",
+        "layer": "output"
+      }
+    ],
+    "steps": [
+      {
+        "id": "source:resolve-asset",
+        "sourceNodeId": "source",
+        "kind": "resolve-asset",
+        "label": "Video asset",
+        "target": "local",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      },
+      {
+        "id": "upscale:upscale-video",
+        "sourceNodeId": "upscale",
+        "kind": "upscale-video",
+        "label": "Upscale video",
+        "target": "local",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      },
+      {
+        "id": "output:ingest-asset",
+        "sourceNodeId": "output",
+        "kind": "ingest-asset",
+        "label": "Save video",
+        "target": "local",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      }
+    ]
+  }
+}

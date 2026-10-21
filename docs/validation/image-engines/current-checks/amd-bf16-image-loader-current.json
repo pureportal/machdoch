@@ -1,0 +1,50 @@
+{
+  "checkedAt": "2026-10-13T02:08:31.906139+00:00",
+  "workerVersion": "media-diffusers-worker/1.95.0",
+  "workerSha256": "74174ca619570839c831fa810066556cf2de71b2e784e8ec69a50ac5e4516de9",
+  "runtimeSha256": "03500fea56ec238b29a5b5449463239ff9c08200808faba65d5c5052d25a2eee",
+  "hipVersion": "7.14.60850",
+  "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+  "genericAmdDefault": "torch.float16",
+  "bf16Supported": true,
+  "pipelineWeightsLoaded": false,
+  "imagesGenerated": false,
+  "checks": [
+    {
+      "architecture": "flux-1-dev",
+      "selectedDtype": "torch.bfloat16",
+      "package": "D:\\Models\\machdoch\\models\\packages\\user-3fc5ed773ffaee5d18b6a191da9cb684\\revisions\\3fc5ed773ffaee5d18b6a191da9cb684b151f2cf13bf6b55fe36fddfcdd0365c",
+      "passed": true
+    },
+    {
+      "architecture": "flux-1-schnell",
+      "selectedDtype": "torch.bfloat16",
+      "package": "D:\\Models\\machdoch\\models\\packages\\user-ecf7ddb963c9deee056e67b3370de935\\revisions\\ecf7ddb963c9deee056e67b3370de9358b9ba3762dbee77e027454c1616820f1",
+      "passed": true
+    },
+    {
+      "architecture": "qwen-image",
+      "selectedDtype": "torch.bfloat16",
+      "package": "D:\\Models\\machdoch\\models\\packages\\user-57787a0edb66e92ddcbc8e71c614d81e\\revisions\\57787a0edb66e92ddcbc8e71c614d81eac96f4f9d192cde68d59e54487afac11",
+      "passed": true
+    },
+    {
+      "architecture": "qwen-image-2512",
+      "selectedDtype": "torch.bfloat16",
+      "package": "D:\\Models\\machdoch\\models\\packages\\user-eec712df8cb8867fa397c03fc3f60c3e\\revisions\\eec712df8cb8867fa397c03fc3f60c3eded2affe49211d64db1709ed6fef7c56",
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "sources": [
+    "https://huggingface.co/docs/diffusers/api/pipelines/flux",
+    "https://huggingface.co/Qwen/Qwen-Image",
+    "https://huggingface.co/Qwen/Qwen-Image-2512",
+    "https://huggingface.co/Qwen/Qwen-Image-Edit-2511",
+    "https://huggingface.co/docs/diffusers/api/pipelines/glm_image",
+    "https://huggingface.co/docs/diffusers/api/pipelines/hidream",
+    "https://huggingface.co/docs/diffusers/api/pipelines/ideogram4",
+    "https://huggingface.co/black-forest-labs/FLUX.2-dev",
+    "https://huggingface.co/Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers"
+  ]
+}

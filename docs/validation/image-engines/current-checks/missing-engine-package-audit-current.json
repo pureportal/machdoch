@@ -1,0 +1,1190 @@
+{
+  "sampledAt": "2026-10-12T00:09:00.570540+00:00",
+  "installedArchitectures": 12,
+  "missingArchitectures": 19,
+  "packages": [
+    {
+      "architecture": "stable-diffusion-xl-dmad-4step",
+      "repository": "ZhengmingYu/DMAD",
+      "revision": "b1fa1f8745fd6563bf922e6be4b4b03125aaabdd",
+      "metadataUrl": "https://huggingface.co/api/models/ZhengmingYu/DMAD/revision/b1fa1f8745fd6563bf922e6be4b4b03125aaabdd?blobs=true",
+      "pipeline": "StableDiffusionXLPipeline",
+      "installed": false,
+      "gated": false,
+      "publishedWeights": [
+        {
+          "path": "comfyui/dmad_minimax_h3_4step_full_critic_comfyui.safetensors",
+          "bytes": 1956195976
+        },
+        {
+          "path": "comfyui/dmad_minimax_h3_4step_lora_critic_comfyui.safetensors",
+          "bytes": 1956195960
+        },
+        {
+          "path": "imagenet64/dmad_imagenet_frozencritic/checkpoint_model_221000/pytorch_model_ema.bin",
+          "bytes": 1184538562
+        },
+        {
+          "path": "imagenet64/dmad_imagenet_gaproute/checkpoint_model_568000/pytorch_model_ema.bin",
+          "bytes": 1184538562
+        },
+        {
+          "path": "imagenet64/dmad_imagenet_pgcritic/checkpoint_model_108000/pytorch_model_ema.bin",
+          "bytes": 1184538562
+        },
+        {
+          "path": "minimax_h3/dmad_minimax_h3_4step_full_critic.safetensors",
+          "bytes": 1383674320
+        },
+        {
+          "path": "minimax_h3/dmad_minimax_h3_4step_lora_critic.safetensors",
+          "bytes": 1383674304
+        },
+        {
+          "path": "sdxl/dmad_sdxl_1step_frozencritic_unet_fp16.bin",
+          "bytes": 5135860277
+        },
+        {
+          "path": "sdxl/dmad_sdxl_1step_unet_fp16.bin",
+          "bytes": 5135837515
+        },
+        {
+          "path": "sdxl/dmad_sdxl_4step_unet_fp16.bin",
+          "bytes": 5135837515
+        }
+      ],
+      "totalPublishedWeightBytes": 25640891553,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": false,
+      "metadataRead": true
+    },
+    {
+      "architecture": "stable-diffusion-xl-dmad-1step",
+      "repository": "ZhengmingYu/DMAD",
+      "revision": "b1fa1f8745fd6563bf922e6be4b4b03125aaabdd",
+      "metadataUrl": "https://huggingface.co/api/models/ZhengmingYu/DMAD/revision/b1fa1f8745fd6563bf922e6be4b4b03125aaabdd?blobs=true",
+      "pipeline": "StableDiffusionXLPipeline",
+      "installed": false,
+      "gated": false,
+      "publishedWeights": [
+        {
+          "path": "comfyui/dmad_minimax_h3_4step_full_critic_comfyui.safetensors",
+          "bytes": 1956195976
+        },
+        {
+          "path": "comfyui/dmad_minimax_h3_4step_lora_critic_comfyui.safetensors",
+          "bytes": 1956195960
+        },
+        {
+          "path": "imagenet64/dmad_imagenet_frozencritic/checkpoint_model_221000/pytorch_model_ema.bin",
+          "bytes": 1184538562
+        },
+        {
+          "path": "imagenet64/dmad_imagenet_gaproute/checkpoint_model_568000/pytorch_model_ema.bin",
+          "bytes": 1184538562
+        },
+        {
+          "path": "imagenet64/dmad_imagenet_pgcritic/checkpoint_model_108000/pytorch_model_ema.bin",
+          "bytes": 1184538562
+        },
+        {
+          "path": "minimax_h3/dmad_minimax_h3_4step_full_critic.safetensors",
+          "bytes": 1383674320
+        },
+        {
+          "path": "minimax_h3/dmad_minimax_h3_4step_lora_critic.safetensors",
+          "bytes": 1383674304
+        },
+        {
+          "path": "sdxl/dmad_sdxl_1step_frozencritic_unet_fp16.bin",
+          "bytes": 5135860277
+        },
+        {
+          "path": "sdxl/dmad_sdxl_1step_unet_fp16.bin",
+          "bytes": 5135837515
+        },
+        {
+          "path": "sdxl/dmad_sdxl_4step_unet_fp16.bin",
+          "bytes": 5135837515
+        }
+      ],
+      "totalPublishedWeightBytes": 25640891553,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": false,
+      "metadataRead": true
+    },
+    {
+      "architecture": "z-image-turbo",
+      "repository": "Tongyi-MAI/Z-Image-Turbo",
+      "revision": "f332072aa78be7aecdf3ee76d5c247082da564a6",
+      "metadataUrl": "https://huggingface.co/api/models/Tongyi-MAI/Z-Image-Turbo/revision/f332072aa78be7aecdf3ee76d5c247082da564a6?blobs=true",
+      "pipeline": "ZImagePipeline",
+      "installed": true,
+      "gated": false,
+      "publishedWeights": [
+        {
+          "path": "text_encoder/model-00001-of-00003.safetensors",
+          "bytes": 3957900840
+        },
+        {
+          "path": "text_encoder/model-00002-of-00003.safetensors",
+          "bytes": 3987450520
+        },
+        {
+          "path": "text_encoder/model-00003-of-00003.safetensors",
+          "bytes": 99630640
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00001-of-00003.safetensors",
+          "bytes": 9973693184
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00002-of-00003.safetensors",
+          "bytes": 9973714824
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00003-of-00003.safetensors",
+          "bytes": 4672282880
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 167666902
+        }
+      ],
+      "totalPublishedWeightBytes": 32832339790,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true
+    },
+    {
+      "architecture": "z-image",
+      "repository": "Tongyi-MAI/Z-Image",
+      "revision": "04cc4abb7c5069926f75c9bfde9ef43d49423021",
+      "metadataUrl": "https://huggingface.co/api/models/Tongyi-MAI/Z-Image/revision/04cc4abb7c5069926f75c9bfde9ef43d49423021?blobs=true",
+      "pipeline": "ZImagePipeline",
+      "installed": true,
+      "gated": false,
+      "publishedWeights": [
+        {
+          "path": "text_encoder/model-00001-of-00003.safetensors",
+          "bytes": 3957900840
+        },
+        {
+          "path": "text_encoder/model-00002-of-00003.safetensors",
+          "bytes": 3987450520
+        },
+        {
+          "path": "text_encoder/model-00003-of-00003.safetensors",
+          "bytes": 99630640
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+          "bytes": 9973727144
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+          "bytes": 2336146728
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 167666902
+        }
+      ],
+      "totalPublishedWeightBytes": 20522522774,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true
+    },
+    {
+      "architecture": "qwen-image",
+      "repository": "Qwen/Qwen-Image",
+      "revision": "75e0b4be04f60ec59a75f475837eced720f823b6",
+      "metadataUrl": "https://huggingface.co/api/models/Qwen/Qwen-Image/revision/75e0b4be04f60ec59a75f475837eced720f823b6?blobs=true",
+      "pipeline": "QwenImagePipeline",
+      "installed": false,
+      "gated": false,
+      "publishedWeights": [
+        {
+          "path": "text_encoder/model-00001-of-00004.safetensors",
+          "bytes": 4968243304
+        },
+        {
+          "path": "text_encoder/model-00002-of-00004.safetensors",
+          "bytes": 4991495816
+        },
+        {
+          "path": "text_encoder/model-00003-of-00004.safetensors",
+          "bytes": 4932751040
+        },
+        {
+          "path": "text_encoder/model-00004-of-00004.safetensors",
+          "bytes": 1691924384
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00001-of-00009.safetensors",
+          "bytes": 4989364312
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00002-of-00009.safetensors",
+          "bytes": 4984214160
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00003-of-00009.safetensors",
+          "bytes": 4946470000
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00004-of-00009.safetensors",
+          "bytes": 4984213736
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00005-of-00009.safetensors",
+          "bytes": 4946471896
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00006-of-00009.safetensors",
+          "bytes": 4946451560
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00007-of-00009.safetensors",
+          "bytes": 4908690520
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00008-of-00009.safetensors",
+          "bytes": 4984232856
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00009-of-00009.safetensors",
+          "bytes": 1170918840
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 253806966
+        }
+      ],
+      "totalPublishedWeightBytes": 57699249390,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true,
+      "downloaded": true,
+      "checkpoint": "D:/Models/machdoch/downloads/civitai/1936965/2409636/jibMixQwen_v50.gguf",
+      "sourceUrl": "https://civitai.com/models/1936965?modelVersionId=2409636",
+      "components": "D:/Models/machdoch/downloads/prepared-qwen-image-original",
+      "conversionComplete": true,
+      "nativeImportComplete": false,
+      "referenceGenerationsComplete": false
+    },
+    {
+      "architecture": "qwen-image-2512",
+      "repository": "Qwen/Qwen-Image-2512",
+      "revision": "25468b98e3276ca6700de15c6628e51b7de54a26",
+      "metadataUrl": "https://huggingface.co/api/models/Qwen/Qwen-Image-2512/revision/25468b98e3276ca6700de15c6628e51b7de54a26?blobs=true",
+      "pipeline": "QwenImagePipeline",
+      "installed": false,
+      "gated": false,
+      "publishedWeights": [
+        {
+          "path": "text_encoder/model-00001-of-00004.safetensors",
+          "bytes": 4968243304
+        },
+        {
+          "path": "text_encoder/model-00002-of-00004.safetensors",
+          "bytes": 4991495816
+        },
+        {
+          "path": "text_encoder/model-00003-of-00004.safetensors",
+          "bytes": 4932751040
+        },
+        {
+          "path": "text_encoder/model-00004-of-00004.safetensors",
+          "bytes": 1691924384
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00001-of-00009.safetensors",
+          "bytes": 4989364312
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00002-of-00009.safetensors",
+          "bytes": 4984214160
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00003-of-00009.safetensors",
+          "bytes": 4946470000
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00004-of-00009.safetensors",
+          "bytes": 4984213736
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00005-of-00009.safetensors",
+          "bytes": 4946471896
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00006-of-00009.safetensors",
+          "bytes": 4946451560
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00007-of-00009.safetensors",
+          "bytes": 4908690520
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00008-of-00009.safetensors",
+          "bytes": 4984232856
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00009-of-00009.safetensors",
+          "bytes": 1170918840
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 253806966
+        }
+      ],
+      "totalPublishedWeightBytes": 57699249390,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true,
+      "downloaded": true,
+      "checkpoint": "D:/Models/machdoch/downloads/civitai/1936965/2753478/jibMixQwen_v60.gguf",
+      "sourceUrl": "https://civitai.com/models/1936965?modelVersionId=2753478",
+      "components": "D:/Models/machdoch/downloads/prepared-qwen-image-2512",
+      "conversionComplete": true,
+      "nativeImportComplete": false,
+      "referenceGenerationsComplete": false
+    },
+    {
+      "architecture": "qwen-image-edit-2511",
+      "repository": "Qwen/Qwen-Image-Edit-2511",
+      "revision": "6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9",
+      "metadataUrl": "https://huggingface.co/api/models/Qwen/Qwen-Image-Edit-2511/revision/6f3ccc0b56e431dc6a0c2b2039706d7d26f22cb9?blobs=true",
+      "pipeline": "QwenImageEditPlusPipeline",
+      "installed": false,
+      "gated": false,
+      "publishedWeights": [
+        {
+          "path": "text_encoder/model-00001-of-00004.safetensors",
+          "bytes": 4968243304
+        },
+        {
+          "path": "text_encoder/model-00002-of-00004.safetensors",
+          "bytes": 4991495816
+        },
+        {
+          "path": "text_encoder/model-00003-of-00004.safetensors",
+          "bytes": 4932751040
+        },
+        {
+          "path": "text_encoder/model-00004-of-00004.safetensors",
+          "bytes": 1691924384
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00001-of-00005.safetensors",
+          "bytes": 9973578592
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00002-of-00005.safetensors",
+          "bytes": 9987326072
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00003-of-00005.safetensors",
+          "bytes": 9987307440
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00004-of-00005.safetensors",
+          "bytes": 9930685712
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00005-of-00005.safetensors",
+          "bytes": 982130472
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 253806966
+        }
+      ],
+      "totalPublishedWeightBytes": 57699249798,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true
+    },
+    {
+      "architecture": "sana",
+      "repository": "Efficient-Large-Model/Sana_1600M_1024px_diffusers",
+      "revision": "ac0da2ff55fbe434795be0dce883042e4d49e2fc",
+      "metadataUrl": "https://huggingface.co/api/models/Efficient-Large-Model/Sana_1600M_1024px_diffusers/revision/ac0da2ff55fbe434795be0dce883042e4d49e2fc?blobs=true",
+      "pipeline": "SanaPipeline",
+      "installed": false,
+      "gated": false,
+      "publishedWeights": [
+        {
+          "path": "text_encoder/model-00001-of-00002.safetensors",
+          "bytes": 4988024144
+        },
+        {
+          "path": "text_encoder/model-00002-of-00002.safetensors",
+          "bytes": 240691624
+        },
+        {
+          "path": "text_encoder/model.fp16-00001-of-00002.safetensors",
+          "bytes": 4988024144
+        },
+        {
+          "path": "text_encoder/model.fp16-00002-of-00002.safetensors",
+          "bytes": 240691624
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+          "bytes": 4999769624
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+          "bytes": 1418127024
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model.fp16.safetensors",
+          "bytes": 3208971144
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model.safetensors",
+          "bytes": 3208971656
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.fp16.safetensors",
+          "bytes": 1249044836
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 1249044836
+        }
+      ],
+      "totalPublishedWeightBytes": 25791360656,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true
+    },
+    {
+      "architecture": "sana-sprint",
+      "repository": "Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers",
+      "revision": "19683c58b7ea290e55cedd8950ae1d86ada7ef96",
+      "metadataUrl": "https://huggingface.co/api/models/Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers/revision/19683c58b7ea290e55cedd8950ae1d86ada7ef96?blobs=true",
+      "pipeline": "SanaSprintPipeline",
+      "installed": false,
+      "gated": false,
+      "publishedWeights": [
+        {
+          "path": "text_encoder/model-00001-of-00002.safetensors",
+          "bytes": 4988024144
+        },
+        {
+          "path": "text_encoder/model-00002-of-00002.safetensors",
+          "bytes": 240691624
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model.safetensors",
+          "bytes": 3220530536
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 1249044836
+        }
+      ],
+      "totalPublishedWeightBytes": 9698291140,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true
+    },
+    {
+      "architecture": "glm-image",
+      "repository": "zai-org/GLM-Image",
+      "revision": "2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4",
+      "metadataUrl": "https://huggingface.co/api/models/zai-org/GLM-Image/revision/2c433cc0cbc293bde2ac8ca9624f279b5d23fcf4?blobs=true",
+      "pipeline": "GlmImagePipeline",
+      "installed": false,
+      "gated": false,
+      "publishedWeights": [
+        {
+          "path": "text_encoder/model.safetensors",
+          "bytes": 870643240
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00001-of-00003.safetensors",
+          "bytes": 4966398856
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00002-of-00003.safetensors",
+          "bytes": 4984743304
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00003-of-00003.safetensors",
+          "bytes": 3902674480
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 812234342
+        },
+        {
+          "path": "vision_language_encoder/model-00001-of-00004.safetensors",
+          "bytes": 5295710600
+        },
+        {
+          "path": "vision_language_encoder/model-00002-of-00004.safetensors",
+          "bytes": 5303216664
+        },
+        {
+          "path": "vision_language_encoder/model-00003-of-00004.safetensors",
+          "bytes": 5303216648
+        },
+        {
+          "path": "vision_language_encoder/model-00004-of-00004.safetensors",
+          "bytes": 4326469720
+        }
+      ],
+      "totalPublishedWeightBytes": 35765307854,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true
+    },
+    {
+      "architecture": "hidream-i1-full",
+      "repository": "HiDream-ai/HiDream-I1-Full",
+      "revision": "8ccbbfb270ccdae26d6bb0081df67dc81e4033bf",
+      "metadataUrl": "https://huggingface.co/api/models/HiDream-ai/HiDream-I1-Full/revision/8ccbbfb270ccdae26d6bb0081df67dc81e4033bf?blobs=true",
+      "pipeline": "HiDreamImagePipeline",
+      "installed": false,
+      "gated": false,
+      "publishedWeights": [
+        {
+          "path": "text_encoder/model.safetensors",
+          "bytes": 495149872
+        },
+        {
+          "path": "text_encoder_2/model.safetensors",
+          "bytes": 2779424184
+        },
+        {
+          "path": "text_encoder_3/model-00001-of-00002.safetensors",
+          "bytes": 4994582224
+        },
+        {
+          "path": "text_encoder_3/model-00002-of-00002.safetensors",
+          "bytes": 4530066360
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00001-of-00007.safetensors",
+          "bytes": 4985892648
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00002-of-00007.safetensors",
+          "bytes": 4982937568
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00003-of-00007.safetensors",
+          "bytes": 4993382144
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00004-of-00007.safetensors",
+          "bytes": 4977488288
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00005-of-00007.safetensors",
+          "bytes": 4993217032
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00006-of-00007.safetensors",
+          "bytes": 4993217016
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00007-of-00007.safetensors",
+          "bytes": 4285536488
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 167666902
+        }
+      ],
+      "totalPublishedWeightBytes": 47178560726,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true
+    },
+    {
+      "architecture": "ideogram-4",
+      "repository": "ideogram-ai/ideogram-4-nf4",
+      "revision": "f664347839e0a87bc495f5c9483cc0014b8e344e",
+      "metadataUrl": "https://huggingface.co/api/models/ideogram-ai/ideogram-4-nf4/revision/f664347839e0a87bc495f5c9483cc0014b8e344e?blobs=true",
+      "pipeline": "Ideogram4Pipeline",
+      "installed": false,
+      "gated": "auto",
+      "publishedWeights": [
+        {
+          "path": "text_encoder/model.safetensors",
+          "bytes": 5483794772
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model.safetensors",
+          "bytes": 5221703035
+        },
+        {
+          "path": "unconditional_transformer/diffusion_pytorch_model.safetensors",
+          "bytes": 5221703035
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 168120878
+        }
+      ],
+      "totalPublishedWeightBytes": 16095321720,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true
+    },
+    {
+      "architecture": "flux-1-schnell",
+      "repository": "black-forest-labs/FLUX.1-schnell",
+      "revision": "741f7c3ce8b383c54771c7003378a50191e9efe9",
+      "metadataUrl": "https://huggingface.co/api/models/black-forest-labs/FLUX.1-schnell/revision/741f7c3ce8b383c54771c7003378a50191e9efe9?blobs=true",
+      "pipeline": "FluxPipeline",
+      "installed": false,
+      "gated": "auto",
+      "publishedWeights": [
+        {
+          "path": "ae.safetensors",
+          "bytes": 335304388
+        },
+        {
+          "path": "flux1-schnell.safetensors",
+          "bytes": 23782506688
+        },
+        {
+          "path": "text_encoder/model.safetensors",
+          "bytes": 246144352
+        },
+        {
+          "path": "text_encoder_2/model-00001-of-00002.safetensors",
+          "bytes": 4994582224
+        },
+        {
+          "path": "text_encoder_2/model-00002-of-00002.safetensors",
+          "bytes": 4530066360
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00001-of-00003.safetensors",
+          "bytes": 9962580296
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00002-of-00003.safetensors",
+          "bytes": 9949328904
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00003-of-00003.safetensors",
+          "bytes": 3870584832
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 167666902
+        }
+      ],
+      "totalPublishedWeightBytes": 57838764946,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true,
+      "checkpoint": "D:/Models/machdoch/downloads/civitai/618692/699279/flux_schnell.sft",
+      "sourceUrl": "https://civitai.com/models/618692?modelVersionId=699279",
+      "components": "D:/Models/machdoch/downloads/prepared-flux-1-schnell",
+      "downloaded": true,
+      "conversionComplete": true,
+      "nativeImportComplete": false,
+      "referenceGenerationsComplete": false
+    },
+    {
+      "architecture": "flux-1-dev",
+      "repository": "black-forest-labs/FLUX.1-dev",
+      "revision": "3de623fc3c33e44ffbe2bad470d0f45bccf2eb21",
+      "metadataUrl": "https://huggingface.co/api/models/black-forest-labs/FLUX.1-dev/revision/3de623fc3c33e44ffbe2bad470d0f45bccf2eb21?blobs=true",
+      "pipeline": "FluxPipeline",
+      "installed": false,
+      "gated": "auto",
+      "publishedWeights": [
+        {
+          "path": "ae.safetensors",
+          "bytes": 335304388
+        },
+        {
+          "path": "flux1-dev.safetensors",
+          "bytes": 23802932552
+        },
+        {
+          "path": "text_encoder/model.safetensors",
+          "bytes": 246144352
+        },
+        {
+          "path": "text_encoder_2/model-00001-of-00002.safetensors",
+          "bytes": 4994582224
+        },
+        {
+          "path": "text_encoder_2/model-00002-of-00002.safetensors",
+          "bytes": 4530066360
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00001-of-00003.safetensors",
+          "bytes": 9983040304
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00002-of-00003.safetensors",
+          "bytes": 9949328904
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00003-of-00003.safetensors",
+          "bytes": 3870584832
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 167666902
+        }
+      ],
+      "totalPublishedWeightBytes": 57879650818,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true
+    },
+    {
+      "architecture": "flux-2-klein-base-4b",
+      "repository": "black-forest-labs/FLUX.2-klein-base-4B",
+      "revision": "a3b4f4849157f664bdbc776fd7453c2783562f4d",
+      "metadataUrl": "https://huggingface.co/api/models/black-forest-labs/FLUX.2-klein-base-4B/revision/a3b4f4849157f664bdbc776fd7453c2783562f4d?blobs=true",
+      "pipeline": "Flux2KleinPipeline",
+      "installed": false,
+      "gated": false,
+      "publishedWeights": [
+        {
+          "path": "flux-2-klein-base-4b.safetensors",
+          "bytes": 7751105712
+        },
+        {
+          "path": "text_encoder/model-00001-of-00002.safetensors",
+          "bytes": 4967215360
+        },
+        {
+          "path": "text_encoder/model-00002-of-00002.safetensors",
+          "bytes": 3077766632
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model.safetensors",
+          "bytes": 7751109744
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 168120878
+        }
+      ],
+      "totalPublishedWeightBytes": 23715318326,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true,
+      "checkpoint": "D:/Models/machdoch/downloads/civitai/2322332/2612552/flux2Klein_4bBase.safetensors",
+      "sourceUrl": "https://civitai.com/models/2322332?modelVersionId=2612552",
+      "components": "D:/Models/machdoch/downloads/components-flux-2-klein-base-4b",
+      "downloaded": true,
+      "conversionComplete": true,
+      "nativeImportComplete": false,
+      "referenceGenerationsComplete": false
+    },
+    {
+      "architecture": "flux-2-klein-9b",
+      "repository": "black-forest-labs/FLUX.2-klein-9B",
+      "revision": "92196c8e11f7b6cf2b7493e037d8c5345c559216",
+      "metadataUrl": "https://huggingface.co/api/models/black-forest-labs/FLUX.2-klein-9B/revision/92196c8e11f7b6cf2b7493e037d8c5345c559216?blobs=true",
+      "pipeline": "Flux2KleinPipeline",
+      "installed": false,
+      "gated": "auto",
+      "publishedWeights": [
+        {
+          "path": "flux-2-klein-9b.safetensors",
+          "bytes": 18157185168
+        },
+        {
+          "path": "text_encoder/model-00001-of-00004.safetensors",
+          "bytes": 4902257696
+        },
+        {
+          "path": "text_encoder/model-00002-of-00004.safetensors",
+          "bytes": 4915960368
+        },
+        {
+          "path": "text_encoder/model-00003-of-00004.safetensors",
+          "bytes": 4983068496
+        },
+        {
+          "path": "text_encoder/model-00004-of-00004.safetensors",
+          "bytes": 1580230264
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+          "bytes": 9801069272
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+          "bytes": 8356121608
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 168120878
+        }
+      ],
+      "totalPublishedWeightBytes": 52864013750,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true
+    },
+    {
+      "architecture": "flux-2-klein-base-9b",
+      "repository": "black-forest-labs/FLUX.2-klein-base-9B",
+      "revision": "32773329fbe7e81a90ef971740e8ba4b0364ecf3",
+      "metadataUrl": "https://huggingface.co/api/models/black-forest-labs/FLUX.2-klein-base-9B/revision/32773329fbe7e81a90ef971740e8ba4b0364ecf3?blobs=true",
+      "pipeline": "Flux2KleinPipeline",
+      "installed": false,
+      "gated": "auto",
+      "publishedWeights": [
+        {
+          "path": "flux-2-klein-base-9b.safetensors",
+          "bytes": 18157185168
+        },
+        {
+          "path": "text_encoder/model-00001-of-00004.safetensors",
+          "bytes": 4902257696
+        },
+        {
+          "path": "text_encoder/model-00002-of-00004.safetensors",
+          "bytes": 4915960368
+        },
+        {
+          "path": "text_encoder/model-00003-of-00004.safetensors",
+          "bytes": 4983068496
+        },
+        {
+          "path": "text_encoder/model-00004-of-00004.safetensors",
+          "bytes": 1580230264
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+          "bytes": 9801069272
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+          "bytes": 8356121608
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 168120878
+        }
+      ],
+      "totalPublishedWeightBytes": 52864013750,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true
+    },
+    {
+      "architecture": "flux-2-dev",
+      "repository": "black-forest-labs/FLUX.2-dev",
+      "revision": "26afe3a78bb242c0a8bb181dcc8937bb16e5c66c",
+      "metadataUrl": "https://huggingface.co/api/models/black-forest-labs/FLUX.2-dev/revision/26afe3a78bb242c0a8bb181dcc8937bb16e5c66c?blobs=true",
+      "pipeline": "Flux2Pipeline",
+      "installed": false,
+      "gated": "auto",
+      "publishedWeights": [
+        {
+          "path": "ae.safetensors",
+          "bytes": 336211292
+        },
+        {
+          "path": "flux2-dev.safetensors",
+          "bytes": 64446596128
+        },
+        {
+          "path": "text_encoder/model-00001-of-00010.safetensors",
+          "bytes": 4883550696
+        },
+        {
+          "path": "text_encoder/model-00002-of-00010.safetensors",
+          "bytes": 4781593336
+        },
+        {
+          "path": "text_encoder/model-00003-of-00010.safetensors",
+          "bytes": 4886472224
+        },
+        {
+          "path": "text_encoder/model-00004-of-00010.safetensors",
+          "bytes": 4781593376
+        },
+        {
+          "path": "text_encoder/model-00005-of-00010.safetensors",
+          "bytes": 4781593368
+        },
+        {
+          "path": "text_encoder/model-00006-of-00010.safetensors",
+          "bytes": 4886472248
+        },
+        {
+          "path": "text_encoder/model-00007-of-00010.safetensors",
+          "bytes": 4781593376
+        },
+        {
+          "path": "text_encoder/model-00008-of-00010.safetensors",
+          "bytes": 4781593368
+        },
+        {
+          "path": "text_encoder/model-00009-of-00010.safetensors",
+          "bytes": 4886472248
+        },
+        {
+          "path": "text_encoder/model-00010-of-00010.safetensors",
+          "bytes": 4571866320
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00001-of-00007.safetensors",
+          "bytes": 9935797200
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00002-of-00007.safetensors",
+          "bytes": 9890181048
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00003-of-00007.safetensors",
+          "bytes": 9814681480
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00004-of-00007.safetensors",
+          "bytes": 9814681536
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00005-of-00007.safetensors",
+          "bytes": 9814681536
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00006-of-00007.safetensors",
+          "bytes": 9814681536
+        },
+        {
+          "path": "transformer/diffusion_pytorch_model-00007-of-00007.safetensors",
+          "bytes": 5361898792
+        },
+        {
+          "path": "vae/diffusion_pytorch_model.safetensors",
+          "bytes": 336213556
+        }
+      ],
+      "totalPublishedWeightBytes": 177588424664,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": true,
+      "metadataRead": true
+    },
+    {
+      "architecture": "hunyuan-image-3",
+      "repository": "tencent/HunyuanImage-3.0",
+      "revision": "36f21fe74b65614451cc50ffd8a35a5f662dac70",
+      "metadataUrl": "https://huggingface.co/api/models/tencent/HunyuanImage-3.0/revision/36f21fe74b65614451cc50ffd8a35a5f662dac70?blobs=true",
+      "pipeline": "HunyuanImage3Pipeline",
+      "installed": false,
+      "gated": false,
+      "publishedWeights": [
+        {
+          "path": "model-0001-of-0032.safetensors",
+          "bytes": 5363066616
+        },
+        {
+          "path": "model-0002-of-0032.safetensors",
+          "bytes": 5318937248
+        },
+        {
+          "path": "model-0003-of-0032.safetensors",
+          "bytes": 5344627472
+        },
+        {
+          "path": "model-0004-of-0032.safetensors",
+          "bytes": 5327343192
+        },
+        {
+          "path": "model-0005-of-0032.safetensors",
+          "bytes": 5344103080
+        },
+        {
+          "path": "model-0006-of-0032.safetensors",
+          "bytes": 5318937248
+        },
+        {
+          "path": "model-0007-of-0032.safetensors",
+          "bytes": 5344103088
+        },
+        {
+          "path": "model-0008-of-0032.safetensors",
+          "bytes": 5318937256
+        },
+        {
+          "path": "model-0009-of-0032.safetensors",
+          "bytes": 5344103088
+        },
+        {
+          "path": "model-0010-of-0032.safetensors",
+          "bytes": 5318937304
+        },
+        {
+          "path": "model-0011-of-0032.safetensors",
+          "bytes": 5344103232
+        },
+        {
+          "path": "model-0012-of-0032.safetensors",
+          "bytes": 5318937400
+        },
+        {
+          "path": "model-0013-of-0032.safetensors",
+          "bytes": 5344103232
+        },
+        {
+          "path": "model-0014-of-0032.safetensors",
+          "bytes": 5318937400
+        },
+        {
+          "path": "model-0015-of-0032.safetensors",
+          "bytes": 5344103232
+        },
+        {
+          "path": "model-0016-of-0032.safetensors",
+          "bytes": 5318937400
+        },
+        {
+          "path": "model-0017-of-0032.safetensors",
+          "bytes": 5344103224
+        },
+        {
+          "path": "model-0018-of-0032.safetensors",
+          "bytes": 5327859080
+        },
+        {
+          "path": "model-0019-of-0032.safetensors",
+          "bytes": 5344111888
+        },
+        {
+          "path": "model-0020-of-0032.safetensors",
+          "bytes": 5318937392
+        },
+        {
+          "path": "model-0021-of-0032.safetensors",
+          "bytes": 5344103232
+        },
+        {
+          "path": "model-0022-of-0032.safetensors",
+          "bytes": 5318937400
+        },
+        {
+          "path": "model-0023-of-0032.safetensors",
+          "bytes": 5344103232
+        },
+        {
+          "path": "model-0024-of-0032.safetensors",
+          "bytes": 5318937400
+        },
+        {
+          "path": "model-0025-of-0032.safetensors",
+          "bytes": 5344103232
+        },
+        {
+          "path": "model-0026-of-0032.safetensors",
+          "bytes": 5318937400
+        },
+        {
+          "path": "model-0027-of-0032.safetensors",
+          "bytes": 5344103232
+        },
+        {
+          "path": "model-0028-of-0032.safetensors",
+          "bytes": 5318937400
+        },
+        {
+          "path": "model-0029-of-0032.safetensors",
+          "bytes": 5344103232
+        },
+        {
+          "path": "model-0030-of-0032.safetensors",
+          "bytes": 5318937400
+        },
+        {
+          "path": "model-0031-of-0032.safetensors",
+          "bytes": 5354949964
+        },
+        {
+          "path": "model-0032-of-0032.safetensors",
+          "bytes": 3203019864
+        }
+      ],
+      "totalPublishedWeightBytes": 168540402060,
+      "allWeightSizesKnown": true,
+      "weightFormatsMayOverlap": true,
+      "modelIndexPresent": false,
+      "metadataRead": true
+    },
+    {
+      "architecture": "flux-1",
+      "installed": false,
+      "repository": null,
+      "metadataRead": false
+    },
+    {
+      "architecture": "flux-2",
+      "installed": true,
+      "repository": null,
+      "metadataRead": false,
+      "checkpoint": "D:/Models/machdoch/downloads/civitai/2341785/2634080/flux2Klein4BClear_bf16.safetensors",
+      "sourceUrl": "https://civitai.com/models/2341785?modelVersionId=2634080",
+      "components": "D:/Models/machdoch/downloads/prepared-flux-2-klein-4b-normalized",
+      "pipeline": "Flux2KleinPipeline",
+      "downloaded": true,
+      "conversionComplete": true,
+      "nativeImportComplete": true,
+      "referenceGenerationsComplete": false
+    },
+    {
+      "architecture": "stable-diffusion-2",
+      "installed": true,
+      "repository": null,
+      "metadataRead": false,
+      "checkpoint": "D:/Models/machdoch/downloads/civitai/15303/46259/rmadaMergeSD21768_v70.safetensors",
+      "sourceUrl": "https://civitai.com/models/15303?modelVersionId=46259",
+      "components": "D:/Models/machdoch/downloads/components-sd2-1",
+      "pipeline": "StableDiffusionPipeline",
+      "downloaded": true,
+      "conversionComplete": true,
+      "nativeImportComplete": true,
+      "referenceGenerationsComplete": true
+    },
+    {
+      "architecture": "stable-diffusion-3",
+      "installed": false,
+      "repository": null,
+      "metadataRead": false
+    }
+  ],
+  "availabilityEvidence": [
+    "other-engine-civitai-availability-current.json",
+    "sana-civitai-checkpoint-search-current.json",
+    "sd3-civitai-base-filter-current.json",
+    "civitai-base-model-source-tree.json"
+  ],
+  "originalPublisherAudit": "missing-engine-package-audit.json"
+}

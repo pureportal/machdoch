@@ -1,0 +1,77 @@
+{
+  "checkedAtUtc": "2026-10-13T06:52:09.385831+00:00",
+  "repository": "Efficient-Large-Model/Sana_Sprint_0.6B_1024px_diffusers",
+  "revision": "aa76e7f4f4928f378716b6716a2130fba3caf5b1",
+  "gated": false,
+  "license": "apache-2.0",
+  "totalBytes": 7703534462,
+  "files": [
+    {
+      "path": "LICENSE",
+      "bytes": 11358
+    },
+    {
+      "path": "README.md",
+      "bytes": 6543
+    },
+    {
+      "path": "model_index.json",
+      "bytes": 392
+    },
+    {
+      "path": "scheduler/scheduler_config.json",
+      "bytes": 160
+    },
+    {
+      "path": "text_encoder/config.json",
+      "bytes": 890
+    },
+    {
+      "path": "text_encoder/model-00001-of-00002.safetensors",
+      "bytes": 4988024144
+    },
+    {
+      "path": "text_encoder/model-00002-of-00002.safetensors",
+      "bytes": 240691624
+    },
+    {
+      "path": "text_encoder/model.safetensors.index.json",
+      "bytes": 22495
+    },
+    {
+      "path": "tokenizer/special_tokens_map.json",
+      "bytes": 636
+    },
+    {
+      "path": "tokenizer/tokenizer.json",
+      "bytes": 34362873
+    },
+    {
+      "path": "tokenizer/tokenizer.model",
+      "bytes": 4241003
+    },
+    {
+      "path": "tokenizer/tokenizer_config.json",
+      "bytes": 46996
+    },
+    {
+      "path": "transformer/config.json",
+      "bytes": 648
+    },
+    {
+      "path": "transformer/diffusion_pytorch_model.safetensors",
+      "bytes": 1187078584
+    },
+    {
+      "path": "vae/config.json",
+      "bytes": 1280
+    },
+    {
+      "path": "vae/diffusion_pytorch_model.safetensors",
+      "bytes": 1249044836
+    }
+  ],
+  "downloadStarted": false,
+  "civitaiDistributionVerified": false,
+  "gemmaAdditionalTermsRequired": true
+}

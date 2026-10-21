@@ -1,0 +1,9 @@
+{
+  "queriedAt": "2026-10-12T22:11:06.235Z",
+  "url": "https://civitai.com/api/v1/models?query=SD3&types=Checkpoint&limit=30",
+  "status": 200,
+  "body": {
+    "items": [],
+    "metadata": {}
+  }
+}

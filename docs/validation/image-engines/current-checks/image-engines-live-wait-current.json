@@ -1,0 +1,59 @@
+{
+  "newAcceptedRawImageSha256": "646137cfe68cf2ca69478f147eb0052f97d910af69b1d2382dd8b2f12246e8d2",
+  "processOwnershipTestsPassed": 9,
+  "nextAction": "Inspect the active RAW ruins output when it completes, then continue every remaining engine and subject in the full coverage matrix.",
+  "requiredRawSubjects": 6,
+  "preparedContinuationCases": 58,
+  "liveProcesses": [
+    {
+      "processId": 3464,
+      "cpuSeconds": 5.21875,
+      "createdAt": "2026-10-12T19:54:35.1225337Z",
+      "name": "pwsh"
+    },
+    {
+      "processId": 20048,
+      "cpuSeconds": 4.328125,
+      "createdAt": "2026-10-12T21:53:59.9240435Z",
+      "name": "pwsh"
+    },
+    {
+      "processId": 20964,
+      "cpuSeconds": 4838.4375,
+      "createdAt": "2026-10-12T21:14:41.9485119Z",
+      "name": "python"
+    },
+    {
+      "processId": 18668,
+      "cpuSeconds": 25.84375,
+      "createdAt": "2026-10-12T23:09:33.3056501Z",
+      "name": "pwsh"
+    },
+    {
+      "processId": 27824,
+      "cpuSeconds": 19.640625,
+      "createdAt": "2026-10-12T23:21:34.5855792Z",
+      "name": "pwsh"
+    },
+    {
+      "processId": 19564,
+      "cpuSeconds": 1.25,
+      "createdAt": "2026-10-12T22:10:04.0469540Z",
+      "name": "procdump64"
+    }
+  ],
+  "currentWorkerLog": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-2-raw-refined-reference-sweep-continuation\\02-krea-2-raw-reference-144697438\\worker.log",
+  "goalComplete": false,
+  "newAcceptedRawReferenceId": 144655944,
+  "preparedContinuationBatches": 13,
+  "nativeValidatedGenerationRecords": 141,
+  "currentProgress": {
+    "stage": "Sampling 6/52",
+    "progress": 0.3192307692307692
+  },
+  "turnClassification": "Concrete progress and verified live generation wait",
+  "rawAcceptedSubjects": 1,
+  "currentReferenceId": 144697438,
+  "galleryRenders": 136,
+  "recordedAt": "2026-10-12T23:43:12.5568923Z"
+}

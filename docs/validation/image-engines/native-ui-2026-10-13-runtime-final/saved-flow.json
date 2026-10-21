@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "flowId": "media-flow-80906d57-1cd2-4d34-bd9c-704f99f25ae6",
+  "head": {
+    "schemaVersion": 1,
+    "flowId": "media-flow-80906d57-1cd2-4d34-bd9c-704f99f25ae6",
+    "name": "Create image",
+    "description": "Prompt-to-image recipe with explicit quality and output steps.",
+    "headRevisionId": "mfr-ae190001b85a0413efdf2da7f3e289e7",
+    "headRevisionNumber": 1,
+    "createdAt": "2026-10-13T15:12:32.425Z",
+    "updatedAt": "2026-10-13T15:12:53.606Z",
+    "documentDigest": "sha256:159b3fd110391cfee929b939c76185adb53f18c3dd56562a12f48f8c0a683d2e",
+    "executionDigest": "sha256:b7127ffd79b3e8a869e9310d1f66f24f0549114d55cbe1c34a473bbc2c6745b2",
+    "layoutDigest": "sha256:25c90a737021c35122e469f2c941f3cf9c00a814312bc0fd6afb68543c561c18"
+  },
+  "revisions": [
+    {
+      "schemaVersion": 1,
+      "revisionId": "mfr-ae190001b85a0413efdf2da7f3e289e7",
+      "flowId": "media-flow-80906d57-1cd2-4d34-bd9c-704f99f25ae6",
+      "revisionNumber": 1,
+      "parentRevisionId": null,
+      "createdAt": "2026-10-13T15:12:53.606Z",
+      "changeSummary": "Saved from Advanced",
+      "documentDigest": "sha256:159b3fd110391cfee929b939c76185adb53f18c3dd56562a12f48f8c0a683d2e",
+      "executionDigest": "sha256:b7127ffd79b3e8a869e9310d1f66f24f0549114d55cbe1c34a473bbc2c6745b2",
+      "layoutDigest": "sha256:25c90a737021c35122e469f2c941f3cf9c00a814312bc0fd6afb68543c561c18",
+      "nodeCount": 3,
+      "edgeCount": 2,
+      "isHead": true,
+      "flow": {
+        "schemaVersion": 1,
+        "id": "media-flow-80906d57-1cd2-4d34-bd9c-704f99f25ae6",
+        "name": "Create image",
+        "description": "Prompt-to-image recipe with explicit quality and output steps.",
+        "createdAt": "2026-10-13T15:12:32.425Z",
+        "updatedAt": "2026-10-13T15:12:32.425Z",
+        "variables": [],
+        "variableBindings": {},
+        "presets": [],
+        "activePresetId": null,
+        "nodes": [
+          {
+            "id": "prompt",
+            "type": "source.prompt",
+            "version": 1,
+            "label": "Creative brief",
+            "layer": "source",
+            "config": {
+              "prompt": ""
+            }
+          },
+          {
+            "id": "generate",
+            "type": "task.generate-image",
+            "version": 1,
+            "label": "Generate image",
+            "layer": "task",
+            "config": {
+              "aspectRatio": "1:1",
+              "guidanceScale": 0.5,
+              "height": null,
+              "memoryProfile": "auto",
+              "modelAddons": [],
+              "modelId": "local:user:3ec3c673d467e0832ad1324fafa8eed5cde9e9f2e250b399d07245e63c904191",
+              "modelPolicy": "quality",
+              "numInferenceSteps": null,
+              "outputCount": 1,
+              "outputFormat": "png",
+              "poseEnd": 1,
+              "poseStart": 0,
+              "poseStrength": 1,
+              "providerPolicy": "auto",
+              "sampler": "flow-euler",
+              "svgAutoCrop": true,
+              "svgCandidateCount": 1,
+              "svgCriticEnabled": false,
+              "svgMode": "generate",
+              "svgStyle": "illustration",
+              "svgTargetSize": 1024,
+              "svgTextPolicy": "avoid",
+              "transparentBackground": false,
+              "width": null
+            }
+          },
+          {
+            "id": "asset-output",
+            "type": "output.asset",
+            "version": 1,
+            "label": "Save assets",
+            "layer": "output",
+            "config": {
+              "format": "png",
+              "outputCount": 1
+            }
+          }
+        ],
+        "edges": [
+          {
+            "id": "prompt-to-generate",
+            "fromNodeId": "prompt",
+            "fromPortId": "prompt",
+            "toNodeId": "generate",
+            "toPortId": "prompt"
+          },
+          {
+            "id": "result-to-output",
+            "fromNodeId": "generate",
+            "fromPortId": "image",
+            "toNodeId": "asset-output",
+            "toPortId": "image"
+          }
+        ]
+      },
+      "layout": {
+        "schemaVersion": 1,
+        "flowId": "media-flow-80906d57-1cd2-4d34-bd9c-704f99f25ae6",
+        "nodes": [
+          {
+            "nodeId": "prompt",
+            "x": 52,
+            "y": 80
+          },
+          {
+            "nodeId": "generate",
+            "x": 412,
+            "y": 80
+          },
+          {
+            "nodeId": "asset-output",
+            "x": 772,
+            "y": 80
+          }
+        ],
+        "groups": [],
+        "comments": []
+      }
+    }
+  ]
+}

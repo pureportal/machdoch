@@ -1,0 +1,10 @@
+{
+  "referenceId": 144599398,
+  "referenceUrl": "https://civitai.red/images/144599398",
+  "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-2-raw-refined-reference-sweep-continuation\\05-krea-2-raw-reference-144599398\\images\\output-0000.png",
+  "sha256": "41a9603ccf1d8bb99f867f52cde0aba93026a85703a400a6bbdd292914dad429",
+  "workerVersion": "media-diffusers-worker/1.94.0",
+  "referenceQualityVerdict": "near-reference",
+  "observations": "Detailed ponytail and loose hair strands, coherent face and raised-knee seated anatomy, a visible five-finger supporting hand, patterned fabric, warm sunlight and textured white wall and stone ground approach the reference photographic quality. The tighter zigzag pattern and sporty bikini cut, more upright pose, differently bent legs, wider crop, warmer light and smoother skin differ from the reference triangle bikini, loose ties, closer framing and neutral grainy daylight. No extra limb, decoder seam or pixel corruption is visible.",
+  "assessedAt": "2026-10-13T06:21:41.019Z"
+}

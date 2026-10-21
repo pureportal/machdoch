@@ -1,0 +1,10 @@
+{
+  "referenceId": 145095967,
+  "referenceUrl": "https://civitai.red/images/145095967",
+  "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-2-raw-refined-reference-sweep-continuation\\04-krea-2-raw-reference-145095967\\images\\output-0000.png",
+  "sha256": "99c0d51d7b02636d1d97aefb0933f2ea799b5d18fe6ecdc3f6b9a2555767b99f",
+  "workerVersion": "media-diffusers-worker/1.94.0",
+  "referenceQualityVerdict": "below-reference",
+  "observations": "Sharp black hair strands, face detail, denim stitching, belt hardware and alpine terrain, with coherent raised-arm anatomy and no visible decoder seams or pixel corruption. The landscape-filled torso reads as a fitted camisole with straps and opaque boundaries, rather than the reference transparent collared blouse traced in thin white outlines. A flat pink studio-like sky, bright green terrain, smooth skin and hands hidden behind the head miss the reference natural dark photographic light, continuous valley road, cloudy sky and visible crossed wrists.",
+  "assessedAt": "2026-10-13T04:51:50.842Z"
+}

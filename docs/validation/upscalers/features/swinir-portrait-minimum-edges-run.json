@@ -1,0 +1,388 @@
+{
+  "id": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+  "flowId": "upscale-1345cfd2-e3b9-42a6-ac34-e1cc7e58d729",
+  "flowRevisionId": "mfr-98b737d880d5b643fbf61af65e59b5ab",
+  "flowName": "Upscale image",
+  "planId": "upscale-1345cfd2-e3b9-42a6-ac34-e1cc7e58d729:84856fb6329",
+  "status": "completed",
+  "createdAt": "2026-10-15T20:22:57.536Z",
+  "updatedAt": "2026-10-15T20:23:45.749Z",
+  "prompt": "",
+  "modelLabel": "Workflow",
+  "target": "local",
+  "outputCount": 1,
+  "diagnosticCount": 0,
+  "progress": 1,
+  "currentStep": "Completed",
+  "executor": "media-workflow",
+  "error": null,
+  "failure": null,
+  "events": [
+    {
+      "id": 84,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 1,
+      "kind": "run_started",
+      "createdAt": "2026-10-15T20:22:57.537Z",
+      "message": "The pinned local utility graph started.",
+      "progress": 0,
+      "stepId": null,
+      "nodeId": null
+    },
+    {
+      "id": 85,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 2,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T20:22:57.576Z",
+      "message": "Attempt 1/1 · Image asset",
+      "progress": 0,
+      "stepId": "source:resolve-asset",
+      "nodeId": "source"
+    },
+    {
+      "id": 86,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 3,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T20:22:57.603Z",
+      "message": "Attempt 1/1 · Image asset completed",
+      "progress": 1,
+      "stepId": "source:resolve-asset",
+      "nodeId": "source"
+    },
+    {
+      "id": 87,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 4,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T20:22:57.628Z",
+      "message": "Attempt 1/1 · AI upscale",
+      "progress": 0,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 88,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 5,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T20:23:17.813Z",
+      "message": "Loading upscaler",
+      "progress": 0.05,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 89,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 6,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T20:23:38.725Z",
+      "message": "Upscaling tile 1/6",
+      "progress": 0.24166666666666667,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 90,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 7,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T20:23:39.572Z",
+      "message": "Upscaling tile 2/6",
+      "progress": 0.3833333333333333,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 91,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 8,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T20:23:40.029Z",
+      "message": "Upscaling tile 3/6",
+      "progress": 0.525,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 92,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 9,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T20:23:40.825Z",
+      "message": "Upscaling tile 4/6",
+      "progress": 0.6666666666666666,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 93,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 10,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T20:23:41.842Z",
+      "message": "Upscaling tile 5/6",
+      "progress": 0.8083333333333333,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 94,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 11,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T20:23:42.302Z",
+      "message": "Upscaling tile 6/6",
+      "progress": 0.95,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 95,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 12,
+      "kind": "asset_published",
+      "createdAt": "2026-10-15T20:23:45.004Z",
+      "message": "Attempt 1: output saved",
+      "progress": null,
+      "stepId": null,
+      "nodeId": "upscale"
+    },
+    {
+      "id": 96,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 13,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T20:23:45.058Z",
+      "message": "Attempt 1/1 · AI upscale completed",
+      "progress": 1,
+      "stepId": "upscale:upscale-image",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 97,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 14,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T20:23:45.174Z",
+      "message": "Attempt 1/1 · Save assets",
+      "progress": 0,
+      "stepId": "output:ingest-asset",
+      "nodeId": "output"
+    },
+    {
+      "id": 98,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 15,
+      "kind": "asset_published",
+      "createdAt": "2026-10-15T20:23:45.703Z",
+      "message": "Attempt 1: output saved",
+      "progress": null,
+      "stepId": null,
+      "nodeId": "output"
+    },
+    {
+      "id": 99,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 16,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T20:23:45.723Z",
+      "message": "Attempt 1/1 · Save assets completed",
+      "progress": 1,
+      "stepId": "output:ingest-asset",
+      "nodeId": "output"
+    },
+    {
+      "id": 100,
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "sequence": 17,
+      "kind": "run_completed",
+      "createdAt": "2026-10-15T20:23:45.750Z",
+      "message": "Workflow completed",
+      "progress": 1,
+      "stepId": "finalize",
+      "nodeId": null
+    }
+  ],
+  "assets": [
+    {
+      "id": "asset:c73395a7-4fec-4fc0-abc9-829122b1c807:0",
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "digest": "968a6f83af9cde4209fd42658ac317e8cf2c131301ee090a3172a5a9953018a2",
+      "kind": "image",
+      "mimeType": "image/png",
+      "byteSize": 86678,
+      "width": 200,
+      "height": 299,
+      "createdAt": "2026-10-15T20:23:45.004Z",
+      "outputIndex": 0,
+      "fixture": false,
+      "operation": {
+        "details": {
+          "architecture": "SwinIR",
+          "device": "cuda",
+          "height": 299,
+          "nativeScale": 4,
+          "scale": 2.0618556701030926,
+          "schemaVersion": 1,
+          "tileMode": "factor",
+          "tileSize": 64,
+          "width": 200
+        },
+        "iteration": 1,
+        "kind": "workflow",
+        "sourceNodeId": "upscale"
+      },
+      "sourceAssetIds": [
+        "asset:import:0fc4e6f7d319e438:1792095608972229900:0"
+      ],
+      "tags": []
+    },
+    {
+      "id": "asset:c73395a7-4fec-4fc0-abc9-829122b1c807:1",
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "digest": "c2c6390785eca09241c265f1dcd1a4fa513c2ab88d3c7f79717f3e138930e8fc",
+      "kind": "image",
+      "mimeType": "image/png",
+      "byteSize": 87338,
+      "width": 200,
+      "height": 299,
+      "createdAt": "2026-10-15T20:23:45.702Z",
+      "outputIndex": 1,
+      "fixture": false,
+      "operation": {
+        "details": {
+          "finalOutput": true,
+          "operation": "output.asset",
+          "settings": {
+            "format": "png",
+            "outputCount": 1
+          }
+        },
+        "iteration": 1,
+        "kind": "workflow",
+        "sourceNodeId": "output"
+      },
+      "sourceAssetIds": [
+        "asset:c73395a7-4fec-4fc0-abc9-829122b1c807:0"
+      ],
+      "tags": []
+    }
+  ],
+  "providerJobs": [],
+  "humanReviews": [],
+  "nodeExecutions": [
+    {
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "nodeId": "source",
+      "nodeType": "source.image",
+      "nodeLabel": "Image asset",
+      "ordinal": 0,
+      "status": "completed",
+      "activeStepId": "source:resolve-asset",
+      "runtimePhase": "workflow.execute",
+      "attempt": 1,
+      "progress": 1,
+      "message": "Attempt 1/1 · Image asset completed",
+      "startedAt": "2026-10-15T20:22:57.576Z",
+      "updatedAt": "2026-10-15T20:22:57.603Z",
+      "finishedAt": "2026-10-15T20:22:57.603Z",
+      "stateSequence": 2
+    },
+    {
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "nodeId": "upscale",
+      "nodeType": "operation.upscale",
+      "nodeLabel": "AI upscale",
+      "ordinal": 1,
+      "status": "completed",
+      "activeStepId": "upscale:upscale-image",
+      "runtimePhase": "workflow.execute",
+      "attempt": 1,
+      "progress": 1,
+      "message": "Attempt 1/1 · AI upscale completed",
+      "startedAt": "2026-10-15T20:22:57.627Z",
+      "updatedAt": "2026-10-15T20:23:45.057Z",
+      "finishedAt": "2026-10-15T20:23:45.057Z",
+      "stateSequence": 9
+    },
+    {
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "nodeId": "output",
+      "nodeType": "output.asset",
+      "nodeLabel": "Save assets",
+      "ordinal": 2,
+      "status": "completed",
+      "activeStepId": "output:ingest-asset",
+      "runtimePhase": "workflow.execute",
+      "attempt": 1,
+      "progress": 1,
+      "message": "Attempt 1/1 · Save assets completed",
+      "startedAt": "2026-10-15T20:23:45.174Z",
+      "updatedAt": "2026-10-15T20:23:45.722Z",
+      "finishedAt": "2026-10-15T20:23:45.722Z",
+      "stateSequence": 2
+    }
+  ],
+  "planSnapshot": {
+    "schemaVersion": 1,
+    "planId": "upscale-1345cfd2-e3b9-42a6-ac34-e1cc7e58d729:84856fb6329",
+    "flowId": "upscale-1345cfd2-e3b9-42a6-ac34-e1cc7e58d729",
+    "flowFingerprint": "sha256:84856fb63291ca568771aedecf37c52df9dad8dac20d3945554b2f2539a0ac1d",
+    "compiledAt": "2026-10-15T20:22:57.430Z",
+    "nodes": [
+      {
+        "id": "source",
+        "type": "source.image",
+        "label": "Image asset",
+        "layer": "source"
+      },
+      {
+        "id": "upscale",
+        "type": "operation.upscale",
+        "label": "AI upscale",
+        "layer": "operation"
+      },
+      {
+        "id": "output",
+        "type": "output.asset",
+        "label": "Save assets",
+        "layer": "output"
+      }
+    ],
+    "steps": [
+      {
+        "id": "source:resolve-asset",
+        "sourceNodeId": "source",
+        "kind": "resolve-asset",
+        "label": "Image asset",
+        "target": "local",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      },
+      {
+        "id": "upscale:upscale-image",
+        "sourceNodeId": "upscale",
+        "kind": "upscale-image",
+        "label": "AI upscale",
+        "target": "local",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      },
+      {
+        "id": "output:ingest-asset",
+        "sourceNodeId": "output",
+        "kind": "ingest-asset",
+        "label": "Save assets",
+        "target": "local",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      }
+    ]
+  }
+}

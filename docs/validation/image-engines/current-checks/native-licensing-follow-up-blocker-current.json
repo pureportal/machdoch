@@ -1,0 +1,10 @@
+{
+  "action": "Launch the isolated retained verification desktop and rerun native Playwright after Krea licence metadata updates",
+  "status": "rejected-by-automatic-approval-review",
+  "statedReason": "blocked by policy",
+  "processStarted": false,
+  "followUpVerified": false,
+  "lastCompletedNativeCheck": "docs/validation/image-engines/current-checks/native-animagine-current/playwright-results.json",
+  "lastCompletedInstalledCheckpointCount": 21,
+  "generationQueuesAffected": false
+}

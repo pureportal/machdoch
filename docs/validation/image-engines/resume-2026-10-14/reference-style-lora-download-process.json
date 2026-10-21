@@ -1,0 +1,7 @@
+{
+    "pid":  26448,
+    "script":  "C:\\Development\\machdoch\\docs\\validation\\image-engines\\resume-2026-10-14\\download-reference-style-loras.py",
+    "stdout":  "C:\\Development\\machdoch\\docs\\validation\\image-engines\\resume-2026-10-14\\reference-style-lora-download-stdout.log",
+    "stderr":  "C:\\Development\\machdoch\\docs\\validation\\image-engines\\resume-2026-10-14\\reference-style-lora-download-stderr.log",
+    "startedAt":  "2026-10-14T23:57:30.2111153Z"
+}

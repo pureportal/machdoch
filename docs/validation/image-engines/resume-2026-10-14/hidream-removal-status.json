@@ -1,0 +1,96 @@
+{
+  "models": [
+    {
+      "id": "local:hidream-i1-full",
+      "providerId": "local-diffusers",
+      "displayName": "HiDream-I1 Full",
+      "family": "HiDream",
+      "target": "local",
+      "lifecycle": "active",
+      "lifecycleCheckedAt": "2026-07-15T00:00:00.000Z",
+      "lifecycleStaleAfterSeconds": 31536000,
+      "lifecycleSourceUrl": "https://huggingface.co/HiDream-ai/HiDream-I1-Full",
+      "catalogRevision": "builtin-2026-10-03-open-media-audio",
+      "capabilities": [
+        "text-to-image"
+      ],
+      "configured": true,
+      "installed": false,
+      "bundled": false,
+      "installationStatus": "not-installed",
+      "installedRevision": null,
+      "packageType": "diffusers",
+      "architecture": "hidream-i1-full",
+      "addonCapabilities": [],
+      "management": {
+        "acquisition": "file-import"
+      },
+      "runtimeReadiness": "not-applicable",
+      "runtimeReadinessDiagnostic": null,
+      "runtimeReadinessCheckedAt": null,
+      "license": {
+        "name": "MIT and Llama 3.1 Community License",
+        "spdxId": null,
+        "sourceUrl": "https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE",
+        "commercialUse": "review-required",
+        "requiresAcceptance": true
+      },
+      "recommended": false,
+      "speedScore": 0,
+      "qualityScore": 0,
+      "minVramGb": null,
+      "expectedDownloadGb": null,
+      "costHint": null,
+      "privacySummary": "Generation runs on this device.",
+      "limitation": "Import a complete local Diffusers package.",
+      "userImported": false
+    },
+    {
+      "id": "local:user:e7d65da14bf9a82b8da178426e02b5199b33e56d30276e30a3b305137710bbc6",
+      "providerId": "local-diffusers",
+      "displayName": "HiDream-I1 Full FP4",
+      "family": "HiDream",
+      "target": "local",
+      "lifecycle": "active",
+      "lifecycleCheckedAt": "2026-10-14T18:25:03.028Z",
+      "lifecycleStaleAfterSeconds": 315360000,
+      "lifecycleSourceUrl": "https://civitai.com/models/1457126?modelVersionId=1647676",
+      "catalogRevision": "builtin-2026-10-03-open-media-audio",
+      "capabilities": [
+        "text-to-image"
+      ],
+      "configured": true,
+      "installed": true,
+      "bundled": false,
+      "installationStatus": "installed",
+      "installedRevision": "e7d65da14bf9a82b8da178426e02b5199b33e56d30276e30a3b305137710bbc6",
+      "packageType": "diffusers",
+      "architecture": "hidream-i1-full",
+      "addonCapabilities": [],
+      "management": {
+        "acquisition": "file-import"
+      },
+      "runtimeReadiness": "unverified",
+      "runtimeReadinessDiagnostic": null,
+      "runtimeReadinessCheckedAt": null,
+      "license": {
+        "name": "MIT and Llama 3.1 Community License",
+        "spdxId": null,
+        "sourceUrl": "https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE",
+        "commercialUse": "review-required",
+        "requiresAcceptance": true
+      },
+      "recommended": false,
+      "speedScore": 0,
+      "qualityScore": 0,
+      "minVramGb": null,
+      "expectedDownloadGb": 23.41446153447032,
+      "costHint": "No provider charge; uses local GPU time and power.",
+      "privacySummary": "Prompt, checkpoint weights, and generated pixels remain on this device.",
+      "limitation": "Imported local Diffusers package.",
+      "userImported": true
+    }
+  ],
+  "removal": null,
+  "installedImageModels": 31
+}

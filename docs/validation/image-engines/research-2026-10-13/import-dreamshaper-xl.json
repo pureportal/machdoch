@@ -1,0 +1,12 @@
+{
+  "request": {
+    "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\112902\\126688\\dreamshaperXL_alpha2Xl10.safetensors",
+    "architecture": "dreamshaper-xl",
+    "displayName": "DreamShaper XL Alpha 2 \u00b7 Lykon",
+    "sourceUrl": "https://civitai.com/models/112902?modelVersionId=126688",
+    "commercialUse": "review-required",
+    "licenseName": null,
+    "reviewToken": ""
+  },
+  "expectedDigest": "0f1b80cfe81b9c3bde7fdcbf6898897b2811b27be1df684583c3d85cbc9b1fa4"
+}

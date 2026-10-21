@@ -1,0 +1,7 @@
+{
+  "finishedAt": "2026-10-12T01:43:41.3145687Z",
+  "state": "failed",
+  "operations": [],
+  "processId": 25256,
+  "error": "Package preparation is incomplete: flux-1-schnell"
+}

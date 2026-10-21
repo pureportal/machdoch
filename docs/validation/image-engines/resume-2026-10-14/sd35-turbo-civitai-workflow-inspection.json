@@ -1,0 +1,24 @@
+{
+  "member": "Detail Deamon for Flux and SD 3.5 Turbo v 2.0.png",
+  "executed": false,
+  "nodes": [
+    {
+      "type": "CheckpointLoaderSimple",
+      "title": null,
+      "widgets": [
+        "SD 3.5\\sd3.5_large_turbo.safetensors"
+      ],
+      "properties": {
+        "Node name for S&R": "CheckpointLoaderSimple"
+      }
+    },
+    {
+      "type": "Note",
+      "title": "SD 3.5 NOTE",
+      "widgets": [
+        "                    \n\n                       STABLE DIFFUSION 3.5 TURBO\n\n  \n  * FLUX ON/OFF: OFF = SD 3.5 TURBO IS ACTIVE\n  * SET GUIDANCE IN THE PROMPT NODE TO 1 AND CHANGE VAE IF NEEDED\n  * MODEL SAMPLING = SHIFT 3\n  * STEPS = 4-5\n  * SD 3.5 LARGE NORMAL AND SD 3.5 MEDIUM WILL NOT WORK IN THIS WORKFLOW"
+      ],
+      "properties": {}
+    }
+  ]
+}

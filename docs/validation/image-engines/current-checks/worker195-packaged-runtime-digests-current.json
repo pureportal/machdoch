@@ -1,0 +1,10 @@
+{
+  "sourceVerificationRuntimeDigest": "1d1b4c7597ede91a9742749a2378d8e79963ff61aa2ff42f748ac97dc1b44344",
+  "bundledRuntimeDigest": "962a55566a44bdfaa8756ba1e4e683b576f4d6fba74e410275f56fbc628a7f34",
+  "retainedRuntimeDigest": "962a55566a44bdfaa8756ba1e4e683b576f4d6fba74e410275f56fbc628a7f34",
+  "sourceOnlyMediaModules": [
+    "media_reference_verification.py",
+    "media_verification_checkpoints.py",
+    "media_verification_components.py"
+  ]
+}

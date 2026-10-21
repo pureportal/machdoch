@@ -1,0 +1,51 @@
+{
+  "cases": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\stable-diffusion-3-six-reference-cases.json",
+  "referenceCount": 6,
+  "sampler": "flow-euler",
+  "steps": 40,
+  "guidance": 4.5,
+  "allDimensionsDivisibleBy64": true,
+  "canvases": [
+    {
+      "referenceId": 144655944,
+      "width": 832,
+      "height": 1216
+    },
+    {
+      "referenceId": 144697438,
+      "width": 1344,
+      "height": 768
+    },
+    {
+      "referenceId": 144594528,
+      "width": 832,
+      "height": 1216
+    },
+    {
+      "referenceId": 145095967,
+      "width": 832,
+      "height": 1216
+    },
+    {
+      "referenceId": 144599398,
+      "width": 896,
+      "height": 1152
+    },
+    {
+      "referenceId": 145177887,
+      "width": 768,
+      "height": 1344
+    }
+  ],
+  "syntaxChecked": [
+    "sync_media_verification_catalog.py",
+    "prepare_imported_reference_batches.py",
+    "verify_media_reference_sweep.py"
+  ],
+  "nativeImportPassed": false,
+  "generatedOutputs": 0,
+  "checkpointAdaptiveSamplerImplemented": false,
+  "promptPreflight": "sd35-concise-reference-tokenizer-preflight-current.json",
+  "allThreeEncodersUntruncated": true,
+  "adaptedPromptCount": 6
+}

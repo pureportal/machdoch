@@ -1,0 +1,53 @@
+{
+  "completed": true,
+  "verifiedAt": "2026-10-15T18:58:12.725Z",
+  "device": "AMD Radeon RX 9070 (cuda:1)",
+  "checks": [
+    "library occupies main workspace and shared search filters assets",
+    "shared model picker supports searching and keyboard selection",
+    "scale selection updates output size and invalid tiles block both actions",
+    "after-span-image-4x",
+    "source and result align side by side on wide layouts",
+    "1280, 1000 and 800 pixel layouts have no horizontal overflow",
+    "shared save action exports the real image",
+    "result context action selects new source and clears previous result",
+    "change media can open and close the main picker",
+    "after-realesrgan-video-2x",
+    "source and output video previews support playback",
+    "custom model validation and shared failure notification",
+    "after-swinir-image-2x",
+    "failed run recovers with a different source and model",
+    "shared job component cancels real running work and locks settings",
+    "advanced flow opens with the selected upscale configuration",
+    "shared job activity action opens the run inspector",
+    "no renderer exceptions"
+  ],
+  "runs": [
+    {
+      "label": "after-span-image-4x",
+      "runId": "27bc27f3-b28a-4c6c-b2c4-fc71ac3ef467",
+      "status": "completed",
+      "width": 388,
+      "height": 580,
+      "kind": "image"
+    },
+    {
+      "label": "after-realesrgan-video-2x",
+      "runId": "ea4bfde9-ce93-46d1-8701-c940b78808c9",
+      "status": "completed",
+      "width": 192,
+      "height": 128,
+      "kind": "video"
+    },
+    {
+      "label": "after-swinir-image-2x",
+      "runId": "740de1ab-0795-42f3-9d16-6bdbe839e9af",
+      "status": "completed",
+      "width": 194,
+      "height": 290,
+      "kind": "image"
+    }
+  ],
+  "pageErrors": [],
+  "nativeSha256": "fedca8caba07a651cdd51fa0871246cc0a3906090fcf609b63343007c7957a5f"
+}

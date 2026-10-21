@@ -1,0 +1,10 @@
+Process 25348: "C:\Users\ehrha\AppData\Local\Programs\Python\Python312\python.exe" docs/validation/image-engines/download-hidream-nf4-package.py
+Python v3.12.10 (C:\Users\ehrha\AppData\Local\Programs\Python\Python312\python.exe)
+
+Thread 9856 (idle)
+    read (ssl.py:1103)
+    recv_into (ssl.py:1251)
+    readinto (socket.py:720)
+    read (http\client.py:479)
+    acquire (download-hidream-nf4-package.py:49)
+    <module> (download-hidream-nf4-package.py:75)

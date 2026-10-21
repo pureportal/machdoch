@@ -1,0 +1,26 @@
+[
+  {
+    "kind": "image",
+    "path": "docs\\validation\\upscalers\\native-export-image-a2c12a7b-1d40-49d3-a3a9-9d9671cbdb8e.png",
+    "sha256": "2fbe71f4180d7c223b3794ea972fcb57361e5599b69b7396845ca3f97649e706",
+    "verifiedOriginal": true,
+    "dimensions": [
+      388,
+      580
+    ]
+  },
+  {
+    "kind": "video",
+    "path": "docs\\validation\\upscalers\\native-export-video-ae4fa0aa-f673-432e-b4c2-398c1692b356.webm",
+    "sha256": "5a2643bca293c2b8780f1997a65471b88638144c8c04066b605f57e69c8029d0",
+    "verifiedOriginal": true,
+    "dimensions": [
+      192,
+      128
+    ],
+    "frames": 8,
+    "fps": 8.0,
+    "hasAudio": true,
+    "durationSeconds": 1.0
+  }
+]

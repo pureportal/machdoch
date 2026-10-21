@@ -1,0 +1,23 @@
+[
+  {
+    "kind": "upscale-span",
+    "modelPath": "\\\\?\\D:\\Models\\machdoch\\models\\workflow\\upscale-span\\4x-spanx4_ch48.safetensors",
+    "files": 2,
+    "hashVerified": true,
+    "licensePresent": true
+  },
+  {
+    "kind": "upscale",
+    "modelPath": "\\\\?\\D:\\Models\\machdoch\\models\\workflow\\upscale\\RealESRGAN_x4.pth",
+    "files": 2,
+    "hashVerified": true,
+    "licensePresent": true
+  },
+  {
+    "kind": "upscale-swinir",
+    "modelPath": "\\\\?\\D:\\Models\\machdoch\\models\\workflow\\upscale-swinir\\002_lightweightSR_DIV2K_s64w8_SwinIR-S_x4.pth",
+    "files": 2,
+    "hashVerified": true,
+    "licensePresent": true
+  }
+]

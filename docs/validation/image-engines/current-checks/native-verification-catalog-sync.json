@@ -1,0 +1,9 @@
+{
+  "source": "D:\\Models\\machdoch\\media.sqlite3",
+  "target": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-current-desktop-store-2026-10-12\\media.sqlite3",
+  "backup": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-current-desktop-store-2026-10-12\\media-before-catalog-sync-20261013T015025410526Z.sqlite3",
+  "copiedModels": [
+    "local:user:3fc5ed773ffaee5d18b6a191da9cb684b151f2cf13bf6b55fe36fddfcdd0365c"
+  ],
+  "installedImageCheckpoints": 22
+}

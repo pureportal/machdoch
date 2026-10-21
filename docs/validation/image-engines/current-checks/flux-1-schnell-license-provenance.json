@@ -1,0 +1,8 @@
+{
+  "publisher": "black-forest-labs/flux",
+  "revision": "802fb4713906133fcbd0d8dc5351620ca4773036",
+  "url": "https://raw.githubusercontent.com/black-forest-labs/flux/802fb4713906133fcbd0d8dc5351620ca4773036/LICENSE",
+  "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+  "bytes": 11357,
+  "modelLicenseEvidence": "https://huggingface.co/black-forest-labs/FLUX.1-schnell"
+}

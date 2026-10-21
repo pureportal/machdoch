@@ -1,0 +1,19 @@
+{
+  "checkedAt": "2026-10-13T00:48:09.277705+00:00",
+  "llamaComponentAccess": {
+    "sourceUrl": "https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct/resolve/main/config.json",
+    "status": 401
+  },
+  "credentialAvailable": false,
+  "downloadOrImportPerformed": false,
+  "reviewedCivitaiFullCheckpoint": {
+    "modelId": 1562709,
+    "versionId": 1768354,
+    "variant": "hidream_i1_full_fp16",
+    "baseModel": "HiDream",
+    "filename": "hidream_I1FullFp16.safetensors",
+    "bytes": 34211673776,
+    "sha256": "8bbebd53a19ff0ff685c51b9425cee9529f283e3efb052e22add4a28f414ab3e",
+    "sourceUrl": "https://civitai.com/models/1562709?modelVersionId=1768354"
+  }
+}

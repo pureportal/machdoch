@@ -1,0 +1,14 @@
+{
+  "source": "D:\\Models\\machdoch\\media.sqlite3",
+  "target": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-current-desktop-store-2026-10-12\\media.sqlite3",
+  "backup": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-current-desktop-store-2026-10-12\\media-before-krea-attribution-20261012T225030.sqlite3",
+  "copiedMetadata": [
+    "local:user:3ec3c673d467e0832ad1324fafa8eed5cde9e9f2e250b399d07245e63c904191",
+    "local:user:8a50afe6a29e4dea9c2390a0765b506d4ad17de055dee758a0b0a0216d95c8a0",
+    "local:krea-2-raw",
+    "local:krea-2-turbo",
+    "local:user:eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+    "local:user:ed1ea73c0e4f659f7cf4abbc1eb341ab66b1c9121b3465f820b19ade7ced147d"
+  ],
+  "changedInstallations": false
+}

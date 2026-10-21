@@ -1,0 +1,21 @@
+{
+  "file": "D:\\Models\\machdoch\\downloads\\nekofantasia-alpha-civitai-linked-f612455c9032\\text_encoders\\t5xxl_fp16.safetensors.part",
+  "tensorCount": 220,
+  "sampleKeys": [
+    "encoder.block.0.layer.0.SelfAttention.k.weight",
+    "encoder.block.0.layer.0.SelfAttention.o.weight",
+    "encoder.block.0.layer.0.SelfAttention.q.weight",
+    "encoder.block.0.layer.0.SelfAttention.relative_attention_bias.weight",
+    "encoder.block.0.layer.0.SelfAttention.v.weight",
+    "encoder.block.0.layer.0.layer_norm.weight",
+    "encoder.block.0.layer.1.DenseReluDense.wi_0.weight",
+    "encoder.block.0.layer.1.DenseReluDense.wi_1.weight"
+  ],
+  "embeddingKeys": [
+    "encoder.embed_tokens.weight",
+    "shared.weight"
+  ],
+  "dtypes": [
+    "F16"
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "staticRequestChecksOnly": true,
+  "runtimeExecutionProven": false,
+  "batches": 14,
+  "cases": 60,
+  "addedCaseCount": 2,
+  "onlySamplingFieldChanged": "sampler",
+  "passed": true
+}

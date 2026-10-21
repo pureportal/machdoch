@@ -1,0 +1,63 @@
+{
+  "model": "D:\\Models\\machdoch\\models\\components\\krea-2\\qwen-image",
+  "source": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-2-refined-reference-sweep\\02-krea-2-reference-144697438\\decoder-latents.safetensors",
+  "sourceSha256": "5e8ddfd4e4e56ef0a8318a10c2090335bc4537d9e34c87010399166396b55e44",
+  "sourceKind": "generated-latents",
+  "vaeClass": "AutoencoderKLQwenImage",
+  "spatialCompressionRatio": 8,
+  "dtype": "bfloat16",
+  "canvas": [
+    1344,
+    768
+  ],
+  "sameLatents": true,
+  "convolutionBackend": "native",
+  "device": "AMD Radeon RX 9070",
+  "records": [
+    {
+      "tile": 0,
+      "stride": null,
+      "seconds": 16.468999999997322,
+      "peakAllocatedBytes": 9513220608,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0,
+      "maxAbsoluteErrorAgainstFullFrame": 0.0,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-ruins-decoder-comparison\\tile-0.png"
+    },
+    {
+      "tile": 256,
+      "stride": 192,
+      "seconds": 5.015999999995984,
+      "peakAllocatedBytes": 1164532224,
+      "meanAbsoluteErrorAgainstFullFrame": 0.010417378507554531,
+      "maxAbsoluteErrorAgainstFullFrame": 1.35546875,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-ruins-decoder-comparison\\tile-256.png"
+    },
+    {
+      "tile": 512,
+      "stride": 384,
+      "seconds": 1.764999999999418,
+      "peakAllocatedBytes": 2861619712,
+      "meanAbsoluteErrorAgainstFullFrame": 0.007839740253984928,
+      "maxAbsoluteErrorAgainstFullFrame": 1.1796875,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-ruins-decoder-comparison\\tile-512.png"
+    },
+    {
+      "tile": 1024,
+      "stride": 768,
+      "seconds": 1.5780000000013388,
+      "peakAllocatedBytes": 7387175424,
+      "meanAbsoluteErrorAgainstFullFrame": 0.005562025588005781,
+      "maxAbsoluteErrorAgainstFullFrame": 1.01953125,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-ruins-decoder-comparison\\tile-1024.png"
+    },
+    {
+      "tile": 1536,
+      "stride": 1152,
+      "seconds": 18.625,
+      "peakAllocatedBytes": 9513220608,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0,
+      "maxAbsoluteErrorAgainstFullFrame": 0.0,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-ruins-decoder-comparison\\tile-1536.png"
+    }
+  ]
+}

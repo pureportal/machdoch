@@ -1,0 +1,2486 @@
+{
+  "workerSha256": "d45e0740afd8088f4822d808d226ceb2e26cc07d1026ebb83bb7a0c488555fca",
+  "samplingArchitectures": 31,
+  "requiredReferences": [
+    144655944,
+    144697438,
+    144594528,
+    145095967,
+    144599398,
+    145177887
+  ],
+  "coverage": [
+    {
+      "architecture": "stable-diffusion-xl-dmad-4step",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "lcm"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/ZhengmingYu/DMAD"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "stable-diffusion-xl-dmad-1step",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "lcm"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/ZhengmingYu/DMAD"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "z-image-turbo",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/Tongyi-MAI/Z-Image-Turbo"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "z-image",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/Tongyi-MAI/Z-Image"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "qwen-image",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/Qwen/Qwen-Image"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "qwen-image-2512",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/Qwen/Qwen-Image-2512"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "qwen-image-edit-2511",
+      "publishedCapabilities": [
+        "image-to-image",
+        "multi-reference-edit"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/Qwen/Qwen-Image-Edit-2511"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "sana",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "dpmpp-2m"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/Efficient-Large-Model/Sana_1600M_1024px_diffusers",
+        "https://huggingface.co/Efficient-Large-Model/Sana_1600M_1024px_diffusers/blob/main/scheduler/scheduler_config.json"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "sana-sprint",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "scm"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers",
+        "https://huggingface.co/Efficient-Large-Model/Sana_Sprint_1.6B_1024px_diffusers/blob/main/scheduler/scheduler_config.json"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "glm-image",
+      "publishedCapabilities": [
+        "text-to-image",
+        "image-to-image",
+        "multi-reference-edit"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/zai-org/GLM-Image"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "hidream-i1-full",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/HiDream-ai/HiDream-I1-Full"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "ideogram-4",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [],
+      "settingsSources": [
+        "https://huggingface.co/ideogram-ai/ideogram-4-nf4"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "flux-1-schnell",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/black-forest-labs/FLUX.1-schnell"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "flux-1-dev",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/black-forest-labs/FLUX.1-dev"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "flux-2-klein-base-4b",
+      "publishedCapabilities": [
+        "text-to-image",
+        "image-to-image",
+        "multi-reference-edit"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-4B"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "flux-2-klein-9b",
+      "publishedCapabilities": [
+        "text-to-image",
+        "image-to-image",
+        "multi-reference-edit"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/black-forest-labs/FLUX.2-klein-9B"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "flux-2-klein-base-9b",
+      "publishedCapabilities": [
+        "text-to-image",
+        "image-to-image",
+        "multi-reference-edit"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/black-forest-labs/FLUX.2-klein-base-9B"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "flux-2-dev",
+      "publishedCapabilities": [
+        "text-to-image",
+        "image-to-image",
+        "multi-reference-edit"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/black-forest-labs/FLUX.2-dev"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "krea-2-raw",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:8a50afe6a29e4dea9c2390a0765b506d4ad17de055dee758a0b0a0216d95c8a0",
+          "name": "SNOFS (Sex, Nudes, and Other Fun Stuff) Merged · Krea 2 Raw v1.4"
+        }
+      ],
+      "installedCapabilities": [
+        "text-to-image"
+      ],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/krea/Krea-2-Raw"
+      ],
+      "realRuns": [
+        {
+          "id": "local:user:8a50afe6a29e4dea9c2390a0765b506d4ad17de055dee758a0b0a0216d95c8a0",
+          "name": "SNOFS (Sex, Nudes, and Other Fun Stuff) Merged · Krea 2 Raw v1.4",
+          "architecture": "krea-2-raw",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-raw-corrected-reference-144697438\\01-krea-2-raw-8a50afe6a29e",
+          "workerSha256": "5c591cfd104827a3981e52cd93ca51aa4e92d50275486149fc9e587ebacffcbc",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-raw-corrected-reference-144697438\\01-krea-2-raw-8a50afe6a29e\\images\\output-0000.png",
+          "width": 1344,
+          "height": 768,
+          "numInferenceSteps": 52,
+          "workerVersion": "media-diffusers-worker/1.78.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": null,
+          "sha256": "083e4b6d864dc269d96bb97883cf0a4d8a21f1b3b49774ea0a50f49e02580dc8",
+          "seconds": 7055.1570000000065,
+          "referenceId": 144697438,
+          "qualityVerdict": "below-reference",
+          "observations": "Figure and robots are present, but the RAW 52-step output is oversaturated with embossed triangular textures.",
+          "currentClassification": true
+        }
+      ],
+      "referencesWithTechnicalPass": [
+        144697438
+      ],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "qwen-image-2.1-turbo",
+      "publishedCapabilities": [
+        "text-to-image",
+        "image-to-image",
+        "multi-reference-edit",
+        "transparent-output"
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:5fc80891e28870d540fba30271ec02b4fe83e88acb3ae0e5f72bf1171ef63c1e",
+          "name": "Qwen-Image 2.1 Turbo GGUF"
+        }
+      ],
+      "installedCapabilities": [
+        "image-to-image",
+        "multi-reference-edit",
+        "text-to-image",
+        "transparent-output"
+      ],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/Qwen/Qwen-Image-2.1-Turbo"
+      ],
+      "realRuns": [
+        {
+          "id": "local:user:5fc80891e28870d540fba30271ec02b4fe83e88acb3ae0e5f72bf1171ef63c1e",
+          "name": "Qwen-Image 2.1 Turbo GGUF",
+          "architecture": "qwen-image-2.1-turbo",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-image-2.1-turbo-reference-144697438\\01-qwen-image-2.1-turbo-5fc80891e288",
+          "workerSha256": "171eee2bc17b180e2c2d050e1e618c2bf48eb63296bab149a92e04a25cc3cb85",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-image-2.1-turbo-reference-144697438\\01-qwen-image-2.1-turbo-5fc80891e288\\images\\output-0000.png",
+          "width": 1344,
+          "height": 768,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.81.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": null,
+          "sha256": "72c0a291476aa98d906351efada0a108c8f8b4934a6e8d0af446500785551edd",
+          "seconds": 710.7339999999967,
+          "referenceId": 144697438,
+          "qualityVerdict": "near-reference",
+          "observations": "Detailed painted figure on the right and two robots on the left with grassy ruins and colorful geometry; framing differs.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:5fc80891e28870d540fba30271ec02b4fe83e88acb3ae0e5f72bf1171ef63c1e",
+          "name": "Qwen-Image 2.1 Turbo Q4_K_M",
+          "architecture": "qwen-image-2.1-turbo",
+          "referenceId": 144655944,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\01-qwen-image-2.1-turbo-reference-144655944",
+          "workerSha256": "d45e0740afd8088f4822d808d226ceb2e26cc07d1026ebb83bb7a0c488555fca",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "originalPrompt": true,
+          "passed": true,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\01-qwen-image-2.1-turbo-reference-144655944\\images\\output-0000.png",
+          "width": 768,
+          "height": 1344,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.89.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": 1,
+          "sha256": "3eda5bed8f3f3adf8f1e0b5edc4702720f320f52113262572ee644cf11eaef74",
+          "seconds": 855.3119999999999,
+          "qualityVerdict": "below-reference",
+          "observations": "Detailed red-haired anime adult in a white shirt and dark tie, with amber ringed eyes and fine hair and fabric shading. It retains the saliva trail from the source prompt, but the reaching hand and strong golden backlighting are absent; the higher camera angle and dark background change the reference aesthetic.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:5fc80891e28870d540fba30271ec02b4fe83e88acb3ae0e5f72bf1171ef63c1e",
+          "name": "Qwen-Image 2.1 Turbo Q4_K_M",
+          "architecture": "qwen-image-2.1-turbo",
+          "referenceId": 144594528,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\02-qwen-image-2.1-turbo-reference-144594528",
+          "workerSha256": "d45e0740afd8088f4822d808d226ceb2e26cc07d1026ebb83bb7a0c488555fca",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "originalPrompt": true,
+          "passed": true,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\02-qwen-image-2.1-turbo-reference-144594528\\images\\output-0000.png",
+          "width": 768,
+          "height": 1344,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.89.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": 1,
+          "sha256": "2488d82eb9e26f05c9481c61251b90c76eb1a04ea516faafe1190c820cbecaf9",
+          "seconds": 545.0159999999996,
+          "qualityVerdict": "below-reference",
+          "observations": "Sharp adult street photograph with a light-blue off-shoulder blouse, flowing white skirt, white sneakers and colourful graffiti. Detail and sunlight approach the reference, but faint magenta vertical streaks on the white skirt prevent a clean quality pass. Pose and flower density differ. Decoder tile boundaries are under investigation.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:5fc80891e28870d540fba30271ec02b4fe83e88acb3ae0e5f72bf1171ef63c1e",
+          "name": "Qwen-Image 2.1 Turbo Q4_K_M",
+          "architecture": "qwen-image-2.1-turbo",
+          "referenceId": 145095967,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\03-qwen-image-2.1-turbo-reference-145095967",
+          "workerSha256": "d45e0740afd8088f4822d808d226ceb2e26cc07d1026ebb83bb7a0c488555fca",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "originalPrompt": true,
+          "passed": true,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\03-qwen-image-2.1-turbo-reference-145095967\\images\\output-0000.png",
+          "width": 768,
+          "height": 1344,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.89.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": 1,
+          "sha256": "15b39c2409995a74a053649d4aeb227c68b96d4c5a2574170e3cf17a43980c62",
+          "seconds": 565.6560000000009,
+          "qualityVerdict": "near-reference",
+          "observations": "Detailed surreal mountain portrait with raised arms, lowered gaze, white line-art blouse and a landscape double exposure, framed against a pink evening sky and valley road. Skin, hair, clothing outlines and landscape detail are clean. The fingers meet at the top, the road curves, and the inner landscape and face differ from the reference composition.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:5fc80891e28870d540fba30271ec02b4fe83e88acb3ae0e5f72bf1171ef63c1e",
+          "name": "Qwen-Image 2.1 Turbo Q4_K_M",
+          "architecture": "qwen-image-2.1-turbo",
+          "referenceId": 144599398,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\04-qwen-image-2.1-turbo-reference-144599398",
+          "workerSha256": "d45e0740afd8088f4822d808d226ceb2e26cc07d1026ebb83bb7a0c488555fca",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "originalPrompt": false,
+          "passed": true,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\04-qwen-image-2.1-turbo-reference-144599398\\images\\output-0000.png",
+          "width": 896,
+          "height": 1120,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.89.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": 1,
+          "sha256": "8d229a3601ec87ac12daed3914115afbcd01638080e999cd80964e81fbed41ff",
+          "seconds": 836.7029999999995,
+          "qualityVerdict": "below-reference",
+          "observations": "Detailed adult beach portrait with pink zigzag bikini, natural skin and hair, a relaxed pose and warm sunlight against a white wall. A faint magenta vertical stripe crosses the abdomen, with smaller streaks on the wall; the output fails the clean quality requirement. The observed prompt was used because the original prompt is unavailable.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:5fc80891e28870d540fba30271ec02b4fe83e88acb3ae0e5f72bf1171ef63c1e",
+          "name": "Qwen-Image 2.1 Turbo Q4_K_M",
+          "architecture": "qwen-image-2.1-turbo",
+          "referenceId": 145177887,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\05-qwen-image-2.1-turbo-reference-145177887",
+          "workerSha256": "d45e0740afd8088f4822d808d226ceb2e26cc07d1026ebb83bb7a0c488555fca",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "originalPrompt": true,
+          "passed": true,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\05-qwen-image-2.1-turbo-reference-145177887\\images\\output-0000.png",
+          "width": 768,
+          "height": 1344,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.89.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": 1,
+          "sha256": "693f8a08d0e7337c24daef55825a068ee73979917a56de902bb7bd87974b55a9",
+          "seconds": 762.905999999999,
+          "qualityVerdict": "below-reference",
+          "observations": "The covered face, white dress, held teddy, distant glowing eyes and pool of light on wooden flooring closely approach the horror reference. The figure is smaller in the frame and a faint green vertical line appears on the right side of the dark background, preventing a clean quality pass.",
+          "currentClassification": true
+        }
+      ],
+      "referencesWithTechnicalPass": [
+        144697438,
+        144655944,
+        144594528,
+        145095967,
+        144599398,
+        145177887
+      ],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": [
+        144697438,
+        145095967
+      ]
+    },
+    {
+      "architecture": "stable-diffusion-1",
+      "publishedCapabilities": [],
+      "installedModels": [
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "name": "Stable Diffusion 1.5"
+        },
+        {
+          "id": "local:user:879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd",
+          "name": "DreamShaper 8 · Lykon"
+        }
+      ],
+      "installedCapabilities": [
+        "image-to-image",
+        "masked-image-edit",
+        "multi-reference-edit",
+        "text-to-image"
+      ],
+      "samplers": [
+        "euler",
+        "euler-ancestral",
+        "heun",
+        "dpmpp-2m",
+        "dpmpp-2m-karras",
+        "dpmpp-2m-sde-karras",
+        "ddim",
+        "deis",
+        "unipc"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/text2img",
+        "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
+      ],
+      "realRuns": [
+        {
+          "id": "local:user:879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd",
+          "name": "DreamShaper 8 · Lykon",
+          "architecture": "stable-diffusion-1",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-reference-144655944\\01-stable-diffusion-1-879db523c30d",
+          "workerSha256": "57309880d617b4bb65fd92fab0dcd6a8f89cdc0dc097e62b47cf9917e8841a2a",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": false,
+          "exitCode": 3,
+          "error": "RuntimeError: Local Diffusers worker failed: AcceleratorError: CUDA error: device kernel image is invalid\nSearch for `hipErrorInvalidImage' in https://rocm.docs.amd.com/projects/HIP/en/latest/index.html for more information.\nCUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.\nFor debugging consider passing AMD_SERIALIZE_KERNEL=3\nDevice-side assertion tracking was not enabled by user.",
+          "seconds": 180.20299999999975,
+          "referenceId": 144655944,
+          "qualityVerdict": "not-assessed",
+          "observations": null,
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd",
+          "name": "DreamShaper 8 · Lykon",
+          "architecture": "stable-diffusion-1",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-refined-reference-144594528\\01-stable-diffusion-1-879db523c30d",
+          "workerSha256": "f9d750c25ae6a0721c118b3f74d7193fff1d985655f72cda2c08a935f1b7338f",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-refined-reference-144594528\\01-stable-diffusion-1-879db523c30d\\images\\output-0000.png",
+          "width": 432,
+          "height": 768,
+          "numInferenceSteps": 25,
+          "workerVersion": "media-diffusers-worker/1.86.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "deis",
+          "schedulerClass": "DEISMultistepScheduler",
+          "guidanceScale": null,
+          "sha256": "c08748a066635fb63451a37bd74a15d535654abb195a89fdad68b874b20eef6b",
+          "seconds": 42.96900000000005,
+          "referenceId": 144594528,
+          "qualityVerdict": "below-reference",
+          "observations": "Clean full-body street portrait and graffiti; blouse and skirt colors are reversed and the walking pose is lost.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd",
+          "name": "DreamShaper 8 · Lykon",
+          "architecture": "stable-diffusion-1",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-refined-reference-144599398\\01-stable-diffusion-1-879db523c30d",
+          "workerSha256": "f9d750c25ae6a0721c118b3f74d7193fff1d985655f72cda2c08a935f1b7338f",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": false,
+          "exitCode": 2,
+          "error": "RuntimeError: The model withheld an image. Adjust the prompt or seed, then retry.",
+          "seconds": 56.391000000000076,
+          "referenceId": 144599398,
+          "qualityVerdict": "not-assessed",
+          "observations": null,
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd",
+          "name": "DreamShaper 8 · Lykon",
+          "architecture": "stable-diffusion-1",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-refined-reference-145095967\\01-stable-diffusion-1-879db523c30d",
+          "workerSha256": "f9d750c25ae6a0721c118b3f74d7193fff1d985655f72cda2c08a935f1b7338f",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-refined-reference-145095967\\01-stable-diffusion-1-879db523c30d\\images\\output-0000.png",
+          "width": 432,
+          "height": 768,
+          "numInferenceSteps": 25,
+          "workerVersion": "media-diffusers-worker/1.86.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "deis",
+          "schedulerClass": "DEISMultistepScheduler",
+          "guidanceScale": null,
+          "sha256": "ac0b8948d779abd888b11d808179102a868dda5f375dbde0f99792d0bb7365fd",
+          "seconds": 58.516000000000076,
+          "referenceId": 145095967,
+          "qualityVerdict": "below-reference",
+          "observations": "Sharp woman with raised arms and mountain landscape; landscape remains outside the silhouette, missing double exposure.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd",
+          "name": "DreamShaper 8 · Lykon",
+          "architecture": "stable-diffusion-1",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-refined-reference-145177887\\01-stable-diffusion-1-879db523c30d",
+          "workerSha256": "f9d750c25ae6a0721c118b3f74d7193fff1d985655f72cda2c08a935f1b7338f",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-refined-reference-145177887\\01-stable-diffusion-1-879db523c30d\\images\\output-0000.png",
+          "width": 432,
+          "height": 768,
+          "numInferenceSteps": 25,
+          "workerVersion": "media-diffusers-worker/1.86.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "deis",
+          "schedulerClass": "DEISMultistepScheduler",
+          "guidanceScale": null,
+          "sha256": "bc96fec9295e11df352533ea5d132dfa37a5c80068d54a1370648ca4aa35485f",
+          "seconds": 77.65599999999995,
+          "referenceId": 145177887,
+          "qualityVerdict": "below-reference",
+          "observations": "Visible face and cyan shapes replace the teddy and distant eyes; framing and dark negative space differ.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd",
+          "name": "DreamShaper 8 · Lykon",
+          "architecture": "stable-diffusion-1",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-rx9070-reference-144594528\\01-stable-diffusion-1-879db523c30d",
+          "workerSha256": "a4112b4f895465b3ab54f31deeb0a2eacabe7410fceb06b8fdfed1dcdc0f0221",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": false,
+          "exitCode": 0,
+          "error": "ValueError: Generation returned invalid image pixels",
+          "seconds": 33.3130000000001,
+          "referenceId": 144594528,
+          "qualityVerdict": "not-assessed",
+          "observations": null,
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd",
+          "name": "DreamShaper 8 · Lykon",
+          "architecture": "stable-diffusion-1",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-rx9070-reference-144655944\\01-stable-diffusion-1-879db523c30d",
+          "workerSha256": "a4112b4f895465b3ab54f31deeb0a2eacabe7410fceb06b8fdfed1dcdc0f0221",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-rx9070-reference-144655944\\01-stable-diffusion-1-879db523c30d\\images\\output-0000.png",
+          "width": 432,
+          "height": 768,
+          "numInferenceSteps": 25,
+          "workerVersion": "media-diffusers-worker/1.86.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "deis",
+          "schedulerClass": "DEISMultistepScheduler",
+          "guidanceScale": null,
+          "sha256": "66ad2c8cf77f6175cf168421a02c3ae6f641b51acb4dada33e514cc4dfa29f0a",
+          "seconds": 75.86000000000013,
+          "referenceId": 144655944,
+          "qualityVerdict": "below-reference",
+          "observations": "Sharp woman in a white shirt and tie, but black hair, photographic style and hand framing miss the anime reference.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd",
+          "name": "DreamShaper 8 · Lykon",
+          "architecture": "stable-diffusion-1",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-rx9070-reference-144697438\\01-stable-diffusion-1-879db523c30d",
+          "workerSha256": "a4112b4f895465b3ab54f31deeb0a2eacabe7410fceb06b8fdfed1dcdc0f0221",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-eight-rx9070-reference-144697438\\01-stable-diffusion-1-879db523c30d\\images\\output-0000.png",
+          "width": 768,
+          "height": 432,
+          "numInferenceSteps": 25,
+          "workerVersion": "media-diffusers-worker/1.86.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "deis",
+          "schedulerClass": "DEISMultistepScheduler",
+          "guidanceScale": null,
+          "sha256": "95bc33c44112e1ba932ad4e9be0f8147e98b757e6dbd759f924669a8e4a9e8cb",
+          "seconds": 31.59400000000005,
+          "referenceId": 144697438,
+          "qualityVerdict": "below-reference",
+          "observations": "Detailed white-haired woman in desaturated ruins; robot absent, subject placement and painterly color differ.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "name": "Stable Diffusion 1.5",
+          "architecture": "stable-diffusion-1",
+          "referenceId": 144655944,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144655944",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            832,
+            1216
+          ],
+          "requestedDimensions": [
+            512,
+            736
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144655944\\images\\output-0000.png",
+          "width": 512,
+          "height": 736,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "44baa4df1bc4543a0c166e0c4ad52f853bb41a6c891d5441c4817ffee36b9698",
+          "cacheHit": null,
+          "seconds": 145.36000000004424,
+          "observations": "Distorted anime face, black hair and irregular hands; the reference character, lighting and clothing are absent.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "name": "Stable Diffusion 1.5",
+          "architecture": "stable-diffusion-1",
+          "referenceId": 144697438,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144697438",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            1376,
+            768
+          ],
+          "requestedDimensions": [
+            832,
+            448
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144697438\\images\\output-0000.png",
+          "width": 832,
+          "height": 448,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "469b15fd9e6098f4e96179484eef85b2029fa74b81698fa21e17760751720eab",
+          "cacheHit": null,
+          "seconds": 24.85899999999674,
+          "observations": "Cropped dark android in gray ruins; the human woman is absent and the shapes are distorted.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "name": "Stable Diffusion 1.5",
+          "architecture": "stable-diffusion-1",
+          "referenceId": 144594528,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144594528",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            832,
+            1248
+          ],
+          "requestedDimensions": [
+            512,
+            768
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144594528\\images\\output-0000.png",
+          "width": 512,
+          "height": 768,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "3312cc8b309759e069231c2e5cb8babf439b757ea9fe6204c3c9904fe3645e0b",
+          "cacheHit": null,
+          "seconds": 19.23399999999674,
+          "observations": "Sharp smiling portrait on a park path; graffiti, walking pose and blue blouse with white skirt are absent.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "name": "Stable Diffusion 1.5",
+          "architecture": "stable-diffusion-1",
+          "referenceId": 145095967,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-145095967",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            832,
+            1248
+          ],
+          "requestedDimensions": [
+            512,
+            768
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-145095967\\images\\output-0000.png",
+          "width": 512,
+          "height": 768,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "d1c9d2c438a0a17b842b62fcd5363cf7922092b61d60efa00972bf84294cf64a",
+          "cacheHit": null,
+          "seconds": 11.40600000001723,
+          "observations": "Grayscale woman in a windswept black dress; raised arms, mountains and double exposure are absent.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "name": "Stable Diffusion 1.5",
+          "architecture": "stable-diffusion-1",
+          "referenceId": 144599398,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144599398",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            1632,
+            2048
+          ],
+          "requestedDimensions": [
+            544,
+            672
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144599398\\images\\output-0000.png",
+          "width": 544,
+          "height": 672,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "a5b70b6fcd2f57e7045b0b9e364a32a81036b4534d9a388b7aa34f29c5711a24",
+          "cacheHit": null,
+          "seconds": 20.42199999996228,
+          "observations": "Pink bikini and gray stone wall are present, but anatomy, texture and detail are noticeably weaker.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "name": "Stable Diffusion 1.5",
+          "architecture": "stable-diffusion-1",
+          "referenceId": 145177887,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-145177887",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            1024,
+            2048
+          ],
+          "requestedDimensions": [
+            416,
+            864
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-145177887\\images\\output-0000.png",
+          "width": 416,
+          "height": 864,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "17b23f7f8282d8b2ade0eefc5fac75be0e49fefee92e868c070b109c8b2228e7",
+          "cacheHit": null,
+          "seconds": 19.95299999997951,
+          "observations": "Empty wooden room; the girl, teddy and distant eyes are absent.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "name": "Stable Diffusion 1.5",
+          "architecture": "stable-diffusion-1",
+          "referenceId": 144655944,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144655944",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            832,
+            1216
+          ],
+          "requestedDimensions": [
+            512,
+            736
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144655944\\images\\output-0000.png",
+          "width": 512,
+          "height": 736,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "908ec102b0815c9a1c79654a0f4ae76d36c610bf7dcf17acd790a7c580ed5e80",
+          "cacheHit": null,
+          "seconds": 116.625,
+          "observations": "Extreme photographic face with blue eyes and yellow-painted lip; wrong style, character and hand composition.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "name": "Stable Diffusion 1.5",
+          "architecture": "stable-diffusion-1",
+          "referenceId": 144697438,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144697438",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            1376,
+            768
+          ],
+          "requestedDimensions": [
+            832,
+            448
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144697438\\images\\output-0000.png",
+          "width": 832,
+          "height": 448,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "e421af14445a3795ad5bed06c3ef6cdbbb754d2e1a00ea0250da284bf6d69f0a",
+          "cacheHit": null,
+          "seconds": 17.32800000003772,
+          "observations": "Orange artwork crops the character head; requested robot is absent.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "name": "Stable Diffusion 1.5",
+          "architecture": "stable-diffusion-1",
+          "referenceId": 144594528,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144594528",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            832,
+            1248
+          ],
+          "requestedDimensions": [
+            512,
+            768
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144594528\\images\\output-0000.png",
+          "width": 512,
+          "height": 768,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "c825ac5ab05f82a1165a741b7aca8f701516116426970ea9e2c35db8f351517b",
+          "cacheHit": null,
+          "seconds": 15.125,
+          "observations": "Woman and graffiti appear after the encoding fix; clothing colors, feet and hands are incorrect.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "name": "Stable Diffusion 1.5",
+          "architecture": "stable-diffusion-1",
+          "referenceId": 145095967,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-145095967",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            832,
+            1248
+          ],
+          "requestedDimensions": [
+            512,
+            768
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-145095967\\images\\output-0000.png",
+          "width": 512,
+          "height": 768,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "5d3229ffaafffd74bcf7740771994c907be39a7ab152a9c3f3914e368ce3c7df",
+          "cacheHit": null,
+          "seconds": 9.51500000001397,
+          "observations": "Vertically duplicated woman and severe anatomy defects; no landscape double exposure.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "name": "Stable Diffusion 1.5",
+          "architecture": "stable-diffusion-1",
+          "referenceId": 144599398,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144599398",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            1632,
+            2048
+          ],
+          "requestedDimensions": [
+            544,
+            672
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-144599398\\images\\output-0000.png",
+          "width": 544,
+          "height": 672,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "490dcf54c628bae0abdfbe541653a49b56a8c54cd865e0c73af1e47882328505",
+          "cacheHit": null,
+          "seconds": 13.327999999979511,
+          "observations": "Adult in a pink bikini against rough stone; wall, lighting and framing differ from the white-wall reference.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+          "name": "Stable Diffusion 1.5",
+          "architecture": "stable-diffusion-1",
+          "referenceId": 145177887,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-145177887",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            1024,
+            2048
+          ],
+          "requestedDimensions": [
+            416,
+            864
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sd1-full-prompt-six-reference-sweep\\stable-diffusion-1-6ce0161689b3-reference-145177887\\images\\output-0000.png",
+          "width": 416,
+          "height": 864,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "28b08727599f081d9c262a5a85c3cd2352823b24d6ac7784c9cfaf9534deff6c",
+          "cacheHit": null,
+          "seconds": 14.65600000001723,
+          "observations": "Child appears after the encoding fix, but the face is visible; teddy, distant eyes and required dark negative space are missing.",
+          "currentClassification": true
+        }
+      ],
+      "referencesWithTechnicalPass": [
+        144594528,
+        145095967,
+        145177887,
+        144655944,
+        144697438,
+        144599398
+      ],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "stable-diffusion-2",
+      "publishedCapabilities": [],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "euler",
+        "euler-ancestral",
+        "heun",
+        "dpmpp-2m",
+        "dpmpp-2m-karras",
+        "dpmpp-2m-sde-karras",
+        "ddim",
+        "deis",
+        "unipc"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/stabilityai/stable-diffusion-2-1",
+        "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "stable-diffusion-xl",
+      "publishedCapabilities": [],
+      "installedModels": [
+        {
+          "id": "local:user:31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+          "name": "Stable Diffusion XL 1.0 Base"
+        },
+        {
+          "id": "local:user:33e58e86686f6b386c526682b5da9228ead4f91d994abd4b053442dc5b42719e",
+          "name": "Juggernaut XI · KandooAI / RunDiffusion"
+        }
+      ],
+      "installedCapabilities": [
+        "image-to-image",
+        "masked-image-edit",
+        "multi-reference-edit",
+        "text-to-image"
+      ],
+      "samplers": [
+        "euler",
+        "euler-ancestral",
+        "heun",
+        "dpmpp-2m",
+        "dpmpp-2m-karras",
+        "dpmpp-2m-sde-karras",
+        "ddim",
+        "deis",
+        "unipc"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/stable_diffusion_xl",
+        "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
+      ],
+      "realRuns": [
+        {
+          "id": "local:user:33e58e86686f6b386c526682b5da9228ead4f91d994abd4b053442dc5b42719e",
+          "name": "Juggernaut XI · KandooAI / RunDiffusion",
+          "architecture": "stable-diffusion-xl",
+          "referenceId": 144655944,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-144655944",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            832,
+            1216
+          ],
+          "requestedDimensions": [
+            832,
+            1216
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-144655944\\images\\output-0000.png",
+          "width": 832,
+          "height": 1216,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "8bcdbb4b4b0e2c6611c7bcf56d782bd19da63ad35277d5614d52ab6794923bb0",
+          "cacheHit": null,
+          "seconds": 234.28099999995902,
+          "observations": "Sharp photographic/anime hybrid with dark hair and yellow eyes; wrong character style and reaching-hand composition.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:33e58e86686f6b386c526682b5da9228ead4f91d994abd4b053442dc5b42719e",
+          "name": "Juggernaut XI · KandooAI / RunDiffusion",
+          "architecture": "stable-diffusion-xl",
+          "referenceId": 144697438,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-144697438",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            1376,
+            768
+          ],
+          "requestedDimensions": [
+            1344,
+            736
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-144697438\\images\\output-0000.png",
+          "width": 1344,
+          "height": 736,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "7d4fb8b067fb2597051b616dad6fc4a1d566436d599de68d13db99c75b5833e4",
+          "cacheHit": null,
+          "seconds": 78.21899999998277,
+          "observations": "Detailed white-haired blindfolded woman and ruins; robot is absent, pose and circular visual effects differ.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:33e58e86686f6b386c526682b5da9228ead4f91d994abd4b053442dc5b42719e",
+          "name": "Juggernaut XI · KandooAI / RunDiffusion",
+          "architecture": "stable-diffusion-xl",
+          "referenceId": 144594528,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-144594528",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            832,
+            1248
+          ],
+          "requestedDimensions": [
+            832,
+            1248
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-144594528\\images\\output-0000.png",
+          "width": 832,
+          "height": 1248,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "271ee2aebe570bacf5070409ee12fc1b2db8dbf994134a883656fd4b957b74ea",
+          "cacheHit": null,
+          "seconds": 125.73499999998603,
+          "observations": "Strong photographic detail, motion, graffiti and white skirt; top is pink instead of blue and pose differs.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:33e58e86686f6b386c526682b5da9228ead4f91d994abd4b053442dc5b42719e",
+          "name": "Juggernaut XI · KandooAI / RunDiffusion",
+          "architecture": "stable-diffusion-xl",
+          "referenceId": 145095967,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-145095967",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            832,
+            1248
+          ],
+          "requestedDimensions": [
+            832,
+            1248
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-145095967\\images\\output-0000.png",
+          "width": 832,
+          "height": 1248,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "1d6f749240fb898ced8ad55a7da6231718f9254bf6dd3bebd7406caed86c2925",
+          "cacheHit": null,
+          "seconds": 27.92199999996228,
+          "observations": "Clean mountain portrait, but landscape is printed on clothing instead of filling the silhouette; subject and framing differ.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:33e58e86686f6b386c526682b5da9228ead4f91d994abd4b053442dc5b42719e",
+          "name": "Juggernaut XI · KandooAI / RunDiffusion",
+          "architecture": "stable-diffusion-xl",
+          "referenceId": 144599398,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-144599398",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            1632,
+            2048
+          ],
+          "requestedDimensions": [
+            896,
+            1120
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-144599398\\images\\output-0000.png",
+          "width": 896,
+          "height": 1120,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "688596368bc8739f1233397e56c120faec48252cc283c9af0dd46e9d65bb0ff5",
+          "cacheHit": null,
+          "seconds": 146.75,
+          "observations": "Strong realistic adult portrait, coral zigzag bikini, white stucco and natural lighting; framing and fine detail differ.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:33e58e86686f6b386c526682b5da9228ead4f91d994abd4b053442dc5b42719e",
+          "name": "Juggernaut XI · KandooAI / RunDiffusion",
+          "architecture": "stable-diffusion-xl",
+          "referenceId": 145177887,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-145177887",
+          "originalPrompt": true,
+          "referenceDimensions": [
+            1024,
+            2048
+          ],
+          "requestedDimensions": [
+            704,
+            1440
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-six-reference-sweep\\stable-diffusion-xl-33e58e86686f-reference-145177887\\images\\output-0000.png",
+          "width": 704,
+          "height": 1440,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "1cd0f2bd73bbc07f9c262daa121037fd08a0ccf7b31848ef10dfc8c1a292c261",
+          "cacheHit": null,
+          "seconds": 138.48399999999674,
+          "observations": "Clothed child has a visible face and a large floating teddy above the head; missing distant eyes and required dark composition.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+          "name": "Stable Diffusion XL 1.0 Base",
+          "architecture": "stable-diffusion-xl",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-reference-144697438\\01-stable-diffusion-xl-31e35c80fc48",
+          "workerSha256": "8ccb66120c45517ae5f7bb2959cfc975a7ffc902a4f2d6d16e2f05afe67e4623",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-reference-144697438\\01-stable-diffusion-xl-31e35c80fc48\\images\\output-0000.png",
+          "width": 1344,
+          "height": 768,
+          "numInferenceSteps": 32,
+          "workerVersion": "media-diffusers-worker/1.78.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sha256": "1d9869b25da90b96ee5e3982ab3bd8f4578668b7f5a768e82f5dd46cc0689e96",
+          "seconds": 300.2029999999795,
+          "referenceId": 144697438,
+          "qualityVerdict": "below-reference",
+          "observations": "Painted ruined city and back-facing woman near the center; the robot and requested subject placement are absent.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+          "name": "Stable Diffusion XL 1.0 Base",
+          "architecture": "stable-diffusion-xl",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-short-reference-144697438\\01-stable-diffusion-xl-31e35c80fc48",
+          "workerSha256": "171eee2bc17b180e2c2d050e1e618c2bf48eb63296bab149a92e04a25cc3cb85",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-short-reference-144697438\\01-stable-diffusion-xl-31e35c80fc48\\images\\output-0000.png",
+          "width": 1344,
+          "height": 768,
+          "numInferenceSteps": 32,
+          "workerVersion": "media-diffusers-worker/1.81.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "guidanceScale": null,
+          "sha256": "2bdafed789ab75bc674bf8d35d317c920fe75581e7cf31eef7c55198d1496cf8",
+          "seconds": 141.28100000001723,
+          "referenceId": 144697438,
+          "qualityVerdict": "below-reference",
+          "observations": "Detailed white-haired woman in painted ruins; the robot is absent and close framing differs.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+          "name": "Stable Diffusion XL 1.0 Base",
+          "architecture": "stable-diffusion-xl",
+          "referenceId": 144655944,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-144655944",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            832,
+            1216
+          ],
+          "requestedDimensions": [
+            832,
+            1216
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-144655944\\images\\output-0000.png",
+          "width": 832,
+          "height": 1216,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "e0fb3fdfed3b57c214a8f06911f81077a238cb5c466d26b48195122bbfe30290",
+          "cacheHit": null,
+          "seconds": 140.60899999999674,
+          "observations": "Clean red-haired anime character in a white shirt and black tie; malformed hand placement and weak foreshortening/backlighting.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+          "name": "Stable Diffusion XL 1.0 Base",
+          "architecture": "stable-diffusion-xl",
+          "referenceId": 144697438,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-144697438",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            1376,
+            768
+          ],
+          "requestedDimensions": [
+            1344,
+            736
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-144697438\\images\\output-0000.png",
+          "width": 1344,
+          "height": 736,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "03b8b695059a1eea6f14a658cb321324735987efdeb72de7ffdcd8764ac085d6",
+          "cacheHit": null,
+          "seconds": 122.82799999997951,
+          "observations": "Two white-haired human profiles with headphones replace the robots and requested blindfolded woman.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+          "name": "Stable Diffusion XL 1.0 Base",
+          "architecture": "stable-diffusion-xl",
+          "referenceId": 144594528,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-144594528",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            832,
+            1248
+          ],
+          "requestedDimensions": [
+            832,
+            1248
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-144594528\\images\\output-0000.png",
+          "width": 832,
+          "height": 1248,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "f91bbb0f24012fcd28e433e1a8a719eb4845e66cb4144b59b0e744b5a7553aff",
+          "cacheHit": null,
+          "seconds": 209.125,
+          "observations": "Clean photographic portrait and graffiti, but white top replaces blue; clothing, pose and wall geometry differ.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+          "name": "Stable Diffusion XL 1.0 Base",
+          "architecture": "stable-diffusion-xl",
+          "referenceId": 145095967,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-145095967",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            832,
+            1248
+          ],
+          "requestedDimensions": [
+            832,
+            1248
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-145095967\\images\\output-0000.png",
+          "width": 832,
+          "height": 1248,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "b826f778e24be08b49a58259ce770abc53462cf4e35eee17d276f40836e9b609",
+          "cacheHit": null,
+          "seconds": 26.42200000002049,
+          "observations": "Conventional rear-view mountain photograph, with no silhouette double exposure.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+          "name": "Stable Diffusion XL 1.0 Base",
+          "architecture": "stable-diffusion-xl",
+          "referenceId": 144599398,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-144599398",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            1632,
+            2048
+          ],
+          "requestedDimensions": [
+            896,
+            1120
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-144599398\\images\\output-0000.png",
+          "width": 896,
+          "height": 1120,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "aafb89132414208d718c845d9a4b5071ee4257b33d54af143125ce38a88452a2",
+          "cacheHit": null,
+          "seconds": 148.93699999997625,
+          "observations": "Clean adult bikini photograph with warm light and white wall; seated pose, framing and swimsuit shape differ.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+          "name": "Stable Diffusion XL 1.0 Base",
+          "architecture": "stable-diffusion-xl",
+          "referenceId": 145177887,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-145177887",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            1024,
+            2048
+          ],
+          "requestedDimensions": [
+            704,
+            1440
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\stable-diffusion-xl-31e35c80fc48-reference-145177887\\images\\output-0000.png",
+          "width": 704,
+          "height": 1440,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "3688994cdb57a829d487ff112da36efa30dac2932db208604cc2b1123dbbd8e2",
+          "cacheHit": null,
+          "seconds": 132.71899999998277,
+          "observations": "Clothed child in a dark corridor; face visible, teddy and distant eyes absent, upper dark space insufficient.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+          "name": "Stable Diffusion XL 1.0 Base",
+          "architecture": "stable-diffusion-xl",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-full-prompt-reference-144697438\\01-stable-diffusion-xl-31e35c80fc48",
+          "workerSha256": "952cf58c0465e554a5783098bc38d7ea34f83a66fda1deb0ed4669b89dbcf79e",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-full-prompt-reference-144697438\\01-stable-diffusion-xl-31e35c80fc48\\images\\output-0000.png",
+          "width": 1344,
+          "height": 768,
+          "numInferenceSteps": 32,
+          "workerVersion": "media-diffusers-worker/1.82.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "guidanceScale": null,
+          "sha256": "03c692bf008ee58fb0ae11655e57173a7b2aa4bdaece99d8e9b0464a4bbfbd45",
+          "seconds": 163.96899999998277,
+          "referenceId": 144697438,
+          "qualityVerdict": "below-reference",
+          "observations": "Painted white-haired woman near the center with inconsistent proportions; the robot is absent.",
+          "currentClassification": true
+        }
+      ],
+      "referencesWithTechnicalPass": [
+        144655944,
+        144697438,
+        144594528,
+        145095967,
+        144599398,
+        145177887
+      ],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "pony",
+      "publishedCapabilities": [],
+      "installedModels": [
+        {
+          "id": "local:user:b5e68becf7cf2d4202598a9824a3a14c1e654bfc28c3592067471cf1c0dd9c67",
+          "name": "CyberRealistic Pony Catalyst · Catalyst v5.0"
+        }
+      ],
+      "installedCapabilities": [
+        "image-to-image",
+        "masked-image-edit",
+        "multi-reference-edit",
+        "text-to-image"
+      ],
+      "samplers": [
+        "euler",
+        "euler-ancestral",
+        "heun",
+        "dpmpp-2m",
+        "dpmpp-2m-karras",
+        "dpmpp-2m-sde-karras",
+        "ddim",
+        "deis",
+        "unipc"
+      ],
+      "settingsSources": [
+        "https://civitai.com/models/257749/pony-diffusion-v6-xl",
+        "https://huggingface.co/docs/diffusers/en/api/schedulers/deis"
+      ],
+      "realRuns": [
+        {
+          "id": "local:user:b5e68becf7cf2d4202598a9824a3a14c1e654bfc28c3592067471cf1c0dd9c67",
+          "name": "CyberRealistic Pony Catalyst · Catalyst v5.0",
+          "architecture": "pony",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-short-reference-144697438\\02-pony-b5e68becf7cf",
+          "workerSha256": "171eee2bc17b180e2c2d050e1e618c2bf48eb63296bab149a92e04a25cc3cb85",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-short-reference-144697438\\02-pony-b5e68becf7cf\\images\\output-0000.png",
+          "width": 1344,
+          "height": 768,
+          "numInferenceSteps": 32,
+          "workerVersion": "media-diffusers-worker/1.81.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "guidanceScale": null,
+          "sha256": "f4b03bf81d15bf6183de22ea798ca88b9494de6eb6c3119214341c1b827cac4d",
+          "seconds": 387.7820000000065,
+          "referenceId": 144697438,
+          "qualityVerdict": "below-reference",
+          "observations": "Sharp blindfolded white-haired woman with robots in desaturated photographic ruins; painterly style and composition differ.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:b5e68becf7cf2d4202598a9824a3a14c1e654bfc28c3592067471cf1c0dd9c67",
+          "name": "CyberRealistic Pony Catalyst · Catalyst v5.0",
+          "architecture": "pony",
+          "referenceId": 144655944,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-144655944",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            832,
+            1216
+          ],
+          "requestedDimensions": [
+            832,
+            1216
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-144655944\\images\\output-0000.png",
+          "width": 832,
+          "height": 1216,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "a945858bed26c3f7df2fcfcaf7b67a2e4b688b0063b66945fdcbca457efddc54",
+          "cacheHit": null,
+          "seconds": 317.7820000000065,
+          "observations": "Sharp realistic red-haired adult in a white shirt and black tie; anime style, reaching hand and strong backlighting are absent.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:b5e68becf7cf2d4202598a9824a3a14c1e654bfc28c3592067471cf1c0dd9c67",
+          "name": "CyberRealistic Pony Catalyst · Catalyst v5.0",
+          "architecture": "pony",
+          "referenceId": 144697438,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-144697438",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            1376,
+            768
+          ],
+          "requestedDimensions": [
+            1344,
+            736
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-144697438\\images\\output-0000.png",
+          "width": 1344,
+          "height": 736,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "eee302ab5984d2a995e8d97ad7b49de8073d1202b31cb524e9f2500a87a71ee8",
+          "cacheHit": null,
+          "seconds": 292.56200000003446,
+          "observations": "Single robot in a sunny field; woman, ruins, second robot and painted circular effects are absent.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:b5e68becf7cf2d4202598a9824a3a14c1e654bfc28c3592067471cf1c0dd9c67",
+          "name": "CyberRealistic Pony Catalyst · Catalyst v5.0",
+          "architecture": "pony",
+          "referenceId": 144594528,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-144594528",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            832,
+            1248
+          ],
+          "requestedDimensions": [
+            832,
+            1248
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-144594528\\images\\output-0000.png",
+          "width": 832,
+          "height": 1248,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "d5741d0dab80aa61b53aca56e8be2b54bcb105fbb30c1bbeed8caa00d0277eaf",
+          "cacheHit": null,
+          "seconds": 299.09399999998277,
+          "observations": "Sharp adult portrait with blue off-shoulder blouse, white skirt, sneakers and graffiti; static frontal pose and wall composition differ.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:b5e68becf7cf2d4202598a9824a3a14c1e654bfc28c3592067471cf1c0dd9c67",
+          "name": "CyberRealistic Pony Catalyst · Catalyst v5.0",
+          "architecture": "pony",
+          "referenceId": 145095967,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-145095967",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            832,
+            1248
+          ],
+          "requestedDimensions": [
+            832,
+            1248
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "below-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-145095967\\images\\output-0000.png",
+          "width": 832,
+          "height": 1248,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "8a2de9d9088e4080dbff582111b986d62e59148932dfdc5fd09db1141fa085d9",
+          "cacheHit": null,
+          "seconds": 31.82799999997951,
+          "observations": "Sharp realistic woman with raised arms, blue jeans and alpine background; landscape double exposure and downward gaze are absent.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:b5e68becf7cf2d4202598a9824a3a14c1e654bfc28c3592067471cf1c0dd9c67",
+          "name": "CyberRealistic Pony Catalyst · Catalyst v5.0",
+          "architecture": "pony",
+          "referenceId": 144599398,
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-144599398",
+          "originalPrompt": false,
+          "referenceDimensions": [
+            1632,
+            2048
+          ],
+          "requestedDimensions": [
+            896,
+            1120
+          ],
+          "addonDigests": [],
+          "passed": true,
+          "qualityVerdict": "near-reference",
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\sdxl-pony-adapted-six-reference-sweep\\pony-b5e68becf7cf-reference-144599398\\images\\output-0000.png",
+          "width": 896,
+          "height": 1120,
+          "numInferenceSteps": 32,
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "sha256": "9aa38492c39a09682afac5781267acafae6bf527fceafbb7d9b18b5af275e248",
+          "cacheHit": null,
+          "seconds": 385.60999999998603,
+          "observations": "Detailed adult in a pink patterned bikini with natural sunlight. Beach rocks replace the white wall; photographic quality is comparable with a different setting.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:b5e68becf7cf2d4202598a9824a3a14c1e654bfc28c3592067471cf1c0dd9c67",
+          "name": "CyberRealistic Pony Catalyst · Catalyst v5.0",
+          "architecture": "pony",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\pony-reference-144697438\\01-pony-b5e68becf7cf",
+          "workerSha256": "f51e415b47a5364d1cb7d5d4c56f8bd5b1b29fcf5e874748a269b61d52be79af",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\pony-reference-144697438\\01-pony-b5e68becf7cf\\images\\output-0000.png",
+          "width": 1344,
+          "height": 768,
+          "numInferenceSteps": 32,
+          "workerVersion": "media-diffusers-worker/1.78.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sha256": "101fd84ace64b3f2089eeba9cb94aaa56d285e69c46ef8f1ba016e825ea821d6",
+          "seconds": 769.0779999999795,
+          "referenceId": 144697438,
+          "qualityVerdict": "below-reference",
+          "observations": "Empty aerial city with blue towers; the woman and robots are absent.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:b5e68becf7cf2d4202598a9824a3a14c1e654bfc28c3592067471cf1c0dd9c67",
+          "name": "CyberRealistic Pony Catalyst · Catalyst v5.0",
+          "architecture": "pony",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\pony-adapted-final-reference-145177887\\01-pony-b5e68becf7cf",
+          "workerSha256": "f9d750c25ae6a0721c118b3f74d7193fff1d985655f72cda2c08a935f1b7338f",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\pony-adapted-final-reference-145177887\\01-pony-b5e68becf7cf\\images\\output-0000.png",
+          "width": 704,
+          "height": 1440,
+          "numInferenceSteps": 32,
+          "workerVersion": "media-diffusers-worker/1.86.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "dpmpp-2m-karras",
+          "schedulerClass": "DPMSolverMultistepScheduler",
+          "guidanceScale": null,
+          "sha256": "ddebd4dad1dffbe73f080c8dde6985f81684732f5ca95c7b38b6d8cdc7da1032",
+          "seconds": 444.172,
+          "referenceId": 145177887,
+          "qualityVerdict": "below-reference",
+          "observations": "Sharp clothed subject in a lit room, with blue eyes on her face; teddy, concealed face, distant eyes and dark upper frame are missing.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:b5e68becf7cf2d4202598a9824a3a14c1e654bfc28c3592067471cf1c0dd9c67",
+          "name": "CyberRealistic Pony Catalyst · Catalyst v5.0",
+          "architecture": "pony",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\pony-score-reference-144697438\\01-pony-b5e68becf7cf",
+          "workerSha256": "952cf58c0465e554a5783098bc38d7ea34f83a66fda1deb0ed4669b89dbcf79e",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": false,
+          "exitCode": 0,
+          "error": "ValueError: Generation evidence does not match the request",
+          "seconds": 405.0779999999795,
+          "referenceId": 144697438,
+          "qualityVerdict": "not-assessed",
+          "observations": null,
+          "currentClassification": true
+        }
+      ],
+      "referencesWithTechnicalPass": [
+        144697438,
+        144655944,
+        144594528,
+        145095967,
+        144599398,
+        145177887
+      ],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": [
+        144599398
+      ]
+    },
+    {
+      "architecture": "stable-diffusion-3",
+      "publishedCapabilities": [],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/stabilityai/stable-diffusion-3.5-large"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "flux-1",
+      "publishedCapabilities": [],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/black-forest-labs/FLUX.1-dev"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "flux-2",
+      "publishedCapabilities": [],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    },
+    {
+      "architecture": "krea-2",
+      "publishedCapabilities": [],
+      "installedModels": [
+        {
+          "id": "local:user:3ec3c673d467e0832ad1324fafa8eed5cde9e9f2e250b399d07245e63c904191",
+          "name": "realismByStableYogi v30INT8FP8Extended fp8Scaled"
+        }
+      ],
+      "installedCapabilities": [
+        "image-to-image",
+        "masked-image-edit",
+        "multi-reference-edit",
+        "text-to-image"
+      ],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://civitai.com/models/2786499?modelVersionId=3329215"
+      ],
+      "realRuns": [
+        {
+          "id": "local:user:3ec3c673d467e0832ad1324fafa8eed5cde9e9f2e250b399d07245e63c904191",
+          "name": "realismByStableYogi v30INT8FP8Extended fp8Scaled",
+          "architecture": "krea-2",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-extended-best-reference-144599398\\01-krea-2-3ec3c673d467",
+          "workerSha256": "d45e0740afd8088f4822d808d226ceb2e26cc07d1026ebb83bb7a0c488555fca",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-extended-best-reference-144599398\\01-krea-2-3ec3c673d467\\images\\output-0000.png",
+          "width": 896,
+          "height": 1120,
+          "numInferenceSteps": 12,
+          "workerVersion": "media-diffusers-worker/1.89.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": null,
+          "sha256": "def3c404717c228749ae1707588a2957e7fbe1c09fe6e346bae88f9e6d86c01c",
+          "seconds": 1807.9530000000004,
+          "referenceId": 144599398,
+          "qualityVerdict": "near-reference",
+          "observations": "Detailed adult in a pink zigzag swimsuit against a sunlit white wall. Skin, fabric, shadows and hand anatomy are clean; pose, framing and background grain differ. This used the current automatic twelve-step, guidance-0.5 recipe.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:3ec3c673d467e0832ad1324fafa8eed5cde9e9f2e250b399d07245e63c904191",
+          "name": "realismByStableYogi v30INT8FP8Extended fp8Scaled",
+          "architecture": "krea-2",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-reference-144697438\\01-krea-2-3ec3c673d467",
+          "workerSha256": "883ca0791666f30173f66033126135471eedd55a1c66872cc9380284f7905d3f",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-reference-144697438\\01-krea-2-3ec3c673d467\\images\\output-0000.png",
+          "width": 1056,
+          "height": 576,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.78.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sha256": "21e2e79659ba92e2676d356822bfa337e2877afa36e53c2b42c8f62d03d42699",
+          "seconds": 1816.5,
+          "referenceId": 144697438,
+          "qualityVerdict": "below-reference",
+          "observations": "Detailed photographic woman and robot in a green city; the painterly reference style is absent. This used the earlier eight-step, zero-guidance recipe.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:8a50afe6a29e4dea9c2390a0765b506d4ad17de055dee758a0b0a0216d95c8a0",
+          "name": "SNOFS (Sex, Nudes, and Other Fun Stuff) Merged · Krea 2 Raw v1.4",
+          "architecture": "krea-2",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-reference-144697438\\02-krea-2-8a50afe6a29e",
+          "workerSha256": "ee42c4ff7470f98cea83f97847015d90541164a3b4081d2fccd9d1ffe647891e",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-reference-144697438\\02-krea-2-8a50afe6a29e\\images\\output-0000.png",
+          "width": 1056,
+          "height": 576,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.78.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sha256": "4ae782cc310993b58db17fa59f62bddb3409d41202f10e0074389995fb86352b",
+          "seconds": 3177.875,
+          "referenceId": 144697438,
+          "qualityVerdict": "below-reference",
+          "observations": "Historical RAW checkpoint was incorrectly treated as distilled Krea at eight steps and zero guidance. The blurred embossed output is superseded by corrected classification.",
+          "currentClassification": false
+        }
+      ],
+      "referencesWithTechnicalPass": [
+        144599398,
+        144697438
+      ],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": [
+        144599398
+      ]
+    },
+    {
+      "architecture": "qwen-image-2.1",
+      "publishedCapabilities": [],
+      "installedModels": [
+        {
+          "id": "local:user:75c1b4d45c0b134af0c43d71a19318837fdf2bbc779de42b3e4f5f3c4e12644b",
+          "name": "Qwen-Image 2.1 GGUF"
+        }
+      ],
+      "installedCapabilities": [
+        "image-to-image",
+        "multi-reference-edit",
+        "text-to-image",
+        "transparent-output"
+      ],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/Qwen/Qwen-Image-2.1"
+      ],
+      "realRuns": [
+        {
+          "id": "local:user:75c1b4d45c0b134af0c43d71a19318837fdf2bbc779de42b3e4f5f3c4e12644b",
+          "name": "Qwen-Image 2.1 GGUF",
+          "architecture": "qwen-image-2.1",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-base-serialized-reference-144697438\\01-qwen-image-2.1-75c1b4d45c0b",
+          "workerSha256": "952cf58c0465e554a5783098bc38d7ea34f83a66fda1deb0ed4669b89dbcf79e",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-base-serialized-reference-144697438\\01-qwen-image-2.1-75c1b4d45c0b\\images\\output-0000.png",
+          "width": 1408,
+          "height": 768,
+          "numInferenceSteps": 40,
+          "workerVersion": "media-diffusers-worker/1.82.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": null,
+          "sha256": "0f6b4b6b68027e4c1440d23fa70aa96683dd71ba3298a406defc04bb3098b369",
+          "seconds": 2395.7029999999795,
+          "referenceId": 144697438,
+          "qualityVerdict": "near-reference",
+          "observations": "Sharp textured painting with the white-haired woman and multiple metal robots in ruins; brushwork and placement differ.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:75c1b4d45c0b134af0c43d71a19318837fdf2bbc779de42b3e4f5f3c4e12644b",
+          "name": "Qwen-Image 2.1 GGUF",
+          "architecture": "qwen-image-2.1",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-base-basic-guidance-2-retry-reference-144697438\\01-qwen-image-2.1-75c1b4d45c0b",
+          "workerSha256": "d45e0740afd8088f4822d808d226ceb2e26cc07d1026ebb83bb7a0c488555fca",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-base-basic-guidance-2-retry-reference-144697438\\01-qwen-image-2.1-75c1b4d45c0b\\images\\output-0000.png",
+          "width": 512,
+          "height": 288,
+          "numInferenceSteps": 4,
+          "workerVersion": "media-diffusers-worker/1.89.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": null,
+          "sha256": "5bf094aa010cf728a01bfc70c698ff3b47fc735808259a73e631d83230444693",
+          "seconds": 786.1720000000005,
+          "referenceId": 144697438,
+          "qualityVerdict": "below-reference",
+          "observations": "Functional probe at four steps, guidance 2 and 512 by 288; outside the published quality recipe. The call succeeds with empty negative conditioning, but the image has a dark white-haired profile with strong crosshatch artifacts and no clearly resolved robot. This is not a quality benchmark.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:75c1b4d45c0b134af0c43d71a19318837fdf2bbc779de42b3e4f5f3c4e12644b",
+          "name": "Qwen-Image 2.1 GGUF",
+          "architecture": "qwen-image-2.1",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-base-basic-guidance-2-reference-144697438\\01-qwen-image-2.1-75c1b4d45c0b",
+          "workerSha256": "845f2effc46296f43c84e1208aa36d09bb715fb105051b318eeb21bc414a3d5d",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": false,
+          "exitCode": 3,
+          "error": "RuntimeError: Local Diffusers worker failed: OSError: Unable to load weights from checkpoint file for 'D:\\Models\\machdoch\\models\\packages\\user-75c1b4d45c0b134af0c43d71a1931883\\revisions\\75c1b4d45c0b134af0c43d71a19318837fdf2bbc779de42b3e4f5f3c4e12644b\\transformer\\model.gguf' at 'D:\\Models\\machdoch\\models\\packages\\user-75c1b4d45c0b134af0c43d71a1931883\\revisions\\75c1b4d45c0b134af0c43d71a19318837fdf2bbc779de42b3e4f5f3c4e12644b\\transformer\\model.gguf'. ",
+          "seconds": 124.07799999999952,
+          "referenceId": 144697438,
+          "qualityVerdict": "not-assessed",
+          "observations": null,
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:75c1b4d45c0b134af0c43d71a19318837fdf2bbc779de42b3e4f5f3c4e12644b",
+          "name": "Qwen-Image 2.1 GGUF",
+          "architecture": "qwen-image-2.1",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-image-2.1-reference-144697438\\01-qwen-image-2.1-75c1b4d45c0b",
+          "workerSha256": "952cf58c0465e554a5783098bc38d7ea34f83a66fda1deb0ed4669b89dbcf79e",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": false,
+          "exitCode": 3221225477,
+          "error": "RuntimeError: Worker exited with 3221225477 without a generation response",
+          "seconds": 580.5929999999935,
+          "referenceId": 144697438,
+          "qualityVerdict": "not-assessed",
+          "observations": null,
+          "currentClassification": true
+        }
+      ],
+      "referencesWithTechnicalPass": [
+        144697438
+      ],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": [
+        144697438
+      ]
+    },
+    {
+      "architecture": "krea-2-turbo",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [
+        {
+          "id": "local:user:eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+          "name": "Krea 2 Turbo Official FP8"
+        },
+        {
+          "id": "local:user:ed1ea73c0e4f659f7cf4abbc1eb341ab66b1c9121b3465f820b19ade7ced147d",
+          "name": "JANK2 Anime Krea 2 Turbo INT8"
+        }
+      ],
+      "installedCapabilities": [
+        "text-to-image"
+      ],
+      "samplers": [
+        "flow-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/krea/Krea-2-Turbo"
+      ],
+      "realRuns": [
+        {
+          "id": "local:user:ed1ea73c0e4f659f7cf4abbc1eb341ab66b1c9121b3465f820b19ade7ced147d",
+          "name": "JANK2 Anime Krea 2 Turbo INT8",
+          "architecture": "krea-2-turbo",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\jank2-source-reference-144655944\\01-krea-2-turbo-ed1ea73c0e4f",
+          "workerSha256": "ce3d967b2c2eb112cc9eb864209dee5a0867dbe03dadc9f3a59b388a1d4711f4",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\jank2-source-reference-144655944\\01-krea-2-turbo-ed1ea73c0e4f\\images\\output-0000.png",
+          "width": 832,
+          "height": 1216,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.83.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": null,
+          "sha256": "56f10e764b8602a10fb1e46ce28d47a3edfd77d691e76b1bc2440e382c8e6f03",
+          "seconds": 1612.8910000000033,
+          "referenceId": 144655944,
+          "qualityVerdict": "near-reference",
+          "observations": "Comparable anime detail, red hair, amber eyes, white shirt, tie, strong backlighting and reaching hand. Finger framing and background swirls differ.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+          "name": "Krea 2 Turbo Official FP8",
+          "architecture": "krea-2-turbo",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-complete-reference-144594528\\01-krea-2-turbo-eb4dd8c612cf",
+          "workerSha256": "f9d750c25ae6a0721c118b3f74d7193fff1d985655f72cda2c08a935f1b7338f",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-complete-reference-144594528\\01-krea-2-turbo-eb4dd8c612cf\\images\\output-0000.png",
+          "width": 768,
+          "height": 1344,
+          "numInferenceSteps": 10,
+          "workerVersion": "media-diffusers-worker/1.86.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": null,
+          "sha256": "114179bbdca8f2afae7862fae204d211e3921399e54b330f23cdb27249ff7acf",
+          "seconds": 982.0149999999999,
+          "referenceId": 144594528,
+          "qualityVerdict": "near-reference",
+          "observations": "Comparable detail, warm light, flowing blue blouse and white skirt, graffiti and painted flowers. Arm pose and framing differ; visual quality and aesthetic are close.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+          "name": "Krea 2 Turbo Official FP8",
+          "architecture": "krea-2-turbo",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-complete-reference-144599398\\01-krea-2-turbo-eb4dd8c612cf",
+          "workerSha256": "f2262900da7d831d5ecdb77a088e0a9f66d5d680c51563b2dc2f16bb1e0aae6b",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-complete-reference-144599398\\01-krea-2-turbo-eb4dd8c612cf\\images\\output-0000.png",
+          "width": 896,
+          "height": 1120,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.87.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": null,
+          "sha256": "b0b22fc72af8ddc9f7c57d25562716502317b9badafdc45ab4ba8f65340c0e76",
+          "seconds": 506.8130000000001,
+          "referenceId": 144599398,
+          "qualityVerdict": "near-reference",
+          "observations": "Detailed adult swimwear photograph with natural skin, direct warm sunlight and a white wall. Clothing pattern, model identity and pose differ; lighting, texture and photographic aesthetic are close. The source prompt is unavailable; this uses the recorded observational description.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+          "name": "Krea 2 Turbo Official FP8",
+          "architecture": "krea-2-turbo",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-complete-reference-145095967\\01-krea-2-turbo-eb4dd8c612cf",
+          "workerSha256": "f2262900da7d831d5ecdb77a088e0a9f66d5d680c51563b2dc2f16bb1e0aae6b",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-complete-reference-145095967\\01-krea-2-turbo-eb4dd8c612cf\\images\\output-0000.png",
+          "width": 768,
+          "height": 1344,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.87.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": null,
+          "sha256": "0e1a43d3bdf0a35197c4419b33d60e1874f0c1775125c58000ee330ba1feaf32",
+          "seconds": 690.7960000000003,
+          "referenceId": 145095967,
+          "qualityVerdict": "near-reference",
+          "observations": "Melancholy LoRA produces the raised-arm silhouette, white line-art blouse and landscape double exposure with pink sky and mountain valley. Comparable detail and aesthetic; face, hand arrangement and framing differ.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+          "name": "Krea 2 Turbo Official FP8",
+          "architecture": "krea-2-turbo",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-complete-reference-145177887\\01-krea-2-turbo-eb4dd8c612cf",
+          "workerSha256": "845f2effc46296f43c84e1208aa36d09bb715fb105051b318eeb21bc414a3d5d",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-complete-reference-145177887\\01-krea-2-turbo-eb4dd8c612cf\\images\\output-0000.png",
+          "width": 768,
+          "height": 1344,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.88.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": null,
+          "sha256": "22411e2b0ebca2d22ececd7c0fe26fe00271012a81fda7a5996c992708fd71a5",
+          "seconds": 634.0159999999996,
+          "referenceId": 145177887,
+          "qualityVerdict": "near-reference",
+          "observations": "Cold painterly scene with a small clothed subject, teddy bear, wooden floor and tall dark negative space. Detail and general aesthetic are close; the distant eye points are absent and the lower face is partly visible.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+          "name": "Krea 2 Turbo Official FP8",
+          "architecture": "krea-2-turbo",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-official-reference-144697438\\01-krea-2-turbo-eb4dd8c612cf",
+          "workerSha256": "b978b59cb059bc971ce291549c0ac5ff6ccf5b2d51a02c70709fdb96fad54a3b",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": false,
+          "exitCode": 4294967295,
+          "error": "JSONDecodeError: Expecting value: line 1 column 1 (char 0)",
+          "seconds": 1668.030999999959,
+          "referenceId": 144697438,
+          "qualityVerdict": "not-assessed",
+          "observations": null,
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+          "name": "Krea 2 Turbo Official FP8",
+          "architecture": "krea-2-turbo",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-offloaded-reference-144697438\\01-krea-2-turbo-eb4dd8c612cf",
+          "workerSha256": "171eee2bc17b180e2c2d050e1e618c2bf48eb63296bab149a92e04a25cc3cb85",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-offloaded-reference-144697438\\01-krea-2-turbo-eb4dd8c612cf\\images\\output-0000.png",
+          "width": 1344,
+          "height": 768,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.81.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": null,
+          "sha256": "dbd20c5e845625b701e20b5c22d8bcadd62453da1d22163daf29f75e8d5ef241",
+          "seconds": 734.609999999986,
+          "referenceId": 144697438,
+          "qualityVerdict": "near-reference",
+          "observations": "Detailed painted white-haired woman on the right, robots on the left and colorful geometric ruins. Pose and robot spacing differ.",
+          "currentClassification": true
+        },
+        {
+          "id": "local:user:eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+          "name": "Krea 2 Turbo Official FP8",
+          "architecture": "krea-2-turbo",
+          "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-style-reference-144697438\\01-krea-2-turbo-eb4dd8c612cf",
+          "workerSha256": "952cf58c0465e554a5783098bc38d7ea34f83a66fda1deb0ed4669b89dbcf79e",
+          "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+          "passed": true,
+          "exitCode": 0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-turbo-style-reference-144697438\\01-krea-2-turbo-eb4dd8c612cf\\images\\output-0000.png",
+          "width": 1376,
+          "height": 768,
+          "numInferenceSteps": 8,
+          "workerVersion": "media-diffusers-worker/1.82.0",
+          "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+          "sampler": "flow-euler",
+          "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+          "guidanceScale": null,
+          "sha256": "2ff65f7375afaacbf4afda652c8b6b3b3538926d1dadd3c71a140dba378fac84",
+          "seconds": 1728.8129999999655,
+          "referenceId": 144697438,
+          "qualityVerdict": "near-reference",
+          "observations": "Comparable painterly ruins with lush greenery, colorful patterned accents, white-haired character on the right and metal robots on the left. Brighter lighting, framing and robot arrangement differ.",
+          "currentClassification": true
+        }
+      ],
+      "referencesWithTechnicalPass": [
+        144655944,
+        144594528,
+        144599398,
+        145095967,
+        145177887,
+        144697438
+      ],
+      "allSixReferenceQualityVerified": true,
+      "referencesWithNearReferenceAesthetic": [
+        144655944,
+        144594528,
+        144599398,
+        145095967,
+        145177887,
+        144697438
+      ]
+    },
+    {
+      "architecture": "hunyuan-image-3",
+      "publishedCapabilities": [
+        "text-to-image"
+      ],
+      "installedModels": [],
+      "installedCapabilities": [],
+      "samplers": [
+        "hunyuan-euler"
+      ],
+      "settingsSources": [
+        "https://huggingface.co/tencent/HunyuanImage-3.0/blob/main/generation_config.json",
+        "https://github.com/Tencent-Hunyuan/HunyuanImage-3.0"
+      ],
+      "realRuns": [],
+      "referencesWithTechnicalPass": [],
+      "allSixReferenceQualityVerified": false,
+      "referencesWithNearReferenceAesthetic": []
+    }
+  ],
+  "overallComplete": false,
+  "qualityCriterion": "Inspected detail, style and aesthetic; documented composition differences remain",
+  "nativeValidationRecords": 58,
+  "nativeValidationExcluded": [
+    {
+      "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-reference-144697438\\02-krea-2-8a50afe6a29e",
+      "reason": "Superseded model classification"
+    }
+  ]
+}

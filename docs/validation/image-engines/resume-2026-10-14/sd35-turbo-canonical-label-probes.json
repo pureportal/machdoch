@@ -1,0 +1,37 @@
+{
+  "checkedAt": "2026-10-14T20:19:42.803429+00:00",
+  "authenticated": true,
+  "probes": [
+    {
+      "label": "medium-metadata",
+      "url": "https://civitai.com/api/v1/model-versions/1006708",
+      "status": 404
+    },
+    {
+      "label": "turbo-workflow-version",
+      "url": "https://civitai.com/api/v1/model-versions/984491",
+      "status": 404
+    },
+    {
+      "label": "SD3.5 Large Turbo",
+      "url": "https://civitai.com/api/v1/models?types=Checkpoint&baseModels=SD3.5+Large+Turbo&limit=100",
+      "status": 200,
+      "models": [],
+      "hasMore": false
+    },
+    {
+      "label": "SD3.5 Large",
+      "url": "https://civitai.com/api/v1/models?types=Checkpoint&baseModels=SD3.5+Large&limit=100",
+      "status": 200,
+      "models": [],
+      "hasMore": false
+    },
+    {
+      "label": "SD 3.5 Large Turbo",
+      "url": "https://civitai.com/api/v1/models?types=Checkpoint&baseModels=SD+3.5+Large+Turbo&limit=100",
+      "status": 200,
+      "models": [],
+      "hasMore": false
+    }
+  ]
+}

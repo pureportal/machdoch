@@ -1,0 +1,152 @@
+{
+  "_id": "668ffe8ae760dfd88d5139fa",
+  "id": "RunDiffusion/Juggernaut-XI-v11",
+  "private": false,
+  "pipeline_tag": "text-to-image",
+  "library_name": "diffusers",
+  "tags": [
+    "diffusers",
+    "stable-diffusion",
+    "stable-diffusion-xl",
+    "sdxl",
+    "text-to-image",
+    "photorealistic",
+    "photography",
+    "cinematic",
+    "portrait",
+    "juggernaut",
+    "rundiffusion",
+    "kandooai",
+    "en",
+    "base_model:stabilityai/stable-diffusion-xl-base-1.0",
+    "base_model:finetune:stabilityai/stable-diffusion-xl-base-1.0",
+    "license:cc-by-nc-nd-4.0",
+    "endpoints_compatible",
+    "diffusers:StableDiffusionXLPipeline",
+    "region:us"
+  ],
+  "downloads": 19869,
+  "likes": 160,
+  "modelId": "RunDiffusion/Juggernaut-XI-v11",
+  "author": "RunDiffusion",
+  "sha": "f836518c7a75f47a9e26bc661ff9509ef2ceb7c0",
+  "lastModified": "2026-05-08T17:23:19.000Z",
+  "gated": false,
+  "disabled": false,
+  "model-index": null,
+  "config": {
+    "diffusers": {
+      "_class_name": "StableDiffusionXLPipeline"
+    }
+  },
+  "cardData": {
+    "license": "cc-by-nc-nd-4.0",
+    "language": [
+      "en"
+    ],
+    "library_name": "diffusers",
+    "pipeline_tag": "text-to-image",
+    "base_model": "stabilityai/stable-diffusion-xl-base-1.0",
+    "extra_gated_prompt": "By accessing this model, you agree to the following:\n- You will NOT deploy this model behind a paid API or generative service.\n- You will NOT use this model on a platform that competes with RunDiffusion.com.\n- You will NOT redistribute or rehost the model weights.\n- You agree to receive communications from RunDiffusion (model releases, platform updates, and news). RunDiffusion does not misuse your information.\nCommercial licenses can be obtained by emailing juggernaut@rundiffusion.com.\n",
+    "extra_gated_fields": {
+      "Name": "text",
+      "Email": "text",
+      "Intended use": "text"
+    },
+    "tags": [
+      "stable-diffusion",
+      "stable-diffusion-xl",
+      "sdxl",
+      "text-to-image",
+      "photorealistic",
+      "photography",
+      "cinematic",
+      "portrait",
+      "juggernaut",
+      "rundiffusion",
+      "kandooai"
+    ]
+  },
+  "siblings": [
+    {
+      "rfilename": ".gitattributes"
+    },
+    {
+      "rfilename": "Juggernaut-XI-byRunDiffusion.safetensors"
+    },
+    {
+      "rfilename": "README.md"
+    },
+    {
+      "rfilename": "assets/Juggernaut_Banner.webp"
+    },
+    {
+      "rfilename": "model_index.json"
+    },
+    {
+      "rfilename": "scheduler/scheduler_config.json"
+    },
+    {
+      "rfilename": "text_encoder/config.json"
+    },
+    {
+      "rfilename": "text_encoder/pytorch_model.bin"
+    },
+    {
+      "rfilename": "text_encoder_2/config.json"
+    },
+    {
+      "rfilename": "text_encoder_2/pytorch_model.bin"
+    },
+    {
+      "rfilename": "tokenizer/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer/vocab.json"
+    },
+    {
+      "rfilename": "tokenizer_2/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer_2/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer_2/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer_2/vocab.json"
+    },
+    {
+      "rfilename": "unet/config.json"
+    },
+    {
+      "rfilename": "unet/diffusion_pytorch_model.bin"
+    },
+    {
+      "rfilename": "vae/config.json"
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.bin"
+    }
+  ],
+  "spaces": [
+    "tardellirs/model-pulse",
+    "emanforhelp/model-pulse",
+    "artificialguybr/JUGGERNAUT-XL-FREE-DEMO",
+    "tsqn/PhotoMaker-V2",
+    "Lollnooo/JUGGERNAUT-XL-FREE-DEMO",
+    "hello10000/startagain",
+    "builden/ez-clean",
+    "sunhaoyu/SoraWatermarkCleaner",
+    "Glassic/Glassic",
+    "arvind4632/iopaint-bulk"
+  ],
+  "createdAt": "2024-07-11T15:47:22.000Z",
+  "usedStorage": 20982242586
+}

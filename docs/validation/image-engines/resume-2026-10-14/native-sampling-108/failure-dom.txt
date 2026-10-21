@@ -1,0 +1,59 @@
+MACHDOCH
+v30.5.0
+Basic
+Advanced
+Train
+Assets
+Activity
+Image
+Video
+SVG
+Audio
+Assistant
+Convert to Advanced
+Model
+Nekofantasia Alpha · SD3.5 Medium
+Stable Diffusion 3 · Local
+Prompt
+Pose map
+Choose pose image
+No pose map
+Create pose map
+More options
+Output
+Aspect ratio
+1:1
+4:5
+16:9
+9:16
+Outputs
+Quality
+Draft
+Balanced
+High
+Format
+PNG
+WebP
+JPEG
+Transparent background
+Sampling
+Sampler
+Automatic
+Flow Euler · Recommended
+Flow Heun
+Resolution
+Automatic
+Custom
+Sampling steps
+28–40
+Guidance
+3.5–7
+Seed
+Random
+Fixed
+Value
+Generate image
+
+Checking model availability
+
+Image output

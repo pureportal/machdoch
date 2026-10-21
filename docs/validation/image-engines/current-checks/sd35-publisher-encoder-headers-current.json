@@ -1,0 +1,36 @@
+[
+  {
+    "file": "clip_g.safetensors.part",
+    "tensorCount": 518,
+    "sampleKeys": [
+      "__metadata__",
+      "text_model.embeddings.position_embedding.weight",
+      "text_model.embeddings.token_embedding.weight",
+      "text_model.encoder.layers.0.layer_norm1.bias",
+      "text_model.encoder.layers.0.layer_norm1.weight",
+      "text_model.encoder.layers.0.layer_norm2.bias"
+    ],
+    "projectionKeys": [
+      "text_projection.weight"
+    ],
+    "dtypes": [
+      "F16"
+    ]
+  },
+  {
+    "file": "clip_l.safetensors",
+    "tensorCount": 197,
+    "sampleKeys": [
+      "__metadata__",
+      "text_model.embeddings.position_embedding.weight",
+      "text_model.embeddings.token_embedding.weight",
+      "text_model.encoder.layers.0.layer_norm1.bias",
+      "text_model.encoder.layers.0.layer_norm1.weight",
+      "text_model.encoder.layers.0.layer_norm2.bias"
+    ],
+    "projectionKeys": [],
+    "dtypes": [
+      "F16"
+    ]
+  }
+]

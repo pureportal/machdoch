@@ -1,0 +1,28 @@
+Process 30416: "C:\Users\ehrha\AppData\Roaming\com.machdoch.desktop\media-studio\runtime\python\cpython-3.12.10-windows-x86_64-none\python.exe" -B C:\Development\machdoch\apps\client\src-tauri\python\verify_media_reference_sweep.py --template D:/Models/machdoch/verification/2026-10-11/image-engines/qwen-image-2.1-refined-request-template.json --cases D:/Models/machdoch/verification/2026-10-11/image-engines/qwen-image-2.1-refined-reference-cases.json --output-root D:/Models/machdoch/verification/2026-10-11/image-engines/qwen-image-2.1-refined-reference-sweep-continuation --hip-device 1
+Python v3.12.10 (C:\Users\ehrha\AppData\Roaming\com.machdoch.desktop\media-studio\runtime\python\cpython-3.12.10-windows-x86_64-none\python.exe)
+
+Thread 7520 (active): "MainThread"
+    _transfer_tensor_to_device (diffusers\hooks\group_offloading.py:213)
+    _process_tensors_from_modules (diffusers\hooks\group_offloading.py:228)
+    _onload_from_memory (diffusers\hooks\group_offloading.py:292)
+    onload_ (diffusers\hooks\group_offloading.py:362)
+    _fn (torch\_dynamo\eval_frame.py:1298)
+    pre_forward (diffusers\hooks\group_offloading.py:404)
+    new_forward (diffusers\hooks\hooks.py:216)
+    new_forward (diffusers\hooks\hooks.py:217)
+    _call_impl (torch\nn\modules\module.py:1789)
+    _wrapped_call_impl (torch\nn\modules\module.py:1778)
+    _get_qwen_prompt_embeds (diffusers\pipelines\qwenimage21\pipeline_qwenimage21.py:307)
+    encode_prompt (diffusers\pipelines\qwenimage21\pipeline_qwenimage21.py:362)
+    __call__ (diffusers\pipelines\qwenimage21\pipeline_qwenimage21.py:680)
+    decorate_context (torch\utils\_contextlib.py:124)
+    generate (media_diffusers_worker.py:3189)
+    verify (verify_media_reference_sweep.py:135)
+    main (verify_media_reference_sweep.py:168)
+    <module> (verify_media_reference_sweep.py:172)
+Thread 16040 (idle): "tqdm_monitor"
+    wait (threading.py:359)
+    wait (threading.py:655)
+    run (tqdm\_monitor.py:69)
+    _bootstrap_inner (threading.py:1075)
+    _bootstrap (threading.py:1032)

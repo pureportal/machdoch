@@ -1,0 +1,40 @@
+{
+  "checkedAt": "2026-10-13T01:51:49.190125+00:00",
+  "workerVersion": "media-diffusers-worker/1.95.0",
+  "workerSha256": "1e5888d859242ff179f3d8c09e0821baef79196605791963bea1fbd87ade2f93",
+  "runtimeSha256": "18ed7ab0e62c569b3a357247dd0c920e63ae7726858ca7eb398b534ffb2af7b9",
+  "hipVersion": "7.14.60850",
+  "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+  "genericAmdDefault": "torch.float16",
+  "bf16Supported": true,
+  "pipelineWeightsLoaded": false,
+  "imagesGenerated": false,
+  "checks": [
+    {
+      "architecture": "flux-1-dev",
+      "selectedDtype": "torch.bfloat16",
+      "passed": true
+    },
+    {
+      "architecture": "flux-1-schnell",
+      "selectedDtype": "torch.bfloat16",
+      "passed": true
+    },
+    {
+      "architecture": "qwen-image",
+      "selectedDtype": "torch.bfloat16",
+      "passed": true
+    },
+    {
+      "architecture": "qwen-image-2512",
+      "selectedDtype": "torch.bfloat16",
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "sources": [
+    "https://huggingface.co/docs/diffusers/api/pipelines/flux",
+    "https://huggingface.co/Qwen/Qwen-Image",
+    "https://huggingface.co/Qwen/Qwen-Image-2512"
+  ]
+}

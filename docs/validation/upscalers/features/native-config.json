@@ -1,0 +1,31 @@
+{
+  "identifier": "com.machdoch.upscale-features-verification",
+  "build": {
+    "beforeBuildCommand": null,
+    "devUrl": null
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "machdoch",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 960,
+        "minHeight": 720,
+        "center": true,
+        "visible": false,
+        "preventOverflow": {
+          "width": 24,
+          "height": 24
+        },
+        "resizable": true,
+        "skipTaskbar": true,
+        "decorations": false,
+        "transparent": false,
+        "dataDirectory": "upscale-features-verification",
+        "additionalBrowserArgs": "--remote-debugging-port=9237"
+      }
+    ]
+  }
+}

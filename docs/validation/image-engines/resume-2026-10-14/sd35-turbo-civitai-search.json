@@ -1,0 +1,17 @@
+{
+  "checkedAt": "2026-10-14T17:30:08.968042+00:00",
+  "queries": [
+    {
+      "url": "https://civitai.com/api/v1/models?query=SD3.5+Large+Turbo&types=Checkpoint&limit=100",
+      "status": 200,
+      "returned": 0,
+      "matches": []
+    },
+    {
+      "url": "https://civitai.com/api/v1/models?query=Stable+Diffusion+3.5+Large+Turbo&types=Checkpoint&limit=100",
+      "status": 200,
+      "returned": 53,
+      "matches": []
+    }
+  ]
+}

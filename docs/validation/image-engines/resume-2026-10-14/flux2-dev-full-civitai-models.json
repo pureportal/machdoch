@@ -1,0 +1,1106 @@
+[
+  {
+    "id": 2167454,
+    "name": "FLUX.2 DEV GGUF (by City96)",
+    "description": "<p>Source: <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/city96/FLUX.2-dev-gguf/tree/main\">https://huggingface.co/city96/FLUX.2-dev-gguf/tree/main</a> by <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/city96\">City96</a><br /><br /><a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/city96/FLUX.2-dev-gguf/blob/main/media/flux2dev-image.jpg\"><img src=\"https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/0bab9372-752d-4183-aff0-b32d721e6cf8/width=525/0bab9372-752d-4183-aff0-b32d721e6cf8.jpeg\" /></a><br />\ud83d\udcaaTrain your own model<span style=\"color:rgb(193, 194, 197)\">: </span><a target=\"_blank\" rel=\"ugc\" href=\"https://runpod.io?ref=gased9mt\"><span style=\"color:rgb(64, 192, 87)\">https://runpod.io?ref=gased9mt</span></a><br /><span style=\"color:rgb(193, 194, 197)\">\ud83c\udf7a Join my discord: </span><a target=\"_blank\" rel=\"ugc\" href=\"https://discord.com/invite/pAz4Bt3rqb\"><span style=\"color:rgb(64, 192, 87)\">https://discord.com/invite/pAz4Bt3rqb</span></a></p>",
+    "allowNoCredit": false,
+    "allowCommercialUse": [],
+    "allowDerivatives": false,
+    "allowDifferentLicense": true,
+    "type": "Checkpoint",
+    "minor": false,
+    "sfwOnly": false,
+    "poi": false,
+    "nsfw": false,
+    "nsfwLevel": 1,
+    "availability": "Public",
+    "userId": 98099,
+    "hasActivePaidAccess": false,
+    "baseModels": [
+      "Flux.2 D"
+    ],
+    "cosmetic": null,
+    "eventDecoration": null,
+    "supportsGeneration": false,
+    "stats": {
+      "downloadCount": 3931,
+      "thumbsUpCount": 126,
+      "thumbsDownCount": 0,
+      "commentCount": 29,
+      "tippedAmountCount": 20
+    },
+    "creator": {
+      "username": "RalFinger",
+      "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e348d8f3-3b3e-4801-8e2d-fb2204ba4b06/width=96/RalFinger.jpeg"
+    },
+    "tags": [
+      "flux.2 dev",
+      "gguf dev flux.2",
+      "flux 2",
+      "flux 2 dev gguf",
+      "dev",
+      "flux2",
+      "flux.2",
+      "city96",
+      "flux 2 dev",
+      "gguf",
+      "quant",
+      "base model"
+    ],
+    "modelVersions": [
+      {
+        "id": 2443920,
+        "index": 0,
+        "name": "BF16",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-27T10:37:15.401Z",
+        "publishedAt": "2025-11-27T14:09:51.323Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 721,
+          "thumbsUpCount": 48,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2335281,
+            "sizeKB": 62936148.96875,
+            "name": "flux2DEVGGUFByCity96_bf16.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-27T13:47:29.585Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "full",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "883C883E",
+              "AutoV2": "98CDFCB10D",
+              "SHA256": "98CDFCB10D6ED5A860F7169FB234138560CDA4AF158A70848D155D203F0ACAC4",
+              "CRC32": "B3058360",
+              "BLAKE3": "9D642E0931321F70E8F3D5C2A8F35EBF056D5CBE0838435785D8072C635C8CB3",
+              "AutoV3": "AB33DC3D8BCD",
+              "SHA256_12": "98CDFCB10D6E"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2443920?fileId=2335281",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/55f7af61-25b2-41fc-8a85-5d3decf8325a/original=true/111755697.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2443920"
+      },
+      {
+        "id": 2442756,
+        "index": 1,
+        "name": "Q8_0",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-26T23:48:49.263Z",
+        "publishedAt": "2025-11-27T10:26:16.731Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 522,
+          "thumbsUpCount": 22,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2334938,
+            "sizeKB": 34182228.96875,
+            "name": "flux2DEVGGUFByCity96_q80.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-27T10:40:41.887Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "pruned",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "42D30C97",
+              "AutoV2": "09D005300D",
+              "SHA256": "09D005300DD8DCBBD489BB75ADA6254145C84C2C9C3D7CC1829E3C5DEDCB42CE",
+              "CRC32": "CE1E41D5",
+              "BLAKE3": "13C0279AD74425FE616AFC5A5F694EC65284FBB9D5021D2B1E8EA42081E0F4CF",
+              "AutoV3": "3A22D6C2D284",
+              "SHA256_12": "09D005300DD8"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2442756?fileId=2334938",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c05c664b-bbe0-40eb-817a-336f90b87913/original=true/111739771.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2442756"
+      },
+      {
+        "id": 2442580,
+        "index": 2,
+        "name": "Q6_K",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-26T22:12:23.821Z",
+        "publishedAt": "2025-11-26T23:48:11.143Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 312,
+          "thumbsUpCount": 10,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2333717,
+            "sizeKB": 26754132.96875,
+            "name": "flux2DEVGGUFByCity96_q6K.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-26T23:53:59.237Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "pruned",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "BE8AA82B",
+              "AutoV2": "0A662E0303",
+              "SHA256": "0A662E0303D65B7DA4741C7BC54BBCCD4D7FC17B23E71CED36D177467F4A0EF1",
+              "CRC32": "1AB9665C",
+              "BLAKE3": "052E9F3077967CC3BBCC869E67AC40FA1FA9A965610C7ABAE23EDB038932B9FE",
+              "AutoV3": "EED5747DEB22",
+              "SHA256_12": "0A662E0303D6"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2442580?fileId=2333717",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/66f5e00e-d7c5-4eac-89f8-b81c6c3575ed/original=true/111684112.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2442580"
+      },
+      {
+        "id": 2442315,
+        "index": 3,
+        "name": "Q5_K_S",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-26T20:02:10.823Z",
+        "publishedAt": "2025-11-26T22:11:31.196Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 162,
+          "thumbsUpCount": 9,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2333398,
+            "sizeKB": 22680660.96875,
+            "name": "flux2DEVGGUFByCity96_q5KS.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-26T21:13:28.700Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "pruned",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "A5C562FB",
+              "AutoV2": "81B4DA2546",
+              "SHA256": "81B4DA2546746CDF475C71334A9380F98EF71501096E47E75DAA53536C411361",
+              "CRC32": "1722FDDE",
+              "BLAKE3": "5689E8BE1C3374B8BFA8CFBAD4A35B65D1A2BAC4064BA809099C47D1CB68CDAE",
+              "AutoV3": "58260D88B0D0",
+              "SHA256_12": "81B4DA254674"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2442315?fileId=2333398",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b63dc196-fc3b-4798-a247-c39aa6e1af4f/original=true/111676611.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2442315"
+      },
+      {
+        "id": 2442110,
+        "index": 4,
+        "name": "Q5_K_M",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-26T18:28:51.089Z",
+        "publishedAt": "2025-11-26T20:01:33.493Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 306,
+          "thumbsUpCount": 17,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2333175,
+            "sizeKB": 23493396.96875,
+            "name": "flux2DEVGGUFByCity96_q5KM.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-26T19:42:54.628Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "pruned",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "BE8AA82B",
+              "AutoV2": "041ABD6A1D",
+              "SHA256": "041ABD6A1DC300224A2479A26E722129337368A70FFDC027BE8DDAB5C90C5E69",
+              "CRC32": "5D38D6DD",
+              "BLAKE3": "D009A9C8B3A4EB8D22C1D80D38C84E0DBCFE4698BBDCA80E6CF3B76CDE26E290",
+              "AutoV3": "C7147EDBB789",
+              "SHA256_12": "041ABD6A1DC3"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2442110?fileId=2333175",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/231412d3-0114-46e3-ac59-ebe497f16f6f/original=true/111665271.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2442110"
+      },
+      {
+        "id": 2441940,
+        "index": 5,
+        "name": "Q5_1",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-26T17:05:35.351Z",
+        "publishedAt": "2025-11-26T18:27:49.963Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 53,
+          "thumbsUpCount": 8,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2333016,
+            "sizeKB": 24597588.96875,
+            "name": "flux2DEVGGUFByCity96_q51.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-26T18:22:52.490Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "pruned",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "BDC87A0D",
+              "AutoV2": "6BF0606386",
+              "SHA256": "6BF0606386CA72720B453396F198A7150CF1A57A7AC408373EBECA65C2E02600",
+              "CRC32": "D62411BC",
+              "BLAKE3": "2DBF1AE6C5E6C028BB55D6839FDD2FF82B4E662F36A41256D5A26CFCC27E2867",
+              "AutoV3": "F23583317E6D",
+              "SHA256_12": "6BF0606386CA"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2441940?fileId=2333016",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/26235c31-bb0d-4844-bbcb-310ba6f8d84c/original=true/111658434.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2441940"
+      },
+      {
+        "id": 2441819,
+        "index": 6,
+        "name": "Q5_0",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-26T16:00:23.942Z",
+        "publishedAt": "2025-11-26T17:04:53.840Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 67,
+          "thumbsUpCount": 12,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2332872,
+            "sizeKB": 22680660.96875,
+            "name": "flux2DEVGGUFByCity96_q50.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-26T17:13:06.272Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "pruned",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "99129966",
+              "AutoV2": "9D0E70190B",
+              "SHA256": "9D0E70190BE3B8D0EE6DD8103694653823F7A25454044CA872913343B11BDD49",
+              "CRC32": "7A5E48F3",
+              "BLAKE3": "30D101EE003EBAEDC1558DF613D3387F567C0E8D26291717501F731E7FCF7960",
+              "AutoV3": "F02B436127CA",
+              "SHA256_12": "9D0E70190BE3"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2441819?fileId=2332872",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/8f7664a9-454e-445f-8b37-fddf3083f364/original=true/111650743.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2441819"
+      },
+      {
+        "id": 2441503,
+        "index": 7,
+        "name": "Q4_K_S",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-26T13:44:17.981Z",
+        "publishedAt": "2025-11-26T15:48:24.516Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 289,
+          "thumbsUpCount": 15,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2332540,
+            "sizeKB": 18846804.96875,
+            "name": "flux2DEVGGUFByCity96_q4KS.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-26T14:51:16.232Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "pruned",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "24800F53",
+              "AutoV2": "B9C1C8295E",
+              "SHA256": "B9C1C8295ED044F54C3A9894A800E003B4ECC94BFB0F63192B68BAFC232C2B27",
+              "CRC32": "660DF0C4",
+              "BLAKE3": "7F44B45AEACBBA429B60D8D183468F6E786BE57B3DA1FE7092F1BE8DF4DB7304",
+              "AutoV3": "EB422411EB80",
+              "SHA256_12": "B9C1C8295ED0"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2441503?fileId=2332540",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/159c38e5-aa85-429d-a979-43900a71c9fb/original=true/111645221.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2441503"
+      },
+      {
+        "id": 2441386,
+        "index": 8,
+        "name": "Q4_K_M",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-26T12:44:39.901Z",
+        "publishedAt": "2025-11-26T13:43:55.918Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 645,
+          "thumbsUpCount": 21,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2332370,
+            "sizeKB": 19611732.96875,
+            "name": "flux2DEVGGUFByCity96_q4KM.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-26T13:54:58.521Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "pruned",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "A5C562FB",
+              "AutoV2": "FCA680C7B2",
+              "SHA256": "FCA680C7B221A713B5CF7DB6CF6B33474875320EE61F4C585BC33FE391DAB9A6",
+              "CRC32": "9FB658A9",
+              "BLAKE3": "7A345B01009BA15BFE64608AB80DBD69C6D35A86AEB755C651129AC3B24246FF",
+              "AutoV3": "0EAED5EFEA0C",
+              "SHA256_12": "FCA680C7B221"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2441386?fileId=2332370",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ba07a7a9-61ac-4c96-9b8f-ed14c9086046/original=true/111635576.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2441386"
+      },
+      {
+        "id": 2441204,
+        "index": 9,
+        "name": "Q4_1",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-26T11:20:01.419Z",
+        "publishedAt": "2025-11-26T12:44:13.156Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 65,
+          "thumbsUpCount": 6,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2332189,
+            "sizeKB": 20763732.96875,
+            "name": "flux2DEVGGUFByCity96_q41.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-26T12:31:41.307Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "pruned",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "EEF49EAC",
+              "AutoV2": "6CEC0F4F13",
+              "SHA256": "6CEC0F4F131E23C013F1D749E6688005BABEEE5ACF37493BFAAF6C06B73EF9D5",
+              "CRC32": "40C91416",
+              "BLAKE3": "8CBB1EF02DB67DD4FD87EF40FCB506CC1E91BEC55267B59EB4E0F759AD38CDBA",
+              "AutoV3": "8559A8DEF781",
+              "SHA256_12": "6CEC0F4F131E"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2441204?fileId=2332189",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e452d172-50e4-468f-8ed3-ef73502fb378/original=true/111631163.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2441204"
+      },
+      {
+        "id": 2441071,
+        "index": 10,
+        "name": "Q4_0",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-26T10:05:36.310Z",
+        "publishedAt": "2025-11-26T11:19:39.944Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 123,
+          "thumbsUpCount": 6,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2332064,
+            "sizeKB": 18846804.96875,
+            "name": "flux2DEVGGUFByCity96_q40.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-26T11:26:31.573Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "pruned",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "64B1DEF4",
+              "AutoV2": "B750825B6F",
+              "SHA256": "B750825B6FAB2FD491E911D5F99F11E8F3EFC9CBF8A2B1225293D26AF9C0090A",
+              "CRC32": "1FD95D5C",
+              "BLAKE3": "333D402F972EC3E9C40C2DBD128B317395A26ABF9B6995EEFFE47505B9F57CFD",
+              "AutoV3": "57CF7615986A",
+              "SHA256_12": "B750825B6FAB"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2441071?fileId=2332064",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/22d7621c-0f80-4c79-830d-2a2e45d98df4/original=true/111625434.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2441071"
+      },
+      {
+        "id": 2440973,
+        "index": 11,
+        "name": "Q3_K_S",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-26T09:13:50.367Z",
+        "publishedAt": "2025-11-26T10:04:13.801Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 152,
+          "thumbsUpCount": 7,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2331926,
+            "sizeKB": 15409812.96875,
+            "name": "flux2DEVGGUFByCity96_q3KS.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-26T10:29:04.269Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "pruned",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "24800F53",
+              "AutoV2": "ECC594314C",
+              "SHA256": "ECC594314CB0A27D97C3163A5D2555C2814446E92A82604D735050F8E4D5C37C",
+              "CRC32": "F7E4B296",
+              "BLAKE3": "E01E683F560AE1B2B5EEDC80BF85C8E98DBF9E054705C3BF81513E52CE57D4EE",
+              "AutoV3": "31565C163CE8",
+              "SHA256_12": "ECC594314CB0"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2440973?fileId=2331926",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/1e678743-ee43-4ceb-b149-25eb08d95617/original=true/111620131.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2440973"
+      },
+      {
+        "id": 2440874,
+        "index": 12,
+        "name": "Q3_K_M",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-26T08:19:41.858Z",
+        "publishedAt": "2025-11-26T09:13:20.884Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 198,
+          "thumbsUpCount": 13,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2331838,
+            "sizeKB": 15586068.96875,
+            "name": "flux2DEVGGUFByCity96_q3KM.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-26T09:42:51.935Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "pruned",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "24800F53",
+              "AutoV2": "3B89F770A4",
+              "SHA256": "3B89F770A43AB091E6C2A33186D87B4A059D8F74D00DB239834ECC27ED368FB8",
+              "CRC32": "2FAB706A",
+              "BLAKE3": "D39A97A25C13DBECF29938E456D3B190C337075CD195DAF7B9BA0A0DA9B312F0",
+              "AutoV3": "42E780F6ECA6",
+              "SHA256_12": "3B89F770A43A"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2440874?fileId=2331838",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/26e3ef40-7fe7-4f4a-8c77-188e1b6d72ce/original=true/111616803.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2440874"
+      },
+      {
+        "id": 2440805,
+        "index": 13,
+        "name": "Q2_K",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2025-11-26T07:40:21.666Z",
+        "publishedAt": "2025-11-26T08:19:11.106Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "covered": false,
+        "coveredNext": false,
+        "stats": {
+          "downloadCount": 316,
+          "thumbsUpCount": 20,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2331750,
+            "sizeKB": 12556884.96875,
+            "name": "flux2DEVGGUFByCity96_q2K.gguf",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2025-11-26T08:25:18.065Z",
+            "metadata": {
+              "format": "GGUF",
+              "size": "pruned",
+              "fp": "bf16"
+            },
+            "hashes": {
+              "AutoV1": "24800F53",
+              "AutoV2": "B9D1F9388A",
+              "SHA256": "B9D1F9388A328EFA01A7DFC2155E45FAC584D20DB11EF0436A9558A07ECBC83A",
+              "CRC32": "B50AAC39",
+              "BLAKE3": "4D6DED87795C320B85CA69998E245C74754A66E1717A5531D0959A34B67636CA",
+              "AutoV3": "9D4307A65AD3",
+              "SHA256_12": "B9D1F9388A32"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2440805?fileId=2331750",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/d3489a6b-dc9f-4a7b-90e8-1fa4464ef123/original=true/111613312.jpeg",
+            "nsfwLevel": 1,
+            "width": 3712,
+            "height": 4608,
+            "hash": "U8GZ-2r^00rq}OS]5uFfDgem6:wdW~ngRDWA",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2440805"
+      }
+    ]
+  },
+  {
+    "id": 2297235,
+    "name": "mistral_3_small_flux2_fp4_mixed",
+    "description": "<p>mistral_3_small_flux2_fp4_mixed<br />clip model fp4 for FLUX<br />fits into 16GB VRAM very fast with new prompt handling</p><p>\"10times faster if you change the promt\" only in the this case clip model working.<br />you can easy replace fp8.</p><p>flux.2D extremely good at repair and recolor small photos.<br />200x200 pix up to 1024x1024 (and its the same person).<br /><br /><br />all About this license is Apache license 2.0 from mistral Ai<br />and convert by</p><p>origignal source: <a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/Comfy-Org\">https://huggingface.co/Comfy-Org</a><br /></p>",
+    "allowNoCredit": true,
+    "allowCommercialUse": [
+      "Image",
+      "RentCivit",
+      "Rent",
+      "Sell",
+      "SellMerge"
+    ],
+    "allowDerivatives": true,
+    "allowDifferentLicense": true,
+    "type": "Checkpoint",
+    "minor": false,
+    "sfwOnly": false,
+    "poi": false,
+    "nsfw": false,
+    "nsfwLevel": 1,
+    "availability": "Public",
+    "userId": 1479508,
+    "hasActivePaidAccess": false,
+    "baseModels": [
+      "Flux.2 D"
+    ],
+    "cosmetic": null,
+    "eventDecoration": null,
+    "supportsGeneration": true,
+    "stats": {
+      "downloadCount": 891,
+      "thumbsUpCount": 15,
+      "thumbsDownCount": 0,
+      "commentCount": 0,
+      "tippedAmountCount": 0
+    },
+    "creator": {
+      "username": "sevenof9247",
+      "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/be652cb8-b59f-4b19-87b8-d2fcc5df421a/width=96/sevenof9247.jpeg"
+    },
+    "tags": [
+      "base model",
+      "clip"
+    ],
+    "modelVersions": [
+      {
+        "id": 2585001,
+        "index": 0,
+        "name": "mistral_3_small_flux2_fp4",
+        "baseModel": "Flux.2 D",
+        "baseModelType": "Standard",
+        "createdAt": "2026-01-10T17:53:00.446Z",
+        "publishedAt": "2026-01-10T19:35:43.640Z",
+        "status": "Published",
+        "flags": 0,
+        "availability": "Public",
+        "nsfwLevel": 1,
+        "description": "<p>mistral_3_small_flux2_fp4_mixed.safetensors</p>",
+        "covered": false,
+        "coveredNext": true,
+        "stats": {
+          "downloadCount": 891,
+          "thumbsUpCount": 15,
+          "thumbsDownCount": 0
+        },
+        "files": [
+          {
+            "id": 2472517,
+            "sizeKB": 11987966.86621094,
+            "name": "mistral3SmallFlux2Fp4_mistral3SmallFlux2.safetensors",
+            "overrideName": null,
+            "type": "Model",
+            "pickleScanResult": "Success",
+            "pickleScanMessage": "No Pickle imports",
+            "virusScanResult": "Success",
+            "virusScanMessage": null,
+            "scannedAt": "2026-01-10T19:19:02.686Z",
+            "metadata": {
+              "format": "SafeTensor",
+              "size": "pruned",
+              "fp": "nf4"
+            },
+            "hashes": {
+              "AutoV1": "E228C964",
+              "AutoV2": "1EE1FF334D",
+              "SHA256": "1EE1FF334D78228D73049EF0EE4FCD21C1700536B5A45C06547AF057F92463A7",
+              "CRC32": "43E3B1CC",
+              "BLAKE3": "E2095092E9929109BBCD9892D50EB9C7316D17145934B4765F50C069F80032E6",
+              "AutoV3": "5D87E146F5E1",
+              "SHA256_12": "1EE1FF334D78"
+            },
+            "downloadUrl": "https://civitai.com/api/download/models/2585001?fileId=2472517",
+            "primary": true
+          }
+        ],
+        "images": [
+          {
+            "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7c4884a8-0b48-4932-8d17-9f228d67015b/original=true/117102660.jpeg",
+            "nsfwLevel": 1,
+            "width": 768,
+            "height": 1024,
+            "hash": "UAHgA;=yGuT}l}=;TJTJ0GOs#7rXPWAJrrv#",
+            "type": "image",
+            "minor": false,
+            "poi": false,
+            "hasMeta": false,
+            "hasPositivePrompt": false,
+            "onSite": false,
+            "remixOfId": null
+          }
+        ],
+        "downloadUrl": "https://civitai.com/api/download/models/2585001"
+      }
+    ]
+  }
+]

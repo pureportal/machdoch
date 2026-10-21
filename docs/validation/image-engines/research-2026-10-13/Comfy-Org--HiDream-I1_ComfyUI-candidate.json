@@ -1,0 +1,201 @@
+{
+  "_id": "67fed2675769d4b88bae95bb",
+  "id": "Comfy-Org/HiDream-I1_ComfyUI",
+  "private": false,
+  "library_name": "diffusion-single-file",
+  "tags": [
+    "diffusion-single-file",
+    "comfyui",
+    "base_model:HiDream-ai/HiDream-E1-1",
+    "base_model:finetune:HiDream-ai/HiDream-E1-1",
+    "license:mit",
+    "region:us"
+  ],
+  "downloads": 131824,
+  "likes": 216,
+  "modelId": "Comfy-Org/HiDream-I1_ComfyUI",
+  "author": "Comfy-Org",
+  "sha": "0703a0bd5983e85e5f5b007577263164938de251",
+  "lastModified": "2026-09-23T07:56:47.000Z",
+  "gated": false,
+  "disabled": false,
+  "model-index": null,
+  "config": {},
+  "cardData": {
+    "license": "mit",
+    "tags": [
+      "comfyui",
+      "diffusion-single-file"
+    ],
+    "base_model": [
+      "HiDream-ai/HiDream-I1-Dev",
+      "HiDream-ai/HiDream-I1-Fast",
+      "HiDream-ai/HiDream-I1-Full",
+      "HiDream-ai/HiDream-E1-1",
+      "HiDream-ai/HiDream-E1-Full"
+    ]
+  },
+  "siblings": [
+    {
+      "rfilename": ".gitattributes",
+      "blobId": "a6344aac8c09253b3b630fb776ae94478aa0275b",
+      "size": 1519
+    },
+    {
+      "rfilename": "README.md",
+      "blobId": "7662f4f92c7a7ee2d996bc579cf1b06b2395ab42",
+      "size": 5534
+    },
+    {
+      "rfilename": "split_files/diffusion_models/hidream_e1_1_bf16.safetensors",
+      "blobId": "d8d1edf1d2959e0538770071df72c542810ddd9c",
+      "size": 34211675392,
+      "lfs": {
+        "sha256": "b5d14b8d55fbbd42a1f2aaf6d0974623d48275fab4bbeae2663ace4ac13ad241",
+        "size": 34211675392,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "split_files/diffusion_models/hidream_e1_full_bf16.safetensors",
+      "blobId": "d6ac883a31ef52ec8d6ecac007f0e4d9a31228fd",
+      "size": 34211675392,
+      "lfs": {
+        "sha256": "b645503c5d5d583a135d7e77c655237ebc6dc132d49d763759c1dd51683bd1dd",
+        "size": 34211675392,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "split_files/diffusion_models/hidream_i1_dev_bf16.safetensors",
+      "blobId": "cc319466438fe921c69e74bca2a3917703eff89b",
+      "size": 34211675392,
+      "lfs": {
+        "sha256": "09a56b88b61ce2d0cc0eacebbab2e841fd758f858f2e717d01d8947cfe8fac6c",
+        "size": 34211675392,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "split_files/diffusion_models/hidream_i1_dev_fp8.safetensors",
+      "blobId": "36ffccc0f4e10ce519ad31756c91a1577b43b40e",
+      "size": 17105946040,
+      "lfs": {
+        "sha256": "9a372d7384d56e34a8cc7fd77a0fa3d26d6b75d82c7582fd5347e2fd9e6f8664",
+        "size": 17105946040,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "split_files/diffusion_models/hidream_i1_fast_bf16.safetensors",
+      "blobId": "4355980bef83655e1d7ab6e6d346f385ece39e22",
+      "size": 34211675392,
+      "lfs": {
+        "sha256": "fdae2014b7178c5387e49e5c46742e1975310f62349f577a1bb5104eddd3ae70",
+        "size": 34211675392,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "split_files/diffusion_models/hidream_i1_fast_fp8.safetensors",
+      "blobId": "520db5ecb58b229c981510a1906f01c4c7e6bd8b",
+      "size": 17105946040,
+      "lfs": {
+        "sha256": "2d471e82523234e157b9ddd44c0428c89907eeb4e7923b316d49362d17020236",
+        "size": 17105946040,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "split_files/diffusion_models/hidream_i1_full_fp16.safetensors",
+      "blobId": "0324211e6ac385407a1fe46a927f5b0acd9dfb4b",
+      "size": 34211673776,
+      "lfs": {
+        "sha256": "8bbebd53a19ff0ff685c51b9425cee9529f283e3efb052e22add4a28f414ab3e",
+        "size": 34211673776,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "split_files/diffusion_models/hidream_i1_full_fp8.safetensors",
+      "blobId": "e3e62dec35ebff341012c3e57fe000ca84d855ee",
+      "size": 17105946040,
+      "lfs": {
+        "sha256": "807e458dd2ea31e69e40db27afadde4a14ffd0c4c0a23b8c9a0833102e055337",
+        "size": 17105946040,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "split_files/text_encoders/clip_g_hidream.safetensors",
+      "blobId": "cfe262ee68cece25254ce42efc93995250df7724",
+      "size": 1389743104,
+      "lfs": {
+        "sha256": "3771e70e36450e5199f30bad61a53faae85a2e02606974bcda0a6a573c0519d5",
+        "size": 1389743104,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "split_files/text_encoders/clip_l_hidream.safetensors",
+      "blobId": "7845eccf15ba8326ce1cbd76ff2f38bac4a68b0d",
+      "size": 247586528,
+      "lfs": {
+        "sha256": "706fdb88e22e18177b207837c02f4b86a652abca0302821f2bfa24ac6aea4f71",
+        "size": 247586528,
+        "pointerSize": 134
+      }
+    },
+    {
+      "rfilename": "split_files/text_encoders/llama_3.1_8b_instruct_fp8_scaled.safetensors",
+      "blobId": "396d583036f47a5f109dde700544778b7aef78d3",
+      "size": 9081258056,
+      "lfs": {
+        "sha256": "9f86897bbeb933ef4fd06297740edb8dd962c94efcd92b373a11460c33765ea6",
+        "size": 9081258056,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "split_files/text_encoders/t5xxl_fp8_e4m3fn_scaled.safetensors",
+      "blobId": "e5a3b8e6cfdb815766d457253266212e6904ff00",
+      "size": 5157348688,
+      "lfs": {
+        "sha256": "a498f0485dc9536735258018417c3fd7758dc3bccc0a645feaa472b34955557a",
+        "size": 5157348688,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "split_files/vae/ae.safetensors",
+      "blobId": "71f11a92800c4a93cead7cebc556531926ecfc33",
+      "size": 335304388,
+      "lfs": {
+        "sha256": "afc8e28272cd15db3919bacdb6918ce9c1ed22e96cb12c4d5ed0fba823529e38",
+        "size": 335304388,
+        "pointerSize": 134
+      }
+    }
+  ],
+  "spaces": [
+    "tardellirs/model-pulse",
+    "RioShiina/ImageGen",
+    "emanforhelp/model-pulse",
+    "alxander84/ImageGen-32",
+    "Dekonstruktio/Fluxus",
+    "Tinchote/ImageGen",
+    "runebloodstone/img_test",
+    "ISAAC1982/ImageGen",
+    "mrhangetsbetter/ImageGen",
+    "R1000/ImageGen",
+    "desirel/ImageGen",
+    "Rabger666/ImageGen",
+    "BlueSkyXN/ImageGen-Studio",
+    "shinkinokishin/ImageGenClone",
+    "Nklin261/ImageGen",
+    "Gramlin/ImageGen",
+    "shinkinokishin/ImageGen2"
+  ],
+  "createdAt": "2025-04-15T21:40:55.000Z",
+  "usedStorage": 310285375836
+}

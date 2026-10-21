@@ -1,0 +1,21 @@
+{
+  "checkedAt": "2026-10-14T17:13:05.797583+00:00",
+  "probes": [
+    {
+      "url": "https://civitai.com/api/v1/model-versions/983611",
+      "status": 404
+    },
+    {
+      "url": "https://civitai.com/api/v1/model-versions/by-hash/fb64610bf8d73eb064b8d528eef85d062bf2b4b1204ff7bc73e57ad28b24489c",
+      "status": 404
+    },
+    {
+      "url": "https://civitai.com/api/download/models/983611",
+      "status": 404
+    },
+    {
+      "url": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo/resolve/main/model_index.json",
+      "status": 401
+    }
+  ]
+}

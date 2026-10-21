@@ -1,0 +1,10 @@
+{
+  "cargoStartedAt": "2026-10-13T02:46:15.1573620Z",
+  "nativeBuildComplete": false,
+  "productionUiRefreshFinishedAt": "2026-10-13T04:07:19.5549011Z",
+  "checkedAt": "2026-10-13T04:27:50.2166733Z",
+  "applicationCompilationStartedAt": "2026-10-13T04:25:33.2789960Z",
+  "refreshPrecedesApplicationCompilation": true,
+  "applicationCompilerProcessId": 26296,
+  "cargoProcessId": 27764
+}

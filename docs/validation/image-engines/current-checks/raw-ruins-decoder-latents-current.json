@@ -1,0 +1,19 @@
+{
+  "path": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-2-raw-refined-reference-sweep-continuation\\02-krea-2-raw-reference-144697438\\decoder-latents.safetensors",
+  "sha256": "d353a9329f48ec2959321f541ac087a4e057320bfe06516d4aa1bc5125e8a592",
+  "shape": [
+    1,
+    16,
+    1,
+    96,
+    168
+  ],
+  "dtype": "torch.bfloat16",
+  "finite": true,
+  "minimum": -4.65625,
+  "maximum": 4.125,
+  "mean": -0.026956547051668167,
+  "standardDeviation": 1.2602070569992065,
+  "cpuInspectionOnly": true,
+  "newGeneration": false
+}

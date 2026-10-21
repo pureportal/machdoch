@@ -1,0 +1,43 @@
+{
+  "modelId": 638187,
+  "versionId": 721627,
+  "sha256": "FEF37763B8F2C8CC3463139BBB6D91AA517C605B654D4E5C540DE52813F30306",
+  "headerBytes": 327848,
+  "tensors": 2384,
+  "dtypes": {
+    "F32": 1026,
+    "BF16": 314,
+    "F16": 197,
+    "F8_E4M3": 219,
+    "U8": 628
+  },
+  "prefixes": {
+    "model": 1722,
+    "text_encoders": 418,
+    "vae": 244
+  },
+  "sampleKeys": [
+    "model.diffusion_model.double_blocks.0.img_attn.norm.key_norm.scale",
+    "model.diffusion_model.double_blocks.0.img_attn.norm.query_norm.scale",
+    "model.diffusion_model.double_blocks.0.img_attn.proj.weight.absmax",
+    "model.diffusion_model.double_blocks.0.img_attn.proj.weight.quant_map",
+    "model.diffusion_model.double_blocks.0.img_attn.qkv.weight.absmax",
+    "model.diffusion_model.double_blocks.0.img_attn.qkv.weight.quant_map",
+    "model.diffusion_model.double_blocks.0.img_mlp.0.weight.absmax",
+    "model.diffusion_model.double_blocks.0.img_mlp.0.weight.quant_map",
+    "model.diffusion_model.double_blocks.0.img_mlp.2.weight.absmax",
+    "model.diffusion_model.double_blocks.0.img_mlp.2.weight.quant_map",
+    "model.diffusion_model.double_blocks.0.img_mod.lin.weight.absmax",
+    "model.diffusion_model.double_blocks.0.img_mod.lin.weight.quant_map"
+  ],
+  "quantizationKeys": [
+    "model.diffusion_model.double_blocks.0.img_attn.proj.weight.quant_state.bitsandbytes__nf4",
+    "model.diffusion_model.double_blocks.0.img_attn.qkv.weight.quant_state.bitsandbytes__nf4",
+    "model.diffusion_model.double_blocks.0.img_mlp.0.weight.quant_state.bitsandbytes__nf4",
+    "model.diffusion_model.double_blocks.0.img_mlp.2.weight.quant_state.bitsandbytes__nf4",
+    "model.diffusion_model.double_blocks.0.img_mod.lin.weight.quant_state.bitsandbytes__nf4",
+    "model.diffusion_model.double_blocks.0.txt_attn.proj.weight.quant_state.bitsandbytes__nf4",
+    "model.diffusion_model.double_blocks.0.txt_attn.qkv.weight.quant_state.bitsandbytes__nf4",
+    "model.diffusion_model.double_blocks.0.txt_mlp.0.weight.quant_state.bitsandbytes__nf4"
+  ]
+}

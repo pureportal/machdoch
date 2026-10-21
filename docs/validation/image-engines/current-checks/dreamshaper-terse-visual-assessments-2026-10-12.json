@@ -1,0 +1,38 @@
+[
+  {
+    "referenceId": 144655944,
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-terse-reference-sweep\\01-stable-diffusion-1-reference-144655944\\images\\output-0000.png",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "referenceUrl": "https://civitai.red/images/144655944",
+    "sha256": "d6e5352bb20ef2ad1ce85fec93cb238f5c156f42400c2f90b670c3a8b26c6d0b",
+    "observations": "Smooth stylized red-haired portrait with white shirt and dark tie, but doll-like facial shading, weak backlight and a hand held near the shoulder miss the reference anime texture and reaching-palm composition.",
+    "referenceQualityVerdict": "below-reference"
+  },
+  {
+    "referenceId": 144697438,
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-terse-reference-sweep\\02-stable-diffusion-1-reference-144697438\\images\\output-0000.png",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "referenceUrl": "https://civitai.red/images/144697438",
+    "sha256": "ac84e6cb2baf6239ac1f79491ccbbb34f6ff0ea7f1b9d1a9a00f3c465ac6e119",
+    "observations": "Atmospheric painted ruined city with two distant figures; the enormous collapsed robot and foreground white-haired woman are absent, with a simpler gray palette than the reference.",
+    "referenceQualityVerdict": "below-reference"
+  },
+  {
+    "referenceId": 144594528,
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-terse-reference-sweep\\03-stable-diffusion-1-reference-144594528\\images\\output-0000.png",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "referenceUrl": "https://civitai.red/images/144594528",
+    "sha256": "ed6362b183988be0e35e3ed401d215c04e753055afcd46b07b6b1652ff49a8bc",
+    "observations": "Clean street photograph with fine fabric, sunlight and mural colors, but pink hair, floral clothes, a short blue skirt and a static pose miss the reference blue blouse, flowing white skirt and warm candid aesthetic.",
+    "referenceQualityVerdict": "below-reference"
+  },
+  {
+    "referenceId": 145177887,
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\dreamshaper-terse-reference-sweep\\05-stable-diffusion-1-reference-145177887\\images\\output-0000.png",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "referenceUrl": "https://civitai.red/images/145177887",
+    "sha256": "f3d194afd05aa732a10d0c1a0f1a3d4e67393fcf1686c12cfc9d02deb3ea1f2b",
+    "observations": "Detailed clothed child holding a teddy in a dark room, with clean fabric and wood texture; the visible face, hair bows, centered bear and brighter photographic treatment weaken the reference horror mood.",
+    "referenceQualityVerdict": "below-reference"
+  }
+]

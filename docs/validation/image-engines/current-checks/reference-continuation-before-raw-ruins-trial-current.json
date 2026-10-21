@@ -1,0 +1,90 @@
+[
+  {
+    "name": "Pony V6 XL: six publisher-setting references",
+    "template": "D:/Models/machdoch/verification/2026-10-11/image-engines/pony-v6-publisher-reference-template.json",
+    "cases": "D:/Models/machdoch/verification/2026-10-11/image-engines/pony-v6-publisher-reference-cases.json",
+    "outputRoot": "D:/Models/machdoch/verification/2026-10-11/image-engines/pony-v6-publisher-six-reference-sweep"
+  },
+  {
+    "cases": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\animagine-4-publisher-reference-cases.json",
+    "name": "Animagine XL 4.0 Opt: two publisher-setting illustration references",
+    "outputRoot": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\animagine-4-publisher-reference-sweep",
+    "template": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\animagine-4-publisher-reference-template.json"
+  },
+  {
+    "name": "Juggernaut XI: controlled double-exposure adapter and horror photograph trials",
+    "template": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-style-diagnostics-template.json",
+    "cases": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-style-diagnostic-cases.json",
+    "outputRoot": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-style-diagnostics"
+  },
+  {
+    "name": "Qwen-Image 2.1 six refined references",
+    "template": "D:/Models/machdoch/verification/2026-10-11/image-engines/qwen-image-2.1-refined-request-template.json",
+    "cases": "D:/Models/machdoch/verification/2026-10-11/image-engines/qwen-image-2.1-refined-reference-cases.json",
+    "outputRoot": "D:/Models/machdoch/verification/2026-10-11/image-engines/qwen-image-2.1-refined-reference-sweep-continuation"
+  },
+  {
+    "name": "Z-Image Base six references",
+    "template": "D:/Models/machdoch/verification/2026-10-11/image-engines/z-image-base-reference-template.json",
+    "cases": "D:/Models/machdoch/verification/2026-10-11/image-engines/z-image-base-reference-cases.json",
+    "outputRoot": "D:/Models/machdoch/verification/2026-10-11/image-engines/z-image-base-six-reference-sweep-continuation"
+  },
+  {
+    "name": "Krea 2 RAW six refined references",
+    "template": "D:/Models/machdoch/verification/2026-10-11/image-engines/krea-2-raw-refined-request-template.json",
+    "cases": "D:/Models/machdoch/verification/2026-10-11/image-engines/krea-2-raw-refined-reference-cases.json",
+    "outputRoot": "D:/Models/machdoch/verification/2026-10-11/image-engines/krea-2-raw-refined-reference-sweep-continuation",
+    "captureDecoderLatents": true
+  },
+  {
+    "name": "flux-2-klein-base-4b: six imported-engine references",
+    "template": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\flux-2-klein-base-4b-imported-reference-template.json",
+    "cases": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\flux-2-klein-base-4b-six-reference-cases.json",
+    "outputRoot": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\flux-2-klein-base-4b-imported-six-reference-sweep"
+  },
+  {
+    "name": "flux-1-schnell: six imported-engine references",
+    "template": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\flux-1-schnell-imported-reference-template.json",
+    "cases": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\flux-1-schnell-six-reference-cases.json",
+    "outputRoot": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\flux-1-schnell-imported-six-reference-sweep"
+  },
+  {
+    "name": "qwen-image: six imported-engine references",
+    "template": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-image-imported-reference-template.json",
+    "cases": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-image-six-reference-cases.json",
+    "outputRoot": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-image-imported-six-reference-sweep"
+  },
+  {
+    "name": "qwen-image-2512: six imported-engine references",
+    "template": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-image-2512-imported-reference-template.json",
+    "cases": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-image-2512-six-reference-cases.json",
+    "outputRoot": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-image-2512-imported-six-reference-sweep"
+  },
+  {
+    "name": "Krea 2 Extended adapter-trigger comparison",
+    "template": "D:/Models/machdoch/verification/2026-10-11/image-engines/krea-2-refined-request-template.json",
+    "cases": "D:/Models/machdoch/verification/2026-10-11/image-engines/krea-2-adapter-trigger-comparison-cases.json",
+    "outputRoot": "D:/Models/machdoch/verification/2026-10-11/image-engines/krea-2-adapter-trigger-comparison",
+    "captureDecoderLatents": true
+  },
+  {
+    "name": "Krea 2 Extended style diagnostics",
+    "template": "D:/Models/machdoch/verification/2026-10-11/image-engines/krea-2-refined-request-template.json",
+    "cases": "D:/Models/machdoch/verification/2026-10-11/image-engines/krea-2-style-diagnostic-cases.json",
+    "outputRoot": "D:/Models/machdoch/verification/2026-10-11/image-engines/krea-2-style-diagnostics",
+    "captureDecoderLatents": true
+  },
+  {
+    "name": "Extended Krea: isolated guidance comparison",
+    "template": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-2-refined-request-template.json",
+    "cases": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-extended-guidance-comparison-cases-2026-10-12.json",
+    "outputRoot": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-extended-guidance-comparison-2026-10-12",
+    "captureDecoderLatents": true
+  },
+  {
+    "name": "SD 2.1: isolated Euler ancestral photo comparisons",
+    "template": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\stable-diffusion-2-imported-reference-template.json",
+    "cases": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\stable-diffusion-2-sampler-comparison-cases.json",
+    "outputRoot": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\stable-diffusion-2-sampler-photo-comparisons"
+  }
+]

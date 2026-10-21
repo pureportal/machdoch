@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 5,
+  "model": {
+    "id": "local:user:b19790e5ac48a7e111429e4866de2e779f9cd7e18f94004cf826ad0d8d4db44b",
+    "architecture": "z-image",
+    "packageKind": "directory",
+    "path": "D:/Models/machdoch/models/packages/user-b19790e5ac48a7e111429e4866de2e77/revisions/b19790e5ac48a7e111429e4866de2e779f9cd7e18f94004cf826ad0d8d4db44b",
+    "configPath": null,
+    "revision": "b19790e5ac48a7e111429e4866de2e779f9cd7e18f94004cf826ad0d8d4db44b",
+    "digest": "b19790e5ac48a7e111429e4866de2e779f9cd7e18f94004cf826ad0d8d4db44b"
+  },
+  "prompt": "Editorial beach photograph of a 25-year-old adult woman with brown hair in a ponytail, wearing a pink, coral and white zigzag-patterned bikini, seated against a sunlit white stucco wall, resting one hand on the stone ground, looking toward the camera. Warm afternoon sunlight, natural skin texture, subtle film grain, realistic proportions, relaxed holiday setting, vertical composition.",
+  "negativePrompt": "",
+  "outputCount": 1,
+  "outputFormat": "png",
+  "modelPolicy": "quality",
+  "aspectRatio": "4:5",
+  "seed": 41791,
+  "sampling": {
+    "sampler": "flow-euler",
+    "numInferenceSteps": 40,
+    "guidanceScale": 4,
+    "width": 896,
+    "height": 1120
+  },
+  "addons": [],
+  "referenceImages": [],
+  "memoryProfile": "auto",
+  "requireChromaBackground": false,
+  "outputDirectory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\z-image-six-reference-sweep\\05-z-image-turbo-reference-144599398\\images",
+  "modelCacheDirectory": "D:/Models/machdoch/cache/image-models"
+}

@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "flowId": "media-flow-485d2a96-adb2-4a87-aacd-a44729c6023d",
+  "head": {
+    "schemaVersion": 1,
+    "flowId": "media-flow-485d2a96-adb2-4a87-aacd-a44729c6023d",
+    "name": "Create image",
+    "description": "Prompt-to-image recipe with explicit quality and output steps.",
+    "headRevisionId": "mfr-43ef4931a4f8e536136f4f3207007ffc",
+    "headRevisionNumber": 1,
+    "createdAt": "2026-10-11T13:58:27.238Z",
+    "updatedAt": "2026-10-11T13:58:27.706Z",
+    "documentDigest": "sha256:39bcde77ce8548238b31057c84b5c68e11392defb73a7252ba4f2663c3ddfba5",
+    "executionDigest": "sha256:10e07e2b05c9fb91976189d90182cd72a6d93b9adcdbcd5f7463d87db52a0dac",
+    "layoutDigest": "sha256:4e4ece0a703fdee2065b9cd369a89d906059aa522f3038101a3ab70e6ee29a00"
+  },
+  "revisions": [
+    {
+      "schemaVersion": 1,
+      "revisionId": "mfr-43ef4931a4f8e536136f4f3207007ffc",
+      "flowId": "media-flow-485d2a96-adb2-4a87-aacd-a44729c6023d",
+      "revisionNumber": 1,
+      "parentRevisionId": null,
+      "createdAt": "2026-10-11T13:58:27.706Z",
+      "changeSummary": "Saved from Advanced",
+      "documentDigest": "sha256:39bcde77ce8548238b31057c84b5c68e11392defb73a7252ba4f2663c3ddfba5",
+      "executionDigest": "sha256:10e07e2b05c9fb91976189d90182cd72a6d93b9adcdbcd5f7463d87db52a0dac",
+      "layoutDigest": "sha256:4e4ece0a703fdee2065b9cd369a89d906059aa522f3038101a3ab70e6ee29a00",
+      "nodeCount": 4,
+      "edgeCount": 3,
+      "isHead": true,
+      "flow": {
+        "schemaVersion": 1,
+        "id": "media-flow-485d2a96-adb2-4a87-aacd-a44729c6023d",
+        "name": "Create image",
+        "description": "Prompt-to-image recipe with explicit quality and output steps.",
+        "createdAt": "2026-10-11T13:58:27.238Z",
+        "updatedAt": "2026-10-11T13:58:27.238Z",
+        "variables": [],
+        "variableBindings": {},
+        "presets": [],
+        "activePresetId": null,
+        "nodes": [
+          {
+            "id": "prompt",
+            "type": "source.prompt",
+            "version": 1,
+            "label": "Creative brief",
+            "layer": "source",
+            "config": {
+              "prompt": "zidiusArt, This is a digital collage/photo manipulation artwork with a surreal and emotional atmosphere. • Figure-centered composition: a long-haired black woman is posing with her arms raised high above her head. With its head slightly bowed and gaze downward, it gives off a quiet yet emotional impression. A casual style with jeans and a belt. • Double Exposure and Transparent Clothing Effect (Double Exposure): This is the most distinctive feature, where the shirt worn by the subject is made transparent. The shape of the clothing is rendered in simple white line art, through which the massive mountain range and landscape in the background are projected into the inner space of the garment instead of the figure's body. • Background: The scenery behind the figure and through the clothing is an exotic Swiss countryside landscape featuring towering snow-capped mountains and dark rocky cliffs, with green fields and a small hut stretching below. The figure stands on an asphalt road stretching straight through the fields. • Color and tone: Overall, the sky has a pastel sunset hue tinged with pink and purple, while the mountains and roads are rendered in calm, weighty tones, creating a dreamy and surreal mood."
+            }
+          },
+          {
+            "id": "seed",
+            "type": "source.seed",
+            "version": 1,
+            "label": "Seed",
+            "layer": "source",
+            "config": {
+              "seed": 1050111864
+            }
+          },
+          {
+            "id": "generate",
+            "type": "task.generate-image",
+            "version": 1,
+            "label": "Generate image",
+            "layer": "task",
+            "config": {
+              "aspectRatio": "9:16",
+              "guidanceScale": 0.5,
+              "memoryProfile": "auto",
+              "modelAddons": [],
+              "modelId": "local:user:3ec3c673d467e0832ad1324fafa8eed5cde9e9f2e250b399d07245e63c904191",
+              "modelPolicy": "quality",
+              "outputCount": 1,
+              "outputFormat": "png",
+              "poseEnd": 1,
+              "poseStart": 0,
+              "poseStrength": 1,
+              "providerPolicy": "auto",
+              "sampler": "flow-euler",
+              "svgAutoCrop": true,
+              "svgCandidateCount": 1,
+              "svgCriticEnabled": false,
+              "svgMode": "generate",
+              "svgStyle": "illustration",
+              "svgTargetSize": 1024,
+              "svgTextPolicy": "avoid",
+              "transparentBackground": false
+            }
+          },
+          {
+            "id": "asset-output",
+            "type": "output.asset",
+            "version": 1,
+            "label": "Save assets",
+            "layer": "output",
+            "config": {
+              "format": "png",
+              "outputCount": 1
+            }
+          }
+        ],
+        "edges": [
+          {
+            "id": "prompt-to-generate",
+            "fromNodeId": "prompt",
+            "fromPortId": "prompt",
+            "toNodeId": "generate",
+            "toPortId": "prompt"
+          },
+          {
+            "id": "seed-to-generate",
+            "fromNodeId": "seed",
+            "fromPortId": "seed",
+            "toNodeId": "generate",
+            "toPortId": "seed"
+          },
+          {
+            "id": "result-to-output",
+            "fromNodeId": "generate",
+            "fromPortId": "image",
+            "toNodeId": "asset-output",
+            "toPortId": "image"
+          }
+        ]
+      },
+      "layout": {
+        "schemaVersion": 1,
+        "flowId": "media-flow-485d2a96-adb2-4a87-aacd-a44729c6023d",
+        "nodes": [
+          {
+            "nodeId": "prompt",
+            "x": 52,
+            "y": 80
+          },
+          {
+            "nodeId": "seed",
+            "x": 52,
+            "y": 500
+          },
+          {
+            "nodeId": "generate",
+            "x": 412,
+            "y": 80
+          },
+          {
+            "nodeId": "asset-output",
+            "x": 772,
+            "y": 80
+          }
+        ],
+        "groups": [],
+        "comments": []
+      }
+    }
+  ]
+}

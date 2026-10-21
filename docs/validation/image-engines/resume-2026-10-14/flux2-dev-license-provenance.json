@@ -1,0 +1,18 @@
+[
+  {
+    "file": "LICENSE-FLUX-DEV.txt",
+    "source": "https://api.github.com/repos/black-forest-labs/flux2/git/blobs/3bd190cc0444d1590c43f6f5c9e034e64c9321b3",
+    "gitBlob": "3bd190cc0444d1590c43f6f5c9e034e64c9321b3",
+    "sha256": "49d6e28784b26ba85d2849a68c2d1144600f0bf52136878cd152f604c65580a8",
+    "bytes": 18764
+  },
+  {
+    "file": "LICENSE-Mistral.txt",
+    "source": "https://www.apache.org/licenses/LICENSE-2.0.txt",
+    "publisher": "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+    "publisherRevision": "95a6d26c4bfb886c58daf9d3f7332c857cb27b43",
+    "license": "apache-2.0",
+    "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+    "bytes": 11358
+  }
+]

@@ -1,0 +1,38 @@
+{
+  "passed": true,
+  "scope": "NF4 and FP4 quantization and linear inference; full model inference remains untested",
+  "bitsandbytes": "0.50.2",
+  "torch": "2.12.0+rocm7.14.0",
+  "hip": "7.14.60850",
+  "device": "AMD Radeon RX 9070",
+  "deviceMemoryBytes": 17095983104,
+  "weightsDtype": "torch.uint8",
+  "quantization": [
+    "nf4",
+    "fp4"
+  ],
+  "computeDtype": "bfloat16",
+  "measurements": [
+    {
+      "quantization": "nf4",
+      "batchSize": 1,
+      "relativeRmse": 0.09557024389505386
+    },
+    {
+      "quantization": "nf4",
+      "batchSize": 16,
+      "relativeRmse": 0.0916985273361206
+    },
+    {
+      "quantization": "fp4",
+      "batchSize": 1,
+      "relativeRmse": 0.11459697782993317
+    },
+    {
+      "quantization": "fp4",
+      "batchSize": 16,
+      "relativeRmse": 0.11078847944736481
+    }
+  ],
+  "seconds": 8.60899999999674
+}

@@ -1,0 +1,12 @@
+{
+  "request": {
+    "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\833294\\1022833\\noobaiXLNAIXL_epsilonPred10Version.safetensors",
+    "architecture": "noobai-xl",
+    "displayName": "NoobAI XL Epsilon 1.0 \u00b7 Laxhar Dream Lab",
+    "sourceUrl": "https://civitai.com/models/833294?modelVersionId=1022833",
+    "commercialUse": "review-required",
+    "licenseName": null,
+    "reviewToken": ""
+  },
+  "expectedDigest": "ff827fc34584853257d6de64b8bc3e34156814f6b0cfd1a5112a5e9164806df1"
+}

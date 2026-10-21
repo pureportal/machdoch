@@ -1,0 +1,188 @@
+{
+  "decoderControlsOnly": true,
+  "newGenerationCount": 0,
+  "records": [
+    {
+      "referenceId": 144655944,
+      "sourceKind": "generated-latents",
+      "sourceSha256": "aefc84f76e2f8b425ac0c1474272c4ce9fd90a178c85bb6560325a4e51686fa1",
+      "sameLatents": true,
+      "model": "D:\\Models\\machdoch\\models\\components\\krea-2\\qwen-image",
+      "vaeClass": "AutoencoderKLQwenImage",
+      "dtype": "bfloat16",
+      "device": "AMD Radeon RX 9070",
+      "records": [
+        {
+          "tile": 0,
+          "stride": null,
+          "seconds": 29.82800000000134,
+          "peakAllocatedBytes": 9081634304,
+          "meanAbsoluteErrorAgainstFullFrame": 0.0,
+          "maxAbsoluteErrorAgainstFullFrame": 0.0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-redhair-decoder-comparison\\tile-0.png"
+        },
+        {
+          "tile": 256,
+          "stride": 192,
+          "seconds": 6.35899999999674,
+          "peakAllocatedBytes": 911855104,
+          "meanAbsoluteErrorAgainstFullFrame": 0.010432898066937923,
+          "maxAbsoluteErrorAgainstFullFrame": 1.24609375,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-redhair-decoder-comparison\\tile-256.png"
+        },
+        {
+          "tile": 512,
+          "stride": 384,
+          "seconds": 2.438000000001921,
+          "peakAllocatedBytes": 2605993472,
+          "meanAbsoluteErrorAgainstFullFrame": 0.007931414991617203,
+          "maxAbsoluteErrorAgainstFullFrame": 1.080078125,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-redhair-decoder-comparison\\tile-512.png"
+        },
+        {
+          "tile": 1024,
+          "stride": 768,
+          "seconds": 4.125,
+          "peakAllocatedBytes": 7699557888,
+          "meanAbsoluteErrorAgainstFullFrame": 0.0030580756720155478,
+          "maxAbsoluteErrorAgainstFullFrame": 0.54052734375,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-redhair-decoder-comparison\\tile-1024.png"
+        },
+        {
+          "tile": 1536,
+          "stride": 1152,
+          "seconds": 15.702999999994063,
+          "peakAllocatedBytes": 9081634304,
+          "meanAbsoluteErrorAgainstFullFrame": 0.0,
+          "maxAbsoluteErrorAgainstFullFrame": 0.0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-redhair-decoder-comparison\\tile-1536.png"
+        }
+      ],
+      "pixelComparisons": [
+        {
+          "tile": 0,
+          "sha256": "c863d6856714b23de77c2d5d525972402c7326bca69a5cb8fa8025cdea3d8f33",
+          "meanPixelDifferenceAgainstGeneration": 1.2945284824139676,
+          "maxPixelDifferenceAgainstGeneration": 159
+        },
+        {
+          "tile": 256,
+          "sha256": "fcc2a2f645b229197a71dfd66b6cc6233e2c438f894f3059ef6f656c83ecfadd",
+          "meanPixelDifferenceAgainstGeneration": 0.0,
+          "maxPixelDifferenceAgainstGeneration": 0
+        },
+        {
+          "tile": 512,
+          "sha256": "55f26722981250dacbc8b1d680e4f029c98a4a71ebe8f26befd83c3f0cf3e66f",
+          "meanPixelDifferenceAgainstGeneration": 0.9600044281376519,
+          "maxPixelDifferenceAgainstGeneration": 152
+        },
+        {
+          "tile": 1024,
+          "sha256": "85f84578e0fa0269b487ff7eaa1df4fc25989d1d2cc2d91f47c7f7d0b74efd83",
+          "meanPixelDifferenceAgainstGeneration": 1.2714738318151146,
+          "maxPixelDifferenceAgainstGeneration": 166
+        },
+        {
+          "tile": 1536,
+          "sha256": "c863d6856714b23de77c2d5d525972402c7326bca69a5cb8fa8025cdea3d8f33",
+          "meanPixelDifferenceAgainstGeneration": 1.2945284824139676,
+          "maxPixelDifferenceAgainstGeneration": 159
+        }
+      ],
+      "visualInspection": "Full-frame and 256-pixel tiles retain the same clean photographic portrait; neither reproduces the reference anime shading.",
+      "qualityTargetMet": false
+    },
+    {
+      "referenceId": 144697438,
+      "sourceKind": "generated-latents",
+      "sourceSha256": "5e8ddfd4e4e56ef0a8318a10c2090335bc4537d9e34c87010399166396b55e44",
+      "sameLatents": true,
+      "model": "D:\\Models\\machdoch\\models\\components\\krea-2\\qwen-image",
+      "vaeClass": "AutoencoderKLQwenImage",
+      "dtype": "bfloat16",
+      "device": "AMD Radeon RX 9070",
+      "records": [
+        {
+          "tile": 0,
+          "stride": null,
+          "seconds": 16.468999999997322,
+          "peakAllocatedBytes": 9513220608,
+          "meanAbsoluteErrorAgainstFullFrame": 0.0,
+          "maxAbsoluteErrorAgainstFullFrame": 0.0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-ruins-decoder-comparison\\tile-0.png"
+        },
+        {
+          "tile": 256,
+          "stride": 192,
+          "seconds": 5.015999999995984,
+          "peakAllocatedBytes": 1164532224,
+          "meanAbsoluteErrorAgainstFullFrame": 0.010417378507554531,
+          "maxAbsoluteErrorAgainstFullFrame": 1.35546875,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-ruins-decoder-comparison\\tile-256.png"
+        },
+        {
+          "tile": 512,
+          "stride": 384,
+          "seconds": 1.764999999999418,
+          "peakAllocatedBytes": 2861619712,
+          "meanAbsoluteErrorAgainstFullFrame": 0.007839740253984928,
+          "maxAbsoluteErrorAgainstFullFrame": 1.1796875,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-ruins-decoder-comparison\\tile-512.png"
+        },
+        {
+          "tile": 1024,
+          "stride": 768,
+          "seconds": 1.5780000000013388,
+          "peakAllocatedBytes": 7387175424,
+          "meanAbsoluteErrorAgainstFullFrame": 0.005562025588005781,
+          "maxAbsoluteErrorAgainstFullFrame": 1.01953125,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-ruins-decoder-comparison\\tile-1024.png"
+        },
+        {
+          "tile": 1536,
+          "stride": 1152,
+          "seconds": 18.625,
+          "peakAllocatedBytes": 9513220608,
+          "meanAbsoluteErrorAgainstFullFrame": 0.0,
+          "maxAbsoluteErrorAgainstFullFrame": 0.0,
+          "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-generated-ruins-decoder-comparison\\tile-1536.png"
+        }
+      ],
+      "pixelComparisons": [
+        {
+          "tile": 0,
+          "sha256": "bbed0181fe01352debb7cdcb7520e4886b0fd85e8ebe877dc8a544253f94207c",
+          "meanPixelDifferenceAgainstGeneration": 1.326429256055721,
+          "maxPixelDifferenceAgainstGeneration": 173
+        },
+        {
+          "tile": 256,
+          "sha256": "c1648ed52d02321c1b027a06f387146af0184d01523e4ca0c70000894125f257",
+          "meanPixelDifferenceAgainstGeneration": 0.0,
+          "maxPixelDifferenceAgainstGeneration": 0
+        },
+        {
+          "tile": 512,
+          "sha256": "59c0cca424ca395d3eacb2c9f589776b097a7a695494607eb15daa2138bfbcd0",
+          "meanPixelDifferenceAgainstGeneration": 1.0420693695229828,
+          "maxPixelDifferenceAgainstGeneration": 153
+        },
+        {
+          "tile": 1024,
+          "sha256": "425dd9f9e9e5f76df247d9217304cab565d40c5cba5370dba43e95934c73f497",
+          "meanPixelDifferenceAgainstGeneration": 1.2147962782118056,
+          "maxPixelDifferenceAgainstGeneration": 157
+        },
+        {
+          "tile": 1536,
+          "sha256": "bbed0181fe01352debb7cdcb7520e4886b0fd85e8ebe877dc8a544253f94207c",
+          "meanPixelDifferenceAgainstGeneration": 1.326429256055721,
+          "maxPixelDifferenceAgainstGeneration": 173
+        }
+      ],
+      "visualInspection": "Full-frame and 256-pixel tiles retain clean skin, robots and background detail; neither restores the wide painted reference composition.",
+      "qualityTargetMet": false
+    }
+  ]
+}

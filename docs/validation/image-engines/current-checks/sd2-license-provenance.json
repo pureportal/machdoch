@@ -1,0 +1,10 @@
+{
+  "source": "Redistributed Stable Diffusion licence in the publisher third-party notice",
+  "publisher": "tencent/Hunyuan3D-2.1",
+  "revision": "0b94677654c57bb9a6b6845cd7b704ccf551d327",
+  "sourceUrl": "https://huggingface.co/tencent/Hunyuan3D-2.1/blob/0b94677654c57bb9a6b6845cd7b704ccf551d327/Notice.txt",
+  "sourceSha256": "ffccf6b539a82e6084d14ff064dadd22d33384d6164b07c0c5a3141810df0350",
+  "licenseSha256": "d22a0df5437940c0a6caaea1bdf17bbf1a509ecb32922de326f1e891e53f2600",
+  "extractedSection": "Copyright (c) 2022 Stability AI and the complete CreativeML Open RAIL++-M License dated November 24, 2022, including Attachment A",
+  "originalSourceUnavailable": true
+}

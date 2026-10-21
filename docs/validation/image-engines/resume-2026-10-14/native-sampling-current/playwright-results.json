@@ -1,0 +1,411 @@
+{
+  "actualTauriIPC": true,
+  "fixtureCatalog": false,
+  "installedModels": 32,
+  "extendedKreaGuidancePreserved": true,
+  "checks": [
+    {
+      "id": "local:user:73d565bf50024dabb3b57f64382bc07c794735c7f3c0601d5ba19b74bec1b7ce",
+      "architecture": "anima",
+      "steps": 40,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:6327eca98bfb6538dd7a4edce22484a1bbc57a8cff6b11d075d40da1afb847ac",
+      "architecture": "stable-diffusion-xl",
+      "steps": 32,
+      "samplers": [
+        "Automatic",
+        "Euler",
+        "Euler ancestral",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras · Recommended",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:b5e68becf7cf2d4202598a9824a3a14c1e654bfc28c3592067471cf1c0dd9c67",
+      "architecture": "pony",
+      "steps": 32,
+      "samplers": [
+        "Automatic",
+        "Euler",
+        "Euler ancestral · Recommended",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:879db523c30d3b9017143d56705015e15a2cb5628762c11d086fed9538abd7fd",
+      "architecture": "stable-diffusion-1",
+      "steps": 32,
+      "samplers": [
+        "Automatic",
+        "Euler",
+        "Euler ancestral",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras · Recommended",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:0f1b80cfe81b9c3bde7fdcbf6898897b2811b27be1df684583c3d85cbc9b1fa4",
+      "architecture": "dreamshaper-xl",
+      "steps": 25,
+      "samplers": [
+        "Automatic",
+        "Euler",
+        "Euler ancestral",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS · Recommended",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:3fc5ed773ffaee5d18b6a191da9cb684b151f2cf13bf6b55fe36fddfcdd0365c",
+      "architecture": "flux-1-dev",
+      "steps": 50,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:ecf7ddb963c9deee056e67b3370de9358b9ba3762dbee77e027454c1616820f1",
+      "architecture": "flux-1-schnell",
+      "steps": 4,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:648fd53bd26440e200b79bad9a6bf33b81de0455cf96e02acaa12e61175f8623",
+      "architecture": "flux-2",
+      "steps": 4,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:db396aab8c15beb5173f87cb50c865459f91df43543e79921f21fde863a1c513",
+      "architecture": "flux-2-klein-base-4b",
+      "steps": 50,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:e7d65da14bf9a82b8da178426e02b5199b33e56d30276e30a3b305137710bbc6",
+      "architecture": "hidream-i1-full",
+      "steps": 50,
+      "samplers": [
+        "Automatic",
+        "UniPC · Recommended",
+        "Flow Euler"
+      ]
+    },
+    {
+      "id": "local:user:571f5143321fd0339c03e12518bf1e435d7346149fe66d6ab0291e8d9e994aa3",
+      "architecture": "hidream-i1-full",
+      "steps": 50,
+      "samplers": [
+        "Automatic",
+        "UniPC · Recommended",
+        "Flow Euler"
+      ]
+    },
+    {
+      "id": "local:user:3e15ba00387db678ab4a099f75771c4f5ac67fda9e7100a01d263eaf30145aa9",
+      "architecture": "illustrious-xl",
+      "steps": 28,
+      "samplers": [
+        "Automatic",
+        "Euler",
+        "Euler ancestral · Recommended",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:ed1ea73c0e4f659f7cf4abbc1eb341ab66b1c9121b3465f820b19ade7ced147d",
+      "architecture": "krea-2-turbo",
+      "steps": 8,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:57787a0edb66e92ddcbc8e71c614d81eac96f4f9d192cde68d59e54487afac11",
+      "architecture": "qwen-image",
+      "steps": 50,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:eec712df8cb8867fa397c03fc3f60c3eded2affe49211d64db1709ed6fef7c56",
+      "architecture": "qwen-image-2512",
+      "steps": 50,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:33e58e86686f6b386c526682b5da9228ead4f91d994abd4b053442dc5b42719e",
+      "architecture": "juggernaut-xl",
+      "steps": 35,
+      "samplers": [
+        "Automatic",
+        "Euler",
+        "Euler ancestral",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras · Recommended",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+      "architecture": "krea-2-turbo",
+      "steps": 8,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:62d1eb3e10df764cfeff0163b5aaab2e5775aac3987632f6428dd2bad1074e30",
+      "architecture": "stable-diffusion-3",
+      "steps": 32,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:ff827fc34584853257d6de64b8bc3e34156814f6b0cfd1a5112a5e9164806df1",
+      "architecture": "noobai-xl",
+      "steps": 28,
+      "samplers": [
+        "Automatic",
+        "Euler",
+        "Euler ancestral · Recommended",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:67ab2fd8ec439a89b3fedb15cc65f54336af163c7eb5e4f2acc98f090a29b0b3",
+      "architecture": "pony",
+      "steps": 32,
+      "samplers": [
+        "Automatic",
+        "Euler",
+        "Euler ancestral · Recommended",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:75c1b4d45c0b134af0c43d71a19318837fdf2bbc779de42b3e4f5f3c4e12644b",
+      "architecture": "qwen-image-2.1",
+      "steps": 40,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:5fc80891e28870d540fba30271ec02b4fe83e88acb3ae0e5f72bf1171ef63c1e",
+      "architecture": "qwen-image-2.1-turbo",
+      "steps": 8,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:6a35a7855770ae9820a3c931d4964c3817b6d9e3c6f9c4dabb5b3a94e5643b80",
+      "architecture": "realvis-xl",
+      "steps": 50,
+      "samplers": [
+        "Automatic",
+        "Euler",
+        "Euler ancestral",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras · Recommended",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:3f067a1b943cf162f2b8f8588f6cf5824bd5b4c7d1d88d87164b9ca123616549",
+      "architecture": "sd-turbo",
+      "steps": 4,
+      "samplers": [
+        "Automatic",
+        "Euler · Recommended",
+        "Euler ancestral",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:2e58e3704b4c0831bf848e0507c9b5ff2cd8d007b8d0719dba3874156f631050",
+      "architecture": "sdxl-turbo",
+      "steps": 4,
+      "samplers": [
+        "Automatic",
+        "Euler",
+        "Euler ancestral · Recommended",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:8a50afe6a29e4dea9c2390a0765b506d4ad17de055dee758a0b0a0216d95c8a0",
+      "architecture": "krea-2-raw",
+      "steps": 52,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:6ce0161689b3853acaa03779ec93eafe75a02f4ced659bee03f50797806fa2fa",
+      "architecture": "stable-diffusion-1",
+      "steps": 32,
+      "samplers": [
+        "Automatic",
+        "Euler",
+        "Euler ancestral",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras · Recommended",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:31e35c80fc4829d14f90153f4c74cd59c90b779f6afe05a74cd6120b893f7e5b",
+      "architecture": "stable-diffusion-xl",
+      "steps": 32,
+      "samplers": [
+        "Automatic",
+        "Euler",
+        "Euler ancestral",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras · Recommended",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:b19790e5ac48a7e111429e4866de2e779f9cd7e18f94004cf826ad0d8d4db44b",
+      "architecture": "z-image",
+      "steps": 50,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:5ae9b7d780d6ab09015c3c1a45946d3b2de41331a06752454219f39338dd7b60",
+      "architecture": "z-image-turbo",
+      "steps": 9,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    },
+    {
+      "id": "local:user:bc2169b605081066857862ef8aa8e887eb086842993d4dacdf2a8715f772d922",
+      "architecture": "stable-diffusion-2",
+      "steps": 32,
+      "samplers": [
+        "Automatic",
+        "Euler",
+        "Euler ancestral",
+        "Heun",
+        "DPM++ 2M",
+        "DPM++ 2M Karras · Recommended",
+        "DPM++ 2M SDE Karras",
+        "DDIM",
+        "DEIS",
+        "UniPC"
+      ]
+    },
+    {
+      "id": "local:user:3ec3c673d467e0832ad1324fafa8eed5cde9e9f2e250b399d07245e63c904191",
+      "architecture": "krea-2",
+      "steps": 12,
+      "samplers": [
+        "Automatic",
+        "Flow Euler · Recommended"
+      ]
+    }
+  ],
+  "errors": []
+}
