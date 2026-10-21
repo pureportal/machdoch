@@ -1,0 +1,22 @@
+{
+  "stoppedOwnedWorker": true,
+  "pid": 20224,
+  "imageCompleted": false,
+  "case": {
+    "id": "local:user:57787a0edb66e92ddcbc8e71c614d81eac96f4f9d192cde68d59e54487afac11",
+    "name": "Jib Mix Qwen v5",
+    "architecture": "qwen-image",
+    "referenceId": 144655944,
+    "directory": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\qwen-image\\01-qwen-image-reference-144655944",
+    "workerSha256": "0eff19924639f152f23be910deefea81e25863235b0be10d5c1a0a2b2c9705a4",
+    "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+    "runtimeSha256": "25bf6ff0f66cbcca03aba7febefa70ff4dade07b99aae6a92c37eca072c71e79",
+    "originalPrompt": false,
+    "passed": false,
+    "error": "RuntimeError: Expected all tensors to be on the same device, but got weight is on cpu, different from other tensors on cuda:0 (when checking argument in method wrapper_CUDA__slow_conv_dilated3d)",
+    "seconds": 12310.312999999998
+  },
+  "batchCompleted": false,
+  "reason": "Review the first Qwen baseline and run shorter quality comparisons before continuing the larger batches.",
+  "stoppedAt": "2026-10-15T03:47:39.034Z"
+}

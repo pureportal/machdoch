@@ -1,0 +1,14 @@
+{
+  "partialRunOnly": true,
+  "workerProcessId": 20964,
+  "memoryObserverProcessId": 5136,
+  "crashObserverProcessId": 18668,
+  "samples": 17,
+  "firstCapturedAt": "2026-10-12T23:09:41.1875537Z",
+  "latestCapturedAt": "2026-10-12T23:12:32.8052297Z",
+  "gpuDedicatedMaxBytes": 5365170176.0,
+  "processPrivateMaxBytes": 2840993792,
+  "systemAvailableMinBytes": 19333484544,
+  "log": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-memory-diagnostics\\5136-memory.jsonl",
+  "nativeCrashCauseEstablished": false
+}

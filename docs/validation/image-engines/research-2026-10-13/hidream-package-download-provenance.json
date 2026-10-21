@@ -1,0 +1,167 @@
+[
+  {
+    "source": "https://civitai.com/models/1457126?modelVersionId=1647676",
+    "path": "D:\\Models\\machdoch\\downloads\\civitai\\1457126\\1647676\\hidreamI1FULLDEVFAST_full.safetensors",
+    "sha256": "94f8ccee232f29270c876d3e5db6d74aab2d3b138d97ba738951b1fe837ffa5f"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/model_index.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\model_index.json",
+    "sha256": "17cc70f9342a20adb25c4a48db64ec0cd5991ca4c92ba71200a294b39ae04748"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/scheduler/scheduler_config.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\scheduler\\scheduler_config.json",
+    "sha256": "8508d023ce65787971c928e400b37ed70144aaf88fe07cb2771e7cce49bdaa9c"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder/config.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder\\config.json",
+    "sha256": "65295d66c6ec90847bfb701c99bcb5c888d709ef3a400c49633e691690c93904"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder/model.safetensors",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder\\model.safetensors",
+    "sha256": "b70c11ad5d7e9abf6109348908f599ea382f8019e1f36910bbc8ebecde936633"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_2/config.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_2\\config.json",
+    "sha256": "c0efd277569d6f63b752b632b208ed5eddb00cb3ec69a615dcd76e967f5078ea"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_2/model.safetensors",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_2\\model.safetensors",
+    "sha256": "4d6effa7a5e600cabf7528ed7234146a13ead1b2c151211d706b293a060b112a"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_3/config.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_3\\config.json",
+    "sha256": "32eac37d769361977906fbea3938f2909425e56aedf86e47749c90c15aac0ae2"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_3/model-00001-of-00002.safetensors",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_3\\model-00001-of-00002.safetensors",
+    "sha256": "3a4b559411fbef7373773f43600bd2fe7761c4bf167b9652685ff66d21e86d62"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_3/model-00002-of-00002.safetensors",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_3\\model-00002-of-00002.safetensors",
+    "sha256": "bd6f84c01f1105e5899d70a9944d86bf4b2e8b9063b994884d05ab86090f3220"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_3/model.safetensors.index.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_3\\model.safetensors.index.json",
+    "sha256": "38d5212b3302708425294d3558183e932be0f41827085f80949f2d00f24abf87"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_4/.gitattributes",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_4\\.gitattributes",
+    "sha256": "34448b82c17d60fec9b65b1f093c115ddbaadc04beb1b0140b6bfed2e012a930"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_4/README.md",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_4\\README.md",
+    "sha256": "5fd612514c4970d40c281133c33d408b8b96ce6c69f0d705d428977c8137ca15"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_4/config.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_4\\config.json",
+    "sha256": "4a1f6ac044b8d8d419d7ef3840aa463c225915857e4848bc66fcb1a3fd5a56ed"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_4/generation_config.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_4\\generation_config.json",
+    "sha256": "280388b9a56fc9ad1f05d9096dc399ff6b5cf4a9c0a0a48d9ccc1dbc15290f7f"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_4/model.safetensors",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_4\\model.safetensors",
+    "sha256": "f6c8ab7a8b2790ce56f3ae3946ad39866fc5250b51b277c9d0eee83ac4f26a92"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_4/special_tokens_map.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_4\\special_tokens_map.json",
+    "sha256": "94e708c3f5e64acf85bbe5ad01467a1248faadb73e83b41793087ecced586e8f"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_4/tokenizer.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_4\\tokenizer.json",
+    "sha256": "6b9e4e7fb171f92fd137b777cc2714bf87d11576700a1dcd7a399e7bbe39537b"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/text_encoder_4/tokenizer_config.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\text_encoder_4\\tokenizer_config.json",
+    "sha256": "4d18eae3017839b17cb3598f589b62ec212652d183582ee0fc33a4f1e8b3da67"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/tokenizer/merges.txt",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\tokenizer\\merges.txt",
+    "sha256": "9fd691f7c8039210e0fced15865466c65820d09b63988b0174bfe25de299051a"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/tokenizer/special_tokens_map.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\tokenizer\\special_tokens_map.json",
+    "sha256": "c4864a9376a8401918425bed71fc14fc0e81f9b59ec45c1cf96cccb2df508eac"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/tokenizer/tokenizer_config.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\tokenizer\\tokenizer_config.json",
+    "sha256": "19d7b034cb0cc3ce9766c2231373ab8aa8991fc72e2c8f76558bfaae3de0d563"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/tokenizer/vocab.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\tokenizer\\vocab.json",
+    "sha256": "e089ad92ba36837a0d31433e555c8f45fe601ab5c221d4f607ded32d9f7a4349"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/tokenizer_2/merges.txt",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\tokenizer_2\\merges.txt",
+    "sha256": "9fd691f7c8039210e0fced15865466c65820d09b63988b0174bfe25de299051a"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/tokenizer_2/special_tokens_map.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\tokenizer_2\\special_tokens_map.json",
+    "sha256": "f118ab3a983206e4f32583448de6bd6aae4ee21869135cef1f5848a753cdaab6"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/tokenizer_2/tokenizer_config.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\tokenizer_2\\tokenizer_config.json",
+    "sha256": "c9d23941f76a41cbd50eda9290f57be7828f0a7a677939e9ef181f7e12bd1bdf"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/tokenizer_2/vocab.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\tokenizer_2\\vocab.json",
+    "sha256": "e089ad92ba36837a0d31433e555c8f45fe601ab5c221d4f607ded32d9f7a4349"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/tokenizer_3/special_tokens_map.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\tokenizer_3\\special_tokens_map.json",
+    "sha256": "7a1985a994c41886db38c719d2a3d2f40606663cc19d7c5d6a85d349320e06d2"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/tokenizer_3/spiece.model",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\tokenizer_3\\spiece.model",
+    "sha256": "d60acb128cf7b7f2536e8f38a5b18a05535c9e14c7a355904270e15b0945ea86"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/tokenizer_3/tokenizer.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\tokenizer_3\\tokenizer.json",
+    "sha256": "f5dfec163765e18e270537fe896c49f5fad74db1525641d9b255a3008b999596"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/tokenizer_3/tokenizer_config.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\tokenizer_3\\tokenizer_config.json",
+    "sha256": "1a3d2db64215ed77854dd4208aac5f8361c1b5471cabd19c0ef1472d1a895eb0"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/vae/config.json",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\vae\\config.json",
+    "sha256": "ad6f0acb584ceb3d136d1e32b684dec65db24bffe9223df2bac0b45539d4e6b5"
+  },
+  {
+    "source": "https://huggingface.co/szwagros/HiDream-I1-Full-4bit/resolve/a26dcad3a4f184c3ade9304ee385192c00d655ec/vae/diffusion_pytorch_model.safetensors",
+    "path": "D:\\Models\\machdoch\\downloads\\hidream-nf4-prepared\\vae\\diffusion_pytorch_model.safetensors",
+    "sha256": "f5b59a26851551b67ae1fe58d32e76486e1e812def4696a4bea97f16604d40a3"
+  }
+]

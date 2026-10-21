@@ -1,0 +1,69 @@
+MACHDOCH
+v30.5.0
+Basic
+Advanced
+Train
+Assets
+Activity
+Image
+Video
+SVG
+Audio
+Assistant
+Convert to Advanced
+Model
+realismByStableYogi v30INT8FP8Extended fp8Scaled
+KREA 2 · Local
+Prompt
+Reference images
+Choose from Assets
+Add image
+Pose map
+Choose pose image
+No pose map
+Create pose map
+LoRAs
+Add LoRAs
+More options
+Output
+Aspect ratio
+1:1
+4:5
+16:9
+9:16
+Outputs
+Quality
+Draft
+Balanced
+High
+Format
+PNG
+WebP
+JPEG
+Transparent background
+Sampling
+Reset
+Sampler
+Automatic
+Flow Euler · Recommended
+Resolution
+Automatic
+Custom
+Sampling steps
+8–20
+Guidance
+0–1.5
+Seed
+Random
+Fixed
+Value
+Memory
+Automatic
+Memory saver
+Balanced
+Maximum speed
+Generate image
+
+Checking model availability
+
+Image output

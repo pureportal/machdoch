@@ -1,0 +1,20 @@
+[
+  {
+    "sourceUrl": "https://civitai.red/api/v1/models/612370",
+    "status": 500,
+    "type": "application/json; charset=utf-8"
+  },
+  {
+    "sourceUrl": "https://civitai.red/api/v1/models/129816",
+    "status": 500,
+    "type": "application/json; charset=utf-8"
+  },
+  {
+    "sourceUrl": "https://civitai.red/api/v1/models/132494",
+    "error": "TimeoutError"
+  },
+  {
+    "sourceUrl": "https://civitai.red/api/v1/models/190242",
+    "error": "TimeoutError"
+  }
+]

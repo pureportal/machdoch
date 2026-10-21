@@ -1,0 +1,50 @@
+{
+  "generation": {
+    "id": "local:user:8a50afe6a29e4dea9c2390a0765b506d4ad17de055dee758a0b0a0216d95c8a0",
+    "name": "Krea 2 RAW, natural prompt and negative conditioning refinement",
+    "architecture": "krea-2-raw",
+    "referenceId": 144655944,
+    "directory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-2-raw-refined-reference-sweep-continuation\\01-krea-2-raw-reference-144655944",
+    "workerSha256": "997cf9eff93415f00433408930d5ba9760d2acd4309d836d5225f68d797028a2",
+    "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+    "runtimeSha256": "f84fef7de275299831f43ec24ae9ffe0e5d2e27195f4401102c359578386a523",
+    "originalPrompt": false,
+    "passed": true,
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-2-raw-refined-reference-sweep-continuation\\01-krea-2-raw-reference-144655944\\images\\output-0000.png",
+    "width": 832,
+    "height": 1216,
+    "numInferenceSteps": 52,
+    "workerVersion": "media-diffusers-worker/1.94.0",
+    "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+    "sampler": "flow-euler",
+    "schedulerClass": "FlowMatchEulerDiscreteScheduler",
+    "guidanceScale": 3.5,
+    "sha256": "646137cfe68cf2ca69478f147eb0052f97d910af69b1d2382dd8b2f12246e8d2",
+    "seconds": 8099.734
+  },
+  "capturedDecoderLatents": {
+    "shape": [
+      1,
+      16,
+      1,
+      152,
+      104
+    ],
+    "dtypeInCapture": "torch.bfloat16",
+    "finite": true,
+    "minimum": -4.3125,
+    "maximum": 4.75,
+    "mean": -0.25818610191345215,
+    "standardDeviation": 1.319467544555664
+  },
+  "assessment": {
+    "referenceId": 144655944,
+    "referenceUrl": "https://civitai.red/images/144655944",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-2-raw-refined-reference-sweep-continuation\\01-krea-2-raw-reference-144655944\\images\\output-0000.png",
+    "sha256": "646137cfe68cf2ca69478f147eb0052f97d910af69b1d2382dd8b2f12246e8d2",
+    "workerVersion": "media-diffusers-worker/1.94.0",
+    "referenceQualityVerdict": "near-reference",
+    "observations": "Clean detailed anime portrait with red hair, amber ring-patterned eyes, coherent white shirt and black tie, a forward-reaching hand and intense golden doorway backlight. The reference has rougher painterly texture and darker contrast; this result uses smoother cel shading, a different gaze and more blurred/cropped foreground fingers."
+  },
+  "allRawReferencesVerified": false
+}

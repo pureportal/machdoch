@@ -1,0 +1,15 @@
+{
+  "checkedAt": "2026-10-15T03:18:02.613483+00:00",
+  "publisherRevision": "b940f670f0eda2d07fbb75229e779da1ad11eb80",
+  "mirrorRevision": "1cb9becf522803da9d25c2713d1a82b41bc6198d",
+  "exactTransformerFiles": [
+    "transformer/config.json",
+    "transformer/diffusion_pytorch_model.safetensors"
+  ],
+  "transformerBytes": 4939433672,
+  "civitaiPublisherCheckpoint": {
+    "url": "https://civitai.com/api/v1/model-versions/by-hash/11fe06e22364b823dfeedc275912336b932b32a293a0b2f35ffac071990cc4de",
+    "status": 404
+  },
+  "downloadStarted": false
+}

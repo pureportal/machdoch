@@ -1,0 +1,9 @@
+{
+  "sourcePath": "D:\\Models\\machdoch\\downloads\\sd35-medium-publisher-matched",
+  "architecture": "stable-diffusion-3",
+  "displayName": "Stable Diffusion 3.5 Medium - Stability AI",
+  "sourceUrl": "https://huggingface.co/stabilityai/stable-diffusion-3.5-medium",
+  "commercialUse": "review-required",
+  "licenseName": "Stability AI Community License",
+  "reviewToken": ""
+}

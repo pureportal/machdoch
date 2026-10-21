@@ -1,0 +1,118 @@
+[
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:c359197b55c8b9cc1dd5ed33fe58824488b419be392baaba1a337a3a1344e55d",
+      "alreadyInstalled": true,
+      "architecture": "z-image-turbo",
+      "byteSize": 170128248,
+      "digest": "c359197b55c8b9cc1dd5ed33fe58824488b419be392baaba1a337a3a1344e55d",
+      "displayName": "Painterly - CE — CreativeEdge",
+      "importedAt": "2026-10-11T13:54:48.399Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/c359197b55c8b9cc1dd5ed33fe58824488b419be392baaba1a337a3a1344e55d/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "zimage",
+      "blockingReason": null,
+      "byteSize": 170128248,
+      "canImport": true,
+      "detectedArchitecture": "z-image",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "ad87530560e46046da422e1ab51283b2c88d91191dd85f1134d733c21d5bcb2a",
+      "loraProfile": {
+        "algorithm": "lora",
+        "convolutionTargetCount": 0,
+        "dialect": "diffusers-peft",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 0,
+        "rankMaximum": 32,
+        "rankMinimum": 32,
+        "targetModuleCount": 240
+      },
+      "metadataSummary": [
+        "ss_base_model_version: zimage"
+      ],
+      "reviewToken": "28890d75c2ed59eb69dc1e1029598f20c4336ad992bf40749efc481ade0beaa8",
+      "schemaVersion": 1,
+      "sourceFileName": "Painterly01b_CE_ZIMGT_AIT5k.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\957327\\2504144\\Painterly01b_CE_ZIMGT_AIT5k.safetensors",
+      "suggestedDisplayName": "Painterly02_CE_ZIMGT_AIT3k",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser"
+      ],
+      "tensorCount": 480,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  },
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:561f707182a2881da2f656d0ce64399386ce0438fbe8c1c4d350f04a1af17f61",
+      "alreadyInstalled": false,
+      "architecture": "z-image-turbo",
+      "byteSize": 170129424,
+      "digest": "561f707182a2881da2f656d0ce64399386ce0438fbe8c1c4d350f04a1af17f61",
+      "displayName": "Anime art — Adel_AI",
+      "importedAt": "2026-10-11T13:54:53.335Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/561f707182a2881da2f656d0ce64399386ce0438fbe8c1c4d350f04a1af17f61/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "urn:air:zimageturbo:repository:huggingface:ostris/Z-Image-De-Turbo@main.tar",
+      "blockingReason": null,
+      "byteSize": 170129424,
+      "canImport": true,
+      "detectedArchitecture": "z-image",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "bf7602f218a20e319b6defb511c113a20ec2723c1f5b3aa732e2a5526fe80c32",
+      "loraProfile": {
+        "algorithm": "lora",
+        "convolutionTargetCount": 0,
+        "dialect": "diffusers-peft",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 0,
+        "rankMaximum": 32,
+        "rankMinimum": 32,
+        "targetModuleCount": 240
+      },
+      "metadataSummary": [
+        "modelspec.architecture: zimageturbo/lora",
+        "ss_base_model_version: zimage",
+        "ss_sd_model_name: urn:air:zimageturbo:repository:huggingface:ostris/Z-Image-De-Turbo@main.tar"
+      ],
+      "reviewToken": "acf779584febfdf86054f5a6f6d07a8834b60fbf3b6691f9299bb0ed0cece947",
+      "schemaVersion": 1,
+      "sourceFileName": "Anime_art_v7_E10.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\832858\\2921054\\Anime_art_v7_E10.safetensors",
+      "suggestedDisplayName": "training_1247607-20260505080843086",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser"
+      ],
+      "tensorCount": 480,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  }
+]

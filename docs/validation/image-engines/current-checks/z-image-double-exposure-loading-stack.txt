@@ -1,0 +1,15 @@
+Process 31292: "D:\Models\machdoch\runtime\python\cpython-3.12.10-windows-x86_64-none\python.exe" -B apps/client/src-tauri/python/verify_media_reference_sweep.py --template D:/Models/machdoch/verification/2026-10-11/image-engines/z-image-six-reference-sweep/05-z-image-turbo-reference-144599398/request.json --cases D:/Models/machdoch/verification/2026-10-11/image-engines/z-image-double-exposure-refinement-cases.json --output-root D:/Models/machdoch/verification/2026-10-11/image-engines/z-image-double-exposure-refinements
+Python v3.12.10 (D:\Models\machdoch\runtime\python\cpython-3.12.10-windows-x86_64-none\python.exe)
+
+Thread 30164 (idle): "MainThread"
+    _load_dll_libraries (torch\__init__.py:263)
+    <module> (torch\__init__.py:287)
+    _call_with_frames_removed (<frozen importlib._bootstrap>:488)
+    exec_module (<frozen importlib._bootstrap_external>:999)
+    _load_unlocked (<frozen importlib._bootstrap>:935)
+    _find_and_load_unlocked (<frozen importlib._bootstrap>:1331)
+    _find_and_load (<frozen importlib._bootstrap>:1360)
+    _runtime (media_diffusers_worker.py:176)
+    verify (verify_media_reference_sweep.py:99)
+    main (verify_media_reference_sweep.py:175)
+    <module> (verify_media_reference_sweep.py:179)

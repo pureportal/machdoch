@@ -1,0 +1,347 @@
+{
+  "workerVersion": "media-diffusers-worker/1.109.0",
+  "scope": "Full FLUX.2 Dev adapter and prepared local quantized package",
+  "pythonVerification": {
+    "runtimeTests": 113,
+    "packageIntegrityTests": 3,
+    "passed": true,
+    "command": "python -m unittest test_media_flux2 test_media_open_models test_media_diffusers_worker -v",
+    "runtimeTestSeconds": 125.341,
+    "packageCommand": "python -m unittest test_prepare_flux2_dev_verification_package -v",
+    "workerVersion": "media-diffusers-worker/1.106.0",
+    "workerSha256": "3e6a7625a0698671d758bfd67f6e89a7c94f0a128f39187a988799b9daff730c"
+  },
+  "nativeTests": {
+    "passed": true,
+    "testsPassed": 33,
+    "ignoredFixtureTests": 5,
+    "log": "docs\\validation\\image-engines\\resume-2026-10-14\\flux2-dev-native-tests.log"
+  },
+  "checkpoint": {
+    "modelId": 2167454,
+    "versionId": 2441386,
+    "filename": "flux2DEVGGUFByCity96_q4KM.gguf",
+    "sha256": "fca680c7b221a713b5cf7db6cf6b33474875320ee61f4c585bc33fe391dab9a6",
+    "bytes": 20082414560,
+    "sourceUrl": "https://civitai.com/models/2167454?modelVersionId=2441386",
+    "model": "FLUX.2 DEV GGUF (by City96)",
+    "baseModel": "Flux.2 D"
+  },
+  "companionPublisher": {
+    "id": "diffusers/FLUX.2-dev-bnb-4bit",
+    "revision": "c30ad107542e63f222f864a8de510204394fb18a"
+  },
+  "companionDownloadComplete": true,
+  "fullDevGenerationVerified": false,
+  "nativePlaywright106Verified": {
+    "samplerControls": true,
+    "installedModelsChecked": 33,
+    "record": "docs\\validation\\image-engines\\resume-2026-10-14\\native-sampling-106\\playwright-results.json",
+    "basicAndAdvancedGeneration": false,
+    "fullDev": false
+  },
+  "existingReferenceBatch": {
+    "parentPid": 29228,
+    "childPid": 20224,
+    "workerVersion": "media-diffusers-worker/1.105.0",
+    "sourceSnapshot": "captured at batch interpreter startup",
+    "completed": false,
+    "zImageComplete": true,
+    "remainingCases": 9,
+    "stoppedAtCheckpoint": true,
+    "qwenFirstImageCompleted": false,
+    "qwenDecoderError": "RuntimeError: Expected all tensors to be on the same device, but got weight is on cpu, different from other tensors on cuda:0 (when checking argument in method wrapper_CUDA__slow_conv_dilated3d)",
+    "qwenCaseSeconds": 12310.312999999998
+  },
+  "fullGoalComplete": false,
+  "companionComponents": [
+    {
+      "path": "text_encoder/model-00001-of-00004.safetensors",
+      "sha256": "4875062f3f8a490cc45ac429ccfb1d146c5363542f3693ba77484cc62e7f3097",
+      "bytes": 4934721590
+    },
+    {
+      "path": "text_encoder/model-00002-of-00004.safetensors",
+      "sha256": "6e687a020dc99c4d3ed2f196c8f58c5760544d78b443453d11a6de441ed62006",
+      "bytes": 4991630581
+    },
+    {
+      "path": "text_encoder/model-00003-of-00004.safetensors",
+      "sha256": "71e0c94eae03c4d9e8511d11f8afded8a057f1805f5f7e3dca01bdf773fbdd30",
+      "bytes": 4169109891
+    },
+    {
+      "path": "text_encoder/model-00004-of-00004.safetensors",
+      "sha256": "5b72834082387ce74af5414bf353165eab35661f3261f7c9c9f16da505b64e93",
+      "bytes": 1342177424
+    },
+    {
+      "path": "vae/diffusion_pytorch_model.safetensors",
+      "sha256": "d64f3a68e1cc4f9f4e29b6e0da38a0204fe9a49f2d4053f0ec1fa1ca02f9c4b5",
+      "bytes": 336213556
+    }
+  ],
+  "packageAssembly": {
+    "passed": true,
+    "path": "D:/Models/machdoch/downloads/flux2-dev-q4km-prepared",
+    "weightChanges": false
+  },
+  "sourceDigest": "26f9e91d0f07682484bec862e689b06140e960f035f2c516f4d924fced516d5a",
+  "nativeImport": {
+    "state": "passed",
+    "log": "docs\\validation\\image-engines\\resume-2026-10-14\\flux2-dev-native-import.log",
+    "result": {
+      "schemaVersion": 1,
+      "modelId": "local:user:1dcd2e59a71071de6905c2bd0cb5d6799cb76c7af38bfe00bcbc5239e4545f80",
+      "displayName": "FLUX.2 Dev Q4_K_M - Black Forest Labs / City96",
+      "family": "FLUX",
+      "revision": "1dcd2e59a71071de6905c2bd0cb5d6799cb76c7af38bfe00bcbc5239e4545f80",
+      "digest": "1dcd2e59a71071de6905c2bd0cb5d6799cb76c7af38bfe00bcbc5239e4545f80",
+      "byteSize": 35873821283,
+      "targetLabel": "models/packages/user-1dcd2e59a71071de6905c2bd0cb5d679/revisions/1dcd2e59a71071de6905c2bd0cb5d6799cb76c7af38bfe00bcbc5239e4545f80",
+      "importedAt": "2026-10-15T00:58:55.418Z",
+      "alreadyInstalled": false
+    }
+  },
+  "nativeRuntime": {
+    "ready": true,
+    "workerVersion": "media-diffusers-worker/1.106.0",
+    "deviceLabel": "AMD Radeon RX 9070 (cuda:1)",
+    "record": "docs\\validation\\image-engines\\resume-2026-10-14\\native-runtime-106.json"
+  },
+  "desktopBuild": {
+    "passed": true,
+    "uiLog": "docs\\validation\\image-engines\\resume-2026-10-14\\build-ui-106.log",
+    "nativeLog": "docs\\validation\\image-engines\\resume-2026-10-14\\native-app-final-build-106.log"
+  },
+  "nativePlaywright107Verified": {
+    "samplerControls": true,
+    "installedModelsChecked": 34,
+    "record": "docs\\validation\\image-engines\\resume-2026-10-14\\native-sampling-107\\playwright-results.json",
+    "basicAndAdvancedGeneration": false,
+    "fullDev": false,
+    "heunBasicToAdvancedSavedFlow": true,
+    "heunRecord": "docs\\validation\\image-engines\\resume-2026-10-14\\native-heun-flow-107\\playwright-results.json"
+  },
+  "desktop107": {
+    "process": {
+      "pid": 19520,
+      "executable": "C:\\Development\\machdoch\\.cache\\image-engine-native-107-artifact\\machdoch.exe",
+      "endpoint": "http://127.0.0.1:9228",
+      "workerVersion": "media-diffusers-worker/1.107.0",
+      "hashes": {
+        "machdoch.exe": "fc698800faaa779e32ea711ff624b38c81b062fe7acf7508558e8d8bc4781fc5",
+        "python/media_diffusers_worker.py": "ea702ee53f972587eb455df209c84e6f23533cdebc568536316bdfb311c7b4c9",
+        "python/media_open_models.py": "01a13d526c49fdd848a2e8b4eced2e7154fbd6d64ca9ed4135a9ca9fa6c1446a",
+        "python/media_flux2.py": "17228a18f31c5cbb4d754acfd62a88a1bf4326aebaefeecbb1a4421051f20a39",
+        "python/image_sampling_profiles.json": "08692a1f60248c070c200399360aefdfacf90281675edb147a7ca0d6901f8c14"
+      },
+      "startedAt": "2026-10-15T01:26:29.996Z",
+      "expectedModelStore": "D:/Models/machdoch"
+    },
+    "build": {
+      "exitCode": 0,
+      "seconds": 744.41,
+      "log": "native-app-final-build-107.log"
+    },
+    "uiBuildLog": "docs\\validation\\image-engines\\resume-2026-10-14\\build-ui-final-107.log",
+    "runtimeReadinessVerified": true,
+    "runtimeRecord": "docs\\validation\\image-engines\\resume-2026-10-14\\native-runtime-107.json",
+    "runtimeDeviceLabel": "AMD Radeon RX 9070 (cuda:0)"
+  },
+  "styleAddonImports": {
+    "passed": true,
+    "count": 3,
+    "record": "docs\\validation\\image-engines\\resume-2026-10-14\\native-style-addons\\native-imports.json",
+    "qualityVerified": false
+  },
+  "preparedComparisons": {
+    "manifest": "D:/Models/machdoch/verification/2026-10-13/image-engines/next-quality-batches-107.json",
+    "cases": 28,
+    "started": false
+  },
+  "sd35TurboAcquisition": {
+    "state": "passed",
+    "source": "publisher-matched public redistribution",
+    "checkpointWeightsFromCivitai": false,
+    "civitaiDiscovery": "https://civitai.com/models/948541?modelVersionId=1068749",
+    "publisherMetadata": "docs\\validation\\image-engines\\resume-2026-10-14\\sd35-large-turbo-publisher-metadata.json",
+    "mirrorMetadata": "docs\\validation\\image-engines\\resume-2026-10-14\\sd35-large-turbo-mirror-metadata.json",
+    "log": "docs\\validation\\image-engines\\resume-2026-10-14\\sd35-large-turbo-acquisition.log",
+    "nativeImportVerified": true,
+    "generationVerified": false,
+    "preparedPackage": "D:/Models/machdoch/downloads/sd35-large-turbo-publisher-matched",
+    "nativeImportState": "passed",
+    "nativeImportLog": "docs\\validation\\image-engines\\resume-2026-10-14\\sd35-large-turbo-native-import.log",
+    "nativeImportResult": {
+      "schemaVersion": 1,
+      "modelId": "local:user:37efbf3a9527f9cb0d81f7ce35ceba82fc1e08f7c8c80e38e84187e90cafd791",
+      "displayName": "Stable Diffusion 3.5 Large Turbo - Stability AI",
+      "family": "Stable Diffusion 3.5",
+      "revision": "37efbf3a9527f9cb0d81f7ce35ceba82fc1e08f7c8c80e38e84187e90cafd791",
+      "digest": "37efbf3a9527f9cb0d81f7ce35ceba82fc1e08f7c8c80e38e84187e90cafd791",
+      "byteSize": 27891517991,
+      "targetLabel": "models/packages/user-37efbf3a9527f9cb0d81f7ce35ceba82/revisions/37efbf3a9527f9cb0d81f7ce35ceba82fc1e08f7c8c80e38e84187e90cafd791",
+      "importedAt": "2026-10-15T02:34:58.542Z",
+      "alreadyInstalled": false
+    },
+    "nativeImportSeconds": 2975.724
+  },
+  "currentWorkerChange": "Flow Heun alternative for non-distilled SD3/SD3.5; full-size image quality unverified",
+  "currentNativeSamplerTests": {
+    "passed": true,
+    "tests": 2,
+    "record": "docs\\validation\\image-engines\\resume-2026-10-14\\flow-heun-native-tests-result.json",
+    "log": "docs\\validation\\image-engines\\resume-2026-10-14\\flow-heun-native-tests.log"
+  },
+  "cpuEncoderOffloadTest": {
+    "passed": true,
+    "scope": "Serialized NF4 CPU load and CPU group-offload hooks preserve numerical output and packed uint8 weights; GPU staging unverified",
+    "seconds": 166.412,
+    "log": "docs\\validation\\image-engines\\resume-2026-10-14\\flux2-dev-encoder-offload-test.log"
+  },
+  "pendingDesktop108": {
+    "workerVersion": "media-diffusers-worker/1.108.0",
+    "change": "SD3 guidance default 4.5; suggested range 3.5?7",
+    "uiBuildPassed": true,
+    "defaultGuidanceTestPassed": true,
+    "nativeBuildPassed": true,
+    "nativePlaywrightPassed": true,
+    "buildRecord": "docs\\validation\\image-engines\\resume-2026-10-14\\native-app-build-108-result.json",
+    "buildSeconds": 536.365
+  },
+  "conceptAddons": {
+    "verifiedFiles": 5,
+    "nativeImportVerified": true,
+    "qualityVerified": false,
+    "fixture": "docs\\validation\\image-engines\\resume-2026-10-14\\concept-addon-import-fixture.json",
+    "nativeImportRecord": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\resume-2026-10-14\\native-concept-addons\\native-imports.json",
+    "preparedCases": 6,
+    "manifest": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\concept-quality-batches-108.json"
+  },
+  "verificationLogging": {
+    "passed": true,
+    "regressionReproducedBeforeFix": true,
+    "windowsReferenceTests": 26,
+    "skipped": 0,
+    "record": "docs\\validation\\image-engines\\resume-2026-10-14\\reference-verification-windows-tests-result.json",
+    "log": "docs\\validation\\image-engines\\resume-2026-10-14\\reference-verification-windows-tests.log",
+    "latestTests": 26,
+    "latestSkipped": 0,
+    "latestRecord": "docs\\validation\\image-engines\\resume-2026-10-14\\reference-verification-110-result.json"
+  },
+  "baselineCheckpointController": {
+    "record": "docs\\validation\\image-engines\\resume-2026-10-14\\qwen-reference-worker-owner.json",
+    "checkpoint": "docs\\validation\\image-engines\\resume-2026-10-14\\qwen-baseline-checkpoint.json",
+    "condition": "First Qwen baseline reaches a completed result; image hash checked before stopping the owned worker",
+    "currentlyWaiting": false
+  },
+  "shortQualityChecks": {
+    "manifest": "D:/Models/machdoch/verification/2026-10-13/image-engines/short-quality-preflight-108.json",
+    "cases": 5,
+    "started": false
+  },
+  "preparedTurboComparisons": {
+    "manifest": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\sd35-large-turbo-quality-batches-108.json",
+    "cases": 6,
+    "started": false
+  },
+  "desktop108": {
+    "process": {
+      "pid": 22452,
+      "executable": "C:\\Development\\machdoch\\.cache\\image-engine-native-108-artifact\\machdoch.exe",
+      "endpoint": "http://127.0.0.1:9228",
+      "workerVersion": "media-diffusers-worker/1.108.0",
+      "hashes": {
+        "machdoch.exe": "18e4655369b8135a1d0a2f1518d83b31f62aa8a7ba9324402cef51cb3a66023f",
+        "python/media_diffusers_worker.py": "34b36e962c4db1f9f1d5b76fb208712ef771bd8302a0f61d7bf713d7728db0d4",
+        "python/media_open_models.py": "01a13d526c49fdd848a2e8b4eced2e7154fbd6d64ca9ed4135a9ca9fa6c1446a",
+        "python/media_flux2.py": "17228a18f31c5cbb4d754acfd62a88a1bf4326aebaefeecbb1a4421051f20a39",
+        "python/image_sampling_profiles.json": "0a87ae95f12f219685c4ce5fe76d4e579b2e5868f1f0abb1242ed40d434d7155"
+      },
+      "startedAt": "2026-10-15T02:51:35.359Z",
+      "expectedModelStore": "D:/Models/machdoch"
+    },
+    "runtimeReadinessVerified": true,
+    "runtimeDeviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+    "samplerModelsChecked": 35,
+    "samplerRecord": "docs\\validation\\image-engines\\resume-2026-10-14\\native-sampling-108\\playwright-results.json",
+    "heunSavedFlowPassed": true,
+    "gpuGenerationVerified": false,
+    "turboBasicToAdvancedControlsPassed": true,
+    "turboControlRecord": "docs\\validation\\image-engines\\resume-2026-10-14\\native-turbo-flow-108\\playwright-results.json",
+    "retiredAfterControlChecks": true,
+    "reason": "Release the idle verification WebView while the Qwen baseline completes; production desktop retained."
+  },
+  "pendingDesktop109": {
+    "workerVersion": "media-diffusers-worker/1.109.0",
+    "change": "Time LoRA schedules against actual scheduler evaluations, including Heun predictor/corrector passes",
+    "regressionReproducedBeforeFix": true,
+    "testsPassed": 95,
+    "testsRecord": "docs\\validation\\image-engines\\resume-2026-10-14\\heun-lora-schedule-109-result.json",
+    "nativeBuildState": "passed",
+    "gpuGenerationVerified": false,
+    "nativeBuildSeconds": 920.099,
+    "stagedArtifact": "docs\\validation\\image-engines\\resume-2026-10-14\\native-109-artifact.json",
+    "nativePlaywrightPending": true
+  },
+  "pendingDesktop110": {
+    "workerVersion": "media-diffusers-worker/1.110.0",
+    "change": "NF4 for original Qwen and Qwen 2512 text encoders; declared GGUF transformers remain intact",
+    "testsState": "passed",
+    "nativeBuildState": "passed",
+    "generationVerified": false,
+    "tests": 121,
+    "testExecutionSeconds": 39.805,
+    "processSeconds": 191.016,
+    "testRecord": "docs\\validation\\image-engines\\resume-2026-10-14\\qwen-nf4-encoder-110-result.json",
+    "nativeBuildSeconds": 544.902,
+    "artifactRecord": "docs\\validation\\image-engines\\resume-2026-10-14\\native-110-artifact.json",
+    "stagedFiles": 121,
+    "nativeRuntimeVerified": false
+  },
+  "sd35MediumAcquisition": {
+    "state": "prepared",
+    "record": "docs\\validation\\image-engines\\resume-2026-10-14\\sd35-medium-acquisition-result.json",
+    "nativeImportVerified": true,
+    "nativeImportPlannedAfterNative109Generation": true,
+    "generationVerified": false,
+    "nativeImportState": "passed",
+    "nativeImportLog": "docs\\validation\\image-engines\\resume-2026-10-14\\sd35-medium-native-import.log",
+    "nativeImportResult": {
+      "schemaVersion": 1,
+      "modelId": "local:user:d49dede388bd0377f412473eb410780c070ff4485d5ff9fdbdf78e924dca9831",
+      "displayName": "Stable Diffusion 3.5 Medium - Stability AI",
+      "family": "Stable Diffusion 3",
+      "revision": "d49dede388bd0377f412473eb410780c070ff4485d5ff9fdbdf78e924dca9831",
+      "digest": "d49dede388bd0377f412473eb410780c070ff4485d5ff9fdbdf78e924dca9831",
+      "byteSize": 16538118686,
+      "targetLabel": "models/packages/user-d49dede388bd0377f412473eb410780c/revisions/d49dede388bd0377f412473eb410780c070ff4485d5ff9fdbdf78e924dca9831",
+      "importedAt": "2026-10-15T04:20:17.075Z",
+      "alreadyInstalled": false
+    },
+    "nativeImportSeconds": 1667.843,
+    "preparedQualityCases": 6
+  },
+  "desktop109": {
+    "runtimeVerified": true,
+    "basicAndAdvancedGenerationPassed": true,
+    "generationRecord": "docs\\validation\\image-engines\\resume-2026-10-14\\native-generation-109-comparison.json",
+    "retiredAfterGeneration": true
+  },
+  "pendingDesktop111": {
+    "workerVersion": "media-diffusers-worker/1.111.0",
+    "change": "Keep image VAE on the selected GPU while offloading larger components",
+    "gpuDecoderRegressionReproducedBeforeFix": true,
+    "gpuDecoderRegressionPassed": true,
+    "tests": 161,
+    "testsPassed": true,
+    "testsRecord": "docs\\validation\\image-engines\\resume-2026-10-14\\image-runtime-111-final-result.json",
+    "nativeBuildState": "passed",
+    "fullSizeQwenGenerationState": "running",
+    "comparisonManifest": "D:/Models/machdoch/verification/2026-10-13/image-engines/qwen-image-nf4-baseline-batches.json",
+    "nativeBuildSeconds": 366.955,
+    "stagedArtifactRecord": "docs\\validation\\image-engines\\resume-2026-10-14\\native-111-artifact.json",
+    "nativeRuntimeVerified": false
+  }
+}

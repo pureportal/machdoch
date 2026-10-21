@@ -1,0 +1,24 @@
+{
+  "installed": {
+    "sha256": "8a50afe6a29e4dea9c2390a0765b506d4ad17de055dee758a0b0a0216d95c8a0",
+    "tensorCount": 430,
+    "dtypes": {
+      "BF16": 430
+    },
+    "quantized": false
+  },
+  "otherPublisherFile": {
+    "sha256": "7f18a3f1203ef84157d5767f3ea3e000d05ebd2eadab8cfe95ebbaef45689eb5",
+    "headerOnly": true,
+    "fullWeightDigestVerified": false,
+    "tensorCount": 956,
+    "dtypes": {
+      "F32": 263,
+      "BF16": 167,
+      "I8": 263,
+      "U8": 263
+    },
+    "quantization": "convrot8"
+  },
+  "conclusion": "The installed RAW checkpoint already supplies BF16 weights; a precision-control download of the other file would not provide an unquantized baseline"
+}

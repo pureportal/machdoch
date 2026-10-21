@@ -1,0 +1,125 @@
+{
+  "auditedAt": "2026-10-15T18:20:31.445769+00:00",
+  "previousGoalTurn": "progress",
+  "requirements": [
+    {
+      "requirement": "multiple_local_open_source_upscalers",
+      "status": "verified",
+      "evidence": [
+        "native-model-installs.json",
+        "model-downloads.json",
+        "gpu-audit-results.json",
+        "../../../THIRD_PARTY_NOTICES.md"
+      ]
+    },
+    {
+      "requirement": "consumer_gpu_execution",
+      "status": "verified",
+      "evidence": [
+        "native-runtime.json",
+        "gpu-audit-results.json"
+      ]
+    },
+    {
+      "requirement": "media_studio_menu",
+      "status": "verified",
+      "evidence": [
+        "ui-image-span-4x.png",
+        "playwright-results.json"
+      ]
+    },
+    {
+      "requirement": "video_upscaling",
+      "status": "verified",
+      "evidence": [
+        "ui-video-realesrgan-2x-run.json",
+        "generation-video-verification.json",
+        "gpu-audit-results.json"
+      ]
+    },
+    {
+      "requirement": "image_and_video_generation_chaining",
+      "status": "verified",
+      "evidence": [
+        "generation-chains.json",
+        "generation-chain-image-run.json",
+        "generation-chain-video-run.json",
+        "ui-advanced-run.json"
+      ]
+    },
+    {
+      "requirement": "generated_media_context_menus",
+      "status": "verified",
+      "evidence": [
+        "ui-library-images-context.png",
+        "ui-library-videos-context.png",
+        "playwright-results.json"
+      ]
+    },
+    {
+      "requirement": "basic_and_advanced_settings",
+      "status": "verified",
+      "evidence": [
+        "ui-image-span-4x.png",
+        "ui-advanced-video.png",
+        "ui-invalid-tile.png"
+      ]
+    },
+    {
+      "requirement": "ease_of_use",
+      "status": "verified",
+      "evidence": [
+        "ui-image-span-4x.png",
+        "ui-compact.png",
+        "playwright-results.json"
+      ]
+    },
+    {
+      "requirement": "stability_and_error_recovery",
+      "status": "verified",
+      "evidence": [
+        "ui-missing-model.png",
+        "ui-canceled-run.json",
+        "python-upscale-tests.log",
+        "media-tests.log",
+        "rust-tests.log",
+        "gpu-audit-results.json"
+      ]
+    },
+    {
+      "requirement": "modern_upscaler_and_comfyui_research",
+      "status": "verified",
+      "evidence": [
+        "research.md"
+      ]
+    },
+    {
+      "requirement": "attribution_and_licenses",
+      "status": "verified",
+      "evidence": [
+        "model-downloads.json",
+        "native-model-installs.json",
+        "../../../THIRD_PARTY_NOTICES.md"
+      ]
+    },
+    {
+      "requirement": "playwright_ui_and_real_test_upscales",
+      "status": "verified",
+      "evidence": [
+        "playwright-results.json",
+        "export-verification.json",
+        "native-artifact.json"
+      ]
+    }
+  ],
+  "additionalFix": "Reject non-finite model output before clipping; ten GPU output cases remain pixel-identical.",
+  "nativeUiChecks": 15,
+  "pythonTestsPassed": 19,
+  "scopeLimits": [
+    "WebM video input/output with independent frame processing",
+    "Other platforms and long/large-video performance not benchmarked",
+    "Newer generative restoration engines researched, not selectable runtimes",
+    "The generated LTX source has little subject motion; moving clip checks separately verify frame preservation"
+  ],
+  "allRequirementsVerified": true
+}

@@ -1,0 +1,32 @@
+{
+  "checkedAtUtc": "2026-10-13T06:54:49.708785+00:00",
+  "candidate": "rtqichen/torchdiffeq",
+  "license": "MIT",
+  "adaptiveSolvers": [
+    "dopri5",
+    "bosh3"
+  ],
+  "checkpointSource": "https://huggingface.co/Nekofantasia/Nekofantasia-alpha",
+  "evidence": {
+    "license": {
+      "url": "https://raw.githubusercontent.com/rtqichen/torchdiffeq/master/LICENSE",
+      "sha256": "df970ff07a0460f29115f2feddcceb8253f5840a8b35df857884354e3d47753c",
+      "bytes": 1075
+    },
+    "readme": {
+      "url": "https://raw.githubusercontent.com/rtqichen/torchdiffeq/master/README.md",
+      "sha256": "8f7702fdd454fdad124487a96ae3fa45d02af1d41adf3b5397fac6670ee1c370",
+      "bytes": 7712
+    }
+  },
+  "dependencyInstalled": false,
+  "productionSamplerImplemented": false,
+  "codeCopied": false,
+  "requiredIntegration": [
+    "SD3 conditioning and classifier-free guidance at adaptive times",
+    "Flow schedule and endpoint handling",
+    "Evaluation bounds and cancellation",
+    "UI and native sampler contract",
+    "Real six-reference quality comparison"
+  ]
+}

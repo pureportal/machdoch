@@ -1,0 +1,118 @@
+{
+  "repository": "OnomaAIResearch/Illustrious-xl-early-release-v0",
+  "revision": "dca0dac303e6dc4b0c31d8001bc685b89b5d0204",
+  "gated": false,
+  "card": {
+    "license": "other",
+    "license_name": "fair-ai-public-license-1.0-sd",
+    "license_link": "https://freedevproject.org/faipl-1.0-sd/",
+    "language": [
+      "en"
+    ],
+    "base_model": "KBlueLeaf/kohaku-xl-beta5",
+    "pipeline_tag": "text-to-image"
+  },
+  "files": [
+    {
+      "rfilename": "(OnomaAI)Official Description_Feb,12,2025.pdf"
+    },
+    {
+      "rfilename": ".gitattributes"
+    },
+    {
+      "rfilename": "Illustrious Technical Report.pdf"
+    },
+    {
+      "rfilename": "Illustrious-XL-v0.1-GUIDED.safetensors"
+    },
+    {
+      "rfilename": "Illustrious-XL-v0.1.safetensors"
+    },
+    {
+      "rfilename": "README.md"
+    },
+    {
+      "rfilename": "TERM_OF_USE"
+    },
+    {
+      "rfilename": "model_index.json"
+    },
+    {
+      "rfilename": "scheduler/scheduler_config.json"
+    },
+    {
+      "rfilename": "text_encoder/config.json"
+    },
+    {
+      "rfilename": "text_encoder/model.safetensors"
+    },
+    {
+      "rfilename": "text_encoder/pytorch_model.bin"
+    },
+    {
+      "rfilename": "text_encoder_2/config.json"
+    },
+    {
+      "rfilename": "text_encoder_2/model.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_2/pytorch_model.bin"
+    },
+    {
+      "rfilename": "tokenizer/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer/vocab.json"
+    },
+    {
+      "rfilename": "tokenizer_2/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer_2/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer_2/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer_2/vocab.json"
+    },
+    {
+      "rfilename": "unet/config.json"
+    },
+    {
+      "rfilename": "unet/diffusion_pytorch_model.bin"
+    },
+    {
+      "rfilename": "unet/diffusion_pytorch_model.safetensors"
+    },
+    {
+      "rfilename": "vae/config.json"
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.bin"
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.safetensors"
+    }
+  ],
+  "documents": {
+    "README.md": {
+      "status": 200,
+      "content": "---\nlicense: other\nlicense_name: fair-ai-public-license-1.0-sd\nlicense_link: https://freedevproject.org/faipl-1.0-sd/\nlanguage:\n- en\nbase_model: KBlueLeaf/kohaku-xl-beta5\npipeline_tag: text-to-image\n---\n<style>\n@import url('https://fonts.googleapis.com/css2?family=Montserrat&family=Playwrite+DE+Grund:wght@100..400&display=swap');\n.title-container {\n  display: flex;\n  justify-content: center;\n  align-items: center;\n  height: 20vh;\n}\n/* Title Base Styling */\n.title {\n  text-align: center;\n  letter-spacing: -0.02em;\n  line-height: 1.2;\n  padding: 0.5em 0;\n}\n.playwrite-de-grund-title {\n  font-size: 40px;\n  font-style: normal; /* You can change to italic if needed */\n  color: black;\n}\n@keyframes titlePulse {\n  0% { transform: scale(1); }\n  100% { transform: scale(1.05); }\n}\n.custom-table {\n  table-layout: fixed;\n  width: 100%;\n  border-collapse: separate;\n  border-spacing: 1em;\n  margin-top: 2em;\n}\n.custom-table td {\n  width: 33.333%;\n  vertical-align: top;\n  padding: 0;\n}\n.custom-image-container {\n  position: relative;\n  width: 100%;\n  height: 100%\n  margin-bottom: 1em;\n  overflow: hidden;\n  align-items: center;\n  border-radius: 15px;\n  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);\n  transition: all 0.3s ease;\n}\n.custom-image-container:hover {\n  transform: translateY(-10px);\n  box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4);\n}\n.custom-image {\n  width: 100%;\n  height: auto;\n  object-fit: cover;\n  transition: transform 0.5s;\n}\n.last-image-container {\n  display: grid;\n  grid-template-columns: 1fr; /* One column for vertical layout */\n  gap: 0px; /* Remove space between images */\n  width: 80%; /* Adjust as needed */\n  height: 100%; /* Set full height */\n}\n.last-image-container img {\n  width: 100%; /* Full width for each image */\n  height: auto; /* Maintain aspect ratio */\n}\n.custom-image-container:hover .custom-image {\n  transform: scale(1.1);\n}\n.playwrite-de-grund-title .company-name {\n    font-size: 40px;\n}\n.nsfw-filter {\n  filter: blur(10px);\n  transition: filter 0.3s ease;\n}\n.custom-image-container:hover .nsfw-filter {\n  filter: blur(5px);\n}\n.overlay {\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  background: rgba(0, 0, 0, 0.7);\n  display: flex;\n  flex-direction: column;\n  justify-content: center;\n  align-items: center;\n  opacity: 0;\n  transition: opacity 0.3s;\n}\n.custom-image-container:hover .overlay {\n  opacity: 1;\n}\n.overlay-text {\n  font-size: 1.5em;\n  font-weight: bold;\n  color: #FFFFFF;\n  text-align: center;\n  padding: 0.5em;\n  background: linear-gradient(45deg, #E74C3C, #C0392B);\n  -webkit-background-clip: text;\n  -webkit-text-fill-color: transparent;\n  text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.7);\n}\n.overlay-subtext {\n  font-size: 0.85em;\n  color: #F0F0F0;\n  margin-top: 0.5em;\n  font-style: italic;\n  text-shadow: 3px 3px 6px rgba(0, 0, 0, 0.5);\n}\n.model-info {\n  font-style: bold;\n}\n@media (max-width: 768px) {\n  .title {\n    font-size: 3rem;\n  }\n  .custom-table td {\n    display: block;\n    width: 70%;\n  }\n}\n.playwrite-de-grund-title .trained-by {\n    font-size: 32px; /* Smaller font size for \"trained by\" part */\n}\n</style>\n<head>\n    <link\n    rel=\"stylesheet\"\n    href=\"https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.8.2/css/all.min.css\"\n  />\n</head>\n<body>\n  <div class=\"title-container\">\n    <h1 class=\"title\">\n      <i class=\"fa-thin fa-palette\"></i>\n      <span class=\"playwrite-de-grund-title\"><b>Illustrious XL v0.1</b><br> <span class=\"trained-by\">trained by</span> <a rel=\"nofollow\" href=\"https://onomaai.com/\"><b><span class=\"company-name\">Onoma AI</span></b></a></span>\n    </h1>\n  </div>\n  <table class=\"custom-table\">\n    <tr>\n      <td>\n        <div class=\"custom-image-container\">\n          <img class=\"custom-image\" src=\"https://cdn-uploads.huggingface.co/production/uploads/65eea2d62cc24ebc6dbe16c0/dXvGxUKjcsqzt_gDWc9FU.png\" alt=\"s00\">\n        </div>\n        <div class=\"custom-image-container\">\n          <img class=\"custom-image\" src=\"https://cdn-uploads.huggingface.co/production/uploads/65eea2d62cc24ebc6dbe16c0/TjfHgNIgpfhX1Josy-a1h.png\" alt=\"s01\">\n        </div>\n        <div class=\"custom-image-container\">\n          <img class=\"custom-image\" src=\"https://cdn-uploads.huggingface.co/production/uploads/65eea2d62cc24ebc6dbe16c0/YMxjs05WcbuS5sIjeqOJr.png\" alt=\"s02\">\n        </div>\n      </td>\n      <td>\n        <div class=\"custom-image-container\">\n          <img class=\"custom-image\" src=\"https://cdn-uploads.huggingface.co/production/uploads/65eea2d62cc24ebc6dbe16c0/ChTQ2UKphqbFsyKF9ddNY.png\" alt=\"s10\">\n        </div>\n        <div class=\"custom-image-container\">\n          <img class=\"custom-image\" src=\"https://cdn-uploads.huggingface.co/production/uploads/65eea2d62cc24ebc6dbe16c0/PO3_B7AeUVq59OWHidEas.png\" alt=\"s11\">\n        </div>\n        <div class=\"custom-image-container\">\n          <img class=\"custom-image\" src=\"https://cdn-uploads.huggingface.co/production/uploads/65eea2d62cc24ebc6dbe16c0/hLR6af7AluIYQPB6GXQYh.png\" alt=\"s12\">\n        </div>\n      </td>\n      <td>\n        <div class=\"custom-image-container\">\n          <img class=\"custom-image\" src=\"https://cdn-uploads.huggingface.co/production/uploads/65eea2d62cc24ebc6dbe16c0/4kdzhZAGp_VLEqat6T5Yv.png\" alt=\"s20\">\n        </div>\n        <div class=\"custom-image-container\">\n          <img class=\"custom-image\" src=\"https://cdn-uploads.huggingface.co/production/uploads/65eea2d62cc24ebc6dbe16c0/05bgqY-9S2dNxtpa6WmNV.png\" alt=\"s21\">\n        </div>\n        <div class=\"custom-image-container\">\n          <img class=\"custom-image\" src=\"https://cdn-uploads.huggingface.co/production/uploads/65eea2d62cc24ebc6dbe16c0/yAYxcQ1IK_dytlPGObMe4.png\" alt=\"s22\">\n        </div>\n      </td>\n    </tr>\n  </table>\n\n  <div>\n    <p>\n      Illustrious XL is the Illustration focused Stable Diffusion XL model which is continued from Kohaku XL Beta 5, trained by OnomaAI Research Team.\n      The model focuses on utilizing large-scale annotated dataset, <a href=\"https://huggingface.co/datasets/nyanko7/danbooru2023\">Danbooru2023.</a>\n      We release the v0.1 and v0.1-GUIDED model here, under fair public ai license, however discourages the usage of model over monetization purpose / any closed source purposes.\n      For full technical details, please refer to our technical report.\n    </p>\n    <p>\n      <strong>Model Information:</strong>\n    </p>\n    <ul style=\"margin-left: 20px;\">\n      <li><strong>Name:</strong> Illustrious-XL-v0.1</li>\n      <li><strong>Model Type:</strong> Stable Diffusion XL Model</li>\n      <li><strong>Dataset:</strong> Fine-tuned on Danbooru2023 Dataset</li>\n    </ul>\n    <p>\n      <strong>Description</strong>: \n    </p>\n    <ul style=\"margin-left: 20px;\">\n      <li><strong>Illustrious-XL</strong> is a powerful generative model series, fine-tuned on the comprehensive Danbooru2023 dataset and its variants. It includes a wide variety of character designs, styles, and artistic knowledge derived from the dataset, making it suitable for creative and artistic AI generation tasks.</li>\n      <li><strong>Illustrious-XL-v0.1</strong> is untuned BASE model, which works as possible base for all future model variants. LoRAs / Adapters can be trained on this model, ensuring future usecases. The model is research-only purpose, as not tuned for aesthetics / preferences.</li>\n      <li><strong>Illustrious-XL-v0.1-GUIDED</strong> is minimally safety controlled model, which works as better option for usual usecases.</li>\n    </ul>\n    We plan to release several aesthetic-finetuned model variants in near future.  \n    <p>\n      <strong>Technical Details:</strong>\n    </p>\n    <ul style=\"margin-left: 20px;\">\n        <li> <a href=\"https://arxiv.org/abs/2409.19946\" target=\"_blank\">https://arxiv.org/abs/2409.19946</a> </li>\n    </ul>\n    <p>\n      <strong>Terms and Conditions:</strong>\n    </p>\n    <ul style=\"margin-left: 20px;\">\n      <li>We recommend to use official repositories, to prevent malicious attacks.</li>\n      <li>Users must agree with LICENSE to use the model. As mentioned in LICENSE, we do NOT take any actions about generated results or possible variants.</li>\n      <li> <strong>As mentioned in LICENSE, users must NOT use the generated result for any prohibited purposes, including but not limited to:</strong></li>\n      <ul style=\"margin-left: 20px;\">\n        <li><strong>Harmful or malicious activities</strong>: This includes harassment, threats, spreading misinformation, or any use intended to harm individuals or groups.</li>\n        <li><strong>Illegal activities</strong>: Using generated content to violate any applicable laws or regulations.</li>\n        <li><strong>Unethical, offensive content generation</strong>: Generating offensive, defamatory, or controversial content that violates ethical guidelines.</li>\n      </ul>\n    </ul>\n    By using this model, users agree to comply with the conditions outlined in the LICENSE and acknowledge responsibility for how they utilize the generated content.\n    <p>\n      <strong>Safety Control Recommendation:</strong>\n    </p>\n    <ul style=\"margin-left: 20px;\">\n      <li>Generative models can occasionally produce unintended or harmful outputs.</li>\n      <li>To minimize this risk, it is strongly recommended to use the GUIDED model variant, which incorporates additional safety mechanisms for responsible content generation.</li>\n      <li>By choosing this variant, users can significantly reduce the likelihood of generating harmful or unintended content.</li>\n      <li>We plan to update GUIDED model variants and its methodologies, with extensive research.</li>\n    </ul>\n    <p>\n      <strong>Training/Merging Policy:</strong><br>\n      You may fine-tune, merge, or train LoRA based on this model. However, to foster an open-source community, you are required to:\n    </p>\n    <ul style=\"margin-left: 20px;\">\n      <li>Openly share details of any derived models, including references to the original model licensed under the fair-ai-public-license.</li>\n      <li>Provide information on datasets and \"merge recipes\" used for fine-tuning or training.</li>\n      <li>Adhere to the <strong>fair-ai-public-license</strong>, ensuring that any derivative works are also open source.</li>\n    </ul>\n    <p>\n      <strong>Uploading / Generation Policy:</strong><br>\n      We do not restrict any upload or spread of the generation results, as we do not own any rights regard to generated materials. This includes 'personally trained models / finetuned models / trained lora-related results'. However, we kindly ask you to open the generation details, to foster the open source communities and researches.\n    </p>\n    <p>\n      <strong>Monetization Prohibition:</strong>\n      <ul style=\"margin-left: 20px;\">\n        <li>You are prohibited from monetizing any <strong>close-sourced fine-tuned / merged model, which disallows the public from accessing the model's source code / weights and its usages.</strong></li>\n        <li>As per the license, you must openly publish any derivative models and variants. This model is intended for open-source use, and all derivatives must follow the same principles.</li>\n      </ul>\n    </p>\n    <p>\n      <strong>Usage:</strong><br>\n      We do not recommend overusing critical composition tags such as 'close-up', 'upside-down', or 'cowboy shot', as they can be conflicting and lead to confusion, affecting model results.<br>\n      Recommended sampling method: Euler a, Sampling Steps: 20–28, CFG: 5–7.5 (may vary based on use case).<br>\n      We suggest using suitable composition tags like \"upper body,\" \"cowboy shot,\" \"portrait,\" or \"full body\" depending on your use case.<br>\n      The model supports quality tags such as: \"worst quality,\" \"bad quality,\" \"average quality,\" \"good quality,\" \"best quality,\" and \"masterpiece (quality).\"<br>\n      Note: The model does not have any default style. This is intended behavior for the base model.\n    </p>\n    <div class=\"last-image-container\">\n      <img src=\"https://cdn-uploads.huggingface.co/production/uploads/651d27e3a00c49c5e50c0653/RiStls1S26meeu8UV8wKj.png\" alt=\"s23\">\n      <p><strong>Prompt:</strong><br>\n        1boy, holding knife, blue eyes, jewelry, jacket, shirt, open mouth, hand up, simple background, hair between eyes, vest, knife, tongue, holding weapon, grey vest, upper body, necktie, solo, looking at viewer, smile, pink blood, weapon, dagger, open clothes, collared shirt, blood on face, tongue out, blonde hair, holding dagger, red necktie, white shirt, blood, short hair, holding, earrings, long sleeves, black jacket, dark theme\n      </p>\n      <p><strong>Negative Prompt:</strong><br>\n        worst quality, comic, multiple views, bad quality, low quality, lowres, displeasing, very displeasing, bad anatomy, bad hands, scan artifacts, monochrome, greyscale, signature, twitter username, jpeg artifacts, 2koma, 4koma, guro, extra digits, fewer digits\n      </p>\n      <img src=\"https://cdn-uploads.huggingface.co/production/uploads/63398de08f27255b6b50081a/2QgPFOXbu0W6XjAMvLryY.png\" alt=\"s24\">\n      <p><strong>Prompt:</strong><br>\n        1girl, extremely dark, black theme, silhouette, rim lighting, black, looking at viewer, low contrast, masterpiece\n      </p>\n      <p><strong>Negative Prompt:</strong><br>\n        worst quality, comic, multiple views, bad quality, low quality, lowres, displeasing, very displeasing, bad anatomy, bad hands, scan artifacts, monochrome, greyscale, twitter username, jpeg artifacts, 2koma, 4koma, guro, extra digits, fewer digits, jaggy lines, unclear\n      </p>\n    </div>\n\n  </div>\n</body>\n\n\n\n# Illustrious XL Series Update\n\nIt’s been a while since we released **Illustrious XL v0.1**, and we know many of you have been eagerly waiting for updates. We also recognize that many are disappointed with the closed-source nature of **Illustrious XL v1.0**, and we want to address this directly. A lot has happened since then, and we’re truly grateful for the open-source community’s contributions—whether it’s large-scale fine-tuned models, ControlNets, or the countless LoRAs and adapters that have been developed.\n\n---\n\n## Development Journey\n\nWhen we started working on the Illustrious XL series, our goal was simple: there weren’t any strong pretrained models available for illustrations, so we decided to build one ourselves—a pretrain-level fine-tuned model that artists and researchers could actually use.\n\nWe also knew that keeping everything in-house wouldn’t help the field move forward. That’s why we released **v0.1** to the public and focused on training newer variations, pushing the model’s capabilities further with improved quality, deeper knowledge, and architectural refinements.\n\nAlong the way, we discovered something unexpected. The model wasn’t just good at illustrations—it could also interpret natural language, handle complex prompts, and generate high-resolution images, far beyond what we originally planned.\n\n---\n\n## Our Model Versions\n\n- **v0.1 (trained in May 2024)**\n- **v1.0 (July 2024)**\n- **v1.1 (August 2024)**\n- **v2.0 (September 2024)**\n- **v3 (November 2024)**\n- **v3.5 (a special variant incorporating Google’s v-parameterization)**\n\nThese models take another step forward in natural language composition and image generation.\n\nThat said, we can’t drop everything all at once. There’s a clear roadmap ahead, and open-source releases are part of it. But rather than rushing, we want to do this the right way—with explanations, insights, and research-backed improvements.\n\n---\n\n## Our Future Plans\n\nNow, after months of work behind the scenes, we’re finally ready to move forward. We’ll be rolling out our latest models step by step while progressively open-sourcing previous versions so they can be studied and improved upon. Expect breakthroughs like **true 2K-resolution generation** and better natural language alignment along the way.\n\n---\n\n## Commitment to Open Source\n\nThis will take time, but we’re moving fast. Our next-generation models are already in development, tackling some of the fundamental limitations of the base SD XL architecture. As we progress, older models will naturally be deprecated, and weight releases will follow accordingly. Our team aims to proceed thoughtfully, ensuring that each release is accompanied by comprehensive explanations and insights.\n\n---\n\n## Backward Compatibility\n\nOne last thing—we’re not just here to release models. Every model we’ve built is designed with backward compatibility in mind, because Illustrious XL wasn’t just about making something new—it was about creating a better foundation for fine-tuning. That’s why we’ve put so much effort into training LoRAs properly, and soon, we’ll be sharing insights on how to train them more effectively.\n\n---\n\n## Summary\n\nIn summary, **Onoma AI** plans to roll out open-source weights step by step and encourages the community to stay tuned for upcoming developments—we’re just getting started.\n\n"
+    },
+    "model_index.json": {
+      "status": 200,
+      "content": "{\n  \"_class_name\": \"StableDiffusionXLPipeline\",\n  \"_diffusers_version\": \"0.30.3\",\n  \"feature_extractor\": [\n    null,\n    null\n  ],\n  \"force_zeros_for_empty_prompt\": true,\n  \"image_encoder\": [\n    null,\n    null\n  ],\n  \"scheduler\": [\n    \"diffusers\",\n    \"EulerDiscreteScheduler\"\n  ],\n  \"text_encoder\": [\n    \"transformers\",\n    \"CLIPTextModel\"\n  ],\n  \"text_encoder_2\": [\n    \"transformers\",\n    \"CLIPTextModelWithProjection\"\n  ],\n  \"tokenizer\": [\n    \"transformers\",\n    \"CLIPTokenizer\"\n  ],\n  \"tokenizer_2\": [\n    \"transformers\",\n    \"CLIPTokenizer\"\n  ],\n  \"unet\": [\n    \"diffusers\",\n    \"UNet2DConditionModel\"\n  ],\n  \"vae\": [\n    \"diffusers\",\n    \"AutoencoderKL\"\n  ]\n}\n"
+    },
+    "scheduler/scheduler_config.json": {
+      "status": 200,
+      "content": "{\n  \"_class_name\": \"EulerDiscreteScheduler\",\n  \"_diffusers_version\": \"0.30.3\",\n  \"beta_end\": 0.012,\n  \"beta_schedule\": \"scaled_linear\",\n  \"beta_start\": 0.00085,\n  \"clip_sample\": false,\n  \"final_sigmas_type\": \"zero\",\n  \"interpolation_type\": \"linear\",\n  \"num_train_timesteps\": 1000,\n  \"prediction_type\": \"epsilon\",\n  \"rescale_betas_zero_snr\": false,\n  \"sample_max_value\": 1.0,\n  \"set_alpha_to_one\": false,\n  \"sigma_max\": null,\n  \"sigma_min\": null,\n  \"skip_prk_steps\": true,\n  \"steps_offset\": 1,\n  \"timestep_spacing\": \"leading\",\n  \"timestep_type\": \"discrete\",\n  \"trained_betas\": null,\n  \"use_karras_sigmas\": false\n}\n"
+    }
+  }
+}

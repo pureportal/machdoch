@@ -1,0 +1,12 @@
+{
+  "request": {
+    "sourcePath": "D:/Models/machdoch/models/packages/user-33e58e86686f6b386c526682b5da9228/revisions/33e58e86686f6b386c526682b5da9228ead4f91d994abd4b053442dc5b42719e/checkpoint.safetensors",
+    "architecture": "juggernaut-xl",
+    "displayName": "Juggernaut XI · KandooAI / RunDiffusion",
+    "sourceUrl": "https://huggingface.co/RunDiffusion/Juggernaut-XI-v11",
+    "commercialUse": "review-required",
+    "licenseName": null,
+    "reviewToken": ""
+  },
+  "expectedDigest": "33e58e86686f6b386c526682b5da9228ead4f91d994abd4b053442dc5b42719e"
+}

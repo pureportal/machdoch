@@ -1,0 +1,76 @@
+MACHDOCH
+DEVELOPER
+v30.3.0
+Basic
+Advanced
+Train
+Assets
+Activity
+The selected media configuration is not supported.
+Technical details
+Image
+Video
+SVG
+Audio
+Assistant
+Convert to Advanced
+Model
+Stable Diffusion XL 1.0 Base
+Stable Diffusion XL · Local
+Prompt
+Base image
+Choose from Assets
+Add image
+Reference images
+Choose from Assets
+Add image
+Pose map
+Choose pose image
+No pose map
+Create pose map
+LoRAs and embeddings
+Add LoRAs and embeddings
+More options
+Output
+Aspect ratio
+1:1
+4:5
+16:9
+9:16
+Outputs
+Quality
+Draft
+Balanced
+High
+Format
+PNG
+WebP
+JPEG
+Transparent background
+Sampling
+Reset
+Sampler
+Automatic
+Euler
+Euler ancestral
+Heun
+DPM++ 2M
+DPM++ 2M Karras
+DPM++ 2M SDE Karras
+DDIM
+UniPC
+Resolution
+Automatic
+Custom
+Sampling steps
+20–50
+Guidance
+5–8
+Seed
+Random
+Fixed
+Generate image
+
+Add a prompt
+
+Image output

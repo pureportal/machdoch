@@ -1,0 +1,283 @@
+[
+  {
+    "parameters": {
+      "baseModels": "SD 3.5 Large"
+    },
+    "items": [],
+    "metadata": {}
+  },
+  {
+    "parameters": {
+      "baseModels": "SD 3.5"
+    },
+    "items": [],
+    "metadata": {}
+  },
+  {
+    "parameters": {
+      "query": "SD3.5"
+    },
+    "items": [
+      {
+        "id": 541654,
+        "name": "PAAMA_FANTA_SD_3.2",
+        "description": "<p>FANTA</p>",
+        "allowNoCredit": false,
+        "allowCommercialUse": [
+          "RentCivit"
+        ],
+        "allowDerivatives": false,
+        "allowDifferentLicense": true,
+        "type": "Checkpoint",
+        "minor": false,
+        "sfwOnly": false,
+        "poi": false,
+        "nsfw": false,
+        "nsfwLevel": 8,
+        "availability": "Public",
+        "userId": 727757,
+        "hasActivePaidAccess": false,
+        "baseModels": [
+          "SD 1.5"
+        ],
+        "cosmetic": null,
+        "eventDecoration": null,
+        "supportsGeneration": true,
+        "stats": {
+          "downloadCount": 773,
+          "thumbsUpCount": 56,
+          "thumbsDownCount": 0,
+          "commentCount": 0,
+          "tippedAmountCount": 0
+        },
+        "creator": {
+          "username": "PAAMA_JEUN",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ebdaef1e-8339-4a1a-acde-51568179d142/width=96/PAAMA_JEUN.jpeg"
+        },
+        "tags": [
+          "character"
+        ],
+        "modelVersions": [
+          {
+            "id": 604444,
+            "index": 0,
+            "name": "PAAMA_FANTA_5",
+            "baseModel": "SD 1.5",
+            "baseModelType": "Standard",
+            "publishedAt": "2024-06-28T13:37:18.128Z",
+            "flags": 0,
+            "availability": "Public",
+            "nsfwLevel": 8,
+            "description": null,
+            "trainedWords": [],
+            "vaeId": null,
+            "coveredNext": true,
+            "paidAccess": null,
+            "stats": {
+              "downloadCount": 545,
+              "thumbsUpCount": 46,
+              "thumbsDownCount": 0
+            },
+            "supportsGeneration": false,
+            "files": [
+              {
+                "id": 519513,
+                "sizeKB": 5844114.40625,
+                "name": "paamaFANTASD32_paamaFANTA5.safetensors",
+                "overrideName": null,
+                "type": "Model",
+                "pickleScanResult": "Success",
+                "pickleScanMessage": "No Pickle imports",
+                "virusScanResult": "Success",
+                "virusScanMessage": null,
+                "scannedAt": "2024-06-28T13:42:59.484Z",
+                "metadata": {
+                  "format": "SafeTensor",
+                  "size": "full",
+                  "fp": "fp16"
+                },
+                "hashes": {
+                  "AutoV1": "A3015D28",
+                  "AutoV2": "B4BE33FEE6",
+                  "SHA256": "B4BE33FEE64CFFAEA57BC70ADA4A252F70F25D2D4FED65942949F37815EB095E",
+                  "CRC32": "E03CF5DD",
+                  "BLAKE3": "75C70AEF1EAB36B3083FC7A4F22FEB1E926C671C410A3AB3027305F79EB7EA70",
+                  "AutoV3": "77D8F5109CAD",
+                  "SHA256_12": "B4BE33FEE64C"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/604444",
+                "primary": true
+              }
+            ],
+            "images": [
+              {
+                "id": 17567039,
+                "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c978688a-59b3-4586-99a6-d6bdff8ba558/original=true/17567039.jpeg",
+                "nsfwLevel": 8,
+                "width": 1024,
+                "height": 1536,
+                "hash": "UCF5?T00Osi^00_3D%-;_NsnxZD*D*IU?HR*",
+                "type": "image",
+                "minor": false,
+                "poi": false,
+                "hasMeta": true,
+                "hasPositivePrompt": true,
+                "onSite": false,
+                "remixOfId": null
+              }
+            ],
+            "downloadUrl": "https://civitai.com/api/download/models/604444"
+          },
+          {
+            "id": 603068,
+            "index": 1,
+            "name": "PAAMA_FANTA_J.EUN_3",
+            "baseModel": "SD 1.5",
+            "baseModelType": "Standard",
+            "publishedAt": "2024-06-28T13:27:09.574Z",
+            "flags": 0,
+            "availability": "Public",
+            "nsfwLevel": 8,
+            "description": null,
+            "trainedWords": [],
+            "vaeId": null,
+            "coveredNext": true,
+            "paidAccess": null,
+            "stats": {
+              "downloadCount": 67,
+              "thumbsUpCount": 7,
+              "thumbsDownCount": 0
+            },
+            "supportsGeneration": false,
+            "files": [
+              {
+                "id": 518065,
+                "sizeKB": 5844114.40625,
+                "name": "paamaFANTASD32_paamaFANTAJEUN3.safetensors",
+                "overrideName": null,
+                "type": "Model",
+                "pickleScanResult": "Success",
+                "pickleScanMessage": "No Pickle imports",
+                "virusScanResult": "Success",
+                "virusScanMessage": null,
+                "scannedAt": "2024-06-27T22:28:24.883Z",
+                "metadata": {
+                  "format": "SafeTensor",
+                  "size": "full",
+                  "fp": "fp16"
+                },
+                "hashes": {
+                  "AutoV1": "A3015D28",
+                  "AutoV2": "B4BE33FEE6",
+                  "SHA256": "B4BE33FEE64CFFAEA57BC70ADA4A252F70F25D2D4FED65942949F37815EB095E",
+                  "CRC32": "E03CF5DD",
+                  "BLAKE3": "75C70AEF1EAB36B3083FC7A4F22FEB1E926C671C410A3AB3027305F79EB7EA70",
+                  "AutoV3": "77D8F5109CAD",
+                  "SHA256_12": "B4BE33FEE64C"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/603068",
+                "primary": true
+              }
+            ],
+            "images": [
+              {
+                "id": 17565860,
+                "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2aadbdc4-837b-4ccf-8b8b-d59b62561fb4/original=true/17565860.jpeg",
+                "nsfwLevel": 8,
+                "width": 1024,
+                "height": 1536,
+                "hash": "UFF5v.I:tl~pE101RPIV0L-:-oIVM|xut7%2",
+                "type": "image",
+                "minor": false,
+                "poi": false,
+                "hasMeta": true,
+                "hasPositivePrompt": true,
+                "onSite": false,
+                "remixOfId": null
+              }
+            ],
+            "downloadUrl": "https://civitai.com/api/download/models/603068"
+          },
+          {
+            "id": 602220,
+            "index": 2,
+            "name": "PAAMA_FANTA_J.EUN_2",
+            "baseModel": "SD 1.5",
+            "baseModelType": "Standard",
+            "publishedAt": "2024-06-27T21:59:33.390Z",
+            "flags": 0,
+            "availability": "Public",
+            "nsfwLevel": 8,
+            "description": "<p><u>FANTA</u></p>",
+            "trainedWords": [],
+            "vaeId": null,
+            "coveredNext": true,
+            "paidAccess": null,
+            "stats": {
+              "downloadCount": 161,
+              "thumbsUpCount": 16,
+              "thumbsDownCount": 0
+            },
+            "supportsGeneration": false,
+            "files": [
+              {
+                "id": 517241,
+                "sizeKB": 5844114.40625,
+                "name": "paamaFANTASD32_paamaFANTAJEUN2.safetensors",
+                "overrideName": null,
+                "type": "Model",
+                "pickleScanResult": "Success",
+                "pickleScanMessage": "No Pickle imports",
+                "virusScanResult": "Success",
+                "virusScanMessage": null,
+                "scannedAt": "2024-06-27T16:02:56.413Z",
+                "metadata": {
+                  "format": "SafeTensor",
+                  "size": "full",
+                  "fp": "fp16"
+                },
+                "hashes": {
+                  "AutoV1": "A3015D28",
+                  "AutoV2": "B4BE33FEE6",
+                  "SHA256": "B4BE33FEE64CFFAEA57BC70ADA4A252F70F25D2D4FED65942949F37815EB095E",
+                  "CRC32": "E03CF5DD",
+                  "BLAKE3": "75C70AEF1EAB36B3083FC7A4F22FEB1E926C671C410A3AB3027305F79EB7EA70",
+                  "AutoV3": "77D8F5109CAD",
+                  "SHA256_12": "B4BE33FEE64C"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/602220",
+                "primary": true
+              }
+            ],
+            "images": [
+              {
+                "id": 17476940,
+                "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5f424dfe-56ff-4585-9398-e64923da7cfa/original=true/17476940.jpeg",
+                "nsfwLevel": 8,
+                "width": 1024,
+                "height": 1536,
+                "hash": "UBCY{=?v0L~pOYx[-:Rj0KM{w^9FozWXnixZ",
+                "type": "image",
+                "minor": false,
+                "poi": false,
+                "hasMeta": true,
+                "hasPositivePrompt": true,
+                "onSite": false,
+                "remixOfId": null
+              }
+            ],
+            "downloadUrl": "https://civitai.com/api/download/models/602220"
+          }
+        ]
+      }
+    ],
+    "metadata": {}
+  },
+  {
+    "parameters": {
+      "username": "StabilityAI"
+    },
+    "items": [],
+    "metadata": {}
+  }
+]

@@ -1,0 +1,13 @@
+{
+  "completed": true,
+  "checks": [
+    "clearing the tile divisor remains empty and recovers without invalid-number warnings",
+    "custom sizing and mode changes recover from empty inactive fields",
+    "final build shows an advisory VRAM warning and clears it with Automatic tiles",
+    "Advanced cards summarize the selected edge constraints instead of inactive dimensions"
+  ],
+  "exceptions": [],
+  "invalidNumberWarnings": [],
+  "executableSha256": "0f2bdd43ae2c71d72f136f9e9f0a9c42185ff1c7a5ab0d99cc29780e1dd9f61f",
+  "verifiedAt": "2026-10-15T20:34:13.630Z"
+}

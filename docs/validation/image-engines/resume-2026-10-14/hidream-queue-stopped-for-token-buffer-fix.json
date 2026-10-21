@@ -1,0 +1,32 @@
+[
+    {
+        "ProcessId":  26052,
+        "ParentProcessId":  25272,
+        "CommandLine":  "\"C:\\Development\\machdoch\\.cache\\image-verification-runtime\\Scripts\\python.exe\" -B -Xutf8 .cache/start-final-image-reference-batches.py"
+    },
+    {
+        "ProcessId":  15984,
+        "ParentProcessId":  26052,
+        "CommandLine":  "\"C:\\Users\\ehrha\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -B -Xutf8 .cache/start-final-image-reference-batches.py"
+    },
+    {
+        "ProcessId":  7520,
+        "ParentProcessId":  15984,
+        "CommandLine":  "C:\\Development\\machdoch\\.cache\\image-verification-runtime\\Scripts\\python.exe -B -Xutf8 apps/client/src-tauri/python/verify_media_reference_batches.py --batches D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\resume-2026-10-14-final-reference-batches.json --results D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\resume-2026-10-14-final-batch-results.json --hip-device 1"
+    },
+    {
+        "ProcessId":  13384,
+        "ParentProcessId":  7520,
+        "CommandLine":  "\"C:\\Users\\ehrha\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -B -Xutf8 apps/client/src-tauri/python/verify_media_reference_batches.py --batches D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\resume-2026-10-14-final-reference-batches.json --results D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\resume-2026-10-14-final-batch-results.json --hip-device 1"
+    },
+    {
+        "ProcessId":  14460,
+        "ParentProcessId":  13384,
+        "CommandLine":  "C:\\Development\\machdoch\\.cache\\image-verification-runtime\\Scripts\\python.exe -B C:\\Development\\machdoch\\apps\\client\\src-tauri\\python\\verify_media_reference_sweep.py --template D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\hidream-fp4-template.json --cases D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\hidream-fp4-cases.json --output-root D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\hidream-fp4 --hip-device 1"
+    },
+    {
+        "ProcessId":  12632,
+        "ParentProcessId":  14460,
+        "CommandLine":  "\"C:\\Users\\ehrha\\AppData\\Local\\Programs\\Python\\Python312\\python.exe\" -B C:\\Development\\machdoch\\apps\\client\\src-tauri\\python\\verify_media_reference_sweep.py --template D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\hidream-fp4-template.json --cases D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\hidream-fp4-cases.json --output-root D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\hidream-fp4 --hip-device 1"
+    }
+]

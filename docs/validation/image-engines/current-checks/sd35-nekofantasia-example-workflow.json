@@ -1,0 +1,585 @@
+{
+  "id": "6a7030ad-db8d-4f64-9083-53425b72df7f",
+  "revision": 0,
+  "last_node_id": 349,
+  "last_link_id": 709,
+  "nodes": [
+    {
+      "id": 341,
+      "type": "BasicScheduler",
+      "pos": [
+        -9.133778522733701,
+        334.7024439677171
+      ],
+      "size": [
+        270,
+        106
+      ],
+      "flags": {},
+      "order": 7,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 708
+        }
+      ],
+      "outputs": [
+        {
+          "name": "SIGMAS",
+          "type": "SIGMAS",
+          "links": [
+            699
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.15.1",
+        "Node name for S&R": "BasicScheduler"
+      },
+      "widgets_values": [
+        "simple",
+        20,
+        1
+      ]
+    },
+    {
+      "id": 335,
+      "type": "RungeKuttaSampler",
+      "pos": [
+        314.9805018699195,
+        331.2438444091714
+      ],
+      "size": [
+        293.931640625,
+        442
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "SAMPLER",
+          "type": "SAMPLER",
+          "links": [
+            691
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfyui-rk-sampler",
+        "ver": "ee29bd96e1e6880dde0378892f2da1319395f416",
+        "Node name for S&R": "RungeKuttaSampler",
+        "aux_id": "memmaptensor/ComfyUI-RK-Sampler"
+      },
+      "widgets_values": [
+        "ae_dopri5",
+        "adaptive_pid",
+        -4,
+        -3,
+        0,
+        1,
+        0,
+        "rms_norm",
+        false,
+        true,
+        -0.1,
+        0,
+        0.9,
+        0.2,
+        3,
+        2147483647,
+        0.001
+      ]
+    },
+    {
+      "id": 135,
+      "type": "EmptySD3LatentImage",
+      "pos": [
+        -327.43767473425095,
+        597.171609047695
+      ],
+      "size": [
+        315,
+        106
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "LATENT",
+          "type": "LATENT",
+          "slot_index": 0,
+          "links": [
+            695
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.5.1",
+        "Node name for S&R": "EmptySD3LatentImage"
+      },
+      "widgets_values": [
+        832,
+        1216,
+        1
+      ]
+    },
+    {
+      "id": 105,
+      "type": "Note",
+      "pos": [
+        -633.6132324857255,
+        562.2540440248946
+      ],
+      "size": [
+        256.75789845836186,
+        193.74048252719194
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "Make sure the resolution is multiple of 64 pixels and adds up to around 1 megapixel. \n\n1024 x 1024 1:1\n1152 x 896 9:7\n1216 x 832 3:2\n1344 x 768 7:4\n1536 x 640 12:5\n896 x 1152 7:9\n832 x 1216 2:3\n768 x 1344 4:7\n640 x 1536 5:12"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 11,
+      "type": "TripleCLIPLoader",
+      "pos": [
+        -1170.752594478781,
+        680.4169415727016
+      ],
+      "size": [
+        315,
+        106
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "slot_index": 0,
+          "links": [
+            5,
+            94
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.5.1",
+        "Node name for S&R": "TripleCLIPLoader"
+      },
+      "widgets_values": [
+        "clip_g.safetensors",
+        "clip_l.safetensors",
+        "t5xxl_fp16.safetensors"
+      ]
+    },
+    {
+      "id": 4,
+      "type": "CheckpointLoaderSimple",
+      "pos": [
+        -1323.5618212991883,
+        503.39582476905696
+      ],
+      "size": [
+        632.6060180664062,
+        98
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "MODEL",
+          "type": "MODEL",
+          "slot_index": 0,
+          "links": [
+            708,
+            709
+          ]
+        },
+        {
+          "name": "CLIP",
+          "type": "CLIP",
+          "links": null
+        },
+        {
+          "name": "VAE",
+          "type": "VAE",
+          "slot_index": 2,
+          "links": [
+            702
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.5.1",
+        "Node name for S&R": "CheckpointLoaderSimple"
+      },
+      "widgets_values": [
+        "Nekofantasia-01.safetensors"
+      ]
+    },
+    {
+      "id": 71,
+      "type": "CLIPTextEncode",
+      "pos": [
+        -446.0918954651361,
+        1154.0136319943708
+      ],
+      "size": [
+        351.8130798339844,
+        195.57545471191406
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 94
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "slot_index": 0,
+          "links": [
+            694
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.5.1",
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "lowres, pixelated, downscaled, upscaled, jpeg artifacts, compression artifacts, scan artifacts, blurry, censored, bar censor, mosaic censoring, heart censor, bad anatomy, bad hands, bad feet, extra digits, fewer digits, watermark, text, dated, watermark grid, sample watermark, artist name"
+      ],
+      "color": "#322",
+      "bgcolor": "#533"
+    },
+    {
+      "id": 338,
+      "type": "VAEDecode",
+      "pos": [
+        683.1690647098986,
+        670.2711008628836
+      ],
+      "size": [
+        181.921875,
+        46
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "samples",
+          "type": "LATENT",
+          "link": 696
+        },
+        {
+          "name": "vae",
+          "type": "VAE",
+          "link": 702
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            698
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.15.1",
+        "Node name for S&R": "VAEDecode"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 6,
+      "type": "CLIPTextEncode",
+      "pos": [
+        -444.48756241668093,
+        885.0128179600409
+      ],
+      "size": [
+        342.21509258248534,
+        195.87930444715585
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "clip",
+          "type": "CLIP",
+          "link": 5
+        }
+      ],
+      "outputs": [
+        {
+          "name": "CONDITIONING",
+          "type": "CONDITIONING",
+          "slot_index": 0,
+          "links": [
+            693
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.5.1",
+        "Node name for S&R": "CLIPTextEncode"
+      },
+      "widgets_values": [
+        "1girl, absurdres, animal ears, bow, braid, cat ears, dress, green dress, hair bow, highres, kaenbyou rin, long hair, long sleeves, looking at viewer, nekomata, oil painting (medium), painting (medium), portrait, red eyes, red hair, red ribbon, neck ribbon, smile, solo, touhou, traditional media, twin braids"
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 337,
+      "type": "SamplerCustom",
+      "pos": [
+        117.46141139866492,
+        966.7684882601213
+      ],
+      "size": [
+        392.74617450122537,
+        493.8876992887683
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "model",
+          "type": "MODEL",
+          "link": 709
+        },
+        {
+          "name": "positive",
+          "type": "CONDITIONING",
+          "link": 693
+        },
+        {
+          "name": "negative",
+          "type": "CONDITIONING",
+          "link": 694
+        },
+        {
+          "name": "sampler",
+          "type": "SAMPLER",
+          "link": 691
+        },
+        {
+          "name": "sigmas",
+          "type": "SIGMAS",
+          "link": 699
+        },
+        {
+          "name": "latent_image",
+          "type": "LATENT",
+          "link": 695
+        }
+      ],
+      "outputs": [
+        {
+          "name": "output",
+          "type": "LATENT",
+          "links": [
+            696
+          ]
+        },
+        {
+          "name": "denoised_output",
+          "type": "LATENT",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.15.1",
+        "Node name for S&R": "SamplerCustom"
+      },
+      "widgets_values": [
+        true,
+        305214868707738,
+        "randomize",
+        4.5
+      ]
+    },
+    {
+      "id": 340,
+      "type": "SaveImage",
+      "pos": [
+        536.4906495986128,
+        962.3833068481241
+      ],
+      "size": [
+        511.49106553304875,
+        493.2475024967639
+      ],
+      "flags": {},
+      "order": 10,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 698
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.15.1"
+      },
+      "widgets_values": [
+        "ComfyUI"
+      ]
+    }
+  ],
+  "links": [
+    [
+      5,
+      11,
+      0,
+      6,
+      0,
+      "CLIP"
+    ],
+    [
+      94,
+      11,
+      0,
+      71,
+      0,
+      "CLIP"
+    ],
+    [
+      691,
+      335,
+      0,
+      337,
+      3,
+      "SAMPLER"
+    ],
+    [
+      693,
+      6,
+      0,
+      337,
+      1,
+      "CONDITIONING"
+    ],
+    [
+      694,
+      71,
+      0,
+      337,
+      2,
+      "CONDITIONING"
+    ],
+    [
+      695,
+      135,
+      0,
+      337,
+      5,
+      "LATENT"
+    ],
+    [
+      696,
+      337,
+      0,
+      338,
+      0,
+      "LATENT"
+    ],
+    [
+      698,
+      338,
+      0,
+      340,
+      0,
+      "IMAGE"
+    ],
+    [
+      699,
+      341,
+      0,
+      337,
+      4,
+      "SIGMAS"
+    ],
+    [
+      702,
+      4,
+      2,
+      338,
+      1,
+      "VAE"
+    ],
+    [
+      708,
+      4,
+      0,
+      341,
+      0,
+      "MODEL"
+    ],
+    [
+      709,
+      4,
+      0,
+      337,
+      0,
+      "MODEL"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.6694621923598314,
+      "offset": [
+        1071.3891498185064,
+        -135.44988695642186
+      ]
+    },
+    "frontendVersion": "1.39.19",
+    "workflowRendererVersion": "LG"
+  },
+  "version": 0.4
+}

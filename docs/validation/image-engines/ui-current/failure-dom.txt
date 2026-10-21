@@ -1,0 +1,61 @@
+Basic
+Advanced
+Train
+Assets
+Activity
+
+Media Studio is ready
+
+Image
+Video
+SVG
+Audio
+Assistant
+Convert to Advanced
+Model
+krea-2
+FLUX.2 klein · Local
+Prompt
+Reference images
+Add image
+Pose map
+No pose map
+Create pose map
+More options
+Output
+Aspect ratio
+1:1
+4:5
+16:9
+9:16
+Outputs
+Quality
+Draft
+Balanced
+High
+Format
+PNG
+WebP
+JPEG
+Transparent background
+Sampling
+Sampler
+Automatic
+Flow Euler
+Resolution
+Automatic
+Custom
+Sampling steps
+8–20
+Guidance
+0–1.5
+Seed
+Random
+Fixed
+Memory
+Automatic
+Memory saver
+Balanced
+Maximum speed
+Generate image
+Image output

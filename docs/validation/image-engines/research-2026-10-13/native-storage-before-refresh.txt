@@ -1,0 +1,71 @@
+MACHDOCH
+v30.4.0
+Basic
+Advanced
+Train
+Assets
+Activity
+Media Studio storage is temporarily unavailable.
+Refresh
+Technical details
+
+STORAGE_UNAVAILABLE · failed to configure Media Studio database: database is locked
+
+operation media_list_asset_page
+
+Image
+Video
+SVG
+Audio
+Assistant
+Convert to Advanced
+Model
+FLUX.2 Klein Base 4B BF16
+FLUX · Local
+Prompt
+Base image
+Choose from Assets
+Add image
+Reference images
+Choose from Assets
+Add image
+Pose map
+Choose pose image
+No pose map
+Create pose map
+More options
+Output
+Aspect ratio
+1:1
+4:5
+16:9
+9:16
+Outputs
+Quality
+Draft
+Balanced
+High
+Format
+PNG
+WebP
+JPEG
+Transparent background
+Sampling
+Sampler
+Automatic
+Flow Euler · Recommended
+Resolution
+Automatic
+Custom
+Sampling steps
+50
+Guidance
+4
+Seed
+Random
+Fixed
+Generate image
+
+Add a prompt
+
+Image output

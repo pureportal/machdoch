@@ -1,0 +1,16 @@
+{
+  "checkedAt": "2026-10-13T06:05:39.499593+00:00",
+  "workerVersion": "media-diffusers-worker/1.96.0",
+  "workerSha256": "17435e5cce914feb1cf49698f87b7b5004a77bdb51e5334f32ce1e20b8c4dcf2",
+  "runtimeDigest": "a23d2e787738247b1b9dc51a31135683045a2a662cb5685b922184af2caa52a4",
+  "architecture": "stable-diffusion-3",
+  "selectedInferencePrecision": "bfloat16 on a capable GPU; float32 otherwise; explicit precision preserved",
+  "loaderTests": 126,
+  "downloadIntegrityTests": 3,
+  "sources": [
+    "https://huggingface.co/stabilityai/stable-diffusion-3.5-medium",
+    "https://huggingface.co/Nekofantasia/Nekofantasia-alpha"
+  ],
+  "fullModelExecutionVerified": false,
+  "retainedDesktopWorkerVersion": "media-diffusers-worker/1.95.0"
+}

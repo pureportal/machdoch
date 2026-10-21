@@ -1,0 +1,1437 @@
+[
+  {
+    "query": "Niji Anime",
+    "models": [
+      {
+        "id": 2412992,
+        "name": "Niji Anime Style [Z-Image Base]",
+        "creator": {
+          "username": "nocor1i8",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/6418b395-906b-4391-873d-47358ce3432f/width=96/nocor1i8.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": false,
+          "allowCommercialUse": [
+            "RentCivit",
+            "Rent"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 2712972,
+            "name": "v1.0",
+            "baseModel": "ZImageBase",
+            "trainedWords": [],
+            "description": null,
+            "files": [
+              {
+                "name": "z-image-niji.safetensors",
+                "sizeKB": 180054.05078125,
+                "hashes": {
+                  "AutoV1": "5F40EA3B",
+                  "AutoV2": "FBD2862BA5",
+                  "SHA256": "FBD2862BA57E2754EE5F32600B3D9A794108D5926B6030F70EDD003D57F7D763",
+                  "CRC32": "6CC52A9E",
+                  "BLAKE3": "ED59611D2418497F83E510CA95B4CCDC0E3D3F7E9206069529C91A73881FF467",
+                  "AutoV3": "2403744BB191",
+                  "SHA256_12": "FBD2862BA57E"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 124229,
+        "name": "niji - chibi_anime",
+        "creator": {
+          "username": "Cinsdia",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/413ee08a-0537-47b8-a230-df633466fecd/width=96/Cinsdia.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit",
+            "Rent",
+            "Sell",
+            "SellMerge"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 135596,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [],
+            "description": null,
+            "files": [
+              {
+                "name": "chibi_anime.safetensors",
+                "sizeKB": 147579.9765625,
+                "hashes": {
+                  "AutoV1": "F494BC54",
+                  "AutoV2": "C3D23BDF7A",
+                  "SHA256": "C3D23BDF7A38D74F779FFCE2E888EFDDE49CB5AE27A05DC023F67CC5223655EF",
+                  "CRC32": "8F8E284D",
+                  "BLAKE3": "EFEC55AC6EC421A20534CE45A68D92608374718C17027C07CD5921C197CA2B3C",
+                  "AutoV3": "DE00FC77DF96",
+                  "SHA256_12": "C3D23BDF7A38"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 113135,
+        "name": "niji - gakuen_anime",
+        "creator": {
+          "username": "Cinsdia",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/413ee08a-0537-47b8-a230-df633466fecd/width=96/Cinsdia.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit",
+            "Rent",
+            "Sell",
+            "SellMerge"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 122200,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [],
+            "description": null,
+            "files": [
+              {
+                "name": "gakuen_anime.safetensors",
+                "sizeKB": 147573.46875,
+                "hashes": {
+                  "AutoV1": "2E434060",
+                  "AutoV2": "A8425151E4",
+                  "SHA256": "A8425151E43F88F1C471C285AA6D3B647CF648F4FD1977A81525C83DF8F0DC4F",
+                  "CRC32": "9C29CC63",
+                  "BLAKE3": "DC0E6F9C871FE42F8422DA2C684B243F2225324A56407FD68D6E0535E852BA08",
+                  "AutoV3": "5CFA6B636E13",
+                  "SHA256_12": "A8425151E43F"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 149230,
+        "name": "nijiAnimeGirl",
+        "creator": {
+          "username": "catto12345",
+          "image": null
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 166619,
+            "name": "vivideyesv1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "vivid22eyes"
+            ],
+            "description": null,
+            "files": [
+              {
+                "name": "vivid22eyes.safetensors",
+                "sizeKB": 73846.9375,
+                "hashes": {
+                  "AutoV1": "DB963106",
+                  "AutoV2": "E2EE65AF6C",
+                  "SHA256": "E2EE65AF6C996438BB0762AE2CA1ACCFA44549C45123DECEE59BECC04DE28CA9",
+                  "CRC32": "30A1EE3F",
+                  "BLAKE3": "89CE2F0850340321D88DCF97C7025F39B174516C366C17351EB7FAA97F5C664E",
+                  "AutoV3": "30A67006EAF8",
+                  "SHA256_12": "E2EE65AF6C99"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 838306,
+        "name": "Anime Niji Style",
+        "creator": {
+          "username": "speach1sdef178",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7d584182-7f74-470b-80a6-cb2968fa6ecf/width=96/speach1sdef178.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": false,
+          "allowCommercialUse": [
+            "RentCivit"
+          ],
+          "allowDerivatives": false,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 2579032,
+            "name": "ZIT_ver2",
+            "baseModel": "ZImageTurbo",
+            "trainedWords": [
+              "mode_niji_anime",
+              "anime",
+              "rating SFW"
+            ],
+            "description": "<p>another version niji anime style LORA for ZIT</p>",
+            "files": [
+              {
+                "name": "mode_niji_anime_zit.safetensors",
+                "sizeKB": 332220.2890625,
+                "hashes": {
+                  "AutoV1": "E1D120AC",
+                  "AutoV2": "679EB25EA2",
+                  "SHA256": "679EB25EA27380E2D4E197B60BB0D547A620145121D71FA7AB4FA747B4C8E807",
+                  "CRC32": "DA7537F4",
+                  "BLAKE3": "43CE2EB4897EC4772FDDBE9FAF75F6D66DEC6CB18F122ABEBC648A259FC74FAE",
+                  "AutoV3": "0D74ECE70181",
+                  "SHA256_12": "679EB25EA273"
+                }
+              }
+            ]
+          },
+          {
+            "id": 2579013,
+            "name": "ZIT ver1",
+            "baseModel": "ZImageTurbo",
+            "trainedWords": [
+              "mode_niji_anime",
+              "anime",
+              "rating SFW"
+            ],
+            "description": "<p>version for ZIT, this version with more 2d style</p>",
+            "files": [
+              {
+                "name": "mode_niji_anime_zit_v5_Full_Cap.safetensors",
+                "sizeKB": 249180.1953125,
+                "hashes": {
+                  "AutoV1": "AAF93E51",
+                  "AutoV2": "6B453C0678",
+                  "SHA256": "6B453C0678C37793CF62D8BAF61847940AFE66A6D98012613D327B059E7BE309",
+                  "CRC32": "F493F12F",
+                  "BLAKE3": "5F0E215D462BA625631041BFAAE4B3A2C2F7C91E9063401DEECE7AA24A4B9706",
+                  "AutoV3": "A297492A9131",
+                  "SHA256_12": "6B453C0678C3"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 130311,
+        "name": "Niji COOL perfect anime LoRa \u4f18\u79c0\u52a8\u6f2b\u6a21\u578b",
+        "creator": {
+          "username": "Terry9993",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e7cd7bab-0a5e-426d-7ad2-ed173d85fd00/width=96/Terry9993.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 142924,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "niji"
+            ],
+            "description": null,
+            "files": [
+              {
+                "name": "Nijicool.safetensors",
+                "sizeKB": 36976.1953125,
+                "hashes": {
+                  "AutoV1": "FE29D153",
+                  "AutoV2": "53DE857493",
+                  "SHA256": "53DE857493EBA0BB6EB3EC187770D161507CAF42634A920877775541C0D82711",
+                  "CRC32": "B954F0F5",
+                  "BLAKE3": "E372F299FA4704464BEF58522ADCA2050D81CEBC3679C6065F54810B645D3DCB",
+                  "AutoV3": "D8C72134433F",
+                  "SHA256_12": "53DE857493EB"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 871757,
+        "name": "Niji",
+        "creator": {
+          "username": "Adel_AI",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7c1e2bac-1f02-4978-9eb8-d5456fb12a2b/width=96/Adel_AI.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 2619718,
+            "name": "ZIT",
+            "baseModel": "ZImageTurbo",
+            "trainedWords": [
+              "Niji art style"
+            ],
+            "description": "<p>Steps : 8<br />Sampler/Scheduler : Seed_3 / Normal --- ipndm / Normal ---- heunpp2 / linear_quadratic or beta<br />Weighting : around 0.75</p>",
+            "files": [
+              {
+                "name": "Niji_E15.safetensors",
+                "sizeKB": 83099.9453125,
+                "hashes": {
+                  "AutoV1": "8C1486E9",
+                  "AutoV2": "1440C4ABE3",
+                  "SHA256": "1440C4ABE3220B665E368FCA6653FC2FCFB16AF49AB28777446141C5EA6E56AF",
+                  "CRC32": "FB67AEB9",
+                  "BLAKE3": "8FBDB37DC39FF87183C7122D788EDED4EFBF9F9714039BC5119BB5370547DA49",
+                  "AutoV3": "36A9CE61214F",
+                  "SHA256_12": "1440C4ABE322"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 108841,
+        "name": "niji - flat_illustration",
+        "creator": {
+          "username": "Cinsdia",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/413ee08a-0537-47b8-a230-df633466fecd/width=96/Cinsdia.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit",
+            "Rent",
+            "Sell",
+            "SellMerge"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 117238,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [],
+            "description": null,
+            "files": [
+              {
+                "name": "flat_illustration.safetensors",
+                "sizeKB": 147569.583984375,
+                "hashes": {
+                  "AutoV1": "E33310FC",
+                  "AutoV2": "41D2AFB9BA",
+                  "SHA256": "41D2AFB9BAE4767DDE83B93DE6DCD1246041224AAAD348BC61C3DD41800BC21E",
+                  "CRC32": "E9E11798",
+                  "BLAKE3": "BB2808B006E04434469A9BC75A6F74FE826E102E59DFF4FB3C41898CC8E03E70",
+                  "AutoV3": "7693DFB3E329",
+                  "SHA256_12": "41D2AFB9BAE4"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "query": "Painterly",
+    "models": [
+      {
+        "id": 957327,
+        "name": "Painterly - CE",
+        "creator": {
+          "username": "CreativeEdge",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7bbd2209-2e95-432e-8206-9a330dded8a2/width=96/CreativeEdge.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit"
+          ],
+          "allowDerivatives": false,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 2701754,
+            "name": "V01b - Z-Image",
+            "baseModel": "ZImageBase",
+            "trainedWords": [],
+            "description": null,
+            "files": [
+              {
+                "name": "Painterly01b_CE_ZIMG_AIT4k.safetensors",
+                "sizeKB": 166140.8671875,
+                "hashes": {
+                  "AutoV1": "0D2B6A0B",
+                  "AutoV2": "5C81594C27",
+                  "SHA256": "5C81594C2764AF6AFA57CB6B83363760E258E3FAAAE7A168D74DF181B588FFF1",
+                  "CRC32": "DC1A5287",
+                  "BLAKE3": "969FAFE6548B4C6043997C0A395E6E5EA5A926FA4A2F15166BD3B8E50D1AE48A",
+                  "AutoV3": "1DF3B36820A4",
+                  "SHA256_12": "5C81594C2764"
+                }
+              }
+            ]
+          },
+          {
+            "id": 2504144,
+            "name": "V01b - Z-Image Turbo",
+            "baseModel": "ZImageTurbo",
+            "trainedWords": [],
+            "description": null,
+            "files": [
+              {
+                "name": "Painterly01b_CE_ZIMGT_AIT5k.safetensors",
+                "sizeKB": 166140.8671875,
+                "hashes": {
+                  "AutoV1": "FEE1D88C",
+                  "AutoV2": "C359197B55",
+                  "SHA256": "C359197B55C8B9CC1DD5ED33FE58824488B419BE392BAABA1A337A3A1344E55D",
+                  "CRC32": "C8314F23",
+                  "BLAKE3": "2F5E58E18A50EA891D14B50EA05E19EDAAC655C11F6CCD3B8AC1DF4C8A545BBE",
+                  "AutoV3": "D3DCB2975343",
+                  "SHA256_12": "C359197B55C8"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 80094,
+        "name": "Painterly | Style LoRA",
+        "creator": {
+          "username": "TackiNO",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b3aa9c2f-adce-4528-c9b7-4d63d2aca300/width=96/TackiNO.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 84920,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [],
+            "description": "<p><strong>How to use LoRA</strong></p><ul><li><p><strong>Weight works best at</strong> <code>:0.7</code> although you are free to experiment.</p></li></ul><p><strong>Training</strong></p><ul><li><p>The LoRA has been trained on <a target=\"_blank\" rel=\"ugc\" href=\"https://civitai.com/models/3850/kenshi\"><strong>Kenshi</strong></a></p></li></ul>",
+            "files": [
+              {
+                "name": "Painterly-Style_LoRA.safetensors",
+                "sizeKB": 147569.2607421875,
+                "hashes": {
+                  "AutoV1": "75A34E9A",
+                  "AutoV2": "544900D4C9",
+                  "SHA256": "544900D4C913EDAAB0CB9257AEAAC745A95E47B77286998FB52E4D7183846E36",
+                  "CRC32": "68F33F4A",
+                  "BLAKE3": "E5F56DDC22B019F59D847064F428E4991FB542961D231D9B3F53960C99B300F7",
+                  "AutoV3": "DB9568D48520",
+                  "SHA256_12": "544900D4C913"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 112860,
+        "name": "PainterlyComicStyle-SD1-5",
+        "creator": {
+          "username": "jonathonwood5882",
+          "image": null
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 129671,
+            "name": "v2.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "paintedcomics"
+            ],
+            "description": "<p>More than doubled the number of training images, including additional artist styles from classic 1970's and 80's comics. More men included this time as well, so manly heroes and villains should render better.<br /><br />Continue to recommend weighting between .44 and .65. I prefer using realistic checkpoints such as Photon, but the Lora will work on illustration ones as well. Haven't tested much with anime checkpoints.</p>",
+            "files": [
+              {
+                "name": "PainterlyComicStyle-V2-30.safetensors",
+                "sizeKB": 26596.0595703125,
+                "hashes": {
+                  "AutoV1": "4D48B653",
+                  "AutoV2": "CE4A220AB1",
+                  "SHA256": "CE4A220AB16912F7A01B6E81E44C9E9A4377C25E115CE3FE8B25785D9962D0EA",
+                  "CRC32": "C0B669C1",
+                  "BLAKE3": "6E73A59CDF9361A234A3F00B2C51C97D4326D41E6FB46178FE9B535247BD78F1",
+                  "AutoV3": "0EB8B8B12013",
+                  "SHA256_12": "CE4A220AB169"
+                }
+              }
+            ]
+          },
+          {
+            "id": 121888,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "paintedcomics"
+            ],
+            "description": "<p>Initial version</p>",
+            "files": [
+              {
+                "name": "PainterlyComicStyle-40.safetensors",
+                "sizeKB": 18555.1416015625,
+                "hashes": {
+                  "AutoV1": "DE2F2560",
+                  "AutoV2": "EA61E755ED",
+                  "SHA256": "EA61E755ED423279CCDFE07A9504F68CB5994B1D54509CC1BC64DBD179F32BE3",
+                  "CRC32": "065AC920",
+                  "BLAKE3": "30C1C66323339E7E9F6F931B7839E718F08CD290800D114FCCB645E1422356D7",
+                  "AutoV3": "67BB7D3195B2",
+                  "SHA256_12": "EA61E755ED42"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 2326354,
+        "name": "Painterly 3D",
+        "creator": {
+          "username": "Adel_AI",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7c1e2bac-1f02-4978-9eb8-d5456fb12a2b/width=96/Adel_AI.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 2616947,
+            "name": "ZIT",
+            "baseModel": "ZImageTurbo",
+            "trainedWords": [
+              "Ganinev art style"
+            ],
+            "description": "<p>Steps : 8<br />Sampler/Scheduler : Seed_3 / Normal --- ipndm / Normal ---- heunpp2 / linear_quadratic or beta<br />Weighting : around 0.75</p>",
+            "files": [
+              {
+                "name": "Ev_Ganin_2.safetensors",
+                "sizeKB": 83100.4609375,
+                "hashes": {
+                  "AutoV1": "2208188C",
+                  "AutoV2": "5D71A6074B",
+                  "SHA256": "5D71A6074BBA9DEEC67E8C97A6163D12F53A24E399F8A4FBFE4AB2DCD23C5834",
+                  "CRC32": "BC5E264E",
+                  "BLAKE3": "DAF6E2ED4B31A5013E4D9C0B5D74A65100F6474D6523EAEE0016DFCFB552600C",
+                  "AutoV3": "A7CBC37BF9F5",
+                  "SHA256_12": "5D71A6074BBA"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "query": "2B Nier",
+    "models": [
+      {
+        "id": 5200,
+        "name": "2B (NieR:Automata) LoRA / YorHA edition",
+        "creator": {
+          "username": "Lykon",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/3b119431-445f-4b21-aba6-87a5ee9518ef/width=96/Lykon.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit",
+            "Rent"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 6031,
+            "name": "v2b",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "yorha no. 2 type b"
+            ],
+            "description": null,
+            "files": [
+              {
+                "name": "yorha_noDOT_2_type_b.safetensors",
+                "sizeKB": 147533.7490234375,
+                "hashes": {
+                  "AutoV1": "83F41602",
+                  "AutoV2": "3FB6A3C0B0",
+                  "SHA256": "3FB6A3C0B0B93190D802A27CD1A67C1787C0D50E41BAE0E4DA73BAF1F67D9E79",
+                  "CRC32": "A9441758",
+                  "BLAKE3": "9825CE5ECECADB7FCCDA1A527AE351B6FDA0F28539C3BC1C7400B96A4429C123",
+                  "AutoV3": "DDE83CF76FD3",
+                  "SHA256_12": "3FB6A3C0B0B9"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 50304,
+        "name": "2B / NieR:Automata",
+        "creator": {
+          "username": "rainn00",
+          "image": null
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 54834,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "blindfold",
+              "grey eyes"
+            ],
+            "description": null,
+            "files": [
+              {
+                "name": "2b-v1.safetensors",
+                "sizeKB": 73841.978515625,
+                "hashes": {
+                  "AutoV1": "907E2307",
+                  "AutoV2": "105892DB57",
+                  "SHA256": "105892DB57BF57AA9D72EB9E507C08958E67E31D0CD1CBDE45BD8E92BFA790EA",
+                  "CRC32": "EA8BDF67",
+                  "BLAKE3": "2E930B35EDF14F634AE12017D75DA601B4D4F1A276382A21EC5326482869432F",
+                  "AutoV3": "83F228FA191C",
+                  "SHA256_12": "105892DB57BF"
+                }
+              }
+            ]
+          },
+          {
+            "id": 54910,
+            "name": "loha-v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "blindfold ",
+              "grey eyes"
+            ],
+            "description": "<p>The loha version can restore more pattern details</p><p>Notice!</p><p>This model is trained by lycoris loha,ensure you have installed the necessary plugins before using.</p><p>Thanks for all pictures author.</p>",
+            "files": [
+              {
+                "name": "2Bloha-v1.safetensors",
+                "sizeKB": 171695.7705078125,
+                "hashes": {
+                  "AutoV1": "FFF0C3BF",
+                  "AutoV2": "162DF44D49",
+                  "SHA256": "162DF44D4979006AF58935264ADF4829308EA6F3FE23A6288DE5162336B178F2",
+                  "CRC32": "5776F369",
+                  "BLAKE3": "68EF36F0C1FBF88AAE1FA887514854661CEB401B0594CE4F32937E612CDAE8BD",
+                  "AutoV3": "68EEAFA961A4",
+                  "SHA256_12": "162DF44D4979"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 116224,
+        "name": "2b (NieR:Automata) | Goofy Ai",
+        "creator": {
+          "username": "Goofy_Ai",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/79fc7817-ef86-4a49-94c5-eafd01bc9cf7/width=96/Goofy_Ai.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 125842,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "yorha no. 2 type b",
+              "white hair,short hair,black hairband"
+            ],
+            "description": null,
+            "files": [
+              {
+                "name": "2b.safetensors",
+                "sizeKB": 35821.7890625,
+                "hashes": {
+                  "AutoV1": "82452A6D",
+                  "AutoV2": "6665C90521",
+                  "SHA256": "6665C905214A40DB2098F63BB7C7DD787397E5DDEDE6EC060AB253ED25D0BCEF",
+                  "CRC32": "4BAB94AB",
+                  "BLAKE3": "EA5284892E3DBB197822FFCC86F85A4FF7B153E5BC0448D490D05E876F08FA2D",
+                  "AutoV3": "AB82A22110AD",
+                  "SHA256_12": "6665C905214A"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 248385,
+        "name": "2B (NieR:Automata) 2B \uff08\u5c3c\u5c14 \u673a\u68b0\u7eaa\u5143\uff09",
+        "creator": {
+          "username": "kozue",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/521c8d8c-7fdd-43f7-945e-8a79cb8a4fc9/width=96/kozue.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 280263,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "1girl,blindfold,black blindfold,solo, white hair, dress,black dress, hairband, short hair, mole under mouth, gloves, thighhighs, puffy sleeves, cleavage cutout, long sleeves, yorha no. 2 type b,leotard,",
+              "pod (nier automata)"
+            ],
+            "description": null,
+            "files": [
+              {
+                "name": "2b.safetensors",
+                "sizeKB": 106086.361328125,
+                "hashes": {
+                  "AutoV1": "1BA2C529",
+                  "AutoV2": "0B9E32F81E",
+                  "SHA256": "0B9E32F81EA1B5A7A86212F3170721C1B807F988864A31750B9486BD769ED232",
+                  "CRC32": "3D7778E6",
+                  "BLAKE3": "4C53A2CEA9AE7A30F83077E482F737433C95E2DFE430F4FFA420976FC28DC88C",
+                  "AutoV3": "846134F8FB71",
+                  "SHA256_12": "0B9E32F81EA1"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 365908,
+        "name": "2B (Nier: Automata)",
+        "creator": {
+          "username": "titan0115",
+          "image": "https://cdn.discordapp.com/avatars/265540478823432214/0939b4cc7a525cfbc66d4db69bf3b62e.png"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit",
+            "Rent",
+            "Sell",
+            "SellMerge"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 423286,
+            "name": "for sd1.5",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "2B",
+              "mask"
+            ],
+            "description": null,
+            "files": [
+              {
+                "name": "2B_clean.safetensors",
+                "sizeKB": 147568.015625,
+                "hashes": {
+                  "AutoV1": "95308FEC",
+                  "AutoV2": "7A699A5584",
+                  "SHA256": "7A699A55849F234A6BADDAAF6AB751AA58F8EAC54A5A70B58C2D30DC58B91F45",
+                  "CRC32": "71C316B8",
+                  "BLAKE3": "A5E6B2C62382A249509B99A154CAF4116BDCDB5C9C27CE9D55E4D5FED811B292",
+                  "AutoV3": "500FC7DF137B",
+                  "SHA256_12": "7A699A55849F"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 271018,
+        "name": "2b - Nier Automata",
+        "creator": {
+          "username": "KingDead",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c1e00bf0-196d-4866-8238-20a1eaadeb63/width=96/KingDead.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": false,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit"
+          ],
+          "allowDerivatives": false,
+          "allowDifferentLicense": false
+        },
+        "versions": [
+          {
+            "id": 305493,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "2b"
+            ],
+            "description": null,
+            "files": [
+              {
+                "name": "2b-08.safetensors",
+                "sizeKB": 18550.1796875,
+                "hashes": {
+                  "AutoV1": "DE2F2560",
+                  "AutoV2": "4CA96A1219",
+                  "SHA256": "4CA96A1219995F8DBDE1E93E6DBEA33F4904415D266A01381AE95541CAD5671F",
+                  "CRC32": "90B2B10B",
+                  "BLAKE3": "6222281F48F625A6D7D1B3B70872B6651352EB3A0F535B5F71851FD60AEE2AC0",
+                  "AutoV3": "8C98D2DC5A1C",
+                  "SHA256_12": "4CA96A121999"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 103791,
+        "name": "2b (Nier Automata)",
+        "creator": {
+          "username": "ForkY",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5063641e-df4e-4ecf-8eba-cc33b378b12a/width=96/ForkY.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit",
+            "Rent"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 111197,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "<lora:2b:0.6>"
+            ],
+            "description": null,
+            "files": [
+              {
+                "name": "2b.safetensors",
+                "sizeKB": 147569.3017578125,
+                "hashes": {
+                  "AutoV1": "2B9462D8",
+                  "AutoV2": "47E81632D5",
+                  "SHA256": "47E81632D5421ACB0408CAAAA7D60B490B493CCAA8087BDD9EB3BBC654D829C9",
+                  "CRC32": "AD5FB44E",
+                  "BLAKE3": "E4CC902B5D89EA8EDDC02F90201FB6EC2C8C0AAD05E424500AD3268109C6A304",
+                  "AutoV3": "85BBBF4DB0D4",
+                  "SHA256_12": "47E81632D542"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 196549,
+        "name": "2B (Nier Automata)",
+        "creator": {
+          "username": "Unknown_AI",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/11eb4b89-d42f-4ca9-8dee-31f0ea6f63d4/width=96/Unknown_AI.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image"
+          ],
+          "allowDerivatives": false,
+          "allowDifferentLicense": false
+        },
+        "versions": [
+          {
+            "id": 220984,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "2B_NA",
+              "white hair, black blindfold, black hairband",
+              "black dress, short dress, black gloves, feather trim, juliet sleeves, puffy sleeves",
+              "black thighhighs, black footwear, boots, high heels",
+              "highleg leotard",
+              "back cutout"
+            ],
+            "description": null,
+            "files": [
+              {
+                "name": "2B_NierAutomata.safetensors",
+                "sizeKB": 147572.953125,
+                "hashes": {
+                  "AutoV1": "C12DED0B",
+                  "AutoV2": "7A17BAFD49",
+                  "SHA256": "7A17BAFD49C65F131652AF860F7598F479E6CD8E6F5AC7D65E12EFC0E2787A32",
+                  "CRC32": "99193066",
+                  "BLAKE3": "CEB46B7CAC316ABE21736F3FCB6B52BFD3B4E864020BE7CC9A649816B848C05C",
+                  "AutoV3": "58323072B87B",
+                  "SHA256_12": "7A17BAFD49C6"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 2227727,
+        "name": "2B [NieR: Automata] (Z-Image Turbo LoRA)",
+        "creator": {
+          "username": "Tekemo",
+          "image": "https://lh3.googleusercontent.com/a/ACg8ocLGB2jr-mDvAK4quFFBhMHWXRwDTLUVrXboQ9g0HVX1jk6HY3zR=s96-c"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit",
+            "Rent",
+            "Sell",
+            "SellMerge"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 2507880,
+            "name": "v1.0",
+            "baseModel": "ZImageTurbo",
+            "trainedWords": [
+              "2B_NierA"
+            ],
+            "description": "<p>Trained on 35 images<br />Trained for 1500 steps</p>",
+            "files": [
+              {
+                "name": "2B_NierA_v1.safetensors",
+                "sizeKB": 166140.8984375,
+                "hashes": {
+                  "AutoV1": "1E13DCFF",
+                  "AutoV2": "96D3E6DDB6",
+                  "SHA256": "96D3E6DDB6D2AB2DD334C7F35206DFE48DFC5DB4CE0FA44DE4307A4D214A82D9",
+                  "CRC32": "65FAB5D2",
+                  "BLAKE3": "5700D8B971AE60CD2064465AC1A10969B75FBDE08B44F87FA4B823075341A833",
+                  "AutoV3": "373C9D653B93",
+                  "SHA256_12": "96D3E6DDB6D2"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 41422,
+        "name": "2B\u65b0\u5a18 _ YoRHa No.2 Type B\uff08Nier: Automata\uff09_ Role.LORA",
+        "creator": {
+          "username": "C_1",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/dd6857c3-8903-4f64-8f3b-ea242b769e32/width=96/C_1.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": false,
+          "allowCommercialUse": [],
+          "allowDerivatives": false,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 106736,
+            "name": "v1.9",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "Nier.2b\\(Bride\\)",
+              "hair over one eye",
+              "black headband"
+            ],
+            "description": "<p>\ud83d\udd181.9\u66f4\u65b0\uff1a\u51cf\u5c11\u4e86\u66f4\u591alora\u5e26\u6765\u7684\u8d1f\u9762\u5f71\u54cd\uff0c\u5927\u90e8\u5206\u6a21\u578b\u90fd\u80fd\u4f7f\u7528\u3002</p><p>\u4e3a\u4e86\u8ffd\u6c42\u51cf\u5c11\u5bf9\u6a21\u578b\u7684\u7834\u574f\uff0c\u53ef\u80fd\u5728\u4e00\u4e9b\u6a21\u578b\u4e0a\u8863\u670d\u4e0d\u662f\u5f88\u7a33\u5b9a\uff08\u7a33\u5b9a\u6027\uff1a2d\u21922.5d\u2192\u771f\u4eba\uff09\u3002</p><p>\u25fc <strong>\u4f7f\u7528</strong></p><p> \u2755 <strong>hair over one eye</strong>,<strong>black headband \u5efa\u8bae\u5e26\u4e0a</strong>\uff0c\u6709\u4e9b\u6a21\u578b\u9ed8\u8ba4\u4e0d\u51fa\u6548\u679c\u3002</p><p>\u6839\u636e\u4f60\u7684\u6a21\u578b\u9002\u7528\u60c5\u51b5\uff0c<strong>\u4f7f\u7528\u89e6\u53d1\u8bcd</strong>\u6743\u91cd\u53ef\u4ee5\u5728<strong>0.8-1</strong>\u4e4b\u95f4\uff0c<strong>\u4e0d\u4f7f\u7528\u89e6\u53d1\u8bcd</strong>\u53ef\u80fd\u8981<strong>\u8bbe\u7f6e\u66f4\u9ad8</strong>\u3002</p><p><strong>\u2714</strong>\u53ef\u589e\u52a0\u9009\u9879\uff1abridal veil, mole under mouth,dress,thighhighs,hair flower\uff08\u6211\u4e00\u822c\u653e\u8d1f\u9762\u91cc</p><p>\u4e0d\u5e26\u89e6\u53d1\u8bcd\u53ef\u4ee5\u66f4\u6539\u66f4\u591a\u3002</p><p>2.0-\u9664\u975e\u6709\u65b0\u6280\u672f\u53ef\u4ee5\u5b8c\u7f8e\u6d88\u9664lora\u5bf9\u6a21\u578b\u7684\u98ce\u683c\u5f71\u54cd\uff0c\u90a3\u8fd9\u5c31\u662f\u6700\u540e\u4e00\u7248\u4e86\u3002</p><p>\ud83d\udcc3\u540e\u9762\u6216\u8bb8\u4f1a\u51fa\u7eaf\u8863\u670dlora\uff0c\u90a3\u5c31\u4fdd\u6301\u5173\u6ce8\u5427\u3002</p><p>\u6211\u77e5\u9053\u6709\u4e9b\u7f51\u7ad9\u5728\u5077\u522b\u4eba\u7684\u6a21\u578b\uff0c\u5728\u6b64\u7533\u660e\u6ca1\u6709\u5728C\u7ad9\u5916\u7684\u7f51\u7ad9\u53d1\u5e03\u8fc7\u3002</p>",
+            "files": [
+              {
+                "name": "Bride 2bV1.9.safetensors",
+                "sizeKB": 73846.6982421875,
+                "hashes": {
+                  "AutoV1": "DEDB5469",
+                  "AutoV2": "19104859C2",
+                  "SHA256": "19104859C24595DC063CB6CE72512372113341B4D74C2505704A71676E01062B",
+                  "CRC32": "9AA9E013",
+                  "BLAKE3": "FAE970AB9F01D838FAB48F5AB965C7CC6C84FD146F16DF1A1713D984D183A29B",
+                  "AutoV3": "F060AF3D386A",
+                  "SHA256_12": "19104859C245"
+                }
+              }
+            ]
+          },
+          {
+            "id": 46342,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "bride 2b",
+              "yorha no. 2 type b",
+              "hair over one eye"
+            ],
+            "description": "<p>\u4f7f\u75287G nai\u6a21\u578b\u8bad\u7ec3\uff0c\u63a8\u8350\u4f7f\u75282.5D\u7c7b\u578b\u6a21\u578b\u751f\u6210\u3002</p><p>\u8fd9\u4e2a\u7248\u672c\u4e2d\u8138\u90e8\u6ca1\u6709\u8bad\u7ec3\u4e0d\u591f\uff0c\u4f1a\u88ab\u6a21\u578b\u5e26\u504f\uff0c\u53ef\u4ee5\u7528\u5185\u7f6e\u89d2\u8272\u8bcd\u6216\u63d0\u9ad8\u6743\u91cd\u5c1d\u8bd5\u8fd8\u539f\u3002\u5728\u4e4b\u540e\u7248\u672c\u4f1a\u8fdb\u884c\u4fee\u8865\u3002</p><p>\u6216\u8bb8\uff0c\u8fd9\u662f\u4e00\u4e2a2b\u7684\u670d\u88c5\u6a21\u578b\u5462\uff1fhh</p>",
+            "files": [
+              {
+                "name": "2B\u65b0\u5a18 _ YoRHa No.2 Type B\uff08Nier Automata\uff09_ Role.LORA\uff08V1.0.safetensors",
+                "sizeKB": 37009.326171875,
+                "hashes": {
+                  "AutoV1": "B4D0C65A",
+                  "AutoV2": "2F4AB79963",
+                  "SHA256": "2F4AB79963D78D26895B3D7597FCDAA82246C77E2973BFBFBD19E2F3FD214D2B",
+                  "CRC32": "99657E47",
+                  "BLAKE3": "8417BF9D9A4B6E014F2504A8AB940A58492AE2D2A6150BADEB2FE6E2ACD4CCFC",
+                  "AutoV3": "850F6B893F76",
+                  "SHA256_12": "2F4AB79963D7"
+                }
+              }
+            ]
+          },
+          {
+            "id": 67145,
+            "name": "v1.5",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "Bride 2b/(Nie:R/)"
+            ],
+            "description": "<p>\u8fd9\u4e2a\u7248\u672c\u4fee\u590d\u4e86\u773c\u775b\uff0c\u8138\u578b\u4e0d\u62df\u5408\u7684\u60c5\u51b5\u3002\u5bf92d\u7c7b\u6a21\u578b\u53cb\u597d\u4e86\u4e00\u4e9b\uff0c\u4f46\u4f1a\u5e26\u6709\u4e00\u4e9b\u4e9b\u753b\u98ce\u504f\u79fb\uff0c\u771f\u4eba\u6a21\u578b\u6548\u679c\u4e00\u822c\u3002</p><p>\u63a8\u83502.5D\u6a21\u578b\u751f\u6210\uff0c\u5982yorrrlmix_v21\u3002</p><p>\u9ed8\u8ba4\u8f93\u5165\u89e6\u53d1\u8bcd\u51fa\u6765\u7684\u4eba\u7269<strong>\u53f3\u773c\u6ca1\u6709\u88ab\u906e\u4f4f</strong>\uff0c\u53ef\u4ee5\u7528<strong>hair over one eye</strong>\u89e6\u53d1\u3002</p><p>\u9ed8\u8ba4\u60c5\u51b5\u53ef\u80fd\u51fa\u73b0<strong>\u9ed1\u8272\u914d\u4ef6\u6df7\u5165</strong>\uff0c\u53ef\u4ee5\u7528 <strong>White dress</strong>\u52a0\u5f3a\u767d\u8272\u7684\u6743\u91cd\uff0c\u7528<strong>Black dress</strong>\u4f1a\u52a0\u5f3a\u51fa\u73b0\u9ed1\u793c\u670d\u7684\u6982\u7387\u3002</p><p>\u4e00\u4e9b\u788e\u788e\u5ff5\u2014\u2014\u2014\u2014\u8fd9\u4e2a\u7248\u672c\u7ecf\u5386\u4e8620\u6b21\u4fee\u6539\u3002\u57fa\u6a21\u9009\u62e9\u4ecenai\u5230sd1.5\u5230Basil_mix_fixed\u5230chilloutmix\u5230yorrrlmix_v21\uff0c\u6700\u540e\u7528Merge Block Weighted\u81ea\u5df1\u5408\u5e76\u4e86\u51e0\u56de\uff0c\u7ec8\u4e8e\u624d\u5b8c\u6210\u8bad\u7ec3\u3002</p><p>1.0\u7684\u60c5\u51b5\u5224\u5b9a\u4f4dnai\u6a21\u578b\u5bf9\u8fd9\u4e2a\u89d2\u8272\u201c\u53f3\u773c\u88ab\u5934\u53d1\u5b8c\u5168\u76d6\u4f4f\u201d\u4e0d\u592a\u7406\u89e3\uff0c\u8c03\u6574\u8bad\u7ec3\u96c6\u548c\u5b66\u4e60\u7387\u90fd\u4f1a\u51fa\u73b0\u52aa\u529b\u9732\u51fa\u53cc\u773c\u7684\u60c5\u51b5\uff0c\u800c\u4e4b\u524d\u57fa\u6a21\u662f\u6ca1\u6709\u6570\u636e\u201c\u53f3\u773c\u88ab\u5934\u53d1\u5b8c\u5168\u76d6\u4f4f\u201d\u624d\u4f7f\u5f97\u5d29\u574f\u3002</p><p>\u4e4b\u540e\u7528\u5176\u4ed6\u6a21\u578b\u8bad\u7ec3\u6311\u9009\u51fa\u53ef\u4ee5\u751f\u6210\u7684\u6a21\u578b\uff0c\u518d\u5408\u5e76\u6a21\u578b\u6570\u636e\u7ed9sd1.5\uff0c\u7ec8\u4e8e\u5f97\u5230\u8fd9\u4e2a\u6a21\u578b\u3002<br /></p><p>\u592a\u7d2f\u4e86\ud83d\ude02</p>",
+            "files": [
+              {
+                "name": "susu_bride 2bv24.safetensors",
+                "sizeKB": 86362.2138671875,
+                "hashes": {
+                  "AutoV1": "6EA1C31D",
+                  "AutoV2": "705B08630A",
+                  "SHA256": "705B08630A51B3FF4048DE41306B7045A7FF09A37E338510A132916A2EAF760A",
+                  "CRC32": "644BCC8B",
+                  "BLAKE3": "3D36FA52F9D057AF637F23449E7FE327BBA0427C8DDE54A2E892F5936E81F31E",
+                  "AutoV3": "D6B960773B3D",
+                  "SHA256_12": "705B08630A51"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 95387,
+        "name": "2B | Nier Automata",
+        "creator": {
+          "username": "wrench1815",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/fad8a16e-e227-4fd8-9f4d-a41a05c8de68/width=96/wrench1815.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit",
+            "Rent"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 101819,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "n_2b",
+              "blindfold, black blindfold, large breasts",
+              "blue eyes"
+            ],
+            "description": "<p><strong>I was completely unsatisfied with the 2B LoRAs out there. The Boobies were not enough 1.6 for my taste. Neither that ass was jiggly enough. So I resorted to making my own.</strong></p>",
+            "files": [
+              {
+                "name": "n_2b-10.safetensors",
+                "sizeKB": 18549.8740234375,
+                "hashes": {
+                  "AutoV1": "DE2F2560",
+                  "AutoV2": "7600981D24",
+                  "SHA256": "7600981D24A800529477881D3E95730E808407A4EAEF9E447367CF4194074938",
+                  "CRC32": "A8504D4E",
+                  "BLAKE3": "98F3DA4B8E3714DD66746BBDE18B268A1E9AA7224627B07384FA9C32D47B5FDE",
+                  "AutoV3": "CF308FA73BB9",
+                  "SHA256_12": "7600981D24A8"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 84968,
+        "name": "Nier Automata 2B (YoRHa No.2 Type.B) without blindfold",
+        "creator": {
+          "username": "mssmzm",
+          "image": null
+        },
+        "permissions": {
+          "allowNoCredit": false,
+          "allowCommercialUse": [],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 90317,
+            "name": "ver.A",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "2B_NoBlindFold  "
+            ],
+            "description": "<p>Trained with AOM3A1B</p>",
+            "files": [
+              {
+                "name": "2B_NoBlindFold-CounterfeitV3-Lora-000027.safetensors",
+                "sizeKB": 73845.66015625,
+                "hashes": {
+                  "AutoV1": "BF863A17",
+                  "AutoV2": "6DF21EE4F9",
+                  "SHA256": "6DF21EE4F9C5F064EC9BED1EC0C3D63EABD9B7EA1952C7104A8F3C143C0F400B",
+                  "CRC32": "4C9217E1",
+                  "BLAKE3": "F76B9EED4D4DB55B6997B9A76F39BCC340CBF8E55CA810C126C415A2A018D67C",
+                  "AutoV3": "4E46CA3B2083",
+                  "SHA256_12": "6DF21EE4F9C5"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 538982,
+        "name": "2B + 2P  (Nier Automata - Final Fantasy XIV)",
+        "creator": {
+          "username": "QX106",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/a294169a-c6c5-4631-9e24-2a4702c3d006/width=96/QX106.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "RentCivit",
+            "Rent"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 599181,
+            "name": "V1 - semi-realistic",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "short hair , mole under mouth, parted lips",
+              "2ppale, pale skin, black hair,",
+              "2pdark, dark skin, black hair,",
+              "2b, pale skin, white hair,",
+              "blue-gray eyes",
+              "white dress, cleavage cutout, black gloves, white footwear",
+              "black leotard, cleavage cutout, black gloves, white footwear",
+              "black dress, cleavage cutout, white gloves, black footwear",
+              "white leotard, cleavage cutout, white gloves, black footwear",
+              "kaine lingerie, kaine bandages, kaine gloves, kaine shoes",
+              "white blindfold, ",
+              "black blindfold",
+              "white hairband",
+              "black hairband"
+            ],
+            "description": "<p>Common tags: short hair , mole under mouth, parted lips, white hairband</p><p>2P - pale skin: 2ppale, pale skin, black hair,</p><p>2P - dark skin: 2pdark, dark skin, black hair,</p><p>2B: 2b, pale skin, white hair,</p><p>Uncovered eyes: blue-gray eyes</p><p>Blindfold: white blindfold, black blindfold</p><p>Hairband: white hairband, black hairband</p><p>2P's Dress: white dress, cleavage cutout, black gloves, white footwear</p><p>2P's Leotard: black leotard, cleavage cutout, black gloves, white footwear</p><p>2B's Dress: black dress, cleavage cutout, white gloves, black footwear</p><p>2B's Leotard: white leotard, cleavage cutout, white gloves, black footwear</p><p>Kaine's outfit: kaine lingerie, kaine bandages, kaine gloves, kaine shoes</p><p>Experimental tags:</p><p>2b2p</p><p>2b2p dress,  2b dress, 2p dress</p><p>2b2p leotard, 2b leotard  , 2p leotard</p><p>2b2p footwear , 2b footwear, 2p footwear</p><p>2b2p gloves, 2b gloves, 2p gloves</p><p>2b2p blindfold, 2b blindfold, 2p blindfold</p>",
+            "files": [
+              {
+                "name": "2B2P_semi-realistic_v1.safetensors",
+                "sizeKB": 36980.4453125,
+                "hashes": {
+                  "AutoV1": "9F775AC4",
+                  "AutoV2": "FEB312E238",
+                  "SHA256": "FEB312E2382B348A9AC3D489310B4C7AC9493C32D1917F331BF056A92D7AB6EB",
+                  "CRC32": "A9138D00",
+                  "BLAKE3": "C76F77A31F03FA59F712FD11AB07508AE6402A6BB1D70ACA75681F28C0D7CB80",
+                  "AutoV3": "56B72F328291",
+                  "SHA256_12": "FEB312E2382B"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "query": "Double Exposure",
+    "models": [
+      {
+        "id": 132494,
+        "name": "Double Exposure Concept",
+        "creator": {
+          "username": "BixBit11",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2870f71e-e138-4a7a-7a06-9759dee13500/width=96/BixBit11.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": false
+        },
+        "versions": [
+          {
+            "id": 145734,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "w0rld"
+            ],
+            "description": "<p>First Version</p>",
+            "files": [
+              {
+                "name": "w0rld - World Inside Body.safetensors",
+                "sizeKB": 36979.1015625,
+                "hashes": {
+                  "AutoV1": "B165F789",
+                  "AutoV2": "42D8BDCA99",
+                  "SHA256": "42D8BDCA995E19835CB8073D2B19AA8107809A4DF740C81F9CD549D76B3A2FF3",
+                  "CRC32": "03B3FBBD",
+                  "BLAKE3": "B260E8099D9A9EF0667D3E8D0FFED7844509360FD1245FA28ABFCBCB642AC51B",
+                  "AutoV3": "6093A498E077",
+                  "SHA256_12": "42D8BDCA995E"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 90633,
+        "name": "Double exposure / \u53cc\u91cd\u66dd\u5149 / \u4e8c\u91cd\u9732\u5149 / \ub354\ube14 \ub178\ucd9c",
+        "creator": {
+          "username": "Terry9993",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e7cd7bab-0a5e-426d-7ad2-ed173d85fd00/width=96/Terry9993.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 96567,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "double exposure"
+            ],
+            "description": null,
+            "files": [
+              {
+                "name": "double exposure.safetensors",
+                "sizeKB": 36976.6201171875,
+                "hashes": {
+                  "AutoV1": "8A744A75",
+                  "AutoV2": "9B5C43E636",
+                  "SHA256": "9B5C43E636051ED817A59FFB6F5DE3B57C11434CC3334C6D770F422D5CB0A6B0",
+                  "CRC32": "764C1C0C",
+                  "BLAKE3": "8DF19E5C5AC41BF12ABDBAFE845A198B446AF1B886AD43E0B898CDADD49733FE",
+                  "AutoV3": "F64D42509186",
+                  "SHA256_12": "9B5C43E63605"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 2422642,
+        "name": "DOUBLE EXPOSURE LORA - REDMOND - STYLE LORA",
+        "creator": {
+          "username": "artificialguybr",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f00f0b34-bdf0-4884-9c0c-9d3b389613f4/width=96/artificialguybr.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit",
+            "Rent"
+          ],
+          "allowDerivatives": false,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 2723837,
+            "name": "v1.0 - ZIMAGE",
+            "baseModel": "ZImageTurbo",
+            "trainedWords": [
+              "Double Exposure",
+              "DoubleExposureREDAF"
+            ],
+            "description": null,
+            "files": [
+              {
+                "name": "[ZImage.Turbo]DoubleExposure_Redmond.safetensors",
+                "sizeKB": 83100.5234375,
+                "hashes": {
+                  "AutoV1": "DDB67496",
+                  "AutoV2": "FC48E726AE",
+                  "SHA256": "FC48E726AE5391713A6BC33C57D6B5DE16378A83F64EB3518EA25CCF9C0E96A7",
+                  "CRC32": "22D7E8FF",
+                  "BLAKE3": "D8B6373F3E71AB9DF8EA939CA6FC50B7E2FC3346EF5CE1952C0AFC674BE8D985",
+                  "AutoV3": "78204DE59347",
+                  "SHA256_12": "FC48E726AE53"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 192882,
+        "name": "Concept_Silhouette_double exposure_Beta 1.0",
+        "creator": {
+          "username": "iiiiiphoenix",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/36e5d810-02ee-4ec3-a65a-d4d774ee3ae6/width=96/iiiiiphoenix.jpeg"
+        },
+        "permissions": {
+          "allowNoCredit": true,
+          "allowCommercialUse": [
+            "Image",
+            "RentCivit",
+            "Rent",
+            "Sell",
+            "SellMerge"
+          ],
+          "allowDerivatives": true,
+          "allowDifferentLicense": true
+        },
+        "versions": [
+          {
+            "id": 216735,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "trainedWords": [
+              "silhouette"
+            ],
+            "description": "<p>-</p>",
+            "files": [
+              {
+                "name": "silhouette-000012.safetensors",
+                "sizeKB": 106071.90625,
+                "hashes": {
+                  "AutoV1": "85DAC493",
+                  "AutoV2": "99460A040E",
+                  "SHA256": "99460A040EC18E2924E447FDB824F1A0BCC70048E16D3B2B7E76F881627119D3",
+                  "CRC32": "A2E6F1E0",
+                  "BLAKE3": "80D43581668BCC72AEFF7C3765B818A71E185FDC65D1A6B380717B97E30E8992",
+                  "AutoV3": "51F0345B68DB",
+                  "SHA256_12": "99460A040EC1"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

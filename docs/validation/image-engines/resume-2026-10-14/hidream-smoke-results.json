@@ -1,0 +1,47 @@
+{
+  "worker": "C:\\Development\\machdoch\\apps\\client\\src-tauri\\python\\media_diffusers_worker.py",
+  "workerSha256": "a895c9719239071bcd39ab163938faa0f3a5cd4681e3d0eaedf9979e15159df5",
+  "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+  "runtimeSha256": "c3549f9f6e9d2b83a65c72bbc3258a13183167c62d7cd0fcbc32ad9165a2d434",
+  "residentWorker": true,
+  "models": [
+    {
+      "id": "local:user:e7d65da14bf9a82b8da178426e02b5199b33e56d30276e30a3b305137710bbc6",
+      "name": "HiDream-I1 Full FP4",
+      "architecture": "hidream-i1-full",
+      "referenceId": 144655944,
+      "directory": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\hidream-fp4-smoke\\01-hidream-i1-full-reference-144655944",
+      "workerSha256": "bb97e45e763cce528fd4423bcccecf3ce24d645396c252311c0fa766fc8711a0",
+      "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+      "runtimeSha256": "f3b109153675680a1532ffe881475b514ed83ec60fd0a757ee99b01a50c3152f",
+      "originalPrompt": false,
+      "passed": false,
+      "error": "ValueError: Generation returned unexpected width",
+      "seconds": 987.8899999999994
+    },
+    {
+      "id": "local:user:e7d65da14bf9a82b8da178426e02b5199b33e56d30276e30a3b305137710bbc6",
+      "name": "HiDream-I1 Full FP4",
+      "architecture": "hidream-i1-full",
+      "referenceId": 144655944,
+      "directory": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\hidream-fp4-smoke\\01-hidream-i1-full-reference-144655944-attempt-2",
+      "workerSha256": "a895c9719239071bcd39ab163938faa0f3a5cd4681e3d0eaedf9979e15159df5",
+      "tensorReaderSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+      "runtimeSha256": "c3549f9f6e9d2b83a65c72bbc3258a13183167c62d7cd0fcbc32ad9165a2d434",
+      "originalPrompt": false,
+      "passed": true,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-13\\image-engines\\hidream-fp4-smoke\\01-hidream-i1-full-reference-144655944-attempt-2\\images\\output-0000.png",
+      "width": 256,
+      "height": 256,
+      "numInferenceSteps": 1,
+      "workerVersion": "media-diffusers-worker/1.102.0",
+      "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+      "sampler": "unipc",
+      "schedulerClass": "UniPCMultistepScheduler",
+      "guidanceScale": 5,
+      "sha256": "76ea5d0e0cf5363bfa722660a62b4f58303e67222f6a5fb355a54086ebfdb0a8",
+      "seconds": 1302.1719999999987
+    }
+  ],
+  "passed": true
+}

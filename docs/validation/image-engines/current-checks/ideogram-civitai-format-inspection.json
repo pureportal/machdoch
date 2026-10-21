@@ -1,0 +1,35 @@
+{
+  "modelId": 2684606,
+  "versionId": 3014385,
+  "filename": "ideogram4Nvfp4_nvfp4_2893443.safetensors",
+  "publisherSha256": "639e37bd1dd7ee35e23c7cfccf93a518ddc7f4587818956ec42b31e659fd6ac0",
+  "headerOnly": true,
+  "weightDigestVerified": false,
+  "sourceUrl": "https://civitai.com/models/2684606?modelVersionId=3014385",
+  "tensorCount": 1050,
+  "dtypes": [
+    "F32",
+    "BF16",
+    "F8_E4M3",
+    "U8"
+  ],
+  "quantizationKeys": [
+    "adaln_proj.weight_scale",
+    "final_layer.adaln_modulation.weight_scale",
+    "final_layer.linear.weight_scale",
+    "input_proj.weight_scale",
+    "layers.0.adaln_modulation.weight_scale",
+    "layers.0.attention.o.weight_scale_2",
+    "layers.0.attention.qkv.weight_scale_2",
+    "layers.0.feed_forward.w1.weight_scale_2",
+    "layers.0.feed_forward.w2.weight_scale_2",
+    "layers.0.feed_forward.w3.weight_scale_2",
+    "layers.1.adaln_modulation.weight_scale",
+    "layers.1.attention.o.weight_scale_2"
+  ],
+  "metadataKeys": [
+    "model_type"
+  ],
+  "runtimeGeneration": "not run",
+  "quantizationStateKeys": []
+}

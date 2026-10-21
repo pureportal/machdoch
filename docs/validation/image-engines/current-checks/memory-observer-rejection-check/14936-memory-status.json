@@ -1,0 +1,9 @@
+{
+  "log": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\current-checks\\memory-observer-rejection-check\\14936-memory.jsonl",
+  "samples": 0,
+  "error": "Every selected queue must be a live reference runner for this verification root.",
+  "startedAt": "2026-10-12T23:24:45.8533300Z",
+  "finishedAt": "2026-10-12T23:24:46.4761798Z",
+  "processId": 14936,
+  "phase": "failed"
+}

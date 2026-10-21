@@ -1,0 +1,307 @@
+[
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:14b35286688a088739b8f5c9991313bc1e9e93798f3ec856b97a691a7df30fe6",
+      "alreadyInstalled": false,
+      "architecture": "stable-diffusion-xl",
+      "byteSize": 228454940,
+      "digest": "14b35286688a088739b8f5c9991313bc1e9e93798f3ec856b97a691a7df30fe6",
+      "displayName": "Double Exposure SDXL - runew0lf",
+      "importedAt": "2026-10-15T02:50:36.342Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/14b35286688a088739b8f5c9991313bc1e9e93798f3ec856b97a691a7df30fe6/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "128078.safetensors",
+      "blockingReason": null,
+      "byteSize": 228454940,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-xl",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "811e8c727135672130c7150a6e25a79a608da441a8546ce80ab16e57d83a6e51",
+      "loraProfile": {
+        "algorithm": "lora",
+        "convolutionTargetCount": 0,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 986,
+        "rankMaximum": 32,
+        "rankMinimum": 32,
+        "targetModuleCount": 986
+      },
+      "metadataSummary": [
+        "modelspec.architecture: stable-diffusion-xl-v1-base/lora",
+        "modelspec.title: Double_Exposure",
+        "ss_base_model_version: sdxl_base_v1-0",
+        "ss_sd_model_name: 128078.safetensors"
+      ],
+      "reviewToken": "6fa16bd9c41c4176daf189975a49a51090836e64ffb32dfd9b3bff4a774522c3",
+      "schemaVersion": 1,
+      "sourceFileName": "Double_Exposure.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\187387\\210432\\Double_Exposure.safetensors",
+      "suggestedDisplayName": "Double_Exposure",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder",
+        "text-encoder-2"
+      ],
+      "tensorCount": 2958,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  },
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:42d8bdca995e19835cb8073d2b19aa8107809a4df740c81f9cd549d76b3a2ff3",
+      "alreadyInstalled": true,
+      "architecture": "stable-diffusion-1",
+      "byteSize": 37866600,
+      "digest": "42d8bdca995e19835cb8073d2b19aa8107809a4df740c81f9cd549d76b3a2ff3",
+      "displayName": "World Inside Body SD1.5 - BixBit11",
+      "importedAt": "2026-10-15T02:50:40.006Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/42d8bdca995e19835cb8073d2b19aa8107809a4df740c81f9cd549d76b3a2ff3/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "anythingV3_fp16.ckpt",
+      "blockingReason": null,
+      "byteSize": 37866600,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-1",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "5af0dd1905bf1df4cbf1accbe56044501c682eda3ca34b61ba1825d3d72557f4",
+      "loraProfile": {
+        "algorithm": "locon",
+        "convolutionTargetCount": 32,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 264,
+        "rankMaximum": 32,
+        "rankMinimum": 32,
+        "targetModuleCount": 264
+      },
+      "metadataSummary": [
+        "ss_base_model_version: sd_v1",
+        "ss_sd_model_name: anythingV3_fp16.ckpt"
+      ],
+      "reviewToken": "ae36edd1c4d0fbeb255a507876421a428930472ee3f4aea51b7c1dfcbb90ca3a",
+      "schemaVersion": 1,
+      "sourceFileName": "w0rld - World Inside Body.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\132494\\145734\\w0rld - World Inside Body.safetensors",
+      "suggestedDisplayName": "w0rld - World Inside Body",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder"
+      ],
+      "tensorCount": 792,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  },
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:b8faa92a244bc8dfbc1acdfcfd893733b8a6f5b9cb55c49f7ea557144a10f536",
+      "alreadyInstalled": false,
+      "architecture": "stable-diffusion-xl",
+      "byteSize": 114436028,
+      "digest": "b8faa92a244bc8dfbc1acdfcfd893733b8a6f5b9cb55c49f7ea557144a10f536",
+      "displayName": "Environment Inside Silhouette Illustrious - App1e17",
+      "importedAt": "2026-10-15T02:50:46.366Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/b8faa92a244bc8dfbc1acdfcfd893733b8a6f5b9cb55c49f7ea557144a10f536/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "889818.safetensors",
+      "blockingReason": null,
+      "byteSize": 114436028,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-xl",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "39e5f52cf269669bd873ed6a80339fc504a0a6477661f3cd0370c185d9ba4ce5",
+      "loraProfile": {
+        "algorithm": "lora",
+        "convolutionTargetCount": 0,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 986,
+        "rankMaximum": 16,
+        "rankMinimum": 16,
+        "targetModuleCount": 986
+      },
+      "metadataSummary": [
+        "modelspec.architecture: stable-diffusion-xl-v1-base/lora",
+        "modelspec.title: double_exposure",
+        "ss_base_model_version: sdxl_base_v1-0",
+        "ss_sd_model_name: 889818.safetensors"
+      ],
+      "reviewToken": "9afd752dd4146fed2b3cf072b3aa39879c4ff574cdf4c9125a00e663e4ccd178",
+      "schemaVersion": 1,
+      "sourceFileName": "double_exposure.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\1253670\\1413362\\double_exposure.safetensors",
+      "suggestedDisplayName": "double_exposure",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder",
+        "text-encoder-2"
+      ],
+      "tensorCount": 2958,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  },
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:cc085d119adf794af02f32b3591b97ff084c9ed6fb61f942c17ca742d9b8d10f",
+      "alreadyInstalled": false,
+      "architecture": "stable-diffusion-xl",
+      "byteSize": 228450348,
+      "digest": "cc085d119adf794af02f32b3591b97ff084c9ed6fb61f942c17ca742d9b8d10f",
+      "displayName": "Double Exposure Pony - Jedas",
+      "importedAt": "2026-10-15T02:50:56.730Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/cc085d119adf794af02f32b3591b97ff084c9ed6fb61f942c17ca742d9b8d10f/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "serendipityPDXL_v20.safetensors",
+      "blockingReason": null,
+      "byteSize": 228450348,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-xl",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "83cd2483679c8c07e7f83de5e6c223fd4e10850eb43475240613c5ae2ca6a11d",
+      "loraProfile": {
+        "algorithm": "lora",
+        "convolutionTargetCount": 0,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 986,
+        "rankMaximum": 32,
+        "rankMinimum": 32,
+        "targetModuleCount": 986
+      },
+      "metadataSummary": [
+        "modelspec.architecture: stable-diffusion-xl-v1-base/lora",
+        "modelspec.title: DoubleExposure",
+        "ss_base_model_version: sdxl_base_v1-0",
+        "ss_sd_model_name: serendipityPDXL_v20.safetensors"
+      ],
+      "reviewToken": "62564a082a1c56f8b98bf40214214547970a014bbf475be468c38349b822ac5a",
+      "schemaVersion": 1,
+      "sourceFileName": "DoubleExposureP-000006.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\678461\\760260\\DoubleExposureP-000006.safetensors",
+      "suggestedDisplayName": "DoubleExposure",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder",
+        "text-encoder-2"
+      ],
+      "tensorCount": 2958,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  },
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:e418bba6a541e30cfbe0f6da5dd65a0486ebb67361b842541750b74d8680029a",
+      "alreadyInstalled": false,
+      "architecture": "flux-1",
+      "byteSize": 19260744,
+      "digest": "e418bba6a541e30cfbe0f6da5dd65a0486ebb67361b842541750b74d8680029a",
+      "displayName": "Double Exposure FLUX.1 - Ethanar",
+      "importedAt": "2026-10-15T02:50:58.107Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/e418bba6a541e30cfbe0f6da5dd65a0486ebb67361b842541750b74d8680029a/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "691639.safetensors",
+      "blockingReason": null,
+      "byteSize": 19260744,
+      "canImport": true,
+      "detectedArchitecture": "flux-1",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "08df8141cc8065d75be8c191a6aea77b974e3462608be37e5722366fe961eefb",
+      "loraProfile": {
+        "algorithm": "lora",
+        "convolutionTargetCount": 0,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 304,
+        "rankMaximum": 2,
+        "rankMinimum": 2,
+        "targetModuleCount": 304
+      },
+      "metadataSummary": [
+        "modelspec.architecture: flux-1-dev/lora",
+        "modelspec.title: Double_Exposure_for_Flux_-_by_Ethanar",
+        "ss_base_model_version: flux1",
+        "ss_sd_model_name: 691639.safetensors"
+      ],
+      "reviewToken": "5d86aaf234cf57718cc0aac811e8d740321468c0b40b775cef4edb2be4b7fc9f",
+      "schemaVersion": 1,
+      "sourceFileName": "Double_Exposure_for_Flux_-_by_Ethanar.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\685432\\767128\\Double_Exposure_for_Flux_-_by_Ethanar.safetensors",
+      "suggestedDisplayName": "Double_Exposure_for_Flux_-_by_Ethanar",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser"
+      ],
+      "tensorCount": 912,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  }
+]

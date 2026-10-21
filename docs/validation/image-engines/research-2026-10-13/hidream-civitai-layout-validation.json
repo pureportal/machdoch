@@ -1,0 +1,9 @@
+{
+  "source": "D:\\Models\\machdoch\\downloads\\civitai\\1457126\\1647676\\hidreamI1FULLDEVFAST_full.safetensors",
+  "expectedTensors": 1615,
+  "packedLinearWeights": 1128,
+  "missing": [],
+  "wrongShapes": [],
+  "nonQuantizedLinearModules": [],
+  "passed": true
+}

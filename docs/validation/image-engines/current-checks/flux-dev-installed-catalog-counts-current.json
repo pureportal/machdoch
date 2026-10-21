@@ -1,0 +1,23 @@
+{
+  "installedImageCheckpoints": 22,
+  "installedImageArchitectures": 17,
+  "architectures": {
+    "flux-1-dev": 1,
+    "flux-1-schnell": 1,
+    "flux-2": 1,
+    "flux-2-klein-base-4b": 1,
+    "krea-2": 1,
+    "krea-2-raw": 1,
+    "krea-2-turbo": 2,
+    "pony": 2,
+    "qwen-image": 1,
+    "qwen-image-2.1": 1,
+    "qwen-image-2.1-turbo": 1,
+    "qwen-image-2512": 1,
+    "stable-diffusion-1": 2,
+    "stable-diffusion-2": 1,
+    "stable-diffusion-xl": 3,
+    "z-image": 1,
+    "z-image-turbo": 1
+  }
+}

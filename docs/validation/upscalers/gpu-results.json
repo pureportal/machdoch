@@ -1,0 +1,237 @@
+[
+  {
+    "model": "upscale-span",
+    "command": "upscale",
+    "scale": "2",
+    "seconds": 13.765999999999622,
+    "code": 0,
+    "result": {
+      "schemaVersion": 1,
+      "width": 194,
+      "height": 290,
+      "architecture": "SPAN",
+      "nativeScale": 4,
+      "scale": 2,
+      "tileSize": 64,
+      "device": "cuda"
+    },
+    "differenceFromLanczos": 1.903075008887309
+  },
+  {
+    "model": "upscale-span",
+    "command": "upscale",
+    "scale": "4",
+    "seconds": 13.29699999999957,
+    "code": 0,
+    "result": {
+      "schemaVersion": 1,
+      "width": 388,
+      "height": 580,
+      "architecture": "SPAN",
+      "nativeScale": 4,
+      "scale": 4,
+      "tileSize": 64,
+      "device": "cuda"
+    },
+    "differenceFromLanczos": 1.853252755065766
+  },
+  {
+    "model": "upscale-span",
+    "command": "upscale-video",
+    "scale": "2",
+    "seconds": 12.594000000000051,
+    "code": 0,
+    "result": {
+      "schemaVersion": 1,
+      "architecture": "SPAN",
+      "device": "cuda",
+      "nativeScale": 4,
+      "scale": 2,
+      "tileSize": 64,
+      "output": {
+        "fileName": "output.webm",
+        "width": 192,
+        "height": 128,
+        "numFrames": 8,
+        "fps": 8.0,
+        "durationSeconds": 1.0,
+        "hasAudio": true,
+        "hasAlpha": false
+      }
+    },
+    "frameDifferences": [
+      15.2305908203125,
+      12.904893663194445,
+      13.059041341145834,
+      14.71115451388889,
+      12.161919487847221,
+      16.8460693359375,
+      13.477959526909721
+    ]
+  },
+  {
+    "model": "upscale",
+    "command": "upscale",
+    "scale": "2",
+    "seconds": 11.25,
+    "code": 0,
+    "result": {
+      "schemaVersion": 1,
+      "width": 194,
+      "height": 290,
+      "architecture": "ESRGAN",
+      "nativeScale": 4,
+      "scale": 2,
+      "tileSize": 64,
+      "device": "cuda"
+    },
+    "differenceFromLanczos": 4.916228226093139
+  },
+  {
+    "model": "upscale",
+    "command": "upscale",
+    "scale": "4",
+    "seconds": 11.57800000000043,
+    "code": 0,
+    "result": {
+      "schemaVersion": 1,
+      "width": 388,
+      "height": 580,
+      "architecture": "ESRGAN",
+      "nativeScale": 4,
+      "scale": 4,
+      "tileSize": 64,
+      "device": "cuda"
+    },
+    "differenceFromLanczos": 5.090886064699609
+  },
+  {
+    "model": "upscale",
+    "command": "upscale-video",
+    "scale": "2",
+    "seconds": 11.967999999999847,
+    "code": 0,
+    "result": {
+      "schemaVersion": 1,
+      "architecture": "ESRGAN",
+      "device": "cuda",
+      "nativeScale": 4,
+      "scale": 2,
+      "tileSize": 64,
+      "output": {
+        "fileName": "output.webm",
+        "width": 192,
+        "height": 128,
+        "numFrames": 8,
+        "fps": 8.0,
+        "durationSeconds": 1.0,
+        "hasAudio": true,
+        "hasAlpha": false
+      }
+    },
+    "frameDifferences": [
+      9.729532877604166,
+      8.998887803819445,
+      9.79428439670139,
+      11.428154839409721,
+      9.422322591145834,
+      12.834676106770834,
+      10.543619791666666
+    ]
+  },
+  {
+    "model": "upscale-swinir",
+    "command": "upscale",
+    "scale": "2",
+    "seconds": 21.717999999999847,
+    "code": 0,
+    "result": {
+      "schemaVersion": 1,
+      "width": 194,
+      "height": 290,
+      "architecture": "SwinIR",
+      "nativeScale": 4,
+      "scale": 2,
+      "tileSize": 64,
+      "device": "cuda"
+    },
+    "differenceFromLanczos": 1.9609254651025003
+  },
+  {
+    "model": "upscale-swinir",
+    "command": "upscale",
+    "scale": "4",
+    "seconds": 22.438000000000102,
+    "code": 0,
+    "result": {
+      "schemaVersion": 1,
+      "width": 388,
+      "height": 580,
+      "architecture": "SwinIR",
+      "nativeScale": 4,
+      "scale": 4,
+      "tileSize": 64,
+      "device": "cuda"
+    },
+    "differenceFromLanczos": 1.9180353122407867
+  },
+  {
+    "model": "upscale-swinir",
+    "command": "upscale-video",
+    "scale": "2",
+    "seconds": 20.092999999999847,
+    "code": 0,
+    "result": {
+      "schemaVersion": 1,
+      "architecture": "SwinIR",
+      "device": "cuda",
+      "nativeScale": 4,
+      "scale": 2,
+      "tileSize": 64,
+      "output": {
+        "fileName": "output.webm",
+        "width": 192,
+        "height": 128,
+        "numFrames": 8,
+        "fps": 8.0,
+        "durationSeconds": 1.0,
+        "hasAudio": true,
+        "hasAlpha": false
+      }
+    },
+    "frameDifferences": [
+      10.23196072048611,
+      9.691446940104166,
+      10.39590115017361,
+      12.351508246527779,
+      10.092909071180555,
+      13.366563585069445,
+      11.539048936631945
+    ]
+  },
+  {
+    "model": "upscale-span",
+    "command": "upscale-video",
+    "scale": "4",
+    "seconds": 14.905999999999949,
+    "code": 0,
+    "result": {
+      "schemaVersion": 1,
+      "architecture": "SPAN",
+      "device": "cuda",
+      "nativeScale": 4,
+      "scale": 4,
+      "tileSize": 64,
+      "output": {
+        "fileName": "output.webm",
+        "width": 384,
+        "height": 256,
+        "numFrames": 8,
+        "fps": 8.0,
+        "durationSeconds": 1.0,
+        "hasAudio": true,
+        "hasAlpha": false
+      }
+    }
+  }
+]

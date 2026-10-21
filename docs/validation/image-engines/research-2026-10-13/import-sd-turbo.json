@@ -1,0 +1,12 @@
+{
+  "request": {
+    "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\220609\\248781\\sdTurbo_v10.safetensors",
+    "architecture": "sd-turbo",
+    "displayName": "SD-Turbo \u00b7 Stability AI",
+    "sourceUrl": "https://civitai.com/models/220609?modelVersionId=248781",
+    "commercialUse": "review-required",
+    "licenseName": null,
+    "reviewToken": ""
+  },
+  "expectedDigest": "3f067a1b943cf162f2b8f8588f6cf5824bd5b4c7d1d88d87164b9ca123616549"
+}

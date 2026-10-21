@@ -1,0 +1,12 @@
+{
+  "request": {
+    "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\215478\\242797\\sdxlTurbo_fullVersion.safetensors",
+    "architecture": "sdxl-turbo",
+    "displayName": "SDXL Turbo \u00b7 Stability AI",
+    "sourceUrl": "https://civitai.com/models/215478?modelVersionId=242797",
+    "commercialUse": "review-required",
+    "licenseName": null,
+    "reviewToken": ""
+  },
+  "expectedDigest": "2e58e3704b4c0831bf848e0507c9b5ff2cd8d007b8d0719dba3874156f631050"
+}

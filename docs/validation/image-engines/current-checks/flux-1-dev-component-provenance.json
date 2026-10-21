@@ -1,0 +1,134 @@
+{
+  "publisher": "black-forest-labs/FLUX.1-dev",
+  "revision": "3de623fc3c33e44ffbe2bad470d0f45bccf2eb21",
+  "mirror": "frankjoshua/FLUX.1-dev",
+  "mirrorRevision": "3ba3402dc8fdd82501d8b564cec2c817742ac163",
+  "components": [
+    {
+      "path": "LICENSE.md",
+      "bytes": 18621,
+      "sha256": "6f7b3d94ddd94380a4dc2d1211ed57883d320dea96f4393b34d4a454041029e1",
+      "source": "original-publisher"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4394,
+      "sha256": "efaf627d78af42f5ff92ec6c05551237c6939dbc1a8ee83910b9b5c7340d34cf",
+      "source": "publisher-identical-public-mirror"
+    },
+    {
+      "path": "model_index.json",
+      "bytes": 536,
+      "sha256": "24946df21ff25e210486b5f6b14208983a90c9c73f8d48cfa724c0e4e03f7201",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "scheduler/scheduler_config.json",
+      "bytes": 273,
+      "sha256": "63b6d2fa93579e383a308009bfd5ae12e61f8950017dd749302f8d54bb3520b6",
+      "source": "publisher-identical-public-mirror"
+    },
+    {
+      "path": "text_encoder/config.json",
+      "bytes": 613,
+      "sha256": "d79d5c8c6ce85112a923d621a5412886ddbbb0636210fc0f72f450582e675542",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "text_encoder/model.safetensors",
+      "bytes": 246144352,
+      "sha256": "893d67a23f4693ed42cdab4cbad7fe3e727cf59609c40da28a46b5470f9ed082",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "text_encoder_2/config.json",
+      "bytes": 782,
+      "sha256": "9001e5a8ae0571a362f806b87b6105dd1a15c33dca237b606d2561164109beeb",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "text_encoder_2/model-00001-of-00002.safetensors",
+      "bytes": 4994582224,
+      "sha256": "ec87bffd1923e8b2774a6d240c922a41f6143081d52cf83b8fe39e9d838c893e",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "text_encoder_2/model-00002-of-00002.safetensors",
+      "bytes": 4530066360,
+      "sha256": "a5640855b301fcdbceddfa90ae8066cd9414aff020552a201a255ecf2059da00",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "text_encoder_2/model.safetensors.index.json",
+      "bytes": 19885,
+      "sha256": "3bacec0f0cf392399d4a385908f67dd73df99c9e9cfee669f148858ba9fbdb0a",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "tokenizer/merges.txt",
+      "bytes": 524619,
+      "sha256": "9fd691f7c8039210e0fced15865466c65820d09b63988b0174bfe25de299051a",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "tokenizer/special_tokens_map.json",
+      "bytes": 588,
+      "sha256": "2cdb3b8331a60c92fc1e55a13e9fd61fd2293c5a51275fdcccd62b780052530e",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "tokenizer/tokenizer_config.json",
+      "bytes": 705,
+      "sha256": "6bdcee9ccce2a16ca2b4c0c5ed00b42c50ea225f4472a8c4c1e963a2902c2881",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "tokenizer/vocab.json",
+      "bytes": 1059962,
+      "sha256": "e089ad92ba36837a0d31433e555c8f45fe601ab5c221d4f607ded32d9f7a4349",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "tokenizer_2/special_tokens_map.json",
+      "bytes": 2543,
+      "sha256": "7a1985a994c41886db38c719d2a3d2f40606663cc19d7c5d6a85d349320e06d2",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "tokenizer_2/spiece.model",
+      "bytes": 791656,
+      "sha256": "d60acb128cf7b7f2536e8f38a5b18a05535c9e14c7a355904270e15b0945ea86",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "tokenizer_2/tokenizer.json",
+      "bytes": 2424235,
+      "sha256": "f5dfec163765e18e270537fe896c49f5fad74db1525641d9b255a3008b999596",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "tokenizer_2/tokenizer_config.json",
+      "bytes": 20817,
+      "sha256": "1a3d2db64215ed77854dd4208aac5f8361c1b5471cabd19c0ef1472d1a895eb0",
+      "source": "verified-schnell-component"
+    },
+    {
+      "path": "transformer/config.json",
+      "bytes": 378,
+      "sha256": "4f601e115ed85ab891646f03d17dca39d61278eca4b618e8c642cad71495fee8",
+      "source": "publisher-identical-public-mirror"
+    },
+    {
+      "path": "vae/config.json",
+      "bytes": 820,
+      "sha256": "ad6f0acb584ceb3d136d1e32b684dec65db24bffe9223df2bac0b45539d4e6b5",
+      "source": "publisher-identical-public-mirror"
+    },
+    {
+      "path": "vae/diffusion_pytorch_model.safetensors",
+      "bytes": 167666902,
+      "sha256": "f5b59a26851551b67ae1fe58d32e76486e1e812def4696a4bea97f16604d40a3",
+      "source": "verified-schnell-component"
+    }
+  ]
+}

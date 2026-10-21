@@ -1,0 +1,135 @@
+MACHDOCH
+v30.5.0
+Basic
+Advanced
+Train
+Assets
+Activity
+Image
+Video
+SVG
+Audio
+Assistant
+Convert to Advanced
+Model
+SD-Turbo · Stability AI
+Stable Diffusion 2.1 · Local
+Model settings updated
+Sampler reset to model defaults. Guidance reset to model defaults.
+Prompt
+Pose map
+Choose pose image
+No pose map
+Create pose map
+More options
+Output
+Aspect ratio
+1:1
+4:5
+16:9
+9:16
+Outputs
+Quality
+Draft
+Balanced
+High
+Format
+PNG
+WebP
+JPEG
+Transparent background
+Sampling
+Reset
+Sampler
+Automatic
+Euler · Recommended
+Euler ancestral
+Heun
+DPM++ 2M
+DPM++ 2M Karras
+DPM++ 2M SDE Karras
+DDIM
+DEIS
+UniPC
+Resolution
+Automatic
+Custom
+Width
+Height
+Sampling steps
+1–4
+Seed
+Random
+Fixed
+Value
+Generate image
+SD-Turbo · Stability AI · image
+Completed
+Candid photograph, smiling adult Japanese woman moving beside colorful flower graffiti, blue off-shoulder blouse, flowing white skirt, white sneakers, windblown dark hair, natural daylight, realistic skin texture.
+Completed · 3:58
+View activity
+Results
+1
+Save image
+Edit image
+Animate
+View in Assets
+All base models
+FLUX.2
+SDXL
+Pony (SDXL)
+Stable Diffusion 3
+Stable Diffusion 2
+Stable Diffusion 1
+Krea 2
+Qwen-Image 2.1
+Z-Image-Turbo
+Z-Image Base
+Qwen-Image
+Qwen-Image-2512
+HiDream-I1 Full
+FLUX.1 schnell
+FLUX.1 dev
+FLUX.2 klein Base 4B
+Krea 2 Raw
+Qwen-Image 2.1 Turbo
+Krea 2 Turbo
+Illustrious XL
+NoobAI XL
+Juggernaut XL
+RealVisXL
+DreamShaper XL
+SDXL Turbo
+SD-Turbo
+Anima
+Local + Remote
+Local
+Remote
+All categories
+Uncategorised
+Animal & Creature
+Animation & Motion
+Architecture
+Character
+Clothing & Accessories
+Concept
+Environment & Background
+Illustration
+Lighting & Color
+Logo & Branding
+NSFW — Adult
+NSFW — Explicit
+NSFW — Mature
+Object & Prop
+Photography
+Pose & Action
+Product & Mockup
+Style
+Texture & Material
+Typography
+UI & Icon
+Vehicle
+All tags
+Name A–Z
+Name Z–A
+No matching models

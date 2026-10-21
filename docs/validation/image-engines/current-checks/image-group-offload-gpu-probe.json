@@ -1,0 +1,55 @@
+{
+  "scope": "Small real SDK graphs; full checkpoint generation remains separate",
+  "device": "AMD Radeon RX 9070",
+  "torch": "2.12.0+rocm7.14.0",
+  "diffusers": "0.41.0.dev0",
+  "offload": {
+    "onload_device": "cuda:0",
+    "offload_device": "cpu",
+    "offload_type": "block_level",
+    "num_blocks_per_group": "1",
+    "non_blocking": "True",
+    "use_stream": "True",
+    "record_stream": "True",
+    "low_cpu_mem_usage": "True"
+  },
+  "records": [
+    {
+      "model": "QwenImageTransformer2DModel-Q8_0",
+      "seconds": 14.656999999999243,
+      "peakAllocatedBytes": 80337920,
+      "maxAbsoluteErrorAgainstCpu": 4.76837158203125e-07,
+      "finite": true,
+      "outputShape": [
+        1,
+        4,
+        128
+      ]
+    },
+    {
+      "model": "FluxTransformer2DModel",
+      "seconds": 1.5780000000013388,
+      "peakAllocatedBytes": 80462336,
+      "maxAbsoluteErrorAgainstCpu": 4.172325134277344e-07,
+      "finite": true,
+      "outputShape": [
+        1,
+        4,
+        32
+      ]
+    },
+    {
+      "model": "T5EncoderModel",
+      "seconds": 9.89100000000326,
+      "peakAllocatedBytes": 80301056,
+      "maxAbsoluteErrorAgainstCpu": 9.238719940185547e-07,
+      "finite": true,
+      "outputShape": [
+        1,
+        4,
+        32
+      ]
+    }
+  ],
+  "passed": true
+}

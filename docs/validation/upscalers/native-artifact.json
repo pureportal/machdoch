@@ -1,0 +1,14 @@
+[
+  {
+    "path": ".cache/upscale-native/machdoch.exe",
+    "sha256": "722e36b78d7447a7b6e29eb033198f86ecca5ae0a78477c10474b3e3f5f528ee"
+  },
+  {
+    "path": ".cache/upscale-native/python/media_workflow_worker.py",
+    "sha256": "7f03b5605b3a210f56f35966a62b3eb548c331bd840d05ae3823eb85a771f890"
+  },
+  {
+    "path": ".cache/upscale-native/python/media_upscale.py",
+    "sha256": "00bfee46ed7935e94bf306b2b46da422196daf3136c25051ecb568bc30b93248"
+  }
+]

@@ -1,0 +1,23 @@
+{
+  "sameGeneratedLatents": true,
+  "comparisons": [
+    {
+      "tile": 0,
+      "realOutput": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-decoder-reruns\\01-qwen-image-2.1-turbo-reference-144599398\\images\\output-0000.png",
+      "realOutputSha256": "b35f7abd2f6e9ecfa296d6908d303d2a99a49d989c0efcb5a30aa5c06a90adee",
+      "probeImage": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-generated-latents-decoder-comparison\\tile-0.png",
+      "equalRGBPixels": true,
+      "maximumAbsolutePixelDifference": 0,
+      "meanAbsolutePixelDifference": 0.0
+    },
+    {
+      "tile": 256,
+      "realOutput": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-remaining-references\\04-qwen-image-2.1-turbo-reference-144599398\\images\\output-0000.png",
+      "realOutputSha256": "8d229a3601ec87ac12daed3914115afbcd01638080e999cd80964e81fbed41ff",
+      "probeImage": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-generated-latents-decoder-comparison\\tile-256.png",
+      "equalRGBPixels": true,
+      "maximumAbsolutePixelDifference": 0,
+      "meanAbsolutePixelDifference": 0.0
+    }
+  ]
+}

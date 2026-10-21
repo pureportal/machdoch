@@ -1,0 +1,25 @@
+{
+  "authenticated": true,
+  "responses": [
+    {
+      "url": "https://civitai.com/api/v1/models?types=Checkpoint&baseModels=SD%203&limit=100",
+      "status": 200,
+      "body": {
+        "items": [],
+        "metadata": {}
+      }
+    },
+    {
+      "url": "https://civitai.com/api/v1/models?types=Checkpoint&baseModels=SD%203.5%20Medium&limit=100",
+      "status": 200,
+      "body": {
+        "items": [],
+        "metadata": {}
+      }
+    },
+    {
+      "url": "https://civitai.com/api/v1/models/896953",
+      "status": 404
+    }
+  ]
+}

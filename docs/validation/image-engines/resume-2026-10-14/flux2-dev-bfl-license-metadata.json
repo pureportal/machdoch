@@ -1,0 +1,34 @@
+[
+  {
+    "name": "LICENSE-FLUX-DEV",
+    "path": "model_licenses/LICENSE-FLUX-DEV",
+    "sha": "3bd190cc0444d1590c43f6f5c9e034e64c9321b3",
+    "size": 18764,
+    "url": "https://api.github.com/repos/black-forest-labs/flux2/contents/model_licenses/LICENSE-FLUX-DEV?ref=main",
+    "html_url": "https://github.com/black-forest-labs/flux2/blob/main/model_licenses/LICENSE-FLUX-DEV",
+    "git_url": "https://api.github.com/repos/black-forest-labs/flux2/git/blobs/3bd190cc0444d1590c43f6f5c9e034e64c9321b3",
+    "download_url": "https://raw.githubusercontent.com/black-forest-labs/flux2/main/model_licenses/LICENSE-FLUX-DEV",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/black-forest-labs/flux2/contents/model_licenses/LICENSE-FLUX-DEV?ref=main",
+      "git": "https://api.github.com/repos/black-forest-labs/flux2/git/blobs/3bd190cc0444d1590c43f6f5c9e034e64c9321b3",
+      "html": "https://github.com/black-forest-labs/flux2/blob/main/model_licenses/LICENSE-FLUX-DEV"
+    }
+  },
+  {
+    "name": "LICENSE-FLUX-NON-COMMERICAL",
+    "path": "model_licenses/LICENSE-FLUX-NON-COMMERICAL",
+    "sha": "828139a03d16cc28f8b8c33d2467659d0d0924ea",
+    "size": 18157,
+    "url": "https://api.github.com/repos/black-forest-labs/flux2/contents/model_licenses/LICENSE-FLUX-NON-COMMERICAL?ref=main",
+    "html_url": "https://github.com/black-forest-labs/flux2/blob/main/model_licenses/LICENSE-FLUX-NON-COMMERICAL",
+    "git_url": "https://api.github.com/repos/black-forest-labs/flux2/git/blobs/828139a03d16cc28f8b8c33d2467659d0d0924ea",
+    "download_url": "https://raw.githubusercontent.com/black-forest-labs/flux2/main/model_licenses/LICENSE-FLUX-NON-COMMERICAL",
+    "type": "file",
+    "_links": {
+      "self": "https://api.github.com/repos/black-forest-labs/flux2/contents/model_licenses/LICENSE-FLUX-NON-COMMERICAL?ref=main",
+      "git": "https://api.github.com/repos/black-forest-labs/flux2/git/blobs/828139a03d16cc28f8b8c33d2467659d0d0924ea",
+      "html": "https://github.com/black-forest-labs/flux2/blob/main/model_licenses/LICENSE-FLUX-NON-COMMERICAL"
+    }
+  }
+]

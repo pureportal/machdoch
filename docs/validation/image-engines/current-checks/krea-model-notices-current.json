@@ -1,0 +1,52 @@
+{
+  "licenseSha256": "b82a2805162bde714a4eb27b9063c4fc3345d08a30be055134a6160e5430ba74",
+  "licenseSource": "https://www.krea.ai/krea-2-licensing",
+  "models": [
+    {
+      "id": "local:user:3ec3c673d467e0832ad1324fafa8eed5cde9e9f2e250b399d07245e63c904191",
+      "architecture": "krea-2",
+      "licenseFile": "D:\\Models\\machdoch\\models\\packages\\user-3ec3c673d467e0832ad1324fafa8eed5\\LICENSE-Krea-2-Community.pdf",
+      "noticeFile": "D:\\Models\\machdoch\\models\\packages\\user-3ec3c673d467e0832ad1324fafa8eed5\\NOTICE",
+      "noticeSha256": "50ce422ee949beec7139172a636b7906eda444a6db292c6f38b593054585ce42"
+    },
+    {
+      "id": "local:user:8a50afe6a29e4dea9c2390a0765b506d4ad17de055dee758a0b0a0216d95c8a0",
+      "architecture": "krea-2-raw",
+      "licenseFile": "D:\\Models\\machdoch\\models\\packages\\user-8a50afe6a29e4dea9c2390a0765b506d\\LICENSE-Krea-2-Community.pdf",
+      "noticeFile": "D:\\Models\\machdoch\\models\\packages\\user-8a50afe6a29e4dea9c2390a0765b506d\\NOTICE",
+      "noticeSha256": "50ce422ee949beec7139172a636b7906eda444a6db292c6f38b593054585ce42"
+    },
+    {
+      "id": "local:user:eb4dd8c612cfd10f64f25b057e6e6bbcb5737c94a7372177e456dbf7579502f1",
+      "architecture": "krea-2-turbo",
+      "licenseFile": "D:\\Models\\machdoch\\models\\packages\\user-eb4dd8c612cfd10f64f25b057e6e6bbc\\LICENSE-Krea-2-Community.pdf",
+      "noticeFile": "D:\\Models\\machdoch\\models\\packages\\user-eb4dd8c612cfd10f64f25b057e6e6bbc\\NOTICE",
+      "noticeSha256": "50ce422ee949beec7139172a636b7906eda444a6db292c6f38b593054585ce42"
+    },
+    {
+      "id": "local:user:ed1ea73c0e4f659f7cf4abbc1eb341ab66b1c9121b3465f820b19ade7ced147d",
+      "architecture": "krea-2-turbo",
+      "licenseFile": "D:\\Models\\machdoch\\models\\packages\\user-ed1ea73c0e4f659f7cf4abbc1eb341ab\\LICENSE-Krea-2-Community.pdf",
+      "noticeFile": "D:\\Models\\machdoch\\models\\packages\\user-ed1ea73c0e4f659f7cf4abbc1eb341ab\\NOTICE",
+      "noticeSha256": "50ce422ee949beec7139172a636b7906eda444a6db292c6f38b593054585ce42"
+    }
+  ],
+  "metadataUpdates": [
+    {
+      "id": "local:user:3ec3c673d467e0832ad1324fafa8eed5cde9e9f2e250b399d07245e63c904191",
+      "architecture": "krea-2",
+      "beforeLicenseName": "",
+      "afterLicenseName": "Krea 2 Community License Agreement",
+      "sourceUrl": "https://www.krea.ai/krea-2-licensing"
+    },
+    {
+      "id": "local:user:8a50afe6a29e4dea9c2390a0765b506d4ad17de055dee758a0b0a0216d95c8a0",
+      "architecture": "krea-2-raw",
+      "beforeLicenseName": "",
+      "afterLicenseName": "Krea 2 Community License Agreement",
+      "sourceUrl": "https://civitai.red/models/2416142?modelVersionId=3333068"
+    }
+  ],
+  "weightChanges": false,
+  "databaseBackup": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\model-licenses\\media-before-krea-license-20261012T224930.sqlite3"
+}

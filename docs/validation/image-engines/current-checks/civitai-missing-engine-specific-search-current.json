@@ -1,0 +1,337 @@
+[
+  {
+    "query": "SD3",
+    "sourceUrl": "https://civitai.com/api/v1/models?query=SD3&types=Checkpoint&limit=100",
+    "checkedAt": "2026-10-13T01:38:21.121909+00:00",
+    "status": 200,
+    "items": [],
+    "metadata": {}
+  },
+  {
+    "query": "SD3.5",
+    "sourceUrl": "https://civitai.com/api/v1/models?query=SD3.5&types=Checkpoint&limit=100",
+    "checkedAt": "2026-10-13T01:38:22.290806+00:00",
+    "status": 200,
+    "items": [],
+    "metadata": {}
+  },
+  {
+    "query": "Sana-Sprint",
+    "sourceUrl": "https://civitai.com/api/v1/models?query=Sana-Sprint&types=Checkpoint&limit=100",
+    "checkedAt": "2026-10-13T01:38:22.589665+00:00",
+    "status": 200,
+    "items": [],
+    "metadata": {}
+  },
+  {
+    "query": "HunyuanImage3",
+    "sourceUrl": "https://civitai.com/api/v1/models?query=HunyuanImage3&types=Checkpoint&limit=100",
+    "checkedAt": "2026-10-13T01:38:23.078615+00:00",
+    "status": 200,
+    "items": [
+      {
+        "id": 1944745,
+        "name": "HunyuanImage-2.1_fp8_e4m3fn",
+        "description": "<p># <strong>HunyuanImage-2.1</strong></p><p>### An Efficient Diffusion Model for High-Resolution (2K) Text-to-Image Generation</p><p>---</p><p>## <strong>Performance on RTX 5090</strong></p><p>&gt; When using <strong>HunyuanImage-2.1</strong> with the <strong>quantized encoder</strong> + <strong>quantized base model</strong>,</p><p>&gt; the VRAM usage on an <strong>NVIDIA RTX 5090</strong> typically ranges between <strong>26 GB and 30 GB</strong> with average</p><p>&gt; 16 second inference time depending on resolution, batch size, and prompt complexity.</p><p></p><p>\u26a0 <strong>Important Note:</strong></p><p>The <strong>refiner</strong> and <strong>not yet implemented</strong> and are <strong>not ready for use in ComfyUI</strong>.</p><p>Currently, <strong>only the base model and distilled</strong> is supported.</p><p></p><p>[Example_Workflow](<a target=\"_blank\" rel=\"ugc\" href=\"https://huggingface.co/drbaph/HunyuanImage-2.1_fp8/resolve/main/example_workflow.json?download=true\">https://huggingface.co/drbaph/HunyuanImage-2.1_fp8/resolve/main/example_workflow.json?download=true</a>)</p><p></p><p>---</p><p>### <strong>Workflow Notes</strong></p><p>- <strong>Model:</strong> HunyuanImage-2.1</p><p>- <strong>Mode:</strong> Quantized Encoder + Quantized Base Model</p><p>- <strong>VRAM Usage:</strong> ~26GB\u201330GB on RTX 5090</p><p>- <strong>Resolution Tested:</strong> 2K (2048\u00d72048)</p><p>- <strong>Frameworks:</strong> ComfyUI &amp; Diffusers</p><p>- <strong>Optimisations</strong> Works with Patch Sage Attention + Lazycache / TeaCache \u2705</p><p>- <strong>Refiner:</strong> \u274c Not implemented yet, <strong>not available in ComfyUI</strong></p><p>- <strong>License:</strong> [tencent-hunyuan-community](<a target=\"_blank\" rel=\"ugc\" href=\"https://github.com/Tencent-Hunyuan/HunyuanImage-2.1/blob/master/LICENSE\">https://github.com/Tencent-Hunyuan/HunyuanImage-2.1/blob/master/LICENSE</a>)</p><p>---</p><p></p>",
+        "allowNoCredit": true,
+        "allowCommercialUse": [
+          "Image",
+          "RentCivit",
+          "Rent",
+          "Sell",
+          "SellMerge"
+        ],
+        "allowDerivatives": true,
+        "allowDifferentLicense": true,
+        "type": "Checkpoint",
+        "minor": false,
+        "sfwOnly": false,
+        "poi": false,
+        "nsfw": false,
+        "nsfwLevel": 5,
+        "availability": "Public",
+        "userId": 2244724,
+        "hasActivePaidAccess": false,
+        "baseModels": [
+          "Other"
+        ],
+        "cosmetic": null,
+        "eventDecoration": null,
+        "supportsGeneration": false,
+        "stats": {
+          "downloadCount": 435,
+          "thumbsUpCount": 23,
+          "thumbsDownCount": 0,
+          "commentCount": 0,
+          "tippedAmountCount": 50
+        },
+        "creator": {
+          "username": "DrBaph",
+          "image": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/9b235b98-f7f8-414b-8f05-7524dda6f657/width=96/DrBaph.jpeg"
+        },
+        "tags": [
+          "base model"
+        ],
+        "modelVersions": [
+          {
+            "id": 2206738,
+            "index": 0,
+            "name": "hunyuanimage2.1-distilled",
+            "baseModel": "Other",
+            "baseModelType": "Standard",
+            "publishedAt": "2025-09-12T06:24:42.061Z",
+            "flags": 0,
+            "availability": "Public",
+            "nsfwLevel": 5,
+            "description": null,
+            "trainedWords": [],
+            "vaeId": null,
+            "coveredNext": false,
+            "paidAccess": null,
+            "stats": {
+              "downloadCount": 268,
+              "thumbsUpCount": 10,
+              "thumbsDownCount": 0
+            },
+            "supportsGeneration": false,
+            "files": [
+              {
+                "id": 2100004,
+                "sizeKB": 17048188.375,
+                "name": "hunyuanimage21Fp8_hunyuanimage21.safetensors",
+                "overrideName": null,
+                "type": "Model",
+                "pickleScanResult": "Success",
+                "pickleScanMessage": "No Pickle imports",
+                "virusScanResult": "Success",
+                "virusScanMessage": null,
+                "scannedAt": "2025-09-12T06:13:26.701Z",
+                "metadata": {
+                  "format": "SafeTensor",
+                  "size": "full",
+                  "fp": "fp8"
+                },
+                "hashes": {
+                  "AutoV1": "28827AC3",
+                  "AutoV2": "696D627446",
+                  "SHA256": "696D62744686A4F95FD8DE3AA8C9BF7424026678D7B58CF1C7FA349DB6304472",
+                  "CRC32": "4159B754",
+                  "BLAKE3": "EF96FD692B1DC45992934E6E57040690853823883FFDB2F37FAE88D2CD14E79E",
+                  "AutoV3": "AFD32585EE2D",
+                  "SHA256_12": "696D62744686"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/2206738",
+                "primary": true
+              }
+            ],
+            "images": [
+              {
+                "id": 99835441,
+                "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2d20472f-13a6-4b59-9df0-9af8a7be848a/original=true/99835441.jpeg",
+                "nsfwLevel": 1,
+                "width": 1536,
+                "height": 2560,
+                "hash": "UEI=fWrgx.X+0[OT#5$+4;OSaIj0l:rGGGI:",
+                "type": "image",
+                "minor": false,
+                "poi": false,
+                "hasMeta": true,
+                "hasPositivePrompt": true,
+                "onSite": false,
+                "remixOfId": null
+              },
+              {
+                "id": 99835443,
+                "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/6be35bda-1f2e-437e-ab6c-c48fadc6f5d9/original=true/99835443.jpeg",
+                "nsfwLevel": 1,
+                "width": 1536,
+                "height": 2304,
+                "hash": "UIKu7[63vgv~4TxbrYsn.m#8KOoz00X8x]OX",
+                "type": "image",
+                "minor": false,
+                "poi": false,
+                "hasMeta": true,
+                "hasPositivePrompt": true,
+                "onSite": false,
+                "remixOfId": null
+              },
+              {
+                "id": 99835444,
+                "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/62efa5ff-d5ea-4e0e-a6bb-458bb2577ffb/original=true/99835444.jpeg",
+                "nsfwLevel": 1,
+                "width": 1536,
+                "height": 2304,
+                "hash": "UBBfMFP05Ev:^UNCD~f,ExxwivM^NCnOR%bX",
+                "type": "image",
+                "minor": false,
+                "poi": false,
+                "hasMeta": true,
+                "hasPositivePrompt": true,
+                "onSite": false,
+                "remixOfId": null
+              }
+            ],
+            "downloadUrl": "https://civitai.com/api/download/models/2206738"
+          },
+          {
+            "id": 2201058,
+            "index": 1,
+            "name": "hunyuanimage2.1_fp8_e4m3f",
+            "baseModel": "Other",
+            "baseModelType": "Standard",
+            "publishedAt": "2025-09-10T12:14:53.568Z",
+            "flags": 0,
+            "availability": "Public",
+            "nsfwLevel": 5,
+            "description": "<p>Hunyuan Image 2.1 fp8\u00a0e4m3fn</p>",
+            "trainedWords": [],
+            "vaeId": null,
+            "coveredNext": false,
+            "paidAccess": null,
+            "stats": {
+              "downloadCount": 167,
+              "thumbsUpCount": 16,
+              "thumbsDownCount": 0
+            },
+            "supportsGeneration": false,
+            "files": [
+              {
+                "id": 2094413,
+                "sizeKB": 3.072265625,
+                "name": "hunyuanimage21Fp8_trainingData.zip",
+                "overrideName": null,
+                "type": "Training Data",
+                "pickleScanResult": "Success",
+                "pickleScanMessage": "No Pickle imports",
+                "virusScanResult": "Success",
+                "virusScanMessage": null,
+                "scannedAt": "2025-09-10T12:21:06.971Z",
+                "metadata": {
+                  "format": "Other",
+                  "size": null,
+                  "fp": null
+                },
+                "hashes": {
+                  "AutoV2": "BFC48DFEB1",
+                  "SHA256": "BFC48DFEB1C4C95C02D844025CCD65255FD24BDB6B698130CCB399EEC449B572",
+                  "CRC32": "CDF3F01A",
+                  "BLAKE3": "10D59C135947D99E745B0065E0F07D29EA780C25E189D29A4DA2D1840C35EAE9",
+                  "AutoV3": "60F900E5E52F",
+                  "SHA256_12": "BFC48DFEB1C4"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/2201058?type=Training%20Data"
+              },
+              {
+                "id": 2094408,
+                "sizeKB": 17021279.6171875,
+                "name": "hunyuanimage21Fp8.safetensors",
+                "overrideName": null,
+                "type": "Model",
+                "pickleScanResult": "Success",
+                "pickleScanMessage": "No Pickle imports",
+                "virusScanResult": "Success",
+                "virusScanMessage": null,
+                "scannedAt": "2025-09-10T12:24:28.440Z",
+                "metadata": {
+                  "format": "SafeTensor",
+                  "size": "full",
+                  "fp": "fp8"
+                },
+                "hashes": {
+                  "AutoV1": "3286AA83",
+                  "AutoV2": "D04E8F3373",
+                  "SHA256": "D04E8F337391AE12BF0B9ADE2F5FD17FCAF88C0E3BD4D05B036EE02B52AA5604",
+                  "CRC32": "ADFFE9A9",
+                  "BLAKE3": "A4AA9B008154530F7157039F1F83FD2FC70A569DE031D371797064CF27E181F4",
+                  "AutoV3": "B42760A4ABF4",
+                  "SHA256_12": "D04E8F337391"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/2201058",
+                "primary": true
+              }
+            ],
+            "images": [
+              {
+                "id": 99480197,
+                "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/1475d541-92d9-4a13-8512-cd70cb82230f/original=true/99480197.jpeg",
+                "nsfwLevel": 1,
+                "width": 1536,
+                "height": 2560,
+                "hash": "UEI=fWrgx.X+0[OT#5$+4;OSaIj0l:rGGGI:",
+                "type": "image",
+                "minor": false,
+                "poi": false,
+                "hasMeta": true,
+                "hasPositivePrompt": true,
+                "onSite": false,
+                "remixOfId": null
+              },
+              {
+                "id": 99482985,
+                "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/8c0bb651-df0c-45e8-8bd4-df93b91f8175/original=true/99482985.jpeg",
+                "nsfwLevel": 1,
+                "width": 1536,
+                "height": 2560,
+                "hash": "USJHXW5laQx^yZEN$2kBRNayozn~IpNZs8o#",
+                "type": "image",
+                "minor": false,
+                "poi": false,
+                "hasMeta": true,
+                "hasPositivePrompt": true,
+                "onSite": false,
+                "remixOfId": null
+              },
+              {
+                "id": 99478945,
+                "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/30b48f9a-3688-456d-af86-42a09ebeb6c2/original=true/99478945.jpeg",
+                "nsfwLevel": 1,
+                "width": 2560,
+                "height": 1536,
+                "hash": "UG7.m@X.ITv|u6ogV@R5TKnhaJR*t.WBRPo~",
+                "type": "image",
+                "minor": false,
+                "poi": false,
+                "hasMeta": true,
+                "hasPositivePrompt": true,
+                "onSite": false,
+                "remixOfId": null
+              },
+              {
+                "id": 99569614,
+                "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/d9ba582b-078b-40bc-95f0-c7c65a585944/original=true/99569614.jpeg",
+                "nsfwLevel": 1,
+                "width": 1536,
+                "height": 2304,
+                "hash": "UIKu7[63vgv~4TxbrYsn.m#8KOoz00X8x]OX",
+                "type": "image",
+                "minor": false,
+                "poi": false,
+                "hasMeta": true,
+                "hasPositivePrompt": true,
+                "onSite": false,
+                "remixOfId": null
+              },
+              {
+                "id": 99569782,
+                "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/8c46ff3c-30be-4f33-86b9-179adc8c4c28/original=true/99569782.jpeg",
+                "nsfwLevel": 1,
+                "width": 1536,
+                "height": 2304,
+                "hash": "UBBfMFP05Ev:^UNCD~f,ExxwivM^NCnOR%bX",
+                "type": "image",
+                "minor": false,
+                "poi": false,
+                "hasMeta": true,
+                "hasPositivePrompt": true,
+                "onSite": false,
+                "remixOfId": null
+              }
+            ],
+            "downloadUrl": "https://civitai.com/api/download/models/2201058"
+          }
+        ]
+      }
+    ],
+    "metadata": {}
+  }
+]

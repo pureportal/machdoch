@@ -1,0 +1,19 @@
+{
+  "completedBatches": [
+    {
+      "name": "Qwen-Image 2.1 Turbo composition refinements",
+      "outputRoot": "D:/Models/machdoch/verification/2026-10-11/image-engines/qwen-turbo-composition-refinements",
+      "passed": true,
+      "seconds": 2155.7190000000046
+    },
+    {
+      "name": "Krea 2 Extended five remaining references",
+      "outputRoot": "D:/Models/machdoch/verification/2026-10-11/image-engines/krea-2-refined-reference-sweep",
+      "passed": true,
+      "seconds": 10532.186999999998
+    }
+  ],
+  "continuationManifest": "D:/Models/machdoch/verification/2026-10-11/image-engines/continuation-reference-batches.json",
+  "releasedWorkerPid": 4372,
+  "reason": "Convert verified packages before continuing the remaining references"
+}

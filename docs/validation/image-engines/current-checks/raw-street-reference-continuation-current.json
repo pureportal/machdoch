@@ -1,0 +1,63 @@
+{
+  "rawNearReferenceSubjects": [
+    144655944,
+    144594528
+  ],
+  "galleryRenders": 138,
+  "processes": [
+    {
+      "ProcessId": 3464,
+      "ParentProcessId": 12300,
+      "CreationDate": "2026-10-12T21:54:35.122533+02:00",
+      "Name": "pwsh.exe"
+    },
+    {
+      "ProcessId": 20964,
+      "ParentProcessId": 23420,
+      "CreationDate": "2026-10-12T23:14:41.948511+02:00",
+      "Name": "python.exe"
+    },
+    {
+      "ProcessId": 20048,
+      "ParentProcessId": 29120,
+      "CreationDate": "2026-10-12T23:53:59.924043+02:00",
+      "Name": "pwsh.exe"
+    },
+    {
+      "ProcessId": 18668,
+      "ParentProcessId": 21808,
+      "CreationDate": "2026-10-13T01:09:33.30565+02:00",
+      "Name": "pwsh.exe"
+    },
+    {
+      "ProcessId": 27824,
+      "ParentProcessId": 28248,
+      "CreationDate": "2026-10-13T01:21:34.585579+02:00",
+      "Name": "pwsh.exe"
+    },
+    {
+      "ProcessId": 27764,
+      "ParentProcessId": 812,
+      "CreationDate": "2026-10-13T04:46:15.157362+02:00",
+      "Name": "cargo.exe"
+    }
+  ],
+  "desktopBuildLogTail": [
+    "   Compiling dirs v5.0.1",
+    "   Compiling cipher v0.4.4",
+    "   Compiling windows-future v0.2.1",
+    "   Compiling rand v0.8.5",
+    "   Compiling kurbo v0.13.1",
+    "   Compiling rand v0.9.4"
+  ],
+  "desktopBuildCommand": "pnpm tauri build --no-bundle",
+  "nativeValidatedRecords": 143,
+  "rawProgress": [
+    "",
+    "MACHDOCH_PROGRESS {\"stage\": \"Sampling 12/52\", \"progress\": 0.38846153846153847}"
+  ],
+  "goalComplete": false,
+  "checkedAt": "2026-10-13T03:22:17.1321713Z",
+  "rawCurrentReference": 145095967,
+  "desktopBuildComplete": false
+}

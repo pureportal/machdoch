@@ -1,0 +1,21 @@
+{
+  "checkedAt": "2026-10-13T04:54:53.728486+00:00",
+  "referenceId": 145095967,
+  "changedRequestFields": [
+    "prompt"
+  ],
+  "seed": 1050111864,
+  "sampling": {
+    "sampler": "flow-euler",
+    "numInferenceSteps": 52,
+    "guidanceScale": 3.5,
+    "width": 832,
+    "height": 1248
+  },
+  "architecture": "krea-2-raw",
+  "runtimeDigest": "1d1b4c7597ede91a9742749a2378d8e79963ff61aa2ff42f748ac97dc1b44344",
+  "queueCases": 68,
+  "queueBatches": 17,
+  "executed": false,
+  "passed": true
+}

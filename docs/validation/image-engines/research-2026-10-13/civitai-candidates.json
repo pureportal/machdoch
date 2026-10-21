@@ -1,0 +1,1950 @@
+[
+  {
+    "query": "Anima",
+    "models": [
+      {
+        "id": 260267,
+        "name": "Animagine XL V3.1",
+        "creator": "CagliostroLab",
+        "versions": [
+          {
+            "id": 403131,
+            "name": "v3.1",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "animagineXLV31_v31.safetensors",
+                "sizeKB": 6775708.765625,
+                "hashes": {
+                  "AutoV1": "C798D390",
+                  "AutoV2": "E3C47AEDB0",
+                  "SHA256": "E3C47AEDB06418C6C331443CD89F2B3B3B34B7ED2102A3D4C4408A8D35AAD6B0",
+                  "CRC32": "A125F6FD",
+                  "BLAKE3": "DE1931B2EEF4D32725B3064FE3F50AB5392E78DDF497C8A1B6BCF175CFE6C73A",
+                  "AutoV3": "1BA54E3DEE33",
+                  "SHA256_12": "E3C47AEDB064"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/403131"
+              },
+              {
+                "name": "sdxl_vae.safetensors",
+                "sizeKB": 326798.01171875,
+                "hashes": {
+                  "AutoV1": "D636E597",
+                  "AutoV2": "63AEECB90F",
+                  "SHA256": "63AEECB90FF7BC1C115395962D3E803571385B61938377BC7089B36E81E92E2E",
+                  "CRC32": "9109193B",
+                  "BLAKE3": "9EF46CD2F47F064860494C1D6E6BBB0D1A12052B641ED09C78DD265F767CD110",
+                  "AutoV3": "F723FEC0B7D3",
+                  "SHA256_12": "63AEECB90FF7"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/403131?type=VAE&format=SafeTensor"
+              }
+            ]
+          },
+          {
+            "id": 293564,
+            "name": "v3.0",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "animagineXLV31_v30.safetensors",
+                "sizeKB": 6775604.111328125,
+                "hashes": {
+                  "AutoV1": "75F2F05B",
+                  "AutoV2": "1449E5B0B9",
+                  "SHA256": "1449E5B0B9DE87B0F414C5F29CB11CE3B3DC61FA2B320E784C9441720BF7B766",
+                  "CRC32": "3283A76F",
+                  "BLAKE3": "BA8B3384D287A2AE24E59D05898F92A39CCD56C28CD5560F854CF0900FBF8948",
+                  "AutoV3": "4C4359A0C94D",
+                  "SHA256_12": "1449E5B0B9DE"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/293564"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 2458426,
+        "name": "Anima",
+        "creator": "circlestone_labs",
+        "versions": [
+          {
+            "id": 3263843,
+            "name": "turbo-v1.1",
+            "baseModel": "Anima",
+            "files": [
+              {
+                "name": "anima_turboV11.safetensors",
+                "sizeKB": 4084209.625,
+                "hashes": {
+                  "AutoV1": "A231A5D0",
+                  "AutoV2": "FBA1195327",
+                  "SHA256": "FBA11953276B57EDF59D1DC4F1857AC05AA079C56F982B4D7C20298D57D3F7EB",
+                  "CRC32": "9BBADBC9",
+                  "BLAKE3": "6CAAE380057827BF247C3B0C4F5B65A29783D021CE9B60ECE455E6E2197E4533",
+                  "AutoV3": "2377CE19704F",
+                  "SHA256_12": "FBA11953276B"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/3263843"
+              }
+            ]
+          },
+          {
+            "id": 3126581,
+            "name": "aesthetic-v1.1",
+            "baseModel": "Anima",
+            "files": [
+              {
+                "name": "anima_aestheticV11.safetensors",
+                "sizeKB": 4084209.625,
+                "hashes": {
+                  "AutoV1": "E19A98C5",
+                  "AutoV2": "3C1868387A",
+                  "SHA256": "3C1868387A3A1FF504BBB87C33678321965EAD381FCF87AFBD0264DAA600C082",
+                  "CRC32": "EC8F7238",
+                  "BLAKE3": "82971560F6C3C031F0E088C61EB2F4AB14D2131007B3C521C68AC2A1D76CE566",
+                  "AutoV3": "A9194F1ADCED",
+                  "SHA256_12": "3C1868387A3A"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/3126581"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 1188071,
+        "name": "Animagine XL 4.0",
+        "creator": "CagliostroLab",
+        "versions": [
+          {
+            "id": 1408658,
+            "name": "v4 Opt",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "animagineXL40_v4Opt.safetensors",
+                "sizeKB": 6775732.4609375,
+                "hashes": {
+                  "AutoV1": "06DE8AEE",
+                  "AutoV2": "6327ECA98B",
+                  "SHA256": "6327ECA98BFB6538DD7A4EDCE22484A1BBC57A8CFF6B11D075D40DA1AFB847AC",
+                  "CRC32": "650144B3",
+                  "BLAKE3": "C8FACC6833DCF4FA0E3194539519EC2AD6B10C274605DCD988BBBDF160223A76",
+                  "AutoV3": "E3CE95963E86",
+                  "SHA256_12": "6327ECA98BFB"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1408658"
+              }
+            ]
+          },
+          {
+            "id": 1409042,
+            "name": "v4 Zero",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "animagineXL40_v4Zero.safetensors",
+                "sizeKB": 6776429.4921875,
+                "hashes": {
+                  "AutoV1": "6BBC06C9",
+                  "AutoV2": "F15812E65C",
+                  "SHA256": "F15812E65C2EA7F4E19CE37FB2A8445EB65C64DA450A508DD9C8F237C73F6BB8",
+                  "CRC32": "F5CABDB6",
+                  "BLAKE3": "89EA185CBCE8F6C0AD0308A92055C5C50002BA20803EEC42142566763AA7C0C2",
+                  "AutoV3": "E56515DABF08",
+                  "SHA256_12": "F15812E65C2E"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1409042"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 261336,
+        "name": "anima_pencil-XL",
+        "creator": "blue_pen5805",
+        "versions": [
+          {
+            "id": 597138,
+            "name": "v5.0.0",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "animaPencilXL_v500.safetensors",
+                "sizeKB": 6775430.8046875,
+                "hashes": {
+                  "AutoV1": "6226FC84",
+                  "AutoV2": "896FAA18CD",
+                  "SHA256": "896FAA18CD6852CCF977E2DEC76191C38F256D031204E233CB3ED76F6088D55B",
+                  "CRC32": "D358FFA2",
+                  "BLAKE3": "56B8D83D9B20E9607794DAFB6A9B9026C941A1DD5BE848B8CE646F581DCC6E97",
+                  "AutoV3": "239E9199AA10",
+                  "SHA256_12": "896FAA18CD68"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/597138"
+              }
+            ]
+          },
+          {
+            "id": 505691,
+            "name": "v4.0.0",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "animaPencilXL_v400.safetensors",
+                "sizeKB": 6775430.353515625,
+                "hashes": {
+                  "AutoV1": "9043054A",
+                  "AutoV2": "48759A41A9",
+                  "SHA256": "48759A41A99CEF43D8242966216F8AFE5B1826DCB092512E62637D8805FF2C37",
+                  "CRC32": "4FCB1D54",
+                  "BLAKE3": "B195A14D7E68A351FCD7038D6F23C2D9A56F8FE05950EECC79A6C943552F3A92",
+                  "AutoV3": "C65BCD34FB74",
+                  "SHA256_12": "48759A41A99C"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/505691"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 1984400,
+        "name": "AniMayhem - Pale Rider",
+        "creator": "Whistler_ai",
+        "versions": [
+          {
+            "id": 3039900,
+            "name": "v4.0 Long Rider",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "animayhemPaleRider_v40LongRider.safetensors",
+                "sizeKB": 6775461.400390625,
+                "hashes": {
+                  "AutoV1": "12FF997C",
+                  "AutoV2": "47498CF53D",
+                  "SHA256": "47498CF53D87FD5846FD7C36417883EF414C14C1D6BCF5061EEF7B0C4FD39FC0",
+                  "CRC32": "F27A8C3B",
+                  "BLAKE3": "2D18E4528C4D65B5094DE441B66577415120B5EC0D1AE73EF999E0BD2EB78061",
+                  "AutoV3": "8061376F11FC",
+                  "SHA256_12": "47498CF53D87"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/3039900"
+              }
+            ]
+          },
+          {
+            "id": 2672638,
+            "name": "v3.0 Plains Drifter",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "animayhemPaleRider_v30PlainsDrifter.safetensors",
+                "sizeKB": 6775450.064453125,
+                "hashes": {
+                  "AutoV1": "215E1939",
+                  "AutoV2": "3262F32C95",
+                  "SHA256": "3262F32C959656AF25EB4380069E444223919F17303098CEA803B886C93F957E",
+                  "CRC32": "82437DE1",
+                  "BLAKE3": "3ACE3D87A04D333E596DDB702F44DAF923F95F404B52662D76D721FC4BB562FB",
+                  "AutoV3": "94BEE891FB5E",
+                  "SHA256_12": "3262F32C9596"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/2672638"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "query": "Illustrious",
+    "models": [
+      {
+        "id": 795765,
+        "name": "Illustrious-XL",
+        "creator": "aria1th261",
+        "versions": [
+          {
+            "id": 889818,
+            "name": "v0.1",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "illustriousXL_v01.safetensors",
+                "sizeKB": 6775430.4296875,
+                "hashes": {
+                  "AutoV1": "AD446F67",
+                  "AutoV2": "3E15BA0038",
+                  "SHA256": "3E15BA00387DB678AB4A099F75771C4F5AC67FDA9E7100A01D263EAF30145AA9",
+                  "CRC32": "5EF2797E",
+                  "BLAKE3": "EF3A6DD9C8A71E07D77CE8E84780524357E629EE8750EB3018AED648D4C803F1",
+                  "AutoV3": "B5A178534B80",
+                  "SHA256_12": "3E15BA00387D"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/889818"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 1412827,
+        "name": "Illustrious Realism by klaabu",
+        "creator": "klaabu",
+        "versions": [
+          {
+            "id": 1643845,
+            "name": "V1.0 + VAE",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "illustriousRealismBy_v10VAE.safetensors",
+                "sizeKB": 6775451.376953125,
+                "hashes": {
+                  "AutoV1": "67A27D5D",
+                  "AutoV2": "55B1634B47",
+                  "SHA256": "55B1634B476AEA2DBE2955ED751F9FFD126048F748F410C20381E70C3BDA21FF",
+                  "CRC32": "1C50E1B8",
+                  "BLAKE3": "2AE0A2F298B2EE50C2624ADEA077D4E55E1A5E229FA9BCC91D7A1834970F025E",
+                  "AutoV3": "ECCA4ADF6554",
+                  "SHA256_12": "55B1634B476A"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1643845"
+              }
+            ]
+          },
+          {
+            "id": 1597195,
+            "name": "v1.0",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "illustriousRealismBy_v10.safetensors",
+                "sizeKB": 6775451.376953125,
+                "hashes": {
+                  "AutoV1": "67A27D5D",
+                  "AutoV2": "85B0A59290",
+                  "SHA256": "85B0A592904965497E6ACA576431CE20572079267B6750BC9E8384E52B240233",
+                  "CRC32": "9405CEA7",
+                  "BLAKE3": "35C48264C49FF19D7B3050AF912BE52084FB0E08888158433BE38C9CEA0837E2",
+                  "AutoV3": "5F6ABC038BB4",
+                  "SHA256_12": "85B0A5929049"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1597195"
+              },
+              {
+                "name": "sdxl_vae.safetensors",
+                "sizeKB": 326798.009765625,
+                "hashes": {
+                  "AutoV1": "584F63AB",
+                  "AutoV2": "235745AF8D",
+                  "SHA256": "235745AF8D86BF4A4C1B5B4F529868B37019A10F7C0B2E79AD0ABCA3A22BC6E1",
+                  "CRC32": "5BB75FB4",
+                  "BLAKE3": "D46EB6988A26BCAF9E9CFA5E5C6264C4EE1A70F2018F33B8BC2DD7CA0681B490",
+                  "AutoV3": "55F20A1016E7",
+                  "SHA256_12": "235745AF8D86"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1597195?type=VAE&format=SafeTensor"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 835655,
+        "name": "Illustrious XL personal merge (noob v-pred0.5 test merge updated)",
+        "creator": "dims2",
+        "versions": [
+          {
+            "id": 1023901,
+            "name": "v3.0_noob-1.0based",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "illustriousXLPersonalMerge_v30Noob10based.safetensors",
+                "sizeKB": 6775431.826171875,
+                "hashes": {
+                  "AutoV1": "B9DB937D",
+                  "AutoV2": "D14EA71AD5",
+                  "SHA256": "D14EA71AD5BF5A7BBA4AD3F6DFD9319EBBA32890B5010E3DDF61FCFF8FA71D1A",
+                  "CRC32": "FE1F5401",
+                  "BLAKE3": "3E956C722BB45BDB17B8F1D6BC8A9337532C402E2612191A492110E499C35725",
+                  "AutoV3": "EB52EE034239",
+                  "SHA256_12": "D14EA71AD5BF"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1023901"
+              }
+            ]
+          },
+          {
+            "id": 1065716,
+            "name": "vp0.5test_normalsteps",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "illustriousXLPersonalMerge_vp05testNormalsteps.safetensors",
+                "sizeKB": 6775431.611328125,
+                "hashes": {
+                  "AutoV1": "66C06BF5",
+                  "AutoV2": "AEF94CDCDE",
+                  "SHA256": "AEF94CDCDE8DA0EF04A40B3ADD405311EC9FB3D17794AFEACED4B2BF34578D03",
+                  "CRC32": "A3535D13",
+                  "BLAKE3": "72C065FC1F2F416915D231193DC2CC0CDEB952B94ECE82A447B93C3C05C9A030",
+                  "AutoV3": "5E4AE7EF8C43",
+                  "SHA256_12": "AEF94CDCDE8D"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1065716"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 1214846,
+        "name": "Illustrious Gehenna [Illustrious Checkpoint]",
+        "creator": "interfusor",
+        "versions": [
+          {
+            "id": 3197782,
+            "name": "v60",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "illustriousGehenna_v60.safetensors",
+                "sizeKB": 6938816.46484375,
+                "hashes": {
+                  "AutoV1": "5B4F72ED",
+                  "AutoV2": "4525E63687",
+                  "SHA256": "4525E636875381C5B387F995EB67F037B2C9A3FFF2C53870357EBB69C91E47A0",
+                  "CRC32": "98CF8606",
+                  "BLAKE3": "58F8E364AC1E124E446205441F2DBDE782921F7F05951EBEB93531F36DDA404E",
+                  "AutoV3": "213245A9F1B6",
+                  "SHA256_12": "4525E6368753"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/3197782"
+              }
+            ]
+          },
+          {
+            "id": 1716055,
+            "name": "v40",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "illustriousGehenna_v40.safetensors",
+                "sizeKB": 6775430.353515625,
+                "hashes": {
+                  "AutoV1": "7D5E4F44",
+                  "AutoV2": "10A207C7CC",
+                  "SHA256": "10A207C7CC89CD354A544044C13F7F0B218C75609623FF54534A24C75C1B9AF2",
+                  "CRC32": "01822D57",
+                  "BLAKE3": "CC6781FAC3207D9A742DEE30C87B846DEF4AFF4DF8BD20DF166D07EAB90443AB",
+                  "AutoV3": "6F03F472A6F0",
+                  "SHA256_12": "10A207C7CC89"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1716055"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 1232765,
+        "name": "Illustrious XL 1.0",
+        "creator": "ONOMAAI",
+        "versions": [
+          {
+            "id": 1389133,
+            "name": "v1.0",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "illustriousXL10_v10.safetensors",
+                "sizeKB": 6775430.40625,
+                "hashes": {
+                  "AutoV1": "5C57AD03",
+                  "AutoV2": "735CF3FEFC",
+                  "SHA256": "735CF3FEFCBDC4F7817F53247E38B836FFD27C7641AF6D8DAA21D245242CB4BD",
+                  "CRC32": "48945F6A",
+                  "BLAKE3": "B2991FED9205432A52E04A1A5B39A44C97F8572C7EA3A5E193ED2E63EE9A0C7D",
+                  "AutoV3": "C93075B144C1",
+                  "SHA256_12": "735CF3FEFCBD"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1389133"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "query": "NoobAI",
+    "models": [
+      {
+        "id": 833294,
+        "name": "NoobAI-XL (NAI-XL)",
+        "creator": "L_A_X",
+        "versions": [
+          {
+            "id": 1190596,
+            "name": "V-Pred-1.0-Version",
+            "baseModel": "NoobAI",
+            "files": [
+              {
+                "name": "noobaiXLNAIXL_vPred10Version.safetensors",
+                "sizeKB": 6938818.466796875,
+                "hashes": {
+                  "AutoV1": "25DC06A8",
+                  "AutoV2": "EA349EEAE8",
+                  "SHA256": "EA349EEAE87CA8D25BA902C93810F7CA83E5C82F920EDF12F273AF004AE02819",
+                  "CRC32": "6A91AF64",
+                  "BLAKE3": "C7F40A013CD3516943BEC5BFF517C0218D8434F99ED52E427AC2C961B852F318",
+                  "AutoV3": "F21947596BD6",
+                  "SHA256_12": "EA349EEAE87C"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1190596"
+              }
+            ]
+          },
+          {
+            "id": 1165792,
+            "name": "V-Pred-0.9R-Version",
+            "baseModel": "NoobAI",
+            "files": [
+              {
+                "name": "noobaiXLNAIXL_vPred09RVersion.safetensors",
+                "sizeKB": 6938818.458984375,
+                "hashes": {
+                  "AutoV1": "E7C176CF",
+                  "AutoV2": "E41B3CDBFA",
+                  "SHA256": "E41B3CDBFA68321DE393A155E7FAEC6B1EF5D1B633B622CB5ECD7594EC279E07",
+                  "CRC32": "3FAC3416",
+                  "BLAKE3": "A420C989E25E32352C80B683E54475D0F2F83C556F709E813D7249C19E8DAF27",
+                  "AutoV3": "CBFF1BFE029C",
+                  "SHA256_12": "E41B3CDBFA68"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1165792"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 913998,
+        "name": "NoobaiCyberFix",
+        "creator": "MindInTheDigits",
+        "versions": [
+          {
+            "id": 1122850,
+            "name": "v3.0",
+            "baseModel": "NoobAI",
+            "files": [
+              {
+                "name": "noobaicyberfix_v30.safetensors",
+                "sizeKB": 6775433.009765625,
+                "hashes": {
+                  "AutoV1": "C81B43D2",
+                  "AutoV2": "A980F27B57",
+                  "SHA256": "A980F27B571BCC752E0831CE105A6FA2CD22DA31441BF213DCCD6771B823C22F",
+                  "CRC32": "A334FD80",
+                  "BLAKE3": "6FE07624666250194EDDB56E80DFBCAC284DE70254149415ADBEF7EA46311CD6",
+                  "AutoV3": "87BBCE66D54D",
+                  "SHA256_12": "A980F27B571B"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1122850"
+              }
+            ]
+          },
+          {
+            "id": 1027693,
+            "name": "v2.0",
+            "baseModel": "NoobAI",
+            "files": [
+              {
+                "name": "noobaicyberfix_v20.safetensors",
+                "sizeKB": 6775437.033203125,
+                "hashes": {
+                  "AutoV1": "4F37005C",
+                  "AutoV2": "B2CFDCE8D4",
+                  "SHA256": "B2CFDCE8D4DA0ED49FCCC734D91235D74A5F7144D9F7D1D825D0005A55621CD5",
+                  "CRC32": "E8DAD80F",
+                  "BLAKE3": "00BA0B4710C63E9F6E85F9C40240CA52B0B3FE7962FEE2DC5CA8B85FB51406AE",
+                  "AutoV3": "9D7A5608CB3F",
+                  "SHA256_12": "B2CFDCE8D4DA"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1027693"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 1263826,
+        "name": "NoobAI-XL-XIN",
+        "creator": "AWY",
+        "versions": [
+          {
+            "id": 1425256,
+            "name": "v1.0",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "noobaiXLXIN_v10.safetensors",
+                "sizeKB": 6775432.875,
+                "hashes": {
+                  "AutoV1": "96946F71",
+                  "AutoV2": "A3244D92F8",
+                  "SHA256": "A3244D92F8208A42182AE83E50A56AFD2C0DE512F55B28776657B4E4B7352F84",
+                  "CRC32": "4E232558",
+                  "BLAKE3": "15BEA7DF53CD63485209825D11D0FE68CDAA1E3E2052E8D6E07F6F12B0845AB3",
+                  "AutoV3": "EFD15CCDDA99",
+                  "SHA256_12": "A3244D92F820"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1425256"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 986743,
+        "name": "noobaiXLvPred_MMMMix",
+        "creator": "xiaofan941297",
+        "versions": [
+          {
+            "id": 1169509,
+            "name": "v3.0",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "noobaixlvpredMmmmix_v30.safetensors",
+                "sizeKB": 6775437.666015625,
+                "hashes": {
+                  "AutoV1": "4B923940",
+                  "AutoV2": "FBA56D9644",
+                  "SHA256": "FBA56D9644F839412592F7E069BC8E4E69BC21E2F9CC15BD4BAAEBF045E9A711",
+                  "CRC32": "163AAF5A",
+                  "BLAKE3": "C586CD6FC87B40CEBB2B7455785791F2209AD6152FC5DA59965CC9A3AF48E01D",
+                  "AutoV3": "92DF819F5223",
+                  "SHA256_12": "FBA56D9644F8"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1169509"
+              }
+            ]
+          },
+          {
+            "id": 1144534,
+            "name": "v2.5",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "noobaixlvpredMmmmix_v25.safetensors",
+                "sizeKB": 6775437.548828125,
+                "hashes": {
+                  "AutoV1": "E288D3E0",
+                  "AutoV2": "E72465F3DB",
+                  "SHA256": "E72465F3DB58F72C437991C14A5D9FE2C11320D24A158E7D72E948EFACD789C8",
+                  "CRC32": "5716D097",
+                  "BLAKE3": "F0F6E0AC9F1FC01F83E3FB56F88FD479CFA451E221EBCA869E52F3E1CA43135A",
+                  "AutoV3": "8C8231CA2858",
+                  "SHA256_12": "E72465F3DB58"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1144534"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 873533,
+        "name": "NoobAiIter_XL - vPred",
+        "creator": "MeltyGarnet",
+        "versions": [
+          {
+            "id": 1002915,
+            "name": "v075",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "noobaiiterXLVpred_v075.safetensors",
+                "sizeKB": 6775436.486328125,
+                "hashes": {
+                  "AutoV1": "B0B425AC",
+                  "AutoV2": "6A17164143",
+                  "SHA256": "6A171641430F20F94C5DF6C9BDA03D2FBDC17A56E4DB839C59220253926DAF48",
+                  "CRC32": "E2F062D4",
+                  "BLAKE3": "A25BF55163BC5F5B603B4EEC32B6CFC5C5A2655232235265D78321C97949C821",
+                  "AutoV3": "A007AA2939FC",
+                  "SHA256_12": "6A171641430F"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1002915"
+              },
+              {
+                "name": "AAA Anime VAE SDXL.safetensors",
+                "sizeKB": 163430.857421875,
+                "hashes": {
+                  "AutoV1": "561F323D",
+                  "AutoV2": "CE4BBF40FA",
+                  "SHA256": "CE4BBF40FAA01EC60E99A5DAC735B2642A07A43E1470760204A8C363B6A38B4B",
+                  "CRC32": "537F8B46",
+                  "BLAKE3": "976603683324F11853A58392DC1E85E22F32E75AA751FEDBA7BDADB75850C137",
+                  "AutoV3": "5B7385CFD2C1",
+                  "SHA256_12": "CE4BBF40FAA0"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1002915?type=VAE&format=SafeTensor"
+              }
+            ]
+          },
+          {
+            "id": 977843,
+            "name": "v1.0",
+            "baseModel": "Illustrious",
+            "files": [
+              {
+                "name": "noobaiiterXLVpred_v10.safetensors",
+                "sizeKB": 6775435.173828125,
+                "hashes": {
+                  "AutoV1": "B3B40167",
+                  "AutoV2": "4A8AAD1673",
+                  "SHA256": "4A8AAD1673189E9F9FCFE001173A0FA1C0EE7488EAA4683D4F561D47C4B3E2B7",
+                  "CRC32": "151F7A8F",
+                  "BLAKE3": "57400DA522DD7162F8645EB84A9C2EC0F0ADC7F7D470ED4621AA50A76DD56709",
+                  "AutoV3": "91B8A4B4C38B",
+                  "SHA256_12": "4A8AAD167318"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/977843"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "query": "SDXL Turbo",
+    "models": [
+      {
+        "id": 215478,
+        "name": "SDXL Turbo",
+        "creator": null,
+        "versions": [
+          {
+            "id": 242797,
+            "name": "Full Version",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "sdxlTurbo_fullVersion.safetensors",
+                "sizeKB": 13550548.20898438,
+                "hashes": {
+                  "AutoV1": "98954852",
+                  "AutoV2": "2E58E3704B",
+                  "SHA256": "2E58E3704B4C0831BF848E0507C9B5FF2CD8D007B8D0719DBA3874156F631050",
+                  "CRC32": "DDDCC191",
+                  "BLAKE3": "910C618C531960EC61DC80379208C43BDEC08B232D361D66298E315B365E91BC",
+                  "AutoV3": "04C8637A349B",
+                  "SHA256_12": "2E58E3704B4C"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/242797"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 101055,
+        "name": "SD XL",
+        "creator": null,
+        "versions": [
+          {
+            "id": 128078,
+            "name": "v1.0 VAE fix",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "sdXL_v10VAEFix.safetensors",
+                "sizeKB": 6775467.123046875,
+                "hashes": {
+                  "AutoV1": "BE9EDD61",
+                  "AutoV2": "E6BB9EA85B",
+                  "SHA256": "E6BB9EA85BBF7BF6478A7C6D18B71246F22E95D41BCDD80ED40AA212C33CFEFF",
+                  "CRC32": "9B4D991F",
+                  "BLAKE3": "D4B89247EE54185BA1DCC1ACC0BB2E1A2E9333D7F53CE651A19B8B76CB520A95",
+                  "SHA256_12": "E6BB9EA85BBF"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/128078"
+              }
+            ]
+          },
+          {
+            "id": 128080,
+            "name": "v1.0 Refiner VAE fix",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "sdXL_v10RefinerVAEFix.safetensors",
+                "sizeKB": 5933576.103515625,
+                "hashes": {
+                  "AutoV1": "1E06ED13",
+                  "AutoV2": "8D0CE6C016",
+                  "SHA256": "8D0CE6C016004CBDACD50F937DAD381D8C396628D621A7F97191470532780164",
+                  "CRC32": "FA018B50",
+                  "BLAKE3": "98A786E50979436385FFDB68FA532F99C87773A98E6E35613F555105823B690D",
+                  "SHA256_12": "8D0CE6C01600"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/128080"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 84040,
+        "name": "SDXL Unstable Diffusers \u261b YamerMIX",
+        "creator": "Yamer",
+        "versions": [
+          {
+            "id": 395107,
+            "name": "NihilMania",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "sdxlUnstableDiffusers_nihilmania.safetensors",
+                "sizeKB": 6775456.923828125,
+                "hashes": {
+                  "AutoV1": "3AC69B12",
+                  "AutoV2": "A47E380DB3",
+                  "SHA256": "A47E380DB3E8A85C72F1EB0AC7D3E266BB60C97128F5F5C8AEFCD5A2D818D7E0",
+                  "CRC32": "A24E243D",
+                  "BLAKE3": "0E6D208D504410CEAF290D43411F86F90AA8B5BC095DABFEE2027F896DF47448",
+                  "AutoV3": "B8F1EAC7D44C",
+                  "SHA256_12": "A47E380DB3E8"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/395107"
+              },
+              {
+                "name": "sdxl_vae.safetensors",
+                "sizeKB": 326798.01171875,
+                "hashes": {
+                  "AutoV1": "D636E597",
+                  "AutoV2": "63AEECB90F",
+                  "SHA256": "63AEECB90FF7BC1C115395962D3E803571385B61938377BC7089B36E81E92E2E",
+                  "CRC32": "9109193B",
+                  "BLAKE3": "9EF46CD2F47F064860494C1D6E6BBB0D1A12052B641ED09C78DD265F767CD110",
+                  "AutoV3": "F723FEC0B7D3",
+                  "SHA256_12": "63AEECB90FF7"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/395107?type=VAE&format=SafeTensor"
+              }
+            ]
+          },
+          {
+            "id": 309729,
+            "name": "V11 + RunDiffusion",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "sdxlUnstableDiffusers_v11Rundiffusion.safetensors",
+                "sizeKB": 6775430.353515625,
+                "hashes": {
+                  "AutoV1": "530D0453",
+                  "AutoV2": "DDA8C0514C",
+                  "SHA256": "DDA8C0514CA0B28BB4285385CC8696871F6FA1FA31AA49CA5FD83FA17C35E87B",
+                  "CRC32": "22AD2163",
+                  "BLAKE3": "A7656BB5114035B907C48F5F50CD5D006E1384F94FBD4ED55398B57B52727BAC",
+                  "AutoV3": "975C1AF8E25A",
+                  "SHA256_12": "DDA8C0514CA0"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/309729"
+              },
+              {
+                "name": "sdxl_vae.safetensors",
+                "sizeKB": 326798.01171875,
+                "hashes": {
+                  "AutoV1": "D636E597",
+                  "AutoV2": "63AEECB90F",
+                  "SHA256": "63AEECB90FF7BC1C115395962D3E803571385B61938377BC7089B36E81E92E2E",
+                  "CRC32": "9109193B",
+                  "BLAKE3": "9EF46CD2F47F064860494C1D6E6BBB0D1A12052B641ED09C78DD265F767CD110",
+                  "AutoV3": "F723FEC0B7D3",
+                  "SHA256_12": "63AEECB90FF7"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/309729?type=VAE&format=SafeTensor"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 120765,
+        "name": "SDXL_Niji_Seven",
+        "creator": "Stan_Katayama",
+        "versions": [
+          {
+            "id": 662395,
+            "name": "SDXL_Niji_Seven",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "sdxlNijiSeven.safetensors",
+                "sizeKB": 6973410.017578125,
+                "hashes": {
+                  "AutoV1": "DA2056BD",
+                  "AutoV2": "0F298C78B6",
+                  "SHA256": "0F298C78B6BC5108648685CA3DFAE5DB66EE0C0EC0B2ED599625DA4FD8DE5F9A",
+                  "CRC32": "34EFF188",
+                  "BLAKE3": "28306A7970DEDEEBCC41210969997C21137107239774ADF75CE6249335971626",
+                  "AutoV3": "DD647B0A84FC",
+                  "SHA256_12": "0F298C78B6BC"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/662395"
+              }
+            ]
+          },
+          {
+            "id": 581810,
+            "name": "SDXL_Niji_v6",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "sdxlNijiSeven_sdxlNijiV6.safetensors",
+                "sizeKB": 6973376.978515625,
+                "hashes": {
+                  "AutoV1": "2BBA5BA6",
+                  "AutoV2": "7FFA23E3D1",
+                  "SHA256": "7FFA23E3D1D6F45AFA498521EF8011DD41996C9F47BC91CA9EEAB28411A2B06B",
+                  "CRC32": "A0EEC2FF",
+                  "BLAKE3": "F591085E535A5AC0B69275BFE040C2E2895C37D00B7C18377396D424319A5F57",
+                  "AutoV3": "022031FEB5AA",
+                  "SHA256_12": "7FFA23E3D1D6"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/581810"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 125634,
+        "name": "[SDXL] RongHua | \u5bb9\u534e | \u56fd\u98ce\u5927\u6a21\u578b",
+        "creator": "fok3827",
+        "versions": [
+          {
+            "id": 471038,
+            "name": "v4.5",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "SDXLRonghua_v45.safetensors",
+                "sizeKB": 6775430.390625,
+                "hashes": {
+                  "AutoV1": "E3ED3F6A",
+                  "AutoV2": "C369BC2BAE",
+                  "SHA256": "C369BC2BAE999E6945DA463E682FB855AF7F42D9D0FDE31C68C0B95FBB537995",
+                  "CRC32": "2F3226CB",
+                  "BLAKE3": "8B999EA41B289BCB94F7BE763063B71BCED3B248F5D2650EC06B5B42A263CE47",
+                  "AutoV3": "8117950943BE",
+                  "SHA256_12": "C369BC2BAE99"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/471038"
+              }
+            ]
+          },
+          {
+            "id": 253479,
+            "name": "v4.0",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "SDXLRonghua_v40.safetensors",
+                "sizeKB": 6775433.205078125,
+                "hashes": {
+                  "AutoV1": "2C6F3D4D",
+                  "AutoV2": "07211A97C0",
+                  "SHA256": "07211A97C04A27DFA0F8C41A7933A82AFF1F1CA306B846A7851111787B0C9FCC",
+                  "CRC32": "CE48F573",
+                  "BLAKE3": "93A3BD37529BA0D2799B160C7A1E3B4F51EF596F89AA80C88FB9CAEB0521B073",
+                  "AutoV3": "B913CC72D013",
+                  "SHA256_12": "07211A97C04A"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/253479"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "query": "SD Turbo",
+    "models": [
+      {
+        "id": 220609,
+        "name": "SD-Turbo",
+        "creator": "phil866",
+        "versions": [
+          {
+            "id": 248781,
+            "name": "v1.0",
+            "baseModel": "SD 2.1",
+            "files": [
+              {
+                "name": "sdTurbo_v10.safetensors",
+                "sizeKB": 5092345.046875,
+                "hashes": {
+                  "AutoV1": "84A18082",
+                  "AutoV2": "3F067A1B94",
+                  "SHA256": "3F067A1B943CF162F2B8F8588F6CF5824BD5B4C7D1D88D87164B9CA123616549",
+                  "CRC32": "426B19EB",
+                  "BLAKE3": "311AE00C2DE7817385096E39DB5D3CB5D599FC99057B5F42AC5251DC7FE048BA",
+                  "AutoV3": "7267D014D5F7",
+                  "SHA256_12": "3F067A1B943C"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/248781"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 101055,
+        "name": "SD XL",
+        "creator": null,
+        "versions": [
+          {
+            "id": 128078,
+            "name": "v1.0 VAE fix",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "sdXL_v10VAEFix.safetensors",
+                "sizeKB": 6775467.123046875,
+                "hashes": {
+                  "AutoV1": "BE9EDD61",
+                  "AutoV2": "E6BB9EA85B",
+                  "SHA256": "E6BB9EA85BBF7BF6478A7C6D18B71246F22E95D41BCDD80ED40AA212C33CFEFF",
+                  "CRC32": "9B4D991F",
+                  "BLAKE3": "D4B89247EE54185BA1DCC1ACC0BB2E1A2E9333D7F53CE651A19B8B76CB520A95",
+                  "SHA256_12": "E6BB9EA85BBF"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/128078"
+              }
+            ]
+          },
+          {
+            "id": 128080,
+            "name": "v1.0 Refiner VAE fix",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "sdXL_v10RefinerVAEFix.safetensors",
+                "sizeKB": 5933576.103515625,
+                "hashes": {
+                  "AutoV1": "1E06ED13",
+                  "AutoV2": "8D0CE6C016",
+                  "SHA256": "8D0CE6C016004CBDACD50F937DAD381D8C396628D621A7F97191470532780164",
+                  "CRC32": "FA018B50",
+                  "BLAKE3": "98A786E50979436385FFDB68FA532F99C87773A98E6E35613F555105823B690D",
+                  "SHA256_12": "8D0CE6C01600"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/128080"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 14335,
+        "name": "sd-photoreal-v2.8",
+        "creator": "rippertnt",
+        "versions": [
+          {
+            "id": 16875,
+            "name": "v2.8",
+            "baseModel": "SD 1.5",
+            "files": [
+              {
+                "name": "sdPhotorealV28_v28.safetensors",
+                "sizeKB": 2082642.677734375,
+                "hashes": {
+                  "AutoV1": "CD2641F7",
+                  "AutoV2": "222B9801A6",
+                  "SHA256": "222B9801A653E1B9DCE61BA6842DF9787517E49AB9878E92A8040607A57BDA91",
+                  "CRC32": "6E730CD0",
+                  "BLAKE3": "0AC1622F33960C65765AC78C17B70E8C9C1512B3A8AD749554E035CECDB0AF1C",
+                  "SHA256_12": "222B9801A653"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/16875"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 820101,
+        "name": "SD | Realistic Asian Girls",
+        "creator": "68yesman853",
+        "versions": [
+          {
+            "id": 917047,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "files": [
+              {
+                "name": "sdRealisticAsian_v10.safetensors",
+                "sizeKB": 2343792.328125,
+                "hashes": {
+                  "AutoV1": "7100C73D",
+                  "AutoV2": "8721F835EA",
+                  "SHA256": "8721F835EA6377985601BE9D83CFC73A5847DD2D0F0A8AC230E2AD50135BBD49",
+                  "CRC32": "BF619EE3",
+                  "BLAKE3": "1BD5A98CB3EB8024CBC703BAEAFFD9ADE1690F1505D1EEEF9FFBCD067C89C231",
+                  "AutoV3": "06AA21B2330F",
+                  "SHA256_12": "8721F835EA63"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/917047"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 14340,
+        "name": "sd-anireal-v2.8",
+        "creator": "rippertnt",
+        "versions": [
+          {
+            "id": 16881,
+            "name": "v2.8",
+            "baseModel": "SD 1.5",
+            "files": [
+              {
+                "name": "sdAnirealV28_v28.safetensors",
+                "sizeKB": 2082642.677734375,
+                "hashes": {
+                  "AutoV1": "6E8CDAE9",
+                  "AutoV2": "19156E42BC",
+                  "SHA256": "19156E42BCAD8483306D1D6FB68F982FDFDE3AC73878C070055E4844F401E6C0",
+                  "CRC32": "D424575E",
+                  "BLAKE3": "80E7D448A4D37595B92A0089C3B86FA314EC09A6E0097CA938462F35077C828D",
+                  "SHA256_12": "19156E42BCAD"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/16881"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "query": "HiDream",
+    "models": [
+      {
+        "id": 1498292,
+        "name": "HiDream I1 FP8 Uncensored (Full/Dev/Fast)",
+        "creator": "_Envy_",
+        "versions": [
+          {
+            "id": 1796117,
+            "name": "full v0.33 alpha",
+            "baseModel": "HiDream",
+            "files": [
+              {
+                "name": "hidreamI1FP8Uncensored_fullV033Alpha.safetensors",
+                "sizeKB": 16705110.9140625,
+                "hashes": {
+                  "AutoV1": "E4EEF246",
+                  "AutoV2": "5F7C6EDCA9",
+                  "SHA256": "5F7C6EDCA9E65DE527A7915816586938B599380E779BA28B506FDCED13BBF9A8",
+                  "CRC32": "57B9B828",
+                  "BLAKE3": "7FE1799379B4FCB5C4C518A492513C93EAF9EC9CCABEAC97D18E9AA18BCDB982",
+                  "AutoV3": "FEFD242BCECE",
+                  "SHA256_12": "5F7C6EDCA9E6"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1796117"
+              }
+            ]
+          },
+          {
+            "id": 1795696,
+            "name": "fast v0.33 alpha",
+            "baseModel": "HiDream",
+            "files": [
+              {
+                "name": "hidreamI1FP8Uncensored_fastV033Alpha.safetensors",
+                "sizeKB": 16705110.9140625,
+                "hashes": {
+                  "AutoV1": "00DE44E7",
+                  "AutoV2": "5D0D9C7E9F",
+                  "SHA256": "5D0D9C7E9F8BC2584AA4412852901413630461081F4436647D96740E6A8C25DF",
+                  "CRC32": "0675730D",
+                  "BLAKE3": "448B43A8B8BB71255A0C640A7727A0327F9108B7058C57FC68E1BE5FF9C52733",
+                  "AutoV3": "0FFA074C19FD",
+                  "SHA256_12": "5D0D9C7E9F8B"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1795696"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 1457126,
+        "name": "HiDream I1 FULL-DEV-FAST [NF4]",
+        "creator": "RalFinger",
+        "versions": [
+          {
+            "id": 1647676,
+            "name": "FULL",
+            "baseModel": "HiDream",
+            "files": [
+              {
+                "name": "hidreamI1FULLDEVFAST_full.safetensors",
+                "sizeKB": 9400751.229492188,
+                "hashes": {
+                  "AutoV1": "D19D0A73",
+                  "AutoV2": "94F8CCEE23",
+                  "SHA256": "94F8CCEE232F29270C876D3E5DB6D74AAB2D3B138D97BA738951B1FE837FFA5F",
+                  "CRC32": "63FFA210",
+                  "BLAKE3": "1C861B54AD2F408DB40392D763BB995CB27B9C312CC4EB1DC6CCF249E98BC8B9",
+                  "AutoV3": "84ADA9888B84",
+                  "SHA256_12": "94F8CCEE232F"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1647676"
+              }
+            ]
+          },
+          {
+            "id": 1647744,
+            "name": "DEV",
+            "baseModel": "HiDream",
+            "files": [
+              {
+                "name": "hidreamI1FULLDEVFAST_dev.safetensors",
+                "sizeKB": 9400751.229492188,
+                "hashes": {
+                  "AutoV1": "D19D0A73",
+                  "AutoV2": "8619E65CC8",
+                  "SHA256": "8619E65CC84FE2BC5E73128DADAE3E9D17BDAF198653F6155C00E3BA154E654E",
+                  "CRC32": "A7A92AEC",
+                  "BLAKE3": "C922512590C85B9551193CEA3DE11989D1D97A81C7FF157A37EF5BAB072ECC89",
+                  "AutoV3": "C1767839C8E5",
+                  "SHA256_12": "8619E65CC84F"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1647744"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 1562709,
+        "name": "HiDream",
+        "creator": "CivitaiOfficial",
+        "versions": [
+          {
+            "id": 1772448,
+            "name": "hidream_i1_full_fp8",
+            "baseModel": "HiDream",
+            "files": [
+              {
+                "name": "hidream_I1FullFp8.safetensors",
+                "sizeKB": 16705025.4296875,
+                "hashes": {
+                  "AutoV1": "E231439D",
+                  "AutoV2": "807E458DD2",
+                  "SHA256": "807E458DD2EA31E69E40DB27AFADDE4A14FFD0C4C0A23B8C9A0833102E055337",
+                  "CRC32": "47D1B49A",
+                  "BLAKE3": "E42D95FF782D391DFB8B561C37ECD1DF60CE1A6E97DF4AC5564E3BBD8DC002F2",
+                  "AutoV3": "3177FF5919AD",
+                  "SHA256_12": "807E458DD2EA"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1772448"
+              }
+            ]
+          },
+          {
+            "id": 1771369,
+            "name": "hidream_i1_dev_fp8",
+            "baseModel": "HiDream",
+            "files": [
+              {
+                "name": "hidream_I1DevFp8.safetensors",
+                "sizeKB": 16705025.4296875,
+                "hashes": {
+                  "AutoV1": "D692ECDA",
+                  "AutoV2": "9A372D7384",
+                  "SHA256": "9A372D7384D56E34A8CC7FD77A0FA3D26D6B75D82C7582FD5347E2FD9E6F8664",
+                  "CRC32": "E37BD6B1",
+                  "BLAKE3": "A4DBD21D675F9A3012F86747CCF7D52A9EE0A43A4DC72E2B7A08916F4639BC90",
+                  "AutoV3": "CDA898582445",
+                  "SHA256_12": "9A372D7384D5"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1771369"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 1472075,
+        "name": "HiDream I1 FULL [GGUF+FP8+F16] with ComfyUI workflow",
+        "creator": "RalFinger",
+        "versions": [
+          {
+            "id": 1665293,
+            "name": "Q8",
+            "baseModel": "HiDream",
+            "files": [
+              {
+                "name": "hidreamI1FULLGGUFFP8F16_q8.gguf",
+                "sizeKB": 18251374.5625,
+                "hashes": {
+                  "AutoV1": "B7ABF208",
+                  "AutoV2": "2ADDC6B267",
+                  "SHA256": "2ADDC6B2672848AB82939ECD0C1880CF9A2A1D036EFED17F748C417E51069345",
+                  "CRC32": "6DA79A53",
+                  "BLAKE3": "11676E68A049076C6968CB9F7AC099158E4B076FD40378A34975001FAE1F22D3",
+                  "AutoV3": "6293E458370C",
+                  "SHA256_12": "2ADDC6B26728"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1665293"
+              }
+            ]
+          },
+          {
+            "id": 1665439,
+            "name": "Q6K",
+            "baseModel": "HiDream",
+            "files": [
+              {
+                "name": "hidreamI1FULLGGUFFP8F16_q6k.gguf",
+                "sizeKB": 14335454.5625,
+                "hashes": {
+                  "AutoV1": "B7ABF208",
+                  "AutoV2": "C30CF170C1",
+                  "SHA256": "C30CF170C1D1B24C1C1BCF17CC61BD37D389713BA7745AEE302776A27807EAD5",
+                  "CRC32": "0601E66E",
+                  "BLAKE3": "7355663550118BAE7A2E328A391C0C5989625FA630F9FEEFBD35201C4ED943B6",
+                  "AutoV3": "0F018EE2EE1A",
+                  "SHA256_12": "C30CF170C1D1"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1665439"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 1496362,
+        "name": "HiDream Full GGUF-Q5_K_M UNCENSORED\ud83d\udd1e",
+        "creator": "0l1v1aR0551",
+        "versions": [
+          {
+            "id": 1692682,
+            "name": "v1.0",
+            "baseModel": "HiDream",
+            "files": [
+              {
+                "name": "hidreamFullGGUFQ5KM_v10.zip",
+                "sizeKB": 27857915.72558594,
+                "hashes": {
+                  "AutoV1": "83B285C2",
+                  "AutoV2": "65A9B79945",
+                  "SHA256": "65A9B799457F28FEF0B2897856505B29A0B48A692A0306D936EECDBBCA63BAE9",
+                  "CRC32": "23CD85D9",
+                  "BLAKE3": "253A8AEC8F36569672E0174EDCDDCD5D3E9681AEAD4DC1F940FAC6D3FE11CAE4",
+                  "AutoV3": "54A8CF9F67CC",
+                  "SHA256_12": "65A9B799457F"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/1692682"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "query": "RealVisXL",
+    "models": [
+      {
+        "id": 139562,
+        "name": "RealVisXL V5.0",
+        "creator": "SG_161222",
+        "versions": [
+          {
+            "id": 798204,
+            "name": "V5.0 Lightning (BakedVAE)",
+            "baseModel": "SDXL Lightning",
+            "files": [
+              {
+                "name": "realvisxlV50_v50LightningBakedvae_full_fp16.safetensors",
+                "sizeKB": 6775454.6015625,
+                "hashes": {
+                  "AutoV1": "1EDAD99B",
+                  "AutoV2": "FABCADD933",
+                  "SHA256": "FABCADD9330DCC4F9702063428D40B9D4D07168D8ACEFC819B8D1D9DB466B3EC",
+                  "CRC32": "72A18D76",
+                  "BLAKE3": "B10D19221CF701003B34698F6DB28849C80DE3401E44EF52F0EA6753C21D74E7",
+                  "AutoV3": "2E168AA255A4",
+                  "SHA256_12": "FABCADD9330D"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/798204"
+              },
+              {
+                "name": "realvisxlV50_v50LightningBakedvae_full_fp32.safetensors",
+                "sizeKB": 13550553.6953125,
+                "hashes": {
+                  "AutoV1": "9C999E01",
+                  "AutoV2": "963559C965",
+                  "SHA256": "963559C9659571C889AF1B5D5AF6697AEECF4FF13F2EEE8E956E3ECE51A05931",
+                  "CRC32": "F6B0541D",
+                  "BLAKE3": "D42EB739BAE10678E4456542225817E342D46669015F81553D1B449CA14B35F2",
+                  "AutoV3": "142B4A046C5E",
+                  "SHA256_12": "963559C96595"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/798204?type=Model&format=SafeTensor&size=full&fp=fp32"
+              }
+            ]
+          },
+          {
+            "id": 789646,
+            "name": "V5.0 (BakedVAE)",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "realvisxlV50_v50Bakedvae_full_fp32.safetensors",
+                "sizeKB": 13550569.5703125,
+                "hashes": {
+                  "AutoV1": "9D0ABDD4",
+                  "AutoV2": "49527024B6",
+                  "SHA256": "49527024B637885DF831335102F0B167F40EBB0C6B7599FAB585C7FDC98A007B",
+                  "CRC32": "189E7598",
+                  "BLAKE3": "D2E9411C2BAF4AAFB1C6CCEBDBA562ED530EE4F927C9B6904E0263AB309B98DC",
+                  "AutoV3": "C3F0760652C7",
+                  "SHA256_12": "49527024B637"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/789646?type=Model&format=SafeTensor&size=full&fp=fp32"
+              },
+              {
+                "name": "realvisxlV50_v50Bakedvae_full_fp16.safetensors",
+                "sizeKB": 6775454.578125,
+                "hashes": {
+                  "AutoV1": "EBAFBFEA",
+                  "AutoV2": "6A35A78557",
+                  "SHA256": "6A35A7855770AE9820A3C931D4964C3817B6D9E3C6F9C4DABB5B3A94E5643B80",
+                  "CRC32": "1B318724",
+                  "BLAKE3": "B41E026758437D6A8AB4F04921CCABB46475CE46C489FA1F6ACD3BA899223B96",
+                  "AutoV3": "46096BFFD355",
+                  "SHA256_12": "6A35A7855770"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/789646"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "query": "DreamShaper XL",
+    "models": [
+      {
+        "id": 112902,
+        "name": "DreamShaper XL",
+        "creator": "Lykon",
+        "versions": [
+          {
+            "id": 354657,
+            "name": "Lightning DPM++ SDE",
+            "baseModel": "SDXL Lightning",
+            "files": [
+              {
+                "name": "dreamshaperXL_lightningDPMSDE.safetensors",
+                "sizeKB": 6776582.275390625,
+                "hashes": {
+                  "AutoV1": "488F085E",
+                  "AutoV2": "FDBE56354B",
+                  "SHA256": "FDBE56354B8F876B736F24D3AD867ECD4140C019F57642EC8DDD878088D44F64",
+                  "CRC32": "326E2D69",
+                  "BLAKE3": "4F7F728B6F7EDF7FDFC0BDD7A8C8A82E3FF4262B9E0FBCA9913FD3D2DFF9BA5E",
+                  "AutoV3": "386F58096E32",
+                  "SHA256_12": "FDBE56354B8F"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/354657"
+              }
+            ]
+          },
+          {
+            "id": 355868,
+            "name": "SFW Lightning DPM++ SDE",
+            "baseModel": "SDXL Lightning",
+            "files": [
+              {
+                "name": "dreamshaperXL_sfwLightningDPMSDE.safetensors",
+                "sizeKB": 6776582.275390625,
+                "hashes": {
+                  "AutoV1": "488F085E",
+                  "AutoV2": "832E7BB230",
+                  "SHA256": "832E7BB2302C3CD67C818CA4FE9DCBEDF696D3070DAB5463127263EC4DB9899F",
+                  "CRC32": "706BD705",
+                  "BLAKE3": "BFC4B7AF43DA6B258CCDDDBCDD64954A013C1E82C46AB78D7B0E574C6AF93A1A",
+                  "AutoV3": "7B7FA9558E13",
+                  "SHA256_12": "832E7BB2302C"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/355868"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 403751,
+        "name": "Dreamshaper XL Lightning inpainting",
+        "creator": "WereCatf",
+        "versions": [
+          {
+            "id": 450187,
+            "name": "Lightning Inpaint",
+            "baseModel": "SDXL Lightning",
+            "files": [
+              {
+                "name": "dreamshaperXL_lightningInpaint.safetensors",
+                "sizeKB": 6775460.109375,
+                "hashes": {
+                  "AutoV1": "7B3D338D",
+                  "AutoV2": "1A49CD4473",
+                  "SHA256": "1A49CD4473DAD2121261BFA875E9FD18DC5FFF707B995C0561F8110B7B2C644F",
+                  "CRC32": "B39D3FDD",
+                  "BLAKE3": "D5004C1FC006D820C7AF253532D8639023BF5633B4E190E898924E14B2751E36",
+                  "AutoV3": "BAF35CFE848A",
+                  "SHA256_12": "1A49CD4473DA"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/450187"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 4384,
+        "name": "DreamShaper",
+        "creator": "Lykon",
+        "versions": [
+          {
+            "id": 128713,
+            "name": "8",
+            "baseModel": "SD 1.5",
+            "files": [
+              {
+                "name": "dreamshaper_8.safetensors",
+                "sizeKB": 2082642.474609375,
+                "hashes": {
+                  "AutoV1": "9D40847D",
+                  "AutoV2": "879DB523C3",
+                  "SHA256": "879DB523C30D3B9017143D56705015E15A2CB5628762C11D086FED9538ABD7FD",
+                  "CRC32": "6A63EC60",
+                  "BLAKE3": "771C807DB56DBFC33FEDA5638D920F6C507DB971DA44772EE44A08DC38C3B437",
+                  "SHA256_12": "879DB523C30D"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/128713"
+              }
+            ]
+          },
+          {
+            "id": 252914,
+            "name": "8 LCM",
+            "baseModel": "SD 1.5 LCM",
+            "files": [
+              {
+                "name": "dreamshaper_8LCM.safetensors",
+                "sizeKB": 2083793.9375,
+                "hashes": {
+                  "AutoV1": "71D93F27",
+                  "AutoV2": "A4F3E1526C",
+                  "SHA256": "A4F3E1526C5DC4FCBE342F5C410D83AE202C7A415FCEFCBB92E0F93FCD0A87C3",
+                  "CRC32": "0388D7BE",
+                  "BLAKE3": "01D7E8575977F7418878E320C9B66CA64452CF623D6D71746EEDCF671F5F24F3",
+                  "AutoV3": "4B56DC7D3324",
+                  "SHA256_12": "A4F3E1526C5D"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/252914"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 129879,
+        "name": "Dreamshaper PixelArt",
+        "creator": "GetAiKOFi",
+        "versions": [
+          {
+            "id": 142421,
+            "name": "v1.0",
+            "baseModel": "SD 1.5",
+            "files": [
+              {
+                "name": "dreamshaperPixelart_v10.safetensors",
+                "sizeKB": 2082642.022460938,
+                "hashes": {
+                  "AutoV1": "6CEC876B",
+                  "AutoV2": "3964F64D21",
+                  "SHA256": "3964F64D21C8E68CE8932FAC6AFFE7901E79E7AE114EFC74342AFC509AC706C2",
+                  "CRC32": "E047A40D",
+                  "BLAKE3": "008BA6E04FBE3A58016E9CDCAF29BD1CE0F5358BBF051F5FC351B00B547D0CA5",
+                  "SHA256_12": "3964F64D21C8"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/142421"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 30186,
+        "name": "DreamShaper _TFMCartoons",
+        "creator": "Adellanuki",
+        "versions": [
+          {
+            "id": 36366,
+            "name": "v1.0",
+            "baseModel": "Other",
+            "files": [
+              {
+                "name": "dreamshaper_v10.safetensors",
+                "sizeKB": 2082642.6484375,
+                "hashes": {
+                  "AutoV1": "B90BB431",
+                  "AutoV2": "7C6906F852",
+                  "SHA256": "7C6906F8527C5142D2A4E7988BCAA5DA0ABDFE7D2BF84E091DEB8F180D7337A7",
+                  "CRC32": "6A2105FF",
+                  "BLAKE3": "A8965210AD270DF316B98A0213E2DC6078F6CAF4B7C01D329D00948C4875A354",
+                  "SHA256_12": "7C6906F8527C"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/36366"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "query": "Stable Diffusion 3.5 Large Turbo",
+    "models": [
+      {
+        "id": 121215,
+        "name": "Stable-Diffusion-XL-Anime-Final",
+        "creator": "bdsqlsz",
+        "versions": [
+          {
+            "id": 660179,
+            "name": "final",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "stableDiffusionXL_final.safetensors",
+                "sizeKB": 6775432.859375,
+                "hashes": {
+                  "AutoV1": "2F484CF7",
+                  "AutoV2": "997FB6AA77",
+                  "SHA256": "997FB6AA77125918CDE052E8A1EBBF27BDD1841773EEEAE9E57BD5F9996BDD37",
+                  "CRC32": "40690528",
+                  "BLAKE3": "426C65A0F7BDC3422CF156BEA6F8601DC8D7757EFD42E721B08C9F0C2AE724D3",
+                  "AutoV3": "C1DA83FA8734",
+                  "SHA256_12": "997FB6AA7712"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/660179"
+              }
+            ]
+          },
+          {
+            "id": 520650,
+            "name": "v5.6",
+            "baseModel": "SDXL Hyper",
+            "files": [
+              {
+                "name": "stableDiffusionXL_v56.safetensors",
+                "sizeKB": 6775432.859375,
+                "hashes": {
+                  "AutoV1": "2F484CF7",
+                  "AutoV2": "3C9A7A9976",
+                  "SHA256": "3C9A7A9976C19BE004D02C33DC3431B2FD17932CDB439E0F1F641DBEAD41CA78",
+                  "CRC32": "96CE2C90",
+                  "BLAKE3": "7D26D702F97B1EED4EE3EED8BA40FB0C0F16389AE8D8155FD0DA71BDE1A485BE",
+                  "AutoV3": "EFC73FFFF664",
+                  "SHA256_12": "3C9A7A9976C1"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/520650"
+              },
+              {
+                "name": "sdxl_vae.safetensors",
+                "sizeKB": 326798.009765625,
+                "hashes": {
+                  "AutoV1": "584F63AB",
+                  "AutoV2": "235745AF8D",
+                  "SHA256": "235745AF8D86BF4A4C1B5B4F529868B37019A10F7C0B2E79AD0ABCA3A22BC6E1",
+                  "CRC32": "5BB75FB4",
+                  "BLAKE3": "D46EB6988A26BCAF9E9CFA5E5C6264C4EE1A70F2018F33B8BC2DD7CA0681B490",
+                  "AutoV3": "55F20A1016E7",
+                  "SHA256_12": "235745AF8D86"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/520650?type=VAE&format=SafeTensor"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 122757,
+        "name": "Stable-Diffusion-XL-Kawaii",
+        "creator": "bdsqlsz",
+        "versions": [
+          {
+            "id": 133954,
+            "name": "v1.0_RoundEyes",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "stableDiffusionXL_v10Roundeyes.safetensors",
+                "sizeKB": 6775430.376953125,
+                "hashes": {
+                  "AutoV1": "FFF0C339",
+                  "AutoV2": "8744A0DC44",
+                  "SHA256": "8744A0DC449420BE1EF1CC51588FE4388B395CE1C17166E67EDCCFA7D4A3C40A",
+                  "CRC32": "3AA3E5E3",
+                  "BLAKE3": "7BCED399939D5E6F00511965212004FA6AD698E3735E784F71033155EC49EEC7",
+                  "SHA256_12": "8744A0DC4494"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/133954"
+              }
+            ]
+          },
+          {
+            "id": 133743,
+            "name": "v1.0_OvalEyes",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "stableDiffusionXL_v10Ovaleyes.safetensors",
+                "sizeKB": 6775430.376953125,
+                "hashes": {
+                  "AutoV1": "FFF0C339",
+                  "AutoV2": "20571A9BE1",
+                  "SHA256": "20571A9BE1C5489A5A746650FAB020A7967B0AC69DB62CA2092D03A6324F6E84",
+                  "CRC32": "1FDE44A2",
+                  "BLAKE3": "6430C637459B089F27E5D1FD4D2F30F044F9327A4D15D26FC01F2979AAAE518B",
+                  "SHA256_12": "20571A9BE1C5"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/133743"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 155256,
+        "name": "Stable Diffusion v1.5 [bf16/fp16] [no-ema/ema-only] [no-vae] [SafeTensors] [Checkpoint]",
+        "creator": "LeaderThree",
+        "versions": [
+          {
+            "id": 174123,
+            "name": "v1.5-no-ema",
+            "baseModel": "SD 1.5",
+            "files": [
+              {
+                "name": "stableDiffusionV15Bf16Fp16NoEma_v15NoEma_pruned_bf16.safetensors",
+                "sizeKB": 1919227.2890625,
+                "hashes": {
+                  "AutoV1": "A9493238",
+                  "AutoV2": "2DDFB598EB",
+                  "SHA256": "2DDFB598EB3413E411E4518B862F1F6986F2EDC71F03405B05BCD83DBF4BE901",
+                  "CRC32": "F002A67C",
+                  "BLAKE3": "3C1C740190B8DDF97944995196DAB7F17C8BC17B505FF14227CA22914E7BCD30",
+                  "SHA256_12": "2DDFB598EB34"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/174123?type=Model&format=SafeTensor&size=pruned&fp=bf16"
+              },
+              {
+                "name": "stableDiffusionV15Bf16Fp16NoEma_v15NoEma_pruned_fp16.safetensors",
+                "sizeKB": 1919226.4296875,
+                "hashes": {
+                  "AutoV1": "C548049E",
+                  "AutoV2": "E3FA3670BB",
+                  "SHA256": "E3FA3670BBC199A5C7DDBCCC3A927FEBA50EF652DB016372699A87C87A0A517D",
+                  "CRC32": "D9401421",
+                  "BLAKE3": "1B6F90F74CDD83A970E2AE9318EA2D5299355A3A5432F35089650FCDF93E9559",
+                  "SHA256_12": "E3FA3670BBC1"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/174123"
+              },
+              {
+                "name": "vae-ft-mse-840000-ema-pruned_fp16.safetensors",
+                "sizeKB": 163411.2607421875,
+                "hashes": {
+                  "AutoV1": "5C98E895",
+                  "AutoV2": "E852361DA7",
+                  "SHA256": "E852361DA7A57EF5C87A7F551CDD218B2E54458555FF1A89C6AB4468ABED73C2",
+                  "CRC32": "B50B6BE4",
+                  "BLAKE3": "250E9BB9A154C569105B13B6EC40F1EF2B710C1C0CBAF84BFAEF18FD88FFB0A3",
+                  "SHA256_12": "E852361DA7A5"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/174123?type=VAE&format=SafeTensor"
+              }
+            ]
+          },
+          {
+            "id": 174136,
+            "name": "v1.5-ema-only",
+            "baseModel": "SD 1.5",
+            "files": [
+              {
+                "name": "stableDiffusionV15Bf16Fp16NoEma_v15EmaOnly_132808.safetensors",
+                "sizeKB": 1919226.4296875,
+                "hashes": {
+                  "AutoV1": "C548049E",
+                  "AutoV2": "D2F269D3CB",
+                  "SHA256": "D2F269D3CBBCF63404B69F25046137BE60C0FA061FC7CE1D75F7239EC3544D50",
+                  "CRC32": "AE00F03E",
+                  "BLAKE3": "DDAD70FB925AFEDF1D4D26DA1FB32F6A56F2A502EF99D3618DB1C11E231D5446",
+                  "SHA256_12": "D2F269D3CBBC"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/174136"
+              },
+              {
+                "name": "stableDiffusionV15Bf16Fp16NoEma_v15EmaOnly_pruned_bf16.safetensors",
+                "sizeKB": 1919227.2890625,
+                "hashes": {
+                  "AutoV1": "A9493238",
+                  "AutoV2": "EA776416AD",
+                  "SHA256": "EA776416ADCC543329C5FB82B8081A7A0724F6D6827AAF27389C2BD27142E619",
+                  "CRC32": "0067C7D1",
+                  "BLAKE3": "A4C68097DCBF4FBF8B3F07A4B6A44148AC0DFF9335F52E8E12B74613C5B921B2",
+                  "SHA256_12": "EA776416ADCC"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/174136?type=Model&format=SafeTensor&size=pruned&fp=bf16"
+              },
+              {
+                "name": "stableDiffusionV15Bf16Fp16NoEma_v15EmaOnly_132801.safetensors",
+                "sizeKB": 1919226.4296875,
+                "hashes": {
+                  "AutoV1": "C548049E",
+                  "AutoV2": "D2F269D3CB",
+                  "SHA256": "D2F269D3CBBCF63404B69F25046137BE60C0FA061FC7CE1D75F7239EC3544D50",
+                  "CRC32": "AE00F03E",
+                  "BLAKE3": "DDAD70FB925AFEDF1D4D26DA1FB32F6A56F2A502EF99D3618DB1C11E231D5446",
+                  "SHA256_12": "D2F269D3CBBC"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/174136?type=Model&format=SafeTensor&size=pruned&fp=fp16"
+              },
+              {
+                "name": "vae-ft-mse-840000-ema-pruned_fp16.safetensors",
+                "sizeKB": 163411.2607421875,
+                "hashes": {
+                  "AutoV1": "5C98E895",
+                  "AutoV2": "E852361DA7",
+                  "SHA256": "E852361DA7A57EF5C87A7F551CDD218B2E54458555FF1A89C6AB4468ABED73C2",
+                  "CRC32": "B50B6BE4",
+                  "BLAKE3": "250E9BB9A154C569105B13B6EC40F1EF2B710C1C0CBAF84BFAEF18FD88FFB0A3",
+                  "SHA256_12": "E852361DA7A5"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/174136?type=VAE&format=SafeTensor"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 32423,
+        "name": "E621 Rising v2: A Stable Diffusion 2.1 Furry Model",
+        "creator": "hearmeneigh",
+        "versions": [
+          {
+            "id": 38862,
+            "name": "v2.0",
+            "baseModel": "SD 2.1",
+            "files": [
+              {
+                "name": "e621RisingV2AStable_v20.ckpt",
+                "sizeKB": 2519840.212890625,
+                "hashes": {
+                  "AutoV1": "E70A2B11",
+                  "AutoV2": "BECB35BCDD",
+                  "SHA256": "BECB35BCDD05BE6C505F3D09F81D1BF80CCD5C4C8E8BC9B0F4E144800612C265",
+                  "CRC32": "8BA261A6",
+                  "BLAKE3": "0B9FD45FC5B056C71F4AD9FD117DFB298395A6A563AE7384B0F09B3F6A2E9B5B",
+                  "SHA256_12": "BECB35BCDD05"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/38862?type=Model&format=PickleTensor&size=full&fp=fp16"
+              },
+              {
+                "name": "e621RisingV2AStable_v20.safetensors",
+                "sizeKB": 2519598.3359375,
+                "hashes": {
+                  "AutoV1": "8FB2946D",
+                  "AutoV2": "A1E877D375",
+                  "SHA256": "A1E877D37541D21CF155CDEDDB0EE20206B4ADF388967FB6DA571FDDC2AB7698",
+                  "CRC32": "192008D6",
+                  "BLAKE3": "418705AB2E95D20C0BA9DA551FD2407685772DBFC1050322302B0F0287FEC706",
+                  "SHA256_12": "A1E877D37541"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/38862"
+              },
+              {
+                "name": "e621RisingV2AStable_v20.yaml",
+                "sizeKB": 1.748046875,
+                "hashes": {
+                  "AutoV2": "E61D2F1998",
+                  "SHA256": "E61D2F1998021823EB8AB98A3D7104358B047647C844662AA595DEEA72E225AE",
+                  "CRC32": "FCAB131A",
+                  "BLAKE3": "B8B57185F2326A76373365974E2F97CC1845082ABE22DAC68EBE0A2E9ACFEE4C",
+                  "SHA256_12": "E61D2F199802"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/38862?type=Config&format=Other"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 269988,
+        "name": "Nebul.Redmond - Stable Diffusion SD XL Finetuned Model",
+        "creator": "artificialguybr",
+        "versions": [
+          {
+            "id": 304365,
+            "name": "v1.0",
+            "baseModel": "SDXL 1.0",
+            "files": [
+              {
+                "name": "nebulRedmondStable_v10.safetensors",
+                "sizeKB": 6776598.486328125,
+                "hashes": {
+                  "AutoV1": "2591D258",
+                  "AutoV2": "053C51D7BB",
+                  "SHA256": "053C51D7BBE36EADC912D108B4515749F4A338AA207345729E43DE544A0941C2",
+                  "CRC32": "B29C10C8",
+                  "BLAKE3": "D8D45A69456189368C29355E62BCF75E3C3C7151D1E85D0AB5947F0962855820",
+                  "AutoV3": "42CBF2BA4876",
+                  "SHA256_12": "053C51D7BBE3"
+                },
+                "downloadUrl": "https://civitai.com/api/download/models/304365"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

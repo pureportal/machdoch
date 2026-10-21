@@ -1,0 +1,16 @@
+{
+  "checkedAt": "2026-10-13T01:10:48.212899+00:00",
+  "existingImageReinspection": true,
+  "newGeneration": false,
+  "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\stable-diffusion-2-refined-six-reference-sweep\\03-stable-diffusion-2-reference-144594528\\images\\output-0000.png",
+  "sha256": "7b6771f4a563506d1dc4b8391de520320e2333e9c8eef2c1016c1c2819031b3d",
+  "dimensions": [
+    768,
+    1152
+  ],
+  "qualityVerdict": "below-reference",
+  "observations": "Detailed fabric and floral mural, coherent photographic lighting; malformed fingers remain visible. Sunglasses and staged standing pose differ from the reference.",
+  "configurationValidation": "docs\\validation\\image-engines\\current-checks\\sd2-publisher-configuration-validation-current.json",
+  "promptTokenization": "docs\\validation\\image-engines\\current-checks\\sd2-refined-prompt-tokenization-current.json",
+  "samplerTrialsPreflight": "docs\\validation\\image-engines\\current-checks\\sd2-sampler-reference-preflight-current.json"
+}

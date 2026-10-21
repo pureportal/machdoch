@@ -1,0 +1,15 @@
+{
+  "staticRequestChecksOnly": true,
+  "runtimeExecutionProven": false,
+  "batches": 15,
+  "cases": 61,
+  "referenceId": 144697438,
+  "sampler": "flow-euler",
+  "steps": 52,
+  "guidance": 3.5,
+  "addonDigests": [
+    "43c97c9ebfd6f7bbd78d93e15f9b70a7b03667698fb2a9cdeef83fa84fa7d767"
+  ],
+  "onlyGenerationInputChanged": "addons",
+  "passed": true
+}

@@ -1,0 +1,23 @@
+{
+  "checkedAt": "2026-10-13T04:32:15.389Z",
+  "dependencyFile": ".cache/rust/release/deps/machdoch_lib.d",
+  "checks": [
+    {
+      "file": "apps/client/dist/ui-preview/assets/media-runtime-QCQukfOP.js",
+      "inCompiledInputs": true
+    },
+    {
+      "file": "apps/client/dist/ui-preview/assets/media-generation-recipe-B2mV7QXB.js",
+      "inCompiledInputs": true
+    },
+    {
+      "file": "apps/client/src-tauri/python/open_media_models.json",
+      "inCompiledInputs": true
+    },
+    {
+      "file": "apps/client/src-tauri/python/image_sampling_profiles.json",
+      "inCompiledInputs": true
+    }
+  ],
+  "nativeBinaryVerified": false
+}

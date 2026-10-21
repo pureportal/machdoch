@@ -1,0 +1,11 @@
+{
+  "referenceId": 145095967,
+  "aspectRatio": "9:16",
+  "modelName": "HiDream-I1 Full FP4",
+  "modelId": "local:user:e7d65da14bf9a82b8da178426e02b5199b33e56d30276e30a3b305137710bbc6",
+  "width": 832,
+  "height": 1248,
+  "sampler": "unipc",
+  "seed": 1050111887,
+  "promptFile": "D:/Models/machdoch/verification/2026-10-13/image-engines/hidream-collage-composite-refinement.txt"
+}

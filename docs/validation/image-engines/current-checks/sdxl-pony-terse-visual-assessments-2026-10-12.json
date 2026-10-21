@@ -1,0 +1,66 @@
+[
+  {
+    "referenceId": 144594528,
+    "referenceQualityVerdict": "near-reference",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-terse-reference-sweep\\03-stable-diffusion-xl-reference-144594528\\images\\output-0000.png",
+    "sha256": "dcdef42de6c4799248901009e1c9c26ab1e841abc44eed3e116186172967e018",
+    "observations": "Detailed natural street photograph with a blue off-shoulder blouse, white skirt, sneakers and floral mural; fabric, skin, hands and sunlight approach the reference quality. The floral blouse, walking pose and framing differ.",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "referenceUrl": "https://civitai.red/images/144594528"
+  },
+  {
+    "referenceId": 145095967,
+    "referenceQualityVerdict": "below-reference",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\juggernaut-terse-reference-sweep\\04-stable-diffusion-xl-reference-145095967\\images\\output-0000.png",
+    "sha256": "eb522db85d04c5f19796f3edb2754beda87d86998ea4f3501d05e2de6b2fc8bf",
+    "observations": "Sharp mountain photograph with raised arms, pink sky and white blouse outlines; opaque photographic collage panels remain inside the torso, with excessive saturation compared with the reference double exposure.",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "referenceUrl": "https://civitai.red/images/145095967"
+  },
+  {
+    "referenceId": 144655944,
+    "referenceQualityVerdict": "below-reference",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\pony-terse-reference-sweep\\01-pony-reference-144655944\\images\\output-0000.png",
+    "sha256": "382d5d0bd65b1bf004cb733bb5c2a062b0b466c715035a0e5e6713eac7ff7cc6",
+    "observations": "Detailed photographic red-haired portrait with amber eyes, white shirt and dark tie; the anime treatment, reaching palm and golden backlighting are absent.",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "referenceUrl": "https://civitai.red/images/144655944"
+  },
+  {
+    "referenceId": 144697438,
+    "referenceQualityVerdict": "below-reference",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\pony-terse-reference-sweep\\02-pony-reference-144697438\\images\\output-0000.png",
+    "sha256": "f8a5fab43b23d54a71fb94757ff80ee37470ada875add6d1ed4bd8092184bcee",
+    "observations": "Sharp photograph of a white-haired woman, tank and ruined city; it misses the painted texture, ornate black outfit, collapsed robot and dense reference palette.",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "referenceUrl": "https://civitai.red/images/144697438"
+  },
+  {
+    "referenceId": 144594528,
+    "referenceQualityVerdict": "near-reference",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\pony-terse-reference-sweep\\03-pony-reference-144594528\\images\\output-0000.png",
+    "sha256": "818a133c304dfa3832312809571c6233c85637335c986b3d403ec74564fa0722",
+    "observations": "Clean photographic detail in the face, hair, skin, floral clothes, shoes and colorful mural; the pose, shorter skirt, blonde hair and frontal lighting differ from the reference.",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "referenceUrl": "https://civitai.red/images/144594528"
+  },
+  {
+    "referenceId": 145095967,
+    "referenceQualityVerdict": "below-reference",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\pony-terse-reference-sweep\\04-pony-reference-145095967\\images\\output-0000.png",
+    "sha256": "e4e39c9ded4a13450c90559e372e481bf83ac8ccf1325f9f3002217f78161de7",
+    "observations": "Detailed mountain portrait with natural face and cloth; raised arms, transparent torso, blouse outlines and the double-exposure effect are absent.",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "referenceUrl": "https://civitai.red/images/145095967"
+  },
+  {
+    "referenceId": 145177887,
+    "displayInComparison": false,
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "sha256": "7bdec4e1b2d100080cd98db5e6413b27c7bba15f3cbb91488c9c35f8fb323a58",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\pony-terse-reference-sweep\\05-pony-reference-145177887\\images\\output-0000.png",
+    "referenceUrl": "https://civitai.red/images/145177887",
+    "observations": "The nightdress is sheer and fails the requested fully clothed scene. Withheld from the comparison gallery; face, daylight, teddy placement and mood also differ.",
+    "referenceQualityVerdict": "below-reference"
+  }
+]

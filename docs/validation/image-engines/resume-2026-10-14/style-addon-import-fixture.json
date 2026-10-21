@@ -1,0 +1,55 @@
+{
+  "database": "D:/Models/machdoch/media.sqlite3",
+  "blobs": "D:/Models/machdoch/blobs/sha256",
+  "outputDirectory": "C:\\Development\\machdoch\\docs\\validation\\image-engines\\resume-2026-10-14\\native-style-addons",
+  "assets": [
+    {
+      "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\929497\\2247497\\illustrious_masterpieces_v3.safetensors",
+      "reviewToken": "",
+      "displayName": "Masterpiece Illustrious v3 - motimalu",
+      "kind": "lora",
+      "architecture": "stable-diffusion-xl",
+      "triggerWords": [
+        "masterpiece",
+        "best quality",
+        "very aesthetic"
+      ],
+      "token": null,
+      "sourceUrl": "https://civitai.com/models/929497?modelVersionId=2247497",
+      "licenseName": null,
+      "commercialUse": "review-required"
+    },
+    {
+      "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\929497\\1070123\\illustrious_noobai_epsilon_pred_1_masterpieces_v1.safetensors",
+      "reviewToken": "",
+      "displayName": "Masterpiece NoobAI Epsilon 1.0 - motimalu",
+      "kind": "lora",
+      "architecture": "stable-diffusion-xl",
+      "triggerWords": [
+        "masterpiece",
+        "best quality",
+        "very aesthetic"
+      ],
+      "token": null,
+      "sourceUrl": "https://civitai.com/models/929497?modelVersionId=1070123",
+      "licenseName": null,
+      "commercialUse": "review-required"
+    },
+    {
+      "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\929497\\1040450\\quality_modifiers_masterpieces_v1.safetensors",
+      "reviewToken": "",
+      "displayName": "Masterpiece Pony v1 - motimalu",
+      "kind": "lora",
+      "architecture": "stable-diffusion-xl",
+      "triggerWords": [
+        "masterpiece",
+        "best quality",
+        "very aesthetic"
+      ],
+      "token": null,
+      "sourceUrl": "https://civitai.com/models/929497?modelVersionId=1040450",
+      "licenseName": null,
+      "commercialUse": "review-required"
+    }
+  ]
+}

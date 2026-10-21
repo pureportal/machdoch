@@ -1,0 +1,53 @@
+{
+  "gpuRunsPassed": 10,
+  "nativeUiChecks": [
+    "menu",
+    "image and video imports",
+    "tile validation",
+    "4x image",
+    "2x video",
+    "single final result",
+    "native exports",
+    "result context action",
+    "video playback",
+    "advanced flow",
+    "missing model recovery",
+    "running job cancellation",
+    "compact layout",
+    "generated image/video library context actions",
+    "native execution from Advanced canvas"
+  ],
+  "generationChains": [
+    {
+      "kind": "image",
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "source": [
+        512,
+        512
+      ],
+      "output": [
+        1024,
+        1024
+      ]
+    },
+    {
+      "kind": "video",
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "source": [
+        512,
+        512
+      ],
+      "output": [
+        1024,
+        1024
+      ]
+    }
+  ],
+  "exportsVerified": 2,
+  "movingVideoOrderVerifiedForAllModels": true,
+  "generatedVideoMotion": "Very little visible subject motion in the generated source; motion preservation is checked separately on the moving test-chart clips.",
+  "oldArtifactCleanup": "Rejected by automatic approval review; intermediate files retained",
+  "completionAudit": "completion-audit.json",
+  "gpuAuditCasesPassed": 10,
+  "pythonTestsPassed": 19
+}

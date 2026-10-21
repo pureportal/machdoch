@@ -1,0 +1,293 @@
+[
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:53de857493eba0bb6eb3ec187770d161507caf42634a920877775541c0d82711",
+      "alreadyInstalled": false,
+      "architecture": "stable-diffusion-1",
+      "byteSize": 37863624,
+      "digest": "53de857493eba0bb6eb3ec187770d161507caf42634a920877775541c0d82711",
+      "displayName": "Niji COOL perfect anime LoRa 优秀动漫模型 — Terry9993",
+      "importedAt": "2026-10-11T15:49:29.131Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/53de857493eba0bb6eb3ec187770d161507caf42634a920877775541c0d82711/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "b90c3c9b66e653ca44bb8969cd46790db4f34f2a.safetensors",
+      "blockingReason": null,
+      "byteSize": 37863624,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-1",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "98f5919f59447d1c99b551f95fa583b16f2fc88d048dcd32762d561cdd3a08d2",
+      "loraProfile": {
+        "algorithm": "locon",
+        "convolutionTargetCount": 32,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 264,
+        "rankMaximum": 32,
+        "rankMinimum": 32,
+        "targetModuleCount": 264
+      },
+      "metadataSummary": [
+        "ss_base_model_version: sd_v1",
+        "ss_sd_model_name: b90c3c9b66e653ca44bb8969cd46790db4f34f2a.safetensors"
+      ],
+      "reviewToken": "b8665f9f6a0b709de2161f96df7453ab713304a3c443216f473727ca2a2749c2",
+      "schemaVersion": 1,
+      "sourceFileName": "Nijicool.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\130311\\142924\\Nijicool.safetensors",
+      "suggestedDisplayName": "20230817-1692283711330",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder"
+      ],
+      "tensorCount": 792,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  },
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:544900d4c913edaab0cb9257aeaac745a95e47b77286998fb52e4d7183846e36",
+      "alreadyInstalled": false,
+      "architecture": "stable-diffusion-1",
+      "byteSize": 151110923,
+      "digest": "544900d4c913edaab0cb9257aeaac745a95e47b77286998fb52e4d7183846e36",
+      "displayName": "Painterly | Style LoRA — TackiNO",
+      "importedAt": "2026-10-11T15:49:34.546Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/544900d4c913edaab0cb9257aeaac745a95e47b77286998fb52e4d7183846e36/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "kenshi_01.safetensors",
+      "blockingReason": null,
+      "byteSize": 151110923,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-1",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "91564b71f33a2aa6fb3004e6d6d4312e0ae7c4e37c965a6259ebe933ee1e5cff",
+      "loraProfile": {
+        "algorithm": "locon",
+        "convolutionTargetCount": 32,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 264,
+        "rankMaximum": 128,
+        "rankMinimum": 128,
+        "targetModuleCount": 264
+      },
+      "metadataSummary": [
+        "ss_sd_model_name: kenshi_01.safetensors"
+      ],
+      "reviewToken": "f960e5a04f63870f933eee66af8d68a6967944bac4af77a5fd62dd0bfea1277c",
+      "schemaVersion": 1,
+      "sourceFileName": "Painterly-Style_LoRA.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\80094\\84920\\Painterly-Style_LoRA.safetensors",
+      "suggestedDisplayName": "Painterly-Style_LoRA",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder"
+      ],
+      "tensorCount": 792,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  },
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:3fb6a3c0b0b93190d802a27cd1a67c1787c0d50e41bae0e4da73baf1f67d9e79",
+      "alreadyInstalled": false,
+      "architecture": "stable-diffusion-1",
+      "byteSize": 151074559,
+      "digest": "3fb6a3c0b0b93190d802a27cd1a67c1787c0d50e41bae0e4da73baf1f67d9e79",
+      "displayName": "2B (NieR:Automata) LoRA / YorHA edition — Lykon",
+      "importedAt": "2026-10-11T15:49:39.682Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/3fb6a3c0b0b93190d802a27cd1a67c1787c0d50e41bae0e4da73baf1f67d9e79/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "Anything-v4-5-pruned.ckpt",
+      "blockingReason": null,
+      "byteSize": 151074559,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-1",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "325ae4aa86ab84966ac529ed70e184735652c26418ac29e314d4e4b4deaf940f",
+      "loraProfile": {
+        "algorithm": "locon",
+        "convolutionTargetCount": 32,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 0,
+        "rankMaximum": 128,
+        "rankMinimum": 128,
+        "targetModuleCount": 264
+      },
+      "metadataSummary": [
+        "ss_sd_model_name: Anything-v4-5-pruned.ckpt"
+      ],
+      "reviewToken": "66c9455981ca60bbceed66f78a4af93580122d70fd92c117b8d3ad2df54598f9",
+      "schemaVersion": 1,
+      "sourceFileName": "yorha_noDOT_2_type_b.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\5200\\6031\\yorha_noDOT_2_type_b.safetensors",
+      "suggestedDisplayName": "Anything-v4-5-pruned.ckpt",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder"
+      ],
+      "tensorCount": 528,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  },
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:42d8bdca995e19835cb8073d2b19aa8107809a4df740c81f9cd549d76b3a2ff3",
+      "alreadyInstalled": false,
+      "architecture": "stable-diffusion-1",
+      "byteSize": 37866600,
+      "digest": "42d8bdca995e19835cb8073d2b19aa8107809a4df740c81f9cd549d76b3a2ff3",
+      "displayName": "Double Exposure Concept — BixBit11",
+      "importedAt": "2026-10-11T15:49:41.350Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/42d8bdca995e19835cb8073d2b19aa8107809a4df740c81f9cd549d76b3a2ff3/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "anythingV3_fp16.ckpt",
+      "blockingReason": null,
+      "byteSize": 37866600,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-1",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "5af0dd1905bf1df4cbf1accbe56044501c682eda3ca34b61ba1825d3d72557f4",
+      "loraProfile": {
+        "algorithm": "locon",
+        "convolutionTargetCount": 32,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 264,
+        "rankMaximum": 32,
+        "rankMinimum": 32,
+        "targetModuleCount": 264
+      },
+      "metadataSummary": [
+        "ss_base_model_version: sd_v1",
+        "ss_sd_model_name: anythingV3_fp16.ckpt"
+      ],
+      "reviewToken": "ae36edd1c4d0fbeb255a507876421a428930472ee3f4aea51b7c1dfcbb90ca3a",
+      "schemaVersion": 1,
+      "sourceFileName": "w0rld - World Inside Body.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\132494\\145734\\w0rld - World Inside Body.safetensors",
+      "suggestedDisplayName": "w0rld - World Inside Body",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder"
+      ],
+      "tensorCount": 792,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  },
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:fc48e726ae5391713a6bc33c57d6b5de16378a83f64eb3518ea25ccf9c0e96a7",
+      "alreadyInstalled": false,
+      "architecture": "z-image-turbo",
+      "byteSize": 85094936,
+      "digest": "fc48e726ae5391713a6bc33c57d6b5de16378a83f64eb3518ea25ccf9c0e96a7",
+      "displayName": "DOUBLE EXPOSURE LORA - REDMOND - STYLE LORA — artificialguybr",
+      "importedAt": "2026-10-11T15:49:44.619Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/fc48e726ae5391713a6bc33c57d6b5de16378a83f64eb3518ea25ccf9c0e96a7/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "zimage",
+      "blockingReason": null,
+      "byteSize": 85094936,
+      "canImport": true,
+      "detectedArchitecture": "z-image",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "614c28eb794e2449415e47cac7059430f84af19d3fdc5c0ea8572798035dfe4e",
+      "loraProfile": {
+        "algorithm": "lora",
+        "convolutionTargetCount": 0,
+        "dialect": "diffusers-peft",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 0,
+        "rankMaximum": 16,
+        "rankMinimum": 16,
+        "targetModuleCount": 240
+      },
+      "metadataSummary": [
+        "ss_base_model_version: zimage"
+      ],
+      "reviewToken": "c6ff17aa6323b6d09d9358667d884c008264495ddc2d7230a315dd6f57b9dda9",
+      "schemaVersion": 1,
+      "sourceFileName": "[ZImage.Turbo]DoubleExposure_Redmond.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\2422642\\2723837\\[ZImage.Turbo]DoubleExposure_Redmond.safetensors",
+      "suggestedDisplayName": "doubleexposure_z_deturbo",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser"
+      ],
+      "tensorCount": 480,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  }
+]

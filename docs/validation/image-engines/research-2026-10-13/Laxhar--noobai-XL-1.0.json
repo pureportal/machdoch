@@ -1,0 +1,100 @@
+{
+  "repository": "Laxhar/noobai-XL-1.0",
+  "revision": "70dee4d903b83cc6d1e8d12e65051cfdbcf54ab3",
+  "gated": false,
+  "card": {
+    "license": "other",
+    "license_name": "fair-ai-public-license-1.0-sd",
+    "license_link": "https://freedevproject.org/faipl-1.0-sd/",
+    "language": [
+      "en"
+    ],
+    "base_model": [
+      "Laxhar/noobai-XL-0.77"
+    ],
+    "pipeline_tag": "text-to-image",
+    "tags": [
+      "Diffusers",
+      "Safetensors"
+    ]
+  },
+  "files": [
+    {
+      "rfilename": ".gitattributes"
+    },
+    {
+      "rfilename": "NoobAI-XL-v1.0.safetensors"
+    },
+    {
+      "rfilename": "README.md"
+    },
+    {
+      "rfilename": "model_index.json"
+    },
+    {
+      "rfilename": "scheduler/scheduler_config.json"
+    },
+    {
+      "rfilename": "text_encoder/config.json"
+    },
+    {
+      "rfilename": "text_encoder/model.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_2/config.json"
+    },
+    {
+      "rfilename": "text_encoder_2/model.safetensors"
+    },
+    {
+      "rfilename": "tokenizer/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer/vocab.json"
+    },
+    {
+      "rfilename": "tokenizer_2/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer_2/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer_2/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer_2/vocab.json"
+    },
+    {
+      "rfilename": "unet/config.json"
+    },
+    {
+      "rfilename": "unet/diffusion_pytorch_model.safetensors"
+    },
+    {
+      "rfilename": "vae/config.json"
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.safetensors"
+    }
+  ],
+  "documents": {
+    "README.md": {
+      "status": 200,
+      "content": "---\nlicense: other\nlicense_name: fair-ai-public-license-1.0-sd\nlicense_link: https://freedevproject.org/faipl-1.0-sd/\nlanguage:\n- en\nbase_model:\n- Laxhar/noobai-XL-0.77\npipeline_tag: text-to-image\ntags:\n- Diffusers\n- Safetensors\n---\n\n# New Image Generation Model\n\nThis is an image generation model based on training from Illustrious-xl. \n\nIt utilizes the latest full Danbooru and e621 datasets for training, with native tags caption.\n\n# Model Introduction\n\n## Model Details\n- **Developed by**: [Laxhar Lab](https://huggingface.co/Laxhar)\n  \n- **Model Type**: Diffusion-based text-to-image generative model\n\n- **Fine-tuned from**: OnomaAIResearch/Illustrious-xl-early-release-v0  \n   \n- **Sponsored by from**: [Lanyun Cloud](https://cloud.lanyun.net)\n\n# Recommended Settings\n\n## Parameters\n- CFG: 5 ~ 6\n- Steps: 25 ~ 30\n- Sampling Method:Euler a\n- Resolution: Total area around 1024x1024. Best to choose from: 768x1344, **832x1216**, 896x1152, 1024x1024, 1152x896, 1216x832, 1344x768\n\n  \n## Prompts\n\n- Prompt Prefix:\n\n```\nmasterpiece, best quality, newest, absurdres, highres, safe,\n```\n\n- Negative Prompt:\n\n```\nnsfw, worst quality, old, early, low quality, lowres, signature, username, logo, bad hands, mutated hands, mammal, anthro, furry, ambiguous form, feral, semi-anthro\n```\n\n# Usage Guidelines\n\n## Caption\n\n```\n<1girl/1boy/1other/...>, <character>, <series>, <artists>, <special tags>, <general tags>, <other tags>\n```\n\n## Quality Tags\n\nFor quality tags, we evaluated image popularity through the following process:\n\n- Data normalization based on various sources and ratings.\n- Application of time-based decay coefficients according to date recency.\n- Ranking of images within the entire dataset based on this processing.\n\nOur ultimate goal is to ensure that quality tags effectively track user preferences in recent years.\n\n| Percentile Range | Quality Tags   |\n| :--------------- | :------------- |\n| > 95th           | masterpiece    |\n| > 85th, <= 95th  | best quality   |\n| > 60th, <= 85th  | good quality   |\n| > 30th, <= 60th  | normal quality |\n| <= 30th          | worst quality  |\n\n\n## Date tags\n| Year Range | Period |\n|:-----------------|:------------------|\n| 2005-2010   | old       |\n| 2011-2014   | early     |\n| 2014-2017   | mid       |\n| 2018-2020   | recent    |\n| 2021-2024   | newest    |\n\n## Datasets\n- Latest Danbooru images up to the training date(for v1.0,it mean approximately before 2024-10-23)\n- E621 images [e621-2024-webp-4Mpixel](https://huggingface.co/datasets/NebulaeWis/e621-2024-webp-4Mpixel) dataset on Hugging Face\n- \n**Communication**\n\n- **QQ Groups:**\n\n  - 875042008\n  - 914818692\n  - 635772191\n\n- **Discord:** [Laxhar Dream Lab SDXL NOOB](https://discord.com/invite/DKnFjKEEvH)\n\n**Utility Tool**\n\nLaxhar Lab is training a dedicated ControlNet model for NoobXL, and the models are being released progressively. So far, the normal, depth, and canny have been released.\n\nModel link: https://civitai.com/models/929685\n\n# Model License\n\nThis model's license inherits from https://huggingface.co/OnomaAIResearch/Illustrious-xl-early-release-v0 fair-ai-public-license-1.0-sd and adds the following terms. Any use of this model and its variants is bound by this license.\n\n## I. Usage Restrictions\n\n- Prohibited use for harmful, malicious, or illegal activities, including but not limited to harassment, threats, and spreading misinformation.\n- Prohibited generation of unethical or offensive content.\n- Prohibited violation of laws and regulations in the user's jurisdiction.\n\n## II. Commercial Prohibition\n\nWe prohibit any form of commercialization, including but not limited to monetization or commercial use of the model, derivative models, or model-generated products.\n\n## III. Open Source Community\n\nTo foster a thriving open-source community,users MUST comply with the following requirements:\n\n- Open source derivative models, merged models, LoRAs, and products based on the above models.\n- Share work details such as synthesis formulas, prompts, and workflows.\n- Follow the fair-ai-public-license to ensure derivative works remain open source.\n\n## IV. Disclaimer\n\nGenerated models may produce unexpected or harmful outputs. Users must assume all risks and potential consequences of usage.\n\n# Participants and Contributors\n\n## Participants\n\n- **L_A_X:** [Civitai](https://civitai.com/user/L_A_X) | [Liblib.art](https://www.liblib.art/userpage/9e1b16538b9657f2a737e9c2c6ebfa69) | [Huggingface](https://huggingface.co/LAXMAYDAY)\n- **li_li:** [Civitai](https://civitai.com/user/li_li) | [Huggingface](https://huggingface.co/heziiiii)\n- **nebulae:** [Civitai](https://civitai.com/user/kitarz) | [Huggingface](https://huggingface.co/NebulaeWis)\n- **Chenkin:** [Civitai](https://civitai.com/user/Chenkin) | [Huggingface](https://huggingface.co/windsingai)\n- **Euge:** [Civitai](https://civitai.com/user/Euge_) | [Huggingface](https://huggingface.co/Eugeoter) | [Github](https://github.com/Eugeoter)\n\n## Contributors\n\n- **Narugo1992**: Thanks to [narugo1992](https://github.com/narugo1992) and the [deepghs](https://huggingface.co/deepghs) team for open-sourcing various training sets, image processing tools, and models.\n\n- **Mikubill**: Thanks to [Mikubill](https://github.com/Mikubill) for the [Naifu](https://github.com/Mikubill/naifu) trainer.\n\n- **Onommai**: Thanks to [OnommAI](https://onomaai.com/) for open-sourcing a powerful base model.\n\n- **V-Prediction**: Thanks to the following individuals for their detailed instructions and experiments.\n\n  - adsfssdf\n  - [bluvoll](https://civitai.com/user/bluvoll)\n  - [bvhari](https://github.com/bvhari)\n  - [catboxanon](https://github.com/catboxanon)\n  - [parsee-mizuhashi](https://huggingface.co/parsee-mizuhashi)\n  - [very-aesthetic](https://github.com/very-aesthetic)\n  - [momoura](https://civitai.com/user/momoura)\n  - madmanfourohfour\n\n- **Community**: [aria1th261](https://civitai.com/user/aria1th261), [neggles](https://github.com/neggles/neurosis), [sdtana](https://huggingface.co/sdtana), [chewing](https://huggingface.co/chewing), [irldoggo](https://github.com/irldoggo), [reoe](https://huggingface.co/reoe), [kblueleaf](https://civitai.com/user/kblueleaf), [Yidhar](https://github.com/Yidhar), ageless, 白玲可, Creeper, KaerMorh, 吟游诗人, SeASnAkE, [zwh20081](https://civitai.com/user/zwh20081), Wenaka⁧~喵, 稀里哗啦, 幸运二副, 昨日の約, 445, [EBIX](https://civitai.com/user/EBIX), [Sopp](https://huggingface.co/goyishsoyish), [Y_X](https://civitai.com/user/Y_X), [Minthybasis](https://civitai.com/user/Minthybasis), [Rakosz](https://civitai.com/user/Rakosz)"
+    },
+    "model_index.json": {
+      "status": 200,
+      "content": "{\n  \"_class_name\": \"StableDiffusionXLPipeline\",\n  \"_diffusers_version\": \"0.31.0\",\n  \"feature_extractor\": [\n    null,\n    null\n  ],\n  \"force_zeros_for_empty_prompt\": true,\n  \"image_encoder\": [\n    null,\n    null\n  ],\n  \"scheduler\": [\n    \"diffusers\",\n    \"EulerDiscreteScheduler\"\n  ],\n  \"text_encoder\": [\n    \"transformers\",\n    \"CLIPTextModel\"\n  ],\n  \"text_encoder_2\": [\n    \"transformers\",\n    \"CLIPTextModelWithProjection\"\n  ],\n  \"tokenizer\": [\n    \"transformers\",\n    \"CLIPTokenizer\"\n  ],\n  \"tokenizer_2\": [\n    \"transformers\",\n    \"CLIPTokenizer\"\n  ],\n  \"unet\": [\n    \"diffusers\",\n    \"UNet2DConditionModel\"\n  ],\n  \"vae\": [\n    \"diffusers\",\n    \"AutoencoderKL\"\n  ]\n}\n"
+    },
+    "scheduler/scheduler_config.json": {
+      "status": 200,
+      "content": "{\n  \"_class_name\": \"EulerDiscreteScheduler\",\n  \"_diffusers_version\": \"0.31.0\",\n  \"beta_end\": 0.012,\n  \"beta_schedule\": \"scaled_linear\",\n  \"beta_start\": 0.00085,\n  \"clip_sample\": false,\n  \"final_sigmas_type\": \"zero\",\n  \"interpolation_type\": \"linear\",\n  \"num_train_timesteps\": 1000,\n  \"prediction_type\": \"epsilon\",\n  \"rescale_betas_zero_snr\": false,\n  \"sample_max_value\": 1.0,\n  \"set_alpha_to_one\": false,\n  \"sigma_max\": null,\n  \"sigma_min\": null,\n  \"skip_prk_steps\": true,\n  \"steps_offset\": 1,\n  \"timestep_spacing\": \"leading\",\n  \"timestep_type\": \"discrete\",\n  \"trained_betas\": null,\n  \"use_beta_sigmas\": false,\n  \"use_exponential_sigmas\": false,\n  \"use_karras_sigmas\": false\n}\n"
+    }
+  }
+}

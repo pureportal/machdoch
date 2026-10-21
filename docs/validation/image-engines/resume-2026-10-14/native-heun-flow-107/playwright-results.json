@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "actualTauriIPC": true,
+  "modelId": "local:user:62d1eb3e10df764cfeff0163b5aaab2e5775aac3987632f6428dd2bad1074e30",
+  "sampling": {
+    "sampler": "flow-heun",
+    "steps": 50,
+    "guidance": 5
+  },
+  "errors": []
+}

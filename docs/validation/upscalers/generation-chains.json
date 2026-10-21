@@ -1,0 +1,228 @@
+[
+  {
+    "kind": "image",
+    "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+    "model": "SD-Turbo · Stability AI",
+    "seconds": 173.641,
+    "input": {
+      "id": "asset:71d537c8-1764-484f-a6b7-74f7827837f8:0",
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "digest": "a4c1864893e223a0cf1cd139276b6d377091c4ffc45639e7212097be69470a28",
+      "kind": "image",
+      "mimeType": "image/png",
+      "byteSize": 490301,
+      "width": 512,
+      "height": 512,
+      "createdAt": "2026-10-15T17:53:11.300Z",
+      "outputIndex": 0,
+      "fixture": false,
+      "operation": {
+        "details": {
+          "modelId": "local:user:3f067a1b943cf162f2b8f8588f6cf5824bd5b4c7d1d88d87164b9ca123616549",
+          "prompt": "A red ball on a white tabletop, studio photograph",
+          "provenance": {
+            "addons": [],
+            "aspectRatio": "1:1",
+            "conditioningSources": [],
+            "device": "cuda",
+            "deviceLabel": "AMD Radeon RX 9070 (cuda:0)",
+            "deviceMemoryBytes": 17095983104,
+            "editConditioning": null,
+            "modelDigest": "3f067a1b943cf162f2b8f8588f6cf5824bd5b4c7d1d88d87164b9ca123616549",
+            "modelPolicy": "fast",
+            "modelRevision": "3f067a1b943cf162f2b8f8588f6cf5824bd5b4c7d1d88d87164b9ca123616549",
+            "negativePrompt": "",
+            "numInferenceSteps": 2,
+            "outputs": [
+              {
+                "branchId": "source",
+                "format": "png",
+                "index": 0,
+                "jpegBackground": "#ffffff",
+                "outputNodeId": "source",
+                "postProcessing": [],
+                "quality": 95,
+                "seed": 2609874878994472,
+                "sourceIndex": 0
+              }
+            ],
+            "packages": {
+              "accelerate": "1.14.0",
+              "bitsandbytes": "0.50.2",
+              "datasets": "5.0.1",
+              "diffusers": "0.41.0.dev0",
+              "ftfy": "6.3.1",
+              "gguf": "0.19.0",
+              "imageio-ffmpeg": "0.6.0",
+              "numpy": "2.5.2",
+              "opencv-python-headless": "4.13.0.92",
+              "peft": "0.19.1",
+              "pillow": "12.3.0",
+              "protobuf": "7.35.1",
+              "resvg_py": "0.5.0",
+              "safetensors": "0.8.0",
+              "scipy": "1.18.1",
+              "sentencepiece": "0.2.2",
+              "spandrel": "0.4.2",
+              "torch": "2.12.0+rocm7.14.0",
+              "torchvision": "0.27.0+rocm7.14.0",
+              "transformers": "5.17.0"
+            },
+            "performance": null,
+            "prompt": "A red ball on a white tabletop, studio photograph",
+            "requireChromaBackground": false,
+            "workerVersion": "media-diffusers-worker/1.112.0"
+          },
+          "seed": 2609874878994472
+        },
+        "iteration": 1,
+        "kind": "workflow",
+        "sourceNodeId": "source"
+      },
+      "sourceAssetIds": [],
+      "tags": []
+    },
+    "output": {
+      "id": "asset:71d537c8-1764-484f-a6b7-74f7827837f8:2",
+      "runId": "71d537c8-1764-484f-a6b7-74f7827837f8",
+      "digest": "ba6e3ea1593ba99e5bfb31469b7bed683e21e1c673161ab2c1a9f221001045a0",
+      "kind": "image",
+      "mimeType": "image/png",
+      "byteSize": 1535601,
+      "width": 1024,
+      "height": 1024,
+      "createdAt": "2026-10-15T17:53:29.814Z",
+      "outputIndex": 2,
+      "fixture": false,
+      "operation": {
+        "details": {
+          "finalOutput": true,
+          "operation": "output.asset",
+          "settings": {
+            "format": "png",
+            "outputCount": 1
+          }
+        },
+        "iteration": 1,
+        "kind": "workflow",
+        "sourceNodeId": "output"
+      },
+      "sourceAssetIds": [
+        "asset:71d537c8-1764-484f-a6b7-74f7827837f8:1"
+      ],
+      "tags": []
+    }
+  },
+  {
+    "kind": "video",
+    "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+    "model": "LTX-Video 0.9.8 2B Distilled FP8",
+    "seconds": 411.067,
+    "input": {
+      "id": "asset:b7c77688-bdd5-46b0-8edf-1e3787fdea0e:0",
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "digest": "866d179d050bcd4f8ab61a055e28a6ac6f49f5669819888daf400d4a1d255dfd",
+      "kind": "video",
+      "mimeType": "video/webm",
+      "byteSize": 2459695,
+      "width": 512,
+      "height": 512,
+      "createdAt": "2026-10-15T18:00:20.282Z",
+      "outputIndex": 0,
+      "fixture": false,
+      "operation": {
+        "details": {
+          "addons": [],
+          "fps": 8,
+          "modelId": "local:ltx-video-0.9.8-2b-distilled-fp8",
+          "modelRevision": "8984fa25007f376c1a299016d0957a37a2f797bb",
+          "numFrames": 17,
+          "performance": {
+            "blocksPerGroup": 4,
+            "computeDtype": "bfloat16",
+            "deviceMemoryBytes": 17095983104,
+            "diskCacheBytes": null,
+            "diskCacheFiles": null,
+            "diskCacheHit": null,
+            "diskCachePath": null,
+            "distilledTimesteps": [
+              1000,
+              993.7,
+              987.5,
+              981.1999999999999,
+              975,
+              909.4,
+              725,
+              421.9
+            ],
+            "effectiveMemoryProfile": "balanced",
+            "gpuMemory": {
+              "initialDeviceFreeBytes": 16937648128,
+              "initialDeviceTotalBytes": 17095983104,
+              "peakAllocatedBytes": 9689332736,
+              "peakReservedBytes": 9709813760,
+              "postReleaseAllocatedBytes": 79691776,
+              "postReleaseDeviceFreeBytes": 16641622016,
+              "postReleaseReservedBytes": 79691776,
+              "processIsolation": "one-generation-per-process",
+              "stagePeakAllocatedBytes": {
+                "vaeAndPostprocess": 9689332736
+              }
+            },
+            "offloadType": "block-level-cpu",
+            "physicalMemoryBytes": 33618337792,
+            "renderStrategy": "distilled-single-pass",
+            "requestedMemoryProfile": "auto",
+            "textEncoderDevice": "cuda",
+            "timingSeconds": {
+              "denoiseAndDecode": 77.365,
+              "modelLoadAndPrompt": 242.459,
+              "postprocessAndEncode": 4.764,
+              "release": 0.565,
+              "setupAndConditioning": 1.604,
+              "total": 326.757
+            },
+            "variant": "2b-distilled-fp8",
+            "weightStorageDtype": "float8_e4m3fn",
+            "windowsDiskOffloadCompatibility": false
+          },
+          "prompt": "A red ball rolls from left to right on a white tabletop, locked camera, clear motion",
+          "seed": 8963968511524361
+        },
+        "iteration": 1,
+        "kind": "workflow",
+        "sourceNodeId": "source"
+      },
+      "sourceAssetIds": [
+        "asset:71d537c8-1764-484f-a6b7-74f7827837f8:0",
+        "asset:71d537c8-1764-484f-a6b7-74f7827837f8:0"
+      ],
+      "tags": []
+    },
+    "output": {
+      "id": "asset:b7c77688-bdd5-46b0-8edf-1e3787fdea0e:2",
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "digest": "27ce4e70a932631942772e362f5178f8bae370d3dbfc6ac52e5b694ee333bcd0",
+      "kind": "video",
+      "mimeType": "video/webm",
+      "byteSize": 271966,
+      "width": 1024,
+      "height": 1024,
+      "createdAt": "2026-10-15T18:01:28.270Z",
+      "outputIndex": 2,
+      "fixture": false,
+      "operation": {
+        "details": {
+          "finalOutput": true
+        },
+        "iteration": 1,
+        "kind": "workflow",
+        "sourceNodeId": "output"
+      },
+      "sourceAssetIds": [
+        "asset:b7c77688-bdd5-46b0-8edf-1e3787fdea0e:1"
+      ],
+      "tags": []
+    }
+  }
+]

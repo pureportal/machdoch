@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "flowId": "media-flow-d765e379-d4ff-4bfc-a886-122d6f23f4c7",
+  "head": {
+    "schemaVersion": 1,
+    "flowId": "media-flow-d765e379-d4ff-4bfc-a886-122d6f23f4c7",
+    "name": "Create image",
+    "description": "Prompt-to-image recipe with explicit quality and output steps.",
+    "headRevisionId": "mfr-5e376690bcb747bcf5e4adae9111001d",
+    "headRevisionNumber": 1,
+    "createdAt": "2026-10-12T03:06:07.698Z",
+    "updatedAt": "2026-10-12T03:06:08.858Z",
+    "documentDigest": "sha256:7d43bfb90dcc3b6f161547235dd3523f56721645c2e5cfb3a7df9931d056f30f",
+    "executionDigest": "sha256:0714c050ccfa1f118ef1a1dd035b3fc693b427d2f126971069cfb99e04172419",
+    "layoutDigest": "sha256:1fe559097a984afc8d375e5787c5575e64ff5ab4f6e10516a084beb17a27aa10"
+  },
+  "revisions": [
+    {
+      "schemaVersion": 1,
+      "revisionId": "mfr-5e376690bcb747bcf5e4adae9111001d",
+      "flowId": "media-flow-d765e379-d4ff-4bfc-a886-122d6f23f4c7",
+      "revisionNumber": 1,
+      "parentRevisionId": null,
+      "createdAt": "2026-10-12T03:06:08.858Z",
+      "changeSummary": "Saved from Advanced",
+      "documentDigest": "sha256:7d43bfb90dcc3b6f161547235dd3523f56721645c2e5cfb3a7df9931d056f30f",
+      "executionDigest": "sha256:0714c050ccfa1f118ef1a1dd035b3fc693b427d2f126971069cfb99e04172419",
+      "layoutDigest": "sha256:1fe559097a984afc8d375e5787c5575e64ff5ab4f6e10516a084beb17a27aa10",
+      "nodeCount": 4,
+      "edgeCount": 3,
+      "isHead": true,
+      "flow": {
+        "schemaVersion": 1,
+        "id": "media-flow-d765e379-d4ff-4bfc-a886-122d6f23f4c7",
+        "name": "Create image",
+        "description": "Prompt-to-image recipe with explicit quality and output steps.",
+        "createdAt": "2026-10-12T03:06:07.698Z",
+        "updatedAt": "2026-10-12T03:06:07.698Z",
+        "variables": [],
+        "variableBindings": {},
+        "presets": [],
+        "activePresetId": null,
+        "nodes": [
+          {
+            "id": "prompt",
+            "type": "source.prompt",
+            "version": 1,
+            "label": "Creative brief",
+            "layer": "source",
+            "config": {
+              "prompt": "Editorial beach photograph of a 25-year-old adult woman with brown hair in a ponytail, wearing a pink, coral and white zigzag-patterned bikini, seated against a sunlit white stucco wall, resting one hand on the stone ground, looking toward the camera. Warm afternoon sunlight, natural skin texture, subtle film grain, realistic proportions, relaxed holiday setting, vertical composition."
+            }
+          },
+          {
+            "id": "seed",
+            "type": "source.seed",
+            "version": 1,
+            "label": "Seed",
+            "layer": "source",
+            "config": {
+              "seed": 41791
+            }
+          },
+          {
+            "id": "generate",
+            "type": "task.generate-image",
+            "version": 1,
+            "label": "Generate image",
+            "layer": "task",
+            "config": {
+              "aspectRatio": "4:5",
+              "guidanceScale": 0.5,
+              "memoryProfile": "auto",
+              "modelAddons": [],
+              "modelId": "local:user:3ec3c673d467e0832ad1324fafa8eed5cde9e9f2e250b399d07245e63c904191",
+              "modelPolicy": "quality",
+              "outputCount": 1,
+              "outputFormat": "png",
+              "poseEnd": 1,
+              "poseStart": 0,
+              "poseStrength": 1,
+              "providerPolicy": "auto",
+              "sampler": "flow-euler",
+              "svgAutoCrop": true,
+              "svgCandidateCount": 1,
+              "svgCriticEnabled": false,
+              "svgMode": "generate",
+              "svgStyle": "illustration",
+              "svgTargetSize": 1024,
+              "svgTextPolicy": "avoid",
+              "transparentBackground": false
+            }
+          },
+          {
+            "id": "asset-output",
+            "type": "output.asset",
+            "version": 1,
+            "label": "Save assets",
+            "layer": "output",
+            "config": {
+              "format": "png",
+              "outputCount": 1
+            }
+          }
+        ],
+        "edges": [
+          {
+            "id": "prompt-to-generate",
+            "fromNodeId": "prompt",
+            "fromPortId": "prompt",
+            "toNodeId": "generate",
+            "toPortId": "prompt"
+          },
+          {
+            "id": "seed-to-generate",
+            "fromNodeId": "seed",
+            "fromPortId": "seed",
+            "toNodeId": "generate",
+            "toPortId": "seed"
+          },
+          {
+            "id": "result-to-output",
+            "fromNodeId": "generate",
+            "fromPortId": "image",
+            "toNodeId": "asset-output",
+            "toPortId": "image"
+          }
+        ]
+      },
+      "layout": {
+        "schemaVersion": 1,
+        "flowId": "media-flow-d765e379-d4ff-4bfc-a886-122d6f23f4c7",
+        "nodes": [
+          {
+            "nodeId": "prompt",
+            "x": 52,
+            "y": 80
+          },
+          {
+            "nodeId": "seed",
+            "x": 52,
+            "y": 500
+          },
+          {
+            "nodeId": "generate",
+            "x": 412,
+            "y": 80
+          },
+          {
+            "nodeId": "asset-output",
+            "x": 772,
+            "y": 80
+          }
+        ],
+        "groups": [],
+        "comments": []
+      }
+    }
+  ]
+}

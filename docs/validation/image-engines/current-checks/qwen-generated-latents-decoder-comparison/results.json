@@ -1,0 +1,61 @@
+{
+  "model": "D:\\Models\\machdoch\\models\\packages\\user-5fc80891e28870d540fba30271ec02b4\\revisions\\5fc80891e28870d540fba30271ec02b4fe83e88acb3ae0e5f72bf1171ef63c1e",
+  "source": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-turbo-decoder-reruns\\01-qwen-image-2.1-turbo-reference-144599398\\decoder-latents.safetensors",
+  "sourceSha256": "a09b978880f9ef0302d0e5a82c2f1a153efa67d916ecb66d574e3993346b4f04",
+  "sourceKind": "generated-latents",
+  "dtype": "bfloat16",
+  "canvas": [
+    896,
+    1120
+  ],
+  "sameLatents": true,
+  "convolutionBackend": "native",
+  "device": "AMD Radeon RX 9070",
+  "records": [
+    {
+      "tile": 0,
+      "stride": null,
+      "seconds": 12.65599999999904,
+      "peakAllocatedBytes": 11262221824,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0,
+      "maxAbsoluteErrorAgainstFullFrame": 0.0,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-generated-latents-decoder-comparison\\tile-0.png"
+    },
+    {
+      "tile": 256,
+      "stride": 192,
+      "seconds": 1.4689999999973224,
+      "peakAllocatedBytes": 1460903424,
+      "meanAbsoluteErrorAgainstFullFrame": 0.010082595981657505,
+      "maxAbsoluteErrorAgainstFullFrame": 0.642578125,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-generated-latents-decoder-comparison\\tile-256.png"
+    },
+    {
+      "tile": 512,
+      "stride": 384,
+      "seconds": 1.2339999999967404,
+      "peakAllocatedBytes": 3517464064,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0035626450553536415,
+      "maxAbsoluteErrorAgainstFullFrame": 0.330078125,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-generated-latents-decoder-comparison\\tile-512.png"
+    },
+    {
+      "tile": 1024,
+      "stride": 768,
+      "seconds": 1.5469999999986612,
+      "peakAllocatedBytes": 10360872448,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0014894987689331174,
+      "maxAbsoluteErrorAgainstFullFrame": 0.2021484375,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-generated-latents-decoder-comparison\\tile-1024.png"
+    },
+    {
+      "tile": 1536,
+      "stride": 1152,
+      "seconds": 0.9690000000009604,
+      "peakAllocatedBytes": 11262221824,
+      "meanAbsoluteErrorAgainstFullFrame": 0.0,
+      "maxAbsoluteErrorAgainstFullFrame": 0.0,
+      "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\qwen-generated-latents-decoder-comparison\\tile-1536.png"
+    }
+  ]
+}

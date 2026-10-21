@@ -1,0 +1,499 @@
+{
+  "_id": "6717551f7892af397bb0c78c",
+  "id": "stabilityai/stable-diffusion-3.5-large-turbo",
+  "private": false,
+  "pipeline_tag": "text-to-image",
+  "library_name": "diffusers",
+  "tags": [
+    "diffusers",
+    "safetensors",
+    "text-to-image",
+    "stable-diffusion",
+    "en",
+    "arxiv:2403.03206",
+    "license:other",
+    "diffusers:StableDiffusion3Pipeline",
+    "region:us"
+  ],
+  "downloads": 5734,
+  "likes": 730,
+  "modelId": "stabilityai/stable-diffusion-3.5-large-turbo",
+  "author": "stabilityai",
+  "sha": "ec07796fc06b096cc56de9762974a28f4c632eda",
+  "lastModified": "2024-10-22T14:35:36.000Z",
+  "gated": "auto",
+  "disabled": false,
+  "model-index": null,
+  "config": {
+    "diffusers": {
+      "_class_name": "StableDiffusion3Pipeline"
+    }
+  },
+  "cardData": {
+    "license": "other",
+    "license_name": "stabilityai-ai-community",
+    "license_link": "LICENSE.md",
+    "tags": [
+      "text-to-image",
+      "stable-diffusion",
+      "diffusers"
+    ],
+    "inference": true,
+    "extra_gated_prompt": "By clicking \"Agree\", you agree to the [License Agreement](https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo/blob/main/LICENSE.md) and acknowledge Stability AI's [Privacy Policy](https://stability.ai/privacy-policy).",
+    "extra_gated_fields": {
+      "Name": "text",
+      "Email": "text",
+      "Country": "country",
+      "Organization or Affiliation": "text",
+      "Receive email updates and promotions on Stability AI products, services, and research?": {
+        "type": "select",
+        "options": [
+          "Yes",
+          "No"
+        ]
+      },
+      "What do you intend to use the model for?": {
+        "type": "select",
+        "options": [
+          "Research",
+          "Personal use",
+          "Creative Professional",
+          "Startup",
+          "Enterprise"
+        ]
+      },
+      "I agree to the License Agreement and acknowledge Stability AI's Privacy Policy": "checkbox"
+    },
+    "language": [
+      "en"
+    ],
+    "pipeline_tag": "text-to-image"
+  },
+  "siblings": [
+    {
+      "rfilename": ".gitattributes",
+      "blobId": "bb6c5ddb61c525a19f105f57ba3429f3d7d6fed2",
+      "size": 1582
+    },
+    {
+      "rfilename": "LICENSE.md",
+      "blobId": "b07f871a39b333819b9a986ac2dbb7f6fcb7a95e",
+      "size": 11726
+    },
+    {
+      "rfilename": "README.md",
+      "blobId": "73d74bc07ffa59ff9ea0dd2dfafd5712e07329c8",
+      "size": 10817
+    },
+    {
+      "rfilename": "SD3.5L_Turbo_example_workflow.json",
+      "blobId": "8a0b0d6269779e2efdcbe9684b31efaa652312ee",
+      "size": 11579
+    },
+    {
+      "rfilename": "mmdit.png",
+      "blobId": "6b47baaaf4a0ae3867d00a833b7225d0ebceb61e",
+      "size": 262061
+    },
+    {
+      "rfilename": "model_index.json",
+      "blobId": "d1e85db2887d95ee9e0f6206771a4c52f9233e2f",
+      "size": 706
+    },
+    {
+      "rfilename": "scheduler/scheduler_config.json",
+      "blobId": "eca5b2eed3727b3ad375eb20e467e4264120fd5d",
+      "size": 141
+    },
+    {
+      "rfilename": "sd3.5_large_turbo.safetensors",
+      "blobId": "04522a75630eb8712ce351e7403620e9dda51998",
+      "size": 16460374454,
+      "lfs": {
+        "sha256": "fb64610bf8d73eb064b8d528eef85d062bf2b4b1204ff7bc73e57ad28b24489c",
+        "size": 16460374454,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "sd3.5_large_turbo_demo.png",
+      "blobId": "8c3437fa9ab5ef70bc7a8002a44cb78bb3e62890",
+      "size": 15332695,
+      "lfs": {
+        "sha256": "1d3c462ffbb9b15af3cdb3e62d1a232ac81a6f1f1efa0e39cf32a6eba9cf0efc",
+        "size": 15332695,
+        "pointerSize": 133
+      }
+    },
+    {
+      "rfilename": "text_encoder/config.json",
+      "blobId": "dbda34b6008657d7be7423051c47abd4c94e263a",
+      "size": 574
+    },
+    {
+      "rfilename": "text_encoder/model.fp16.safetensors",
+      "blobId": "888b139f21181cd4ee4e93ce739ee63f26f2079c",
+      "size": 247323896,
+      "lfs": {
+        "sha256": "71e183d11db0c6b6282a4d9e0abb74125edc8692393e89ed8ee5571005f35cb1",
+        "size": 247323896,
+        "pointerSize": 134
+      }
+    },
+    {
+      "rfilename": "text_encoder/model.safetensors",
+      "blobId": "888b139f21181cd4ee4e93ce739ee63f26f2079c",
+      "size": 247323896,
+      "lfs": {
+        "sha256": "71e183d11db0c6b6282a4d9e0abb74125edc8692393e89ed8ee5571005f35cb1",
+        "size": 247323896,
+        "pointerSize": 134
+      }
+    },
+    {
+      "rfilename": "text_encoder_2/config.json",
+      "blobId": "35886d089e214b9e35db394d4d3d122a19baf231",
+      "size": 570
+    },
+    {
+      "rfilename": "text_encoder_2/model.fp16.safetensors",
+      "blobId": "1a41ba6f6d67ebaaea453978332a941d0bc5dae5",
+      "size": 1389382176,
+      "lfs": {
+        "sha256": "ec310df2af79c318e24d20511b601a591ca8cd4f1fce1d8dff822a356bcdb1f4",
+        "size": 1389382176,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder_2/model.safetensors",
+      "blobId": "1a41ba6f6d67ebaaea453978332a941d0bc5dae5",
+      "size": 1389382176,
+      "lfs": {
+        "sha256": "ec310df2af79c318e24d20511b601a591ca8cd4f1fce1d8dff822a356bcdb1f4",
+        "size": 1389382176,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder_3/config.json",
+      "blobId": "5f020057278e664f8d4875a172b8266a9707c249",
+      "size": 740
+    },
+    {
+      "rfilename": "text_encoder_3/model-00001-of-00002.safetensors",
+      "blobId": "821fab5489700b2759adf6279e66ae49ce977d12",
+      "size": 4994582104,
+      "lfs": {
+        "sha256": "4f2751ceeb2a96edd693e539dc5d6bba0b8d3814f49a9b3798403a0cec4b2e3d",
+        "size": 4994582104,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder_3/model-00002-of-00002.safetensors",
+      "blobId": "6a80301dd8f107a40fd7727de44c95dee84f6a7b",
+      "size": 4530066248,
+      "lfs": {
+        "sha256": "f63154532130422309532ff56f11945fbea8266c958e3133e8e5aef85c6293c7",
+        "size": 4530066248,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder_3/model.fp16-00001-of-00002.safetensors",
+      "blobId": "821fab5489700b2759adf6279e66ae49ce977d12",
+      "size": 4994582104,
+      "lfs": {
+        "sha256": "4f2751ceeb2a96edd693e539dc5d6bba0b8d3814f49a9b3798403a0cec4b2e3d",
+        "size": 4994582104,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder_3/model.fp16-00002-of-00002.safetensors",
+      "blobId": "6a80301dd8f107a40fd7727de44c95dee84f6a7b",
+      "size": 4530066248,
+      "lfs": {
+        "sha256": "f63154532130422309532ff56f11945fbea8266c958e3133e8e5aef85c6293c7",
+        "size": 4530066248,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoder_3/model.safetensors.index.fp16.json",
+      "blobId": "26fbacbb229da635a50237394681830c048fc371",
+      "size": 20980
+    },
+    {
+      "rfilename": "text_encoder_3/model.safetensors.index.json",
+      "blobId": "c8728bc3dca59d2616a2a594cbac3ddb9eb77d5b",
+      "size": 19885
+    },
+    {
+      "rfilename": "text_encoders/README.md",
+      "blobId": "10361bb01afae01826203baa800da32c3cc2d2f2",
+      "size": 636
+    },
+    {
+      "rfilename": "text_encoders/clip_g.safetensors",
+      "blobId": "1a41ba6f6d67ebaaea453978332a941d0bc5dae5",
+      "size": 1389382176,
+      "lfs": {
+        "sha256": "ec310df2af79c318e24d20511b601a591ca8cd4f1fce1d8dff822a356bcdb1f4",
+        "size": 1389382176,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoders/clip_l.safetensors",
+      "blobId": "e224fcda070dc105fd83c64ed2074f47a1b0ff7b",
+      "size": 246144152,
+      "lfs": {
+        "sha256": "660c6f5b1abae9dc498ac2d21e1347d2abdb0cf6c0c0c8576cd796491d9a6cdd",
+        "size": 246144152,
+        "pointerSize": 134
+      }
+    },
+    {
+      "rfilename": "text_encoders/t5xxl_fp16.safetensors",
+      "blobId": "53df2732c884758d2a898585551df37ea652a416",
+      "size": 9787841024,
+      "lfs": {
+        "sha256": "6e480b09fae049a72d2a8c5fbccb8d3e92febeb233bbe9dfe7256958a9167635",
+        "size": 9787841024,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "text_encoders/t5xxl_fp8_e4m3fn.safetensors",
+      "blobId": "79b9ebe64019308077904fa68ed6f707569121c0",
+      "size": 4893934904,
+      "lfs": {
+        "sha256": "7d330da4816157540d6bb7838bf63a0f02f573fc48ca4d8de34bb0cbfd514f09",
+        "size": 4893934904,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "tokenizer/merges.txt",
+      "blobId": "76e821f1b6f0a9709293c3b6b51ed90980b3166b",
+      "size": 524619
+    },
+    {
+      "rfilename": "tokenizer/special_tokens_map.json",
+      "blobId": "cf0682d6de72c1547f41b4f6d7c59f62deffef94",
+      "size": 588
+    },
+    {
+      "rfilename": "tokenizer/tokenizer_config.json",
+      "blobId": "180a4e1be2a7d0b38a44108d6f24f585f35147b1",
+      "size": 705
+    },
+    {
+      "rfilename": "tokenizer/vocab.json",
+      "blobId": "469be27c5c010538f845f518c4f5e8574c78f7c8",
+      "size": 1059962
+    },
+    {
+      "rfilename": "tokenizer_2/merges.txt",
+      "blobId": "76e821f1b6f0a9709293c3b6b51ed90980b3166b",
+      "size": 524619
+    },
+    {
+      "rfilename": "tokenizer_2/special_tokens_map.json",
+      "blobId": "b3b93aa8e7fd8552501067e63e04e2958298c2b2",
+      "size": 576
+    },
+    {
+      "rfilename": "tokenizer_2/tokenizer_config.json",
+      "blobId": "f4299b251265219ef1369503c04d837bd9528f0a",
+      "size": 856
+    },
+    {
+      "rfilename": "tokenizer_2/vocab.json",
+      "blobId": "469be27c5c010538f845f518c4f5e8574c78f7c8",
+      "size": 1059962
+    },
+    {
+      "rfilename": "tokenizer_3/special_tokens_map.json",
+      "blobId": "17ade346a1042cbe0c1436f5bedcbd85c099d582",
+      "size": 2543
+    },
+    {
+      "rfilename": "tokenizer_3/spiece.model",
+      "blobId": "317a5ccbde45300f5d1d970d4d449af2108b147e",
+      "size": 791656,
+      "lfs": {
+        "sha256": "d60acb128cf7b7f2536e8f38a5b18a05535c9e14c7a355904270e15b0945ea86",
+        "size": 791656,
+        "pointerSize": 131
+      }
+    },
+    {
+      "rfilename": "tokenizer_3/tokenizer.json",
+      "blobId": "6f055030106071d446e559644b285557a82fefd4",
+      "size": 2424035
+    },
+    {
+      "rfilename": "tokenizer_3/tokenizer_config.json",
+      "blobId": "15377e70a0e43e060a98bbc5cb6245664d906e6c",
+      "size": 20617
+    },
+    {
+      "rfilename": "transformer/config.json",
+      "blobId": "feda980c13a51d63beaa5074de3e03bbadb5b0ab",
+      "size": 397
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00001-of-00002.safetensors",
+      "blobId": "bfd46f6a40fe8a6a34b4428d60171047cd176056",
+      "size": 9985185992,
+      "lfs": {
+        "sha256": "1f5ce9ed17cd13d87fd61b4743ce046c1c114a422364542b7167121b147bc110",
+        "size": 9985185992,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model-00002-of-00002.safetensors",
+      "blobId": "8a266f70cd1b3eeafe32eeb6cb877ce440059472",
+      "size": 6307519304,
+      "lfs": {
+        "sha256": "34374d4c2ea0d26baf986094f485dec2161c3778cc57c5b9840cabd9a8f3839a",
+        "size": 6307519304,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "transformer/diffusion_pytorch_model.safetensors.index.json",
+      "blobId": "8b54a2ceceea4454cc015aa5f808cf31a179e75f",
+      "size": 126867
+    },
+    {
+      "rfilename": "vae/config.json",
+      "blobId": "059ae000f22d9c502030ead3c3f1db2718ae6f1f",
+      "size": 809
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.safetensors",
+      "blobId": "cf3d571cdbab14706c8d77c1254244e9a4d021f3",
+      "size": 167666902,
+      "lfs": {
+        "sha256": "8f53304a79335b55e13ec50f63e5157fee4deb2f30d5fae0654e2b2653c109dc",
+        "size": 167666902,
+        "pointerSize": 134
+      }
+    }
+  ],
+  "spaces": [
+    "Nymbo/Serverless-ImgGen-Hub",
+    "BoobyBoobs/Flux_Lustly_AI_Uncensored_NSFW_V1",
+    "stabilityai/stable-diffusion-3.5-large-turbo",
+    "Nymbo/Compare-6",
+    "multimodalart/civitai-to-hf",
+    "gokaygokay/SD3.5-with-Captioner",
+    "gokaygokay/SD3.5-Prompt-Generator",
+    "Novaciano/Flux_Lustly_AI_Uncensored_NSFW_V1",
+    "prs-eth/FLAIR",
+    "AlekseyCalvin/Stabled_LoRAs_on_SD3.5_MERGED",
+    "Abinivesh/Multi-models-prompt-to-image-generation",
+    "arad1367/Stable_Diffusion_3.5_Large_Customized",
+    "NativeAngels/Compare-6",
+    "Marhill/Flux_Lustly_AI_Uncensored_NSFW_V1",
+    "jainarham/trellis-3d-api",
+    "Parmist/strangerzonehf-Flux-Super-Realism-LoRA",
+    "weathon/VSF",
+    "MrDrmm/Gen2",
+    "vasilisklv/genai_story_creation_game",
+    "NativeAngels/Serverless-ImgGen-Hub",
+    "silveroxides/stable-diffusion-3.5-large-turbo",
+    "xiongmin1012/stabilityai-stable-diffusion-3.5-large-turbo",
+    "stabilityai/ReSWD",
+    "Madmaic/stabilityai-stable-diffusion-3.5-large-turbo",
+    "phamngoctukts/assistant",
+    "MrDrmm/Self",
+    "MrDrmm/Gen",
+    "AstroMash/Flux_Lustly_AI_Uncensored_NSFW_V1",
+    "nruto/rxple",
+    "TrashWitch/stabilityai-stable-diffusion-3.5-large-turbo",
+    "Funkybng/stabilityai-stable-diffusion-3.5-large-turbo",
+    "Nymbo/Model-Status-Checker",
+    "FradigmaDangerYT/stabilityai-stable-diffusion-large-turbo",
+    "ready4follower/stabilityai-stable-diffusion-3.5-large-turbo",
+    "MrDrmm/t2i-multi-demo",
+    "MrRokot/GENFLUX",
+    "greendra/Stable-Diffusion-3.5-Large-Serverless",
+    "Babyboy333/Flux_Lustly_AI_Uncensored_NSFW_V1",
+    "AiAF/Civ-2-HF",
+    "iYuri/PromptCine",
+    "Moebius-pizza/Serverless-ImgGen-Hub",
+    "samsammysammy/Serverless-ImgGen-Hub",
+    "Ihavemoney999/AKOsker-AI",
+    "PhelpsGG/stabilityai-stable-diffusion-3.5-large-turbo",
+    "domenicCarter/stable-diffusion-3.5-large-turbo",
+    "safdafsaf/stabilityai-stable-diffusion-3.5-large-turbo",
+    "Aryansoni27/stabilityai-stable-diffusion-3.5-large-turbo",
+    "atnerus/stabilityai-stable-diffusion-3.5-large-turbo",
+    "keshav6936/stabilityai-stable-diffusion-3.5-large-turbo",
+    "Lexar40/stabilityai-stable-diffusion-3.5-large-turbo",
+    "jameselee/stabilityai-stable-diffusion-3.5-large-turbo",
+    "dramoneaon/stable-diffusion-3.5-large-turbo",
+    "sombrecopie/stabilityai-stable-diffusion-3.5-large-turbo",
+    "ItoshiRae/stabilityai-stable-diffusion-3.5-large-turbo",
+    "mashasanwaifu/stabilityai-stable-diffusion-3.5-large-turbo",
+    "stablewaheed/stabilityai-stable-diffusion-3.5-large-turbo",
+    "mowanwan/IP-Adapter-FaceID-Demo",
+    "baiyang1111/stabilityai-stable-diffusion-3.5-large-turbo",
+    "skvsmdarman/stabilityai-stable-diffusion-3.5-large-turbo",
+    "Arnab9922/stabilityai-stable-diffusion-3.5-large-turbo",
+    "tinitales/tinytalesapi",
+    "zhaoyang01/stabilityai-stable-diffusion-3.5-large-turbo",
+    "Goi123/stabilityai-stable-diffusion-3.5-large-turbo",
+    "shawnchen0329/stabilityai-stable-diffusion-3.5-large-turbo",
+    "Alph4teK/stabilityai-stable-diffusion-3.5-large-turbo",
+    "nimcos/stabilityai-stable-diffusion-3.5-large-turbo",
+    "spark12x/SD3.5-Prompt-Generator",
+    "aisucksdix/stabilityai-stable-diffusion-3.5-large-turbo",
+    "cosmaan/stabilityai-stable-diffusion-3.5-large-turbo",
+    "anselm94/stable-diffusion-3.5-large-turbo",
+    "mosca312/stabilityai-stable-diffusion-3.5-large-turbo",
+    "leonchiu/stabilityai-stable-diffusion-3.5-large-turbo",
+    "JproCo/stabilityai-stable-diffusion-3.5-large-turbo",
+    "Serg4451D/stabilityai-stable-diffusion-3.5-large-turbo",
+    "Amanhij/stabilityai-stable-diffusion-3.5-large-turbo",
+    "Serg4451D/3.5-turbo",
+    "omer3290/stable-diffusion-3.5-large-turbo",
+    "NativeAngels/stable-diffusion-3.5-large-turbo",
+    "kooldark/Nhutuan_auto_img",
+    "FisheggAwaO/stabilityai-stable-diffusion-3.5-large-turbo",
+    "rushikeshnarule/stabilityai-stable-diffusion-3.5-large-turbo",
+    "VikasK293/stable-diffusion-3.5-large-turbo",
+    "BICORP/stabilityai-stable-diffusion-3.5-large-turbo",
+    "roshikhan301/stabilityai-stable-diffusion-3.5-large-turbo",
+    "roshikhan301/stabilityai-stable-diffusion-3.5-large",
+    "cyraweb/image",
+    "aakshkr10/stabilityai-stable-diffusion-3.5-large-turbo",
+    "ewqXiangYang/stabilityai-stable-diffusion-3.5-large-turbo",
+    "tahu321/saepul-id",
+    "xiongmin1012/stable-diffusion-3.5-large-turbo-cpu",
+    "superbearart/stabilityai-stable-diffusion-3.5-large-turbo",
+    "saliseabeali/stabilityai-stable-diffusion-3.5-large-turbo",
+    "GhostMash/stabilityai-stable-diffusion-3.5-large-turbo",
+    "cybermite/stable-diffusion-3.5-large-turbo",
+    "saumyashome/stabilityai-stable-diffusion-3.5-large-turbo",
+    "harsimran726/stabilityai-stable-diffusion-3.5-large-turbo",
+    "Yoki18S/stabilityai-stable-diffusion-3.5-large-turbo",
+    "saffysoftware/stabilityai-stable-diffusion-3.5-large-turbo",
+    "Vafelka-tag/stabilityai-stable-diffusion-3.5-large-turbo",
+    "RandomOnHuggingFace/DreamXL-Image"
+  ],
+  "createdAt": "2024-10-22T07:32:47.000Z",
+  "safetensors": {
+    "parameters": {
+      "BF16": 8146280768
+    },
+    "total": 8146280768
+  },
+  "usedStorage": 59027362128
+}

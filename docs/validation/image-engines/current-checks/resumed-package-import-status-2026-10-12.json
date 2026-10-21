@@ -1,0 +1,7 @@
+{
+  "processId": 31380,
+  "state": "failed",
+  "operations": [],
+  "previousImportProcessId": 33012,
+  "error": "The preserved import process exited without a complete test receipt after its original parent terminated. Reverification is required."
+}

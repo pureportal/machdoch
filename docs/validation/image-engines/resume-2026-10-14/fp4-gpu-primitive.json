@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "quantization": "fp4",
+  "device": "AMD Radeon RX 9070",
+  "shape": [
+    1,
+    64
+  ],
+  "finite": true
+}

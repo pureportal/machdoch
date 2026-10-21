@@ -1,0 +1,70 @@
+{
+  "comparisonScope": "Selected runtime source files",
+  "identical": true,
+  "records": [
+    {
+      "file": "diffusers/hooks/group_offloading.py",
+      "hashes": [
+        "eca3cb11d942c73bd524e7913f707dd13e26a8f65ab0b69c0fc8ec8b9945c386",
+        "eca3cb11d942c73bd524e7913f707dd13e26a8f65ab0b69c0fc8ec8b9945c386"
+      ],
+      "identical": true
+    },
+    {
+      "file": "diffusers/loaders/single_file_utils.py",
+      "hashes": [
+        "6f005899ba2d23b52a937d053f2494841f1e8261a64f7a26866ff829ef0f5149",
+        "6f005899ba2d23b52a937d053f2494841f1e8261a64f7a26866ff829ef0f5149"
+      ],
+      "identical": true
+    },
+    {
+      "file": "diffusers/models/transformers/transformer_qwenimage.py",
+      "hashes": [
+        "a87b7d2b987c5b04fbdcc2a8db86bcba355a454cc7eebac3304f19d1f0173967",
+        "a87b7d2b987c5b04fbdcc2a8db86bcba355a454cc7eebac3304f19d1f0173967"
+      ],
+      "identical": true
+    },
+    {
+      "file": "diffusers/quantizers/gguf/gguf_quantizer.py",
+      "hashes": [
+        "d271e00f58c59158b7428521157c3e8c1363c590e083154ce947f8b11e5caa84",
+        "d271e00f58c59158b7428521157c3e8c1363c590e083154ce947f8b11e5caa84"
+      ],
+      "identical": true
+    },
+    {
+      "file": "transformers/models/qwen2_5_vl/modeling_qwen2_5_vl.py",
+      "hashes": [
+        "507cb2c383ead0e0e22b16ec9c8af2eb82703843cd5849112715751d990ff15e",
+        "507cb2c383ead0e0e22b16ec9c8af2eb82703843cd5849112715751d990ff15e"
+      ],
+      "identical": true
+    },
+    {
+      "file": "transformers/models/t5/modeling_t5.py",
+      "hashes": [
+        "29bcef07c5350c2d044a697db5b87dbca90a9b9fa30eedb79f7122e6ce38f9f8",
+        "29bcef07c5350c2d044a697db5b87dbca90a9b9fa30eedb79f7122e6ce38f9f8"
+      ],
+      "identical": true
+    },
+    {
+      "file": "gguf/quants.py",
+      "hashes": [
+        "db403c3b2292d3f2c5cfef4109d4b5745f437b5599c7afc94d4b97feca7e9247",
+        "db403c3b2292d3f2c5cfef4109d4b5745f437b5599c7afc94d4b97feca7e9247"
+      ],
+      "identical": true
+    },
+    {
+      "file": "torch/_rocm_init.py",
+      "hashes": [
+        "09af48b9d0392bfa909e4cd082018824b66e557dc8d438674f2eeaed30536ebf",
+        "09af48b9d0392bfa909e4cd082018824b66e557dc8d438674f2eeaed30536ebf"
+      ],
+      "identical": true
+    }
+  ]
+}

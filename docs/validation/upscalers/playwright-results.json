@@ -1,0 +1,106 @@
+{
+  "runtime": "AMD Radeon RX 9070 (cuda:1)",
+  "results": [
+    {
+      "label": "ui-image-span-4x",
+      "runId": "a2c12a7b-1d40-49d3-a3a9-9d9671cbdb8e",
+      "asset": {
+        "id": "asset:a2c12a7b-1d40-49d3-a3a9-9d9671cbdb8e:1",
+        "runId": "a2c12a7b-1d40-49d3-a3a9-9d9671cbdb8e",
+        "digest": "2fbe71f4180d7c223b3794ea972fcb57361e5599b69b7396845ca3f97649e706",
+        "kind": "image",
+        "mimeType": "image/png",
+        "byteSize": 234141,
+        "width": 388,
+        "height": 580,
+        "createdAt": "2026-10-15T18:18:24.976Z",
+        "outputIndex": 1,
+        "fixture": false,
+        "operation": {
+          "details": {
+            "finalOutput": true,
+            "operation": "output.asset",
+            "settings": {
+              "format": "png",
+              "outputCount": 1
+            }
+          },
+          "iteration": 1,
+          "kind": "workflow",
+          "sourceNodeId": "output"
+        },
+        "sourceAssetIds": [
+          "asset:a2c12a7b-1d40-49d3-a3a9-9d9671cbdb8e:0"
+        ],
+        "tags": []
+      }
+    },
+    {
+      "label": "ui-video-realesrgan-2x",
+      "runId": "ae4fa0aa-f673-432e-b4c2-398c1692b356",
+      "asset": {
+        "id": "asset:ae4fa0aa-f673-432e-b4c2-398c1692b356:1",
+        "runId": "ae4fa0aa-f673-432e-b4c2-398c1692b356",
+        "digest": "5a2643bca293c2b8780f1997a65471b88638144c8c04066b605f57e69c8029d0",
+        "kind": "video",
+        "mimeType": "video/webm",
+        "byteSize": 29030,
+        "width": 192,
+        "height": 128,
+        "createdAt": "2026-10-15T18:18:41.195Z",
+        "outputIndex": 1,
+        "fixture": false,
+        "operation": {
+          "details": {
+            "finalOutput": true
+          },
+          "iteration": 1,
+          "kind": "workflow",
+          "sourceNodeId": "output"
+        },
+        "sourceAssetIds": [
+          "asset:ae4fa0aa-f673-432e-b4c2-398c1692b356:0"
+        ],
+        "tags": []
+      }
+    }
+  ],
+  "pageErrors": [],
+  "uploads": [],
+  "checks": [
+    "menu",
+    "image and video imports",
+    "tile validation",
+    "4x image",
+    "2x video",
+    "single final result",
+    "native exports",
+    "result context action",
+    "video playback",
+    "advanced flow",
+    "missing model recovery",
+    "running job cancellation",
+    "compact layout",
+    "generated image/video library context actions",
+    "native execution from Advanced canvas"
+  ],
+  "libraryContexts": [
+    {
+      "kind": "Videos",
+      "source": "Source · 192 × 128"
+    },
+    {
+      "kind": "Images",
+      "source": "Source · 388 × 580"
+    }
+  ],
+  "cancellation": {
+    "runId": "4a9d9dbc-ee9d-458a-90a9-983dca4b7ac7",
+    "status": "canceled",
+    "assets": 0
+  },
+  "advancedRun": {
+    "runId": "09fdd611-8c24-4a03-aa1c-12d5ad8075fc",
+    "status": "completed"
+  }
+}

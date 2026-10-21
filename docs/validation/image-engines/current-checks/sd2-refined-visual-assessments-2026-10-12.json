@@ -1,0 +1,56 @@
+[
+  {
+    "referenceUrl": "https://civitai.red/images/144655944",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\stable-diffusion-2-refined-six-reference-sweep\\01-stable-diffusion-2-reference-144655944\\images\\output-0000.png",
+    "referenceId": 144655944,
+    "referenceQualityVerdict": "below-reference",
+    "observations": "Clean anime linework, red hair, amber eyes, white shirt and tie; the reaching hand is absent and lighting is flatter than the reference.",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "sha256": "7984023b25ed8ec8a18ff70dba1e24418e3cb17aaa7615af293d1d067953d076"
+  },
+  {
+    "referenceUrl": "https://civitai.red/images/144697438",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\stable-diffusion-2-refined-six-reference-sweep\\02-stable-diffusion-2-reference-144697438\\images\\output-0000.png",
+    "referenceId": 144697438,
+    "referenceQualityVerdict": "below-reference",
+    "observations": "The foreground woman and ruined towers are restored, but the collapsed robot is absent; the open sky and simplified painted scene miss the reference density and palette.",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "sha256": "94fe163d180e700667a2385738869868cec82fe2ec01ddd4f74474dd408b1048"
+  },
+  {
+    "referenceUrl": "https://civitai.red/images/144594528",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\stable-diffusion-2-refined-six-reference-sweep\\03-stable-diffusion-2-reference-144594528\\images\\output-0000.png",
+    "referenceId": 144594528,
+    "referenceQualityVerdict": "below-reference",
+    "observations": "Detailed photograph with a blue blouse, white skirt and floral wall; malformed fingers, added sunglasses, staged posture and flatter light remain below the reference aesthetic.",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "sha256": "7b6771f4a563506d1dc4b8391de520320e2333e9c8eef2c1016c1c2819031b3d"
+  },
+  {
+    "referenceUrl": "https://civitai.red/images/145095967",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\stable-diffusion-2-refined-six-reference-sweep\\04-stable-diffusion-2-reference-145095967\\images\\output-0000.png",
+    "referenceId": 145095967,
+    "referenceQualityVerdict": "below-reference",
+    "observations": "Two separate photographic panels replace the requested transparent-torso double exposure; the blouse remains opaque and the composition is incorrect.",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "sha256": "47f4328eef602e6a3e7fa08edecdf9502431d511cc9582144d67213cb03ee121"
+  },
+  {
+    "referenceUrl": "https://civitai.red/images/144599398",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\stable-diffusion-2-refined-six-reference-sweep\\05-stable-diffusion-2-reference-144599398\\images\\output-0000.png",
+    "referenceId": 144599398,
+    "referenceQualityVerdict": "below-reference",
+    "observations": "Good hair, skin, sunlight and limestone texture, but an extra navel artifact and incorrect swimwear detail remain below the reference quality target.",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "sha256": "ffaf7e3a164f7e07c1e4b29e2c7c7ffd3fbb0ff30d18ca056758be94f39ea362"
+  },
+  {
+    "referenceUrl": "https://civitai.red/images/145177887",
+    "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\stable-diffusion-2-refined-six-reference-sweep\\06-stable-diffusion-2-reference-145177887\\images\\output-0000.png",
+    "referenceId": 145177887,
+    "referenceQualityVerdict": "below-reference",
+    "observations": "Painted child in a pale nightdress with convincing fabric texture; the exposed face, missing teddy and brighter room miss the reference horror mood.",
+    "workerVersion": "media-diffusers-worker/1.93.0",
+    "sha256": "cff04131ad38759d3ed761a9f053aa324e91c1e93e05fe2b5660fc33992dc5e7"
+  }
+]

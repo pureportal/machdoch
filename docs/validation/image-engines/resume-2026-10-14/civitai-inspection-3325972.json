@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "canDownload": true,
+  "canEnrich": true,
+  "resourceType": "Checkpoint",
+  "tags": [
+    "realistic",
+    "base model"
+  ],
+  "sampleImages": [
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b86d93b4-63c6-412c-926c-1046855928d1/original=true/142848151.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 8,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, highres, realistic, 1girl, ((from side)), lying, on bed, on stomach, solo, perfect face, detailed eyes, seducing viewer, screaming, good anatomy, large breasts, sexy body, incredibly detailed face and eyes, face close-up, white freckles, long hair, white hair, bangs, half-closed eyes, halo, colored skin, black lipstick, angel wings, multiple wings, naked, blue eyes, open mouth, orgasm face, modest look, seducing viewer, posing, sexy pose, solo, lift dress, large saggy boobs",
+        "negativePrompt": "worst quality, low quality, blurry, anatomical nonsense, text, watermark, signature, loli, child"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/bebe6d00-82b2-4633-941d-4ba36b4fafa6/original=true/142850603.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 2,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, highres, photorealistic picture, adult woman, dressed in a red sequin cocktail dress, one-shoulder design, (white fur palantine, fur cape, off shoulder), mini bag with gold accents. Shimmering red sequins, soft velvet texture, embossed leather bag, polished metal details. solo, female focus, looking at the viewer, petite, delicate features, sensual glare, medium breasts, perfect breasts, toned legs, narrow waist. Gentle head tilt, parted lips, seductive, green eyes, heavy makeup, black eyeshadow, mascara, dark lipstick, lush brown hair, (rose tattoo, shoulder tattoo, intricate details). sitting in a black velvet chair in a professional photo studio, sideway. dramatic lighting, subtle shadows, perfect hands",
+        "negativePrompt": "neg_realism512, worst quality, low quality, blurry, anatomical nonsense, text, watermark, signature, loli, child"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/af7d3a91-c474-43e6-944e-efd027c6bb13/original=true/142848169.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 4,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, highres, realistic, 1girl, solo, goth girl, very pale skin, white skin, eyeliner, eyeshadow, heavy makeup, looking at viewer, white hair, long hair, straight hair, seductive smile, black lipstick, pretty face, long hair, long sleeves, white shirt, black skirt, navel, sexy pose, wet clothes, see-through, black chocker, jewelry, leaning back, crossed arms, standing, brick wall, dark alley, night time, heavy-rain, rain, wet, cloudy, dark, water drop, blue theme, neon glow, blue",
+        "negativePrompt": "worst quality, low quality, blurry, anatomical nonsense, text, watermark, signature, loli, child"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/538a9e93-8931-426d-97b9-a0c66f1e2abe/original=true/142848168.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 2,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, highres, realistic, 1girl, solo, perfect body, mature female, cyberpunk, red bodysuit, holding weapon, gloves, handgun, skin tight, elbow gloves, pilot suit, looking to the side, holding gun, from side, brown background, white hair, science fiction, red gloves, gun, two-tone bodysuit, ass, yellow eyes, bodysuit, long hair, weapon, large breasts, standing, closed mouth, breasts, holding, underground ruins",
+        "negativePrompt": "worst quality, low quality, blurry, anatomical nonsense, text, watermark, signature, loli, child"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ffd32f4a-169c-4b92-a9cd-c2fa0be19e38/original=true/142848671.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 8,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, highres, Photorealistic, 1girl, solo, smug, (2b \\(nier:automata\\), alternative costume), (((red hair)), short hair):1.5, green eyes, dark red lipstick, elf ears, ear piercing, oni horns, black horns, large breasts, latex dress, black dress, cleavage, lace choker, naked shoulders, (shoulder tattoo, tribal tattoo), (elbow gloves), cowboy shot, face focus, three quarter view, looking at viewer, black background, simple background, volumetric lighting",
+        "negativePrompt": "neg_realism512, worst quality, low quality, blurry, anatomical nonsense, text, watermark, signature, loli, child"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7dffdff7-72e8-4e9a-b66f-981a4bd84261/original=true/142849351.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 4,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, highres, Photorealistic, (looking at viewer:1.1), gorgeous, hot, seductive, young woman, (eye contact:1.1), beautiful face, (detailed face:1.2), (excited:1.2) , hyper detailed, best quality, ultra high res, white hair, cosy house interior, photorealistic, high resolution, detailed, raw photo, 1girl, white wet see-trough swimsuit, (wet:1.2), floating long hair",
+        "negativePrompt": "neg_realism512, worst quality, low quality, blurry, anatomical nonsense, text, watermark, signature, loli, child"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/28361d1a-0fd9-471b-b347-d1a94081e002/original=true/142848175.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 8,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, highres, realistic, 1girl, solo, from behind, looking back, asian, glasses, (backpack, heart shaped backpack:1.1), white shirt, (translucent neon skirt), black thong underneath, (posing in front of graffiti tag mural art:1.1), smile, pigtails, neon thigh highs, big tits, eyeliner , forest nude, 25 years old gorgeous supermodel kpop show ass woman, soft lighting, subtle shadows,",
+        "negativePrompt": "worst quality, low quality, blurry, anatomical nonsense, text, watermark, signature, loli, child"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/befcb34e-4702-450d-8f5c-14fbd1606311/original=true/142848174.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 1,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, highres, realistic, 1girl, long hair, looking at viewer, blue eyes, blonde hair, long sleeves, upper body, flower, parted lips, looking back, from behind, armor, uniform, lips, petals, rose, wavy hair, shoulder armor, pink flower, pink rose",
+        "negativePrompt": "worst quality, low quality, blurry, anatomical nonsense, text, watermark, signature, loli, child"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/505eb419-eddd-4252-98a4-9cd18140477a/original=true/142849206.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 4,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, highres, focused subject, depth of field, shot from a low angle, dutch angle, from side, blush, horny, 1girl, mature female, long hair, red hair, perfect lips, thick thighs, wide hips, perfect lips, perfect breasts, white shirt, green blazer, grey pencil skirt, sitting on stools, bar, night , stockings, looking viewer , crossed legs, photoshoot, subtle shadows, soft lighting",
+        "negativePrompt": "neg_realism512, worst quality, low quality, blurry, anatomical nonsense, text, watermark, signature, loli, child"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f4c376e7-cca2-4b08-a64b-564a9253ac16/original=true/142848204.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 4,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, highres, realistic, 1girl, solo, blonde hair, blue eyes, parted bangs, sidelocks, elf, pointy ears, medium breasts, skinny, long hair, very long hair, black bodysuit, gold trims, cleavage, cleavage cutout, thigh straps, clothing cutout, gloves, holding blue glowing energy sword, sword guard stance, fighting stance, wind, night, city, three quarter view, looking at viewer, evil smile, dutch angle, beckoning",
+        "negativePrompt": "worst quality, low quality, blurry, anatomical nonsense, text, watermark, signature, loli, child"
+      }
+    }
+  ],
+  "blockingReason": null,
+  "reviewToken": "474940229605cc01c723c71f7bd5a8b6e43381a88efb44f72b23d50b7de7158d",
+  "observedAt": "2026-10-14T20:45:46.691Z",
+  "sourceUrl": "https://civitai.com/models/1490179?modelVersionId=3325972",
+  "air": "urn:air:sdxl:checkpoint:civitai:1490179@3325972",
+  "modelId": 1490179,
+  "versionId": 3325972,
+  "modelName": "UnNamedIXL - Realistic model - IllustriousXL V2.0 based",
+  "versionName": "V7",
+  "kind": null,
+  "baseModel": "Illustrious",
+  "suggestedArchitecture": "illustrious-xl",
+  "trainedWords": [
+    "realistic"
+  ],
+  "creator": "n_Arno",
+  "nsfw": false,
+  "poi": false,
+  "availability": "Public",
+  "status": "Published",
+  "file": {
+    "id": 3214390,
+    "name": "unnamedixlRealisticModel_v7.safetensors",
+    "byteSize": 6938040904,
+    "sha256": "5de851376608d77ac5fca529ba727897860d187ad66108dd15da3c800cbd1a2f",
+    "pickleScanResult": "Success",
+    "virusScanResult": "Success",
+    "scannedAt": "2026-09-15T11:54:21.107"
+  },
+  "licenseClaims": {
+    "allowNoCredit": true,
+    "allowCommercialUse": [
+      "RentCivit"
+    ],
+    "allowDerivatives": true,
+    "allowDifferentLicense": false
+  },
+  "warnings": [
+    "Civitai scan results and publisher metadata are external claims; the downloaded bytes are independently SHA-256 verified and inspected as safetensors before import.",
+    "The Civitai base-model label is an advisory compatibility hint, not proof that the add-on works with every fine-tuned checkpoint in that family.",
+    "Civitai publisher permissions are not automatically treated as a license. Review the publisher page and confirm your rights in the final import step."
+  ]
+}

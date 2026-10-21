@@ -1,0 +1,973 @@
+{
+  "checkedAt": "2026-10-13T04:25:01.750Z",
+  "passed": true,
+  "stagingDirectory": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current",
+  "runtimeFileCount": 119,
+  "historicalInventoryCount": 118,
+  "additionalDeclaredFiles": [
+    {
+      "source": "apps/client/src-tauri/python/fizgig/assets/h3_silu_temb_grid.safetensors",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\assets\\h3_silu_temb_grid.safetensors",
+      "bytes": 5510600,
+      "sourceSha256": "30eb3c2cc7fb6b470d9717ff840d359313ac27cd64b705e32da1baa10f72d6a8",
+      "stagedSha256": "30eb3c2cc7fb6b470d9717ff840d359313ac27cd64b705e32da1baa10f72d6a8",
+      "matches": true
+    }
+  ],
+  "nativeBinaryVerified": false,
+  "completeDesktopDistribution": false,
+  "inventory": [
+    {
+      "source": "apps/client/src-tauri/python/local_speech_worker.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\local_speech_worker.py",
+      "bytes": 3075,
+      "sourceSha256": "2480233d706ede1f531624c7ee5832988f011b1907bddb901b8fe7fd3636c089",
+      "stagedSha256": "2480233d706ede1f531624c7ee5832988f011b1907bddb901b8fe7fd3636c089",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_diffusers_worker.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_diffusers_worker.py",
+      "bytes": 397631,
+      "sourceSha256": "74174ca619570839c831fa810066556cf2de71b2e784e8ec69a50ac5e4516de9",
+      "stagedSha256": "74174ca619570839c831fa810066556cf2de71b2e784e8ec69a50ac5e4516de9",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_open_models.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_open_models.py",
+      "bytes": 9295,
+      "sourceSha256": "51804567139741314b862140c3c28b5ddc2175fc7e6118ac96dbb629fd42ee83",
+      "stagedSha256": "51804567139741314b862140c3c28b5ddc2175fc7e6118ac96dbb629fd42ee83",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_image_sampling.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_image_sampling.py",
+      "bytes": 2372,
+      "sourceSha256": "4736e662395901f701973d697c06062a4042089d157f6d29574be5f987d3da21",
+      "stagedSha256": "4736e662395901f701973d697c06062a4042089d157f6d29574be5f987d3da21",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_sdxl_conditioning.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_sdxl_conditioning.py",
+      "bytes": 2187,
+      "sourceSha256": "f1f0eee940b7be155c6b01c1bd2b476cdcd663b72c7067325c673b97274193ee",
+      "stagedSha256": "f1f0eee940b7be155c6b01c1bd2b476cdcd663b72c7067325c673b97274193ee",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_sd_conditioning.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_sd_conditioning.py",
+      "bytes": 1246,
+      "sourceSha256": "790b3a1dc0e19fd2bdc66995cf6e7d39e79a0fc38da503df103e7cf9ea1e2fd0",
+      "stagedSha256": "790b3a1dc0e19fd2bdc66995cf6e7d39e79a0fc38da503df103e7cf9ea1e2fd0",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_clip_windows.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_clip_windows.py",
+      "bytes": 821,
+      "sourceSha256": "0eca1fd54edcecd010666d90b0850f45f9a3bfea7c05de6a2a1d673e69209ac0",
+      "stagedSha256": "0eca1fd54edcecd010666d90b0850f45f9a3bfea7c05de6a2a1d673e69209ac0",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_qwen_quantization.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_qwen_quantization.py",
+      "bytes": 1240,
+      "sourceSha256": "a04f0f97ff28a05a2ca3e2637adb2416201357d118a926827f0b827b5fbff505",
+      "stagedSha256": "a04f0f97ff28a05a2ca3e2637adb2416201357d118a926827f0b827b5fbff505",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/LICENSE-gguf.txt",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\LICENSE-gguf.txt",
+      "bytes": 1072,
+      "sourceSha256": "ef78c7e6659e34c798194f0d344e807c722de70cbca1359ef54772661e11ca38",
+      "stagedSha256": "ef78c7e6659e34c798194f0d344e807c722de70cbca1359ef54772661e11ca38",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_krea_quantization.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_krea_quantization.py",
+      "bytes": 2786,
+      "sourceSha256": "e183acb61364e203daa83d961700a96ac5a2e4389e8b32f4319839f15298f0ba",
+      "stagedSha256": "e183acb61364e203daa83d961700a96ac5a2e4389e8b32f4319839f15298f0ba",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_krea_cache.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_krea_cache.py",
+      "bytes": 976,
+      "sourceSha256": "28dd75c0a4d189152e0e7ac8cec382c802ccd6d89bc15c8b3d23dc1cc57e61a6",
+      "stagedSha256": "28dd75c0a4d189152e0e7ac8cec382c802ccd6d89bc15c8b3d23dc1cc57e61a6",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_hunyuan_image3.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_hunyuan_image3.py",
+      "bytes": 3128,
+      "sourceSha256": "1a36d21fbb32d9f6e9f05ba40548fd2c3c004d7bd75edfdfebfe1bba14f945e3",
+      "stagedSha256": "1a36d21fbb32d9f6e9f05ba40548fd2c3c004d7bd75edfdfebfe1bba14f945e3",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/image_sampling_profiles.json",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\image_sampling_profiles.json",
+      "bytes": 8422,
+      "sourceSha256": "8ba0b0c4e78f7d18415c8aa1d6cd771f8dad6a5cf94752c051fe20a4f99ef0cf",
+      "stagedSha256": "8ba0b0c4e78f7d18415c8aa1d6cd771f8dad6a5cf94752c051fe20a4f99ef0cf",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_sdxl_distillation.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_sdxl_distillation.py",
+      "bytes": 4134,
+      "sourceSha256": "b9f5aacf7e32d71cecae3d8c8ea273fb2aa635a0369d0b1beb9605db94df03ad",
+      "stagedSha256": "b9f5aacf7e32d71cecae3d8c8ea273fb2aa635a0369d0b1beb9605db94df03ad",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_student_checkpoints.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_student_checkpoints.py",
+      "bytes": 986,
+      "sourceSha256": "8e6ce96bbdd9ee23bd2c9794a58e81e93f0d0dacc462e692d926d57ec82e6e46",
+      "stagedSha256": "8e6ce96bbdd9ee23bd2c9794a58e81e93f0d0dacc462e692d926d57ec82e6e46",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_open_video.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_open_video.py",
+      "bytes": 14378,
+      "sourceSha256": "71c1288688f6d1eb7d5d790a99e2f16f149a00e26852f2d8cfef3ad2fb11764a",
+      "stagedSha256": "71c1288688f6d1eb7d5d790a99e2f16f149a00e26852f2d8cfef3ad2fb11764a",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_h3_distillation.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_h3_distillation.py",
+      "bytes": 6615,
+      "sourceSha256": "fd09805809cc1b356f9acf7484690e60642eb3ab8765d48fb1d837d1df1b0f44",
+      "stagedSha256": "fd09805809cc1b356f9acf7484690e60642eb3ab8765d48fb1d837d1df1b0f44",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_h3_geometry.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_h3_geometry.py",
+      "bytes": 5339,
+      "sourceSha256": "187075d7d765ed7a0021e50aff52c2d66823aadde66c811ce84c12fa9b26ec9a",
+      "stagedSha256": "187075d7d765ed7a0021e50aff52c2d66823aadde66c811ce84c12fa9b26ec9a",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_h3_sampling.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_h3_sampling.py",
+      "bytes": 5300,
+      "sourceSha256": "3cf82aa060bf48e0a4ed0d25c2166f5af0771b6a0ad7ac56932c7fec8cc49683",
+      "stagedSha256": "3cf82aa060bf48e0a4ed0d25c2166f5af0771b6a0ad7ac56932c7fec8cc49683",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_h3_adapters.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_h3_adapters.py",
+      "bytes": 3607,
+      "sourceSha256": "94958927709b09bfcaa04fc9467ee1614a58918bb3474b0f7d1783fc4fc74726",
+      "stagedSha256": "94958927709b09bfcaa04fc9467ee1614a58918bb3474b0f7d1783fc4fc74726",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/LICENSE-DMAD.txt",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\LICENSE-DMAD.txt",
+      "bytes": 11358,
+      "sourceSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "stagedSha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/NOTICE-DMAD.txt",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\NOTICE-DMAD.txt",
+      "bytes": 877,
+      "sourceSha256": "c64c1094a44aa33b305e42340b0bbc16a2ffd86390bd0c3f742bb2db642d51aa",
+      "stagedSha256": "c64c1094a44aa33b305e42340b0bbc16a2ffd86390bd0c3f742bb2db642d51aa",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_ltx_loading.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_ltx_loading.py",
+      "bytes": 2975,
+      "sourceSha256": "74178b1ef9835e5977442175dac6acb60b4234396eb33edd2f427180e4e53912",
+      "stagedSha256": "74178b1ef9835e5977442175dac6acb60b4234396eb33edd2f427180e4e53912",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_audio.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_audio.py",
+      "bytes": 5413,
+      "sourceSha256": "b15432236c52143aa2bf4c064dc8331e1b567e2ca79ad29cf6fa6e7b122a669d",
+      "stagedSha256": "b15432236c52143aa2bf4c064dc8331e1b567e2ca79ad29cf6fa6e7b122a669d",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/open_media_models.json",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\open_media_models.json",
+      "bytes": 33376,
+      "sourceSha256": "0851a4771c347d132f102c30a3ceaf9108170fac6267f75c8c4c1f4267eab59a",
+      "stagedSha256": "0851a4771c347d132f102c30a3ceaf9108170fac6267f75c8c4c1f4267eab59a",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_minimax_h3.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_minimax_h3.py",
+      "bytes": 11043,
+      "sourceSha256": "a3e16352b31692e3751d62ead2f9101404fb368eb614de1d8fa530a0ee98c56e",
+      "stagedSha256": "a3e16352b31692e3751d62ead2f9101404fb368eb614de1d8fa530a0ee98c56e",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_refmods.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_refmods.py",
+      "bytes": 22652,
+      "sourceSha256": "89e4dc878018f388f0135d8564d042af892670319628b00f996e2b8899cea8ca",
+      "stagedSha256": "89e4dc878018f388f0135d8564d042af892670319628b00f996e2b8899cea8ca",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_refmod_models.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_refmod_models.py",
+      "bytes": 920,
+      "sourceSha256": "17133c0b58121b8f36bc701ae6a1ff847646f5ca93da2bdc36a309354911b705",
+      "stagedSha256": "17133c0b58121b8f36bc701ae6a1ff847646f5ca93da2bdc36a309354911b705",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_refmod_creation.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_refmod_creation.py",
+      "bytes": 11238,
+      "sourceSha256": "b4d7aa42ff9110d23b6069b88ca356b8ffbb970a8ac863e8e6727b7e3cae606d",
+      "stagedSha256": "b4d7aa42ff9110d23b6069b88ca356b8ffbb970a8ac863e8e6727b7e3cae606d",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_refmod_conditioning.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_refmod_conditioning.py",
+      "bytes": 2507,
+      "sourceSha256": "e957c4b4a98861d810afcb5e02fb6174c9bed6543458d68170d006658d07a62f",
+      "stagedSha256": "e957c4b4a98861d810afcb5e02fb6174c9bed6543458d68170d006658d07a62f",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_refmod_preview.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_refmod_preview.py",
+      "bytes": 3356,
+      "sourceSha256": "e2aec8744afdcd5ef253c95cadc7917f413c98ed25b8f3e57060a9ed04462106",
+      "stagedSha256": "e2aec8744afdcd5ef253c95cadc7917f413c98ed25b8f3e57060a9ed04462106",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/LICENSE-RefMod-MIT.txt",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\LICENSE-RefMod-MIT.txt",
+      "bytes": 1077,
+      "sourceSha256": "ebcb7e4282e799ab880126d4d7523dfe7b3fa1ec6f457156a2e8ad6fbeea7113",
+      "stagedSha256": "ebcb7e4282e799ab880126d4d7523dfe7b3fa1ec6f457156a2e8ad6fbeea7113",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/LICENSE-H3-PromptBuilder-MIT.txt",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\LICENSE-H3-PromptBuilder-MIT.txt",
+      "bytes": 1068,
+      "sourceSha256": "19cb889133b1980bcd71089c0caebbe453602b145ff3bcd3e8cbe623ff1ab0ad",
+      "stagedSha256": "19cb889133b1980bcd71089c0caebbe453602b145ff3bcd3e8cbe623ff1ab0ad",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/NOTICE-RefMod.txt",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\NOTICE-RefMod.txt",
+      "bytes": 3136,
+      "sourceSha256": "0f3df65e6135cf4c9a697cf730ed1915559e2822f3a0b1559784a5c6f17c111d",
+      "stagedSha256": "0f3df65e6135cf4c9a697cf730ed1915559e2822f3a0b1559784a5c6f17c111d",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/assets/h3_silu_temb_grid.safetensors",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\assets\\h3_silu_temb_grid.safetensors",
+      "bytes": 5510600,
+      "sourceSha256": "30eb3c2cc7fb6b470d9717ff840d359313ac27cd64b705e32da1baa10f72d6a8",
+      "stagedSha256": "30eb3c2cc7fb6b470d9717ff840d359313ac27cd64b705e32da1baa10f72d6a8",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/krea2/device_utils.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\krea2\\device_utils.py",
+      "bytes": 809,
+      "sourceSha256": "adc88f223ffd5920b89d8df6141467483d798705a4d743c54397797808218f80",
+      "stagedSha256": "adc88f223ffd5920b89d8df6141467483d798705a4d743c54397797808218f80",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/krea2/safetensors_utils.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\krea2\\safetensors_utils.py",
+      "bytes": 33110,
+      "sourceSha256": "f955c57b519e28c848cddb59f13c18faae03f1be34439373acb451f27eb91458",
+      "stagedSha256": "f955c57b519e28c848cddb59f13c18faae03f1be34439373acb451f27eb91458",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/krea2/__init__.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\krea2\\__init__.py",
+      "bytes": 182,
+      "sourceSha256": "68fe6c50e6cee63b66ec6bc9d502a4f172f5662d6c08d4336e911902f37e1ed2",
+      "stagedSha256": "68fe6c50e6cee63b66ec6bc9d502a4f172f5662d6c08d4336e911902f37e1ed2",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/audio_vae.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\audio_vae.py",
+      "bytes": 4508,
+      "sourceSha256": "ac22cf022d0ed200fc50c81981391acdb804e7bef6c24d7ab5829cf8f563799b",
+      "stagedSha256": "ac22cf022d0ed200fc50c81981391acdb804e7bef6c24d7ab5829cf8f563799b",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/convrot.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\convrot.py",
+      "bytes": 16272,
+      "sourceSha256": "31d0153dc557a2ecc34a6b385b51c97ab41ba3c7eb52c4ff79ef91b6c152e251",
+      "stagedSha256": "31d0153dc557a2ecc34a6b385b51c97ab41ba3c7eb52c4ff79ef91b6c152e251",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/convrot_w8a16_backward_triton.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\convrot_w8a16_backward_triton.py",
+      "bytes": 7306,
+      "sourceSha256": "ac5af5a85c28c367d074b10268dbc3dfb327221f51f305b12bdb9fc089db879b",
+      "stagedSha256": "ac5af5a85c28c367d074b10268dbc3dfb327221f51f305b12bdb9fc089db879b",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/convrot_w8a16_triton.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\convrot_w8a16_triton.py",
+      "bytes": 7738,
+      "sourceSha256": "e974c46126542c765bdd4182ecfd963a30885dd532774c22c7a1f806d9585d92",
+      "stagedSha256": "e974c46126542c765bdd4182ecfd963a30885dd532774c22c7a1f806d9585d92",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/embedder.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\embedder.py",
+      "bytes": 59723,
+      "sourceSha256": "0340e63d5415c64b82bddc2d955266395d2b5d4d36f5390433241736f54ed688",
+      "stagedSha256": "0340e63d5415c64b82bddc2d955266395d2b5d4d36f5390433241736f54ed688",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/h3_h2d_offload.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\h3_h2d_offload.py",
+      "bytes": 16892,
+      "sourceSha256": "c4334e5bf85cf34cd93c9986250deaabee52b412ec977f1e771cdbbbd31c73a5",
+      "stagedSha256": "c4334e5bf85cf34cd93c9986250deaabee52b412ec977f1e771cdbbbd31c73a5",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/loader.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\loader.py",
+      "bytes": 20039,
+      "sourceSha256": "dbe5b46e401cddf0d5ec99bca7b1c0c96731f6c286e6d439652e2e5e66928273",
+      "stagedSha256": "dbe5b46e401cddf0d5ec99bca7b1c0c96731f6c286e6d439652e2e5e66928273",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/model.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\model.py",
+      "bytes": 68037,
+      "sourceSha256": "00792978b3c050dc7132752aed0ac12e562fa70b75b967a5e4579f3c42b55a80",
+      "stagedSha256": "00792978b3c050dc7132752aed0ac12e562fa70b75b967a5e4579f3c42b55a80",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/reference.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\reference.py",
+      "bytes": 5207,
+      "sourceSha256": "09100858ecb1887635eb9d0f6d513d7ad616551e154d3dee1e82574f88e8d5a6",
+      "stagedSha256": "09100858ecb1887635eb9d0f6d513d7ad616551e154d3dee1e82574f88e8d5a6",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/sampling.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\sampling.py",
+      "bytes": 26238,
+      "sourceSha256": "044fb4f486c73945509bb0a5748628cba5f81e7f5f8ef908bf4171cedb43f75b",
+      "stagedSha256": "044fb4f486c73945509bb0a5748628cba5f81e7f5f8ef908bf4171cedb43f75b",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/test_embedder_cache.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\test_embedder_cache.py",
+      "bytes": 2404,
+      "sourceSha256": "3786920796f3d15f7ec55fe9113853b3f38823d99f8cb152694db2bd057878f6",
+      "stagedSha256": "3786920796f3d15f7ec55fe9113853b3f38823d99f8cb152694db2bd057878f6",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/test_loader_contracts.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\test_loader_contracts.py",
+      "bytes": 2130,
+      "sourceSha256": "4e00fbe19cd2f921396287d1bbc1bbc0d568005e762820e9d4413faf72d11b0c",
+      "stagedSha256": "4e00fbe19cd2f921396287d1bbc1bbc0d568005e762820e9d4413faf72d11b0c",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/test_reference_contracts.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\test_reference_contracts.py",
+      "bytes": 1323,
+      "sourceSha256": "817e9aa2eed1aa0ec123c56987f1e427a564fc36d41a2d739629066c12990cf3",
+      "stagedSha256": "817e9aa2eed1aa0ec123c56987f1e427a564fc36d41a2d739629066c12990cf3",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/test_sampling_contracts.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\test_sampling_contracts.py",
+      "bytes": 881,
+      "sourceSha256": "1eb5d2a1e3aeb3a367ff8baeba35a5841943be1c43ed692daac9a56d710b0639",
+      "stagedSha256": "1eb5d2a1e3aeb3a367ff8baeba35a5841943be1c43ed692daac9a56d710b0639",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/trainer.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\trainer.py",
+      "bytes": 349739,
+      "sourceSha256": "6031a5d520cef086be1be2f33e05f7f0d6cc54e32d955f2f19028d5832418ade",
+      "stagedSha256": "6031a5d520cef086be1be2f33e05f7f0d6cc54e32d955f2f19028d5832418ade",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/vae.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\vae.py",
+      "bytes": 4359,
+      "sourceSha256": "a1c0dc2d0adb5469446c1a34038e88c88876cd7aa705da554b3b2416b348dc01",
+      "stagedSha256": "a1c0dc2d0adb5469446c1a34038e88c88876cd7aa705da554b3b2416b348dc01",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/video_vae_checkpoint.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\video_vae_checkpoint.py",
+      "bytes": 5801,
+      "sourceSha256": "fc8a630c1c4c51c13621ddccf38dfe1b8b7b0685ad10c4d8b56d38df5a53b205",
+      "stagedSha256": "fc8a630c1c4c51c13621ddccf38dfe1b8b7b0685ad10c4d8b56d38df5a53b205",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/minimax/__init__.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\minimax\\__init__.py",
+      "bytes": 584,
+      "sourceSha256": "ea041ce5eaf175f185b40f159493489ca070845afa452757c9fc3f1880bd165f",
+      "stagedSha256": "ea041ce5eaf175f185b40f159493489ca070845afa452757c9fc3f1880bd165f",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/networks/lora.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\networks\\lora.py",
+      "bytes": 96004,
+      "sourceSha256": "6884de59fff8a68607bb328981acead649afba9e65f620b824b0f7d22e908f53",
+      "stagedSha256": "6884de59fff8a68607bb328981acead649afba9e65f620b824b0f7d22e908f53",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/networks/__init__.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\networks\\__init__.py",
+      "bytes": 0,
+      "sourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stagedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/training/ema.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\training\\ema.py",
+      "bytes": 4240,
+      "sourceSha256": "32d578767894137dc2fff066575d0f59819eac342f4f57e5bfd211c6f62168a1",
+      "stagedSha256": "32d578767894137dc2fff066575d0f59819eac342f4f57e5bfd211c6f62168a1",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/training/metadata.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\training\\metadata.py",
+      "bytes": 12348,
+      "sourceSha256": "189a511013c10ce6a1f03a0f4893b117231daa8fb3d80055680d5c21abe952d2",
+      "stagedSha256": "189a511013c10ce6a1f03a0f4893b117231daa8fb3d80055680d5c21abe952d2",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/training/optimizers.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\training\\optimizers.py",
+      "bytes": 8982,
+      "sourceSha256": "3ffaae0f312a37a076de9df2a9fbd5de321e8404fca80b81ff435a16d866bfda",
+      "stagedSha256": "3ffaae0f312a37a076de9df2a9fbd5de321e8404fca80b81ff435a16d866bfda",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/training/train_utils.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\training\\train_utils.py",
+      "bytes": 2343,
+      "sourceSha256": "41be4d5decd3621f77ba747e979e52bbcefcf9fe1288d05fce65f119ff89e059",
+      "stagedSha256": "41be4d5decd3621f77ba747e979e52bbcefcf9fe1288d05fce65f119ff89e059",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/training/__init__.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\training\\__init__.py",
+      "bytes": 0,
+      "sourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stagedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/utils/capabilities.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\utils\\capabilities.py",
+      "bytes": 3263,
+      "sourceSha256": "1545a1f65f16516b9cb681ecae5f0859e34bf6882fe8fa7161196c4d756a6753",
+      "stagedSha256": "1545a1f65f16516b9cb681ecae5f0859e34bf6882fe8fa7161196c4d756a6753",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/utils/device.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\utils\\device.py",
+      "bytes": 20631,
+      "sourceSha256": "c6598357bd7678bf30d714f95519dfff6a78a59dcd2504491eecfa214ba39cdd",
+      "stagedSha256": "c6598357bd7678bf30d714f95519dfff6a78a59dcd2504491eecfa214ba39cdd",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/utils/safetensors.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\utils\\safetensors.py",
+      "bytes": 19811,
+      "sourceSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+      "stagedSha256": "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/utils/__init__.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\utils\\__init__.py",
+      "bytes": 0,
+      "sourceSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stagedSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/fizgig/__init__.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\fizgig\\__init__.py",
+      "bytes": 84,
+      "sourceSha256": "8217332971cb04593220e81f0f7e719a008e0466c3f176cc086f44efc5c394d3",
+      "stagedSha256": "8217332971cb04593220e81f0f7e719a008e0466c3f176cc086f44efc5c394d3",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/LICENSE-fizgig.txt",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\LICENSE-fizgig.txt",
+      "bytes": 11542,
+      "sourceSha256": "4d16df2546fd73333cdc8d5556427447455dd774bacc740b716915fbdd3d1cbe",
+      "stagedSha256": "4d16df2546fd73333cdc8d5556427447455dd774bacc740b716915fbdd3d1cbe",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/THIRD_PARTY_NOTICES-fizgig.md",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\THIRD_PARTY_NOTICES-fizgig.md",
+      "bytes": 7051,
+      "sourceSha256": "0e90a48b54de4c46884170e9c16e8d2361297809dcf2ea8923705766bad6f781",
+      "stagedSha256": "0e90a48b54de4c46884170e9c16e8d2361297809dcf2ea8923705766bad6f781",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_training.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_training.py",
+      "bytes": 5763,
+      "sourceSha256": "5fdb00b3308e80ef6ba09c7226b30264e22f5efe28024de70ea7fc3477204dea",
+      "stagedSha256": "5fdb00b3308e80ef6ba09c7226b30264e22f5efe28024de70ea7fc3477204dea",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_diffusion_training.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_diffusion_training.py",
+      "bytes": 9497,
+      "sourceSha256": "835d36a8a66976255b129af0005cbac6cdf6fd83471cdd4d2e8a227d1db7c183",
+      "stagedSha256": "835d36a8a66976255b129af0005cbac6cdf6fd83471cdd4d2e8a227d1db7c183",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_flow_training.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_flow_training.py",
+      "bytes": 16995,
+      "sourceSha256": "51cbd688ff7020b04284333fff7db94282762a308becc836edfb3ed3841fdad6",
+      "stagedSha256": "51cbd688ff7020b04284333fff7db94282762a308becc836edfb3ed3841fdad6",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_flow_training_data.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_flow_training_data.py",
+      "bytes": 5829,
+      "sourceSha256": "011c5f8b29ffeae01734fe527e0bfbe919afaa827ae6c289a0e97130d8c3dbd9",
+      "stagedSha256": "011c5f8b29ffeae01734fe527e0bfbe919afaa827ae6c289a0e97130d8c3dbd9",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_training_loop.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_training_loop.py",
+      "bytes": 5434,
+      "sourceSha256": "492cee6b3a06c84bbcda6d972796a15301378370ae72e79eead446a05f4e2f44",
+      "stagedSha256": "492cee6b3a06c84bbcda6d972796a15301378370ae72e79eead446a05f4e2f44",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_training_options.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_training_options.py",
+      "bytes": 2837,
+      "sourceSha256": "a263c7e33adc742d6e0b7765a084f6a910f5c30694e357e76ba90443ca1280d0",
+      "stagedSha256": "a263c7e33adc742d6e0b7765a084f6a910f5c30694e357e76ba90443ca1280d0",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_training_exports.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_training_exports.py",
+      "bytes": 1307,
+      "sourceSha256": "1866ef9bf6bc1c81bf45324aed2e978e47c2da7644adf2d9f05c11bba4dbf5a0",
+      "stagedSha256": "1866ef9bf6bc1c81bf45324aed2e978e47c2da7644adf2d9f05c11bba4dbf5a0",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_training_optimizer.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_training_optimizer.py",
+      "bytes": 2001,
+      "sourceSha256": "ff189a79bc3ae6501ef1cafddd1952bb8b5ce0a4f015ccf3f4dd45f264fd564b",
+      "stagedSha256": "ff189a79bc3ae6501ef1cafddd1952bb8b5ce0a4f015ccf3f4dd45f264fd564b",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_training_data.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_training_data.py",
+      "bytes": 5700,
+      "sourceSha256": "c7bd517de264663686fc04facd364e94cfa41232e977793ee75bdf460b6b1fd9",
+      "stagedSha256": "c7bd517de264663686fc04facd364e94cfa41232e977793ee75bdf460b6b1fd9",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_training_video_data.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_training_video_data.py",
+      "bytes": 4145,
+      "sourceSha256": "5cce2c4794156ee2a1512066b8a71b57508c9b5f188fee9d80389f05dd551a97",
+      "stagedSha256": "5cce2c4794156ee2a1512066b8a71b57508c9b5f188fee9d80389f05dd551a97",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_cogvideo_training.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_cogvideo_training.py",
+      "bytes": 11586,
+      "sourceSha256": "4c95d3179094c29cb8dccf048be6fc007654395fdb0adbb47f9d6a2f865d039f",
+      "stagedSha256": "4c95d3179094c29cb8dccf048be6fc007654395fdb0adbb47f9d6a2f865d039f",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_cogvideo_training_data.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_cogvideo_training_data.py",
+      "bytes": 3804,
+      "sourceSha256": "be265601fed34a841ba08b83b15fe9675dca7ec6db31b28505b6d248ef5e3c18",
+      "stagedSha256": "be265601fed34a841ba08b83b15fe9675dca7ec6db31b28505b6d248ef5e3c18",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_cogvideo_conditioning.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_cogvideo_conditioning.py",
+      "bytes": 2482,
+      "sourceSha256": "a6bde7c9c312b5403b83f8e687d1a5bbada19b4b66a50aafa9ee738ffca24f01",
+      "stagedSha256": "a6bde7c9c312b5403b83f8e687d1a5bbada19b4b66a50aafa9ee738ffca24f01",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_wan_training.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_wan_training.py",
+      "bytes": 9532,
+      "sourceSha256": "d32f52cd6d3fe19f22774a2e154ccd68c1f392f49f6eff95d059312607adc07f",
+      "stagedSha256": "d32f52cd6d3fe19f22774a2e154ccd68c1f392f49f6eff95d059312607adc07f",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_wan_training_data.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_wan_training_data.py",
+      "bytes": 2758,
+      "sourceSha256": "dcd410031fc0d486ddeb9871f484499d31708b7a2ee3e2b57251b0e46fc095a8",
+      "stagedSha256": "dcd410031fc0d486ddeb9871f484499d31708b7a2ee3e2b57251b0e46fc095a8",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_wan_conditioning.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_wan_conditioning.py",
+      "bytes": 2434,
+      "sourceSha256": "e6e31dcdf1c358e4f47ba27bf27f29ae3f8f17c0e4c24346f4f69759c38e668e",
+      "stagedSha256": "e6e31dcdf1c358e4f47ba27bf27f29ae3f8f17c0e4c24346f4f69759c38e668e",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_training_embeddings.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_training_embeddings.py",
+      "bytes": 4831,
+      "sourceSha256": "83c0508bdd8e88bd5638f948d448422b09606a840e89f7cb1e7864840507aef6",
+      "stagedSha256": "83c0508bdd8e88bd5638f948d448422b09606a840e89f7cb1e7864840507aef6",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_sana_conditioning.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_sana_conditioning.py",
+      "bytes": 1010,
+      "sourceSha256": "1d7fd4dd58b187994df5269add5d7c197c128ce3cd80ed745fd4fd5e976f92f3",
+      "stagedSha256": "1d7fd4dd58b187994df5269add5d7c197c128ce3cd80ed745fd4fd5e976f92f3",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_sd3_conditioning.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_sd3_conditioning.py",
+      "bytes": 1880,
+      "sourceSha256": "2a0738f1b2b59ce914a6d4fd3c4ac162faf2dec6faf7aa57fdd0c869ea26874c",
+      "stagedSha256": "2a0738f1b2b59ce914a6d4fd3c4ac162faf2dec6faf7aa57fdd0c869ea26874c",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_z_image_conditioning.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_z_image_conditioning.py",
+      "bytes": 1202,
+      "sourceSha256": "e7389584bdfaee2cca9b6707e963809df2f4d0ea8c2c9857a7308003674f9a16",
+      "stagedSha256": "e7389584bdfaee2cca9b6707e963809df2f4d0ea8c2c9857a7308003674f9a16",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_flux2_conditioning.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_flux2_conditioning.py",
+      "bytes": 2545,
+      "sourceSha256": "5b09ea562eba4ad89105356747db1df5b3a5593cfbf352c0cbbef47f630ec47f",
+      "stagedSha256": "5b09ea562eba4ad89105356747db1df5b3a5593cfbf352c0cbbef47f630ec47f",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_embedding_prompts.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_embedding_prompts.py",
+      "bytes": 745,
+      "sourceSha256": "08c6a625cb7ce05b4e63658a4130c06eb479e523726b935c89197f4332528eb4",
+      "stagedSha256": "08c6a625cb7ce05b4e63658a4130c06eb479e523726b935c89197f4332528eb4",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_training_state.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_training_state.py",
+      "bytes": 3059,
+      "sourceSha256": "cdc8ce89f15186330e720eb71be5dcc925c6d062f33d47f9651e92a5772cf654",
+      "stagedSha256": "cdc8ce89f15186330e720eb71be5dcc925c6d062f33d47f9651e92a5772cf654",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/train_dreambooth_lora_krea2.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\train_dreambooth_lora_krea2.py",
+      "bytes": 90200,
+      "sourceSha256": "ce84523c44ce56b84e621a89186227a7e626990bbab6e96d3cdb6789a7c8148c",
+      "stagedSha256": "ce84523c44ce56b84e621a89186227a7e626990bbab6e96d3cdb6789a7c8148c",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/LICENSE-diffusers-training.txt",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\LICENSE-diffusers-training.txt",
+      "bytes": 11357,
+      "sourceSha256": "f9e2070c247517b1ddf65f7b11b393484a18da91a958fd18a97bd0f241c3125c",
+      "stagedSha256": "f9e2070c247517b1ddf65f7b11b393484a18da91a958fd18a97bd0f241c3125c",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_model_memory.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_model_memory.py",
+      "bytes": 3218,
+      "sourceSha256": "452b0a7c8e6cf805f20ac01338922bb084c12bc951613b6718b3810739630398",
+      "stagedSha256": "452b0a7c8e6cf805f20ac01338922bb084c12bc951613b6718b3810739630398",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_model_server.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_model_server.py",
+      "bytes": 1952,
+      "sourceSha256": "db21872783a91a6247a816ad0acda6c63e5bf1115daecb776fd510bc994a36e9",
+      "stagedSha256": "db21872783a91a6247a816ad0acda6c63e5bf1115daecb776fd510bc994a36e9",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_image_conditioning.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_image_conditioning.py",
+      "bytes": 7771,
+      "sourceSha256": "6ca85024028bfaacfebc834d6dc68b8450169ee411111074df0499a04e1e1a9d",
+      "stagedSha256": "6ca85024028bfaacfebc834d6dc68b8450169ee411111074df0499a04e1e1a9d",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_controlnet.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_controlnet.py",
+      "bytes": 2966,
+      "sourceSha256": "75e82dfa9c14764b947dbb03dfd92b261fa9843c9af56419e58fd7128fc0e14b",
+      "stagedSha256": "75e82dfa9c14764b947dbb03dfd92b261fa9843c9af56419e58fd7128fc0e14b",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_framepack_loading.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_framepack_loading.py",
+      "bytes": 2093,
+      "sourceSha256": "1549613ae58a47e06ce089bc9e17adb728a3729fb0bc6505cf6fb89771468d97",
+      "stagedSha256": "1549613ae58a47e06ce089bc9e17adb728a3729fb0bc6505cf6fb89771468d97",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_video_loop.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_video_loop.py",
+      "bytes": 8662,
+      "sourceSha256": "df75e43d26b8211c90e365c7f76f42d4db965ef064dc8af5167e12d4152660b5",
+      "stagedSha256": "df75e43d26b8211c90e365c7f76f42d4db965ef064dc8af5167e12d4152660b5",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_video_io.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_video_io.py",
+      "bytes": 4483,
+      "sourceSha256": "c47fd990d2a583077ed9c0ec92ae5b3b8081624cb3fe932fabe2cf952247c878",
+      "stagedSha256": "c47fd990d2a583077ed9c0ec92ae5b3b8081624cb3fe932fabe2cf952247c878",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_video_2k.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_video_2k.py",
+      "bytes": 6112,
+      "sourceSha256": "a21c2e86151047ccb1f752fc7a431312caf92f15718a57fd904f0ed8eb4b6e79",
+      "stagedSha256": "a21c2e86151047ccb1f752fc7a431312caf92f15718a57fd904f0ed8eb4b6e79",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_video_addons.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_video_addons.py",
+      "bytes": 5852,
+      "sourceSha256": "74fbe5f1046bfc9b0ab64530a3fc1bcdb69121ca80a4a133aa8cef47540559c8",
+      "stagedSha256": "74fbe5f1046bfc9b0ab64530a3fc1bcdb69121ca80a4a133aa8cef47540559c8",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_wan_loading.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_wan_loading.py",
+      "bytes": 2039,
+      "sourceSha256": "1a7d794041e7dc7e55421fcd1c55ca65efb9b6d70fce2b53fb6ab7cb5b6bb3fd",
+      "stagedSha256": "1a7d794041e7dc7e55421fcd1c55ca65efb9b6d70fce2b53fb6ab7cb5b6bb3fd",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_svg_model.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_svg_model.py",
+      "bytes": 7534,
+      "sourceSha256": "041e47ad24894c3887f381964ad593297d5648a9cdf371649d4ef997547d5008",
+      "stagedSha256": "041e47ad24894c3887f381964ad593297d5648a9cdf371649d4ef997547d5008",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_svg_refinement.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_svg_refinement.py",
+      "bytes": 10142,
+      "sourceSha256": "41332dcc87eeca5489e6ee4c9e4b99e1160902dd8e5d9ad78b076c90e86e279c",
+      "stagedSha256": "41332dcc87eeca5489e6ee4c9e4b99e1160902dd8e5d9ad78b076c90e86e279c",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_image_addons.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_image_addons.py",
+      "bytes": 3665,
+      "sourceSha256": "8e9b688ff9cbc4a870e57e116e5829d10e107e2dcf21097ac180c298b4cb1eb4",
+      "stagedSha256": "8e9b688ff9cbc4a870e57e116e5829d10e107e2dcf21097ac180c298b4cb1eb4",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_workflow_worker.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_workflow_worker.py",
+      "bytes": 13503,
+      "sourceSha256": "6657c035d39f5930a6b42615c415930faa0d457670915f83457e4312e3aeb235",
+      "stagedSha256": "6657c035d39f5930a6b42615c415930faa0d457670915f83457e4312e3aeb235",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_video_composition.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_video_composition.py",
+      "bytes": 13498,
+      "sourceSha256": "4004e247e21853220abe449164a275110be47b4f7cce298e994e538d071cc7f6",
+      "stagedSha256": "4004e247e21853220abe449164a275110be47b4f7cce298e994e538d071cc7f6",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_lip_sync.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_lip_sync.py",
+      "bytes": 6982,
+      "sourceSha256": "e5ff859724b2dd9a7b413291f8f661669c9e874b8fd3c2a7e73ab7916296700e",
+      "stagedSha256": "e5ff859724b2dd9a7b413291f8f661669c9e874b8fd3c2a7e73ab7916296700e",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_musetalk.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_musetalk.py",
+      "bytes": 5512,
+      "sourceSha256": "5ef5de753ea8282ad18b2ce90c7331e868a2c8d31582d0128148ac1bf48601ca",
+      "stagedSha256": "5ef5de753ea8282ad18b2ce90c7331e868a2c8d31582d0128148ac1bf48601ca",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_face_parsing.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_face_parsing.py",
+      "bytes": 6618,
+      "sourceSha256": "ade5816847ebf65afdafc22919a3ad6b68719b41297675113a8b8a38c88a72c1",
+      "stagedSha256": "ade5816847ebf65afdafc22919a3ad6b68719b41297675113a8b8a38c88a72c1",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/LICENSE-MuseTalk.txt",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\LICENSE-MuseTalk.txt",
+      "bytes": 13577,
+      "sourceSha256": "b3b408ae318831993f66aadf70d1f234ed01b574921f0e27d69d74c6b8763495",
+      "stagedSha256": "b3b408ae318831993f66aadf70d1f234ed01b574921f0e27d69d74c6b8763495",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_visual_check.py",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_visual_check.py",
+      "bytes": 7584,
+      "sourceSha256": "fcf591902420669bb76bcf2ea12ad767919623601f25b73c7e7608fd0d58d48e",
+      "stagedSha256": "fcf591902420669bb76bcf2ea12ad767919623601f25b73c7e7608fd0d58d48e",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_diffusers_requirements.txt",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_diffusers_requirements.txt",
+      "bytes": 499,
+      "sourceSha256": "93d6f3d3f4e16ef20e6c74d06951d3a340ec0279db30cbf6325e2ad1a888734b",
+      "stagedSha256": "93d6f3d3f4e16ef20e6c74d06951d3a340ec0279db30cbf6325e2ad1a888734b",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/media_runtime_manifest.json",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\media_runtime_manifest.json",
+      "bytes": 1518,
+      "sourceSha256": "768531d7448f9210f2c1b69c3a7ca636fa8728f1863b53e20871ca94685605a3",
+      "stagedSha256": "768531d7448f9210f2c1b69c3a7ca636fa8728f1863b53e20871ca94685605a3",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/LICENSE-HunyuanImage-3.txt",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\LICENSE-HunyuanImage-3.txt",
+      "bytes": 16612,
+      "sourceSha256": "38ee960faee3ab4ca226b0b50d661a4460e4d8c1e8fbc8431d5cd69bc2c363cc",
+      "stagedSha256": "38ee960faee3ab4ca226b0b50d661a4460e4d8c1e8fbc8431d5cd69bc2c363cc",
+      "matches": true
+    },
+    {
+      "source": "apps/client/src-tauri/python/NOTICE-HunyuanImage-3.txt",
+      "staged": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\native-worker195-runtime-staging-current\\python\\NOTICE-HunyuanImage-3.txt",
+      "bytes": 651,
+      "sourceSha256": "5492c36cf2b811ec4ee49eb1e94d2e06b24f11d4b58f610458a09b34194c6708",
+      "stagedSha256": "5492c36cf2b811ec4ee49eb1e94d2e06b24f11d4b58f610458a09b34194c6708",
+      "matches": true
+    }
+  ]
+}

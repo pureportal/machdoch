@@ -1,0 +1,40 @@
+[
+  {
+    "path": "C:\\Development\\howtale\\artifacts\\webview-scenes-1791937710022\\WebView scenes\\browser\\8a8c36c4-991a-4867-bf46-505aae7bb432\\capture.webm",
+    "metadata": {
+      "ffmpeg_version": "7.1-essentials_build-www.gyan.dev built with gcc 14.2.0 (Rev1, Built by MSYS2 project)",
+      "codec": "vp9",
+      "pix_fmt": "yuv420p(pc, bt470bg/unknown/unknown, progressive)",
+      "fps": 30.0,
+      "source_size": [
+        1280,
+        720
+      ],
+      "size": [
+        1280,
+        720
+      ],
+      "rotate": 0,
+      "duration": 8.83
+    }
+  },
+  {
+    "path": "C:\\Development\\howtale\\artifacts\\webview-scenes-1791940098291\\WebView scenes\\browser\\50c0e75e-2978-45d0-a983-ccb3ed4798ab\\capture.webm",
+    "metadata": {
+      "ffmpeg_version": "7.1-essentials_build-www.gyan.dev built with gcc 14.2.0 (Rev1, Built by MSYS2 project)",
+      "codec": "vp9",
+      "pix_fmt": "yuv420p(pc, bt470bg/unknown/unknown, progressive)",
+      "fps": 30.0,
+      "source_size": [
+        1280,
+        720
+      ],
+      "size": [
+        1280,
+        720
+      ],
+      "rotate": 0,
+      "duration": 20.1
+    }
+  }
+]

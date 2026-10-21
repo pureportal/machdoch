@@ -1,0 +1,12 @@
+{
+  "request": {
+    "sourcePath": "D:\\Models\\machdoch\\downloads\\civitai\\795765\\889818\\illustriousXL_v01.safetensors",
+    "architecture": "illustrious-xl",
+    "displayName": "Illustrious XL v0.1 \u00b7 OnomaAI Research",
+    "sourceUrl": "https://civitai.com/models/795765?modelVersionId=889818",
+    "commercialUse": "review-required",
+    "licenseName": null,
+    "reviewToken": ""
+  },
+  "expectedDigest": "3e15ba00387db678ab4a099f75771c4f5ac67fda9e7100a01d263eaf30145aa9"
+}

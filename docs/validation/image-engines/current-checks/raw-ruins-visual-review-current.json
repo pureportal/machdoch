@@ -1,0 +1,10 @@
+{
+  "referenceId": 144697438,
+  "referenceUrl": "https://civitai.red/images/144697438",
+  "image": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\krea-2-raw-refined-reference-sweep-continuation\\02-krea-2-raw-reference-144697438\\images\\output-0000.png",
+  "sha256": "1f0a768cce8a2e742f4122469884ccc1c52cb35e5524335d692aa968a25b4c07",
+  "workerVersion": "media-diffusers-worker/1.94.0",
+  "referenceQualityVerdict": "below-reference",
+  "observations": "Sharp coherent illustration with the blindfolded white-haired woman on the right, two round-headed robots on the left, ruined towers, grass and circular glitch color. Smooth cel shading, a bright pale sky, orange toy-like robots and clean clothing miss the reference dark impasto texture, dense organic foliage and dramatic shadow. No decoder seams or pixel corruption are visible.",
+  "assessedAt": "2026-10-13T01:22:47.639672+00:00"
+}

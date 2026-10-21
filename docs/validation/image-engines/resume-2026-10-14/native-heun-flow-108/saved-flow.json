@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 1,
+  "flowId": "media-flow-373055dc-afe2-4b33-96d2-4bedbfe5b5b5",
+  "head": {
+    "schemaVersion": 1,
+    "flowId": "media-flow-373055dc-afe2-4b33-96d2-4bedbfe5b5b5",
+    "name": "Create image",
+    "description": "Prompt-to-image recipe with explicit quality and output steps.",
+    "headRevisionId": "mfr-77f069646efec7a37ac153ce96529d94",
+    "headRevisionNumber": 1,
+    "createdAt": "2026-10-15T02:54:03.655Z",
+    "updatedAt": "2026-10-15T02:54:15.156Z",
+    "documentDigest": "sha256:db3dce8099e15fb2af3dd2bea4e46d673259e670a7760cda9902ae5b3d5bf2ad",
+    "executionDigest": "sha256:91be988bf8b5f70801ac02fb6e6bec64c1c18d3fc738c82aa4848e22766acfd6",
+    "layoutDigest": "sha256:0ba40c69c41c6bdd680670c6db1b598619f8bc18c56ab3a94caff3f855b820da"
+  },
+  "revisions": [
+    {
+      "schemaVersion": 1,
+      "revisionId": "mfr-77f069646efec7a37ac153ce96529d94",
+      "flowId": "media-flow-373055dc-afe2-4b33-96d2-4bedbfe5b5b5",
+      "revisionNumber": 1,
+      "parentRevisionId": null,
+      "createdAt": "2026-10-15T02:54:15.156Z",
+      "changeSummary": "Saved from Advanced",
+      "documentDigest": "sha256:db3dce8099e15fb2af3dd2bea4e46d673259e670a7760cda9902ae5b3d5bf2ad",
+      "executionDigest": "sha256:91be988bf8b5f70801ac02fb6e6bec64c1c18d3fc738c82aa4848e22766acfd6",
+      "layoutDigest": "sha256:0ba40c69c41c6bdd680670c6db1b598619f8bc18c56ab3a94caff3f855b820da",
+      "nodeCount": 4,
+      "edgeCount": 3,
+      "isHead": true,
+      "flow": {
+        "schemaVersion": 1,
+        "id": "media-flow-373055dc-afe2-4b33-96d2-4bedbfe5b5b5",
+        "name": "Create image",
+        "description": "Prompt-to-image recipe with explicit quality and output steps.",
+        "createdAt": "2026-10-15T02:54:03.655Z",
+        "updatedAt": "2026-10-15T02:54:03.655Z",
+        "variables": [],
+        "variableBindings": {},
+        "presets": [],
+        "activePresetId": null,
+        "nodes": [
+          {
+            "id": "prompt",
+            "type": "source.prompt",
+            "version": 1,
+            "label": "Creative brief",
+            "layer": "source",
+            "config": {
+              "prompt": "Candid photograph, smiling adult Japanese woman moving beside colorful flower graffiti, blue off-shoulder blouse, flowing white skirt, white sneakers, windblown dark hair, natural daylight, realistic skin texture."
+            }
+          },
+          {
+            "id": "seed",
+            "type": "source.seed",
+            "version": 1,
+            "label": "Seed",
+            "layer": "source",
+            "config": {
+              "seed": 296620512
+            }
+          },
+          {
+            "id": "generate",
+            "type": "task.generate-image",
+            "version": 1,
+            "label": "Generate image",
+            "layer": "task",
+            "config": {
+              "aspectRatio": "1:1",
+              "guidanceScale": 5,
+              "memoryProfile": "auto",
+              "modelAddons": [],
+              "modelId": "local:user:62d1eb3e10df764cfeff0163b5aaab2e5775aac3987632f6428dd2bad1074e30",
+              "modelPolicy": "quality",
+              "numInferenceSteps": 50,
+              "outputCount": 1,
+              "outputFormat": "png",
+              "poseEnd": 1,
+              "poseStart": 0,
+              "poseStrength": 1,
+              "providerPolicy": "auto",
+              "sampler": "flow-heun",
+              "svgAutoCrop": true,
+              "svgCandidateCount": 1,
+              "svgCriticEnabled": false,
+              "svgMode": "generate",
+              "svgStyle": "illustration",
+              "svgTargetSize": 1024,
+              "svgTextPolicy": "avoid",
+              "transparentBackground": false
+            }
+          },
+          {
+            "id": "asset-output",
+            "type": "output.asset",
+            "version": 1,
+            "label": "Save assets",
+            "layer": "output",
+            "config": {
+              "format": "png",
+              "outputCount": 1
+            }
+          }
+        ],
+        "edges": [
+          {
+            "id": "prompt-to-generate",
+            "fromNodeId": "prompt",
+            "fromPortId": "prompt",
+            "toNodeId": "generate",
+            "toPortId": "prompt"
+          },
+          {
+            "id": "seed-to-generate",
+            "fromNodeId": "seed",
+            "fromPortId": "seed",
+            "toNodeId": "generate",
+            "toPortId": "seed"
+          },
+          {
+            "id": "result-to-output",
+            "fromNodeId": "generate",
+            "fromPortId": "image",
+            "toNodeId": "asset-output",
+            "toPortId": "image"
+          }
+        ]
+      },
+      "layout": {
+        "schemaVersion": 1,
+        "flowId": "media-flow-373055dc-afe2-4b33-96d2-4bedbfe5b5b5",
+        "nodes": [
+          {
+            "nodeId": "prompt",
+            "x": 52,
+            "y": 80
+          },
+          {
+            "nodeId": "seed",
+            "x": 52,
+            "y": 500
+          },
+          {
+            "nodeId": "generate",
+            "x": 412,
+            "y": 80
+          },
+          {
+            "nodeId": "asset-output",
+            "x": 772,
+            "y": 80
+          }
+        ],
+        "groups": [],
+        "comments": []
+      }
+    }
+  ]
+}

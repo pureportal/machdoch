@@ -1,0 +1,212 @@
+{
+  "completed": true,
+  "verifiedAt": "2026-10-15T20:27:56.592Z",
+  "device": "AMD Radeon RX 9070 (cuda:1)",
+  "checks": [
+    "empty manual tiles block actions; Automatic recovers without stale errors",
+    "presets, keyboard slider, and custom numeric scale stay synchronized",
+    "span-custom-2.75x",
+    "minimum targets reject empty pairs and allow a single constrained dimension",
+    "realesrgan-minimum-dimensions",
+    "swinir-portrait-minimum-edges",
+    "target fields and tile controls fit 1280, 1000, and 800 pixel layouts",
+    "video-minimum-short-edge",
+    "video minimum size preserves playable output",
+    "video-custom-1.1x-full-frame",
+    "span-8x-multiple-passes",
+    "already-meets-minimum",
+    "estimated VRAM warning is advisory and clears with Automatic tiles",
+    "large output and intermediate allocations are blocked before submission",
+    "target dimensions and tile strategy open in Advanced",
+    "advanced-minimum-edges",
+    "no renderer exceptions"
+  ],
+  "runs": [
+    {
+      "name": "span-custom-2.75x",
+      "runId": "b38163ef-2872-4739-b871-fef5940fd265",
+      "width": 440,
+      "height": 264,
+      "kind": "image",
+      "assetId": "asset:b38163ef-2872-4739-b871-fef5940fd265:1",
+      "details": {
+        "architecture": "SPAN",
+        "device": "cuda",
+        "height": 264,
+        "nativeScale": 4,
+        "scale": 2.75,
+        "schemaVersion": 1,
+        "tileMode": "automatic",
+        "tileSize": 512,
+        "width": 440
+      },
+      "exportPath": "C:\\Development\\machdoch\\docs\\validation\\upscalers\\features\\span-custom-2.75x-output.png",
+      "digest": "c2871266ea6e6317a6408a4e3f94b67e0781e3dab1f8d2805a1b1f60dfe0a0f9"
+    },
+    {
+      "name": "realesrgan-minimum-dimensions",
+      "runId": "8e4d0c6f-2d3f-47a8-adbe-64fd5969bd7d",
+      "width": 384,
+      "height": 231,
+      "kind": "image",
+      "assetId": "asset:8e4d0c6f-2d3f-47a8-adbe-64fd5969bd7d:1",
+      "details": {
+        "architecture": "ESRGAN",
+        "device": "cuda",
+        "height": 231,
+        "nativeScale": 4,
+        "scale": 2.4,
+        "schemaVersion": 1,
+        "tileMode": "manual",
+        "tileSize": 64,
+        "width": 384
+      },
+      "exportPath": "C:\\Development\\machdoch\\docs\\validation\\upscalers\\features\\realesrgan-minimum-dimensions-output.png",
+      "digest": "3eba5aed974db59ffa894d28f4a5549c6fac2775931fde7332fe5189437e4cd2"
+    },
+    {
+      "name": "swinir-portrait-minimum-edges",
+      "runId": "c73395a7-4fec-4fc0-abc9-829122b1c807",
+      "width": 200,
+      "height": 299,
+      "kind": "image",
+      "assetId": "asset:c73395a7-4fec-4fc0-abc9-829122b1c807:1",
+      "details": {
+        "architecture": "SwinIR",
+        "device": "cuda",
+        "height": 299,
+        "nativeScale": 4,
+        "scale": 2.0618556701030926,
+        "schemaVersion": 1,
+        "tileMode": "factor",
+        "tileSize": 64,
+        "width": 200
+      },
+      "exportPath": "C:\\Development\\machdoch\\docs\\validation\\upscalers\\features\\swinir-portrait-minimum-edges-output.png",
+      "digest": "c2c6390785eca09241c265f1dcd1a4fa513c2ab88d3c7f79717f3e138930e8fc"
+    },
+    {
+      "name": "video-minimum-short-edge",
+      "runId": "780977bc-62f1-45db-b323-56b560353ab2",
+      "width": 144,
+      "height": 96,
+      "kind": "video",
+      "assetId": "asset:780977bc-62f1-45db-b323-56b560353ab2:1",
+      "details": {
+        "architecture": "SPAN",
+        "device": "cuda",
+        "nativeScale": 4,
+        "output": {
+          "durationSeconds": 1,
+          "fileName": "output.webm",
+          "fps": 8,
+          "hasAlpha": false,
+          "hasAudio": true,
+          "height": 96,
+          "numFrames": 8,
+          "width": 144
+        },
+        "scale": 1.5,
+        "schemaVersion": 1,
+        "tileMode": "automatic",
+        "tileSize": 512
+      },
+      "exportPath": "C:\\Development\\machdoch\\docs\\validation\\upscalers\\features\\video-minimum-short-edge-output.webm",
+      "digest": "babc0ffd3ae7e06fda99a32a2a1a9dd8680764d885c75933ad50e2f2c845ed5a"
+    },
+    {
+      "name": "video-custom-1.1x-full-frame",
+      "runId": "8c57a8af-b041-4bf8-8a91-47407bb81480",
+      "width": 106,
+      "height": 71,
+      "kind": "video",
+      "assetId": "asset:8c57a8af-b041-4bf8-8a91-47407bb81480:1",
+      "details": {
+        "architecture": "SPAN",
+        "device": "cuda",
+        "nativeScale": 4,
+        "output": {
+          "durationSeconds": 1,
+          "fileName": "output.webm",
+          "fps": 8,
+          "hasAlpha": false,
+          "hasAudio": true,
+          "height": 71,
+          "numFrames": 8,
+          "width": 106
+        },
+        "scale": 1.1041666666666667,
+        "schemaVersion": 1,
+        "tileMode": "full",
+        "tileSize": 96
+      },
+      "exportPath": "C:\\Development\\machdoch\\docs\\validation\\upscalers\\features\\video-custom-1.1x-full-frame-output.webm",
+      "digest": "a58cc565a52bde6239b15ca68e47382d272343016e1b0bcf122cf967aaecf724"
+    },
+    {
+      "name": "span-8x-multiple-passes",
+      "runId": "f8a1b6ca-4f88-46f1-81ba-820866aaf600",
+      "width": 1280,
+      "height": 768,
+      "kind": "image",
+      "assetId": "asset:f8a1b6ca-4f88-46f1-81ba-820866aaf600:1",
+      "details": {
+        "architecture": "SPAN",
+        "device": "cuda",
+        "height": 768,
+        "nativeScale": 4,
+        "scale": 8,
+        "schemaVersion": 1,
+        "tileMode": "manual",
+        "tileSize": 128,
+        "width": 1280
+      },
+      "exportPath": "C:\\Development\\machdoch\\docs\\validation\\upscalers\\features\\span-8x-multiple-passes-output.png",
+      "digest": "24fee5e71e2a137e8295afb97e4a8e93fee19c0cec8218f21d1a8ed79b4464f1"
+    },
+    {
+      "name": "already-meets-minimum",
+      "runId": "a1aad1c0-9691-4c50-958d-7bfa33e5aa29",
+      "width": 160,
+      "height": 96,
+      "kind": "image",
+      "assetId": "asset:a1aad1c0-9691-4c50-958d-7bfa33e5aa29:1",
+      "details": {
+        "architecture": "SPAN",
+        "device": "cuda",
+        "height": 96,
+        "nativeScale": 4,
+        "scale": 1,
+        "schemaVersion": 1,
+        "tileMode": "manual",
+        "tileSize": 128,
+        "width": 160
+      },
+      "exportPath": "C:\\Development\\machdoch\\docs\\validation\\upscalers\\features\\already-meets-minimum-output.png",
+      "digest": "9d8e9c34a5ef80f234f265c8ea50b059a6c2763982d588f8ada306af09bd23bd"
+    },
+    {
+      "name": "advanced-minimum-edges",
+      "runId": "c65939c7-4402-4e18-88c9-d1419f5fcf13",
+      "width": 200,
+      "height": 299,
+      "kind": "image",
+      "assetId": "asset:c65939c7-4402-4e18-88c9-d1419f5fcf13:1",
+      "details": {
+        "architecture": "SwinIR",
+        "device": "cuda",
+        "height": 299,
+        "nativeScale": 4,
+        "scale": 2.0618556701030926,
+        "schemaVersion": 1,
+        "tileMode": "factor",
+        "tileSize": 64,
+        "width": 200
+      },
+      "exportPath": "C:\\Development\\machdoch\\docs\\validation\\upscalers\\features\\advanced-minimum-edges-output.png",
+      "digest": "c2c6390785eca09241c265f1dcd1a4fa513c2ab88d3c7f79717f3e138930e8fc"
+    }
+  ],
+  "pageErrors": [],
+  "executableSha256": "161143d8c4c0edb8ceabf92d4e664fdc49e4cd26822a28b46b93766b3acf7eb2"
+}

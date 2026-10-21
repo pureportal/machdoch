@@ -1,0 +1,108 @@
+{
+  "repository": "SG161222/RealVisXL_V5.0",
+  "revision": "ac93e0dda1f6d448cae19bbfab8c5e720a5e48bc",
+  "gated": false,
+  "card": {
+    "license": "openrail++"
+  },
+  "files": [
+    {
+      "rfilename": ".gitattributes"
+    },
+    {
+      "rfilename": "README.md"
+    },
+    {
+      "rfilename": "RealVisXL_V5.0_fp16.safetensors"
+    },
+    {
+      "rfilename": "RealVisXL_V5.0_fp32.safetensors"
+    },
+    {
+      "rfilename": "model_index.json"
+    },
+    {
+      "rfilename": "scheduler/scheduler_config.json"
+    },
+    {
+      "rfilename": "text_encoder/config.json"
+    },
+    {
+      "rfilename": "text_encoder/model.fp16.safetensors"
+    },
+    {
+      "rfilename": "text_encoder/model.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_2/config.json"
+    },
+    {
+      "rfilename": "text_encoder_2/model.fp16.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_2/model.safetensors"
+    },
+    {
+      "rfilename": "tokenizer/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer/vocab.json"
+    },
+    {
+      "rfilename": "tokenizer_2/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer_2/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer_2/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer_2/vocab.json"
+    },
+    {
+      "rfilename": "unet/config.json"
+    },
+    {
+      "rfilename": "unet/diffusion_pytorch_model-00001-of-00002.safetensors"
+    },
+    {
+      "rfilename": "unet/diffusion_pytorch_model-00002-of-00002.safetensors"
+    },
+    {
+      "rfilename": "unet/diffusion_pytorch_model.fp16.safetensors"
+    },
+    {
+      "rfilename": "unet/diffusion_pytorch_model.safetensors.index.json"
+    },
+    {
+      "rfilename": "vae/config.json"
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.fp16.safetensors"
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.safetensors"
+    }
+  ],
+  "documents": {
+    "README.md": {
+      "status": 200,
+      "content": "---\nlicense: openrail++\n---\n<strong>Check my exclusive models on Mage: </strong><a href=\"https://www.mage.space/play/4371756b27bf52e7a1146dc6fe2d969c\" rel=\"noopener noreferrer nofollow\"><strong>ParagonXL</strong></a><strong> / </strong><a href=\"https://www.mage.space/play/df67a9f27f19629a98cb0fb619d1949a\" rel=\"noopener noreferrer nofollow\"><strong>NovaXL</strong></a><strong> / </strong><a href=\"https://www.mage.space/play/d8db06ae964310acb4e090eec03984df\" rel=\"noopener noreferrer nofollow\"><strong>NovaXL Lightning</strong></a><strong> / </strong><a href=\"https://www.mage.space/play/541da1e10976ab82976a5cacc770a413\" rel=\"noopener noreferrer nofollow\"><strong>NovaXL V2</strong></a><strong> / </strong><a href=\"https://www.mage.space/play/a56d2680c464ef25b8c66df126b3f706\" rel=\"noopener noreferrer nofollow\"><strong>NovaXL Pony</strong></a><strong> / </strong><a href=\"https://www.mage.space/play/b0ab6733c3be2408c93523d57a605371\" rel=\"noopener noreferrer nofollow\"><strong>NovaXL Pony Lightning</strong></a><strong> / </strong><a href=\"https://www.mage.space/play/e3b01cd493ed86ed8e4708751b1c9165\" rel=\"noopener noreferrer nofollow\"><strong>RealDreamXL</strong></a><strong> / </strong><a href=\"https://www.mage.space/play/ef062fc389c3f8723002428290c1158c\" rel=\"noopener noreferrer nofollow\"><strong>RealDreamXL Lightning</strong></a></p>\n<b>This model is available on <a href=\"https://www.mage.space/\">Mage.Space</a> (main sponsor)</b><br>\n<b>You can support me directly on Boosty - https://boosty.to/sg_161222</b><br>\n\nThe model is aimed at photorealism. Can produce sfw and nsfw images of decent quality.<br>\nCivitAI Page: https://civitai.com/models/139562?modelVersionId=789646<br>\n\n<b>Recommended Negative Prompt:</b><br>\nbad hands, bad anatomy, ugly, deformed, (face asymmetry, eyes asymmetry, deformed eyes, deformed mouth, open mouth)<br>\n<b>or another negative prompt</b><br>\n\n<b>Recommended Generation Parameters:</b><br>\nSampling Method: DPM++ SDE Karras (30+ Sampling Steps) or DPM++ 2M Karras (50+ Sampling Steps)<br>\n\n<b>Recommended Hires Fix Parameters:</b><br>\nHires Sampling Method: DPM++ 2M Karras<br>\nHires steps: 25+<br>\nUpscaler: 4x-NMKD-Superscale-SP_178000_G / 4x-UltraSharp upscaler / or another<br>\nDenoising strength: 0.1 - 0.3<br>\nUpscale by: 1.1-1.5<br>"
+    },
+    "model_index.json": {
+      "status": 200,
+      "content": "{\r\n  \"_class_name\": \"StableDiffusionXLPipeline\",\r\n  \"_diffusers_version\": \"0.30.0.dev0\",\r\n  \"feature_extractor\": [\r\n    null,\r\n    null\r\n  ],\r\n  \"force_zeros_for_empty_prompt\": true,\r\n  \"image_encoder\": [\r\n    null,\r\n    null\r\n  ],\r\n  \"scheduler\": [\r\n    \"diffusers\",\r\n    \"DDIMScheduler\"\r\n  ],\r\n  \"text_encoder\": [\r\n    \"transformers\",\r\n    \"CLIPTextModel\"\r\n  ],\r\n  \"text_encoder_2\": [\r\n    \"transformers\",\r\n    \"CLIPTextModelWithProjection\"\r\n  ],\r\n  \"tokenizer\": [\r\n    \"transformers\",\r\n    \"CLIPTokenizer\"\r\n  ],\r\n  \"tokenizer_2\": [\r\n    \"transformers\",\r\n    \"CLIPTokenizer\"\r\n  ],\r\n  \"unet\": [\r\n    \"diffusers\",\r\n    \"UNet2DConditionModel\"\r\n  ],\r\n  \"vae\": [\r\n    \"diffusers\",\r\n    \"AutoencoderKL\"\r\n  ]\r\n}\r\n"
+    },
+    "scheduler/scheduler_config.json": {
+      "status": 200,
+      "content": "{\r\n  \"_class_name\": \"DDIMScheduler\",\r\n  \"_diffusers_version\": \"0.30.0.dev0\",\r\n  \"beta_end\": 0.012,\r\n  \"beta_schedule\": \"scaled_linear\",\r\n  \"beta_start\": 0.00085,\r\n  \"clip_sample\": false,\r\n  \"clip_sample_range\": 1.0,\r\n  \"dynamic_thresholding_ratio\": 0.995,\r\n  \"num_train_timesteps\": 1000,\r\n  \"prediction_type\": \"epsilon\",\r\n  \"rescale_betas_zero_snr\": false,\r\n  \"sample_max_value\": 1.0,\r\n  \"set_alpha_to_one\": false,\r\n  \"steps_offset\": 1,\r\n  \"thresholding\": false,\r\n  \"timestep_spacing\": \"leading\",\r\n  \"trained_betas\": null\r\n}\r\n"
+    }
+  }
+}

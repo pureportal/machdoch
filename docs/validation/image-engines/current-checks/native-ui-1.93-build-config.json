@@ -1,0 +1,29 @@
+{
+  "build": {
+    "devUrl": null
+  },
+  "identifier": "com.machdoch.imageverification.dev",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "machdoch",
+        "width": 1440,
+        "height": 960,
+        "minWidth": 960,
+        "minHeight": 720,
+        "center": true,
+        "visible": false,
+        "preventOverflow": {
+          "width": 24,
+          "height": 24
+        },
+        "resizable": true,
+        "skipTaskbar": true,
+        "decorations": false,
+        "transparent": false,
+        "additionalBrowserArgs": "--remote-debugging-port=9465"
+      }
+    ]
+  }
+}

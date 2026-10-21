@@ -1,0 +1,221 @@
+{
+  "_id": "69262cace0013afb1d03c964",
+  "id": "city96/FLUX.2-dev-gguf",
+  "private": false,
+  "pipeline_tag": "image-to-image",
+  "library_name": "gguf",
+  "tags": [
+    "gguf",
+    "image-generation",
+    "image-editing",
+    "flux",
+    "diffusion-single-file",
+    "image-to-image",
+    "base_model:black-forest-labs/FLUX.2-dev",
+    "base_model:quantized:black-forest-labs/FLUX.2-dev",
+    "license:other",
+    "region:us"
+  ],
+  "downloads": 70155,
+  "likes": 167,
+  "modelId": "city96/FLUX.2-dev-gguf",
+  "author": "city96",
+  "sha": "ade5d688ddab0d9cf4a5b01bf4321e01c115020d",
+  "lastModified": "2025-11-29T21:34:06.000Z",
+  "gated": false,
+  "disabled": false,
+  "model-index": null,
+  "config": {},
+  "cardData": {
+    "base_model": "black-forest-labs/FLUX.2-dev",
+    "library_name": "gguf",
+    "quantized_by": "city96",
+    "license": "other",
+    "license_name": "flux-dev-non-commercial-license",
+    "license_link": "LICENSE.md",
+    "tags": [
+      "image-generation",
+      "image-editing",
+      "flux",
+      "diffusion-single-file"
+    ],
+    "pipeline_tag": "image-to-image"
+  },
+  "gguf": {
+    "total": 32223281152,
+    "architecture": "flux",
+    "totalFileSize": 64446616544
+  },
+  "siblings": [
+    {
+      "rfilename": ".gitattributes",
+      "blobId": "c4267c7eaacdcc203d2ca6e354b9ab935303cdee",
+      "size": 2376
+    },
+    {
+      "rfilename": "LICENSE.txt",
+      "blobId": "3bd190cc0444d1590c43f6f5c9e034e64c9321b3",
+      "size": 18764
+    },
+    {
+      "rfilename": "README.md",
+      "blobId": "df462a24781034fb52d860aed1770dd92f27348d",
+      "size": 2108
+    },
+    {
+      "rfilename": "flux2-dev-BF16.gguf",
+      "blobId": "0ae78ebc0c4062d5f65708f72c77682891c7cf33",
+      "size": 64446616544,
+      "lfs": {
+        "sha256": "98cdfcb10d6ed5a860f7169fb234138560cda4af158a70848d155d203f0acac4",
+        "size": 64446616544,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "flux2-dev-Q2_K.gguf",
+      "blobId": "3cc1c94ef9d6c9eed1bab543fc3cf6e219711334",
+      "size": 12858250208,
+      "lfs": {
+        "sha256": "b9d1f9388a328efa01a7dfc2155e45fac584d20db11ef0436a9558a07ecbc83a",
+        "size": 12858250208,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "flux2-dev-Q3_K_M.gguf",
+      "blobId": "70c93902d34644c294cd24a78621dc441e105ff1",
+      "size": 15960134624,
+      "lfs": {
+        "sha256": "3b89f770a43ab091e6c2a33186d87b4a059d8f74d00db239834ecc27ed368fb8",
+        "size": 15960134624,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "flux2-dev-Q3_K_S.gguf",
+      "blobId": "4f94f2d6b82b0450827259f694d518dbfcaa0f5d",
+      "size": 15779648480,
+      "lfs": {
+        "sha256": "ecc594314cb0a27d97c3163a5d2555c2814446e92a82604d735050f8e4d5c37c",
+        "size": 15779648480,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "flux2-dev-Q4_0.gguf",
+      "blobId": "35f7fcde1a1175015839fc7788f779ede63c5e61",
+      "size": 19299128288,
+      "lfs": {
+        "sha256": "b750825b6fab2fd491e911d5f99f11e8f3efc9cbf8a2b1225293d26af9c0090a",
+        "size": 19299128288,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "flux2-dev-Q4_1.gguf",
+      "blobId": "4a97d8b12a17e159dfe43e204500185c5d25f8ba",
+      "size": 21262062560,
+      "lfs": {
+        "sha256": "6cec0f4f131e23c013f1d749e6688005babeee5acf37493bfaaf6c06b73ef9d5",
+        "size": 21262062560,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "flux2-dev-Q4_K_M.gguf",
+      "blobId": "36cef1b3713fa46388e9712e264358daf44fe8d9",
+      "size": 20082414560,
+      "lfs": {
+        "sha256": "fca680c7b221a713b5cf7db6cf6b33474875320ee61f4c585bc33fe391dab9a6",
+        "size": 20082414560,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "flux2-dev-Q4_K_S.gguf",
+      "blobId": "014c196452a874cc9f13314120953f686f6ed8bf",
+      "size": 19299128288,
+      "lfs": {
+        "sha256": "b9c1c8295ed044f54c3a9894a800e003b4ecc94bfb0f63192b68bafc232c2b27",
+        "size": 19299128288,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "flux2-dev-Q5_0.gguf",
+      "blobId": "2d9ed766049baac7ea0a4a38e4783cd6cf95a11f",
+      "size": 23224996832,
+      "lfs": {
+        "sha256": "9d0e70190be3b8d0ee6dd8103694653823f7a25454044ca872913343b11bdd49",
+        "size": 23224996832,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "flux2-dev-Q5_1.gguf",
+      "blobId": "40e91e68fbba9c286727a6e0cb20c66197112eaf",
+      "size": 25187931104,
+      "lfs": {
+        "sha256": "6bf0606386ca72720b453396f198a7150cf1a57a7ac408373ebeca65c2e02600",
+        "size": 25187931104,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "flux2-dev-Q5_K_M.gguf",
+      "blobId": "0df442b18879cb77eb618e1de7aab643bfb18294",
+      "size": 24057238496,
+      "lfs": {
+        "sha256": "041abd6a1dc300224a2479a26e722129337368a70ffdc027be8ddab5c90c5e69",
+        "size": 24057238496,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "flux2-dev-Q5_K_S.gguf",
+      "blobId": "0253e6f3d88ec730902e5b38c38aa41aac613369",
+      "size": 23224996832,
+      "lfs": {
+        "sha256": "81b4da2546746cdf475c71334a9380f98ef71501096e47e75daa53536c411361",
+        "size": 23224996832,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "flux2-dev-Q6_K.gguf",
+      "blobId": "1a7e9af31db0d13e90172d0dcd134119d431dd88",
+      "size": 27396232160,
+      "lfs": {
+        "sha256": "0a662e0303d65b7da4741c7bc54bbccd4d7fc17b23e71ced36d177467f4a0ef1",
+        "size": 27396232160,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "flux2-dev-Q8_0.gguf",
+      "blobId": "fa5c3945af4205dc8338b4c4732d3c99891b1a34",
+      "size": 35002602464,
+      "lfs": {
+        "sha256": "09d005300dd8dcbbd489bb75ada6254145c84c2c9c3d7cc1829e3c5dedcb42ce",
+        "size": 35002602464,
+        "pointerSize": 136
+      }
+    },
+    {
+      "rfilename": "media/flux2dev-image.jpg",
+      "blobId": "d3fa74fe44a8fef075c49984ff62c6024d1a3578",
+      "size": 3628035,
+      "lfs": {
+        "sha256": "1bef8745c81aab30411cd7e6dbba1e1b10cd0a17eb2c59fc1ad2be807166b654",
+        "size": 3628035,
+        "pointerSize": 132
+      }
+    }
+  ],
+  "spaces": [
+    "FoxLoverAI/TurboCustomImageEditing"
+  ],
+  "createdAt": "2025-11-25T22:24:44.000Z",
+  "usedStorage": 347085707454
+}

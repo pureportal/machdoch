@@ -1,0 +1,13 @@
+Process 28220: "C:\Users\ehrha\AppData\Roaming\com.machdoch.desktop\media-studio\runtime\python\cpython-3.12.10-windows-x86_64-none\python.exe" -I -B -Xutf8 \\?\C:\Development\machdoch\.cache\rust\debug\python\media_diffusers_worker.py serve
+Python v3.12.10 (C:\Users\ehrha\AppData\Roaming\com.machdoch.desktop\media-studio\runtime\python\cpython-3.12.10-windows-x86_64-none\python.exe)
+
+Thread 22840 (idle): "MainThread"
+    serve (media_model_server.py:23)
+    main (media_diffusers_worker.py:9785)
+    <module> (media_diffusers_worker.py:9889)
+Thread 29004 (idle): "tqdm_monitor"
+    wait (threading.py:359)
+    wait (threading.py:655)
+    run (tqdm\_monitor.py:69)
+    _bootstrap_inner (threading.py:1075)
+    _bootstrap (threading.py:1032)

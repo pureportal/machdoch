@@ -1,0 +1,214 @@
+[
+  {
+    "model": "upscale-span",
+    "command": "upscale",
+    "scale": "2",
+    "seconds": 9.561999999999898,
+    "pixelsUnchanged": true,
+    "sha256": "1d152bed2498b2b80de03335cec45e5bb53e6b7e27cd40d04cf7cf07291a90d0",
+    "result": {
+      "schemaVersion": 1,
+      "width": 194,
+      "height": 290,
+      "architecture": "SPAN",
+      "nativeScale": 4,
+      "scale": 2,
+      "tileSize": 64,
+      "device": "cuda"
+    }
+  },
+  {
+    "model": "upscale-span",
+    "command": "upscale",
+    "scale": "4",
+    "seconds": 9.640999999999622,
+    "pixelsUnchanged": true,
+    "sha256": "b064086fa56444bcab24d1c2c73cfe5272c5b823ebeeac78a89d1a90f1275e12",
+    "result": {
+      "schemaVersion": 1,
+      "width": 388,
+      "height": 580,
+      "architecture": "SPAN",
+      "nativeScale": 4,
+      "scale": 4,
+      "tileSize": 64,
+      "device": "cuda"
+    }
+  },
+  {
+    "model": "upscale-span",
+    "command": "upscale-video",
+    "scale": "2",
+    "seconds": 11.375,
+    "pixelsUnchanged": true,
+    "sha256": "ec789123edc21f8d6497a48075d1814c1a347b91cc14399d670e9ada30bec792",
+    "result": {
+      "schemaVersion": 1,
+      "architecture": "SPAN",
+      "device": "cuda",
+      "nativeScale": 4,
+      "scale": 2,
+      "tileSize": 64,
+      "output": {
+        "fileName": "output.webm",
+        "width": 192,
+        "height": 128,
+        "numFrames": 8,
+        "fps": 8.0,
+        "durationSeconds": 1.0,
+        "hasAudio": true,
+        "hasAlpha": false
+      }
+    }
+  },
+  {
+    "model": "upscale",
+    "command": "upscale",
+    "scale": "2",
+    "seconds": 9.890000000001237,
+    "pixelsUnchanged": true,
+    "sha256": "73f04a29899bc1152b0829cb981c0038c27cadd6e42d4547372c38e88430257b",
+    "result": {
+      "schemaVersion": 1,
+      "width": 194,
+      "height": 290,
+      "architecture": "ESRGAN",
+      "nativeScale": 4,
+      "scale": 2,
+      "tileSize": 64,
+      "device": "cuda"
+    }
+  },
+  {
+    "model": "upscale",
+    "command": "upscale",
+    "scale": "4",
+    "seconds": 10.313000000000102,
+    "pixelsUnchanged": true,
+    "sha256": "1770f55dee5c509af8316bfda3be4d340a463814a74ab6fe68988f5a3c42534a",
+    "result": {
+      "schemaVersion": 1,
+      "width": 388,
+      "height": 580,
+      "architecture": "ESRGAN",
+      "nativeScale": 4,
+      "scale": 4,
+      "tileSize": 64,
+      "device": "cuda"
+    }
+  },
+  {
+    "model": "upscale",
+    "command": "upscale-video",
+    "scale": "2",
+    "seconds": 10.65599999999904,
+    "pixelsUnchanged": true,
+    "sha256": "f0dc6609ba6d770b3995886311cb1973531249150a29d0c4bfba8b6ece353748",
+    "result": {
+      "schemaVersion": 1,
+      "architecture": "ESRGAN",
+      "device": "cuda",
+      "nativeScale": 4,
+      "scale": 2,
+      "tileSize": 64,
+      "output": {
+        "fileName": "output.webm",
+        "width": 192,
+        "height": 128,
+        "numFrames": 8,
+        "fps": 8.0,
+        "durationSeconds": 1.0,
+        "hasAudio": true,
+        "hasAlpha": false
+      }
+    }
+  },
+  {
+    "model": "upscale-swinir",
+    "command": "upscale",
+    "scale": "2",
+    "seconds": 14.609000000000378,
+    "pixelsUnchanged": true,
+    "sha256": "71aca16412a00ab461d0bb8b9fbdc66d24d8027f933fda881ddac09e58f99568",
+    "result": {
+      "schemaVersion": 1,
+      "width": 194,
+      "height": 290,
+      "architecture": "SwinIR",
+      "nativeScale": 4,
+      "scale": 2,
+      "tileSize": 64,
+      "device": "cuda"
+    }
+  },
+  {
+    "model": "upscale-swinir",
+    "command": "upscale",
+    "scale": "4",
+    "seconds": 13.54700000000048,
+    "pixelsUnchanged": true,
+    "sha256": "bf13e9223d66c9adbf92426e8f0cd309bd6b7edbc834a949e0d555afc200b2a1",
+    "result": {
+      "schemaVersion": 1,
+      "width": 388,
+      "height": 580,
+      "architecture": "SwinIR",
+      "nativeScale": 4,
+      "scale": 4,
+      "tileSize": 64,
+      "device": "cuda"
+    }
+  },
+  {
+    "model": "upscale-swinir",
+    "command": "upscale-video",
+    "scale": "2",
+    "seconds": 15.656999999999243,
+    "pixelsUnchanged": true,
+    "sha256": "c3a83579f69e5fb06d5d05fa07c892600824ac1f7784c657ec5d2dcaea02816b",
+    "result": {
+      "schemaVersion": 1,
+      "architecture": "SwinIR",
+      "device": "cuda",
+      "nativeScale": 4,
+      "scale": 2,
+      "tileSize": 64,
+      "output": {
+        "fileName": "output.webm",
+        "width": 192,
+        "height": 128,
+        "numFrames": 8,
+        "fps": 8.0,
+        "durationSeconds": 1.0,
+        "hasAudio": true,
+        "hasAlpha": false
+      }
+    }
+  },
+  {
+    "model": "upscale-span",
+    "command": "upscale-video",
+    "scale": "4",
+    "seconds": 11.421000000000276,
+    "pixelsUnchanged": true,
+    "sha256": "47ddc8d0d87bf64f8960582064e6ecef3dd072bd81d6f95cfdfce7602a1e1fec",
+    "result": {
+      "schemaVersion": 1,
+      "architecture": "SPAN",
+      "device": "cuda",
+      "nativeScale": 4,
+      "scale": 4,
+      "tileSize": 64,
+      "output": {
+        "fileName": "output.webm",
+        "width": 384,
+        "height": 256,
+        "numFrames": 8,
+        "fps": 8.0,
+        "durationSeconds": 1.0,
+        "hasAudio": true,
+        "hasAlpha": false
+      }
+    }
+  }
+]

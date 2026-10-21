@@ -1,0 +1,10 @@
+{
+  "modelId": 618692,
+  "versionId": 699279,
+  "filename": "flux_schnell.sft",
+  "sha256": "9403429e0052277ac2a87ad800adece5481eecefd9ed334e1f348723621d2a0a",
+  "bytes": 23782506688,
+  "sourceUrl": "https://civitai.com/models/618692?modelVersionId=699279",
+  "model": "FLUX",
+  "baseModel": "Flux.1 D"
+}

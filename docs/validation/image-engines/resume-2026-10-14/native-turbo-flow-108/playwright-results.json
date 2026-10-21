@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "actualTauriIPC": true,
+  "modelId": "local:user:37efbf3a9527f9cb0d81f7ce35ceba82fc1e08f7c8c80e38e84187e90cafd791",
+  "sampler": "flow-euler",
+  "fixedSteps": 4,
+  "fixedGuidance": 0,
+  "basicGuidanceHidden": true,
+  "advancedGuidanceDisabled": true,
+  "basicToAdvanced": true,
+  "scope": "Control check; generation has not run"
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "status": "fulfilled",
+    "value": {
+      "repo": "diffusers/stable-diffusion-2-1",
+      "status": 401,
+      "url": "https://huggingface.co/api/models/diffusers/stable-diffusion-2-1?blobs=true"
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "repo": "diffusers/sd2-1-base",
+      "status": 401,
+      "url": "https://huggingface.co/api/models/diffusers/sd2-1-base?blobs=true"
+    }
+  },
+  {
+    "status": "fulfilled",
+    "value": {
+      "repo": "stabilityai/stable-diffusion-2-1-base",
+      "status": 401,
+      "url": "https://huggingface.co/api/models/stabilityai/stable-diffusion-2-1-base?blobs=true"
+    }
+  }
+]

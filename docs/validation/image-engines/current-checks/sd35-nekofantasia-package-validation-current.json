@@ -1,0 +1,44 @@
+{
+  "checkedAtUtc": "2026-10-13T06:48:24.952741+00:00",
+  "processId": 1476,
+  "package": "C:\\Development\\machdoch\\.cache\\prepared-sd35-nekofantasia-package-current",
+  "bytesBeforeProvenance": 16538212331,
+  "filesBeforeProvenance": 33,
+  "tensorInspections": [
+    {
+      "component": "transformer",
+      "tensors": 909,
+      "allTensorNamesShapesAndDtypesMatch": true,
+      "dtype": "BF16"
+    },
+    {
+      "component": "vae",
+      "tensors": 244,
+      "allTensorNamesShapesAndDtypesMatch": true,
+      "dtype": "BF16"
+    },
+    {
+      "component": "text_encoder",
+      "tensors": 197,
+      "allTensorNamesShapesAndDtypesMatch": true,
+      "dtype": "F16"
+    },
+    {
+      "component": "text_encoder_2",
+      "tensors": 517,
+      "allTensorNamesShapesAndDtypesMatch": true,
+      "dtype": "F16"
+    },
+    {
+      "component": "text_encoder_3",
+      "tensors": 220,
+      "allTensorNamesShapesAndDtypesMatch": true,
+      "dtype": "F16"
+    }
+  ],
+  "allHashesVerified": true,
+  "t5PublisherDigestMatches": true,
+  "licensesAndNoticeVerified": true,
+  "nativeImportVerified": false,
+  "fullPipelineInferenceVerified": false
+}

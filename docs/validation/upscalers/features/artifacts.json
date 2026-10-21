@@ -1,0 +1,34 @@
+[
+  {
+    "root": ".cache/upscale-features-native",
+    "executableSha256": "161143d8c4c0edb8ceabf92d4e664fdc49e4cd26822a28b46b93766b3acf7eb2",
+    "workers": [
+      {
+        "name": "media_upscale.py",
+        "sha256": "4e47252f562fb2907be30b939885be9a8d90256ee795e7e4caff966388687015",
+        "matchesSource": true
+      },
+      {
+        "name": "media_upscale_settings.py",
+        "sha256": "2d6edc27ed107db27c29e750dd9667e8408723e68b42111eac66d2d4f668b990",
+        "matchesSource": true
+      }
+    ]
+  },
+  {
+    "root": ".cache/upscale-features-final",
+    "executableSha256": "0f2bdd43ae2c71d72f136f9e9f0a9c42185ff1c7a5ab0d99cc29780e1dd9f61f",
+    "workers": [
+      {
+        "name": "media_upscale.py",
+        "sha256": "4e47252f562fb2907be30b939885be9a8d90256ee795e7e4caff966388687015",
+        "matchesSource": true
+      },
+      {
+        "name": "media_upscale_settings.py",
+        "sha256": "2d6edc27ed107db27c29e750dd9667e8408723e68b42111eac66d2d4f668b990",
+        "matchesSource": true
+      }
+    ]
+  }
+]

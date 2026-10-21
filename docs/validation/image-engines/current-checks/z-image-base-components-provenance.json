@@ -1,0 +1,80 @@
+{
+  "revision": "04cc4abb7c5069926f75c9bfde9ef43d49423021",
+  "records": [
+    {
+      "path": "model_index.json",
+      "method": "publisher-download",
+      "size": 467
+    },
+    {
+      "path": "scheduler/scheduler_config.json",
+      "method": "publisher-download",
+      "size": 173
+    },
+    {
+      "path": "text_encoder/config.json",
+      "method": "publisher-download",
+      "size": 726
+    },
+    {
+      "path": "text_encoder/generation_config.json",
+      "method": "publisher-download",
+      "size": 239
+    },
+    {
+      "path": "text_encoder/model-00001-of-00003.safetensors",
+      "method": "verified-hardlink",
+      "size": 3957900840
+    },
+    {
+      "path": "text_encoder/model-00002-of-00003.safetensors",
+      "method": "verified-hardlink",
+      "size": 3987450520
+    },
+    {
+      "path": "text_encoder/model-00003-of-00003.safetensors",
+      "method": "verified-hardlink",
+      "size": 99630640
+    },
+    {
+      "path": "text_encoder/model.safetensors.index.json",
+      "method": "publisher-download",
+      "size": 32819
+    },
+    {
+      "path": "tokenizer/merges.txt",
+      "method": "publisher-download",
+      "size": 1671853
+    },
+    {
+      "path": "tokenizer/tokenizer.json",
+      "method": "verified-hardlink",
+      "size": 11422654
+    },
+    {
+      "path": "tokenizer/tokenizer_config.json",
+      "method": "publisher-download",
+      "size": 9732
+    },
+    {
+      "path": "tokenizer/vocab.json",
+      "method": "publisher-download",
+      "size": 2776833
+    },
+    {
+      "path": "transformer/config.json",
+      "method": "publisher-download",
+      "size": 500
+    },
+    {
+      "path": "vae/config.json",
+      "method": "publisher-download",
+      "size": 820
+    },
+    {
+      "path": "vae/diffusion_pytorch_model.safetensors",
+      "method": "verified-hardlink",
+      "size": 167666902
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+[
+  {
+    "url": "https://huggingface.co/api/models?author=diffusers&search=3.5&limit=40&full=true",
+    "items": []
+  },
+  {
+    "url": "https://huggingface.co/api/models?author=sayakpaul&search=3.5&limit=40&full=true",
+    "items": []
+  }
+]

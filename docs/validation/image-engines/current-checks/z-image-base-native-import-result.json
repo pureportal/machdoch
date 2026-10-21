@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "modelId": "local:user:b19790e5ac48a7e111429e4866de2e779f9cd7e18f94004cf826ad0d8d4db44b",
+  "displayName": "Tongyi-MAI Z-Image Base BF16",
+  "family": "Z-Image",
+  "revision": "b19790e5ac48a7e111429e4866de2e779f9cd7e18f94004cf826ad0d8d4db44b",
+  "digest": "b19790e5ac48a7e111429e4866de2e779f9cd7e18f94004cf826ad0d8d4db44b",
+  "byteSize": 20538504376,
+  "targetLabel": "models/packages/user-b19790e5ac48a7e111429e4866de2e77/revisions/b19790e5ac48a7e111429e4866de2e779f9cd7e18f94004cf826ad0d8d4db44b",
+  "importedAt": "2026-10-11T16:30:16.931Z",
+  "alreadyInstalled": false
+}

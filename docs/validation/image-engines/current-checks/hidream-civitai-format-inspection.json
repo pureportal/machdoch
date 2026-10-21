@@ -1,0 +1,39 @@
+{
+  "modelId": 1457126,
+  "versionId": 1647676,
+  "filename": "hidreamI1FULLDEVFAST_full.safetensors",
+  "publisherSha256": "94f8ccee232f29270c876d3e5db6d74aab2d3b138d97ba738951b1fe837ffa5f",
+  "headerOnly": true,
+  "weightDigestVerified": false,
+  "sourceUrl": "https://civitai.com/models/1457126?modelVersionId=1647676",
+  "tensorCount": 4999,
+  "dtypes": [
+    "F32",
+    "BF16",
+    "U8"
+  ],
+  "quantizationKeys": [
+    "caption_projection.0.linear.weight.absmax",
+    "caption_projection.0.linear.weight.quant_map",
+    "caption_projection.1.linear.weight.absmax",
+    "caption_projection.1.linear.weight.quant_map",
+    "caption_projection.10.linear.weight.absmax",
+    "caption_projection.10.linear.weight.quant_map",
+    "caption_projection.11.linear.weight.absmax",
+    "caption_projection.11.linear.weight.quant_map",
+    "caption_projection.12.linear.weight.absmax",
+    "caption_projection.12.linear.weight.quant_map",
+    "caption_projection.13.linear.weight.absmax",
+    "caption_projection.13.linear.weight.quant_map"
+  ],
+  "metadataKeys": [
+    "format"
+  ],
+  "runtimeGeneration": "not run",
+  "quantizationStateKeys": [
+    "caption_projection.0.linear.weight.quant_state.bitsandbytes__fp4",
+    "caption_projection.1.linear.weight.quant_state.bitsandbytes__fp4",
+    "caption_projection.10.linear.weight.quant_state.bitsandbytes__fp4",
+    "caption_projection.11.linear.weight.quant_state.bitsandbytes__fp4"
+  ]
+}

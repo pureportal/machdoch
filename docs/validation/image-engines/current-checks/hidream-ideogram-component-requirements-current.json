@@ -1,0 +1,28 @@
+{
+  "sampledAt": "2026-10-11T19:05:59.699Z",
+  "hidream": {
+    "publisher": "https://huggingface.co/HiDream-ai/HiDream-I1-Full",
+    "requiredExternalEncoder": "meta-llama/Meta-Llama-3.1-8B-Instruct",
+    "publisherInstructions": "The inference script downloads the external Llama encoder separately; its component licence also applies.",
+    "runtimeGeneration": "not run"
+  },
+  "ideogram": {
+    "publisher": "https://huggingface.co/ideogram-ai/ideogram-4-nf4",
+    "publisherHardwareTable": {
+      "nf4": "CUDA; Diffusers support",
+      "fp8": "All hardware; no Diffusers support"
+    },
+    "originalWeightAccess": "gated",
+    "observedHost": "AMD Radeon RX 9070 with ROCm",
+    "bitsandbytesInstalled": true,
+    "hardwareCompatibility": "Current bitsandbytes supports the host target; full Ideogram inference remains untested",
+    "runtimeGeneration": "not run",
+    "installedQuantizationBackend": {
+      "version": "0.50.2",
+      "windowsRocmLibrary": "libbitsandbytes_rocm714.dll",
+      "documentedTarget": "gfx1201",
+      "documentation": "https://huggingface.co/docs/bitsandbytes/main/en/installation?backend=AMD+ROCm&source=Windows",
+      "inferenceTest": "pending"
+    }
+  }
+}

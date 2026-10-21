@@ -1,0 +1,44 @@
+{
+  "upscale-span": [
+    {
+      "path": "4x-spanx4_ch48.safetensors",
+      "url": "https://github.com/OpenModelDB/model-hub/releases/download/span/4x-spanx4_ch48.safetensors",
+      "bytes": 8965736,
+      "sha256": "80abb88a936bccaeb89076e2dc0cb71871fcb7c725bb479c0cc7a95e1e5e3362"
+    },
+    {
+      "path": "LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/hongyuanyu/SPAN/c77a5917759f09e66fbc7124220c5afc5ee221e5/LICENSE.txt",
+      "bytes": 11350,
+      "sha256": "5447872f21ddc29dc0dc060d5c885513c01c904e9da9931bba69898a6fb4d415"
+    }
+  ],
+  "upscale": [
+    {
+      "path": "RealESRGAN_x4.pth",
+      "url": "https://huggingface.co/ai-forever/Real-ESRGAN/resolve/8110204ebf8d25c031b66c26c2d1098aa831157e/RealESRGAN_x4.pth",
+      "bytes": 67040989,
+      "sha256": "aa00f09ad753d88576b21ed977e97d634976377031b178acc3b5b238df463400"
+    },
+    {
+      "path": "LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/ai-forever/Real-ESRGAN/362a0316878f41dbdfbb23657b450c3353de5acf/LICENSE",
+      "bytes": 1519,
+      "sha256": "780ab29c688ad555a1a76faa728ded87b21ef02c72ba913c2418e7138fc331da"
+    }
+  ],
+  "upscale-swinir": [
+    {
+      "path": "002_lightweightSR_DIV2K_s64w8_SwinIR-S_x4.pth",
+      "url": "https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/002_lightweightSR_DIV2K_s64w8_SwinIR-S_x4.pth",
+      "bytes": 17225941,
+      "sha256": "09fad24e32ae62722e1a055efde9921328f4137981bab0a42a4a3a806306c58e"
+    },
+    {
+      "path": "LICENSE.txt",
+      "url": "https://raw.githubusercontent.com/JingyunLiang/SwinIR/6545850fbf8df298df73d81f3e8cba638787c8bd/LICENSE",
+      "bytes": 11348,
+      "sha256": "d66ccc11682c7458b19b376e1335e8665cbe412ff71f554bfec25f1791cddfa0"
+    }
+  ]
+}

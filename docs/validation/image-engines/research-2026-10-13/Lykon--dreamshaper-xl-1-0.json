@@ -1,0 +1,114 @@
+{
+  "repository": "Lykon/dreamshaper-xl-1-0",
+  "revision": "41e6644752a8c9aa63930e6043c4fd83c7708420",
+  "gated": false,
+  "card": {
+    "language": [
+      "en"
+    ],
+    "license": "openrail++",
+    "tags": [
+      "stable-diffusion",
+      "stable-diffusion-diffusers",
+      "stable-diffusion-xl",
+      "text-to-image",
+      "art",
+      "artistic",
+      "diffusers",
+      "anime",
+      "dreamshaper"
+    ],
+    "duplicated_from": "lykon-models/dreamshaper-xl-1-0"
+  },
+  "files": [
+    {
+      "rfilename": ".gitattributes"
+    },
+    {
+      "rfilename": "README.md"
+    },
+    {
+      "rfilename": "image.png"
+    },
+    {
+      "rfilename": "model_index.json"
+    },
+    {
+      "rfilename": "scheduler/scheduler_config.json"
+    },
+    {
+      "rfilename": "text_encoder/config.json"
+    },
+    {
+      "rfilename": "text_encoder/model.fp16.safetensors"
+    },
+    {
+      "rfilename": "text_encoder/model.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_2/config.json"
+    },
+    {
+      "rfilename": "text_encoder_2/model.fp16.safetensors"
+    },
+    {
+      "rfilename": "text_encoder_2/model.safetensors"
+    },
+    {
+      "rfilename": "tokenizer/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer/vocab.json"
+    },
+    {
+      "rfilename": "tokenizer_2/merges.txt"
+    },
+    {
+      "rfilename": "tokenizer_2/special_tokens_map.json"
+    },
+    {
+      "rfilename": "tokenizer_2/tokenizer_config.json"
+    },
+    {
+      "rfilename": "tokenizer_2/vocab.json"
+    },
+    {
+      "rfilename": "unet/config.json"
+    },
+    {
+      "rfilename": "unet/diffusion_pytorch_model.fp16.safetensors"
+    },
+    {
+      "rfilename": "unet/diffusion_pytorch_model.safetensors"
+    },
+    {
+      "rfilename": "vae/config.json"
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.fp16.safetensors"
+    },
+    {
+      "rfilename": "vae/diffusion_pytorch_model.safetensors"
+    }
+  ],
+  "documents": {
+    "README.md": {
+      "status": 200,
+      "content": "---\nlanguage:\n- en\nlicense: openrail++\ntags:\n- stable-diffusion\n- stable-diffusion-diffusers\n- stable-diffusion-xl\n- text-to-image\n- art\n- artistic\n- diffusers\n- anime\n- dreamshaper\nduplicated_from: lykon-models/dreamshaper-xl-1-0\n---\n\n# Dreamshaper SDXL-1-0\n\n`lykon-models/dreamshaper-xl-1-0` is a Stable Diffusion model that has been fine-tuned on [stabilityai/stable-diffusion-xl-base-1.0](https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0).\n\nPlease consider supporting me: \n- on [Patreon](https://www.patreon.com/Lykon275)\n- or [buy me a coffee](https://snipfeed.co/lykon)\n\n## Diffusers\n\nFor more general information on how to run text-to-image models with 🧨 Diffusers, see [the docs](https://huggingface.co/docs/diffusers/using-diffusers/conditional_image_generation).\n\n1. Installation\n\n```\npip install diffusers transformers accelerate\n```\n\n2. Run\n```py\nfrom diffusers import AutoPipelineForText2Image, DEISMultistepScheduler\nimport torch\n\npipe = AutoPipelineForText2Image.from_pretrained('lykon-models/dreamshaper-xl-1-0', torch_dtype=torch.float16, variant=\"fp16\")\npipe.scheduler = DEISMultistepScheduler.from_config(pipe.scheduler.config)\npipe = pipe.to(\"cuda\")\n\nprompt = \"portrait photo of muscular bearded guy in a worn mech suit, light bokeh, intricate, steel metal, elegant, sharp focus, soft lighting, vibrant colors\"\n\ngenerator = torch.manual_seed(0)\nimage = pipe(prompt, num_inference_steps=25).images[0]  \nimage.save(\"./image.png\")\n```\n\n![](./image.png)\n"
+    },
+    "model_index.json": {
+      "status": 200,
+      "content": "{\n  \"_class_name\": \"StableDiffusionXLPipeline\",\n  \"_diffusers_version\": \"0.21.0.dev0\",\n  \"_name_or_path\": \"lykon-models/dreamshaper-xl-1-0\",\n  \"force_zeros_for_empty_prompt\": true,\n  \"scheduler\": [\n    \"diffusers\",\n    \"DEISMultistepScheduler\"\n  ],\n  \"text_encoder\": [\n    \"transformers\",\n    \"CLIPTextModel\"\n  ],\n  \"text_encoder_2\": [\n    \"transformers\",\n    \"CLIPTextModelWithProjection\"\n  ],\n  \"tokenizer\": [\n    \"transformers\",\n    \"CLIPTokenizer\"\n  ],\n  \"tokenizer_2\": [\n    \"transformers\",\n    \"CLIPTokenizer\"\n  ],\n  \"unet\": [\n    \"diffusers\",\n    \"UNet2DConditionModel\"\n  ],\n  \"vae\": [\n    \"diffusers\",\n    \"AutoencoderKL\"\n  ]\n}\n"
+    },
+    "scheduler/scheduler_config.json": {
+      "status": 200,
+      "content": "{\n  \"_class_name\": \"DEISMultistepScheduler\",\n  \"_diffusers_version\": \"0.21.0.dev0\",\n  \"algorithm_type\": \"deis\",\n  \"beta_end\": 0.012,\n  \"beta_schedule\": \"scaled_linear\",\n  \"beta_start\": 0.00085,\n  \"clip_sample\": false,\n  \"dynamic_thresholding_ratio\": 0.995,\n  \"interpolation_type\": \"linear\",\n  \"lower_order_final\": true,\n  \"num_train_timesteps\": 1000,\n  \"prediction_type\": \"epsilon\",\n  \"sample_max_value\": 1.0,\n  \"set_alpha_to_one\": false,\n  \"skip_prk_steps\": true,\n  \"solver_order\": 2,\n  \"solver_type\": \"logrho\",\n  \"steps_offset\": 1,\n  \"thresholding\": false,\n  \"timestep_spacing\": \"leading\",\n  \"trained_betas\": null,\n  \"use_karras_sigmas\": false\n}\n"
+    }
+  }
+}

@@ -1,0 +1,2328 @@
+[
+  {
+    "name": "hidream",
+    "url": "https://huggingface.co/api/models/HiDream-ai/HiDream-I1-Full?blobs=true",
+    "status": 200,
+    "revision": "8ccbbfb270ccdae26d6bb0081df67dc81e4033bf",
+    "files": 36,
+    "weightBytes": 47178560726
+  },
+  {
+    "name": "juggernaut-xi",
+    "url": "https://huggingface.co/api/models/RunDiffusion/Juggernaut-XI-v11",
+    "status": 200,
+    "revision": "f836518c7a75f47a9e26bc661ff9509ef2ceb7c0",
+    "files": 22,
+    "weightBytes": 0
+  },
+  {
+    "name": "llama-access",
+    "url": "https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct/resolve/main/config.json",
+    "status": 401
+  },
+  {
+    "name": "sd35-turbo-access",
+    "url": "https://huggingface.co/stabilityai/stable-diffusion-3.5-large-turbo/resolve/main/model_index.json",
+    "status": 401
+  },
+  {
+    "name": "civitai-sd35-turbo",
+    "url": "https://civitai.com/api/v1/models?query=Stable+Diffusion+3.5&types=Checkpoint&limit=100",
+    "status": 200,
+    "models": [
+      {
+        "id": 718357,
+        "name": "Delgados",
+        "versions": [
+          {
+            "id": 818049,
+            "name": "animalitos",
+            "baseModel": "Flux.1 S"
+          },
+          {
+            "id": 803285,
+            "name": "unchained-hyfu",
+            "baseModel": "Flux.1 S"
+          }
+        ]
+      },
+      {
+        "id": 121215,
+        "name": "Stable-Diffusion-XL-Anime-Final",
+        "versions": [
+          {
+            "id": 660179,
+            "name": "final",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 520650,
+            "name": "v5.6",
+            "baseModel": "SDXL Hyper"
+          },
+          {
+            "id": 466100,
+            "name": "v5.4",
+            "baseModel": "SDXL Hyper"
+          },
+          {
+            "id": 410487,
+            "name": "v5.2",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 389464,
+            "name": "v4",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 147872,
+            "name": "v3.0",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 141086,
+            "name": "v2.0",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 131845,
+            "name": "v1.0",
+            "baseModel": "SDXL 1.0"
+          }
+        ]
+      },
+      {
+        "id": 122757,
+        "name": "Stable-Diffusion-XL-Kawaii",
+        "versions": [
+          {
+            "id": 133954,
+            "name": "v1.0_RoundEyes",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 133743,
+            "name": "v1.0_OvalEyes",
+            "baseModel": "SDXL 1.0"
+          }
+        ]
+      },
+      {
+        "id": 155256,
+        "name": "Stable Diffusion v1.5 [bf16/fp16] [no-ema/ema-only] [no-vae] [SafeTensors] [Checkpoint]",
+        "versions": [
+          {
+            "id": 174123,
+            "name": "v1.5-no-ema",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 174136,
+            "name": "v1.5-ema-only",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 32423,
+        "name": "E621 Rising v2: A Stable Diffusion 2.1 Furry Model",
+        "versions": [
+          {
+            "id": 38862,
+            "name": "v2.0",
+            "baseModel": "SD 2.1"
+          }
+        ]
+      },
+      {
+        "id": 269988,
+        "name": "Nebul.Redmond - Stable Diffusion SD XL Finetuned Model",
+        "versions": [
+          {
+            "id": 304365,
+            "name": "v1.0",
+            "baseModel": "SDXL 1.0"
+          }
+        ]
+      },
+      {
+        "id": 118689,
+        "name": "The pruned stable diffusion XL (SDXL 0.9) no-ema (for lower RAM and lower VRAM)",
+        "versions": [
+          {
+            "id": 128796,
+            "name": "v1.0",
+            "baseModel": "SDXL 0.9"
+          }
+        ]
+      },
+      {
+        "id": 106489,
+        "name": "Hellcoder - (Trying to uncensor Stable Diffusion 2.1)",
+        "versions": [
+          {
+            "id": 116517,
+            "name": "Alpha_Hellcoder_V_0-3",
+            "baseModel": "SD 2.1 768"
+          },
+          {
+            "id": 114697,
+            "name": "Alpha_Hellcoder_V0.1.1",
+            "baseModel": "SD 2.1"
+          },
+          {
+            "id": 114370,
+            "name": "Alpha Hellcoder V0.1",
+            "baseModel": "SD 2.1 768"
+          }
+        ]
+      },
+      {
+        "id": 108360,
+        "name": "Hellcoder(Uncensored Stable Diffusion 2.1)DIffusersFriendly",
+        "versions": [
+          {
+            "id": 116622,
+            "name": "v1.0",
+            "baseModel": "SD 2.1 768"
+          }
+        ]
+      },
+      {
+        "id": 1185,
+        "name": "Cmodel Upgrade! Stable diffusion version 2 ",
+        "versions": [
+          {
+            "id": 1219,
+            "name": "Safetensor Version",
+            "baseModel": "SD 2.0"
+          }
+        ]
+      },
+      {
+        "id": 166609,
+        "name": "Realism By Stable Yogi (Pony)",
+        "versions": [
+          {
+            "id": 2985392,
+            "name": "Pony _v6.5",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 2985497,
+            "name": "Pony_v6.5 DMD2 + Gguf",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 992946,
+            "name": "Pony_V3_VAE",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 2176178,
+            "name": "v6.0_FP16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 2176192,
+            "name": "v6.0_DMD2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 2176186,
+            "name": "v6.0_BF16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 2176196,
+            "name": "v6.0_DMD2_ALT",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1422871,
+            "name": "v4.0_FP16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1883050,
+            "name": "v5.0_FP16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1883065,
+            "name": "v5.0_DMD2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1419384,
+            "name": "v4.0_DMD2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1075446,
+            "name": "V5_XL_FP16",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 1223643,
+            "name": "SD1.5_V9",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 1234938,
+            "name": "SD1.5_V9_FP32",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 1235013,
+            "name": "SD1.5_V9_LCM",
+            "baseModel": "SD 1.5 LCM"
+          },
+          {
+            "id": 1075450,
+            "name": "V5_XL_FP32",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 1075457,
+            "name": "V5_XL_DMD2",
+            "baseModel": "SDXL 1.0 LCM"
+          },
+          {
+            "id": 1075460,
+            "name": "V5_XL_Hyper",
+            "baseModel": "SDXL Hyper"
+          },
+          {
+            "id": 1075465,
+            "name": "V5_XL_Lightning",
+            "baseModel": "SDXL Lightning"
+          },
+          {
+            "id": 992950,
+            "name": "PONY_V3_DMD2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 992955,
+            "name": "PONY_V3_TURBO",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 992953,
+            "name": "PONY_V3_LIGHTNING",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 992951,
+            "name": "PONY_V3_HYPER",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1040580,
+            "name": "Extended Halloween",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 967230,
+            "name": "SD1.5_V8",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 939448,
+            "name": "XL_V4_VAE",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 939453,
+            "name": "XL_V4_DMD2",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 939456,
+            "name": "XL_V4_LIGHTNING",
+            "baseModel": "SDXL Lightning"
+          },
+          {
+            "id": 939451,
+            "name": "XL_V4_HYPER",
+            "baseModel": "SDXL Hyper"
+          },
+          {
+            "id": 895093,
+            "name": "Pony_V2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 897654,
+            "name": "Pony_V2_FP32",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 898501,
+            "name": "Pony_V2_Hyper_4s",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 898412,
+            "name": "Pony_V2_DMD2_4S",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 775007,
+            "name": "Pony_V1",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 823111,
+            "name": "XL_V3_VAE",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 836036,
+            "name": "XL_V3_LIGHTNING",
+            "baseModel": "SDXL Lightning"
+          },
+          {
+            "id": 854874,
+            "name": "PONY_V1_INPAINT",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 796131,
+            "name": "XL_V2_LIGHTNING",
+            "baseModel": "SDXL Lightning"
+          },
+          {
+            "id": 733125,
+            "name": "XL_V2",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 799684,
+            "name": "SD1.5_V7",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 795982,
+            "name": "SD1.5_V6 LCM INPAINT",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 683081,
+            "name": "V6 LCM",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 671371,
+            "name": "V6",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 629360,
+            "name": "V5",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 353362,
+            "name": "V4_LCM",
+            "baseModel": "SD 1.5 LCM"
+          },
+          {
+            "id": 334330,
+            "name": "XL_V1_LCM",
+            "baseModel": "SDXL 1.0 LCM"
+          },
+          {
+            "id": 333743,
+            "name": "XL_V1",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 325825,
+            "name": "V4",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 267814,
+            "name": "V3 + LCM",
+            "baseModel": "SD 1.5 LCM"
+          },
+          {
+            "id": 244560,
+            "name": "V3",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 243377,
+            "name": "V2",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 187436,
+            "name": "V1",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 974693,
+        "name": "Realism Illustrious By Stable Yogi",
+        "versions": [
+          {
+            "id": 2831949,
+            "name": "v5.5 FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2831980,
+            "name": "v5.5_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2831979,
+            "name": "v5.5_BF16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2091367,
+            "name": "v5.0_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2094546,
+            "name": "v5.0_BF16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2094547,
+            "name": "v5.0_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2094548,
+            "name": "v5.0_DMD2_ALT",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1906686,
+            "name": "v4.5_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1906687,
+            "name": "v4.5_BF16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1906683,
+            "name": "v4.5_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1736657,
+            "name": "v4.0_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1736527,
+            "name": "v4.0_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1542140,
+            "name": "v3.5_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1542150,
+            "name": "v3.5_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1372996,
+            "name": "v3.0_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1368900,
+            "name": "v3.0_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1376998,
+            "name": "v3.0_BF16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1279713,
+            "name": "v2.5_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1282415,
+            "name": "v2.5_BF16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1291468,
+            "name": "v2.5_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1267205,
+            "name": "v2.2_BF16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1265485,
+            "name": "v2.2_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1219781,
+            "name": "v2.0_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1224267,
+            "name": "V2.0_FP32",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1227687,
+            "name": "v2.0_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1235496,
+            "name": "v2.0_Lightning",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1231299,
+            "name": "v2.0_Hyper",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1209533,
+            "name": "v1.8_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1212301,
+            "name": "v1.8_FP32",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1196907,
+            "name": "v1.6_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1193368,
+            "name": "v1.6_Lightning",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1189445,
+            "name": "v1.6_Hyper",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1184557,
+            "name": "V1.6_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1152479,
+            "name": "V1.3_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1152577,
+            "name": "v1.3_FP32",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1152583,
+            "name": "v1.3_Lightning",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1152581,
+            "name": "v1.3_Hyper",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1152578,
+            "name": "v1.3_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1129446,
+            "name": "v1.1_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1129568,
+            "name": "v1.1_FP32",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1129785,
+            "name": "v1.1_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1129898,
+            "name": "v1.1_Lightning",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1091458,
+            "name": "V1_FP16",
+            "baseModel": "Illustrious"
+          }
+        ]
+      },
+      {
+        "id": 174687,
+        "name": "Babes By Stable Yogi - Pony",
+        "versions": [
+          {
+            "id": 2937668,
+            "name": "v6.5 FP16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 2939218,
+            "name": "v6.5 Fp8 + DMD2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 2939237,
+            "name": "v6.5 Q4+Q8",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 2110984,
+            "name": "v6.0_FP16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 2120243,
+            "name": "v6.0_BF16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 2120255,
+            "name": "v6.0_DMD2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 2122249,
+            "name": "v6.0_DMD2_ALT",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1779463,
+            "name": "v5.0",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1779472,
+            "name": "v5.0_4s",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1146820,
+            "name": "PONY_V4",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 984905,
+            "name": "PONY_V3",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 883787,
+            "name": "PONY_V2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1075478,
+            "name": "XL_V4",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 932860,
+            "name": "XL_V3",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 810284,
+            "name": "XL_V2",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 1146884,
+            "name": "PONY_V4_FP32_Fix",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1147146,
+            "name": "PONY_V4_DMD2_Fix",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1147148,
+            "name": "PONY_V4_Hyper_Fix",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1147162,
+            "name": "PONY_V4_Lightning_Fix",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1075481,
+            "name": "V4_XL_FP32",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 1075487,
+            "name": "V4_XL_DMD2",
+            "baseModel": "SDXL 1.0 LCM"
+          },
+          {
+            "id": 1075493,
+            "name": "V4_XL_Hyper",
+            "baseModel": "SDXL Hyper"
+          },
+          {
+            "id": 1075500,
+            "name": "V4_XL_Lightning",
+            "baseModel": "SDXL Lightning"
+          },
+          {
+            "id": 986096,
+            "name": "PONY_V3_DMD2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 987186,
+            "name": "Pony_V3_Hyper",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 987183,
+            "name": "PONY_V3_Lightning",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 987187,
+            "name": "PONY_V3_Inpaint",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1031029,
+            "name": "V7_SD1.5_INPAINT",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 933154,
+            "name": "XL_V3_DMD2",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 933014,
+            "name": "XL_V3_HYPER",
+            "baseModel": "SDXL Hyper"
+          },
+          {
+            "id": 932903,
+            "name": "XL_V3_Lightning",
+            "baseModel": "SDXL Lightning"
+          },
+          {
+            "id": 922630,
+            "name": "V7_SD1.5",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 890602,
+            "name": "Pony_V2_DMD2_4S",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 895446,
+            "name": "Pony_V2_Lightning_4s",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 891397,
+            "name": "Pony_V2_Hyper_4S",
+            "baseModel": "SDXL Hyper"
+          },
+          {
+            "id": 764023,
+            "name": "PONY_V1_FIX",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 836063,
+            "name": "XL_V2_LIGHTNING",
+            "baseModel": "SDXL Lightning"
+          },
+          {
+            "id": 854879,
+            "name": "PONY_V1_INPAINT",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 758660,
+            "name": "V6.0",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 622868,
+            "name": "V5.0",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 661500,
+            "name": "V5-LCM",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 427983,
+            "name": "V4-Instagram-Edition",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 353319,
+            "name": "XL_V1",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 351779,
+            "name": "XL_V1_LCM",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 351139,
+            "name": "V3+LCM",
+            "baseModel": "SD 1.5 LCM"
+          },
+          {
+            "id": 325734,
+            "name": "V3",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 263569,
+            "name": "V2+LCM",
+            "baseModel": "SD 1.5 LCM"
+          },
+          {
+            "id": 260093,
+            "name": "v2.0",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 224145,
+            "name": "v1.0 PRUNED",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 196109,
+            "name": "v1.0",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 1134825,
+        "name": "Babes Illustrious By Stable Yogi",
+        "versions": [
+          {
+            "id": 2739037,
+            "name": "v5.5 FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2750294,
+            "name": "v5.5_BF16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2750450,
+            "name": "v5.5_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2044007,
+            "name": "v5.0_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2044078,
+            "name": "v5.0_BF16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2044081,
+            "name": "v5.0_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2048263,
+            "name": "v5.0_DMD2_ALT",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1740703,
+            "name": "v4.0_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1740707,
+            "name": "v4.0_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1644615,
+            "name": "v3.0_BF16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1622684,
+            "name": "v3.0_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1622693,
+            "name": "v3.0_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1393867,
+            "name": "V2.0_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1393795,
+            "name": "v2.0_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1393862,
+            "name": "v2.0_BF16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1275906,
+            "name": "v1.0_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1299022,
+            "name": "v1.0_BF16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1282203,
+            "name": "v1.0_DMD2",
+            "baseModel": "Illustrious"
+          }
+        ]
+      },
+      {
+        "id": 167318,
+        "name": "Ultra Realistic By Stable Yogi (Pony)",
+        "versions": [
+          {
+            "id": 3182197,
+            "name": "v2.5",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1992752,
+            "name": "V2.0_FP16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1992753,
+            "name": "v2.0_BF16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1992755,
+            "name": "v2.0_DMD2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1699918,
+            "name": "v1.0_FP16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1699924,
+            "name": "v1.0_DMD2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 288890,
+            "name": "V3 + LCM",
+            "baseModel": "SD 1.5 LCM"
+          },
+          {
+            "id": 261180,
+            "name": "v3.0",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 219267,
+            "name": "v2.0",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 188210,
+            "name": "V1.0",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 2741166,
+        "name": "Muse By Stable Yogi Krea2",
+        "versions": [
+          {
+            "id": 3258954,
+            "name": "v3.5 Int8 Extended",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3355115,
+            "name": "v3.5 Int4 Extended \u270b",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3258951,
+            "name": "v3.5 NVFP4 Extended",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3258949,
+            "name": "v3.5 Q8 Extended",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3258950,
+            "name": "v3.5 Fp8 Extended",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3258948,
+            "name": "v3.5 Q4 Extended",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3254124,
+            "name": "v3.5 Q2 EXTENDED",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3189679,
+            "name": "v3.0 Turbo Int8",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3191141,
+            "name": "v3.0 Turbo NVFP4",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3200544,
+            "name": "v3.0 \ud83d\udfe2 Extended Turbo",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3200345,
+            "name": "v3.0 Extended Turbo Edit",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3186004,
+            "name": "v3.0 Turbo GGUf",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3149126,
+            "name": "v2.5 \ud83d\udfe2 EXTENDED TURBO",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3161047,
+            "name": "v2.5 NVFP4 Turbo",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3147272,
+            "name": "v2.5 INT8 Turbo",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3142181,
+            "name": "v2.5 GGUF",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3131430,
+            "name": "v2.0 Turbo INT8",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3138301,
+            "name": "v2.0 Turbo EDIT INT8",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3092719,
+            "name": "v1.5 Turbo Fp8",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3087451,
+            "name": "v1.0 Turbo Fp8",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3082791,
+            "name": "v1.0 Turbo FP8",
+            "baseModel": "Krea 2"
+          }
+        ]
+      },
+      {
+        "id": 2221503,
+        "name": "Zimage Turbo by Stable Yogi",
+        "versions": [
+          {
+            "id": 3164760,
+            "name": "2603 NVFP4",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 3096324,
+            "name": "2603 Fp8",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 3102528,
+            "name": "2603 INT8-ConvRot",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 2668773,
+            "name": "2602-BF16",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 2660405,
+            "name": "2602-Q8",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 2642303,
+            "name": "2602-FP8",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 2576181,
+            "name": "2601_fp8",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 2597578,
+            "name": "2601_Q8",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 2585636,
+            "name": "2601_bf16",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 2547276,
+            "name": "Xmas Bf16",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 2521513,
+            "name": "Xmas FP8",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 2547774,
+            "name": "Xmas_Q8",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 2507597,
+            "name": "Lab Rat v0 Q8",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 2504831,
+            "name": "Lab Rat v0 FP8",
+            "baseModel": "ZImageTurbo"
+          },
+          {
+            "id": 2500972,
+            "name": "Lab Rat v0",
+            "baseModel": "ZImageTurbo"
+          }
+        ]
+      },
+      {
+        "id": 168949,
+        "name": "Asian Realism By Stable Yogi (PONY)",
+        "versions": [
+          {
+            "id": 2474558,
+            "name": "v3.0_FP16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 2474640,
+            "name": "v3.0_DMD2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 2474623,
+            "name": "v3.0_BF16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1984324,
+            "name": "V2.0_FP16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1984328,
+            "name": "v2.0_BF16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1984330,
+            "name": "v2.0_DMD2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1624625,
+            "name": "v1.0_FP16_PONY",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1624612,
+            "name": "v1.0_BF16_PONY",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1624621,
+            "name": "v1.0_DMD2_PONY",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 270440,
+            "name": "V4",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 268900,
+            "name": "V4+LCM",
+            "baseModel": "SD 1.5 LCM"
+          },
+          {
+            "id": 244766,
+            "name": "v3.0",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 216802,
+            "name": "v2.0",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 189954,
+            "name": "1.0",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 1584358,
+        "name": "Ultra Realistic By Stable Yogi (ILLUS)",
+        "versions": [
+          {
+            "id": 3062969,
+            "name": "v2.5",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 3067429,
+            "name": "v2.5 DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2222714,
+            "name": "v2.0_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2222716,
+            "name": "v2.0_BF16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2222760,
+            "name": "v2.0_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 2222763,
+            "name": "v2.0_DMD2_ALT",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1792854,
+            "name": "v1.0_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1793157,
+            "name": "v1.0_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1819995,
+            "name": "v1.0_BF16",
+            "baseModel": "Illustrious"
+          }
+        ]
+      },
+      {
+        "id": 2786499,
+        "name": "Realism by Stable Yogi Krea2",
+        "versions": [
+          {
+            "id": 3329215,
+            "name": "v3.0 INT8 + FP8 Extended",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3326551,
+            "name": "v3.0 Q8 + Q2 Extended",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3322841,
+            "name": "v3.0 NVFP4 Extended",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3320956,
+            "name": "v3.0 INT4 Extended",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3316654,
+            "name": "v3.0 Q4 GGUF Extended",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3231618,
+            "name": "v2.5 FP8 Turbo",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3231611,
+            "name": "v2.5 INT8 Turbo",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3231619,
+            "name": "v2.5 NVFP4 Turbo",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3254606,
+            "name": "v2.5 Q2",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3210156,
+            "name": "v2.5 GGUF",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3186312,
+            "name": "v2.0 Turbo INT8",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3191447,
+            "name": "v2.0 Turbo NVFP4",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3186033,
+            "name": "v2.0 Turbo GGUF",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3178129,
+            "name": "v1.5 NVFP4",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3171271,
+            "name": "v1.5 INT8 TURBO",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3164756,
+            "name": "v1.5 Turbo GGUF",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3161023,
+            "name": "v1.0 NVFP4 Turbo",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3154231,
+            "name": "v1.0 Extended Turbo",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3142193,
+            "name": "v1.0 INT8 TURBO",
+            "baseModel": "Krea 2"
+          },
+          {
+            "id": 3139592,
+            "name": "v1.0 GGUF TURBO",
+            "baseModel": "Krea 2"
+          }
+        ]
+      },
+      {
+        "id": 1423965,
+        "name": "Realism SDXL By Stable Yogi",
+        "versions": [
+          {
+            "id": 2337806,
+            "name": "v8.0_FP16",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 2337812,
+            "name": "v8.0_Fp32",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 2337815,
+            "name": "v8.0_DMD2",
+            "baseModel": "SDXL Lightning"
+          },
+          {
+            "id": 2337817,
+            "name": "v8.0_DMD2_ALT",
+            "baseModel": "SDXL Hyper"
+          },
+          {
+            "id": 1928563,
+            "name": "v7.0_FP16",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 1928565,
+            "name": "v7.0_BF16",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 1928561,
+            "name": "v7.0_DMD2",
+            "baseModel": "SDXL Lightning"
+          },
+          {
+            "id": 1609506,
+            "name": "v6.0_XL",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 1610087,
+            "name": "v6.0_XL_DMD2",
+            "baseModel": "SDXL 1.0"
+          }
+        ]
+      },
+      {
+        "id": 1606452,
+        "name": "Ultra Realistic By Stable Yogi (SDXL)",
+        "versions": [
+          {
+            "id": 2285644,
+            "name": "v2.0_FP16",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 2285825,
+            "name": "v2.0_FP32",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 2285880,
+            "name": "v2.0_DMD2",
+            "baseModel": "SDXL Lightning"
+          },
+          {
+            "id": 1817928,
+            "name": "v1.0",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 1817969,
+            "name": "v1.0 4s",
+            "baseModel": "SDXL 1.0"
+          }
+        ]
+      },
+      {
+        "id": 1459741,
+        "name": "Asian Realism By Stable Yogi (ILLUS)",
+        "versions": [
+          {
+            "id": 1849702,
+            "name": "V2.0_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1849705,
+            "name": "v2.0_DMD2",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1650726,
+            "name": "v1.0_FP16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1650728,
+            "name": "v1.0_BF16",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1650722,
+            "name": "v1.0_DMD2",
+            "baseModel": "Illustrious"
+          }
+        ]
+      },
+      {
+        "id": 177131,
+        "name": "Muse Craft By Stable Yogi (SDXL)",
+        "versions": [
+          {
+            "id": 1950438,
+            "name": "v1.0_DMD2",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 1950432,
+            "name": "v1.0_BF16",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 1950427,
+            "name": "v1.0_FP16",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 288777,
+            "name": "V2 LCM",
+            "baseModel": "SD 1.5 LCM"
+          },
+          {
+            "id": 250189,
+            "name": "v2.0",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 1719840,
+        "name": "Babes By Stable Yogi (SDXL)",
+        "versions": [
+          {
+            "id": 2401621,
+            "name": "v6.0_FP16",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 2406196,
+            "name": "v6.0_DMD2",
+            "baseModel": "SDXL Lightning"
+          },
+          {
+            "id": 2406022,
+            "name": "v6.0_BF16",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 2406047,
+            "name": "v6.0_FP32",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 1946290,
+            "name": "v5.0_FP16",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 1946302,
+            "name": "v5.0_BF16",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 1946310,
+            "name": "v5.0_DMD2",
+            "baseModel": "SDXL 1.0"
+          }
+        ]
+      },
+      {
+        "id": 170134,
+        "name": "DARK_BY_STABLE_YOGI",
+        "versions": [
+          {
+            "id": 288922,
+            "name": "V2 + LCM",
+            "baseModel": "SD 1.5 LCM"
+          },
+          {
+            "id": 226365,
+            "name": "v2.0",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 191194,
+            "name": "v1.0",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 170860,
+        "name": "DREAM_BY_STABLE_YOGI",
+        "versions": [
+          {
+            "id": 269168,
+            "name": "V3+LCM",
+            "baseModel": "SD 1.5 LCM"
+          },
+          {
+            "id": 240361,
+            "name": "v2.0",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 191976,
+            "name": "v1.0",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 167537,
+        "name": "BEAUTY_BY_STABLE_YOGI",
+        "versions": [
+          {
+            "id": 288911,
+            "name": "V3 + LCM",
+            "baseModel": "SD 1.5 LCM"
+          },
+          {
+            "id": 260358,
+            "name": "v3.0",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 216929,
+            "name": "v2.0",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 188435,
+            "name": "v1.0",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 306055,
+        "name": "Stable Cascade",
+        "versions": [
+          {
+            "id": 343567,
+            "name": "base",
+            "baseModel": "Stable Cascade"
+          },
+          {
+            "id": 350856,
+            "name": "prior",
+            "baseModel": "Stable Cascade"
+          },
+          {
+            "id": 345025,
+            "name": "controlnet",
+            "baseModel": "Stable Cascade"
+          }
+        ]
+      },
+      {
+        "id": 232228,
+        "name": "Realistic_LCM_BY_Stable_Yogi",
+        "versions": [
+          {
+            "id": 262126,
+            "name": "v1.0",
+            "baseModel": "SD 1.5 LCM"
+          }
+        ]
+      },
+      {
+        "id": 171686,
+        "name": "QUICK_BY_STABLE_YOGI",
+        "versions": [
+          {
+            "id": 288885,
+            "name": "V3 + LCM",
+            "baseModel": "SD 1.5 LCM"
+          },
+          {
+            "id": 261479,
+            "name": "v3.0",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 224000,
+            "name": "v2.0 Pruned",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 198552,
+            "name": "2",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 192863,
+            "name": "v1.0",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 906585,
+        "name": "Stable NoobAI",
+        "versions": [
+          {
+            "id": 1106761,
+            "name": "vpred v0.65S iter",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1018194,
+            "name": "v0.75 iter+spo",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1014509,
+            "name": "v0.75 iter",
+            "baseModel": "Illustrious"
+          }
+        ]
+      },
+      {
+        "id": 1144717,
+        "name": "Semi Real Pony By Stable Yogi",
+        "versions": [
+          {
+            "id": 1622418,
+            "name": "v2_FP16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1622420,
+            "name": "v2_DMD2",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1287502,
+            "name": "v1.0_FP16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1287507,
+            "name": "v1.0_BF16",
+            "baseModel": "Pony"
+          },
+          {
+            "id": 1287436,
+            "name": "v1.0_DMD2",
+            "baseModel": "Pony"
+          }
+        ]
+      },
+      {
+        "id": 176544,
+        "name": "DARK_ART_BY_STABLE_YOGI",
+        "versions": [
+          {
+            "id": 261066,
+            "name": "v2.0",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 198224,
+            "name": "v1.0",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 175965,
+        "name": "ART_BY_STABLE_YOGI",
+        "versions": [
+          {
+            "id": 226125,
+            "name": "v1.0 PRUNED",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 197572,
+            "name": "v1.0",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 323194,
+        "name": "Stable Cascade by Stability.AI (single files)",
+        "versions": [
+          {
+            "id": 362358,
+            "name": "Stage A",
+            "baseModel": "Stable Cascade"
+          },
+          {
+            "id": 362369,
+            "name": "Stage B",
+            "baseModel": "Stable Cascade"
+          },
+          {
+            "id": 363571,
+            "name": "Stage C",
+            "baseModel": "Stable Cascade"
+          },
+          {
+            "id": 368719,
+            "name": "EffNet",
+            "baseModel": "Stable Cascade"
+          },
+          {
+            "id": 368715,
+            "name": "Previewer",
+            "baseModel": "Stable Cascade"
+          },
+          {
+            "id": 368823,
+            "name": "TextEnc",
+            "baseModel": "Stable Cascade"
+          },
+          {
+            "id": 368118,
+            "name": "Stage B (for ComfyUI)",
+            "baseModel": "Stable Cascade"
+          },
+          {
+            "id": 368675,
+            "name": "Stage C (for ComfyUI)",
+            "baseModel": "Stable Cascade"
+          }
+        ]
+      },
+      {
+        "id": 487228,
+        "name": "Stable Pony",
+        "versions": [
+          {
+            "id": 541811,
+            "name": "v1.0",
+            "baseModel": "Pony"
+          }
+        ]
+      },
+      {
+        "id": 248934,
+        "name": "Stable Destruction",
+        "versions": [
+          {
+            "id": 280897,
+            "name": "HAKAI",
+            "baseModel": "SDXL 1.0"
+          }
+        ]
+      },
+      {
+        "id": 2215,
+        "name": "Stable BTD6",
+        "versions": [
+          {
+            "id": 2366,
+            "name": "v1.0",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 403832,
+        "name": "Stable lis",
+        "versions": [
+          {
+            "id": 450267,
+            "name": "v1.0",
+            "baseModel": "Stable Cascade"
+          }
+        ]
+      },
+      {
+        "id": 344334,
+        "name": "Stable Cascade StableSwarmUI",
+        "versions": [
+          {
+            "id": 385424,
+            "name": "v1.0",
+            "baseModel": "Stable Cascade"
+          }
+        ]
+      },
+      {
+        "id": 358921,
+        "name": "Stable Cascade Stage B Slightly Improved",
+        "versions": [
+          {
+            "id": 401180,
+            "name": "v0.0",
+            "baseModel": "Stable Cascade"
+          }
+        ]
+      },
+      {
+        "id": 1081,
+        "name": "Stable BTD6",
+        "versions": [
+          {
+            "id": 1080,
+            "name": "BTD6",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 314325,
+        "name": "CounterSushi - Stable Cascade",
+        "versions": [
+          {
+            "id": 365424,
+            "name": "CounterSushi v0.3",
+            "baseModel": "Stable Cascade"
+          },
+          {
+            "id": 355602,
+            "name": "CounterSushi v0.2",
+            "baseModel": "Stable Cascade"
+          },
+          {
+            "id": 352648,
+            "name": "CounterSushi v0.1",
+            "baseModel": "Stable Cascade"
+          }
+        ]
+      },
+      {
+        "id": 316681,
+        "name": "InvictusRedmond - Stable Cascade Stage C Finetune - Generalist Model",
+        "versions": [
+          {
+            "id": 368922,
+            "name": "v1.1 - Less training",
+            "baseModel": "Stable Cascade"
+          },
+          {
+            "id": 355185,
+            "name": "v1.0",
+            "baseModel": "Stable Cascade"
+          }
+        ]
+      },
+      {
+        "id": 306144,
+        "name": "HelloWorld Stable Cascade Early Beta",
+        "versions": [
+          {
+            "id": 343656,
+            "name": "Stage_c_lite v0.1",
+            "baseModel": "Stable Cascade"
+          }
+        ]
+      },
+      {
+        "id": 332850,
+        "name": "Real Stable XL",
+        "versions": [
+          {
+            "id": 423465,
+            "name": "RealStable H",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 416393,
+            "name": "RealStable F",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 411273,
+            "name": "RealStable F.A.E",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 407694,
+            "name": "RealStable F.A",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 404534,
+            "name": "RealStable E",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 394413,
+            "name": "RealStable D4",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 394266,
+            "name": "RealStable C Final",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 394144,
+            "name": "RealStable B",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 372865,
+            "name": "Real Stable A",
+            "baseModel": "SDXL 1.0"
+          }
+        ]
+      },
+      {
+        "id": 2069063,
+        "name": "Kinda Stable",
+        "versions": [
+          {
+            "id": 2341245,
+            "name": "v1.0",
+            "baseModel": "SDXL 1.0"
+          }
+        ]
+      },
+      {
+        "id": 77446,
+        "name": "2.8D STABLE BEST VERSION",
+        "versions": [
+          {
+            "id": 305348,
+            "name": "v6",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 129942,
+            "name": "2.8Dv.5",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 106966,
+            "name": "2.8Dv4",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 89194,
+            "name": "2.8Dv3Realcook",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 88702,
+            "name": "2.8Dv3-PaintingCook",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 87765,
+            "name": "TANG V2.0-STABLE",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 84691,
+            "name": "Real Tang",
+            "baseModel": "SD 1.5"
+          },
+          {
+            "id": 82228,
+            "name": "DarkTongv1.0-2.8DBEST ",
+            "baseModel": "SD 1.5"
+          }
+        ]
+      },
+      {
+        "id": 1489531,
+        "name": "Illustrious-XL-v2.0-stable",
+        "versions": [
+          {
+            "id": 1684946,
+            "name": "v2.0-stable",
+            "baseModel": "Illustrious"
+          },
+          {
+            "id": 1684912,
+            "name": "v2.0-stable",
+            "baseModel": "Illustrious"
+          }
+        ]
+      },
+      {
+        "id": 409675,
+        "name": "Mix PhotoReal Stable XL",
+        "versions": [
+          {
+            "id": 710084,
+            "name": "Mix PhotoReal Stable 5",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 689342,
+            "name": "Mix PhotoReal Stable 4",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 674936,
+            "name": "MixPhotoRealS1.3Final",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 658251,
+            "name": "Mix PhotoReal Stable 1.2",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 625218,
+            "name": "Mix PhotoReal Stable 1.1",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 571480,
+            "name": "Mix PhotoReal Stable H1.0",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 562571,
+            "name": "Mix PhotoReal Stable H.1",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 549160,
+            "name": "Mix PhotoReal Stable F",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 546800,
+            "name": "Mix PhotoReal Stable E",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 521800,
+            "name": "Mix PhotoReal Stable D",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 513354,
+            "name": "Mix PhotoReal Stable C",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 472308,
+            "name": "Mix PhotoReal Stable B",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 460622,
+            "name": "Mix PhotoReal S.Noise F",
+            "baseModel": "SDXL 1.0"
+          },
+          {
+            "id": 456632,
+            "name": "Mix PhotoReal Stable XL 0",
+            "baseModel": "SDXL 1.0"
+          }
+        ]
+      },
+      {
+        "id": 363972,
+        "name": "1000-THR \"Stable Cascade\"",
+        "versions": [
+          {
+            "id": 406957,
+            "name": "Text Encoder",
+            "baseModel": "Stable Cascade"
+          },
+          {
+            "id": 406702,
+            "name": "Stage C",
+            "baseModel": "Stable Cascade"
+          }
+        ]
+      },
+      {
+        "id": 2957912,
+        "name": "Qwen Image 2.1 Nvfp4 Q4",
+        "versions": [
+          {
+            "id": 3350705,
+            "name": "NVFP4",
+            "baseModel": "Qwen 2.1"
+          },
+          {
+            "id": 3351922,
+            "name": "Q4 GGUF",
+            "baseModel": "Qwen 2.1"
+          }
+        ]
+      }
+    ]
+  }
+]

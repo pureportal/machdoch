@@ -1,0 +1,9 @@
+{
+  "precedingProcessId": 3464,
+  "error": "A reference generation is already running",
+  "finishedAt": "2026-10-13T07:00:58.3993080Z",
+  "startedAt": "2026-10-12T21:54:18.6980018Z",
+  "state": "failed",
+  "processId": 20048,
+  "manifest": "D:\\Models\\machdoch\\verification\\2026-10-11\\image-engines\\complete-installed-reference-continuation-next.json"
+}

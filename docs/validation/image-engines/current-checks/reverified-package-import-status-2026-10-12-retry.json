@@ -1,0 +1,25 @@
+{
+  "processId": 11816,
+  "state": "running",
+  "operations": [
+    {
+      "name": "flux-1-schnell",
+      "finishedAt": "2026-10-12T01:59:01.2264234Z",
+      "state": "passed",
+      "exitCode": 0,
+      "startedAt": "2026-10-12T01:45:49.9520659Z"
+    },
+    {
+      "name": "qwen-image",
+      "finishedAt": "2026-10-12T02:33:32.1600091Z",
+      "state": "passed",
+      "exitCode": 0,
+      "startedAt": "2026-10-12T01:59:01.3366747Z"
+    },
+    {
+      "name": "qwen-image-2512",
+      "state": "running",
+      "startedAt": "2026-10-12T02:33:32.3419774Z"
+    }
+  ]
+}

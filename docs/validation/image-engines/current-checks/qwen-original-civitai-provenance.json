@@ -1,0 +1,10 @@
+{
+  "modelId": 1936965,
+  "versionId": 2409636,
+  "filename": "jibMixQwen_v50.gguf",
+  "sha256": "47e1d60a933acb2e9d8932737c8b17c39d98623e278ae8c948690b04a5c19393",
+  "bytes": 14934899232,
+  "sourceUrl": "https://civitai.com/models/1936965?modelVersionId=2409636",
+  "model": "Jib Mix Qwen",
+  "baseModel": "Qwen"
+}

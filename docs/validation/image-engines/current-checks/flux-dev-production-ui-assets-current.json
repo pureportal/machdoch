@@ -1,0 +1,24 @@
+{
+  "checkedAt": "2026-10-13T04:08:34.995Z",
+  "architecture": "flux-1-dev",
+  "defaultSteps": 50,
+  "suggestedSteps": [
+    50,
+    50
+  ],
+  "guidance": 3.5,
+  "refreshedBeforeApplicationCompilation": true,
+  "assets": [
+    {
+      "file": "apps/client/dist/ui-preview/assets/media-runtime-QCQukfOP.js",
+      "bytes": 228384,
+      "sha256": "92a379b8705b53908bbee23ce16e60bfbbd7e9c538222638b20e9ed9902ce264"
+    },
+    {
+      "file": "apps/client/dist/ui-preview/assets/media-generation-recipe-B2mV7QXB.js",
+      "bytes": 194929,
+      "sha256": "cb230ce78e3556e5679807f0ad68b0b670b9c46412408d67f7fc0a7c1684fab1"
+    }
+  ],
+  "nativeBinaryVerified": false
+}

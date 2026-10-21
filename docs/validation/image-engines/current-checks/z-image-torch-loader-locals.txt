@@ -1,0 +1,103 @@
+Process 31292: "D:\Models\machdoch\runtime\python\cpython-3.12.10-windows-x86_64-none\python.exe" -B apps/client/src-tauri/python/verify_media_reference_sweep.py --template D:/Models/machdoch/verification/2026-10-11/image-engines/z-image-six-reference-sweep/05-z-image-turbo-reference-144599398/request.json --cases D:/Models/machdoch/verification/2026-10-11/image-engines/z-image-double-exposure-refinement-cases.json --output-root D:/Models/machdoch/verification/2026-10-11/image-engines/z-image-double-exposure-refinements
+Python v3.12.10 (D:\Models\machdoch\runtime\python\cpython-3.12.10-windows-x86_64-none\python.exe)
+
+Thread 30164 (idle): "MainThread"
+    mem_get_info (torch\cuda\memory.py:847)
+        Arguments:
+            device: 0
+    memory_snapshot (media_model_memory.py:18)
+        Arguments:
+            torch: <module at 0x1b7ff115d50>
+            device: "cuda"
+    acquire (media_model_memory.py:77)
+        Arguments:
+            self: <ModelPipelineCache at 0x1b7962a7d70>
+            configuration: {...}
+        Locals:
+            key: "{"addons":[],"controlnetPath":null,"height":1248,"imageToImage":false,"inpainting":false,"ipAdapterPath":null,"memoryProfil..."
+    generate (media_diffusers_worker.py:2830)
+        Arguments:
+            request: {"schemaVersion": 5, ...}
+            cache: <ModelPipelineCache at 0x1b7962a7d70>
+        Locals:
+            torch: <module at 0x1b7ff115d50>
+            diffusers: <_LazyModule at 0x1b790dc6c00>
+            runtime_device: "cuda"
+            device_label: "AMD Radeon RX 9070 (cuda:0)"
+            device_memory: 17095983104
+            convolution_backend: "native"
+            model: {"id": "local:user:5ae9b7d780d6ab09015c3c1a45946d3b2de41331a06752454219f39338dd7b60", "architecture": "z-image-turbo", ...}
+            prompt: "Surreal editorial double-exposure digital collage. An adult woman with long straight black hair raises both arms over her h..."
+            negative_prompt: ""
+            output_count: 1
+            policy: "quality"
+            seed: 1050111864
+            profile: {"id": "local:z-image-turbo", "architecture": "z-image-turbo", "displayName": "Z-Image-Turbo", "family": "Z-Image", ...}
+            krea_checkpoint: False
+            width: 832
+            height: 1248
+            step_count: 9
+            requested_guidance: 0
+            addons: []
+            krea_prompt_embeds: None
+            krea_prompt_mask: None
+            krea_performance_evidence: None
+            reference_values: []
+            references: []
+            supported_reference_roles: <frozenset at 0x1b796451d20>
+            unsupported_roles: []
+            base_path: None
+            base_original: None
+            control_path: None
+            control_image: None
+            controlnet_path: None
+            control_strength: None
+            control_start: None
+            control_end: None
+            control: None
+            control_kind: "openpose"
+            conditioned_images: []
+            ip_adapter_references: False
+            edit_mask: None
+            mask_strength: None
+            mask_path: None
+            primary_reference_image: None
+    verify (verify_media_reference_sweep.py:113)
+        Arguments:
+            template_path: <WindowsPath at 0x1b7ff13dc40>
+            cases_path: <WindowsPath at 0x1b7ff13dcb0>
+            output_root: <WindowsPath at 0x1b7ff13dd20>
+            hip_device: "1"
+            capture_decoder_latents: False
+        Locals:
+            template: {"schemaVersion": 5, ...}
+            cases: [{"id": 145095967, ...}, {"id": 145095967, ...}, {"id": 145095967, ...}]
+            architecture: "z-image-turbo"
+            decoder_classes: {"stable-diffusion-1": "AutoencoderKL", "stable-diffusion-2": "AutoencoderKL", "stable-diffusion-xl": "AutoencoderKL", ...}
+            name: "HUGGING_FACE_HUB_TOKEN"
+            worker_path: <WindowsPath at 0x1b7ff13e110>
+            reader_path: <WindowsPath at 0x1b7ff13e180>
+            worker_digest: "4b069763a588e1fe20c8a7f329538ebb6bd948ee8bbf144be38ba9b987bf40bf"
+            reader_digest: "a9653124ec3e5f0fdf7c829c97e0eddcdd5c75859f80c306a9b1f2c49b7b9ec1"
+            summary: {"worker": "C:\Development\machdoch\apps\client\src-tauri\python\media_diffusers_worker.py", ...}
+            cache: <ModelPipelineCache at 0x1b7962a7d70>
+            log_stack: <ExitStack at 0x1b7ff0c64e0>
+            index: 0
+            case: {"id": 145095967, ...}
+            reference_id: 145095967
+            model: {"id": "local:user:5ae9b7d780d6ab09015c3c1a45946d3b2de41331a06752454219f39338dd7b60", "architecture": "z-image-turbo", ...}
+            images: <WindowsPath at 0x1b7ff13e2d0>
+            request: {"schemaVersion": 5, ...}
+            record: {"id": "local:user:5ae9b7d780d6ab09015c3c1a45946d3b2de41331a06752454219f39338dd7b60", ...}
+            started: 31606.453
+            log: <_io.TextIOWrapper at 0x1b7ff4fbe60>
+            generation_stack: <ExitStack at 0x1b7ff0c65a0>
+            torch: <module at 0x1b7ff115d50>
+            diffusers: <_LazyModule at 0x1b790dc6c00>
+            device: "cuda"
+            _: 17095983104
+    main (verify_media_reference_sweep.py:175)
+        Locals:
+            parser: <ArgumentParser at 0x1b7f37efd70>
+            arguments: <Namespace at 0x1b7ff0c5d00>
+    <module> (verify_media_reference_sweep.py:179)

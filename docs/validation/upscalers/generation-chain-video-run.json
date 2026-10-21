@@ -1,0 +1,866 @@
+{
+  "id": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+  "flowId": "upscale-chain-video-95a37cb5-1a70-4156-9203-1c4bd087f422",
+  "flowRevisionId": "mfr-bf0839583dab0e1c20ef4ce66829595d",
+  "flowName": "Upscale video",
+  "planId": "upscale-chain-video-95a37cb5-1a70-4156-9203-1c4bd087f422:550165ad7e2",
+  "status": "completed",
+  "createdAt": "2026-10-15T17:54:37.620Z",
+  "updatedAt": "2026-10-15T18:01:28.302Z",
+  "prompt": "A red ball rolls from left to right on a white tabletop, locked camera, clear motion",
+  "modelLabel": "Workflow",
+  "target": "local",
+  "outputCount": 1,
+  "diagnosticCount": 0,
+  "progress": 1,
+  "currentStep": "Completed",
+  "executor": "media-workflow",
+  "error": null,
+  "failure": null,
+  "events": [
+    {
+      "id": 1631,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 1,
+      "kind": "run_started",
+      "createdAt": "2026-10-15T17:54:37.638Z",
+      "message": "The pinned local utility graph started.",
+      "progress": 0,
+      "stepId": null,
+      "nodeId": null
+    },
+    {
+      "id": 1632,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 2,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:54:37.675Z",
+      "message": "Attempt 1/1 · Opening frame",
+      "progress": 0,
+      "stepId": "frame:resolve-asset",
+      "nodeId": "frame"
+    },
+    {
+      "id": 1633,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 3,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:54:37.703Z",
+      "message": "Attempt 1/1 · Opening frame completed",
+      "progress": 1,
+      "stepId": "frame:resolve-asset",
+      "nodeId": "frame"
+    },
+    {
+      "id": 1634,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 4,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:54:37.722Z",
+      "message": "Attempt 1/1 · Prompt",
+      "progress": 0,
+      "stepId": "prompt:normalize-prompt",
+      "nodeId": "prompt"
+    },
+    {
+      "id": 1635,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 5,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:54:37.737Z",
+      "message": "Attempt 1/1 · Prompt completed",
+      "progress": 1,
+      "stepId": "prompt:normalize-prompt",
+      "nodeId": "prompt"
+    },
+    {
+      "id": 1636,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 6,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:54:37.756Z",
+      "message": "Attempt 1/1 · Generate video",
+      "progress": 0,
+      "stepId": "resolve-video-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1637,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 7,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:54:52.703Z",
+      "message": "Starting video runtime",
+      "progress": 0.02,
+      "stepId": "resolve-video-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1638,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 8,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:54:54.286Z",
+      "message": "Loading video model",
+      "progress": 0.08,
+      "stepId": "resolve-video-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1639,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 9,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:59:37.091Z",
+      "message": "Sampling 1/8",
+      "progress": 0.325,
+      "stepId": "resolve-video-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1640,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 10,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:59:41.134Z",
+      "message": "Sampling 2/8",
+      "progress": 0.4,
+      "stepId": "resolve-video-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1641,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 11,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:59:44.897Z",
+      "message": "Sampling 3/8",
+      "progress": 0.475,
+      "stepId": "resolve-video-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1642,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 12,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:59:48.330Z",
+      "message": "Sampling 4/8",
+      "progress": 0.55,
+      "stepId": "resolve-video-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1643,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 13,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:59:51.798Z",
+      "message": "Sampling 5/8",
+      "progress": 0.625,
+      "stepId": "resolve-video-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1644,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 14,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:59:55.194Z",
+      "message": "Sampling 6/8",
+      "progress": 0.7,
+      "stepId": "resolve-video-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1645,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 15,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T17:59:58.659Z",
+      "message": "Sampling 7/8",
+      "progress": 0.775,
+      "stepId": "resolve-video-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1646,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 16,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:00:02.179Z",
+      "message": "Sampling 8/8",
+      "progress": 0.85,
+      "stepId": "resolve-video-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1647,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 17,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:00:14.090Z",
+      "message": "Encoding video",
+      "progress": 0.94,
+      "stepId": "resolve-video-model:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1648,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 18,
+      "kind": "asset_published",
+      "createdAt": "2026-10-15T18:00:20.295Z",
+      "message": "Attempt 1: output saved",
+      "progress": null,
+      "stepId": null,
+      "nodeId": "source"
+    },
+    {
+      "id": 1649,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 19,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:00:20.321Z",
+      "message": "Attempt 1/1 · Generate video completed",
+      "progress": 1,
+      "stepId": "generate-video:source",
+      "nodeId": "source"
+    },
+    {
+      "id": 1650,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 20,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:00:20.337Z",
+      "message": "Attempt 1/1 · Upscale video",
+      "progress": 0,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1651,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 21,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:00:30.564Z",
+      "message": "Reading video",
+      "progress": 0.01,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1652,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 22,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:00:30.886Z",
+      "message": "Loading upscaler",
+      "progress": 0.05,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1653,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 23,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:00:45.504Z",
+      "message": "Upscaling frame 1/17",
+      "progress": 0.14705882352941177,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1654,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 24,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:00:47.933Z",
+      "message": "Upscaling frame 2/17",
+      "progress": 0.19411764705882353,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1655,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 25,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:00:50.183Z",
+      "message": "Upscaling frame 3/17",
+      "progress": 0.24117647058823533,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1656,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 26,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:00:52.532Z",
+      "message": "Upscaling frame 4/17",
+      "progress": 0.28823529411764703,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1657,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 27,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:00:54.918Z",
+      "message": "Upscaling frame 5/17",
+      "progress": 0.33529411764705885,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1658,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 28,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:00:57.200Z",
+      "message": "Upscaling frame 6/17",
+      "progress": 0.3823529411764707,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1659,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 29,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:00:59.684Z",
+      "message": "Upscaling frame 7/17",
+      "progress": 0.4294117647058824,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1660,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 30,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:01.916Z",
+      "message": "Upscaling frame 8/17",
+      "progress": 0.4764705882352941,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1661,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 31,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:04.198Z",
+      "message": "Upscaling frame 9/17",
+      "progress": 0.5235294117647059,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1662,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 32,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:06.657Z",
+      "message": "Upscaling frame 10/17",
+      "progress": 0.5705882352941176,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1663,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 33,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:08.978Z",
+      "message": "Upscaling frame 11/17",
+      "progress": 0.6176470588235294,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1664,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 34,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:11.358Z",
+      "message": "Upscaling frame 12/17",
+      "progress": 0.6647058823529413,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1665,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 35,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:13.708Z",
+      "message": "Upscaling frame 13/17",
+      "progress": 0.711764705882353,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1666,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 36,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:15.989Z",
+      "message": "Upscaling frame 14/17",
+      "progress": 0.7588235294117648,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1667,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 37,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:18.477Z",
+      "message": "Upscaling frame 15/17",
+      "progress": 0.8058823529411765,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1668,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 38,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:20.773Z",
+      "message": "Upscaling frame 16/17",
+      "progress": 0.8529411764705882,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1669,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 39,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:23.157Z",
+      "message": "Upscaling frame 17/17",
+      "progress": 0.9,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1670,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 40,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:24.327Z",
+      "message": "Checking video",
+      "progress": 0.95,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1671,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 41,
+      "kind": "asset_published",
+      "createdAt": "2026-10-15T18:01:28.218Z",
+      "message": "Attempt 1: output saved",
+      "progress": null,
+      "stepId": null,
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1672,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 42,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:28.232Z",
+      "message": "Attempt 1/1 · Upscale video completed",
+      "progress": 1,
+      "stepId": "upscale:upscale-video",
+      "nodeId": "upscale"
+    },
+    {
+      "id": 1673,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 43,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:28.248Z",
+      "message": "Attempt 1/1 · Save video",
+      "progress": 0,
+      "stepId": "output:ingest-asset",
+      "nodeId": "output"
+    },
+    {
+      "id": 1674,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 44,
+      "kind": "asset_published",
+      "createdAt": "2026-10-15T18:01:28.270Z",
+      "message": "Attempt 1: output saved",
+      "progress": null,
+      "stepId": null,
+      "nodeId": "output"
+    },
+    {
+      "id": 1675,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 45,
+      "kind": "node_state_changed",
+      "createdAt": "2026-10-15T18:01:28.284Z",
+      "message": "Attempt 1/1 · Save video completed",
+      "progress": 1,
+      "stepId": "output:ingest-asset",
+      "nodeId": "output"
+    },
+    {
+      "id": 1676,
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "sequence": 46,
+      "kind": "run_completed",
+      "createdAt": "2026-10-15T18:01:28.361Z",
+      "message": "Workflow completed",
+      "progress": 1,
+      "stepId": "finalize",
+      "nodeId": null
+    }
+  ],
+  "assets": [
+    {
+      "id": "asset:b7c77688-bdd5-46b0-8edf-1e3787fdea0e:0",
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "digest": "866d179d050bcd4f8ab61a055e28a6ac6f49f5669819888daf400d4a1d255dfd",
+      "kind": "video",
+      "mimeType": "video/webm",
+      "byteSize": 2459695,
+      "width": 512,
+      "height": 512,
+      "createdAt": "2026-10-15T18:00:20.282Z",
+      "outputIndex": 0,
+      "fixture": false,
+      "operation": {
+        "details": {
+          "addons": [],
+          "fps": 8,
+          "modelId": "local:ltx-video-0.9.8-2b-distilled-fp8",
+          "modelRevision": "8984fa25007f376c1a299016d0957a37a2f797bb",
+          "numFrames": 17,
+          "performance": {
+            "blocksPerGroup": 4,
+            "computeDtype": "bfloat16",
+            "deviceMemoryBytes": 17095983104,
+            "diskCacheBytes": null,
+            "diskCacheFiles": null,
+            "diskCacheHit": null,
+            "diskCachePath": null,
+            "distilledTimesteps": [
+              1000,
+              993.7,
+              987.5,
+              981.1999999999999,
+              975,
+              909.4,
+              725,
+              421.9
+            ],
+            "effectiveMemoryProfile": "balanced",
+            "gpuMemory": {
+              "initialDeviceFreeBytes": 16937648128,
+              "initialDeviceTotalBytes": 17095983104,
+              "peakAllocatedBytes": 9689332736,
+              "peakReservedBytes": 9709813760,
+              "postReleaseAllocatedBytes": 79691776,
+              "postReleaseDeviceFreeBytes": 16641622016,
+              "postReleaseReservedBytes": 79691776,
+              "processIsolation": "one-generation-per-process",
+              "stagePeakAllocatedBytes": {
+                "vaeAndPostprocess": 9689332736
+              }
+            },
+            "offloadType": "block-level-cpu",
+            "physicalMemoryBytes": 33618337792,
+            "renderStrategy": "distilled-single-pass",
+            "requestedMemoryProfile": "auto",
+            "textEncoderDevice": "cuda",
+            "timingSeconds": {
+              "denoiseAndDecode": 77.365,
+              "modelLoadAndPrompt": 242.459,
+              "postprocessAndEncode": 4.764,
+              "release": 0.565,
+              "setupAndConditioning": 1.604,
+              "total": 326.757
+            },
+            "variant": "2b-distilled-fp8",
+            "weightStorageDtype": "float8_e4m3fn",
+            "windowsDiskOffloadCompatibility": false
+          },
+          "prompt": "A red ball rolls from left to right on a white tabletop, locked camera, clear motion",
+          "seed": 8963968511524361
+        },
+        "iteration": 1,
+        "kind": "workflow",
+        "sourceNodeId": "source"
+      },
+      "sourceAssetIds": [
+        "asset:71d537c8-1764-484f-a6b7-74f7827837f8:0",
+        "asset:71d537c8-1764-484f-a6b7-74f7827837f8:0"
+      ],
+      "tags": []
+    },
+    {
+      "id": "asset:b7c77688-bdd5-46b0-8edf-1e3787fdea0e:1",
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "digest": "27ce4e70a932631942772e362f5178f8bae370d3dbfc6ac52e5b694ee333bcd0",
+      "kind": "video",
+      "mimeType": "video/webm",
+      "byteSize": 271966,
+      "width": 1024,
+      "height": 1024,
+      "createdAt": "2026-10-15T18:01:28.218Z",
+      "outputIndex": 1,
+      "fixture": false,
+      "operation": {
+        "details": {
+          "architecture": "SPAN",
+          "device": "cuda",
+          "nativeScale": 4,
+          "output": {
+            "durationSeconds": 2.125,
+            "fileName": "output.webm",
+            "fps": 8,
+            "hasAlpha": false,
+            "hasAudio": false,
+            "height": 1024,
+            "numFrames": 17,
+            "width": 1024
+          },
+          "scale": 2,
+          "schemaVersion": 1,
+          "tileSize": 128
+        },
+        "iteration": 1,
+        "kind": "workflow",
+        "sourceNodeId": "upscale"
+      },
+      "sourceAssetIds": [
+        "asset:b7c77688-bdd5-46b0-8edf-1e3787fdea0e:0"
+      ],
+      "tags": []
+    },
+    {
+      "id": "asset:b7c77688-bdd5-46b0-8edf-1e3787fdea0e:2",
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "digest": "27ce4e70a932631942772e362f5178f8bae370d3dbfc6ac52e5b694ee333bcd0",
+      "kind": "video",
+      "mimeType": "video/webm",
+      "byteSize": 271966,
+      "width": 1024,
+      "height": 1024,
+      "createdAt": "2026-10-15T18:01:28.270Z",
+      "outputIndex": 2,
+      "fixture": false,
+      "operation": {
+        "details": {
+          "finalOutput": true
+        },
+        "iteration": 1,
+        "kind": "workflow",
+        "sourceNodeId": "output"
+      },
+      "sourceAssetIds": [
+        "asset:b7c77688-bdd5-46b0-8edf-1e3787fdea0e:1"
+      ],
+      "tags": []
+    }
+  ],
+  "providerJobs": [],
+  "humanReviews": [],
+  "nodeExecutions": [
+    {
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "nodeId": "frame",
+      "nodeType": "source.image",
+      "nodeLabel": "Opening frame",
+      "ordinal": 0,
+      "status": "completed",
+      "activeStepId": "frame:resolve-asset",
+      "runtimePhase": "workflow.execute",
+      "attempt": 1,
+      "progress": 1,
+      "message": "Attempt 1/1 · Opening frame completed",
+      "startedAt": "2026-10-15T17:54:37.675Z",
+      "updatedAt": "2026-10-15T17:54:37.703Z",
+      "finishedAt": "2026-10-15T17:54:37.703Z",
+      "stateSequence": 2
+    },
+    {
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "nodeId": "prompt",
+      "nodeType": "source.prompt",
+      "nodeLabel": "Prompt",
+      "ordinal": 1,
+      "status": "completed",
+      "activeStepId": "prompt:normalize-prompt",
+      "runtimePhase": "workflow.execute",
+      "attempt": 1,
+      "progress": 1,
+      "message": "Attempt 1/1 · Prompt completed",
+      "startedAt": "2026-10-15T17:54:37.722Z",
+      "updatedAt": "2026-10-15T17:54:37.737Z",
+      "finishedAt": "2026-10-15T17:54:37.737Z",
+      "stateSequence": 2
+    },
+    {
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "nodeId": "source",
+      "nodeType": "task.generate-video",
+      "nodeLabel": "Generate video",
+      "ordinal": 2,
+      "status": "completed",
+      "activeStepId": "generate-video:source",
+      "runtimePhase": "workflow.execute",
+      "attempt": 1,
+      "progress": 1,
+      "message": "Attempt 1/1 · Generate video completed",
+      "startedAt": "2026-10-15T17:54:37.756Z",
+      "updatedAt": "2026-10-15T18:00:20.320Z",
+      "finishedAt": "2026-10-15T18:00:20.320Z",
+      "stateSequence": 13
+    },
+    {
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "nodeId": "upscale",
+      "nodeType": "operation.upscale-video",
+      "nodeLabel": "Upscale video",
+      "ordinal": 3,
+      "status": "completed",
+      "activeStepId": "upscale:upscale-video",
+      "runtimePhase": "workflow.execute",
+      "attempt": 1,
+      "progress": 1,
+      "message": "Attempt 1/1 · Upscale video completed",
+      "startedAt": "2026-10-15T18:00:20.337Z",
+      "updatedAt": "2026-10-15T18:01:28.232Z",
+      "finishedAt": "2026-10-15T18:01:28.232Z",
+      "stateSequence": 22
+    },
+    {
+      "runId": "b7c77688-bdd5-46b0-8edf-1e3787fdea0e",
+      "nodeId": "output",
+      "nodeType": "output.video",
+      "nodeLabel": "Save video",
+      "ordinal": 4,
+      "status": "completed",
+      "activeStepId": "output:ingest-asset",
+      "runtimePhase": "workflow.execute",
+      "attempt": 1,
+      "progress": 1,
+      "message": "Attempt 1/1 · Save video completed",
+      "startedAt": "2026-10-15T18:01:28.248Z",
+      "updatedAt": "2026-10-15T18:01:28.284Z",
+      "finishedAt": "2026-10-15T18:01:28.284Z",
+      "stateSequence": 2
+    }
+  ],
+  "planSnapshot": {
+    "schemaVersion": 1,
+    "planId": "upscale-chain-video-95a37cb5-1a70-4156-9203-1c4bd087f422:550165ad7e2",
+    "flowId": "upscale-chain-video-95a37cb5-1a70-4156-9203-1c4bd087f422",
+    "flowFingerprint": "sha256:550165ad7e299bc5fd2d9c1c34fd2634f9cbdf6ba6663582018683e7dffaf22a",
+    "compiledAt": "2026-10-15T17:54:37.524Z",
+    "nodes": [
+      {
+        "id": "frame",
+        "type": "source.image",
+        "label": "Opening frame",
+        "layer": "source"
+      },
+      {
+        "id": "prompt",
+        "type": "source.prompt",
+        "label": "Prompt",
+        "layer": "source"
+      },
+      {
+        "id": "source",
+        "type": "task.generate-video",
+        "label": "Generate video",
+        "layer": "task"
+      },
+      {
+        "id": "upscale",
+        "type": "operation.upscale-video",
+        "label": "Upscale video",
+        "layer": "operation"
+      },
+      {
+        "id": "output",
+        "type": "output.video",
+        "label": "Save video",
+        "layer": "output"
+      }
+    ],
+    "steps": [
+      {
+        "id": "frame:resolve-asset",
+        "sourceNodeId": "frame",
+        "kind": "resolve-asset",
+        "label": "Opening frame",
+        "target": "local",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      },
+      {
+        "id": "prompt:normalize-prompt",
+        "sourceNodeId": "prompt",
+        "kind": "normalize-prompt",
+        "label": "Prompt",
+        "target": "local",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      },
+      {
+        "id": "resolve-video-model:source",
+        "sourceNodeId": "source",
+        "kind": "resolve-model",
+        "label": "Resolve video provider, model, keyframe, and audio capabilities",
+        "target": "orchestrator",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      },
+      {
+        "id": "generate-video:source",
+        "sourceNodeId": "source",
+        "kind": "generate-video",
+        "label": "Generate opaque one-way video with LTX-Video 0.9.8 2B Distilled FP8",
+        "target": "local",
+        "cacheable": true,
+        "sideEffect": null,
+        "review": null
+      },
+      {
+        "id": "upscale:upscale-video",
+        "sourceNodeId": "upscale",
+        "kind": "upscale-video",
+        "label": "Upscale video",
+        "target": "local",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      },
+      {
+        "id": "output:ingest-asset",
+        "sourceNodeId": "output",
+        "kind": "ingest-asset",
+        "label": "Save video",
+        "target": "local",
+        "cacheable": false,
+        "sideEffect": null,
+        "review": null
+      }
+    ]
+  }
+}

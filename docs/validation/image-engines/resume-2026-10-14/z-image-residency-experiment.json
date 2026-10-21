@@ -1,0 +1,9 @@
+{
+  "checkedAt": "2026-10-14T22:57:20.592567+00:00",
+  "experimentalWorkerVersion": "media-diffusers-worker/1.104.0",
+  "status": "interrupted",
+  "acceptedAsQualityEvidence": false,
+  "reason": "Resident-model experiment remained in HIP memcpy/synchronization after more than thirty minutes; original memory policy restored. The isolated RX 9070 arithmetic probe passed.",
+  "partialDirectory": "D:/Models/machdoch/verification/2026-10-13/image-engines/z-image/01-z-image-reference-144599398-attempt-2",
+  "finalWorkerVersion": "media-diffusers-worker/1.105.0"
+}

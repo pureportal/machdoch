@@ -1,0 +1,9 @@
+{
+    "results":  "D:/Models/machdoch/verification/2026-10-13/image-engines/remaining-stable-worker-105-batch-results.json",
+    "cases":  11,
+    "qualityAccepted":  false,
+    "pid":  29228,
+    "startedAt":  "2026-10-14T23:10:05.6514823Z",
+    "manifest":  "D:/Models/machdoch/verification/2026-10-13/image-engines/missing-current-batches.json",
+    "workerVersion":  "media-diffusers-worker/1.105.0"
+}

@@ -1,0 +1,17 @@
+{
+  "checkedAt": "2026-10-13T04:30:24.497Z",
+  "architecture": "flux-1-dev",
+  "defaultSteps": 50,
+  "defaultRange": [
+    50,
+    50
+  ],
+  "outsideValue": 49,
+  "basicWarning": true,
+  "basicWarningRecovered": true,
+  "advancedSteps": 50,
+  "advancedSampler": "flow-euler",
+  "advancedWarning": true,
+  "advancedWarningRecovered": true,
+  "errors": []
+}

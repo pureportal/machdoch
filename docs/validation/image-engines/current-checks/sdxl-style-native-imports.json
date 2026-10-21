@@ -1,0 +1,188 @@
+[
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:8ffee4a007ea6bb33557086aef581ae3e5012d8bb4b085d536707f43b90db4b5",
+      "alreadyInstalled": false,
+      "architecture": "pony",
+      "byteSize": 228453468,
+      "digest": "8ffee4a007ea6bb33557086aef581ae3e5012d8bb4b085d536707f43b90db4b5",
+      "displayName": "Watercolor Sketch Pony · novuschroma",
+      "importedAt": "2026-10-11T17:46:24.092Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/8ffee4a007ea6bb33557086aef581ae3e5012d8bb4b085d536707f43b90db4b5/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "ponyDiffusionV6XL_v6StartWithThisOne.safetensors",
+      "blockingReason": null,
+      "byteSize": 228453468,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-xl",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "b21bf054ff43bf196f6e2ba6e0d77516b0b56b4f170a79d1a8000c5e9a98aae5",
+      "loraProfile": {
+        "algorithm": "lora",
+        "convolutionTargetCount": 0,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 986,
+        "rankMaximum": 32,
+        "rankMinimum": 32,
+        "targetModuleCount": 986
+      },
+      "metadataSummary": [
+        "modelspec.architecture: stable-diffusion-xl-v1-base/lora",
+        "modelspec.title: ncpy43 style_",
+        "ss_base_model_version: sdxl_base_v1-0",
+        "ss_sd_model_name: ponyDiffusionV6XL_v6StartWithThisOne.safetensors"
+      ],
+      "reviewToken": "2f09528b8d7340dd43d0e94014d0c3074bdd2cdadb122581db831c68e18904d7",
+      "schemaVersion": 1,
+      "sourceFileName": "ncpy43 style.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\612370\\717948\\ncpy43 style.safetensors",
+      "suggestedDisplayName": "ncpy43 style_",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder",
+        "text-encoder-2"
+      ],
+      "tensorCount": 2958,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  },
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:a0db761861c251795661e718f5059107525e999832cfc08e7872b6d297b7359d",
+      "alreadyInstalled": false,
+      "architecture": "stable-diffusion-xl",
+      "byteSize": 228453228,
+      "digest": "a0db761861c251795661e718f5059107525e999832cfc08e7872b6d297b7359d",
+      "displayName": "Watercolor Sketch SDXL · novuschroma",
+      "importedAt": "2026-10-11T17:46:30.623Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/a0db761861c251795661e718f5059107525e999832cfc08e7872b6d297b7359d/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "stabilityai/stable-diffusion-xl-base-1.0",
+      "blockingReason": null,
+      "byteSize": 228453228,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-xl",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "24f4886de5b587c18260973e8c5a7ca55ef03b6b0a521d4302283f28d98f6a8b",
+      "loraProfile": {
+        "algorithm": "lora",
+        "convolutionTargetCount": 0,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 986,
+        "rankMaximum": 32,
+        "rankMinimum": 32,
+        "targetModuleCount": 986
+      },
+      "metadataSummary": [
+        "modelspec.architecture: stable-diffusion-xl-v1-base/lora",
+        "modelspec.title: novuschroma43 style_",
+        "ss_base_model_version: sdxl_base_v1-0",
+        "ss_sd_model_name: stabilityai/stable-diffusion-xl-base-1.0"
+      ],
+      "reviewToken": "9c67f8ef1140a40f99d6f5d1fc75995861305692e9e08cc704d6b66c2c027682",
+      "schemaVersion": 1,
+      "sourceFileName": "novuschroma43 style.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\612370\\684551\\novuschroma43 style.safetensors",
+      "suggestedDisplayName": "novuschroma43 style_",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder",
+        "text-encoder-2"
+      ],
+      "tensorCount": 2958,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  },
+  {
+    "imported": {
+      "addonId": "local-addon:sha256:8e00176159390744e3849199d314e827bb45ecbb6b5794abe31e8b3c2951d1cc",
+      "alreadyInstalled": false,
+      "architecture": "stable-diffusion-xl",
+      "byteSize": 228458524,
+      "digest": "8e00176159390744e3849199d314e827bb45ecbb6b5794abe31e8b3c2951d1cc",
+      "displayName": "Niji XL · metalmouse",
+      "importedAt": "2026-10-11T17:46:36.694Z",
+      "kind": "lora",
+      "schemaVersion": 1,
+      "targetLabel": "models/addons/sha256/8e00176159390744e3849199d314e827bb45ecbb6b5794abe31e8b3c2951d1cc/addon.safetensors"
+    },
+    "inspection": {
+      "architectureConfidence": "high",
+      "baseModelHint": "sd_xl_base_1.0_fixvae_V2_fp16.safetensors",
+      "blockingReason": null,
+      "byteSize": 228458524,
+      "canImport": true,
+      "detectedArchitecture": "stable-diffusion-xl",
+      "detectedKind": "lora",
+      "duplicate": null,
+      "embeddingVectors": [],
+      "headerDigest": "fd570f5a4ce2f7722a5434d9850d721340182501a1efa9843ad0c453ec6aaa09",
+      "loraProfile": {
+        "algorithm": "lora",
+        "convolutionTargetCount": 0,
+        "dialect": "kohya",
+        "heterogeneousRanks": false,
+        "magnitudeVectorCount": 0,
+        "networkAlphaCount": 986,
+        "rankMaximum": 32,
+        "rankMinimum": 32,
+        "targetModuleCount": 986
+      },
+      "metadataSummary": [
+        "modelspec.architecture: stable-diffusion-xl-v1-base/lora",
+        "modelspec.title: niji",
+        "ss_base_model_version: sdxl_base_v1-0",
+        "ss_sd_model_name: sd_xl_base_1.0_fixvae_V2_fp16.safetensors"
+      ],
+      "reviewToken": "10373df7565f965664bb2990a6b68a95e581add484faab1aadc6ee1f960dbcc3",
+      "schemaVersion": 1,
+      "sourceFileName": "M_niji_XL.safetensors",
+      "sourcePath": "\\\\?\\D:\\Models\\machdoch\\downloads\\civitai\\129816\\142343\\M_niji_XL.safetensors",
+      "suggestedDisplayName": "niji",
+      "suggestedToken": null,
+      "suggestedTriggerWords": [],
+      "targetComponents": [
+        "denoiser",
+        "text-encoder",
+        "text-encoder-2"
+      ],
+      "tensorCount": 2958,
+      "warnings": [
+        "Only the data-only safetensors header was inspected; no model code or repository script was executed.",
+        "Architecture detection is advisory. Confirm the exact base family on the publisher page before importing.",
+        "Compatibility is checked again against the selected provider, model architecture, and target components before a run can start.",
+        "The LoRA algorithm, tensor dialect, ranks, convolution targets, and DoRA magnitude-vector coverage will be verified again before runtime loading."
+      ]
+    }
+  }
+]

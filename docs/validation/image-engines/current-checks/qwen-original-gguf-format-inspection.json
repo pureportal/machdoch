@@ -1,0 +1,11 @@
+{
+  "path": "D:/Models/machdoch/downloads/civitai/1936965/2409636/jibMixQwen_v50.gguf",
+  "architecture": "qwen_image",
+  "tensorCount": 1933,
+  "tensorTypes": [
+    "BF16",
+    "F32",
+    "Q5_K",
+    "Q6_K"
+  ]
+}

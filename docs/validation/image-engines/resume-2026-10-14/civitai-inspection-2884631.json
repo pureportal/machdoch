@@ -1,0 +1,180 @@
+{
+  "schemaVersion": 1,
+  "canDownload": true,
+  "canEnrich": true,
+  "resourceType": "Checkpoint",
+  "tags": [
+    "women",
+    "realistic",
+    "cute",
+    "pony xl",
+    "base model",
+    "man"
+  ],
+  "sampleImages": [
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/6f02f31f-0de1-4d12-8e99-fe83f036e7ff/original=true/128392606.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 1,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, photorealistic, 8k, 1 girl, solo, portrait, cyberpunk, futuristic punk girl, long messy pink hair, blue eyes, electric blue eyes, thick eyelashes, glossy lips, confident expression, looking at viewer, black tech bodysuit, black straps, exposed shoulders, mech collar, tattoos, arm tattoos, punk accessories, streetwear, dystopian, studio lighting, dark background, neon glow, vibrant colors, high contrast, detailed clothing, sci-fi",
+        "negativePrompt": "lowres, worst quality, low quality, bad anatomy, bad hands, jpeg artifacts, extra digits, censored, watermark"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b84702a8-0b46-4bd5-b466-5b8c0396139b/original=true/128392615.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 4,
+      "type": "image",
+      "meta": {
+        "prompt": "1girl, solo, pinup, flirtatious, glossy lips, red lips, polka dot, high waist, seamed stockings, angled pose, gothic, pale skin, long hair, white hair, blue eyes, choker looking at viewer, dynamic composition black design, dark background, purple background, abstract background, highly detailed, brushwork",
+        "negativePrompt": "lowres, worst quality, low quality, bad anatomy, bad hands, jpeg artifacts, extra digits, censored"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7c70760b-0dd8-4f8a-97c3-33fb279d2c57/original=true/128392620.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 1,
+      "type": "image",
+      "meta": {
+        "prompt": "photorealistic, masterpiece, best quality, absurdres, ultra detailed, abandoned space colony, distant planet, science fiction, ruined colony, damaged dome, broken communication tower, red sandstorm, stormy sky, control room, old technology, flickering lights, dying power, oxygen tank, debris, dust, lone astronaut, inspecting, decaying interior, abandoned, dangerous atmosphere, isolation, cinematic lighting, atmospheric perspective, realistic, detailed background",
+        "negativePrompt": "lowres, worst quality, low quality, bad anatomy, bad hands, jpeg artifacts, extra digits, censored"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c8a4d704-e59c-458f-9c4e-05d8388dc156/original=true/128392601.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 1,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, photorealistic, 8k, 1 girl, young woman, solo, close-up portrait, fair skin, freckles, blue-green eyes, reddish blonde hair, braided updo, looking at viewer, pensive, thoughtful, off shoulder dress, pale cream dress, floral pattern, light blue flowers, tree trunk, outdoors, green foliage, blurred background, natural daylight, soft lighting, sharp focus, facial detail, natural skin texture, no watermark, no logo, no text",
+        "negativePrompt": "lowres, worst quality, low quality, bad anatomy, bad hands, jpeg artifacts, extra digits, censored, watermark"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/bcf159cd-32e0-489a-b37e-c87671765142/original=true/128392605.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 1,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, photorealistic, 8k, scenery, landscape, no humans, outdoors, waterfall, cascading water, rocks, boulders, stream, forest, trees, autumn, fall foliage, red leaves, yellow leaves, fallen leaves, moss, greenery, flowing water, long exposure water, nature, soft sunlight, natural lighting, warm tones, peaceful, detailed background, high detail",
+        "negativePrompt": "lowres, worst quality, low quality, bad anatomy, bad hands, jpeg artifacts, extra digits, censored, watermark"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c995ccb1-73da-47f3-806a-1666666f2a58/original=true/128392618.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 4,
+      "type": "image",
+      "meta": {
+        "prompt": "1girl, solo multicolored hair, medium hair, bangs, hair between eyes, blue eyes hairclip, nail polish mascara, eyeliner, lips, finger to mouth off shoulder shirt, black shirt, single bare shoulder, bra strap parted lips, ooking at viewer upper body",
+        "negativePrompt": "lowres, worst quality, low quality, bad anatomy, bad hands, jpeg artifacts, extra digits, censored"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/a8c4fe7e-c66d-42b7-9eea-27c34f8260b8/original=true/128392619.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 1,
+      "type": "image",
+      "meta": {
+        "prompt": "crystal ball, cracked, broken glass, in hand, holding, close up, reflective surface, transparent",
+        "negativePrompt": "lowres, worst quality, low quality, bad anatomy, bad hands, jpeg artifacts, extra digits, censored"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/45a4f7d5-5652-411e-b455-c54ca618c82e/original=true/128392592.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 4,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, photorealistic, 8k, 1man, young man, solo, muscular, short brown hair, focused gaze, boxing, boxer, right cross punch, boxing gloves, left hand in guard, black sleeveless tank top, defined arms, broad shoulders, modern gym, gym equipment, blurred background, low angle, action shot, sharp focus, strong lighting, bright highlights, energetic atmosphere, shallow depth of field, high detail",
+        "negativePrompt": "lowres, worst quality, low quality, bad anatomy, bad hands, jpeg artifacts, extra digits, censored, watermark"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c6697fde-8ca0-46c7-8923-0033912c3186/original=true/128392617.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 8,
+      "type": "image",
+      "meta": {
+        "prompt": "1woman, solo, detailed eyes, perfect eyes, realistic eyes, nude, long red hair, naked, mascara, black eyelashes, lipstick, nose blush large breasts, latex leotard latex boots, lying on stomach, top-down bottom-up looking at viewer soft natural lighting, shallow depth of field high detail, cinematic realism",
+        "negativePrompt": "lowres, worst quality, low quality, bad anatomy, bad hands, jpeg artifacts, extra digits, censored"
+      }
+    },
+    {
+      "url": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/91ccca38-ea6a-4a41-b5c4-56468d17e2b4/original=true/128392591.jpeg",
+      "width": 1248,
+      "height": 1824,
+      "nsfw": false,
+      "nsfwLevel": 1,
+      "type": "image",
+      "meta": {
+        "prompt": "masterpiece, best quality, photorealistic, 8k, elephant, African elephant, charging, running toward viewer, low angle, wildlife photography, massive ears, flared ears, ivory tusks, curved tusks, wrinkled gray skin, focused eyes, powerful body, shallow water, water splash, white water spray, droplets, frozen motion, reeds, lush vegetation, bushes, distant trees, overcast sky, bright sky, sharp focus, high detail, dynamic composition, no watermark, no logo, no text",
+        "negativePrompt": "lowres, worst quality, low quality, bad anatomy, bad hands, jpeg artifacts, extra digits, censored, watermark"
+      }
+    }
+  ],
+  "blockingReason": null,
+  "reviewToken": "9bafb6fdfaafeb22757e6b3de7507e4362449f5ddf012a78f54247370721f3fe",
+  "observedAt": "2026-10-14T20:52:32.406Z",
+  "sourceUrl": "https://civitai.com/models/443821?modelVersionId=2884631",
+  "air": "urn:air:sdxl:checkpoint:civitai:443821@2884631",
+  "modelId": 443821,
+  "versionId": 2884631,
+  "modelName": "CyberRealistic Pony",
+  "versionName": "v18.0 CoreShift",
+  "kind": null,
+  "baseModel": "Pony",
+  "suggestedArchitecture": "pony",
+  "trainedWords": [],
+  "creator": "Cyberdelia",
+  "nsfw": false,
+  "poi": false,
+  "availability": "Public",
+  "status": "Published",
+  "file": {
+    "id": 2764472,
+    "name": "cyberrealisticPony_v180Coreshift_2764472.safetensors",
+    "byteSize": 6938041288,
+    "sha256": "1d580c1c3f3612fa4db88af65372255582d5509ca0b28f85387273368301941b",
+    "pickleScanResult": "Success",
+    "virusScanResult": "Success",
+    "scannedAt": "2026-04-23T16:02:44.141"
+  },
+  "licenseClaims": {
+    "allowNoCredit": true,
+    "allowCommercialUse": [
+      "Image",
+      "RentCivit",
+      "Rent",
+      "Sell",
+      "SellMerge"
+    ],
+    "allowDerivatives": true,
+    "allowDifferentLicense": true
+  },
+  "warnings": [
+    "Civitai scan results and publisher metadata are external claims; the downloaded bytes are independently SHA-256 verified and inspected as safetensors before import.",
+    "The Civitai base-model label is an advisory compatibility hint, not proof that the add-on works with every fine-tuned checkpoint in that family.",
+    "Civitai publisher permissions are not automatically treated as a license. Review the publisher page and confirm your rights in the final import step."
+  ]
+}
