@@ -267,12 +267,18 @@ fn execute(
     };
     monitor(None)?;
     let identity = format!("{:?}", work.process);
+    let model = if matches!(work.command.as_str(), "generate" | "generate-video") {
+        let request: serde_json::Value = serde_json::from_slice(work.input.as_deref().ok_or("Model request is missing")?)
+            .map_err(|error| format!("Invalid model request: {error}"))?;
+        Some(request.get("model").filter(|model| model.is_object()).cloned().ok_or("Model identity is missing")?)
+    } else { None };
     let uses_model_worker = matches!(
         work.command.as_str(),
         "generate" | "generate-video" | "probe"
     );
     if let Some(worker) = resident.as_mut() {
         if (uses_model_worker && worker.identity != identity)
+            || model.as_ref().is_some_and(|model| &worker.model != model)
             || Instant::now() >= worker.expires_at
             || !worker.alive()?
             || system_memory_pressure()
@@ -287,6 +293,7 @@ fn execute(
             *resident = Some(ResidentWorker::spawn(
                 copy_command(&work.process),
                 identity,
+                model.ok_or("Model identity is missing")?,
             )?);
         }
         return resident
