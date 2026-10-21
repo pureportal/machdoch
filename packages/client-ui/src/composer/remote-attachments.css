@@ -1,15 +1,144 @@
 .m-attachment-dialog {
+  width: calc(100% - 32px);
+  max-width: 480px;
   max-height: calc(
     var(--m-viewport-height, 100dvh) - 16px - env(safe-area-inset-top) -
       env(safe-area-inset-bottom)
   );
   overflow-y: auto;
   overscroll-behavior: contain;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 16px;
+  border-color: var(--app-border);
+  background: var(--app-surface);
+  color: var(--app-text);
+}
+
+.m-attachment-header {
+  min-height: 40px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding-right: 40px;
+  text-align: left;
+}
+
+.m-attachment-dialog [data-slot="dialog-close"] {
+  top: 18px;
+  right: 16px;
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+}
+
+.m-attachment-sources {
+  display: grid;
+  gap: 12px;
+}
+
+.m-attachment-source {
+  display: flex;
+  width: 100%;
+  height: auto;
+  min-height: 64px;
+  justify-content: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--app-border);
+  border-radius: 12px;
+  background: var(--app-surface-raised);
+  color: var(--app-text);
+  white-space: normal;
+  text-align: left;
+}
+
+.m-attachment-source span,
+.m-attachment-folder span {
+  flex: 1;
+}
+
+.m-attachment-source > svg:first-child {
+  width: 20px;
+  height: 20px;
+  color: var(--app-sky-500);
+}
+
+.m-attachment-source > svg:last-child,
+.m-attachment-folder > svg:last-child {
+  color: var(--app-text-muted);
+}
+
+.m-attachment-source:hover:not(:disabled),
+.m-attachment-file:has(input:enabled):hover {
+  background: var(--app-surface-muted);
+}
+
+.m-attachment-source:focus-visible {
+  outline: 2px solid var(--app-sky-500);
+  outline-offset: 2px;
+}
+
+.m-attachment-path {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--app-border);
+  font-size: 13px;
+}
+
+.m-attachment-path span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .m-attachment-directory {
+  min-height: 0;
   max-height: calc(var(--m-viewport-height, 100dvh) * 0.4);
+  overflow-y: auto;
   overscroll-behavior: contain;
+}
+
+.m-attachment-status,
+.m-attachment-empty {
+  margin: 0;
+  color: var(--app-text-muted);
+  font-size: 14px;
+}
+
+.m-attachment-empty {
+  padding: 20px 8px;
+  text-align: center;
+}
+
+.m-attachment-error {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+
+.m-attachment-dialog-footer {
+  flex-direction: row;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--app-border);
+}
+
+.m-attachment-dialog-footer > button {
+  min-height: 44px;
+  flex: 1;
+}
+
+.m-attachment-confirm {
+  background: var(--app-text);
+  color: var(--app-bg);
+}
+
+.m-attachment-confirm:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--app-text) 85%, var(--app-bg));
 }
 
 .m-attachment-dialog [role="alert"] {
@@ -22,6 +151,13 @@
   min-width: 0;
   align-items: center;
   gap: 8px;
+}
+
+.m-attachment-file > svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--app-text-muted);
 }
 
 .m-attachment-file {
@@ -72,23 +208,21 @@
 }
 
 .m-attachment-folder {
+  min-width: 0;
+  flex: 1;
+  justify-content: flex-start;
   height: auto;
   min-height: 44px;
 }
 
 @media (max-width: 640px), (max-height: 500px) {
   .m-attachment-dialog {
-    width: calc(100% - 16px);
-    gap: 16px;
-    padding: 20px;
+    padding: 16px;
   }
 
-  .m-attachment-dialog-footer {
-    flex-direction: row;
-  }
-
-  .m-attachment-dialog-footer > button {
-    flex: 1;
+  .m-attachment-dialog [data-slot="dialog-close"] {
+    top: 14px;
+    right: 12px;
   }
 }
 

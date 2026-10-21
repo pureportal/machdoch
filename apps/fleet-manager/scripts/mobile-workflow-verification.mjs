@@ -24,7 +24,7 @@ export async function verifyMobileAttachmentBrowsing(
   await page.setViewportSize({ width: 320, height: 740 });
   await openAttachments(page, "Images");
   await page
-    .getByRole("button", { name: "Browse device", exact: true })
+    .getByRole("button", { name: "Browse workspace", exact: true })
     .click();
   await page.getByRole("button", { name: "photos/", exact: true }).click();
   const name =
@@ -51,7 +51,7 @@ export async function verifyMobileAttachmentBrowsing(
   await page.screenshot({
     path: join(artifactRoot, "fleet-attachment-browser-phone.png"),
   });
-  await dialog.getByRole("button", { name: "Attach", exact: true }).tap();
+  await dialog.getByRole("button", { name: "Attach (1)", exact: true }).tap();
   await dialog.waitFor({ state: "hidden" });
   assert.ok(
     fixture.attachedPaths.includes("/projects/example/photos/holiday-24.png"),
@@ -70,7 +70,7 @@ export async function verifyMobileAttachmentBrowsing(
     position: { x: targetBox.width - 4, y: targetBox.height / 2 },
   });
   assert.equal(await folder.isChecked(), true);
-  await page.getByRole("button", { name: "Attach", exact: true }).tap();
+  await page.getByRole("button", { name: "Attach (1)", exact: true }).tap();
   await page.getByRole("dialog").waitFor({ state: "hidden" });
   assert.ok(fixture.attachedPaths.includes("/projects/example/photos"));
   return { fileTarget: box, folderTarget: targetBox, lastFileAttached: true };
