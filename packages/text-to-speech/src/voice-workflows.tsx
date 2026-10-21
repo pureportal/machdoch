@@ -68,7 +68,7 @@ export function VoiceWorkflows({runtime,active,settings,references,rights,permis
     <form aria-label="Create voice" className="tts-stack" onSubmit={event=>{
       event.preventDefault();const data=new FormData(event.currentTarget);
       void run(async()=>{
-        if(!permission||!rights.trim())throw new Error("Confirm permission and record rights evidence before creating a voice.");
+        if(!permission||!rights.trim())throw new Error("Confirm permission before creating a voice.");
         if(source==="design"&&!candidates.some(candidate=>candidate.id===candidateId))throw new Error("Choose a saved design candidate from Voice jobs.");
         if(source==="references"&&!references.length)throw new Error("Choose reference recordings first.");
         queued(await runtime.execute("createVoice",{owner:OWNER,name:String(data.get("name")).trim(),referenceAssetIds:source==="references"?references.map(reference=>reference.asset.id):[],transcripts:source==="references"?references.map(reference=>reference.transcript):[],rightsEvidence:rights.trim(),permissionConfirmed:permission,cloudConsent:creationConsent,...requestBudget(creationBudget),...(source==="design"?{designCandidateId:candidateId}:{})}));

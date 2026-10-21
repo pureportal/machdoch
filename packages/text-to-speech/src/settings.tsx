@@ -1,5 +1,5 @@
 import {useState} from "react";
-import {Save} from "lucide-react";
+import {PlugZap,Save,Trash2} from "lucide-react";
 import type {SpeechSettings,SpeechRuntime,SpeechBackend} from "@machdoch/speech";
 import {Field,formNumber,BACKENDS,BACKEND_LABELS,type Run} from "./controls.tsx";
 import {LocalModel} from "./local-model.tsx";
@@ -79,7 +79,7 @@ function ConnectionEditor({ runtime, backend, connection, run, busy, saved }: {
   saved(connection: SpeechSettings["connections"][number]): void;
 }) {
   const [secret, setSecret] = useState("");
-  return <details className="tts-connection" open={backend === "fish-cloud" ? true : undefined}><summary>{BACKEND_LABELS[backend]}<span className="tts-muted">{connection?.healthy === true ? "Connected" : connection?.configured ? "Configured" : "Not configured"}</span></summary><form className="tts-stack" onSubmit={event => {
+  return <details className="tts-connection"><summary>{BACKEND_LABELS[backend]}<span className="tts-muted">{connection?.healthy === true ? "Connected" : connection?.configured ? "Configured" : "Not configured"}</span></summary><form className="tts-stack" onSubmit={event => {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     void run(async () => {
@@ -92,7 +92,7 @@ function ConnectionEditor({ runtime, backend, connection, run, busy, saved }: {
       setSecret(""); saved(result);
     });
   }}>
-    <div className="tts-row"><span role="status">{connection?.healthy === false ? "Connection failed" : null}</span>
+    <div className="tts-connection-status"><span role="status">{connection?.healthy === false ? "Connection failed" : null}</span>
       {connection?.error && <span role="alert">{connection.error}</span>}
     </div>
     <div className="tts-grid">
@@ -102,12 +102,12 @@ function ConnectionEditor({ runtime, backend, connection, run, busy, saved }: {
       {backend === "sglang" && <Field label="Runtime version"><input name="runtimeVersion" maxLength={128} defaultValue={connection?.runtimeVersion ?? ""} required /></Field>}
     </div>
     <div className="tts-row">
-      <button disabled={busy}>Save connection</button>
-      <button type="button" disabled={busy || !connection?.configured} onClick={() => void run(async () => saved(await runtime.execute("testConnection", { backend })))}>Test connection</button>
-      <button type="button" disabled={busy || !connection?.configured} onClick={() => void run(async () => {
+      <button disabled={busy}><Save size={16} aria-hidden="true" />Save connection</button>
+      <button type="button" disabled={busy || !connection?.configured} onClick={() => void run(async () => saved(await runtime.execute("testConnection", { backend })))}><PlugZap size={16} aria-hidden="true" />Test connection</button>
+      <button type="button" className="tts-icon-button tts-danger" aria-label="Remove API key" title="Remove API key" disabled={busy || !connection?.configured} onClick={() => void run(async () => {
         if (!window.confirm("Remove the stored API key for " + backend + "?")) return;
         saved(await runtime.execute("setConnection", { backend, deleteSecret: true })); setSecret("");
-      })}>Remove API key</button>
+      })}><Trash2 size={16} aria-hidden="true" /></button>
     </div>
   </form></details>;
 }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
-import { AudioLines, BookOpen, ChevronDown, FileText, MoreHorizontal, Pause, Play, Redo2, Save, Settings2, SlidersHorizontal, Square, Trash2, Undo2, Users } from "lucide-react";
+import { ArrowLeft, AudioLines, BookOpen, ChevronDown, FileText, FolderOpen, MoreHorizontal, Pause, Play, Redo2, Save, Settings2, SlidersHorizontal, Square, Trash2, Undo2, Users, X } from "lucide-react";
 import {
   DELIVERY_TAGS, compileSpeechScript, speechRenderSegment, createAudioPlaybackHandle,
   speechContentHash, speechPlayback, createSpeechPlayback, orderedProductionTakes,collectSpeechReferenceAssetIds,speechCastBindings,validateSpeechCastStructure,
@@ -110,6 +110,7 @@ export function TextToSpeechStudio({ runtime, assetUrl, onMediaHandoff, openProj
   const busy = pending > 0;
   const profile = profiles.find(item => item.id === project?.profileId);
   const connection = settings?.connections.find(item => item.backend === profile?.backend);
+  const availableProfiles = profiles.filter(item => settings?.connections.some(connection => connection.backend === item.backend && connection.configured));
 
   useEffect(() => {
     let disposed = false;
@@ -284,11 +285,11 @@ export function TextToSpeechStudio({ runtime, assetUrl, onMediaHandoff, openProj
     <header className="tts-header">
       <div className="tts-row"><AudioLines size={22} aria-hidden="true" /><h1>Text to Speech</h1></div>
       <div className="tts-row">
-        {project && <button className="tts-project-toggle" aria-expanded={projectsOpen} onClick={() => setProjectsOpen(value => !value)}>Projects<ChevronDown size={15} /></button>}
-        {project && <><span className="tts-save-state" role="status">{workspace.saveState}</span><button disabled={busy || !!workspace.conflict || workspace.saveState === "Saved"} onClick={() => void run(save)}><Save size={16} />Save</button></>}
+        {project && <button className="tts-project-toggle" aria-expanded={projectsOpen} onClick={() => setProjectsOpen(value => !value)}><FolderOpen size={16} aria-hidden="true" />Projects<ChevronDown size={15} aria-hidden="true" /></button>}
+        {project && <><span className="tts-save-state" role="status">{workspace.saveState}</span><button className="tts-icon-button" aria-label="Save" title="Save" disabled={busy || !!workspace.conflict || workspace.saveState === "Saved"} onClick={() => void run(save)}><Save size={16} aria-hidden="true" /></button></>}
       </div>
     </header>
-    {error && <div className="tts-error" role="alert"><span>{error}</span><button onClick={() => setError(null)} aria-label="Dismiss error">×</button></div>}
+    {error && <div className="tts-error" role="alert"><span>{error}</span><button className="tts-icon-button" onClick={() => setError(null)} aria-label="Dismiss error" title="Dismiss error"><X size={16} aria-hidden="true" /></button></div>}
     {workspace.conflict && <div className="tts-conflict" role="alert">
       <span>This project changed elsewhere.</span>
       <button disabled={busy} onClick={() => void run(async () => {
@@ -409,19 +410,19 @@ export function TextToSpeechStudio({ runtime, assetUrl, onMediaHandoff, openProj
             <aside className="tts-generation" aria-label="Voice setup">
             <section className="tts-voice-setup tts-stack">
               <div className="tts-section-heading"><h2>Voice setup</h2><button className="tts-icon-button" aria-label="Edit profiles" onClick={() => setPanel("profiles")}><Settings2 size={16} /></button></div>
-              <Field label="Profile"><select value={project.profileId ?? ""} onChange={event => edit(value => ({ ...value, profileId: event.target.value || null }))}>
-                <option value="">Select profile</option>{profiles.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+              <Field label="Profile"><select value={availableProfiles.some(item => item.id === project.profileId) ? project.profileId! : ""} onChange={event => edit(value => ({ ...value, profileId: event.target.value || null }))}>
+                <option value="">Select profile</option>{availableProfiles.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select></Field>
-              {!profiles.length && <button onClick={() => setPanel("profiles")}>Create profile</button>}
+              {!availableProfiles.length && <button onClick={() => setPanel(settings?.connections.some(connection => connection.configured) ? "profiles" : "settings")}><Settings2 size={16} aria-hidden="true" />{settings?.connections.some(connection => connection.configured) ? "Create profile" : "Configure provider"}</button>}
             </section>
-            <CastEditor project={project} edit={edit} profile={profile} runtime={runtime} report={report} chooseVoice={id => { setVoiceTarget(id ? { kind: "speaker", id } : { kind: "new" }); setPanel("voices"); }} />
+            <CastEditor project={project} edit={edit} profile={profile} runtime={runtime} report={report} voiceLibraryAvailable={!!settings?.connections.some(connection => connection.backend === "fish-cloud" && connection.configured)} chooseVoice={id => { setVoiceTarget(id ? { kind: "speaker", id } : { kind: "new" }); setPanel("voices"); }} />
             </aside>
             <div className="tts-render">
               <div className="tts-render-actions">
-                <button className="tts-primary" disabled={!canGenerate} onClick={() => void run(() => render())}><AudioLines size={16} />Generate audio</button>
-                <button disabled={!canGenerate} onClick={() => void run(() => render(true))}><Play size={16} />Preview</button>
+                <button className="tts-primary" aria-busy={busy || !analysis.ready} disabled={!canGenerate} onClick={() => void run(() => render())}><AudioLines size={16} aria-hidden="true" />Generate audio</button>
+                <button className="tts-icon-button" aria-label="Preview" title="Preview" disabled={!canGenerate} onClick={() => void run(() => render(true))}><Play size={16} aria-hidden="true" /></button>
               </div>
-              <details className="tts-render-options"><summary>Generation options<ChevronDown size={14} /></summary><div className="tts-grid">
+              <details className="tts-menu tts-render-options"><summary><SlidersHorizontal size={16} aria-hidden="true" />Generation options<ChevronDown size={14} aria-hidden="true" /></summary><div className="tts-menu-content tts-grid">
               <Field label="Render"><select value={scope} onChange={event => setScope(event.target.value as typeof scope)}>
                 <option value="project">Project</option><option value="chapter">Chapter</option><option value="scene">Scene</option><option value="turn">Turn</option><option value="selection">Selection</option>
               </select></Field>
@@ -431,7 +432,7 @@ export function TextToSpeechStudio({ runtime, assetUrl, onMediaHandoff, openProj
               <Field label="Takes"><input type="number" min={1} step={1} required value={takeCount} onChange={event => setTakeCount(event.target.valueAsNumber)} /></Field>
               <label className="tts-check"><input type="checkbox" checked={reuseCache} onChange={event => setReuseCache(event.target.checked)} />Reuse cache</label>
               </div></details>
-              {renderReason && <div className="tts-setup-action"><span>{renderReason}</span>{profile && settings && (!connection?.configured || !["sglang", "drama3"].includes(profile.backend) && !settings.cloudConsent) ? <button onClick={() => setPanel("settings")}>Open settings</button> : null}</div>}
+              <div className="tts-setup-action" role="status"><span>{renderReason}</span>{renderReason && profile && settings && (!connection?.configured || !["sglang", "drama3"].includes(profile.backend) && !settings.cloudConsent) ? <button className="tts-icon-button" aria-label="Open settings" title="Open settings" onClick={() => setPanel("settings")}><Settings2 size={16} aria-hidden="true" /></button> : null}</div>
             </div>
             <details className="tts-advanced tts-script-advanced"><summary>Advanced tools<ChevronDown size={16} /></summary><div className="tts-stack">
             <SceneCasting project={project} scopes={scenes} edit={edit} report={report}/>
@@ -448,7 +449,7 @@ export function TextToSpeechStudio({ runtime, assetUrl, onMediaHandoff, openProj
             }} />
             <SpeechCreativeTools runtime={runtime} project={project} sentences={analysis.ready ? analysis.sentences : []} onChange={value => edit(() => value)} onPreview={source => render(true,source)}
               onJump={offset => { setMode("source");window.requestAnimationFrame(() => editor.current?.focusRange({from:offset,to:offset})); }} />
-            <BatchRender runtime={runtime} project={project} profiles={profiles} dictionaries={dictionaries} settings={settings} run={run} busy={busy||!!workspace.conflict} onProjects={()=>workspace.loadProjects({offset:0})} openProject={openProject}/>
+            <BatchRender runtime={runtime} project={project} profiles={availableProfiles} dictionaries={dictionaries} settings={settings} run={run} busy={busy||!!workspace.conflict} onProjects={()=>workspace.loadProjects({offset:0})} openProject={openProject}/>
             </div></details>
             </div>
           </>}
@@ -528,7 +529,7 @@ export function TextToSpeechStudio({ runtime, assetUrl, onMediaHandoff, openProj
           </>}
         </div>
         <div hidden={panel !== "voices"} className="tts-panel">
-          {canBindVoice && <div className="tts-voice-selection tts-row"><button onClick={() => setPanel("script")}>Back to script</button><span>Choose a voice for {binding?.name || (project?.cast.length ? "new speaker" : "Narrator")}</span></div>}
+          {canBindVoice && <div className="tts-voice-selection tts-row"><button className="tts-icon-button" aria-label="Back to script" title="Back to script" onClick={() => setPanel("script")}><ArrowLeft size={16} aria-hidden="true" /></button><span>Choose a voice for {binding?.name || (project?.cast.length ? "new speaker" : "Narrator")}</span></div>}
           {!!project?.cast.length && voiceTarget?.kind !== "new" && (!binding || project.cast.length > 1) && <Field label="Assign to"><select value={binding?.id ?? ""} onChange={event => setVoiceTarget(event.target.value ? { kind: "speaker", id: event.target.value } : null)}>
             <option value="">Choose cast member</option>{project.cast.map(member => <option key={member.id} value={member.id}>{member.name}</option>)}
           </select></Field>}
@@ -540,10 +541,10 @@ export function TextToSpeechStudio({ runtime, assetUrl, onMediaHandoff, openProj
           {project&&<details className="tts-advanced"><summary>Listening reviews</summary><VoiceAuditions key={project.id} runtime={runtime} takes={takes} reviews={project.voiceAuditions??[]} onSave={async voiceAuditions=>{const id=project.id;edit(value=>{if(value.id!==id)throw new Error("Reopen the reviewed project before saving.");return {...value,voiceAuditions};});const saved=await save();if(saved?.id!==id)throw new Error("The review project changed. Reopen it before retrying.");}} onListen={async take=>{await audition(take.id,assetUrl(take.asset.path));const state=speechPlayback.snapshot();if(state.itemId!==take.id||state.status!=="playing")throw new Error(state.error??"Press Play to start this take before reviewing it.");}}/></details>}
         </div>
         <div hidden={panel !== "profiles"} className="tts-panel">
-          <ProfilesPanel runtime={runtime} profiles={profiles} dictionaries={dictionaries} settings={settings} run={run} busy={busy}
+          {settings && <ProfilesPanel runtime={runtime} profiles={profiles} dictionaries={dictionaries} settings={settings} run={run} busy={busy} openSettings={() => setPanel("settings")}
             playReference={asset=>audition(`profile-reference:${asset.id}`,assetUrl(asset.path))}
             saved={item => { setProfiles(items => [item, ...items.filter(current => current.id !== item.id)]); if (project && !project.profileId) { edit(value => ({ ...value, profileId: item.id })); setPanel("script"); } }}
-            deleted={id => { setProfiles(items => items.filter(item => item.id !== id)); if (project?.profileId === id) edit(value => ({ ...value, profileId: null })); }} />
+            deleted={id => { setProfiles(items => items.filter(item => item.id !== id)); if (project?.profileId === id) edit(value => ({ ...value, profileId: null })); }} />}
         </div>
         <div hidden={panel !== "dictionaries"} className="tts-panel">
           <DictionariesPanel runtime={runtime} dictionaries={dictionaries} profiles={profiles} settings={settings} assetUrl={assetUrl} run={run} busy={busy}

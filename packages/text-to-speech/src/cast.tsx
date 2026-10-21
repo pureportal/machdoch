@@ -2,22 +2,23 @@ import {useEffect,useState} from "react";
 import {Plus,Trash2,Users} from "lucide-react";
 import type {SpeechProject,SpeechProfile,SpeechCastMember,SpeechRuntime} from "@machdoch/speech";
 import {Field} from "./controls.tsx";
-export function CastEditor({ project, edit, profile, runtime, report, chooseVoice }: {
+export function CastEditor({ project, edit, profile, runtime, report, chooseVoice, voiceLibraryAvailable }: {
   project: SpeechProject; edit(change: (value: SpeechProject) => SpeechProject): void; profile?: SpeechProfile;
   chooseVoice(id: string | null): void;
   runtime: SpeechRuntime; report(error: unknown): void;
+  voiceLibraryAvailable: boolean;
 }) {
   const [voiceNames,setVoiceNames] = useState<Record<string,string>>({});
   const voiceIds = JSON.stringify([...new Set(project.cast.flatMap(member => member.voiceId ? [member.voiceId] : []))].sort());
   useEffect(() => {
-    if (profile?.backend !== "fish-cloud") return;
+    if (profile?.backend !== "fish-cloud" || !voiceLibraryAvailable) return;
     let disposed = false;
     const ids: string[] = JSON.parse(voiceIds);
     void Promise.all(ids.map(async id => [id, (await runtime.execute("getVoice", {id})).name] as const)).then(names => {
       if (!disposed) setVoiceNames(Object.fromEntries(names));
     }).catch(error => { if (!disposed) report(error); });
     return () => { disposed = true; };
-  }, [voiceIds,profile?.backend,runtime,report]);
+  }, [voiceIds,profile?.backend,voiceLibraryAvailable,runtime,report]);
   const change = (id: string, patch: Partial<SpeechCastMember>) => edit(value => ({
     ...value, cast: value.cast.map(member => member.id === id ? { ...member, ...patch } : member),
   }));
@@ -29,7 +30,7 @@ export function CastEditor({ project, edit, profile, runtime, report, chooseVoic
       <div className="tts-grid">
       {project.cast.length > 1 && <h3>{member.name || "Speaker"}</h3>}
       {(member.voiceId || member.referenceAssetIds.length > 0) && <span className="tts-cast-voice">{member.referenceAssetIds.length ? "Reference recordings" : member.voiceId && (profile?.backend === "openai" || profile?.backend === "google" ? member.voiceId : voiceNames[member.voiceId])}</span>}
-      <button className="tts-choose-voice" onClick={() => chooseVoice(member.id)}>{member.voiceId || member.referenceAssetIds.length ? "Change voice" : "Choose voice"}</button>
+      <button className="tts-choose-voice" onClick={() => chooseVoice(member.id)}><Users size={16} aria-hidden="true" />{member.voiceId || member.referenceAssetIds.length ? "Change voice" : "Choose voice"}</button>
       </div>
       <details><summary>Speaker settings</summary><div className="tts-grid">
       <Field label="Speaker name"><input value={member.name} onChange={event => change(member.id, { name: event.target.value })} /></Field>
