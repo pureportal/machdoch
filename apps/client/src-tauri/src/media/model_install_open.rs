@@ -30,6 +30,7 @@ struct FileSnapshot {
     byte_size: u64,
     sha256: String,
     download_url: Option<String>,
+    content: Option<String>,
 }
 
 fn snapshots() -> &'static [ManifestSnapshot] {
@@ -56,6 +57,17 @@ pub(super) fn file_download_url(model_id: &str, path: &str) -> Option<&'static s
         .iter()
         .find(|file| file.path == path)?
         .download_url
+        .as_deref()
+}
+
+pub(super) fn file_content(model_id: &str, path: &str) -> Option<&'static str> {
+    snapshots()
+        .iter()
+        .find(|snapshot| snapshot.model_id == model_id)?
+        .files
+        .iter()
+        .find(|file| file.path == path)?
+        .content
         .as_deref()
 }
 

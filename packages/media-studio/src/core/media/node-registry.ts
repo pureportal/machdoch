@@ -10,6 +10,8 @@ import { AUDIO_NODE_DEFINITIONS } from "./audio-nodes.js";
 import { VIDEO_COMPOSITION_NODE_DEFINITIONS } from "./video-composition-nodes.js";
 import { DEFAULT_SUBJECT_CUTOUT_MODEL_PRIORITY } from "./subject-cutout-policy.js";
 import { isMediaImageMask } from "./image-mask.js";
+import { mediaImageLayoutError } from "./image-layout.js";
+import { IMAGE_LAYOUT_NODE, imageLayoutPort, imageLayoutMethodField, mediaImageLayoutInputPorts } from "./image-layout-nodes.js";
 import { readRefMods } from "./refmods.js";
 import { MEDIA_IMAGE_SAMPLERS } from "./image-sampling.js";
 import {
@@ -25,6 +27,7 @@ import {
 
 export type MediaNodeInspectorGroup = "Basic" | "Creative" | "Expert";
 export type MediaNodeFieldKind =
+  | "image-layout"
   | "file"
   | "directory"
   | "node"
@@ -279,6 +282,7 @@ export const MEDIA_NODE_DEFINITIONS = [
   ...AUDIO_NODE_DEFINITIONS,
   ...VIDEO_COMPOSITION_NODE_DEFINITIONS,
   ...WORKFLOW_NODE_DEFINITIONS,
+  IMAGE_LAYOUT_NODE,
   {
     type: "source.prompt",
     version: 1,
@@ -450,10 +454,12 @@ export const MEDIA_NODE_DEFINITIONS = [
       promptPort,
       optionalImageReferenceInput,
       seedInput,
+      imageLayoutPort,
       workflowControlnetPort,
     ],
     outputs: [imageOutput],
     fields: [
+      imageLayoutMethodField,
       {
         id: "providerPolicy",
         label: "Run on",
@@ -799,11 +805,13 @@ export const MEDIA_NODE_DEFINITIONS = [
       promptPort,
       imageReferenceInput,
       seedInput,
+      imageLayoutPort,
       workflowMaskPort,
       workflowControlnetPort,
     ],
     outputs: [imageOutput],
     fields: [
+      imageLayoutMethodField,
       {
         id: "providerPolicy",
         label: "Run on",
@@ -2737,6 +2745,9 @@ const validateFieldValue = (
             /\p{Cc}/u.test(character),
         );
       break;
+    case "image-layout":
+      isValid = mediaImageLayoutError(value) === null;
+      break;
     case "mask":
       isValid = value === null || isMediaImageMask(value);
       break;
@@ -3177,7 +3188,7 @@ export const validateMediaFlowGraph = (
       node.type === "task.generate-image" &&
       node.config.outputFormat === "svg" &&
       node.config.svgMode === "vectorize";
-    for (const port of definition?.inputs ?? []) {
+    for (const port of mediaImageLayoutInputPorts(node, definition?.inputs ?? [], flow.edges)) {
       const required = isSvgVectorization ? port.id === "image" : port.required;
       if (required && !incomingByPort.has(`${node.id}\u001f${port.id}`)) {
         issues.push({

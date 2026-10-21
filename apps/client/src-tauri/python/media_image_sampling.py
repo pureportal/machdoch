@@ -40,6 +40,8 @@ def validate_sampler(architecture: str, sampler: Any) -> None:
 
 def configure_sampler(pipeline: Any, diffusers: Any, architecture: str, sampler: str | None) -> None:
     validate_sampler(architecture, sampler)
+    if architecture in ("moss-image-base", "moss-image-sft"):
+        return
     if not hasattr(pipeline, "_machdoch_default_scheduler"):
         pipeline._machdoch_default_scheduler = pipeline.scheduler
     original = pipeline._machdoch_default_scheduler
@@ -59,7 +61,7 @@ def configure_sampler(pipeline: Any, diffusers: Any, architecture: str, sampler:
         else:
             scheduler_class = getattr(diffusers, class_name)
         scheduler = scheduler_class.from_config(original.config, **options, **scheduler_options)
-    if architecture == "anima":
+    if architecture in ("anima", "flux-3-image-klein"):
         pipeline.update_components(scheduler=scheduler)
     else:
         pipeline.scheduler = scheduler

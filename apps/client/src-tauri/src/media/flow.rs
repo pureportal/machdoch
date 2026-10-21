@@ -1,3 +1,4 @@
+use super::canonical_json::canonical_json;
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     fmt, fs,
@@ -1215,7 +1216,7 @@ fn validate_remote_edit_snapshot(
             return Err("compiled plan steps do not match the pinned remote edit flow".to_string());
         }
         let (target, cacheable, side_effect) = match actual.kind.as_str() {
-            "normalize-prompt" | "resolve-asset" | "resolve-seed" => ("orchestrator", true, None),
+            "normalize-prompt" | "resolve-asset" | "resolve-seed" | "resolve-layout" => ("orchestrator", true, None),
             "resolve-model" => ("orchestrator", false, None),
             "edit-image" => ("remote", false, Some("paid-request")),
             "cutout-subject" => ("local", true, None),
@@ -1382,7 +1383,8 @@ fn resolve_ralph_config_value(flow: &MediaFlowDocument, value: &Value) -> MediaR
         Value::Object(entries) => entries
             .iter()
             .map(|(key, entry)| {
-                resolve_ralph_config_value(flow, entry).map(|resolved| (key.clone(), resolved))
+                if key == "imageLayout" { Ok((key.clone(), entry.clone())) }
+                else { resolve_ralph_config_value(flow, entry).map(|resolved| (key.clone(), resolved)) }
             })
             .collect::<MediaResult<Map<_, _>>>()
             .map(Value::Object),
@@ -1438,6 +1440,9 @@ fn create_ralph_plan_steps(nodes: &[MediaFlowNode]) -> MediaResult<Vec<MediaRunP
                 true,
                 None,
                 None,
+            )),
+            "source.image-layout" => steps.push(create_step(
+                "resolve-layout", "resolve-layout", "Resolve image layout".to_string(), "orchestrator", true, None, None,
             )),
             "task.generate-image" => {
                 steps.push(create_step(
@@ -1728,7 +1733,8 @@ pub(crate) fn create_ralph_fixture_run_request(
             .config
             .iter()
             .map(|(key, value)| {
-                resolve_ralph_config_value(&flow, value).map(|resolved| (key.clone(), resolved))
+                if key == "imageLayout" { Ok((key.clone(), value.clone())) }
+                else { resolve_ralph_config_value(&flow, value).map(|resolved| (key.clone(), resolved)) }
             })
             .collect::<MediaResult<Map<_, _>>>()?;
     }
@@ -2797,6 +2803,7 @@ fn is_supported_node(node_type: &str, version: u32) -> bool {
         && matches!(
             node_type,
             "source.prompt"
+                | "source.image-layout"
                 | "task.generate-prompt"
                 | "operation.canny"
                 | "operation.image-mask"
@@ -3267,6 +3274,10 @@ impl MediaFlowDocument {
                 ));
             }
             for port_id in required_input_ports(&node.r#type, is_svg_vectorization) {
+                if node.r#type == "task.edit-image" && *port_id == "image"
+                    && incoming_ports.contains_key(&(node.id.as_str(), "layout")) {
+                    continue;
+                }
                 if node.r#type == "task.generate-video"
                     && *port_id == "prompt"
                     && node
@@ -3401,8 +3412,8 @@ impl MediaFlowDocument {
             Value::Object(entries) => entries
                 .iter()
                 .map(|(key, entry)| {
-                    self.resolve_config_value(entry)
-                        .map(|resolved| (key.clone(), resolved))
+                    if key == "imageLayout" { Ok((key.clone(), entry.clone())) }
+                    else { self.resolve_config_value(entry).map(|resolved| (key.clone(), resolved)) }
                 })
                 .collect::<MediaResult<Map<_, _>>>()
                 .map(Value::Object),
@@ -3654,6 +3665,7 @@ impl MediaFlowNode {
         }
         let expected_layer = match self.r#type.as_str() {
             "source.prompt"
+            | "source.image-layout"
             | "source.image"
             | "source.audio"
             | "source.video"
@@ -3986,6 +3998,10 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
         | "operation.video-sequence"
         | "operation.video-audio"
         | "operation.lip-sync" => super::workflow_schema::validate_node(node),
+        "source.image-layout" => {
+            validate_config_keys(node, &["imageLayout"])?;
+            super::image_layout::MediaImageLayout::parse(node.config.get("imageLayout").ok_or("Choose a layout")?).map(|_| ())
+        }
         "source.prompt" => {
             validate_config_keys(node, &["prompt"])?;
             config_multiline_string(node, "prompt", 8_000, true).map(|_| ())
@@ -4047,6 +4063,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                 node,
                 if node.r#type == "task.edit-image" {
                     &[
+                        "layoutMethod",
                         "providerPolicy",
                         "modelPolicy",
                         "modelId",
@@ -4070,6 +4087,7 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                     ]
                 } else {
                     &[
+                        "layoutMethod",
                         "providerPolicy",
                         "modelPolicy",
                         "modelId",
@@ -4098,6 +4116,9 @@ fn validate_node_config(node: &MediaFlowNode) -> MediaResult<()> {
                 },
             )?;
             super::image_sampling::ImageSampling::from_config(&node.config)?;
+            if node.config.contains_key("layoutMethod") {
+                config_enum(node, "layoutMethod", &["native", "composition", "reference", "masked"])?;
+            }
             config_enum(node, "providerPolicy", &["auto", "local", "remote"])?;
             config_enum(node, "modelPolicy", &["balanced", "fast", "quality"])?;
             if let Some(addons) = node.config.get("modelAddons") {
@@ -5073,6 +5094,8 @@ fn port_type(node_type: &str, port_id: &str, output: bool) -> Option<&'static st
         ("operation.visual-check", true, "report") => Some("quality-report"),
         ("operation.segment", true, "mask") | ("task.edit-image", false, "mask") => Some("mask"),
         ("source.prompt", true, "prompt") => Some("prompt"),
+        ("source.image-layout", true, "layout")
+        | ("task.generate-image" | "task.edit-image", false, "layout") => Some("image-layout"),
         ("source.image", true, "image") => Some("image"),
         ("source.audio", true, "audio") => Some("audio"),
         ("source.video", true, "video") => Some("video"),
@@ -5168,6 +5191,7 @@ fn required_input_ports(node_type: &str, is_svg_vectorization: bool) -> &'static
         | "operation.upscale" => &["image"],
         "operation.upscale-video" => &["video"],
         "source.prompt"
+        | "source.image-layout"
         | "source.image"
         | "source.audio"
         | "source.video"
@@ -5209,6 +5233,7 @@ fn required_output_ports(node_type: &str) -> &'static [&'static str] {
         "operation.upscale" => &["image"],
         "operation.upscale-video" => &["video"],
         "source.prompt" => &["prompt"],
+        "source.image-layout" => &["layout"],
         "source.image" => &["image"],
         "source.audio" => &["audio"],
         "source.video"
@@ -5418,45 +5443,6 @@ fn digest_value(value: &Value) -> MediaResult<String> {
     Ok(format!("sha256:{:x}", Sha256::digest(canonical.as_bytes())))
 }
 
-fn canonical_json(value: &Value) -> MediaResult<String> {
-    match value {
-        Value::Null => Ok("null".to_string()),
-        Value::Bool(value) => Ok(value.to_string()),
-        Value::Number(value) => {
-            if let Some(integer) = value.as_i64() {
-                return Ok(integer.to_string());
-            }
-            if let Some(integer) = value.as_u64() {
-                return Ok(integer.to_string());
-            }
-            let number = value
-                .as_f64()
-                .ok_or_else(|| "flow JSON contains a non-finite number".to_string())?;
-            Ok(ryu_js::Buffer::new().format(number).to_string())
-        }
-        Value::String(value) => serde_json::to_string(value)
-            .map_err(|error| format!("failed to canonicalize JSON string: {error}")),
-        Value::Array(values) => Ok(format!(
-            "[{}]",
-            values
-                .iter()
-                .map(canonical_json)
-                .collect::<MediaResult<Vec<_>>>()?
-                .join(",")
-        )),
-        Value::Object(values) => {
-            let mut keys = values.keys().collect::<Vec<_>>();
-            keys.sort_unstable();
-            let mut entries = Vec::with_capacity(keys.len());
-            for key in keys {
-                let encoded_key = serde_json::to_string(key)
-                    .map_err(|error| format!("failed to canonicalize JSON key: {error}"))?;
-                entries.push(format!("{encoded_key}:{}", canonical_json(&values[key])?));
-            }
-            Ok(format!("{{{}}}", entries.join(",")))
-        }
-    }
-}
 
 #[test]
 fn canonical_numbers_preserve_browser_mask_coordinates() {

@@ -3,6 +3,8 @@ import {
   isMediaVideoFrameCountValid,
 } from "./video-quality.js";
 import { openMediaModelProfile } from "./open-model-profiles.js";
+import { attachMediaImageLayout, readMediaImageLayoutSettings } from "./image-layout-flow.js";
+import { mediaImageLayoutCapabilityError } from "./image-layout-capabilities.js";
 import {
   mediaImageSamplingError,
   readMediaImageSampling,
@@ -251,6 +253,7 @@ export const createImageRecipeFlow = ({
       createEdge("pose-to-generate", pose.id, "image", generate.id, "image"),
     );
   }
+  attachMediaImageLayout(nodes, edges, generate.id, settings);
   let previousNodeId = generate.id;
 
   if (settings.transparentBackground && settings.outputFormat !== "svg") {
@@ -484,6 +487,7 @@ export const createImageEditFlow = ({
       ? [createEdge("seed-to-edit", seed.id, "seed", edit.id, "seed")]
       : []),
   ];
+  attachMediaImageLayout(nodes, edges, edit.id, settings);
   let previousNodeId = edit.id;
 
   if (settings.transparentBackground) {
@@ -1764,6 +1768,7 @@ const selectImageModel = (
   models: readonly MediaModelDescriptor[],
   requiredCapabilities: readonly MediaCapability[] = ["text-to-image"],
 ): MediaModelDescriptor | null => {
+  if (settings.imageLayout && !settings.modelId) return null;
   const candidates = models
     .filter((model) => isMediaModelReady(model))
     .filter((model) =>
@@ -1974,6 +1979,7 @@ const readImageTaskNodeSettings = (
 
   return {
     prompt: typeof prompt === "string" ? prompt : "",
+    ...readMediaImageLayoutSettings(flow, taskNode),
     providerPolicy: providerPolicy as ImageRecipeSettings["providerPolicy"],
     modelPolicy: modelPolicy as ImageRecipeSettings["modelPolicy"],
     modelId: typeof modelId === "string" ? modelId : null,
@@ -2091,6 +2097,8 @@ const readMediaImageTaskSettings = (
           ? "guided-svg-generation"
           : "text-to-svg",
     );
+  } else if (settings.imageLayout && ["reference", "masked"].includes(settings.layoutMethod ?? "")) {
+    requiredCapabilities.push("image-to-image");
   } else if (sourceAssets.length === 0) {
     requiredCapabilities.push("text-to-image");
   } else {
@@ -2435,6 +2443,9 @@ export const compileMediaImageOutputBranches = (
         `${output.label} must match its branch format conversion.`,
       );
     }
+    if (task.config.layoutMethod === "masked" && (task.config.outputFormat !== "png" || format !== "png" || operations.some(operation => operation.kind !== "metadata-strip"))) {
+      throw new Error("Masked layouts require PNG output without pixel-changing operations. Export or transform the saved image separately.");
+    }
     return {
       id: output.id,
       outputNodeId: output.id,
@@ -2761,6 +2772,9 @@ const createExecutionSteps = (
 
   for (const node of orderMediaFlowNodes(flow)) {
     switch (node.type) {
+      case "source.image-layout":
+        steps.push({ id: stepId(node, "resolve-layout"), sourceNodeId: node.id, kind: "resolve-layout", label: "Layout", target: "orchestrator", cacheable: true });
+        break;
       case "source.prompt":
         steps.push({
           id: stepId(node, "normalize-prompt"),
@@ -3386,7 +3400,7 @@ export const compileMediaFlow = ({
     isLocalUtilityFlow ||
     isSvgVectorization
   ) {
-    if (connectedSourceAssets.length === 0) {
+    if (connectedSourceAssets.length === 0 && !settings?.imageLayout) {
       diagnostics.push({
         code: "SOURCE_ASSET_REQUIRED",
         severity: "error",
@@ -3606,6 +3620,19 @@ export const compileMediaFlow = ({
       )
     : null;
   const imageProfile = openMediaModelProfile(imageModel?.architecture);
+  if (settings?.imageLayout) {
+    const layoutError = mediaImageLayoutCapabilityError(imageModel, models, settings.imageLayout, settings.layoutMethod);
+    if (layoutError) diagnostics.push({ code: "MODEL_CAPABILITY_UNSUPPORTED", severity: "error", message: layoutError,
+      ...(imageTaskNode ? { nodeId: imageTaskNode.id } : {}), action: "Update layout settings or install its prerequisites." });
+    if (settings.layoutMethod === "masked" && settings.outputFormat !== "png") diagnostics.push({
+      code: "NODE_SCHEMA_INVALID", severity: "error", message: "Masked layouts require PNG output.",
+      ...(imageTaskNode ? { nodeId: imageTaskNode.id } : {}), action: "Choose PNG; convert the saved image separately.",
+    });
+    if (connectedSourceAssets.length > 0 || hasMediaImageMaskContent(settings.editMask)) diagnostics.push({
+      code: "NODE_SCHEMA_INVALID", severity: "error", message: "Use layer assets for this layout. Remove image and mask inputs.",
+      ...(imageTaskNode ? { nodeId: imageTaskNode.id } : {}), action: "Choose assets in the layout editor.",
+    });
+  }
   const imageProfileError =
     settings && imageProfile
       ? (mediaImageSamplingError(
@@ -3631,6 +3658,7 @@ export const compileMediaFlow = ({
   if (
     settings &&
     settings.prompt.trim().length === 0 &&
+    !settings.imageLayout &&
     !(settings.outputFormat === "svg" && settings.svgMode === "vectorize") &&
     !promptlessImageConditioning
   ) {

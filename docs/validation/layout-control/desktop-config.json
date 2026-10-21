@@ -1,0 +1,12 @@
+{
+  "identifier": "com.machdoch.layout-verification",
+  "build": { "beforeBuildCommand": null, "devUrl": null },
+  "app": {
+    "windows": [{
+      "label": "main", "title": "Machdoch layout verification", "width": 1440, "height": 960,
+      "minWidth": 960, "minHeight": 720, "visible": false, "skipTaskbar": true,
+      "decorations": false, "dataDirectory": "layout-control-cdp",
+      "additionalBrowserArgs": "--remote-debugging-port=9239 --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"
+    }]
+  }
+}

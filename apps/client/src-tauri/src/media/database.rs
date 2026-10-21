@@ -2109,6 +2109,7 @@ pub(crate) fn complete_local_diffusers_generation(
             "numInferenceSteps": batch.provenance.num_inference_steps,
             "addons": batch.provenance.addons,
             "performance": batch.provenance.performance,
+            "imageLayout": batch.provenance.image_layout,
             "requireChromaBackground": batch.provenance.require_chroma_background,
             "editConditioning": batch.provenance.edit_conditioning,
             "conditioningSources": batch.provenance.conditioning_sources,
@@ -2136,6 +2137,13 @@ pub(crate) fn complete_local_diffusers_generation(
                 ],
             )
             .map_err(|error| format!("failed to register locally generated image asset: {error}"))?;
+        if let Some(layout) = &batch.provenance.image_layout {
+            let variant = batch.provenance.outputs.iter().find(|output| output.index == asset.output_index).map_or(0, |output| output.source_index as usize);
+            for (input_id, role) in super::layout_asset_store::source_assets(layout, variant) {
+                transaction.execute("INSERT OR IGNORE INTO asset_inputs(asset_id,input_asset_id,role) VALUES (?1,?2,?3)",
+                    params![asset_id,input_id,role]).map_err(|error| error.to_string())?;
+            }
+        }
         for reference in &request.reference_images {
             transaction
                 .execute(
@@ -3723,7 +3731,7 @@ pub(crate) fn complete_run(paths: &MediaRuntimePaths, run_id: &str) -> MediaResu
     let candidate_asset_ids = {
         let mut statement = transaction
             .prepare(
-                "SELECT id FROM assets WHERE run_id = ?1 AND deleted_at IS NULL ORDER BY output_index ASC",
+                "SELECT id FROM assets WHERE run_id = ?1 AND deleted_at IS NULL AND COALESCE(json_extract(operation_json,'$.kind'),'') <> 'layout-layer' ORDER BY output_index ASC",
             )
             .map_err(|error| format!("failed to prepare review candidate query: {error}"))?;
         let candidates = statement
@@ -4514,6 +4522,7 @@ pub(crate) fn get_run_detail(
 
 const VISIBLE_ASSET_FILTER: &str = "
   a.deleted_at IS NULL
+  AND COALESCE(json_extract(a.operation_json,'$.kind'),'') <> 'layout-layer'
   AND (
     NOT EXISTS (SELECT 1 FROM human_reviews hr WHERE hr.run_id = a.run_id)
     OR (r.status = 'completed' AND EXISTS (
@@ -5823,7 +5832,7 @@ fn list_assets_for_run(
     run_id: &str,
 ) -> MediaResult<Vec<MediaAssetRecord>> {
     let mut statement = connection
-        .prepare("SELECT id, run_id, blob_digest, kind, mime_type, byte_size, width, height, created_at, output_index, fixture, operation_json FROM assets WHERE run_id = ?1 AND deleted_at IS NULL ORDER BY output_index ASC")
+        .prepare("SELECT id, run_id, blob_digest, kind, mime_type, byte_size, width, height, created_at, output_index, fixture, operation_json FROM assets WHERE run_id = ?1 AND deleted_at IS NULL AND COALESCE(json_extract(operation_json,'$.kind'),'') <> 'layout-layer' ORDER BY output_index ASC")
         .map_err(|error| format!("failed to prepare run asset query: {error}"))?;
     let mut assets = statement
         .query_map(params![run_id], map_asset)
@@ -6673,6 +6682,8 @@ mod tests {
             layer: "output".to_string(),
         });
         GenerateMediaImagesRequest {
+            image_layout: None,
+            layout_method: None,
             schema_version: 1,
             run_id: run_id.to_string(),
             flow_id: "flow-1".to_string(),
@@ -7717,6 +7728,7 @@ mod tests {
                 subject_cutout: None,
             }],
             provenance: crate::media::provider_local_diffusers::LocalDiffusersProvenance {
+                image_layout: None,
                 worker_version: "media-diffusers-worker/1.0.0".to_string(),
                 packages: HashMap::from([("diffusers".to_string(), Some("0.39.0".to_string()))]),
                 device: "cuda".to_string(),

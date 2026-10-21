@@ -25,6 +25,7 @@ pub(crate) struct ExecuteMediaWorkflowRequest {
 
 #[derive(Clone)]
 enum WorkflowValue {
+    Layout(super::image_layout::MediaImageLayout),
     ControlNet(controlnet::ControlNetConditioning),
     Text(String),
     Image(String),
@@ -173,6 +174,12 @@ fn execute_started(
             let image = || image_input(flow, &values, node, "image");
             let mut output_port = "image";
             let output = match node.r#type.as_str() {
+                "source.image-layout" => {
+                    output_port = "layout";
+                    Some(WorkflowValue::Layout(super::image_layout::MediaImageLayout::parse(
+                        node.config.get("imageLayout").ok_or("Choose a layout")?,
+                    )?))
+                }
                 "source.prompt" => {
                     output_port = "prompt";
                     Some(WorkflowValue::Text(config_text(node, "prompt").to_string()))

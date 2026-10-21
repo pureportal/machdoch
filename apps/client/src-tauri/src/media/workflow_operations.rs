@@ -135,6 +135,15 @@ pub(super) fn generate_image(
         "prompt":prompt,"modelId":model_id,"modelLabel":node.label,"outputCount":1,"diagnosticCount":0,"aspectRatio":node.config["aspectRatio"],"outputFormat":node.config["outputFormat"],"modelPolicy":node.config["modelPolicy"],"modelAddons":node.config.get("modelAddons").cloned().unwrap_or(json!([])),"transparentBackground":node.config.get("transparentBackground").and_then(Value::as_bool).unwrap_or(false),"poseImageAssetId":pose,"poseStrength":pose.as_ref().map(|_|config_number(node,"poseStrength",1.0)),"referenceImages":references,"baseImageAssetId":base,"editMask":edit_mask,"seed":seed,"negativePrompt":"","editStrength":config_number(node,"editStrength",0.65),"maskStrength":config_number(node,"maskStrength",1.0),"memoryProfile":node.config.get("memoryProfile"),"outputBranches":[]
     })).map_err(|e| e.to_string())?;
     generation.sampling = super::image_sampling::ImageSampling::from_config(&node.config)?;
+    generation.image_layout = match optional_input(flow, values, node, "layout")? {
+        Some(WorkflowValue::Layout(layout)) => Some(layout.clone()),
+        Some(_) => return Err("Connect an image layout.".into()),
+        None => None,
+    };
+    if generation.image_layout.is_some() {
+        generation.layout_method = Some(serde_json::from_value(node.config.get("layoutMethod").cloned().ok_or("Choose a layout method")?)
+            .map_err(|error| format!("Invalid layout method: {error}"))?);
+    }
     generation.control_net = match optional_input(flow, values, node, "controlnet")? {
         Some(WorkflowValue::ControlNet(control)) => Some(control.clone()),
         Some(_) => return Err("Connect an Apply ControlNet node.".into()),
@@ -152,7 +161,8 @@ pub(super) fn generate_image(
         jpeg_background: "#ffffff".into(),
         operations: Vec::new(),
     }];
-    if generation.base_image_asset_id.is_none() && generation.reference_images.is_empty() {
+    if generation.base_image_asset_id.is_none() && generation.reference_images.is_empty()
+        && !matches!(generation.layout_method, Some(super::image_layout::LayoutMethod::Reference | super::image_layout::LayoutMethod::Masked)) {
         generation.edit_strength = None;
     }
     if generation.edit_mask.is_none() {
@@ -172,6 +182,9 @@ pub(super) fn generate_image(
     sources.extend(base);
     sources.extend(pose);
     sources.extend(mask);
+    if let Some(layout) = &batch.provenance.image_layout {
+        sources.extend(super::layout_asset_store::source_assets(layout, 0).into_iter().map(|(id, _)| id));
+    }
     sources.extend(
         generation
             .control_net

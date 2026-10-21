@@ -449,6 +449,8 @@ mod tests {
 
     fn request() -> GenerateMediaImagesRequest {
         GenerateMediaImagesRequest {
+            image_layout: None,
+            layout_method: None,
             schema_version: 1,
             run_id: "run:test".to_string(),
             flow_id: "flow:test".to_string(),

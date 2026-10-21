@@ -17,6 +17,10 @@ use tauri::{AppHandle, Manager as _};
 
 #[path = "provider_audio.rs"]
 mod audio;
+#[path = "provider_image_layout.rs"]
+mod image_layout;
+#[path = "provider_layout_refinement.rs"]
+mod layout_refinement;
 pub(crate) use audio::generate_audio;
 #[path = "provider_video_composition.rs"]
 mod video_composition;
@@ -169,6 +173,8 @@ struct WorkerAddon<'a> {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkerGenerationRequest<'a> {
+    image_layout: Option<&'a super::image_layout::MediaImageLayout>,
+    layout_method: Option<&'a super::image_layout::LayoutMethod>,
     #[serde(skip_serializing_if = "Option::is_none")]
     control_net: Option<super::controlnet::WorkerControlNet<'a>>,
     sampling: &'a super::image_sampling::ImageSampling,
@@ -264,6 +270,8 @@ struct WorkerOutputRecord {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkerGenerationResponse {
+    #[serde(default)]
+    image_layout: Option<serde_json::Value>,
     schema_version: u32,
     worker_version: String,
     #[serde(default)]
@@ -448,6 +456,7 @@ struct WorkerFailure {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct LocalDiffusersProvenance {
+    pub(crate) image_layout: Option<serde_json::Value>,
     pub(crate) worker_version: String,
     pub(crate) packages: HashMap<String, Option<String>>,
     pub(crate) device: String,
@@ -628,7 +637,19 @@ fn run_worker(
     let _runtime_guard = super::runtime_setup::RUNTIME_USE
         .read()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let worker = worker_command(python, script);
+    let mut worker = worker_command(python, script);
+    if let Some((paths, _)) = cancellation {
+        let cache = paths.models_root()?.join("cache");
+        for folder in ["tmp", "miopen/kernels", "miopen/db", "inductor", "triton"] {
+            fs::create_dir_all(cache.join(folder)).map_err(|error| error.to_string())?;
+        }
+        worker.env("HF_HOME", cache.join("huggingface")).env("HF_HUB_CACHE", cache.join("huggingface").join("hub"))
+            .env("TORCH_HOME", cache.join("torch")).env("TMP", cache.join("tmp")).env("TEMP", cache.join("tmp"))
+            .env("MIOPEN_CUSTOM_CACHE_DIR", cache.join("miopen").join("kernels"))
+            .env("MIOPEN_USER_DB_PATH", cache.join("miopen").join("db"))
+            .env("TORCHINDUCTOR_CACHE_DIR", cache.join("inductor"))
+            .env("TRITON_CACHE_DIR", cache.join("triton"));
+    }
     super::model_memory::run(
         worker,
         command,
@@ -2172,6 +2193,7 @@ fn validate_image_sampling_evidence(
             "ddim" => "DDIMScheduler",
             "deis" => "DEISMultistepScheduler",
             "unipc" => "UniPCMultistepScheduler",
+            "flow-euler" if matches!(architecture, "moss-image-base" | "moss-image-sft") => "MOSSImageScheduler",
             "flow-euler" => "FlowMatchEulerDiscreteScheduler",
             "flow-heun" => "FlowMatchHeunDiscreteScheduler",
             "lcm" => "LCMScheduler",
@@ -2205,6 +2227,9 @@ pub(crate) fn generate(
     request: &GenerateMediaImagesRequest,
     mask_asset_id: Option<&str>,
 ) -> MediaResult<LocalGeneratedImageBatch> {
+    if request.image_layout.is_some() && request.layout_method != Some(super::image_layout::LayoutMethod::Native) {
+        return image_layout::generate(app, paths, request);
+    }
     let script = worker_script(app)?;
     let (runtime, python) = ready_runtime(app, &script)?;
     let model = installed_model(paths, &request.model_id)?;
@@ -2278,7 +2303,7 @@ pub(crate) fn generate(
             model.architecture
         ));
     }
-    if request.prompt.is_empty() && !has_conditioning {
+    if request.prompt.is_empty() && !has_conditioning && request.image_layout.is_none() {
         return Err("prompt or supported local image conditioning is required".to_string());
     }
     let ip_adapter_path = if !request.reference_images.is_empty()
@@ -2365,7 +2390,9 @@ pub(crate) fn generate(
         .sampling
         .validate_architecture(&model.architecture)?;
     let worker_request = WorkerGenerationRequest {
-        model_cache_directory: paths.database.with_file_name("cache").join("image-models"),
+        image_layout: request.image_layout.as_ref(),
+        layout_method: request.layout_method.as_ref(),
+        model_cache_directory: paths.models_root()?.join("cache").join("image-models"),
         control_net: request
             .control_net
             .as_ref()
@@ -2436,6 +2463,18 @@ pub(crate) fn generate(
         Some((paths, &request.run_id)),
     )?;
     let response = decode_generation_response(&output)?;
+    if let Some(layout) = &request.image_layout {
+        let expected = serde_json::to_value(layout).map_err(|error| error.to_string())?;
+        if response.image_layout.as_ref().and_then(|evidence| evidence.get("layout")) != Some(&expected)
+            || response.image_layout.as_ref().and_then(|evidence| evidence.get("method")).and_then(serde_json::Value::as_str) != Some("native") {
+            return Err("The image worker did not confirm the immutable layout.".into());
+        }
+        if response.outputs.iter().any(|output| output.width != layout.canvas.width || output.height != layout.canvas.height) {
+            return Err("The generated image dimensions differ from the layout canvas.".into());
+        }
+    } else if response.image_layout.is_some() {
+        return Err("The image worker returned an unrequested layout.".into());
+    }
     validate_generation_evidence(
         &response,
         &runtime,
@@ -2575,6 +2614,12 @@ pub(crate) fn generate(
     Ok(LocalGeneratedImageBatch {
         assets,
         provenance: LocalDiffusersProvenance {
+            image_layout: response.image_layout.map(|mut evidence| -> MediaResult<serde_json::Value> {
+                if let Some(layout) = &request.image_layout {
+                    evidence["digest"] = serde_json::json!(layout.digest()?);
+                }
+                Ok(evidence)
+            }).transpose()?,
             worker_version: response.worker_version,
             packages: response.packages,
             device: response.device,
@@ -4909,6 +4954,8 @@ time.sleep(60)
             end: 0.8,
         };
         let request = WorkerGenerationRequest {
+            image_layout: None,
+            layout_method: None,
             model_cache_directory: output_path.join("model-cache"),
             control_net: None,
             sampling: &Default::default(),
@@ -5088,6 +5135,7 @@ time.sleep(60)
             },
         ];
         let mut response = WorkerGenerationResponse {
+            image_layout: None,
             schema_version: WORKER_SCHEMA_VERSION,
             worker_version: runtime.worker_version.clone().unwrap(),
             packages: runtime.packages.clone(),
@@ -5207,6 +5255,7 @@ time.sleep(60)
             ..reference_expectation
         };
         let mut response = WorkerGenerationResponse {
+            image_layout: None,
             schema_version: WORKER_SCHEMA_VERSION,
             worker_version: runtime.worker_version.clone().unwrap(),
             packages: runtime.packages.clone(),
@@ -5371,6 +5420,7 @@ time.sleep(60)
             requires_visible_reference_change: false,
         };
         let mut response = WorkerGenerationResponse {
+            image_layout: None,
             schema_version: WORKER_SCHEMA_VERSION,
             worker_version: "test".to_string(),
             packages: HashMap::new(),
