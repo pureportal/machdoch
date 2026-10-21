@@ -999,6 +999,7 @@ pub enum ProductCommandKind {
     SetRunningMessageAction,
     AddContextAttachments,
     SetSessionModel,
+    RefreshProviderModels,
     SetSessionMode,
     SetAdaptiveController,
     SetParallelAgentMode,
@@ -1429,6 +1430,7 @@ impl ProductCommand {
                 ("provider", self.provider.is_some()),
                 ("model", self.model.is_some()),
             ]),
+            ProductCommandKind::RefreshProviderModels => required.push(("provider", self.provider.is_some())),
             ProductCommandKind::SetSessionMode
             | ProductCommandKind::SetAdaptiveController
             | ProductCommandKind::SetParallelAgentMode
@@ -1708,6 +1710,7 @@ impl ProductCommand {
                     && valid_short_text(self.provider.as_deref())
                     && valid_short_text(self.model.as_deref())
             }
+            ProductCommandKind::RefreshProviderModels => valid_short_text(self.provider.as_deref()),
             ProductCommandKind::SetSessionMode => {
                 valid_identifier(self.session_id.as_deref()) && valid_mode(self.mode.as_deref())
             }
@@ -2134,6 +2137,7 @@ impl ProductCommandKind {
             }
             Self::SetRunningMessageAction => &["kind", "commandId", "sessionId", "runningAction"],
             Self::SetSessionModel => &["kind", "commandId", "sessionId", "provider", "model"],
+            Self::RefreshProviderModels => &["kind", "commandId", "provider"],
             Self::SetSessionMode => &["kind", "commandId", "sessionId", "mode"],
             Self::SetAdaptiveController => &["kind", "commandId", "sessionId", "mode"],
             Self::SetParallelAgentMode => &["kind", "commandId", "sessionId", "mode"],
@@ -2248,6 +2252,7 @@ impl ProductCommandKind {
             Self::SetRunningMessageAction => "set-running-message-action",
             Self::AddContextAttachments => "add-context-attachments",
             Self::SetSessionModel => "set-session-model",
+            Self::RefreshProviderModels => "refresh-provider-models",
             Self::SetSessionMode => "set-session-mode",
             Self::SetAdaptiveController => "set-adaptive-controller",
             Self::SetParallelAgentMode => "set-parallel-agent-mode",

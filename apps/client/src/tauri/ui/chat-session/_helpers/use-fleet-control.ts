@@ -17,6 +17,7 @@ import {
   type ComposerHistorySelection,
 } from "@machdoch/fleet-protocol";
 import { getOriginalPromptContent } from "@machdoch/product-ui";
+import { useProviderModelCatalog } from "../../use-provider-model-catalog";
 import {
   renderMediaPoseSvg,
   type MediaPoseMap,
@@ -60,7 +61,6 @@ import {
   getFleetConnectionStatus,
   getPendingFleetControlCommands,
   loadActiveDesktopTasks,
-  loadProviderModelCatalog,
   listSchedulerJobs,
   listSchedulerRuns,
   REASONING_MODE_ORDER,
@@ -97,7 +97,6 @@ import { useFleetRalph } from "../../ralph/use-fleet-ralph";
 import {
   getCatalogModelsForProvider,
   getModelLabelForProvider,
-  type ProviderModelCatalogSnapshot,
   type RuntimeProvider,
 } from "../../model-catalog";
 import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
@@ -810,9 +809,12 @@ export const useFleetControl = (options: {
   );
   const [mediaSnapshot, setMediaSnapshot] =
     useState<FleetShellMediaSnapshot | null>(null);
-  const [providerModelCatalog, setProviderModelCatalog] =
-    useState<ProviderModelCatalogSnapshot | null>(null);
-  const [modelCatalogLoading, setModelCatalogLoading] = useState(false);
+  const {
+    catalog: providerModelCatalog,
+    loadingProviders: modelCatalogLoadingProviders,
+    refresh: refreshModelCatalog,
+  } = useProviderModelCatalog(options.hasHydrated && fleetEnabled);
+  const modelCatalogLoading = modelCatalogLoadingProviders.size > 0;
   const handleCommandRef = useRef<
     (command: FleetControlCommandEvent) => Promise<void>
   >(async () => undefined);
@@ -852,23 +854,6 @@ export const useFleetControl = (options: {
     options.onRefreshInstructions,
     fleetPublishingEnabled,
   ]);
-
-  useEffect(() => {
-    if (!options.hasHydrated || !fleetPublishingEnabled) return;
-
-    let cancelled = false;
-    setModelCatalogLoading(true);
-    void loadProviderModelCatalog()
-      .then((catalog) => {
-        if (!cancelled) setProviderModelCatalog(catalog);
-      })
-      .finally(() => {
-        if (!cancelled) setModelCatalogLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [options.hasHydrated, fleetPublishingEnabled]);
 
   const getSessionForCommand = useCallback(
     (
@@ -1051,6 +1036,7 @@ export const useFleetControl = (options: {
         provider,
         label: getProviderLabel(provider),
         available: runtimeProvider?.available === true,
+        loading: modelCatalogLoadingProviders.has(provider),
         ...(runtimeProvider?.error ? { error: runtimeProvider.error } : {}),
         models: getCatalogModelsForProvider(provider, providerModelCatalog).map(
           (model) => ({
@@ -1372,6 +1358,7 @@ export const useFleetControl = (options: {
     options.voiceSupported,
     options.workspaceContextPacks,
     modelCatalogLoading,
+    modelCatalogLoadingProviders,
     providerModelCatalog,
     ralphState,
     mediaSnapshot,
@@ -1846,6 +1833,14 @@ export const useFleetControl = (options: {
           break;
         }
 
+        case "refresh-provider-models": {
+          if (!command.provider || !options.chooserProviders.includes(command.provider as RuntimeProvider)) {
+            throw new NonRetryableFleetCommandError("Choose an available provider to retry.");
+          }
+          await refreshModelCatalog(command.provider as RuntimeProvider, true);
+          break;
+        }
+
         case "set-session-model": {
           const provider = command.provider;
           const runtimeProvider =
@@ -2214,6 +2209,7 @@ export const useFleetControl = (options: {
       configuredMediaProviderIds,
       options,
       providerModelCatalog,
+      refreshModelCatalog,
       refreshMedia,
       refreshRalph,
       startFleetRalphAction,

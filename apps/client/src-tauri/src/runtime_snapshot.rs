@@ -85,15 +85,24 @@ use workspace::{
 };
 use workspace_memory::{forget_workspace_memory_entry, load_workspace_memory_entries};
 
-static PROVIDER_MODEL_CATALOG_CACHE: OnceLock<model_catalog_cache::ModelCatalogCache> =
-    OnceLock::new();
+static PROVIDER_MODEL_CATALOG_CACHE: OnceLock<
+    HashMap<&'static str, model_catalog_cache::ModelCatalogCache>,
+> = OnceLock::new();
 
-fn provider_model_catalog_cache() -> &'static model_catalog_cache::ModelCatalogCache {
-    PROVIDER_MODEL_CATALOG_CACHE.get_or_init(Default::default)
+fn provider_model_catalog_caches(
+) -> &'static HashMap<&'static str, model_catalog_cache::ModelCatalogCache> {
+    PROVIDER_MODEL_CATALOG_CACHE.get_or_init(|| {
+        VALID_MODEL_PROVIDERS
+            .iter()
+            .map(|provider| (*provider, Default::default()))
+            .collect()
+    })
 }
 
 async fn invalidate_provider_model_catalog_cache() {
-    provider_model_catalog_cache().invalidate().await;
+    for cache in provider_model_catalog_caches().values() {
+        cache.invalidate().await;
+    }
 }
 
 pub(crate) fn normalize_optional_string(value: Option<&str>) -> Option<String> {
@@ -129,29 +138,55 @@ pub async fn get_global_provider_availability() -> Result<Vec<ProviderAvailabili
 }
 
 #[tauri::command]
-pub async fn get_provider_model_catalog() -> Result<ProviderModelCatalogSnapshot, String> {
-    // Keep the refresh alive if its caller goes away: blocking CLI probes must
-    // finish and clean up before another caller starts a replacement refresh.
-    tokio::spawn(async {
-        provider_model_catalog_cache()
-            .get_or_refresh(|| async {
-                let env = tokio::task::spawn_blocking(load_global_env)
-                    .await
-                    .map_err(|error| {
-                        format!("Model catalog environment reader failed: {error}")
-                    })??;
-                let client = create_provider_model_http_client()?;
-                let probes: Vec<_> = VALID_MODEL_PROVIDERS
-                    .iter()
-                    .map(|provider| fetch_provider_model_catalog(&client, &env, provider))
-                    .collect();
-                let providers = stream::iter(probes).buffered(3).collect().await;
-                Ok(ProviderModelCatalogSnapshot {
-                    generated_at: create_timestamp_millis(),
-                    providers,
-                })
+pub async fn get_provider_model_catalog(
+    provider: Option<String>,
+    force_refresh: Option<bool>,
+) -> Result<ProviderModelCatalogSnapshot, String> {
+    if provider
+        .as_deref()
+        .is_some_and(|value| !is_valid_model_provider(value))
+    {
+        return Err("Choose a supported model provider.".to_string());
+    }
+    tokio::spawn(async move {
+        let client = create_provider_model_http_client()?;
+        let probes: Vec<_> = VALID_MODEL_PROVIDERS
+            .iter()
+            .copied()
+            .filter(|id| provider.as_deref().is_none_or(|selected| selected == *id))
+            .map(|id| {
+                let client = &client;
+                async move {
+                    provider_model_catalog_caches()[id]
+                        .get_or_refresh(force_refresh.unwrap_or(false), || async {
+                            let env = tokio::task::spawn_blocking(load_global_env)
+                                .await
+                                .map_err(|error| {
+                                    format!("Model catalog environment reader failed: {error}")
+                                })??;
+                            Ok(ProviderModelCatalogSnapshot {
+                                generated_at: create_timestamp_millis(),
+                                providers: vec![
+                                    fetch_provider_model_catalog(client, &env, id).await,
+                                ],
+                            })
+                        })
+                        .await
+                }
             })
-            .await
+            .collect();
+        let results: Vec<Result<ProviderModelCatalogSnapshot, String>> = stream::iter(probes)
+            .buffered(VALID_MODEL_PROVIDERS.len())
+            .collect()
+            .await;
+        let mut providers = Vec::new();
+        for result in results {
+            providers.extend(result?.providers);
+        }
+        Ok(ProviderModelCatalogSnapshot {
+            generated_at: create_timestamp_millis(),
+            providers,
+        })
     })
     .await
     .map_err(|error| format!("Model catalog refresh failed: {error}"))?

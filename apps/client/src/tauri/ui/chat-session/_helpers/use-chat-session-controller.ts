@@ -4,6 +4,7 @@ import {
 } from "./voice-settings-controls";
 import { createRuntimeSettingsControls } from "./runtime-settings-controls";
 import { useFleetDeviceUiSettings } from "./use-fleet-device-ui-settings";
+import { useProviderModelCatalog } from "../../use-provider-model-catalog";
 import {
   createWorkspaceInstructionLifecycle,
   useInstructionManagement,
@@ -709,6 +710,7 @@ export const useChatSessionController = (
 ) => {
   const backgroundMaintenanceEnabled =
     options.enableBackgroundMaintenance !== false;
+  useProviderModelCatalog(backgroundMaintenanceEnabled);
   const state = useChatSessionShellState({
     includeHistoryContent: options.includeHistoryContent,
     isolateActiveSession: options.isolateActiveSession,

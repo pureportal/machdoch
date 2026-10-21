@@ -101,6 +101,7 @@ const SUPPORTED_REASONING_MODES: &[&str] = &[
 ];
 
 const SUPPORTED_COMMAND_GROUPS: &[&[&str]] = &[
+    &["refresh-provider-models"],
     TASK_ID_COMMANDS,
     SESSION_ID_COMMANDS,
     SESSION_MUTATION_COMMANDS,

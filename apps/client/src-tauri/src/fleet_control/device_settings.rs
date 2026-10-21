@@ -39,7 +39,10 @@ pub(crate) async fn invoke(
             encoded(runtime_snapshot::get_global_provider_availability().await)
         }
         "get_provider_model_catalog" => {
-            encoded(runtime_snapshot::get_provider_model_catalog().await)
+            encoded(runtime_snapshot::get_provider_model_catalog(
+                args.get("provider").and_then(Value::as_str).map(str::to_string),
+                args.get("forceRefresh").and_then(Value::as_bool),
+            ).await)
         }
         "get_user_provider_api_keys" => {
             encoded(runtime_snapshot::get_user_provider_api_keys().await)

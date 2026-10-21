@@ -170,6 +170,7 @@ fn model_provider() -> Shape {
         required("provider", string(240)),
         required("label", text()),
         required("available", Shape::Bool),
+        optional("loading", Shape::Bool),
         optional("error", text()),
         required(
             "models",

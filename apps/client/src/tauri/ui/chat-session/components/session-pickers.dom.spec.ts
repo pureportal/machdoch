@@ -188,7 +188,7 @@ describe("session picker popovers", () => {
 
     fireEvent.click(screen.getByLabelText("Session model: OpenAI GPT-5.6"));
 
-    expect(screen.getByText("Not configured")).toBeTruthy();
+    expect(screen.getByText("Connect OpenAI in Settings to load models.")).toBeTruthy();
     expect(screen.queryByLabelText("Choose OpenAI GPT-5.6")).toBeNull();
   });
 

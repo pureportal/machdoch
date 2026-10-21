@@ -36,7 +36,9 @@ function openPicker(query = "日本") {
     name: "Search models",
   });
   fireEvent.change(search, { target: { value: query } });
-  expect(screen.queryByRole("dialog", { name: "Session model" })).not.toBeNull();
+  expect(
+    screen.queryByRole("dialog", { name: "Session model" }),
+  ).not.toBeNull();
   expect(trigger.getAttribute("aria-expanded")).toBe("true");
   expect(onSelect).not.toHaveBeenCalled();
   return { onSelect, search, trigger };
@@ -55,7 +57,9 @@ describe("model search composition selection", () => {
       });
       fireEvent(search, event);
       expect.soft(onSelect).not.toHaveBeenCalled();
-      expect.soft(screen.queryByRole("dialog", { name: "Session model" })).not.toBeNull();
+      expect
+        .soft(screen.queryByRole("dialog", { name: "Session model" }))
+        .not.toBeNull();
       expect.soft(trigger.getAttribute("aria-expanded")).toBe("true");
       expect.soft(event.defaultPrevented).toBe(false);
     },
@@ -68,7 +72,13 @@ describe("model search composition selection", () => {
     fireEvent.change(search, { target: { value: "日本" } });
     fireEvent.compositionEnd(search, { data: "日本" });
     expect(onSelect).not.toHaveBeenCalled();
-    expect(fireEvent.keyDown(search, { key: "Enter", isComposing: false, keyCode: 13 })).toBe(false);
+    expect(
+      fireEvent.keyDown(search, {
+        key: "Enter",
+        isComposing: false,
+        keyCode: 13,
+      }),
+    ).toBe(false);
     expect(onSelect.mock.calls).toEqual([["provider", "japanese"]]);
     expect(screen.queryByRole("dialog", { name: "Session model" })).toBeNull();
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
@@ -79,15 +89,101 @@ describe("model search composition selection", () => {
     expect(screen.getByRole("status").textContent).toBe("No matching models.");
     fireEvent.keyDown(search, { key: "Enter" });
     expect(onSelect).not.toHaveBeenCalled();
-    expect(screen.queryByRole("dialog", { name: "Session model" })).not.toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: "Session model" }),
+    ).not.toBeNull();
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("selects the clicked match exactly once and closes the picker", () => {
     const { onSelect, trigger } = openPicker();
-    fireEvent.click(screen.getByRole("button", { name: "Choose Provider 日本 Fast" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose Provider 日本 Fast" }),
+    );
     expect(onSelect.mock.calls).toEqual([["provider", "japanese-fast"]]);
     expect(screen.queryByRole("dialog", { name: "Session model" })).toBeNull();
     expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+});
+
+describe("model discovery recovery", () => {
+  const failedProvider = {
+    id: "codex-cli",
+    label: "Codex CLI",
+    available: false,
+    error:
+      "Codex CLI model discovery failed. C:\\Users\\private\\codex.exe timed out while running the agent CLI command.",
+    models: [],
+  };
+
+  it("replaces raw diagnostics with an actionable error and retries the selected provider", () => {
+    const onRetry = vi.fn();
+    const { rerender } = render(
+      <ComposerModelPicker
+        providers={[failedProvider]}
+        activeProvider="codex-cli"
+        activeProviderLabel="Codex CLI"
+        activeModel="gpt"
+        activeModelLabel="GPT"
+        loading={false}
+        onRetry={onRetry}
+        onSelect={vi.fn()}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Session model: Codex CLI GPT" }),
+    );
+    expect(
+      screen.getByText("Codex CLI took too long to respond. Try again."),
+    ).toBeTruthy();
+    expect(document.body.textContent).not.toContain("C:\\Users");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry.mock.calls).toEqual([["codex-cli"]]);
+    rerender(
+      <ComposerModelPicker
+        providers={[{ ...failedProvider, loading: true }]}
+        activeProvider="codex-cli"
+        activeProviderLabel="Codex CLI"
+        activeModel="gpt"
+        activeModelLabel="GPT"
+        loading
+        onRetry={onRetry}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+    expect(screen.getByText("Checking Codex CLI models…")).toBeTruthy();
+  });
+
+  it("keeps saved models selectable during refresh failures and while another provider is loading", () => {
+    const onSelect = vi.fn();
+    render(
+      <ComposerModelPicker
+        providers={[
+          {
+            ...failedProvider,
+            available: true,
+            loading: false,
+            models: [{ id: "gpt", label: "GPT" }],
+          },
+        ]}
+        activeProvider="codex-cli"
+        activeProviderLabel="Codex CLI"
+        activeModel="gpt"
+        activeModelLabel="GPT"
+        loading
+        onRetry={vi.fn()}
+        onSelect={onSelect}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Session model: Codex CLI GPT" }),
+    );
+    expect(screen.getByText("Saved models")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose Codex CLI GPT" }),
+    );
+    expect(onSelect.mock.calls).toEqual([["codex-cli", "gpt"]]);
   });
 });

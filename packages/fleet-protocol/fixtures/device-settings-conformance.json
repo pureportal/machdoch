@@ -1,6 +1,36 @@
 {
   "cases": [
     {
+      "name": "catalog can force a provider refresh",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "get_provider_model_catalog",
+        "args": { "provider": "codex-cli", "forceRefresh": true }
+      },
+      "accepted": true
+    },
+    {
+      "name": "catalog rejects unsupported providers",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "get_provider_model_catalog",
+        "args": { "provider": "unknown" }
+      },
+      "accepted": false
+    },
+    {
+      "name": "catalog requires a boolean refresh flag",
+      "request": {
+        "kind": "invoke",
+        "id": "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+        "command": "get_provider_model_catalog",
+        "args": { "forceRefresh": "true" }
+      },
+      "accepted": false
+    },
+    {
       "name": "catalog uses no arguments",
       "request": {
         "kind": "invoke",

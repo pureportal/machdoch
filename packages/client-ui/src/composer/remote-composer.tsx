@@ -277,6 +277,7 @@ export function RemoteComposer({
               id: provider.provider,
               label: provider.label,
               available: provider.available,
+              loading: provider.loading,
               ...(provider.error ? { error: provider.error } : {}),
               models: provider.models,
             }))}
@@ -285,6 +286,7 @@ export function RemoteComposer({
             activeModel={composer.model}
             activeModelLabel={composer.modelLabel}
             loading={composer.modelCatalogLoading}
+            onRetry={(provider) => void onCommand({ kind: "refresh-provider-models", provider })}
             onSelect={(provider, modelId) =>
               void onCommand({
                 kind: "set-session-model",
