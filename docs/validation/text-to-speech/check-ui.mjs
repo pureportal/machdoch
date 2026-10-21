@@ -114,7 +114,7 @@ try{
   await page.getByRole("button",{name:"Resume queue",exact:true}).click();
   await page.getByRole("button",{name:"Pause queue",exact:true}).waitFor();
   await page.getByRole("button",{name:"Voices",exact:true}).click();
-  await page.getByRole("textbox",{name:"Rights evidence",exact:true}).fill("Synthetic browser microphone fixture");
+  await page.getByText("Create or clone a voice",{exact:true}).click();
   await page.getByRole("checkbox",{name:"I have permission to use these recordings and create this voice.",exact:true}).check();
   await page.getByLabel("Recording transcript",{exact:true}).fill("Synthetic microphone capture");
   await page.getByRole("button",{name:"Record reference",exact:true}).click();
@@ -124,12 +124,12 @@ try{
   await page.reload();
   await page.getByRole("button",{name:"Speech interaction check",exact:true}).click();
   await page.getByRole("button",{name:"Voices",exact:true}).click();
+  await page.getByText("Create or clone a voice",{exact:true}).click();
   await page.getByRole("button",{name:"Import recording",exact:true}).click();
   await page.waitForFunction(()=>window.speechFixture.recordedBytes.length>58);
   const recording=await page.evaluate(()=>window.speechFixture.recordedBytes);
   await writeFile("D:/Models/machdoch/speech/verification/synthetic-microphone.wav",Buffer.from(recording));
   assert.equal(await page.getByLabel("Saved recording",{exact:true}).locator("option").count(),2);
-  await page.getByRole("textbox",{name:"Rights evidence",exact:true}).fill("Synthetic recording permission fixture");
   await page.getByRole("checkbox",{name:"I have permission to use these recordings and create this voice.",exact:true}).check();
   await page.getByLabel("Assign to",{exact:true}).selectOption(speakerId);
   await page.getByLabel("Saved recording",{exact:true}).selectOption({label:"Synthetic microphone capture"});

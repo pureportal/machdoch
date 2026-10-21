@@ -118,7 +118,7 @@ let analysisGate:{promise:Promise<void>;release():void}|null=null;
 const holdAnalysis=()=>{let release!:()=>void;const promise=new Promise<void>(resolve=>{release=resolve;});analysisGate={promise,release};};
 const releaseAnalysis=()=>{const pending=analysisGate;analysisGate=null;pending?.release();};
 let recordedBytes:number[]=[];
-Object.assign(window,{speechFixture:{calls,takes,jobs,dictionaries,draftWrites,holdDrafts,releaseDrafts,get completedDraftWrites(){return completedDraftWrites;},dictionaryHistory,prepareReading,prepareProviderResponses,prepareProfileReferences,prepareArchiveReferences,prepareHistoryPages,prepareProductionHistory,prepareDeletionVoice,failVoiceUpdate:()=>{failNextUpdate=true;},clearVoiceCatalog:()=>{libraryVoices.splice(0);},completeVoiceWorkflow,holdAnalysis,releaseAnalysis,enableRenderTargets:()=>{renderTargetsEnabled=true;},corruptAnalysis:()=>{corruptAnalysis=true;},get projects(){return projects;},get templates(){return templates;},get playback(){return speechPlayback.snapshot();},get recordedBytes(){return recordedBytes;}}});
+Object.assign(window,{speechFixture:{calls,takes,jobs,dictionaries,draftWrites,holdDrafts,releaseDrafts,get completedDraftWrites(){return completedDraftWrites;},dictionaryHistory,prepareReading,prepareProviderResponses,prepareProfileReferences,prepareArchiveReferences,prepareHistoryPages,prepareProductionHistory,prepareDeletionVoice,failVoiceUpdate:()=>{failNextUpdate=true;},clearVoiceCatalog:()=>{libraryVoices.splice(0);},completeVoiceWorkflow,holdAnalysis,releaseAnalysis,enableRenderTargets:()=>{renderTargetsEnabled=true;},corruptAnalysis:()=>{corruptAnalysis=true;},get runtime(){return runtime;},get projects(){return projects;},get templates(){return templates;},get playback(){return speechPlayback.snapshot();},get recordedBytes(){return recordedBytes;}}});
 
 const runtime:SpeechRuntime={transport:"native",async execute<K extends keyof SpeechOperations>(operation:K,input:SpeechOperations[K]["input"]):Promise<SpeechOperations[K]["output"]>{
   calls.push({operation,input:structuredClone(input)});
@@ -256,6 +256,7 @@ const runtime:SpeechRuntime={transport:"native",async execute<K extends keyof Sp
       const index=dictionaries.findIndex(item=>item.id===dictionary.id);if(index<0)dictionaries.push(dictionary);else dictionaries[index]=dictionary;
       dictionaryHistory.push(structuredClone(dictionary));localStorage.setItem("speech-fixture-dictionaries",JSON.stringify(dictionaries));localStorage.setItem("speech-fixture-dictionary-history",JSON.stringify(dictionaryHistory));result=dictionary;break;
     }
+    case "runtimeModelStatus":result={state:settings.connections.some(connection=>connection.backend==="drama3"&&connection.configured)?"installed":"idle",bytes:0,totalBytes:1024,error:null,path:settings.modelRoot,licenseUrl:"https://speech.test/license"};break;
     case "settings":result=settings;break;
     case "saveSettings":Object.assign(settings,values.settings);result=settings;break;
     case "getProject":result=projects.find(project=>project.id===values.id);if(!result)throw new Error("Project not found");break;

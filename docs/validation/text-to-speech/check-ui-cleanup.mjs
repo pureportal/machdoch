@@ -110,12 +110,12 @@ try {
   await button("Clear filters").click();
   await page.getByRole("heading", { name: "Comparison voice 1", exact: true }).waitFor();
   await button("Favorite voice").first().click();
-  await summary("Filters").click();
+  await page.getByLabel("Filters", { exact: true }).click();
   await field("Favorites").check();
   await button("Apply filters").click();
   await page.waitForFunction(() => document.querySelectorAll(".tts-voice-list .tts-voice").length === 1);
   await field("Favorites").waitFor({ state: "hidden" });
-  await summary("Filters").click();
+  await page.getByLabel("Filters", { exact: true }).click();
   await field("Favorites").uncheck();
   await button("Apply filters").click();
   await page.getByRole("heading", { name: "Comparison voice 2", exact: true }).waitFor();
@@ -276,7 +276,7 @@ try {
   check("Project content survives reload and reopening");
   await button("Voices").click();
   await page.evaluate(() => window.speechFixture.prepareDeletionVoice());
-  await summary("Filters").click();
+  await page.getByLabel("Filters", { exact: true }).click();
   await field("My voices").check();
   await button("Apply filters").click();
   const ownedVoice = page.locator(".tts-voice-list .tts-voice").filter({ has: page.getByRole("heading", { name: "Deletion voice", exact: true }) });

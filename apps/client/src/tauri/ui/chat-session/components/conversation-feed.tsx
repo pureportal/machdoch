@@ -250,6 +250,9 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
         : null;
   const shouldRenderBubble =
     message.role === "user" || renderedContent.trim().length > 0;
+  const showSpeechActions =
+    getFinalSpeechAnswer(message, "") !== null &&
+    Boolean(voicePlaybackSupported || onOpenInStudio || onSaveSpeech);
   const showCrashRecoveryActions = isRecoveredTaskCrashMessage(message);
   const messageAttachments =
     message.role === "user" ? (message.contextAttachments ?? []) : [];
@@ -381,7 +384,8 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                   "app-message-bubble relative max-w-[90%] min-w-0 overflow-hidden rounded-[1.75rem] px-5 py-4 text-sm leading-7 shadow-lg wrap-break-word",
                   message.role === "user"
                     ? "app-user-message-bubble rounded-tr-md bg-slate-800 text-slate-100 shadow-slate-950/20"
-                    : "app-agent-message-bubble rounded-tl-sm border border-slate-800 bg-slate-900/80 pr-14 text-slate-300 shadow-slate-950/30",
+                    : "app-agent-message-bubble rounded-tl-sm border border-slate-800 bg-slate-900/80 text-slate-300 shadow-slate-950/30",
+                  showSpeechActions && "flex items-start gap-3",
                   message.role === "user" && originalPromptContent && "pr-14",
                   isEditing && "w-full pr-5",
                   isActiveEditing &&
@@ -399,91 +403,114 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                         )
                 }
               >
-                {message.role === "agent" &&
-                voicePlaybackSupported && getFinalSpeechAnswer(message, "") !== null &&
-                renderedContent.trim().length > 0 ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    aria-label={
-                      isSpeakingMessage
-                        ? "Stop reading aloud"
-                        : "Read response aloud"
-                    }
-                    tooltip={
-                      isSpeakingMessage
-                        ? "Stop reading aloud"
-                        : "Read response aloud"
-                    }
-                    onClick={() => {
-                      if (isSpeakingMessage) {
-                        onStopSpeaking();
-                        return;
+                <div className="min-w-0 flex-1">
+                  {message.role === "user" &&
+                  originalPromptContent &&
+                  !isEditing ? (
+                    <OriginalPromptToggle
+                      expanded={isOriginalPromptExpanded}
+                      panelId={originalPromptPanelId}
+                      onToggle={() => onToggleOriginalPrompt(message.id)}
+                    />
+                  ) : null}
+
+                  {isActiveEditing && !isEditing ? (
+                    <span className="mb-2 inline-flex rounded-full border border-sky-300/30 bg-sky-400/10 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-sky-100">
+                      Editing
+                    </span>
+                  ) : null}
+
+                  {isEditing ? (
+                    <MessageEditor
+                      value={editContent}
+                      onChange={onEditContentChange}
+                      onCancel={onCancelEditing}
+                      onSubmit={() => onEditMessage?.(message)}
+                    />
+                  ) : (
+                    <MarkdownContent
+                      content={renderedContent}
+                      workspaceRoot={workspaceRoot}
+                      onOpenWorkspaceFile={openWorkspaceFile}
+                      onOpenLocalFile={onOpenLocalFile}
+                      className={
+                        message.role === "user"
+                          ? "app-user-message-text"
+                          : undefined
                       }
+                    />
+                  )}
 
-                      onSpeakMessage(message);
-                    }}
-                    className={cn(
-                      "app-message-voice-button absolute top-3 right-3 h-7 w-7 rounded-full border border-slate-800 bg-slate-950/70 text-slate-300 hover:bg-slate-900 hover:text-slate-100",
-                      isSpeakingMessage &&
-                        "border-rose-500/30 text-rose-200 hover:text-rose-100",
-                    )}
+                  {isPromptEnhancementPlaceholder || isPromptEnhancing ? (
+                    <PromptEnhancementPending
+                      onCancel={onCancelPromptEnhancement}
+                      className="mt-3"
+                    />
+                  ) : null}
+                </div>
+
+                {showSpeechActions ? (
+                  <div
+                    role="group"
+                    aria-label="Speech actions"
+                    className="app-message-speech-actions flex shrink-0 flex-col items-center gap-1"
                   >
-                    {isSpeakingMessage ? (
-                      <Square className="h-3.5 w-3.5" />
-                    ) : (
-                      <Volume2 className="h-3.5 w-3.5 text-sky-300" />
-                    )}
-                  </Button>
-                ) : null}
+                    {voicePlaybackSupported ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label={
+                          isSpeakingMessage
+                            ? "Stop reading aloud"
+                            : "Read response aloud"
+                        }
+                        onClick={() => {
+                          if (isSpeakingMessage) {
+                            onStopSpeaking();
+                            return;
+                          }
 
-                {onOpenInStudio && getFinalSpeechAnswer(message, "") !== null && <Button type="button" variant="ghost" size="icon" aria-label="Open in Text to Speech"
-                  className="absolute top-3 right-12 h-7 w-7" onClick={() => onOpenInStudio(message)}><AudioLines className="h-3.5 w-3.5" /></Button>}
-                {onSaveSpeech && getFinalSpeechAnswer(message, "") !== null && <Button type="button" variant="ghost" size="icon" aria-label="Save speech in Text to Speech"
-                  className="absolute top-3 right-[5.25rem] h-7 w-7" onClick={() => onSaveSpeech(message)}><Save className="h-3.5 w-3.5" /></Button>}
-                {message.role === "user" &&
-                originalPromptContent &&
-                !isEditing ? (
-                  <OriginalPromptToggle
-                    expanded={isOriginalPromptExpanded}
-                    panelId={originalPromptPanelId}
-                    onToggle={() => onToggleOriginalPrompt(message.id)}
-                  />
-                ) : null}
-
-                {isActiveEditing && !isEditing ? (
-                  <span className="mb-2 inline-flex rounded-full border border-sky-300/30 bg-sky-400/10 px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em] text-sky-100">
-                    Editing
-                  </span>
-                ) : null}
-
-                {isEditing ? (
-                  <MessageEditor
-                    value={editContent}
-                    onChange={onEditContentChange}
-                    onCancel={onCancelEditing}
-                    onSubmit={() => onEditMessage?.(message)}
-                  />
-                ) : (
-                  <MarkdownContent
-                    content={renderedContent}
-                    workspaceRoot={workspaceRoot}
-                    onOpenWorkspaceFile={openWorkspaceFile}
-                    onOpenLocalFile={onOpenLocalFile}
-                    className={
-                      message.role === "user"
-                        ? "app-user-message-text"
-                        : undefined
-                    }
-                  />
-                )}
-
-                {isPromptEnhancementPlaceholder || isPromptEnhancing ? (
-                  <PromptEnhancementPending
-                    onCancel={onCancelPromptEnhancement}
-                    className="mt-3"
-                  />
+                          onSpeakMessage(message);
+                        }}
+                        className={cn(
+                          "app-message-voice-button h-7 w-7 rounded-full border border-slate-800 bg-slate-950/70 text-slate-300 hover:bg-slate-900 hover:text-slate-100",
+                          isSpeakingMessage &&
+                            "border-rose-500/30 text-rose-200 hover:text-rose-100",
+                        )}
+                      >
+                        {isSpeakingMessage ? (
+                          <Square className="h-3.5 w-3.5" />
+                        ) : (
+                          <Volume2 className="h-3.5 w-3.5 text-sky-300" />
+                        )}
+                      </Button>
+                    ) : null}
+                    {onOpenInStudio ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Open in Text to Speech"
+                        className="h-7 w-7"
+                        onClick={() => onOpenInStudio(message)}
+                      >
+                        <AudioLines className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : null}
+                    {onSaveSpeech ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Save speech in Text to Speech"
+                        className="h-7 w-7"
+                        onClick={() => onSaveSpeech(message)}
+                      >
+                        <Save className="h-3.5 w-3.5" />
+                      </Button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             ) : null}
