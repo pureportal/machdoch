@@ -64,8 +64,11 @@ for line in sys.stdin:
     fn work(
         &self,
         command: &str,
-        input: serde_json::Value,
+        mut input: serde_json::Value,
     ) -> (Work, mpsc::Receiver<MediaResult<Output>>) {
+        if matches!(command, "generate" | "generate-video") {
+            input.as_object_mut().unwrap().entry("model").or_insert_with(|| serde_json::json!({"id":"fixture","revision":"1"}));
+        }
         let mut process = Command::new("python");
         process
             .args(["-I", "-Xutf8"])
@@ -138,6 +141,29 @@ fn reuses_worker_for_images_videos_and_probes_without_extending_retention_for_pr
     assert!(resident.as_ref().unwrap().expires_at > deadline);
     release(&mut resident).unwrap();
     assert_reaped(pid(&first));
+}
+
+#[test]
+fn changing_model_or_revision_reaps_the_previous_worker() {
+    let fixture = Fixture::new();
+    let stopping = AtomicBool::new(false);
+    let mut resident = None;
+    let mut previous = None;
+    for model in [
+        serde_json::json!({"id":"first","revision":"1"}),
+        serde_json::json!({"id":"first","revision":"2"}),
+        serde_json::json!({"id":"second","revision":"2"}),
+    ] {
+        let (work, _) = fixture.work("generate", serde_json::json!({"model":model}));
+        let output = execute(&mut resident, &work, &stopping).unwrap();
+        if let Some(previous) = previous {
+            assert_ne!(previous, pid(&output));
+            assert_reaped(previous);
+        }
+        previous = Some(pid(&output));
+    }
+    release(&mut resident).unwrap();
+    assert_reaped(previous.unwrap());
 }
 
 #[test]
@@ -286,7 +312,7 @@ fn resident_and_isolated_generation_time_out_after_progress_stops() {
             Ok(())
         };
         let error = if command == "generate" {
-            let mut worker = ResidentWorker::spawn(work.process, "test".into()).unwrap();
+            let mut worker = ResidentWorker::spawn(work.process, "test".into(), serde_json::json!({"id":"fixture","revision":"1"})).unwrap();
             worker
                 .request("probe", None, work.timeout, |_| Ok(()))
                 .unwrap();
@@ -328,7 +354,7 @@ for index in range(200):
         let input =
             serde_json::to_vec(&serde_json::json!({"prompt": "x".repeat(1024 * 1024)})).unwrap();
         let error = if command == "generate" {
-            let mut worker = ResidentWorker::spawn(work.process, "test".into()).unwrap();
+            let mut worker = ResidentWorker::spawn(work.process, "test".into(), serde_json::json!({"id":"fixture","revision":"1"})).unwrap();
             let result = worker.request(command, Some(&input), work.timeout, |_| Ok(()));
             assert!(!worker.alive().unwrap());
             result.unwrap_err()
@@ -353,7 +379,7 @@ fn cancellation_and_monitor_failures_reap_in_flight_workers() {
     for reason in ["generation was canceled", "database unavailable"] {
         let fixture = Fixture::new();
         let (work, _) = fixture.work("generate", serde_json::json!({}));
-        let mut worker = ResidentWorker::spawn(work.process, "test".into()).unwrap();
+        let mut worker = ResidentWorker::spawn(work.process, "test".into(), serde_json::json!({"id":"fixture","revision":"1"})).unwrap();
         let output = worker
             .request("generate", Some(b"{}"), Duration::from_secs(10), |_| Ok(()))
             .unwrap();

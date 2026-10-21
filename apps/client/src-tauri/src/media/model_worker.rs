@@ -20,11 +20,12 @@ pub(super) struct ResidentWorker {
     diagnostics: Arc<Mutex<Vec<u8>>>,
     readers: Vec<thread::JoinHandle<()>>,
     pub(super) identity: String,
+    pub(super) model: serde_json::Value,
     pub(super) expires_at: Instant,
 }
 
 impl ResidentWorker {
-    pub(super) fn spawn(mut command: Command, identity: String) -> MediaResult<Self> {
+    pub(super) fn spawn(mut command: Command, identity: String, model: serde_json::Value) -> MediaResult<Self> {
         command
             .arg("serve")
             .stdin(Stdio::piped())
@@ -117,6 +118,7 @@ impl ResidentWorker {
             diagnostics,
             readers,
             identity,
+            model,
             expires_at: Instant::now(),
         })
     }
