@@ -362,6 +362,9 @@ importers:
       '@machdoch/product-ui':
         specifier: workspace:*
         version: link:../product-ui
+      '@machdoch/speech':
+        specifier: workspace:*
+        version: link:../speech
       highlight.js:
         specifier: ^11.11.1
         version: 11.12.0
