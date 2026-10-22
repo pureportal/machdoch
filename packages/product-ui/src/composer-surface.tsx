@@ -5,6 +5,7 @@ import "./composer-surface.css";
 export interface ComposerSurfaceProps {
   modelPicker: ReactNode;
   controls: ReactNode;
+  toolbarActions?: ReactNode;
   children: ReactNode;
   busy?: boolean;
   disabled?: boolean;
@@ -14,6 +15,7 @@ export interface ComposerSurfaceProps {
 export function ComposerSurface({
   modelPicker,
   controls,
+  toolbarActions,
   children,
   busy = false,
   disabled = false,
@@ -47,6 +49,9 @@ export function ComposerSurface({
         <div id={optionsId} className="m-composer-surface-controls">
           {controls}
         </div>
+        {toolbarActions ? (
+          <div className="m-composer-surface-actions">{toolbarActions}</div>
+        ) : null}
       </div>
       <div className="m-composer-surface-body app-composer-body">
         {children}

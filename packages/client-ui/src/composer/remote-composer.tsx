@@ -155,8 +155,10 @@ export function RemoteComposer({
   renderContextPackPicker,
   onHistoryKeyDown,
   liveVoiceActive = false,
+  toolbarActions,
 }: RemoteComposerProps & {
   liveVoiceActive?: boolean;
+  toolbarActions?: React.ReactNode;
   attachments: RemoteAttachmentControls;
   renderContextPackPicker: (draft: string) => React.ReactNode;
   onHistoryKeyDown?:
@@ -263,6 +265,7 @@ export function RemoteComposer({
       ) : null}
       <AgentComposer
         variant="session"
+        toolbarActions={toolbarActions}
         draftIdentity={composer.sessionId}
         draft={draft}
         draftRevision={drafts.getRevision()}
