@@ -157,6 +157,15 @@ export function ContextPacksIcon(props: ComposerIconProps): ReactElement {
   );
 }
 
+export function ContextWindowIcon(props: ComposerIconProps): ReactElement {
+  return (
+    <ComposerSvg {...props}>
+      <path d="M7 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h3M17 3h3a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1h-3" />
+      <path d="M8 7h8M8 11h8M8 15h5" />
+    </ComposerSvg>
+  );
+}
+
 function MemoryRibbon(): ReactElement {
   return <path d="M15 11h7v11l-3.5-2L15 22Z" />;
 }

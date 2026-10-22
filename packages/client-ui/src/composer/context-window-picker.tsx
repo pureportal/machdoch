@@ -1,8 +1,19 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   contextWindowCapabilities,
   type ContextWindow,
+  type ContextWindowModelCapabilities,
 } from "@machdoch/fleet-protocol/context-window";
+import { ContextWindowIcon } from "@machdoch/product-ui";
+import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  DialogTrigger,
+} from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
+import { ContextWindowForm } from "./context-window-form";
+import "./context-window-picker.css";
 
 export function ContextWindowPicker({
   provider,
@@ -11,95 +22,91 @@ export function ContextWindowPicker({
   onChange,
   capabilities,
   inheritLabel = "Workspace default",
+  presentation = "icon",
 }: {
   provider: string | undefined;
   model: string | undefined;
   value: ContextWindow | undefined;
   onChange: (value: ContextWindow | undefined) => void;
-  capabilities?: {
-    contextWindowTokens?: number | null;
-    longContextWindowTokens?: number | null;
-  };
+  capabilities?: ContextWindowModelCapabilities;
   inheritLabel?: string;
-}): React.ReactElement | null {
+  presentation?: "icon" | "field";
+}): React.ReactElement {
   const supported = contextWindowCapabilities(provider, model, capabilities);
-  const [tokens, setTokens] = useState(
-    typeof value === "number" ? String(value) : "",
-  );
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => {
-    setTokens(typeof value === "number" ? String(value) : "");
-    setError(null);
-  }, [value, provider, model]);
-  if (!supported.long && !supported.numericMaximum) return null;
-  const selection = typeof value === "number" ? "custom" : (value ?? "inherit");
+  const [open, setOpen] = useState(false);
+  const disabled = supported.kind === "fixed";
+  const highest = supported.kind === "range" ? supported.maximum : "long";
+  const current =
+    value === undefined
+      ? inheritLabel
+      : value === "default"
+        ? "Provider default"
+        : value === highest
+          ? "Highest"
+          : typeof value === "number"
+            ? `${value.toLocaleString()} tokens`
+            : "Highest";
+  const label = disabled
+    ? "Context size: unavailable for this model"
+    : `Context size: ${current}`;
+
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs">
-      <label className="flex items-center gap-2">
-        Context size
-        <select
-          aria-label="Context size"
-          className="rounded-md border border-current/20 bg-transparent px-2 py-1.5"
-          value={selection}
-          onChange={(event) => {
-            const selected = event.target.value;
-            setError(null);
-            onChange(
-              selected === "inherit"
-                ? undefined
-                : selected === "custom"
-                  ? supported.numericMaximum!
-                  : (selected as ContextWindow),
-            );
+    <Dialog open={open && !disabled} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size={presentation === "field" ? "default" : "icon-sm"}
+          className={
+            presentation === "field"
+              ? "app-context-window-trigger app-context-window-field"
+              : "app-context-window-trigger app-composer-toolbar-icon-button app-composer-toolbar-control rounded-full shadow-none"
+          }
+          aria-label={label}
+          aria-disabled={disabled}
+          data-active={!disabled && value !== undefined}
+          tooltip={
+            disabled
+              ? "This provider does not allow changing context size for this model."
+              : label
+          }
+          onClick={(event) => {
+            if (disabled) event.preventDefault();
           }}
         >
-          <option value="inherit">{inheritLabel}</option>
-          <option value="default">Provider default</option>
-          {supported.long && (
-            <option value="long">
-              {(
-                capabilities?.longContextWindowTokens ?? 1_000_000
-              ).toLocaleString()}{" "}
-              tokens
-            </option>
+          <ContextWindowIcon />
+          {presentation === "field" && (
+            <span>{disabled ? "Unavailable" : current}</span>
           )}
-          {supported.numericMaximum && <option value="custom">Custom</option>}
-        </select>
-      </label>
-      {selection === "custom" && supported.numericMaximum && (
-        <input
-          aria-label="Context size tokens"
-          aria-invalid={Boolean(error)}
-          className="w-32 rounded-md border border-current/20 bg-transparent px-2 py-1.5"
-          type="number"
-          min={1}
-          max={supported.numericMaximum}
-          step={1}
-          value={tokens}
-          onChange={(event) => {
-            setTokens(event.target.value);
-            setError(null);
+        </Button>
+      </DialogTrigger>
+      {supported.kind !== "fixed" && (
+        <DialogContent
+          className="app-context-window-dialog"
+          aria-describedby={undefined}
+          onOpenAutoFocus={(event) => {
+            const selected = (
+              event.target as HTMLElement
+            ).querySelector<HTMLInputElement>('input[type="radio"]:checked');
+            if (selected) {
+              event.preventDefault();
+              selected.focus();
+            }
           }}
-          onBlur={(event) => {
-            if (
-              event.target.validity.valid &&
-              Number.isInteger(Number(tokens)) &&
-              Number(tokens) > 0
-            ) {
-              setError(null);
-              onChange(Number(tokens));
-            } else
-              setError(
-                `Enter a whole number from 1 to ${supported.numericMaximum!.toLocaleString()}.`,
-              );
-          }}
-        />
+        >
+          <DialogTitle>Context size</DialogTitle>
+          <ContextWindowForm
+            key={`${provider}:${model}:${JSON.stringify(supported)}:${value}`}
+            supported={supported}
+            value={value}
+            inheritLabel={inheritLabel}
+            onApply={(nextValue) => {
+              onChange(nextValue);
+              setOpen(false);
+            }}
+          />
+        </DialogContent>
       )}
-      {error ? (
-        <span role="alert" className="text-red-500">
-          {error}
-        </span>
-      ) : null}
-    </div>
+    </Dialog>
   );
 }
