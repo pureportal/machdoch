@@ -42,13 +42,15 @@ export const supportsLongContextWindow = (
   provider: ConfiguredModelProvider | null | undefined,
   model?: string | null,
 ): boolean => {
-  return contextWindowCapabilities(
-    provider,
-    model,
-    provider && model
-      ? getDiscoveredModelCapabilities(provider, model)
-      : undefined,
-  ).long;
+  return (
+    contextWindowCapabilities(
+      provider,
+      model,
+      provider && model
+        ? getDiscoveredModelCapabilities(provider, model)
+        : undefined,
+    ).kind === "presets"
+  );
 };
 
 export const assertContextWindowSupportedForProviderModel = (

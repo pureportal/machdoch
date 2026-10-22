@@ -2,6 +2,7 @@ export {
   AdaptiveControlIcon,
   AskIcon,
   ContextPacksIcon,
+  ContextWindowIcon,
   DropdownIcon,
   ExecuteIcon,
   FullAccessIcon,
