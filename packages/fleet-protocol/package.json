@@ -36,7 +36,8 @@
     "./task-file-change-normalization": "./src/task-file-change-normalization.ts",
     "./workspace-library": "./src/workspace-library.ts",
     "./skills": "./src/skills.ts",
-    "./mcp-apps": "./src/mcp-apps.ts"
+    "./mcp-apps": "./src/mcp-apps.ts",
+    "./live-voice": "./src/live-voice.ts"
   },
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",

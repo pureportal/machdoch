@@ -50,7 +50,8 @@
     "./sessions/sidebar-commands": "./src/sessions/sidebar-commands.tsx",
     "./mcp-apps/results": "./src/mcp-apps/results.tsx",
     "./mcp-apps/settings": "./src/mcp-apps/settings.tsx",
-    "./mcp-apps/host": "./src/mcp-apps/host.ts"
+    "./mcp-apps/host": "./src/mcp-apps/host.ts",
+    "./voice/live-voice-control": "./src/voice/live-voice-control.tsx"
   },
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",
@@ -67,7 +68,8 @@
     "highlight.js": "^11.11.1",
     "html-to-image": "^1.11.13",
     "mermaid": "^11.16.1",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "@machdoch/speech": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.2.8",
