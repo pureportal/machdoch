@@ -1,0 +1,78 @@
+.app-pack-select-menu,
+.app-pack-model-menu[data-slot="popover-content"] {
+  z-index: 60;
+  padding: 5px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 10px;
+  background: var(--app-surface-raised);
+  color: var(--app-text);
+  box-shadow: var(--app-elevated-shadow);
+}
+.app-pack-select-menu {
+  width: var(--radix-select-trigger-width);
+  max-width: calc(100vw - 24px);
+  max-height: min(360px, var(--radix-select-content-available-height));
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.app-pack-select-option {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+.app-pack-select-option[data-highlighted] {
+  background: var(--app-hover);
+}
+.app-pack-select-option[data-state="checked"] {
+  color: var(--app-text);
+  font-weight: 600;
+}
+.app-pack-select-option > span:last-child {
+  flex-shrink: 0;
+}
+.app-pack-model-menu[data-slot="popover-content"] {
+  width: max(280px, var(--radix-popover-trigger-width));
+  padding: 0;
+  overflow: hidden;
+}
+.app-pack-model-menu [data-slot="command"] {
+  background: transparent;
+  color: var(--app-text);
+}
+.app-pack-model-menu [data-slot="command-input-wrapper"] {
+  border-color: var(--app-border);
+}
+.app-pack-model-menu [data-slot="command-input"]::placeholder {
+  color: var(--app-text-muted);
+}
+.app-pack-model-menu [data-slot="command-list"] {
+  max-height: min(
+    280px,
+    calc(var(--radix-popover-content-available-height) - 60px)
+  );
+}
+.app-pack-model-menu [data-slot="command-item"] {
+  min-height: 38px;
+  justify-content: space-between;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.app-pack-model-menu [data-slot="command-item"][data-selected="true"] {
+  background: var(--app-hover);
+  color: var(--app-text);
+}
+.app-pack-model-menu [data-slot="command-item"] svg {
+  flex-shrink: 0;
+}
+

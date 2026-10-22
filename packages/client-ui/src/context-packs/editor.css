@@ -1,0 +1,480 @@
+@import "./editor-menus.css";
+
+.app-context-pack-dialog[data-slot="dialog-content"] {
+  width: calc(100vw - 48px);
+  max-width: 1600px;
+  height: calc(var(--m-viewport-height, 100dvh) - 48px);
+  max-height: 1100px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 18px;
+  background: var(--app-surface);
+  color: var(--app-text);
+  box-shadow: var(--app-elevated-shadow);
+}
+
+.app-pack-header[data-slot="dialog-header"] {
+  padding: 24px 64px 24px 28px;
+  border-bottom: 1px solid var(--app-border);
+  text-align: left;
+}
+
+.app-context-pack-dialog > [data-slot="dialog-close"] {
+  top: 16px;
+  right: 18px;
+  padding: 10px;
+  color: var(--app-text-muted);
+}
+
+.app-context-pack-dialog > [data-slot="dialog-close"]:hover {
+  background: var(--app-hover);
+  color: var(--app-text);
+}
+
+.app-pack-form {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.app-pack-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(360px, 33%, 460px);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-pack-content,
+.app-pack-settings {
+  min-width: 0;
+  min-height: 0;
+  padding: 24px 28px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--app-border-strong) transparent;
+}
+
+.app-pack-content {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.app-pack-content > * {
+  flex-shrink: 0;
+}
+
+.app-pack-identity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+}
+
+.app-pack-settings .app-pack-field {
+  gap: 6px;
+}
+
+.app-pack-settings .app-pack-control,
+.app-pack-settings .app-context-window-field {
+  height: 40px;
+}
+
+.app-pack-field {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 8px;
+  color: var(--app-text-soft);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.app-pack-control,
+.app-pack-field .app-context-window-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 9px;
+  background: var(--app-surface);
+  color: var(--app-text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 20px;
+  box-shadow: none;
+  outline: none;
+}
+
+.app-pack-control:hover,
+.app-pack-field .app-context-window-field:hover {
+  border-color: var(--app-text-muted);
+  background: var(--app-surface-raised);
+}
+
+.app-pack-control:focus-visible,
+.app-pack-control[data-state="open"],
+.app-pack-field .app-context-window-field:focus-visible {
+  border-color: var(--app-sky-500);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-sky-500) 18%, transparent);
+}
+
+.app-pack-control::placeholder,
+.app-pack-control[data-placeholder="true"] {
+  color: var(--app-text-muted);
+}
+.app-pack-select {
+  justify-content: space-between;
+  text-align: left;
+  cursor: pointer;
+}
+.app-pack-select > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-pack-select svg {
+  flex-shrink: 0;
+  color: var(--app-text-muted);
+}
+
+.app-pack-scope {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.app-pack-scope-label {
+  margin-bottom: 8px;
+  color: var(--app-text-soft);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+.app-pack-scope-options {
+  display: flex;
+  gap: 2px;
+  height: 42px;
+  padding: 3px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-surface-muted);
+}
+.app-pack-scope-option {
+  padding: 0 12px;
+  border-radius: 7px;
+  color: var(--app-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.app-pack-scope-option[aria-pressed="true"] {
+  background: var(--app-surface);
+  color: var(--app-text);
+  box-shadow: 0 1px 3px #0002;
+}
+.app-pack-scope-option:hover:not(:disabled) {
+  color: var(--app-text);
+}
+.app-pack-scope-option:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.app-pack-prompt-field {
+  flex: 1 0 300px;
+}
+.app-pack-textarea {
+  min-height: 110px;
+  padding: 12px;
+  resize: vertical;
+  font-weight: 400;
+}
+.app-pack-instructions {
+  flex: 0 0 auto;
+}
+.app-pack-extras {
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+}
+.app-pack-extras summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 10px 14px;
+  color: var(--app-text-soft);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.app-pack-extras summary::-webkit-details-marker {
+  display: none;
+}
+.app-pack-extras summary:hover {
+  background: var(--app-hover);
+  border-radius: 10px;
+}
+.app-pack-extras summary svg {
+  flex-shrink: 0;
+}
+.app-pack-extras[open] summary svg {
+  transform: rotate(90deg);
+}
+.app-pack-extra-fields {
+  display: grid;
+  gap: 18px;
+  border-top: 1px solid var(--app-border);
+  padding: 18px;
+}
+.app-pack-attachment-name {
+  margin: 0;
+  font-size: 12px;
+  color: var(--app-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.app-pack-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border-left: 1px solid var(--app-border);
+  background: var(--app-surface-raised);
+}
+.app-pack-settings > * {
+  flex-shrink: 0;
+}
+.app-pack-settings-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 22px;
+}
+.app-pack-settings h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.app-pack-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  color: var(--app-text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.app-pack-reset:hover:not(:disabled) {
+  color: var(--app-text);
+}
+.app-pack-reset:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.app-pack-model-settings {
+  display: grid;
+  gap: 12px;
+  padding-block: 16px;
+  border-block: 1px solid var(--app-border);
+}
+.app-pack-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  color: var(--app-text-soft);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.app-pack-toggle input {
+  appearance: none;
+  position: relative;
+  width: 32px;
+  height: 20px;
+  margin: 0;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 20px;
+  background: var(--app-surface-muted);
+  cursor: pointer;
+}
+.app-pack-toggle input::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--app-text-muted);
+}
+.app-pack-toggle input:checked {
+  background: var(--app-sky-600);
+  border-color: var(--app-sky-600);
+}
+.app-pack-toggle input:checked::before {
+  transform: translateX(12px);
+  background: white;
+}
+.app-pack-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 14px;
+}
+.app-pack-preferences {
+  padding-top: 18px;
+  border-top: 1px solid var(--app-border);
+}
+.app-pack-field .app-context-window-field {
+  justify-content: flex-start;
+  cursor: pointer;
+}
+.app-pack-field .app-context-window-field span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-pack-field .app-context-window-field[aria-disabled="true"] {
+  color: var(--app-text-muted);
+  border-style: dashed;
+  cursor: not-allowed;
+}
+
+.app-pack-footer[data-slot="dialog-footer"] {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 18px 28px;
+  border-top: 1px solid var(--app-border);
+  background: var(--app-surface);
+}
+.app-pack-footer .app-pack-cancel {
+  color: var(--app-text-soft);
+}
+.app-pack-footer .app-pack-cancel:hover {
+  background: var(--app-hover);
+  color: var(--app-text);
+}
+.app-pack-footer .app-pack-save {
+  background: var(--app-sky-600);
+  color: white;
+}
+.app-pack-footer .app-pack-save:hover {
+  background: var(--app-sky-700);
+}
+.app-pack-footer button {
+  min-height: 40px;
+  padding-inline: 16px;
+  border-radius: 9px;
+}
+.app-pack-error,
+.app-pack-hint {
+  flex: 1 1 220px;
+  margin: 0 auto 0 0;
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+.app-pack-error {
+  color: var(--destructive);
+}
+.app-pack-hint {
+  color: var(--app-text-muted);
+}
+
+.app-pack-scope-option:focus-visible,
+.app-pack-toggle input:focus-visible,
+.app-pack-reset:focus-visible,
+.app-pack-extras summary:focus-visible {
+  outline: 2px solid var(--app-sky-500);
+  outline-offset: 3px;
+}
+
+@media (min-width: 1400px) {
+  .app-pack-content,
+  .app-pack-settings {
+    padding: 24px 32px;
+  }
+}
+
+@media (max-width: 900px) {
+  .app-context-pack-dialog[data-slot="dialog-content"] {
+    width: calc(100vw - 24px);
+    height: calc(var(--m-viewport-height, 100dvh) - 24px);
+  }
+  .app-pack-body {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+    display: block;
+  }
+  .app-pack-content,
+  .app-pack-settings {
+    overflow: visible;
+    padding: 22px;
+  }
+  .app-pack-prompt-field {
+    flex-basis: 360px;
+  }
+  .app-pack-settings {
+    border-left: 0;
+    border-top: 1px solid var(--app-border);
+  }
+}
+
+@media (max-width: 480px) {
+  .app-context-pack-dialog[data-slot="dialog-content"] {
+    width: 100vw;
+    height: var(--m-viewport-height, 100dvh);
+    max-height: var(--m-viewport-height, 100dvh);
+    border-radius: 0;
+    border: 0;
+  }
+  .app-pack-header[data-slot="dialog-header"] {
+    padding: 22px 60px 22px 18px;
+  }
+  .app-pack-content,
+  .app-pack-settings {
+    padding: 20px 18px;
+  }
+  .app-pack-identity {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .app-pack-scope-options {
+    width: fit-content;
+  }
+  .app-pack-prompt-field {
+    flex-basis: 320px;
+  }
+  .app-pack-prompt-highlight,
+  .app-pack-prompt-input {
+    padding: 12px;
+  }
+  .app-pack-settings-grid {
+    gap: 18px 12px;
+  }
+  .app-pack-footer[data-slot="dialog-footer"] {
+    padding: 14px 18px;
+  }
+}
+
+@media (max-width: 360px) {
+  .app-pack-settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
