@@ -34,7 +34,8 @@
     "./device-settings": "./src/device-settings.ts",
     "./device-settings-transfer": "./src/device-settings-transfer.ts",
     "./task-file-change-normalization": "./src/task-file-change-normalization.ts",
-    "./workspace-library": "./src/workspace-library.ts"
+    "./workspace-library": "./src/workspace-library.ts",
+    "./skills": "./src/skills.ts"
   },
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",
