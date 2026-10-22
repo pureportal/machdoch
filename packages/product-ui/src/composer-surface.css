@@ -57,6 +57,14 @@
   color: var(--app-text);
   font: inherit;
   cursor: pointer;
+  order: 3;
+}
+
+.m-composer-surface-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  margin-left: auto;
 }
 
 .m-composer-options-toggle svg {
@@ -135,6 +143,7 @@
   }
 
   .m-composer-surface-controls {
+    order: 4;
     flex-basis: 100%;
     max-height: min(200px, calc(var(--m-viewport-height, 100dvh) * 0.3));
     overflow-y: auto;
@@ -230,6 +239,7 @@
   .m-composer-surface-controls {
     flex-basis: 100%;
     max-height: calc(var(--m-viewport-height, 100dvh) * 0.24);
+    order: 4;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -253,7 +263,13 @@
       .app-composer-form:focus-within,
       .app-composer-running-controls:focus-within
     )
-    .m-composer-surface-toolbar {
+    .m-composer-surface-toolbar:not(
+      :has(
+        .m-composer-surface-actions [aria-pressed="true"],
+        .m-composer-surface-actions [role="alert"],
+        .m-composer-surface-actions textarea
+      )
+    ) {
     display: none;
   }
 

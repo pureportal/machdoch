@@ -113,6 +113,7 @@ export interface AgentComposerProps {
   showCancelAlongsideSend?: boolean;
   textareaRef?: Ref<HTMLTextAreaElement>;
   toolbarControls?: ReactNode;
+  toolbarActions?: ReactNode;
   inputHeader?: ReactNode;
   toggles?: AgentComposerToggle[];
   actions?: AgentComposerAction[];
@@ -440,6 +441,7 @@ export const AgentComposer = ({
   showCancelAlongsideSend = false,
   textareaRef,
   toolbarControls,
+  toolbarActions,
   inputHeader,
   toggles = [],
   actions = [],
@@ -1536,6 +1538,7 @@ export const AgentComposer = ({
       busy={inputBlocked}
       disabled={inputBlocked}
       modelPicker={modelPicker}
+      toolbarActions={toolbarActions}
       controls={
         <>
           {toolbarControls}

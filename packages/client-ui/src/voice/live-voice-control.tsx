@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type JSX } from "react";
-import { AudioLines, Square } from "lucide-react";
+import { AudioLines, LoaderCircle, Square, X } from "lucide-react";
 import {
   createSystemSpeechHandle,
   markdownToSpeech,
@@ -11,6 +11,7 @@ import type {
 } from "@machdoch/fleet-protocol/live-voice";
 import { connectLiveTranscription } from "./live-connection";
 import { startLiveVoiceCapture, supportsLiveVoice } from "./live-capture";
+import "./live-voice-control.css";
 
 export interface LiveVoiceControlProps {
   identity: string;
@@ -205,105 +206,131 @@ function LiveVoiceSessionControl(props: LiveVoiceControlProps): JSX.Element {
       fail(cause);
     }
   };
+  const actionLabel =
+    state === "idle"
+      ? "Live voice"
+      : state === "connecting"
+        ? "Cancel connection"
+        : "Stop listening";
+  const showReplyPlayback =
+    state === "listening" &&
+    (props.replyPlayback || props.browserReply !== undefined);
   return (
-    <div className="grid gap-2 text-sm">
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          className="inline-flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-slate-500/15 disabled:opacity-50"
-          aria-pressed={state !== "idle"}
-          disabled={
-            state === "idle" &&
-            (props.disabled || retrying || delivering || Boolean(unsent))
-          }
-          onClick={() => {
-            if (state === "idle") void start();
-            else stop();
-          }}
-        >
-          {state === "idle" ? (
-            <AudioLines size={16} aria-hidden="true" />
-          ) : (
-            <Square size={16} aria-hidden="true" />
-          )}
+    <div className="m-live-voice">
+      <button
+        type="button"
+        className="m-live-voice-button"
+        aria-label={actionLabel}
+        title={actionLabel}
+        aria-pressed={state !== "idle"}
+        disabled={
+          state === "idle" &&
+          (props.disabled || retrying || delivering || Boolean(unsent))
+        }
+        onClick={() => {
+          if (state === "idle") void start();
+          else stop();
+        }}
+      >
+        {state === "idle" ? (
+          <AudioLines size={16} aria-hidden="true" />
+        ) : state === "connecting" ? (
+          <LoaderCircle size={16} className="animate-spin" aria-hidden="true" />
+        ) : (
+          <Square size={16} aria-hidden="true" />
+        )}
+        <span>
           {state === "idle"
-            ? "Live voice"
+            ? "Live"
             : state === "connecting"
-              ? "Cancel connection"
-              : "Stop listening"}
-        </button>
-        {state === "listening" &&
-        (props.replyPlayback || props.browserReply !== undefined) ? (
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={props.replyPlayback?.enabled ?? speakReplies}
-              onChange={(event) => {
-                if (props.replyPlayback)
-                  props.replyPlayback.onChange(event.target.checked);
-                else setSpeakReplies(event.target.checked);
-                if (!event.target.checked) {
-                  speechPlayback.stop(owner);
-                  props.onSpeechStart();
-                }
-              }}
-            />
-            Speak replies
-          </label>
-        ) : null}
-      </div>
-      {partial ? (
-        <p role="status" className="max-h-24 overflow-auto px-2">
-          {partial}
-        </p>
-      ) : null}
-      {error ? (
-        <p role="alert" className="px-2 text-red-500">
-          {error}
-        </p>
-      ) : null}
-      {unsent ? (
-        <div className="grid gap-2">
-          <textarea
-            aria-label="Unsent voice message"
-            disabled={retrying || delivering}
-            value={unsent}
-            onChange={(event) => setUnsent(event.target.value)}
-            rows={3}
-            className="rounded-md border border-current/20 bg-transparent p-2"
-          />
-          {delivering && <p role="status">Sending voice message…</p>}
-          <div className="flex gap-3">
-            <button
-              type="button"
-              disabled={
-                retrying || delivering || props.disabled || !unsent.trim()
-              }
-              onClick={() => {
-                setRetrying(true);
-                void current.current
-                  .onTranscript(unsent)
-                  .then(() => {
+              ? "Cancel"
+              : "Stop"}
+        </span>
+      </button>
+      {showReplyPlayback || partial || error || unsent ? (
+        <div className="m-live-voice-panel">
+          {showReplyPlayback ? (
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={props.replyPlayback?.enabled ?? speakReplies}
+                onChange={(event) => {
+                  if (props.replyPlayback)
+                    props.replyPlayback.onChange(event.target.checked);
+                  else setSpeakReplies(event.target.checked);
+                  if (!event.target.checked) {
+                    speechPlayback.stop(owner);
+                    props.onSpeechStart();
+                  }
+                }}
+              />
+              Speak replies
+            </label>
+          ) : null}
+          {partial ? (
+            <p role="status" className="max-h-24 overflow-auto">
+              {partial}
+            </p>
+          ) : null}
+          {error ? (
+            <div className="flex items-start gap-2">
+              <p role="alert" className="min-w-0 flex-1 text-red-500">
+                {error}
+              </p>
+              <button
+                type="button"
+                aria-label="Dismiss voice error"
+                className="m-live-voice-dismiss"
+                onClick={() => setError(null)}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            </div>
+          ) : null}
+          {unsent ? (
+            <div className="grid gap-2">
+              <textarea
+                aria-label="Unsent voice message"
+                disabled={retrying || delivering}
+                value={unsent}
+                onChange={(event) => setUnsent(event.target.value)}
+                rows={3}
+                className="rounded-md border border-current/20 bg-transparent p-2"
+              />
+              {delivering && <p role="status">Sending voice message…</p>}
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  disabled={
+                    retrying || delivering || props.disabled || !unsent.trim()
+                  }
+                  onClick={() => {
+                    setRetrying(true);
+                    void current.current
+                      .onTranscript(unsent)
+                      .then(() => {
+                        setUnsent("");
+                        setError(null);
+                      })
+                      .catch((cause: unknown) => setError(String(cause)))
+                      .finally(() => setRetrying(false));
+                  }}
+                >
+                  Send text
+                </button>
+                <button
+                  type="button"
+                  disabled={retrying || delivering}
+                  onClick={() => {
                     setUnsent("");
                     setError(null);
-                  })
-                  .catch((cause: unknown) => setError(String(cause)))
-                  .finally(() => setRetrying(false));
-              }}
-            >
-              Send text
-            </button>
-            <button
-              type="button"
-              disabled={retrying || delivering}
-              onClick={() => {
-                setUnsent("");
-                setError(null);
-              }}
-            >
-              Discard
-            </button>
-          </div>
+                  }}
+                >
+                  Discard
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

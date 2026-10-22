@@ -746,18 +746,6 @@ export const SessionComposer = ({
 
   return (
     <div className="relative grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
-      {speechInput.live && activeSession.workspace && !editingMessageId && ["openai", "google"].includes(speechInput.provider) ? <LiveVoiceControl
-        key={activeSession.id}
-        identity={activeSession.id}
-        workspaceRoot={activeSession.workspace}
-        inputDeviceId={speechInput.live.inputDeviceId}
-        replyPlayback={speechInput.live.replyPlayback}
-        onActiveChange={setLiveVoiceActive}
-        disabled={speechInput.recording || speechInput.transcribing}
-        invoke={(input) => invokeWorkspaceTools("run_live_voice_command", { workspaceRoot: activeSession.workspace, input })}
-        onTranscript={speechInput.live.onTranscript}
-        onSpeechStart={speechInput.live.onSpeechStart}
-      /> : null}
       {notification ? (
         <div className="pointer-events-none absolute bottom-[calc(100%+0.75rem)] right-0 z-30 flex w-full justify-end">
           <AppNotification
@@ -816,6 +804,30 @@ export const SessionComposer = ({
         }
         showCancelAlongsideSend={Boolean(editingMessageId)}
         toolbarControls={toolbarControls}
+        toolbarActions={
+          speechInput.live &&
+          activeSession.workspace &&
+          !editingMessageId &&
+          ["openai", "google"].includes(speechInput.provider) ? (
+            <LiveVoiceControl
+              key={activeSession.id}
+              identity={activeSession.id}
+              workspaceRoot={activeSession.workspace}
+              inputDeviceId={speechInput.live.inputDeviceId}
+              replyPlayback={speechInput.live.replyPlayback}
+              onActiveChange={setLiveVoiceActive}
+              disabled={speechInput.recording || speechInput.transcribing}
+              invoke={(input) =>
+                invokeWorkspaceTools("run_live_voice_command", {
+                  workspaceRoot: activeSession.workspace,
+                  input,
+                })
+              }
+              onTranscript={speechInput.live.onTranscript}
+              onSpeechStart={speechInput.live.onSpeechStart}
+            />
+          ) : null
+        }
         inputHeader={
           <>
             {activeSession.temporaryPackSettings && onResetTemporaryContextPack ? (
