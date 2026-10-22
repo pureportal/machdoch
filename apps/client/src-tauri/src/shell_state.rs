@@ -1363,7 +1363,7 @@ mod tests {
                 "useGlobalMemory": false,
                 "uiControlEnabled": true
             },
-            "runningTaskMessageAction": "steer"
+            "runningTaskMessageAction": "stop-and-send"
         });
 
         let replaced = prepare_chat_voice_preference_replacement(&current, &preferences, 2)

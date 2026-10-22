@@ -165,6 +165,16 @@ const managedSettingsDelivery = () => ({
   },
 });
 
+void test("preserves long context-pack text in managed settings", () => {
+  const delivery = managedSettingsDelivery();
+  const pack = delivery.profile.document.contextPacks[0]!;
+  pack.prompt = "Prompt\n" + "x".repeat(200_000) + "\nEnd prompt";
+  pack.instructions = "Instructions\n" + "x".repeat(200_000) + "\nEnd instructions";
+  assert.deepEqual(fleetManagedSettingsDeliverySchema.parse(delivery), delivery);
+  pack.prompt += "\0";
+  assert.equal(fleetManagedSettingsDeliverySchema.safeParse(delivery).success, false);
+});
+
 const snapshotMessage = (chunks: string[]) => ({
   type: "response" as const,
   requestId: "request-1",

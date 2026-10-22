@@ -93,7 +93,7 @@ export const replaceDiscoveredModelCapabilities = (
   }
 };
 
-const getDiscoveredModelCapabilities = (
+export const getDiscoveredModelCapabilities = (
   provider: ModelProvider,
   model: string,
 ): DiscoveredModelCapabilities | undefined =>

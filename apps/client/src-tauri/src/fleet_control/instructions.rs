@@ -9,6 +9,9 @@ pub(crate) async fn invoke(
     if !machdoch_fleet_protocol::instructions::valid_instruction_invocation(&command, &args) {
         return Err(json!("Invalid instruction operation."));
     }
+    if command == "run_skill_command" {
+        return crate::desktop_task::run_skill_command(args["input"].clone()).await.map_err(|error| json!(error));
+    }
     let workspace = args["request"]["workspaceRoot"]
         .as_str()
         .ok_or_else(|| json!("Select a workspace."))?;

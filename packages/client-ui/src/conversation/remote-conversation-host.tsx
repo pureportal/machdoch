@@ -1,3 +1,4 @@
+import { McpAppResults } from "../mcp-apps/results";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ProductConversation,
@@ -281,9 +282,11 @@ export function RemoteConversationHost({
         }}
         renderActivity={(message) => {
           const thinking = history.thinking.get(message.id);
-          if (!thinking) return null;
+          if (!thinking && !message.mcpAppIds?.length) return null;
           return (
-            <TaskThinkingPanel
+            <>
+            <McpAppResults thinking={thinking} appIds={message.mcpAppIds} workspaceRoot={message.workspace ?? session.workspace} invoke={(root, input) => workspaceTransport.invoke("run_mcp_app_command", { workspaceRoot: root, input })} />
+            {thinking && <TaskThinkingPanel
               thinking={thinking}
               timeoutControls={
                 message.taskId && thinking.timeout?.idleTimeoutMs ? (
@@ -307,7 +310,8 @@ export function RemoteConversationHost({
                   />
                 ) : null
               }
-            />
+            />}
+            </>
           );
         }}
         messages={messages}

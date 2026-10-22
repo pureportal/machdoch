@@ -1,4 +1,8 @@
 import {
+  parseContextWindow,
+} from "../../../../core/context-windows.js";
+import { getModelContextWindowTokens, getDiscoveredLongContextWindowTokens } from "../../../../core/model-capabilities.js";
+import {
   getAvailableGoalModes,
   resolveGoalMode,
   type GoalMode,
@@ -588,7 +592,7 @@ export const useFleetControl = (options: {
   hasHydrated: boolean;
   shellState: ShellPersistedState;
   activeSession: ChatSessionRecord;
-  runningTaskMessageAction: "queue" | "steer" | "stop-and-send";
+  runningTaskMessageAction: "queue" | "stop-and-send";
   imageInputSupported: boolean;
   imageInputDisabledReason: string | null;
   visibleMessages: ChatSessionMessage[];
@@ -688,6 +692,7 @@ export const useFleetControl = (options: {
     sessionId: string,
     reasoning: RuntimeSnapshot["reasoning"] | null,
   ) => void;
+  onSetSessionContextWindow?: (sessionId: string, value: import("@machdoch/fleet-protocol/context-window").ContextWindow | undefined) => void;
   onSetSessionWorkspace: (sessionId: string, workspace: string | null) => void;
   onAddWorkspace: (workspace: string) => void | Promise<void>;
   onRemoveWorkspace: (workspace: string) => Promise<void>;
@@ -706,7 +711,7 @@ export const useFleetControl = (options: {
     goalObjective?: string;
     iterationCount?: number;
     iterationMode?: "repeat-prompt" | "continue" | "repeat-prompt-and-continue";
-    runningAction?: "queue" | "steer" | "stop-and-send";
+    runningAction?: "queue" | "stop-and-send";
   }) => boolean;
   onSetSessionMemory: (sessionId: string, enabled: boolean) => void;
   onForgetSessionMemory: (sessionId: string, memoryId: string) => void;
@@ -735,7 +740,7 @@ export const useFleetControl = (options: {
     scope: SmartContextPackScope,
   ) => void;
   onRunningTaskMessageActionChange: (
-    action: "queue" | "steer" | "stop-and-send",
+    action: "queue" | "stop-and-send",
   ) => void;
   onQueuedMessageChange: (messageId: string, content: string) => void;
   onQueuedMessageMove: (messageId: string, direction: -1 | 1) => void;
@@ -1163,6 +1168,9 @@ export const useFleetControl = (options: {
         ],
         reasoning: options.activeReasoning,
         defaultReasoning: options.defaultReasoning,
+        contextWindow: options.activeSession.contextWindow,
+        contextWindowTokens: getModelContextWindowTokens(options.activeSession.provider, options.activeSession.model),
+        longContextWindowTokens: getDiscoveredLongContextWindowTokens(options.activeSession.provider, options.activeSession.model),
         reasoningOptions: [
           ...getReasoningModesForProvider(
             options.activeSession.provider,
@@ -1940,6 +1948,12 @@ export const useFleetControl = (options: {
                 : null,
             );
           }
+          break;
+        }
+        case "set-session-context-window": {
+          const value = parseContextWindow(command.mode);
+          if (command.mode !== "inherit" && value === undefined) throw new Error("Choose a valid context size.");
+          if (command.sessionId) options.onSetSessionContextWindow?.(command.sessionId, value);
           break;
         }
 

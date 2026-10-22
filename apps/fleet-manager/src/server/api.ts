@@ -1,3 +1,4 @@
+import { workspaceLibraryCapability } from "@machdoch/fleet-protocol/workspace-library";
 import {
   speechRequestSchema,
   speechCapability,
@@ -342,7 +343,8 @@ async function routeApi(
       const capability = productOperationCapabilities[operation];
       if (
         capability &&
-        !runtime.gateways.supportsCapability(path[1], capability.capability)
+        !runtime.gateways.supportsCapability(path[1], capability.capability) &&
+        !(operation === "workspace" && runtime.gateways.supportsCapability(path[1], workspaceLibraryCapability))
       )
         throw new HttpError(409, capability.message);
       const response = await relay(

@@ -13,6 +13,13 @@ pub(crate) async fn invoke(
     if command == "get_context_pack_documents" {
         return super::context_packs::documents(app, &args).await;
     }
+    if command == "run_mcp_app_command" {
+        let workspace = args["workspaceRoot"].as_str().unwrap_or("");
+        if !matches!(args["input"]["action"].as_str(), Some("settings" | "set-enabled")) {
+            super::workspace::require_known_workspace(&app, workspace)?;
+        }
+        return crate::desktop_task::run_mcp_app_command(workspace.to_owned(), args["input"].clone()).await.map_err(|error| json!(error));
+    }
     if command == "reset_desktop_task_timeout" {
         return crate::desktop_task::reset_desktop_task_timeout(
             app.clone(),
@@ -64,6 +71,14 @@ pub(crate) async fn invoke(
         return super::workspace_terminal::invoke(&app, &command, &args).await;
     }
     let result = match command.as_str() {
+        "run_live_voice_command" => {
+            return crate::desktop_task::run_live_voice_command(workspace.to_owned(), args["input"].clone())
+                .await.map_err(|error| json!(error));
+        }
+        "run_workspace_library_command" => {
+            return crate::desktop_task::run_workspace_library_command(workspace.to_owned(), args["input"].clone())
+                .await.map_err(|error| json!(error));
+        }
         "get_workspace_run_configuration_document"
         | "get_workspace_run_snapshot"
         | "save_workspace_run_configuration_document"

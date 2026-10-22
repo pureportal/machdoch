@@ -75,7 +75,6 @@ pub(crate) const MAX_MCP_BYTES: u64 = 2 * 1024 * 1024;
 pub(crate) const MAX_RALPH_FLOW_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_CONTEXT_PACKS: usize = 160;
 const MAX_CONTEXT_PACK_NAME_CHARS: usize = 72;
-const MAX_CONTEXT_PACK_TEXT_CHARS: usize = 8_000;
 const MAX_CONTEXT_PACK_VARIABLES: usize = 12;
 const MAX_CONTEXT_PACK_VARIABLE_CHARS: usize = 40;
 const MAX_CONTEXT_PACK_TRIGGERS: usize = 16;
@@ -422,7 +421,7 @@ pub(crate) fn chat_voice_preferences_from_sources<R: Runtime>(
     let running_task_message_action = store
         .get(RUNNING_TASK_MESSAGE_ACTION_STORAGE_KEY)
         .and_then(|value| value.as_str().map(str::to_string))
-        .filter(|value| ["steer", "stop-and-send", "queue"].contains(&value.as_str()))
+        .filter(|value| ["stop-and-send", "queue"].contains(&value.as_str()))
         .unwrap_or_else(|| "queue".to_string());
     let value = json!({
         "voice": {
@@ -1653,7 +1652,7 @@ pub(crate) fn validate_chat_voice_preferences_value(value: &Value) -> Result<(),
         || !root
             .get("runningTaskMessageAction")
             .and_then(Value::as_str)
-            .is_some_and(|value| ["steer", "stop-and-send", "queue"].contains(&value))
+            .is_some_and(|value| ["stop-and-send", "queue"].contains(&value))
     {
         return Err("Chat defaults contain an invalid preference.".to_string());
     }
@@ -1665,10 +1664,15 @@ fn valid_context_pack_string(
     maximum_chars: usize,
     allow_empty: bool,
 ) -> bool {
+    valid_context_pack_text(value)
+        && value.and_then(Value::as_str).is_some_and(|value| {
+            (allow_empty || !value.is_empty()) && value.chars().count() <= maximum_chars
+        })
+}
+
+fn valid_context_pack_text(value: Option<&Value>) -> bool {
     value.and_then(Value::as_str).is_some_and(|value| {
-        (allow_empty || !value.is_empty())
-            && value.trim() == value
-            && value.chars().count() <= maximum_chars
+        value.trim() == value
             && !value
                 .chars()
                 .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
@@ -1858,8 +1862,8 @@ fn validate_context_pack(value: &Value) -> Result<usize, String> {
     let _ = context_pack_id(value)?;
     if !pack.get("workspace").is_some_and(Value::is_null)
         || !valid_context_pack_string(pack.get("name"), MAX_CONTEXT_PACK_NAME_CHARS, false)
-        || !valid_context_pack_string(pack.get("instructions"), MAX_CONTEXT_PACK_TEXT_CHARS, true)
-        || !valid_context_pack_string(pack.get("prompt"), MAX_CONTEXT_PACK_TEXT_CHARS, true)
+        || !valid_context_pack_text(pack.get("instructions"))
+        || !valid_context_pack_text(pack.get("prompt"))
         || !valid_context_pack_number(pack.get("createdAt"))
         || !valid_context_pack_number(pack.get("updatedAt"))
         || !valid_context_pack_number(pack.get("useCount"))
@@ -2411,8 +2415,8 @@ mod tests {
                 "id": id,
                 "workspace": workspace,
                 "name": format!("Pack {id}"),
-                "instructions": "Use the selected context.",
-                "prompt": "Review the current task.",
+                "instructions": format!("Instructions\n{}End", "Grüß 🌿\n".repeat(40_000)),
+                "prompt": format!("Prompt\n{}End", "日本語\n".repeat(40_000)),
                 "contextAttachments": [],
                 "variables": [],
                 "trigger": { "phrases": [], "pathPatterns": [] },
@@ -2428,6 +2432,7 @@ mod tests {
             ]
         });
         let incoming = vec![pack("new-global", Value::Null)];
+        assert!(validate_global_context_packs_value(&json!({ "contextPacks": incoming })).is_ok());
 
         assert_eq!(
             global_context_packs_from_shell_state(&shell_state)
@@ -2439,6 +2444,8 @@ mod tests {
         assert_eq!(replaced.len(), 2);
         assert_eq!(replaced[0]["id"], json!("new-global"));
         assert_eq!(replaced[0]["workspace"], Value::Null);
+        assert_eq!(replaced[0]["prompt"], incoming[0]["prompt"]);
+        assert_eq!(replaced[0]["instructions"], incoming[0]["instructions"]);
         assert_eq!(replaced[1]["id"], json!("workspace-pack"));
         assert_eq!(replaced[1]["workspace"], json!("C:/workspace"));
 

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { skillRequestSchema } from "@machdoch/fleet-protocol/skills";
 import {
   operationEventsSchema,
   operationReadSchema,
@@ -142,6 +143,7 @@ export const instructionArgumentsSchema = z
   });
 
 export const instructionRequestSchema = z.union([
+  z.strictObject({ kind: z.literal("invoke"), id: z.string().uuid(), command: z.literal("run_skill_command"), args: z.strictObject({ input: skillRequestSchema }) }),
   z.strictObject({
     kind: z.literal("invoke"),
     id: z.string().uuid(),

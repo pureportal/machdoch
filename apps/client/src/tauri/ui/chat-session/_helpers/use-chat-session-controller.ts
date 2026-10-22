@@ -1,3 +1,5 @@
+import { resetTemporaryContextPackSettings } from "./temporary-context-pack";
+import { retainSupportedContextWindow, assertContextWindowSupportedForProviderModel } from "../../../../core/context-windows.js";
 import {
   createDeviceVoicePreferences,
   createRuntimeVoiceSettingsControls,
@@ -1347,8 +1349,10 @@ export const useChatSessionController = (
         )
       : null;
   const activePromptEnhancementMode =
+    activeComposerSession.temporaryPackSettings?.promptEnhancementMode ??
     activeMessageEdit?.promptEnhancementMode ?? promptEnhancementMode;
   const activeChatInterviewEnabled =
+    activeComposerSession.temporaryPackSettings?.interviewEnabled ??
     activeMessageEdit?.interviewEnabled ?? chatInterviewEnabled;
   const chatInterviewBusy =
     chatInterview?.status === "loading" || chatInterview?.status === "starting";
@@ -1484,28 +1488,95 @@ export const useChatSessionController = (
 
           return {
             ...current,
-            promptEnhancementMode: mode,
+            ...(!current.session.temporaryPackSettings
+              ? { promptEnhancementMode: mode } : {}),
+            session: current.session.temporaryPackSettings
+              ? {
+                  ...current.session,
+                  temporaryPackSettings: {
+                    ...current.session.temporaryPackSettings,
+                    promptEnhancementMode: mode,
+                  },
+                }
+              : current.session,
           };
         });
         setPromptEnhancementStatus(null);
         return;
       }
 
-      setPromptEnhancementMode(mode);
+      if (state.activeSession.temporaryPackSettings) {
+        state.updateSessionById(state.activeSession.id, (session) =>
+          session.temporaryPackSettings
+            ? {
+                ...session,
+                temporaryPackSettings: {
+                  ...session.temporaryPackSettings,
+                  promptEnhancementMode: mode,
+                },
+                updatedAt: Date.now(),
+              }
+            : session,
+        );
+      } else {
+        setPromptEnhancementMode(mode);
+      }
       setPromptEnhancementStatus(null);
     },
-    [],
+    [
+      state.activeSession.id,
+      state.activeSession.temporaryPackSettings,
+      state.updateSessionById,
+    ],
   );
-  const handleInterviewEnabledChange = useCallback((enabled: boolean): void => {
-    if (activeMessageEditRef.current) {
-      setMessageEdit((current) =>
-        current ? { ...current, interviewEnabled: enabled } : current,
-      );
-      return;
-    }
+  const handleInterviewEnabledChange = useCallback(
+    (enabled: boolean): void => {
+      if (activeMessageEditRef.current) {
+        setMessageEdit((current) =>
+          current
+            ? {
+                ...current,
+                ...(!current.session.temporaryPackSettings
+                  ? { interviewEnabled: enabled } : {}),
+                session: current.session.temporaryPackSettings
+                  ? {
+                      ...current.session,
+                      temporaryPackSettings: {
+                        ...current.session.temporaryPackSettings,
+                        interviewEnabled: enabled,
+                      },
+                    }
+                  : current.session,
+              }
+            : current,
+        );
+        return;
+      }
 
-    setChatInterviewEnabled(enabled);
-  }, []);
+      if (state.activeSession.temporaryPackSettings) {
+        state.updateSessionById(state.activeSession.id, (session) =>
+          session.temporaryPackSettings
+            ? {
+                ...session,
+                temporaryPackSettings: {
+                  ...session.temporaryPackSettings,
+                  interviewEnabled: enabled,
+                },
+                updatedAt: Date.now(),
+              }
+            : session,
+        );
+      } else {
+        setChatInterviewEnabled(enabled);
+      }
+    },
+    [
+      state.activeSession.id,
+      state.activeSession.temporaryPackSettings,
+      state.updateSessionById,
+    ],
+  );
+
   const handleSessionMemoryEnabledChange = useCallback(
     (enabled: boolean): void => {
       if (activeMessageEditRef.current) {
@@ -2956,6 +3027,7 @@ export const useChatSessionController = (
           ...session,
           provider,
           model,
+          contextWindow: retainSupportedContextWindow(session.contextWindow, provider, model),
           goalMode: resolveGoalMode(provider, session.goalMode),
           parallelAgentMode: resolveParallelAgentMode(
             provider,
@@ -2998,6 +3070,7 @@ export const useChatSessionController = (
             ...session,
             provider,
             model,
+            contextWindow: retainSupportedContextWindow(session.contextWindow, provider, model),
             parallelAgentMode: resolveParallelAgentMode(
               provider,
               model,
@@ -4285,12 +4358,14 @@ export const useChatSessionController = (
       const interviewEnabled = input.interviewEnabled;
       const sessionMemoryEnabled = input.sessionMemoryEnabled;
       const useGlobalMemory = input.useGlobalMemory;
+      const useWorkspaceMemory = input.useWorkspaceMemory;
       const uiControlEnabled = input.uiControlEnabled;
       const hasOptionalSettingOverride =
         promptEnhancementMode !== undefined ||
         interviewEnabled !== undefined ||
         sessionMemoryEnabled !== undefined ||
         useGlobalMemory !== undefined ||
+        useWorkspaceMemory !== undefined ||
         uiControlEnabled !== undefined;
 
       if (
@@ -4314,6 +4389,7 @@ export const useChatSessionController = (
           id: existingPack?.id ?? crypto.randomUUID(),
           workspace: input.scope === "global" ? null : workspaceRoot,
           name,
+          temporary: input.temporary === true,
           instructions,
           prompt,
           contextAttachments,
@@ -4334,6 +4410,7 @@ export const useChatSessionController = (
             ? { sessionMemoryEnabled }
             : {}),
           ...(useGlobalMemory !== undefined ? { useGlobalMemory } : {}),
+          ...(useWorkspaceMemory !== undefined ? { useWorkspaceMemory } : {}),
           ...(uiControlEnabled !== undefined ? { uiControlEnabled } : {}),
           createdAt: existingPack?.createdAt ?? now,
           updatedAt: now,
@@ -4455,7 +4532,7 @@ export const useChatSessionController = (
 
           return {
             ...current,
-            ...nextComposerSettings,
+            ...(!pack.temporary ? nextComposerSettings : {}),
             session: nextSession,
           };
         });
@@ -4567,8 +4644,10 @@ export const useChatSessionController = (
           pack,
         );
 
-        setPromptEnhancementMode(nextComposerSettings.promptEnhancementMode);
-        setChatInterviewEnabled(nextComposerSettings.interviewEnabled);
+        if (!pack.temporary) {
+          setPromptEnhancementMode(nextComposerSettings.promptEnhancementMode);
+          setChatInterviewEnabled(nextComposerSettings.interviewEnabled);
+        }
         composerState.resetDraftHistoryState();
       }
     },
@@ -4583,6 +4662,17 @@ export const useChatSessionController = (
       workspaceContextPacks,
     ],
   );
+
+  const handleResetTemporaryContextPack = useCallback((): void => {
+    if (activeMessageEditRef.current) {
+      updateMessageEditSession(resetTemporaryContextPackSettings);
+      return;
+    }
+    state.updateSessionById(state.activeSession.id, (session) => ({
+      ...resetTemporaryContextPackSettings(session),
+      updatedAt: Date.now(),
+    }));
+  }, [state.activeSession.id, state.updateSessionById, updateMessageEditSession]);
 
   const handleDeleteContextPack = useCallback(
     (packId: string): void => {
@@ -4978,12 +5068,12 @@ export const useChatSessionController = (
           session.draftContextAttachments.length === 0
         ) {
           clearedComposer = createComposerClearGuard(session);
-          return session;
+          return resetTemporaryContextPackSettings(session);
         }
 
         const updatedAt = Date.now();
         const nextSession: ChatSessionRecord = {
-          ...session,
+          ...resetTemporaryContextPackSettings(session),
           draft: "",
           draftContextAttachments: [],
           draftUpdatedAt: updatedAt,
@@ -5526,6 +5616,7 @@ export const useChatSessionController = (
       input?: {
         sessionId: string;
         task: string;
+        messageSettings?: ChatSessionMessageSettings;
         goalObjective?: string;
         visibleMessageContent?: string;
         promptHistoryContent?: string;
@@ -5572,6 +5663,17 @@ export const useChatSessionController = (
         id: crypto.randomUUID(),
         sessionId,
         task,
+        ...(input?.messageSettings
+          ? { settings: input.messageSettings }
+          : targetSession.temporaryPackSettings
+            ? {
+                settings: createSessionMessageSettings(
+                  targetSession,
+                  targetSession.temporaryPackSettings.promptEnhancementMode,
+                  targetSession.temporaryPackSettings.interviewEnabled,
+                ),
+              }
+            : {}),
         ...(input?.goalObjective ? { goalObjective: input.goalObjective } : {}),
         ...(input?.visibleMessageContent?.trim()
           ? { visibleMessageContent: input.visibleMessageContent.trim() }
@@ -5579,9 +5681,7 @@ export const useChatSessionController = (
         ...(input?.promptHistoryContent?.trim()
           ? { promptHistoryContent: input.promptHistoryContent.trim() }
           : {}),
-        ...(input?.promptEnhancement
-          ? { promptEnhancement: input.promptEnhancement }
-          : {}),
+        ...(input?.promptEnhancement ? { promptEnhancement: input.promptEnhancement } : {}),
         ...(input?.promptEnhancementRequest
           ? { promptEnhancementRequest: input.promptEnhancementRequest }
           : {}),
@@ -5600,15 +5700,10 @@ export const useChatSessionController = (
       };
 
       updateQueuedSessionMessages((current) =>
-        placement === "front"
-          ? [queuedMessage, ...current]
-          : [...current, queuedMessage],
+        placement === "front" ? [queuedMessage, ...current] : [...current, queuedMessage],
       );
       if (input?.clearComposer !== false) {
-        clearSessionComposerInput(
-          queuedMessage.sessionId,
-          input?.composerClearGuard,
-        );
+        clearSessionComposerInput(queuedMessage.sessionId, input?.composerClearGuard);
       }
 
       return queuedMessage;
@@ -5730,113 +5825,6 @@ export const useChatSessionController = (
     };
   }, [blockedQueuedTaskIdsSignature]);
 
-  const appendSteeringMessageToRunningTask = useCallback(
-    (input?: {
-      sessionSnapshot: ChatSessionRecord;
-      task: string;
-      contextAttachments: ChatSessionContextAttachment[];
-      composerClearGuard?: ComposerClearGuard;
-    }): boolean => {
-      const submittedSessionSnapshot =
-        input?.sessionSnapshot ?? state.activeSession;
-      const sessionSnapshot =
-        shellStateRef.current.sessions.find(
-          (session) => session.id === submittedSessionSnapshot.id,
-        ) ?? null;
-      const task = (input?.task ?? state.activeSession.draft).trim();
-
-      if (!sessionSnapshot || !task) {
-        return false;
-      }
-
-      const contextAttachments = (
-        input?.contextAttachments ?? state.activeSession.draftContextAttachments
-      ).map((attachment) => ({
-        ...attachment,
-      }));
-      const hasUnsupportedImage =
-        getImageAttachmentPaths(contextAttachments).length > 0 &&
-        !modelSupportsImageInput(
-          sessionSnapshot.provider,
-          sessionSnapshot.model,
-        );
-
-      if (hasUnsupportedImage) {
-        return false;
-      }
-
-      const targetTaskId =
-        getActiveDesktopTaskIdForSession(sessionSnapshot.id) ??
-        getLatestRunningTaskId(sessionSnapshot);
-
-      if (!targetTaskId) {
-        return false;
-      }
-
-      const now = Date.now();
-      const orderRank =
-        Math.min(
-          0,
-          ...shellStateRef.current.queuedSessionMessages
-            .filter((message) => message.sessionId === sessionSnapshot.id)
-            .map((message) => message.orderRank),
-        ) - 1;
-      const queuedMessage: ChatSessionQueuedMessage = {
-        id: crypto.randomUUID(),
-        sessionId: sessionSnapshot.id,
-        task,
-        visibleMessageContent: task,
-        promptHistoryContent: task,
-        blockedByTaskId: targetTaskId,
-        contextAttachments,
-        contentUpdatedAt: now,
-        attachmentsUpdatedAt: now,
-        attachmentTombstones: {},
-        blockerUpdatedAt: now,
-        orderRank,
-        orderUpdatedAt: now,
-        status: "queued",
-        statusUpdatedAt: now,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      updateQueuedSessionMessages((current) => [queuedMessage, ...current]);
-      clearSessionComposerInput(sessionSnapshot.id, input?.composerClearGuard);
-
-      updateThinkingTrace(sessionSnapshot.id, targetTaskId, (trace) => {
-        const progress: TaskExecutionProgress = {
-          task: trace.task ?? "",
-          mode: trace.mode,
-          state: "executing",
-          message:
-            "Live steering is unavailable for this runtime; the note was queued as the next follow-up.",
-          executedTools: [],
-          outputSections: [],
-          cancellable: true,
-          timelineEvent: {
-            kind: "state",
-            phase: "started",
-            label: "Follow-up queued",
-            detail: appendContextAttachmentsToTask(task, contextAttachments),
-            tone: "info",
-          },
-        };
-
-        return appendThinkingProgress(trace, progress);
-      });
-
-      return true;
-    },
-    [
-      clearSessionComposerInput,
-      getActiveDesktopTaskIdForSession,
-      state.activeSession,
-      updateThinkingTrace,
-      updateQueuedSessionMessages,
-    ],
-  );
-
   const dispatchNextQueuedMessageForSession = useCallback(
     (session: ChatSessionRecord): void => {
       const nextQueuedMessage = queuedSessionMessages.find(
@@ -5903,6 +5891,12 @@ export const useChatSessionController = (
               return;
             }
 
+            latestSession = resetTemporaryContextPackSettings(latestSession);
+            if (queuedMessageAtDispatch.settings) {
+              latestSession = applySessionMessageSettings(
+                latestSession, queuedMessageAtDispatch.settings,
+              );
+            }
             const promptEnhancementRequest =
               queuedMessageAtDispatch.promptEnhancementRequest;
             let enhancedPrompt: string | undefined;
@@ -6066,7 +6060,7 @@ export const useChatSessionController = (
 
             const queuedMessageToSubmit = dispatchAttempt.message;
             const dispatchPrompt = dispatchAttempt.prompt;
-            latestSession = refreshedSession;
+            latestSession = resetTemporaryContextPackSettings(refreshedSession);
             const promptEnhancementTaskIdForStartedTask =
               promptEnhancementTaskId;
 
@@ -6087,7 +6081,7 @@ export const useChatSessionController = (
               ...(dispatchPrompt.promptEnhancement
                 ? { promptEnhancement: dispatchPrompt.promptEnhancement }
                 : {}),
-              messageSettings: createSessionMessageSettings(
+              messageSettings: queuedMessageToSubmit.settings ?? createSessionMessageSettings(
                 latestSession,
                 promptEnhancementRequest?.mode ?? "off",
                 false,
@@ -6717,6 +6711,7 @@ export const useChatSessionController = (
             ...session,
             provider,
             model,
+            contextWindow: retainSupportedContextWindow(session.contextWindow, provider, model),
             parallelAgentMode: resolveParallelAgentMode(
               provider,
               model,
@@ -7042,9 +7037,10 @@ export const useChatSessionController = (
           },
           pack,
         );
-        appliedPromptEnhancementMode =
-          nextComposerSettings.promptEnhancementMode;
-        appliedInterviewEnabled = nextComposerSettings.interviewEnabled;
+        if (!pack.temporary) {
+          appliedPromptEnhancementMode = nextComposerSettings.promptEnhancementMode;
+          appliedInterviewEnabled = nextComposerSettings.interviewEnabled;
+        }
 
         const now = Date.now();
         const savedModelSelection = getSmartContextPackModelSelection(
@@ -7275,6 +7271,12 @@ export const useChatSessionController = (
     },
     onSetParallelAgentMode: handleRemoteSetParallelAgentMode,
     onSetSessionReasoning: handleRemoteSetSessionReasoning,
+    onSetSessionContextWindow: (sessionId, contextWindow) => {
+      const session = state.getSessionById(sessionId);
+      if (!session) throw new Error("Choose a session first.");
+      if (contextWindow !== undefined) assertContextWindowSupportedForProviderModel(contextWindow, session.provider, session.model);
+      state.applyShellState((previous) => ({ ...previous, sessions: previous.sessions.map((entry) => entry.id === sessionId ? { ...entry, contextWindow, updatedAt: Date.now() } : entry) }));
+    },
     onSetSessionWorkspace: applyRemoteWorkspaceSelection,
     onAddWorkspace: addWorkspaceToHistory,
     onRemoveWorkspace: removeWorkspaceFromHistory,
@@ -8100,7 +8102,12 @@ export const useChatSessionController = (
           ),
           timestamp,
         });
-        updateQueuedSessionMessages((current) => [...current, ...messages]);
+        updateQueuedSessionMessages((current) => [
+          ...current,
+          ...messages.map((message) => ({
+            ...message, settings: submission.messageSettings,
+          })),
+        ]);
         clearSessionComposerInput(sessionId, submission.composerClearGuard);
         if (insertAtFront) requestTaskCancellation(targetSession);
         return;
@@ -8165,18 +8172,11 @@ export const useChatSessionController = (
 
         if (submission.runningAction) {
           switch (submission.runningAction) {
-            case "steer":
-              appendSteeringMessageToRunningTask({
-                sessionSnapshot: submission.sessionSnapshot,
-                task: resolvedTask,
-                contextAttachments: submission.contextAttachments,
-                composerClearGuard: submission.composerClearGuard,
-              });
-              return;
             case "stop-and-send": {
               const queuedMessage = queueActiveSessionMessage("front", {
                 sessionId: submission.sessionSnapshot.id,
                 task,
+                messageSettings: submission.messageSettings,
                 ...(submission.messageSettings.goalObjective
                   ? { goalObjective: submission.messageSettings.goalObjective }
                   : {}),
@@ -8199,6 +8199,7 @@ export const useChatSessionController = (
               queueActiveSessionMessage("back", {
                 sessionId: submission.sessionSnapshot.id,
                 task,
+                messageSettings: submission.messageSettings,
                 ...(submission.messageSettings.goalObjective
                   ? { goalObjective: submission.messageSettings.goalObjective }
                   : {}),
@@ -8314,7 +8315,6 @@ export const useChatSessionController = (
 
       if (
         submission.promptEnhancementMode === "off" ||
-        submission.runningAction === "steer" ||
         shouldDeferPromptEnhancementUntilQueuedDispatch(
           submission.promptEnhancementMode,
           submission.runningAction,
@@ -8345,7 +8345,6 @@ export const useChatSessionController = (
       })();
     },
     [
-      appendSteeringMessageToRunningTask,
       clearSessionComposerInput,
       closeMessageEdit,
       enhancePromptForSubmission,
@@ -8392,7 +8391,7 @@ export const useChatSessionController = (
             unsettledTaskId: getUnsettledDesktopTaskIdForSession(session.id),
             runningAction: input.runningAction ?? runningTaskMessageAction,
           }),
-          composerClearGuard: createComposerClearGuard(session),
+          composerClearGuard: { ...createComposerClearGuard(session), preserve: prompt !== session.draft.trim() },
           messageSettings: createSessionMessageSettings(
             session,
             input.promptEnhancementMode,
@@ -8527,6 +8526,7 @@ export const useChatSessionController = (
       (attachment) => ({ ...attachment }),
     );
     const selectedPromptEnhancementMode =
+      sessionSnapshot.temporaryPackSettings?.promptEnhancementMode ??
       currentEdit?.promptEnhancementMode ?? promptEnhancementMode;
     const submission: ChatInputNeededSubmission = {
       kind: "active-session",
@@ -8537,13 +8537,16 @@ export const useChatSessionController = (
       messageSettings: createSessionMessageSettings(
         sessionSnapshot,
         selectedPromptEnhancementMode,
-        currentEdit?.interviewEnabled ?? chatInterviewEnabled,
+        sessionSnapshot.temporaryPackSettings?.interviewEnabled ??
+          currentEdit?.interviewEnabled ?? chatInterviewEnabled,
         !currentEdit && !goalCommand ? goalObjective : undefined,
       ),
       promptEnhancementMode: selectedPromptEnhancementMode,
       iterationCount: currentEdit ? 1 : iterationCount,
       iterationMode,
-      interviewEnabled: currentEdit?.interviewEnabled ?? chatInterviewEnabled,
+      interviewEnabled:
+        sessionSnapshot.temporaryPackSettings?.interviewEnabled ??
+        currentEdit?.interviewEnabled ?? chatInterviewEnabled,
       runningAction: currentEdit
         ? null
         : getSessionMessageRunningAction({
@@ -8865,6 +8868,15 @@ export const useChatSessionController = (
             activeComposerSession.model,
           ),
       speechInput: {
+        live: {
+          replyPlayback: { enabled: voice.conversationAutoSpeak === "auto" || (voice.conversationAutoSpeak === "default" && voice.autoSpeakResponses), onChange: (enabled: boolean) => voice.setConversationAutoSpeak(enabled ? "auto" : "manual") },
+          inputDeviceId: runtime.userSpeechToTextSettings.inputDeviceId,
+          onSpeechStart: voice.stopSpeaking,
+          onTranscript: async (prompt: string) => {
+            const sent = submitRemoteSessionMessage({ sessionId: activeComposerSession.id, prompt, promptEnhancementMode: "off", interviewEnabled: false, runningAction: "stop-and-send" });
+            if (!sent) throw new Error("The voice message could not be sent. Retry the text below.");
+          },
+        },
         provider: runtime.userSpeechToTextSettings.activeProvider,
         browserSupported: speechInput.browserSupported,
         enabled: speechInput.enabled,
@@ -8919,6 +8931,13 @@ export const useChatSessionController = (
       onAdaptiveControllerOverrideChange:
         handleAdaptiveControllerOverrideChange,
       onSessionReasoningSelection: handleSessionReasoningSelection,
+      onContextWindowChange: (contextWindow: import("@machdoch/fleet-protocol/context-window").ContextWindow | undefined) => {
+        if (activeMessageEditRef.current) {
+          updateMessageEditSession((session) => ({ ...session, contextWindow, updatedAt: Date.now() }));
+          return;
+        }
+        state.applyShellState((previous) => ({ ...previous, sessions: previous.sessions.map((session) => session.id === state.activeSessionId ? { ...session, contextWindow, updatedAt: Date.now() } : session) }));
+      },
       onSessionMemoryEnabledChange: handleSessionMemoryEnabledChange,
       onForgetSessionMemory: (memoryId: string) =>
         forgetSessionMemory(activeComposerSession.id, memoryId),
@@ -8946,6 +8965,7 @@ export const useChatSessionController = (
         handleClearContextAttachments("active-session"),
       onSaveContextPack: handleSaveContextPack,
       onApplyContextPack: handleApplyContextPack,
+      onResetTemporaryContextPack: handleResetTemporaryContextPack,
       onDeleteContextPack: handleDeleteContextPack,
       onExportContextPacks: handleExportContextPacks,
       onImportContextPacks: handleImportContextPacks,

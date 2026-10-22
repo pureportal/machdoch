@@ -562,7 +562,7 @@ export interface FleetControlCommandEvent {
   goalObjective?: string;
   iterationCount?: number;
   iterationMode?: "repeat-prompt" | "continue" | "repeat-prompt-and-continue";
-  runningAction?: "queue" | "steer" | "stop-and-send";
+  runningAction?: "queue" | "stop-and-send";
   direction?: -1 | 1;
   targetIndex?: number;
   variableValues?: Record<string, string>;
@@ -953,6 +953,7 @@ const FLEET_CONTROL_COMMAND_KINDS = [
   "set-parallel-agent-mode",
   "set-goal-mode",
   "set-session-reasoning",
+  "set-session-context-window",
   "set-session-workspace",
   "add-workspace",
   "remove-workspace",
@@ -1402,7 +1403,7 @@ const isFleetControlCommandEvent = (
         String(value.iterationMode),
       )) &&
     (value.runningAction === undefined ||
-      ["queue", "steer", "stop-and-send"].includes(
+      ["queue", "stop-and-send"].includes(
         String(value.runningAction),
       )) &&
     (value.direction === undefined ||

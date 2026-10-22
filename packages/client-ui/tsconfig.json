@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
@@ -8,7 +9,8 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
     "strict": true,
-    "target": "ES2023"
+    "target": "ES2023",
+    "types": ["node"]
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"]
 }

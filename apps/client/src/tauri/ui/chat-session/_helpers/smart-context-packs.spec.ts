@@ -409,11 +409,13 @@ describe("smart context packs", () => {
     ).toBe(false);
   });
 
-  it("exports and imports packs into the target workspace", () => {
+  it("exports, imports and applies long pack prompts without truncation", () => {
     const existingPack = createPack({ id: "pack-1", name: "Existing" });
     const exportedPack = createPack({
       id: "pack-1",
       name: "Imported",
+      instructions: "Instructions\n" + "x".repeat(200_000) + "\nEnd instructions",
+      prompt: "Prompt\n" + "x".repeat(200_000) + "\nEnd prompt",
       workspace: "C:\\Source",
       useCount: 4,
       lastUsedAt: 10,
@@ -450,6 +452,13 @@ describe("smart context packs", () => {
     });
     expect(state.contextPacks[0]?.id).not.toBe("pack-1");
     expect(state.contextPacks[1]?.name).toBe("Existing");
+    const importedPack = state.contextPacks[0]!;
+    expect(importedPack.instructions).toBe(exportedPack.instructions);
+    expect(importedPack.prompt).toBe(exportedPack.prompt);
+    const applied = applySmartContextPackToComposer("Current task", [], importedPack);
+    expect(applied.draft).toContain(exportedPack.instructions);
+    expect(applied.draft).toContain(exportedPack.prompt);
+    expect(applied.draft).toContain("Current task");
   });
 
   it("imports packs into global scope when requested", () => {

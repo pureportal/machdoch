@@ -20,6 +20,7 @@ export const getSessionMessageRunningAction = (input: {
 };
 
 export interface ComposerClearGuard {
+  preserve?: boolean;
   draft: string;
   contextAttachments: ChatSessionContextAttachment[];
   draftUpdatedAt: number;
@@ -47,6 +48,7 @@ export const isComposerClearGuardCurrent = (
   session: ChatSessionRecord,
   guard: ComposerClearGuard | undefined,
 ): boolean => {
+  if (guard?.preserve) return false;
   if (!guard) {
     return true;
   }

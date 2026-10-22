@@ -6,6 +6,7 @@ import {
 } from "@machdoch/fleet-protocol/instructions";
 import type { OperationResponse } from "@machdoch/fleet-protocol/operation";
 import { FleetOperationStore } from "../../core/fleet-operations.js";
+import { runManagedSkillsRequest } from "../../core/managed-skills.js";
 import { parseCliArgs } from "./cli-args.js";
 import { printInstructionSummary } from "./cli-instruction-commands.js";
 
@@ -51,6 +52,7 @@ export class FleetInstructionRuntime {
   private async execute(
     request: Extract<InstructionRequest, { kind: "invoke" }>,
   ): Promise<unknown> {
+    if (request.command === "run_skill_command") return runManagedSkillsRequest(request.args.input);
     const { arguments: argumentsList, workspaceRoot } = request.args.request;
     const workspace = workspaceRoot
       ? await this.assertWorkspace(workspaceRoot)

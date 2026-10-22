@@ -22,6 +22,7 @@ import {
 import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import { WorkspaceManager } from "../ui/workspace-management/workspace-manager";
+import { WorkspaceLibraryView } from "../ui/workspace-management/workspace-library-view";
 import {
   configureRemoteWorkspacePlatform,
   getRemoteWorkspacePlatform,
@@ -164,8 +165,14 @@ function FleetWorkspaces(): React.ReactElement {
   useEffect(() => {
     let disposed = false;
     const initialize = async (): Promise<void> => {
-      const [value, settings, model] = await Promise.all([
-        loadSnapshot(),
+      const value = await loadSnapshot();
+      if (disposed) return;
+      if (value.shell?.workspaceToolsMode === "library") {
+        setWorkspace((current) => current ?? value.shell?.composer?.workspace ?? value.shell?.workspaces[0]?.root ?? null);
+        setReady(true);
+        return;
+      }
+      const [settings, model] = await Promise.all([
         workspaceTransport.invoke<UserMemorySettings>(
           "get_user_memory_settings",
         ),
@@ -337,7 +344,9 @@ function FleetWorkspaces(): React.ReactElement {
             {error}
           </div>
         ) : null}
-        {ready && workspaceSetup ? (
+        {ready && snapshot?.shell?.workspaceToolsMode === "library" ? (
+          <WorkspaceLibraryView roots={snapshot.shell.workspaces.map((entry) => entry.root)} workspaceRoot={workspace} onWorkspaceChange={setWorkspace} onDirtyChange={setDirty} />
+        ) : ready && workspaceSetup ? (
           <WorkspaceManager
             setup={setup}
             workspaceSetup={workspaceSetup}

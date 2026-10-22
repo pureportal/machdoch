@@ -3,6 +3,7 @@ import type { ComposerDraftStore } from "./use-composer-draft";
 import type { ProductCommandHandler } from "./product-runtime";
 
 export interface RemoteComposerProps {
+  latestReply?: { id: string; text: string } | null | undefined;
   composer: NonNullable<ProductShell["composer"]>;
   session: ProductSession;
   contextPacks: ProductShell["contextPacks"];

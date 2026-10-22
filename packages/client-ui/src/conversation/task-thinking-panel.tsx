@@ -160,6 +160,7 @@ const getTechnicalMetadata = (
       key === "durationMs" ||
       key === "argumentsPreview" ||
       key === "outputPreview"
+      || key === "mcpAppId"
     ) {
       continue;
     }

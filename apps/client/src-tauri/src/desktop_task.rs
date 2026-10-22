@@ -934,6 +934,34 @@ pub async fn run_instruction_command(request: InstructionCommandRequest) -> Resu
 }
 
 #[tauri::command]
+pub async fn run_workspace_library_command(workspace_root: String, input: Value) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || cli_commands::execute_json_payload_command(&workspace_root, &input, "knowledge"))
+        .await
+        .map_err(|error| format!("The workspace library command stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn run_skill_command(input: Value) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || cli_commands::execute_json_payload_command("", &input, "skills"))
+        .await
+        .map_err(|error| format!("The skill command stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn run_mcp_app_command(workspace_root: String, input: Value) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || cli_commands::execute_json_payload_command(&workspace_root, &input, "mcp-apps"))
+        .await
+        .map_err(|error| format!("The MCP App command stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn run_live_voice_command(workspace_root: String, input: Value) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || cli_commands::execute_json_payload_command(&workspace_root, &input, "live-voice"))
+        .await
+        .map_err(|error| format!("The live voice command stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
 pub async fn run_task_interview_command(
     app_handle: tauri::AppHandle,
     window: tauri::WebviewWindow,

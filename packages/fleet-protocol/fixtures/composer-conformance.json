@@ -129,7 +129,7 @@
       "accepted": true
     },
     {
-      "name": "submit continue with steer",
+      "name": "submit continue with stop-and-send",
       "command": {
         "kind": "submit-message",
         "sessionId": "session-1",
@@ -138,7 +138,7 @@
         "interviewEnabled": false,
         "iterationCount": 1,
         "iterationMode": "continue",
-        "runningAction": "steer"
+        "runningAction": "stop-and-send"
       },
       "accepted": true
     },
@@ -941,11 +941,11 @@
       "accepted": false
     },
     {
-      "name": "set running action steer",
+      "name": "set running action stop-and-send",
       "command": {
         "kind": "set-running-message-action",
         "sessionId": "session-1",
-        "runningAction": "steer"
+        "runningAction": "stop-and-send"
       },
       "accepted": true
     },
@@ -1107,7 +1107,7 @@
         "prompt": "Build it",
         "promptEnhancementMode": "off",
         "interviewEnabled": false,
-        "runningAction": "steer"
+        "runningAction": "stop-and-send"
       },
       "accepted": true
     },
@@ -1594,7 +1594,7 @@
       "accepted": true
     },
     {
-      "name": "composer iteration continue action steer",
+      "name": "composer iteration continue action stop-and-send",
       "composer": {
         "queuedMessages": [
           {
@@ -1630,7 +1630,7 @@
             "failureMessage": "Failure"
           }
         ],
-        "runningTaskMessageAction": "steer",
+        "runningTaskMessageAction": "stop-and-send",
         "draftRevision": 1,
         "imageInputSupported": true
       },

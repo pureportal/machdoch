@@ -169,6 +169,7 @@ export interface ConversationMemoryEntry {
 }
 
 export interface TaskConversationContext {
+  contextWindow?: import("./runtime-contract.generated.js").ContextWindow;
   sessionId?: string;
   adaptiveControllerOverride?: boolean | null;
   parallelAgentMode?: ParallelAgentMode;

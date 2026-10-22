@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { liveVoiceRequestSchema } from "@machdoch/fleet-protocol/live-voice";
+import { mcpAppRequestSchema } from "@machdoch/fleet-protocol/mcp-apps";
+import { workspaceLibraryRequestSchema } from "@machdoch/fleet-protocol/workspace-library";
 import { sessionDataCommands } from "@machdoch/fleet-protocol/session-data-commands";
 import { resetTaskTimeoutCommandSchema } from "@machdoch/fleet-protocol/task-thinking";
 import { hasUnpairedUtf16Surrogate } from "@machdoch/fleet-protocol/unicode";
@@ -136,6 +139,7 @@ export const workspaceRequestSchema = z.union([
   operationReadSchema,
   operationReleaseSchema,
   z.discriminatedUnion("command", [
+    command("run_live_voice_command", z.strictObject({ workspaceRoot: root, input: liveVoiceRequestSchema })),
     command(
       "get_session_file_change_files",
       sessionDataCommands.get_session_file_change_files,
@@ -189,6 +193,8 @@ export const workspaceRequestSchema = z.union([
       }),
     ),
     command("get_runtime_snapshot", z.strictObject({ workspaceRoot: root })),
+    command("run_workspace_library_command", z.strictObject({ workspaceRoot: root, input: workspaceLibraryRequestSchema })),
+    command("run_mcp_app_command", z.strictObject({ workspaceRoot: z.string().max(2048).refine((value) => !value.includes("\0")), input: mcpAppRequestSchema })),
     command(
       "stop_all_workspace_terminals",
       z.strictObject({ workspaceRoot: root }),

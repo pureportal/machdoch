@@ -193,6 +193,25 @@ fn mcp_command(args: &Value) -> bool {
 
 pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
     match command {
+        "run_live_voice_command" => fields(args, &["workspaceRoot", "input"]).is_some_and(|args| {
+            root(&args["workspaceRoot"]) && match args["input"]["action"].as_str() {
+                Some("session") => fields(&args["input"], &["action"]).is_some(),
+                Some("process") => fields(&args["input"], &["action", "text"]).is_some_and(|input| text(&input["text"], 20_000, false)),
+                _ => false,
+            }
+        }),
+        "run_mcp_app_command" => fields(args, &["workspaceRoot", "input"]).is_some_and(|args| {
+            text(&args["workspaceRoot"], 2048, true)
+                && args["input"].is_object()
+                && args["input"].to_string().len() <= 256 * 1024
+                && matches!(args["input"]["action"].as_str(), Some("settings" | "set-enabled" | "load" | "call-tool"))
+        }),
+        "run_workspace_library_command" => fields(args, &["workspaceRoot", "input"]).is_some_and(|args| {
+            root(&args["workspaceRoot"])
+                && args["input"].is_object()
+                && args["input"].to_string().len() <= 2 * 1024 * 1024
+                && matches!(args["input"]["action"].as_str(), Some("source" | "search" | "index" | "projects" | "project" | "save-project" | "delete-project" | "check-sources"))
+        }),
         "get_session_file_change_files" | "get_session_file_change_hunks" => {
             args.as_object().is_some_and(|args| {
                 let hunks = command == "get_session_file_change_hunks";

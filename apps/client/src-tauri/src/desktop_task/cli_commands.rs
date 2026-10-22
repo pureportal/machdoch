@@ -649,6 +649,28 @@ pub(super) fn execute_instruction_command(
     result
 }
 
+pub(super) fn execute_json_payload_command(workspace_root: &str, input: &Value, subcommand: &'static str) -> Result<Value, String> {
+    let contents = serde_json::to_string(input).map_err(|error| error.to_string())?;
+    if contents.len() > 2 * 1024 * 1024 {
+        return Err("Command request exceeds 2 MiB.".to_string());
+    }
+    let path = super::payload_files::write_instruction_payload_file(&contents)?;
+    let result = run_auxiliary_json_command(
+        workspace_root,
+        vec!["--input-json-file".to_string(), path.display().to_string()],
+        &AuxiliaryCliSpec {
+            subcommand,
+            command_name: subcommand,
+            parse_name: subcommand,
+            failure_name: subcommand,
+            stdout_capture_limit_bytes: 8 * 1024 * 1024,
+            timeout_ms: AUXILIARY_CLI_COMMAND_TIMEOUT_MS,
+        },
+    );
+    cleanup_temporary_files(&[path]);
+    result
+}
+
 pub(super) fn execute_task_interview_command(
     app_handle: tauri::AppHandle,
     window_label: String,

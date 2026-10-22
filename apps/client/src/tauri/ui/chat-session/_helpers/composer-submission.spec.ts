@@ -90,7 +90,7 @@ describe("session message routing", () => {
     ],
   });
 
-  it.each(["queue", "steer", "stop-and-send"] as const)(
+  it.each(["queue", "stop-and-send"] as const)(
     "queues during post-agent processing with the %s preference",
     (runningAction) => {
       expect(
@@ -104,7 +104,7 @@ describe("session message routing", () => {
     },
   );
 
-  it.each(["queue", "steer", "stop-and-send"] as const)(
+  it.each(["queue", "stop-and-send"] as const)(
     "preserves the %s action while the agent is running",
     (runningAction) => {
       for (const [session, activeTaskId] of [
@@ -131,7 +131,7 @@ describe("session message routing", () => {
         session: completedSession,
         activeTaskId: null,
         unsettledTaskId: "task-1",
-        runningAction: "steer",
+        runningAction: "stop-and-send",
       });
 
       expect(

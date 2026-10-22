@@ -18,7 +18,9 @@ describe("provider context windows", () => {
   });
 
   it("limits provider-controlled context tiers to supported CLI providers", () => {
-    expect(supportsLongContextWindow("copilot-cli", "auto")).toBe(true);
+    expect(supportsLongContextWindow("copilot-cli", "auto")).toBe(false);
+    expect(supportsLongContextWindow("claude-cli", "claude-opus-4-7")).toBe(false);
+    expect(supportsLongContextWindow("claude-cli", "claude-sonnet-4-6")).toBe(true);
     expect(supportsLongContextWindow("claude-cli", "sonnet")).toBe(true);
     expect(supportsLongContextWindow("claude-cli", "haiku")).toBe(false);
     expect(() =>

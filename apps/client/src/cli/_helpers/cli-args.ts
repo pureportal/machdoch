@@ -701,6 +701,44 @@ export const parseCliArgs = (
 
   const [first, ...rest] = positionals;
 
+  if (first === "live-voice") {
+    if (rawRalphInputJson && rawRalphInputJsonFile) fail("Choose --input-json or --input-json-file.");
+    if (rest.length || (!rawRalphInputJson && !rawRalphInputJsonFile)) fail("Use live-voice --input-json-file <path>.");
+    return { ...sharedOptions, command: "live-voice", liveVoice: rawRalphInputJsonFile ? { inputJsonFile: rawRalphInputJsonFile } : { request: JSON.parse(rawRalphInputJson!) } };
+  }
+
+  if (first === "mcp-apps") {
+    if (rawRalphInputJson && rawRalphInputJsonFile) fail("Choose --input-json or --input-json-file.");
+    if ((rawRalphInputJson || rawRalphInputJsonFile) && rest.length) fail("Do not combine a JSON request with a positional action.");
+    let request: unknown = { action: "settings" };
+    if (rawRalphInputJson) request = JSON.parse(rawRalphInputJson);
+    else if (rest.length === 1 && ["enable", "disable"].includes(rest[0]!)) request = { action: "set-enabled", enabled: rest[0] === "enable" };
+    else if (rest.length && !(rest.length === 1 && rest[0] === "settings")) fail("Use mcp-apps settings, enable, disable, or --input-json-file <path>.");
+    return { ...sharedOptions, command: "mcp-apps", mcpApps: rawRalphInputJsonFile ? { inputJsonFile: rawRalphInputJsonFile } : { request } };
+  }
+
+  if (first === "skills") {
+    if (rawRalphInputJson && rawRalphInputJsonFile) fail("Choose --input-json or --input-json-file.");
+    if ((rawRalphInputJson || rawRalphInputJsonFile) && rest.length) fail("Do not combine a JSON request with a positional action.");
+    if (!rawRalphInputJson && !rawRalphInputJsonFile && rest.length && !(rest.length === 1 && rest[0] === "list")) fail("Use skills list or skills --input-json-file <path>.");
+    return { ...sharedOptions, command: "skills", skills: { ...(rawRalphInputJsonFile ? { inputJsonFile: rawRalphInputJsonFile } : { request: rawRalphInputJson ? JSON.parse(rawRalphInputJson) : { action: "list" } }) } };
+  }
+
+  if (first === "knowledge" || first === "research") {
+    if (rawRalphInputJson && rawRalphInputJsonFile) fail("Choose --input-json or --input-json-file.");
+    let request: unknown;
+    if (rawRalphInputJson) request = JSON.parse(rawRalphInputJson);
+    else if (!rawRalphInputJsonFile) {
+      if (first === "knowledge" && rest[0] === "search" && rest.length > 1) request = { action: "search", query: rest.slice(1).join(" "), limit: 20 };
+      else if (first === "knowledge" && rest.length === 1 && rest[0] === "index") request = { action: "index" };
+      else if (first === "research" && (rest.length === 0 || (rest.length === 1 && rest[0] === "list"))) request = { action: "projects" };
+      else if (first === "research" && rest.length === 2 && rest[0] === "show") request = { action: "project", id: rest[1] };
+      else fail("Use knowledge search <query>, knowledge index, research list, research show <id>, or --input-json-file.");
+    }
+    if ((rawRalphInputJson || rawRalphInputJsonFile) && rest.length) fail("Do not combine positional actions with a JSON request.");
+    return { ...sharedOptions, command: first, workspaceLibrary: { ...(request ? { request } : {}), ...(rawRalphInputJsonFile ? { inputJsonFile: rawRalphInputJsonFile } : {}) } };
+  }
+
   validateMcpCommand(first!, values?.apply === true);
 
   validateInstructionCommand(first!, values);

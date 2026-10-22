@@ -619,6 +619,7 @@ export const createConversationContextFromSession = (
 
   return {
     sessionId: session.id,
+    ...(session.contextWindow !== undefined ? { contextWindow: session.contextWindow } : {}),
     adaptiveControllerOverride: session.adaptiveControllerOverride ?? null,
     ...(session.specialSession === "pose" ? { chatType: "pose" as const } : {}),
     ...(session.specialSession === "pose" && session.poseScene

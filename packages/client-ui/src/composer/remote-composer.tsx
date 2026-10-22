@@ -1,4 +1,5 @@
 import { SessionAdaptiveControllerPicker } from "./adaptive-controller-picker";
+import { ContextWindowPicker } from "./context-window-picker";
 import { SessionPromptEnhancementPicker } from "./prompt-enhancement-picker";
 import {
   AskIcon,
@@ -153,7 +154,9 @@ export function RemoteComposer({
   attachments,
   renderContextPackPicker,
   onHistoryKeyDown,
+  liveVoiceActive = false,
 }: RemoteComposerProps & {
+  liveVoiceActive?: boolean;
   attachments: RemoteAttachmentControls;
   renderContextPackPicker: (draft: string) => React.ReactNode;
   onHistoryKeyDown?:
@@ -299,6 +302,7 @@ export function RemoteComposer({
         }
         toolbarControls={
           <fieldset className="m-product-composer-toolbar" disabled={pending}>
+            <ContextWindowPicker provider={composer.provider} model={composer.model} value={composer.contextWindow} capabilities={composer} onChange={(value) => void onCommand({ kind: "set-session-context-window", sessionId: session.id, mode: value === undefined ? "inherit" : String(value) })} />
             <OptionMenu
               disabled={pending}
               label="Reasoning mode"
@@ -628,6 +632,7 @@ export function RemoteComposer({
                     : "Start device microphone",
                   icon: <Mic />,
                   disabled:
+                    liveVoiceActive ||
                     pending ||
                     voice.speechInputBusy ||
                     !voice.speechInputEnabled,

@@ -22,7 +22,6 @@ export type ProductIterationMode = z.infer<typeof productIterationModeSchema>;
 
 export const productRunningMessageActionSchema = z.enum([
   "queue",
-  "steer",
   "stop-and-send",
 ]);
 export type ProductRunningMessageAction = z.infer<

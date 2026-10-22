@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { contextWindowSchema } from "@machdoch/fleet-protocol/context-window";
+import { contextPackTextSchema } from "@machdoch/fleet-protocol/context-pack-contract";
 import type { FleetManagerConfig } from "./config";
 
 export class SettingsValidationError extends Error {}
@@ -115,20 +117,15 @@ const contextPackSchema = z
   .strictObject({
     id: z.string().uuid(),
     name: validName(200),
-    instructions: z
-      .string()
-      .max(128 * 1024)
-      .refine(noNullByte)
-      .default(""),
-    prompt: z
-      .string()
-      .max(128 * 1024)
-      .refine(noNullByte)
-      .default(""),
+    instructions: contextPackTextSchema.default(""),
+    prompt: contextPackTextSchema.default(""),
     provider: optionalEnum(modelProviders),
     model: optionalText,
     mode: optionalEnum(modes),
     reasoning: optionalEnum(reasoningLevels),
+    contextWindow: contextWindowSchema.optional(),
+    temporary: z.boolean().optional(),
+    useWorkspaceMemory: z.boolean().optional(),
     variables: z
       .array(
         z.strictObject({

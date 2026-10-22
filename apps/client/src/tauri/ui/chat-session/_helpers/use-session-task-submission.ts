@@ -18,6 +18,7 @@ import {
 } from "../../runtime";
 import { getDesktopTaskRunFailure } from "../../desktop-task-error";
 import type { ExecutionAttempt } from "./execution-retry";
+import { resetTemporaryContextPackSettings } from "./temporary-context-pack";
 import {
   appendThinkingProgress,
   appendTerminalExecutionToThinkingTrace,
@@ -210,6 +211,7 @@ export interface SubmitTaskToSessionOptions {
 }
 
 export interface SessionOperationConflictSubmission {
+  messageSettings: ChatSessionMessageSettings;
   sessionId: string;
   activeTaskId: string;
   task: string;
@@ -917,6 +919,7 @@ export const useSessionTaskSubmission = (options: {
             submitOptions.promptEnhancementRequestOnConflict,
           );
           const queued = currentOptions.onSessionOperationConflict?.({
+            messageSettings,
             sessionId,
             ...(messageSettings.goalObjective
               ? { goalObjective: messageSettings.goalObjective }
@@ -1138,7 +1141,9 @@ export const useSessionTaskSubmission = (options: {
             promptContextHistory: nextPromptHistory.promptContextHistory,
           };
 
-          return currentOptions.applySessionMessageLimit(nextSession);
+          return currentOptions.applySessionMessageLimit(
+            shouldClearComposer ? resetTemporaryContextPackSettings(nextSession) : nextSession,
+          );
         });
 
         if (!sessionFound) {

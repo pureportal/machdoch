@@ -1,3 +1,5 @@
+import { McpAppsSettings } from "@machdoch/client-ui/mcp-apps/settings";
+import { invokeWorkspaceTools } from "../ui/workspace-management/workspace-platform";
 import "./analytics.js";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -187,7 +189,7 @@ function FleetSettings(): React.ReactElement {
             {error}
           </div>
         ) : snapshot ? (
-          <DeviceSettings snapshot={snapshot} />
+          snapshot.shell?.workspaceToolsMode === "library" ? <div className="p-4"><McpAppsSettings invoke={(workspaceRoot, input) => invokeWorkspaceTools("run_mcp_app_command", { workspaceRoot, input })} /></div> : <DeviceSettings snapshot={snapshot} />
         ) : (
           <div role="status" className="p-4">
             Loading settings…

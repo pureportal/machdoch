@@ -9,6 +9,9 @@ import { getProviderLabel } from "@machdoch/client-ui/provider-labels";
 import { mergeContextAttachments } from "./session-context-attachments";
 import { normalizeSessionReasoningOverride } from "./session-reasoning";
 import { applyContextPackDraft, createContextPackTextSections } from "../../../../shared/context-pack-draft.js";
+import { createSessionMessageSettings } from "./session-message-settings";
+import { resetTemporaryContextPackSettings } from "./temporary-context-pack";
+import { assertContextWindowSupportedForProviderModel, retainSupportedContextWindow } from "../../../../core/context-windows.js";
 
 export interface SmartContextPackComposerApplication {
   draft: string;
@@ -64,11 +67,18 @@ export const applySmartContextPackSettingsToSession = (
   pack: SmartContextPack,
   modelSelection: SmartContextPackModelSelection | null,
 ): ChatSessionRecord => {
-  const nextSession = { ...session };
+  const baseSession = resetTemporaryContextPackSettings(session);
+  const nextSession = { ...baseSession };
 
   if (modelSelection) {
     nextSession.provider = modelSelection.provider;
     nextSession.model = modelSelection.model;
+  }
+
+  nextSession.contextWindow = retainSupportedContextWindow(nextSession.contextWindow, nextSession.provider, nextSession.model);
+  if (pack.contextWindow !== undefined) {
+    assertContextWindowSupportedForProviderModel(pack.contextWindow, nextSession.provider, nextSession.model);
+    nextSession.contextWindow = pack.contextWindow;
   }
 
   if (pack.mode) {
@@ -95,10 +105,25 @@ export const applySmartContextPackSettingsToSession = (
     nextSession.useGlobalMemory = pack.useGlobalMemory;
   }
 
+  if (pack.useWorkspaceMemory !== undefined) {
+    nextSession.useWorkspaceMemory = pack.useWorkspaceMemory;
+  }
+
   if (pack.uiControlEnabled !== undefined) {
     nextSession.uiControlEnabled = pack.uiControlEnabled;
   }
 
+  if (pack.temporary) {
+    nextSession.temporaryPackSettings = {
+      packName: pack.name,
+      previous: createSessionMessageSettings(baseSession),
+      applied: createSessionMessageSettings(nextSession),
+      ...(pack.promptEnhancementMode !== undefined
+        ? { promptEnhancementMode: pack.promptEnhancementMode } : {}),
+      ...(pack.interviewEnabled !== undefined
+        ? { interviewEnabled: pack.interviewEnabled } : {}),
+    };
+  }
   return nextSession;
 };
 
@@ -107,6 +132,7 @@ export const applySmartContextPackSettingsToShellDefaults = (
   pack: SmartContextPack,
   modelSelection: SmartContextPackModelSelection | null,
 ): ShellPersistedState => {
+  if (pack.temporary) return state;
   const nextState = { ...state };
 
   if (modelSelection) {
@@ -142,6 +168,10 @@ export const applySmartContextPackSettingsToShellDefaults = (
 
   if (pack.sessionMemoryEnabled !== undefined) {
     nextState.lastSelectedSessionMemoryEnabled = pack.sessionMemoryEnabled;
+  }
+
+  if (pack.useWorkspaceMemory !== undefined) {
+    nextState.lastSelectedUseWorkspaceMemory = pack.useWorkspaceMemory;
   }
 
   if (pack.useGlobalMemory !== undefined) {

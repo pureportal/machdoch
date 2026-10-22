@@ -562,6 +562,10 @@ export function ProductShell({
                     />
                     {shell.composer?.sessionId === activeSession.id ? (
                       <Composer
+                        latestReply={activeSession.runningTaskId ? null : (() => {
+                          const message = shell.visibleMessages.at(-1);
+                          return message && ["assistant", "agent"].includes(message.role) && !["running", "failed", "cancelled"].includes(message.source?.status ?? "") ? { id: message.id, text: message.content } : null;
+                        })()}
                         drafts={drafts}
                         composer={shell.composer}
                         session={activeSession}

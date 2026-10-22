@@ -21,6 +21,8 @@ import {
 import { createSession } from "../../chat-session.model";
 import { RUN_MODE_META } from "../_helpers/session-shell";
 import { SessionComposer, type SessionComposerProps } from "./session-composer";
+import { createSessionMessageSettings } from "../_helpers/session-message-settings";
+import { resetTemporaryContextPackSettings } from "../_helpers/temporary-context-pack";
 
 const EDIT_DRAFT = "Original edited request";
 const noop = (): void => {};
@@ -110,7 +112,7 @@ const createProps = (
   },
   canSendMessage: false,
   sendDisabledReason: "Prompt enhancement is still running.",
-  runningTaskMessageAction: "steer",
+  runningTaskMessageAction: "stop-and-send",
   queuedMessages: [],
   onSelectFolder: noopAsync,
   onWorkspaceSelection: noop,
@@ -154,6 +156,24 @@ const createProps = (
 });
 
 describe("SessionComposer feature availability", () => {
+  it("offers a reset for temporary settings without removing the draft", () => {
+    const previous = createSession({ provider: "openai", model: "usual-model", draft: EDIT_DRAFT });
+    const applied = { ...previous, model: "cheap-model" };
+    let session = { ...applied, temporaryPackSettings: {
+      packName: "Commit and push", previous: createSessionMessageSettings(previous),
+      applied: createSessionMessageSettings(applied),
+    } } as typeof previous;
+    const props = createProps({ activeSession: session, editingMessageId: null,
+      onResetTemporaryContextPack: () => { session = resetTemporaryContextPackSettings(session); },
+    });
+    const view = render(createElement(SessionComposer, props));
+    fireEvent.click(screen.getByRole("button", { name: "Reset temporary settings" }));
+    view.rerender(createElement(SessionComposer, { ...props, activeSession: session }));
+    expect(session.model).toBe("usual-model");
+    expect(session.draft).toBe(EDIT_DRAFT);
+    expect(screen.queryByRole("button", { name: "Reset temporary settings" })).toBeNull();
+  });
+
   it.each([
     "openai",
     "anthropic",
@@ -754,7 +774,7 @@ describe("SessionComposer enhancement", () => {
     ).toBe("continue");
   });
 
-  it("queues repeated requests while a task is running", () => {
+  it("preserves interruption mode for repeated requests", () => {
     const onRunningTaskMessageActionChange = vi.fn();
     render(
       createElement(
@@ -763,7 +783,7 @@ describe("SessionComposer enhancement", () => {
           editingMessageId: null,
           canSendMessage: true,
           isExecuting: true,
-          runningTaskMessageAction: "steer",
+          runningTaskMessageAction: "stop-and-send",
           onRunningTaskMessageActionChange,
         }),
       ),
@@ -774,7 +794,7 @@ describe("SessionComposer enhancement", () => {
       target: { value: "2" },
     });
 
-    expect(onRunningTaskMessageActionChange).toHaveBeenCalledWith("queue");
+    expect(onRunningTaskMessageActionChange).not.toHaveBeenCalled();
   });
 
   it("keeps the normal composer available while enhancement is shown in the conversation", () => {

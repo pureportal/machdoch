@@ -162,7 +162,7 @@ export const WorkspaceSettingsPanel = ({
           setup.reasoningProvider,
           setup.reasoningModel,
         );
-  const supportsNumericContext = setup.reasoningProvider === "codex-cli";
+  const supportsNumericContext = setup.reasoningProvider === "codex-cli" && Boolean(setup.reasoningModel && getModelContextWindowTokens(setup.reasoningProvider, setup.reasoningModel));
   const maximumContextTokens =
     catalogModel?.capabilities?.longContextWindowTokens ??
     catalogModel?.capabilities?.contextWindowTokens ??

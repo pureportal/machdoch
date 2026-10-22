@@ -44,6 +44,31 @@ describe("managed settings", () => {
     expect(isSecretId("custom.GitHub")).toBe(false);
   });
 
+  it("preserves long context-pack text and rejects null bytes", () => {
+    const document = emptySettingsDocument();
+    document.contextPacks.push({
+      id: crypto.randomUUID(),
+      name: "Long prompt",
+      instructions: "Instructions\n" + "x".repeat(200_000) + "\nEnd instructions",
+      prompt: "Prompt\n" + "x".repeat(200_000) + "\nEnd prompt",
+      provider: null,
+      model: null,
+      mode: null,
+      reasoning: null,
+      variables: [],
+      triggerPhrases: [],
+      pathPatterns: [],
+      promptEnhancementMode: null,
+      interviewEnabled: null,
+      sessionMemoryEnabled: null,
+      useGlobalMemory: null,
+      uiControlEnabled: null,
+    });
+    expect(validateSettingsDocument(document, limits)).toEqual(document);
+    document.contextPacks[0]!.prompt += "\0";
+    expect(() => validateSettingsDocument(document, limits)).toThrow();
+  });
+
   it("validates prompt paths and case-insensitive uniqueness", () => {
     const document = emptySettingsDocument();
     document.prompts.push({

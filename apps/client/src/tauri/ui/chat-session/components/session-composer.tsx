@@ -5,6 +5,8 @@ import {
   Square,
   WandSparkles,
 } from "lucide-react";
+import { LiveVoiceControl } from "@machdoch/client-ui/voice/live-voice-control";
+import { invokeWorkspaceTools } from "../../workspace-management/workspace-platform";
 import {
   GlobalMemoryIcon,
   InterviewIcon,
@@ -85,6 +87,8 @@ import { SessionParallelAgentPicker } from "./session-parallel-agent-picker";
 import { SessionAdaptiveControllerPicker } from "@machdoch/client-ui/composer/adaptive-controller-picker";
 import { SessionPromptEnhancementPicker } from "@machdoch/client-ui/composer/prompt-enhancement-picker";
 import { SessionReasoningPicker } from "./session-reasoning-picker";
+import { ContextWindowPicker } from "@machdoch/client-ui/composer/context-window-picker";
+import type { ContextWindow } from "@machdoch/fleet-protocol/context-window";
 import { SmartContextPackPicker } from "@machdoch/client-ui/context-packs/picker";
 import { loadRalphContextPackUsage } from "@machdoch/client-ui/context-packs/ralph-usage";
 import { listRalphFlows, showRalphFlow } from "../../runtime";
@@ -92,6 +96,7 @@ import { listRalphFlows, showRalphFlow } from "../../runtime";
 const loadContextPackUsage = (workspaceRoot: string) =>
   loadRalphContextPackUsage(workspaceRoot, listRalphFlows, showRalphFlow);
 import { WorkspacePicker } from "./workspace-picker";
+import { useProviderModelCatalog } from "../../use-provider-model-catalog";
 
 export interface SessionComposerProps {
   activeSession: ChatSessionRecord;
@@ -139,6 +144,7 @@ export interface SessionComposerProps {
   imageInputSupported: boolean;
   imageInputDisabledReason: string | null;
   speechInput: {
+    live?: { onTranscript: (text: string) => Promise<void>; onSpeechStart: () => void; inputDeviceId?: string | null | undefined; replyPlayback: { enabled: boolean; onChange: (enabled: boolean) => void } };
     provider: SpeechToTextProvider;
     browserSupported: boolean;
     enabled: boolean;
@@ -171,6 +177,7 @@ export interface SessionComposerProps {
   onGoalModeSelection?: (mode: GoalMode) => void;
   onAdaptiveControllerOverrideChange?: (override: boolean | null) => void;
   onSessionReasoningSelection: (reasoning: ReasoningMode | null) => void;
+  onContextWindowChange?: (value: ContextWindow | undefined) => void;
   onSessionMemoryEnabledChange: (enabled: boolean) => void;
   onForgetSessionMemory: (memoryId: string) => Promise<unknown> | unknown;
   onUseWorkspaceMemoryChange?: (enabled: boolean) => void;
@@ -188,6 +195,7 @@ export interface SessionComposerProps {
   onRemoveContextAttachment: (attachmentId: string) => void;
   onClearContextAttachments: () => void;
   onSaveContextPack: (input: SaveSmartContextPackInput) => void;
+  onResetTemporaryContextPack?: () => void;
   onApplyContextPack: (
     packId: string,
     variableValues?: Record<string, string>,
@@ -286,6 +294,7 @@ export const SessionComposer = ({
   onGoalModeSelection = () => undefined,
   onAdaptiveControllerOverrideChange = () => undefined,
   onSessionReasoningSelection,
+  onContextWindowChange,
   onSessionMemoryEnabledChange,
   onForgetSessionMemory,
   onUseWorkspaceMemoryChange = () => undefined,
@@ -304,6 +313,7 @@ export const SessionComposer = ({
   onClearContextAttachments,
   onSaveContextPack,
   onApplyContextPack,
+  onResetTemporaryContextPack,
   onDeleteContextPack,
   onExportContextPacks,
   onImportContextPacks,
@@ -324,6 +334,8 @@ export const SessionComposer = ({
   isExecuting,
   isPromptEnhancementActive = false,
 }: SessionComposerProps): JSX.Element => {
+  const [liveVoiceActive, setLiveVoiceActive] = useState(false);
+  const { catalog: packModelCatalog } = useProviderModelCatalog();
   const goalId = useId();
   const [goalOpen, setGoalOpen] = useState(false);
   const showGoalControl =
@@ -461,6 +473,8 @@ export const SessionComposer = ({
         onSessionReasoningSelection={onSessionReasoningSelection}
       />
 
+      {onContextWindowChange && <ContextWindowPicker provider={activeSession.provider} model={activeSession.model} value={activeSession.contextWindow} onChange={onContextWindowChange} capabilities={packModelCatalog?.providers.find((entry) => entry.provider === activeSession.provider)?.models.find((entry) => entry.id === activeSession.model)?.capabilities} />}
+
       <SessionAdaptiveControllerPicker
         override={activeSession.adaptiveControllerOverride ?? null}
         defaultEnabled={defaultAdaptiveControllerEnabled}
@@ -502,8 +516,17 @@ export const SessionComposer = ({
       />
 
       <SmartContextPackPicker
+          activeContextWindow={activeSession.contextWindow}
         loadRalphPackUsage={loadContextPackUsage}
         contextPacks={contextPacks}
+        modelOptions={packModelCatalog?.providers.flatMap((provider) =>
+          provider.models.map((model) => ({
+            provider: provider.provider,
+            id: model.id,
+            label: model.label ?? model.id,
+              capabilities: model.capabilities,
+          })),
+        )}
         workspaceRoot={activeSession.workspace}
         activeDraft={activeSession.draft}
         activeProvider={activeSession.provider}
@@ -514,6 +537,7 @@ export const SessionComposer = ({
         activeInterviewEnabled={interviewEnabled}
         activeSessionMemoryEnabled={activeSession.sessionMemoryEnabled}
         activeUseGlobalMemory={activeSession.useGlobalMemory}
+        activeUseWorkspaceMemory={activeSession.useWorkspaceMemory !== false}
         activeUiControlEnabled={activeSession.uiControlEnabled}
         contextAttachments={contextAttachments}
         matchedContextPackIds={matchedContextPackIds}
@@ -661,7 +685,7 @@ export const SessionComposer = ({
         label: actionLabel,
         title: actionLabel,
         icon,
-        disabled: !speechInput.browserSupported || speechInput.transcribing,
+        disabled: liveVoiceActive || !speechInput.browserSupported || speechInput.transcribing,
         onClick: speechInput.onAction,
         contextActions: [
           ...(canTranslate
@@ -708,6 +732,7 @@ export const SessionComposer = ({
     ];
   }, [
     speechInput.autoFormat,
+    liveVoiceActive,
     speechInput.autoTranslateToEnglish,
     speechInput.browserSupported,
     speechInput.enabled,
@@ -721,6 +746,18 @@ export const SessionComposer = ({
 
   return (
     <div className="relative grid min-w-0 grid-cols-[minmax(0,1fr)] gap-3">
+      {speechInput.live && activeSession.workspace && !editingMessageId && ["openai", "google"].includes(speechInput.provider) ? <LiveVoiceControl
+        key={activeSession.id}
+        identity={activeSession.id}
+        workspaceRoot={activeSession.workspace}
+        inputDeviceId={speechInput.live.inputDeviceId}
+        replyPlayback={speechInput.live.replyPlayback}
+        onActiveChange={setLiveVoiceActive}
+        disabled={speechInput.recording || speechInput.transcribing}
+        invoke={(input) => invokeWorkspaceTools("run_live_voice_command", { workspaceRoot: activeSession.workspace, input })}
+        onTranscript={speechInput.live.onTranscript}
+        onSpeechStart={speechInput.live.onSpeechStart}
+      /> : null}
       {notification ? (
         <div className="pointer-events-none absolute bottom-[calc(100%+0.75rem)] right-0 z-30 flex w-full justify-end">
           <AppNotification
@@ -780,7 +817,22 @@ export const SessionComposer = ({
         showCancelAlongsideSend={Boolean(editingMessageId)}
         toolbarControls={toolbarControls}
         inputHeader={
-          showGoalControl ? (
+          <>
+            {activeSession.temporaryPackSettings && onResetTemporaryContextPack ? (
+              <div className="flex items-center justify-between gap-3 border-b border-slate-700/60 px-3 py-2 text-xs">
+                <span className="truncate text-sky-200">
+                  Next prompt: {activeSession.temporaryPackSettings.packName}
+                </span>
+                <button
+                  type="button"
+                  onClick={onResetTemporaryContextPack}
+                  className="shrink-0 rounded-md px-2 py-1 text-slate-300 hover:bg-slate-800 hover:text-white"
+                >
+                  Reset temporary settings
+                </button>
+              </div>
+            ) : null}
+            {showGoalControl ? (
             <GoalControl
               key={activeSession.id}
               id={goalId}
@@ -801,7 +853,8 @@ export const SessionComposer = ({
               onCommand={(command) => onSend(command)}
               onPause={onCancel}
             />
-          ) : null
+            ) : null}
+          </>
         }
         toggles={toggles}
         actions={actions}

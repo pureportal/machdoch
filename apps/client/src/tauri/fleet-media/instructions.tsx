@@ -2,7 +2,6 @@ import "./analytics.js";
 import { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  InstructionManager,
   useInstructionManagement,
 } from "@machdoch/client-ui/instructions";
 import {
@@ -18,7 +17,7 @@ import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
 import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import { configureRemoteInstructionPlatform } from "../ui/instruction-management/instruction-platform";
-import { instructionRuntime } from "../ui/instruction-management/instruction-runtime";
+import { InstructionManager } from "../ui/instruction-management/instruction-manager";
 import { configureRemoteRalphPlatform } from "../ui/ralph/ralph-platform";
 import {
   listInstructions,
@@ -132,7 +131,6 @@ function FleetInstructions(): React.ReactElement {
         ) : ready ? (
           <InstructionManager
             setup={setup}
-            runtime={instructionRuntime}
             onDirtyChange={setDirty}
           />
         ) : (
