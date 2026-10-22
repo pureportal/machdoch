@@ -47,7 +47,10 @@
     "./composer/prompt-enhancement-options": "./src/composer/prompt-enhancement-options.ts",
     "./conversation.css": "./src/conversation/styles.css",
     "./conversation/execution-insight-row": "./src/conversation/execution-insight-row.tsx",
-    "./sessions/sidebar-commands": "./src/sessions/sidebar-commands.tsx"
+    "./sessions/sidebar-commands": "./src/sessions/sidebar-commands.tsx",
+    "./mcp-apps/results": "./src/mcp-apps/results.tsx",
+    "./mcp-apps/settings": "./src/mcp-apps/settings.tsx",
+    "./mcp-apps/host": "./src/mcp-apps/host.ts"
   },
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",

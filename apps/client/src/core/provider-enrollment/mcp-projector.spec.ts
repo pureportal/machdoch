@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { AgentCliProvider } from "../runtime-contract.generated.js";
 import type { MachdochCliLaunch } from "./machdoch-cli-launch.js";
 import { projectMcpForProvider } from "./mcp-projector.js";
+import { saveWorkspaceMcpDiscovery } from "../mcp/config.js";
+import { setMcpAppsEnabled } from "../mcp/app-settings.js";
 
 const roots: string[] = [];
 const originalConfigDirectory = process.env.MACHDOCH_USER_CONFIG_DIR;
@@ -35,6 +37,95 @@ const createLaunch = (root: string, source = false): MachdochCliLaunch => ({
 });
 
 describe("MCP projector", () => {
+  it("captures apps on the first invocation before a discovery cache exists", async () => {
+    const root = await mkdtemp(join(tmpdir(), "machdoch-first-app-"));
+    roots.push(root);
+    process.env.MACHDOCH_USER_CONFIG_DIR = join(root, "user");
+    const directory = join(root, ".machdoch", "mcp");
+    await mkdir(directory, { recursive: true });
+    await writeFile(
+      join(directory, "mcp.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        servers: [
+          {
+            id: "charts",
+            enabled: true,
+            transport: { type: "stdio", command: "charts-server" },
+          },
+        ],
+      }),
+    );
+    const projection = await projectMcpForProvider("codex-cli", root, {
+      machdochCliLaunch: createLaunch(root),
+      appRun: { id: "first-task", readOnly: true },
+    });
+    expect(projection.servers[0]).toMatchObject({
+      route: "cli-stdio-proxy",
+      providerConfig: { env: { MACHDOCH_MCP_APP_RUN_ID: "first-task" } },
+    });
+    setMcpAppsEnabled(false);
+    const disabled = await projectMcpForProvider("codex-cli", root, {
+      machdochCliLaunch: createLaunch(root),
+      appRun: { id: "second-task", readOnly: true },
+    });
+    expect(disabled.servers[0]?.route).toBe("cli-native-mcp");
+  });
+  it.each(["codex-cli", "claude-cli", "copilot-cli"] as const)(
+    "routes %s interactive tools through the host with task identity and read-only policy",
+    async (provider) => {
+      const root = await mkdtemp(join(tmpdir(), "machdoch-app-projection-"));
+      roots.push(root);
+      process.env.MACHDOCH_USER_CONFIG_DIR = join(root, "user");
+      const directory = join(root, ".machdoch", "mcp");
+      await mkdir(directory, { recursive: true });
+      await writeFile(
+        join(directory, "mcp.json"),
+        JSON.stringify({
+          schemaVersion: 1,
+          servers: [
+            {
+              id: "charts",
+              enabled: true,
+              transport: {
+                type: "streamable-http",
+                url: "https://example.com/mcp",
+              },
+            },
+          ],
+        }),
+      );
+      await saveWorkspaceMcpDiscovery(root, {
+        serverId: "charts",
+        discoveredAt: new Date().toISOString(),
+        transportType: "streamable-http",
+        tools: [
+          {
+            name: "chart",
+            inputSchema: { type: "object" },
+            _meta: { ui: { resourceUri: "ui://chart" } },
+          },
+        ],
+        resources: [],
+        resourceTemplates: [],
+        prompts: [],
+      });
+      const projection = await projectMcpForProvider(provider, root, {
+        machdochCliLaunch: createLaunch(root),
+        appRun: { id: "task-one", readOnly: true },
+      });
+      expect(projection.servers[0]).toMatchObject({
+        route: "cli-stdio-proxy",
+        capabilities: expect.arrayContaining(["apps"]),
+        providerConfig: {
+          env: {
+            MACHDOCH_MCP_APP_RUN_ID: "task-one",
+            MACHDOCH_MCP_APP_READ_ONLY: "true",
+          },
+        },
+      });
+    },
+  );
   it("omits an unreachable HTTP server for a Ralph enrollment", async () => {
     const root = await mkdtemp(
       join(tmpdir(), "machdoch-projector-unreachable-"),

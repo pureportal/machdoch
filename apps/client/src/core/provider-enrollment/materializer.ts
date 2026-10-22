@@ -17,6 +17,7 @@ import {
   resolve,
 } from "node:path";
 import type { AgentCliProvider } from "../runtime-contract.generated.js";
+import { materializeManagedSkills } from "../managed-skill-delivery.js";
 import type {
   FrozenInstructionSet,
   InstructionDeliveryPlan,
@@ -79,6 +80,7 @@ const hasInvalidCopilotMcpServerNameCharacter = (value: string): boolean =>
   });
 
 interface MaterializeCliEnrollmentParams {
+  appReadOnly?: boolean;
   provider: AgentCliProvider;
   executable: string;
   runId: string;
@@ -628,6 +630,7 @@ const renderCodexEnrollment = async (
     'cli_auth_credentials_store = "file"',
     "project_doc_max_bytes = 0",
     "project_doc_fallback_filenames = []",
+    "mcp_optional_startup_grace_ms = 0",
     renderCodexUntrustedProjectsToml(workspaceRoot),
     renderCodexMcpToml(getMcpServers(projection)),
   ]
@@ -998,6 +1001,7 @@ export const materializeCliEnrollment = async (
     const [{ probe, plan: probedPlan }, projection] = await Promise.all([
       probeMatchingCliDeliveryPlan(params),
       projectMcpForProvider(params.provider, params.workspaceRoot, {
+        appRun: { id: params.runId, readOnly: params.appReadOnly !== false },
         machdochCliLaunch: params.machdochCliLaunch,
         ...(params.localMcp ? { localMcp: params.localMcp } : {}),
         ...(params.localMcpOnly ? { localMcpOnly: true } : {}),
@@ -1035,6 +1039,11 @@ export const materializeCliEnrollment = async (
       params.workspaceRoot,
       providerFeatures,
     );
+    const skillHome = params.provider === "codex-cli" ? rendered.env.CODEX_HOME : params.provider === "copilot-cli" ? rendered.env.COPILOT_HOME : undefined;
+    if (skillHome) {
+      const skills = await materializeManagedSkills(join(skillHome, "skills"));
+      rendered.files.push(...skills.map((file) => ({ ...file, role: "skill-resource" as const, purpose: "Run-scoped managed skill" })));
+    }
     const enrollmentEnvironment: NodeJS.ProcessEnv = {
       ...projection.environment,
       ...rendered.env,

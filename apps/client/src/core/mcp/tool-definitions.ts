@@ -1,9 +1,12 @@
+import { captureMcpApp } from "./apps.js";
+import { mcpAppToolUiSchema } from "@machdoch/fleet-protocol/mcp-apps";
 import { createHash, randomUUID } from "node:crypto";
 import type {
   AgentModelToolImageContent,
   AgentModelToolResultContent,
   ToolCallEffect,
   ToolRiskLevel,
+  TaskExecutionSection,
 } from "../types.js";
 import {
   coerceBoolean,
@@ -252,7 +255,7 @@ export const createMcpDirectToolMappings = (
     }
 
     for (const tool of serverDiscovery.tools) {
-      if (!isDirectToolEnabled(server, tool.name)) {
+      if (!modelVisible(tool) || !isDirectToolEnabled(server, tool.name)) {
         continue;
       }
 
@@ -312,6 +315,20 @@ export const createMcpDirectToolMappings = (
 
   return mappings;
 };
+
+const modelVisible = (tool: McpDiscoveredTool): boolean => {
+  const parsed = mcpAppToolUiSchema.safeParse(tool._meta?.ui);
+  return tool._meta?.ui === undefined || (parsed.success && (!parsed.data.visibility || parsed.data.visibility.includes("model")));
+};
+
+async function captureApp(context: AgentToolExecutionContext, serverId: string, name: string, args: Record<string, unknown>, result: Record<string, unknown>): Promise<{ mcpAppId?: string; appSections: TaskExecutionSection[] }> {
+  try {
+    const id = await captureMcpApp(context.workspaceRoot, serverId, name, args, result, context.mode !== "machdoch");
+    return { ...(id ? { mcpAppId: id } : {}), appSections: [] };
+  } catch (error) {
+    return { appSections: [{ title: "Interactive result unavailable", lines: [error instanceof Error ? error.message : String(error)], tone: "warning" }] };
+  }
+}
 
 const createProgressHandler = (
   context: AgentToolExecutionContext,
@@ -421,7 +438,7 @@ const searchCachedTools = (
   const maxResults = resolveCatalogLimit(args);
   const matches = getFilteredDiscoveries(discoveries, serverId)
     .flatMap((discovery) =>
-      discovery.tools
+      discovery.tools.filter(modelVisible)
         .filter((tool) =>
           matchesCatalogQuery(query, [
             discovery.serverId,
@@ -478,7 +495,7 @@ const inspectCachedTool = (
     (candidate) => candidate.name === toolName,
   );
 
-  if (!discovery || !tool) {
+  if (!discovery || !tool || !modelVisible(tool)) {
     return formatJson({
       serverId,
       toolName,
@@ -794,7 +811,7 @@ const summarizeDiscovery = (
     discovery.capabilitiesHash
       ? `Capabilities hash: ${discovery.capabilitiesHash}`
       : undefined,
-    `Tools: ${discovery.tools.length}`,
+    `Tools: ${discovery.tools.filter(modelVisible).length}`,
     `Resources: ${discovery.resources.length}`,
     `Resource templates: ${discovery.resourceTemplates.length}`,
     `Prompts: ${discovery.prompts.length}`,
@@ -812,8 +829,8 @@ const summarizeDiscovery = (
           .join("\n")}`
       : undefined,
     "",
-    discovery.tools.length > 0
-      ? `Tools:\n${discovery.tools
+    discovery.tools.filter(modelVisible).length > 0
+      ? `Tools:\n${discovery.tools.filter(modelVisible)
           .map((tool) =>
             [
               `- ${tool.name}${tool.description ? `: ${tool.description}` : ""}`,
@@ -887,7 +904,7 @@ const listCapabilityNames = (
           toolCatalogHash: discovery.toolCatalogHash ?? null,
           resourceCatalogHash: discovery.resourceCatalogHash ?? null,
           promptCatalogHash: discovery.promptCatalogHash ?? null,
-          tools: discovery.tools.map((tool) => tool.name),
+          tools: discovery.tools.filter(modelVisible).map((tool) => tool.name),
           resources: discovery.resources.map((resource) => resource.uri),
           resourceTemplates: discovery.resourceTemplates.map(
             (template) => template.uriTemplate,
@@ -1054,14 +1071,17 @@ const executeMcpCall = async (
         : { onProgress: createProgressHandler(context) },
     );
     const formatted = formatCallToolOutput(result);
+    const app = await captureApp(context, serverId, remoteToolName, remoteArguments.value, result);
 
     return {
+      ...(app.mcpAppId ? { mcpAppId: app.mcpAppId } : {}),
       ...createSuccessfulResult(
         toolName,
         formatted.output,
         `mcp_call_tool: ${serverId}.${remoteToolName} -> ${compactTraceText(formatted.output)}`,
         formatted.content,
       ),
+      sections: [...createSuccessfulResult(toolName, formatted.output, "", formatted.content).sections, ...app.appSections],
       toolResult: {
         callId: randomUUID(),
         name: toolName,
@@ -2046,8 +2066,10 @@ const createDirectToolDefinition = (
           ),
         );
         const formatted = formatCallToolOutput(result);
+        const app = await captureApp(context, mapping.serverId, mapping.remoteName, args, result);
 
         return {
+          ...(app.mcpAppId ? { mcpAppId: app.mcpAppId } : {}),
           ...createSuccessfulResult(
             mapping.exposedName,
             formatted.output,
@@ -2056,6 +2078,7 @@ const createDirectToolDefinition = (
             )}`,
             formatted.content,
           ),
+          sections: [...createSuccessfulResult(mapping.exposedName, formatted.output, "", formatted.content).sections, ...app.appSections],
           toolResult: {
             callId: randomUUID(),
             name: mapping.exposedName,
@@ -2114,7 +2137,7 @@ export const assertMcpServerEnabled = async (
 export const summarizeMcpDiscoveryForPrompt = (
   discovery: McpServerDiscovery,
 ): string => {
-  const toolLines = discovery.tools.map(formatDiscoveredToolLine);
+  const toolLines = discovery.tools.filter(modelVisible).map(formatDiscoveredToolLine);
   const resourceLines = discovery.resources.map(formatDiscoveredResourceLine);
   const templateLines = discovery.resourceTemplates.map(
     formatDiscoveredResourceTemplateLine,

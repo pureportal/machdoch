@@ -241,6 +241,7 @@ export interface McpEffectiveConfig {
 }
 
 export interface McpDiscoveredTool {
+  _meta?: Record<string, unknown>;
   name: string;
   title?: string;
   description?: string;
@@ -359,6 +360,7 @@ export interface McpDirectToolMapping {
 }
 
 export interface McpOperationOptions {
+  caller?: "model" | "app";
   signal?: AbortSignal;
   onProgress?: (message: string) => void | Promise<void>;
   configurationScope?: "user";

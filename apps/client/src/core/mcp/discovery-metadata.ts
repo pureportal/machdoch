@@ -57,6 +57,7 @@ const cleanToolForDefinitionHash = (
     outputSchema: tool.outputSchema ?? null,
     annotations: tool.annotations ?? null,
     taskSupport: tool.taskSupport ?? null,
+    ui: tool._meta?.ui ?? null,
   };
 };
 
