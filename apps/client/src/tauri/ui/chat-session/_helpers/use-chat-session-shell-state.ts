@@ -1214,6 +1214,12 @@ const mergeSessionConcurrentFields = (
       baseSession.useGlobalMemory,
       latestSession.useGlobalMemory,
     ),
+    temporaryPackSettings: mergeSessionFieldForPersistence(
+      primarySession.temporaryPackSettings,
+      localSession.temporaryPackSettings,
+      baseSession.temporaryPackSettings,
+      latestSession.temporaryPackSettings,
+    ),
     uiControlEnabled: mergeSessionFieldForPersistence(
       primarySession.uiControlEnabled,
       localSession.uiControlEnabled,

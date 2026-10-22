@@ -5,6 +5,8 @@ import type {
   SmartContextPackTrigger,
 } from "@machdoch/client-ui/context-packs/model";
 import { contextPackLimits } from "@machdoch/fleet-protocol/context-pack-contract";
+import { parseContextWindow } from "../../core/context-windows.js";
+import type { ContextWindow } from "@machdoch/fleet-protocol/context-window";
 import {
   MAX_REQUEST_ITERATIONS,
   type ChatSessionContextAttachmentKind,
@@ -140,6 +142,7 @@ export interface ChatSessionQueuedPromptEnhancementRequest {
 }
 
 export interface ChatSessionMessageSettings {
+  contextWindow?: ContextWindow;
   workspace: string | null;
   provider: RuntimeProvider;
   model: string;
@@ -238,6 +241,14 @@ export const getActivePromptEnhancementEditMessageId = (
 };
 
 export interface ChatSessionRecord {
+  contextWindow?: ContextWindow;
+  temporaryPackSettings?: {
+    packName: string;
+    previous: ChatSessionMessageSettings;
+    applied: ChatSessionMessageSettings;
+    promptEnhancementMode?: ChatSessionMessagePromptEnhancementMode;
+    interviewEnabled?: boolean;
+  };
   voiceAutoSpeakOverride?: boolean;
   voiceProfileOverride?: string;
   id: string;
@@ -288,6 +299,7 @@ export interface ShellVoiceSettings {
 }
 
 export interface ChatSessionQueuedMessage {
+  settings?: ChatSessionMessageSettings;
   id: string;
   sessionId: string;
   task: string;
@@ -985,9 +997,7 @@ const normalizePromptContextHistory = (
 };
 
 const normalizeContextPackText = (value: unknown): string => {
-  return typeof value === "string"
-    ? value.trim().slice(0, contextPackLimits.text)
-    : "";
+  return typeof value === "string" ? value.trim() : "";
 };
 
 const normalizeContextPackToken = (
@@ -1128,6 +1138,7 @@ const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
         : undefined;
     const mode = normalizeOptionalStoredRunMode(entry.mode);
     const reasoning = normalizeOptionalStoredReasoningMode(entry.reasoning);
+    const contextWindow = parseContextWindow(entry.contextWindow);
     const promptEnhancementMode = normalizeOptionalPromptEnhancementMode(
       entry.promptEnhancementMode,
     );
@@ -1152,6 +1163,9 @@ const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
       workspace: workspaceCandidate || null,
       name,
       instructions: normalizeContextPackText(entry.instructions),
+      ...(typeof entry.temporary === "boolean"
+        ? { temporary: entry.temporary }
+        : {}),
       prompt: normalizeContextPackText(entry.prompt),
       contextAttachments: normalizeContextAttachments(
         entry.contextAttachments,
@@ -1163,6 +1177,7 @@ const normalizeSmartContextPacks = (value: unknown): SmartContextPack[] => {
       ...(provider && model ? { model } : {}),
       ...(mode ? { mode } : {}),
       ...(reasoning ? { reasoning } : {}),
+      ...(contextWindow !== undefined ? { contextWindow } : {}),
       ...(promptEnhancementMode !== undefined ? { promptEnhancementMode } : {}),
       ...(interviewEnabled !== undefined ? { interviewEnabled } : {}),
       ...(sessionMemoryEnabled !== undefined ? { sessionMemoryEnabled } : {}),
@@ -1271,6 +1286,7 @@ export const createSession = (
   );
   const mode = normalizeOptionalStoredRunMode(overrides.mode);
   const reasoning = normalizeOptionalStoredReasoningMode(overrides.reasoning);
+  const contextWindow = parseContextWindow(overrides.contextWindow);
   const specialSession = isSpecialSessionKind(overrides.specialSession)
     ? overrides.specialSession
     : undefined;
@@ -1312,6 +1328,7 @@ export const createSession = (
     goalMode: resolveGoalMode(provider, overrides.goalMode),
     ...(isSessionGoal(overrides.goal) ? { goal: overrides.goal } : {}),
     adaptiveControllerOverride: overrides.adaptiveControllerOverride ?? null,
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
     ...(reasoning ? { reasoning } : {}),
     draft: overrides.draft ?? "",
     draftContextAttachments,
@@ -1328,6 +1345,9 @@ export const createSession = (
     useWorkspaceMemory: overrides.useWorkspaceMemory ?? true,
     useGlobalMemory: overrides.useGlobalMemory ?? true,
     uiControlEnabled: overrides.uiControlEnabled ?? false,
+    ...(overrides.temporaryPackSettings
+      ? { temporaryPackSettings: overrides.temporaryPackSettings }
+      : {}),
     ...(typeof overrides.voiceAutoSpeakOverride === "boolean" ? { voiceAutoSpeakOverride: overrides.voiceAutoSpeakOverride } : {}),
     ...(typeof overrides.voiceProfileOverride === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(overrides.voiceProfileOverride) ? { voiceProfileOverride: overrides.voiceProfileOverride } : {}),
     sessionMemory: isQuickTaskSession ? [] : (overrides.sessionMemory ?? []),
@@ -2158,6 +2178,7 @@ const normalizeMessageSettings = (
 
   const mode = normalizeOptionalStoredRunMode(value.mode);
   const reasoning = normalizeOptionalStoredReasoningMode(value.reasoning);
+  const contextWindow = parseContextWindow(value.contextWindow);
   const promptEnhancementMode =
     typeof value.promptEnhancementMode === "string" &&
     MESSAGE_PROMPT_ENHANCEMENT_MODES.includes(
@@ -2174,6 +2195,7 @@ const normalizeMessageSettings = (
     workspace,
     provider: value.provider,
     model,
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
     ...(mode ? { mode } : {}),
     parallelAgentMode: normalizeParallelAgentMode(value.parallelAgentMode),
     goalMode: resolveGoalMode(
@@ -2196,6 +2218,26 @@ const normalizeMessageSettings = (
     uiControlEnabled: value.uiControlEnabled === true,
     promptEnhancementMode,
     interviewEnabled: value.interviewEnabled === true,
+  };
+};
+
+const normalizeTemporaryPackSettings = (
+  value: unknown,
+): ChatSessionRecord["temporaryPackSettings"] => {
+  if (!isRecord(value)) return undefined;
+  const previous = normalizeMessageSettings(value.previous);
+  const applied = normalizeMessageSettings(value.applied);
+  if (!previous || !applied) return undefined;
+  const promptEnhancementMode = normalizeOptionalPromptEnhancementMode(
+    value.promptEnhancementMode,
+  );
+  const interviewEnabled = normalizeOptionalBoolean(value.interviewEnabled);
+  return {
+    packName: normalizeString(value.packName),
+    previous,
+    applied,
+    ...(promptEnhancementMode !== undefined ? { promptEnhancementMode } : {}),
+    ...(interviewEnabled !== undefined ? { interviewEnabled } : {}),
   };
 };
 
@@ -2448,6 +2490,9 @@ const normalizeSessionRecord = (
     useWorkspaceMemory: session.useWorkspaceMemory !== false,
     useGlobalMemory: session.useGlobalMemory !== false,
     uiControlEnabled: session.uiControlEnabled === true,
+    temporaryPackSettings: normalizeTemporaryPackSettings(
+      session.temporaryPackSettings,
+    ),
     ...(typeof session.voiceAutoSpeakOverride === "boolean" ? { voiceAutoSpeakOverride: session.voiceAutoSpeakOverride } : {}),
     ...(typeof session.voiceProfileOverride === "string" && /^[A-Za-z0-9_-]{1,128}$/u.test(session.voiceProfileOverride) ? { voiceProfileOverride: session.voiceProfileOverride } : {}),
     adaptiveControllerOverride:
@@ -2624,7 +2669,9 @@ const normalizeQueuedSessionMessages = (
         .slice(0, 512),
     );
 
+    const settings = normalizeMessageSettings(entry.settings);
     queuedMessages.push({
+      ...(settings ? { settings } : {}),
       id,
       sessionId,
       task,

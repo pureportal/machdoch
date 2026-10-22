@@ -1,4 +1,7 @@
+import { FleetWorkspaceLibraryRuntime } from "./cli-fleet-workspace-library.js";
 import { collectFleetTelemetry } from "../../core/fleet-telemetry.js";
+import { parseContextWindow, retainSupportedContextWindow, assertContextWindowSupportedForProviderModel } from "../../core/context-windows.js";
+import { getModelContextWindowTokens, getDiscoveredLongContextWindowTokens } from "../../core/model-capabilities.js";
 import { createFleetSessionId } from "@machdoch/fleet-protocol";
 import { loadFleetManagedProfile } from "../../core/fleet-settings.js";
 import {
@@ -72,6 +75,8 @@ import type {
 import { createDiscoveryOptions } from "./cli-output.js";
 import {
   FLEET_CLI_STATE_SCHEMA_VERSION,
+  captureFleetPackSettings,
+  resetTemporaryFleetPackSettings,
   loadFleetCliState,
   saveFleetCliState,
   type FleetCliCommandRecord,
@@ -81,6 +86,7 @@ import {
 } from "./cli-fleet-state.js";
 
 interface FleetCliTaskSession {
+  mcpAppIds?: string[];
   taskId: string;
   task: string;
   mode: string;
@@ -110,6 +116,7 @@ interface FleetCliTaskSession {
 interface ActiveFleetTask {
   sessionId: string;
   controller: TaskExecutionController;
+  goalObjective?: string;
 }
 
 interface FleetCliProductDependencies {
@@ -353,6 +360,7 @@ export class FleetCliProductRuntime {
     () => this.state.workspaceRoot,
   );
   private readonly media = new FleetMediaWorker();
+  private readonly workspaceLibrary = new FleetWorkspaceLibraryRuntime((workspace) => this.assertWorkspace(workspace));
   private readonly speech = new FleetOperationStore();
   private readonly ralph = new FleetRalphRuntime();
   private readonly ralphEditor = new FleetRalphEditor((workspace) =>
@@ -380,6 +388,11 @@ export class FleetCliProductRuntime {
   private readonly sessionMemory = new Map<string, ConversationMemoryEntry[]>();
   private eventId: number;
   private mutationTail: Promise<void> = Promise.resolve();
+  private readonly taskSubmissionTails = new Map<string, Promise<void>>();
+  private readonly pendingCommands = new Map<
+    string,
+    { digest: string; response: Promise<HostResponse> }
+  >();
   private stopping = false;
 
   private constructor(
@@ -451,11 +464,7 @@ export class FleetCliProductRuntime {
             message: "Device settings require a native client.",
           };
         case "workspace":
-          return {
-            type: "error",
-            code: "unavailable",
-            message: "Workspace tools require a native client.",
-          };
+          return { type: "workspace", response: await this.workspaceLibrary.request(request.request) };
         case "instructions":
           return {
             type: "instructions",
@@ -520,6 +529,7 @@ export class FleetCliProductRuntime {
     const ralphEditorStopped = this.ralphEditor.shutdown();
     const schedulerStopped = this.scheduler.shutdown();
     const instructionsStopped = this.instructions.shutdown();
+    const libraryStopped = this.workspaceLibrary.shutdown();
     const runsStopped = this.runs.shutdown();
     const projectsStopped = this.projects.shutdown();
     await this.mutationTail;
@@ -531,6 +541,7 @@ export class FleetCliProductRuntime {
       this.ralph.shutdown(),
       schedulerStopped,
       instructionsStopped,
+      libraryStopped,
       ...this.taskSettlements.values(),
       projectsStopped,
       runsStopped,
@@ -653,6 +664,31 @@ export class FleetCliProductRuntime {
   }
 
   private async executeCommand(command: ProductCommand): Promise<HostResponse> {
+    const commandId = command.commandId;
+    if (!commandId) return await this.dispatchCommand(command);
+    const digest = commandDigest(command);
+    const pending = this.pendingCommands.get(commandId);
+    if (pending) {
+      if (pending.digest !== digest)
+        throw new FleetProductError(
+          "conflict",
+          "The command id was already used for a different command.",
+        );
+      const response = await pending.response;
+      return response.type === "commandAccepted"
+        ? { ...response, receipt: { ...response.receipt, duplicate: true } }
+        : response;
+    }
+    const response = this.dispatchCommand(command);
+    this.pendingCommands.set(commandId, { digest, response });
+    try {
+      return await response;
+    } finally {
+      this.pendingCommands.delete(commandId);
+    }
+  }
+
+  private async dispatchCommand(command: ProductCommand): Promise<HostResponse> {
     switch (command.kind) {
       case "add-workspace":
       case "remove-workspace":
@@ -840,6 +876,8 @@ export class FleetCliProductRuntime {
                 "invalidRequest",
                 "The context pack and draft exceed the message limit. Shorten the pack or draft.",
               );
+            resetTemporaryFleetPackSettings(session);
+            const previous = captureFleetPackSettings(session);
             const runtime = await this.dependencies.loadRuntimeConfig(
               session.workspace,
               pack.mode ?? session.mode,
@@ -856,10 +894,18 @@ export class FleetCliProductRuntime {
             session.model = runtime.model;
             session.mode = runtime.mode;
             session.reasoning = runtime.reasoning;
+            if (pack.contextWindow !== undefined) {
+              if (!isConfiguredModelProvider(runtime.provider)) throw new Error("Choose a configured provider before applying this context size.");
+              assertContextWindowSupportedForProviderModel(pack.contextWindow, runtime.provider, runtime.model);
+            }
+            session.contextWindow = pack.contextWindow ?? retainSupportedContextWindow(session.contextWindow, runtime.provider, runtime.model);
             if (pack.sessionMemoryEnabled !== null)
               session.sessionMemoryEnabled = pack.sessionMemoryEnabled;
+            if (pack.useWorkspaceMemory !== undefined)
+              session.useWorkspaceMemory = pack.useWorkspaceMemory;
             if (pack.useGlobalMemory !== null)
               session.globalMemoryEnabled = pack.useGlobalMemory;
+            if (pack.temporary) session.temporaryPackSettings = { previous, applied: captureFleetPackSettings(session) };
             session.updatedAt = timestamp;
             return { record: { sessionId: session.id } };
           },
@@ -923,6 +969,15 @@ export class FleetCliProductRuntime {
         return await this.commitCommand(command, (state, _id, timestamp) => {
           const session = this.getSession(state, command.sessionId);
           session.reasoning = command.reasoning;
+          session.updatedAt = timestamp;
+          return { record: { sessionId: session.id } };
+        });
+      case "set-session-context-window":
+        return await this.commitCommand(command, (state, _id, timestamp) => {
+          const session = this.getSession(state, command.sessionId);
+          const value = parseContextWindow(command.mode);
+          if (value !== undefined && isConfiguredModelProvider(session.provider)) assertContextWindowSupportedForProviderModel(value, session.provider, session.model, getModelContextWindowTokens(session.provider, session.model));
+          session.contextWindow = value;
           session.updatedAt = timestamp;
           return { record: { sessionId: session.id } };
         });
@@ -1053,6 +1108,7 @@ export class FleetCliProductRuntime {
       const session = this.getSession(state, command.sessionId);
       session.provider = provider;
       session.model = command.model;
+      session.contextWindow = retainSupportedContextWindow(session.contextWindow, provider, command.model);
       session.parallelAgentMode = resolveParallelAgentMode(
         provider,
         command.model,
@@ -1239,6 +1295,7 @@ export class FleetCliProductRuntime {
       {
         runId: taskId,
         conversationContext: {
+          ...(session.contextWindow !== undefined ? { contextWindow: session.contextWindow } : {}),
           sessionId: session.id,
           parallelAgentMode: session.parallelAgentMode,
           goalMode: resolveGoalMode(session.provider, session.goalMode),
@@ -1297,6 +1354,59 @@ export class FleetCliProductRuntime {
     sessionId: string,
     prompt: string,
   ): Promise<HostResponse> {
+    const previous = this.taskSubmissionTails.get(sessionId);
+    let release: () => void = () => undefined;
+    const tail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    this.taskSubmissionTails.set(sessionId, tail);
+    await previous;
+    try {
+      let goalObjective: string | undefined;
+      if (
+        command.kind === "submit-message" &&
+        command.runningAction === "stop-and-send"
+      ) {
+        const interruption = await this.serializeMutation(async () => {
+          if (this.stopping)
+            throw new FleetProductError("unavailable", "Fleet service is stopping.");
+          const receipt = command.commandId
+            ? this.existingReceipt(this.state, command, command.commandId)
+            : null;
+          if (receipt) return { receipt };
+          const taskId = this.getSession(this.state, sessionId).pendingTask?.taskId;
+          if (!taskId) return {};
+          const active = this.activeTasks.get(taskId);
+          const settlement = this.taskSettlements.get(taskId);
+          if (!active || !settlement || !this.taskSessions.get(taskId)?.cancellable)
+            throw new FleetProductError(
+              "conflict",
+              "Wait for the running task to finish before sending a correction.",
+            );
+          active.controller.cancel("Fleet task interrupted by a correction.");
+          return { settlement, goalObjective: active.goalObjective };
+        });
+        if (interruption.receipt) return interruption.receipt;
+        await interruption.settlement;
+        goalObjective = interruption.goalObjective;
+      }
+      return await this.commitTask(command, sessionId, prompt, goalObjective);
+    } finally {
+      release();
+      if (this.taskSubmissionTails.get(sessionId) === tail)
+        this.taskSubmissionTails.delete(sessionId);
+    }
+  }
+
+  private async commitTask(
+    command: Extract<
+      ProductCommand,
+      { kind: "submit-message" | "retry" | "continue" }
+    >,
+    sessionId: string,
+    prompt: string,
+    previousGoalObjective?: string,
+  ): Promise<HostResponse> {
     return await this.commitCommand(command, async (state, _id, timestamp) => {
       const currentSession = this.getSession(this.state, sessionId);
       if (
@@ -1321,11 +1431,14 @@ export class FleetCliProductRuntime {
           "Another agent task is already running in this project. Wait for it to finish or use a separate project.",
         );
       const taskId = this.dependencies.createId();
+      const goalObjective = command.kind === "submit-message"
+        ? command.goalObjective ?? previousGoalObjective
+        : undefined;
       const controller = await this.prepareTask(
         currentSession,
         prompt,
         taskId,
-        command.kind === "submit-message" ? command.goalObjective : undefined,
+        goalObjective,
       );
       const session = this.getSession(state, sessionId);
       session.messages = [
@@ -1347,7 +1460,7 @@ export class FleetCliProductRuntime {
         ...session.promptHistory.filter((entry) => entry !== prompt),
         prompt,
       ].slice(-30);
-      session.draft = "";
+      if (session.draft.trim() === prompt.trim()) session.draft = "";
       session.updatedAt = timestamp;
       if (session.title === "New chat") session.title = sessionTitle(prompt);
       const taskSession: FleetCliTaskSession = {
@@ -1363,9 +1476,10 @@ export class FleetCliProductRuntime {
         logs: [],
         timeline: [],
       };
+      resetTemporaryFleetPackSettings(session);
       return {
         record: { taskId, sessionId: session.id },
-        afterCommit: () => this.startTask(session.id, taskSession, controller),
+        afterCommit: () => this.startTask(session.id, taskSession, controller, goalObjective),
       };
     });
   }
@@ -1374,8 +1488,9 @@ export class FleetCliProductRuntime {
     sessionId: string,
     taskSession: FleetCliTaskSession,
     controller: TaskExecutionController,
+    goalObjective?: string,
   ): void {
-    this.activeTasks.set(taskSession.taskId, { sessionId, controller });
+    this.activeTasks.set(taskSession.taskId, { sessionId, controller, ...(goalObjective ? { goalObjective } : {}) });
     this.taskSessions.set(taskSession.taskId, taskSession);
     pruneCompletedFleetTaskSessions(this.taskSessions, this.activeTasks);
     this.eventId += 1;
@@ -1407,6 +1522,7 @@ export class FleetCliProductRuntime {
     task.cancellable = progress.cancellable;
     task.updatedAt = timestamp;
     task.progressCount += 1;
+    if (typeof progress.timelineEvent?.metadata?.mcpAppId === "string") task.mcpAppIds = [...new Set([...(task.mcpAppIds ?? []), progress.timelineEvent.metadata.mcpAppId])].slice(-100);
     if (progress.timelineEvent) {
       task.timeline = [
         ...task.timeline,
@@ -1449,6 +1565,7 @@ export class FleetCliProductRuntime {
         {
           id: this.dependencies.createId(),
           role: "agent" as const,
+          ...(this.taskSessions.get(taskId)?.mcpAppIds ? { mcpAppIds: this.taskSessions.get(taskId)!.mcpAppIds! } : {}),
           content,
           createdAt: timestamp,
           taskId,
@@ -1512,6 +1629,9 @@ export class FleetCliProductRuntime {
         {
           id: this.dependencies.createId(),
           role: "agent" as const,
+          ...(this.taskSessions.get(taskId)?.mcpAppIds
+            ? { mcpAppIds: this.taskSessions.get(taskId)!.mcpAppIds! }
+            : {}),
           content: message,
           createdAt: timestamp,
           taskId,
@@ -1598,6 +1718,7 @@ export class FleetCliProductRuntime {
       content: boundedText(message.content),
       createdAt: message.createdAt,
       ...(message.taskId ? { taskId: message.taskId } : {}),
+      ...(message.mcpAppIds ? { mcpAppIds: message.mcpAppIds } : {}),
       presentation: "message",
       attachments: [],
       actions: {
@@ -1633,7 +1754,15 @@ export class FleetCliProductRuntime {
       (entry) => entry.provider === activeSession.provider && entry.configured,
     );
     const running = Boolean(activeSession.pendingTask);
+    const runningTaskId = activeSession.pendingTask?.taskId;
+    const canCorrectTask = Boolean(
+      runningTaskId &&
+      this.activeTasks.has(runningTaskId) &&
+      this.taskSettlements.has(runningTaskId) &&
+      this.taskSessions.get(runningTaskId)?.cancellable,
+    );
     const workspaceBusy =
+      this.ralph.isWorkspaceBusy(activeSession.workspace) ||
       this.ralphEditor.isWorkspaceBusy(activeSession.workspace) ||
       state.sessions.some(
         (session) =>
@@ -1659,6 +1788,7 @@ export class FleetCliProductRuntime {
         ({ digest: _digest, ...command }) => command,
       ),
       shell: {
+        workspaceToolsMode: "library",
         sessionRoutingAvailable: true,
         ralph: await this.ralph.snapshot(activeSession.workspace),
         ...(poseScene ? { poseSceneSvg: renderMediaPoseSvg(poseScene) } : {}),
@@ -1763,6 +1893,9 @@ export class FleetCliProductRuntime {
           ],
           reasoning: activeSession.reasoning,
           defaultReasoning: config.reasoning,
+          contextWindow: activeSession.contextWindow,
+          contextWindowTokens: getModelContextWindowTokens(activeSession.provider, activeSession.model),
+          longContextWindowTokens: isConfiguredModelProvider(activeSession.provider) ? getDiscoveredLongContextWindowTokens(activeSession.provider, activeSession.model) : undefined,
           reasoningOptions: [...REASONING_MODES],
           promptEnhancementMode: "off" as const,
           interviewEnabled: false,
@@ -1774,7 +1907,8 @@ export class FleetCliProductRuntime {
               .filter(Boolean)
               .at(-1) ?? activeSession.workspace,
           canSend:
-            !running && !workspaceBusy && providerAvailable && !config.offline,
+            (!running || canCorrectTask) && !workspaceBusy && providerAvailable && !config.offline,
+          runningTaskMessageAction: "stop-and-send",
           ...(workspaceBusy
             ? {
                 sendDisabledReason:
@@ -1802,6 +1936,7 @@ export class FleetCliProductRuntime {
                 id: entry.id,
                 content: entry.content,
                 createdAt: entry.createdAt,
+                ...(entry.applicability ? { applicability: entry.applicability } : {}),
                 ...(sourceSession
                   ? {
                       sourceSession: {

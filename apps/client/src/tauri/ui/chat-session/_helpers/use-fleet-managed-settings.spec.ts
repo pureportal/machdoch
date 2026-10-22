@@ -1,6 +1,9 @@
 import type { FleetManagedSettingsDocument } from "@machdoch/fleet-protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createInitialShellState, type FleetManagedSettingsState } from "../../chat-session.model";
+import {
+  createInitialShellState,
+  type FleetManagedSettingsState,
+} from "../../chat-session.model";
 import { type SmartContextPack } from "@machdoch/client-ui/context-packs/model";
 import {
   applyManagedShellSettings,
@@ -94,55 +97,87 @@ const metadata: FleetManagedSettingsState = {
 };
 
 describe("Fleet managed settings", () => {
-  it("captures portable local packs and excludes existing managed instructions and packs", () => {
-    const state = createInitialShellState();
-    const local = document();
-    const localId = "123e4567-e89b-42d3-a456-426614174000";
-    const managedId = "123e4567-e89b-42d3-a456-426614174001";
-    local.instructions = [localId, managedId].map((id) => ({
-      id,
-      name: id,
-      body: "Review",
-      enabled: true,
-      global: true,
-      tags: [],
-    }));
-    state.fleetManagedSettings = {
-      ...metadata,
-      instructionProfileIds: { source: managedId },
-      contextPackIds: [managedId],
-    };
-    state.contextPacks = [
-      localPack(localId, "Local"),
-      localPack(managedId, "Managed"),
-      {
-        ...localPack("123e4567-e89b-42d3-a456-426614174002", "Workspace"),
-        workspace: "C:\\Project",
-      },
-    ];
-    const exported = createEnrollmentSettingsDocument(
-      local,
-      state,
-      { version: 1, theme: "dark", density: "compact", accent: "sky", showChangedFiles: true },
-      {
-        infinite: false,
-        executorTurns: 42,
-        autopilotExecutorIterations: 7,
-        automaticRetries: true,
-        retryAttempts: 3,
-      },
-    );
-    expect(exported.instructions.map((instruction) => instruction.id)).toEqual([
-      localId,
-    ]);
-    expect(exported.contextPacks.map((pack) => pack.id)).toEqual([localId]);
-    expect(exported.defaults).toMatchObject({
-      theme: "dark",
-      density: "compact",
-    });
-    expect(exported.agentLimits).toMatchObject({ executorTurns: 42 });
-    expect(exported).not.toHaveProperty("secrets");
-  });
+  it.each([true, false, undefined])(
+    "captures portable local pack settings (%s) and excludes managed data",
+    (enabled) => {
+      const state = createInitialShellState();
+      const local = document();
+      const localId = "123e4567-e89b-42d3-a456-426614174000";
+      const managedId = "123e4567-e89b-42d3-a456-426614174001";
+      local.instructions = [localId, managedId].map((id) => ({
+        id,
+        name: id,
+        body: "Review",
+        enabled: true,
+        global: true,
+        tags: [],
+      }));
+      state.fleetManagedSettings = {
+        ...metadata,
+        instructionProfileIds: { source: managedId },
+        contextPackIds: [managedId],
+      };
+      state.contextPacks = [
+        {
+          ...localPack(localId, "Local"),
+          ...(enabled !== undefined
+            ? {
+                contextWindow: 32_000,
+                temporary: enabled,
+                useWorkspaceMemory: !enabled,
+              }
+            : {}),
+        },
+        localPack(managedId, "Managed"),
+        {
+          ...localPack("123e4567-e89b-42d3-a456-426614174002", "Workspace"),
+          workspace: "C:\\Project",
+        },
+      ];
+      const exported = createEnrollmentSettingsDocument(
+        local,
+        state,
+        {
+          version: 1,
+          theme: "dark",
+          density: "compact",
+          accent: "sky",
+          showChangedFiles: true,
+        },
+        {
+          infinite: false,
+          executorTurns: 42,
+          autopilotExecutorIterations: 7,
+          automaticRetries: true,
+          retryAttempts: 3,
+        },
+      );
+      expect(
+        exported.instructions.map((instruction) => instruction.id),
+      ).toEqual([localId]);
+      expect(exported.contextPacks.map((pack) => pack.id)).toEqual([localId]);
+      const [imported] = createManagedContextPacks(exported, [], "manager-one");
+      for (const pack of [exported.contextPacks[0], imported]) {
+        if (enabled === undefined) {
+          expect(pack).not.toHaveProperty("contextWindow");
+          expect(pack).not.toHaveProperty("temporary");
+          expect(pack).not.toHaveProperty("useWorkspaceMemory");
+        } else {
+          expect(pack).toMatchObject({
+            contextWindow: 32_000,
+            temporary: enabled,
+            useWorkspaceMemory: !enabled,
+          });
+        }
+      }
+      expect(exported.defaults).toMatchObject({
+        theme: "dark",
+        density: "compact",
+      });
+      expect(exported.agentLimits).toMatchObject({ executorTurns: 42 });
+      expect(exported).not.toHaveProperty("secrets");
+    },
+  );
   beforeEach(() => {
     vi.clearAllMocks();
     secretRuntime.loadUserProviderApiKeys.mockResolvedValue({});
@@ -241,6 +276,48 @@ describe("Fleet managed settings", () => {
     );
 
     expect(second).toBe(first);
+  });
+
+  it.each([
+    { contextWindow: 32_000 },
+    { temporary: true },
+    { temporary: false },
+    { useWorkspaceMemory: true },
+    { useWorkspaceMemory: false },
+  ])("detects changes to optional pack settings: %j", (settings) => {
+    const [first] = createManagedContextPacks(document(), [], "manager-one");
+    if (!first) throw new Error("Managed pack was not created.");
+    const revised = document();
+    revised.contextPacks = revised.contextPacks.map((pack) => ({
+      ...pack,
+      ...settings,
+    }));
+    const [second] = createManagedContextPacks(
+      revised,
+      [first],
+      "manager-one",
+      [first.id],
+    );
+    if (!second) throw new Error("Revised managed pack was not created.");
+    expect(second).not.toBe(first);
+    expect(second).toMatchObject(settings);
+    const [unchanged] = createManagedContextPacks(
+      revised,
+      [second],
+      "manager-one",
+      [second.id],
+    );
+    expect(unchanged).toBe(second);
+    const [reset] = createManagedContextPacks(
+      document(),
+      [second],
+      "manager-one",
+      [second.id],
+    );
+    expect(reset).not.toBe(second);
+    expect(reset).not.toHaveProperty("contextWindow");
+    expect(reset).not.toHaveProperty("temporary");
+    expect(reset).not.toHaveProperty("useWorkspaceMemory");
   });
 
   it("removes managed credentials that are no longer assigned", async () => {

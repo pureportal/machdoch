@@ -31,6 +31,7 @@ import {
 export * from "@machdoch/fleet-protocol/device-settings";
 export { createFleetSessionId } from "@machdoch/fleet-protocol/session-routing";
 import { z } from "zod";
+import { contextWindowSchema } from "@machdoch/fleet-protocol/context-window";
 import { memoryApplicabilitySchema } from "@machdoch/fleet-protocol/memory-applicability";
 import { speechRequestSchema, speechResponseSchema } from "@machdoch/fleet-protocol/speech";
 export * from "@machdoch/fleet-protocol/speech";
@@ -54,7 +55,10 @@ import {
   maximumComposerTextCharacters,
 } from "@machdoch/fleet-protocol/composer-contract";
 export * from "@machdoch/fleet-protocol/composer-contract";
-import { contextPackCommandSchema } from "@machdoch/fleet-protocol/context-pack-contract";
+import {
+  contextPackCommandSchema,
+  contextPackTextSchema,
+} from "@machdoch/fleet-protocol/context-pack-contract";
 export * from "@machdoch/fleet-protocol/context-pack-contract";
 import { hostTelemetrySchema } from "@machdoch/fleet-protocol/telemetry";
 export {
@@ -311,6 +315,9 @@ export interface FleetManagedSettingsDocument {
     model: string | null;
     mode: string | null;
     reasoning: string | null;
+    contextWindow?: import("./context-window.js").ContextWindow | undefined;
+    temporary?: boolean | undefined;
+    useWorkspaceMemory?: boolean | undefined;
     variables: Array<{
       name: string;
       defaultValue: string | null;
@@ -527,12 +534,15 @@ const managedSettingsContextPackSchema = z
   .strictObject({
     id: managedSettingsUuid,
     name: managedSettingsName,
-    instructions: managedSettingsText,
-    prompt: managedSettingsText,
+    instructions: contextPackTextSchema,
+    prompt: contextPackTextSchema,
     provider: modelProviderSchema.nullable(),
     model: managedSettingsNullableText,
     mode: runModeSchema.nullable(),
     reasoning: managedSettingsReasoningSchema.nullable(),
+    contextWindow: contextWindowSchema.optional(),
+    temporary: z.boolean().optional(),
+    useWorkspaceMemory: z.boolean().optional(),
     variables: z
       .array(
         z.strictObject({
@@ -936,6 +946,7 @@ export const productCommandSchema = z
       kind: z.literal("set-session-reasoning"),
       reasoning: reasoningModeSchema,
     }),
+    z.strictObject({ ...sessionCommandShape, kind: z.literal("set-session-context-window"), mode: z.union([z.literal("inherit"), z.enum(["default", "long"]), z.string().regex(/^\d{1,8}$/u).refine((value) => Number(value) >= 1 && Number(value) <= 10_000_000)]) }),
     z.strictObject({
       ...sessionCommandShape,
       kind: z.literal("set-session-workspace"),
@@ -1170,6 +1181,7 @@ const traceEntrySchema = z.strictObject({
 });
 
 export const productMessageSchema = z.strictObject({
+  mcpAppIds: z.array(z.string().uuid()).max(100).optional(),
   id: identifier,
   role: z.string().max(64),
   content: text,
@@ -1441,6 +1453,7 @@ export const projectLibrarySchema = z.strictObject({
 
 export const productShellSchema = z.strictObject({
   sessionRoutingAvailable: z.boolean().optional(),
+  workspaceToolsMode: z.enum(["full", "library"]).optional(),
   projectLibrary: projectLibrarySchema.optional(),
   poseSceneSvg: z.string().max(64_000).optional(),
   version: z.literal(productSnapshotVersion),
@@ -1497,6 +1510,9 @@ export const productShellSchema = z.strictObject({
       goal: productGoalSchema.nullable().optional(),
       reasoning: reasoningModeSchema,
       defaultReasoning: reasoningModeSchema,
+      contextWindow: contextWindowSchema.optional(),
+      contextWindowTokens: z.number().int().positive().nullable().optional(),
+      longContextWindowTokens: z.number().int().positive().nullable().optional(),
       reasoningOptions: z.array(reasoningModeSchema).min(1).max(10),
       promptEnhancementMode: promptEnhancementModeSchema,
       interviewEnabled: z.boolean(),

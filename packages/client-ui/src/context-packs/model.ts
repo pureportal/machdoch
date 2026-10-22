@@ -5,6 +5,7 @@ import type {
   PromptEnhancementMode,
 } from "@machdoch/fleet-protocol/runtime-options";
 import type { ChatSessionContextAttachment } from "../composer/model";
+import type { ContextWindow } from "@machdoch/fleet-protocol/context-window";
 
 export interface SmartContextPackVariable {
   name: string;
@@ -17,6 +18,8 @@ export interface SmartContextPackTrigger {
 }
 
 export interface SmartContextPackSettingOverrides {
+  contextWindow?: ContextWindow;
+  temporary?: boolean;
   provider?: RuntimeProvider;
   model?: string;
   mode?: RunMode;

@@ -59,7 +59,7 @@ export const createQueuedPromptEnhancementRequest = (
 
 export const shouldDeferPromptEnhancementUntilQueuedDispatch = (
   mode: PromptEnhancementMode,
-  runningAction: "steer" | "stop-and-send" | "queue" | null,
+  runningAction: "stop-and-send" | "queue" | null,
 ): boolean => {
   return (
     mode !== "off" &&

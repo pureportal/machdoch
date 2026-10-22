@@ -1,3 +1,5 @@
+import { McpAppsSettings } from "@machdoch/client-ui/mcp-apps/settings";
+import { invokeWorkspaceTools } from "../../../workspace-management/workspace-platform";
 import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
 import {
   AlertTriangle,
@@ -2089,6 +2091,7 @@ export const McpSettingsPanel = ({
 
   return (
     <SettingsCard title="MCP servers">
+      <McpAppsSettings invoke={(workspaceRoot, input) => invokeWorkspaceTools("run_mcp_app_command", { workspaceRoot, input })} />
       <SubmitShortcut asChild>
         <div className="grid gap-4 py-4">
           {showProviderSync ? (

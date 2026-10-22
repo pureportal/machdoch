@@ -7,10 +7,11 @@ import {
   MAX_CONTEXT_WINDOW_TOKENS,
   MIN_CONTEXT_WINDOW_TOKENS,
 } from "./runtime-contract.generated.js";
-import { getDiscoveredLongContextWindowTokens } from "./model-capabilities.js";
-
-const CLAUDE_LONG_CONTEXT_MODEL_PATTERN =
-  /^(?:sonnet|opus|sonnet\[1m\]|opus\[1m\]|claude-(?:sonnet|opus)-(?:5|4-[6-9])(?:-|$)|claude-(?:5|4-[6-9])-(?:sonnet|opus)(?:-|$))/u;
+import {
+  getDiscoveredModelCapabilities,
+  getModelContextWindowTokens,
+} from "./model-capabilities.js";
+import { contextWindowCapabilities } from "@machdoch/fleet-protocol/context-window";
 
 export const parseContextWindow = (
   value: unknown,
@@ -41,20 +42,13 @@ export const supportsLongContextWindow = (
   provider: ConfiguredModelProvider | null | undefined,
   model?: string | null,
 ): boolean => {
-  if (provider === "copilot-cli") {
-    const discoveredLongContext = model
-      ? getDiscoveredLongContextWindowTokens(provider, model)
-      : undefined;
-
-    return discoveredLongContext === undefined
-      ? true
-      : typeof discoveredLongContext === "number" && discoveredLongContext > 0;
-  }
-
-  return (
-    provider === "claude-cli" &&
-    CLAUDE_LONG_CONTEXT_MODEL_PATTERN.test(model?.trim().toLowerCase() ?? "")
-  );
+  return contextWindowCapabilities(
+    provider,
+    model,
+    provider && model
+      ? getDiscoveredModelCapabilities(provider, model)
+      : undefined,
+  ).long;
 };
 
 export const assertContextWindowSupportedForProviderModel = (
@@ -63,6 +57,8 @@ export const assertContextWindowSupportedForProviderModel = (
   model?: string | null,
   discoveredMaximumTokens?: number | null,
 ): void => {
+  if (!isContextWindow(contextWindow))
+    throw new Error("Choose a valid context size.");
   if (contextWindow === "default") {
     return;
   }
@@ -79,7 +75,11 @@ export const assertContextWindowSupportedForProviderModel = (
     );
   }
 
-  if (provider !== "codex-cli") {
+  if (
+    provider !== "codex-cli" ||
+    !model ||
+    !getModelContextWindowTokens(provider, model)
+  ) {
     throw new Error(
       `A numeric context window cannot be configured for \`${modelName}\` on \`${provider}\`.`,
     );
@@ -94,15 +94,28 @@ export const assertContextWindowSupportedForProviderModel = (
     );
   }
 
-  if (
-    discoveredMaximumTokens !== null &&
-    discoveredMaximumTokens !== undefined &&
-    contextWindow > discoveredMaximumTokens
-  ) {
+  const maximum =
+    discoveredMaximumTokens ?? getModelContextWindowTokens(provider, model);
+  if (maximum && contextWindow > maximum) {
     throw new Error(
-      `Context window ${contextWindow} exceeds the discovered ${discoveredMaximumTokens}-token limit for \`${modelName}\`.`,
+      `Context window ${contextWindow} exceeds the discovered ${maximum}-token limit for \`${modelName}\`.`,
     );
   }
+};
+
+export const retainSupportedContextWindow = (
+  value: ContextWindow | undefined,
+  provider: ConfiguredModelProvider | "unconfigured",
+  model: string,
+): ContextWindow | undefined => {
+  if (value === undefined || provider === "unconfigured") return undefined;
+  const maximum = getModelContextWindowTokens(provider, model);
+  return value === "default" ||
+    (value === "long"
+      ? supportsLongContextWindow(provider, model)
+      : provider === "codex-cli" && maximum !== null && value <= maximum)
+    ? value
+    : undefined;
 };
 
 export const resolveClaudeCliModelForContextWindow = (

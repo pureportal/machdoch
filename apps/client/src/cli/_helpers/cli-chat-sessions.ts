@@ -20,6 +20,7 @@ import type {
 } from "../../core/types.js";
 import { CliUsageError } from "./cli-error.js";
 import { resolveCliWorkspaceRoot } from "./cli-workspace.js";
+import { isContextWindow } from "../../core/runtime-contract.generated.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -55,6 +56,7 @@ export const parseConversationContext = (
         `Invalid conversation context: ${key} must be a boolean.`,
       );
   }
+  if (value.contextWindow !== undefined && !isContextWindow(value.contextWindow)) throw new CliUsageError("Invalid conversation context size.");
   if (
     value.adaptiveControllerOverride !== undefined &&
     value.adaptiveControllerOverride !== null &&

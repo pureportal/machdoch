@@ -1,5 +1,4 @@
 import {
-  SteerIcon,
   StopIcon,
   ComposerInput,
   ComposerSurface,
@@ -262,12 +261,6 @@ const useBufferedDraft = (
 
 const RUNNING_TASK_MESSAGE_ACTIONS = [
   {
-    id: "steer",
-    label: "Steer",
-    sendLabel: "Steer running task",
-    icon: SteerIcon,
-  },
-  {
     id: "stop-and-send",
     label: "Stop & Send",
     sendLabel: "Stop task and send message",
@@ -291,7 +284,7 @@ const getRunningTaskMessageActionMeta = (
 ) => {
   return (
     RUNNING_TASK_MESSAGE_ACTIONS.find((entry) => entry.id === action) ??
-    RUNNING_TASK_MESSAGE_ACTIONS[2]
+    RUNNING_TASK_MESSAGE_ACTIONS[1]
   );
 };
 
@@ -564,15 +557,12 @@ export const AgentComposer = ({
   const showCancelButton =
     isExecuting && canCancel && (variant === "quick" || !canSubmit);
   const selectedRunningAction =
-    runningTaskMessageAction ?? RUNNING_TASK_MESSAGE_ACTIONS[2].id;
+    runningTaskMessageAction ?? RUNNING_TASK_MESSAGE_ACTIONS[1].id;
   const selectIterationCount = useCallback(
     (count: number): void => {
       setIterationCount(count);
-      if (count > 1 && isExecuting && selectedRunningAction === "steer") {
-        onRunningTaskMessageActionChange?.("queue");
-      }
     },
-    [isExecuting, onRunningTaskMessageActionChange, selectedRunningAction],
+    [],
   );
   const selectedRunningActionMeta = getRunningTaskMessageActionMeta(
     selectedRunningAction,
@@ -735,10 +725,6 @@ export const AgentComposer = ({
                 aria-pressed={selected}
                 disabled={inputBlocked}
                 onClick={() => {
-                  if (action.id === "steer") {
-                    setIterationCount(1);
-                    setIterationsOpen(false);
-                  }
                   onRunningTaskMessageActionChange?.(action.id);
                 }}
                 className={cn(

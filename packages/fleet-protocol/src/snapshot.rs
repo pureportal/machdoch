@@ -329,7 +329,7 @@ fn product_shell_shape() -> Shape {
         ),
         optional(
             "runningTaskMessageAction",
-            enumeration(&["queue", "steer", "stop-and-send"]),
+            enumeration(&["queue", "stop-and-send"]),
         ),
         optional("draftRevision", Shape::Integer),
         optional("textTruncated", Shape::Bool),

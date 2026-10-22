@@ -9,6 +9,11 @@ import type {
 import type { TaskDeterministicAction } from "../../core/types.js";
 
 export type CommandName =
+  | "live-voice"
+  | "skills"
+  | "mcp-apps"
+  | "knowledge"
+  | "research"
   | "update"
   | "run"
   | "chat"
@@ -324,6 +329,10 @@ export interface InstructionCliOptions {
 }
 
 export interface ParsedCliArgs {
+  skills?: { request?: unknown; inputJsonFile?: string };
+  mcpApps?: { request?: unknown; inputJsonFile?: string };
+  liveVoice?: { request?: unknown; inputJsonFile?: string };
+  workspaceLibrary?: { request?: unknown; inputJsonFile?: string };
   update?: { check: boolean };
   mediaFlowAgent?: { inputJsonFile: string };
   speech?: { inputJsonFile: string };

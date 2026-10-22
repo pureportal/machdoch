@@ -5,6 +5,8 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./voice/live-voice-control": "./src/voice/live-voice-control.tsx",
+    "./composer/context-window-picker": "./src/composer/context-window-picker.tsx",
     "./conversation/task-thinking-panel": "./src/conversation/task-thinking-panel.tsx",
     "./conversation/task-execution-story": "./src/conversation/task-execution-story.ts",
     "./conversation/task-action-output": "./src/conversation/task-action-output.ts",
@@ -50,8 +52,7 @@
     "./sessions/sidebar-commands": "./src/sessions/sidebar-commands.tsx",
     "./mcp-apps/results": "./src/mcp-apps/results.tsx",
     "./mcp-apps/settings": "./src/mcp-apps/settings.tsx",
-    "./mcp-apps/host": "./src/mcp-apps/host.ts",
-    "./voice/live-voice-control": "./src/voice/live-voice-control.tsx"
+    "./mcp-apps/host": "./src/mcp-apps/host.ts"
   },
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",
@@ -60,6 +61,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@machdoch/speech": "workspace:*",
     "@machdoch/fleet-protocol": "workspace:*",
     "@machdoch/media-studio": "workspace:*",
     "lucide-react": "^1.18.0",
@@ -68,8 +70,7 @@
     "highlight.js": "^11.11.1",
     "html-to-image": "^1.11.13",
     "mermaid": "^11.16.1",
-    "remark-gfm": "^4.0.1",
-    "@machdoch/speech": "workspace:*"
+    "remark-gfm": "^4.0.1"
   },
   "peerDependencies": {
     "react": "^19.2.8",

@@ -74,6 +74,8 @@ import { WorkspaceTools } from "./workspace-tools";
 import { WorkspaceRunPanel } from "./workspace-run-panel";
 import { WorkspaceConfigurationSettings } from "./workspace-configuration-settings";
 import { WorkspaceMcpSettings } from "./workspace-mcp-settings";
+import { WorkspaceKnowledgePanel } from "./workspace-knowledge-panel";
+import { WorkspaceResearchPanel } from "./workspace-research-panel";
 
 const profileIsEnabled = (profile: InstructionProfileView): boolean =>
   profile.enabled;
@@ -132,6 +134,7 @@ export const WorkspaceManager = ({
   const [workspaceConfigurationBusy, setWorkspaceConfigurationBusy] =
     useState(false);
   const [workspaceMcpDirty, setWorkspaceMcpDirty] = useState(false);
+  const [workspaceResearchDirty, setWorkspaceResearchDirty] = useState(false);
   const [workspaceSettingsResetToken, setWorkspaceSettingsResetToken] =
     useState(0);
   const [workspaceToolsRefreshToken, setWorkspaceToolsRefreshToken] =
@@ -246,6 +249,7 @@ export const WorkspaceManager = ({
       !sameStrings(tags, savedTags)),
   );
   const workspaceDraftDirty =
+    workspaceResearchDirty ||
     workspaceSettingsDirty ||
     workspaceToolsDirty ||
     workspaceRunDirty ||
@@ -1467,6 +1471,12 @@ export const WorkspaceManager = ({
                   />
                 </div>
 
+                <div hidden={workspaceSection !== "knowledge"}>
+                  <WorkspaceKnowledgePanel key={selectedWorkspace.key} workspaceRoot={selectedWorkspace.root} />
+                </div>
+                <div hidden={workspaceSection !== "research"}>
+                  <WorkspaceResearchPanel key={`${selectedWorkspace.key}:${workspaceSettingsResetToken}`} workspaceRoot={selectedWorkspace.root} onDirtyChange={setWorkspaceResearchDirty} />
+                </div>
                 {workspaceSection === "memory" && selectedWorkspace ? (
                   <div className="space-y-4">
                     <WorkspaceMemoryPanel

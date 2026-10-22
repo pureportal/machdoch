@@ -33,6 +33,9 @@ export interface ManagedContextPack {
   model: string | null;
   mode: string | null;
   reasoning: string | null;
+  contextWindow?: import("@machdoch/fleet-protocol/context-window").ContextWindow;
+  temporary?: boolean;
+  useWorkspaceMemory?: boolean;
   variables: Array<{
     name: string;
     defaultValue: string | null;

@@ -8,6 +8,8 @@ import { trackCliCommand } from "./_helpers/cli-analytics.js";
 import { resolveCliWorkspaceRoot } from "./_helpers/cli-workspace.js";
 
 const AGENT_RUNTIME_COMMANDS = new Set<CommandName>([
+  "live-voice",
+  "mcp-apps",
   "run",
   "chat",
   "interview",
@@ -77,6 +79,11 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
     args.command !== "help" &&
     args.command !== "update" &&
     args.command !== "memory" &&
+    args.command !== "knowledge" &&
+    args.command !== "research" &&
+    args.command !== "skills" &&
+    args.command !== "mcp-apps" &&
+    args.command !== "live-voice" &&
     args.command !== "speech" &&
     !isInternalProviderProcess &&
     !isLocalRalphCommand
@@ -95,6 +102,27 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
   }
 
   switch (args.command) {
+    case "live-voice": {
+      const { runLiveVoiceCommand } = await import("./_helpers/cli-live-voice.js");
+      await runLiveVoiceCommand(args);
+      return;
+    }
+    case "mcp-apps": {
+      const { runMcpAppsCommand } = await import("./_helpers/cli-mcp-apps.js");
+      await runMcpAppsCommand(args);
+      return;
+    }
+    case "skills": {
+      const { runSkillsCommand } = await import("./_helpers/cli-skills.js");
+      await runSkillsCommand(args);
+      return;
+    }
+    case "knowledge":
+    case "research": {
+      const { runWorkspaceLibraryCommand } = await import("./_helpers/cli-workspace-library.js");
+      await runWorkspaceLibraryCommand(args);
+      return;
+    }
     case "speech": {
       const { runSpeechCommand } = await import("./_helpers/cli-speech.js");
       await runSpeechCommand(args);

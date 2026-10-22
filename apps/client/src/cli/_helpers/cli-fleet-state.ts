@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getUserConfigPath } from "../../core/env.js";
+import {
+  isContextWindow,
+  type ContextWindow,
+} from "../../core/runtime-contract.generated.js";
 import { withCooperativeFileLock } from "../../core/_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "../../core/_helpers/write-file-atomically.helper.js";
 import {
@@ -29,6 +33,7 @@ import {
 export const FLEET_CLI_STATE_SCHEMA_VERSION = 1;
 
 export interface FleetCliMessage {
+  mcpAppIds?: string[];
   id: string;
   role: "user" | "agent";
   content: string;
@@ -40,6 +45,67 @@ export interface FleetCliPendingTask {
   taskId: string;
   prompt: string;
   startedAt: number;
+}
+
+export type FleetCliPackSettings = Pick<
+  FleetCliSession,
+  | "provider"
+  | "model"
+  | "mode"
+  | "reasoning"
+  | "contextWindow"
+  | "sessionMemoryEnabled"
+  | "useWorkspaceMemory"
+  | "globalMemoryEnabled"
+>;
+
+export function captureFleetPackSettings(
+  session: FleetCliSession,
+): FleetCliPackSettings {
+  const {
+    provider,
+    model,
+    mode,
+    reasoning,
+    contextWindow,
+    sessionMemoryEnabled,
+    useWorkspaceMemory,
+    globalMemoryEnabled,
+  } = session;
+  return {
+    provider,
+    model,
+    mode,
+    reasoning,
+    contextWindow,
+    sessionMemoryEnabled,
+    useWorkspaceMemory,
+    globalMemoryEnabled,
+  };
+}
+
+export function resetTemporaryFleetPackSettings(
+  session: FleetCliSession,
+): void {
+  const temporary = session.temporaryPackSettings;
+  if (!temporary) return;
+  const modelUnchanged =
+    session.provider === temporary.applied.provider &&
+    session.model === temporary.applied.model;
+  for (const key of Object.keys(
+    temporary.applied,
+  ) as (keyof FleetCliPackSettings)[]) {
+    if (
+      session[key] !== temporary.applied[key] ||
+      (["provider", "model", "reasoning", "contextWindow"].includes(key) &&
+        !modelUnchanged)
+    )
+      continue;
+    if (temporary.previous[key] === undefined)
+      Reflect.deleteProperty(session, key);
+    else Object.assign(session, { [key]: temporary.previous[key] });
+  }
+  delete session.temporaryPackSettings;
 }
 
 export interface FleetCliSession {
@@ -55,6 +121,11 @@ export interface FleetCliSession {
   goalMode?: GoalMode;
   goal?: SessionGoal | null;
   reasoning: ReasoningMode;
+  contextWindow?: ContextWindow | undefined;
+  temporaryPackSettings?: {
+    previous: FleetCliPackSettings;
+    applied: FleetCliPackSettings;
+  };
   createdAt: number;
   updatedAt: number;
   archivedAt?: number;
@@ -120,12 +191,24 @@ const boundedString = (
 const parseMessage = (value: unknown): FleetCliMessage => {
   if (
     !isRecord(value) ||
-    !hasOnlyKeys(value, ["id", "role", "content", "createdAt"], ["taskId"]) ||
+    !hasOnlyKeys(
+      value,
+      ["id", "role", "content", "createdAt"],
+      ["taskId", "mcpAppIds"],
+    ) ||
     !boundedString(value.id, 240) ||
     (value.role !== "user" && value.role !== "agent") ||
     !boundedString(value.content, 12_000, true) ||
     !finiteTimestamp(value.createdAt) ||
-    (value.taskId !== undefined && !boundedString(value.taskId, 240))
+    (value.taskId !== undefined && !boundedString(value.taskId, 240)) ||
+    (value.mcpAppIds !== undefined &&
+      (!Array.isArray(value.mcpAppIds) ||
+        value.mcpAppIds.length > 100 ||
+        value.mcpAppIds.some(
+          (id) =>
+            typeof id !== "string" ||
+            !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(id),
+        )))
   ) {
     throw new Error("Fleet CLI session message is invalid.");
   }
@@ -135,6 +218,9 @@ const parseMessage = (value: unknown): FleetCliMessage => {
     content: value.content,
     createdAt: value.createdAt,
     ...(value.taskId ? { taskId: value.taskId } : {}),
+    ...(Array.isArray(value.mcpAppIds)
+      ? { mcpAppIds: value.mcpAppIds as string[] }
+      : {}),
   };
 };
 
@@ -173,6 +259,46 @@ const parseStringArray = (
   return [...value] as string[];
 };
 
+const parsePackSettings = (value: unknown): FleetCliPackSettings => {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(
+      value,
+      [
+        "provider",
+        "model",
+        "mode",
+        "reasoning",
+        "sessionMemoryEnabled",
+        "useWorkspaceMemory",
+        "globalMemoryEnabled",
+      ],
+      ["contextWindow"],
+    ) ||
+    !boundedString(value.provider, 240) ||
+    !isModelProvider(value.provider) ||
+    !boundedString(value.model, 240) ||
+    !modes.has(value.mode) ||
+    !reasoningModes.has(value.reasoning) ||
+    (value.contextWindow !== undefined &&
+      !isContextWindow(value.contextWindow)) ||
+    typeof value.sessionMemoryEnabled !== "boolean" ||
+    typeof value.useWorkspaceMemory !== "boolean" ||
+    typeof value.globalMemoryEnabled !== "boolean"
+  )
+    throw new Error("Temporary context pack settings are invalid.");
+  return {
+    provider: value.provider,
+    model: value.model,
+    mode: value.mode as RunMode,
+    reasoning: value.reasoning as ReasoningMode,
+    contextWindow: value.contextWindow as ContextWindow | undefined,
+    sessionMemoryEnabled: value.sessionMemoryEnabled,
+    useWorkspaceMemory: value.useWorkspaceMemory,
+    globalMemoryEnabled: value.globalMemoryEnabled,
+  };
+};
+
 const parseSession = (value: unknown): FleetCliSession => {
   const required = [
     "id",
@@ -203,6 +329,8 @@ const parseSession = (value: unknown): FleetCliSession => {
       "parallelAgentMode",
       "goalMode",
       "goal",
+      "contextWindow",
+      "temporaryPackSettings",
     ]) ||
     !boundedString(value.id, 240) ||
     !boundedString(value.title, 12_000) ||
@@ -224,6 +352,8 @@ const parseSession = (value: unknown): FleetCliSession => {
       value.goal !== null &&
       !isSessionGoal(value.goal)) ||
     !reasoningModes.has(value.reasoning) ||
+    (value.contextWindow !== undefined &&
+      !isContextWindow(value.contextWindow)) ||
     !finiteTimestamp(value.createdAt) ||
     !finiteTimestamp(value.updatedAt) ||
     (value.archivedAt !== undefined && !finiteTimestamp(value.archivedAt)) ||
@@ -242,6 +372,18 @@ const parseSession = (value: unknown): FleetCliSession => {
     value.pendingTask === undefined
       ? undefined
       : parsePendingTask(value.pendingTask);
+  let temporaryPackSettings: FleetCliSession["temporaryPackSettings"];
+  if (value.temporaryPackSettings !== undefined) {
+    if (
+      !isRecord(value.temporaryPackSettings) ||
+      !hasOnlyKeys(value.temporaryPackSettings, ["previous", "applied"])
+    )
+      throw new Error("Temporary context pack settings are invalid.");
+    temporaryPackSettings = {
+      previous: parsePackSettings(value.temporaryPackSettings.previous),
+      applied: parsePackSettings(value.temporaryPackSettings.applied),
+    };
+  }
   return {
     id: value.id,
     title: value.title,
@@ -261,6 +403,10 @@ const parseSession = (value: unknown): FleetCliSession => {
     ),
     ...(isSessionGoal(value.goal) ? { goal: value.goal } : {}),
     reasoning: value.reasoning as ReasoningMode,
+    ...(isContextWindow(value.contextWindow)
+      ? { contextWindow: value.contextWindow }
+      : {}),
+    ...(temporaryPackSettings ? { temporaryPackSettings } : {}),
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     ...(value.archivedAt !== undefined ? { archivedAt: value.archivedAt } : {}),

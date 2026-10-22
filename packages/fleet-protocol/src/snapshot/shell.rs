@@ -261,6 +261,9 @@ fn composer() -> Shape {
         optional("goal", Shape::Nullable(Box::new(session_goal()))),
         required("reasoning", reasoning_mode()),
         required("defaultReasoning", reasoning_mode()),
+        optional("contextWindow", Shape::Union(vec![enumeration(&["default", "long"]), Shape::BoundedInteger(1, 10_000_000)])),
+        optional("contextWindowTokens", Shape::Nullable(Box::new(Shape::PositiveInteger))),
+        optional("longContextWindowTokens", Shape::Nullable(Box::new(Shape::PositiveInteger))),
         required("reasoningOptions", bounded_array(reasoning_mode(), 1, 10)),
         required(
             "promptEnhancementMode",

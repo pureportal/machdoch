@@ -5,7 +5,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./live-voice": "./src/live-voice.ts",
+    "./skills": "./src/skills.ts",
     "./memory-applicability": "./src/memory-applicability.ts",
+    "./workspace-library": "./src/workspace-library.ts",
+    "./context-window": "./src/context-window.ts",
     "./speech": "./src/speech.ts",
     "./task-file-changes": "./src/task-file-changes.ts",
     "./task-execution-insight": "./src/task-execution-insight.ts",
@@ -34,10 +38,7 @@
     "./device-settings": "./src/device-settings.ts",
     "./device-settings-transfer": "./src/device-settings-transfer.ts",
     "./task-file-change-normalization": "./src/task-file-change-normalization.ts",
-    "./workspace-library": "./src/workspace-library.ts",
-    "./skills": "./src/skills.ts",
-    "./mcp-apps": "./src/mcp-apps.ts",
-    "./live-voice": "./src/live-voice.ts"
+    "./mcp-apps": "./src/mcp-apps.ts"
   },
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",

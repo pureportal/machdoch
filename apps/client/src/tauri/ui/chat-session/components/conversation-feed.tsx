@@ -1,3 +1,5 @@
+import { McpAppResults } from "@machdoch/client-ui/mcp-apps/results";
+import { invokeWorkspaceTools } from "../../workspace-management/workspace-platform";
 import { MessageEditor } from "@machdoch/client-ui/conversation/message-editor";
 import {
   Bot,
@@ -372,6 +374,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
               </div>
             ) : null}
 
+            {thinkingTrace && <McpAppResults thinking={thinkingTrace} workspaceRoot={workspaceRoot} invoke={(root, input) => invokeWorkspaceTools("run_mcp_app_command", { workspaceRoot: root, input })} />}
             {message.role === "user" && message.iteration ? (
               <span className="px-1 text-xs font-medium text-sky-200">
                 Iteration {message.iteration.index} of {message.iteration.total}

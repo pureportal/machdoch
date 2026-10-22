@@ -24,6 +24,63 @@ afterEach(async () => {
   );
 });
 
+const createCorrectionRuntime = async () => {
+  const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-correction-"));
+  roots.push(root);
+  vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", join(root, "config"));
+  const workspace = join(root, "workspace");
+  const executions: Array<{
+    controller: ReturnType<typeof createTaskExecutionController>;
+    finish: () => void;
+  }> = [];
+  const createController = vi.fn<typeof createTaskExecutionController>(
+    (task, config) => {
+      const abortController = new AbortController();
+      let finish: () => void = () => undefined;
+      const completion = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const controller = {
+        signal: abortController.signal,
+        cancel: vi.fn((reason?: string) => abortController.abort(reason)),
+        execute: vi.fn(async () => {
+          await completion;
+          return {
+            task,
+            mode: config.mode,
+            status: "cancelled" as const,
+            summary: `Stopped: ${task}`,
+            executedTools: [],
+            outputSections: [],
+          };
+        }),
+      };
+      executions.push({ controller, finish });
+      return controller;
+    },
+  );
+  const runtime = await FleetCliProductRuntime.create(workspace, {
+    loadRuntimeConfig: async (...arguments_) => ({
+      ...(await loadRuntimeConfig(...arguments_)),
+      provider: "openai",
+      model: "gpt-5.4",
+      offline: false,
+      providerAvailability: [{ provider: "openai", configured: true }],
+    }),
+    createTaskExecutionController: createController,
+  });
+  return {
+    runtime,
+    workspace,
+    createController,
+    executions,
+    shutdown: async () => {
+      for (const execution of executions) execution.finish();
+      await runtime.shutdown();
+    },
+  };
+};
+
 describe.sequential("Fleet CLI product runtime", () => {
   it("rejects native client mutations without accepting a receipt", async () => {
     const root = await mkdtemp(join(tmpdir(), "machdoch-fleet-context-pack-"));
@@ -331,6 +388,268 @@ describe.sequential("Fleet CLI product runtime", () => {
       }),
     );
     await runtime.shutdown();
+  });
+
+  it.each([
+    {
+      draftBehavior: "clears the submitted draft",
+      nextDraft: "Use the existing session store",
+      expectedDraft: "",
+    },
+    {
+      draftBehavior: "preserves a newer draft",
+      nextDraft: "Also cover expired sessions",
+      expectedDraft: "Also cover expired sessions",
+    },
+  ])(
+    "waits for correction cancellation to settle, retains the goal and conversation, and $draftBehavior",
+    async ({ nextDraft, expectedDraft }) => {
+      const fixture = await createCorrectionRuntime();
+      const { runtime, workspace, createController, executions } = fixture;
+      try {
+        const initial = await runtime.handleRequest({
+          type: "getProductSnapshot",
+        });
+        if (
+          initial.type !== "productSnapshot" ||
+          !initial.snapshot.shell?.activeSessionId
+        )
+          throw new Error("Session snapshot is missing.");
+        const sessionId = initial.snapshot.shell.activeSessionId;
+        expect(
+          await runtime.handleRequest({
+            type: "executeProductCommand",
+            command: {
+              kind: "submit-message",
+              sessionId,
+              prompt: "Fix auth",
+              goalObjective: "All auth tests pass",
+              promptEnhancementMode: "off",
+              interviewEnabled: false,
+            },
+          }),
+        ).toMatchObject({ type: "commandAccepted" });
+        const original = executions[0];
+        if (!original) throw new Error("Original task did not start.");
+        const command = {
+          kind: "submit-message",
+          commandId: "command-correction",
+          sessionId,
+          prompt: "Use the existing session store",
+          runningAction: "stop-and-send",
+          promptEnhancementMode: "off",
+          interviewEnabled: false,
+        } as const;
+        expect(
+          await runtime.handleRequest({
+            type: "executeProductCommand",
+            command: {
+              kind: "update-draft",
+              sessionId,
+              prompt: command.prompt,
+            },
+          }),
+        ).toMatchObject({ type: "commandAccepted" });
+        expect(
+          await runtime.handleRequest({ type: "getProductSnapshot" }),
+        ).toMatchObject({
+          type: "productSnapshot",
+          snapshot: {
+            shell: {
+              composer: {
+                canSend: true,
+                isExecuting: true,
+                runningTaskMessageAction: "stop-and-send",
+              },
+            },
+          },
+        });
+
+        const correction = runtime.handleRequest({
+          type: "executeProductCommand",
+          command,
+        });
+        await vi.waitFor(() => {
+          expect(original.controller.cancel).toHaveBeenCalledOnce();
+        });
+        const draftUpdate = runtime.handleRequest({
+          type: "executeProductCommand",
+          command: { kind: "update-draft", sessionId, prompt: nextDraft },
+        });
+        await vi.waitFor(async () => {
+          expect(await draftUpdate).toMatchObject({ type: "commandAccepted" });
+        });
+        expect(createController).toHaveBeenCalledOnce();
+        expect(original.controller.execute).toHaveBeenCalledOnce();
+
+        original.finish();
+        expect(await correction).toEqual({
+          type: "commandAccepted",
+          receipt: { commandId: command.commandId, duplicate: false },
+        });
+        expect(createController).toHaveBeenCalledTimes(2);
+        const replacement = executions[1];
+        if (!replacement) throw new Error("Correction task did not start.");
+        expect(replacement.controller.execute).toHaveBeenCalledOnce();
+        expect(replacement.controller.cancel).not.toHaveBeenCalled();
+        expect(createController).toHaveBeenNthCalledWith(
+          2,
+          command.prompt,
+          expect.anything(),
+          expect.anything(),
+          expect.objectContaining({
+            conversationContext: expect.objectContaining({
+              sessionId,
+              goalObjective: "All auth tests pass",
+              history: [
+                expect.objectContaining({ role: "user", content: "Fix auth" }),
+                expect.objectContaining({
+                  role: "assistant",
+                  content: "Stopped: Fix auth",
+                }),
+              ],
+            }),
+          }),
+        );
+        expect(
+          await runtime.handleRequest({ type: "getProductSnapshot" }),
+        ).toMatchObject({
+          type: "productSnapshot",
+          snapshot: {
+            shell: {
+              activeSessionId: sessionId,
+              composer: { draft: expectedDraft, isExecuting: true },
+              promptHistory: ["Fix auth", command.prompt],
+              visibleMessages: [
+                { role: "user", content: "Fix auth" },
+                { role: "agent", content: "Stopped: Fix auth" },
+                { role: "user", content: command.prompt },
+              ],
+            },
+          },
+        });
+        expect(
+          JSON.parse(await readFile(getFleetCliStatePath(workspace), "utf8")),
+        ).toMatchObject({
+          sessions: [
+            {
+              id: sessionId,
+              draft: expectedDraft,
+              promptHistory: ["Fix auth", command.prompt],
+              pendingTask: { prompt: command.prompt },
+              messages: [
+                { role: "user", content: "Fix auth" },
+                { role: "agent", content: "Stopped: Fix auth" },
+                { role: "user", content: command.prompt },
+              ],
+            },
+          ],
+        });
+      } finally {
+        await fixture.shutdown();
+      }
+    },
+  );
+
+  it("deduplicates pending and accepted corrections without cancelling the replacement task", async () => {
+    const fixture = await createCorrectionRuntime();
+    const { runtime, createController, executions } = fixture;
+    try {
+      const initial = await runtime.handleRequest({
+        type: "getProductSnapshot",
+      });
+      if (
+        initial.type !== "productSnapshot" ||
+        !initial.snapshot.shell?.activeSessionId
+      )
+        throw new Error("Session snapshot is missing.");
+      const sessionId = initial.snapshot.shell.activeSessionId;
+      expect(
+        await runtime.handleRequest({
+          type: "executeProductCommand",
+          command: {
+            kind: "submit-message",
+            sessionId,
+            prompt: "Fix auth",
+            promptEnhancementMode: "off",
+            interviewEnabled: false,
+          },
+        }),
+      ).toMatchObject({ type: "commandAccepted" });
+      const original = executions[0];
+      if (!original) throw new Error("Original task did not start.");
+      const command = {
+        kind: "submit-message",
+        commandId: "command-correction",
+        sessionId,
+        prompt: "Use the existing session store",
+        runningAction: "stop-and-send",
+        promptEnhancementMode: "off",
+        interviewEnabled: false,
+      } as const;
+      const correction = runtime.handleRequest({
+        type: "executeProductCommand",
+        command,
+      });
+      const pendingDuplicate = runtime.handleRequest({
+        type: "executeProductCommand",
+        command,
+      });
+      await vi.waitFor(() => {
+        expect(original.controller.cancel).toHaveBeenCalledOnce();
+      });
+      expect(createController).toHaveBeenCalledOnce();
+      original.finish();
+      expect(await Promise.all([correction, pendingDuplicate])).toEqual([
+        {
+          type: "commandAccepted",
+          receipt: { commandId: command.commandId, duplicate: false },
+        },
+        {
+          type: "commandAccepted",
+          receipt: { commandId: command.commandId, duplicate: true },
+        },
+      ]);
+      const replacement = executions[1];
+      if (!replacement) throw new Error("Correction task did not start.");
+      expect(
+        await runtime.handleRequest({
+          type: "executeProductCommand",
+          command,
+        }),
+      ).toEqual({
+        type: "commandAccepted",
+        receipt: { commandId: command.commandId, duplicate: true },
+      });
+      expect(
+        await runtime.handleRequest({
+          type: "executeProductCommand",
+          command: { ...command, prompt: "Use a different session store" },
+        }),
+      ).toMatchObject({ type: "error", code: "conflict" });
+      expect(original.controller.cancel).toHaveBeenCalledOnce();
+      expect(replacement.controller.cancel).not.toHaveBeenCalled();
+      expect(replacement.controller.execute).toHaveBeenCalledOnce();
+      expect(createController).toHaveBeenCalledTimes(2);
+      const snapshot = await runtime.handleRequest({
+        type: "getProductSnapshot",
+      });
+      if (snapshot.type !== "productSnapshot")
+        throw new Error("Session snapshot is missing.");
+      expect(
+        snapshot.snapshot.commands.filter(
+          (record) => record.commandId === command.commandId,
+        ),
+      ).toHaveLength(1);
+      expect(snapshot.snapshot.shell?.composer?.isExecuting).toBe(true);
+      expect(
+        snapshot.snapshot.shell?.visibleMessages.filter(
+          (message) => message.role === "user" && message.content === command.prompt,
+        ),
+      ).toHaveLength(1);
+    } finally {
+      await fixture.shutdown();
+    }
   });
 
   it("persists native goal mode and resolves it when switching providers", async () => {

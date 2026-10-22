@@ -13,7 +13,7 @@ fn remote_iterations_and_queue_edits_preserve_the_current_payload() {
     let request: ProductCommand = serde_json::from_value(serde_json::json!({
         "kind": "submit-message", "commandId": "iterations", "sessionId": "session-1",
         "prompt": "Work on this", "promptEnhancementMode": "off", "interviewEnabled": false,
-        "iterationCount": 3, "iterationMode": "repeat-prompt-and-continue", "runningAction": "steer"
+        "iterationCount": 3, "iterationMode": "repeat-prompt-and-continue", "runningAction": "stop-and-send"
     }))
     .unwrap();
     let event = normalize_command(request).unwrap();
@@ -22,7 +22,7 @@ fn remote_iterations_and_queue_edits_preserve_the_current_payload() {
         event.iteration_mode.as_deref(),
         Some("repeat-prompt-and-continue")
     );
-    assert_eq!(event.running_action.as_deref(), Some("steer"));
+    assert_eq!(event.running_action.as_deref(), Some("stop-and-send"));
     let mut changed = event.clone();
     changed.iteration_count = Some(2);
     assert!(!command_payloads_match(&event, &changed));

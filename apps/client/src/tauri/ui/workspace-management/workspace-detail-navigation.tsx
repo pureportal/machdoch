@@ -5,6 +5,8 @@ import {
   ScrollText,
   Settings2,
   SlidersHorizontal,
+  Search,
+  BookOpen,
 } from "lucide-react";
 import type { JSX, KeyboardEvent } from "react";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
@@ -15,6 +17,8 @@ export type WorkspaceDetailSection =
   | "configuration"
   | "git"
   | "memory"
+  | "knowledge"
+  | "research"
   | "settings";
 
 const WORKSPACE_DETAIL_SECTIONS = [
@@ -27,6 +31,8 @@ const WORKSPACE_DETAIL_SECTIONS = [
   },
   { value: "git", label: "Git", icon: GitBranch },
   { value: "memory", label: "Memory", icon: Brain },
+  { value: "knowledge", label: "Knowledge", icon: Search },
+  { value: "research", label: "Research", icon: BookOpen },
   { value: "settings", label: "Settings", icon: Settings2 },
 ] as const;
 

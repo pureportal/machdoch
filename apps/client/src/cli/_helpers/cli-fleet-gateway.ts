@@ -1,3 +1,4 @@
+import { workspaceLibraryCapability } from "@machdoch/fleet-protocol/workspace-library";
 import {
   gatewayProtocolVersion,
   hostMessageSchema,
@@ -246,6 +247,7 @@ export const runFleetGatewayConnection = async (options: {
           ralphEditorCapability,
           schedulerEditorCapability,
           instructionEditorCapability,
+          workspaceLibraryCapability,
           workspaceRunsCapability,
           workspacePreviewsCapability,
         ],

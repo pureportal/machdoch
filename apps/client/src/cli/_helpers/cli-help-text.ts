@@ -15,6 +15,9 @@ Core commands:
   interview      Refine a task through structured questions
   config         Inspect or change user and workspace settings
   memory         Inspect and remove saved memory facts
+  knowledge      Search workspace documents and code
+  research       Manage persistent research projects
+  skills         Manage global skills
   inspect        List discovered prompts and skills
   tools          List available tool areas and model-facing functions
   update         Install the latest Machdoch release
@@ -328,6 +331,33 @@ Use --timezone for cron schedules, --prompt-file for file input, and --json for
 automation. Run 'machdoch scheduler create --help' to return to this reference.`;
 
 const HELP_BY_TOPIC: Readonly<Record<string, string>> = {
+  skills: `machdoch skills - manage global skills
+
+Usage:
+  machdoch skills list [--json]
+  machdoch skills --input-json-file <path> [--json]
+
+JSON actions: list, save (skill: name, description, content, enabled, optional
+expectedFingerprint), delete (name, expectedFingerprint). Editing and deleting
+require the fingerprint returned by list.`,
+  knowledge: `machdoch knowledge - search workspace documents and code
+
+Usage:
+  machdoch knowledge search <query> [--cwd <path>] [--json]
+  machdoch knowledge index [--cwd <path>] [--json]
+
+Results include source paths, line ranges and fingerprints. Searches refresh the
+local text index and respect Git exclusions.`,
+  research: `machdoch research - manage persistent research projects
+
+Usage:
+  machdoch research list [--cwd <path>] [--json]
+  machdoch research show <id> [--cwd <path>] [--json]
+  machdoch research --input-json-file <path> [--cwd <path>] [--json]
+
+JSON actions: save-project (project), delete-project (id, revision), check-sources (id).
+Projects contain title, question, notes, status, revision (0 for new), sources and
+findings. Updates require the current revision. Supported findings require sourceIds.`,
   speech: `machdoch speech - use the native speech service
 
 Usage:

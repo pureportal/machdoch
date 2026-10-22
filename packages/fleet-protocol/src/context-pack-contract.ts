@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { contextWindowSchema } from "@machdoch/fleet-protocol/context-window";
 import { productAttachmentSchema } from "@machdoch/fleet-protocol/composer-contract";
 import {
   modelProviderSchema,
@@ -9,7 +10,6 @@ import {
 
 export const contextPackLimits = {
   documents: 160,
-  text: 128 * 1024,
   identifier: 240,
   variables: 64,
   triggers: 128,
@@ -17,12 +17,16 @@ export const contextPackLimits = {
 } as const;
 
 const id = z.string().trim().min(1).max(contextPackLimits.identifier);
-const text = z
+export const contextPackTextSchema = z
   .string()
-  .max(contextPackLimits.text)
   .refine((value) => !value.includes("\0"));
-const variable = z.strictObject({ name: id, defaultValue: text.optional() });
+const variable = z.strictObject({
+  name: id,
+  defaultValue: contextPackTextSchema.optional(),
+});
 const overrides = {
+  contextWindow: contextWindowSchema.optional(),
+  temporary: z.boolean().optional(),
   provider: modelProviderSchema.optional(),
   model: id.optional(),
   mode: runModeSchema.optional(),
@@ -36,8 +40,8 @@ const overrides = {
 };
 const content = {
   name: id,
-  instructions: text,
-  prompt: text,
+  instructions: contextPackTextSchema,
+  prompt: contextPackTextSchema,
   contextAttachments: z.array(productAttachmentSchema).max(64),
 };
 export const contextPackScopeSchema = z.enum(["workspace", "global"]);

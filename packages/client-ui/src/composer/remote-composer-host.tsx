@@ -11,6 +11,7 @@ import {
   type AttachmentActivity,
 } from "./remote-attachment-dialog";
 import { RemoteComposer } from "./remote-composer";
+import { LiveVoiceControl } from "../voice/live-voice-control";
 import { useRemoteComposerHistory } from "./use-remote-composer-history";
 import { RemoteContextPackPicker } from "../context-packs/remote-picker";
 import type {
@@ -42,6 +43,7 @@ export function RemoteComposerHost(
   };
   const { session, workspaceTransport, mediaTransport, onCommand } = props;
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [liveVoiceActive, setLiveVoiceActive] = useState(false);
   const [directory, setDirectory] = useState<WorkspaceDirectoryPage | null>(
     null,
   );
@@ -201,7 +203,22 @@ export function RemoteComposerHost(
 
   return (
     <>
+      {session.workspace && session.specialKind !== "pose" ? <LiveVoiceControl
+        key={session.id}
+        identity={session.id}
+        workspaceRoot={session.workspace}
+        disabled={props.pending}
+        onActiveChange={setLiveVoiceActive}
+        browserReply={props.latestReply ?? null}
+        invoke={(input) => workspaceTransport.invoke("run_live_voice_command", { workspaceRoot: session.workspace, input })}
+        onSpeechStart={() => { if (props.voice?.speakingMessageId) void onCommand({ kind: "stop-speaking" }); }}
+        onTranscript={async (prompt) => {
+          const sent = await onCommand({ kind: "submit-message", sessionId: session.id, prompt, promptEnhancementMode: "off", interviewEnabled: false, runningAction: "stop-and-send" });
+          if (!sent) throw new Error("The voice message could not be sent. Retry the text below.");
+        }}
+      /> : null}
       <RemoteComposer
+        liveVoiceActive={liveVoiceActive}
         {...props}
         onHistoryKeyDown={history.handleKeyDown}
         pending={props.pending || busy}

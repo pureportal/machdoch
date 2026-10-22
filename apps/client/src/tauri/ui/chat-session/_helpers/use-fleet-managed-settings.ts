@@ -37,7 +37,10 @@ import {
   type UserWebSearchApiKeyProvider,
   type WebSearchProvider,
 } from "../../runtime";
-import { type FleetManagedSettingsState, type ShellPersistedState } from "../../chat-session.model";
+import {
+  type FleetManagedSettingsState,
+  type ShellPersistedState,
+} from "../../chat-session.model";
 import { type SmartContextPack } from "@machdoch/client-ui/context-packs/model";
 import {
   SUPPORTED_PROVIDER_ORDER,
@@ -305,6 +308,13 @@ export function createEnrollmentSettingsDocument(
         model: pack.model ?? null,
         mode: pack.mode ?? null,
         reasoning: pack.reasoning ?? null,
+        ...(pack.contextWindow !== undefined
+          ? { contextWindow: pack.contextWindow }
+          : {}),
+        ...(pack.temporary !== undefined ? { temporary: pack.temporary } : {}),
+        ...(pack.useWorkspaceMemory !== undefined
+          ? { useWorkspaceMemory: pack.useWorkspaceMemory }
+          : {}),
         variables: pack.variables.map((variable) => ({
           name: variable.name,
           defaultValue: variable.defaultValue ?? null,
@@ -674,6 +684,13 @@ export function createManagedContextPacks(
       ...(pack.model ? { model: pack.model } : {}),
       ...(mode ? { mode } : {}),
       ...(reasoning ? { reasoning } : {}),
+      ...(pack.contextWindow !== undefined
+        ? { contextWindow: pack.contextWindow }
+        : {}),
+      ...(pack.temporary !== undefined ? { temporary: pack.temporary } : {}),
+      ...(pack.useWorkspaceMemory !== undefined
+        ? { useWorkspaceMemory: pack.useWorkspaceMemory }
+        : {}),
       ...(pack.promptEnhancementMode === null
         ? {}
         : { promptEnhancementMode: pack.promptEnhancementMode }),
@@ -766,6 +783,9 @@ const managedPackContentMatches = (
   current.model === desired.model &&
   current.mode === desired.mode &&
   current.reasoning === desired.reasoning &&
+  current.contextWindow === desired.contextWindow &&
+  current.temporary === desired.temporary &&
+  current.useWorkspaceMemory === desired.useWorkspaceMemory &&
   current.promptEnhancementMode === desired.promptEnhancementMode &&
   current.interviewEnabled === desired.interviewEnabled &&
   current.sessionMemoryEnabled === desired.sessionMemoryEnabled &&

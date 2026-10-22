@@ -239,6 +239,12 @@ pub(super) struct FleetShellComposer {
     pub(super) goal: Option<FleetShellGoal>,
     pub(super) reasoning: String,
     pub(super) default_reasoning: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) context_window: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) context_window_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) long_context_window_tokens: Option<u64>,
     pub(super) reasoning_options: Vec<String>,
     pub(super) prompt_enhancement_mode: String,
     pub(super) interview_enabled: bool,

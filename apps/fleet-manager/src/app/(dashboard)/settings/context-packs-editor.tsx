@@ -2,6 +2,7 @@
 
 import { Boxes, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { ContextWindowPicker } from "@machdoch/client-ui/composer/context-window-picker";
 import { ConfirmButton } from "@/components/confirm-button";
 import { Field } from "@/components/field";
 import { ShowMore } from "@/components/show-more";
@@ -145,6 +146,8 @@ function ContextPackDialog({
 }): React.ReactElement {
   const pack = editing === "new" ? null : editing;
   const [provider, setProvider] = useState(pack?.provider ?? "");
+  const [model, setModel] = useState(pack?.model ?? "");
+  const [contextWindow, setContextWindow] = useState(pack?.contextWindow);
   return (
     <FormDialog
       open={editing !== null}
@@ -161,6 +164,9 @@ function ContextPackDialog({
           model: optionalValue(String(form.get("model") ?? "")),
           mode: optionalValue(String(form.get("mode"))),
           reasoning: optionalValue(String(form.get("reasoning"))),
+          ...(contextWindow !== undefined ? { contextWindow } : {}),
+          temporary: form.get("temporary") === "on",
+          ...(optionalBoolean(form, "useWorkspaceMemory") === null ? {} : { useWorkspaceMemory: optionalBoolean(form, "useWorkspaceMemory")! }),
           variables: parseVariables(String(form.get("variables"))),
           triggerPhrases: splitList(String(form.get("triggerPhrases"))),
           pathPatterns: splitList(String(form.get("pathPatterns"))),
@@ -206,7 +212,7 @@ function ContextPackDialog({
             id="pack-provider"
             name="provider"
             value={provider}
-            onChange={(event) => setProvider(event.target.value)}
+            onChange={(event) => { setProvider(event.target.value); setContextWindow(undefined); }}
           >
             <option value="">Not set</option>
             {providers.map((option) => (
@@ -220,13 +226,16 @@ function ContextPackDialog({
           <Input
             id="pack-model"
             name="model"
-            defaultValue={pack?.model ?? ""}
+            value={model}
+            onChange={(event) => { setModel(event.target.value); setContextWindow(undefined); }}
             disabled={!provider}
             required={Boolean(provider)}
           />
         </Field>
       </div>
       <ShowMore>
+        <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="temporary" defaultChecked={pack?.temporary ?? false} />Temporary (next prompt only)</label>
+        <ContextWindowPicker provider={provider} model={model} value={contextWindow} onChange={setContextWindow} inheritLabel="Keep current" />
         <div className="grid gap-5 md:grid-cols-2">
           <OptionField
             label="Mode"
@@ -286,6 +295,7 @@ function ContextPackDialog({
             name="useGlobalMemory"
             value={pack?.useGlobalMemory ?? null}
           />
+          <BooleanOptionField label="Workspace memory" name="useWorkspaceMemory" value={pack?.useWorkspaceMemory ?? null} />
           <BooleanOptionField
             label="UI control"
             name="uiControlEnabled"

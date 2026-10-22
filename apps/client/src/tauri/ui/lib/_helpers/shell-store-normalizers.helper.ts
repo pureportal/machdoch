@@ -30,7 +30,7 @@ export type MainAppId =
   | "tts"
   | "instructions"
   | "workspaces";
-export type RunningTaskMessageAction = "steer" | "stop-and-send" | "queue";
+export type RunningTaskMessageAction = "stop-and-send" | "queue";
 
 export interface AppShellState {
   version: 1;
@@ -162,7 +162,7 @@ export const normalizeRunningTaskMessageAction = (
 ): RunningTaskMessageAction => {
   return normalizeOneOf(
     value,
-    ["steer", "stop-and-send", "queue"],
+    ["stop-and-send", "queue"],
     DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
   );
 };

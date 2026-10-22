@@ -18,6 +18,9 @@ import {
 } from "./use-automatic-chat-work";
 import { hasPendingChatWork } from "../../app-shell/shutdown-when-idle";
 import { getSessionMessageRunningAction } from "./composer-submission";
+import { applySmartContextPackSettingsToSession } from "./smart-context-packs";
+import type { SmartContextPack } from "@machdoch/client-ui/context-packs/model";
+import { createSessionMessageSettings } from "./session-message-settings";
 
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
@@ -208,6 +211,47 @@ afterEach(() => {
 });
 
 describe("chat execution lifecycle", () => {
+  it("uses a temporary pack for one accepted prompt and the previous model for the next", async () => {
+    vi.useFakeTimers();
+    const work = setup();
+    const originalModel = work.state.activeSession.model;
+    const pack: SmartContextPack = {
+      id: "commit", name: "Commit", workspace: null, instructions: "", prompt: "Commit",
+      contextAttachments: [], variables: [], trigger: { phrases: [], pathPatterns: [] },
+      createdAt: 1, updatedAt: 1, useCount: 0, temporary: true,
+      provider: "openai", model: "cheap-model", sessionMemoryEnabled: false,
+    };
+    work.state.updateSessionById(work.state.activeSession.id, session =>
+      applySmartContextPackSettingsToSession({ ...session, draft: "Commit" }, pack, { provider: "openai", model: "cheap-model" }));
+    vi.mocked(runDesktopTask).mockResolvedValue(success("Commit"));
+    const snapshot = work.state.activeSession;
+    expect(work.submission.submitTaskToSession({
+      sessionSnapshot: snapshot, task: snapshot.draft,
+      messageSettings: createSessionMessageSettings(snapshot),
+      contextAttachments: [], clearDraft: true, activateSession: false,
+    })).toBe(true);
+    expect(work.state.activeSession.model).toBe(originalModel);
+    expect(work.state.activeSession.temporaryPackSettings).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.mocked(runDesktopTask).mock.calls[0]?.[2]?.model).toBe("cheap-model");
+    expect(work.state.activeSession.messages.find(message => message.role === "user")?.settings?.model).toBe("cheap-model");
+    expect(work.submit("Next task")).toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.mocked(runDesktopTask).mock.calls[1]?.[2]?.model).toBe(originalModel);
+  });
+
+  it("keeps pending temporary settings when submission is rejected", () => {
+    const work = setup();
+    const session = work.state.activeSession;
+    const settings = createSessionMessageSettings(session);
+    work.state.updateSessionById(session.id, current => ({ ...current,
+      temporaryPackSettings: { packName: "Commit", previous: settings, applied: settings },
+    }));
+    work.active.current.set("busy", session.id);
+    expect(work.submit("Commit")).toBe(false);
+    expect(work.state.activeSession.temporaryPackSettings?.packName).toBe("Commit");
+  });
+
   it("queues messages during Git diff processing and drains them once after settlement", async () => {
     vi.useFakeTimers();
     const work = setup();

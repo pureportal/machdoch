@@ -104,6 +104,9 @@ struct Args {
 }
 
 pub fn valid_instruction_invocation(command: &str, args: &Value) -> bool {
+    if command == "run_skill_command" {
+        return args.as_object().is_some_and(|args| args.len() == 1 && args.get("input").is_some_and(crate::skills::valid_request));
+    }
     let Ok(args) = serde_json::from_value::<Args>(args.clone()) else {
         return false;
     };

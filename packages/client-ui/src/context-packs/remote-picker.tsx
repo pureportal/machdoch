@@ -150,6 +150,8 @@ export function RemoteContextPackPicker({
         activeModel={composer.model}
         activeRunMode={composer.mode}
         activeReasoning={composer.reasoning}
+        activeContextWindow={composer.contextWindow}
+        modelOptions={[{ provider: provider.data, id: composer.model, label: composer.model, capabilities: composer }]}
         activePromptEnhancementMode={composer.promptEnhancementMode}
         activeInterviewEnabled={composer.interviewEnabled}
         activeSessionMemoryEnabled={composer.sessionMemoryEnabled}

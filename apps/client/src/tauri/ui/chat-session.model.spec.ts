@@ -1444,17 +1444,17 @@ describe("normalizeShellState", () => {
     expect(normalized.contextPacks[0]?.uiControlEnabled).toBeUndefined();
   });
 
-  it("preserves a validated Unicode context-pack archive through import and persisted reload", () => {
+  it("preserves a large Unicode context-pack archive through import and persisted reload", () => {
     const pack = {
       id: "unicode-context-pack",
       workspace: null,
       name: "Context pack " + "x".repeat(120),
-      instructions: "Instructions\n" + "Grüß 🌿\n".repeat(3000) + "End",
-      prompt: "Prompt\n" + "日本語\n".repeat(3000) + "End",
+      instructions: "Instructions\n" + "Grüß 🌿\n".repeat(40_000) + "End",
+      prompt: "Prompt\n" + "日本語\n".repeat(40_000) + "End",
       contextAttachments: [],
       variables: Array.from({ length: 20 }, (_, index) => ({
         name: "variable_" + "x".repeat(60) + index,
-        defaultValue: "Default\n" + "Grüß 🌿\n".repeat(40) + "End",
+        defaultValue: "Default\n" + "Grüß 🌿\n".repeat(index === 0 ? 40_000 : 40) + "End",
       })),
       trigger: {
         phrases: Array.from({ length: 20 }, (_, index) => "phrase " + "x".repeat(120) + index),

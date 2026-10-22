@@ -303,6 +303,9 @@ fn normalize_command_fields(
     }
 
     let mode = optional_truncated_text(request.mode.as_deref(), MAX_FLEET_SHORT_TEXT_CHARS);
+    if kind == "set-session-context-window" && !mode.as_deref().is_some_and(|value| matches!(value, "inherit" | "default" | "long") || (value.len() <= 8 && value.bytes().all(|byte| byte.is_ascii_digit()) && value.parse::<u64>().is_ok_and(|tokens| (1..=10_000_000).contains(&tokens)))) {
+        return Err("Choose a valid context size.".to_string());
+    }
     if kind == "set-session-mode" && !matches!(mode.as_deref(), Some("ask" | "machdoch")) {
         return Err("Session mode must be ask or machdoch.".to_string());
     }

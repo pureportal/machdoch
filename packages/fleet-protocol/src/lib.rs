@@ -9,6 +9,7 @@ pub mod device_settings;
 pub mod speech;
 pub mod identifiers;
 pub mod instructions;
+pub mod skills;
 mod media;
 mod operation;
 pub mod ralph;
@@ -222,6 +223,12 @@ pub struct FleetManagedContextPack {
     pub model: Option<String>,
     pub mode: Option<String>,
     pub reasoning: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window: Option<Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temporary: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub use_workspace_memory: Option<bool>,
     pub variables: Vec<FleetManagedContextPackVariable>,
     pub trigger_phrases: Vec<String>,
     pub path_patterns: Vec<String>,
@@ -461,12 +468,16 @@ fn validate_managed_context_packs(
     for pack in context_packs {
         if !valid_managed_uuid(&pack.id)
             || !valid_managed_name(&pack.name, 200)
-            || !valid_managed_text(&pack.instructions, 128 * 1024, false)
-            || !valid_managed_text(&pack.prompt, 128 * 1024, false)
+            || pack.instructions.contains('\0')
+            || pack.prompt.contains('\0')
             || !valid_managed_provider(pack.provider.as_deref())
             || !valid_managed_optional_text(pack.model.as_deref())
             || !valid_managed_mode(pack.mode.as_deref())
             || !valid_managed_reasoning(pack.reasoning.as_deref())
+            || pack.context_window.as_ref().is_some_and(|value| {
+                !matches!(value.as_str(), Some("default" | "long"))
+                    && !value.as_u64().is_some_and(|tokens| (1..=10_000_000).contains(&tokens))
+            })
             || (pack.provider.is_some() != pack.model.is_some())
             || (pack.instructions.is_empty() && pack.prompt.is_empty())
             || pack.variables.len() > 64
@@ -1005,6 +1016,7 @@ pub enum ProductCommandKind {
     SetParallelAgentMode,
     SetGoalMode,
     SetSessionReasoning,
+    SetSessionContextWindow,
     SetSessionWorkspace,
     AddWorkspace,
     RemoveWorkspace,
@@ -1442,6 +1454,10 @@ impl ProductCommand {
                 ("sessionId", self.session_id.is_some()),
                 ("reasoning", self.reasoning.is_some()),
             ]),
+            ProductCommandKind::SetSessionContextWindow => required.extend([
+                ("sessionId", self.session_id.is_some()),
+                ("mode", self.mode.is_some()),
+            ]),
             ProductCommandKind::SetSessionWorkspace => required.extend([
                 ("sessionId", self.session_id.is_some()),
                 ("workspace", self.workspace.is_some()),
@@ -1732,6 +1748,10 @@ impl ProductCommand {
             ProductCommandKind::SetSessionReasoning => {
                 valid_identifier(self.session_id.as_deref())
                     && valid_reasoning(self.reasoning.as_deref())
+            }
+            ProductCommandKind::SetSessionContextWindow => {
+                valid_identifier(self.session_id.as_deref())
+                    && self.mode.as_deref().is_some_and(|value| matches!(value, "inherit" | "default" | "long") || (value.len() <= 8 && value.bytes().all(|byte| byte.is_ascii_digit()) && value.parse::<u64>().is_ok_and(|tokens| (1..=10_000_000).contains(&tokens))))
             }
             ProductCommandKind::SetSessionWorkspace => {
                 valid_identifier(self.session_id.as_deref())
@@ -2031,7 +2051,7 @@ fn valid_iteration_mode(value: &str) -> bool {
 }
 
 fn valid_running_action(value: &str) -> bool {
-    matches!(value, "queue" | "steer" | "stop-and-send")
+    matches!(value, "queue" | "stop-and-send")
 }
 
 fn valid_prompt_enhancement_mode(value: Option<&str>) -> bool {
@@ -2143,6 +2163,7 @@ impl ProductCommandKind {
             Self::SetParallelAgentMode => &["kind", "commandId", "sessionId", "mode"],
             Self::SetGoalMode => &["kind", "commandId", "sessionId", "mode"],
             Self::SetSessionReasoning => &["kind", "commandId", "sessionId", "reasoning"],
+            Self::SetSessionContextWindow => &["kind", "commandId", "sessionId", "mode"],
             Self::SetSessionWorkspace => &["kind", "commandId", "sessionId", "workspace"],
             Self::AddWorkspace | Self::RemoveWorkspace => &["kind", "commandId", "workspace"],
             Self::RelinkWorkspace => &["kind", "commandId", "workspace", "destinationWorkspace"],
@@ -2258,6 +2279,7 @@ impl ProductCommandKind {
             Self::SetParallelAgentMode => "set-parallel-agent-mode",
             Self::SetGoalMode => "set-goal-mode",
             Self::SetSessionReasoning => "set-session-reasoning",
+            Self::SetSessionContextWindow => "set-session-context-window",
             Self::SetSessionWorkspace => "set-session-workspace",
             Self::AddWorkspace => "add-workspace",
             Self::RemoveWorkspace => "remove-workspace",
@@ -3194,6 +3216,20 @@ mod tests {
         let mut whitespace_only = managed_settings_delivery_json();
         whitespace_only["profile"]["name"] = Value::String(" \u{FEFF}\u{3000} ".to_string());
         assert!(serde_json::from_value::<FleetManagedSettingsDelivery>(whitespace_only).is_err());
+    }
+
+    #[test]
+    fn managed_settings_delivery_preserves_long_context_pack_text() {
+        let mut payload = managed_settings_delivery_json();
+        let prompt = format!("Prompt\n{}\nEnd prompt", "x".repeat(200_000));
+        let instructions = format!("Instructions\n{}\nEnd instructions", "x".repeat(200_000));
+        payload["profile"]["document"]["contextPacks"][0]["prompt"] = serde_json::json!(prompt);
+        payload["profile"]["document"]["contextPacks"][0]["instructions"] = serde_json::json!(instructions);
+        let delivery = serde_json::from_value::<FleetManagedSettingsDelivery>(payload.clone())
+            .expect("long context packs should decode");
+        assert_eq!(serde_json::to_value(delivery).unwrap(), payload);
+        payload["profile"]["document"]["contextPacks"][0]["prompt"] = serde_json::json!("text\0text");
+        assert!(serde_json::from_value::<FleetManagedSettingsDelivery>(payload).is_err());
     }
 
     #[test]

@@ -44,7 +44,7 @@ export interface ChatSessionRequestIteration {
 export const MAX_REQUEST_ITERATIONS = 20;
 
 export type AttachmentSelectionKind = "files" | "folders" | "images";
-export type RunningTaskMessageAction = "queue" | "steer" | "stop-and-send";
+export type RunningTaskMessageAction = "queue" | "stop-and-send";
 export type RequestIterationMode = NonNullable<
   ChatSessionRequestIteration["mode"]
 >;
