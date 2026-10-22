@@ -75,7 +75,10 @@ pub(super) fn available_models(paths: &MediaRuntimePaths) -> MediaResult<HashMap
         .map_err(|error| error.to_string())?;
     let mut present = HashMap::new();
     for (id, package_type, expected_bytes) in rows {
-        if !folder_available {
+        if !folder_available
+            || (!model_install::has_manifest(&id)
+                && !id.starts_with(model_import::USER_MODEL_ID_PREFIX))
+        {
             continue;
         }
         let root = model_install::library_path(paths, &id)?;

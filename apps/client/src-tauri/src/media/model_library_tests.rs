@@ -108,6 +108,66 @@ fn selected_folder_discovers_copied_files_without_a_workspace_and_skips_internal
 }
 
 #[test]
+fn unmanaged_installations_do_not_block_discovery_or_the_model_catalog() {
+    let library = Library::new();
+    let paths = library.instance("dev");
+    let source = library.root.join("source.safetensors");
+    write_checkpoint(&source, "Shared XL");
+    let imported = configure(&paths, &source);
+    write_checkpoint(&library.models.join("new.safetensors"), "New XL");
+    let unmanaged_id = "local:flux-1-schnell";
+    assert!(!model_install::has_manifest(unmanaged_id));
+    database::open(&paths)
+        .unwrap()
+        .execute(
+            "INSERT INTO media_model_installations(
+                model_id, revision, status, manifest_digest, bytes_on_disk, updated_at
+             ) VALUES (?1, 'unmanaged-revision', 'installed', 'unmanaged-digest', 1024, ?2)",
+            rusqlite::params![unmanaged_id, database::now()],
+        )
+        .unwrap();
+
+    let discovery = discover(&paths, None).unwrap();
+    assert_eq!(discovery.entries.len(), 1);
+    assert_eq!(discovery.entries[0].display_name, "New XL");
+    assert_eq!(discovery.entries[0].status, "importable");
+
+    let snapshot = database::get_model_catalog(&paths, &HashSet::new()).unwrap();
+    let model = snapshot
+        .models
+        .iter()
+        .find(|model| model.id == unmanaged_id)
+        .unwrap();
+    assert!(!model.installed);
+    assert!(!model.configured);
+    assert_eq!(model.installation_status, "not-installed");
+    assert!(model.installed_revision.is_none());
+    assert!(snapshot
+        .models
+        .iter()
+        .any(|model| model.id == imported.model_id && model.installed));
+}
+
+#[test]
+fn managed_installations_still_reject_invalid_package_paths() {
+    let library = Library::new();
+    let paths = library.instance("dev");
+    let source = library.root.join("source.safetensors");
+    write_checkpoint(&source, "Shared XL");
+    let imported = configure(&paths, &source);
+    database::open(&paths)
+        .unwrap()
+        .execute(
+            "UPDATE media_model_installations SET relative_path = '../outside' WHERE model_id = ?1",
+            [&imported.model_id],
+        )
+        .unwrap();
+
+    let error = available_models(&paths).unwrap_err();
+    assert_eq!(error, "the installed model path is not a managed package path");
+}
+
+#[test]
 fn missing_and_truncated_models_disappear_and_restored_models_keep_their_configuration() {
     let library = Library::new();
     let paths = library.instance("dev");
