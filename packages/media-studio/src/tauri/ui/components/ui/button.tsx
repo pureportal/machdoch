@@ -6,21 +6,20 @@ import { cn } from "../../lib/utils";
 import { ControlTooltip, TooltipContent } from "./tooltip";
 
 const buttonVariants = cva(
-  "inline-flex cursor-pointer shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-oklch(0.705 0.015 286.067) focus-visible:ring-[3px] focus-visible:ring-oklch(0.705 0.015 286.067)/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-oklch(0.577 0.245 27.325) aria-invalid:ring-oklch(0.577 0.245 27.325)/20 dark:aria-invalid:ring-oklch(0.577 0.245 27.325)/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 dark:focus-visible:border-oklch(0.552 0.016 285.938) dark:focus-visible:ring-oklch(0.552 0.016 285.938)/50 dark:aria-invalid:border-oklch(0.704 0.191 22.216) dark:aria-invalid:ring-oklch(0.704 0.191 22.216)/20 dark:dark:aria-invalid:ring-oklch(0.704 0.191 22.216)/40",
+  "inline-flex cursor-pointer shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-(--ring) focus-visible:ring-[3px] focus-visible:ring-(--ring)/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-(--destructive) aria-invalid:ring-(--destructive)/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
         default:
-          "bg-oklch(0.21 0.006 285.885) text-oklch(0.985 0 0) hover:bg-oklch(0.21 0.006 285.885)/90 dark:bg-oklch(0.92 0.004 286.32) dark:text-oklch(0.21 0.006 285.885) dark:hover:bg-oklch(0.92 0.004 286.32)/90",
+          "bg-(--primary) text-(--primary-foreground) hover:bg-(--primary)/90",
         destructive:
-          "bg-oklch(0.577 0.245 27.325) text-white hover:bg-oklch(0.577 0.245 27.325)/90 focus-visible:ring-oklch(0.577 0.245 27.325)/20 dark:bg-oklch(0.577 0.245 27.325)/60 dark:focus-visible:ring-oklch(0.577 0.245 27.325)/40 dark:bg-oklch(0.704 0.191 22.216) dark:hover:bg-oklch(0.704 0.191 22.216)/90 dark:focus-visible:ring-oklch(0.704 0.191 22.216)/20 dark:dark:bg-oklch(0.704 0.191 22.216)/60 dark:dark:focus-visible:ring-oklch(0.704 0.191 22.216)/40",
+          "bg-(--app-red-500) text-white hover:bg-(--app-red-500)/90 focus-visible:ring-(--app-red-500)/40",
         outline:
-          "border bg-oklch(1 0 0) shadow-xs hover:bg-oklch(0.967 0.001 286.375) hover:text-oklch(0.21 0.006 285.885) dark:border-oklch(0.92 0.004 286.32) dark:bg-oklch(0.92 0.004 286.32)/30 dark:hover:bg-oklch(0.92 0.004 286.32)/50 dark:bg-oklch(0.141 0.005 285.823) dark:hover:bg-oklch(0.274 0.006 286.033) dark:hover:text-oklch(0.985 0 0) dark:dark:border-oklch(1 0 0 / 15%) dark:dark:bg-oklch(1 0 0 / 15%)/30 dark:dark:hover:bg-oklch(1 0 0 / 15%)/50",
+          "border border-(--input) bg-(--background) shadow-xs hover:bg-(--secondary) hover:text-(--secondary-foreground)",
         secondary:
-          "bg-oklch(0.967 0.001 286.375) text-oklch(0.21 0.006 285.885) hover:bg-oklch(0.967 0.001 286.375)/80 dark:bg-oklch(0.274 0.006 286.033) dark:text-oklch(0.985 0 0) dark:hover:bg-oklch(0.274 0.006 286.033)/80",
-        ghost:
-          "hover:bg-oklch(0.967 0.001 286.375) hover:text-oklch(0.21 0.006 285.885) dark:hover:bg-oklch(0.967 0.001 286.375)/50 dark:hover:bg-oklch(0.274 0.006 286.033) dark:hover:text-oklch(0.985 0 0) dark:dark:hover:bg-oklch(0.274 0.006 286.033)/50",
-        link: "text-oklch(0.21 0.006 285.885) underline-offset-4 hover:underline dark:text-oklch(0.92 0.004 286.32)",
+          "bg-(--secondary) text-(--secondary-foreground) hover:bg-(--secondary)/80",
+        ghost: "hover:bg-(--secondary) hover:text-(--secondary-foreground)",
+        link: "text-(--primary) underline-offset-4 hover:underline",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
