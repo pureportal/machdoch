@@ -45,6 +45,8 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
   const installing = useRef(false);
   const installed = useRef(false);
   const checking = useRef(false);
+  const dialogOpen = useRef(open);
+  dialogOpen.current = open;
   const latest = useRef(options);
   latest.current = options;
 
@@ -54,20 +56,6 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
     let timer: ReturnType<typeof setInterval> | undefined;
     let reminder: ReturnType<typeof setInterval> | undefined;
     let enabled = false;
-    const showPending = () => {
-      if (
-        !disposed &&
-        !installing.current &&
-        !installed.current &&
-        update.current &&
-        shouldNotifyForUpdate(
-          update.current.version,
-          preference.current,
-          Date.now(),
-        )
-      )
-        setOpen(true);
-    };
     const checkForUpdate = async (manual = false) => {
       if (
         disposed ||
@@ -130,6 +118,18 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
         checking.current = false;
       }
     };
+    const refreshPending = () => {
+      if (
+        !dialogOpen.current &&
+        update.current &&
+        shouldNotifyForUpdate(
+          update.current.version,
+          preference.current,
+          Date.now(),
+        )
+      )
+        void checkForUpdate();
+    };
     const manualCheck = () => {
       if (installing.current || installed.current) {
         setOpen(true);
@@ -138,7 +138,7 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
       void checkForUpdate(true);
     };
     const resumeCheck = () => {
-      if (document.visibilityState === "visible") showPending();
+      if (document.visibilityState === "visible") refreshPending();
     };
     void (async () => {
       try {
@@ -162,7 +162,7 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
           },
           6 * 60 * 60_000,
         );
-        reminder = setInterval(showPending, 60_000);
+        reminder = setInterval(refreshPending, 60_000);
       } catch (failure) {
         if (!disposed) console.error("Could not initialize updates", failure);
       }
