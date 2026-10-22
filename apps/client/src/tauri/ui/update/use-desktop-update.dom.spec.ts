@@ -39,18 +39,18 @@ vi.mock("@tauri-apps/plugin-store", () => ({
   },
 }));
 
-function availableUpdate() {
+function availableUpdate(version = "2.0.0") {
   return {
     rid: 1,
     currentVersion: "1.0.0",
-    version: "2.0.0",
+    version,
     rawJson: {
-      version: "2.0.0",
+      version,
       platforms: {
         "linux-headless": {
-          url: "https://github.com/pureportal/machdoch/releases/download/v2.0.0/machdoch-headless.tar.gz",
+          url: `https://github.com/pureportal/machdoch/releases/download/v${version}/machdoch-headless.tar.gz`,
           signature: btoa(
-            "untrusted comment: test\npacket\ntrusted comment: timestamp:1\tfile:machdoch-headless.tar.gz\tversion:2.0.0\nglobal\n",
+            `untrusted comment: test\npacket\ntrusted comment: timestamp:1\tfile:machdoch-headless.tar.gz\tversion:${version}\nglobal\n`,
           ),
           sha256: "0".repeat(64),
           size: 100,
@@ -121,6 +121,111 @@ describe("desktop update lifecycle", () => {
       skippedVersion: "2.0.0",
     });
     expect(result.current.open).toBe(false);
+  });
+
+  it.each(["timer", "resume"])(
+    "refreshes an expired reminder before reopening it on %s",
+    async (trigger) => {
+      vi.useFakeTimers();
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+      const { result } = renderHook(() =>
+        useDesktopUpdate({ flush: async () => {} }),
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(result.current.release?.version).toBe("2.0.0");
+      await act(async () => {
+        await result.current.defer("hour");
+        await vi.advanceTimersByTimeAsync(59 * 60_000);
+        document.dispatchEvent(new Event("visibilitychange"));
+      });
+      expect(result.current.open).toBe(false);
+      expect(mocks.check).toHaveBeenCalledOnce();
+
+      let checked: (value: ReturnType<typeof availableUpdate>) => void = () => {};
+      mocks.check.mockImplementationOnce(
+        () =>
+          new Promise<ReturnType<typeof availableUpdate>>((resolve) => {
+            checked = resolve;
+          }),
+      );
+      await act(async () => {
+        if (trigger === "timer") await vi.advanceTimersByTimeAsync(60_000);
+        else {
+          vi.setSystemTime(Date.now() + 60_000);
+          document.dispatchEvent(new Event("visibilitychange"));
+        }
+      });
+      expect(mocks.check).toHaveBeenCalledTimes(2);
+      expect(result.current.open).toBe(false);
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(mocks.check).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        checked(availableUpdate("3.0.0"));
+      });
+      expect(result.current.open).toBe(true);
+      expect(result.current.release?.version).toBe("3.0.0");
+      expect(mocks.close).toHaveBeenCalledOnce();
+      await act(async () => {
+        document.dispatchEvent(new Event("visibilitychange"));
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(mocks.check).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("does not reopen a cached offer when the update is no longer available", async () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() =>
+      useDesktopUpdate({ flush: async () => {} }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await result.current.defer("hour");
+    });
+    mocks.check.mockResolvedValueOnce(null);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 60_000);
+    });
+    expect(mocks.check).toHaveBeenCalledTimes(2);
+    expect(result.current.open).toBe(false);
+    expect(result.current.release).toBeNull();
+    expect(result.current.phase).toBe("current");
+    expect(mocks.close).toHaveBeenCalledOnce();
+  });
+
+  it("retries a failed reminder check without reopening the cached offer", async () => {
+    vi.useFakeTimers();
+    const logError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { result } = renderHook(() =>
+      useDesktopUpdate({ flush: async () => {} }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+      await result.current.defer("hour");
+    });
+    mocks.check.mockRejectedValueOnce(new Error("offline"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 60_000);
+    });
+    expect(mocks.check).toHaveBeenCalledTimes(2);
+    expect(result.current.open).toBe(false);
+    expect(logError).toHaveBeenCalledWith(
+      "Could not check for updates",
+      expect.objectContaining({ message: "offline" }),
+    );
+    mocks.check.mockResolvedValueOnce(availableUpdate("3.0.0"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(mocks.check).toHaveBeenCalledTimes(3);
+    expect(result.current.open).toBe(true);
+    expect(result.current.release?.version).toBe("3.0.0");
   });
 
   it("downloads, installs, and restarts after saving pending changes", async () => {
