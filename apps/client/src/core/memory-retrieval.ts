@@ -1,3 +1,4 @@
+import { assessMemoryApplicability } from "./memory-applicability.js";
 import type {
   ConversationMemoryEntry,
   ConversationMemoryScope,
@@ -58,6 +59,8 @@ export interface MemoryRetrievalResult {
   ranked: RankedMemoryEntry[];
   diagnostics: {
     candidateCount: number;
+    excludedCount: number;
+    excludedByReason: Record<string, number>;
     selectedCount: number;
     selectedByScope: Record<ConversationMemoryScope, number>;
     contextCharacters: number;
@@ -127,17 +130,32 @@ export const retrieveConversationMemory = (
   const queryTokens = tokenizeMemoryText(query);
   const queryCounts = countTokens(queryTokens);
   const queryBigrams = createBigrams(queryTokens);
-  const documents = entries.map((entry) => {
+  const excludedByReason: Record<string, number> = {};
+  const documents = entries.flatMap((entry) => {
+    const assessment = assessMemoryApplicability(
+      { ...entry, content: [entry.content, ...entry.searchTerms].join(" ") },
+      query,
+      now,
+    );
+
+    if (!assessment.applicable) {
+      for (const reason of assessment.reasons) {
+        excludedByReason[reason] = (excludedByReason[reason] ?? 0) + 1;
+      }
+      return [];
+    }
     const searchTermTokens = tokenizeMemoryText(entry.searchTerms.join(" "));
     const tokens = tokenizeMemoryText(
       `${entry.key} ${entry.content} ${entry.searchTerms.join(" ")}`,
     );
-    return {
-      entry,
-      tokens,
-      counts: countTokens(tokens),
-      searchTermTokens: new Set(searchTermTokens),
-    };
+    return [
+      {
+        entry,
+        tokens,
+        counts: countTokens(tokens),
+        searchTermTokens: new Set(searchTermTokens),
+      },
+    ];
   });
   const averageDocumentLength =
     documents.reduce((total, document) => total + document.tokens.length, 0) /
@@ -257,6 +275,8 @@ export const retrieveConversationMemory = (
     ranked: selected,
     diagnostics: {
       candidateCount: entries.length,
+      excludedCount: entries.length - documents.length,
+      excludedByReason,
       selectedCount: selected.length,
       selectedByScope,
       contextCharacters,

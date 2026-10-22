@@ -1,7 +1,7 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createLocalReasoningBank,
   getReasoningBankPath,
@@ -10,6 +10,16 @@ import {
 } from "./reasoning-bank.js";
 
 const roots: string[] = [];
+const DAY_MILLISECONDS = 86_400_000;
+const invalidApplicabilities: unknown[] = [
+  null,
+  { taskTerms: "schema" },
+  { excludedTaskTerms: [" "] },
+  { maxAgeDays: -1 },
+  { verifiedAt: -1 },
+  { enabled: "yes" },
+  { unknownRule: true },
+];
 
 const createWorkspace = async (): Promise<string> => {
   const root = await mkdtemp(join(tmpdir(), "machdoch-reasoning-bank-"));
@@ -32,6 +42,7 @@ const lesson = (
 });
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(
     roots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
@@ -60,6 +71,154 @@ describe("local ReasoningBank", () => {
       ),
     ).toHaveLength(1);
     expect(retrieveReasoningLessons("Paint a landscape", reloaded)).toEqual([]);
+  });
+
+  it("normalizes applicability on write and read and preserves it on disk", async () => {
+    const root = await createWorkspace();
+    const bank = createLocalReasoningBank(root);
+    const now = Date.now();
+    const applicability = {
+      taskTerms: [" Runtime   Schema ", "runtime schema"],
+      excludedTaskTerms: [" Prototype "],
+      maxAgeDays: 7,
+      verifiedAt: now - 1_000,
+      expiresAt: now + DAY_MILLISECONDS,
+      enabled: true,
+    };
+    const expected = {
+      ...applicability,
+      taskTerms: ["runtime schema"],
+      excludedTaskTerms: ["prototype"],
+    };
+    const [stored] = await bank.consolidate([lesson({ applicability })]);
+    expect(stored?.applicability).toEqual(expected);
+    const path = getReasoningBankPath(root);
+    const document = JSON.parse(await readFile(path, "utf8"));
+    expect(document.lessons[0].applicability).toEqual(expected);
+    expect(await createLocalReasoningBank(root).load()).toEqual([stored]);
+
+    document.lessons[0].applicability = applicability;
+    await writeFile(path, JSON.stringify(document));
+    expect((await bank.load())[0]?.applicability).toEqual(expected);
+  });
+
+  it("rejects invalid applicability without changing persisted lessons", async () => {
+    const root = await createWorkspace();
+    const bank = createLocalReasoningBank(root);
+    await bank.consolidate([lesson()]);
+    const path = getReasoningBankPath(root);
+    const before = await readFile(path, "utf8");
+
+    for (const applicability of invalidApplicabilities) {
+      await expect(
+        bank.consolidate([
+          lesson({ title: "A valid candidate must not be partially persisted" }),
+          lesson({
+            applicability: applicability as ReasoningLessonCandidate["applicability"],
+          }),
+        ]),
+      ).rejects.toThrow("Invalid ReasoningBank lesson candidate");
+      expect(await readFile(path, "utf8")).toBe(before);
+    }
+  });
+
+  it("rejects malformed applicability in persisted lessons", async () => {
+    const root = await createWorkspace();
+    const bank = createLocalReasoningBank(root);
+    const [stored] = await bank.consolidate([lesson()]);
+    const path = getReasoningBankPath(root);
+
+    for (const applicability of invalidApplicabilities) {
+      await writeFile(
+        path,
+        JSON.stringify({
+          version: 1,
+          lessons: [{ ...stored, applicability }],
+        }),
+      );
+      await expect(bank.load()).rejects.toThrow(
+        "Unsupported ReasoningBank document",
+      );
+    }
+  });
+
+  it("gates task conditions, exclusions, expiration and disabled lessons before ranking", async () => {
+    const root = await createWorkspace();
+    const [stored] = await createLocalReasoningBank(root).consolidate([lesson()]);
+    const now = Date.now();
+    const query = "Update the runtime schema and generated bindings";
+    const rules = [
+      { taskTerms: ["schema", "rust"] },
+      { excludedTaskTerms: ["bindings"] },
+      { expiresAt: now - 1 },
+      { maxAgeDays: 1, verifiedAt: now - 2 * DAY_MILLISECONDS },
+      { enabled: false },
+    ];
+    const highlyRated = { ...stored!, confidence: 1, helpfulCount: 100 };
+    expect(retrieveReasoningLessons(query, [highlyRated])).toHaveLength(1);
+
+    for (const applicability of rules) {
+      expect(
+        retrieveReasoningLessons(query, [{ ...highlyRated, applicability }]),
+      ).toEqual([]);
+    }
+    expect(
+      retrieveReasoningLessons(query, [
+        {
+          ...highlyRated,
+          applicability: {
+            taskTerms: ["runtime schema", "bindings"],
+            excludedTaskTerms: ["prototype"],
+          },
+        },
+      ]),
+    ).toHaveLength(1);
+  });
+
+  it("keeps durable lessons eligible and treats trigger terms as search aliases", async () => {
+    const root = await createWorkspace();
+    const [stored] = await createLocalReasoningBank(root).consolidate([
+      lesson({
+        triggerTerms: ["contract synchronization", "schema migration"],
+        applicability: { verifiedAt: Date.now() - 3_650 * DAY_MILLISECONDS },
+      }),
+    ]);
+    expect(
+      retrieveReasoningLessons("contract synchronization", [stored!]),
+    ).toHaveLength(1);
+    expect(retrieveReasoningLessons("Paint a landscape", [stored!])).toEqual([]);
+    expect(stored?.applicability?.maxAgeDays).toBeUndefined();
+  });
+
+  it("preserves the evidence date and age rule through repeated lessons and feedback", async () => {
+    const root = await createWorkspace();
+    const now = Date.now();
+    const verifiedAt = now - 10 * DAY_MILLISECONDS;
+    const clock = vi.spyOn(Date, "now").mockReturnValue(verifiedAt);
+    const bank = createLocalReasoningBank(root);
+    const [stored] = await bank.consolidate([
+      lesson({ applicability: { taskTerms: ["schema"], maxAgeDays: 7 } }),
+    ]);
+    clock.mockReturnValue(now);
+    const [refreshed] = await bank.consolidate([
+      lesson({ applicability: { verifiedAt: now } }),
+    ]);
+    expect(refreshed?.id).toBe(stored?.id);
+    expect(refreshed?.updatedAt).toBe(now);
+    expect(refreshed?.applicability).toEqual({
+      taskTerms: ["schema"],
+      maxAgeDays: 7,
+      verifiedAt,
+    });
+
+    await bank.consolidate([lesson()]);
+    await bank.recordRetrieval([stored!.id]);
+    await bank.recordOutcome([stored!.id], "success");
+    const reloaded = await createLocalReasoningBank(root).load();
+    expect(reloaded[0]?.applicability).toEqual(refreshed?.applicability);
+    expect(
+      retrieveReasoningLessons("Update runtime schema and bindings", reloaded),
+    ).toEqual([]);
   });
 
   it("records reuse outcomes and allows a lesson to be removed", async () => {

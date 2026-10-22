@@ -742,6 +742,7 @@ export function RemoteComposer({
           id: entry.id,
           content: entry.content,
           createdAt: entry.createdAt,
+          ...(entry.applicability ? { applicability: entry.applicability } : {}),
           ...(entry.sourceSession
             ? { sourceLabel: entry.sourceSession.title }
             : {}),

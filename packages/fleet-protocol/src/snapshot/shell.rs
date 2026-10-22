@@ -6,6 +6,14 @@ fn attachment() -> Shape {
 
 fn memory_entry() -> Shape {
     object(vec![
+        optional("applicability", object(vec![
+            optional("taskTerms", array(Shape::String(200, true), 32)),
+            optional("excludedTaskTerms", array(Shape::String(200, true), 32)),
+            optional("expiresAt", Shape::Number(0.0, 8_640_000_000_000_000.0)),
+            optional("verifiedAt", Shape::Number(0.0, 8_640_000_000_000_000.0)),
+            optional("maxAgeDays", Shape::Number(0.0, f64::MAX)),
+            optional("enabled", Shape::Bool),
+        ])),
         required("id", identifier()),
         required("content", text()),
         required("createdAt", Shape::Integer),

@@ -10,6 +10,7 @@ import {
 } from "../memory.js";
 import type { ConversationMemoryKind } from "../types.js";
 import { retrieveConversationMemory } from "../memory-retrieval.js";
+import { normalizeMemoryApplicability } from "../memory-applicability.js";
 import {
   getWorkspaceMemoryPath,
   loadWorkspaceMemory,
@@ -45,7 +46,7 @@ const isMemoryKind = (value: unknown): value is ConversationMemoryKind => {
 const parseMemoryMetadata = (
   args: Record<string, unknown>,
 ): ConversationMemoryMetadata | undefined => {
-  const keys = Object.keys(args).sort();
+  const keys = Object.keys(args).filter((key) => key !== "applicability").sort();
   const fact = coerceString(args, "fact");
   const memoryKey = coerceString(args, "memory_key");
   const searchTerms = normalizeMemorySearchTerms(args.search_terms);
@@ -73,6 +74,7 @@ const parseMemoryMetadata = (
     searchTerms,
     importance: args.importance,
     confidence: 1,
+    ...(args.applicability !== undefined ? { applicability: normalizeMemoryApplicability(args.applicability) ?? {} } : {}),
   };
 };
 
@@ -80,6 +82,19 @@ const createMemoryInputSchema = (factDescription: string) => ({
   type: "object",
   additionalProperties: false,
   properties: {
+    applicability: {
+      type: "object",
+      description: "Conditions for future reuse. Specify task terms for conditional advice and an expiry or maximum age for facts that can change. verifiedAt and expiresAt are epoch milliseconds; verifiedAt must reflect actual evidence, not repetition.",
+      additionalProperties: false,
+      properties: {
+        taskTerms: { type: "array", maxItems: 32, items: { type: "string", minLength: 1, maxLength: 200 } },
+        excludedTaskTerms: { type: "array", maxItems: 32, items: { type: "string", minLength: 1, maxLength: 200 } },
+        expiresAt: { type: "number", minimum: 0, maximum: 8_640_000_000_000_000 },
+        verifiedAt: { type: "number", minimum: 0, maximum: 8_640_000_000_000_000 },
+        maxAgeDays: { type: "number", minimum: 0 },
+        enabled: { type: "boolean" },
+      },
+    },
     fact: {
       type: "string",
       description: factDescription,

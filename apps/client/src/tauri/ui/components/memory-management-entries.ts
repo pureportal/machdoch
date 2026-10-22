@@ -23,6 +23,7 @@ export const createMemoryManagementEntries = (
       id: entry.id,
       content: entry.content,
       createdAt: entry.createdAt,
+      ...(entry.applicability ? { applicability: entry.applicability } : {}),
       ...(sourceLabel ? { sourceLabel } : {}),
     };
   });

@@ -1,4 +1,7 @@
 import { loadWorkspaceConfigFile } from "./config.js";
+import { memoryApplicabilitySchema } from "@machdoch/fleet-protocol/memory-applicability";
+
+const consolidationApplicabilitySchema = memoryApplicabilitySchema.pick({ taskTerms: true, excludedTaskTerms: true }).required().extend({ maxAgeDays: memoryApplicabilitySchema.shape.maxAgeDays.unwrap().nullable() });
 import {
   loadUserMemorySettings,
   rememberUserGlobalMemory,
@@ -126,6 +129,16 @@ const createMemoryDecisionOutput = (): AgentModelStructuredOutput => ({
               description:
                 "Short query aliases that retrieve the fact when a future request uses different wording.",
             },
+            applicability: {
+              type: "object",
+              additionalProperties: false,
+              properties: {
+                taskTerms: { type: "array", maxItems: 32, items: { type: "string", minLength: 1, maxLength: 200 } },
+                excludedTaskTerms: { type: "array", maxItems: 32, items: { type: "string", minLength: 1, maxLength: 200 } },
+                maxAgeDays: { type: ["number", "null"], minimum: 0 },
+              },
+              required: ["taskTerms", "excludedTaskTerms", "maxAgeDays"],
+            },
             reason: { type: "string" },
             importance: {
               type: "integer",
@@ -147,6 +160,7 @@ const createMemoryDecisionOutput = (): AgentModelStructuredOutput => ({
             "kind",
             "content",
             "searchTerms",
+            "applicability",
             "reason",
             "importance",
             "confidence",
@@ -173,6 +187,7 @@ const createMemoryReviewSystemPrompt = (): string => {
     "Prefer updating an existing concept key over adding another version of the same fact.",
     "Write compact neutral content with the subject implied by its scope, such as 'Prefers concise answers', 'Package manager: pnpm', or 'Release builds require Node 22'. Never begin content with 'The user' or add labels such as 'The user prefers:'.",
     "Add only useful search terms that are not already obvious words in the content. Use an empty array when no aliases are needed.",
+    "Assess applicability before storing each memory. Set taskTerms only for conditions that must all be present, excludedTaskTerms for contexts where it fails, and maxAgeDays when the evidence can become outdated. Use empty term arrays and a null age only for durable knowledge. Do not renew a remembered claim merely because it was repeated; require evidence from this task.",
     "Do not save secrets, credentials, raw logs, transient progress, generic facts, completed actions, source code that can be read from the workspace, or speculation.",
     "Use an empty array when nothing is worth remembering.",
   ].join("\n");
@@ -307,6 +322,7 @@ const parseMemoryDecisionCandidates = (
       const record = memory as Record<string, unknown>;
       const keys = Object.keys(record).sort();
       const expectedKeys = [
+        "applicability",
         "confidence",
         "content",
         "importance",
@@ -324,10 +340,12 @@ const parseMemoryDecisionCandidates = (
           : undefined,
       );
       const searchTerms = normalizeMemorySearchTerms(record.searchTerms);
+      const applicability = consolidationApplicabilitySchema.safeParse(record.applicability);
 
       if (
         keys.length !== expectedKeys.length ||
         !keys.every((key, index) => key === expectedKeys[index]) ||
+        !applicability.success ||
         !isMemoryScope(scope) ||
         !enabled[scope] ||
         !isMemoryKind(record.kind) ||
@@ -356,6 +374,11 @@ const parseMemoryDecisionCandidates = (
           searchTerms,
           importance: record.importance,
           confidence: record.confidence === "high" ? 1 : 0.75,
+          applicability: {
+            taskTerms: applicability.data.taskTerms,
+            excludedTaskTerms: applicability.data.excludedTaskTerms,
+            ...(applicability.data.maxAgeDays === null ? {} : { maxAgeDays: applicability.data.maxAgeDays }),
+          },
         },
       ];
     });

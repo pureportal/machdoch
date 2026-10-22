@@ -163,6 +163,7 @@ export interface ConversationMemoryEntry {
   searchTerms: string[];
   importance: number;
   confidence: number;
+  applicability?: import("./memory-applicability.js").MemoryApplicability;
   createdAt: number;
   updatedAt: number;
 }

@@ -31,6 +31,7 @@ import {
 export * from "@machdoch/fleet-protocol/device-settings";
 export { createFleetSessionId } from "@machdoch/fleet-protocol/session-routing";
 import { z } from "zod";
+import { memoryApplicabilitySchema } from "@machdoch/fleet-protocol/memory-applicability";
 import { speechRequestSchema, speechResponseSchema } from "@machdoch/fleet-protocol/speech";
 export * from "@machdoch/fleet-protocol/speech";
 import { taskTimeoutSchema } from "@machdoch/fleet-protocol/task-thinking";
@@ -1092,6 +1093,7 @@ const timestamp = z.number().int().nonnegative();
 const optionalTimestamp = timestamp.optional();
 
 export const productMemoryEntrySchema = z.strictObject({
+  applicability: memoryApplicabilitySchema.optional(),
   id: identifier,
   content: text,
   createdAt: timestamp,

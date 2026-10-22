@@ -135,6 +135,7 @@ mod tests {
         let document = WorkspaceMemoryDocument {
             version: WORKSPACE_MEMORY_VERSION,
             entries: vec![UserMemoryEntry {
+                applicability: None,
                 id: "package-manager".to_string(),
                 scope: "workspace".to_string(),
                 source_session_id: None,

@@ -87,7 +87,7 @@ const createExecutionResult = (
 };
 
 const createMemoryTurn = (memories: unknown[]) => ({
-  text: JSON.stringify({ memories }),
+  text: JSON.stringify({ memories: memories.map((memory) => typeof memory === "object" && memory !== null ? { applicability: { taskTerms: [], excludedTaskTerms: [], maxAgeDays: null }, ...memory } : memory) }),
   toolCalls: [],
 });
 

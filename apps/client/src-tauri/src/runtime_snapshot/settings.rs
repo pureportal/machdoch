@@ -466,6 +466,7 @@ pub(super) fn normalize_user_memory_entries(
             entry.updated_at
         };
         let normalized_entry = UserMemoryEntry {
+            applicability: entry.applicability.clone(),
             id: normalize_optional_string(Some(entry.id.as_str()))
                 .unwrap_or_else(|| format!("{}-memory-{}-{}", scope, updated_at, index)),
             scope: scope.to_string(),
@@ -509,6 +510,7 @@ mod tests {
 
     fn memory_entry(id: &str, key: &str, content: &str, updated_at: u64) -> UserMemoryEntry {
         UserMemoryEntry {
+            applicability: None,
             id: id.to_string(),
             scope: "global".to_string(),
             source_session_id: None,

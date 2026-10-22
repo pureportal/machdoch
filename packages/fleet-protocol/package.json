@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./memory-applicability": "./src/memory-applicability.ts",
     "./speech": "./src/speech.ts",
     "./task-file-changes": "./src/task-file-changes.ts",
     "./task-execution-insight": "./src/task-execution-insight.ts",
