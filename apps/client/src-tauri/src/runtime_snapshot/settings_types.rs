@@ -271,6 +271,8 @@ pub(super) struct UserWorkspaceRunConfigFile {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserMemoryEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) applicability: Option<serde_json::Value>,
     pub(super) id: String,
     pub(super) scope: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -2,6 +2,11 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { loadWorkspaceConfigFile } from "./config.js";
+import {
+  assessMemoryApplicability,
+  normalizeMemoryApplicability,
+  type MemoryApplicability,
+} from "./memory-applicability.js";
 import { tokenizeMemoryText } from "./memory-retrieval.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
@@ -15,6 +20,7 @@ export interface ReasoningLesson {
   description: string;
   content: string;
   triggerTerms: string[];
+  applicability?: MemoryApplicability | undefined;
   outcome: ReasoningOutcome;
   confidence: number;
   evidenceCount: number;
@@ -32,6 +38,7 @@ export type ReasoningLessonCandidate = Pick<
   | "description"
   | "content"
   | "triggerTerms"
+  | "applicability"
   | "outcome"
   | "confidence"
 >;
@@ -170,7 +177,17 @@ const loadDocument = async (path: string): Promise<ReasoningBankDocument> => {
   ) {
     throw new Error(`Unsupported ReasoningBank document in ${path}.`);
   }
-  return document as ReasoningBankDocument;
+  try {
+    return {
+      version: BANK_VERSION,
+      lessons: document.lessons.map((lesson) => ({
+        ...lesson,
+        applicability: normalizeMemoryApplicability(lesson.applicability),
+      })),
+    };
+  } catch (cause) {
+    throw new Error(`Unsupported ReasoningBank document in ${path}.`, { cause });
+  }
 };
 
 const lessonKey = (
@@ -209,8 +226,17 @@ export const createLocalReasoningBank = (
       if (!candidates.every(isReasoningLessonCandidate)) {
         throw new Error("Invalid ReasoningBank lesson candidate.");
       }
+      let normalizedCandidates: ReasoningLessonCandidate[];
+      try {
+        normalizedCandidates = candidates.map((candidate) => ({
+          ...candidate,
+          applicability: normalizeMemoryApplicability(candidate.applicability),
+        }));
+      } catch (cause) {
+        throw new Error("Invalid ReasoningBank lesson candidate.", { cause });
+      }
       const uniqueCandidates = new Map<string, ReasoningLessonCandidate>();
-      for (const candidate of candidates) {
+      for (const candidate of normalizedCandidates) {
         const key = lessonKey(candidate);
         const previous = uniqueCandidates.get(key);
         if (!previous || candidate.confidence > previous.confidence) {
@@ -241,6 +267,17 @@ export const createLocalReasoningBank = (
                 ? candidate.description
                 : previous.description,
               content: useNewContent ? candidate.content : previous.content,
+              applicability: normalizeMemoryApplicability({
+                ...(contentChanged
+                  ? candidate.applicability
+                  : {
+                      ...previous.applicability,
+                      ...(useNewContent ? candidate.applicability : {}),
+                    }),
+                verifiedAt: contentChanged
+                  ? (candidate.applicability?.verifiedAt ?? now)
+                  : (previous.applicability?.verifiedAt ?? previous.updatedAt),
+              }),
               triggerTerms: contentChanged
                 ? candidate.triggerTerms.slice(0, 12)
                 : useNewContent
@@ -274,6 +311,10 @@ export const createLocalReasoningBank = (
           } else {
             const created: ReasoningLesson = {
               ...candidate,
+              applicability: normalizeMemoryApplicability({
+                ...candidate.applicability,
+                verifiedAt: candidate.applicability?.verifiedAt ?? now,
+              }),
               id: randomUUID(),
               evidenceCount: 1,
               helpfulCount: 0,
@@ -373,6 +414,27 @@ export const retrieveReasoningLessons = (
   const now = Date.now();
   const documents = lessons
     .filter((lesson) => lesson.harmfulCount <= lesson.helpfulCount)
+    .filter(
+      (lesson) =>
+        assessMemoryApplicability(
+          {
+            kind: "reasoning",
+            content: [
+              lesson.title,
+              lesson.description,
+              lesson.content,
+              ...lesson.triggerTerms,
+            ].join(" "),
+            updatedAt: lesson.updatedAt,
+            confidence: lesson.confidence,
+            ...(lesson.applicability !== undefined
+              ? { applicability: lesson.applicability }
+              : {}),
+          },
+          query,
+          now,
+        ).applicable,
+    )
     .map((lesson) => ({
       lesson,
       title: new Set(tokenizeMemoryText(lesson.title)),

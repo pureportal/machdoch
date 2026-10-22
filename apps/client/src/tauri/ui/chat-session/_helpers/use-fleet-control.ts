@@ -1197,6 +1197,7 @@ export const useFleetControl = (options: {
             id: entry.id,
             content: entry.content,
             createdAt: entry.createdAt,
+            ...(entry.applicability ? { applicability: entry.applicability } : {}),
             ...(sourceSession
               ? {
                   sourceSession: {

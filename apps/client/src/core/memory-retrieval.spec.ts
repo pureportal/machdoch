@@ -27,6 +27,113 @@ const createEntry = (
 describe("retrieveConversationMemory", () => {
   const now = 1_700_000_000_000;
 
+  it("excludes expired memories before ranking even when search aliases match", () => {
+    const current = createEntry(
+      "current",
+      "workspace",
+      "release-build",
+      "Use the release build command",
+    );
+    const expired = createEntry(
+      "expired",
+      "workspace",
+      "old-compiler",
+      "Use the previous compiler",
+      {
+        searchTerms: ["release", "build", "command"],
+        importance: 5,
+        applicability: { expiresAt: now },
+      },
+    );
+    const options = { now, minimumScore: 0 };
+    const baseline = retrieveConversationMemory("release build command", [current], options);
+    const result = retrieveConversationMemory(
+      "release build command",
+      [expired, current],
+      options,
+    );
+
+    expect(result.ranked).toEqual(baseline.ranked);
+    expect(result.diagnostics).toMatchObject({
+      candidateCount: 2,
+      excludedCount: 1,
+      excludedByReason: { expired: 1 },
+      selectedCount: 1,
+    });
+  });
+
+  it.each<{
+    reason: string;
+    applicability: NonNullable<ConversationMemoryEntry["applicability"]>;
+  }>([
+    { reason: "disabled", applicability: { enabled: false } },
+    {
+      reason: "too-old",
+      applicability: { verifiedAt: now - 2 * 86_400_000, maxAgeDays: 1 },
+    },
+    { reason: "future-evidence", applicability: { verifiedAt: now + 1 } },
+    {
+      reason: "unmatched-task-terms",
+      applicability: { taskTerms: ["deployment"] },
+    },
+    {
+      reason: "excluded-task-term",
+      applicability: { excludedTaskTerms: ["release"] },
+    },
+  ])("excludes $reason memories despite a matching query", ({ reason, applicability }) => {
+    const result = retrieveConversationMemory(
+      "release build command",
+      [
+        createEntry("restricted", "workspace", "release-build", "Use the release build command", {
+          importance: 5,
+          applicability,
+        }),
+      ],
+      { now, minimumScore: 0 },
+    );
+
+    expect(result.entries).toEqual([]);
+    expect(result.diagnostics.excludedCount).toBe(1);
+    expect(result.diagnostics.excludedByReason).toEqual({ [reason]: 1 });
+  });
+
+  it("excludes unrelated facts even when the minimum ranking score is zero", () => {
+    const result = retrieveConversationMemory(
+      "release build command",
+      [
+        createEntry("database", "session", "database", "PostgreSQL stores application data", {
+          importance: 5,
+        }),
+      ],
+      { now, minimumScore: 0 },
+    );
+
+    expect(result.entries).toEqual([]);
+    expect(result.diagnostics.excludedByReason).toEqual({ "irrelevant-content": 1 });
+  });
+
+  it("allows matching task rules and counts every reason for an excluded memory", () => {
+    const result = retrieveConversationMemory(
+      "release build command",
+      [
+        createEntry("valid", "workspace", "release-build", "Use the release build command", {
+          applicability: { taskTerms: ["release build"] },
+        }),
+        createEntry("invalid", "global", "output-style", "Keep responses brief", {
+          kind: "preference",
+          applicability: { enabled: false, expiresAt: now },
+        }),
+      ],
+      { now, minimumScore: 0 },
+    );
+
+    expect(result.entries.map((entry) => entry.id)).toEqual(["valid"]);
+    expect(result.diagnostics).toMatchObject({
+      excludedCount: 1,
+      excludedByReason: { disabled: 1, expired: 1 },
+    });
+  });
+
   it("uses expanded search terms without exposing them as memory content", () => {
     const result = retrieveConversationMemory(
       "Find dinner restaurants nearby",

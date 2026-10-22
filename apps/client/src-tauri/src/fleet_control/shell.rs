@@ -277,6 +277,8 @@ pub(super) struct FleetAdaptiveController {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct FleetShellMemoryEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) applicability: Option<serde_json::Value>,
     pub(super) id: String,
     pub(super) content: String,
     pub(super) created_at: u64,

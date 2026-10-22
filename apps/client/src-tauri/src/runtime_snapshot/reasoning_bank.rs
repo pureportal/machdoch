@@ -12,6 +12,8 @@ pub struct ReasoningBankLesson {
     description: String,
     content: String,
     trigger_terms: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    applicability: Option<serde_json::Value>,
     outcome: String,
     confidence: f64,
     evidence_count: u64,
@@ -85,6 +87,7 @@ mod tests {
                     "outcome": "success", "confidence": 0.8,
                     "evidenceCount": 2, "helpfulCount": 1, "harmfulCount": 0,
                     "retrievalCount": 3, "lastRetrievedAt": 1000,
+                    "applicability": {"taskTerms": ["first"], "maxAgeDays": 30, "verifiedAt": 20},
                     "createdAt": 10, "updatedAt": 20
                 },
                 {
@@ -104,6 +107,7 @@ mod tests {
         assert_eq!(lessons.len(), 2);
         assert_eq!(lessons[0].retrieval_count, Some(3));
         assert_eq!(lessons[0].last_retrieved_at, Some(1000.0));
+        assert_eq!(lessons[0].applicability.as_ref().unwrap()["maxAgeDays"], 30);
         assert_eq!(lessons[1].retrieval_count, None);
         assert_eq!(lessons[1].last_retrieved_at, None);
         let older_lesson = serde_json::to_value(&lessons[1]).expect("lesson should serialize");

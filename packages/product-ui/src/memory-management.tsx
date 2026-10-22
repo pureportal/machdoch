@@ -1,8 +1,10 @@
 import { X } from "lucide-react";
+import type { MemoryApplicability } from "@machdoch/fleet-protocol/memory-applicability";
 import { useId, useLayoutEffect, useRef } from "react";
 import { formatTimestampDateTime } from "./format";
 
 export interface MemoryManagementEntry {
+  applicability?: MemoryApplicability;
   id: string;
   content: string;
   createdAt: number;
@@ -25,6 +27,54 @@ const formatMemoryTimestamp = (timestamp: number): string => {
   const dateTime = formatTimestampDateTime(timestamp);
   return dateTime ? memoryTimestampFormatter.format(new Date(dateTime)) : "—";
 };
+
+export function MemoryApplicabilityDetails({
+  applicability,
+}: {
+  applicability: MemoryApplicability | undefined;
+}): React.ReactElement | null {
+  if (!applicability) return null;
+  return (
+    <details className="mt-2 text-xs">
+      <summary>Applicability</summary>
+      <dl className="mt-2 grid gap-1">
+        {applicability.enabled === false && <div>Disabled</div>}
+        {!!applicability.taskTerms?.length && (
+          <div>
+            <dt>All terms</dt>
+            <dd>{applicability.taskTerms.join(", ")}</dd>
+          </div>
+        )}
+        {!!applicability.excludedTaskTerms?.length && (
+          <div>
+            <dt>Exclude</dt>
+            <dd>{applicability.excludedTaskTerms.join(", ")}</dd>
+          </div>
+        )}
+        {applicability.expiresAt !== undefined && (
+          <div>
+            <dt>
+              {applicability.expiresAt <= Date.now() ? "Expired" : "Expires"}
+            </dt>
+            <dd>{formatMemoryTimestamp(applicability.expiresAt)}</dd>
+          </div>
+        )}
+        {applicability.maxAgeDays !== undefined && (
+          <div>
+            <dt>Maximum age</dt>
+            <dd>{applicability.maxAgeDays} days</dd>
+          </div>
+        )}
+        {applicability.verifiedAt !== undefined && (
+          <div>
+            <dt>Verified</dt>
+            <dd>{formatMemoryTimestamp(applicability.verifiedAt)}</dd>
+          </div>
+        )}
+      </dl>
+    </details>
+  );
+}
 
 export function MemoryManagementTable({
   entries,
@@ -59,7 +109,12 @@ export function MemoryManagementTable({
 
             return (
               <tr key={entry.id}>
-                <td className="m-memory-content">{entry.content}</td>
+                <td className="m-memory-content">
+                  {entry.content}
+                  <MemoryApplicabilityDetails
+                    applicability={entry.applicability}
+                  />
+                </td>
                 {showSource ? (
                   <td className="m-memory-source">
                     {entry.sourceLabel ?? <span aria-hidden="true">—</span>}

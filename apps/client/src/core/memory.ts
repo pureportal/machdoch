@@ -1,5 +1,9 @@
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import {
+  normalizeMemoryApplicability,
+  type MemoryApplicability,
+} from "./memory-applicability.js";
+import {
   RUNTIME_MEMORY_KINDS,
   type RuntimeMemoryKind,
 } from "./runtime-contract.generated.js";
@@ -32,6 +36,7 @@ export interface ConversationMemoryMetadata {
   searchTerms?: string[];
   importance?: number;
   confidence?: number;
+  applicability?: MemoryApplicability;
 }
 
 const createContentKey = (content: string): string => {
@@ -156,6 +161,8 @@ export const createConversationMemoryEntry = (
   metadata: ConversationMemoryMetadata = {},
 ): ConversationMemoryEntry => {
   const sourceSessionId = normalizeOptionalString(metadata.sourceSessionId);
+  const applicability = normalizeMemoryApplicability(metadata.applicability);
+  if (applicability?.maxAgeDays !== undefined && applicability.verifiedAt === undefined) applicability.verifiedAt = timestamp;
 
   return {
     id: crypto.randomUUID(),
@@ -167,6 +174,7 @@ export const createConversationMemoryEntry = (
     searchTerms: normalizeMemorySearchTerms(metadata.searchTerms),
     importance: normalizeMemoryImportance(metadata.importance),
     confidence: normalizeMemoryConfidence(metadata.confidence),
+    ...(applicability ? { applicability } : {}),
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -194,6 +202,7 @@ export const normalizeConversationMemoryEntries = (
     }
     const content = normalizeMemoryStatement(normalizedContent);
     const sourceSessionId = normalizeOptionalString(candidate.sourceSessionId);
+    const applicability = normalizeMemoryApplicability(candidate.applicability);
 
     const createdAt =
       typeof candidate.createdAt === "number" &&
@@ -220,6 +229,7 @@ export const normalizeConversationMemoryEntries = (
         searchTerms: normalizeMemorySearchTerms(candidate.searchTerms),
         importance: normalizeMemoryImportance(candidate.importance),
         confidence: normalizeMemoryConfidence(candidate.confidence),
+        ...(applicability ? { applicability } : {}),
         createdAt,
         updatedAt,
       },
@@ -250,16 +260,19 @@ export const mergeConversationMemoryEntries = (
         return [];
       }
       const content = normalizeMemoryStatement(normalizedContent);
+      const { applicability: rawApplicability, ...entryMetadata } = entry;
+      const applicability = normalizeMemoryApplicability(rawApplicability);
 
       return [
         {
-          ...entry,
+          ...entryMetadata,
           key: normalizeMemoryKey(entry.key, content),
           kind,
           content,
           searchTerms: normalizeMemorySearchTerms(entry.searchTerms),
           importance: normalizeMemoryImportance(entry.importance),
           confidence: normalizeMemoryConfidence(entry.confidence),
+          ...(applicability ? { applicability } : {}),
         },
       ];
     })
@@ -313,8 +326,15 @@ export const rememberConversationMemoryEntry = (
       metadata.kind ?? existingEntry.kind,
     );
     const refreshedContent = normalizeMemoryStatement(normalizedContent);
+    const { applicability: existingApplicability, ...entryMetadata } = existingEntry;
+    const applicability = normalizeMemoryApplicability(
+      metadata.applicability === undefined
+        ? existingApplicability
+        : metadata.applicability,
+    );
+    if (applicability?.maxAgeDays !== undefined && applicability.verifiedAt === undefined) applicability.verifiedAt = existingEntry.applicability?.verifiedAt ?? existingEntry.updatedAt;
     const refreshedEntry: ConversationMemoryEntry = {
-      ...existingEntry,
+      ...entryMetadata,
       key: memoryKey,
       kind: refreshedKind,
       content: refreshedContent,
@@ -327,6 +347,7 @@ export const rememberConversationMemoryEntry = (
       confidence: normalizeMemoryConfidence(
         metadata.confidence ?? existingEntry.confidence,
       ),
+      ...(applicability ? { applicability } : {}),
       updatedAt: timestamp,
     };
 

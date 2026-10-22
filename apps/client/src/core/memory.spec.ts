@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   MAX_GLOBAL_MEMORY_ENTRIES,
   MAX_SESSION_MEMORY_ENTRIES,
@@ -9,6 +12,11 @@ import {
   rememberConversationMemoryEntry,
 } from "./memory.ts";
 import type { ConversationMemoryEntry } from "./types.ts";
+import {
+  getWorkspaceMemoryPath,
+  loadWorkspaceMemory,
+  rememberWorkspaceMemory,
+} from "./workspace-memory.ts";
 
 const createEntry = (
   id: string,
@@ -248,5 +256,159 @@ describe("rememberConversationMemoryEntry", () => {
 
     expect(result.entries).toHaveLength(MAX_GLOBAL_MEMORY_ENTRIES);
     expect(result.entries[0]?.content).toBe("new global memory");
+  });
+});
+
+describe("memory applicability persistence", () => {
+  const rules = {
+    taskTerms: ["  Release   Build ", "release build"],
+    excludedTaskTerms: [" Preview "],
+    expiresAt: 1_800_000_000_000,
+    verifiedAt: 1_700_000_000_000,
+    maxAgeDays: 30,
+    enabled: true,
+  };
+  const normalizedRules = {
+    ...rules,
+    taskTerms: ["release build"],
+    excludedTaskTerms: ["preview"],
+  };
+
+  it.each(["session", "workspace", "global"] as const)(
+    "roundtrips normalized rules for %s memories",
+    (scope) => {
+      const saved = rememberConversationMemoryEntry(
+        [],
+        scope,
+        "Use the release build command",
+        5,
+        rules.verifiedAt,
+        { applicability: rules },
+      );
+      const loaded = normalizeConversationMemoryEntries(
+        JSON.parse(JSON.stringify(saved.entries)),
+        scope,
+      );
+
+      expect(saved.entry.applicability).toEqual(normalizedRules);
+      expect(loaded).toEqual(saved.entries);
+      expect(loaded[0]?.applicability).toEqual(normalizedRules);
+      expect(rules.taskTerms).toHaveLength(2);
+    },
+  );
+
+  it("keeps normalized rules on the newest merged entry", () => {
+    const existing = createEntry("existing", "Release build command", 10);
+    const incoming = { ...existing, updatedAt: 20, applicability: rules };
+    const merged = mergeConversationMemoryEntries([existing], [incoming], 5);
+
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.applicability).toEqual(normalizedRules);
+    expect(merged[0]?.applicability).not.toBe(rules);
+  });
+
+  it("preserves rules when refreshing or replacing a remembered fact", () => {
+    const existing = {
+      ...createEntry("existing", "Use Node 20", 10),
+      key: "node-version",
+      applicability: normalizedRules,
+    };
+    const refreshed = rememberConversationMemoryEntry(
+      [existing],
+      "session",
+      existing.content,
+      5,
+      20,
+      { key: existing.key },
+    );
+    const replaced = rememberConversationMemoryEntry(
+      refreshed.entries,
+      "session",
+      "Use Node 22",
+      5,
+      30,
+      { key: existing.key },
+    );
+
+    expect(refreshed.entry.applicability).toEqual(normalizedRules);
+    expect(replaced.entry.applicability).toEqual(normalizedRules);
+    expect(replaced.entries[0]?.applicability).toEqual(normalizedRules);
+  });
+
+  it("allows explicit rule replacement and removal during refresh", () => {
+    const existing = {
+      ...createEntry("existing", "Release build command", 10),
+      applicability: normalizedRules,
+    };
+    const replaced = rememberConversationMemoryEntry(
+      [existing],
+      "session",
+      existing.content,
+      5,
+      20,
+      { applicability: { enabled: false } },
+    );
+    const cleared = rememberConversationMemoryEntry(
+      replaced.entries,
+      "session",
+      existing.content,
+      5,
+      30,
+      { applicability: {} },
+    );
+
+    expect(replaced.entry.applicability).toEqual({ enabled: false });
+    expect(cleared.entry).not.toHaveProperty("applicability");
+    expect(cleared.entries[0]).not.toHaveProperty("applicability");
+  });
+
+  it.each([
+    null,
+    { expiresAt: "tomorrow" },
+    { maxAgeDays: -1 },
+    { enabled: "false" },
+    { taskTerms: [""] },
+    { unknown: true },
+  ])("rejects malformed rules on save, refresh, merge, and load: %j", (invalid) => {
+    const existing = createEntry("existing", "Release build command", 10);
+    const metadata = { applicability: invalid as never };
+
+    expect(() =>
+      rememberConversationMemoryEntry([], "session", existing.content, 5, 20, metadata),
+    ).toThrow(/memory applicability/iu);
+    expect(() =>
+      rememberConversationMemoryEntry([existing], "session", existing.content, 5, 20, metadata),
+    ).toThrow(/memory applicability/iu);
+    expect(() =>
+      mergeConversationMemoryEntries([], [{ ...existing, ...metadata }], 5),
+    ).toThrow(/memory applicability/iu);
+    expect(() =>
+      normalizeConversationMemoryEntries([{ ...existing, applicability: invalid }], "session"),
+    ).toThrow(/memory applicability/iu);
+  });
+
+  it("persists rules to workspace storage and retains them after refresh", async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), "machdoch-memory-rules-"));
+
+    try {
+      await rememberWorkspaceMemory(workspaceRoot, "Use the release build command", {
+        applicability: rules,
+      });
+      const refreshed = await rememberWorkspaceMemory(
+        workspaceRoot,
+        "Use the release build command",
+      );
+      const persisted = JSON.parse(
+        await readFile(getWorkspaceMemoryPath(workspaceRoot), "utf8"),
+      );
+      const loaded = await loadWorkspaceMemory(workspaceRoot);
+
+      expect(persisted.entries[0].applicability).toEqual(normalizedRules);
+      expect(refreshed.applicability).toEqual(normalizedRules);
+      expect(loaded).toHaveLength(1);
+      expect(loaded[0]?.applicability).toEqual(normalizedRules);
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
   });
 });

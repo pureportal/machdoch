@@ -1,4 +1,5 @@
 import { RefreshCw } from "lucide-react";
+import { MemoryApplicabilityDetails } from "@machdoch/product-ui";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import type { ReasoningLesson } from "../../../core/reasoning-bank.js";
@@ -87,6 +88,7 @@ export const WorkspaceReasoningBankPanel = ({
               <p className="whitespace-pre-wrap text-sm text-slate-300">
                 {lesson.content}
               </p>
+              <MemoryApplicabilityDetails applicability={lesson.applicability} />
               <dl className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
                 <div>
                   <dt className="inline">Learned from: </dt>

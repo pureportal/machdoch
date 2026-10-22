@@ -102,6 +102,7 @@ export {
   OriginalPromptToggle,
 } from "./original-prompt";
 export {
+  MemoryApplicabilityDetails,
   MemoryManagementTable,
   MemoryDialog,
   type MemoryManagementEntry,
