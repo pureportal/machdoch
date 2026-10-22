@@ -34,6 +34,8 @@ import { validateToolArguments } from "./tool-argument-validation.js";
 import { createWorkflowToolDefinitions } from "./workflow-tool-definitions.js";
 import { createPoseSceneToolDefinitions } from "./pose-scene-tool-definitions.js";
 import { createSpeechToolDefinitions } from "./speech-tool-definitions.js";
+import { createWorkspaceLibraryToolDefinitions } from "./workspace-library-tool-definitions.js";
+import { createManagedSkillToolDefinitions } from "./managed-skill-tool-definitions.js";
 
 const READ_ONLY_EFFECTS: ReadonlySet<ToolCallEffect> = new Set([
   "read",
@@ -97,6 +99,8 @@ export const createToolDefinitions = (
   }
   const definitions = [
     ...historyDefinitions,
+    ...createWorkspaceLibraryToolDefinitions(),
+    ...createManagedSkillToolDefinitions(),
     ...createFilesystemToolDefinitions(),
     ...createGitToolDefinitions(),
     ...createPackageToolDefinitions(),
@@ -200,6 +204,7 @@ export const executeToolCall = async (
     ...(runId ? { runId } : {}),
     ...(signal ? { signal } : {}),
     memory,
+    mode: config.mode,
     ...(uiControl !== undefined ? { uiControl } : {}),
     ...(onActionOutput
       ? {

@@ -54,6 +54,7 @@ export interface ConversationMemoryRuntime {
 }
 
 export interface AgentToolExecutionContext {
+  mode?: "ask" | "machdoch";
   workspaceRoot: string;
   runId?: string;
   signal?: AbortSignal;
@@ -65,6 +66,7 @@ export interface AgentToolExecutionContext {
 }
 
 export interface AgentToolExecutionResult {
+  mcpAppId?: string;
   toolResult: AgentModelToolResult;
   sections: TaskExecutionSection[];
   traceLines: string[];

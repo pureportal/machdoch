@@ -28,8 +28,10 @@ import type {
 } from "./types.js";
 import type { LocalMcpEndpoint } from "../local-mcp/http.js";
 import { isMcpHttpEndpointReachable } from "./mcp-availability.js";
+import { mcpAppsEnabled } from "../mcp/app-settings.js";
 
 export interface McpProjectionOptions {
+  appRun?: { id: string; readOnly: boolean };
   persistent?: boolean;
   scope?: "user" | "workspace";
   machdochCliLaunch?: MachdochCliLaunch;
@@ -46,6 +48,8 @@ const getCapabilities = (
   server: McpEffectiveServerConfig,
 ): string[] => {
   const capabilities: string[] = [];
+  if (discovery?.tools.some((tool) => tool._meta?.ui !== undefined))
+    capabilities.push("apps");
   if (
     discovery?.tools.some((tool) =>
       isMcpToolEnabledForProjection(server, tool.name),
@@ -98,6 +102,8 @@ const shouldProxyServer = (
   projectedId: string,
 ): string | undefined => {
   const profile = PROVIDER_CAPABILITY_REGISTRY[provider];
+  if (discovery?.tools.some((tool) => tool._meta?.ui !== undefined))
+    return "Interactive MCP tools use the Machdoch host.";
   if (
     !(profile.supportedMcpTransports as readonly string[]).includes(
       server.transport.type,
@@ -264,6 +270,7 @@ const createProxyConfig = (
   launch: MachdochCliLaunch,
   scope: McpProjectionOptions["scope"],
   environmentKeys: readonly string[],
+  appRun?: McpProjectionOptions["appRun"],
 ): Record<string, unknown> => {
   const proxyServer: McpEffectiveServerConfig = {
     id: `machdoch-${server.id}`,
@@ -279,9 +286,15 @@ const createProxyConfig = (
         ...(scope === "user" ? ["--scope", "user"] : ["--cwd", workspaceRoot]),
       ],
       ...(scope === "user" ? {} : { cwd: launch.cwd }),
-      ...(Object.keys(launch.environment).length > 0
-        ? { env: launch.environment }
-        : {}),
+      env: {
+        ...launch.environment,
+        ...(appRun
+          ? {
+              MACHDOCH_MCP_APP_RUN_ID: appRun.id,
+              MACHDOCH_MCP_APP_READ_ONLY: String(appRun.readOnly),
+            }
+          : {}),
+      },
     },
     securityProfile: "weak",
     timeoutMs: server.timeoutMs,
@@ -591,6 +604,7 @@ export const projectMcpForProvider = async (
   }
   const environment = await resolveProjectionEnvironment(availableServers);
   let machdochCliLaunch: MachdochCliLaunch | undefined;
+  const captureApps = Boolean(options.appRun) && mcpAppsEnabled();
 
   for (const server of availableServers) {
     const projectedId = createProjectedServerId(
@@ -598,12 +612,9 @@ export const projectMcpForProvider = async (
       server.id,
       options.persistent === true,
     );
-    const proxyReason = shouldProxyServer(
-      provider,
-      server,
-      discovery[server.id],
-      projectedId,
-    );
+    const proxyReason = captureApps
+      ? "Interactive MCP results use the Machdoch host."
+      : shouldProxyServer(provider, server, discovery[server.id], projectedId);
     const capabilities = getCapabilities(discovery[server.id], server);
     const serverDigest = digestJson({
       server,
@@ -653,6 +664,7 @@ export const projectMcpForProvider = async (
           machdochCliLaunch,
           options.scope,
           getProxyEnvironmentKeys(server, environment),
+          options.appRun,
         ),
         capabilities,
         warnings: [proxyReason],

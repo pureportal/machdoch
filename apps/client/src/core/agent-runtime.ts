@@ -1,3 +1,4 @@
+import { createManagedSkillCatalog } from "./managed-skill-delivery.js";
 import {
   createAutopilotAuditSection,
   createAutopilotMonitorSystemPrompt,
@@ -1099,7 +1100,7 @@ const runExecutorCycle = async (
     toolSpecs,
     conversationContext,
     continuationRequest,
-    systemPromptSections ?? [],
+    [...(systemPromptSections ?? []), await createManagedSkillCatalog()],
     mcpInitializationSections,
   );
   const executorUserPrompt = createExecutorUserPrompt(
@@ -1854,7 +1855,7 @@ const runExecutorCycle = async (
             tone: result.toolResult.isError ? "danger" : "success",
             toolName: call.name,
             callId: call.id,
-            ...(resultMetadata ? { metadata: resultMetadata } : {}),
+            ...((resultMetadata || result.mcpAppId) ? { metadata: { ...resultMetadata, ...(result.mcpAppId ? { mcpAppId: result.mcpAppId } : {}) } } : {}),
           },
         },
       );

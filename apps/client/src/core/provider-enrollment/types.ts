@@ -13,6 +13,7 @@ export const PROVIDER_ENROLLMENT_SCHEMA_VERSION = 1;
 export const PROVIDER_ENROLLMENT_MANIFEST_SCHEMA_VERSION = 2;
 
 export type EnrollmentRenderedFileRole =
+  | "skill-resource"
   | "instruction-transport"
   | "mcp-configuration"
   | "instruction-and-mcp-configuration";

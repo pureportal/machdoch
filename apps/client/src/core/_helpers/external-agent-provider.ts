@@ -1,8 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { createManagedSkillCatalog } from "../managed-skill-delivery.js";
 import { extname, join } from "node:path";
 import { loadRuntimeEnvironment } from "../env.js";
 import { createAnswerLanguageInstruction } from "./answer-language.js";
 import { materializeCliEnrollment } from "../provider-enrollment/materializer.js";
+import { observeMcpApps } from "../mcp/app-run-events.js";
 import { resolveMachdochCliLaunch } from "../provider-enrollment/machdoch-cli-launch.js";
 import type {
   EnrollmentDisposalResult,
@@ -1955,6 +1957,7 @@ const executeExternalAgentCliTask = async (
   const runtimeSystemInstructions = createExternalAgentSystemInstructions(
     executionConfig,
     [
+      await createManagedSkillCatalog(),
       ...(params.systemPromptSections ?? []),
       ...(params.preparedConversationContext.memory.chatHistory !== undefined &&
       params.scopedWorkerToolDefinitions === undefined
@@ -2012,6 +2015,7 @@ const executeExternalAgentCliTask = async (
       assertNativeSubagentInstructionDelivery(instructionPlan);
     }
     enrollment = await materializeCliEnrollment({
+      appReadOnly: params.config.mode !== "machdoch",
       provider,
       executable: binary.executable,
       runId: params.runId ?? `external-${Date.now()}-${process.pid}`,
@@ -2208,6 +2212,13 @@ const executeExternalAgentCliTask = async (
     },
   ];
   let result: SpawnedAgentResult;
+  const stopAppEvents = enrollment.mcpProjection.servers.some((server) => server.capabilities.includes("apps"))
+    ? observeMcpApps(executionConfig.workspaceRoot, enrollment.manifest.runId, async (id) => {
+        await emitAgentProgress(params.task, params.config, "executing", "Interactive result ready", loopState, params.onStateChange, undefined, {
+          timelineEvent: { kind: "tool-call", phase: "completed", label: "Interactive result", metadata: { mcpAppId: id } },
+        });
+      }, (error) => { console.error("Could not read interactive results", error); })
+    : undefined;
   let enrollmentDisposal: EnrollmentDisposalResult;
   let copilotTelemetry:
     | Awaited<ReturnType<typeof readCopilotCliTelemetry>>
@@ -2276,6 +2287,7 @@ const executeExternalAgentCliTask = async (
     assertInstructionDeliveryReceiptCertain(failureReceipt, error);
     throw error;
   } finally {
+    await stopAppEvents?.();
     enrollmentDisposal = await enrollment.dispose();
   }
   const deliveryReceipt = createInstructionDeliveryReceipt({
@@ -2712,11 +2724,16 @@ export const maybeExecuteExternalAgentProviderTask = async (
     ...(params.onScopedWorkerToolCall
       ? { onToolCall: params.onScopedWorkerToolCall }
       : {}),
-    onResult: (definition, result) => {
+    onResult: async (definition, result) => {
       params.onStreamActivity?.();
       if (!toolState.executedTools.includes(definition.backingTool))
         toolState.executedTools.push(definition.backingTool);
       toolState.outputSections.push(...result.sections);
+      if (result.mcpAppId) {
+        await emitAgentProgress(params.task, params.config, "executing", "Interactive result ready", toolState, params.onStateChange, undefined, {
+          timelineEvent: { kind: "tool-call", phase: "completed", label: definition.spec.name, toolName: definition.spec.name, callId: result.toolResult.callId, metadata: { mcpAppId: result.mcpAppId } },
+        });
+      }
       if (result.memoryUpdate)
         toolState.memoryUpdates = upsertMemoryUpdate(
           toolState.memoryUpdates,

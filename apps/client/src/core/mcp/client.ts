@@ -1,3 +1,5 @@
+import { mcpAppsEnabled } from "./app-settings.js";
+import { mcpAppMimeType, mcpAppToolUiSchema } from "@machdoch/fleet-protocol/mcp-apps";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
   auth as runOAuthFlow,
@@ -1094,7 +1096,7 @@ const hasUriScheme = (value: string): boolean => {
 const createClientCapabilities = (
   server: McpEffectiveServerConfig,
 ): ClientCapabilities => {
-  const capabilities: ClientCapabilities = {};
+  const capabilities: ClientCapabilities = mcpAppsEnabled() ? { extensions: { "io.modelcontextprotocol/ui": { mimeTypes: [mcpAppMimeType] } } } : {};
 
   if (server.roots !== "disabled") {
     capabilities.roots = { listChanged: false };
@@ -1287,6 +1289,7 @@ const createConnectionKey = (
     roots: server.roots,
     sampling: server.sampling,
     tasks: server.tasks,
+    appsEnabled: mcpAppsEnabled(),
     timeoutMs: server.timeoutMs,
     maxTotalTimeoutMs: server.maxTotalTimeoutMs,
     idleShutdownMs: server.idleShutdownMs,
@@ -1515,6 +1518,7 @@ const normalizeTool = (
 ): McpDiscoveredTool => {
   return {
     name: tool.name,
+    ...(tool._meta ? { _meta: tool._meta } : {}),
     ...(tool.title ? { title: tool.title } : {}),
     ...(tool.description ? { description: tool.description } : {}),
     inputSchema: tool.inputSchema,
@@ -2394,6 +2398,11 @@ export class McpClientManager {
       discoveredTool.inputSchema,
       args,
     );
+    const ui = mcpAppToolUiSchema.safeParse(discoveredTool._meta?.ui);
+    if (discoveredTool._meta?.ui !== undefined && !ui.success) throw new Error("This MCP tool has invalid app visibility metadata.");
+    if (ui.success && ui.data.visibility && !ui.data.visibility.includes(options.caller ?? "model"))
+      throw new Error("This MCP tool is not available to this caller.");
+    if (server.toolOverrides?.[toolName]?.enabled === false) throw new Error("This MCP tool is disabled.");
     if (argumentValidationError) {
       throw new Error(
         `MCP tool \`${server.id}.${toolName}\` was not called. ${argumentValidationError}`,
@@ -2432,7 +2441,7 @@ export class McpClientManager {
         "cache-hit",
         toolName,
       );
-      return cacheLookup.entry.value;
+      return { ...cacheLookup.entry.value, _meta: { ...cacheLookup.entry.value._meta, ...(ui.success ? { "machdoch/toolUi": ui.data } : {}) } };
     }
 
     const requiresTaskStream = discoveredTool.taskSupport === "required";
@@ -2491,7 +2500,7 @@ export class McpClientManager {
       );
     }
 
-    return result;
+    return { ...result, _meta: { ...result._meta, ...(ui.success ? { "machdoch/toolUi": ui.data } : {}) } };
   }
 
   async listTasks(

@@ -13,6 +13,8 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { mcpClientManager } from "../../mcp/client.js";
+import { captureMcpApp } from "../../mcp/apps.js";
+import { mcpAppToolUiSchema } from "@machdoch/fleet-protocol/mcp-apps";
 import { mapWithConcurrencyLimit } from "../../_helpers/task-file-change-concurrency.js";
 import { runManagedStdioServer } from "../stdio-server-lifecycle.js";
 import {
@@ -38,6 +40,11 @@ interface ProxyCatalogEntry {
 }
 
 const TOOL_SEPARATOR = "__";
+const visibleToModel = (tool: McpServerDiscovery["tools"][number]): boolean => {
+  if (tool._meta?.ui === undefined) return true;
+  const ui = mcpAppToolUiSchema.safeParse(tool._meta.ui);
+  return ui.success && (!ui.data.visibility || ui.data.visibility.includes("model"));
+};
 const RESOURCE_PREFIX = "machdoch-proxy://";
 const MAX_EXPOSED_NAME_LENGTH = 40;
 
@@ -220,6 +227,7 @@ const registerHandlers = (
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: entries.flatMap((entry) =>
       entry.discovery.tools
+        .filter(visibleToModel)
         .filter((tool) =>
           isMcpToolEnabledForProjection(entry.config, tool.name),
         )
@@ -252,19 +260,29 @@ const registerHandlers = (
       entries,
       (entry) =>
         entry.discovery.tools
+          .filter(visibleToModel)
           .filter((tool) =>
             isMcpToolEnabledForProjection(entry.config, tool.name),
           )
           .map((tool) => tool.name),
       getExposedToolName,
     );
-    return await mcpClientManager.callTool(
+    const result = await mcpClientManager.callTool(
       workspaceRoot,
       target.serverId,
       target.name,
       request.params.arguments ?? {},
       createOperationOptions(getCatalogEntry(entries, target.serverId)),
     );
+    const runId = process.env.MACHDOCH_MCP_APP_RUN_ID;
+    if (runId) {
+      try { await captureMcpApp(workspaceRoot, target.serverId, target.name, request.params.arguments ?? {}, result, process.env.MACHDOCH_MCP_APP_READ_ONLY !== "false", runId); }
+      catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return { ...result, content: [...result.content, { type: "text" as const, text: `The tool completed, but its interactive result could not be saved: ${message}` }] };
+      }
+    }
+    return result;
   });
 
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({

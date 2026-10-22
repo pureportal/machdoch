@@ -17,6 +17,7 @@ import {
   createInstructionResolutionFixture,
 } from "../__test__/instruction-test-helpers.js";
 import type { AgentCliProvider } from "../runtime-contract.generated.js";
+import { setMcpAppsEnabled } from "../mcp/app-settings.js";
 
 const readdirMock = vi.hoisted(() => vi.fn());
 vi.mock("node:fs/promises", async (importOriginal) => {
@@ -290,13 +291,14 @@ afterEach(async () => {
 });
 
 describe("CLI provider enrollment materializer", () => {
-  it("keeps an existing Codex run's configuration while a new run receives synced HTTP changes", async () => {
+  it("keeps an existing native Codex configuration while a new run receives synced HTTP changes with apps disabled", async () => {
     const root = await createRoot();
     const workspaceRoot = join(root, "workspace");
     const userConfigRoot = join(root, "user-config");
     await mkdir(workspaceRoot);
     await mkdir(userConfigRoot);
     vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", userConfigRoot);
+    setMcpAppsEnabled(false);
     await writeFile(
       join(userConfigRoot, "user-config.json"),
       JSON.stringify({
@@ -554,6 +556,9 @@ describe("CLI provider enrollment materializer", () => {
         expect(configPath).toBeDefined();
         expect(await readFile(configPath!, "utf8")).toContain(
           "developer_instructions",
+        );
+        expect(await readFile(configPath!, "utf8")).toContain(
+          "mcp_optional_startup_grace_ms = 0",
         );
         expect(await readFile(configPath!, "utf8")).toContain(
           'cli_auth_credentials_store = "file"',

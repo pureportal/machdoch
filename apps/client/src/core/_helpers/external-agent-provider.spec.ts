@@ -39,6 +39,7 @@ import {
 import { createExternalAgentResultProtocolInstructions } from "./external-agent-result-protocol.ts";
 import { maybeExecuteModelDrivenTask } from "../agent-runtime.ts";
 import { runWithTaskModelUsageRecording } from "../model-usage.ts";
+import { replaceDiscoveredModelCapabilities } from "../model-capabilities.ts";
 
 interface MockChildProcess extends EventEmitter {
   pid: number;
@@ -504,6 +505,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  replaceDiscoveredModelCapabilities("copilot-cli", []);
   vi.useRealTimers();
   restoreEnvironment();
 
@@ -3742,6 +3744,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
   it("passes explicit copilot reasoning effort and context tier when configured", async () => {
     const workspaceRoot = await createWorkspace();
+    replaceDiscoveredModelCapabilities("copilot-cli", [{ id: "gpt-5.3-codex", capabilities: { longContextWindowTokens: 1_000_000 } }]);
 
     process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
 
