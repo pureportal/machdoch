@@ -1,0 +1,62 @@
+.m-skills-library {
+  min-width: 0;
+  padding: 16px;
+}
+
+.m-skills-library > header {
+  margin-bottom: 16px;
+}
+
+.m-skills-library .m-memory-dialog-actions {
+  flex-wrap: wrap;
+}
+
+.m-skills-library .m-memory-dialog-actions > button:not([role="switch"]) {
+  min-height: 36px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 8px;
+  padding: 7px 12px;
+  background: var(--app-surface);
+  color: var(--app-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.m-skills-library
+  .m-memory-dialog-actions
+  > button:not([role="switch"]):hover:enabled {
+  background: var(--app-slate-800);
+}
+
+.m-skills-library button:focus-visible {
+  outline: 2px solid var(--app-sky-500);
+  outline-offset: 2px;
+}
+
+.m-skills-library button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.m-skills-library .m-memory-switch {
+  width: 42px;
+  height: 26px;
+}
+
+.m-skills-library .m-memory-switch > span {
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+}
+
+.m-skills-library .m-memory-switch[data-checked="true"] > span {
+  transform: translateX(16px);
+}
+
+@media (max-width: 760px) {
+  .m-skills-library .m-memory-dialog-actions > button:not([role="switch"]) {
+    min-height: 44px;
+  }
+}
