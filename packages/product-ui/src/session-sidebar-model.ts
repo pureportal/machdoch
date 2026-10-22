@@ -51,10 +51,12 @@ export const getSessionProjectId = (
   workspace: string | null | undefined,
 ): string => {
   if (!workspace?.trim()) return NO_WORKSPACE_PROJECT_KEY;
-  const trimmed = workspace.trim();
-  return (
-    trimmed.replace(/\\/gu, "/").replace(/\/+$/u, "") || trimmed
-  ).toLowerCase();
+  const normalized = workspace
+    .trim()
+    .replace(/\\/gu, "/")
+    .replace(/^\/\/[?.]\/UNC\//iu, "//")
+    .replace(/^\/\/[?.]\/(?=[a-z]:\/)/iu, "");
+  return (normalized.replace(/\/+$/u, "") || normalized).toLowerCase();
 };
 
 export const calculateSessionSearchScore = (

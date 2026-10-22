@@ -50,6 +50,27 @@ function Sidebar({ sessions }: { sessions: ProductSession[] }) {
 const renderSessions = (sessions: ProductSession[]) =>
   render(<Sidebar sessions={sessions} />);
 
+it("keeps chats with equivalent Windows paths visible when selecting a workspace", () => {
+  renderSessions([
+    session("Quick Chat", { specialKind: "quick-voice", workspace: "C:/quick" }),
+    session("Plain path", { workspace: "C:\\alpha" }),
+    session("Extended path", { workspace: "\\\\?\\C:\\alpha" }),
+    session("Other drive", { workspace: "D:\\alpha" }),
+    session("Nested workspace", { workspace: "C:\\alpha\\nested" }),
+  ]);
+
+  expect(screen.getAllByRole("option", { name: "alpha" })).toHaveLength(2);
+  fireEvent.change(screen.getByRole("combobox", { name: "Workspace filter" }), {
+    target: { value: "c:/alpha" },
+  });
+
+  expect(screen.getByText("Quick Chat")).toBeTruthy();
+  expect(screen.getByText("Plain path")).toBeTruthy();
+  expect(screen.getByText("Extended path")).toBeTruthy();
+  expect(screen.queryByText("Other drive")).toBeNull();
+  expect(screen.queryByText("Nested workspace")).toBeNull();
+});
+
 it("combines workspace and every selected tag while keeping Quick Chat visible", () => {
   renderSessions([
     session("Quick Chat", { specialKind: "quick-voice" }),
