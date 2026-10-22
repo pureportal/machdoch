@@ -408,6 +408,63 @@ describe("sidebar filtering and ordering", () => {
 });
 
 describe("workspace facets", () => {
+  it.each([
+    ["C:\\Development\\machdoch", "\\\\?\\C:\\Development\\machdoch"],
+    ["\\\\?\\C:\\Development\\machdoch", "C:\\Development\\machdoch"],
+    ["\\\\server\\share\\machdoch", "\\\\?\\UNC\\server\\share\\machdoch"],
+    ["\\\\?\\UNC\\server\\share\\machdoch", "\\\\server\\share\\machdoch"],
+  ])(
+    "includes equivalent Windows workspace paths when filtering by %s",
+    (workspaceRoot, equivalentWorkspace) => {
+      const index = createSessionHistoryIndex(
+        [
+          createSession({
+            id: "quick",
+            specialSession: QUICK_VOICE_SESSION_KIND,
+          }),
+          createSession({ id: "plain", workspace: workspaceRoot }),
+          createSession({
+            id: "pinned",
+            workspace: equivalentWorkspace,
+            pinnedAt: 1,
+          }),
+          createSession({
+            id: "archived",
+            workspace: equivalentWorkspace,
+            archivedAt: 1,
+          }),
+          createSession({
+            id: "same-folder-name",
+            workspace: "D:\\Other\\machdoch",
+          }),
+          createSession({
+            id: "nested-workspace",
+            workspace: `${workspaceRoot}\\nested`,
+          }),
+        ],
+        undefined,
+        { workspaceRoots: [workspaceRoot, equivalentWorkspace] },
+      );
+      const projects = index.projects.filter(
+        (project) => project.path !== null,
+      );
+
+      expect(projects).toHaveLength(1);
+      expect(projects[0]).toMatchObject({ label: "machdoch", count: 3 });
+
+      const filter = { projectFilter: projects[0].id, status: "any" as const };
+      expectUniqueSessionOrder(
+        filterSessionHistoryIndex(index, { ...filter, scope: "open" }).sessions,
+        ["quick", "pinned", "plain"],
+      );
+      expectUniqueSessionOrder(
+        filterSessionHistoryIndex(index, { ...filter, scope: "archived" })
+          .sessions,
+        ["quick", "archived"],
+      );
+    },
+  );
+
   it("uses configured workspace roots while retaining session counts", () => {
     const index = createSessionHistoryIndex(
       [
