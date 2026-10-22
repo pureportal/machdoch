@@ -25,7 +25,7 @@ fn fixture() -> (Cleanup,SpeechStore) {
 
 fn settings()->Value {json!({"connections":[{"backend":"fish-cloud","configured":true,"model":"drama-3","runtimeVersion":null}],"cloudConsent":true,"answerCharacterLimit":1000,"budgetLimit":null,"answerBudgetLimit":null,"pricing":{"unit":"characters","perMillion":1_000_000.0,"currency":"USD","source":"https://example.test/rate","effectiveFrom":"2000-01-01","effectiveTo":"2099-01-01"}})}
 fn input()->Value {json!({"owner":"chat:auto:session","projectId":null,"revisionId":"stream","profileId":"profile","segments":[{"id":"answer","text":"Hello.","spokenText":"Hello.","chapter":null,"voiceIds":["voice"],"referenceAssetIds":[]}],"takes":1,"priority":100,"reuseCache":false,"cloudConsent":true,"budgetLimit":null})}
-fn begin(store:&mut SpeechStore,settings:Value,id:&str)->Result<Value,String>{crate::admission::admit_live(store,input(),settings,"2026-10-19T00:00:00Z".into(),id.into(),100)}
+fn begin(store:&mut SpeechStore,settings:Value,id:&str)->Result<Value,String>{super::super::admission::admit_live(store,input(),settings,"2026-10-19T00:00:00Z".into(),id.into(),100)}
 fn fragment(sequence:u64,text:&str)->Value{json!({"jobId":"job","owner":"chat:auto:session","sequence":sequence,"text":text,"finish":false})}
 
 #[test]
@@ -75,11 +75,11 @@ fn live_finish_requires_exact_transcript_and_all_consumed_fragments(){
     assert_eq!(segment["text"],"Hello. 世界.");assert_eq!(segment["liveFragments"],json!(["Hello."," 世界."]));
     assert!(append(&mut store,&fragment(3," Late.")).is_err());
     finish["answerRevision"]=json!("changed");assert!(append(&mut store,&finish).is_err());
-    crate::contracts::validate_segment_references(&segment,&json!({"backend":"fish-cloud"})).unwrap();
+    super::super::contracts::validate_segment_references(&segment,&json!({"backend":"fish-cloud"})).unwrap();
     let profile=store.execute("listProfiles",&json!({})).unwrap()[0].clone();
-    let hash=crate::cache::request_hash(&segment,&profile,&json!([]),&json!({}),&json!({})).unwrap();
+    let hash=super::super::cache::request_hash(&segment,&profile,&json!([]),&json!({}),&json!({})).unwrap();
     let mut changed=segment.clone();changed["liveFragments"]=json!(["Hello. 世界."]);
-    assert_ne!(hash,crate::cache::request_hash(&changed,&profile,&json!([]),&json!({}),&json!({})).unwrap());
+    assert_ne!(hash,super::super::cache::request_hash(&changed,&profile,&json!([]),&json!({}),&json!({})).unwrap());
 }
 
 #[test]
@@ -111,14 +111,14 @@ fn answer_admission_counts_direction_but_only_literal_content_uses_the_answer_ca
     let (_cleanup,mut store)=fixture();
     let mut profile=store.execute("listProfiles",&json!({})).unwrap()[0].clone();profile["direction"]=json!("calm");store.execute("saveProfile",&json!({"profile":profile})).unwrap();
     let mut value=input();value["segments"][0]["text"]=json!("x".repeat(1000));value["segments"][0]["spokenText"]=value["segments"][0]["text"].clone();
-    crate::admission::admit(&mut store,value,settings(),"2026-10-19T00:00:00Z".into(),"ordinary".into()).unwrap();
+    super::super::admission::admit(&mut store,value,settings(),"2026-10-19T00:00:00Z".into(),"ordinary".into()).unwrap();
     assert_eq!(store.connection.query_row("SELECT amount FROM speech_budget WHERE job_id='ordinary'",[],|row|row.get::<_,f64>(0)).unwrap(),1006.0);
     for text in ["[whisper] Hello.","<|speaker:9|> Hello."]{
         let mut value=input();value["segments"][0]["text"]=json!(text);value["segments"][0]["spokenText"]=json!(text);
-        assert!(crate::admission::admit(&mut store,value,settings(),"2026-10-19T00:00:00Z".into(),"unsafe".into()).unwrap_err().contains("literal"));
+        assert!(super::super::admission::admit(&mut store,value,settings(),"2026-10-19T00:00:00Z".into(),"unsafe".into()).unwrap_err().contains("literal"));
     }
     let mut value=input();value["segments"][0]["spokenText"]=json!("Different.");
-    assert!(crate::admission::admit(&mut store,value,settings(),"2026-10-19T00:00:00Z".into(),"different".into()).is_err());
+    assert!(super::super::admission::admit(&mut store,value,settings(),"2026-10-19T00:00:00Z".into(),"different".into()).is_err());
 }
 
 fn complete(store:&mut SpeechStore)->Value{
@@ -131,7 +131,7 @@ fn complete(store:&mut SpeechStore)->Value{
     let asset=store.put_asset(&path,"audio/wav",0.1,24000,1).unwrap();
     let profile=store.execute("listProfiles",&json!({})).unwrap()[0].clone();
     let connection=json!({"backend":"fish-cloud","model":"drama-3","url":null,"runtimeVersion":null});
-    let hash=crate::cache::request_hash(&segment,&profile,&json!([]),&json!({}),&connection).unwrap();
+    let hash=super::super::cache::request_hash(&segment,&profile,&json!([]),&json!({}),&connection).unwrap();
     let now=chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis,true);
     let take=json!({"id":"live-take","projectId":null,"revisionId":"stream","segmentId":"answer","asset":asset,"createdAt":now,"generatedAt":now,"reusedFromTakeId":null,"backend":"fish-cloud","model":"drama-3","requestHash":hash,"parentTakeId":null,"favorite":false,"rating":null,"note":"","alignment":[],"spokenText":"Hello.","chapter":null});
     let request=json!({"segment":segment,"profile":profile,"dictionaries":[],"references":{},"connection":connection});
