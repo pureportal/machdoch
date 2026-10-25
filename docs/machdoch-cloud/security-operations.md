@@ -31,8 +31,8 @@ Use RBAC plus resource-level checks for projects, repositories, devices, runs, a
 
 | Role/capability | Typical scope |
 | --- | --- |
-| Owner | Organization lifecycle, recovery, membership policy, ownership transfer |
-| Administrator | Identity/integrations, approved providers, runner pools, policies, and quotas |
+| Owner | Organization lifecycle, recovery, sign-in infrastructure and trust roots, membership policy, ownership transfer |
+| Administrator | Ordinary-member identity management, integrations, approved AI providers, runner pools, delegated policies, and quotas |
 | Team/project lead | Planning configuration, project membership, workflows within delegated limits |
 | Member | Issue/document collaboration and allowed run initiation |
 | Reviewer | Review/evidence access and allowed approval actions; merge is a separate capability |
@@ -41,6 +41,8 @@ Use RBAC plus resource-level checks for projects, repositories, devices, runs, a
 | Agent/service principal | Explicit installation scopes and run-specific narrowed grants |
 
 Do not grant repository code access merely because someone can see a project description. Do not grant full device control merely because someone can execute a task in one bound workspace. Administrative configuration rights do not implicitly authorize reading every user's private local session.
+
+Changing OIDC trust endpoints, signing-key sources, client credentials or email sign-in delivery can determine who may authenticate as an owner. These changes require owner authority; ordinary member-management rights must not confer control over those trust roots. Invitations bind the target organization, granted role and recipient identity, and must not transfer an organization's authentication authority into unrelated memberships.
 
 Enforce permissions in APIs, database queries, event subscriptions, MCP tools, artifact downloads, exports, search indexes, webhook delivery, and preview/terminal channels. Recheck authorization after asynchronous work and at mutation/publication time. Long-lived signed links must not bypass a later revocation; sensitive artifacts need short-lived grants or an authenticated proxy.
 

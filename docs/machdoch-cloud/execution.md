@@ -124,7 +124,7 @@ A worktree provides file separation, not protection from a malicious process run
 
 ## E-07 — Cloud sandbox lifecycle
 
-Use a dedicated Linux execution pool with VM-level isolation for untrusted code. Firecracker is a suitable self-hosted foundation where Linux/KVM and its host-hardening requirements are met; it is not a ready-made fleet scheduler. Build and operate the sandbox controller, image lifecycle, networking, quotas, storage, and cleanup around it. [Firecracker](https://firecracker-microvm.github.io/).
+Use dedicated execution pools with VM-level isolation for untrusted code and an explicitly selected hardware-virtualization backend. Firecracker is a suitable Linux/KVM foundation where its host-hardening requirements are met. Windows pools can use QEMU/WHPX for Linux guests under the same image, broker, quota, watchdog, and cleanup requirements. Build and operate the sandbox controller, image lifecycle, networking, storage, and cleanup around the selected backend. [Firecracker](https://firecracker-microvm.github.io/), [QEMU security requirements](https://www.qemu.org/docs/master/system/security.html), [WHPX](https://www.qemu.org/docs/master/system/whpx.html).
 
 Lifecycle: reserve resources → provision from an immutable image → attach run-scoped volumes → fetch repository at a pinned commit → execute authorized setup → validate readiness → run agent → collect evidence/checkpoint → revoke credentials → terminate → retain or remove owned resources under policy.
 
@@ -134,7 +134,7 @@ Setup-only secrets are issued separately from task credentials and removed befor
 
 Maintain reusable environment builds, image scanning, build logs, and prewarmed capacity. Warm images must contain no run/customer data or active credentials. Snapshot reuse is scoped by trust/organization and invalidated on security updates.
 
-If the installation lacks KVM, cloud execution reports unavailable until an appropriate runner is attached. Do not silently degrade into privileged containers. Native Windows/macOS and GPU workloads use explicitly capable worker/client pools; Firecracker must not be presumed to provide those capabilities.
+If the selected backend's hardware virtualization is unavailable, that pool reports unavailable until an appropriate runner is attached. Do not silently switch to CPU emulation, privileged containers, or host-process execution. Native Windows/macOS and GPU workloads use explicitly capable worker/client pools; a Linux guest does not provide those capabilities merely because its host has them.
 
 Previews use unique authenticated origins, isolated cookies, a revocable run grant, and bounded HTTP/WebSocket proxying. Never serve generated HTML, repository content, or arbitrary preview JavaScript on the application's authenticated origin.
 
