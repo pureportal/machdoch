@@ -20,7 +20,7 @@ import {
 } from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
 import { SessionModePicker } from "./session-mode-picker";
 import { SessionReasoningPicker } from "./session-reasoning-picker";
-import { replaceDiscoveredModelCapabilities } from "../../../../core/model-capabilities.js";
+import { replaceDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
 
 beforeAll(() => {
   class ResizeObserverMock {

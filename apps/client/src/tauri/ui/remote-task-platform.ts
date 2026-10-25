@@ -1,7 +1,7 @@
 import type { ProductSnapshot } from "@machdoch/fleet-protocol";
 import type { FleetOperationTransport } from "@machdoch/product-ui/fleet-operation-transport";
 import { isConfiguredModelProvider } from "../../core/runtime-contract.generated.js";
-import { replaceDiscoveredModelCapabilities } from "../../core/model-capabilities.js";
+import { replaceDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
 import type { RemoteRalphPlatform } from "./ralph/ralph-platform";
 import type { UserInternalTaskModelSettings } from "./runtime";
 

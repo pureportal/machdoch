@@ -24,6 +24,17 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
+      ...["login", "join", "sign-in", "authorize", "sso"].map((page) => ({
+        source: `/cloud/${page}`,
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: securityHeaders
+              .find((header) => header.key === "Content-Security-Policy")!
+              .value.replace(" https://swetrix.pureportal.io", ""),
+          },
+        ],
+      })),
       {
         source: "/media-studio/:path*",
         headers: [

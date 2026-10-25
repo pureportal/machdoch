@@ -1,18 +1,8 @@
 import { existsSync } from "node:fs";
 import { lstat, readdir, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
-import type {
-  AgentModelToolResult,
-  AgentModelToolSpec,
-  ConversationHistoryEntry,
-  ConversationMemoryEntry,
-  TaskActionOutput,
-  TaskExecutionMemoryUpdate,
-  TaskExecutionSection,
-  ToolCallEffect,
-  ToolRiskLevel,
-  UiControlRuntimeInfo,
-} from "../types.js";
+import type { AgentModelToolResult, AgentModelToolSpec } from "@machdoch/model-runtime/types";
+import type { ConversationHistoryEntry, ConversationMemoryEntry, TaskActionOutput, TaskExecutionMemoryUpdate, TaskExecutionSection, ToolCallEffect, ToolRiskLevel, UiControlRuntimeInfo } from "../types.js";
 import type { ToolName } from "../runtime-contract.generated.js";
 
 export const MAX_DIRECTORY_ENTRIES = 60;

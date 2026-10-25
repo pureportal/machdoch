@@ -5,6 +5,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./cloud-task-context": "./src/cloud-task-context.ts",
+    "./cloud-workspaces": "./src/cloud-workspaces.ts",
+    "./cloud-repository": "./src/cloud-repository.ts",
+    "./cloud-artifacts": "./src/cloud-artifacts.ts",
     "./live-voice": "./src/live-voice.ts",
     "./skills": "./src/skills.ts",
     "./memory-applicability": "./src/memory-applicability.ts",
@@ -38,7 +42,12 @@
     "./device-settings": "./src/device-settings.ts",
     "./device-settings-transfer": "./src/device-settings-transfer.ts",
     "./task-file-change-normalization": "./src/task-file-change-normalization.ts",
-    "./mcp-apps": "./src/mcp-apps.ts"
+    "./mcp-apps": "./src/mcp-apps.ts",
+    "./cloud-execution": "./src/cloud-execution.ts",
+    "./cloud-providers": "./src/cloud-providers.ts",
+    "./cloud-inference": "./src/cloud-inference.ts",
+    "./cloud-agent-tools": "./src/cloud-agent-tools.ts",
+    "./cloud-agent": "./src/cloud-agent.ts"
   },
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",

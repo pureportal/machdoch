@@ -3,7 +3,7 @@ import { completedSpeechTakes } from "@machdoch/speech/completed-takes";
 import { nativeSpeechRuntime, parseSpeechExportOptions, produceSpeechProject } from "../speech.js";
 import type { SpeechProductionRequest } from "../speech.js";
 import { createToolErrorResult, resolveWorkspaceTarget, type AgentToolDefinition } from "./agent-tools-shared.js";
-import { validateToolArguments } from "./tool-argument-validation.js";
+import { validateToolArguments } from "@machdoch/model-runtime/tool-argument-validation";
 
 const outputSchema = {
   type: "object", additionalProperties: false,

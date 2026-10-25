@@ -26,7 +26,7 @@ import { ChatInterviewDialog } from "./chat-session/components/chat-interview-di
 import { ChatInputNeededDialog } from "./chat-session/components/chat-input-needed-dialog";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { FilePreviewDialogFallback } from "./chat-session/components/file-preview-dialog-fallback";
-import { FleetManagerPanel } from "./chat-session/components/fleet-manager-panel";
+import { CloudPanel } from "./cloud/cloud-panel";
 import { ProviderEmptyState } from "./chat-session/components/provider-empty-state";
 import { PoseScenePreview } from "./chat-session/components/pose-scene-preview";
 import { SchedulerPanel } from "./chat-session/components/scheduler-panel";
@@ -500,7 +500,7 @@ export const ChatSession = (): JSX.Element => {
       },
       {
         id: "app.fleet-manager.open",
-        title: "Open Fleet Manager",
+        title: "Open machdoch.cloud",
         group: "Navigation",
         keywords: ["fleet", "enrollment", "managed host"],
         scope: { kind: "global", ownerId: "app" },
@@ -1245,7 +1245,7 @@ export const ChatSession = (): JSX.Element => {
         commandOverlayId="fleet-manager"
         commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
       >
-        <FleetManagerPanel />
+        <CloudPanel workspaceRoot={controller.composer.activeSession.workspace} />
       </Dialog>
 
       {schedulerOpen ? (

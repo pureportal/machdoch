@@ -1,4 +1,5 @@
-import type { AgentModelToolSpec, ResolvedTaskContext } from "../types.js";
+import type { AgentModelToolSpec } from "@machdoch/model-runtime/types";
+import type { ResolvedTaskContext } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { ExecutorContinuationRequest } from "./agent-runtime-types.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";

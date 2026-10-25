@@ -1,16 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import type {
-  AgentModelStartParams,
-  AgentModelStreamEvent,
-  AgentModelToolSpec,
-} from "../../types.js";
-import {
-  AnthropicMessagesAdapter,
-  createAnthropicOutputConfig,
-  getAnthropicMaxOutputTokens,
-  createAnthropicToolSelection,
-  createAnthropicUserContent,
-} from "./anthropic-adapter.js";
+import type { AgentModelStartParams, AgentModelStreamEvent, AgentModelToolSpec } from "@machdoch/model-runtime/types";
+import { AnthropicMessagesAdapter, createAnthropicOutputConfig, getAnthropicMaxOutputTokens, createAnthropicToolSelection, createAnthropicUserContent } from "@machdoch/model-runtime/providers/anthropic-adapter";
 
 const tool: AgentModelToolSpec = {
   name: "inspect_file",

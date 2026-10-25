@@ -3,7 +3,7 @@ import { ReasoningIcons, type ComposerIconProps } from "@machdoch/product-ui";
 import { useCallback, useMemo, useState, type JSX } from "react";
 import type { ReasoningMode } from "../../runtime";
 import { isReasoningMode } from "../../../../core/runtime-contract.generated.js";
-import { getDiscoveredDefaultReasoningMode } from "../../../../core/model-capabilities.js";
+import { getDiscoveredDefaultReasoningMode } from "@machdoch/model-runtime/model-capabilities";
 import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import type {

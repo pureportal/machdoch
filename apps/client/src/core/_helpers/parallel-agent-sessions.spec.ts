@@ -6,12 +6,8 @@ import {
   parallelWorker as worker,
   executeParallelWorkers as execute,
 } from "../__test__/parallel-agent-test-helpers.js";
-import type {
-  AgentModelAdapter,
-  AgentModelToolCall,
-  ParallelAgentMode,
-  TaskExecutionTimelineEvent,
-} from "../types.js";
+import type { AgentModelAdapter, AgentModelToolCall, ParallelAgentMode } from "@machdoch/model-runtime/types";
+import type { TaskExecutionTimelineEvent } from "../types.js";
 import { createParallelAgentSessionTool } from "./parallel-agent-sessions.js";
 import { TASK_EXECUTION_IDLE_TIMEOUT_MS } from "./task-execution-timeouts.js";
 

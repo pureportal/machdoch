@@ -11,7 +11,7 @@ import {
   parseInternalTaskStructuredOutput,
 } from "../internal-task-model.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
-import type { AgentModelAdapter } from "../types.js";
+import type { AgentModelAdapter } from "@machdoch/model-runtime/types";
 
 const outputSchema = {
   name: "media_flow_edit",

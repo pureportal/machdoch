@@ -83,7 +83,7 @@ const createPackRuntime = async () => {
           model: "gpt-5.4",
           mode: null,
           reasoning: null,
-          contextWindow: 64_000,
+          contextWindow: "highest",
           temporary: true,
           variables: [],
           triggerPhrases: [],
@@ -177,13 +177,13 @@ describe.sequential("Fleet temporary context packs", () => {
     },
     {
       name: "restores the previous context size after the first task is accepted",
-      previousContext: 32_000,
+      previousContext: "lowest" as const,
       manualContext: undefined,
     },
     {
       name: "preserves a manual context change made after applying the pack",
-      previousContext: 32_000,
-      manualContext: 128_000,
+      previousContext: "lowest" as const,
+      manualContext: "default" as const,
     },
   ])("$name", async ({ previousContext, manualContext }) => {
     const fixture = await createPackRuntime();
@@ -195,7 +195,7 @@ describe.sequential("Fleet temporary context packs", () => {
         await execute({
           kind: "set-session-context-window",
           sessionId,
-          mode: String(previousContext),
+          mode: previousContext,
         });
       await execute({
         kind: "apply-context-pack",
@@ -203,14 +203,14 @@ describe.sequential("Fleet temporary context packs", () => {
         contextPackId: fixture.contextPackId,
       });
       expect(await composer()).toMatchObject({
-        contextWindow: 64_000,
+        contextWindow: "highest",
         sessionMemoryEnabled: false,
       });
       if (manualContext !== undefined)
         await execute({
           kind: "set-session-context-window",
           sessionId,
-          mode: String(manualContext),
+          mode: manualContext,
         });
 
       await execute({
@@ -228,7 +228,7 @@ describe.sequential("Fleet temporary context packs", () => {
         expect.anything(),
         expect.objectContaining({
           conversationContext: expect.objectContaining({
-            contextWindow: manualContext ?? 64_000,
+            contextWindow: manualContext ?? "highest",
             sessionMemoryEnabled: false,
             workspaceMemoryEnabled: false,
           }),
@@ -306,7 +306,7 @@ describe.sequential("Fleet temporary context packs", () => {
       messages: [],
     };
     const previous = captureFleetPackSettings(session);
-    session.contextWindow = 64_000;
+    session.contextWindow = "highest";
     session.useWorkspaceMemory = false;
     session.temporaryPackSettings = {
       previous,
@@ -325,7 +325,7 @@ describe.sequential("Fleet temporary context packs", () => {
     const restoredSession = restored?.sessions[0];
     if (!restored || !restoredSession)
       throw new Error("Session state is missing.");
-    expect(restoredSession.contextWindow).toBe(64_000);
+    expect(restoredSession.contextWindow).toBe("highest");
     expect(restoredSession.temporaryPackSettings).toEqual({
       previous,
       applied: captureFleetPackSettings(session),

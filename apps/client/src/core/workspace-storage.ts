@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { getWorkspaceRuntimeDirectory } from "./workspace-runtime-storage.js";
 import { createReadStream } from "node:fs";
 import {
   lstat,
@@ -258,6 +259,15 @@ export const ensureWorkspaceStorage = async (
   workspaceRoot: string,
 ): Promise<void> => {
   const root = resolve(workspaceRoot);
+  const runtime = getWorkspaceRuntimeDirectory(root);
+  if (runtime) {
+    await ensureDirectory(runtime, dirname(runtime));
+    for (const category of ["state", "cache", "artifacts"] as const)
+      await ensureDirectory(getWorkspaceLocalDirectory(root, category), runtime);
+    if (!(await layoutIsCurrent(root)))
+      await writeJsonAtomically(getWorkspaceStorageMarkerPath(root), { version: WORKSPACE_STORAGE_LAYOUT_VERSION });
+    return;
+  }
   const existing = migrations.get(root);
   if (existing) {
     await existing;

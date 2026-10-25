@@ -1,0 +1,37 @@
+{
+  "name": "@machdoch/cloud-runner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "start": "node --import @oxc-node/core/register src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "prepare:guest": "node scripts/prepare-guest.mjs",
+    "build:native": "cargo build --manifest-path native/Cargo.toml --release",
+    "test:supervisor": "node --test scripts/supervisor.test.mjs",
+    "test:windows-socket": "node --import @oxc-node/core/register --test scripts/windows-socket.test.mjs",
+    "test:channel": "node --import @oxc-node/core/register --test src/sandbox/guest-channel.test.ts src/sandbox/repository-gateway.test.ts",
+    "test:launch": "node --import @oxc-node/core/register --test src/sandbox/machine-launch.test.ts src/sandbox/supervisor.test.ts",
+    "verify:linux-supervisor": "node scripts/verify-linux-supervisor.mjs",
+    "verify:shared-agent": "node --import @oxc-node/core/register scripts/verify-shared-agent.mjs",
+    "verify:local-source": "node --import @oxc-node/core/register scripts/verify-local-source.mjs",
+    "verify:kvm-boot": "node scripts/verify-linux-supervisor.mjs --kvm-boot",
+    "test:artifacts": "node --import @oxc-node/core/register --test src/artifact-uploader.test.ts",
+    "test:recovery": "node --import @oxc-node/core/register --test src/journal.test.ts src/recovery.test.ts",
+    "test:workflow": "node --import @oxc-node/core/register --test src/agent-loop.test.ts src/runner.test.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@machdoch/cloud-client": "workspace:*",
+    "@oxc-node/core": "^0.1.0",
+    "@machdoch/fleet-protocol": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "@types/node": "^25.9.3"
+  }
+}

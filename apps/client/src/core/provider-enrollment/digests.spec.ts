@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  compareCanonicalStrings,
-  digestJson,
-  stableJson,
-} from "./digests.js";
+import { compareCanonicalStrings, digestJson, stableJson } from "@machdoch/model-runtime/digests";
 
 describe("canonical JSON digests", () => {
   it("sorts object keys by raw code units instead of host locale collation", () => {

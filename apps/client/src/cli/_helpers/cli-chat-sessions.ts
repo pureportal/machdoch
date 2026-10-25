@@ -13,11 +13,9 @@ import {
   type RuntimeAgentLimitOverrides,
   type RunMode,
 } from "../../core/runtime-contract.generated.js";
-import type { ConfiguredModelProvider } from "../../core/provider-model-registry.js";
-import type {
-  ParallelAgentMode,
-  TaskConversationContext,
-} from "../../core/types.js";
+import type { ConfiguredModelProvider } from "@machdoch/model-runtime/provider-model-registry";
+import type { ParallelAgentMode } from "@machdoch/model-runtime/types";
+import type { TaskConversationContext } from "../../core/types.js";
 import { CliUsageError } from "./cli-error.js";
 import { resolveCliWorkspaceRoot } from "./cli-workspace.js";
 import { isContextWindow } from "../../core/runtime-contract.generated.js";

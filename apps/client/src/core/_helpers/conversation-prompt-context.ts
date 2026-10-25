@@ -15,13 +15,8 @@ import {
   isReasoningBankEnabled,
   retrieveReasoningLessons,
 } from "../reasoning-bank.js";
-import type {
-  ConversationHistoryEntry,
-  ParallelAgentMode,
-  TaskConversationContext,
-  TaskExecutionSection,
-  UiControlRuntimeInfo,
-} from "../types.js";
+import type { ConversationHistoryEntry, TaskConversationContext, TaskExecutionSection, UiControlRuntimeInfo } from "../types.js";
+import type { ParallelAgentMode } from "@machdoch/model-runtime/types";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { ConversationMemoryRuntime } from "./agent-tools-shared.js";
 import {

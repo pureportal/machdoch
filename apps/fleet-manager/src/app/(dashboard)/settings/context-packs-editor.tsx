@@ -212,7 +212,7 @@ function ContextPackDialog({
             id="pack-provider"
             name="provider"
             value={provider}
-            onChange={(event) => { setProvider(event.target.value); setContextWindow(undefined); }}
+            onChange={(event) => { setProvider(event.target.value); }}
           >
             <option value="">Not set</option>
             {providers.map((option) => (
@@ -227,7 +227,7 @@ function ContextPackDialog({
             id="pack-model"
             name="model"
             value={model}
-            onChange={(event) => { setModel(event.target.value); setContextWindow(undefined); }}
+            onChange={(event) => { setModel(event.target.value); }}
             disabled={!provider}
             required={Boolean(provider)}
           />

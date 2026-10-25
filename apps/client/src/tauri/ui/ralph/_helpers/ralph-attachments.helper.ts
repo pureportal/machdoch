@@ -1,4 +1,4 @@
-import { getImageInputMediaTypeForPath } from "../../../../core/model-capabilities.js";
+import { getImageInputMediaTypeForPath } from "@machdoch/model-runtime/model-capabilities";
 import type { RalphAttachmentReference } from "../../../../core/ralph.js";
 import type { ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import type { DroppedPathEntry } from "../../runtime";

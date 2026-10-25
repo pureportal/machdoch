@@ -1,18 +1,6 @@
 import type OpenAI from "openai";
-import type {
-  AgentModelStartParams,
-  AgentModelStreamEvent,
-  AgentModelToolSpec,
-} from "../../types.js";
-import {
-  OpenAIResponsesAdapter,
-  createOpenAIMultiAgentConfig,
-  createOpenAIReasoningConfig,
-  createOpenAIResponseToolSelection,
-  createOpenAITools,
-  createOpenAIStructuredOutputTextConfig,
-  createOpenAIUserInput,
-} from "./openai-adapter.js";
+import type { AgentModelStartParams, AgentModelStreamEvent, AgentModelToolSpec } from "@machdoch/model-runtime/types";
+import { OpenAIResponsesAdapter, createOpenAIMultiAgentConfig, createOpenAIReasoningConfig, createOpenAIResponseToolSelection, createOpenAITools, createOpenAIStructuredOutputTextConfig, createOpenAIUserInput } from "@machdoch/model-runtime/providers/openai-adapter";
 
 const tool: AgentModelToolSpec = {
   name: "inspect_file",

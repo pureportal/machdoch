@@ -2017,14 +2017,27 @@
     "accepted": true
   },
   {
-    "name": "context window long",
+    "name": "context window lowest",
     "request": {
       "kind": "invoke",
       "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
       "command": "save_workspace_context_window",
       "args": {
         "workspaceRoot": "/projects/demo",
-        "contextWindow": "long"
+        "contextWindow": "lowest"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "context window highest",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "save_workspace_context_window",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "contextWindow": "highest"
       }
     },
     "accepted": true
@@ -2040,7 +2053,7 @@
         "contextWindow": 1
       }
     },
-    "accepted": true
+    "accepted": false
   },
   {
     "name": "context window 10000000",
@@ -2053,7 +2066,7 @@
         "contextWindow": 10000000
       }
     },
-    "accepted": true
+    "accepted": false
   },
   {
     "name": "reject context window 0",

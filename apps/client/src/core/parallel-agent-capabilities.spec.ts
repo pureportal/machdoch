@@ -6,11 +6,8 @@ import {
   getInstructionCapabilityDescriptor,
 } from "./instruction-system/delivery.js";
 import type { InstructionLifecycleSupport } from "./instruction-system/types.js";
-import {
-  getAvailableParallelAgentModes,
-  resolveParallelAgentMode,
-  supportsNativeSubagents,
-} from "./parallel-agent-capabilities.js";
+import { getAvailableParallelAgentModes, resolveParallelAgentMode } from "./parallel-agent-capabilities.js";
+import { supportsNativeSubagents } from "@machdoch/model-runtime/native-subagents";
 
 const createNativeInstructionPlan = (
   subagents: InstructionLifecycleSupport,

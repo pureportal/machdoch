@@ -3,9 +3,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
-vi.mock("../model-capabilities.js", async (importOriginal) => {
+vi.mock("@machdoch/model-runtime/model-capabilities", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../model-capabilities.js")>();
+    await importOriginal<typeof import("@machdoch/model-runtime/model-capabilities")>();
   return {
     ...actual,
     getModelContextWindowTokens: (_provider: string, model: string) =>

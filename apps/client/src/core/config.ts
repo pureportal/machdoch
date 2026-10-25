@@ -4,13 +4,9 @@ import { join } from "node:path";
 import { loadFleetManagedProfile } from "./fleet-settings.js";
 import { loadChatDefaults } from "./chat-defaults.js";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
-import {
-  assertContextWindowSupportedForProviderModel,
-  parseContextWindow,
-} from "./context-windows.js";
-import { getModelContextWindowTokens } from "./model-capabilities.js";
-import { assertReasoningExecutionModeSupportedForProviderModel } from "./reasoning-execution-modes.js";
-import { assertReasoningModeSupportedForProviderModel } from "./reasoning-modes.js";
+import { parseContextWindow } from "./context-windows.js";
+import { assertReasoningExecutionModeSupportedForProviderModel } from "@machdoch/model-runtime/reasoning-execution-modes";
+import { assertReasoningModeSupportedForProviderModel } from "@machdoch/model-runtime/reasoning-modes";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
 import { ensureWorkspaceStorage } from "./workspace-storage.js";
@@ -296,32 +292,13 @@ export const saveWorkspaceReasoningExecutionMode = async (
 
 export const saveWorkspaceContextWindow = async (
   workspaceRoot: string,
-  contextWindow: string | number,
+  contextWindow: string,
 ): Promise<string> => {
   const parsedContextWindow = parseContextWindow(contextWindow);
 
   if (parsedContextWindow === undefined) {
     throw new Error(
-      "Expected workspace.context-window to be default, long, or a positive token count up to 10000000.",
-    );
-  }
-
-  const runtime = await loadRuntimeConfig(
-    workspaceRoot,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    parsedContextWindow,
-  );
-
-  if (
-    runtime.provider === "unconfigured" &&
-    parsedContextWindow !== "default"
-  ) {
-    throw new Error(
-      "Configure a model provider before selecting a non-default context window.",
+      "Expected workspace.context-window to be lowest, default, or highest.",
     );
   }
 
@@ -623,7 +600,7 @@ export const loadRuntimeConfig = async (
 
   if (rawContextWindowFromEnv && contextWindowFromEnv === undefined) {
     throw new Error(
-      "MACHDOCH_CONTEXT_WINDOW must be default, long, or a positive token count up to 10000000.",
+      "MACHDOCH_CONTEXT_WINDOW must be lowest, default, or highest.",
     );
   }
 
@@ -635,7 +612,7 @@ export const loadRuntimeConfig = async (
     configuredContextWindow === undefined
   ) {
     throw new Error(
-      "workspace.contextWindow must be default, long, or a positive token count up to 10000000.",
+      "workspace.contextWindow must be lowest, default, or highest.",
     );
   }
 
@@ -643,7 +620,7 @@ export const loadRuntimeConfig = async (
     overrideContextWindow ??
     contextWindowFromEnv ??
     configuredContextWindow ??
-    "default";
+    "highest";
   const provider = resolveProvider(
     overrideProvider ??
       config.provider ??
@@ -668,12 +645,6 @@ export const loadRuntimeConfig = async (
       reasoningMode,
       provider,
       model,
-    );
-    assertContextWindowSupportedForProviderModel(
-      contextWindow,
-      provider,
-      model,
-      getModelContextWindowTokens(provider, model),
     );
   }
 

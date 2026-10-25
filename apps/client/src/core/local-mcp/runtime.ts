@@ -1,10 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
-import type {
-  AgentModelToolCall,
-  TaskActionOutputHandler,
-  UiControlRuntimeInfo,
-} from "../types.js";
+import type { AgentModelToolCall } from "@machdoch/model-runtime/types";
+import type { TaskActionOutputHandler, UiControlRuntimeInfo } from "../types.js";
 import {
   createToolDefinitions,
   executeToolCall,

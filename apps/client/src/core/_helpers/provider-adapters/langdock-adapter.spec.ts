@@ -1,12 +1,6 @@
 import type OpenAI from "openai";
-import type { AgentModelStartParams, AgentModelToolSpec } from "../../types.js";
-import {
-  LangdockChatCompletionsAdapter,
-  createLangdockReasoningConfig,
-  createLangdockStructuredOutputConfig,
-  createLangdockToolSelection,
-  createLangdockTools,
-} from "./langdock-adapter.js";
+import type { AgentModelStartParams, AgentModelToolSpec } from "@machdoch/model-runtime/types";
+import { LangdockChatCompletionsAdapter, createLangdockReasoningConfig, createLangdockStructuredOutputConfig, createLangdockToolSelection, createLangdockTools } from "@machdoch/model-runtime/providers/langdock-adapter";
 
 const tool: AgentModelToolSpec = {
   name: "inspect_file",

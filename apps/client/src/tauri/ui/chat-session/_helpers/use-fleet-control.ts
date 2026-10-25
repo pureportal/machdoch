@@ -1,7 +1,7 @@
 import {
   parseContextWindow,
 } from "../../../../core/context-windows.js";
-import { getModelContextWindowTokens, getDiscoveredLongContextWindowTokens } from "../../../../core/model-capabilities.js";
+import { getDiscoveredModelCapabilities, getDiscoveredLongContextWindowTokens } from "@machdoch/model-runtime/model-capabilities";
 import {
   getAvailableGoalModes,
   resolveGoalMode,
@@ -1169,7 +1169,8 @@ export const useFleetControl = (options: {
         reasoning: options.activeReasoning,
         defaultReasoning: options.defaultReasoning,
         contextWindow: options.activeSession.contextWindow,
-        contextWindowTokens: getModelContextWindowTokens(options.activeSession.provider, options.activeSession.model),
+        workspaceContextWindow: options.runtimeSnapshot?.contextWindow ?? "highest",
+        contextWindowTokens: getDiscoveredModelCapabilities(options.activeSession.provider, options.activeSession.model)?.contextWindowTokens,
         longContextWindowTokens: getDiscoveredLongContextWindowTokens(options.activeSession.provider, options.activeSession.model),
         reasoningOptions: [
           ...getReasoningModesForProvider(

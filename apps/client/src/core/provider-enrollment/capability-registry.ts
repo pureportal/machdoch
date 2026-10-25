@@ -9,7 +9,7 @@ import type {
   ProviderCapabilityProfile,
   ProviderProbeResult,
 } from "./types.js";
-import { compareCanonicalStrings, sha256 } from "./digests.js";
+import { compareCanonicalStrings, sha256 } from "@machdoch/model-runtime/digests";
 
 export const PROVIDER_CAPABILITY_REGISTRY = {
   openai: {

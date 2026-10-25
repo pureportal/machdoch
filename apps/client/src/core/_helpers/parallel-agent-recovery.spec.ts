@@ -6,7 +6,10 @@ import {
   executeParallelWorkers as execute,
   parallelWorker as worker,
 } from "../__test__/parallel-agent-test-helpers.js";
-import type { AgentModelAdapter, AgentModelToolCall } from "../types.js";
+import type {
+  AgentModelAdapter,
+  AgentModelToolCall,
+} from "@machdoch/model-runtime/types";
 import { createParallelAgentSessionTool } from "./parallel-agent-sessions.js";
 
 const workspaces: string[] = [];
@@ -156,6 +159,7 @@ it("clears a failed objective only after the same plan successfully reruns", asy
   });
   await execute(tool, [worker("first"), worker("second")]);
   expect(tool.hasWorkerFailure()).toBe(true);
+  expect(tool.getCompletionBlocker()).toBeUndefined();
   fail = false;
   await execute(tool, [
     worker("first", { objective: "Different objective" }),
@@ -222,6 +226,9 @@ it("enforces declared read paths even when every worker is read-only", async () 
   expect(result.toolResult.isError).toBe(true);
   expect(tool.hasWorkerFailure()).toBe(true);
   expect(continuations).toBe(0);
+  expect(tool.getCompletionBlocker()).toContain(
+    "violated its declared file scope",
+  );
   expect(result.toolResult.output).not.toContain("Secret");
 });
 
@@ -252,6 +259,7 @@ it("rejects overlapping worker groups without starting extra sessions", async ()
   try {
     await ready;
     expect(tool.hasWorkerFailure()).toBe(true);
+    expect(tool.getCompletionBlocker()).toContain("still running");
     const second = await execute(tool, [worker("first"), worker("second")]);
     expect(second.toolResult.isError).toBe(true);
     expect(second.toolResult.output).toContain("already running");
@@ -261,6 +269,7 @@ it("rejects overlapping worker groups without starting extra sessions", async ()
     await first;
   }
   expect(tool.hasWorkerFailure()).toBe(false);
+  expect(tool.getCompletionBlocker()).toBeUndefined();
 });
 
 it("reports successful writes when a worker fails after modifying its file", async () => {

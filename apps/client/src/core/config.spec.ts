@@ -113,7 +113,7 @@ describe("loadRuntimeConfig", () => {
     expect(config.mode).toBe("machdoch");
     expect(config.provider).toBe("unconfigured");
     expect(config.model).toBe("gpt-5.6-sol");
-    expect(config.contextWindow).toBe("default");
+    expect(config.contextWindow).toBe("highest");
     expect(config.reasoningMode).toBe("standard");
     expect(config.answerLanguage).toBe("English");
     expect(config.offline).toBe(false);
@@ -489,25 +489,25 @@ describe("loadRuntimeConfig", () => {
     );
   });
 
-  it("persists and loads a numeric Codex context window", async () => {
+  it("persists and loads a context preset", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();
 
     process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
     await saveWorkspaceRuntimeProvider(workspaceRoot, "codex-cli");
     await saveWorkspaceDefaultModel(workspaceRoot, "gpt-5.5");
-    await saveWorkspaceContextWindow(workspaceRoot, 400_000);
+    await saveWorkspaceContextWindow(workspaceRoot, "highest");
 
     const runtime = await loadRuntimeConfig(workspaceRoot);
     const stored = JSON.parse(
       await readFile(join(workspaceRoot, ".machdoch", "config.json"), "utf8"),
     ) as Record<string, unknown>;
 
-    expect(runtime.contextWindow).toBe(400_000);
-    expect(stored.contextWindow).toBe(400_000);
+    expect(runtime.contextWindow).toBe("highest");
+    expect(stored.contextWindow).toBe("highest");
   });
 
-  it("rejects context settings that the configured provider cannot apply", async () => {
+  it("saves workspace presets even for a fixed-size provider", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();
 
@@ -515,12 +515,8 @@ describe("loadRuntimeConfig", () => {
     await saveWorkspaceRuntimeProvider(workspaceRoot, "openai");
     await saveWorkspaceDefaultModel(workspaceRoot, "gpt-5.5");
 
-    await expect(
-      saveWorkspaceContextWindow(workspaceRoot, "long"),
-    ).rejects.toThrow("Long context is not supported");
-    await expect(
-      saveWorkspaceContextWindow(workspaceRoot, 400_000),
-    ).rejects.toThrow("cannot be configured");
+    await saveWorkspaceContextWindow(workspaceRoot, "lowest");
+    expect((await loadRuntimeConfig(workspaceRoot)).contextWindow).toBe("lowest");
   });
 
   it("rejects an invalid context window environment value", async () => {
@@ -530,7 +526,7 @@ describe("loadRuntimeConfig", () => {
     process.env.MACHDOCH_CONTEXT_WINDOW = "automatic";
 
     await expect(loadRuntimeConfig(workspaceRoot)).rejects.toThrow(
-      "MACHDOCH_CONTEXT_WINDOW must be default, long, or a positive token count",
+      "MACHDOCH_CONTEXT_WINDOW must be lowest, default, or highest.",
     );
   });
 
@@ -589,7 +585,7 @@ describe("loadRuntimeConfig", () => {
     expect((await loadRuntimeConfig(workspaceRoot)).model).toBe("gpt-5");
   });
 
-  it("rejects provider and model changes that invalidate saved settings", async () => {
+  it("preserves context presets across provider changes while validating reasoning", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();
 
@@ -597,11 +593,10 @@ describe("loadRuntimeConfig", () => {
     process.env.OPENAI_API_KEY = "sk-real-openai-key-123456";
     await saveWorkspaceRuntimeProvider(workspaceRoot, "codex-cli");
     await saveWorkspaceDefaultModel(workspaceRoot, "gpt-5.5");
-    await saveWorkspaceContextWindow(workspaceRoot, 400_000);
+    await saveWorkspaceContextWindow(workspaceRoot, "highest");
 
-    await expect(
-      saveWorkspaceRuntimeProvider(workspaceRoot, "openai"),
-    ).rejects.toThrow("numeric context window cannot be configured");
+    await saveWorkspaceRuntimeProvider(workspaceRoot, "openai");
+    expect((await loadRuntimeConfig(workspaceRoot)).contextWindow).toBe("highest");
 
     await saveWorkspaceContextWindow(workspaceRoot, "default");
     await saveWorkspaceReasoningMode(workspaceRoot, "none");
@@ -612,7 +607,7 @@ describe("loadRuntimeConfig", () => {
     const stored = JSON.parse(
       await readFile(join(workspaceRoot, ".machdoch", "config.json"), "utf8"),
     ) as Record<string, unknown>;
-    expect(stored.provider).toBe("codex-cli");
+    expect(stored.provider).toBe("openai");
     expect(stored.model).toBe("gpt-5.5");
   });
 });

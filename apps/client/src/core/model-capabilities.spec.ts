@@ -1,16 +1,4 @@
-import {
-  getModelCapabilityProfile,
-  getModelContextWindowTokens,
-  getImageInputMediaTypeForPath,
-  getSupportedImageInputExtensions,
-  modelSupportsReasoning,
-  modelSupportsStreaming,
-  modelSupportsToolUse,
-  modelSupportsVoice,
-  modelSupportsImageInput,
-  providerSupportsImageInputMediaType,
-  replaceDiscoveredModelCapabilities,
-} from "./model-capabilities.js";
+import { getModelCapabilityProfile, getModelContextWindowTokens, getImageInputMediaTypeForPath, getSupportedImageInputExtensions, modelSupportsReasoning, modelSupportsStreaming, modelSupportsToolUse, modelSupportsVoice, modelSupportsImageInput, providerSupportsImageInputMediaType, replaceDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
 
 describe("model image input capabilities", () => {
   it("detects supported image media types from paths", () => {
@@ -123,7 +111,7 @@ describe("model image input capabilities", () => {
       streaming: true,
       contextWindowTokens: 1_000_000,
     });
-    expect(profile?.providerModes).toContain("gemini-function-calling-any");
+    expect(profile?.providerModes).toEqual(["google-interactions"]);
     expect(getModelContextWindowTokens("anthropic", "claude-sonnet-5")).toBe(
       1_000_000,
     );

@@ -27,16 +27,8 @@ import {
   loadWorkspaceMemory,
   rememberWorkspaceMemory,
 } from "./workspace-memory.js";
-import type {
-  AgentModelAdapter,
-  AgentModelStructuredOutput,
-  ConversationMemoryKind,
-  ConversationMemoryScope,
-  TaskConversationContext,
-  TaskExecutionMemoryUpdate,
-  TaskExecutionResult,
-  TaskExecutionSection,
-} from "./types.js";
+import type { AgentModelAdapter, AgentModelStructuredOutput } from "@machdoch/model-runtime/types";
+import type { ConversationMemoryKind, ConversationMemoryScope, TaskConversationContext, TaskExecutionMemoryUpdate, TaskExecutionResult, TaskExecutionSection } from "./types.js";
 import type { RuntimeConfig } from "./runtime-contract.generated.js";
 
 const MAX_MEMORY_REVIEW_TEXT_LENGTH = 6_000;

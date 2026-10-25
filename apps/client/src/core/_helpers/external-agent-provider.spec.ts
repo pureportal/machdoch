@@ -39,7 +39,7 @@ import {
 import { createExternalAgentResultProtocolInstructions } from "./external-agent-result-protocol.ts";
 import { maybeExecuteModelDrivenTask } from "../agent-runtime.ts";
 import { runWithTaskModelUsageRecording } from "../model-usage.ts";
-import { replaceDiscoveredModelCapabilities } from "../model-capabilities.ts";
+import { replaceDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
 
 interface MockChildProcess extends EventEmitter {
   pid: number;
@@ -526,7 +526,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       provider: "codex-cli",
       model: "gpt-5.6-sol",
       reasoning: "ultra",
-      contextWindow: 1_050_000,
+      contextWindow: "highest",
     });
     params.nativeGoal = "All intake tests pass";
     params.captureGoalEvidence = true;
@@ -857,6 +857,66 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       reason: "Codex CLI failed: The model is unavailable for this account.",
     });
   });
+
+  it("lets Codex reconnect without starting completion shutdown or failing the result", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const processKillSpy = vi.spyOn(process, "kill").mockReturnValue(true);
+    const progress: TaskExecutionProgress[] = [];
+    const resultPromise = maybeExecuteExternalAgentProviderTask({
+      ...createParams(workspaceRoot),
+      onStateChange: (event) => {
+        progress.push(event);
+      },
+    });
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    vi.useFakeTimers();
+    call.child.stdout.write(
+      `${JSON.stringify({
+        type: "error",
+        message:
+          "Reconnecting... 4/5 (stream disconnected before completion: websocket closed by server before response.completed)",
+      })}\n`,
+    );
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(spawnCalls).toHaveLength(1);
+    expect(processKillSpy).not.toHaveBeenCalled();
+    writeStructuredAnswer(call, "Completed and verified the work.");
+    call.child.emit("close", 0, null);
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "executed",
+      response: { markdown: "Completed and verified the work." },
+    });
+    expect(
+      progress.some((event) => event.timelineEvent?.phase === "failed"),
+    ).toBe(false);
+    expect(
+      progress.some((event) => event.timelineEvent?.phase === "completed"),
+    ).toBe(true);
+  });
+
+  it.each([0, 1])(
+    "fails incomplete Codex streams despite answer text (exit %s)",
+    async (exitCode) => {
+      const workspaceRoot = await createWorkspace();
+      process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+      const resultPromise = maybeExecuteExternalAgentProviderTask(
+        createParams(workspaceRoot),
+      );
+      await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+      const call = spawnCalls[0]!;
+      writeCodexMessage(call.child, "Partial answer.");
+      call.child.stdout.write(
+        `${JSON.stringify({ type: "error", message: "Connection lost." })}\n`,
+      );
+      call.child.emit("close", exitCode, null);
+      await expect(resultPromise).resolves.toMatchObject({
+        status: "failed",
+        reason: "Codex CLI failed: Connection lost.",
+      });
+    },
+  );
 
   it("keeps the last CLI diagnostic when no turn failure message was emitted", async () => {
     const workspaceRoot = await createWorkspace();
@@ -2318,7 +2378,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         provider: "codex-cli",
         model: "gpt-5.6-sol",
         reasoning: "ultra",
-        contextWindow: 1_050_000,
+        contextWindow: "highest",
       }),
     );
 
@@ -2348,7 +2408,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         provider: "codex-cli",
         model: "gpt-6-astra",
         reasoning: "aeon",
-        contextWindow: 1_050_000,
+        contextWindow: "highest",
       }),
     );
 
@@ -2566,8 +2626,10 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
   it.each([
     ["win32", "stderr"],
     ["win32", "stdout"],
+    ["win32", "stdout-error"],
     ["linux", "stderr"],
     ["linux", "stdout"],
+    ["linux", "stdout-error"],
     ["linux", "stderr-after-limit"],
   ] as const)(
     "stops a persistent Codex authentication error on %s from %s without waiting for process exit",
@@ -2589,7 +2651,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         const child = spawnCalls[0]!.child;
         Object.defineProperty(process, "platform", { value: platform });
         vi.useFakeTimers();
-        if (stream !== "stdout") {
+        if (stream !== "stdout" && stream !== "stdout-error") {
           if (stream === "stderr-after-limit")
             child.stderr.write("x".repeat(140_000));
           child.stderr.write("refresh_token_");
@@ -2597,7 +2659,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
           child.stderr.write("refresh_token_reused\n".repeat(100));
         } else {
           child.stdout.write(
-            `${JSON.stringify({ type: "turn.failed", error: { code: "refresh_token_reused", message: "Unauthorized" } })}\n`,
+            `${JSON.stringify({ type: stream === "stdout-error" ? "error" : "turn.failed", error: { code: "refresh_token_reused", message: "Unauthorized" } })}\n`,
           );
         }
         if (process.platform === "win32")
@@ -3042,7 +3104,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         provider: "claude-cli",
         model: "claude-sonnet-4-6",
         reasoning: "high",
-        contextWindow: "long",
+        contextWindow: "highest",
         agentLimits: {
           executorTurns: 7,
           autopilotExecutorIterations: 3,
@@ -3744,7 +3806,12 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
   it("passes explicit copilot reasoning effort and context tier when configured", async () => {
     const workspaceRoot = await createWorkspace();
-    replaceDiscoveredModelCapabilities("copilot-cli", [{ id: "gpt-5.3-codex", capabilities: { longContextWindowTokens: 1_000_000 } }]);
+    replaceDiscoveredModelCapabilities("copilot-cli", [
+      {
+        id: "gpt-5.3-codex",
+        capabilities: { longContextWindowTokens: 1_000_000 },
+      },
+    ]);
 
     process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
 
@@ -3753,7 +3820,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         provider: "copilot-cli",
         model: "gpt-5.3-codex",
         reasoning: "xhigh",
-        contextWindow: "long",
+        contextWindow: "highest",
       }),
     );
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { replaceDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -97,10 +98,14 @@ describe("adaptive context and compute", () => {
         "Implement a full featured architecture across the repository. Investigate the existing codebase, integrate the changes, fix all affected paths, and verify the behavior with tests and performance checks.",
       ]) {
         const normal = planAdaptiveExecution(task, config);
+        replaceDiscoveredModelCapabilities("codex-cli", [{ id: "small-context", capabilities: { contextWindowTokens: contextWindow, longContextWindowTokens: 128_000 } }]);
         const constrained = planAdaptiveExecution(task, {
           ...config,
-          contextWindow,
+          provider: "codex-cli",
+          model: "small-context",
+          contextWindow: "lowest",
         });
+        replaceDiscoveredModelCapabilities("codex-cli", []);
         expect(constrained.historyCharacters).toBeLessThan(
           normal.historyCharacters,
         );

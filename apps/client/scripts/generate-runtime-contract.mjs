@@ -103,9 +103,7 @@ const rustConstName = (prefix, propertyName) =>
 const runtimeModes = getEnum("RunMode");
 const reasoningModes = getEnum("ReasoningMode");
 const reasoningExecutionModes = getEnum("ReasoningExecutionMode");
-const contextWindowVariants = defs.ContextWindow?.oneOf;
-const contextWindowModes = contextWindowVariants?.[0]?.enum;
-const contextWindowBounds = contextWindowVariants?.[1];
+const contextWindowModes = getEnum("ContextWindow");
 const validTools = getEnum("ToolName");
 const configuredModelProviders = getEnum("ConfiguredModelProvider");
 const modelProviders = getEnum("ModelProvider");
@@ -141,18 +139,6 @@ const defaultAnswerLanguage =
 const desktopSettingBounds = getBoundsObject("UserDesktopSettings");
 const schemaVersion = metadata.schemaVersion;
 
-if (
-  !Array.isArray(contextWindowModes) ||
-  contextWindowModes.some((value) => typeof value !== "string") ||
-  contextWindowBounds?.type !== "integer" ||
-  typeof contextWindowBounds.minimum !== "number" ||
-  typeof contextWindowBounds.maximum !== "number"
-) {
-  throw new Error(
-    "Expected $defs.ContextWindow to define string modes and integer bounds.",
-  );
-}
-
 for (const [name, value] of Object.entries({
   defaultModelByProvider,
   defaultModelProvider,
@@ -183,9 +169,7 @@ export const REASONING_EXECUTION_MODES = ${tsReadonlyArray(reasoningExecutionMod
 export type ReasoningExecutionMode = (typeof REASONING_EXECUTION_MODES)[number];
 
 export const CONTEXT_WINDOW_MODES = ${tsReadonlyArray(contextWindowModes)} as const;
-export const MIN_CONTEXT_WINDOW_TOKENS = ${contextWindowBounds.minimum} as const;
-export const MAX_CONTEXT_WINDOW_TOKENS = ${contextWindowBounds.maximum} as const;
-export type ContextWindow = (typeof CONTEXT_WINDOW_MODES)[number] | number;
+export type ContextWindow = (typeof CONTEXT_WINDOW_MODES)[number];
 
 export const VALID_TOOLS = ${tsReadonlyArray(validTools)} as const;
 export type ToolName = (typeof VALID_TOOLS)[number];
@@ -263,11 +247,7 @@ export const isReasoningExecutionMode = (
   isRuntimeContractValue(REASONING_EXECUTION_MODES, value);
 
 export const isContextWindow = (value: unknown): value is ContextWindow =>
-  (typeof value === "string" && isRuntimeContractValue(CONTEXT_WINDOW_MODES, value)) ||
-  (typeof value === "number" &&
-    Number.isInteger(value) &&
-    value >= MIN_CONTEXT_WINDOW_TOKENS &&
-    value <= MAX_CONTEXT_WINDOW_TOKENS);
+  typeof value === "string" && isRuntimeContractValue(CONTEXT_WINDOW_MODES, value);
 
 export const isConfiguredModelProvider = (
   value: string | undefined,
@@ -633,8 +613,6 @@ pub const RUN_MODES: [&str; ${runtimeModes.length}] = ${rustStringArray(runtimeM
 pub const REASONING_MODES: [&str; ${reasoningModes.length}] = ${rustStringArray(reasoningModes)};
 pub const REASONING_EXECUTION_MODES: [&str; ${reasoningExecutionModes.length}] = ${rustStringArray(reasoningExecutionModes)};
 pub const CONTEXT_WINDOW_MODES: [&str; ${contextWindowModes.length}] = ${rustStringArray(contextWindowModes)};
-pub const MIN_CONTEXT_WINDOW_TOKENS: u32 = ${contextWindowBounds.minimum};
-pub const MAX_CONTEXT_WINDOW_TOKENS: u32 = ${contextWindowBounds.maximum};
 pub const VALID_TOOLS: [&str; ${validTools.length}] = ${rustStringArray(validTools)};
 pub const VALID_MODEL_PROVIDERS: [&str; ${configuredModelProviders.length}] = ${rustStringArray(configuredModelProviders)};
 pub const MODEL_PROVIDERS: [&str; ${modelProviders.length}] = ${rustStringArray(modelProviders)};

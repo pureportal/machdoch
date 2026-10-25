@@ -2,17 +2,55 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
-import { AnthropicMessagesAdapter } from "./provider-adapters/anthropic-adapter.js";
-import { GeminiChatAdapter } from "./provider-adapters/gemini-adapter.js";
-import { LangdockChatCompletionsAdapter } from "./provider-adapters/langdock-adapter.js";
+import { AnthropicMessagesAdapter } from "@machdoch/model-runtime/providers/anthropic-adapter";
+import { LangdockGeminiAdapter } from "@machdoch/model-runtime/providers/langdock-gemini-adapter";
+import { LangdockChatCompletionsAdapter } from "@machdoch/model-runtime/providers/langdock-adapter";
 import {
-  createProviderAdapter,
   getLangdockModelRoute,
   resolveLangdockAnthropicBaseURL,
   resolveLangdockBaseURL,
   resolveLangdockGoogleBaseURL,
+} from "@machdoch/model-runtime/langdock";
+import {
+  createProviderAdapter,
+  withProviderAdapterFactory,
 } from "./provider-adapters.js";
+import type { AgentModelAdapter } from "@machdoch/model-runtime/types";
 
+it("keeps broker factories scoped across concurrent tasks and ahead of local credentials", async () => {
+  const first: AgentModelAdapter = {
+    startTurn: async () => ({ text: "first", toolCalls: [] }),
+    continueTurn: async () => ({ text: "first", toolCalls: [] }),
+  };
+  const second: AgentModelAdapter = {
+    startTurn: async () => ({ text: "second", toolCalls: [] }),
+    continueTurn: async () => ({ text: "second", toolCalls: [] }),
+  };
+  const config = {
+    provider: "openai",
+    model: "scoped",
+    offline: true,
+  } as RuntimeConfig;
+  const [a, b] = await Promise.all([
+    withProviderAdapterFactory(
+      () => first,
+      async () => {
+        await Promise.resolve();
+        return createProviderAdapter(config, [], second);
+      },
+    ),
+    withProviderAdapterFactory(
+      () => second,
+      async () => {
+        await Promise.resolve();
+        return createProviderAdapter(config, [], first);
+      },
+    ),
+  ]);
+  expect(a).toBe(first);
+  expect(b).toBe(second);
+  expect(await createProviderAdapter(config, [], first)).toBe(first);
+});
 describe("resolveLangdockBaseURL", () => {
   it("defaults to the Langdock OpenAI-compatible EU base URL", () => {
     expect(resolveLangdockBaseURL({})).toBe(
@@ -158,19 +196,19 @@ describe("createProviderAdapter Langdock routing", () => {
         [],
         undefined,
       ),
-    ).resolves.toBeInstanceOf(GeminiChatAdapter);
+    ).resolves.toBeInstanceOf(LangdockGeminiAdapter);
   });
 
-  it("rejects request-level context settings for API providers", async () => {
+  it("accepts model-independent context presets for fixed-size API providers", async () => {
     await expect(
       createProviderAdapter(
         {
           ...createConfig(workspaceRoot, "gpt-5.5"),
-          contextWindow: "long",
+          contextWindow: "highest",
         },
         [],
         undefined,
       ),
-    ).rejects.toThrow("Long context is not supported");
+    ).resolves.toBeInstanceOf(LangdockChatCompletionsAdapter);
   });
 });

@@ -227,16 +227,27 @@ it.each(providers)(
 
 it.each(
   providers.flatMap((provider) =>
-    [false, true].map((retry) => ({ provider, retry })),
+    [false, true].flatMap((retry) =>
+      (["executed", "blocked", "failed", "scope-violation"] as const).map(
+        (parentStatus) => ({ provider, retry, parentStatus }),
+      ),
+    ),
   ),
 )(
-  "$provider preserves parent failure until failed workers recover (retry: $retry)",
-  async ({ provider, retry }) => {
+  "$provider preserves the parent's $parentStatus outcome after worker failures (retry: $retry)",
+  async ({ provider, retry, parentStatus }) => {
     const options = await createOptions(provider);
     let failWorkers = true;
     vi.mocked(maybeExecuteExternalAgentProviderTask).mockImplementation(
       async (params) => {
         if (params.scopedWorkerToolDefinitions !== undefined) {
+          if (failWorkers && parentStatus === "scope-violation") {
+            await runtimeFor(params).call("read_file", {
+              path: "outside.txt",
+              startLine: 1,
+              endLine: 1,
+            });
+          }
           return failWorkers
             ? {
                 ...completed(params),
@@ -249,7 +260,12 @@ it.each(
           (definition) => definition.spec.name === "run_parallel_agents",
         );
         expect(parallel).toBeDefined();
-        const plan = { workers: [worker("first"), worker("second")] };
+        const plan = {
+          workers: [
+            worker("first", { readPaths: ["first.txt"] }),
+            worker("second", { readPaths: ["second.txt"] }),
+          ],
+        };
         const context = {
           workspaceRoot: options.config.workspaceRoot,
           memory: params.preparedConversationContext.memory,
@@ -263,7 +279,21 @@ it.each(
             (await parallel!.execute(plan, context)).toolResult.isError,
           ).toBe(false);
         }
-        return completed(params);
+        return {
+          ...completed(params),
+          status:
+            parentStatus === "scope-violation" ? "executed" : parentStatus,
+          ...(parentStatus === "executed"
+            ? {}
+            : { reason: "Required work remains incomplete" }),
+          response: {
+            markdown: "Verified result",
+            highlights: [],
+            relatedFiles: [],
+            verification: [],
+            followUps: [],
+          },
+        };
       },
     );
     const result = await maybeExecuteModelDrivenTask({
@@ -274,7 +304,18 @@ it.each(
       instructionDeliveryPlan: options.instructionDeliveryPlan!,
       conversationContext: { history: [], parallelAgentMode: "machdoch" },
     });
-    expect(result?.status, result?.summary).toBe(retry ? "executed" : "failed");
+    expect(result?.status, result?.summary).toBe(
+      parentStatus === "scope-violation" ? "failed" : parentStatus,
+    );
+    if (parentStatus === "scope-violation") {
+      expect(result?.reason).toContain("violated its declared file scope");
+      expect(result?.metadata?.parallelWorkerFailure).toBe(true);
+      return;
+    }
     expect(result?.metadata?.parallelWorkerFailure).toBe(!retry);
+    expect(result?.summary).toBe("Verified result");
+    expect(result?.response?.markdown).toBe("Verified result");
+    if (parentStatus !== "executed")
+      expect(result?.reason).toBe("Required work remains incomplete");
   },
 );

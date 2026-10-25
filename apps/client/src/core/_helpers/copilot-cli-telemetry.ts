@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import type { AgentModelStreamUsage } from "../types.js";
+import type { AgentModelStreamUsage } from "@machdoch/model-runtime/types";
 
 interface CopilotCliTelemetry {
   modelCallCount: number;

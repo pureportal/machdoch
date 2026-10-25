@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { contextWindowSchema } from "@machdoch/fleet-protocol/context-window";
 import { liveVoiceRequestSchema } from "@machdoch/fleet-protocol/live-voice";
 import { mcpAppRequestSchema } from "@machdoch/fleet-protocol/mcp-apps";
 import { workspaceLibraryRequestSchema } from "@machdoch/fleet-protocol/workspace-library";
@@ -340,10 +341,7 @@ export const workspaceRequestSchema = z.union([
       "save_workspace_context_window",
       z.strictObject({
         workspaceRoot: root,
-        contextWindow: z.union([
-          z.enum(["default", "long"]),
-          z.number().int().min(1).max(10_000_000),
-        ]),
+        contextWindow: contextWindowSchema,
       }),
     ),
     command(

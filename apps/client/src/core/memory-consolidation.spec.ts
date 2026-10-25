@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadUserMemorySettings, saveUserGlobalMemoryEnabled } from "./env.ts";
 import { consolidateTaskExecutionMemory } from "./memory-consolidation.ts";
-import type { AgentModelAdapter, TaskExecutionResult } from "./types.ts";
+import type { AgentModelAdapter } from "@machdoch/model-runtime/types";
+import type { TaskExecutionResult } from "./types.ts";
 import { loadWorkspaceMemory } from "./workspace-memory.ts";
 import type {
   ProviderAvailability,

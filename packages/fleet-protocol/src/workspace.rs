@@ -451,9 +451,7 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
         "save_workspace_context_window" => fields(args, &["workspaceRoot", "contextWindow"])
             .is_some_and(|args| {
                 root(&args["workspaceRoot"])
-                    && (matches!(args["contextWindow"].as_str(), Some("default" | "long"))
-                        || (integer(&args["contextWindow"], 10_000_000.0)
-                            && args["contextWindow"].as_f64().unwrap() > 0.0))
+                    && matches!(args["contextWindow"].as_str(), Some("lowest" | "default" | "highest"))
             }),
         "save_workspace_mcp_config_document" => {
             fields(args, &["workspaceRoot", "rawBase64", "expectedRawBase64"]).is_some_and(|args| {

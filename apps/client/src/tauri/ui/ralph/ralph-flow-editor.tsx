@@ -69,11 +69,7 @@ import type {
   CommandDefinition,
   CommandPageItem,
 } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
-import {
-  createImageInputUnsupportedModelMessage,
-  getSupportedImageInputExtensions,
-  modelSupportsImageInput,
-} from "../../../core/model-capabilities.js";
+import { createImageInputUnsupportedModelMessage, getSupportedImageInputExtensions, modelSupportsImageInput } from "@machdoch/model-runtime/model-capabilities";
 import type {
   MediaFlowHead,
   MediaFlowRevision,

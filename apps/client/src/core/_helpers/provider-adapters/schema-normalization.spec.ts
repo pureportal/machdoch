@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeOpenAIStrictInputSchema } from "./schema-normalization.js";
+import { normalizeOpenAIStrictInputSchema } from "@machdoch/model-runtime/providers/schema-normalization";
 
 describe("normalizeOpenAIStrictInputSchema", () => {
   it("normalizes referenced definitions and tuple objects recursively", () => {

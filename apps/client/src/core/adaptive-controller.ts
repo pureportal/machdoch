@@ -1,5 +1,6 @@
-import { getReasoningModesForProviderModel } from "./reasoning-modes.js";
-import { getModelContextWindowTokens } from "./model-capabilities.js";
+import { getReasoningModesForProviderModel } from "@machdoch/model-runtime/reasoning-modes";
+import { contextWindowTokens } from "@machdoch/fleet-protocol/context-window";
+import { getContextWindowCapabilities } from "./context-windows.js";
 import { loadWorkspaceConfigFile } from "./config.js";
 import { loadUserConfigFile } from "./env.js";
 import { DEFAULT_USER_DESKTOP_SETTINGS } from "./runtime-contract.generated.js";
@@ -122,24 +123,17 @@ export const planAdaptiveExecution = (
   const level: AdaptiveControllerLevel =
     profileScore >= 5 ? "deep" : profileScore >= 2 ? "standard" : "simple";
   const profile = PROFILES[level];
-  const knownContextWindow = getModelContextWindowTokens(
-    config.provider,
-    config.model,
+  const selectedContextTokens = contextWindowTokens(
+    config.contextWindow ?? "highest",
+    getContextWindowCapabilities(config.provider, config.model),
   );
-  const contextWindowTokens =
-    typeof config.contextWindow === "number"
-      ? Math.min(
-          config.contextWindow,
-          knownContextWindow ?? config.contextWindow,
-        )
-      : knownContextWindow;
   const totalContextCharacters =
     profile.historyCharacters +
     profile.memoryCharacters +
     profile.experienceCharacters +
     profile.workspaceRunCharacters;
-  const availableContextCharacters = contextWindowTokens
-    ? Math.min(totalContextCharacters, contextWindowTokens * 4 * 0.18)
+  const availableContextCharacters = selectedContextTokens
+    ? Math.min(totalContextCharacters, selectedContextTokens * 4 * 0.18)
     : totalContextCharacters;
   const contextScale = availableContextCharacters / totalContextCharacters;
   const historyCharacters = Math.max(

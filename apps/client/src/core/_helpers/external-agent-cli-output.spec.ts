@@ -101,6 +101,55 @@ describe("Codex CLI output decoder", () => {
     });
   });
 
+  it("waits for successful completion after reconnect diagnostics", () => {
+    const decoder = new CodexCliOutputDecoder();
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      const update = decoder.push(
+        eventLine({
+          type: "error",
+          message: `Reconnecting... ${attempt}/5 (stream disconnected before completion)`,
+        }),
+      );
+      expect(update.resultExitCode).toBeUndefined();
+      expect(decoder.hasTerminalResult()).toBe(false);
+    }
+    decoder.push(
+      eventLine({
+        type: "item.completed",
+        item: { type: "agent_message", text: "Verified result." },
+      }),
+    );
+    const update = decoder.push(eventLine({ type: "turn.completed" }));
+    expect(update.resultExitCode).toBe(0);
+    expect(decoder.hasTerminalResult()).toBe(true);
+    expect(decoder.getFailureMessage()).toBeUndefined();
+    expect(decoder.getFinalOutput()).toBe("Verified result.");
+  });
+
+  it("keeps a failed turn terminal even when answer text is available", () => {
+    const decoder = new CodexCliOutputDecoder();
+    decoder.push(
+      eventLine({
+        type: "item.completed",
+        item: { type: "agent_message", text: "Partial result." },
+      }),
+    );
+    decoder.push(eventLine({ type: "error", message: "Reconnecting... 4/5" }));
+    const update = decoder.push(
+      eventLine({
+        type: "turn.failed",
+        error: { message: "Retry limit exceeded." },
+      }),
+    );
+    expect(update.resultExitCode).toBe(1);
+    expect(decoder.hasTerminalResult()).toBe(true);
+    expect(decoder.getFailureMessage()).toBe("Retry limit exceeded.");
+    expect(
+      decoder.push(eventLine({ type: "turn.completed" })).resultExitCode,
+    ).toBeUndefined();
+    expect(decoder.getFailureMessage()).toBe("Retry limit exceeded.");
+  });
+
   it("does not treat an item diagnostic as terminal after a successful turn", () => {
     const decoder = new CodexCliOutputDecoder();
 

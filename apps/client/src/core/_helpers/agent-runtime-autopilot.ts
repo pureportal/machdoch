@@ -1,11 +1,5 @@
-import type {
-  AgentModelToolSpec,
-  AgentModelTurn,
-  ResolvedTaskContext,
-  TaskAutopilotDecision,
-  TaskAutopilotReport,
-  TaskExecutionSection,
-} from "../types.js";
+import type { AgentModelToolSpec, AgentModelTurn } from "@machdoch/model-runtime/types";
+import type { ResolvedTaskContext, TaskAutopilotDecision, TaskAutopilotReport, TaskExecutionSection } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import {
   createHostElevationRuntimeLine,

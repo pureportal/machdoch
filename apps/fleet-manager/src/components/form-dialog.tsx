@@ -17,6 +17,8 @@ export function FormDialog({
   submitLabel,
   onSubmit,
   children,
+  focusWhenOpenerRemoved,
+  submitDisabled = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -24,6 +26,8 @@ export function FormDialog({
   submitLabel: string;
   onSubmit: (form: FormData) => Promise<void>;
   children: React.ReactNode;
+  focusWhenOpenerRemoved?: React.RefObject<HTMLElement | null>;
+  submitDisabled?: boolean;
 }): React.ReactElement {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -56,9 +60,12 @@ export function FormDialog({
               : null;
         }}
         onCloseAutoFocus={(event) => {
-          if (returnFocus.current?.isConnected) {
+          const target = returnFocus.current?.isConnected
+            ? returnFocus.current
+            : focusWhenOpenerRemoved?.current;
+          if (target?.isConnected) {
             event.preventDefault();
-            returnFocus.current.focus();
+            target.focus();
           }
         }}
       >
@@ -66,7 +73,7 @@ export function FormDialog({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (submitting.current) return;
+            if (submitting.current || submitDisabled) return;
             const form = new FormData(event.currentTarget);
             submitting.current = true;
             setPending(true);
@@ -100,7 +107,7 @@ export function FormDialog({
                   Cancel
                 </Button>
               </DialogClose>
-              <Button ref={submit} type="submit">
+              <Button ref={submit} type="submit" disabled={submitDisabled}>
                 {pending ? "Saving…" : submitLabel}
               </Button>
             </DialogFooter>

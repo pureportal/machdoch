@@ -1,4 +1,4 @@
-import { normalizeModelId } from "./normalize-model-id.helper.ts";
+import { normalizeModelId } from "@machdoch/model-runtime/normalize-model-id";
 
 describe("normalizeModelId", () => {
   it.each([

@@ -1,5 +1,5 @@
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
-import type { AgentModelStreamUsage } from "../types.js";
+import type { AgentModelStreamUsage } from "@machdoch/model-runtime/types";
 import {
   CodexGoalProtocolError,
   CodexGoalProtocolReader,

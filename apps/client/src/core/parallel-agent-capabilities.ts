@@ -1,30 +1,11 @@
+import { supportsNativeSubagents } from "@machdoch/model-runtime/native-subagents";
 import type { ModelProvider } from "./runtime-contract.generated.js";
-import type { ParallelAgentMode } from "./types.js";
+import type { ParallelAgentMode } from "@machdoch/model-runtime/types";
 import type { InstructionDeliveryPlan } from "./instruction-system/types.js";
 import { supportsNativeSubagentInstructionDelivery } from "./instruction-system/subagents.js";
 
 const MANAGED_MODES = ["disabled", "read-only", "machdoch"] as const;
 const NATIVE_MODES = [...MANAGED_MODES, "native"] as const;
-
-export const supportsNativeSubagents = (
-  provider: ModelProvider,
-  model: string,
-): boolean => {
-  if (!model.trim()) return false;
-
-  switch (provider) {
-    case "codex-cli":
-    case "claude-cli":
-    case "copilot-cli":
-      return true;
-    case "openai":
-      return /^gpt-(?:5\.6(?:-(?:sol|terra|luna))?|6-(?:astra|sol|luna))(?:-\d{4}-\d{2}-\d{2})?$/iu.test(
-        model,
-      );
-    default:
-      return false;
-  }
-};
 
 export const getAvailableParallelAgentModes = (
   provider: ModelProvider,

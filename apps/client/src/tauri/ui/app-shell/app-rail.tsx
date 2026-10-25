@@ -116,7 +116,7 @@ export function AppRail({
     },
     {
       id: "fleet",
-      label: "Fleet Manager",
+      label: "machdoch.cloud",
       icon: Server,
       onSelect: onOpenFleetManager,
     },

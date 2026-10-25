@@ -52,7 +52,7 @@ function editor(value = initial, onSubmit = vi.fn()) {
           provider: "codex-cli",
           id: "gpt-6.1-sol",
           label: "GPT 6.1 Sol",
-          capabilities: { contextWindowTokens: 400_000 },
+          capabilities: { contextWindowTokens: 200_000, longContextWindowTokens: 400_000 },
         },
       ]}
       onOpenChange={vi.fn()}
@@ -147,7 +147,7 @@ describe("context pack editor", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Model" }));
     fireEvent.click(await screen.findByRole("option", { name: "GPT 6.1 Sol" }));
     fireEvent.click(
-      screen.getByRole("button", { name: "Context size: Keep current" }),
+      screen.getByRole("button", { name: /^Context size: Keep current/ }),
     );
     fireEvent.click(screen.getByRole("radio", { name: /Highest/ }));
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
@@ -156,7 +156,7 @@ describe("context pack editor", () => {
     await waitFor(() => expect(save).toHaveBeenCalledOnce());
     expect(save.mock.calls[0]?.[0]).toMatchObject({
       model: "gpt-6.1-sol",
-      contextWindow: 400_000,
+      contextWindow: "highest",
     });
   });
 });

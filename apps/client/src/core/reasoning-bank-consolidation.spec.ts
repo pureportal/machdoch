@@ -8,7 +8,8 @@ import {
   retrieveReasoningLessons,
 } from "./reasoning-bank.js";
 import type { RuntimeConfig } from "./runtime-contract.generated.js";
-import type { AgentModelAdapter, TaskExecutionResult } from "./types.js";
+import type { AgentModelAdapter } from "@machdoch/model-runtime/types";
+import type { TaskExecutionResult } from "./types.js";
 
 const roots: string[] = [];
 

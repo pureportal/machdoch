@@ -36,10 +36,19 @@ export const createParallelAgentSessionTool = (
   return {
     hasWorkerFailure: () =>
       running || boundaryFailure || workerFailures.size > 0,
+    getCompletionBlocker: () => {
+      if (boundaryFailure) {
+        return "A parallel worker violated its declared file scope. Review the worker results and workspace changes.";
+      }
+      if (running) {
+        return "Parallel workers are still running. Wait for their results before completing the task.";
+      }
+      return undefined;
+    },
     definition: {
       spec: {
         name: "run_parallel_agents",
-        description: `Run ${maxWorkers === 2 ? "two" : "two or three"} independent objectives in fresh concurrent agent sessions, then inspect their ordered results and toolErrors before completing the parent task. Use only when independent work saves time. Full Mode permits explicitly scoped file edits. Failed workers retain partial findings; retry the same worker plan to resolve its failure.`,
+        description: `Run ${maxWorkers === 2 ? "two" : "two or three"} independent objectives in fresh concurrent agent sessions, then inspect their ordered results and toolErrors before completing the parent task. Use only when independent work saves time. Full Mode permits explicitly scoped file edits. Failed workers retain partial findings. Review their changes and finish any required work yourself or retry the workers. Report the parent task as blocked if required work remains incomplete.`,
         inputSchema: {
           type: "object",
           additionalProperties: false,

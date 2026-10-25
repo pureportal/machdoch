@@ -109,7 +109,6 @@ export function PackEditorSettings({
                 onChange({
                   provider: value as RuntimeProvider,
                   model: "",
-                  contextWindow: undefined,
                 })
               }
             />
@@ -118,9 +117,7 @@ export function PackEditorSettings({
               options={modelOptions.filter(
                 (model) => model.provider === settings.provider,
               )}
-              onChange={(model) =>
-                onChange({ model, contextWindow: undefined })
-              }
+              onChange={(model) => onChange({ model })}
             />
           </>
         )}

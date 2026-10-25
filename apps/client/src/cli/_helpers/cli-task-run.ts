@@ -8,20 +8,10 @@ import { loadRuntimeConfig } from "../../core/config.js";
 import { loadChatDefaults } from "../../core/chat-defaults.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import { createTaskExecutionController } from "../../core/execution.js";
-import {
-  createImageInputUnsupportedModelMessage,
-  getImageInputMediaTypeForPath,
-  getSupportedImageInputExtensions,
-  modelSupportsImageInput,
-  providerSupportsImageInputMediaType,
-} from "../../core/model-capabilities.js";
+import { createImageInputUnsupportedModelMessage, getImageInputMediaTypeForPath, getSupportedImageInputExtensions, modelSupportsImageInput, providerSupportsImageInputMediaType } from "@machdoch/model-runtime/model-capabilities";
 import { previewTaskRun } from "../../core/task-runner.js";
-import type {
-  AgentModelImageInput,
-  TaskConversationContext,
-  TaskExecutionResult,
-  TaskRunPreview,
-} from "../../core/types.js";
+import type { AgentModelImageInput } from "@machdoch/model-runtime/types";
+import type { TaskConversationContext, TaskExecutionResult, TaskRunPreview } from "../../core/types.js";
 import type { RuntimeConfig } from "../../core/runtime-contract.generated.js";
 import type { ParsedCliArgs } from "./cli-args.js";
 import {

@@ -2,6 +2,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readFile, rm, stat } from "node:fs/promises";
 import { writeFileAtomically } from "../_helpers/write-file-atomically.helper.js";
+import { quoteWindowsArgument } from "../_helpers/windows-command-line.js";
 import {
   resolveMachdochCliLaunch,
   type MachdochCliLaunch,
@@ -41,25 +42,6 @@ const getWindowsStartupDirectory = (): string => {
     "Programs",
     "Startup",
   );
-};
-
-const quoteWindowsArgument = (value: string): string => {
-  let result = '"';
-  let backslashes = 0;
-  for (const character of value) {
-    if (character === "\\") {
-      backslashes += 1;
-      continue;
-    }
-    if (character === '"') {
-      result += "\\".repeat(backslashes * 2 + 1) + '"';
-      backslashes = 0;
-      continue;
-    }
-    result += "\\".repeat(backslashes) + character;
-    backslashes = 0;
-  }
-  return result + "\\".repeat(backslashes * 2) + '"';
 };
 
 export const renderProviderSyncAutostart = (

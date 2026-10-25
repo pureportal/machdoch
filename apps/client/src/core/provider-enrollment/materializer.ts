@@ -37,7 +37,7 @@ import {
 } from "./instruction-delivery-preflight.js";
 import { summarizeEnrollmentCoverage } from "./coverage-ledger.js";
 import { renderIsolatedCopilotState } from "./copilot-state.js";
-import { compareCanonicalStrings, sha256 } from "./digests.js";
+import { compareCanonicalStrings, sha256 } from "@machdoch/model-runtime/digests";
 import { projectMcpForProvider } from "./mcp-projector.js";
 import type { MachdochCliLaunch } from "./machdoch-cli-launch.js";
 import type { LocalMcpEndpoint } from "../local-mcp/http.js";

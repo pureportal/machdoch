@@ -1,10 +1,18 @@
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { validateToolArguments } from "./tool-argument-validation.js";
+import { validateToolArguments } from "@machdoch/model-runtime/tool-argument-validation";
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("Tool schema dialects", () => {
+  it("rejects asynchronous schemas without treating their promises as successful validation", () => {
+    expect(
+      validateToolArguments(
+        { $async: true, type: "object", required: ["missing"] },
+        {},
+      ),
+    ).toContain("synchronous validation");
+  });
   it.each([NaN, Infinity, -Infinity])(
     "rejects non-finite numeric arguments: %s",
     (value) => {

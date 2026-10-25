@@ -1,4 +1,4 @@
-import { getImageInputMediaTypeForPath } from "../../../../core/model-capabilities.js";
+import { getImageInputMediaTypeForPath } from "@machdoch/model-runtime/model-capabilities";
 import { type ChatSessionRecord } from "../../chat-session.model";
 import { isLinkContextAttachment, isMediaAssetContextAttachment, isPathContextAttachment, type ChatSessionContextAttachment, type ChatSessionContextAttachmentKind } from "@machdoch/client-ui/composer/model";
 import type { MediaAssetReference } from "@machdoch/media-studio/core/media/contracts.js";

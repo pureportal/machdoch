@@ -1,99 +1,105 @@
 import {
-  assertContextWindowSupportedForProviderModel,
   parseContextWindow,
   resolveClaudeCliModelForContextWindow,
-  supportsLongContextWindow,
+  resolveContextWindowForProviderModel,
 } from "./context-windows.js";
-import { replaceDiscoveredModelCapabilities } from "./model-capabilities.js";
+import { replaceDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
 
-describe("provider context windows", () => {
-  it("parses canonical modes and bounded numeric token counts", () => {
+afterEach(() => {
+  replaceDiscoveredModelCapabilities("codex-cli", []);
+  replaceDiscoveredModelCapabilities("copilot-cli", []);
+});
+
+describe("provider context presets", () => {
+  it("parses presets and rejects custom token counts", () => {
     expect(parseContextWindow("default")).toBe("default");
-    expect(parseContextWindow(" LONG ")).toBe("long");
-    expect(parseContextWindow("1050000")).toBe(1_050_000);
-    expect(parseContextWindow(400_000)).toBe(400_000);
-    expect(parseContextWindow("0")).toBeUndefined();
-    expect(parseContextWindow("10000001")).toBeUndefined();
-    expect(parseContextWindow("automatic")).toBeUndefined();
+    expect(parseContextWindow(" HIGHEST ")).toBe("highest");
+    expect(parseContextWindow("lowest")).toBe("lowest");
+    for (const value of ["long", "1050000", 400_000, "automatic"])
+      expect(parseContextWindow(value)).toBeUndefined();
   });
 
-  it("limits provider-controlled context tiers to supported CLI providers", () => {
-    expect(supportsLongContextWindow("copilot-cli", "auto")).toBe(false);
-    expect(supportsLongContextWindow("claude-cli", "claude-opus-4-7")).toBe(false);
-    expect(supportsLongContextWindow("claude-cli", "claude-sonnet-4-6")).toBe(true);
-    expect(supportsLongContextWindow("claude-cli", "sonnet")).toBe(true);
-    expect(supportsLongContextWindow("claude-cli", "haiku")).toBe(false);
-    expect(() =>
-      assertContextWindowSupportedForProviderModel(
-        "long",
-        "openai",
-        "gpt-5.6-sol",
-      ),
-    ).toThrow("Long context is not supported");
-  });
-
-  it("uses Copilot SDK metadata to reject models without a long-context tier", () => {
-    replaceDiscoveredModelCapabilities("copilot-cli", [
+  it("uses discovered Codex limits without mutating the selected preset", () => {
+    replaceDiscoveredModelCapabilities("codex-cli", [
       {
-        id: "with-long-context",
-        capabilities: { longContextWindowTokens: 1_000_000 },
+        id: "large",
+        capabilities: {
+          contextWindowTokens: 272_000,
+          longContextWindowTokens: 872_000,
+        },
       },
       {
-        id: "without-long-context",
-        capabilities: { longContextWindowTokens: null },
+        id: "small",
+        capabilities: {
+          contextWindowTokens: 64_000,
+          longContextWindowTokens: 128_000,
+        },
+      },
+      {
+        id: "fixed",
+        capabilities: {
+          contextWindowTokens: 64_000,
+          longContextWindowTokens: 64_000,
+        },
       },
     ]);
-
-    expect(supportsLongContextWindow("copilot-cli", "with-long-context")).toBe(
-      true,
-    );
     expect(
-      supportsLongContextWindow("copilot-cli", "without-long-context"),
-    ).toBe(false);
-    expect(() =>
-      assertContextWindowSupportedForProviderModel(
-        "long",
-        "copilot-cli",
-        "without-long-context",
-      ),
-    ).toThrow("Long context is not supported");
+      resolveContextWindowForProviderModel("highest", "codex-cli", "large"),
+    ).toBe(872_000);
+    expect(
+      resolveContextWindowForProviderModel("highest", "codex-cli", "small"),
+    ).toBe(128_000);
+    expect(
+      resolveContextWindowForProviderModel("highest", "codex-cli", "fixed"),
+    ).toBe("default");
+    expect(
+      resolveContextWindowForProviderModel("lowest", "codex-cli", "small"),
+    ).toBe(64_000);
+    expect(
+      resolveContextWindowForProviderModel("default", "codex-cli", "large"),
+    ).toBe("default");
   });
 
-  it("uses numeric windows only for Codex and enforces discovered limits", () => {
-    expect(() =>
-      assertContextWindowSupportedForProviderModel(
-        400_000,
-        "codex-cli",
-        "gpt-5.4-mini",
-        400_000,
-      ),
-    ).not.toThrow();
-    expect(() =>
-      assertContextWindowSupportedForProviderModel(
-        400_001,
-        "codex-cli",
-        "gpt-5.4-mini",
-        400_000,
-      ),
-    ).toThrow("exceeds the discovered 400000-token limit");
-    expect(() =>
-      assertContextWindowSupportedForProviderModel(
-        400_000,
-        "copilot-cli",
-        "gpt-5.4",
-      ),
-    ).toThrow("cannot be configured");
+  it("uses only supported Copilot tiers and leaves API providers at their fixed size", () => {
+    replaceDiscoveredModelCapabilities("copilot-cli", [
+      {
+        id: "tiered",
+        capabilities: {
+          contextWindowTokens: 200_000,
+          longContextWindowTokens: 1_000_000,
+        },
+      },
+      { id: "fixed", capabilities: { contextWindowTokens: 200_000 } },
+    ]);
+    expect(
+      resolveContextWindowForProviderModel("highest", "copilot-cli", "tiered"),
+    ).toBe("long");
+    expect(
+      resolveContextWindowForProviderModel("lowest", "copilot-cli", "tiered"),
+    ).toBe("default");
+    expect(
+      resolveContextWindowForProviderModel("highest", "copilot-cli", "fixed"),
+    ).toBe("default");
+    expect(
+      resolveContextWindowForProviderModel("highest", "openai", "gpt-6-astra"),
+    ).toBe("default");
   });
 
-  it("maps Claude long context to the documented model suffix", () => {
-    expect(resolveClaudeCliModelForContextWindow("sonnet", "long")).toBe(
+  it("maps Claude highest to its long-context suffix and lowest to its base model", () => {
+    expect(resolveClaudeCliModelForContextWindow("sonnet", "highest")).toBe(
       "sonnet[1m]",
     );
-    expect(resolveClaudeCliModelForContextWindow("sonnet[1m]", "long")).toBe(
+    expect(resolveClaudeCliModelForContextWindow("sonnet[1m]", "highest")).toBe(
       "sonnet[1m]",
+    );
+    expect(resolveClaudeCliModelForContextWindow("sonnet[1m]", "lowest")).toBe(
+      "sonnet",
     );
     expect(resolveClaudeCliModelForContextWindow("sonnet", "default")).toBe(
       "sonnet",
+    );
+    expect(resolveClaudeCliModelForContextWindow("haiku", "highest")).toBe(
+      "haiku",
     );
   });
 });

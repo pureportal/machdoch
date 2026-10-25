@@ -30,6 +30,7 @@ Automation and integration:
   mcp            Inspect and use MCP servers, tools, resources, and prompts
   provider-sync  Manage delegated CLI-provider integration
   fleet          Connect this CLI host to Fleet Manager
+  cloud          Link workspaces to machdoch.cloud
 
 Examples:
   machdoch run "summarize the changes in this repository" --cwd .
@@ -391,6 +392,17 @@ Restart running Machdoch services after an update.`,
   mcp: MCP_HELP,
   "provider-sync": PROVIDER_SYNC_HELP,
   fleet: FLEET_HELP,
+  cloud: `machdoch cloud - link local workspaces to machdoch.cloud
+
+Usage:
+  machdoch cloud connect --cloud-url <HTTPS origin> [--name <name>] [--cwd <workspace>] [--json]
+  machdoch cloud status [--json]
+  machdoch cloud disconnect <connection id> [--json]
+  machdoch cloud run <connection id> --cloud-runtime <runtime manifest> [--once] [--json]
+
+Set MACHDOCH_CLOUD_RUNNER_TOKEN to a token enrolled for a client execution profile.
+The workspace's origin and committed base must match that profile.
+Run processes queued tasks for a Client (Linux) profile until stopped; --once handles one task.`,
   scheduler: SCHEDULER_HELP,
 };
 

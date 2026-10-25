@@ -15,7 +15,7 @@ import type { ConversationMemoryRuntime } from "../_helpers/agent-tools-shared.j
 import { loadWorkspaceMemory } from "../workspace-memory.js";
 import { createLocalToolRuntime } from "./runtime.js";
 import { createLocalMcpServer } from "./server.js";
-import { createOpenAITools } from "../_helpers/provider-adapters/openai-adapter.js";
+import { createOpenAITools } from "@machdoch/model-runtime/providers/openai-adapter";
 
 let root: string;
 const cleanup: Array<() => Promise<void>> = [];

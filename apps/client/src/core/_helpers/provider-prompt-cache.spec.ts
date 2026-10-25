@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AgentModelToolSpec } from "../types.js";
-import { resolveProviderPromptCacheDirectives } from "./provider-prompt-cache.js";
+import type { AgentModelToolSpec } from "@machdoch/model-runtime/types";
+import { resolveProviderPromptCacheDirectives } from "@machdoch/model-runtime/provider-prompt-cache";
 
 const tools: AgentModelToolSpec[] = [
   {

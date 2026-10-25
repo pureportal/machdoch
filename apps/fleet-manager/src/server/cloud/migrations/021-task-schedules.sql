@@ -1,0 +1,16 @@
+ALTER TABLE cloud_issue_schedules RENAME TO cloud_schedules;
+ALTER TABLE cloud_schedules ADD COLUMN action jsonb;
+UPDATE cloud_schedules SET action=jsonb_build_object('kind','create-issue','issue',issue);
+ALTER TABLE cloud_schedules ALTER COLUMN action SET NOT NULL;
+ALTER TABLE cloud_schedules DROP COLUMN issue;
+ALTER TABLE cloud_schedules ADD COLUMN provider_revision integer;
+ALTER TABLE cloud_schedules ADD COLUMN admitted_runs integer NOT NULL DEFAULT 0 CHECK (admitted_runs>=0);
+ALTER TABLE cloud_schedules ADD COLUMN allocated_tokens bigint NOT NULL DEFAULT 0 CHECK (allocated_tokens>=0);
+ALTER TABLE cloud_schedule_occurrences ADD COLUMN run_id uuid;
+ALTER TABLE cloud_schedule_occurrences ADD COLUMN reason text;
+ALTER TABLE cloud_schedule_occurrences DROP CONSTRAINT cloud_schedule_occurrences_outcome_check;
+ALTER TABLE cloud_schedule_occurrences DROP CONSTRAINT cloud_schedule_occurrences_check;
+ALTER TABLE cloud_schedule_occurrences ADD CONSTRAINT cloud_schedule_occurrence_outcome CHECK (outcome IN ('created','skipped','admitted','overlap'));
+ALTER TABLE cloud_schedule_occurrences ADD CONSTRAINT cloud_schedule_occurrence_identity CHECK ((outcome='created' AND issue_id IS NOT NULL AND run_id IS NULL) OR (outcome='admitted' AND run_id IS NOT NULL AND issue_id IS NULL) OR (outcome IN ('skipped','overlap') AND issue_id IS NULL AND run_id IS NULL));
+ALTER TABLE cloud_schedule_occurrences ADD FOREIGN KEY (organization_id,run_id) REFERENCES cloud_runs(organization_id,id);
+CREATE UNIQUE INDEX cloud_schedule_occurrence_run ON cloud_schedule_occurrences(run_id) WHERE run_id IS NOT NULL;

@@ -8,13 +8,14 @@ import { createInstructionResolutionFixture } from "../__test__/instruction-test
 import { maybeExecuteExternalAgentProviderTask } from "../_helpers/external-agent-provider.js";
 import { createProviderAdapter } from "../_helpers/provider-adapters.js";
 import { executeTask } from "../execution.js";
+import { createLocalToolRuntime } from "../local-mcp/runtime.js";
 import { createInstructionDeliveryPlan } from "../instruction-system/index.js";
 import {
   VALID_MODEL_PROVIDERS,
   type ConfiguredModelProvider,
   type RuntimeConfig,
 } from "../runtime-contract.generated.js";
-import type { AgentModelAdapter, AgentModelTurn } from "../types.js";
+import type { AgentModelAdapter, AgentModelTurn } from "@machdoch/model-runtime/types";
 
 vi.mock("../_helpers/external-agent-provider.js", () => ({
   maybeExecuteExternalAgentProviderTask: vi.fn(),
@@ -168,11 +169,19 @@ describe("goal and parallel agent combinations", () => {
             expect(params.preparedConversationContext.parallelAgentMode).toBe(
               "disabled",
             );
-            const read = tools.find((tool) => tool.spec.name === "read_file");
-            const result = await read!.execute(
-              { path: "evidence.txt", startLine: 1, endLine: 1 },
-              toolContext,
-            );
+            const runtime = createLocalToolRuntime({
+              config: params.config,
+              memory: params.preparedConversationContext.memory,
+              scopedToolDefinitions: tools,
+              signal: params.signal!,
+              onToolCall: params.onScopedWorkerToolCall!,
+              onToolResult: params.onScopedWorkerToolResult!,
+            });
+            const result = await runtime.call("read_file", {
+              path: "evidence.txt",
+              startLine: 1,
+              endLine: 1,
+            });
             expect(
               result.toolResult.isError,
               result.toolResult.output,

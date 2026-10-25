@@ -1,13 +1,8 @@
 import { captureMcpApp } from "./apps.js";
 import { mcpAppToolUiSchema } from "@machdoch/fleet-protocol/mcp-apps";
 import { createHash, randomUUID } from "node:crypto";
-import type {
-  AgentModelToolImageContent,
-  AgentModelToolResultContent,
-  ToolCallEffect,
-  ToolRiskLevel,
-  TaskExecutionSection,
-} from "../types.js";
+import type { AgentModelToolImageContent, AgentModelToolResultContent } from "@machdoch/model-runtime/types";
+import type { ToolCallEffect, ToolRiskLevel, TaskExecutionSection } from "../types.js";
 import {
   coerceBoolean,
   coerceInteger,
@@ -32,7 +27,7 @@ import {
 } from "./config.js";
 import { mcpClientManager } from "./client.js";
 import { mcpRunCacheManager } from "./run-cache.js";
-import { validateToolArguments } from "../_helpers/tool-argument-validation.js";
+import { validateToolArguments } from "@machdoch/model-runtime/tool-argument-validation";
 import type {
   McpDirectToolMapping,
   McpDiscoveryChangeSet,

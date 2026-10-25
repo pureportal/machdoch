@@ -11,6 +11,7 @@ import { tokenizeMemoryText } from "./memory-retrieval.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
 import { ensureWorkspaceStorage } from "./workspace-storage.js";
+import { getWorkspaceLocalDirectory } from "./workspace-storage-paths.js";
 
 export type ReasoningOutcome = "success" | "failure";
 
@@ -133,10 +134,7 @@ const isReasoningLesson = (value: unknown): value is ReasoningLesson => {
 
 export const getReasoningBankPath = (workspaceRoot: string): string =>
   join(
-    resolve(workspaceRoot),
-    ".machdoch",
-    "local",
-    "state",
+    getWorkspaceLocalDirectory(resolve(workspaceRoot), "state"),
     "reasoning-bank.json",
   );
 
@@ -186,7 +184,9 @@ const loadDocument = async (path: string): Promise<ReasoningBankDocument> => {
       })),
     };
   } catch (cause) {
-    throw new Error(`Unsupported ReasoningBank document in ${path}.`, { cause });
+    throw new Error(`Unsupported ReasoningBank document in ${path}.`, {
+      cause,
+    });
   }
 };
 

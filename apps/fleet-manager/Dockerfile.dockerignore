@@ -45,6 +45,12 @@
 !packages/speech/**
 !packages/text-to-speech/
 !packages/text-to-speech/**
+!packages/model-runtime/
+!packages/model-runtime/**
+!packages/cloud-client/
+!packages/cloud-client/**
+!packages/recurrence/
+!packages/recurrence/**
 
 apps/fleet-manager/.next/
 apps/fleet-manager/.env*

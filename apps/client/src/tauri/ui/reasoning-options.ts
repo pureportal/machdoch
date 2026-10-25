@@ -1,7 +1,4 @@
-import {
-  getReasoningModesForProviderModel,
-  normalizeReasoningModeForProviderModel,
-} from "../../core/reasoning-modes.js";
+import { getReasoningModesForProviderModel, normalizeReasoningModeForProviderModel } from "@machdoch/model-runtime/reasoning-modes";
 import type { ReasoningMode } from "../../core/runtime-contract.generated.js";
 import type { RuntimeProvider } from "./model-catalog";
 import type { RuntimeModelCapabilities } from "./model-catalog";

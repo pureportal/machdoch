@@ -1,12 +1,8 @@
 import type { AgentToolDefinition } from "./agent-tools-shared.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
 import type { InstructionDeliveryPlan } from "../instruction-system/index.js";
-import type {
-  AgentModelAdapter,
-  ParallelAgentMode,
-  ResolvedTaskContext,
-  TaskExecutionTimelineEvent,
-} from "../types.js";
+import type { AgentModelAdapter, ParallelAgentMode } from "@machdoch/model-runtime/types";
+import type { ResolvedTaskContext, TaskExecutionTimelineEvent } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 
 export interface ParallelWorkerPlan {
@@ -39,4 +35,5 @@ export interface ParallelAgentSessionOptions {
 export interface ParallelAgentSessionTool {
   definition: AgentToolDefinition;
   hasWorkerFailure(): boolean;
+  getCompletionBlocker(): string | undefined;
 }

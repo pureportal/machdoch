@@ -1,19 +1,6 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type {
-  AgentModelRequestAttempt,
-  AgentModelRequestAttemptHandler,
-  AgentModelStreamUsage,
-  AgentModelToolResult,
-  AgentModelToolSpec,
-  AgentModelTurn,
-  TaskExecutionResult,
-  TaskExecutionTokenUsage,
-  TaskModelCallStage,
-  TaskModelRequestAttemptUsage,
-  TaskModelUsageCall,
-  TaskModelUsageReport,
-  TaskModelUsageTotals,
-} from "./types.js";
+import type { AgentModelRequestAttempt, AgentModelRequestAttemptHandler, AgentModelStreamUsage, AgentModelToolResult, AgentModelToolSpec, AgentModelTurn } from "@machdoch/model-runtime/types";
+import type { TaskExecutionResult, TaskExecutionTokenUsage, TaskModelCallStage, TaskModelRequestAttemptUsage, TaskModelUsageCall, TaskModelUsageReport, TaskModelUsageTotals } from "./types.js";
 import type { ModelProvider } from "./runtime-contract.generated.js";
 
 const taskModelUsageStorage = new AsyncLocalStorage<TaskModelUsageRecorder>();

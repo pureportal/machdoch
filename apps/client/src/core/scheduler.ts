@@ -33,7 +33,7 @@ import type {
   ReasoningMode,
   RunMode,
 } from "./runtime-contract.generated.js";
-import { parseCronExpression } from "./_helpers/parse-cron-expression.helper.js";
+import { parseCronExpression, timezoneIds } from "@machdoch/recurrence";
 import { splitDueTimesByMissedPolicy } from "./_helpers/split-due-times-by-missed-policy.helper.js";
 import {
   normalizeSchedulerMultilineText,
@@ -79,12 +79,11 @@ export { getScheduledJobContextPaths } from "./_helpers/get-scheduled-job-contex
 export {
   getNextCronRunAfter,
   parseCronExpression,
-} from "./_helpers/parse-cron-expression.helper.js";
+} from "@machdoch/recurrence";
 export type {
   CronField,
   ParsedCronExpression,
-  TimeZoneDateParts,
-} from "./_helpers/parse-cron-expression.helper.js";
+} from "@machdoch/recurrence";
 
 export const SMART_SCHEDULER_SCHEMA = "machdoch.smartScheduler" as const;
 export const SMART_SCHEDULER_SCHEMA_VERSION = 2 as const;
@@ -1105,14 +1104,12 @@ const createEventId = (): string => `event_${randomUUID()}`;
 const normalizeTimeZone = (value: string | undefined): string => {
   const timezone = normalizeSchedulerText(value) ?? DEFAULT_TIMEZONE;
 
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format();
-    return timezone;
-  } catch {
+  if (!timezoneIds.includes(timezone)) {
     throw new Error(
       `Expected scheduler timezone to be a valid IANA timezone: ${timezone}`,
     );
   }
+  return timezone;
 };
 
 const normalizeSchedule = (

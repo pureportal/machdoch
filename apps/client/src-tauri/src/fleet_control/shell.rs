@@ -242,6 +242,8 @@ pub(super) struct FleetShellComposer {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) context_window: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) workspace_context_window: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) context_window_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) long_context_window_tokens: Option<u64>,

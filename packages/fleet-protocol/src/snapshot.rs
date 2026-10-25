@@ -13,7 +13,6 @@ enum Shape {
     Nullable(Box<Shape>),
     Version,
     ImageDataUrl,
-    Union(Vec<Shape>),
     Uuid,
     ProjectName,
     PositiveInteger,
@@ -129,7 +128,6 @@ impl Shape {
             Self::ImageDataUrl => value.as_str().is_some_and(|value| {
                 value.encode_utf16().count() <= 120_000 && value.starts_with("data:image/")
             }),
-            Self::Union(shapes) => shapes.iter().any(|shape| shape.accepts(value)),
             Self::Uuid => value.as_str().is_some_and(|value| {
                 let parts: Vec<_> = value.split('-').collect();
                 parts.len() == 5

@@ -2,16 +2,20 @@ import type OpenAI from "openai";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { GoogleGenAI } from "@google/genai";
 import { expect, it, vi } from "vitest";
-import type { AgentModelAdapter, AgentModelToolSpec } from "../../types.js";
+import type {
+  AgentModelAdapter,
+  AgentModelToolSpec,
+} from "@machdoch/model-runtime/types";
 import { runtimeConfig } from "../../__test__/ralph-test-helpers.js";
 import { executeToolCall } from "../agent-tools.js";
-import { validateToolArguments } from "../tool-argument-validation.js";
+import { validateToolArguments } from "@machdoch/model-runtime/tool-argument-validation";
 import { createFilesystemToolDefinitions } from "../filesystem-tool-definitions.js";
-import { OpenAIResponsesAdapter } from "./openai-adapter.js";
-import { LangdockChatCompletionsAdapter } from "./langdock-adapter.js";
-import { AnthropicMessagesAdapter } from "./anthropic-adapter.js";
-import { GeminiChatAdapter } from "./gemini-adapter.js";
-import { decodeOpenAIToolArguments } from "./tool-arguments.js";
+import { OpenAIResponsesAdapter } from "@machdoch/model-runtime/providers/openai-adapter";
+import { LangdockChatCompletionsAdapter } from "@machdoch/model-runtime/providers/langdock-adapter";
+import { AnthropicMessagesAdapter } from "@machdoch/model-runtime/providers/anthropic-adapter";
+import { LangdockGeminiAdapter } from "@machdoch/model-runtime/providers/langdock-gemini-adapter";
+import { GoogleInteractionsAdapter } from "@machdoch/model-runtime/providers/google-interactions";
+import { decodeOpenAIToolArguments } from "@machdoch/model-runtime/providers/tool-arguments";
 
 const routes = [
   "openai",
@@ -109,6 +113,28 @@ const createAdapter = (
       model: "claude-sonnet-4-5",
     };
   }
+  if (route === "google") {
+    const client = {
+      interactions: {
+        create: async () => ({
+          id: "interaction",
+          status: "requires_action",
+          steps: [
+            {
+              type: "function_call",
+              id: "call",
+              name: definition.name,
+              arguments: value,
+            },
+          ],
+        }),
+      },
+    } as unknown as GoogleGenAI;
+    return {
+      adapter: new GoogleInteractionsAdapter(client),
+      model: "gemini-3.5-flash",
+    };
+  }
   const client = {
     chats: {
       create: () => ({
@@ -133,12 +159,7 @@ const createAdapter = (
     },
   } as unknown as GoogleGenAI;
   return {
-    adapter: new GeminiChatAdapter(
-      client,
-      "gemini-3-pro",
-      [definition],
-      route === "google" ? "google" : "langdock",
-    ),
+    adapter: new LangdockGeminiAdapter(client, "gemini-3-pro", [definition]),
     model: "gemini-3-pro",
   };
 };
@@ -423,6 +444,29 @@ it.each(["google", "langdock"] as const)(
   "%s rejects invalid arguments in streamed Gemini calls",
   async (provider) => {
     const client = {
+      interactions: {
+        create: async function* () {
+          yield {
+            event_type: "interaction.created",
+            interaction: { id: "interaction", status: "in_progress" },
+          };
+          yield {
+            event_type: "step.start",
+            index: 0,
+            step: {
+              type: "function_call",
+              id: "call",
+              name: "inspect",
+              arguments: [],
+            },
+          };
+          yield { event_type: "step.stop", index: 0 };
+          yield {
+            event_type: "interaction.completed",
+            interaction: { id: "interaction", status: "requires_action" },
+          };
+        },
+      },
       chats: {
         create: () => ({
           sendMessageStream: async function* () {
@@ -443,12 +487,10 @@ it.each(["google", "langdock"] as const)(
         }),
       },
     } as unknown as GoogleGenAI;
-    const adapter = new GeminiChatAdapter(
-      client,
-      "gemini-3-pro",
-      [tool],
-      provider,
-    );
+    const adapter =
+      provider === "google"
+        ? new GoogleInteractionsAdapter(client)
+        : new LangdockGeminiAdapter(client, "gemini-3-pro", [tool]);
     const turn = await adapter.startTurn({
       model: "gemini-3-pro",
       systemPrompt: "Inspect",

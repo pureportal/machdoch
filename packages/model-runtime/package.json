@@ -1,0 +1,21 @@
+{
+  "name": "@machdoch/model-runtime",
+  "version": "35.0.1",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit --pretty false",
+    "check": "oxlint src"
+  },
+  "dependencies": {
+    "@machdoch/fleet-protocol": "workspace:*",
+    "@anthropic-ai/sdk": "^0.104.2",
+    "@google/genai": "^2.8.0",
+    "openai": "^6.46.0",
+    "ajv": "^8.20.0"
+  }
+}

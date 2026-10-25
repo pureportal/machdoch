@@ -2,15 +2,9 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import { executeAgentCliInference } from "./_helpers/agent-cli-inference.js";
 import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
 import { createProviderAdapter } from "./_helpers/provider-adapters.js";
-import { normalizeReasoningModeForProviderModel } from "./reasoning-modes.js";
+import { normalizeReasoningModeForProviderModel } from "@machdoch/model-runtime/reasoning-modes";
 import type { RuntimeConfig } from "./runtime-contract.generated.js";
-import type {
-  AgentModelAdapter,
-  AgentModelImageInput,
-  AgentModelRequestAttemptHandler,
-  AgentModelStructuredOutput,
-  AgentModelTurn,
-} from "./types.js";
+import type { AgentModelAdapter, AgentModelImageInput, AgentModelRequestAttemptHandler, AgentModelStructuredOutput, AgentModelTurn } from "@machdoch/model-runtime/types";
 
 export interface InternalTaskModelInferenceParams {
   systemPrompt: string;

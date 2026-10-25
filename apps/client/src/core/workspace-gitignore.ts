@@ -1,5 +1,6 @@
 import { lstat, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { getWorkspaceRuntimeDirectory } from "./workspace-runtime-storage.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeFileAtomically } from "./_helpers/write-file-atomically.helper.js";
 
@@ -55,6 +56,7 @@ const withMissingPatterns = (original: string): string => {
 export const ensureWorkspaceGitignore = async (
   workspaceRoot: string,
 ): Promise<void> => {
+  if (getWorkspaceRuntimeDirectory(workspaceRoot)) return;
   const directory = join(workspaceRoot, ".machdoch");
   const metadata = await lstat(directory);
   if (!metadata.isDirectory() || metadata.isSymbolicLink()) {

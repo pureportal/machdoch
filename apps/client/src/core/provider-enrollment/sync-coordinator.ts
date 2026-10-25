@@ -24,7 +24,7 @@ import {
 } from "./capability-registry.js";
 import { loadProviderEnrollmentConfig } from "./config.js";
 import { summarizeEnrollmentCoverage } from "./coverage-ledger.js";
-import { compareCanonicalStrings, sha256 } from "./digests.js";
+import { compareCanonicalStrings, sha256 } from "@machdoch/model-runtime/digests";
 import { projectMcpForProvider } from "./mcp-projector.js";
 import {
   assertStableManagedTargetUnchanged,

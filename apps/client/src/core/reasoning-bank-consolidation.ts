@@ -13,11 +13,8 @@ import {
   type ReasoningOutcome,
 } from "./reasoning-bank.js";
 import type { RuntimeConfig } from "./runtime-contract.generated.js";
-import type {
-  AgentModelAdapter,
-  TaskConversationContext,
-  TaskExecutionResult,
-} from "./types.js";
+import type { AgentModelAdapter } from "@machdoch/model-runtime/types";
+import type { TaskConversationContext, TaskExecutionResult } from "./types.js";
 
 const MAX_REVIEW_CHARACTERS = 8_000;
 const MAX_LESSONS_PER_TASK = 3;

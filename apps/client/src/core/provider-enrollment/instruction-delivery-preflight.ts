@@ -13,8 +13,8 @@ import type {
   InstructionDeliveryPlan,
 } from "../instruction-system/types.js";
 import type { AgentCliProvider } from "../runtime-contract.generated.js";
-import type { ParallelAgentMode } from "../types.js";
-import { supportsNativeSubagents } from "../parallel-agent-capabilities.js";
+import type { ParallelAgentMode } from "@machdoch/model-runtime/types";
+import { supportsNativeSubagents } from "@machdoch/model-runtime/native-subagents";
 import {
   createProviderProbeEvidence,
   probeProviderCli,

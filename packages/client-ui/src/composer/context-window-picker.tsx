@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   contextWindowCapabilities,
+  contextWindowTokens,
+  CONTEXT_WINDOW_LABELS,
+  DEFAULT_CONTEXT_WINDOW,
   type ContextWindow,
   type ContextWindowModelCapabilities,
 } from "@machdoch/fleet-protocol/context-window";
@@ -21,7 +24,8 @@ export function ContextWindowPicker({
   value,
   onChange,
   capabilities,
-  inheritLabel = "Workspace default",
+  inheritedValue = DEFAULT_CONTEXT_WINDOW,
+  inheritLabel = "Workspace Default",
   presentation = "icon",
 }: {
   provider: string | undefined;
@@ -29,26 +33,24 @@ export function ContextWindowPicker({
   value: ContextWindow | undefined;
   onChange: (value: ContextWindow | undefined) => void;
   capabilities?: ContextWindowModelCapabilities;
+  inheritedValue?: ContextWindow;
   inheritLabel?: string;
   presentation?: "icon" | "field";
 }): React.ReactElement {
   const supported = contextWindowCapabilities(provider, model, capabilities);
   const [open, setOpen] = useState(false);
   const disabled = supported.kind === "fixed";
-  const highest = supported.kind === "range" ? supported.maximum : "long";
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
+  const tokens = contextWindowTokens(value ?? inheritedValue, supported);
   const current =
-    value === undefined
-      ? inheritLabel
-      : value === "default"
-        ? "Provider default"
-        : value === highest
-          ? "Highest"
-          : typeof value === "number"
-            ? `${value.toLocaleString()} tokens`
-            : "Highest";
+    value === undefined ? inheritLabel : CONTEXT_WINDOW_LABELS[value];
+  const resultingValue =
+    tokens === null ? "" : ` (${tokens.toLocaleString()} tokens)`;
   const label = disabled
     ? "Context size: unavailable for this model"
-    : `Context size: ${current}`;
+    : `Context size: ${current}${resultingValue}`;
 
   return (
     <Dialog open={open && !disabled} onOpenChange={setOpen}>
@@ -64,17 +66,15 @@ export function ContextWindowPicker({
           }
           aria-label={label}
           aria-disabled={disabled}
-          data-active={!disabled && value !== undefined}
+          disabled={disabled}
+          data-active={!disabled}
           tooltip={
             disabled
               ? "This provider does not allow changing context size for this model."
               : label
           }
-          onClick={(event) => {
-            if (disabled) event.preventDefault();
-          }}
         >
-          <ContextWindowIcon />
+          <ContextWindowIcon mode={value ?? "workspace"} />
           {presentation === "field" && (
             <span>{disabled ? "Unavailable" : current}</span>
           )}
@@ -96,9 +96,10 @@ export function ContextWindowPicker({
         >
           <DialogTitle>Context size</DialogTitle>
           <ContextWindowForm
-            key={`${provider}:${model}:${JSON.stringify(supported)}:${value}`}
+            key={`${provider}:${model}:${JSON.stringify(supported)}:${value}:${inheritedValue}`}
             supported={supported}
             value={value}
+            inheritedValue={inheritedValue}
             inheritLabel={inheritLabel}
             onApply={(nextValue) => {
               onChange(nextValue);

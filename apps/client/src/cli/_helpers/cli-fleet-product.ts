@@ -1,7 +1,7 @@
 import { FleetWorkspaceLibraryRuntime } from "./cli-fleet-workspace-library.js";
 import { collectFleetTelemetry } from "../../core/fleet-telemetry.js";
-import { parseContextWindow, retainSupportedContextWindow, assertContextWindowSupportedForProviderModel } from "../../core/context-windows.js";
-import { getModelContextWindowTokens, getDiscoveredLongContextWindowTokens } from "../../core/model-capabilities.js";
+import { parseContextWindow } from "../../core/context-windows.js";
+import { getDiscoveredModelCapabilities, getDiscoveredLongContextWindowTokens } from "@machdoch/model-runtime/model-capabilities";
 import { createFleetSessionId } from "@machdoch/fleet-protocol";
 import { loadFleetManagedProfile } from "../../core/fleet-settings.js";
 import {
@@ -57,7 +57,7 @@ import {
   mergeConversationMemoryEntries,
   resolveWorkspaceMemoryEnabled,
 } from "../../core/memory.js";
-import { getReasoningModesForProviderModel } from "../../core/reasoning-modes.js";
+import { getReasoningModesForProviderModel } from "@machdoch/model-runtime/reasoning-modes";
 import {
   getAvailableParallelAgentModes,
   resolveParallelAgentMode,
@@ -894,11 +894,8 @@ export class FleetCliProductRuntime {
             session.model = runtime.model;
             session.mode = runtime.mode;
             session.reasoning = runtime.reasoning;
-            if (pack.contextWindow !== undefined) {
-              if (!isConfiguredModelProvider(runtime.provider)) throw new Error("Choose a configured provider before applying this context size.");
-              assertContextWindowSupportedForProviderModel(pack.contextWindow, runtime.provider, runtime.model);
-            }
-            session.contextWindow = pack.contextWindow ?? retainSupportedContextWindow(session.contextWindow, runtime.provider, runtime.model);
+
+            session.contextWindow = pack.contextWindow ?? session.contextWindow;
             if (pack.sessionMemoryEnabled !== null)
               session.sessionMemoryEnabled = pack.sessionMemoryEnabled;
             if (pack.useWorkspaceMemory !== undefined)
@@ -976,7 +973,7 @@ export class FleetCliProductRuntime {
         return await this.commitCommand(command, (state, _id, timestamp) => {
           const session = this.getSession(state, command.sessionId);
           const value = parseContextWindow(command.mode);
-          if (value !== undefined && isConfiguredModelProvider(session.provider)) assertContextWindowSupportedForProviderModel(value, session.provider, session.model, getModelContextWindowTokens(session.provider, session.model));
+          if (command.mode !== "inherit" && value === undefined) throw new Error("Choose a valid context size.");
           session.contextWindow = value;
           session.updatedAt = timestamp;
           return { record: { sessionId: session.id } };
@@ -1108,7 +1105,6 @@ export class FleetCliProductRuntime {
       const session = this.getSession(state, command.sessionId);
       session.provider = provider;
       session.model = command.model;
-      session.contextWindow = retainSupportedContextWindow(session.contextWindow, provider, command.model);
       session.parallelAgentMode = resolveParallelAgentMode(
         provider,
         command.model,
@@ -1894,7 +1890,8 @@ export class FleetCliProductRuntime {
           reasoning: activeSession.reasoning,
           defaultReasoning: config.reasoning,
           contextWindow: activeSession.contextWindow,
-          contextWindowTokens: getModelContextWindowTokens(activeSession.provider, activeSession.model),
+          workspaceContextWindow: config.contextWindow,
+          contextWindowTokens: getDiscoveredModelCapabilities(activeSession.provider, activeSession.model)?.contextWindowTokens,
           longContextWindowTokens: isConfiguredModelProvider(activeSession.provider) ? getDiscoveredLongContextWindowTokens(activeSession.provider, activeSession.model) : undefined,
           reasoningOptions: [...REASONING_MODES],
           promptEnhancementMode: "off" as const,

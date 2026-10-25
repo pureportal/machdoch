@@ -1,9 +1,5 @@
-import { PROVIDER_MODEL_METADATA } from "./provider-model-registry.js";
-import {
-  assertReasoningModeSupportedForProviderModel,
-  getReasoningModesForProviderModel,
-  normalizeReasoningModeForProviderModel,
-} from "./reasoning-modes.js";
+import { PROVIDER_MODEL_METADATA } from "@machdoch/model-runtime/provider-model-registry";
+import { assertReasoningModeSupportedForProviderModel, getReasoningModesForProviderModel, normalizeReasoningModeForProviderModel } from "@machdoch/model-runtime/reasoning-modes";
 
 describe("provider model reasoning modes", () => {
   it("defines a non-empty default-first mode list for every curated model", () => {
@@ -116,7 +112,7 @@ describe("provider model reasoning modes", () => {
     ).toEqual(["default", "low", "medium", "high"]);
     expect(
       getReasoningModesForProviderModel("google", "gemini-2.5-flash"),
-    ).toEqual(["default", "none", "low", "medium", "high"]);
+    ).toEqual(["default", "low", "medium", "high"]);
     expect(
       getReasoningModesForProviderModel("google", "gemini-3.7-flash"),
     ).toEqual(["default", "low", "medium", "high"]);

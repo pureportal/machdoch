@@ -19,6 +19,7 @@ import { closeRuntime, getRuntime } from "./server/runtime";
 import { requestClientAddress } from "./server/network";
 import { maximumRequestBodyBytes } from "./server/request-limits";
 import { getPreviewHub } from "./server/previews";
+import { closeCloudRuntime, getCloudRuntime } from "./server/cloud/runtime";
 
 type Command = "dev" | "serve" | "seed" | "password" | "settings-key";
 
@@ -69,6 +70,14 @@ async function runServer(
   hostname: string,
   port: number,
 ): Promise<void> {
+  if (
+    process.env.MACHDOCH_CLOUD_DATABASE_URL ||
+    process.env.MACHDOCH_CLOUD_ORIGIN
+  ) {
+    const cloud = await getCloudRuntime();
+    cloud.inference.worker.start();
+    cloud.authentication.mailWorker.start();
+  }
   const appDirectory = resolve(fileURLToPath(new URL("..", import.meta.url)));
   const app = next({ dev: development, dir: appDirectory, hostname, port });
   await app.prepare();
@@ -145,9 +154,20 @@ async function runServer(
     getRuntime().gateways.close();
     getRuntime().previews?.close();
     server.close(() => {
-      clearTimeout(deadline);
-      closeRuntime();
-      process.exit(0);
+      void closeCloudRuntime()
+        .then(() => {
+          clearTimeout(deadline);
+          closeRuntime();
+          process.exit(0);
+        })
+        .catch((error: unknown) => {
+          console.error(
+            "Cloud shutdown failed",
+            error instanceof Error ? error.name : "Unknown error",
+          );
+          closeRuntime();
+          process.exit(1);
+        });
     });
     server.closeIdleConnections();
   };
@@ -196,7 +216,11 @@ async function dispatchHttpRequest(
     response.end();
     return;
   }
-  if (pathname === "/api" || pathname.startsWith("/api/")) {
+  if (
+    pathname === "/api" ||
+    pathname.startsWith("/api/") ||
+    pathname.startsWith("/.well-known/oauth-")
+  ) {
     const runtime = getRuntime();
     const controller = new AbortController();
     const disconnected = (): void => controller.abort();

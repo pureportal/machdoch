@@ -1,7 +1,7 @@
 import type OpenAI from "openai";
 import { describe, it, expect, vi } from "vitest";
-import type { AgentModelStreamEvent } from "../../types.js";
-import { OpenAIResponsesAdapter } from "./openai-adapter.js";
+import type { AgentModelStreamEvent } from "@machdoch/model-runtime/types";
+import { OpenAIResponsesAdapter } from "@machdoch/model-runtime/providers/openai-adapter";
 
 describe("OpenAI adapter final channel", () => {
   it("publishes the explicit final stream before the response completes and never relabels drafts or children", async () => {

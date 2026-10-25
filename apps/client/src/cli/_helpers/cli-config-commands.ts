@@ -250,7 +250,7 @@ export const printConfigSummary = async (
     ["Model", config.model],
     ["Reasoning", config.reasoning],
     ["Reasoning mode", config.reasoningMode ?? "standard"],
-    ["Context window", String(config.contextWindow ?? "default")],
+    ["Context window", String(config.contextWindow ?? "highest")],
     ["Offline", String(config.offline)],
     ["Executor turns", formatLimit(agentLimits.executorTurns)],
     [

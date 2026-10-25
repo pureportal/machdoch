@@ -51,8 +51,7 @@ import type {
   TaskExecutionState,
 } from "./types.js";
 import type { RuntimeConfig } from "./runtime-contract.generated.js";
-import { assertContextWindowSupportedForProviderModel } from "./context-windows.js";
-import { getModelContextWindowTokens } from "./model-capabilities.js";
+import { isContextWindow } from "./runtime-contract.generated.js";
 
 const providerIsConfigured = (config: RuntimeConfig): boolean => {
   return config.providerAvailability.some(
@@ -163,9 +162,9 @@ const runTaskExecutionStateMachine = async (
   customizations: CustomizationDiscoveryResult,
   options: TaskExecutionOptions = {},
 ): Promise<TaskExecutionResult> => {
-  if (options.conversationContext?.contextWindow !== undefined && config.provider !== "unconfigured") {
+  if (options.conversationContext?.contextWindow !== undefined) {
     const contextWindow = options.conversationContext.contextWindow;
-    assertContextWindowSupportedForProviderModel(contextWindow, config.provider, config.model, getModelContextWindowTokens(config.provider, config.model));
+    if (!isContextWindow(contextWindow)) throw new Error("Choose a valid context size.");
     config = { ...config, contextWindow };
   }
   const runtime: TaskExecutionRuntime = {

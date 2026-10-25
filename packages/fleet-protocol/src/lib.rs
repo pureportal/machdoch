@@ -475,8 +475,7 @@ fn validate_managed_context_packs(
             || !valid_managed_mode(pack.mode.as_deref())
             || !valid_managed_reasoning(pack.reasoning.as_deref())
             || pack.context_window.as_ref().is_some_and(|value| {
-                !matches!(value.as_str(), Some("default" | "long"))
-                    && !value.as_u64().is_some_and(|tokens| (1..=10_000_000).contains(&tokens))
+                !matches!(value.as_str(), Some("lowest" | "default" | "highest"))
             })
             || (pack.provider.is_some() != pack.model.is_some())
             || (pack.instructions.is_empty() && pack.prompt.is_empty())
@@ -1751,7 +1750,7 @@ impl ProductCommand {
             }
             ProductCommandKind::SetSessionContextWindow => {
                 valid_identifier(self.session_id.as_deref())
-                    && self.mode.as_deref().is_some_and(|value| matches!(value, "inherit" | "default" | "long") || (value.len() <= 8 && value.bytes().all(|byte| byte.is_ascii_digit()) && value.parse::<u64>().is_ok_and(|tokens| (1..=10_000_000).contains(&tokens))))
+                    && matches!(self.mode.as_deref(), Some("inherit" | "lowest" | "default" | "highest"))
             }
             ProductCommandKind::SetSessionWorkspace => {
                 valid_identifier(self.session_id.as_deref())

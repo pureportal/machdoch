@@ -174,21 +174,11 @@ import type {
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type {
-  AgentModelImageMediaType,
-  ConversationMemoryEntry,
-  TaskConversationContext,
-  TaskDeterministicAction,
-  TaskActionOutput,
-  TaskExecutionProgress,
-  TaskExecutionChangedLineRange,
-  TaskExecutionFileChange,
-  TaskExecutionResult,
-  TaskRunPreview,
-} from "../../core/types.js";
+import type { AgentModelImageMediaType } from "@machdoch/model-runtime/types";
+import type { ConversationMemoryEntry, TaskConversationContext, TaskDeterministicAction, TaskActionOutput, TaskExecutionProgress, TaskExecutionChangedLineRange, TaskExecutionFileChange, TaskExecutionResult, TaskRunPreview } from "../../core/types.js";
 import type { ReasoningLesson } from "../../core/reasoning-bank.js";
 import { validateTaskDeterministicAction } from "../../core/_helpers/deterministic-action-validation.js";
-import { replaceDiscoveredModelCapabilities } from "../../core/model-capabilities.js";
+import { replaceDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
 import { normalizeDesktopTaskRunError } from "./desktop-task-error.js";
 import { normalizeMcpConfigSaveError } from "./mcp-config-error.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
@@ -3791,7 +3781,7 @@ export const saveWorkspaceContextWindow = async (
 
   if (!isContextWindow(contextWindow)) {
     throw new Error(
-      "Expected workspace context window to be default, long, or a positive token count up to 10000000.",
+      "Expected workspace context window to be lowest, default, or highest.",
     );
   }
 

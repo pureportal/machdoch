@@ -1,12 +1,6 @@
 import { loadRuntimeConfig } from "../../core/config.js";
-import {
-  getProviderModelMetadata,
-  type ConfiguredModelProvider,
-} from "../../core/provider-model-registry.js";
-import {
-  getReasoningModesForProviderModel,
-  normalizeReasoningModeForProviderModel,
-} from "../../core/reasoning-modes.js";
+import { getProviderModelMetadata, type ConfiguredModelProvider } from "@machdoch/model-runtime/provider-model-registry";
+import { getReasoningModesForProviderModel, normalizeReasoningModeForProviderModel } from "@machdoch/model-runtime/reasoning-modes";
 import {
   VALID_MODEL_PROVIDERS,
   type RuntimeConfig,
@@ -16,7 +10,7 @@ import {
 import type { ParsedCliArgs } from "./cli-args.js";
 import type { ChatInput } from "./cli-chat-input.js";
 import type { CliChatSession } from "./cli-chat-sessions.js";
-import type { ParallelAgentMode } from "../../core/types.js";
+import type { ParallelAgentMode } from "@machdoch/model-runtime/types";
 import {
   getAvailableParallelAgentModes,
   resolveParallelAgentMode,

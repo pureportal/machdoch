@@ -946,7 +946,7 @@ export const productCommandSchema = z
       kind: z.literal("set-session-reasoning"),
       reasoning: reasoningModeSchema,
     }),
-    z.strictObject({ ...sessionCommandShape, kind: z.literal("set-session-context-window"), mode: z.union([z.literal("inherit"), z.enum(["default", "long"]), z.string().regex(/^\d{1,8}$/u).refine((value) => Number(value) >= 1 && Number(value) <= 10_000_000)]) }),
+    z.strictObject({ ...sessionCommandShape, kind: z.literal("set-session-context-window"), mode: z.union([z.literal("inherit"), contextWindowSchema]) }),
     z.strictObject({
       ...sessionCommandShape,
       kind: z.literal("set-session-workspace"),
@@ -1511,6 +1511,7 @@ export const productShellSchema = z.strictObject({
       reasoning: reasoningModeSchema,
       defaultReasoning: reasoningModeSchema,
       contextWindow: contextWindowSchema.optional(),
+      workspaceContextWindow: contextWindowSchema.optional(),
       contextWindowTokens: z.number().int().positive().nullable().optional(),
       longContextWindowTokens: z.number().int().positive().nullable().optional(),
       reasoningOptions: z.array(reasoningModeSchema).min(1).max(10),

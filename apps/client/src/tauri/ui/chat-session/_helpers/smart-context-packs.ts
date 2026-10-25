@@ -11,7 +11,6 @@ import { normalizeSessionReasoningOverride } from "./session-reasoning";
 import { applyContextPackDraft, createContextPackTextSections } from "../../../../shared/context-pack-draft.js";
 import { createSessionMessageSettings } from "./session-message-settings";
 import { resetTemporaryContextPackSettings } from "./temporary-context-pack";
-import { assertContextWindowSupportedForProviderModel, retainSupportedContextWindow } from "../../../../core/context-windows.js";
 
 export interface SmartContextPackComposerApplication {
   draft: string;
@@ -75,9 +74,7 @@ export const applySmartContextPackSettingsToSession = (
     nextSession.model = modelSelection.model;
   }
 
-  nextSession.contextWindow = retainSupportedContextWindow(nextSession.contextWindow, nextSession.provider, nextSession.model);
   if (pack.contextWindow !== undefined) {
-    assertContextWindowSupportedForProviderModel(pack.contextWindow, nextSession.provider, nextSession.model);
     nextSession.contextWindow = pack.contextWindow;
   }
 

@@ -10,18 +10,14 @@ import type {
   EnrollmentDisposalResult,
   MaterializedCliEnrollment,
 } from "../provider-enrollment/types.js";
-import { assertReasoningModeSupportedForProviderModel } from "../reasoning-modes.js";
+import { assertReasoningModeSupportedForProviderModel } from "@machdoch/model-runtime/reasoning-modes";
 import type {
   AgentCliProvider,
   ReasoningMode,
   RuntimeConfig,
 } from "../runtime-contract.generated.js";
-import type {
-  AgentModelStreamUsage,
-  TaskActionOutputHandler,
-  TaskExecutionResult,
-  TaskExecutionSection,
-} from "../types.js";
+import type { AgentModelStreamUsage } from "@machdoch/model-runtime/types";
+import type { TaskActionOutputHandler, TaskExecutionResult, TaskExecutionSection } from "../types.js";
 import {
   getAgentCliProviderLabel,
   isAgentCliProvider,
@@ -50,10 +46,9 @@ import {
 } from "../instruction-system/delivery.js";
 import { canonicalDigest } from "../instruction-system/normalization.js";
 import {
-  assertContextWindowSupportedForProviderModel,
+  resolveContextWindowForProviderModel,
   resolveClaudeCliModelForContextWindow,
 } from "../context-windows.js";
-import { getModelContextWindowTokens } from "../model-capabilities.js";
 import {
   sliceUtf16PrefixAtCodePointBoundary,
   sliceUtf16SuffixAtCodePointBoundary,
@@ -1265,8 +1260,6 @@ export const runExternalAgentCommand = async (
     ): void {
       if (
         provider === "codex-cli" &&
-        update.resultExitCode !== undefined &&
-        update.resultExitCode !== 0 &&
         isCodexAuthenticationFailure(outputDecoder.getFailureMessage?.() ?? "")
       ) {
         stopForAuthenticationFailure();
@@ -1479,12 +1472,10 @@ const createCodexArgs = (
   nativeSubagents: boolean,
   scopedWorker: boolean,
 ): ExternalAgentCommand => {
-  const contextWindow = config.contextWindow ?? "default";
-  assertContextWindowSupportedForProviderModel(
-    contextWindow,
-    "codex-cli",
+  const contextWindow = resolveContextWindowForProviderModel(
+    config.contextWindow ?? "highest",
+    config.provider,
     config.model,
-    getModelContextWindowTokens("codex-cli", config.model),
   );
   const reasoningEffort = mapReasoningToCodexCliEffort(
     config.model,
@@ -1608,12 +1599,10 @@ const createCodexCommand = ({
   if (nativeGoal) {
     if (scopedWorker || delegationMode !== "full-access")
       throw new Error("Native goals require an agent execution.");
-    const contextWindow = config.contextWindow ?? "default";
-    assertContextWindowSupportedForProviderModel(
-      contextWindow,
-      "codex-cli",
+    const contextWindow = resolveContextWindowForProviderModel(
+      config.contextWindow ?? "highest",
+      config.provider,
       config.model,
-      getModelContextWindowTokens("codex-cli", config.model),
     );
     const effort = mapReasoningToCodexCliEffort(config.model, config.reasoning);
     return {
@@ -1698,11 +1687,12 @@ const createClaudeCommand = ({
       );
     }
   }
-  const contextWindow = config.contextWindow ?? "default";
-  const model = resolveClaudeCliModelForContextWindow(
+  const contextWindow = resolveContextWindowForProviderModel(
+    config.contextWindow ?? "highest",
+    config.provider,
     config.model,
-    contextWindow,
   );
+  const model = resolveClaudeCliModelForContextWindow(config.model, config.contextWindow ?? "highest");
   const effort = mapReasoningToClaudeCliEffort(config.model, config.reasoning);
   if (
     !providerFeatures.includes("--output-format") ||
@@ -1787,10 +1777,9 @@ const createCopilotCommand = ({
   nativeSubagents,
   scopedWorker,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
-  const contextWindow = config.contextWindow ?? "default";
-  assertContextWindowSupportedForProviderModel(
-    contextWindow,
-    "copilot-cli",
+  const contextWindow = resolveContextWindowForProviderModel(
+    config.contextWindow ?? "highest",
+    config.provider,
     config.model,
   );
   const effort = mapReasoningToCopilotCliEffort(config.model, config.reasoning);

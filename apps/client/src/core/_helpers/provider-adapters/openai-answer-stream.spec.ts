@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { OpenAIFinalAnswerStream } from "./openai-answer-stream.js";
+import { OpenAIFinalAnswerStream } from "@machdoch/model-runtime/providers/openai-answer-stream";
 
 function start() {
   const stream = new OpenAIFinalAnswerStream();

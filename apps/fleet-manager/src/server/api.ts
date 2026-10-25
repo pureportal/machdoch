@@ -28,6 +28,7 @@ import {
   type FleetManagedSettingsSyncReport,
 } from "@machdoch/fleet-protocol";
 import { z } from "zod";
+import { handleCloudApi } from "./cloud/api";
 import { streamSpeechAudio } from "./speech-audio";
 import { scopeSpeechRequest } from "./speech-identity";
 import {
@@ -213,6 +214,11 @@ export async function handleApiRequest(
   request: Request,
   context: ApiRequestContext,
 ): Promise<Response> {
+  if (
+    new URL(request.url).pathname.startsWith("/api/v1/") ||
+    new URL(request.url).pathname.startsWith("/.well-known/oauth-")
+  )
+    return handleCloudApi(request, context.clientAddress);
   let response: Response;
   try {
     const runtime = getRuntime();
@@ -307,7 +313,16 @@ async function routeApi(
   if (method === "DELETE" && path[0] === "instances" && path.length === 2) {
     return revokeInstance(runtime, request, path[1] ?? "");
   }
-  if (method === "GET" && path[0] === "instances" && path[1] && path[2] === "product" && path[3] === "speech" && path[4] === "assets" && path[5] && path.length === 6) {
+  if (
+    method === "GET" &&
+    path[0] === "instances" &&
+    path[1] &&
+    path[2] === "product" &&
+    path[3] === "speech" &&
+    path[4] === "assets" &&
+    path[5] &&
+    path.length === 6
+  ) {
     return streamSpeechAudio(runtime, request, path[1], path[5]);
   }
   if (
@@ -344,13 +359,29 @@ async function routeApi(
       if (
         capability &&
         !runtime.gateways.supportsCapability(path[1], capability.capability) &&
-        !(operation === "workspace" && runtime.gateways.supportsCapability(path[1], workspaceLibraryCapability))
+        !(
+          operation === "workspace" &&
+          runtime.gateways.supportsCapability(
+            path[1],
+            workspaceLibraryCapability,
+          )
+        )
       )
         throw new HttpError(409, capability.message);
       const response = await relay(
         runtime,
         path[1],
-        hostRequestSchema.parse({ type: operation, request: operation === "speech" ? scopeSpeechRequest(speechRequestSchema.parse(input), requireOwner(runtime,request).sessionHash, path[1]) : input }),
+        hostRequestSchema.parse({
+          type: operation,
+          request:
+            operation === "speech"
+              ? scopeSpeechRequest(
+                  speechRequestSchema.parse(input),
+                  requireOwner(runtime, request).sessionHash,
+                  path[1],
+                )
+              : input,
+        }),
         request.signal,
       );
       requireOwner(runtime, request);

@@ -1,10 +1,5 @@
-import type {
-  AgentModelToolResult,
-  AgentModelToolSpec,
-  TaskExecutionNarrative,
-  TaskExecutionSection,
-  TaskResultProtocol,
-} from "../types.js";
+import type { AgentModelToolResult, AgentModelToolSpec } from "@machdoch/model-runtime/types";
+import type { TaskExecutionNarrative, TaskExecutionSection, TaskResultProtocol } from "../types.js";
 import { coerceString } from "./agent-runtime-shared.js";
 import {
   MAX_FINAL_RESPONSE_ITEMS,

@@ -431,13 +431,11 @@ pub(super) fn save_workspace_context_window_value(
     context_window: &ContextWindow,
 ) -> Result<PathBuf, String> {
     match context_window {
-        ContextWindow::Mode(mode) if matches!(mode.as_str(), "default" | "long") => {}
-        ContextWindow::Tokens(tokens)
-            if *tokens >= crate::runtime_contract_generated::MIN_CONTEXT_WINDOW_TOKENS
-                && *tokens <= crate::runtime_contract_generated::MAX_CONTEXT_WINDOW_TOKENS => {}
+        ContextWindow::Mode(mode)
+            if crate::runtime_contract_generated::CONTEXT_WINDOW_MODES.contains(&mode.as_str()) => {}
         _ => {
             return Err(
-                "Expected workspace context window to be default, long, or a positive token count up to 10000000."
+                "Expected workspace context window to be lowest, default, or highest."
                     .to_string(),
             );
         }

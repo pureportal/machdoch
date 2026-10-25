@@ -1,6 +1,8 @@
 import {
   createCipheriv,
   createDecipheriv,
+  createHmac,
+  hkdfSync,
   randomBytes,
   timingSafeEqual,
 } from "node:crypto";
@@ -14,9 +16,29 @@ const keyCheckPlaintext = Buffer.from("machdoch-settings-manager-key-v1");
 const keyCheckAad = Buffer.from("machdoch/settings/key-check/v1");
 
 export class SettingsCipher {
+  private readonly fingerprintKey: Buffer;
   constructor(private readonly key: Buffer) {
     if (key.length !== 32)
       throw new Error("Settings encryption key must contain 32 bytes.");
+    this.fingerprintKey = Buffer.from(
+      hkdfSync(
+        "sha256",
+        key,
+        Buffer.alloc(0),
+        Buffer.from("machdoch/settings/command-fingerprint"),
+        32,
+      ),
+    );
+  }
+
+  fingerprint(plaintext: Buffer, associatedData: Buffer): string {
+    const size = Buffer.alloc(4);
+    size.writeUInt32BE(associatedData.length);
+    return createHmac("sha256", this.fingerprintKey)
+      .update(size)
+      .update(associatedData)
+      .update(plaintext)
+      .digest("base64url");
   }
 
   encrypt(plaintext: Buffer, associatedData: Buffer): Buffer {

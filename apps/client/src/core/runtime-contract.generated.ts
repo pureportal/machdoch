@@ -13,10 +13,8 @@ export type ReasoningMode = (typeof REASONING_MODES)[number];
 export const REASONING_EXECUTION_MODES = ["standard", "pro"] as const;
 export type ReasoningExecutionMode = (typeof REASONING_EXECUTION_MODES)[number];
 
-export const CONTEXT_WINDOW_MODES = ["default", "long"] as const;
-export const MIN_CONTEXT_WINDOW_TOKENS = 1 as const;
-export const MAX_CONTEXT_WINDOW_TOKENS = 10000000 as const;
-export type ContextWindow = (typeof CONTEXT_WINDOW_MODES)[number] | number;
+export const CONTEXT_WINDOW_MODES = ["lowest", "default", "highest"] as const;
+export type ContextWindow = (typeof CONTEXT_WINDOW_MODES)[number];
 
 export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "run", "mcp", "scheduler", "workflows", "utilities"] as const;
 export type ToolName = (typeof VALID_TOOLS)[number];
@@ -206,11 +204,7 @@ export const isReasoningExecutionMode = (
   isRuntimeContractValue(REASONING_EXECUTION_MODES, value);
 
 export const isContextWindow = (value: unknown): value is ContextWindow =>
-  (typeof value === "string" && isRuntimeContractValue(CONTEXT_WINDOW_MODES, value)) ||
-  (typeof value === "number" &&
-    Number.isInteger(value) &&
-    value >= MIN_CONTEXT_WINDOW_TOKENS &&
-    value <= MAX_CONTEXT_WINDOW_TOKENS);
+  typeof value === "string" && isRuntimeContractValue(CONTEXT_WINDOW_MODES, value);
 
 export const isConfiguredModelProvider = (
   value: string | undefined,

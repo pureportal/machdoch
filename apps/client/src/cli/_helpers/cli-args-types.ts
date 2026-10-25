@@ -23,6 +23,7 @@ export type CommandName =
   | "ralph"
   | "scheduler"
   | "fleet"
+  | "cloud"
   | "mcp"
   | "provider-sync"
   | "set-api"
@@ -347,6 +348,11 @@ export interface ParsedCliArgs {
   mcp?: McpCliOptions;
   providerSync?: ProviderSyncCliOptions;
   fleet?: FleetCliOptions;
+  cloud?:
+    | { action: "connect"; origin: string; name?: string }
+    | { action: "status" | "request" }
+    | { action: "disconnect"; id: string }
+    | { action: "run"; id: string; runtime: string; once: boolean };
   instructions?: InstructionCliOptions;
   mode?: RunMode;
   provider?: UserApiProvider;

@@ -3,19 +3,8 @@ import {
   ThinkingLevel,
   type GoogleGenAI,
 } from "@google/genai";
-import type {
-  AgentModelStartParams,
-  AgentModelStreamEvent,
-  AgentModelToolSpec,
-} from "../../types.js";
-import {
-  GeminiChatAdapter,
-  createGeminiFunctionCallingMode,
-  createGeminiStructuredOutputConfig,
-  createGeminiThinkingConfig,
-  createGeminiUserMessage,
-  normalizeGeminiResponse,
-} from "./gemini-adapter.js";
+import type { AgentModelStartParams, AgentModelStreamEvent, AgentModelToolSpec } from "@machdoch/model-runtime/types";
+import { LangdockGeminiAdapter, createGeminiFunctionCallingMode, createGeminiStructuredOutputConfig, createGeminiThinkingConfig, createGeminiUserMessage, normalizeGeminiResponse } from "@machdoch/model-runtime/providers/langdock-gemini-adapter";
 
 const tool: AgentModelToolSpec = {
   name: "inspect_file",
@@ -37,7 +26,7 @@ const startParams: AgentModelStartParams = {
   tools: [tool],
 };
 
-describe("Gemini function-calling conformance", () => {
+describe("Langdock Gemini function-calling conformance", () => {
   it("creates inline image parts", () => {
     expect(
       createGeminiUserMessage({
@@ -213,7 +202,7 @@ describe("Gemini function-calling conformance", () => {
         },
       },
     } as unknown as GoogleGenAI;
-    const adapter = new GeminiChatAdapter(client, "gemini-3-pro", [tool]);
+    const adapter = new LangdockGeminiAdapter(client, "gemini-3-pro", [tool]);
 
     await expect(adapter.startTurn(startParams)).resolves.toEqual({
       text: "Need the file.",
@@ -332,7 +321,7 @@ describe("Gemini function-calling conformance", () => {
         create: vi.fn(() => chat),
       },
     } as unknown as GoogleGenAI;
-    const adapter = new GeminiChatAdapter(client, "gemini-3-pro", [tool]);
+    const adapter = new LangdockGeminiAdapter(client, "gemini-3-pro", [tool]);
 
     await expect(
       adapter.startTurn({
@@ -346,26 +335,26 @@ describe("Gemini function-calling conformance", () => {
 
     expect(events).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ type: "status", provider: "google" }),
+        expect.objectContaining({ type: "status", provider: "langdock" }),
         expect.objectContaining({
           type: "reasoning-delta",
-          provider: "google",
+          provider: "langdock",
           delta: "Thinking privately.",
         }),
-        { type: "text-delta", provider: "google", delta: "Need " },
+        { type: "text-delta", provider: "langdock", delta: "Need " },
         expect.objectContaining({
           type: "tool-call-start",
-          provider: "google",
+          provider: "langdock",
           name: "inspect_file",
         }),
         expect.objectContaining({
           type: "tool-call-done",
-          provider: "google",
+          provider: "langdock",
           argumentsText: '{"path":"README.md"}',
         }),
         expect.objectContaining({
           type: "usage",
-          provider: "google",
+          provider: "langdock",
           usage: expect.objectContaining({
             totalTokens: 14,
             reasoningTokens: 2,

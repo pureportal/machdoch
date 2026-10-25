@@ -1,11 +1,6 @@
 /// <reference types="vitest/globals" />
 
-import {
-  emitProviderStreamEvent,
-  normalizeAnthropicUsage,
-  normalizeGeminiUsage,
-  normalizeOpenAIUsage,
-} from "./stream-events.ts";
+import { emitProviderStreamEvent, normalizeAnthropicUsage, normalizeGeminiUsage, normalizeOpenAIUsage } from "@machdoch/model-runtime/providers/stream-events";
 
 describe("emitProviderStreamEvent", () => {
   it("isolates throwing progress handlers from provider stream execution", () => {

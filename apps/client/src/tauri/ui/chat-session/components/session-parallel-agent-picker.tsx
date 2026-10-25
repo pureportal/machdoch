@@ -9,7 +9,7 @@ import {
   type ComposerIconProps,
 } from "@machdoch/product-ui";
 import { useId, useMemo, useState, type JSX } from "react";
-import type { ParallelAgentMode } from "../../../../core/types.js";
+import type { ParallelAgentMode } from "@machdoch/model-runtime/types";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {

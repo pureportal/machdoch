@@ -1,8 +1,5 @@
-import {
-  getDefaultModelForProvider as getRegistryDefaultModelForProvider,
-  getProviderModelMetadata,
-  type ConfiguredModelProvider,
-} from "../../core/provider-model-registry.js";
+import { getDefaultModelForProvider as getRegistryDefaultModelForProvider } from "../../core/provider-model-defaults.js";
+import { getProviderModelMetadata, type ConfiguredModelProvider } from "@machdoch/model-runtime/provider-model-registry";
 
 export type RuntimeProvider = ConfiguredModelProvider;
 

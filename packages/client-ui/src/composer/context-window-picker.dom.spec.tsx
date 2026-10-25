@@ -3,219 +3,178 @@ import { afterEach, expect, it, vi } from "vitest";
 import { ContextWindowPicker } from "./context-window-picker";
 
 afterEach(cleanup);
-
 const open = () =>
   fireEvent.click(screen.getByRole("button", { name: /^Context size:/ }));
 const choose = (name: string) =>
   fireEvent.click(screen.getByRole("radio", { name: new RegExp(name) }));
 const apply = () =>
   fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+const props = {
+  provider: "codex-cli",
+  model: "discovered",
+  capabilities: {
+    contextWindowTokens: 272_000,
+    longContextWindowTokens: 872_000,
+  },
+};
 
-it("edits exact token counts within the discovered range and only commits on Apply", () => {
+it("shows exactly four presets with resolved workspace and model sizes", () => {
   const onChange = vi.fn();
   render(
-    <ContextWindowPicker
-      provider="codex-cli"
-      model="discovered-model"
-      capabilities={{
-        contextWindowTokens: 200_000,
-        longContextWindowTokens: 1_000_000,
-      }}
-      value={64_000}
-      onChange={onChange}
-    />,
+    <ContextWindowPicker {...props} value={undefined} onChange={onChange} />,
   );
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(
+    screen
+      .getByRole("button", {
+        name: "Context size: Workspace Default (872,000 tokens)",
+      })
+      .getAttribute("data-active"),
+  ).toBe("true");
   open();
-  const tokens = screen.getByRole("spinbutton", { name: "Tokens" });
-  const slider = screen.getByRole("slider");
-  expect(tokens.getAttribute("max")).toBe("1000000");
-  expect(slider.getAttribute("min")).toBe("1");
-  expect(slider.getAttribute("max")).toBe("1000000");
-  expect(slider.getAttribute("step")).toBe("1");
-  for (const value of ["1000001", "0", "-1", "1.5", ""]) {
-    fireEvent.change(tokens, { target: { value } });
-    expect(screen.getByRole("alert").textContent).toContain("1,000,000");
-    expect(
-      screen.getByRole("button", { name: "Apply" }).hasAttribute("disabled"),
-    ).toBe(true);
-    apply();
-  }
+  expect(
+    screen
+      .getAllByRole("radio")
+      .map((radio) => radio.closest("label")?.textContent),
+  ).toEqual([
+    "Workspace Default872,000 tokens",
+    "Lowest272,000 tokens",
+    "Provider Default272,000 tokens",
+    "Highest872,000 tokens",
+  ]);
+  expect(screen.queryByRole("slider")).toBeNull();
+  expect(screen.queryByRole("spinbutton")).toBeNull();
+  choose("Highest");
   expect(onChange).not.toHaveBeenCalled();
-  fireEvent.change(tokens, { target: { value: "800000" } });
-  expect((slider as HTMLInputElement).value).toBe("800000");
-  fireEvent.blur(tokens);
-  expect(onChange).not.toHaveBeenCalled();
-  fireEvent.change(slider, { target: { value: "400000" } });
-  expect((tokens as HTMLInputElement).value).toBe("400000");
   apply();
-  expect(onChange).toHaveBeenCalledExactlyOnceWith(400000);
-  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(onChange).toHaveBeenCalledExactlyOnceWith("highest");
 });
 
-it("discards edits when cancelled and restores the saved selection on reopening", () => {
+it("uses the configured workspace preset and commits inheritance separately", () => {
   const onChange = vi.fn();
   render(
     <ContextWindowPicker
-      provider="codex-cli"
-      model="gpt-6-astra"
-      value={64_000}
+      {...props}
+      value="highest"
+      inheritedValue="lowest"
       onChange={onChange}
     />,
   );
+  open();
+  expect(
+    screen.getByRole("radio", { name: "Workspace Default 272,000 tokens" }),
+  ).toBeTruthy();
+  choose("Workspace Default");
+  apply();
+  expect(onChange).toHaveBeenLastCalledWith(undefined);
+  open();
+  choose("Provider Default");
+  apply();
+  expect(onChange).toHaveBeenLastCalledWith("default");
+});
+
+it("discards cancelled drafts", () => {
+  const onChange = vi.fn();
+  render(<ContextWindowPicker {...props} value="lowest" onChange={onChange} />);
   open();
   choose("Highest");
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  open();
+  expect(
+    (screen.getByRole("radio", { name: /Lowest/ }) as HTMLInputElement).checked,
+  ).toBe(true);
   expect(onChange).not.toHaveBeenCalled();
-  open();
-  expect(
-    (screen.getByRole("radio", { name: "Custom" }) as HTMLInputElement).checked,
-  ).toBe(true);
-  expect((screen.getByRole("spinbutton") as HTMLInputElement).value).toBe(
-    "64000",
-  );
 });
 
-it("applies Highest as the numeric model maximum and recognizes it when reopened", () => {
-  const onChange = vi.fn();
-  const props = { provider: "codex-cli", model: "gpt-5.4-mini", onChange };
-  const { rerender } = render(
-    <ContextWindowPicker {...props} value={undefined} />,
-  );
-  open();
-  choose("Highest");
-  expect(screen.queryByRole("slider")).toBeNull();
-  apply();
-  expect(onChange).toHaveBeenCalledWith(400000);
-  rerender(<ContextWindowPicker {...props} value={400000} />);
-  open();
-  expect(
-    (screen.getByRole("radio", { name: /Highest/ }) as HTMLInputElement)
-      .checked,
-  ).toBe(true);
-});
-
-it.each([
-  ["claude-cli", "sonnet", undefined, 1_000_000],
-  [
-    "copilot-cli",
-    "discovered-model",
-    { contextWindowTokens: 200_000, longContextWindowTokens: 2_000_000 },
-    2_000_000,
-  ],
-] as const)(
-  "offers provider tiers without arbitrary inputs for %s",
-  (provider, model, capabilities, maximum) => {
-    const onChange = vi.fn();
-    render(
-      <ContextWindowPicker
-        provider={provider}
-        model={model}
-        capabilities={capabilities}
-        value={undefined}
-        onChange={onChange}
-      />,
-    );
-    open();
-    expect(screen.queryByRole("spinbutton")).toBeNull();
-    expect(screen.queryByRole("slider")).toBeNull();
-    expect(screen.queryByRole("radio", { name: "Custom" })).toBeNull();
-    choose(`Highest ${maximum.toLocaleString()}`);
-    apply();
-    expect(onChange).toHaveBeenCalledExactlyOnceWith("long");
-  },
-);
-
-it.each([
-  ["openai", "gpt-6-astra"],
-  ["claude-cli", "haiku"],
-  ["copilot-cli", "auto"],
-  ["codex-cli", "unknown"],
-])(
-  "keeps a disabled, labelled icon for unsupported %s / %s",
-  (provider, model) => {
-    const onChange = vi.fn();
-    render(
-      <ContextWindowPicker
-        provider={provider}
-        model={model}
-        value={undefined}
-        onChange={onChange}
-      />,
-    );
-    const trigger = screen.getByRole("button", {
-      name: "Context size: unavailable for this model",
-    });
-    expect(trigger.getAttribute("aria-disabled")).toBe("true");
-    fireEvent.click(trigger);
-    expect(screen.queryByRole("dialog")).toBeNull();
-    expect(onChange).not.toHaveBeenCalled();
-  },
-);
-
-it("resets an open draft when the model or its discovered limit changes", () => {
+it("preserves the selected preset through model and provider changes, including fixed models", () => {
   const onChange = vi.fn();
   const { rerender } = render(
-    <ContextWindowPicker
-      provider="codex-cli"
-      model="gpt-6-astra"
-      value={undefined}
-      onChange={onChange}
-    />,
+    <ContextWindowPicker {...props} value="highest" onChange={onChange} />,
   );
   open();
-  choose("Custom");
-  fireEvent.change(screen.getByRole("spinbutton"), {
-    target: { value: "900000" },
-  });
   rerender(
     <ContextWindowPicker
-      provider="codex-cli"
-      model="gpt-5.4-mini"
-      value={undefined}
+      {...props}
+      model="smaller"
+      capabilities={{
+        contextWindowTokens: 64_000,
+        longContextWindowTokens: 128_000,
+      }}
+      value="highest"
       onChange={onChange}
     />,
   );
   expect(
     (
       screen.getByRole("radio", {
-        name: "Workspace default",
+        name: "Highest 128,000 tokens",
       }) as HTMLInputElement
     ).checked,
   ).toBe(true);
-  choose("Custom");
-  expect(screen.getByRole("spinbutton").getAttribute("max")).toBe("400000");
   rerender(
     <ContextWindowPicker
-      provider="codex-cli"
-      model="gpt-5.4-mini"
-      capabilities={{ contextWindowTokens: 250_000 }}
-      value={undefined}
+      {...props}
+      provider="openai"
+      value="highest"
       onChange={onChange}
     />,
   );
-  choose("Highest");
-  apply();
-  expect(onChange).toHaveBeenCalledExactlyOnceWith(250000);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: /^Context size:/ })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  rerender(
+    <ContextWindowPicker {...props} value="highest" onChange={onChange} />,
+  );
+  open();
+  expect(
+    (
+      screen.getByRole("radio", {
+        name: "Highest 872,000 tokens",
+      }) as HTMLInputElement
+    ).checked,
+  ).toBe(true);
+  expect(onChange).not.toHaveBeenCalled();
 });
 
-it("preserves the difference between inheritance and an explicit provider default", () => {
+it.each(["codex-cli", "copilot-cli", "claude-cli", "openai"])(
+  "disables a single-size %s model",
+  (provider) => {
+    const onChange = vi.fn();
+    render(
+      <ContextWindowPicker
+        provider={provider}
+        model="sonnet"
+        capabilities={{
+          contextWindowTokens: 1_000_000,
+          longContextWindowTokens: 1_000_000,
+        }}
+        value="highest"
+        onChange={onChange}
+      />,
+    );
+    const button = screen.getByRole("button", { name: /^Context size:/ });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(button);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onChange).not.toHaveBeenCalled();
+  },
+);
+
+it("renders distinct active SVGs for all four selections", () => {
   const onChange = vi.fn();
-  render(
-    <ContextWindowPicker
-      provider="codex-cli"
-      model="gpt-6-astra"
-      value={64_000}
-      onChange={onChange}
-      inheritLabel="Keep current"
-    />,
+  const { rerender } = render(
+    <ContextWindowPicker {...props} value={undefined} onChange={onChange} />,
   );
-  open();
-  choose("Keep current");
-  apply();
-  expect(onChange).toHaveBeenLastCalledWith(undefined);
-  open();
-  choose("Provider default");
-  apply();
-  expect(onChange).toHaveBeenLastCalledWith("default");
+  const icons = new Set<string>();
+  for (const value of [undefined, "lowest", "default", "highest"] as const) {
+    rerender(
+      <ContextWindowPicker {...props} value={value} onChange={onChange} />,
+    );
+    const button = screen.getByRole("button", { name: /^Context size:/ });
+    expect(button.getAttribute("data-active")).toBe("true");
+    icons.add(button.querySelector("svg")!.innerHTML);
+  }
+  expect(icons.size).toBe(4);
 });

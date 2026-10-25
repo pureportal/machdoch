@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInstructionResolutionFixture } from "./instruction-test-helpers.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
-import type { ParallelAgentMode, ResolvedTaskContext } from "../types.js";
+import type { ParallelAgentMode } from "@machdoch/model-runtime/types";
+import type { ResolvedTaskContext } from "../types.js";
 import {
   createParallelAgentSessionTool,
   type ParallelWorkerPlan,

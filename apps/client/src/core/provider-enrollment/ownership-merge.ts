@@ -8,7 +8,7 @@ import {
   writeFileAtomically,
   writeJsonAtomically,
 } from "../_helpers/write-file-atomically.helper.js";
-import { compareCanonicalStrings, digestJson, sha256 } from "./digests.js";
+import { compareCanonicalStrings, digestJson, sha256 } from "@machdoch/model-runtime/digests";
 
 const TOML_START = "# machdoch-managed:provider-enrollment:start";
 const TOML_END = "# machdoch-managed:provider-enrollment:end";

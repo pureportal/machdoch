@@ -1,7 +1,7 @@
 import { lstat, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { getInstructionCapabilityDescriptor } from "./delivery.js";
-import { getModelContextWindowTokens } from "../model-capabilities.js";
+import { getModelContextWindowTokens } from "@machdoch/model-runtime/model-capabilities";
 import { loadInstructionLibrary } from "./library-store.js";
 import { loadFleetManagedProfile } from "../fleet-settings.js";
 import { inventoryNativeInstructions } from "./native-inventory.js";

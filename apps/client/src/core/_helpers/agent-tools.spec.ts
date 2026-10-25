@@ -1,4 +1,9 @@
-/// <reference types="vitest/globals" />
+import { describe, expect, it } from "vitest";
+import {
+  withAgentToolPolicy,
+  isAgentToolGranted,
+} from "./agent-tool-policy.js";
+import { cloudTaskToolPolicy } from "../cloud/tool-policy.js";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -226,5 +231,102 @@ describe("executeToolCall", () => {
     );
 
     expect(result.result?.toolResult.output).toBe("done");
+  });
+});
+
+describe("agent tool scopes", () => {
+  it("offers sandbox capabilities and rejects a cached tool outside the grant before execution", async () => {
+    const config = createRuntimeConfig({ mode: "machdoch" });
+    const unrestricted = createToolDefinitions(config, memory);
+    const utility = unrestricted.find(
+      (tool) => tool.backingTool === "utilities",
+    )!;
+    expect(
+      cloudTaskToolPolicy({
+        ...utility,
+        spec: { ...utility.spec, name: "run_parallel_agents" },
+      }),
+    ).toBe(false);
+    const scheduler = unrestricted.find(
+      (tool) => tool.backingTool === "scheduler",
+    )!;
+    expect(scheduler).toBeDefined();
+    let invoked = false;
+    const cached: AgentToolDefinition = {
+      ...scheduler,
+      execute: async () => {
+        invoked = true;
+        throw new Error("Must not execute");
+      },
+    };
+    await withAgentToolPolicy(cloudTaskToolPolicy, async () => {
+      const granted = createToolDefinitions(config, memory);
+      expect(granted.some((tool) => tool.spec.name === "create_file")).toBe(
+        true,
+      );
+      expect(
+        granted.some((tool) => tool.spec.name === "run_shell_command"),
+      ).toBe(true);
+      expect(
+        granted.some((tool) =>
+          [
+            "scheduler",
+            "workflows",
+            "mcp",
+            "network",
+            "run",
+            "browser",
+          ].includes(tool.backingTool),
+        ),
+      ).toBe(false);
+      const denied = await executeToolCall(
+        config,
+        memory,
+        undefined,
+        new Map([[cached.spec.name, cached]]),
+        { id: "denied", name: cached.spec.name, arguments: {} },
+      );
+      expect(denied.result?.toolResult.isError).toBe(true);
+      expect(invoked).toBe(false);
+    });
+    expect(
+      createToolDefinitions(config, memory).map((tool) => tool.spec.name),
+    ).toEqual(unrestricted.map((tool) => tool.spec.name));
+  });
+
+  it("isolates concurrent policies and prevents nested scopes from widening their parent", async () => {
+    const definitions = createToolDefinitions(
+      createRuntimeConfig({ mode: "machdoch" }),
+      memory,
+    );
+    const read = definitions.find((tool) => tool.spec.name === "read_file")!;
+    const write = definitions.find((tool) => tool.spec.name === "create_file")!;
+    const results = await Promise.all([
+      withAgentToolPolicy(
+        (tool) => tool.effect === "read",
+        async () => {
+          await Promise.resolve();
+          return withAgentToolPolicy(
+            () => true,
+            async () => {
+              await Promise.resolve();
+              return [isAgentToolGranted(read), isAgentToolGranted(write)];
+            },
+          );
+        },
+      ),
+      withAgentToolPolicy(
+        (tool) => tool.spec.name === "create_file",
+        async () => {
+          await Promise.resolve();
+          return [isAgentToolGranted(read), isAgentToolGranted(write)];
+        },
+      ),
+    ]);
+    expect(results).toEqual([
+      [true, false],
+      [false, true],
+    ]);
+    expect(isAgentToolGranted(write)).toBe(true);
   });
 });

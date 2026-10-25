@@ -85,6 +85,7 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
     args.command !== "mcp-apps" &&
     args.command !== "live-voice" &&
     args.command !== "speech" &&
+    args.command !== "cloud" &&
     !isInternalProviderProcess &&
     !isLocalRalphCommand
   ) {
@@ -102,6 +103,11 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
   }
 
   switch (args.command) {
+    case "cloud": {
+      const { runCloudCommand } = await import("./_helpers/cli-cloud-commands.js");
+      await runCloudCommand(args);
+      return;
+    }
     case "live-voice": {
       const { runLiveVoiceCommand } = await import("./_helpers/cli-live-voice.js");
       await runLiveVoiceCommand(args);

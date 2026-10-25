@@ -314,13 +314,7 @@ import { isAgentCliProvider } from "./_helpers/agent-cli-providers.js";
 import { resolveReviewModelRuntimeConfig } from "./review-model.js";
 import { isTaskModelUsageReport } from "./model-usage.js";
 import { mcpClientManager } from "./mcp/client.js";
-import {
-  createImageInputUnsupportedModelMessage,
-  getImageInputMediaTypeForPath,
-  getSupportedImageInputExtensions,
-  modelSupportsImageInput,
-  providerSupportsImageInputMediaType,
-} from "./model-capabilities.js";
+import { createImageInputUnsupportedModelMessage, getImageInputMediaTypeForPath, getSupportedImageInputExtensions, modelSupportsImageInput, providerSupportsImageInputMediaType } from "@machdoch/model-runtime/model-capabilities";
 import {
   getEnabledMcpServer,
   loadMcpDiscoveryCacheSync,
@@ -331,18 +325,8 @@ import type {
   McpOperationCacheOptions,
   McpOperationOptions,
 } from "./mcp/types.js";
-import type {
-  CustomizationDiscoveryResult,
-  AgentModelImageInput,
-  TaskExecutionOptions,
-  TaskConversationContext,
-  TaskActionOutput,
-  TaskExecutionProgress,
-  TaskExecutionProgressHandler,
-  TaskExecutionResult,
-  TaskExecutionTimelineEventKind,
-  TaskExecutionTokenUsage,
-} from "./types.js";
+import type { CustomizationDiscoveryResult, TaskExecutionOptions, TaskConversationContext, TaskActionOutput, TaskExecutionProgress, TaskExecutionProgressHandler, TaskExecutionResult, TaskExecutionTimelineEventKind, TaskExecutionTokenUsage } from "./types.js";
+import type { AgentModelImageInput } from "@machdoch/model-runtime/types";
 import type {
   ConfiguredModelProvider,
   ModelProvider,

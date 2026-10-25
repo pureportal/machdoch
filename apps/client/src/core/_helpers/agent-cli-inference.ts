@@ -6,11 +6,7 @@ import type {
   AgentCliProvider,
   RuntimeConfig,
 } from "../runtime-contract.generated.js";
-import type {
-  AgentModelImageInput,
-  AgentModelStructuredOutput,
-  AgentModelTurn,
-} from "../types.js";
+import type { AgentModelImageInput, AgentModelStructuredOutput, AgentModelTurn } from "@machdoch/model-runtime/types";
 import {
   getAgentCliProviderLabel,
   resolveAgentCliProviderBinary,

@@ -1,4 +1,4 @@
-import type { ParallelAgentMode } from "../../../../core/types.js";
+import type { ParallelAgentMode } from "@machdoch/model-runtime/types";
 import { getParallelAgentOptions } from "@machdoch/product-ui";
 import type {
   CommandDefinition,

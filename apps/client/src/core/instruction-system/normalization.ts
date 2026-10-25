@@ -1,10 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstat, realpath } from "node:fs/promises";
 import { isAbsolute, normalize, relative, resolve, sep } from "node:path";
-import {
-  compareCanonicalStrings,
-  stableJson,
-} from "../provider-enrollment/digests.js";
+import { compareCanonicalStrings, stableJson } from "@machdoch/model-runtime/digests";
 import { InstructionSystemError } from "./types.js";
 import {
   MAX_INSTRUCTION_PROFILE_NAME_LENGTH,

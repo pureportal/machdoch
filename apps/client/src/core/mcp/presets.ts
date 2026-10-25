@@ -1,10 +1,37 @@
 import type { McpPresetDefinition } from "./types.js";
 import { cloneMcpPreset } from "./_helpers/clone-mcp-preset.helper.js";
 
-const DEFAULT_MCP_OAUTH_REDIRECT_URL =
-  "http://127.0.0.1:43110/oauth/callback";
+const DEFAULT_MCP_OAUTH_REDIRECT_URL = "http://127.0.0.1:43110/oauth/callback";
 
 export const MCP_PRESETS: readonly McpPresetDefinition[] = [
+  {
+    id: "machdoch-cloud",
+    title: "machdoch.cloud",
+    description:
+      "Issues, planning, and AI tasks in your organization's machdoch.cloud.",
+    server: {
+      id: "machdoch-cloud",
+      title: "machdoch.cloud",
+      enabled: false,
+      preset: "machdoch-cloud",
+      transport: {
+        type: "streamable-http",
+        url: "${env:MACHDOCH_CLOUD_ORIGIN}/api/v1/mcp",
+      },
+      auth: {
+        type: "oauth",
+        clientId: "machdoch-client",
+        redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+        scopes: ["cloud:read", "cloud:write", "cloud:execute"],
+      },
+      exposure: { mode: "hybrid", directTools: true },
+      securityProfile: "balanced",
+      timeoutMs: 30_000,
+      maxTotalTimeoutMs: 60_000,
+      maxResponseChars: 100_000,
+      cache: { enabled: false },
+    },
+  },
   {
     id: "serper-search",
     title: "Serper Search",
@@ -86,8 +113,7 @@ export const MCP_PRESETS: readonly McpPresetDefinition[] = [
     server: {
       id: "firecrawl",
       title: "Firecrawl Web",
-      description:
-        "Official Firecrawl MCP server. Requires FIRECRAWL_API_KEY.",
+      description: "Official Firecrawl MCP server. Requires FIRECRAWL_API_KEY.",
       enabled: false,
       preset: "firecrawl-web",
       transport: {

@@ -1,19 +1,5 @@
-import type {
-  AgentModelAdapter,
-  AgentModelToolCall,
-  AgentModelStructuredOutput,
-  ResolvedTaskContext,
-  TaskConversationContext,
-  AgentModelImageInput,
-  TaskExecutionMemoryUpdate,
-  TaskExecutionControl,
-  TaskExecutionNarrative,
-  TaskActionOutputHandler,
-  TaskExecutionProgressHandler,
-  TaskExecutionResult,
-  TaskResultProtocol,
-  TaskExecutionSection,
-} from "../types.js";
+import type { AgentModelAdapter, AgentModelToolCall, AgentModelStructuredOutput, AgentModelImageInput } from "@machdoch/model-runtime/types";
+import type { ResolvedTaskContext, TaskConversationContext, TaskExecutionMemoryUpdate, TaskExecutionControl, TaskExecutionNarrative, TaskActionOutputHandler, TaskExecutionProgressHandler, TaskExecutionResult, TaskResultProtocol, TaskExecutionSection } from "../types.js";
 import type {
   InstructionDeliveryPlan,
   InstructionDeliveryReceipt,

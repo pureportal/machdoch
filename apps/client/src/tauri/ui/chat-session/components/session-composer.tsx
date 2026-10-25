@@ -40,10 +40,8 @@ import type {
   SpeechToTextProvider,
 } from "../../../../core/runtime-contract.generated.js";
 import { isLocalSpeechProvider } from "../../../../shared/local-speech.js";
-import type {
-  ConversationMemoryEntry,
-  ParallelAgentMode,
-} from "../../../../core/types.js";
+import type { ConversationMemoryEntry } from "../../../../core/types.js";
+import type { ParallelAgentMode } from "@machdoch/model-runtime/types";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import type { CommandDefinition } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import {
@@ -177,6 +175,7 @@ export interface SessionComposerProps {
   onGoalModeSelection?: (mode: GoalMode) => void;
   onAdaptiveControllerOverrideChange?: (override: boolean | null) => void;
   onSessionReasoningSelection: (reasoning: ReasoningMode | null) => void;
+  workspaceContextWindow?: ContextWindow;
   onContextWindowChange?: (value: ContextWindow | undefined) => void;
   onSessionMemoryEnabledChange: (enabled: boolean) => void;
   onForgetSessionMemory: (memoryId: string) => Promise<unknown> | unknown;
@@ -295,6 +294,7 @@ export const SessionComposer = ({
   onAdaptiveControllerOverrideChange = () => undefined,
   onSessionReasoningSelection,
   onContextWindowChange,
+  workspaceContextWindow,
   onSessionMemoryEnabledChange,
   onForgetSessionMemory,
   onUseWorkspaceMemoryChange = () => undefined,
@@ -473,7 +473,7 @@ export const SessionComposer = ({
         onSessionReasoningSelection={onSessionReasoningSelection}
       />
 
-      {onContextWindowChange && <ContextWindowPicker provider={activeSession.provider} model={activeSession.model} value={activeSession.contextWindow} onChange={onContextWindowChange} capabilities={packModelCatalog?.providers.find((entry) => entry.provider === activeSession.provider)?.models.find((entry) => entry.id === activeSession.model)?.capabilities} />}
+      {onContextWindowChange && <ContextWindowPicker provider={activeSession.provider} model={activeSession.model} value={activeSession.contextWindow} inheritedValue={workspaceContextWindow} onChange={onContextWindowChange} capabilities={packModelCatalog?.providers.find((entry) => entry.provider === activeSession.provider)?.models.find((entry) => entry.id === activeSession.model)?.capabilities} />}
 
       <SessionAdaptiveControllerPicker
         override={activeSession.adaptiveControllerOverride ?? null}

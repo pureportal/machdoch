@@ -78,7 +78,7 @@ export const WORKSPACE_CONFIG_DEFINITIONS: readonly CliConfigSettingDefinition[]
       category: "Workspace",
       scope: "workspace",
       description: "Context window requested from the selected provider model.",
-      acceptedValues: "default|long|token count",
+      acceptedValues: "lowest|default|highest",
     },
     {
       setting: "workspace.offline",
@@ -188,7 +188,7 @@ const saveWorkspaceConfigSetting = async (
     const contextWindow =
       parseContextWindow(normalizedValue) ??
       fail(
-        "Expected workspace.context-window to be default, long, or a positive token count up to 10000000.",
+        "Expected workspace.context-window to be lowest, default, or highest.",
       );
 
     return {
@@ -342,7 +342,7 @@ const resolveEntry = (
       );
       break;
     case "workspace.context-window":
-      value = snapshot.runtime.contextWindow ?? "default";
+      value = snapshot.runtime.contextWindow ?? "highest";
       source = configSource(
         snapshot.workspaceConfig.contextWindow,
         snapshot.env.MACHDOCH_CONTEXT_WINDOW,

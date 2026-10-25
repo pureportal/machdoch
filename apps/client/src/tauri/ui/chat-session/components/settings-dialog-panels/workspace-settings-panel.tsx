@@ -1,12 +1,9 @@
 import { useEffect, useState, type JSX } from "react";
 import {
-  MAX_CONTEXT_WINDOW_TOKENS,
-  MIN_CONTEXT_WINDOW_TOKENS,
-} from "../../../../../core/runtime-contract.generated.js";
-import { getModelContextWindowTokens } from "../../../../../core/model-capabilities.js";
-import { supportsLongContextWindow } from "../../../../../core/context-windows.js";
-import { getReasoningExecutionModesForProviderModel } from "../../../../../core/reasoning-execution-modes.js";
-import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
+  CONTEXT_WINDOW_LABELS,
+  contextWindowSchema,
+} from "@machdoch/fleet-protocol/context-window";
+import { getReasoningExecutionModesForProviderModel } from "@machdoch/model-runtime/reasoning-execution-modes";
 import {
   getCatalogModelForProvider,
   type ProviderModelCatalogSnapshot,
@@ -78,12 +75,7 @@ const getEffectiveContextNotice = ({
     return null;
   }
 
-  const value =
-    typeof effectiveContextWindow === "number"
-      ? `${effectiveContextWindow.toLocaleString()} tokens`
-      : effectiveContextWindow === "long"
-        ? "Long"
-        : "Default";
+  const value = CONTEXT_WINDOW_LABELS[effectiveContextWindow];
 
   return `Effective context window is currently ${value} because an environment override is active.`;
 };
@@ -101,7 +93,6 @@ export const WorkspaceSettingsPanel = ({
 }: WorkspaceSettingsPanelProps): JSX.Element => {
   const [providerModelCatalog, setProviderModelCatalog] =
     useState<ProviderModelCatalogSnapshot | null>(null);
-  const [contextTokenDraft, setContextTokenDraft] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -116,14 +107,6 @@ export const WorkspaceSettingsPanel = ({
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    setContextTokenDraft(
-      typeof setup.defaultContextWindow === "number"
-        ? String(setup.defaultContextWindow)
-        : "",
-    );
-  }, [setup.defaultContextWindow]);
 
   const catalogModel =
     setup.reasoningProvider && setup.reasoningModel
@@ -153,27 +136,6 @@ export const WorkspaceSettingsPanel = ({
     setup.reasoningProvider ?? null,
     setup.reasoningModel,
   );
-  const supportsLongContext =
-    setup.reasoningProvider === "copilot-cli"
-      ? typeof catalogModel?.capabilities?.longContextWindowTokens === "number"
-      : setup.reasoningProvider !== null &&
-        setup.reasoningProvider !== undefined &&
-        supportsLongContextWindow(
-          setup.reasoningProvider,
-          setup.reasoningModel,
-        );
-  const supportsNumericContext = setup.reasoningProvider === "codex-cli" && Boolean(setup.reasoningModel && getModelContextWindowTokens(setup.reasoningProvider, setup.reasoningModel));
-  const maximumContextTokens =
-    catalogModel?.capabilities?.longContextWindowTokens ??
-    catalogModel?.capabilities?.contextWindowTokens ??
-    (setup.reasoningProvider && setup.reasoningModel
-      ? getModelContextWindowTokens(
-          setup.reasoningProvider,
-          setup.reasoningModel,
-        )
-      : null) ??
-    MAX_CONTEXT_WINDOW_TOKENS;
-
   useSettingsNavigationGuard({
     dirty: setup.saving,
     title: "Saving workspace defaults",
@@ -351,69 +313,20 @@ export const WorkspaceSettingsPanel = ({
         </p>
       ) : null}
 
-      {supportsLongContext ? (
-        <SettingPanel label="Context window">
-          <ChoiceButtons
-            label="Default workspace context window"
-            value={setup.defaultContextWindow === "long" ? "long" : "default"}
-            options={[
-              { value: "default", label: "Default" },
-              {
-                value: "long",
-                label:
-                  setup.reasoningProvider === "copilot-cli"
-                    ? "Long (tiered pricing)"
-                    : "Long",
-              },
-            ]}
-            disabled={setup.saving || !setup.workspaceRoot}
-            onChange={(contextWindow) => {
-              void setup.onContextWindowChange(contextWindow);
-            }}
-          />
-        </SettingPanel>
-      ) : null}
+      <SettingPanel label="Context size">
+        <ChoiceButtons
+          label="Default workspace context size"
+          value={setup.defaultContextWindow}
+          options={contextWindowSchema.options.map((value) => ({
+            value,
+            label: CONTEXT_WINDOW_LABELS[value],
+          }))}
+          disabled={setup.saving || !setup.workspaceRoot}
+          onChange={(value) => void setup.onContextWindowChange(value)}
+        />
+      </SettingPanel>
 
-      {supportsNumericContext ? (
-        <SettingPanel label="Context window">
-          <Input
-            aria-label="Default workspace context window tokens"
-            type="number"
-            min={MIN_CONTEXT_WINDOW_TOKENS}
-            max={maximumContextTokens}
-            step="1"
-            placeholder="Provider default"
-            value={contextTokenDraft}
-            disabled={setup.saving || !setup.workspaceRoot}
-            onChange={(event) => {
-              setContextTokenDraft(event.target.value);
-            }}
-            onBlur={() => {
-              const tokens = Number(contextTokenDraft);
-
-              if (!contextTokenDraft) {
-                void setup.onContextWindowChange("default");
-              } else if (
-                Number.isInteger(tokens) &&
-                tokens >= MIN_CONTEXT_WINDOW_TOKENS &&
-                tokens <= maximumContextTokens
-              ) {
-                void setup.onContextWindowChange(tokens);
-              } else {
-                setContextTokenDraft(
-                  typeof setup.defaultContextWindow === "number"
-                    ? String(setup.defaultContextWindow)
-                    : "",
-                );
-              }
-            }}
-            className="h-10 max-w-48 rounded-lg border-slate-800 bg-slate-950 text-slate-100 disabled:opacity-50"
-          />
-        </SettingPanel>
-      ) : null}
-
-      {effectiveContextNotice &&
-      (supportsLongContext || supportsNumericContext) ? (
+      {effectiveContextNotice ? (
         <p
           role="note"
           className="border-b border-slate-800/75 py-4 text-sm leading-6 text-amber-200"

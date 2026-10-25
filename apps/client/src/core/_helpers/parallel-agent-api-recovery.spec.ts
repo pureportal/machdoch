@@ -7,8 +7,9 @@ import {
 import { createInstructionResolutionFixture } from "../__test__/instruction-test-helpers.js";
 import { maybeExecuteModelDrivenTask } from "../agent-runtime.js";
 import { createInstructionDeliveryPlan } from "../instruction-system/index.js";
-import type { AgentModelAdapter } from "../types.js";
+import type { AgentModelAdapter } from "@machdoch/model-runtime/types";
 import { createProviderAdapter } from "./provider-adapters.js";
+import { WorkerBoundaryError } from "./parallel-agent-worker-state.js";
 
 vi.mock("./provider-adapters.js", () => ({ createProviderAdapter: vi.fn() }));
 
@@ -33,11 +34,15 @@ const routes = [
 
 it.each(
   routes.flatMap((route) =>
-    [false, true].map((retry) => ({ ...route, retry })),
+    [false, true].flatMap((retry) =>
+      ["completed", "blocked", "failed", "scope-violation"].map(
+        (parentStatus) => ({ ...route, retry, parentStatus }),
+      ),
+    ),
   ),
 )(
-  "$provider/$model preserves parent failure until workers recover (retry: $retry)",
-  async ({ provider, model, retry }) => {
+  "$provider/$model preserves the parent's $parentStatus outcome after worker failures (retry: $retry)",
+  async ({ provider, model, retry, parentStatus }) => {
     const options = await createParallelAgentTestOptions();
     workspaces.push(options.config.workspaceRoot);
     let failWorkers = true;
@@ -47,6 +52,11 @@ it.each(
         override ?? {
           startTurn: async () => {
             workerStarts += 1;
+            if (failWorkers && parentStatus === "scope-violation") {
+              throw new WorkerBoundaryError(
+                "Worker accessed an undeclared path",
+              );
+            }
             if (failWorkers) throw new Error("Temporary provider failure");
             return { text: "Verified worker finding", toolCalls: [] };
           },
@@ -75,6 +85,8 @@ it.each(
             toolCalls: [{ ...parallelCall, id: "retry-workers" }],
           };
         }
+        if (parentStatus === "failed")
+          throw new Error("Parent connection lost");
         return {
           text: "",
           toolCalls: [
@@ -83,8 +95,14 @@ it.each(
               name: "submit_final_response",
               arguments: {
                 summary: "Verified result",
-                status: "completed",
-                blockerReason: "",
+                status:
+                  parentStatus === "scope-violation"
+                    ? "completed"
+                    : parentStatus,
+                blockerReason:
+                  parentStatus === "blocked"
+                    ? "Required work remains incomplete"
+                    : "",
                 markdown: "Verified result",
                 highlights: [],
                 relatedFiles: [],
@@ -119,8 +137,25 @@ it.each(
       conversationContext: { history: [], parallelAgentMode: "read-only" },
     });
     expect(workerStarts).toBe(retry ? 4 : 2);
-    expect(result?.status, result?.summary).toBe(retry ? "executed" : "failed");
-    expect(result?.metadata?.parallelWorkerFailure).toBe(!retry);
-    expect(result?.response?.markdown).toContain("Verified result");
+    expect(result?.status, result?.summary).toBe(
+      parentStatus === "completed"
+        ? "executed"
+        : parentStatus === "scope-violation"
+          ? "failed"
+          : parentStatus,
+    );
+    if (parentStatus === "scope-violation") {
+      expect(result?.reason).toContain("violated its declared file scope");
+      expect(result?.metadata?.parallelWorkerFailure).toBe(true);
+      return;
+    }
+    if (parentStatus !== "failed") {
+      expect(result?.metadata?.parallelWorkerFailure).toBe(!retry);
+      expect(result?.summary).toBe("Verified result");
+      expect(result?.response?.markdown).toBe("Verified result");
+    }
+    if (parentStatus === "blocked") {
+      expect(result?.reason).toBe("Required work remains incomplete");
+    }
   },
 );

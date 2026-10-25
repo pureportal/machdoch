@@ -12,6 +12,17 @@ const config = {
 } as FleetManagerConfig;
 
 describe("Fleet Manager request limits", () => {
+  it("allows a bounded agent catalog only on task inference admission", () => {
+    expect(maximumRequestBodyBytes("/api/v1/runner/inference", config)).toBe(
+      256 * 1024,
+    );
+    expect(
+      maximumRequestBodyBytes("/api/v1/runner/inference/result", config),
+    ).toBe(64 * 1024);
+    expect(maximumRequestBodyBytes("/api/v1/runner/claims", config)).toBe(
+      64 * 1024,
+    );
+  });
   it("accepts bounded media upload chunks without expanding other API limits", () => {
     expect(
       maximumRequestBodyBytes("/api/instances/host/product/media", config),

@@ -1,4 +1,4 @@
-import type { AgentModelStreamUsage } from "../types.js";
+import type { AgentModelStreamUsage } from "@machdoch/model-runtime/types";
 import type {
   ExternalAgentCliOutputDecoder,
   ExternalAgentCliOutputUpdate,

@@ -51,7 +51,7 @@ const createWorkspaceConfigurationValues = (
   snapshot: RuntimeSnapshot,
 ): WorkspaceConfigurationValues => {
   const effectiveReasoningMode = snapshot.reasoningMode ?? "standard";
-  const effectiveContextWindow = snapshot.contextWindow ?? "default";
+  const effectiveContextWindow = snapshot.contextWindow ?? "highest";
 
   return {
     defaultMode: snapshot.defaultMode ?? snapshot.mode,

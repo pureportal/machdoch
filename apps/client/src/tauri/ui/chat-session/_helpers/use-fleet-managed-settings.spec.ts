@@ -122,7 +122,7 @@ describe("Fleet managed settings", () => {
           ...localPack(localId, "Local"),
           ...(enabled !== undefined
             ? {
-                contextWindow: 32_000,
+                contextWindow: "lowest" as const,
                 temporary: enabled,
                 useWorkspaceMemory: !enabled,
               }
@@ -164,7 +164,7 @@ describe("Fleet managed settings", () => {
           expect(pack).not.toHaveProperty("useWorkspaceMemory");
         } else {
           expect(pack).toMatchObject({
-            contextWindow: 32_000,
+            contextWindow: "lowest" as const,
             temporary: enabled,
             useWorkspaceMemory: !enabled,
           });
@@ -279,7 +279,7 @@ describe("Fleet managed settings", () => {
   });
 
   it.each([
-    { contextWindow: 32_000 },
+    { contextWindow: "lowest" as const },
     { temporary: true },
     { temporary: false },
     { useWorkspaceMemory: true },

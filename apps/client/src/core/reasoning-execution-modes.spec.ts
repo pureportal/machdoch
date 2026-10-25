@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  assertReasoningExecutionModeSupportedForProviderModel,
-  getReasoningExecutionModesForProviderModel,
-} from "./reasoning-execution-modes.js";
+import { assertReasoningExecutionModeSupportedForProviderModel, getReasoningExecutionModesForProviderModel } from "@machdoch/model-runtime/reasoning-execution-modes";
 
 describe("reasoning execution modes", () => {
   it.each([

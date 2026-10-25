@@ -17,7 +17,7 @@ import type {
   InteractivePrompter,
 } from "./cli-prompter.js";
 import { InteractiveInputCancelledError } from "./cli-interactive-commands.js";
-import { getProviderModelMetadata } from "../../core/provider-model-registry.js";
+import { getProviderModelMetadata } from "@machdoch/model-runtime/provider-model-registry";
 import { DESKTOP_CONFIG_DEFINITIONS } from "./cli-desktop-config.js";
 import { editPrompt } from "./cli-editor.js";
 import {

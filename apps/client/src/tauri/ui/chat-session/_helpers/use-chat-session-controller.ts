@@ -1,5 +1,4 @@
 import { resetTemporaryContextPackSettings } from "./temporary-context-pack";
-import { retainSupportedContextWindow, assertContextWindowSupportedForProviderModel } from "../../../../core/context-windows.js";
 import {
   createDeviceVoicePreferences,
   createRuntimeVoiceSettingsControls,
@@ -23,24 +22,15 @@ import { useAutomaticChatWork } from "./use-automatic-chat-work";
 import { useShutdownWhenIdle } from "../../app-shell/use-shutdown-when-idle";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MediaAssetReference } from "@machdoch/media-studio/core/media/contracts.js";
-import {
-  createImageInputUnsupportedModelMessage,
-  getImageInputMediaTypeForPath,
-  getSupportedImageInputExtensions,
-  modelSupportsImageInput,
-  providerSupportsImageInputMediaType,
-} from "../../../../core/model-capabilities.js";
+import { createImageInputUnsupportedModelMessage, getImageInputMediaTypeForPath, getSupportedImageInputExtensions, modelSupportsImageInput, providerSupportsImageInputMediaType } from "@machdoch/model-runtime/model-capabilities";
 import { resolveAdaptiveControllerEnabled } from "../../../../shared/adaptive-controller-settings.js";
 import type { RalphInputValue } from "../../../../core/ralph.js";
 import type {
   ReasoningMode,
   RunMode,
 } from "../../../../core/runtime-contract.generated.js";
-import type {
-  AgentModelImageMediaType,
-  ParallelAgentMode,
-  TaskExecutionProgress,
-} from "../../../../core/types.js";
+import type { AgentModelImageMediaType, ParallelAgentMode } from "@machdoch/model-runtime/types";
+import type { TaskExecutionProgress } from "../../../../core/types.js";
 import { resolveParallelAgentMode } from "../../../../core/parallel-agent-capabilities.js";
 import { scheduleAppNotificationDismiss } from "@machdoch/media-studio/tauri/ui/components/ui/notification-lifecycle.js";
 import {
@@ -3027,7 +3017,6 @@ export const useChatSessionController = (
           ...session,
           provider,
           model,
-          contextWindow: retainSupportedContextWindow(session.contextWindow, provider, model),
           goalMode: resolveGoalMode(provider, session.goalMode),
           parallelAgentMode: resolveParallelAgentMode(
             provider,
@@ -3070,7 +3059,6 @@ export const useChatSessionController = (
             ...session,
             provider,
             model,
-            contextWindow: retainSupportedContextWindow(session.contextWindow, provider, model),
             parallelAgentMode: resolveParallelAgentMode(
               provider,
               model,
@@ -6711,7 +6699,6 @@ export const useChatSessionController = (
             ...session,
             provider,
             model,
-            contextWindow: retainSupportedContextWindow(session.contextWindow, provider, model),
             parallelAgentMode: resolveParallelAgentMode(
               provider,
               model,
@@ -7274,7 +7261,6 @@ export const useChatSessionController = (
     onSetSessionContextWindow: (sessionId, contextWindow) => {
       const session = state.getSessionById(sessionId);
       if (!session) throw new Error("Choose a session first.");
-      if (contextWindow !== undefined) assertContextWindowSupportedForProviderModel(contextWindow, session.provider, session.model);
       state.applyShellState((previous) => ({ ...previous, sessions: previous.sessions.map((entry) => entry.id === sessionId ? { ...entry, contextWindow, updatedAt: Date.now() } : entry) }));
     },
     onSetSessionWorkspace: applyRemoteWorkspaceSelection,
@@ -8825,6 +8811,7 @@ export const useChatSessionController = (
       activeRunModeMeta,
       defaultRunMode,
       defaultReasoning: normalizedEffectiveReasoning,
+      workspaceContextWindow: workspaceSnapshotMatchesSession ? runtime.runtimeSnapshot?.contextWindow : undefined,
       activeReasoning,
       isUsingWorkspaceDefaultMode,
       isUsingWorkspaceDefaultReasoning,

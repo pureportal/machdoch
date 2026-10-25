@@ -1,10 +1,5 @@
-import type {
-  AgentModelToolCall,
-  TaskActionOutputHandler,
-  ToolCallEffect,
-  ToolRiskLevel,
-  UiControlRuntimeInfo,
-} from "../types.js";
+import type { AgentModelToolCall } from "@machdoch/model-runtime/types";
+import type { TaskActionOutputHandler, ToolCallEffect, ToolRiskLevel, UiControlRuntimeInfo } from "../types.js";
 import type { RuntimeConfig, ToolName } from "../runtime-contract.generated.js";
 import {
   createToolErrorResult,
@@ -30,12 +25,13 @@ import { compactTraceText, stringifyUnknown } from "./runtime-text.js";
 import { createDesktopUiToolDefinitions } from "./desktop-ui-tool-definitions.js";
 import { createShellNetworkToolDefinitions } from "./shell-network-tool-definitions.js";
 import { createWorkspaceAgentPresenceToolDefinition } from "./workspace-agent-presence-tool.js";
-import { validateToolArguments } from "./tool-argument-validation.js";
+import { validateToolArguments } from "@machdoch/model-runtime/tool-argument-validation";
 import { createWorkflowToolDefinitions } from "./workflow-tool-definitions.js";
 import { createPoseSceneToolDefinitions } from "./pose-scene-tool-definitions.js";
 import { createSpeechToolDefinitions } from "./speech-tool-definitions.js";
 import { createWorkspaceLibraryToolDefinitions } from "./workspace-library-tool-definitions.js";
 import { createManagedSkillToolDefinitions } from "./managed-skill-tool-definitions.js";
+import { isAgentToolGranted } from "./agent-tool-policy.js";
 
 const READ_ONLY_EFFECTS: ReadonlySet<ToolCallEffect> = new Set([
   "read",
@@ -118,11 +114,7 @@ export const createToolDefinitions = (
     ...createDesktopUiToolDefinitions(uiControl),
   ];
 
-  if (config.mode === "ask") {
-    return definitions.filter(isReadOnlyToolDefinition);
-  }
-
-  return definitions;
+  return definitions.filter((definition) => isAgentToolGranted(definition) && (config.mode !== "ask" || isReadOnlyToolDefinition(definition)));
 };
 
 export const executeToolCall = async (
@@ -140,7 +132,7 @@ export const executeToolCall = async (
   signal?.throwIfAborted();
   const toolDefinition = toolDefinitions.get(call.name);
 
-  if (!toolDefinition) {
+  if (!toolDefinition || !isAgentToolGranted(toolDefinition)) {
     return {
       result: createToolErrorResult(
         call.id,

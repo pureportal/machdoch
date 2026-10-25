@@ -305,7 +305,7 @@ export function RemoteComposer({
         }
         toolbarControls={
           <fieldset className="m-product-composer-toolbar" disabled={pending}>
-            <ContextWindowPicker provider={composer.provider} model={composer.model} value={composer.contextWindow} capabilities={composer} onChange={(value) => void onCommand({ kind: "set-session-context-window", sessionId: session.id, mode: value === undefined ? "inherit" : String(value) })} />
+            <ContextWindowPicker provider={composer.provider} model={composer.model} value={composer.contextWindow} inheritedValue={composer.workspaceContextWindow} capabilities={composer} onChange={(value) => void onCommand({ kind: "set-session-context-window", sessionId: session.id, mode: value ?? "inherit" })} />
             <OptionMenu
               disabled={pending}
               label="Reasoning mode"

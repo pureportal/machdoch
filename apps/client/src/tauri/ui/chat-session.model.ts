@@ -26,17 +26,8 @@ import {
   REASONING_MODES,
   VALID_TOOLS,
 } from "../../core/runtime-contract.generated.js";
-import type {
-  ConversationMemoryEntry,
-  ParallelAgentMode,
-  TaskExecutionTokenUsage,
-  TaskExecutionNarrative,
-  TaskExecutionResult,
-  TaskExecutionSection,
-  TaskExecutionStatus,
-  TaskExecutionTimeoutState,
-  TaskRunPreview,
-} from "../../core/types.js";
+import type { ConversationMemoryEntry, TaskExecutionTokenUsage, TaskExecutionNarrative, TaskExecutionResult, TaskExecutionSection, TaskExecutionStatus, TaskExecutionTimeoutState, TaskRunPreview } from "../../core/types.js";
+import type { ParallelAgentMode } from "@machdoch/model-runtime/types";
 import type {
   MediaAssetKind,
   MediaAssetReference,

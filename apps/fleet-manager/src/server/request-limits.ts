@@ -4,6 +4,7 @@ import {
 } from "@machdoch/fleet-protocol";
 import { maximumWorkspaceRequestBodyBytes } from "@machdoch/fleet-protocol/workspace";
 import type { FleetManagerConfig } from "./config";
+import { maximumTaskInferenceRequestBytes } from "@machdoch/fleet-protocol/cloud-inference";
 
 const maximumAuthenticationBodyBytes = 16 * 1024;
 const maximumSettingsSyncReportBodyBytes = 16 * 1024;
@@ -15,6 +16,8 @@ export function maximumRequestBodyBytes(
   pathname: string,
   config: FleetManagerConfig,
 ): number {
+  if (pathname === "/api/v1/runner/inference")
+    return maximumTaskInferenceRequestBytes;
   if (pathname === "/api/fleet/sessions")
     return maximumFleetSessionRequestBodyBytes;
   if (pathname === "/api/auth/login" || pathname === "/api/auth/account") {

@@ -62,7 +62,7 @@ describe("AppRail Fleet Manager navigation", () => {
     const onOpenFleetManager = vi.fn();
     renderRail("idle", onOpenFleetManager);
 
-    fireEvent.click(screen.getByRole("button", { name: "Fleet Manager" }));
+    fireEvent.click(screen.getByRole("button", { name: "machdoch.cloud" }));
 
     expect(onOpenFleetManager).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: "Remote Access" })).toBeNull();

@@ -1,4 +1,4 @@
-import type { AgentModelToolResult } from "../types.js";
+import type { AgentModelToolResult } from "@machdoch/model-runtime/types";
 
 export const MAX_WORKER_TOOL_CALLS = 24;
 export const MAX_WORKER_TEXT = 12_000;

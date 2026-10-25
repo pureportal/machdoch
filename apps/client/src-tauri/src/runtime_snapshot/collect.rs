@@ -12,26 +12,19 @@ use super::{
 };
 use super::{normalize_optional_string, AudioProviderAvailability};
 use crate::runtime_contract_generated::{
-    AGENT_CLI_PROVIDERS, DEFAULT_ANSWER_LANGUAGE, DEFAULT_MODEL_BY_PROVIDER,
-    DEFAULT_MODEL_PROVIDER, MAX_CONTEXT_WINDOW_TOKENS, MIN_CONTEXT_WINDOW_TOKENS,
-    PROVIDER_ENV_KEYS, REASONING_MODES, USER_AUDIO_AI_PROVIDERS, VALID_AUDIO_AI_PROVIDERS,
+    AGENT_CLI_PROVIDERS, CONTEXT_WINDOW_MODES, DEFAULT_ANSWER_LANGUAGE, DEFAULT_MODEL_BY_PROVIDER,
+    DEFAULT_MODEL_PROVIDER, PROVIDER_ENV_KEYS, REASONING_MODES, USER_AUDIO_AI_PROVIDERS, VALID_AUDIO_AI_PROVIDERS,
     VALID_MODEL_PROVIDERS, VALID_SPEECH_TO_TEXT_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS,
     WEB_SEARCH_ENV_KEYS,
 };
 
 fn normalize_context_window(value: &ContextWindow) -> Result<ContextWindow, String> {
     match value {
-        ContextWindow::Mode(mode) if matches!(mode.trim(), "default" | "long") => {
+        ContextWindow::Mode(mode) if CONTEXT_WINDOW_MODES.contains(&mode.trim()) => {
             Ok(ContextWindow::Mode(mode.trim().to_string()))
         }
-        ContextWindow::Tokens(tokens)
-            if (*tokens >= MIN_CONTEXT_WINDOW_TOKENS) && (*tokens <= MAX_CONTEXT_WINDOW_TOKENS) =>
-        {
-            Ok(ContextWindow::Tokens(*tokens))
-        }
         _ => Err(
-            "Context window must be default, long, or a positive token count up to 10000000."
-                .to_string(),
+            "Context window must be lowest, default, or highest.".to_string(),
         ),
     }
 }
@@ -39,21 +32,11 @@ fn normalize_context_window(value: &ContextWindow) -> Result<ContextWindow, Stri
 fn parse_context_window(value: &str) -> Result<ContextWindow, String> {
     let normalized = value.trim().to_ascii_lowercase();
 
-    if matches!(normalized.as_str(), "default" | "long") {
+    if CONTEXT_WINDOW_MODES.contains(&normalized.as_str()) {
         return Ok(ContextWindow::Mode(normalized));
     }
 
-    normalized
-        .parse::<u32>()
-        .ok()
-        .map(ContextWindow::Tokens)
-        .as_ref()
-        .map(normalize_context_window)
-        .transpose()?
-        .ok_or_else(|| {
-            "Context window must be default, long, or a positive token count up to 10000000."
-                .to_string()
-        })
+    Err("Context window must be lowest, default, or highest.".to_string())
 }
 
 fn parse_reasoning_execution_mode(value: &str) -> Result<ReasoningExecutionMode, String> {
@@ -403,7 +386,7 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
         .as_ref()
         .map(normalize_context_window)
         .transpose()?
-        .unwrap_or_else(|| ContextWindow::Mode("default".to_string()));
+        .unwrap_or_else(|| ContextWindow::Mode("highest".to_string()));
     let default_reasoning_mode = config
         .reasoning_mode
         .clone()

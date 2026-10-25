@@ -27,7 +27,7 @@ import type {
   McpOperationOptions,
   McpServerDiscovery,
 } from "../../mcp/types.js";
-import { sha256 } from "../digests.js";
+import { sha256 } from "@machdoch/model-runtime/digests";
 import {
   getMcpToolProjectionPrefix,
   isMcpToolEnabledForProjection,

@@ -1,4 +1,5 @@
 import { createManagedSkillCatalog } from "./managed-skill-delivery.js";
+import { isAgentToolGranted } from "./_helpers/agent-tool-policy.js";
 import {
   createAutopilotAuditSection,
   createAutopilotMonitorSystemPrompt,
@@ -77,23 +78,8 @@ import {
   stringifyUnknown,
 } from "./_helpers/runtime-text.js";
 import { randomUUID } from "node:crypto";
-import type {
-  AgentModelAdapter,
-  AgentModelStreamUsage,
-  AgentModelStreamEvent,
-  AgentModelTurn,
-  AgentModelToolCall,
-  AgentModelToolResult,
-  ResolvedTaskContext,
-  TaskActionOutputHandler,
-  TaskAutopilotDecision,
-  TaskAutopilotReport,
-  TaskExecutionProgress,
-  TaskExecutionProgressHandler,
-  TaskExecutionResult,
-  TaskExecutionSection,
-  TaskExecutionState,
-} from "./types.js";
+import type { AgentModelAdapter, AgentModelStreamUsage, AgentModelStreamEvent, AgentModelTurn, AgentModelToolCall, AgentModelToolResult } from "@machdoch/model-runtime/types";
+import type { ResolvedTaskContext, TaskActionOutputHandler, TaskAutopilotDecision, TaskAutopilotReport, TaskExecutionProgress, TaskExecutionProgressHandler, TaskExecutionResult, TaskExecutionSection, TaskExecutionState } from "./types.js";
 import type { RuntimeConfig } from "./runtime-contract.generated.js";
 
 const MODEL_STREAM_PROGRESS_INTERVAL_MS = 250;
@@ -1050,7 +1036,7 @@ const runExecutorCycle = async (
               : undefined,
           ),
           ...(additionalToolDefinitions ?? []),
-        ];
+        ].filter(isAgentToolGranted);
   const finalResponseTool = createFinalResponseTool(resultProtocol);
   const toolSpecs = [
     ...toolDefinitions.map((toolDefinition) => toolDefinition.spec),
@@ -2554,15 +2540,14 @@ export const maybeExecuteModelDrivenTask = async (
       });
       if (!result) return undefined;
       const parallelWorkerFailure = parallelTool?.hasWorkerFailure() ?? false;
+      const parallelCompletionBlocker = parallelTool?.getCompletionBlocker();
       return {
         ...finalizePoseSceneResult(result, preparedConversationContext.memory),
-        ...(parallelWorkerFailure && result.status === "executed"
+        ...(parallelCompletionBlocker && result.status === "executed"
           ? {
               status: "failed" as const,
-              summary:
-                "Parallel work failed. Review the worker results and workspace changes.",
-              reason:
-                "A parallel worker failed. Review the worker results and workspace changes before retrying.",
+              summary: parallelCompletionBlocker,
+              reason: parallelCompletionBlocker,
             }
           : {}),
         ...(parallelMode !== "disabled" ||
@@ -2608,20 +2593,19 @@ export const maybeExecuteModelDrivenTask = async (
       instructionReceipts,
     );
     const parallelWorkerFailure = parallelTool?.hasWorkerFailure() ?? false;
+    const parallelCompletionBlocker = parallelTool?.getCompletionBlocker();
     return {
       ...finalizePoseSceneResult(result, preparedConversationContext.memory),
-      ...(parallelWorkerFailure && result.status === "executed"
+      ...(parallelCompletionBlocker && result.status === "executed"
         ? {
             status: "failed" as const,
-            summary:
-              "Parallel work failed. Review the worker results and workspace changes.",
-            reason:
-              "A parallel worker failed. Review the worker results and workspace changes before retrying.",
+            summary: parallelCompletionBlocker,
+            reason: parallelCompletionBlocker,
             ...(result.response
               ? {
                   response: {
                     ...result.response,
-                    markdown: `${result.response.markdown}\n\nParallel work failed. Review the worker results and workspace changes.`,
+                    markdown: `${result.response.markdown}\n\n${parallelCompletionBlocker}`,
                   },
                 }
               : {}),

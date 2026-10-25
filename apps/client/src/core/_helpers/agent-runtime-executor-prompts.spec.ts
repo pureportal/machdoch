@@ -1,5 +1,6 @@
 /// <reference types="vitest/globals" />
-import type { AgentModelToolSpec, ResolvedTaskContext } from "../types.js";
+import type { AgentModelToolSpec } from "@machdoch/model-runtime/types";
+import type { ResolvedTaskContext } from "../types.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import {
   createExecutorSystemPrompt,

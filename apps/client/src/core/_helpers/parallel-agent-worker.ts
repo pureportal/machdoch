@@ -5,12 +5,8 @@ import { isAgentCliProvider } from "./agent-cli-providers.js";
 import { maybeExecuteExternalAgentProviderTask } from "./external-agent-provider.js";
 import { observeAgentModelCall } from "../model-usage.js";
 import { assertInstructionInvocationBudget } from "../instruction-system/index.js";
-import type {
-  AgentModelToolCall,
-  AgentModelToolResult,
-  AgentModelTurn,
-  TaskExecutionTimelineEvent,
-} from "../types.js";
+import type { AgentModelToolCall, AgentModelToolResult, AgentModelTurn } from "@machdoch/model-runtime/types";
+import type { TaskExecutionTimelineEvent } from "../types.js";
 import type {
   ParallelAgentSessionOptions,
   ValidatedWorker,

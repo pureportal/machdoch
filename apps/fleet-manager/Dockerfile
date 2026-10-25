@@ -1,4 +1,4 @@
-FROM node:22.13-bookworm-slim AS base
+FROM node:24.22.1-bookworm-slim AS base
 
 WORKDIR /workspace
 
@@ -17,6 +17,9 @@ COPY packages/media-studio/package.json packages/media-studio/package.json
 COPY packages/analytics/package.json packages/analytics/package.json
 COPY packages/speech/package.json packages/speech/package.json
 COPY packages/text-to-speech/package.json packages/text-to-speech/package.json
+COPY packages/model-runtime/package.json packages/model-runtime/package.json
+COPY packages/cloud-client/package.json packages/cloud-client/package.json
+COPY packages/recurrence/package.json packages/recurrence/package.json
 
 RUN pnpm install --frozen-lockfile
 
@@ -31,6 +34,9 @@ COPY packages/media-studio packages/media-studio
 COPY packages/analytics packages/analytics
 COPY packages/speech packages/speech
 COPY packages/text-to-speech packages/text-to-speech
+COPY packages/model-runtime packages/model-runtime
+COPY packages/cloud-client packages/cloud-client
+COPY packages/recurrence packages/recurrence
 COPY LICENSE NOTICE EULA.md THIRD_PARTY_NOTICES.md ./
 COPY legal legal
 COPY docs/licensing docs/licensing
@@ -50,10 +56,13 @@ COPY packages/media-studio/package.json packages/media-studio/package.json
 COPY packages/analytics/package.json packages/analytics/package.json
 COPY packages/speech/package.json packages/speech/package.json
 COPY packages/text-to-speech/package.json packages/text-to-speech/package.json
+COPY packages/model-runtime/package.json packages/model-runtime/package.json
+COPY packages/cloud-client/package.json packages/cloud-client/package.json
+COPY packages/recurrence/package.json packages/recurrence/package.json
 
 RUN pnpm install --prod --frozen-lockfile
 
-FROM node:22.13-bookworm-slim
+FROM node:24.22.1-bookworm-slim AS application
 
 ENV NODE_ENV=production
 
@@ -63,6 +72,12 @@ COPY --from=production-dependencies /workspace ./
 COPY --from=build --chown=node:node /workspace/apps/fleet-manager/.next apps/fleet-manager/.next
 COPY --from=build --chown=node:node /workspace/apps/fleet-manager/public apps/fleet-manager/public
 COPY --from=build --chown=node:node /workspace/apps/fleet-manager/src apps/fleet-manager/src
+COPY --from=build --chown=node:node /workspace/apps/fleet-manager/dist/cloud-model-worker.mjs apps/fleet-manager/dist/cloud-model-worker.mjs
+COPY --from=build --chown=node:node /workspace/apps/fleet-manager/dist/cloud-smtp-worker.mjs apps/fleet-manager/dist/cloud-smtp-worker.mjs
+COPY --from=build --chown=node:node /workspace/apps/fleet-manager/dist/cloud-oidc-worker.mjs apps/fleet-manager/dist/cloud-oidc-worker.mjs
+COPY --from=build --chown=node:node /workspace/apps/fleet-manager/dist/cloud-recurrence-worker.mjs apps/fleet-manager/dist/cloud-recurrence-worker.mjs
+COPY --from=build --chown=node:node /workspace/apps/fleet-manager/dist/cloud-workflows.cjs apps/fleet-manager/dist/cloud-workflows.cjs
+COPY --from=build --chown=node:node /workspace/apps/fleet-manager/scripts/cloud-workflows.ts apps/fleet-manager/scripts/cloud-workflows.ts
 COPY --from=build --chown=node:node /workspace/apps/fleet-manager/next.config.ts apps/fleet-manager/next.config.ts
 COPY --from=build --chown=node:node /workspace/apps/fleet-manager/tsconfig.json apps/fleet-manager/tsconfig.json
 COPY --from=build --chown=node:node /workspace/packages/client-ui/src packages/client-ui/src
@@ -72,6 +87,9 @@ COPY --from=build --chown=node:node /workspace/packages/media-studio/src package
 COPY --from=build --chown=node:node /workspace/packages/analytics/src packages/analytics/src
 COPY --from=build --chown=node:node /workspace/packages/speech/src packages/speech/src
 COPY --from=build --chown=node:node /workspace/packages/text-to-speech/src packages/text-to-speech/src
+COPY --from=build --chown=node:node /workspace/packages/model-runtime/src packages/model-runtime/src
+COPY --from=build --chown=node:node /workspace/packages/cloud-client/src packages/cloud-client/src
+COPY --from=build --chown=node:node /workspace/packages/recurrence/src packages/recurrence/src
 COPY --from=build /workspace/apps/fleet-manager/dist/legal legal-release
 
 RUN mkdir -p /config/data \
@@ -80,6 +98,11 @@ RUN mkdir -p /config/data \
 WORKDIR /workspace/apps/fleet-manager
 
 RUN test -f .next/BUILD_ID \
+    && test -f dist/cloud-model-worker.mjs \
+    && test -f dist/cloud-smtp-worker.mjs \
+    && test -f dist/cloud-oidc-worker.mjs \
+    && test -f dist/cloud-recurrence-worker.mjs \
+    && test -f dist/cloud-workflows.cjs \
     && test -f public/media-studio/index.html \
     && test -L node_modules/@machdoch/client-ui \
     && test -L node_modules/@machdoch/fleet-protocol \
@@ -87,6 +110,7 @@ RUN test -f .next/BUILD_ID \
     && test -L node_modules/@machdoch/product-ui \
     && test -L node_modules/@machdoch/speech \
     && test -L node_modules/@machdoch/text-to-speech \
+    && test -L node_modules/@machdoch/model-runtime \
     && node --import @oxc-node/core/register --input-type=module --eval "await import('@machdoch/fleet-protocol')"
 
 USER node
@@ -94,6 +118,13 @@ USER node
 EXPOSE 43188
 
 VOLUME ["/config/data"]
+
+FROM application AS cloud-workflows
+
+ENTRYPOINT ["node", "--enable-source-maps", "--import", "@oxc-node/core/register", "scripts/cloud-workflows.ts"]
+CMD []
+
+FROM application AS server
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["node", "-e", "fetch('http://127.0.0.1:43188/healthz').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]
 

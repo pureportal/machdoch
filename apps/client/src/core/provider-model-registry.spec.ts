@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  DEFAULT_MODEL_BY_PROVIDER,
-  findProviderModelMetadata,
-  getDefaultModelForProvider,
-  getProviderCatalogMetadata,
-  getProviderModelMetadata,
-  PROVIDER_MODEL_METADATA,
-  type ConfiguredModelProvider,
-} from "./provider-model-registry.js";
+import { DEFAULT_MODEL_BY_PROVIDER, getDefaultModelForProvider } from "./provider-model-defaults.js";
+import { findProviderModelMetadata, getProviderCatalogMetadata, getProviderModelMetadata, PROVIDER_MODEL_METADATA, type ConfiguredModelProvider } from "@machdoch/model-runtime/provider-model-registry";
 
 describe("provider model registry", () => {
   it("returns the contract default model for each configured provider", () => {

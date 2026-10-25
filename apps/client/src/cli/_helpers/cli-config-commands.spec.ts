@@ -398,13 +398,13 @@ describe("CLI configuration catalog", () => {
     await saveConfigSetting(
       workspaceRoot,
       "workspace.context-window",
-      "400000",
+      "highest",
     );
 
     const entries = await loadCliConfigEntries(workspaceRoot);
     expect(
       entries.find((entry) => entry.setting === "workspace.context-window"),
-    ).toMatchObject({ value: 400_000, source: "saved" });
+    ).toMatchObject({ value: "highest", source: "saved" });
 
     await clearConfigSetting(workspaceRoot, "workspace.context-window");
     const stored = JSON.parse(

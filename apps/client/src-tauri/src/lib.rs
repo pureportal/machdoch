@@ -2,6 +2,7 @@ mod agent_cli;
 mod app_update;
 mod atomic_file;
 mod cli_settings_bridge;
+mod cloud_workspaces;
 mod cooperative_file_lock;
 mod desktop_shell;
 mod desktop_task;
@@ -245,6 +246,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
+            cloud_workspaces::cloud_workspace_request,
             app_update::app_update_available,
             app_update::prepare_app_update,
             app_update::finish_app_update,

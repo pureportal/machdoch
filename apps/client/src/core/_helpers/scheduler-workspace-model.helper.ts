@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { getNextCronRunAfter } from "./parse-cron-expression.helper.js";
+import { getNextCronRunAfter, timezoneVersion } from "@machdoch/recurrence";
 import type {
   ScheduledJob,
   ScheduledJobProvenance,
@@ -174,6 +174,15 @@ export const fingerprint = (value: unknown): string =>
     .update(JSON.stringify(canonicalValue(value ?? null)))
     .digest("hex");
 
+export const schedulerTriggerFingerprint = (
+  trigger: TriggerDefinition,
+): string =>
+  fingerprint(
+    trigger.kind === "time" && trigger.schedule.type === "cron"
+      ? { definition: trigger, recurrenceEvaluator: 1, timezoneVersion }
+      : trigger,
+  );
+
 export const createCanonicalWorkspaceQueueKey = (
   workspaceRoot: string,
 ): string => {
@@ -248,7 +257,7 @@ export const splitState = (
       triggers: job.triggers.map((trigger) => ({
         ...selectFields(trigger, TRIGGER_RUNTIME_FIELDS),
         id: trigger.id,
-        definitionFingerprint: fingerprint(
+        definitionFingerprint: schedulerTriggerFingerprint(
           omitFields(trigger, TRIGGER_RUNTIME_FIELDS),
         ),
         updatedAt: trigger.updatedAt,

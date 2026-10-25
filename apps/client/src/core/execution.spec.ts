@@ -18,13 +18,8 @@ import { createInstructionResolutionFixture } from "./__test__/instruction-test-
 import { createInstructionDeliveryPlan } from "./instruction-system/index.ts";
 import type { AgentToolDefinition } from "./_helpers/agent-tools-shared.ts";
 import { mcpClientManager } from "./mcp/client.ts";
-import type {
-  AgentModelAdapter,
-  AgentModelToolCall,
-  AgentModelStartParams,
-  CustomizationDiscoveryResult,
-  TaskExecutionProgress,
-} from "./types.ts";
+import type { AgentModelAdapter, AgentModelToolCall, AgentModelStartParams } from "@machdoch/model-runtime/types";
+import type { CustomizationDiscoveryResult, TaskExecutionProgress } from "./types.ts";
 import type {
   ProviderAvailability,
   RunMode,

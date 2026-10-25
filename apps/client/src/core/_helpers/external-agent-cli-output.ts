@@ -1,5 +1,5 @@
-import type { AgentModelStreamUsage } from "../types.js";
-import { normalizeAnthropicUsage } from "./provider-adapters/stream-events.js";
+import type { AgentModelStreamUsage } from "@machdoch/model-runtime/types";
+import { normalizeAnthropicUsage } from "@machdoch/model-runtime/providers/stream-events";
 
 const MAX_JSON_LINE_CHARS = 2_000_000;
 const MAX_DIAGNOSTIC_LINES = 20;
@@ -324,6 +324,7 @@ export class CodexCliOutputDecoder
       this.modelCallCount += 1;
       this.usage = createCodexUsage(event.usage) ?? this.usage;
       if (!this.terminal) {
+        this.failureMessage = undefined;
         this.terminal = true;
         update.resultExitCode = 0;
       }
@@ -339,7 +340,7 @@ export class CodexCliOutputDecoder
         this.recordDiagnostic(message);
         this.failureMessage = message;
       }
-      if (!this.terminal) {
+      if (type === "turn.failed" && !this.terminal) {
         this.terminal = true;
         update.resultExitCode = 1;
       }

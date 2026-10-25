@@ -20,6 +20,7 @@ import {
   omitFields,
   selectFields,
   fingerprint,
+  schedulerTriggerFingerprint,
   splitState,
   isRecord,
   parseDefinitions,
@@ -296,7 +297,8 @@ export const readWorkspaceSchedulerStateUnlocked = async (
         (trigger): ScheduledJobTrigger => {
           const savedTrigger = triggerStates.get(trigger.id);
           const sameTrigger =
-            savedTrigger?.definitionFingerprint === fingerprint(trigger);
+            savedTrigger?.definitionFingerprint ===
+            schedulerTriggerFingerprint(trigger);
           const restored = {
             ...trigger,
             ...(sameTrigger && savedTrigger
@@ -378,7 +380,14 @@ export const readWorkspaceSchedulerStateUnlocked = async (
   if (
     definitions.jobs.some(
       (job) =>
-        runtimeJobs.get(job.id)?.definitionFingerprint !== fingerprint(job),
+        runtimeJobs.get(job.id)?.definitionFingerprint !== fingerprint(job) ||
+        job.triggers.some(
+          (trigger) =>
+            runtimeJobs
+              .get(job.id)
+              ?.triggers.find((saved) => saved.id === trigger.id)
+              ?.definitionFingerprint !== schedulerTriggerFingerprint(trigger),
+        ),
     )
   ) {
     state.updatedAt = timestamp;

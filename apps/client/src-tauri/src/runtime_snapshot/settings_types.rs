@@ -130,7 +130,6 @@ pub(super) struct WorkspaceConfigFile {
 #[serde(untagged)]
 pub enum ContextWindow {
     Mode(String),
-    Tokens(u32),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

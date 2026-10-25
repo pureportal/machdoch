@@ -14,7 +14,7 @@ import {
   mcpInitializationInstructionSnapshotDigest,
   renderMcpInitializationInstructionSections,
 } from "../mcp/initialization-instructions.js";
-import { digestJson } from "./digests.js";
+import { digestJson } from "@machdoch/model-runtime/digests";
 import { summarizeEnrollmentCoverage } from "./coverage-ledger.js";
 import type {
   EnrollmentCoverageEntry,

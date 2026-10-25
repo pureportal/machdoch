@@ -157,11 +157,17 @@ export function ContextPacksIcon(props: ComposerIconProps): ReactElement {
   );
 }
 
-export function ContextWindowIcon(props: ComposerIconProps): ReactElement {
+export function ContextWindowIcon({
+  mode = "workspace",
+  ...props
+}: ComposerIconProps & { mode?: "workspace" | "lowest" | "default" | "highest" }): ReactElement {
   return (
     <ComposerSvg {...props}>
       <path d="M7 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h3M17 3h3a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1h-3" />
-      <path d="M8 7h8M8 11h8M8 15h5" />
+      {mode === "workspace" && <path d="m7 11 5-4 5 4v6H7Zm3 6v-4h4v4" />}
+      {mode === "lowest" && <path d="m8 10 4 4 4-4M8 18h8" />}
+      {mode === "default" && <path d="M8 7h8M8 11h8M8 15h5" />}
+      {mode === "highest" && <path d="m8 14 4-4 4 4M8 6h8" />}
     </ComposerSvg>
   );
 }

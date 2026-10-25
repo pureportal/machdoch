@@ -61,7 +61,7 @@ import {
   resolveInternalTaskRuntimeConfig,
 } from "../internal-task-model.js";
 import { observeAgentModelCall } from "../model-usage.js";
-import type { AgentModelImageInput } from "../types.js";
+import type { AgentModelImageInput } from "@machdoch/model-runtime/types";
 import {
   getEnabledMcpServer,
   getUserMcpConfigPath,
@@ -90,7 +90,7 @@ import {
   formatMcpOAuthAuthorizationRequiredMessage,
 } from "./oauth-recovery.js";
 import { mcpRunCacheManager } from "./run-cache.js";
-import { validateToolArguments } from "../_helpers/tool-argument-validation.js";
+import { validateToolArguments } from "@machdoch/model-runtime/tool-argument-validation";
 import type {
   McpAuthConfig,
   McpDiscoveredPrompt,

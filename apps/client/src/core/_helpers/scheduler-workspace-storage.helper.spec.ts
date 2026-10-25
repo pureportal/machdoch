@@ -153,6 +153,48 @@ afterEach(async () => {
 });
 
 describe("migrateWorkspaceSchedulerStorage", () => {
+  it("recomputes a stale cron cache once while retaining private definitions and admitted runs", async () => {
+    const root = await createWorkspace();
+    const now = Date.parse("2026-10-25T00:45:00Z");
+    const scheduler = new DurableSmartScheduler({
+      statePath: getSchedulerStatePath(root),
+      clock: { now: () => now },
+    });
+    const job = await scheduler.upsertJob({
+      name: "Fold",
+      schedule: {
+        type: "cron",
+        expression: "30 2 * * *",
+        timezone: "Europe/Berlin",
+      },
+      target: { workspaceRoot: root, prompt: "Retain this private job" },
+    });
+    await scheduler.triggerJobNow(job.id, "queued-before-evaluator-change");
+    const definition = await readFile(getSchedulerDefinitionPath(root), "utf8");
+    const stored = await readJson(getSchedulerStatePath(root));
+    expect((stored.runs as unknown[]).length).toBeGreaterThan(0);
+    const jobs = stored.jobs as {
+      id: string;
+      nextRunAt: number;
+      triggers: { definitionFingerprint: string; nextRunAt: number }[];
+    }[];
+    const record = jobs.find((value) => value.id === job.id)!;
+    record.triggers[0]!.definitionFingerprint = "different-evaluator";
+    record.triggers[0]!.nextRunAt = Date.parse("2026-10-25T01:30:00Z");
+    record.nextRunAt = record.triggers[0]!.nextRunAt;
+    await writeFile(getSchedulerStatePath(root), JSON.stringify(stored));
+    const restored = await readWorkspaceSchedulerStateUnlocked(root, now);
+    expect(restored.state.jobs[0]!.nextRunAt).toBe(
+      Date.parse("2026-10-26T01:30:00Z"),
+    );
+    expect(await readFile(getSchedulerDefinitionPath(root), "utf8")).toBe(
+      definition,
+    );
+    expect(restored.state.runs).toEqual(stored.runs);
+    const committed = await readFile(getSchedulerStatePath(root), "utf8");
+    await readWorkspaceSchedulerStateUnlocked(root, now + 1000);
+    expect(await readFile(getSchedulerStatePath(root), "utf8")).toBe(committed);
+  });
   it("preserves definitions, claims, snapshots, trigger state, history and receipts exactly once", async () => {
     const root = await createWorkspace();
     const original = await seedCombinedState(root);
@@ -271,17 +313,31 @@ describe("migrateWorkspaceSchedulerStorage", () => {
     renameFailure.path = getSchedulerStatePath(root);
     renameFailure.skip = 1;
 
-    await expect(migrateWorkspaceSchedulerStorage(root)).rejects.toThrow("Injected scheduler write failure");
+    await expect(migrateWorkspaceSchedulerStorage(root)).rejects.toThrow(
+      "Injected scheduler write failure",
+    );
     const committed = await readFile(getSchedulerDefinitionPath(root), "utf8");
     const before = await stat(getSchedulerDefinitionPath(root));
-    expect(JSON.parse(committed).schema).toBe("machdoch.smartScheduler.definitions");
-    expect(await readJson(getSchedulerStatePath(root))).toHaveProperty("definitionUpdate");
+    expect(JSON.parse(committed).schema).toBe(
+      "machdoch.smartScheduler.definitions",
+    );
+    expect(await readJson(getSchedulerStatePath(root))).toHaveProperty(
+      "definitionUpdate",
+    );
 
     await migrateWorkspaceSchedulerStorage(root);
-    expect(await readSmartSchedulerState(getSchedulerStatePath(root))).toEqual(original);
-    expect(await readJson(getSchedulerStatePath(root))).not.toHaveProperty("definitionUpdate");
-    expect(await readFile(getSchedulerDefinitionPath(root), "utf8")).toBe(committed);
-    expect((await stat(getSchedulerDefinitionPath(root))).mtimeMs).toBe(before.mtimeMs);
+    expect(await readSmartSchedulerState(getSchedulerStatePath(root))).toEqual(
+      original,
+    );
+    expect(await readJson(getSchedulerStatePath(root))).not.toHaveProperty(
+      "definitionUpdate",
+    );
+    expect(await readFile(getSchedulerDefinitionPath(root), "utf8")).toBe(
+      committed,
+    );
+    expect((await stat(getSchedulerDefinitionPath(root))).mtimeMs).toBe(
+      before.mtimeMs,
+    );
   });
 
   it("rejects conflicting shared edits while retaining the pending migration", async () => {
@@ -390,7 +446,9 @@ describe("migrateWorkspaceSchedulerStorage", () => {
 
   it("rejects a runtime mutation based on definitions that changed after its read", async () => {
     const root = await createWorkspace();
-    const scheduler = new DurableSmartScheduler({ statePath: getSchedulerStatePath(root) });
+    const scheduler = new DurableSmartScheduler({
+      statePath: getSchedulerStatePath(root),
+    });
     await scheduler.upsertJob({
       triggers: [{ kind: "manual" }],
       target: { workspaceRoot: root, prompt: "Original task" },
@@ -400,14 +458,22 @@ describe("migrateWorkspaceSchedulerStorage", () => {
     await withSchedulerStateLock(statePath, async () => {
       const loaded = await readWorkspaceSchedulerStateUnlocked(root);
       const definitions = await readJson(getSchedulerDefinitionPath(root));
-      (definitions.jobs as Array<{ name: string }>)[0]!.name = "Concurrent edit";
+      (definitions.jobs as Array<{ name: string }>)[0]!.name =
+        "Concurrent edit";
       const edited = JSON.stringify(definitions);
       await writeFile(getSchedulerDefinitionPath(root), edited, "utf8");
       loaded.state.updatedAt += 1;
 
-      await expect(writeWorkspaceSchedulerStateUnlocked(root, loaded.state, loaded.definitionFingerprint))
-        .rejects.toThrow("changed during a mutation");
-      expect(await readFile(getSchedulerDefinitionPath(root), "utf8")).toBe(edited);
+      await expect(
+        writeWorkspaceSchedulerStateUnlocked(
+          root,
+          loaded.state,
+          loaded.definitionFingerprint,
+        ),
+      ).rejects.toThrow("changed during a mutation");
+      expect(await readFile(getSchedulerDefinitionPath(root), "utf8")).toBe(
+        edited,
+      );
       expect(await readFile(statePath, "utf8")).toBe(originalRuntime);
     });
   });
@@ -431,7 +497,10 @@ describe("migrateWorkspaceSchedulerStorage", () => {
     await migrateWorkspaceSchedulerStorage(root);
     const restored = await readSmartSchedulerState(getSchedulerStatePath(root));
     expect(restored.jobs.map((job) => job.provenance)).toEqual([
-      { kind: "workspace-prompt", definitionPath: ".machdoch/prompts/fixture.prompt.md" },
+      {
+        kind: "workspace-prompt",
+        definitionPath: ".machdoch/prompts/fixture.prompt.md",
+      },
       { kind: "ralph-watch", watchId: "fixture-watch" },
     ]);
     expect(restored.runs).toEqual(original.runs);

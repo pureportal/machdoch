@@ -1,10 +1,5 @@
 import { getEventListeners } from "node:events";
-import {
-  createProviderRequestSignal,
-  getProviderRequestRetryDelayMs,
-  withProviderRequest,
-  type ProviderRequestLogEntry,
-} from "./request.js";
+import { createProviderRequestSignal, getProviderRequestRetryDelayMs, withProviderRequest, type ProviderRequestLogEntry } from "@machdoch/model-runtime/providers/request";
 
 describe("createProviderRequestSignal", () => {
   it("cleans up the parent abort listener after each request", () => {

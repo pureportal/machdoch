@@ -14,7 +14,7 @@ import type {
   McpServerDiscovery,
 } from "../mcp/types.js";
 import { PROVIDER_CAPABILITY_REGISTRY } from "./capability-registry.js";
-import { digestJson } from "./digests.js";
+import { digestJson } from "@machdoch/model-runtime/digests";
 import {
   assertMachdochCliLaunch,
   resolveMachdochCliLaunch,

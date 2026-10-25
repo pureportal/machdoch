@@ -155,7 +155,7 @@ fn overrides(value: &Map<String, Value>) -> bool {
             .get("reasoning")
             .is_none_or(|value| super::valid_reasoning(value.as_str()))
           && value.get("contextWindow").is_none_or(|value| {
-              matches!(value.as_str(), Some("default" | "long")) || value.as_f64().is_some_and(|value| value.fract() == 0.0 && (1.0..=10_000_000.0).contains(&value))
+              matches!(value.as_str(), Some("lowest" | "default" | "highest"))
           })
         && value
             .get("promptEnhancementMode")
