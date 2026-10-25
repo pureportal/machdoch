@@ -1,3 +1,4 @@
+use machdoch_process::{SupervisedChild, SupervisedChildSpawnError};
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -15,10 +16,7 @@ use tauri::Manager as _;
 #[path = "ralph_live_owner.rs"]
 mod live_owner;
 
-use crate::{
-    child_process::{SupervisedChild, SupervisedChildSpawnError},
-    runtime_snapshot::resolve_workspace_root_path,
-};
+use crate::runtime_snapshot::resolve_workspace_root_path;
 
 use super::{
     diagnostics::{format_command_failure, format_timeout_duration},
@@ -930,8 +928,8 @@ mod tests {
         read_ralph_stdout_with_limit, reconcile_ralph_command_response, request_ralph_cli_stop,
         retained_ralph_cancel_path, stop_ralph_cli_after_wait_error, RALPH_CANCEL_PATH_ENV,
     };
-    use crate::child_process::{ChildCleanupKind, SupervisedChild};
     use crate::desktop_task::process::SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES;
+    use machdoch_process::{ChildCleanupKind, SupervisedChild};
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_RALPH_LIFECYCLE_TEST_MODE";
 

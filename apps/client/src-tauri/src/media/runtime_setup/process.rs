@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::child_process::SupervisedChild;
+use machdoch_process::SupervisedChild;
 
 use super::super::MediaResult;
 use super::{retain_diagnostic_context, MAX_DIAGNOSTIC_CHARS, OUTPUT_OMITTED};

@@ -29,7 +29,7 @@ use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 
 #[cfg(windows)]
-use crate::child_process::terminate_child_process_tree_by_id;
+use machdoch_process::terminate_child_process_tree_by_id;
 use crate::runtime_snapshot::resolve_workspace_root_path;
 
 const MAX_TERMINAL_SESSIONS: usize = 32;

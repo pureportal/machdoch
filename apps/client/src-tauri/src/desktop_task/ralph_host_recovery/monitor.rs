@@ -127,7 +127,7 @@ mod tests {
     };
 
     use super::super::{super::RalphCommandRequest, manifest::RecoveryIntent};
-    use crate::child_process::configure_child_process_group;
+    use machdoch_process::configure_child_process_group;
 
     struct MonitorFixture {
         directory: PathBuf,

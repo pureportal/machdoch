@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::child_process::SupervisedChild;
+use machdoch_process::SupervisedChild;
 
 use super::{
     database, model_worker::ResidentWorker, subject_cutout, worker_deadline::WorkerDeadline,

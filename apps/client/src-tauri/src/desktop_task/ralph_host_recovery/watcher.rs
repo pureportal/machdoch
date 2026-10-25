@@ -1,3 +1,4 @@
+use machdoch_process::configure_child_process_group;
 use std::{
     fs,
     path::Path,
@@ -9,10 +10,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use super::{manifest::RecoveryManifest, RECOVERY_FILE_ENV, RECOVERY_SESSION_ENV};
-use crate::{
-    atomic_file::{write_file_atomic, AtomicWriteOptions},
-    child_process::configure_child_process_group,
-};
+use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
 
 pub(crate) const WATCHER_ARGUMENT: &str = "--ralph-host-watcher";
 

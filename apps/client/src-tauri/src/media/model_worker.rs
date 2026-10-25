@@ -6,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::child_process::SupervisedChild;
+use machdoch_process::SupervisedChild;
 
 use super::{worker_deadline::WorkerDeadline, worker_output::WorkerProgress, MediaResult};
 

@@ -1,7 +1,7 @@
 use super::super::database;
 use super::*;
 #[cfg(target_os = "windows")]
-use crate::child_process::SupervisedChild;
+use machdoch_process::SupervisedChild;
 use rusqlite::params;
 use sha2::Digest as _;
 #[cfg(target_os = "windows")]

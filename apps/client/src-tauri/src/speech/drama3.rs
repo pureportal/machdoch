@@ -98,7 +98,7 @@ async fn generate(service: &Arc<SpeechService>, snapshot: &Value, segment: &Valu
     let mut command = command.into_std();
     let cancellation = cancel.clone();
     let worker = tauri::async_runtime::spawn_blocking(move || -> Result<std::process::ExitStatus, String> {
-        let mut child = crate::child_process::SupervisedChild::spawn_with_required_isolation(&mut command).map_err(|error| format!("The bundled Drama 3 engine could not start: {error}"))?;
+        let mut child = machdoch_process::SupervisedChild::spawn_with_required_isolation(&mut command).map_err(|error| format!("The bundled Drama 3 engine could not start: {error}"))?;
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1800);
         loop {
             if cancellation.is_cancelled() {

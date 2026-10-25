@@ -17,7 +17,7 @@ use zeroize::Zeroizing;
 
 #[cfg(any(machdoch_embedded_runtime, test))]
 use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
-use crate::child_process::SupervisedChild;
+use machdoch_process::SupervisedChild;
 #[cfg(any(machdoch_embedded_runtime, test))]
 use crate::cooperative_file_lock::with_cooperative_file_lock;
 
@@ -536,7 +536,7 @@ mod tests {
             test_child_command("hold"),
             Zeroizing::new(b"{}".to_vec()),
             Duration::from_millis(100),
-            crate::child_process::SupervisedChild::try_wait,
+            machdoch_process::SupervisedChild::try_wait,
         )
         .expect_err("hanging validator should time out");
 

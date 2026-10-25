@@ -1,3 +1,4 @@
+use machdoch_process::{SupervisedChild, SupervisedChildSpawnError};
 use std::{
     collections::HashSet,
     io,
@@ -11,10 +12,7 @@ use std::{
 use tauri::Manager as _;
 use tauri_plugin_store::StoreExt as _;
 
-use crate::{
-    child_process::{SupervisedChild, SupervisedChildSpawnError},
-    runtime_snapshot::{normalize_optional_string, resolve_workspace_root_path},
-};
+use crate::runtime_snapshot::{normalize_optional_string, resolve_workspace_root_path};
 
 use super::{
     diagnostics::{format_command_failure, format_timeout_duration},
@@ -503,9 +501,9 @@ mod tests {
         is_expected_cancelled_desktop_task_response, normalize_desktop_task_input,
         parse_desktop_task_response, stop_shared_cli_after_wait_error, write_cli_task,
     };
-    use crate::child_process::SupervisedChild;
     use crate::desktop_task::payload::write_conversation_context_file;
     use crate::desktop_task::process::{read_stdout, SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES};
+    use machdoch_process::SupervisedChild;
 
     const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_DESKTOP_TASK_WAIT_ERROR_TEST_CHILD_MODE";
 

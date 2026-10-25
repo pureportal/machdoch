@@ -7,7 +7,7 @@ use std::{
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
 use tauri::{AppHandle, Manager};
 
-use crate::child_process::{terminate_child_process_tree_by_id, SupervisedChild};
+use machdoch_process::{terminate_child_process_tree_by_id, SupervisedChild};
 
 use super::super::{provider_local_diffusers, runtime_setup};
 use super::{MediaResult, MediaRuntimePaths, RunnerStatus};

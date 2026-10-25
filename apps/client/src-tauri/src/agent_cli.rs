@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::child_process::SupervisedChild;
+use machdoch_process::SupervisedChild;
 
 pub(crate) const AGENT_CLI_OUTPUT_CAPTURE_LIMIT_BYTES: usize = 1024 * 1024;
 pub(crate) const AGENT_CLI_OUTPUT_TRUNCATED_MARKER: &str = "[output truncated after capture limit]";

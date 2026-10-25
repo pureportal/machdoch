@@ -3263,6 +3263,7 @@ dependencies = [
  "keyring",
  "libc",
  "machdoch-fleet-protocol",
+ "machdoch-process",
  "mdns-sd",
  "mime_guess",
  "network-interface",
@@ -3316,6 +3317,14 @@ dependencies = [
  "base64 0.22.1",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "machdoch-process"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "windows 0.61.3",
 ]
 
 [[package]]

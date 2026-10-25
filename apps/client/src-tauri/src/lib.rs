@@ -1,7 +1,6 @@
 mod agent_cli;
 mod app_update;
 mod atomic_file;
-mod child_process;
 mod cli_settings_bridge;
 mod cooperative_file_lock;
 mod desktop_shell;

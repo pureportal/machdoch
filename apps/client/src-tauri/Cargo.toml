@@ -17,6 +17,7 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2.12", features = ["test"] }
 
 [dependencies]
+machdoch-process = { path = "../../../packages/process-supervisor" }
 argon2 = { version = "0.5.3", default-features = false, features = ["alloc", "zeroize"] }
 base64 = "0.22"
 mime_guess = "2"

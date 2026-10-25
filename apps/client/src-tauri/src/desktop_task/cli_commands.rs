@@ -1,3 +1,4 @@
+use machdoch_process::{SupervisedChild, SupervisedChildSpawnError};
 use std::{
     fs::{self, OpenOptions},
     io,
@@ -17,10 +18,7 @@ use std::os::unix::process::CommandExt;
 
 use serde_json::Value;
 
-use crate::{
-    child_process::{SupervisedChild, SupervisedChildSpawnError},
-    runtime_snapshot::{get_user_config_directory, resolve_workspace_root_path},
-};
+use crate::runtime_snapshot::{get_user_config_directory, resolve_workspace_root_path};
 
 use super::{
     diagnostics::{format_command_failure, format_diagnostic_snippet, format_timeout_duration},
@@ -649,7 +647,11 @@ pub(super) fn execute_instruction_command(
     result
 }
 
-pub(super) fn execute_json_payload_command(workspace_root: &str, input: &Value, subcommand: &'static str) -> Result<Value, String> {
+pub(super) fn execute_json_payload_command(
+    workspace_root: &str,
+    input: &Value,
+    subcommand: &'static str,
+) -> Result<Value, String> {
     let contents = serde_json::to_string(input).map_err(|error| error.to_string())?;
     if contents.len() > 2 * 1024 * 1024 {
         return Err("Command request exceeds 2 MiB.".to_string());

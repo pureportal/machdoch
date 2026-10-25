@@ -8,7 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use crate::child_process::terminate_child_process_tree_by_id;
+use machdoch_process::terminate_child_process_tree_by_id;
 
 use super::{provider_local_diffusers, MediaResult, MediaRuntimePaths};
 

@@ -9,7 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::child_process::SupervisedChild;
+use machdoch_process::SupervisedChild;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
