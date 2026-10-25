@@ -1,4 +1,8 @@
 import { createServer, type Server } from "node:http";
+import {
+  validateOAuthCallback,
+  type McpOAuthCallbackExpectation,
+} from "./oauth-callback.js";
 
 const DEFAULT_OAUTH_CALLBACK_TIMEOUT_MS = 300_000;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "[::1]"]);
@@ -9,8 +13,7 @@ export interface McpOAuthLoopbackCallbackServer {
   close: () => Promise<void>;
 }
 
-interface McpOAuthLoopbackOptions {
-  expectedState?: string;
+interface McpOAuthLoopbackOptions extends McpOAuthCallbackExpectation {
   timeoutMs?: number;
 }
 
@@ -26,7 +29,9 @@ const normalizeListenHost = (hostname: string): string => {
   return hostname.toLowerCase() === "[::1]" ? "::1" : hostname;
 };
 
-const normalizeOptionalCallbackParam = (value: string | null): string | undefined => {
+const normalizeOptionalCallbackParam = (
+  value: string | null,
+): string | undefined => {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
 };
@@ -92,7 +97,9 @@ export const createMcpOAuthLoopbackCallbackServer = async (
   const port = Number.parseInt(expectedUrl.port || "80", 10);
 
   if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
-    throw new Error(`Invalid MCP OAuth callback port in redirect URL: ${redirectUrl}`);
+    throw new Error(
+      `Invalid MCP OAuth callback port in redirect URL: ${redirectUrl}`,
+    );
   }
 
   const listenHost = normalizeListenHost(expectedUrl.hostname);
@@ -148,6 +155,18 @@ export const createMcpOAuthLoopbackCallbackServer = async (
       return;
     }
 
+    try {
+      validateOAuthCallback(callbackUrl.searchParams, options);
+    } catch {
+      response.writeHead(400, { "content-type": "text/html; charset=utf-8" });
+      response.end(
+        renderCallbackPage(
+          "Authorization callback rejected",
+          "Return to the app and restart authorization.",
+        ),
+      );
+      return;
+    }
     const authorizationError = normalizeOptionalCallbackParam(
       callbackUrl.searchParams.get("error"),
     );

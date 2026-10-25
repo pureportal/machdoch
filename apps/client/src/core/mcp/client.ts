@@ -1,4 +1,6 @@
 import { mcpAppsEnabled } from "./app-settings.js";
+import { oauthCallbackExpectation, parseOAuthCallback } from "./oauth-callback.js";
+import { createCoordinatedOAuthFetch } from "./oauth-refresh.js";
 import { mcpAppMimeType, mcpAppToolUiSchema } from "@machdoch/fleet-protocol/mcp-apps";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import {
@@ -47,7 +49,7 @@ import type {
   SamplingMessageContentBlock,
 } from "@modelcontextprotocol/sdk/types.js";
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { collectMcpPages } from "./pagination.js";
 import { basename, isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -505,6 +507,8 @@ class ConfiguredMcpOAuthProvider implements OAuthClientProvider {
   private savedTokens: OAuthTokens | undefined;
   private savedCodeVerifier: string | undefined;
   private savedDiscoveryState: OAuthDiscoveryState | undefined;
+  private coordinatedAccessToken: string | undefined;
+  readonly fetch: typeof fetch;
   clientMetadataUrl?: string;
   lastSavedPath: string | undefined;
   lastAuthorizationUrl: string | undefined;
@@ -520,6 +524,19 @@ class ConfiguredMcpOAuthProvider implements OAuthClientProvider {
       "id" | "transport" | "title" | "description" | "preset"
     >,
   ) {
+    this.fetch = createCoordinatedOAuthFetch({
+      lockPath: `${getUserMcpConfigPath()}.oauth-${createHash("sha256").update(server.id).digest("hex").slice(0,24)}`,
+      tokenEndpoint: () => this.discoveryState()?.authorizationServerMetadata?.token_endpoint,
+      readTokens: async () => {
+        const current = (await loadMcpConfig(context.workspaceRoot)).servers.find((entry)=>entry.id===server.id);
+        if(current?.auth?.type!=="oauth" || current.transport.type==="stdio" || server.transport.type==="stdio" ||
+          resolveTemplateValue(current.transport.url,context)!==resolveTemplateValue(server.transport.url,context))
+          throw new Error("OAuth connection settings changed. Reconnect the MCP server.");
+        return new ConfiguredMcpOAuthProvider(current.auth,context,current).tokens();
+      },
+      saveTokens: (tokens) => this.saveTokens(tokens),
+      adoptTokens: (tokens) => {this.savedTokens=tokens;this.coordinatedAccessToken=tokens.access_token;},
+    });
     const clientMetadataUrl = this.auth.clientMetadataUrl
       ? resolveTemplateValue(this.auth.clientMetadataUrl, this.context)
       : undefined;
@@ -631,6 +648,7 @@ class ConfiguredMcpOAuthProvider implements OAuthClientProvider {
   }
 
   async saveTokens(tokens: OAuthTokens): Promise<void> {
+    if(this.coordinatedAccessToken===tokens.access_token) return;
     const refreshToken =
       tokens.refresh_token ??
       this.savedTokens?.refresh_token ??
@@ -811,7 +829,7 @@ const resolveAuthHeaders = (
 
 const createOAuthProvider = (
   context: McpConnectionContext,
-): OAuthClientProvider | undefined => {
+): ConfiguredMcpOAuthProvider | undefined => {
   return context.server.auth?.type === "oauth"
     ? new ConfiguredMcpOAuthProvider(
         context.server.auth,
@@ -872,7 +890,7 @@ const createTransport = (context: McpConnectionContext): Transport => {
     return new StreamableHTTPClientTransport(
       new URL(resolveTemplateValue(transport.url, context)),
       {
-        ...(authProvider ? { authProvider } : {}),
+        ...(authProvider ? { authProvider, fetch:authProvider.fetch } : {}),
         ...(Object.keys(headers).length > 0
           ? {
               requestInit: {
@@ -891,7 +909,7 @@ const createTransport = (context: McpConnectionContext): Transport => {
   return new SSEClientTransport(
     new URL(resolveTemplateValue(transport.url, context)),
     {
-      ...(authProvider ? { authProvider } : {}),
+      ...(authProvider ? { authProvider, fetch:authProvider.fetch } : {}),
       ...(Object.keys(headers).length > 0
         ? {
             requestInit: {
@@ -929,77 +947,6 @@ const getOAuthScope = (auth: McpOAuthAuthConfig): string | undefined => {
   return auth.scopes && auth.scopes.length > 0
     ? auth.scopes.join(" ")
     : undefined;
-};
-
-interface ParsedOAuthAuthorizationResponse {
-  code: string;
-  state?: string;
-}
-
-const parseOAuthAuthorizationResponse = (
-  authorizationResponse: string,
-): ParsedOAuthAuthorizationResponse => {
-  const value = authorizationResponse.trim();
-
-  if (!value) {
-    throw new Error("Expected an OAuth authorization code or callback URL.");
-  }
-
-  const parseParams = (
-    params: URLSearchParams,
-  ): ParsedOAuthAuthorizationResponse => {
-    const error = params.get("error");
-
-    if (error) {
-      const description = params.get("error_description");
-      throw new Error(
-        `MCP OAuth authorization failed: ${description ? `${error}: ${description}` : error}`,
-      );
-    }
-
-    const code = normalizeOptionalString(params.get("code") ?? undefined);
-
-    if (!code) {
-      throw new Error("OAuth callback URL does not contain a code parameter.");
-    }
-
-    const state = normalizeOptionalString(params.get("state") ?? undefined);
-
-    return {
-      code,
-      ...(state ? { state } : {}),
-    };
-  };
-
-  if (value.startsWith("?")) {
-    return parseParams(new URLSearchParams(value.slice(1)));
-  }
-
-  try {
-    return parseParams(new URL(value).searchParams);
-  } catch {
-    return { code: value };
-  }
-};
-
-const validateOAuthState = (
-  server: McpEffectiveServerConfig,
-  state: string | undefined,
-): boolean | undefined => {
-  const expectedState =
-    server.auth?.type === "oauth" ? server.auth.authorizationState : undefined;
-
-  if (!expectedState) {
-    return undefined;
-  }
-
-  if (state && state !== expectedState) {
-    throw new Error(
-      `MCP OAuth state mismatch for server \`${server.id}\`. Restart the authorization flow.`,
-    );
-  }
-
-  return state === expectedState;
 };
 
 const createOAuthFlowResult = (
@@ -2071,6 +2018,7 @@ export class McpClientManager {
     try {
       const result = await runOAuthFlow(provider, {
         serverUrl: getOAuthServerUrl(context),
+        fetchFn: provider.fetch,
         ...(scope ? { scope } : {}),
       });
 
@@ -2160,7 +2108,10 @@ export class McpClientManager {
     let authorizationFailure: unknown;
     let authorizationFailed = false;
     try {
+      const authorizedServer = await resolveOperationServer(workspaceRoot,serverId,operationOptions);
+      const expectation = authorizedServer?.auth?.type === "oauth" ? oauthCallbackExpectation(authorizedServer.auth) : {};
       callbackServer = await createMcpOAuthLoopbackCallbackServer(redirectUrl, {
+        ...expectation,
         ...(expectedState ? { expectedState } : {}),
         ...(callbackTimeoutMs !== undefined
           ? { timeoutMs: callbackTimeoutMs }
@@ -2238,8 +2189,8 @@ export class McpClientManager {
       );
     }
 
-    const parsed = parseOAuthAuthorizationResponse(authorizationResponse);
-    const stateVerified = validateOAuthState(server, parsed.state);
+    const parsed = parseOAuthCallback(authorizationResponse,oauthCallbackExpectation(server.auth));
+    const stateVerified = parsed.stateVerified;
     const env = await this.loadRuntimeEnvironmentImpl();
     const context: McpConnectionContext = { workspaceRoot, env, server };
     const provider = new ConfiguredMcpOAuthProvider(
@@ -2250,6 +2201,7 @@ export class McpClientManager {
     const scope = getOAuthScope(server.auth);
     const result = await runOAuthFlow(provider, {
       serverUrl: getOAuthServerUrl(context),
+      fetchFn: provider.fetch,
       authorizationCode: parsed.code,
       ...(scope ? { scope } : {}),
     });
