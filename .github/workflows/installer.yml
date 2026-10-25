@@ -90,6 +90,8 @@ jobs:
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup-init.sh
           sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain stable
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          install -d -m 700 /root/.cache/swc-native
+          echo "SWC_NATIVE_BINDING_CACHE=/root/.cache/swc-native" >> "$GITHUB_ENV"
 
       - uses: actions/checkout@v7
 
