@@ -6,6 +6,8 @@ autoInstallPeers: false
 allowBuilds:
   "@google/genai": false
   "@swc/core": true
+  koffi: false
+  node-pty: false
   protobufjs: false
 minimumReleaseAgeExclude:
   - openai@6.46.0
