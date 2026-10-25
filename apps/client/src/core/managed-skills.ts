@@ -1,7 +1,14 @@
 import { createHash } from "node:crypto";
 import { skillRequestSchema } from "@machdoch/fleet-protocol/skills";
-import { lstat, mkdir, readdir, rename, unlink } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import {
+  lstat,
+  mkdir,
+  readdir,
+  realpath,
+  rename,
+  unlink,
+} from "node:fs/promises";
+import { dirname, join, relative, resolve } from "node:path";
 import { getUserConfigPath } from "./env.js";
 import { parseMarkdownDocument } from "./frontmatter.js";
 import { readStableRegularFile } from "./_helpers/read-stable-regular-file.helper.js";
@@ -96,22 +103,47 @@ const ensureDirectory = async (
   path: string,
   create: boolean,
 ): Promise<boolean> => {
-  const parent = dirname(path);
-  if (parent !== path && !(await ensureDirectory(parent, create))) return false;
-  let metadata = await readMetadata(path);
-  if (!metadata && create) {
-    try {
-      await mkdir(path);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  const missing: string[] = [];
+  let current = resolve(path);
+  let metadata = await readMetadata(current);
+  while (!metadata) {
+    const parent = dirname(current);
+    if (parent === current) {
+      if (create)
+        throw new Error(
+          "Skill storage is unavailable. Reconnect its drive and retry.",
+        );
+      return false;
     }
-    metadata = await readMetadata(path);
+    missing.push(current);
+    current = parent;
+    metadata = await readMetadata(current);
   }
-  if (!metadata) return false;
-  if (metadata.isSymbolicLink() || !metadata.isDirectory()) {
+  if (
+    metadata.isSymbolicLink() ||
+    !metadata.isDirectory() ||
+    relative(current, await realpath(current)) !== ""
+  )
     throw new Error(
       "Skill directories must be real directories, without symbolic links.",
     );
+  if (!create) return missing.length === 0;
+  for (const directory of missing.reverse()) {
+    try {
+      await mkdir(directory, { mode: 0o700 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    metadata = await readMetadata(directory);
+    if (
+      !metadata ||
+      metadata.isSymbolicLink() ||
+      !metadata.isDirectory() ||
+      relative(directory, await realpath(directory)) !== ""
+    )
+      throw new Error(
+        "Skill directories must be real directories, without symbolic links.",
+      );
   }
   return true;
 };
