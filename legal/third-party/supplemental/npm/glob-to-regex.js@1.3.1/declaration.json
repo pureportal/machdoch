@@ -1,0 +1,8 @@
+{
+  "name": "glob-to-regex.js",
+  "version": "1.3.1",
+  "license": "Apache-2.0",
+  "source": "https://registry.npmjs.org/glob-to-regex.js/1.3.1",
+  "termsSource": "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/Apache-2.0.txt",
+  "terms": "Standard Apache-2.0 terms; retain upstream attribution in the original package manifest and source."
+}

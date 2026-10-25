@@ -1,0 +1,8 @@
+{
+  "name": "@jsonjoy.com/json-pointer",
+  "version": "1.0.2",
+  "license": "Apache-2.0",
+  "source": "https://registry.npmjs.org/%40jsonjoy.com%2Fjson-pointer/1.0.2",
+  "termsSource": "https://raw.githubusercontent.com/spdx/license-list-data/v3.27.0/text/Apache-2.0.txt",
+  "terms": "Standard Apache-2.0 terms; retain upstream attribution in the original package manifest and source."
+}
