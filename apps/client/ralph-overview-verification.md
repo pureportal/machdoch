@@ -38,6 +38,6 @@ Median storage loading improved by about 83%. These are synthetic local measurem
 
 ## Limits
 
-The full Tauri application and real provider executions were not launched. Browser checks use fixture state, while native calls and event delivery are covered through mocks. Embedded WebView, screen-reader behavior, remote Fleet Manager presentation, and network-mounted workspace timings were not verified.
+The full Tauri application and real provider executions were not launched. Browser checks use fixture state, while native calls and event delivery are covered through mocks. Embedded WebView, screen-reader behavior, remote machdoch.cloud presentation, and network-mounted workspace timings were not verified.
 
 The overview covers selected/recent workspaces and workspaces discovered through desktop activity. It does not scan arbitrary folders. External file and CLI changes can take the 15-second snapshot interval plus query time to appear. Very large histories still require reading their records, and CLI process startup remains part of real query latency. Global runs without recorded workspace context cannot be attributed to a workspace reliably. A resumed run whose flow identity has not loaded yet stays visible; opening its editor becomes available when that identity arrives.

@@ -6,9 +6,9 @@ The inspected code is a TypeScript/React/Next.js Fleet service with a custom Nod
 
 | Existing area | Evidence in this repository | Target treatment |
 | --- | --- | --- |
-| Fleet server and persistence | [server entry](../../apps/fleet-manager/src/server.ts), [database](../../apps/fleet-manager/src/server/database.ts), [initial schema](../../apps/fleet-manager/src/server/migrations/001-initial.sql) | Evolve the web application; replace single-owner/SQLite service persistence with the organization model in PostgreSQL. |
-| Outbound gateway and command correlation | [gateway](../../apps/fleet-manager/src/server/gateway.ts), [relay](../../apps/fleet-manager/src/server/instance-relay.ts), [protocol package](../../packages/fleet-protocol/src/index.ts) | Reuse transport and bounded flow control; add authenticated run/lease/event contracts. |
-| Durable placement | [Fleet sessions](../../apps/fleet-manager/src/server/fleet-sessions.ts), [route schema](../../apps/fleet-manager/src/server/migrations/005-fleet-session-routes.sql) | Preserve command identity and pinned placement; extend to a durable execution ledger. A session route alone is not a run scheduler. |
+| Fleet server and persistence | [server entry](../../apps/cloud/src/server.ts), [database](../../apps/cloud/src/server/database.ts), [initial schema](../../apps/cloud/src/server/cloud/fixtures/legacy.sql) | Evolve the web application; replace single-owner/SQLite service persistence with the organization model in PostgreSQL. |
+| Outbound gateway and command correlation | [gateway](../../apps/cloud/src/server/gateway.ts), [relay](../../apps/cloud/src/server/instance-relay.ts), [protocol package](../../packages/fleet-protocol/src/index.ts) | Reuse transport and bounded flow control; add authenticated run/lease/event contracts. |
+| Durable placement | [Fleet sessions](../../apps/cloud/src/server/fleet-sessions.ts), [route schema](../../apps/cloud/src/server/migrations/remote-schema.sql) | Preserve command identity and pinned placement; extend to a durable execution ledger. A session route alone is not a run scheduler. |
 | Local scheduling and events | [scheduler](../../apps/client/src/core/scheduler.ts), [event matching](../../apps/client/src/core/_helpers/scheduler-event-trigger-matching.helper.ts), [RALPH watches](../../apps/client/src/core/ralph-watches.ts), [shared scheduler contract](../../packages/fleet-protocol/src/scheduler-contract.ts) | Reuse authoring, tested recurrence/condition concepts and step execution; cloud ownership/receipts must follow AU-01–AU-09. See the [source audit](integration-audit.md). |
 | Shared UI | [product UI package](../../packages/product-ui/package.json), [client UI package](../../packages/client-ui/package.json) | Keep canonical reusable product components; add domain-specific cloud screens. |
 | Desktop remote commands | [Fleet control](../../apps/client/src-tauri/src/fleet_control.rs) and its modules | Preserve native implementations and workspace checks; enforce per-user delegated rights at the gateway and device. |
@@ -135,7 +135,7 @@ Make the existing Machdoch execution runtime usable without the desktop shell. E
 
 Suggested ownership:
 
-- Existing `apps/fleet-manager` evolves into the cloud application; perform a coherent product/package rename during implementation, with no duplicate Fleet server left running.
+- Existing `apps/cloud` evolves into the cloud application; perform a coherent product/package rename during implementation, with no duplicate Fleet server left running.
 - A shared agent-runtime package contains the canonical execution machinery now under client core.
 - A shared cloud-contract package owns issue/run/lease/handoff contracts; the existing Fleet protocol evolves to carry remote device operations and the required new messages.
 - A supervised cloud-worker application hosts that runtime inside execution environments.

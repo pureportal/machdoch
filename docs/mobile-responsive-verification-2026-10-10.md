@@ -20,7 +20,7 @@ This iteration passed 20 media transport, picker, and import dialog tests and si
 
 The test used Chromium with mobile emulation and a simulated enrolled native device. Keyboard checks overrode VisualViewport height and offset; picker cancellation dispatched a browser `cancel` event. Physical Android/iOS keyboards, their native file pickers, and live desktop attachment and media storage remain unverified.
 
-Run the browser checks after building both applications, from `apps/fleet-manager`:
+Run the browser checks after building both applications, from `apps/cloud`:
 
 ```sh
 node --import @oxc-node/core/register scripts/verify-mobile.mjs <image-file-paths>

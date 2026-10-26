@@ -4,7 +4,7 @@ Research date: **22 October 2026**. Status: proposed target specification; no pr
 
 Current implementation and runtime checks are recorded separately in [implementation evidence](implementation.md). The specification below remains the complete release target.
 
-Build machdoch.cloud as a self-hosted product development and agent execution suite: plan work, delegate it to Machdoch, execute it in cloud sandboxes or linked clients, review the evidence and changes, and follow delivery. Preserve Fleet Manager's remote access as a first-class part of the suite.
+Build machdoch.cloud as a self-hosted product development and agent execution suite: plan work, delegate it to Machdoch, execute it in cloud sandboxes or linked clients, review the evidence and changes, and follow delivery. Preserve machdoch.cloud's remote access as a first-class part of the suite.
 
 The distinguishing capability should be **one accountable workflow across planning, private infrastructure, personal clients, cloud execution, and review**. A ticket with an agent button is insufficient. The product must manage the entire lifecycle, including uncertainty, interrupted execution, review capacity, failed integrations, and recovery.
 

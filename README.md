@@ -109,7 +109,7 @@ Machdoch can also:
 - **Connect more tools.** Add Model Context Protocol (MCP) servers in **Settings > MCP servers**. Review an integration before giving it access to your data or credentials.
 - **Reuse context.** Keep workspace or global memory, instruction files, and context packs for recurring work.
 - **Use Quick Chat and voice.** Open the small desktop assistant with <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> by default. Set up speech input and spoken replies in **Settings > Voice**.
-- **Reach other computers.** Connect hosts to a self-hosted **Fleet Manager** for remote access. See the [Fleet Manager guide](apps/fleet-manager/README.md) for setup.
+- **Reach other computers.** Connect hosts to a self-hosted **machdoch.cloud** for remote access. See the [machdoch.cloud guide](apps/cloud/README.md) for setup.
 - **Shut down after work finishes on Windows.** Enable the power button in the title bar. Shutdown waits for work across all chats and windows, queued messages, automatic retries, and media jobs, then forces other applications to close. Select the button again to cancel.
 
 ![Media Studio showing two generated image variations](./apps/landing/public/images/app-media.webp)

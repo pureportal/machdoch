@@ -5,10 +5,10 @@ Swetrix runs at https://swetrix.pureportal.io. The integrations use its public c
 | Application                             | Private project | Consent control                                     |
 | --------------------------------------- | --------------- | --------------------------------------------------- |
 | Landing page                            | `kUVZeJbmLZnJ`  | Footer → Analytics                                  |
-| Fleet manager and embedded device tools | `CPs0D0S7QOfV`  | Privacy; also collapsed below sign-in               |
+| machdoch.cloud and embedded device tools | `CPs0D0S7QOfV`  | Privacy; also collapsed below sign-in               |
 | Desktop and CLI                         | `6UblQ7EkvVkW`  | Settings → Privacy; explicit CLI environment opt-in |
 
-Consent is separate for each application, remembered for six months, and tied to notice revision `machdoch-analytics-2026-10-10`. The fleet manager and its same-origin embedded tools share their choice. Withdrawal aborts requests, disconnects performance and exposure observers, removes event listeners, and prevents delayed operation results from being reported. Do Not Track and Global Privacy Control disable browser analytics. The integration's only browser storage is the consent choice, not an analytics identifier. No analytics cookie, offline queue, session replay, identity API, or DOM autocapture is used.
+Consent is separate for each application, remembered for six months, and tied to notice revision `machdoch-analytics-2026-10-10`. The machdoch.cloud and its same-origin embedded tools share their choice. Withdrawal aborts requests, disconnects performance and exposure observers, removes event listeners, and prevents delayed operation results from being reported. Do Not Track and Global Privacy Control disable browser analytics. The integration's only browser storage is the consent choice, not an analytics identifier. No analytics cookie, offline queue, session replay, identity API, or DOM autocapture is used.
 
 ## Coverage
 
@@ -69,7 +69,7 @@ GDPR Articles 5, 6, 7, 13, and 25 require a specified purpose, lawful basis, inf
 
 Two deployment requirements remain blocked:
 
-1. The linked policy currently describes `pureportal.io`, not the Machdoch landing page, fleet manager, desktop, and CLI. Publish the Machdoch scope, actual processors, data categories, retention, withdrawal method, and rights in that policy before production use. The repository has no access to the policy website. See `analytics-privacy-notice.md` for the publication draft and required unresolved retention detail.
+1. The linked policy currently describes `pureportal.io`, not the Machdoch landing page, machdoch.cloud, desktop, and CLI. Publish the Machdoch scope, actual processors, data categories, retention, withdrawal method, and rights in that policy before production use. The repository has no access to the policy website. See `analytics-privacy-notice.md` for the publication draft and required unresolved retention detail.
 2. Automatic retention is not enforced. The supplied retention command deletes data older than 90 days, and systemd unit/timer definitions are included, but the installed Swetrix partial-deletion API returns HTTP 500, including for empty historical ranges. Repair that endpoint or implement and verify a ClickHouse TTL covering analytics, errors, profiles/session data, auxiliary records, backups, and logs. Do not publish a promise of 90-day retention until it actually runs. Do not enable the supplied timer while deletion is broken.
 
 Keep the production integration opt-in, verify the published notice and retention first, and document the consent and processing arrangements. The management API provides no access to publish the company policy or repair the Swetrix host. Cookie-free operation and passing technical tests do not by themselves establish GDPR compliance.

@@ -47,7 +47,7 @@ Subsequent changes hide the native Explorer action in the browser and register t
 
 Screenshots: [desktop editor](../.tmp/fleet-verification/1791204857435/ralph-desktop.png), [mobile editor](../.tmp/fleet-verification/1791204857435/ralph-mobile.png), [mobile inspector](../.tmp/fleet-verification/1791204857435/ralph-mobile-edit.png). Artifacts are ignored by Git and use isolated test workspaces. Utility-only RALPH flows were used; no paid model or generated-media result is counted as verified.
 
-The reusable harness is [verify-ralph.mjs](../apps/fleet-manager/scripts/verify-ralph.mjs), called by [verify-live.mjs](../apps/fleet-manager/scripts/verify-live.mjs). Set `FLEET_VERIFY_CLIENT_BUNDLE=1` after building the CLI. `FLEET_VERIFY_RALPH_ONLY=1` selects enrollment and RALPH checks without the broader settings/Copilot scenario.
+The reusable harness is [verify-ralph.mjs](../apps/cloud/scripts/verify-ralph.mjs), called by [verify-live.mjs](../apps/cloud/scripts/verify-live.mjs). Set `FLEET_VERIFY_CLIENT_BUNDLE=1` after building the CLI. `FLEET_VERIFY_RALPH_ONLY=1` selects enrollment and RALPH checks without the broader settings/Copilot scenario.
 
 ## Verification
 

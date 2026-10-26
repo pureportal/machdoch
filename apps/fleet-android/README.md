@@ -1,6 +1,6 @@
 # Fleet Android
 
-The Android controller opens the existing Fleet Manager interface, including the shared Chat, RALPH, and Media Studio views. It connects to a self-hosted manager over HTTPS and uses its normal sign-in.
+The Android controller opens the existing machdoch.cloud interface, including the shared Chat, RALPH, and Media Studio views. It connects to a self-hosted manager over HTTPS and uses its normal sign-in.
 
 ## Build
 
@@ -29,4 +29,4 @@ Changing the manager closes the device view and clears this app's sign-in and we
 
 Native unit tests check HTTPS origin validation and download origin restrictions. Node tests exercise binary streaming, cancellation, network failure, unsafe links, and the size limit. Android lint, debug builds, and optimized release builds run through Gradle.
 
-Phone testing and a signed release are still required before distribution. See the [fleet verification report](../../docs/fleet-manager-verification-2026-10-05.md) for the broader outcome and remaining gaps.
+Phone testing and a signed release are still required before distribution. See the [remote access verification report](../../docs/fleet-manager-verification-2026-10-05.md) for the broader outcome and remaining gaps.
