@@ -787,6 +787,7 @@ export const useChatSessionController = (
     showPreview,
     closePreview: handleCloseFilePreview,
     openExternally: handleOpenFilePreviewExternally,
+    markdownContext: filePreviewMarkdownContext,
   } = useFilePreview();
   const [runningTaskMessageAction, setRunningTaskMessageAction] =
     useState<RunningTaskMessageAction>(DEFAULT_RUNNING_TASK_MESSAGE_ACTION);
@@ -3288,39 +3289,44 @@ export const useChatSessionController = (
     });
   };
 
-  const showFilePreview = (target: FilePreviewTarget): void => {
+  const showFilePreview = (
+    target: FilePreviewTarget,
+    external?: boolean,
+  ): void => {
     setAttachmentImagePreview(null);
-    showPreview(target);
+    showPreview(target, external);
   };
 
-  const handleOpenLocalFile = (path: string, line?: number): void => {
-    showFilePreview({ kind: "local", path, line });
+  const handleOpenLocalFile = (
+    path: string,
+    line?: number,
+    external?: boolean,
+  ): void => {
+    showFilePreview({ kind: "local", path, line }, external);
   };
 
   const handleOpenWorkspaceFile = (
     relativePath: string,
     line?: number,
     workspaceRoot = state.activeSession.workspace,
+    external?: boolean,
   ): void => {
-    showFilePreview({
-      kind: "workspace",
-      workspaceRoot,
-      relativePath,
-      line,
-    });
+    showFilePreview(
+      { kind: "workspace", workspaceRoot, relativePath, line },
+      external,
+    );
   };
 
   const handleOpenQuickTaskWorkspaceFile = (
     relativePath: string,
     line?: number,
+    workspaceRoot = quickTaskSession?.workspace ?? state.activeSession.workspace,
+    external?: boolean,
   ): void => {
-    showFilePreview({
-      kind: "workspace",
-      workspaceRoot:
-        quickTaskSession?.workspace ?? state.activeSession.workspace,
-      relativePath,
-      line,
-    });
+    showFilePreview(
+      { kind: "workspace", workspaceRoot, relativePath, line },
+      external,
+    );
   };
 
   const handleOpenAttachment = (
@@ -8774,6 +8780,7 @@ export const useChatSessionController = (
     },
     filePreview: {
       preview: filePreview,
+      markdownContext: filePreviewMarkdownContext,
       onOpenChange: (open: boolean) => {
         if (!open) {
           handleCloseFilePreview();

@@ -35,11 +35,13 @@ export interface LocalMarkdownLinkTarget {
 export type LocalMarkdownLinkOpenHandler = (
   path: string,
   line?: number,
+  external?: boolean,
 ) => void;
 
 export type WorkspaceMarkdownLinkOpenHandler = (
   relativePath: string,
   line?: number,
+  external?: boolean,
 ) => void;
 
 interface SourceLocation {
@@ -208,6 +210,52 @@ const isAbsoluteLocalPath = (path: string): boolean =>
   UNC_PATH_PATTERN.test(path) ||
   path.startsWith("/");
 
+const resolveMarkdownTarget = (
+  href: string,
+  sourcePath?: string,
+): SourceLocation | null => {
+  const target = normalizeHrefTarget(href);
+  if (/\p{Cc}/u.test(target.path)) {
+    return null;
+  }
+  if (!sourcePath || isAbsoluteLocalPath(target.path)) {
+    return target;
+  }
+  if (!target.path || URL_PROTOCOL_PATTERN.test(target.path)) {
+    return null;
+  }
+
+  const source = normalizeLocalPath(sourcePath);
+  const directory = source.slice(0, source.lastIndexOf("/") + 1);
+  const segments = directory.split("/").filter(Boolean);
+  const rootDepth = UNC_PATH_PATTERN.test(source)
+    ? 2
+    : WINDOWS_DRIVE_PATH_PATTERN.test(source)
+      ? 1
+      : 0;
+
+  for (const segment of target.path.split("/")) {
+    if (!segment || segment === ".") {
+      continue;
+    }
+    if (segment === "..") {
+      if (segments.length <= rootDepth) {
+        return null;
+      }
+      segments.pop();
+    } else {
+      segments.push(segment);
+    }
+  }
+
+  const prefix = source.startsWith("//")
+    ? "//"
+    : source.startsWith("/")
+      ? "/"
+      : "";
+  return { ...target, path: prefix + segments.join("/") };
+};
+
 const hasUnsafeWorkspacePathSegment = (path: string): boolean =>
   path.split("/").some((segment) => segment === "." || segment === "..");
 
@@ -294,6 +342,7 @@ export const isLocalMarkdownLinkHref = (href: string | undefined): boolean => {
 export const getWorkspaceMarkdownLinkTarget = (
   href: string | undefined,
   workspaceRoot: string | null | undefined,
+  sourcePath?: string,
 ): WorkspaceMarkdownLinkTarget | null => {
   const normalizedHref = href?.trim();
 
@@ -301,7 +350,11 @@ export const getWorkspaceMarkdownLinkTarget = (
     return null;
   }
 
-  const { path, line, column } = normalizeHrefTarget(normalizedHref);
+  const target = resolveMarkdownTarget(normalizedHref, sourcePath);
+  if (!target) {
+    return null;
+  }
+  const { path, line, column } = target;
   const sourceLocation = {
     ...(line ? { line } : {}),
     ...(column ? { column } : {}),
@@ -334,6 +387,7 @@ export const getWorkspaceMarkdownLinkTarget = (
 
 export const getLocalMarkdownLinkTarget = (
   href: string | undefined,
+  sourcePath?: string,
 ): LocalMarkdownLinkTarget | null => {
   const normalizedHref = href?.trim();
 
@@ -341,9 +395,10 @@ export const getLocalMarkdownLinkTarget = (
     return null;
   }
 
-  const target = normalizeHrefTarget(normalizedHref);
+  const target = resolveMarkdownTarget(normalizedHref, sourcePath);
 
   if (
+    !target ||
     !isAbsoluteLocalPath(target.path) ||
     hasUnsafeWorkspacePathSegment(target.path) ||
     /\p{Cc}/u.test(target.path)
@@ -357,8 +412,9 @@ export const getLocalMarkdownLinkTarget = (
 export const openWorkspaceMarkdownLinkTarget = (
   target: WorkspaceMarkdownLinkTarget,
   onOpen: WorkspaceMarkdownLinkOpenHandler,
+  external?: boolean,
 ): void => {
-  onOpen(target.relativePath, target.line);
+  onOpen(target.relativePath, target.line, external);
 };
 
 const isStrongTextPathCandidate = (href: string): boolean => {

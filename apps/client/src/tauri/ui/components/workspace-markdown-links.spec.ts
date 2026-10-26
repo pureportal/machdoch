@@ -14,6 +14,22 @@ const WINDOWS_SOURCE_PATH =
 describe("getLocalMarkdownLinkTarget", () => {
   it.each([
     [
+      "C:/Project/docs/guide.md",
+      "../images/My%20chart.png",
+      "C:/Project/images/My chart.png",
+    ],
+    ["/tmp/docs/guide.md", "./next.md#L8", "/tmp/docs/next.md"],
+    [
+      "//server/share/docs/guide.md",
+      "../chart.png",
+      "//server/share/chart.png",
+    ],
+  ])("resolves document links from %s", (source, href, path) => {
+    expect(getLocalMarkdownLinkTarget(href, source)?.path).toBe(path);
+  });
+
+  it.each([
+    [
       "C:/Users/ehrha/AppData/Local/Temp/machdoch-goal-ui-review/final-composer-desktop.png",
       "C:/Users/ehrha/AppData/Local/Temp/machdoch-goal-ui-review/final-composer-desktop.png",
     ],
@@ -59,6 +75,50 @@ describe("getLocalMarkdownLinkTarget", () => {
 });
 
 describe("getWorkspaceMarkdownLinkTarget", () => {
+  it.each([
+    ["next.md", "docs/guides/next.md"],
+    ["./images/chart.png", "docs/guides/images/chart.png"],
+    ["../images/My%20chart.png", "docs/images/My chart.png"],
+    ["../../README.md", "README.md"],
+    ["images/../next.md", "docs/guides/next.md"],
+    ["..\\images\\chart.png", "docs/images/chart.png"],
+  ])("resolves %s relative to the Markdown document", (href, relativePath) => {
+    expect(
+      getWorkspaceMarkdownLinkTarget(
+        href,
+        WINDOWS_WORKSPACE,
+        "docs/guides/start.md",
+      ),
+    ).toEqual({ relativePath });
+  });
+
+  it("preserves line numbers and rejects paths escaping the workspace", () => {
+    expect(
+      getWorkspaceMarkdownLinkTarget(
+        "../next.md#L12",
+        WINDOWS_WORKSPACE,
+        "docs/guides/start.md",
+      ),
+    ).toEqual({ relativePath: "docs/next.md", line: 12 });
+    for (const href of [
+      "../../../outside.md",
+      "../../%2e%2e/outside.md",
+      "#section",
+      "?view=1",
+      "https://example.com/doc.md",
+      "javascript:alert(1)",
+      "bad%00.png",
+    ]) {
+      expect(
+        getWorkspaceMarkdownLinkTarget(
+          href,
+          WINDOWS_WORKSPACE,
+          "docs/guides/start.md",
+        ),
+      ).toBeNull();
+    }
+  });
+
   it("resolves a Windows workspace path and preserves its trailing line", () => {
     expect(
       getWorkspaceMarkdownLinkTarget(
@@ -214,6 +274,7 @@ describe("openWorkspaceMarkdownLinkTarget", () => {
     expect(onOpen).toHaveBeenCalledWith(
       "src/common/helpers/get-branch-label.ts",
       13,
+      undefined,
     );
   });
 
@@ -227,6 +288,10 @@ describe("openWorkspaceMarkdownLinkTarget", () => {
       onOpen,
     );
 
-    expect(onOpen).toHaveBeenCalledWith("src/branch.dto.ts", undefined);
+    expect(onOpen).toHaveBeenCalledWith(
+      "src/branch.dto.ts",
+      undefined,
+      undefined,
+    );
   });
 });

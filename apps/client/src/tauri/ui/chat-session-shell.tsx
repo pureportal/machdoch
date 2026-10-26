@@ -1288,6 +1288,7 @@ export const ChatSession = (): JSX.Element => {
         >
           <FilePreviewDialog
             preview={controller.filePreview.preview}
+            markdownContext={controller.filePreview.markdownContext}
             onOpenChange={controller.filePreview.onOpenChange}
             onOpenExternal={controller.filePreview.onOpenExternal}
           />

@@ -167,6 +167,48 @@ afterEach(() => {
 });
 
 describe("shared remote message interactions", () => {
+  it.each([{ ctrlKey: true }, { metaKey: true }])(
+    "opens modified file links externally with %j",
+    async (modifiers) => {
+      invoke.mockResolvedValue({
+        dataBase64: btoa("image"),
+        mediaType: "image/png",
+      });
+      const externalWindow = {
+        opener: window,
+        location: { href: "" },
+        close: vi.fn(),
+      };
+      const openWindow = vi
+        .spyOn(window, "open")
+        .mockReturnValue(externalWindow as unknown as Window);
+      try {
+        render(
+          <RemoteConversationHost
+            {...props}
+            messages={[{ ...message, content: "[Chart](images/chart.png)" }]}
+          />,
+        );
+        fireEvent.click(
+          screen.getByRole("button", { name: "Chart" }),
+          modifiers,
+        );
+        await waitFor(() =>
+          expect(externalWindow.location.href).toBe("blob:preview"),
+        );
+        expect(invoke).toHaveBeenCalledWith("read_context_attachment_preview", {
+          sessionId: session.id,
+          messageId: message.id,
+          path: "C:/Project/images/chart.png",
+        });
+        expect(externalWindow.opener).toBeNull();
+        expect(screen.queryByRole("dialog", { name: "chart.png" })).toBeNull();
+      } finally {
+        openWindow.mockRestore();
+      }
+    },
+  );
+
   it("opens a historical file in its recorded workspace after the active workspace changes", async () => {
     invoke.mockResolvedValue({
       dataBase64: btoa("Historical file"),

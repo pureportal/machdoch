@@ -1,8 +1,18 @@
 // @vitest-environment jsdom
-import { act, cleanup, renderHook } from "@testing-library/react";
+import { createElement, useEffect } from "react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useFilePreview } from "./use-file-preview";
 import type { FilePreviewTarget } from "./file-preview-runtime";
+import { FilePreviewDialog } from "@machdoch/client-ui/file-preview/dialog";
 
 const runtime = vi.hoisted(() => ({
   prepareFilePreview: vi.fn(),
@@ -31,10 +41,143 @@ beforeEach(() => {
     lossy: false,
   });
   runtime.resolveLocalFilePreviewSource.mockResolvedValue("asset://logo.png");
+  runtime.resolveWorkspaceFilePreviewSource.mockResolvedValue(
+    "asset://workspace-chart.png",
+  );
+  runtime.openWorkspacePath.mockResolvedValue(undefined);
+  runtime.revealLocalFile.mockResolvedValue(undefined);
 });
 afterEach(cleanup);
 
 describe("file preview opening", () => {
+  it("navigates from a Markdown document through relative documents to an image inside the dialog", async () => {
+    runtime.readWorkspaceFilePreview.mockImplementation(
+      async (_root, path) => ({
+        content:
+          path === "docs/start.md"
+            ? "[Details](guides/details.md)"
+            : "[Chart](../images/chart.png)",
+        truncated: false,
+        lossy: false,
+      }),
+    );
+    function PreviewHarness() {
+      const {
+        preview,
+        showPreview,
+        closePreview,
+        openExternally,
+        markdownContext,
+      } = useFilePreview();
+      useEffect(() => {
+        showPreview({
+          kind: "workspace",
+          workspaceRoot: "C:/Project",
+          relativePath: "docs/start.md",
+        });
+      }, [showPreview]);
+      return createElement(FilePreviewDialog, {
+        preview,
+        markdownContext,
+        onOpenChange: (open) => {
+          if (!open) closePreview();
+        },
+        onOpenExternal: openExternally,
+      });
+    }
+    render(createElement(PreviewHarness));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Show visual preview" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Details" }));
+    await waitFor(() =>
+      expect(runtime.readWorkspaceFilePreview).toHaveBeenCalledWith(
+        "C:/Project",
+        "docs/guides/details.md",
+      ),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Show visual preview" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Chart" }));
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("img", { name: "Preview of chart.png" })
+          .getAttribute("src"),
+      ).toBe("asset://workspace-chart.png"),
+    );
+    expect(runtime.resolveWorkspaceFilePreviewSource).toHaveBeenCalledWith(
+      "C:/Project",
+      "docs/images/chart.png",
+    );
+    expect(runtime.openWorkspacePath).not.toHaveBeenCalled();
+    expect(runtime.revealLocalFile).not.toHaveBeenCalled();
+  });
+
+  it("opens a modified file link externally without replacing the current document", async () => {
+    runtime.readWorkspaceFilePreview.mockResolvedValue({
+      content: "Report",
+      truncated: false,
+      lossy: false,
+    });
+    const { result } = renderHook(() => useFilePreview());
+    await act(async () =>
+      result.current.showPreview({
+        kind: "workspace",
+        workspaceRoot: "C:/Project",
+        relativePath: "docs/start.md",
+      }),
+    );
+    runtime.prepareFilePreview.mockClear();
+    await act(async () =>
+      result.current.markdownContext?.onOpenWorkspaceFile?.(
+        "images/chart.png",
+        undefined,
+        true,
+      ),
+    );
+    expect(runtime.openWorkspacePath).toHaveBeenCalledWith(
+      "C:/Project",
+      "images/chart.png",
+    );
+    expect(runtime.prepareFilePreview).not.toHaveBeenCalled();
+    expect(result.current.preview?.path).toBe("docs/start.md");
+  });
+
+  it.each(["local", "attachment"] as const)(
+    "resolves embedded images beside a %s Markdown document",
+    async (kind) => {
+      const { result } = renderHook(() => useFilePreview());
+      runtime.readAttachedFilePreview.mockResolvedValue({
+        content: "Report",
+        truncated: false,
+        lossy: false,
+      });
+      const target: FilePreviewTarget =
+        kind === "local"
+          ? { kind, path: "C:/Temp/docs/report.md" }
+          : {
+              kind,
+              workspaceRoot: "C:/Project",
+              attachment: {
+                source: "path",
+                id: "report",
+                name: "report.md",
+                kind: "file",
+                path: "C:/Temp/docs/report.md",
+              },
+            };
+      await act(async () => result.current.showPreview(target));
+      await expect(
+        result.current.markdownContext?.resolveImageSource?.("../chart.png"),
+      ).resolves.toBe("asset://logo.png");
+      expect(runtime.resolveLocalFilePreviewSource).toHaveBeenCalledWith(
+        "C:/Temp/chart.png",
+      );
+    },
+  );
+
   it.each([
     {
       kind: "workspace",

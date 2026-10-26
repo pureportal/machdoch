@@ -38,7 +38,10 @@ import {
   getFilePreviewTargetLineIndex,
   scrollFilePreviewTargetLineIntoView,
 } from "./file-preview-target-line";
-import { MarkdownContent } from "../conversation/markdown-content";
+import {
+  MarkdownContent,
+  type MarkdownFileContext,
+} from "../conversation/markdown-content";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Dialog,
@@ -79,6 +82,7 @@ export interface FilePreviewDialogProps {
   preview: FilePreview | null;
   onOpenChange: (open: boolean) => void;
   onOpenExternal: () => void;
+  markdownContext?: MarkdownFileContext;
 }
 
 type FilePreviewCopyState = "idle" | "copied" | "failed";
@@ -213,9 +217,11 @@ export const FilePreviewStatus = ({
 export const FilePreviewVisualContent = ({
   preview,
   visualKind,
+  markdownContext,
 }: {
   preview: FilePreview;
   visualKind: FilePreviewVisualKind;
+  markdownContext?: MarkdownFileContext;
 }): JSX.Element => {
   const content = preview.content ?? "";
 
@@ -227,6 +233,7 @@ export const FilePreviewVisualContent = ({
         className="min-h-0 flex-1 overflow-auto bg-slate-950"
       >
         <MarkdownContent
+          {...markdownContext}
           content={content}
           className="app-file-preview-markdown mx-auto w-full max-w-5xl px-6 py-8 text-sm text-slate-200 sm:px-10"
         />
@@ -278,8 +285,10 @@ const StableFilePreviewCode = memo(function StableFilePreviewCode({
 
 export const FilePreviewTextContent = ({
   preview,
+  markdownContext,
 }: {
   preview: FilePreview;
+  markdownContext?: MarkdownFileContext;
 }): JSX.Element => {
   const visualKind = getFilePreviewVisualKind(preview.title || preview.path);
   const [viewMode, setViewMode] = useState<FilePreviewViewMode>("text");
@@ -1137,13 +1146,23 @@ export const FilePreviewTextContent = ({
       </div>
 
       {activeViewMode === "visual" && visualKind ? (
-        <FilePreviewVisualContent preview={preview} visualKind={visualKind} />
+        <FilePreviewVisualContent
+          preview={preview}
+          visualKind={visualKind}
+          markdownContext={markdownContext}
+        />
       ) : null}
     </div>
   );
 };
 
-const PreviewBody = ({ preview }: { preview: FilePreview }): JSX.Element => {
+const PreviewBody = ({
+  preview,
+  markdownContext,
+}: {
+  preview: FilePreview;
+  markdownContext?: MarkdownFileContext;
+}): JSX.Element => {
   if (preview.loading) {
     return (
       <div
@@ -1193,7 +1212,13 @@ const PreviewBody = ({ preview }: { preview: FilePreview }): JSX.Element => {
   }
 
   if (preview.mode === "text") {
-    return <FilePreviewTextContent preview={preview} />;
+    return (
+      <FilePreviewTextContent
+        key={preview.path}
+        preview={preview}
+        markdownContext={markdownContext}
+      />
+    );
   }
 
   return (
@@ -1213,6 +1238,7 @@ const OpenFilePreviewDialog = ({
   preview,
   onOpenChange,
   onOpenExternal,
+  markdownContext,
 }: FilePreviewDialogProps & { preview: FilePreview }): JSX.Element => {
   const commandStateRef = useRef({ onOpenChange, onOpenExternal, preview });
   commandStateRef.current = { onOpenChange, onOpenExternal, preview };
@@ -1277,7 +1303,7 @@ const OpenFilePreviewDialog = ({
           </DialogHeader>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <PreviewBody preview={preview} />
+            <PreviewBody preview={preview} markdownContext={markdownContext} />
           </div>
         </DialogContent>
       ) : null}

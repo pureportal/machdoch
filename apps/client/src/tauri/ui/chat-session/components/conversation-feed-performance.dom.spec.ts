@@ -73,6 +73,7 @@ it("keeps unchanged message rows mounted while using the latest file handler", (
     "README.md",
     undefined,
     "workspace-1",
+    undefined,
   );
 });
 

@@ -85,7 +85,7 @@ describe("MarkdownContent file links", () => {
 
     expect(onOpenLocalFile).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "View preview" }));
-    expect(onOpenLocalFile).toHaveBeenCalledWith(previewPath, undefined);
+    expect(onOpenLocalFile).toHaveBeenCalledWith(previewPath, undefined, false);
     expect(onOpenWorkspaceFile).not.toHaveBeenCalled();
   });
 
@@ -101,7 +101,7 @@ describe("MarkdownContent file links", () => {
       }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Source" }));
-    expect(onOpenWorkspaceFile).toHaveBeenCalledWith("src/main.ts", 17);
+    expect(onOpenWorkspaceFile).toHaveBeenCalledWith("src/main.ts", 17, false);
     expect(onOpenLocalFile).not.toHaveBeenCalled();
   });
 
@@ -114,7 +114,11 @@ describe("MarkdownContent file links", () => {
       }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Report" }));
-    expect(onOpenLocalFile).toHaveBeenCalledWith("C:/Temp/My report.md", 12);
+    expect(onOpenLocalFile).toHaveBeenCalledWith(
+      "C:/Temp/My report.md",
+      12,
+      false,
+    );
   });
 
   it("uses the latest local file action without remounting selected text", () => {
@@ -131,7 +135,7 @@ describe("MarkdownContent file links", () => {
     expect(container.querySelector("p")?.firstChild).toBe(text);
     fireEvent.click(screen.getByRole("button", { name: "View preview" }));
     expect(firstOpen).not.toHaveBeenCalled();
-    expect(latestOpen).toHaveBeenCalledWith(previewPath, undefined);
+    expect(latestOpen).toHaveBeenCalledWith(previewPath, undefined, false);
   });
 
   it("keeps unsafe protocols and local image embeds blocked", () => {
@@ -152,6 +156,59 @@ describe("MarkdownContent file links", () => {
       screen.getByRole("link", { name: "Section" }).getAttribute("target"),
     ).toBeNull();
     expect(onOpenLocalFile).not.toHaveBeenCalled();
+  });
+
+  it.each([{}, { ctrlKey: true }, { metaKey: true }, { altKey: true }])(
+    "routes document links with modifiers %j",
+    (modifiers) => {
+      const onOpenWorkspaceFile = vi.fn();
+      const onOpenLocalFile = vi.fn();
+      render(
+        createElement(MarkdownContent, {
+          content:
+            "[Chart](../images/chart.png) [Report](file:///C:/Temp/report.md)",
+          sourcePath: "docs/start.md",
+          workspaceRoot: "C:/Project",
+          onOpenWorkspaceFile,
+          onOpenLocalFile,
+        }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Chart" }), modifiers);
+      fireEvent.click(
+        screen.getByRole("button", { name: "Report" }),
+        modifiers,
+      );
+      const external = "ctrlKey" in modifiers || "metaKey" in modifiers;
+      expect(onOpenWorkspaceFile).toHaveBeenCalledWith(
+        "images/chart.png",
+        undefined,
+        external,
+      );
+      expect(onOpenLocalFile).toHaveBeenCalledWith(
+        "C:/Temp/report.md",
+        undefined,
+        external,
+      );
+    },
+  );
+
+  it("loads relative embedded images through the file resolver", async () => {
+    const resolveImageSource = vi.fn().mockResolvedValue("asset://chart.png");
+    render(
+      createElement(MarkdownContent, {
+        content: "![Chart](../images/chart.png)",
+        sourcePath: "docs/start.md",
+        workspaceRoot: "C:/Project",
+        onOpenWorkspaceFile: vi.fn(),
+        resolveImageSource,
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("img", { name: "Chart" }).getAttribute("src"),
+      ).toBe("asset://chart.png"),
+    );
+    expect(resolveImageSource).toHaveBeenCalledWith("../images/chart.png");
   });
 });
 

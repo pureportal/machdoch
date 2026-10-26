@@ -83,6 +83,7 @@ export function RemoteConversationHost({
     relativePath: string,
     message: ProductMessage,
     line?: number,
+    external?: boolean,
   ): void => {
     if (!message.workspace) return;
     const path = `${normalizeLocalPath(message.workspace).replace(/\/+$/u, "")}/${relativePath}`;
@@ -96,6 +97,7 @@ export function RemoteConversationHost({
       },
       line,
       message.id,
+      external,
     );
   };
   const openAttachment = useCallback(
@@ -362,10 +364,11 @@ export function RemoteConversationHost({
             content={content}
             className={className}
             workspaceRoot={message?.workspace ?? null}
-            onOpenWorkspaceFile={(relativePath, line) => {
-              if (message) openWorkspaceFile(relativePath, message, line);
+            onOpenWorkspaceFile={(relativePath, line, external) => {
+              if (message)
+                openWorkspaceFile(relativePath, message, line, external);
             }}
-            onOpenLocalFile={(path, line) =>
+            onOpenLocalFile={(path, line, external) =>
               preview.open(
                 {
                   source: "path",
@@ -376,6 +379,7 @@ export function RemoteConversationHost({
                 },
                 line,
                 message?.id,
+                external,
               )
             }
           />

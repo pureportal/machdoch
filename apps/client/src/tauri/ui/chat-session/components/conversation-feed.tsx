@@ -115,8 +115,9 @@ export interface ConversationFeedProps {
     relativePath: string,
     line?: number,
     workspaceRoot?: string | null,
+    external?: boolean,
   ) => void;
-  onOpenLocalFile?: (path: string, line?: number) => void;
+  onOpenLocalFile?: (path: string, line?: number, external?: boolean) => void;
   onOpenAttachment?: (
     attachment: ChatSessionContextAttachment,
     workspaceRoot?: string | null,
@@ -172,8 +173,9 @@ interface ConversationMessageRowProps {
     relativePath: string,
     line?: number,
     workspaceRoot?: string | null,
+    external?: boolean,
   ) => void;
-  onOpenLocalFile?: (path: string, line?: number) => void;
+  onOpenLocalFile?: (path: string, line?: number, external?: boolean) => void;
   onMessageElementChange: (
     messageId: string,
     element: HTMLDivElement | null,
@@ -274,8 +276,12 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
 
     onRetryTask(message);
   };
-  const openWorkspaceFile = (relativePath: string, line?: number): void => {
-    onOpenWorkspaceFile(relativePath, line, workspaceRoot);
+  const openWorkspaceFile = (
+    relativePath: string,
+    line?: number,
+    external?: boolean,
+  ): void => {
+    onOpenWorkspaceFile(relativePath, line, workspaceRoot, external);
   };
   const openAttachment = onOpenAttachment
     ? (attachment: ChatSessionContextAttachment): void => {
@@ -674,19 +680,24 @@ export const ConversationFeed = ({
       onOpenAttachment,
     };
   }, [onOpenWorkspaceFile, onOpenLocalFile, onOpenAttachment]);
-  const openLocalFile = useCallback((path: string, line?: number) => {
-    openCallbacksRef.current.onOpenLocalFile?.(path, line);
-  }, []);
+  const openLocalFile = useCallback(
+    (path: string, line?: number, external?: boolean) => {
+      openCallbacksRef.current.onOpenLocalFile?.(path, line, external);
+    },
+    [],
+  );
   const openWorkspaceFile = useCallback(
     (
       relativePath: string,
       line?: number,
       messageWorkspaceRoot?: string | null,
+      external?: boolean,
     ) => {
       openCallbacksRef.current.onOpenWorkspaceFile(
         relativePath,
         line,
         messageWorkspaceRoot,
+        external,
       );
     },
     [],
@@ -1298,7 +1309,9 @@ export const ConversationFeed = ({
                 <MarkdownContent
                   content={promptEnhancementPreview.content}
                   workspaceRoot={workspaceRoot}
-                  onOpenWorkspaceFile={onOpenWorkspaceFile}
+                  onOpenWorkspaceFile={(path, line, external) =>
+                    onOpenWorkspaceFile(path, line, workspaceRoot, external)
+                  }
                   onOpenLocalFile={onOpenLocalFile}
                   className="app-user-message-text"
                 />
@@ -1316,7 +1329,9 @@ export const ConversationFeed = ({
                   <MarkdownContent
                     content={promptEnhancementPreviewOriginalContent}
                     workspaceRoot={workspaceRoot}
-                    onOpenWorkspaceFile={onOpenWorkspaceFile}
+                    onOpenWorkspaceFile={(path, line, external) =>
+                      onOpenWorkspaceFile(path, line, workspaceRoot, external)
+                    }
                     onOpenLocalFile={onOpenLocalFile}
                   />
                 </div>

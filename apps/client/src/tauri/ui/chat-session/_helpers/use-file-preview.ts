@@ -1,4 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { MarkdownFileContext } from "@machdoch/client-ui/conversation/markdown-content";
+import {
+  getLocalMarkdownLinkTarget,
+  getWorkspaceMarkdownLinkTarget,
+} from "@machdoch/client-ui/conversation/workspace-markdown-links";
 import {
   prepareFilePreview,
   type FilePreviewTarget,
@@ -104,7 +109,8 @@ const revealFilePreviewTarget = async (
 
 export const useFilePreview = (): {
   preview: FilePreview | null;
-  showPreview: (target: FilePreviewTarget) => void;
+  showPreview: (target: FilePreviewTarget, external?: boolean) => void;
+  markdownContext: MarkdownFileContext | undefined;
   closePreview: () => void;
   openExternally: () => void;
 } => {
@@ -123,36 +129,82 @@ export const useFilePreview = (): {
     setPreview(null);
   }, []);
 
-  const showPreview = useCallback((target: FilePreviewTarget): void => {
-    const request = ++requestRef.current;
-    const nextPreview = createFilePreviewState(target);
-    setPreview(null);
+  const showPreview = useCallback(
+    (target: FilePreviewTarget, external = false): void => {
+      const request = ++requestRef.current;
+      const nextPreview = createFilePreviewState(target);
+      if (!external) setPreview(null);
 
-    void (async () => {
-      try {
-        const canPreview = await prepareFilePreview(target);
-        if (!canPreview || requestRef.current !== request) {
-          return;
+      void (async () => {
+        try {
+          if (external) {
+            await revealFilePreviewTarget(target);
+            return;
+          }
+          const canPreview = await prepareFilePreview(target);
+          if (!canPreview || requestRef.current !== request) {
+            return;
+          }
+          setPreview(nextPreview);
+          const loadedPreview =
+            nextPreview.mode === "text"
+              ? { ...nextPreview, ...(await loadFilePreviewContent(target)) }
+              : { ...nextPreview, source: await loadFilePreviewSource(target) };
+          if (requestRef.current === request) {
+            setPreview({ ...loadedPreview, loading: false });
+          }
+        } catch (error) {
+          if (requestRef.current === request) {
+            setPreview({
+              ...nextPreview,
+              loading: false,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
         }
-        setPreview(nextPreview);
-        const loadedPreview =
-          nextPreview.mode === "text"
-            ? { ...nextPreview, ...(await loadFilePreviewContent(target)) }
-            : { ...nextPreview, source: await loadFilePreviewSource(target) };
-        if (requestRef.current === request) {
-          setPreview({ ...loadedPreview, loading: false });
+      })();
+    },
+    [],
+  );
+
+  const target = preview?.target;
+  const markdownContext = useMemo<MarkdownFileContext | undefined>(() => {
+    if (!target) return undefined;
+    const workspaceRoot = target.kind === "local" ? null : target.workspaceRoot;
+    const sourcePath =
+      target.kind === "workspace"
+        ? target.relativePath
+        : target.kind === "attachment"
+          ? target.attachment.path
+          : target.path;
+    return {
+      workspaceRoot,
+      sourcePath,
+      onOpenWorkspaceFile: (relativePath, line, external) =>
+        showPreview(
+          { kind: "workspace", workspaceRoot, relativePath, line },
+          external,
+        ),
+      onOpenLocalFile: (path, line, external) =>
+        showPreview({ kind: "local", path, line }, external),
+      resolveImageSource: async (href) => {
+        const workspaceTarget = getWorkspaceMarkdownLinkTarget(
+          href,
+          workspaceRoot,
+          sourcePath,
+        );
+        if (workspaceTarget && workspaceRoot) {
+          return resolveWorkspaceFilePreviewSource(
+            workspaceRoot,
+            workspaceTarget.relativePath,
+          );
         }
-      } catch (error) {
-        if (requestRef.current === request) {
-          setPreview({
-            ...nextPreview,
-            loading: false,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    })();
-  }, []);
+        const localTarget = getLocalMarkdownLinkTarget(href, sourcePath);
+        if (localTarget) return resolveLocalFilePreviewSource(localTarget.path);
+        throw new Error("Unable to resolve this image path.");
+      },
+    };
+  }, [target, showPreview]);
 
   const openExternally = (): void => {
     if (!preview) {
@@ -173,5 +225,11 @@ export const useFilePreview = (): {
     });
   };
 
-  return { preview, showPreview, closePreview, openExternally };
+  return {
+    preview,
+    showPreview,
+    closePreview,
+    openExternally,
+    markdownContext,
+  };
 };
