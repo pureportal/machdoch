@@ -97,8 +97,8 @@ export const OPERATIONS = {
   media_set_asset_tags: "media.library",
   media_auto_tag_asset: "media.library",
   save_user_desktop_settings: "settings",
-  enroll_fleet_manager: "fleet.enrollment",
-  reset_fleet_manager_connection: "fleet.enrollment",
+  enroll_cloud_server: "fleet.enrollment",
+  reset_cloud_server_connection: "fleet.enrollment",
   "update.check": "update",
   "update.download": "update",
   "update.install": "update",
@@ -131,7 +131,7 @@ export function commandFeature(id: string): Feature | undefined {
     return navigationFeature(normalized.slice(9));
   if (normalized === "app.settings.open") return "settings";
   if (normalized === "app.scheduler.open") return "scheduler";
-  if (normalized === "app.fleet-manager.open") return "fleet.instances";
+  if (normalized === "app.cloud.open") return "fleet.instances";
   if (/^media\.(flow|layout|selection)\./.test(normalized))
     return "media.workflows";
   if (normalized.startsWith("media.activity.")) return "media.library";
@@ -264,8 +264,8 @@ export function fleetOperation(
   method: string,
 ): Operation | undefined {
   if (method === "GET" || method === "HEAD") return undefined;
-  if (path === "/api/auth/login") return "fleet.login";
-  if (path === "/api/auth/logout") return "fleet.logout";
+  if (path === "/api/v1/auth/login") return "fleet.login";
+  if (path === "/api/v1/auth/logout") return "fleet.logout";
   if (/^\/api\/enrollment-keys(?:\/[^/]+)?$/.test(path))
     return "fleet.enrollment.create";
   if (/^\/api\/users(?:\/[^/]+)?$/.test(path)) {

@@ -7,7 +7,7 @@ use machdoch_fleet_protocol::{
 use reqwest::{header, StatusCode};
 
 use super::{
-    config::validate_fleet_manager_url,
+    config::validate_cloud_server_url,
     http::{
         is_unsafe_text_character, manager_response_error, read_bounded_response, ResponseBodyError,
     },
@@ -24,7 +24,7 @@ pub async fn capture_enrollment(
     let (config, generation) = connected_config(state)?;
     if config.manager_id != manager_id || config.instance_id != instance_id {
         return Err(
-            "Fleet Manager connection changed before device settings were captured.".to_string(),
+            "machdoch.cloud connection changed before device settings were captured.".to_string(),
         );
     }
     let body = serde_json::to_vec(&document)
@@ -43,7 +43,7 @@ pub async fn capture_enrollment(
     require_current_generation(state, generation)?;
     if !response.status().is_success() {
         return Err(
-            manager_response_error(response, "Fleet Manager rejected device settings").await,
+            manager_response_error(response, "machdoch.cloud rejected device settings").await,
         );
     }
     Ok(())
@@ -64,18 +64,18 @@ pub async fn enrollment_capture_required(state: &FleetConnectionState) -> Result
         .map_err(|error| format!("Device settings status is unavailable: {error}"))?;
     require_current_generation(state, generation)?;
     if response.status() == StatusCode::NOT_FOUND {
-        return Err("Update Fleet Manager to capture device settings.".to_string());
+        return Err("Update machdoch.cloud to capture device settings.".to_string());
     }
     if !response.status().is_success() {
         return Err(
-            manager_response_error(response, "Fleet Manager rejected device settings").await,
+            manager_response_error(response, "machdoch.cloud rejected device settings").await,
         );
     }
     let body = read_bounded_response(response, 1024)
         .await
         .map_err(settings_response_error)?;
     let status: CaptureStatus = serde_json::from_slice(&body)
-        .map_err(|_| "Fleet Manager returned invalid device settings status.".to_string())?;
+        .map_err(|_| "machdoch.cloud returned invalid device settings status.".to_string())?;
     require_current_generation(state, generation)?;
     Ok(status.capture_required)
 }
@@ -126,7 +126,7 @@ async fn fetch_delivery(
     if !response.status().is_success() {
         return Err(manager_response_error(
             response,
-            "Fleet Manager rejected settings synchronization",
+            "machdoch.cloud rejected settings synchronization",
         )
         .await);
     }
@@ -147,7 +147,7 @@ pub async fn report_applied(
     }
     let (config, generation) = connected_config(state)?;
     if manager_id != config.manager_id {
-        return Err("Fleet Manager identity changed before settings were applied.".to_string());
+        return Err("machdoch.cloud identity changed before settings were applied.".to_string());
     }
     let report = FleetManagedSettingsSyncReport::Applied {
         manager_id: manager_id.to_string(),
@@ -175,7 +175,7 @@ pub async fn report_failure(
     }
     let (config, generation) = connected_config(state)?;
     if manager_id != config.manager_id {
-        return Err("Fleet Manager identity changed during settings synchronization.".to_string());
+        return Err("machdoch.cloud identity changed during settings synchronization.".to_string());
     }
     let error = normalize_sync_error(error);
     mark_sync_failed(state, generation, &error)?;
@@ -210,7 +210,7 @@ async fn send_report(
     }
     Err(manager_response_error(
         response,
-        "Fleet Manager rejected the settings status report",
+        "machdoch.cloud rejected the settings status report",
     )
     .await)
 }
@@ -226,7 +226,7 @@ fn connected_config(
         .config
         .clone()
         .filter(|config| config.enabled)
-        .ok_or_else(|| "Fleet Manager is not connected.".to_string())?;
+        .ok_or_else(|| "machdoch.cloud is not connected.".to_string())?;
     Ok((config, inner.generation))
 }
 
@@ -234,7 +234,7 @@ fn settings_endpoint(
     config: &super::config::FleetConnectionConfig,
     suffix: &str,
 ) -> Result<url::Url, String> {
-    validate_fleet_manager_url(&config.manager_url)?
+    validate_cloud_server_url(&config.manager_url)?
         .join(&format!(
             "/api/client/settings/{}{}",
             config.instance_id, suffix
@@ -380,7 +380,7 @@ fn require_current_generation(state: &FleetConnectionState, generation: u64) -> 
 
 fn require_generation(inner: &super::FleetConnectionInner, generation: u64) -> Result<(), String> {
     if inner.generation != generation {
-        return Err("Fleet Manager connection changed during synchronization.".to_string());
+        return Err("machdoch.cloud connection changed during synchronization.".to_string());
     }
     Ok(())
 }
@@ -404,14 +404,14 @@ fn parse_delivery(
         return Err("Fleet settings response exceeded the size limit.".to_string());
     }
     let delivery = serde_json::from_slice::<FleetManagedSettingsDelivery>(body)
-        .map_err(|error| format!("Fleet Manager returned invalid settings: {error}"))?;
+        .map_err(|error| format!("machdoch.cloud returned invalid settings: {error}"))?;
     if delivery.schema_version != MANAGED_SETTINGS_SCHEMA_VERSION {
-        return Err("Fleet Manager returned an unsupported settings schema.".to_string());
+        return Err("machdoch.cloud returned an unsupported settings schema.".to_string());
     }
     if delivery.manager_id != expected_manager_id
         || !valid_identifier(&delivery.manager_id, "manager")
     {
-        return Err("Fleet Manager returned settings for another installation.".to_string());
+        return Err("machdoch.cloud returned settings for another installation.".to_string());
     }
     if let Some(profile) = &delivery.profile {
         if profile.revision == 0
@@ -419,7 +419,7 @@ fn parse_delivery(
             || profile.name.trim().is_empty()
         {
             return Err(
-                "Fleet Manager returned inconsistent settings assignment data.".to_string(),
+                "machdoch.cloud returned inconsistent settings assignment data.".to_string(),
             );
         }
     }
@@ -464,7 +464,7 @@ mod tests {
                 .expect_err("changed identity should fail");
             assert_eq!(
                 error,
-                "Fleet Manager connection changed before device settings were captured."
+                "machdoch.cloud connection changed before device settings were captured."
             );
         }
     }

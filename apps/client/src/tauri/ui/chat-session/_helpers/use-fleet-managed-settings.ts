@@ -165,7 +165,7 @@ export const useFleetManagedSettings = (
       const delivery = fetched ?? cached?.delivery;
       if (!delivery) {
         throw new Error(
-          "Fleet Manager returned no settings for a changed entity tag.",
+          "machdoch.cloud returned no settings for a changed entity tag.",
         );
       }
       if (fetched) {
@@ -409,7 +409,7 @@ function validateDelivery(
     (defaults.accent !== null &&
       !["sky", "emerald", "violet", "amber"].includes(defaults.accent))
   ) {
-    throw new Error("Fleet Manager returned unsupported managed defaults.");
+    throw new Error("machdoch.cloud returned unsupported managed defaults.");
   }
   for (const pack of contextPacks) {
     if (
@@ -423,7 +423,7 @@ function validateDelivery(
         ))
     ) {
       throw new Error(
-        "Fleet Manager returned unsupported context pack settings.",
+        "machdoch.cloud returned unsupported context pack settings.",
       );
     }
   }
@@ -432,7 +432,7 @@ function validateDelivery(
     ...USER_WEB_SEARCH_PROVIDERS,
   ]);
   if (Object.keys(profile.secrets).some((id) => !supportedSecrets.has(id))) {
-    throw new Error("Fleet Manager returned an unsupported managed secret.");
+    throw new Error("machdoch.cloud returned an unsupported managed secret.");
   }
 }
 

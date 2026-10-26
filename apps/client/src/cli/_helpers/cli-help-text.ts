@@ -29,7 +29,7 @@ Automation and integration:
   instructions   Manage central instruction files and assignments
   mcp            Inspect and use MCP servers, tools, resources, and prompts
   provider-sync  Manage delegated CLI-provider integration
-  fleet          Connect this CLI host to Fleet Manager
+  fleet          Connect this CLI host to machdoch.cloud
   cloud          Link workspaces to machdoch.cloud
 
 Examples:
@@ -284,7 +284,7 @@ Usage:
 Providers: codex-cli, claude-cli, copilot-cli. The daemon is an internal
 long-running process normally managed by provider-sync enable.`;
 
-const FLEET_HELP = `machdoch fleet - connect this CLI host to Fleet Manager
+const FLEET_HELP = `machdoch fleet - connect this CLI host to machdoch.cloud
 
 Usage:
   machdoch fleet status [--json]

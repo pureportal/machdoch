@@ -1,0 +1,149 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { loadConfig, runtimeConfig } from "./config";
+
+const temporaryDirectories: string[] = [];
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  for (const directory of temporaryDirectories.splice(0)) {
+    rmSync(directory, { force: true, recursive: true });
+  }
+});
+
+function configurationPath(
+  externalBaseUrl: string,
+  listenAddress = "127.0.0.1",
+  settingsManager?: Record<string, unknown>,
+): string {
+  const directory = mkdtempSync(join(tmpdir(), "machdoch-fleet-config-"));
+  temporaryDirectories.push(directory);
+  const path = join(directory, "cloud.json");
+  writeFileSync(
+    path,
+    JSON.stringify({
+      schemaVersion: 1,
+      externalBaseUrl,
+      listen: { address: listenAddress, port: 43188 },
+      database: { path: "./cloud.sqlite" },
+      ...(settingsManager ? { settingsManager } : {}),
+    }),
+  );
+  return path;
+}
+
+describe("machdoch.cloud configuration", () => {
+  it("allows deployment listener overrides after importing configuration", () => {
+    vi.stubEnv("PORT", "43210");
+    vi.stubEnv("MACHDOCH_CLOUD_LISTEN_ADDRESS", "0.0.0.0");
+    expect(
+      runtimeConfig("https://cloud.example.test", {
+        listen: { address: "127.0.0.1", port: 43188 },
+      }).listen,
+    ).toEqual({ address: "0.0.0.0", port: 43210 });
+  });
+  it("requires isolated preview origins and HTTPS outside localhost development", () => {
+    const path = configurationPath("https://fleet.example.test");
+    const config = JSON.parse(readFileSync(path, "utf8"));
+    for (const baseUrl of [
+      "https://fleet.example.test",
+      "https://example.test",
+      "http://previews.example.test",
+      "https://apps.example.test/path",
+      "https://user@apps.example.test",
+    ]) {
+      writeFileSync(path, JSON.stringify({ ...config, previews: { baseUrl } }));
+      expect(() => loadConfig(path)).toThrow("previews.baseUrl");
+    }
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...config,
+        previews: { baseUrl: "https://previews.example.test" },
+      }),
+    );
+    expect(loadConfig(path).previews?.baseUrl).toBe(
+      "https://previews.example.test",
+    );
+    writeFileSync(
+      path,
+      JSON.stringify({
+        ...config,
+        previews: { baseUrl: "http://preview.localhost:43188" },
+      }),
+    );
+    expect(loadConfig(path, "development").previews?.baseUrl).toContain(
+      "preview.localhost",
+    );
+    expect(() => loadConfig(path)).toThrow("previews.baseUrl");
+  });
+  it("rejects heartbeat deadlines shorter than the client heartbeat cadence", () => {
+    const path = configurationPath("https://fleet.example.test");
+    const config = JSON.parse(readFileSync(path, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    config.connectionPolicy = {
+      requestTimeoutSeconds: 30,
+      heartbeatTimeoutSeconds: 10,
+    };
+    writeFileSync(path, JSON.stringify(config));
+    expect(() => loadConfig(path)).toThrow("heartbeatTimeoutSeconds");
+    config.connectionPolicy = {
+      requestTimeoutSeconds: 30,
+      heartbeatTimeoutSeconds: 30,
+    };
+    writeFileSync(path, JSON.stringify(config));
+    expect(loadConfig(path).connectionPolicy.heartbeatTimeoutSeconds).toBe(30);
+  });
+  it("accepts loopback HTTP origins in development", () => {
+    const config = loadConfig(
+      configurationPath("http://127.0.0.1:43188"),
+      "development",
+    );
+
+    expect(config.externalBaseUrl).toBe("http://127.0.0.1:43188");
+
+    expect(
+      loadConfig(
+        configurationPath("http://127.0.0.2:43188", "127.0.0.2"),
+        "development",
+      ).listen.address,
+    ).toBe("127.0.0.2");
+  });
+
+  it("requires HTTPS in production", () => {
+    expect(() =>
+      loadConfig(configurationPath("http://127.0.0.1:43188")),
+    ).toThrow("externalBaseUrl must be an HTTPS origin.");
+  });
+
+  it("rejects non-loopback HTTP origins in development", () => {
+    expect(() =>
+      loadConfig(
+        configurationPath("http://fleet.example.internal"),
+        "development",
+      ),
+    ).toThrow(/loopback HTTP origin/u);
+  });
+
+  it("rejects secret limits that exceed the delivery protocol", () => {
+    expect(() =>
+      loadConfig(
+        configurationPath("https://fleet.example.test", "127.0.0.1", {
+          limits: {
+            maximumProfiles: 64,
+            maximumInstructionsPerProfile: 128,
+            maximumPacksPerProfile: 128,
+            maximumPromptsPerProfile: 128,
+            maximumRevisionsPerProfile: 100,
+            maximumDocumentBytes: 1024 * 1024,
+            maximumSecretBytes: 8 * 1024 + 1,
+          },
+        }),
+      ),
+    ).toThrow();
+  });
+});

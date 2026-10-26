@@ -21,8 +21,8 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
   if (init.body && !headers.has("Content-Type"))
     headers.set("Content-Type", "application/json");
   if (!["GET", "HEAD"].includes(method)) {
-    const csrfToken = readCookie("__Host-machdoch_fleet_csrf");
-    if (csrfToken) headers.set("X-Machdoch-Fleet-CSRF", csrfToken);
+    const csrfToken = readCookie("__Host-machdoch_cloud_csrf");
+    if (csrfToken) headers.set("X-Machdoch-Cloud-CSRF", csrfToken);
   }
   const response = await fetch(path, { ...init, headers, cache: "no-store" });
   const body = (await response.json().catch(() => null)) as {
@@ -36,9 +36,9 @@ async function request<T>(path: string, init: RequestInit): Promise<T> {
     if (
       response.status === 401 &&
       typeof window !== "undefined" &&
-      window.location.pathname !== "/login"
+      window.location.pathname !== "/cloud/login"
     ) {
-      window.location.replace("/login");
+      window.location.replace("/cloud/login");
     }
     throw error;
   }

@@ -29,7 +29,7 @@ interface AppRailProps {
   schedulerActivity: AppActivityState;
   onSelectApp: (app: MainAppId) => void;
   onOpenScheduler: () => void;
-  onOpenFleetManager: () => void;
+  onOpenCloudServer: () => void;
   onOpenSettings: () => void;
 }
 
@@ -41,7 +41,7 @@ export function AppRail({
   schedulerActivity,
   onSelectApp,
   onOpenScheduler,
-  onOpenFleetManager,
+  onOpenCloudServer,
   onOpenSettings,
 }: AppRailProps): React.ReactElement {
   const chatShortcut = useCommandShortcut("app.view.chat");
@@ -118,7 +118,7 @@ export function AppRail({
       id: "fleet",
       label: "machdoch.cloud",
       icon: Server,
-      onSelect: onOpenFleetManager,
+      onSelect: onOpenCloudServer,
     },
     {
       id: "settings",

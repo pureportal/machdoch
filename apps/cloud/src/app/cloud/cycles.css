@@ -1,0 +1,468 @@
+.cloud-project-description h2,
+.cloud-team-card h2,
+.cloud-cycle-entry h3 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.cloud-project-description,
+.cloud-team-card header > div,
+.cloud-cycle-entry-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cloud-team-stats dt,
+.cloud-cycle-entry-capacity dt {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.cloud-cycle-directory {
+  display: grid;
+  gap: 32px;
+}
+.cloud-cycle-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.cloud-cycle-status {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  text-transform: capitalize;
+  font-size: 12px;
+  font-weight: 500;
+}
+.cloud-cycle-status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--muted-foreground);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.cloud-cycle-status[data-status="active"]::before {
+  background: var(--cloud-success);
+  border-color: var(--cloud-success);
+}
+.cloud-cycle-status[data-status="closed"]::before {
+  background: var(--muted-foreground);
+}
+.cloud-cycle-timeline {
+  display: grid;
+  gap: 12px;
+  padding-left: 20px;
+  border-left: 1px solid var(--border);
+  margin-left: 4px;
+}
+.cloud-cycle-entry {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.cloud-cycle-entry::before {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--background);
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  left: -25px;
+  top: 38px;
+}
+.cloud-cycle-entry[data-status="active"] {
+  border-color: color-mix(in srgb, var(--cloud-success) 30%, var(--border));
+}
+.cloud-cycle-entry[data-status="active"]::before {
+  background: var(--cloud-success);
+}
+.cloud-cycle-calendar {
+  width: 58px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  overflow: hidden;
+}
+.cloud-cycle-calendar span {
+  display: block;
+  padding: 5px;
+  background: var(--cloud-hover);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted-foreground);
+}
+.cloud-cycle-calendar strong {
+  display: block;
+  padding: 7px;
+  font-size: 23px;
+  font-weight: 500;
+}
+.cloud-cycle-entry-body {
+  flex: 1;
+  display: grid;
+  gap: 9px;
+}
+.cloud-cycle-entry-capacity {
+  padding-inline: 20px;
+  border-left: 1px solid var(--border);
+}
+.cloud-cycle-entry-capacity dd {
+  margin-top: 5px;
+  font-size: 22px;
+  font-weight: 550;
+  white-space: nowrap;
+}
+.cloud-cycle-entry-capacity dd span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 400;
+}
+.cloud-cycle-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.cloud-cycle-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 22px;
+  margin-bottom: 26px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-cycle-context > span,
+.cloud-cycle-context > a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.cloud-cycle-context svg {
+  flex-shrink: 0;
+}
+.cloud-cycle-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr);
+  gap: 20px;
+  margin-bottom: 32px;
+}
+.cloud-cycle-overview > section {
+  min-width: 0;
+  padding: 26px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.cloud-cycle-overview h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 550;
+  font-size: 13px;
+}
+.cloud-cycle-overview h2 svg {
+  color: var(--muted-foreground);
+}
+.cloud-cycle-completion-body {
+  display: flex;
+  align-items: center;
+  gap: 34px;
+  margin-block: 24px;
+}
+.cloud-progress-ring {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  background: conic-gradient(var(--primary) var(--progress), var(--muted) 0);
+}
+.cloud-progress-ring > span {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 2px;
+  width: 114px;
+  height: 114px;
+  border-radius: 50%;
+  background: var(--card);
+}
+.cloud-progress-ring strong {
+  font-size: 30px;
+  font-weight: 550;
+  letter-spacing: -1px;
+  font-variant-numeric: tabular-nums;
+}
+.cloud-progress-ring > span > span {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.cloud-cycle-metrics {
+  display: grid;
+  gap: 16px;
+}
+.cloud-cycle-metrics dt {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  margin-bottom: 5px;
+}
+.cloud-cycle-metrics dd {
+  font-size: 25px;
+  font-weight: 550;
+  font-variant-numeric: tabular-nums;
+}
+.cloud-cycle-metrics dd span {
+  font-size: 15px;
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+.cloud-cycle-breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.cloud-cycle-breakdown li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+.cloud-cycle-breakdown .cloud-state {
+  overflow-wrap: anywhere;
+}
+.cloud-cycle-breakdown strong {
+  font-weight: 500;
+  font-size: 12px;
+}
+.cloud-cycle-workload .cloud-cycle-metrics {
+  margin-top: 25px;
+}
+.cloud-cycle-workload .cloud-cycle-metrics dd {
+  font-size: 38px;
+  letter-spacing: -1px;
+}
+.cloud-capacity-progress {
+  display: block;
+  width: 100%;
+  height: 7px;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 18px;
+  accent-color: var(--primary);
+  background: var(--muted);
+}
+.cloud-capacity-progress::-webkit-progress-bar {
+  background: var(--muted);
+}
+.cloud-capacity-progress::-webkit-progress-value {
+  background: var(--primary);
+  border-radius: 10px;
+}
+.cloud-capacity-progress::-moz-progress-bar {
+  background: var(--primary);
+}
+.cloud-capacity-progress[data-over-capacity="true"] {
+  accent-color: var(--cloud-warning);
+}
+.cloud-capacity-progress[data-over-capacity="true"]::-webkit-progress-value {
+  background: var(--cloud-warning);
+}
+.cloud-capacity-progress[data-over-capacity="true"]::-moz-progress-bar {
+  background: var(--cloud-warning);
+}
+.cloud-capacity-note {
+  margin-top: 10px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-capacity-note[data-over-capacity="true"] {
+  color: var(--cloud-warning);
+}
+.cloud-cycle-workload-details {
+  display: grid;
+  gap: 14px;
+  padding-top: 20px;
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.cloud-cycle-workload-details > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.cloud-cycle-workload-details dt {
+  color: var(--muted-foreground);
+}
+.cloud-cycle-issues > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.cloud-cycle-issues h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.cloud-cycle-issue-list {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+.cloud-cycle-issue-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px 90px;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+}
+.cloud-cycle-issue-list li + li {
+  border-top: 1px solid var(--border);
+}
+.cloud-cycle-issue-list li:hover {
+  background: var(--cloud-hover);
+}
+.cloud-cycle-issue-list li > a {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  font-size: 12px;
+}
+.cloud-cycle-issue-points {
+  color: var(--muted-foreground);
+  text-align: right;
+  font-size: 11px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.cloud-cycle-carried {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.cloud-cycle-commitment {
+  margin-top: 24px;
+  padding: 18px 22px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--cloud-subtle);
+}
+.cloud-cycle-commitment summary {
+  cursor: pointer;
+}
+.cloud-cycle-commitment ul {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+.cloud-cycle-commitment li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 12px;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1100px) {
+  .cloud-cycle-entry {
+    gap: 18px;
+  }
+  .cloud-cycle-entry-capacity {
+    padding-inline: 12px;
+  }
+  .cloud-cycle-completion-body {
+    gap: 22px;
+  }
+}
+@media (max-width: 800px) {
+  .cloud-cycle-entry {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: 18px;
+    gap: 18px 14px;
+  }
+  .cloud-cycle-entry-capacity {
+    border: 0;
+    padding: 0;
+    grid-column: 1 / -1;
+  }
+  .cloud-cycle-entry > a {
+    grid-column: 1 / -1;
+    justify-self: start;
+    padding-left: 0;
+  }
+  .cloud-cycle-calendar {
+    width: 48px;
+  }
+  .cloud-cycle-timeline {
+    padding-left: 15px;
+  }
+  .cloud-cycle-entry::before {
+    left: -20px;
+  }
+  .cloud-cycle-entry-body .cloud-directory-team {
+    align-items: baseline;
+    font-size: 11px;
+  }
+  .cloud-cycle-entry-body .cloud-directory-team > svg {
+    display: none;
+  }
+  .cloud-cycle-context {
+    gap: 12px 16px;
+  }
+  .cloud-cycle-overview {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+  .cloud-cycle-overview > section {
+    padding: 20px;
+  }
+  .cloud-progress-ring {
+    width: 112px;
+    height: 112px;
+  }
+  .cloud-progress-ring > span {
+    width: 96px;
+    height: 96px;
+  }
+  .cloud-cycle-issue-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    padding: 18px;
+  }
+  .cloud-cycle-issue-list li > a {
+    display: grid;
+    gap: 7px;
+    grid-column: 1 / -1;
+  }
+  .cloud-cycle-issue-list .cloud-issue-title {
+    font-size: 14px;
+  }
+  .cloud-cycle-issue-list .cloud-state {
+    overflow-wrap: anywhere;
+  }
+}

@@ -1,0 +1,60 @@
+import {
+  maximumGatewayMessageBytes,
+  maximumDeviceSettingsRequestBodyBytes,
+} from "@machdoch/fleet-protocol";
+import { maximumWorkspaceRequestBodyBytes } from "@machdoch/fleet-protocol/workspace";
+import type { CloudServerConfig } from "./config";
+import { maximumTaskInferenceRequestBytes } from "@machdoch/fleet-protocol/cloud-inference";
+
+const maximumAuthenticationBodyBytes = 16 * 1024;
+const maximumSettingsSyncReportBodyBytes = 16 * 1024;
+const maximumSmallApiBodyBytes = 64 * 1024;
+export const maximumMediaRequestBodyBytes = 2_250_000;
+export const maximumFleetSessionRequestBodyBytes = 80 * 1024;
+
+export function maximumRequestBodyBytes(
+  pathname: string,
+  config: CloudServerConfig,
+): number {
+  if (pathname === "/api/v1/runner/inference")
+    return maximumTaskInferenceRequestBytes;
+  if (pathname === "/api/fleet/sessions")
+    return maximumFleetSessionRequestBodyBytes;
+  if (
+    pathname === "/api/v1/auth/login" ||
+    pathname === "/api/v1/auth/setup" ||
+    pathname === "/api/v1/account/credentials"
+  ) {
+    return maximumAuthenticationBodyBytes;
+  }
+  if (/^\/api\/client\/settings\/[^/]+\/sync-status$/u.test(pathname)) {
+    return maximumSettingsSyncReportBodyBytes;
+  }
+  if (/^\/api\/client\/settings\/[^/]+\/enrollment$/u.test(pathname))
+    return config.settingsManager.limits.maximumDocumentBytes;
+  if (/^\/api\/instances\/[^/]+\/product\/commands$/u.test(pathname)) {
+    return maximumGatewayMessageBytes;
+  }
+  if (/^\/api\/instances\/[^/]+\/product\/deviceSettings$/u.test(pathname))
+    return maximumDeviceSettingsRequestBodyBytes;
+  if (/^\/api\/instances\/[^/]+\/product\/workspace$/u.test(pathname))
+    return maximumWorkspaceRequestBodyBytes;
+  if (
+    /^\/api\/instances\/[^/]+\/product\/(?:speech|media|ralph|scheduler|instructions)$/u.test(
+      pathname,
+    )
+  ) {
+    return maximumMediaRequestBodyBytes;
+  }
+  if (/^\/api\/instances\/[^/]+\/runs$/u.test(pathname))
+    return 1024 * 1024 + maximumSmallApiBodyBytes;
+  if (pathname.startsWith("/api/settings/")) {
+    return (
+      Math.max(
+        config.settingsManager.limits.maximumDocumentBytes,
+        config.settingsManager.limits.maximumSecretBytes,
+      ) + maximumSmallApiBodyBytes
+    );
+  }
+  return maximumSmallApiBodyBytes;
+}

@@ -253,35 +253,7 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jiti@2.7.0)(jsdom@26.1.0)(terser@5.51.2)
 
-  apps/cloud-runner:
-    dependencies:
-      '@machdoch/cloud-client':
-        specifier: workspace:*
-        version: link:../../packages/cloud-client
-      '@machdoch/fleet-protocol':
-        specifier: workspace:*
-        version: link:../../packages/fleet-protocol
-      '@oxc-node/core':
-        specifier: ^0.1.0
-        version: 0.1.0
-      zod:
-        specifier: ^4.4.3
-        version: 4.4.3
-    devDependencies:
-      '@types/node':
-        specifier: ^25.9.3
-        version: 25.9.3
-      typescript:
-        specifier: ^7.0.2
-        version: 7.0.2
-
-  apps/fleet-android:
-    devDependencies:
-      jsdom:
-        specifier: ^26.1.0
-        version: 26.1.0
-
-  apps/fleet-manager:
+  apps/cloud:
     dependencies:
       '@machdoch/analytics':
         specifier: workspace:*
@@ -334,6 +306,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      cmdk:
+        specifier: ^1.1.1
+        version: 1.1.1(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       lucide-react:
         specifier: ^1.18.0
         version: 1.31.0(react@19.2.8)
@@ -389,6 +364,9 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
+      axe-core:
+        specifier: ^4.13.0
+        version: 4.13.0
       nodemon:
         specifier: ^3.1.14
         version: 3.1.14
@@ -407,6 +385,34 @@ importers:
       vitest:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@25.9.3)(@vitest/coverage-v8@4.1.10)(jiti@2.7.0)(jsdom@26.1.0)(terser@5.51.2)
+
+  apps/cloud-runner:
+    dependencies:
+      '@machdoch/cloud-client':
+        specifier: workspace:*
+        version: link:../../packages/cloud-client
+      '@machdoch/fleet-protocol':
+        specifier: workspace:*
+        version: link:../../packages/fleet-protocol
+      '@oxc-node/core':
+        specifier: ^0.1.0
+        version: 0.1.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^25.9.3
+        version: 25.9.3
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+
+  apps/fleet-android:
+    devDependencies:
+      jsdom:
+        specifier: ^26.1.0
+        version: 26.1.0
 
   apps/landing:
     dependencies:

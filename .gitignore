@@ -86,8 +86,10 @@ apps/client/src-tauri/python/runtime/
 __pycache__/
 *.py[cod]
 
-apps/fleet-manager/public/media-studio/
 apps/fleet-android/.gradle/
 apps/fleet-android/.kotlin/
 apps/fleet-android/**/build/
 apps/fleet-android/local.properties
+
+apps/cloud/data/
+apps/*/public/media-studio/

@@ -9,7 +9,7 @@ import { AppRail, type AppActivityState } from "./app-rail";
 
 const renderRail = (
   mediaActivity: AppActivityState,
-  onOpenFleetManager = (): void => undefined,
+  onOpenCloudServer = (): void => undefined,
 ): void => {
   const rail = createElement(AppRail, {
     activeApp: "chat",
@@ -19,7 +19,7 @@ const renderRail = (
     schedulerActivity: "idle",
     onSelectApp: () => undefined,
     onOpenScheduler: () => undefined,
-    onOpenFleetManager,
+    onOpenCloudServer,
     onOpenSettings: () => undefined,
   });
 
@@ -57,14 +57,14 @@ describe("AppRail Media Studio activity", () => {
   });
 });
 
-describe("AppRail Fleet Manager navigation", () => {
-  it("opens Fleet Manager without exposing legacy remote access", () => {
-    const onOpenFleetManager = vi.fn();
-    renderRail("idle", onOpenFleetManager);
+describe("AppRail machdoch.cloud navigation", () => {
+  it("opens machdoch.cloud without exposing legacy remote access", () => {
+    const onOpenCloudServer = vi.fn();
+    renderRail("idle", onOpenCloudServer);
 
     fireEvent.click(screen.getByRole("button", { name: "machdoch.cloud" }));
 
-    expect(onOpenFleetManager).toHaveBeenCalledOnce();
+    expect(onOpenCloudServer).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: "Remote Access" })).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Mission Control" }),

@@ -13,7 +13,7 @@ import { getUserConfigPath } from "./env.js";
 import {
   getFleetConnectionPath,
   loadFleetConnectionConfig,
-  validateFleetManagerUrl,
+  validateCloudServerUrl,
   type FleetConnectionConfig,
 } from "./fleet-connection.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
@@ -92,14 +92,14 @@ function validateDelivery(
 ): void {
   if (delivery.managerId !== config.managerId)
     throw new Error(
-      "Fleet Manager returned settings for another installation.",
+      "machdoch.cloud returned settings for another installation.",
     );
   if (
     Object.keys(delivery.profile?.secrets ?? {}).some(
       (id) => !supportedSecrets.has(id),
     )
   )
-    throw new Error("Fleet Manager returned an unsupported managed secret.");
+    throw new Error("machdoch.cloud returned an unsupported managed secret.");
 }
 
 async function requireCurrentConnection(
@@ -113,7 +113,7 @@ async function requireCurrentConnection(
     !current?.enabled ||
     connectionDigest(current) !== connectionDigest(config)
   )
-    throw new Error("Fleet Manager connection changed during synchronization.");
+    throw new Error("machdoch.cloud connection changed during synchronization.");
 }
 
 async function discardRejectedCache(
@@ -167,7 +167,7 @@ export async function synchronizeFleetSettings(options: {
   const fetchImplementation = options.fetch ?? globalThis.fetch;
   const endpoint = new URL(
     `/api/client/settings/${encodeURIComponent(config.instanceId)}`,
-    validateFleetManagerUrl(config.managerUrl),
+    validateCloudServerUrl(config.managerUrl),
   );
   const signal = AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]);
   let cached: SettingsDelivery | null;
@@ -196,7 +196,7 @@ export async function synchronizeFleetSettings(options: {
     await discardRejectedCache(response, config, signal);
     if (!response.ok)
       throw new Error(
-        `Fleet Manager rejected the settings status report (${response.status}).`,
+        `machdoch.cloud rejected the settings status report (${response.status}).`,
       );
   };
   try {
@@ -215,8 +215,8 @@ export async function synchronizeFleetSettings(options: {
         await discardRejectedCache(stateResponse, config, signal);
         throw new Error(
           stateResponse.status === 404
-            ? "Update Fleet Manager to capture device settings."
-            : `Fleet Manager rejected enrollment settings (${stateResponse.status}).`,
+            ? "Update machdoch.cloud to capture device settings."
+            : `machdoch.cloud rejected enrollment settings (${stateResponse.status}).`,
         );
       }
       const state = await readSettingsResponse(stateResponse, 1024);
@@ -228,7 +228,7 @@ export async function synchronizeFleetSettings(options: {
         Object.keys(state).length !== 1
       )
         throw new Error(
-          "Fleet Manager returned invalid enrollment settings status.",
+          "machdoch.cloud returned invalid enrollment settings status.",
         );
       if (state.captureRequired) {
         const document = managedSettingsDocumentSchema.parse(
@@ -249,7 +249,7 @@ export async function synchronizeFleetSettings(options: {
         await discardRejectedCache(captured, config, signal);
         if (!captured.ok)
           throw new Error(
-            `Fleet Manager rejected enrollment settings (${captured.status}).`,
+            `machdoch.cloud rejected enrollment settings (${captured.status}).`,
           );
       }
     }
@@ -268,7 +268,7 @@ export async function synchronizeFleetSettings(options: {
         if (response.body) await response.body.cancel();
         await discardRejectedCache(response, config, signal);
         throw new Error(
-          `Fleet Manager rejected settings synchronization (${response.status}).`,
+          `machdoch.cloud rejected settings synchronization (${response.status}).`,
         );
       }
       delivery = fleetManagedSettingsDeliverySchema.parse(
@@ -289,7 +289,7 @@ export async function synchronizeFleetSettings(options: {
     }
     if (!delivery)
       throw new Error(
-        "Fleet Manager returned no settings for a changed entity tag.",
+        "machdoch.cloud returned no settings for a changed entity tag.",
       );
     await sendReport({
       status: "applied",

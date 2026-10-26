@@ -1,0 +1,189 @@
+body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface) {
+  --background: #141519;
+  --foreground: #eeedf2;
+  --card: #1a1b20;
+  --secondary: #26272f;
+  --secondary-foreground: #e2e1e8;
+  --muted: #24252c;
+  --muted-foreground: #a3a3b1;
+  --border: #2c2d36;
+  --input: #3a3b47;
+  --primary: #a79bff;
+  --primary-foreground: #19152e;
+  --ring: var(--primary);
+  --destructive: #ff949e;
+  --cloud-sidebar: #101115;
+  --cloud-subtle: #18191e;
+  --cloud-hover: #22232b;
+  --cloud-shadow: 0 2px 4px #00000010, 0 12px 32px #00000012;
+  --cloud-success: #70d5ac;
+  --cloud-warning: #e6be74;
+  --cloud-danger: #ff949e;
+}
+html[data-theme="light"]
+  body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface) {
+  --background: #ffffff;
+  --foreground: #20212a;
+  --card: #ffffff;
+  --secondary: #f0eff5;
+  --secondary-foreground: #454451;
+  --muted: #f3f3f7;
+  --muted-foreground: #686977;
+  --border: #e5e5ec;
+  --input: #d6d6e0;
+  --primary: #6356cf;
+  --primary-foreground: #ffffff;
+  --destructive: #bc304b;
+  --cloud-sidebar: #f7f7fa;
+  --cloud-subtle: #fafafd;
+  --cloud-hover: #f4f3f9;
+  --cloud-shadow: 0 2px 3px #20212a03, 0 6px 20px #20212a05;
+  --cloud-success: #167553;
+  --cloud-warning: #96630b;
+  --cloud-danger: #bc304b;
+}
+body:has(:is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="sky"]) {
+  --primary: #7bc8ef;
+  --primary-foreground: #112635;
+}
+body:has(
+  :is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="emerald"]
+) {
+  --primary: #73d7b1;
+  --primary-foreground: #10291e;
+}
+body:has(:is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="amber"]) {
+  --primary: #e9c074;
+  --primary-foreground: #2c2010;
+}
+body:has(:is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="rose"]) {
+  --primary: #f59db3;
+  --primary-foreground: #301521;
+}
+html[data-theme="light"]
+  body:has(:is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="sky"]) {
+  --primary: #176a97;
+  --primary-foreground: #fff;
+}
+html[data-theme="light"]
+  body:has(
+    :is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="emerald"]
+  ) {
+  --primary: #167553;
+  --primary-foreground: #fff;
+}
+html[data-theme="light"]
+  body:has(
+    :is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="amber"]
+  ) {
+  --primary: #896012;
+  --primary-foreground: #fff;
+}
+html[data-theme="light"]
+  body:has(:is(.cloud-shell, .cloud-remote-surface)[data-cloud-accent="rose"]) {
+  --primary: #b72e59;
+  --primary-foreground: #fff;
+}
+body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
+  :where(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
+  :where(input, select, textarea) {
+  color-scheme: inherit;
+}
+.cloud-error {
+  color: var(--destructive);
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+.cloud-content :where(p[role="alert"], div[role="alert"]) {
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--destructive) 30%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--destructive) 5%, transparent);
+}
+.cloud-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--primary) 16%, var(--card));
+  color: color-mix(in srgb, var(--primary) 75%, var(--foreground));
+  border: 1px solid color-mix(in srgb, var(--primary) 18%, transparent);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+.cloud-icon-tile {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--primary) 10%, var(--card));
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 14%, transparent);
+}
+.cloud-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.cloud-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  min-height: 260px;
+  padding: 48px 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--cloud-subtle);
+  color: var(--muted-foreground);
+  text-align: center;
+}
+.cloud-empty > svg {
+  width: 36px;
+  height: 36px;
+  stroke-width: 1.2;
+  color: var(--primary);
+  opacity: 0.7;
+}
+.cloud-empty a {
+  color: var(--primary);
+  text-underline-offset: 4px;
+}
+@media (pointer: coarse) {
+  :where(
+      .cloud-shell,
+      .cloud-navigation-sheet,
+      .cloud-auth,
+      .cloud-remote-surface
+    )
+    :where(button, input:not([type="checkbox"]), select) {
+    min-height: 44px;
+  }
+  :where(
+      .cloud-shell,
+      .cloud-navigation-sheet,
+      .cloud-auth,
+      .cloud-remote-surface
+    )
+    :where(input, textarea, select) {
+    font-size: 16px;
+  }
+}

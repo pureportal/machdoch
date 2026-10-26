@@ -12,7 +12,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: { dedupe: ["react", "react-dom"] },
   build: {
-    outDir: path.resolve(directory, "../fleet-manager/public/media-studio"),
+    outDir: path.resolve(directory, "../cloud/public/media-studio"),
     emptyOutDir: true,
     target: "es2022",
     chunkSizeWarningLimit: 1500,

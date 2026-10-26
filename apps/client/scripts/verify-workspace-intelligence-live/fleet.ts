@@ -5,22 +5,22 @@ import { once } from "node:events";
 import { FleetCliProductRuntime } from "../../src/cli/_helpers/cli-fleet-product.ts";
 import { runFleetGatewayConnection } from "../../src/cli/_helpers/cli-fleet-gateway.ts";
 import { gatewayProtocolVersion } from "@machdoch/fleet-protocol";
-import { handleApiRequest } from "../../../fleet-manager/src/server/api.ts";
-import { createWebRequest } from "../../../fleet-manager/src/server/http-request.ts";
+import { handleApiRequest } from "../../../cloud/src/server/api.ts";
+import { createWebRequest } from "../../../cloud/src/server/http-request.ts";
 import {
   FleetDatabase,
   nowSeconds,
-} from "../../../fleet-manager/src/server/database.ts";
-import { AuthStore } from "../../../fleet-manager/src/server/auth-store.ts";
-import { AuthenticationRateLimiter } from "../../../fleet-manager/src/server/authentication-rate-limiter.ts";
-import { FleetStore } from "../../../fleet-manager/src/server/fleet-store.ts";
-import { SettingsStore } from "../../../fleet-manager/src/server/settings-store.ts";
-import { GatewayHub } from "../../../fleet-manager/src/server/gateway.ts";
-import { createSecret } from "../../../fleet-manager/src/server/crypto.ts";
+} from "../../../cloud/src/server/database.ts";
+import { AuthStore } from "../../../cloud/src/server/auth-store.ts";
+import { AuthenticationRateLimiter } from "../../../cloud/src/server/authentication-rate-limiter.ts";
+import { FleetStore } from "../../../cloud/src/server/fleet-store.ts";
+import { SettingsStore } from "../../../cloud/src/server/settings-store.ts";
+import { GatewayHub } from "../../../cloud/src/server/gateway.ts";
+import { createSecret } from "../../../cloud/src/server/crypto.ts";
 import {
   setRuntimeForTests,
   type FleetRuntime,
-} from "../../../fleet-manager/src/server/runtime.ts";
+} from "../../../cloud/src/server/runtime.ts";
 
 export async function startVerificationFleet(workspaceRoot: string) {
   const database = new FleetDatabase(":memory:");

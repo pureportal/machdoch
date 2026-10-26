@@ -115,10 +115,10 @@ public final class FleetActivity extends ComponentActivity {
         Button change = new Button(this);
         change.setText(R.string.change_manager);
         change.setOnClickListener(view -> new AlertDialog.Builder(this)
-            .setTitle("Change manager?")
+            .setTitle("Change server?")
             .setMessage("This closes the device view and signs you out of this app.")
             .setNegativeButton("Cancel", null)
-            .setPositiveButton("Change manager", (dialog, choice) -> CookieManager.getInstance().removeAllCookies(removed -> {
+            .setPositiveButton("Change server", (dialog, choice) -> CookieManager.getInstance().removeAllCookies(removed -> {
                 CookieManager.getInstance().flush();
                 WebStorage.getInstance().deleteAllData();
                 showManagerForm();
@@ -170,7 +170,7 @@ public final class FleetActivity extends ComponentActivity {
         if (isFinishing() || (connectionError != null && connectionError.isShowing())) return;
         destroyWebView();
         connectionError = new AlertDialog.Builder(this).setMessage(message)
-            .setNegativeButton("Change manager", (dialog, choice) -> showManagerForm())
+            .setNegativeButton("Change server", (dialog, choice) -> showManagerForm())
             .setPositiveButton("Retry", (dialog, choice) -> connect(origin)).show();
     }
 

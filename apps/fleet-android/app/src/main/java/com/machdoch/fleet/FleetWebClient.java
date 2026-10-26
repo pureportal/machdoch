@@ -54,12 +54,12 @@ final class FleetWebClient extends WebViewClient {
     @Override
     public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
         handler.cancel();
-        showError.accept("The connection is not secure. Fix the Fleet Manager HTTPS certificate and try again.");
+        showError.accept("The connection is not secure. Fix the machdoch.cloud HTTPS certificate and try again.");
     }
 
     @Override
     public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-        if (request.isForMainFrame()) showError.accept("Fleet Manager could not be reached. Check the URL and connection, then retry.");
+        if (request.isForMainFrame()) showError.accept("machdoch.cloud could not be reached. Check the URL and connection, then retry.");
     }
 
     @Override

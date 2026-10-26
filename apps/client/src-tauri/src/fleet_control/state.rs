@@ -141,7 +141,7 @@ impl FleetControlState {
 
         if inner.pending_commands.len() >= MAX_PENDING_COMMAND_ENTRIES {
             return Err(RecordCommandError::Unavailable(
-                "Fleet Manager has too many unacknowledged commands; retry after they are processed."
+                "machdoch.cloud has too many unacknowledged commands; retry after they are processed."
                     .to_string(),
             ));
         }
@@ -238,7 +238,7 @@ impl FleetControlState {
             .shared
             .inner
             .lock()
-            .map_err(|_| "Unable to update the Fleet Manager product snapshot.".to_string())?;
+            .map_err(|_| "Unable to update the machdoch.cloud product snapshot.".to_string())?;
 
         if inner
             .shell

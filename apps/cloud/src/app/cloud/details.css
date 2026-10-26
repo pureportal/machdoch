@@ -1,0 +1,331 @@
+.cloud-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 28px;
+  max-width: 1280px;
+}
+.cloud-editor-body,
+.cloud-editor-properties {
+  display: grid;
+  align-content: start;
+  gap: 22px;
+  min-width: 0;
+}
+.cloud-editor-body {
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.cloud-editor-body textarea[name="title"] {
+  field-sizing: content;
+  height: auto;
+  min-height: 44px;
+  max-height: 240px;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  font-size: 21px;
+  font-weight: 550;
+  letter-spacing: -0.5px;
+  line-height: 1.5;
+  resize: none;
+}
+.cloud-editor-body textarea:not([name="title"]) {
+  min-height: 150px;
+  background: var(--cloud-subtle);
+}
+.cloud-editor-properties {
+  padding: 22px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--cloud-subtle);
+}
+.cloud-editor-properties label {
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.cloud-editor-properties select {
+  font-size: 12px;
+}
+.cloud-poker,
+.cloud-issue-tasks,
+.cloud-comments {
+  max-width: 1280px;
+  margin-top: 28px;
+  padding: 24px 28px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.cloud-poker h2,
+.cloud-issue-tasks h2,
+.cloud-comments h2 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.cloud-poker .cloud-page-header,
+.cloud-issue-tasks .cloud-page-header {
+  margin-bottom: 18px;
+}
+.cloud-attempt-list {
+  display: grid;
+  gap: 12px;
+}
+.cloud-attempt-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+.cloud-settings {
+  display: grid;
+  gap: 24px;
+  max-width: 1100px;
+}
+.cloud-settings-section {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--cloud-shadow);
+}
+.cloud-settings-section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+.cloud-settings-section h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.cloud-properties {
+  display: grid;
+  gap: 16px;
+  font-size: 13px;
+}
+.cloud-properties > div {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 16px;
+}
+.cloud-properties dt {
+  color: var(--muted-foreground);
+}
+.cloud-properties dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cloud-member-list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.cloud-member-list li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+}
+.cloud-member-list li + li {
+  border-top: 1px solid var(--border);
+}
+.cloud-member-list li > div {
+  flex: 1;
+  min-width: min(100%, 170px);
+  display: grid;
+  gap: 3px;
+  overflow-wrap: anywhere;
+}
+.cloud-member-list strong {
+  font-weight: 500;
+}
+.cloud-member-list span:not(.cloud-avatar) {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-member-picker {
+  display: grid;
+  gap: 10px;
+  max-height: 320px;
+  overflow: auto;
+}
+.cloud-member-picker legend {
+  margin-bottom: 12px;
+  font-weight: 500;
+}
+.cloud-member-picker label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+}
+.cloud-member-picker input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+.cloud-scale-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+.cloud-comments form {
+  display: grid;
+  gap: 12px;
+}
+.cloud-issue-panels {
+  margin-top: 24px;
+  max-width: 1280px;
+}
+.cloud-issue-panels :where(.cloud-poker, .cloud-comments, .cloud-issue-tasks) {
+  margin-top: 0;
+}
+.cloud-issue-panels .cloud-empty {
+  min-height: 150px;
+}
+.cloud-comments form > button {
+  justify-self: start;
+}
+.cloud-comment-list {
+  display: grid;
+  margin-top: 24px;
+}
+.cloud-comment-list > li {
+  padding: 20px 0;
+  border-top: 1px solid var(--border);
+}
+.cloud-comment-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.cloud-comment-heading strong {
+  font-weight: 550;
+}
+.cloud-comment-heading time,
+.cloud-comment-heading span {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.cloud-comment-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin-bottom: 8px;
+  line-height: 1.8;
+}
+.cloud-connection-setup {
+  display: grid;
+  gap: 20px;
+  max-width: 720px;
+  margin-bottom: 28px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.cloud-connections {
+  display: grid;
+  gap: 16px;
+}
+.cloud-connections article {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.cloud-connections h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.cloud-connections ul {
+  margin: 14px 0;
+  padding-left: 20px;
+  list-style: disc;
+  color: var(--muted-foreground);
+}
+.cloud-connections p {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.cloud-consent-scopes {
+  display: grid;
+  gap: 14px;
+  border: 0;
+  padding: 0;
+}
+.cloud-consent-scopes legend {
+  margin-bottom: 14px;
+  font-weight: 600;
+}
+.cloud-consent-scopes label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cloud-consent-scopes input {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+@media (max-width: 1000px) {
+  .cloud-editor {
+    grid-template-columns: minmax(0, 1fr) 220px;
+    gap: 18px;
+  }
+  .cloud-editor-body {
+    padding: 22px;
+  }
+  .cloud-editor-properties {
+    padding: 18px;
+  }
+}
+@media (max-width: 800px) {
+  .cloud-editor {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .cloud-editor-body {
+    padding: 18px;
+  }
+  .cloud-editor-properties {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px 12px;
+  }
+  .cloud-settings-section,
+  .cloud-connection-setup,
+  .cloud-connections article {
+    padding: 18px;
+  }
+  .cloud-poker,
+  .cloud-issue-tasks,
+  .cloud-comments {
+    padding: 20px 16px;
+  }
+  .cloud-properties > div {
+    grid-template-columns: 100px minmax(0, 1fr);
+    gap: 12px;
+  }
+}

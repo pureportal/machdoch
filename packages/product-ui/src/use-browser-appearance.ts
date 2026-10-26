@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   applyAppearanceSettings,
+  browserAppearanceStorageKey,
   DEFAULT_APPEARANCE_SETTINGS,
   normalizeAppearanceSettings,
   type AppearanceSettings,
 } from "./appearance";
 
-const storageKey = "machdoch.desktop.appearance-state";
 const changeEvent = "machdoch:browser-appearance-changed";
 
 export function useBrowserAppearance(): {
@@ -19,7 +19,7 @@ export function useBrowserAppearance(): {
   useEffect(() => {
     const load = (): void => {
       try {
-        const stored = window.localStorage.getItem(storageKey);
+        const stored = window.localStorage.getItem(browserAppearanceStorageKey);
         const next = normalizeAppearanceSettings(
           stored ? JSON.parse(stored) : null,
         );
@@ -32,7 +32,8 @@ export function useBrowserAppearance(): {
       }
     };
     const receive = (event: StorageEvent): void => {
-      if (event.key === storageKey || event.key === null) load();
+      if (event.key === browserAppearanceStorageKey || event.key === null)
+        load();
     };
     load();
     window.addEventListener("storage", receive);
@@ -45,7 +46,10 @@ export function useBrowserAppearance(): {
   const save = useCallback((next: AppearanceSettings): void => {
     try {
       const normalized = normalizeAppearanceSettings(next);
-      window.localStorage.setItem(storageKey, JSON.stringify(normalized));
+      window.localStorage.setItem(
+        browserAppearanceStorageKey,
+        JSON.stringify(normalized),
+      );
       applyAppearanceSettings(normalized);
       setSettings(normalized);
       setError(null);

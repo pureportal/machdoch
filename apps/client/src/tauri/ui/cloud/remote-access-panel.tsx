@@ -2,10 +2,10 @@ import { useEffect, useRef, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import {
-  enrollFleetManager,
+  enrollCloudServer,
   getFleetConnectionStatus,
-  reconnectFleetManager,
-  resetFleetManagerConnection,
+  reconnectCloudServer,
+  resetCloudServerConnection,
   type FleetConnectionStatus,
 } from "../runtime";
 import { requestFleetManagedSettingsSync } from "../chat-session/_helpers/fleet-managed-settings-sync";
@@ -66,7 +66,7 @@ export const RemoteAccessPanel = (): JSX.Element => {
     setActionError(null);
 
     try {
-      const nextStatus = await enrollFleetManager(
+      const nextStatus = await enrollCloudServer(
         managerUrl,
         enrollmentKey,
         instanceName,
@@ -91,7 +91,7 @@ export const RemoteAccessPanel = (): JSX.Element => {
     setLoading(true);
     setActionError(null);
     try {
-      setStatus(await reconnectFleetManager());
+      setStatus(await reconnectCloudServer());
       requestFleetManagedSettingsSync();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
@@ -108,7 +108,7 @@ export const RemoteAccessPanel = (): JSX.Element => {
     setActionError(null);
 
     try {
-      setStatus(await resetFleetManagerConnection());
+      setStatus(await resetCloudServerConnection());
     } catch (resetError) {
       setActionError(
         resetError instanceof Error ? resetError.message : String(resetError),
@@ -199,7 +199,7 @@ export const RemoteAccessPanel = (): JSX.Element => {
               onClick={() => {
                 if (
                   window.confirm(
-                    "Disconnect from Fleet Manager and remove this enrollment?",
+                    "Disconnect from machdoch.cloud and remove this enrollment?",
                   )
                 ) {
                   void disconnect();
@@ -221,13 +221,13 @@ export const RemoteAccessPanel = (): JSX.Element => {
         >
           <div className="grid gap-1">
             <label
-              htmlFor="fleet-manager-url"
+              htmlFor="cloud-url"
               className="text-xs font-medium text-slate-500"
             >
-              Manager URL
+              Cloud URL
             </label>
             <Input
-              id="fleet-manager-url"
+              id="cloud-url"
               type="url"
               value={managerUrl}
               maxLength={2048}

@@ -5,6 +5,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./appearance": "./src/appearance.ts",
     "./skills-management": "./src/skills-management.tsx",
     "./utility-palette.css": "./src/utility-palette.css",
     "./composer-controls": "./src/composer-controls.ts",

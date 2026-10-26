@@ -21,7 +21,7 @@ export const createFleetCliOptions = ({
     | undefined;
   runtimeOverridesProvided: boolean;
 }): FleetCliOptions => {
-  const rawFleetManagerUrl = normalizeOptionalString(values?.["manager-url"]);
+  const rawCloudServerUrl = normalizeOptionalString(values?.["manager-url"]);
   const rawFleetEnrollmentKey = normalizeOptionalString(
     values?.["enrollment-key"],
   );
@@ -68,7 +68,7 @@ export const createFleetCliOptions = ({
 
   const action = actionText as FleetCliAction;
   if (action === "enroll") {
-    if (!rawFleetManagerUrl) {
+    if (!rawCloudServerUrl) {
       fail("Expected --manager-url for `machdoch fleet enroll`.");
     }
     if (!rawFleetEnrollmentKey) {
@@ -96,7 +96,7 @@ export const createFleetCliOptions = ({
           >,
         }
       : {}),
-    ...(rawFleetManagerUrl ? { managerUrl: rawFleetManagerUrl } : {}),
+    ...(rawCloudServerUrl ? { managerUrl: rawCloudServerUrl } : {}),
     ...(rawFleetEnrollmentKey ? { enrollmentKey: rawFleetEnrollmentKey } : {}),
     ...(rawFleetDisplayName ? { displayName: rawFleetDisplayName } : {}),
   };

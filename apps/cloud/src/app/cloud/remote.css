@@ -1,0 +1,108 @@
+.cloud-remote-surface {
+  --app-bg: var(--background);
+  --app-surface: var(--card);
+  --app-surface-raised: var(--cloud-hover);
+  --app-surface-muted: var(--muted);
+  --app-hover: var(--cloud-hover);
+  --app-border: var(--border);
+  --app-border-strong: var(--input);
+  --app-text: var(--foreground);
+  --app-text-soft: var(--secondary-foreground);
+  --app-text-muted: var(--muted-foreground);
+  --app-text-faint: var(--muted-foreground);
+  --app-slate-500: var(--muted-foreground);
+  --app-sky-300: var(--primary);
+  --app-sky-400: var(--primary);
+  --app-sky-500: color-mix(in srgb, var(--primary) 55%, #000);
+  --app-sky-600: var(--app-sky-500);
+  min-height: 100dvh;
+  background: var(--background);
+}
+html[data-theme="light"] .cloud-remote-surface {
+  --app-sky-500: var(--primary);
+}
+.cloud-remote-surface .m-application-navigation {
+  background: var(--cloud-sidebar);
+}
+.cloud-remote-surface .m-navigation-button {
+  border-radius: 7px;
+}
+.cloud-remote-surface .m-product-topbar {
+  background: var(--card);
+  border-color: var(--border);
+}
+.cloud-remote-surface .m-product-instance span[data-connected="true"] {
+  color: var(--cloud-success);
+}
+.cloud-remote-surface .machdoch-product .m-product-primary-button {
+  color: #fff;
+}
+.cloud-remote-surface .m-composer-model-trigger {
+  color: var(--foreground);
+  background: var(--cloud-subtle);
+  border-color: var(--input);
+}
+.cloud-remote-surface .m-composer-model-trigger:hover:not(:disabled) {
+  background: var(--muted);
+  color: var(--foreground);
+}
+.cloud-remote-surface .m-composer-surface-controls button span {
+  color: var(--foreground);
+}
+.cloud-remote-surface .machdoch-product .m-composer-surface {
+  border-color: var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: var(--cloud-shadow);
+}
+.cloud-remote-surface .m-composer-surface-toolbar {
+  border-color: var(--border);
+}
+.cloud-remote-surface .machdoch-product .m-composer-input {
+  background: var(--cloud-subtle);
+  border-color: var(--input);
+  border-radius: 12px;
+}
+.cloud-remote-surface .fleet-services {
+  background: var(--cloud-subtle);
+  font-size: 13px;
+}
+.cloud-remote-surface .fleet-services > div > header {
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.cloud-remote-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  min-height: 52px;
+  padding: 8px 24px;
+  background: var(--cloud-sidebar);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.cloud-remote-toolbar a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 36px;
+  color: var(--muted-foreground);
+}
+.cloud-remote-toolbar a:hover {
+  color: var(--foreground);
+}
+.cloud-remote-toolbar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-remote-surface:has(.cloud-remote-toolbar) .tts-layout {
+  min-height: calc(100dvh - 126px);
+}
+@media (max-width: 800px) {
+  .cloud-remote-toolbar {
+    padding-inline: 16px;
+  }
+}

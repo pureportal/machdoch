@@ -8,7 +8,7 @@ import {
   loadFleetConnectionStatus,
   resetFleetConnection,
   setFleetConnectionEnabled,
-  validateFleetManagerUrl,
+  validateCloudServerUrl,
   writeFleetConnectionConfig,
 } from "./fleet-connection.ts";
 
@@ -145,7 +145,7 @@ describe.sequential("Fleet connection configuration", () => {
         fetch: async () =>
           Response.json({ error: "\u001b[31mspoofed" }, { status: 401 }),
       }),
-    ).rejects.toThrow("Fleet Manager rejected enrollment (401).");
+    ).rejects.toThrow("machdoch.cloud rejected enrollment (401).");
   });
 
   it("does not surface directional controls from manager errors", async () => {
@@ -161,25 +161,25 @@ describe.sequential("Fleet connection configuration", () => {
         fetch: async () =>
           Response.json({ error: "safe\u202etxt" }, { status: 401 }),
       }),
-    ).rejects.toThrow("Fleet Manager rejected enrollment (401).");
+    ).rejects.toThrow("machdoch.cloud rejected enrollment (401).");
   });
 
   it("accepts HTTPS origins and rejects insecure or path-bearing manager URLs", () => {
-    expect(validateFleetManagerUrl("https://fleet.example.test").origin).toBe(
+    expect(validateCloudServerUrl("https://fleet.example.test").origin).toBe(
       "https://fleet.example.test",
     );
-    expect(() => validateFleetManagerUrl("http://fleet.example.test")).toThrow(
+    expect(() => validateCloudServerUrl("http://fleet.example.test")).toThrow(
       "must use HTTPS",
     );
     expect(() =>
-      validateFleetManagerUrl("https://fleet.example.test/path"),
+      validateCloudServerUrl("https://fleet.example.test/path"),
     ).toThrow("must be an origin");
   });
 
   it("does not allow an environment variable to weaken release transport", () => {
     vi.stubEnv("MACHDOCH_FLEET_ALLOW_LOOPBACK_HTTP", "1");
 
-    expect(() => validateFleetManagerUrl("http://127.0.0.1:43188")).toThrow(
+    expect(() => validateCloudServerUrl("http://127.0.0.1:43188")).toThrow(
       "must use HTTPS",
     );
   });

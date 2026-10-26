@@ -535,7 +535,6 @@ export class FleetRunManager {
       exitCode: null,
       health: config.healthCheck ? "Waiting for health check" : null,
     };
-    // Environment secrets belonging to the Fleet manager/CLI must not flow into project commands.
     const env = Object.fromEntries(
       Object.entries(process.env).filter(
         ([key]) =>

@@ -1,0 +1,75 @@
+.cloud-auth {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  min-height: 100dvh;
+  padding: 48px 24px;
+  background:
+    radial-gradient(
+      ellipse at 50% 0,
+      color-mix(in srgb, var(--primary) 9%, transparent),
+      transparent 60%
+    ),
+    var(--cloud-sidebar);
+  font-size: 14px;
+}
+.cloud-auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.7px;
+}
+.cloud-auth-brand .cloud-brand-mark {
+  height: 36px;
+  width: 36px;
+  border-radius: 10px;
+}
+.cloud-auth-panel {
+  display: grid;
+  gap: 24px;
+  width: min(100%, 420px);
+  padding: 32px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  box-shadow: var(--cloud-shadow);
+}
+.cloud-auth h1 {
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.7px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.cloud-auth form {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+}
+.cloud-auth p {
+  color: var(--muted-foreground);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.cloud-auth p[role="alert"] {
+  color: var(--destructive);
+}
+.cloud-auth form > button[type="submit"] {
+  margin-top: 4px;
+}
+.cloud-auth > :where(h1, p) {
+  max-width: 420px;
+}
+@media (max-width: 500px) {
+  .cloud-auth {
+    padding: 32px 20px;
+    gap: 24px;
+  }
+  .cloud-auth-panel {
+    padding: 24px;
+  }
+}

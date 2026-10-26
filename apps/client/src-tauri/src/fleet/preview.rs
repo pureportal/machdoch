@@ -20,7 +20,7 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
-use super::{config::validate_fleet_manager_url, FleetConnectionPhase, FleetConnectionState};
+use super::{config::validate_cloud_server_url, FleetConnectionPhase, FleetConnectionState};
 use crate::workspace_run::{
     model::{RunConfiguration, RunLifecycleState},
     WorkspaceRunState,
@@ -141,7 +141,7 @@ pub(crate) async fn open(
             .lock()
             .map_err(|_| "Fleet connection is unavailable.")?;
         if inner.phase != FleetConnectionPhase::Connected {
-            return Err("Connect to Fleet Manager before opening a preview.".into());
+            return Err("Connect to machdoch.cloud before opening a preview.".into());
         }
         (
             inner
@@ -151,7 +151,7 @@ pub(crate) async fn open(
             inner.generation,
         )
     };
-    let mut url = validate_fleet_manager_url(&config.manager_url)?;
+    let mut url = validate_cloud_server_url(&config.manager_url)?;
     url.set_scheme(if url.scheme() == "https" { "wss" } else { "ws" })
         .map_err(|_| "Invalid preview URL.")?;
     url.set_path(&format!("/api/gateway/preview/{tunnel_id}"));
@@ -181,7 +181,7 @@ pub(crate) async fn open(
                 connect_async_with_config(request, Some(websocket_config), false)
                     .await
                     .map_err(|_| {
-                        "Fleet Manager rejected the preview connection. Reopen the preview."
+                        "machdoch.cloud rejected the preview connection. Reopen the preview."
                             .to_string()
                     })
             }

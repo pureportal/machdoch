@@ -23,7 +23,7 @@ use tokio_tungstenite::{
 };
 
 use super::{
-    config::{validate_fleet_manager_url, FleetConnectionConfig},
+    config::{validate_cloud_server_url, FleetConnectionConfig},
     http::normalized_manager_message,
     now_seconds, FleetConnectionInner, FleetConnectionPhase,
 };
@@ -130,7 +130,7 @@ async fn connect_once(
             if permanent_upgrade_status(response.status().as_u16()) =>
         {
             return ConnectionResult::Stopped(
-                "Fleet Manager rejected the instance credentials.".to_string(),
+                "machdoch.cloud rejected the instance credentials.".to_string(),
             );
         }
         Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
@@ -213,7 +213,7 @@ async fn connect_once(
                 }
             }
             _ = tokio::time::sleep_until(last_received + GATEWAY_IDLE_TIMEOUT) => {
-                return ConnectionResult::Reconnect("Fleet Manager stopped responding.".to_string());
+                return ConnectionResult::Reconnect("machdoch.cloud stopped responding.".to_string());
             }
             completed = async { work.as_mut().expect("guarded worker").await }, if work.is_some() => {
                 work = None;
@@ -255,11 +255,11 @@ async fn connect_once(
                             Ok(ManagerMessage::Disconnect { reason }) => {
                                 return ConnectionResult::Stopped(
                                     normalized_manager_message(&reason, 500).unwrap_or_else(|| {
-                                        "Fleet Manager disconnected the instance.".to_string()
+                                        "machdoch.cloud disconnected the instance.".to_string()
                                     }),
                                 )
                             }
-                            Err(_) => return ConnectionResult::Stopped("Fleet Manager sent an invalid gateway message.".to_string()),
+                            Err(_) => return ConnectionResult::Stopped("machdoch.cloud sent an invalid gateway message.".to_string()),
                         }
                     }
                     Some(Ok(Message::Ping(payload))) => {
@@ -278,11 +278,11 @@ async fn connect_once(
                         | tokio_tungstenite::tungstenite::Error::Utf8(_)
                         | tokio_tungstenite::tungstenite::Error::AttackAttempt,
                     )) => {
-                        return ConnectionResult::Stopped("Fleet Manager sent an invalid gateway message.".to_string())
+                        return ConnectionResult::Stopped("machdoch.cloud sent an invalid gateway message.".to_string())
                     }
                     Some(Err(error)) => return ConnectionResult::Reconnect(format!("Fleet gateway connection failed: {error}")),
                     Some(Ok(Message::Binary(_))) | Some(Ok(Message::Frame(_))) => {
-                        return ConnectionResult::Stopped("Fleet Manager sent an unsupported gateway message.".to_string())
+                        return ConnectionResult::Stopped("machdoch.cloud sent an unsupported gateway message.".to_string())
                     }
                 }
             }
@@ -306,9 +306,9 @@ fn connection_result_from_close(frame: Option<CloseFrame>) -> ConnectionResult {
     );
     if permanent {
         return ConnectionResult::Stopped(if let Some(reason) = reason {
-            format!("Fleet Manager rejected the connection: {reason}")
+            format!("machdoch.cloud rejected the connection: {reason}")
         } else {
-            format!("Fleet Manager rejected the connection ({}).", frame.code)
+            format!("machdoch.cloud rejected the connection ({}).", frame.code)
         });
     }
     ConnectionResult::Reconnect(if let Some(reason) = reason {
@@ -386,10 +386,10 @@ async fn wait_for_generation_change(state: &Arc<Mutex<FleetConnectionInner>>, ge
 }
 
 fn gateway_url(manager_url: &str, instance_id: &str) -> Result<url::Url, String> {
-    let mut url = validate_fleet_manager_url(manager_url)?;
+    let mut url = validate_cloud_server_url(manager_url)?;
     let gateway_scheme = if url.scheme() == "https" { "wss" } else { "ws" };
     url.set_scheme(gateway_scheme)
-        .map_err(|_| "Fleet Manager URL cannot be converted to a gateway URL.".to_string())?;
+        .map_err(|_| "machdoch.cloud URL cannot be converted to a gateway URL.".to_string())?;
     url.set_path(&format!("/api/gateway/connect/{instance_id}"));
     Ok(url)
 }
@@ -474,7 +474,7 @@ mod tests {
         assert!(matches!(
             connection_result_from_close(Some(CloseFrame {
                 code: CloseCode::Restart,
-                reason: "Fleet Manager is restarting.".into(),
+                reason: "machdoch.cloud is restarting.".into(),
             })),
             ConnectionResult::Reconnect(_)
         ));
@@ -563,7 +563,7 @@ mod tests {
         match result {
             ConnectionResult::Stopped(error) => assert_eq!(
                 error,
-                "Fleet Manager rejected the connection: Invalid hello message."
+                "machdoch.cloud rejected the connection: Invalid hello message."
             ),
             _ => panic!("policy close should stop reconnecting"),
         }
@@ -578,7 +578,7 @@ mod tests {
 
         match result {
             ConnectionResult::Stopped(error) => {
-                assert_eq!(error, "Fleet Manager rejected the connection (1008).")
+                assert_eq!(error, "machdoch.cloud rejected the connection (1008).")
             }
             _ => panic!("policy close should stop reconnecting"),
         }

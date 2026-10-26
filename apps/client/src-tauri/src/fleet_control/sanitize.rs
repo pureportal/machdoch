@@ -23,7 +23,7 @@ pub(super) fn sanitize_shell_snapshot(
 ) -> Result<FleetShellSnapshot, String> {
     if snapshot.version != PRODUCT_SNAPSHOT_VERSION {
         return Err(format!(
-            "The Fleet Manager shell snapshot does not match schema version {PRODUCT_SNAPSHOT_VERSION}."
+            "The machdoch.cloud shell snapshot does not match schema version {PRODUCT_SNAPSHOT_VERSION}."
         ));
     }
 

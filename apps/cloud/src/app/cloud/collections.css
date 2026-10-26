@@ -1,0 +1,469 @@
+.cloud-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 18px;
+}
+.cloud-toolbar > input {
+  flex: 1;
+  min-width: 160px;
+  max-width: 360px;
+}
+.cloud-toolbar select {
+  width: auto;
+  max-width: 200px;
+  font-size: 12px;
+}
+.cloud-issue-search {
+  display: flex;
+  position: relative;
+  flex: 1 1 220px;
+  min-width: 0;
+  max-width: 420px;
+  gap: 6px;
+  margin-right: auto;
+}
+.cloud-issue-search > svg {
+  position: absolute;
+  left: 11px;
+  top: 11px;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+.cloud-issue-search input {
+  min-width: 0;
+  padding-left: 34px;
+}
+.cloud-issue-search button {
+  flex-shrink: 0;
+}
+.cloud-view-toggle {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--cloud-subtle);
+}
+.cloud-view-toggle button {
+  min-height: 28px;
+  width: 32px;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+.cloud-view-toggle button[aria-pressed="true"] {
+  color: var(--foreground);
+  background: var(--card);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.cloud-table-wrap {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  scrollbar-width: thin;
+}
+.cloud-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 12px;
+}
+.cloud-table th {
+  padding: 11px 16px;
+  background: var(--cloud-subtle);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.cloud-table td {
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+}
+.cloud-table tr:hover td {
+  background: var(--cloud-hover);
+}
+.cloud-table td:not(:first-child) {
+  white-space: nowrap;
+}
+.cloud-mobile-cell-label {
+  display: none;
+}
+.cloud-issue-link {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 270px;
+}
+.cloud-issue-key {
+  color: var(--muted-foreground);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 11px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.cloud-issue-title {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.cloud-priority {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  text-transform: capitalize;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.cloud-priority[data-priority="urgent"] {
+  color: var(--cloud-danger);
+}
+.cloud-priority[data-priority="high"] {
+  color: var(--cloud-warning);
+}
+.cloud-assignee {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.cloud-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-size: 12px;
+}
+.cloud-state::before {
+  content: "";
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  border: 1.5px solid var(--muted-foreground);
+  border-radius: 50%;
+}
+.cloud-state[data-state="backlog"]::before {
+  border-style: dashed;
+}
+.cloud-state[data-state="ready"]::before {
+  border-color: var(--muted-foreground);
+  box-shadow: inset 0 0 0 2px var(--card);
+  background: var(--muted-foreground);
+}
+.cloud-state[data-state="active"]::before {
+  border-color: var(--cloud-warning);
+  background: conic-gradient(var(--cloud-warning) 50%, transparent 50%);
+}
+.cloud-state[data-state="complete"]::before {
+  background: var(--cloud-success);
+  border-color: var(--cloud-success);
+  box-shadow: inset 0 0 0 2px var(--card);
+}
+.cloud-state[data-state="blocked"]::before {
+  background: var(--cloud-danger);
+  border-color: var(--cloud-danger);
+}
+.cloud-state[data-state="review"]::before {
+  background: var(--primary);
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 2px var(--card);
+}
+.cloud-state[data-state="canceled"]::before {
+  background: linear-gradient(
+    135deg,
+    transparent 42%,
+    var(--muted-foreground) 43%,
+    var(--muted-foreground) 57%,
+    transparent 58%
+  );
+}
+.cloud-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(258px, 1fr);
+  gap: 16px;
+  overflow-x: auto;
+  padding: 0 0 18px;
+  scrollbar-width: thin;
+}
+.cloud-board-column {
+  background: var(--cloud-subtle);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  min-height: 440px;
+}
+.cloud-board-column h2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 2px 18px;
+  font-weight: 550;
+}
+.cloud-board-column h2 > span:last-child {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 400;
+}
+.cloud-board-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  box-shadow: var(--cloud-shadow);
+  transition:
+    border-color 0.15s,
+    transform 0.15s;
+}
+.cloud-board-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
+  transform: translateY(-1px);
+}
+.cloud-board-card .cloud-issue-title {
+  font-size: 13px;
+  line-height: 1.6;
+}
+.cloud-board-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.cloud-board-card-footer .cloud-avatar {
+  margin-left: auto;
+}
+.cloud-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
+  gap: 20px;
+  align-items: start;
+}
+.cloud-card {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  box-shadow: var(--cloud-shadow);
+}
+.cloud-card h2 {
+  font-size: 15px;
+  line-height: 1.5;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  overflow-wrap: anywhere;
+}
+.cloud-card p {
+  color: var(--muted-foreground);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cloud-card-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.cloud-card-heading > svg {
+  color: var(--muted-foreground);
+}
+.cloud-card h2 a:hover {
+  color: var(--primary);
+}
+.cloud-card-metadata {
+  display: grid;
+  gap: 12px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-card-metadata > span,
+.cloud-card-metadata > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.cloud-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.cloud-card-actions > button {
+  font-size: 11px;
+  padding-inline: 10px;
+  min-height: 32px;
+}
+.cloud-card-actions > :last-child:nth-child(n + 3) {
+  margin-left: auto;
+}
+.cloud-card-actions > [aria-label="Schedule history"] {
+  flex-basis: 100%;
+  min-width: 0;
+}
+.cloud-card-team {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.cloud-task-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--cloud-subtle);
+  font-size: 11px;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.cloud-task-state[data-state="succeeded"],
+.cloud-task-state[data-state="active"] {
+  color: var(--cloud-success);
+}
+.cloud-task-state[data-state="failed"],
+.cloud-task-state[data-state="timed_out"] {
+  color: var(--cloud-danger);
+}
+.cloud-task-state[data-state="reconciling"],
+.cloud-task-state[data-state="cancel_requested"],
+.cloud-task-state[data-state="running"],
+.cloud-task-state[data-state="waiting"] {
+  color: var(--cloud-warning);
+}
+.cloud-task-state[data-state="preparing"],
+.cloud-task-state[data-state="validating"],
+.cloud-task-state[data-state="publishing"] {
+  color: var(--primary);
+}
+.cloud-provider-models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.cloud-provider-models li {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--cloud-subtle);
+}
+@media (max-width: 800px) {
+  .cloud-toolbar {
+    gap: 8px;
+  }
+  .cloud-issue-search {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .cloud-issue-search > svg {
+    top: 14px;
+  }
+  .cloud-toolbar select {
+    flex: 1;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .cloud-table td,
+  .cloud-table th {
+    padding: 12px;
+  }
+  .cloud-issue-link {
+    min-width: 210px;
+    gap: 4px;
+    display: grid;
+  }
+  .cloud-issue-table {
+    overflow: hidden;
+  }
+  .cloud-issue-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .cloud-issue-table :is(table, tbody) {
+    display: block;
+  }
+  .cloud-issue-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, auto);
+    align-items: center;
+    gap: 12px;
+    padding: 18px;
+  }
+  .cloud-issue-table tbody tr + tr {
+    border-top: 1px solid var(--border);
+  }
+  .cloud-issue-table tbody td {
+    min-width: 0;
+    border: 0;
+    padding: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .cloud-issue-table td:first-child {
+    grid-column: 1 / -1;
+    margin-bottom: 2px;
+  }
+  .cloud-issue-table td:is(:nth-child(3), :last-child) {
+    text-align: right;
+  }
+  .cloud-issue-table .cloud-issue-link {
+    min-width: 0;
+    gap: 8px;
+  }
+  .cloud-issue-table .cloud-issue-title {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .cloud-issue-table .cloud-issue-key {
+    font-size: 10px;
+  }
+  .cloud-issue-table .cloud-mobile-cell-label {
+    display: inline;
+    color: var(--muted-foreground);
+    font-size: 11px;
+  }
+  .cloud-issue-table tr:hover td {
+    background: transparent;
+  }
+  .cloud-issue-table tr:hover {
+    background: var(--cloud-hover);
+  }
+  .cloud-grid {
+    gap: 14px;
+  }
+  .cloud-card {
+    padding: 20px;
+  }
+  .cloud-board {
+    grid-auto-columns: min(290px, 85vw);
+    gap: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cloud-board-card:hover {
+    transform: none;
+  }
+}

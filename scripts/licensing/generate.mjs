@@ -33,9 +33,9 @@ const profiles = {
     workspaces: ["apps/client"],
     output: "apps/client/dist/legal-desktop",
   },
-  "fleet-manager": {
-    workspaces: ["apps/fleet-manager", "apps/client"],
-    output: "apps/fleet-manager/dist/legal",
+  "cloud": {
+    workspaces: ["apps/cloud", "apps/client"],
+    output: "apps/cloud/dist/legal",
   },
   landing: { workspaces: ["apps/landing"], output: "apps/landing/dist/legal" },
 };
@@ -43,7 +43,7 @@ const profileName = process.argv[2];
 const profile = profiles[profileName];
 if (!profile || process.argv.length > 3) {
   throw new Error(
-    "Usage: node scripts/licensing/generate.mjs headless|desktop|fleet-manager|landing",
+    "Usage: node scripts/licensing/generate.mjs headless|desktop|cloud|landing",
   );
 }
 const inputFiles = [
@@ -158,7 +158,7 @@ try {
       )),
     );
   }
-  if (profileName === "desktop" || profileName === "fleet-manager") {
+  if (profileName === "desktop" || profileName === "cloud") {
     node = await collectNodeLicense(
       process.env.MACHDOCH_NODE_BINARY || process.execPath,
       stage,

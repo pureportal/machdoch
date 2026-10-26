@@ -50,9 +50,9 @@ pub(super) fn delete_fleet_connection_config() -> Result<(), String> {
     })
 }
 
-pub(super) fn validate_fleet_manager_url(value: &str) -> Result<Url, String> {
+pub(super) fn validate_cloud_server_url(value: &str) -> Result<Url, String> {
     let url = Url::parse(value.trim())
-        .map_err(|error| format!("Fleet Manager URL is invalid: {error}"))?;
+        .map_err(|error| format!("machdoch.cloud URL is invalid: {error}"))?;
     let is_development_loopback_url = cfg!(debug_assertions)
         && url.scheme() == "http"
         && match url.host() {
@@ -63,9 +63,9 @@ pub(super) fn validate_fleet_manager_url(value: &str) -> Result<Url, String> {
         };
     if url.scheme() != "https" && !is_development_loopback_url {
         return Err(if cfg!(debug_assertions) {
-            "Fleet Manager URL must use HTTPS or a loopback HTTP origin in development.".to_string()
+            "machdoch.cloud URL must use HTTPS or a loopback HTTP origin in development.".to_string()
         } else {
-            "Fleet Manager URL must use HTTPS.".to_string()
+            "machdoch.cloud URL must use HTTPS.".to_string()
         });
     }
     if url.path() != "/"
@@ -74,7 +74,7 @@ pub(super) fn validate_fleet_manager_url(value: &str) -> Result<Url, String> {
         || !url.username().is_empty()
         || url.password().is_some()
     {
-        return Err("Fleet Manager URL must be an origin.".to_string());
+        return Err("machdoch.cloud URL must be an origin.".to_string());
     }
     Ok(url)
 }
@@ -108,7 +108,7 @@ fn write_fleet_connection_config_at_path(
         secure_directory(directory)?;
     }
     let serialized = serde_json::to_string_pretty(config)
-        .map_err(|error| format!("Failed to serialize Fleet Manager connection: {error}"))?;
+        .map_err(|error| format!("Failed to serialize machdoch.cloud connection: {error}"))?;
     write_file_atomic(
         path,
         format!("{serialized}\n").as_bytes(),
@@ -124,7 +124,7 @@ fn validate_config(config: &FleetConnectionConfig) -> Result<(), String> {
             "Fleet connection schema version {FLEET_CONNECTION_SCHEMA_VERSION} is required."
         ));
     }
-    validate_fleet_manager_url(&config.manager_url)?;
+    validate_cloud_server_url(&config.manager_url)?;
     if !super::valid_identifier(&config.manager_id, "manager")
         || !super::valid_identifier(&config.instance_id, "instance")
         || !super::valid_prefixed_secret(&config.instance_secret, "mch_instance")
@@ -211,13 +211,13 @@ mod tests {
 
     #[test]
     fn manager_url_requires_a_secure_or_development_loopback_origin() {
-        assert!(validate_fleet_manager_url("http://fleet.example.test").is_err());
-        assert!(validate_fleet_manager_url("https://fleet.example.test/path").is_err());
-        assert!(validate_fleet_manager_url("https://fleet.example.test").is_ok());
+        assert!(validate_cloud_server_url("http://fleet.example.test").is_err());
+        assert!(validate_cloud_server_url("https://fleet.example.test/path").is_err());
+        assert!(validate_cloud_server_url("https://fleet.example.test").is_ok());
         if cfg!(debug_assertions) {
-            assert!(validate_fleet_manager_url("http://127.0.0.1:43188").is_ok());
-            assert!(validate_fleet_manager_url("http://localhost:43188").is_ok());
-            assert!(validate_fleet_manager_url("http://[::1]:43188").is_ok());
+            assert!(validate_cloud_server_url("http://127.0.0.1:43188").is_ok());
+            assert!(validate_cloud_server_url("http://localhost:43188").is_ok());
+            assert!(validate_cloud_server_url("http://[::1]:43188").is_ok());
         }
     }
 }

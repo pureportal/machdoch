@@ -4,7 +4,7 @@ import WebSocket, { createWebSocketStream } from "ws";
 import type { HostRequest } from "@machdoch/fleet-protocol";
 import {
   loadFleetConnectionConfig,
-  validateFleetManagerUrl,
+  validateCloudServerUrl,
 } from "./fleet-connection.js";
 import type { FleetRunManager } from "./fleet-runs.js";
 
@@ -22,7 +22,7 @@ export class FleetPreviewTunnels {
     if (!config) throw new Error("Fleet connection is unavailable.");
     if (target.signal.aborted || this.active.size >= 32)
       throw new Error("Preview is unavailable.");
-    const url = validateFleetManagerUrl(config.managerUrl);
+    const url = validateCloudServerUrl(config.managerUrl);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
     url.pathname = `/api/gateway/preview/${request.tunnelId}`;
     // The one-use tunnel credential travels in a header, never a URL or project environment.
@@ -97,7 +97,7 @@ export class FleetPreviewTunnels {
           ? "The service is not listening yet. Check its port and bind address, then retry Preview."
           : error instanceof Error &&
               error.message === "Preview tunnel was rejected."
-            ? "Fleet Manager rejected the preview tunnel. Reopen the preview."
+            ? "machdoch.cloud rejected the preview tunnel. Reopen the preview."
             : "Could not connect to the running service. Check its port and bind address.",
       );
     }

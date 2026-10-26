@@ -83,14 +83,14 @@ const targetFiles = [
     },
   },
   {
-    path: "apps/fleet-manager/package.json",
+    path: "apps/cloud/package.json",
     update: (content, currentVersion, nextVersion) => {
       const packageJson = JSON.parse(content);
 
       assertVersion(
         packageJson.version,
         currentVersion,
-        "apps/fleet-manager/package.json",
+        "apps/cloud/package.json",
       );
       packageJson.version = nextVersion;
 

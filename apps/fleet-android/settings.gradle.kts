@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Machdoch Fleet"
+rootProject.name = "machdoch.cloud"
 include(":app")

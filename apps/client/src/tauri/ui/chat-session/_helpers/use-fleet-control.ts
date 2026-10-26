@@ -1480,7 +1480,7 @@ export const useFleetControl = (options: {
       if (!sourceSession) {
         const targetId = command.sessionId ?? command.taskId ?? "unknown";
         throw new NonRetryableFleetCommandError(
-          `Fleet Manager target \`${targetId}\` is no longer available.`,
+          `machdoch.cloud target \`${targetId}\` is no longer available.`,
         );
       }
 
@@ -2335,7 +2335,7 @@ export const useFleetControl = (options: {
           ) {
             return;
           }
-          console.error("Failed to publish Fleet Manager product state", error);
+          console.error("Failed to publish machdoch.cloud product state", error);
           snapshotPublishRetryAttemptRef.current += 1;
           if (snapshotPublishRetryTimerRef.current === null) {
             const retryDelay = Math.min(
@@ -2436,7 +2436,7 @@ export const useFleetControl = (options: {
               );
             }
             if (!disposed) {
-              console.error("Fleet Manager command failed", error);
+              console.error("machdoch.cloud command failed", error);
             }
             failedAttemptCounts.delete(command.commandId);
             await completeCrossWindowOperation(lease);

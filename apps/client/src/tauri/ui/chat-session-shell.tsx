@@ -176,7 +176,7 @@ export const ChatSession = (): JSX.Element => {
   const [appShellLoadAttempt, setAppShellLoadAttempt] = useState(0);
   const [chatCompletedSinceView, setChatCompletedSinceView] = useState(false);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
-  const [fleetManagerOpen, setFleetManagerOpen] = useState(false);
+  const [cloudServerOpen, setCloudServerOpen] = useState(false);
   const [pendingMediaRunId, setPendingMediaRunId] = useState<string | null>(
     null,
   );
@@ -499,7 +499,7 @@ export const ChatSession = (): JSX.Element => {
         execute: () => setSchedulerOpen(true),
       },
       {
-        id: "app.fleet-manager.open",
+        id: "app.cloud.open",
         title: "Open machdoch.cloud",
         group: "Navigation",
         keywords: ["fleet", "enrollment", "managed host"],
@@ -507,7 +507,7 @@ export const ChatSession = (): JSX.Element => {
         palette: "visible",
         order: 21,
         overlayPolicy: "replace-non-modal",
-        execute: () => setFleetManagerOpen(true),
+        execute: () => setCloudServerOpen(true),
       },
       {
         id: "chat.session.new",
@@ -931,7 +931,7 @@ export const ChatSession = (): JSX.Element => {
               schedulerActivity={schedulerActivity}
               onSelectApp={selectApp}
               onOpenScheduler={() => setSchedulerOpen(true)}
-              onOpenFleetManager={() => setFleetManagerOpen(true)}
+              onOpenCloudServer={() => setCloudServerOpen(true)}
               onOpenSettings={controller.openProviderSettings}
             />
           }
@@ -1240,9 +1240,9 @@ export const ChatSession = (): JSX.Element => {
       </Dialog>
 
       <Dialog
-        open={fleetManagerOpen}
-        onOpenChange={setFleetManagerOpen}
-        commandOverlayId="fleet-manager"
+        open={cloudServerOpen}
+        onOpenChange={setCloudServerOpen}
+        commandOverlayId="cloud"
         commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
       >
         <CloudPanel workspaceRoot={controller.composer.activeSession.workspace} />

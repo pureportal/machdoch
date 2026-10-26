@@ -1,0 +1,216 @@
+.cloud-task-list {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.cloud-task-list li + li {
+  border-top: 1px solid var(--border);
+}
+.cloud-task-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 24px;
+  padding: 22px;
+  transition: background-color 0.15s;
+}
+.cloud-task-row:hover {
+  background: var(--cloud-hover);
+}
+.cloud-task-row:focus-visible {
+  outline-offset: -3px !important;
+}
+.cloud-task-row-title {
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.cloud-task-row-title > svg {
+  flex-shrink: 0;
+  margin-top: 4px;
+  color: var(--muted-foreground);
+}
+.cloud-task-row > .cloud-task-state {
+  justify-self: end;
+}
+.cloud-task-project,
+.cloud-task-created {
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.cloud-task-project {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow-wrap: anywhere;
+}
+.cloud-task-project svg {
+  flex-shrink: 0;
+}
+.cloud-task-created {
+  text-align: right;
+}
+.cloud-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 12px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-back-link:hover {
+  color: var(--foreground);
+}
+.cloud-task-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: -8px 0 24px;
+}
+.cloud-task-context a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-task-context a:hover {
+  color: var(--primary);
+}
+.cloud-task-notice {
+  margin-bottom: 24px;
+  padding: 14px 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--cloud-subtle);
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-task-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  align-items: start;
+  gap: 24px;
+}
+.cloud-task-content,
+.cloud-task-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 20px;
+  min-width: 0;
+}
+.cloud-task-layout h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cloud-task-layout h2 > svg {
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+.cloud-task-brief > div + div {
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+.cloud-task-brief p {
+  margin-top: 14px;
+  line-height: 1.85;
+}
+.cloud-task-result {
+  border-top: 2px solid var(--primary);
+}
+.cloud-task-result[data-state="succeeded"] {
+  border-top-color: var(--cloud-success);
+}
+.cloud-task-properties {
+  display: grid;
+  gap: 16px;
+  font-size: 12px;
+}
+.cloud-task-properties > div {
+  display: grid;
+  gap: 5px;
+}
+.cloud-task-properties dt {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.cloud-task-properties dd {
+  overflow-wrap: anywhere;
+}
+.cloud-task-repository summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.cloud-task-repository summary::after {
+  content: "+";
+  margin-left: auto;
+  color: var(--muted-foreground);
+}
+.cloud-task-repository[open] summary::after {
+  content: "−";
+}
+.cloud-task-repository[open] summary {
+  margin-bottom: 20px;
+}
+.cloud-attempt-list li > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.cloud-attempt-number {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+@media (max-width: 1100px) {
+  .cloud-task-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cloud-task-sidebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cloud-task-repository {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 600px) {
+  .cloud-task-row {
+    gap: 12px;
+    padding: 18px;
+  }
+  .cloud-task-row-title {
+    grid-column: 1 / -1;
+  }
+  .cloud-task-row > .cloud-task-state {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .cloud-task-project {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .cloud-task-created {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+  .cloud-task-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

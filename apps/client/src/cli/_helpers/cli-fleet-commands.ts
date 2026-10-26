@@ -76,7 +76,7 @@ const runService = async (args: ParsedCliArgs): Promise<void> => {
     const config = await loadFleetConnectionConfig();
     if (!config)
       throw new Error(
-        "Enroll this CLI with a Fleet Manager before starting the Fleet service.",
+        "Enroll this CLI with machdoch.cloud before starting the remote-access service.",
       );
     if (!config.enabled)
       throw new Error(
@@ -208,7 +208,7 @@ export const printFleetSummary = async (args: ParsedCliArgs): Promise<void> => {
     case "enroll":
       await enrollFleetConnection({
         managerUrl:
-          options.managerUrl ?? fail("No Fleet Manager URL was provided."),
+          options.managerUrl ?? fail("No machdoch.cloud URL was provided."),
         enrollmentKey:
           options.enrollmentKey ??
           fail("No Fleet enrollment key was provided."),

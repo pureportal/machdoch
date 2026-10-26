@@ -203,11 +203,11 @@ pub fn run() {
             }
 
             if let Err(error) = fleet_control::initialize(app.handle()) {
-                eprintln!("Failed to initialize Fleet Manager control state: {error}");
+                eprintln!("Failed to initialize machdoch.cloud control state: {error}");
             }
 
             if let Err(error) = fleet::initialize(app.handle()) {
-                eprintln!("Failed to initialize Fleet Manager connection: {error}");
+                eprintln!("Failed to initialize machdoch.cloud connection: {error}");
             }
 
             match media::storage::resume_pending(app.handle()) {
@@ -415,7 +415,7 @@ pub fn run() {
             media::media_resolve_provider_review,
             media::media_wake_provider_reconciliation,
             media::media_transform_image,
-            fleet::enroll_fleet_manager,
+            fleet::enroll_cloud_server,
             fleet::get_fleet_connection_status,
             fleet::get_fleet_managed_settings,
             fleet::export_fleet_local_settings,
@@ -423,8 +423,8 @@ pub fn run() {
             fleet::fleet_enrollment_capture_required,
             fleet::report_fleet_managed_settings_applied,
             fleet::report_fleet_managed_settings_failure,
-            fleet::reset_fleet_manager_connection,
-            fleet::reconnect_fleet_manager,
+            fleet::reset_cloud_server_connection,
+            fleet::reconnect_cloud_server,
             fleet::synchronize_fleet_managed_prompts,
             fleet_control::client_requests::complete_fleet_client_request,
             fleet_control::get_pending_fleet_control_commands,

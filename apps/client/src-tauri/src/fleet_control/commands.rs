@@ -173,11 +173,11 @@ pub(super) fn normalize_command(
         .as_ref()
         .is_some_and(|command_id| command_id.chars().count() > 128)
     {
-        return Err("Fleet Manager command ids cannot exceed 128 characters.".to_string());
+        return Err("machdoch.cloud command ids cannot exceed 128 characters.".to_string());
     }
 
     if !is_supported_command(&kind) {
-        return Err("Unsupported Fleet Manager command.".to_string());
+        return Err("Unsupported machdoch.cloud command.".to_string());
     }
 
     let fields = normalize_command_fields(&kind, request)?;
@@ -241,13 +241,13 @@ fn normalize_command_fields(
     require_value(
         requirements.task_id,
         &task_id,
-        "This Fleet Manager command requires a taskId.",
+        "This machdoch.cloud command requires a taskId.",
     )?;
 
     require_value(
         requirements.session_id,
         &session_id,
-        "This Fleet Manager command requires a sessionId.",
+        "This machdoch.cloud command requires a sessionId.",
     )?;
 
     let prompt = if matches!(
@@ -385,14 +385,14 @@ fn normalize_command_fields(
     require_value(
         requirements.enabled,
         &enabled,
-        "This Fleet Manager command requires an enabled value.",
+        "This machdoch.cloud command requires an enabled value.",
     )?;
 
     let memory_id = optional_trimmed_string(request.memory_id.as_deref());
     require_value(
         requirements.memory_id,
         &memory_id,
-        "This Fleet Manager command requires a memoryId.",
+        "This machdoch.cloud command requires a memoryId.",
     )?;
 
     let attachment_id = optional_trimmed_string(request.attachment_id.as_deref());
@@ -404,28 +404,28 @@ fn normalize_command_fields(
     require_value(
         requirements.context_pack_id,
         &context_pack_id,
-        "This Fleet Manager command requires a contextPackId.",
+        "This machdoch.cloud command requires a contextPackId.",
     )?;
 
     let message_id = optional_trimmed_string(request.message_id.as_deref());
     require_value(
         requirements.message_id,
         &message_id,
-        "This Fleet Manager command requires a messageId.",
+        "This machdoch.cloud command requires a messageId.",
     )?;
 
     let run_id = optional_trimmed_string(request.run_id.as_deref());
     require_value(
         requirements.run_id,
         &run_id,
-        "This Fleet Manager command requires a runId.",
+        "This machdoch.cloud command requires a runId.",
     )?;
 
     let flow_id = optional_trimmed_string(request.flow_id.as_deref());
     require_value(
         requirements.flow_id,
         &flow_id,
-        "This Fleet Manager command requires a flowId.",
+        "This machdoch.cloud command requires a flowId.",
     )?;
 
     let scope = optional_trimmed_string(request.scope.as_deref());

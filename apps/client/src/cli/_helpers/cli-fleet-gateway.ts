@@ -19,7 +19,7 @@ import WebSocket, { type RawData } from "ws";
 import { CliConfigurationError } from "./cli-error.js";
 import {
   loadFleetConnectionConfig,
-  validateFleetManagerUrl,
+  validateCloudServerUrl,
   type FleetConnectionConfig,
 } from "../../core/fleet-connection.js";
 
@@ -80,7 +80,7 @@ const connectionFingerprint = (config: FleetConnectionConfig): string =>
 export const createFleetGatewayUrl = (
   config: Pick<FleetConnectionConfig, "managerUrl" | "instanceId">,
 ): string => {
-  const url = validateFleetManagerUrl(config.managerUrl);
+  const url = validateCloudServerUrl(config.managerUrl);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.pathname = `/api/gateway/connect/${encodeURIComponent(config.instanceId)}`;
   return url.toString();
@@ -158,7 +158,7 @@ const closeMessage = (
     .replace(/[\p{Cc}\p{Cf}]/gu, " ")
     .trim();
   const message = normalizedReason
-    ? `Fleet Manager closed the connection: ${normalizedReason}`
+    ? `machdoch.cloud closed the connection: ${normalizedReason}`
     : `Fleet gateway connection closed (${code}).`;
   return { reconnect: !permanentCloseCodes.has(code), message };
 };
@@ -227,10 +227,10 @@ export const runFleetGatewayConnection = async (options: {
       const status = response.statusCode ?? 0;
       const message =
         status === 409
-          ? "Fleet Manager rejected a duplicate instance connection."
+          ? "machdoch.cloud rejected a duplicate instance connection."
           : [401, 403, 404].includes(status)
-            ? "Fleet Manager rejected the instance credentials."
-            : `Fleet Manager rejected the gateway connection (${status}).`;
+            ? "machdoch.cloud rejected the instance credentials."
+            : `machdoch.cloud rejected the gateway connection (${status}).`;
       finish({ reconnect: ![401, 403, 404].includes(status), message });
     });
 

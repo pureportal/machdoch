@@ -93,13 +93,13 @@ const sourceCliAllowsLoopbackHttp = (): boolean => {
   return /\.[cm]?ts$/iu.test(process.argv[1] ?? "");
 };
 
-export const validateFleetManagerUrl = (
+export const validateCloudServerUrl = (
   value: string,
   options: { allowLoopbackHttp?: boolean } = {},
 ): URL => {
   const normalized = value.trim();
   if (normalized.length === 0 || normalized.length > 2_048) {
-    throw new Error("Fleet Manager URL is invalid.");
+    throw new Error("machdoch.cloud URL is invalid.");
   }
 
   let url: URL;
@@ -107,7 +107,7 @@ export const validateFleetManagerUrl = (
     url = new URL(normalized);
   } catch (error) {
     throw new Error(
-      `Fleet Manager URL is invalid: ${error instanceof Error ? error.message : String(error)}`,
+      `machdoch.cloud URL is invalid: ${error instanceof Error ? error.message : String(error)}`,
       { cause: error },
     );
   }
@@ -120,8 +120,8 @@ export const validateFleetManagerUrl = (
   ) {
     throw new Error(
       allowLoopbackHttp
-        ? "Fleet Manager URL must use HTTPS or a loopback HTTP origin in development."
-        : "Fleet Manager URL must use HTTPS.",
+        ? "machdoch.cloud URL must use HTTPS or a loopback HTTP origin in development."
+        : "machdoch.cloud URL must use HTTPS.",
     );
   }
   if (
@@ -131,7 +131,7 @@ export const validateFleetManagerUrl = (
     url.username.length > 0 ||
     url.password.length > 0
   ) {
-    throw new Error("Fleet Manager URL must be an origin.");
+    throw new Error("machdoch.cloud URL must be an origin.");
   }
   return url;
 };
@@ -168,7 +168,7 @@ const parseFleetConnectionConfig = (
     throw new Error("Fleet connection configuration is invalid.");
   }
 
-  const managerUrl = validateFleetManagerUrl(value.managerUrl, options).origin;
+  const managerUrl = validateCloudServerUrl(value.managerUrl, options).origin;
   if (
     !validEncodedValue(value.managerId, "manager", 18) ||
     !validEncodedValue(value.instanceId, "instance", 18) ||
@@ -253,7 +253,7 @@ export const setFleetConnectionEnabled = async (
   if (!config) {
     if (enabled) {
       throw new Error(
-        "Enroll this CLI with a Fleet Manager before enabling Fleet.",
+        "Enroll this CLI with machdoch.cloud before enabling remote access.",
       );
     }
     return getFleetConnectionPath();
@@ -306,17 +306,17 @@ const parseEnrollmentResponse = (
     typeof value.managerUrl !== "string" ||
     typeof value.instanceId !== "string"
   ) {
-    throw new Error("Fleet Manager returned an invalid enrollment response.");
+    throw new Error("machdoch.cloud returned an invalid enrollment response.");
   }
   if (
     !validEncodedValue(value.managerId, "manager", 18) ||
     !validEncodedValue(value.instanceId, "instance", 18)
   ) {
     throw new Error(
-      "Fleet Manager enrollment identity did not match the requested installation.",
+      "machdoch.cloud enrollment identity did not match the requested installation.",
     );
   }
-  const returnedUrl = validateFleetManagerUrl(value.managerUrl, {
+  const returnedUrl = validateCloudServerUrl(value.managerUrl, {
     allowLoopbackHttp,
   });
   if (
@@ -324,7 +324,7 @@ const parseEnrollmentResponse = (
     !(allowLoopbackHttp && requestedUrl.protocol === "http:")
   ) {
     throw new Error(
-      "Fleet Manager enrollment identity did not match the requested installation.",
+      "machdoch.cloud enrollment identity did not match the requested installation.",
     );
   }
   return {
@@ -341,7 +341,7 @@ const parseResponseBody = async (response: Response): Promise<unknown> => {
   const maximumBytes = 64 * 1024;
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
-    throw new Error("Fleet Manager enrollment response was too large.");
+    throw new Error("machdoch.cloud enrollment response was too large.");
   }
   const reader = response.body?.getReader();
   const chunks: Uint8Array[] = [];
@@ -353,7 +353,7 @@ const parseResponseBody = async (response: Response): Promise<unknown> => {
       bytes += result.value.byteLength;
       if (bytes > maximumBytes) {
         await reader.cancel().catch(() => undefined);
-        throw new Error("Fleet Manager enrollment response was too large.");
+        throw new Error("machdoch.cloud enrollment response was too large.");
       }
       chunks.push(result.value);
     }
@@ -362,7 +362,7 @@ const parseResponseBody = async (response: Response): Promise<unknown> => {
   try {
     return JSON.parse(body) as unknown;
   } catch (error) {
-    throw new Error("Fleet Manager returned an invalid enrollment response.", {
+    throw new Error("machdoch.cloud returned an invalid enrollment response.", {
       cause: error,
     });
   }
@@ -385,12 +385,12 @@ export const enrollFleetConnection = async (options: {
     })
   ) {
     throw new Error(
-      "Reset the current Fleet Manager connection before enrolling again.",
+      "Reset the current machdoch.cloud connection before enrolling again.",
     );
   }
   const allowLoopbackHttp =
     options.allowLoopbackHttp ?? sourceCliAllowsLoopbackHttp();
-  const managerUrl = validateFleetManagerUrl(options.managerUrl, {
+  const managerUrl = validateCloudServerUrl(options.managerUrl, {
     allowLoopbackHttp,
   });
   const enrollmentKey = options.enrollmentKey.trim();
@@ -425,7 +425,7 @@ export const enrollFleetConnection = async (options: {
         : null;
     const message =
       managerMessage ??
-      `Fleet Manager rejected enrollment (${response.status}).`;
+      `machdoch.cloud rejected enrollment (${response.status}).`;
     throw new Error(message);
   }
   const enrollment = parseEnrollmentResponse(

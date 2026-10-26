@@ -1,0 +1,60 @@
+.fleet-skip-link {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 100;
+  clip-path: inset(50%);
+  border-radius: 12px;
+  background: var(--card);
+  padding: 12px 20px;
+  color: var(--foreground);
+}
+
+.fleet-skip-link:focus {
+  clip-path: none;
+  outline: 2px solid var(--ring);
+}
+
+.fleet-dialog-footer {
+  position: sticky;
+  bottom: -1.75rem;
+  z-index: 1;
+  background: var(--card);
+  padding-bottom: 0.25rem;
+}
+
+@media (max-width: 639px) {
+  .fleet-dialog {
+    max-height: calc(
+      var(--m-viewport-height, 100dvh) - 1rem - env(safe-area-inset-top) -
+        env(safe-area-inset-bottom)
+    );
+    width: calc(100% - 1rem);
+  }
+
+  .fleet-dialog-footer {
+    bottom: -1.25rem;
+    padding-bottom: 0.25rem;
+  }
+
+  .fleet-dialog-footer > :where(button, a) {
+    flex: 1 1 auto;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fleet-dialog[data-state="open"] {
+    animation: fleet-dialog-enter 140ms ease-out;
+  }
+
+  @keyframes fleet-dialog-enter {
+    from {
+      opacity: 0;
+      scale: 0.98;
+    }
+    to {
+      opacity: 1;
+      scale: 1;
+    }
+  }
+}

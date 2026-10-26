@@ -2,6 +2,8 @@ export type AppearanceTheme = "dark" | "light";
 export type AppearanceDensity = "comfortable" | "compact";
 export type AppearanceAccent = "sky" | "emerald" | "violet" | "amber";
 
+export const browserAppearanceStorageKey = "machdoch.desktop.appearance-state";
+
 export interface AppearanceSettings {
   version: 1;
   theme: AppearanceTheme;

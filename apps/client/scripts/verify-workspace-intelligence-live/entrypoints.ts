@@ -9,7 +9,7 @@ const artifactBase = fileURLToPath(
   new URL("../../../../.machdoch/validation/", import.meta.url),
 );
 const assets = fileURLToPath(
-  new URL("../../../fleet-manager/public/media-studio/", import.meta.url),
+  new URL("../../../cloud/public/media-studio/", import.meta.url),
 );
 await mkdir(artifactBase, { recursive: true });
 const artifacts = await mkdtemp(join(artifactBase, "fleet-entrypoints-"));

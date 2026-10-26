@@ -4247,7 +4247,7 @@ export const getFleetConnectionStatus =
       await analyticsInvoke<unknown>("get_fleet_connection_status"),
     );
     if (!status) {
-      throw new Error("The Fleet Manager connection payload was invalid.");
+      throw new Error("The machdoch.cloud connection payload was invalid.");
     }
     return status;
   };
@@ -4328,55 +4328,55 @@ export const synchronizeFleetManagedPrompts = async (
   });
 };
 
-export const enrollFleetManager = async (
+export const enrollCloudServer = async (
   managerUrl: string,
   enrollmentKey: string,
   displayName: string,
 ): Promise<FleetConnectionStatus> => {
   if (!canInvokeTauriCommands()) {
     throw new Error(
-      "Fleet Manager enrollment is only available in the desktop app.",
+      "machdoch.cloud enrollment is only available in the desktop app.",
     );
   }
   const status = normalizeFleetConnectionStatus(
-    await analyticsInvoke<unknown>("enroll_fleet_manager", {
+    await analyticsInvoke<unknown>("enroll_cloud_server", {
       managerUrl,
       enrollmentKey,
       displayName,
     }),
   );
   if (!status) {
-    throw new Error("The Fleet Manager enrollment payload was invalid.");
+    throw new Error("The machdoch.cloud enrollment payload was invalid.");
   }
   return status;
 };
 
-export const reconnectFleetManager =
+export const reconnectCloudServer =
   async (): Promise<FleetConnectionStatus> => {
     if (!canInvokeTauriCommands()) {
       throw new Error(
-        "Fleet Manager reconnect is only available in the desktop app.",
+        "machdoch.cloud reconnect is only available in the desktop app.",
       );
     }
     const status = normalizeFleetConnectionStatus(
-      await analyticsInvoke<unknown>("reconnect_fleet_manager"),
+      await analyticsInvoke<unknown>("reconnect_cloud_server"),
     );
     if (!status) {
-      throw new Error("The Fleet Manager reconnect payload was invalid.");
+      throw new Error("The machdoch.cloud reconnect payload was invalid.");
     }
     return status;
   };
 
-export const resetFleetManagerConnection =
+export const resetCloudServerConnection =
   async (): Promise<FleetConnectionStatus> => {
     if (!canInvokeTauriCommands()) {
       return { enabled: false, phase: "disabled" };
     }
     const status = normalizeFleetConnectionStatus(
-      await analyticsInvoke<unknown>("reset_fleet_manager_connection"),
+      await analyticsInvoke<unknown>("reset_cloud_server_connection"),
     );
     if (!status) {
-      throw new Error("The Fleet Manager reset payload was invalid.");
+      throw new Error("The machdoch.cloud reset payload was invalid.");
     }
     return status;
   };
@@ -6796,7 +6796,7 @@ export const subscribeToFleetControlCommands = async (
       }
     });
   } catch (error) {
-    console.error("Failed to subscribe to Fleet Manager commands", error);
+    console.error("Failed to subscribe to machdoch.cloud commands", error);
     return () => {};
   }
 };

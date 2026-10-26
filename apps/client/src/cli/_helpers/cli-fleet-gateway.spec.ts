@@ -3,8 +3,11 @@ import { createServer } from "node:http";
 import {
   productCapability,
   ralphEditorCapability,
+  speechCapability,
 } from "@machdoch/fleet-protocol";
+import { workspaceLibraryCapability } from "@machdoch/fleet-protocol/workspace-library";
 import { WebSocketServer } from "ws";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FleetConnectionConfig } from "../../core/fleet-connection.ts";
 import {
   createFleetGatewayUrl,
@@ -287,10 +290,12 @@ describe("Fleet CLI gateway", () => {
           protocolVersion: 4,
           productVersion: "6.3.0",
           capabilities: [
+            speechCapability,
             productCapability,
             ralphEditorCapability,
             "scheduler-editor.v1",
             "instruction-editor.v1",
+            workspaceLibraryCapability,
             "workspace-runs.v1",
             "workspace-previews.v1",
           ],

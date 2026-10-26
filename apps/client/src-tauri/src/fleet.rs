@@ -14,7 +14,7 @@ mod settings;
 pub use machdoch_fleet_protocol::FleetManagedSettingsDelivery;
 
 use config::{
-    delete_fleet_connection_config, load_fleet_connection_config, validate_fleet_manager_url,
+    delete_fleet_connection_config, load_fleet_connection_config, validate_cloud_server_url,
     write_fleet_connection_config, FleetConnectionConfig,
 };
 
@@ -212,7 +212,7 @@ pub async fn synchronize_fleet_managed_prompts(
 }
 
 #[tauri::command]
-pub async fn enroll_fleet_manager(
+pub async fn enroll_cloud_server(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, FleetConnectionState>,
     manager_url: String,
@@ -221,9 +221,9 @@ pub async fn enroll_fleet_manager(
 ) -> Result<FleetConnectionStatus, String> {
     ensure_unbound(&state)?;
     if manager_url.len() > 2_048 {
-        return Err("Fleet Manager URL is too long.".to_string());
+        return Err("machdoch.cloud URL is too long.".to_string());
     }
-    let manager_url = validate_fleet_manager_url(&manager_url)?;
+    let manager_url = validate_cloud_server_url(&manager_url)?;
     let enrollment_key = enrollment_key.trim();
     if !valid_prefixed_secret(enrollment_key, "mch_enroll") {
         return Err("Enrollment key is invalid.".to_string());
@@ -235,10 +235,10 @@ pub async fn enroll_fleet_manager(
         .timeout(std::time::Duration::from_secs(30))
         .user_agent(format!("Machdoch/{}", app_handle.package_info().version))
         .build()
-        .map_err(|error| format!("Unable to configure Fleet Manager client: {error}"))?;
+        .map_err(|error| format!("Unable to configure machdoch.cloud client: {error}"))?;
     let endpoint = manager_url
         .join("/api/enroll")
-        .map_err(|error| format!("Fleet Manager enrollment URL is invalid: {error}"))?;
+        .map_err(|error| format!("machdoch.cloud enrollment URL is invalid: {error}"))?;
     let response = client
         .post(endpoint)
         .bearer_auth(enrollment_key)
@@ -250,33 +250,33 @@ pub async fn enroll_fleet_manager(
         }))
         .send()
         .await
-        .map_err(|error| format!("Fleet Manager enrollment failed: {error}"))?;
+        .map_err(|error| format!("machdoch.cloud enrollment failed: {error}"))?;
     if !response.status().is_success() {
         return Err(
-            http::manager_response_error(response, "Fleet Manager rejected enrollment").await,
+            http::manager_response_error(response, "machdoch.cloud rejected enrollment").await,
         );
     }
     let response_body = http::read_bounded_response(response, MAX_ENROLLMENT_RESPONSE_BYTES)
         .await
         .map_err(|error| match error {
             http::ResponseBodyError::TooLarge => {
-                "Fleet Manager enrollment response exceeded the size limit.".to_string()
+                "machdoch.cloud enrollment response exceeded the size limit.".to_string()
             }
             http::ResponseBodyError::Read(error) => {
-                format!("Fleet Manager enrollment response could not be read: {error}")
+                format!("machdoch.cloud enrollment response could not be read: {error}")
             }
         })?;
     let enrollment =
         serde_json::from_slice::<EnrollmentResponse>(&response_body).map_err(|error| {
-            format!("Fleet Manager returned an invalid enrollment response: {error}")
+            format!("machdoch.cloud returned an invalid enrollment response: {error}")
         })?;
-    let returned_url = validate_fleet_manager_url(&enrollment.manager_url)?;
+    let returned_url = validate_cloud_server_url(&enrollment.manager_url)?;
     let enrolled_manager_url = enrolled_manager_url(&manager_url, returned_url)?;
     if !valid_identifier(&enrollment.manager_id, "manager")
         || !valid_identifier(&enrollment.instance_id, "instance")
     {
         return Err(
-            "Fleet Manager enrollment identity did not match the requested installation."
+            "machdoch.cloud enrollment identity did not match the requested installation."
                 .to_string(),
         );
     }
@@ -307,7 +307,7 @@ pub async fn enroll_fleet_manager(
 }
 
 #[tauri::command]
-pub async fn reconnect_fleet_manager(
+pub async fn reconnect_cloud_server(
     app_handle: tauri::AppHandle,
     state: tauri::State<'_, FleetConnectionState>,
 ) -> Result<FleetConnectionStatus, String> {
@@ -320,7 +320,7 @@ pub async fn reconnect_fleet_manager(
             .config
             .clone()
             .filter(|config| config.enabled)
-            .ok_or_else(|| "Fleet Manager is not connected.".to_string())?;
+            .ok_or_else(|| "machdoch.cloud is not connected.".to_string())?;
         inner.generation = inner.generation.saturating_add(1);
         inner.phase = FleetConnectionPhase::Connecting;
         inner.last_error = None;
@@ -331,7 +331,7 @@ pub async fn reconnect_fleet_manager(
 }
 
 #[tauri::command]
-pub async fn reset_fleet_manager_connection(
+pub async fn reset_cloud_server_connection(
     state: tauri::State<'_, FleetConnectionState>,
 ) -> Result<FleetConnectionStatus, String> {
     delete_fleet_connection_config()?;
@@ -356,7 +356,7 @@ fn ensure_unbound(state: &FleetConnectionState) -> Result<(), String> {
         .map_err(|_| "Fleet connection state is unavailable.".to_string())?;
     if inner.config.is_some() {
         return Err(
-            "Reset the current Fleet Manager connection before enrolling again.".to_string(),
+            "Reset the current machdoch.cloud connection before enrolling again.".to_string(),
         );
     }
     Ok(())
@@ -517,7 +517,7 @@ fn enrolled_manager_url(
     if cfg!(debug_assertions) && requested_url.scheme() == "http" {
         return Ok(requested_url.clone());
     }
-    Err("Fleet Manager enrollment identity did not match the requested installation.".to_string())
+    Err("machdoch.cloud enrollment identity did not match the requested installation.".to_string())
 }
 
 fn validate_display_name(value: &str) -> Result<String, String> {

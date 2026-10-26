@@ -20,9 +20,9 @@ import { RemoteAccessPanel } from "./remote-access-panel";
 
 const runtime = vi.hoisted(() => ({
   getFleetConnectionStatus: vi.fn(),
-  enrollFleetManager: vi.fn(),
-  resetFleetManagerConnection: vi.fn(),
-  reconnectFleetManager: vi.fn(),
+  enrollCloudServer: vi.fn(),
+  resetCloudServerConnection: vi.fn(),
+  reconnectCloudServer: vi.fn(),
 }));
 const requestManagedSettingsSync = vi.hoisted(() => vi.fn());
 
@@ -60,7 +60,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("Fleet Manager dialog", () => {
+describe("machdoch.cloud dialog", () => {
   it("reconnects a failed gateway without removing the enrollment", async () => {
     const connection = {
       enabled: true,
@@ -68,22 +68,22 @@ describe("Fleet Manager dialog", () => {
       managerUrl: "https://fleet.example.com",
       displayName: "Studio workstation",
       lastError:
-        "Fleet Manager rejected the connection: Invalid gateway message.",
+        "machdoch.cloud rejected the connection: Invalid gateway message.",
     };
     runtime.getFleetConnectionStatus.mockResolvedValue(connection);
-    runtime.reconnectFleetManager.mockResolvedValue({
+    runtime.reconnectCloudServer.mockResolvedValue({
       ...connection,
       phase: "connecting",
       lastError: undefined,
     });
-    renderDialog(createElement(RemoteAccessPanel), "fleet-manager");
+    renderDialog(createElement(RemoteAccessPanel), "cloud");
     fireEvent.click(await screen.findByRole("button", { name: "Reconnect" }));
     await waitFor(() =>
-      expect(runtime.reconnectFleetManager).toHaveBeenCalledOnce(),
+      expect(runtime.reconnectCloudServer).toHaveBeenCalledOnce(),
     );
     expect(await screen.findByText("connecting")).toBeTruthy();
     expect(requestManagedSettingsSync).toHaveBeenCalledOnce();
-    expect(runtime.resetFleetManagerConnection).not.toHaveBeenCalled();
+    expect(runtime.resetCloudServerConnection).not.toHaveBeenCalled();
     expect(screen.queryByText(connection.lastError)).toBeNull();
   });
 
@@ -93,10 +93,10 @@ describe("Fleet Manager dialog", () => {
       phase: "error",
       displayName: "Studio workstation",
     });
-    runtime.reconnectFleetManager.mockRejectedValue(
+    runtime.reconnectCloudServer.mockRejectedValue(
       new Error("Fleet connection state is unavailable."),
     );
-    renderDialog(createElement(RemoteAccessPanel), "fleet-manager");
+    renderDialog(createElement(RemoteAccessPanel), "cloud");
     fireEvent.click(await screen.findByRole("button", { name: "Reconnect" }));
     expect(
       await screen.findByText("Fleet connection state is unavailable."),
@@ -109,19 +109,19 @@ describe("Fleet Manager dialog", () => {
     ).toBe(false);
   });
 
-  it("enrolls from the dedicated Fleet Manager dialog", async () => {
+  it("enrolls from the dedicated machdoch.cloud dialog", async () => {
     runtime.getFleetConnectionStatus.mockResolvedValue({
       enabled: false,
       phase: "disabled",
     });
-    runtime.enrollFleetManager.mockResolvedValue({
+    runtime.enrollCloudServer.mockResolvedValue({
       enabled: true,
       phase: "connected",
       managerUrl: "https://fleet.example.com",
       displayName: "Studio workstation",
     });
 
-    renderDialog(createElement(RemoteAccessPanel), "fleet-manager");
+    renderDialog(createElement(RemoteAccessPanel), "cloud");
 
     expect(screen.getByRole("heading", { name: "Remote access" })).toBeTruthy();
     expect(screen.queryByText("Remote Access")).toBeNull();
@@ -129,7 +129,7 @@ describe("Fleet Manager dialog", () => {
       expect(runtime.getFleetConnectionStatus).toHaveBeenCalledOnce(),
     );
 
-    fireEvent.change(screen.getByLabelText("Manager URL"), {
+    fireEvent.change(screen.getByLabelText("Cloud URL"), {
       target: { value: "https://fleet.example.com" },
     });
     fireEvent.change(screen.getByLabelText("Enrollment key"), {
@@ -141,7 +141,7 @@ describe("Fleet Manager dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Connect" }));
 
     await waitFor(() =>
-      expect(runtime.enrollFleetManager).toHaveBeenCalledWith(
+      expect(runtime.enrollCloudServer).toHaveBeenCalledWith(
         "https://fleet.example.com",
         "fleet_enrollment_key",
         "Studio workstation",
@@ -165,7 +165,7 @@ describe("Fleet Manager dialog", () => {
       },
     });
 
-    renderDialog(createElement(RemoteAccessPanel), "fleet-manager");
+    renderDialog(createElement(RemoteAccessPanel), "cloud");
 
     expect(await screen.findByText("Sync failed")).toBeTruthy();
     expect(
