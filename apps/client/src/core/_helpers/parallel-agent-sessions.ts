@@ -32,14 +32,9 @@ export const createParallelAgentSessionTool = (
     : MAX_WORKERS;
   const workerFailures = new Set<string>();
   let running = false;
-  let boundaryFailure = false;
   return {
-    hasWorkerFailure: () =>
-      running || boundaryFailure || workerFailures.size > 0,
+    hasWorkerFailure: () => running || workerFailures.size > 0,
     getCompletionBlocker: () => {
-      if (boundaryFailure) {
-        return "A parallel worker violated its declared file scope. Review the worker results and workspace changes.";
-      }
       if (running) {
         return "Parallel workers are still running. Wait for their results before completing the task.";
       }
@@ -197,7 +192,6 @@ export const createParallelAgentSessionTool = (
                     timeout.signal,
                     scopedReads,
                     (error) => {
-                      boundaryFailure = true;
                       controller.abort(error);
                     },
                     state,
@@ -213,7 +207,6 @@ export const createParallelAgentSessionTool = (
                   return workerResult(worker.id, state);
                 } catch (error) {
                   if (error instanceof WorkerBoundaryError) {
-                    boundaryFailure = true;
                     controller.abort(error);
                   }
                   reportWorkerProgress(options, {

@@ -394,6 +394,8 @@ describe("parallel agent sessions", () => {
     ]);
     expect(escapedResult.toolResult.isError).toBe(true);
     expect(escaped.hasWorkerFailure()).toBe(true);
+    expect(escaped.getCompletionBlocker()).toBeUndefined();
+    expect(escapedResult.toolResult.output).toContain("unclaimed path");
     await expect(
       readFile(join(options.config.workspaceRoot, "outside.txt"), "utf8"),
     ).rejects.toThrow();

@@ -226,9 +226,8 @@ it("enforces declared read paths even when every worker is read-only", async () 
   expect(result.toolResult.isError).toBe(true);
   expect(tool.hasWorkerFailure()).toBe(true);
   expect(continuations).toBe(0);
-  expect(tool.getCompletionBlocker()).toContain(
-    "violated its declared file scope",
-  );
+  expect(tool.getCompletionBlocker()).toBeUndefined();
+  expect(result.toolResult.output).toContain("unclaimed path");
   expect(result.toolResult.output).not.toContain("Secret");
 });
 

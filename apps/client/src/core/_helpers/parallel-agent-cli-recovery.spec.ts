@@ -228,20 +228,25 @@ it.each(providers)(
 it.each(
   providers.flatMap((provider) =>
     [false, true].flatMap((retry) =>
-      (["executed", "blocked", "failed", "scope-violation"] as const).map(
-        (parentStatus) => ({ provider, retry, parentStatus }),
+      ["provider", "scope"].flatMap((workerFailure) =>
+        (["executed", "blocked", "failed"] as const).map((parentStatus) => ({
+          provider,
+          retry,
+          workerFailure,
+          parentStatus,
+        })),
       ),
     ),
   ),
 )(
-  "$provider preserves the parent's $parentStatus outcome after worker failures (retry: $retry)",
-  async ({ provider, retry, parentStatus }) => {
+  "$provider preserves the parent's $parentStatus outcome after worker $workerFailure failures (retry: $retry)",
+  async ({ provider, retry, workerFailure, parentStatus }) => {
     const options = await createOptions(provider);
     let failWorkers = true;
     vi.mocked(maybeExecuteExternalAgentProviderTask).mockImplementation(
       async (params) => {
         if (params.scopedWorkerToolDefinitions !== undefined) {
-          if (failWorkers && parentStatus === "scope-violation") {
+          if (failWorkers && workerFailure === "scope") {
             await runtimeFor(params).call("read_file", {
               path: "outside.txt",
               startLine: 1,
@@ -281,8 +286,7 @@ it.each(
         }
         return {
           ...completed(params),
-          status:
-            parentStatus === "scope-violation" ? "executed" : parentStatus,
+          status: parentStatus,
           ...(parentStatus === "executed"
             ? {}
             : { reason: "Required work remains incomplete" }),
@@ -304,17 +308,11 @@ it.each(
       instructionDeliveryPlan: options.instructionDeliveryPlan!,
       conversationContext: { history: [], parallelAgentMode: "machdoch" },
     });
-    expect(result?.status, result?.summary).toBe(
-      parentStatus === "scope-violation" ? "failed" : parentStatus,
-    );
-    if (parentStatus === "scope-violation") {
-      expect(result?.reason).toContain("violated its declared file scope");
-      expect(result?.metadata?.parallelWorkerFailure).toBe(true);
-      return;
-    }
+    expect(result?.status, result?.summary).toBe(parentStatus);
     expect(result?.metadata?.parallelWorkerFailure).toBe(!retry);
     expect(result?.summary).toBe("Verified result");
     expect(result?.response?.markdown).toBe("Verified result");
+    if (parentStatus === "executed") expect(result?.reason).toBeUndefined();
     if (parentStatus !== "executed")
       expect(result?.reason).toBe("Required work remains incomplete");
   },

@@ -35,14 +35,19 @@ const routes = [
 it.each(
   routes.flatMap((route) =>
     [false, true].flatMap((retry) =>
-      ["completed", "blocked", "failed", "scope-violation"].map(
-        (parentStatus) => ({ ...route, retry, parentStatus }),
+      ["provider", "scope"].flatMap((workerFailure) =>
+        ["completed", "blocked", "failed"].map((parentStatus) => ({
+          ...route,
+          retry,
+          workerFailure,
+          parentStatus,
+        })),
       ),
     ),
   ),
 )(
-  "$provider/$model preserves the parent's $parentStatus outcome after worker failures (retry: $retry)",
-  async ({ provider, model, retry, parentStatus }) => {
+  "$provider/$model preserves the parent's $parentStatus outcome after worker $workerFailure failures (retry: $retry)",
+  async ({ provider, model, retry, workerFailure, parentStatus }) => {
     const options = await createParallelAgentTestOptions();
     workspaces.push(options.config.workspaceRoot);
     let failWorkers = true;
@@ -52,7 +57,7 @@ it.each(
         override ?? {
           startTurn: async () => {
             workerStarts += 1;
-            if (failWorkers && parentStatus === "scope-violation") {
+            if (failWorkers && workerFailure === "scope") {
               throw new WorkerBoundaryError(
                 "Worker accessed an undeclared path",
               );
@@ -95,10 +100,7 @@ it.each(
               name: "submit_final_response",
               arguments: {
                 summary: "Verified result",
-                status:
-                  parentStatus === "scope-violation"
-                    ? "completed"
-                    : parentStatus,
+                status: parentStatus,
                 blockerReason:
                   parentStatus === "blocked"
                     ? "Required work remains incomplete"
@@ -138,17 +140,8 @@ it.each(
     });
     expect(workerStarts).toBe(retry ? 4 : 2);
     expect(result?.status, result?.summary).toBe(
-      parentStatus === "completed"
-        ? "executed"
-        : parentStatus === "scope-violation"
-          ? "failed"
-          : parentStatus,
+      parentStatus === "completed" ? "executed" : parentStatus,
     );
-    if (parentStatus === "scope-violation") {
-      expect(result?.reason).toContain("violated its declared file scope");
-      expect(result?.metadata?.parallelWorkerFailure).toBe(true);
-      return;
-    }
     if (parentStatus !== "failed") {
       expect(result?.metadata?.parallelWorkerFailure).toBe(!retry);
       expect(result?.summary).toBe("Verified result");
