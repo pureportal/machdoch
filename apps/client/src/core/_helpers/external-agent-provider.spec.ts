@@ -3125,6 +3125,13 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
   it("runs claude in non-interactive print mode with the delegated prompt on stdin", async () => {
     const workspaceRoot = await createWorkspace();
+    // The Claude CLI lists `<model>[1m]` for this account, so "highest" selects it.
+    replaceDiscoveredModelCapabilities("claude-cli", [
+      {
+        id: "claude-sonnet-4-6",
+        capabilities: { longContextWindowTokens: 1_000_000 },
+      },
+    ]);
 
     process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
 

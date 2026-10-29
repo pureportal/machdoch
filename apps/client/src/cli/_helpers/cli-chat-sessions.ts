@@ -111,7 +111,7 @@ export const parseConversationContext = (
         typeof value.workspace.root !== "string"))
   )
     throw new CliUsageError("Invalid conversation workspace.");
-  for (const key of ["uiControl", "workspaceRun"]) {
+  for (const key of ["uiControl", "workspaceRun", "modelCapabilities"]) {
     if (value[key] !== undefined && !isRecord(value[key]))
       throw new CliUsageError(
         `Invalid conversation context: ${key} must be an object.`,

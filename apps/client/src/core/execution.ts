@@ -52,6 +52,7 @@ import type {
 } from "./types.js";
 import type { RuntimeConfig } from "./runtime-contract.generated.js";
 import { isContextWindow } from "./runtime-contract.generated.js";
+import { rememberDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
 
 const providerIsConfigured = (config: RuntimeConfig): boolean => {
   return config.providerAvailability.some(
@@ -797,6 +798,14 @@ const executeTaskWithoutWorkspacePresence = async (
     options.signal,
     resolveTaskExecutionTimeouts(options),
   );
+  const modelCapabilities = options.conversationContext?.modelCapabilities;
+  if (modelCapabilities && config.provider !== "unconfigured") {
+    rememberDiscoveredModelCapabilities(
+      config.provider,
+      config.model,
+      modelCapabilities,
+    );
+  }
 
   try {
     return await runWithTaskModelUsageRecording(async () => {

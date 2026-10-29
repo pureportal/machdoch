@@ -95,6 +95,18 @@ export const replaceDiscoveredModelCapabilities = (
   }
 };
 
+/** Records one model's capabilities that another process discovered, such as the desktop host. */
+export const rememberDiscoveredModelCapabilities = (
+  provider: ConfiguredModelProvider,
+  model: string,
+  capabilities: DiscoveredModelCapabilities,
+): void => {
+  discoveredCapabilitiesByProviderModel.set(
+    discoveredCapabilityKey(provider, model),
+    capabilities,
+  );
+};
+
 export const getDiscoveredModelCapabilities = (
   provider: ModelProvider,
   model: string,

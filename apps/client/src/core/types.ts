@@ -170,6 +170,8 @@ export interface ConversationMemoryEntry {
 
 export interface TaskConversationContext {
   contextWindow?: import("./runtime-contract.generated.js").ContextWindow;
+  /** What the provider CLI reported for the selected model when the desktop host probed it. */
+  modelCapabilities?: import("@machdoch/model-runtime/model-capabilities").DiscoveredModelCapabilities;
   sessionId?: string;
   adaptiveControllerOverride?: boolean | null;
   parallelAgentMode?: ParallelAgentMode;

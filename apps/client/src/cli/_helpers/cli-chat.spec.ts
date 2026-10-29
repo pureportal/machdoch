@@ -505,6 +505,15 @@ describe("interactive chat workflows", () => {
     expect(
       parseConversationContext({
         history: [],
+        modelCapabilities: { longContextWindowTokens: 872_000 },
+      }).modelCapabilities,
+    ).toEqual({ longContextWindowTokens: 872_000 });
+    expect(() =>
+      parseConversationContext({ history: [], modelCapabilities: "all" }),
+    ).toThrow("modelCapabilities must be an object");
+    expect(
+      parseConversationContext({
+        history: [],
         adaptiveControllerOverride: false,
       }).adaptiveControllerOverride,
     ).toBe(false);

@@ -178,7 +178,10 @@ import type { AgentModelImageMediaType } from "@machdoch/model-runtime/types";
 import type { ConversationMemoryEntry, TaskConversationContext, TaskDeterministicAction, TaskActionOutput, TaskExecutionProgress, TaskExecutionChangedLineRange, TaskExecutionFileChange, TaskExecutionResult, TaskRunPreview } from "../../core/types.js";
 import type { ReasoningLesson } from "../../core/reasoning-bank.js";
 import { validateTaskDeterministicAction } from "../../core/_helpers/deterministic-action-validation.js";
-import { replaceDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
+import {
+  getDiscoveredModelCapabilities,
+  replaceDiscoveredModelCapabilities,
+} from "@machdoch/model-runtime/model-capabilities";
 import { normalizeDesktopTaskRunError } from "./desktop-task-error.js";
 import { normalizeMcpConfigSaveError } from "./mcp-config-error.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
@@ -6950,6 +6953,16 @@ export const runDesktopTask = async (
     deterministicActionValidation?.state === "valid"
       ? deterministicActionValidation.action
       : undefined;
+  // The runtime process has no model catalog of its own; hand it what the
+  // provider CLI reported for this model (context tiers, effort, native features).
+  const modelCapabilities =
+    normalizedProvider && normalizedModel
+      ? getDiscoveredModelCapabilities(normalizedProvider, normalizedModel)
+      : undefined;
+  const conversationContext =
+    context.conversationContext && modelCapabilities
+      ? { ...context.conversationContext, modelCapabilities }
+      : context.conversationContext;
 
   if (!canInvokeTauriCommands()) {
     return {
@@ -6979,9 +6992,7 @@ export const runDesktopTask = async (
           ? { imagePaths: normalizedImagePaths }
           : {}),
         ...(mediaAssetReferences.length > 0 ? { mediaAssetReferences } : {}),
-        ...(context.conversationContext
-          ? { conversationContext: context.conversationContext }
-          : {}),
+        ...(conversationContext ? { conversationContext } : {}),
       },
     });
   } catch (error) {
