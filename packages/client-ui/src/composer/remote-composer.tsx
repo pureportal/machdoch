@@ -683,6 +683,8 @@ export function RemoteComposer({
           void onCommand({ kind: "clear-attachments", sessionId: session.id });
         }}
         onRunningTaskMessageActionChange={(runningAction) => {
+          // Remote composers never offer steering, which the fleet cannot relay.
+          if (runningAction === "steer") return;
           void onCommand({
             kind: "set-running-message-action",
             sessionId: session.id,

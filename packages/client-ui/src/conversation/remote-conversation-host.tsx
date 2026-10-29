@@ -24,6 +24,8 @@ import { MessageEditor } from "./message-editor";
 import { normalizeLocalPath } from "./workspace-markdown-links";
 import { useRemoteConversationHistory } from "./use-remote-conversation-history";
 import { TaskThinkingPanel } from "./task-thinking-panel";
+import { AgentLiveRunDetails, formatQuestionAnswers } from "./agent-live-run-details";
+import { FollowUpSuggestions } from "./follow-up-suggestions";
 import { TaskTimeoutControls } from "./task-timeout-controls";
 import { RemoteExecutionInsight } from "./remote-execution-insight";
 import { taskTimeoutSchema } from "@machdoch/fleet-protocol/task-thinking";
@@ -59,6 +61,25 @@ export function RemoteConversationHost({
     transport: workspaceTransport,
   });
   const messages = history.messages;
+  const latestRunMessageId = useMemo(
+    () => [...messages].reverse().find((message) => history.thinking.has(message.id))?.id,
+    [messages, history.thinking],
+  );
+  // A remote view answers and continues through ordinary messages, which the
+  // desktop routes to the waiting agent.
+  const sendMessage = useCallback(
+    async (prompt: string): Promise<void> => {
+      const sent = await onCommand({
+        kind: "submit-message",
+        sessionId: session.id,
+        prompt,
+        promptEnhancementMode: "off",
+        interviewEnabled: false,
+      });
+      if (!sent) throw new Error("The message could not be sent. Try again.");
+    },
+    [onCommand, session.id],
+  );
   const [editContent, setEditContent] = useState("");
   const messageElements = useRef(new Map<string, HTMLElement>());
   const editorSubmit = useRef<(() => void) | null>(null);
@@ -313,6 +334,31 @@ export function RemoteConversationHost({
                 ) : null
               }
             />}
+            {thinking?.agentLive ? (
+              <AgentLiveRunDetails
+                live={thinking.agentLive}
+                running={thinking.status === "running" && session.status === "running"}
+                onAnswer={async (_questionId, answers) => {
+                  const question = thinking.agentLive?.question;
+                  if (question) await sendMessage(formatQuestionAnswers(question, answers));
+                }}
+                onSendMessage={(text) => {
+                  void sendMessage(text);
+                }}
+              />
+            ) : null}
+            {message.id === latestRunMessageId && session.status !== "running" ? (
+              <FollowUpSuggestions
+                suggestions={thinking?.agentLive?.suggestions ?? []}
+                disabled={pending}
+                onPick={(prompt) => {
+                  void onCommand({ kind: "update-draft", sessionId: session.id, prompt });
+                }}
+                onSend={(prompt) => {
+                  void sendMessage(prompt);
+                }}
+              />
+            ) : null}
             </>
           );
         }}

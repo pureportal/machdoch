@@ -58,6 +58,13 @@ import {
   type ChatSessionRecord,
 } from "../../chat-session.model";
 import { type SmartContextPack } from "@machdoch/client-ui/context-packs/model";
+import {
+  FastTierIcon,
+  ReviewChangesIcon,
+} from "@machdoch/client-ui/conversation/agent-live-icons";
+import { getDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
+import { REVIEW_CHANGES_PROMPT } from "../_helpers/review-changes";
+import { sessionNeedsInput } from "../_helpers/session-needs-input";
 import type {
   AttachmentSelectionKind,
   ChatSessionContextAttachment,
@@ -161,6 +168,8 @@ export interface SessionComposerProps {
   };
   canSendMessage: boolean;
   sendDisabledReason: string | null;
+  /** The running turn accepts messages typed into it. */
+  canSteerRunningTask?: boolean;
   runningTaskMessageAction: RunningTaskMessageAction;
   queuedMessages: AgentComposerQueuedMessage[];
   onSelectFolder: (overrideLock?: boolean) => Promise<void>;
@@ -182,6 +191,8 @@ export interface SessionComposerProps {
   onUseWorkspaceMemoryChange?: (enabled: boolean) => void;
   onUseGlobalMemoryChange: (enabled: boolean) => void;
   onUiControlEnabledChange: (enabled: boolean) => void;
+  /** Shown when the model offers a faster service tier. */
+  onFastModeChange?: (enabled: boolean) => void;
   onInterviewEnabledChange: (enabled: boolean) => void;
   onPromptEnhancementModeChange: (mode: PromptEnhancementMode) => void;
   onSelectContextFiles: () => Promise<void>;
@@ -282,6 +293,7 @@ export const SessionComposer = ({
   speechInput,
   canSendMessage,
   sendDisabledReason,
+  canSteerRunningTask = false,
   runningTaskMessageAction,
   queuedMessages,
   onSelectFolder,
@@ -300,6 +312,7 @@ export const SessionComposer = ({
   onUseWorkspaceMemoryChange = () => undefined,
   onUseGlobalMemoryChange,
   onUiControlEnabledChange,
+  onFastModeChange,
   onInterviewEnabledChange,
   onPromptEnhancementModeChange,
   onSelectContextFiles,
@@ -563,6 +576,9 @@ export const SessionComposer = ({
       />
     </>
   );
+  const fastModeAvailable =
+    getDiscoveredModelCapabilities(activeSession.provider, activeSession.model)
+      ?.fastMode === true;
   const toggles = useMemo<AgentComposerToggle[]>(() => {
     const next: AgentComposerToggle[] = [];
     if (showSessionMemoryButton) {
@@ -619,8 +635,23 @@ export const SessionComposer = ({
         onPressedChange: onUiControlEnabledChange,
       },
     );
+    if (fastModeAvailable && onFastModeChange) {
+      next.push({
+        id: "fast-mode",
+        label: "Fast",
+        description: activeSession.fastMode
+          ? "Fast tier on: the provider answers faster and may bill the run at a higher rate."
+          : "Use the provider's fast tier. Faster answers; the run may cost more.",
+        icon: <FastTierIcon className="h-4 w-4" />,
+        pressed: activeSession.fastMode === true,
+        onPressedChange: onFastModeChange,
+      });
+    }
     return next;
   }, [
+    activeSession.fastMode,
+    fastModeAvailable,
+    onFastModeChange,
     activeSession.sessionMemoryEnabled,
     activeSession.uiControlEnabled,
     globalMemoryDescription,
@@ -693,6 +724,16 @@ export const SessionComposer = ({
     );
     return [
       {
+        id: "review-changes",
+        label: "Review changes",
+        title: activeSession.workspace
+          ? "Review the uncommitted changes in this workspace"
+          : "Choose a workspace to review its changes",
+        icon: <ReviewChangesIcon className="h-4 w-4" />,
+        disabled: !activeSession.workspace || isExecuting,
+        onClick: () => onSend(REVIEW_CHANGES_PROMPT),
+      },
+      {
         id: "speech-input",
         label: actionLabel,
         title: actionLabel,
@@ -743,6 +784,9 @@ export const SessionComposer = ({
       },
     ];
   }, [
+    activeSession.workspace,
+    isExecuting,
+    onSend,
     speechInput.autoFormat,
     liveVoiceActive,
     speechInput.autoTranslateToEnglish,
@@ -790,7 +834,11 @@ export const SessionComposer = ({
         placeholder={
           editingMessageId
             ? "Update the message and its options"
-            : "What should machdoch do next?"
+            : isExecuting && sessionNeedsInput(activeSession)
+              ? "Type your answer, or choose an option above"
+              : isExecuting && canSteerRunningTask && runningTaskMessageAction === "steer"
+                ? "Add guidance for the running task"
+                : "What should machdoch do next?"
         }
         modelPicker={
           <SessionModelPicker
@@ -888,6 +936,7 @@ export const SessionComposer = ({
         toggles={toggles}
         actions={actions}
         runningTaskMessageAction={runningTaskMessageAction}
+        canSteerRunningTask={canSteerRunningTask}
         queuedMessages={editingMessageId ? [] : queuedMessages}
         iterationsEnabled={
           !editingMessageId &&

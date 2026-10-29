@@ -1,3 +1,4 @@
+import { isReviewChangesTask } from "./review-changes";
 import { useCallback, useRef, type MutableRefObject } from "react";
 import {
   MAX_SESSION_MEMORY_ENTRIES,
@@ -558,6 +559,12 @@ export const useSessionTaskSubmission = (options: {
           : {}),
         adaptiveControllerOverride:
           messageSettings.adaptiveControllerOverride ?? null,
+        agentFeatures: {
+          liveControl: true,
+          suggestFollowUps: true,
+          ...(messageSettings.fastMode ? { fastMode: true } : {}),
+          ...(isReviewChangesTask(normalizedTask) ? { reviewChanges: true } : {}),
+        },
         wasQueued:
           submitOptions.consumedQueuedMessageId !== undefined ||
           submitOptions.queuedMessageRecovery !== undefined,

@@ -92,6 +92,8 @@ import {
   type SessionStatusFilter,
   type SessionStatusFilterSelection,
 } from "../_helpers/session-shell.ts";
+import { AgentQuestionIcon } from "@machdoch/client-ui/conversation/agent-live-icons";
+import { sessionNeedsInput } from "../_helpers/session-needs-input";
 import {
   WorkspaceSelect,
   type WorkspaceSelectOption,
@@ -659,6 +661,7 @@ export const SessionsSidebar = ({
                 const isPinned = isSessionPinnedInSidebar(
                   getSessionSidebarGroup(session),
                 );
+                const needsInput = sessionNeedsInput(session);
                 const hasUnreadCompletion =
                   !isActive &&
                   !archived &&
@@ -729,6 +732,7 @@ export const SessionsSidebar = ({
                         className={cn(
                           "app-session-card group relative flex min-h-[3.15rem] items-start overflow-hidden rounded-lg border px-2.5 pt-1.5 pb-2 transition-colors",
                           hasUnreadCompletion && "app-session-card--needs-read",
+                          needsInput && "app-session-card--needs-input",
                           isActive
                             ? "border-sky-500/30 bg-sky-500/10 shadow-lg shadow-sky-950/20"
                             : "border-slate-800 bg-slate-950/70 hover:border-slate-700 hover:bg-slate-950",
@@ -741,7 +745,11 @@ export const SessionsSidebar = ({
                         <button
                           type="button"
                           aria-label={`Open session ${sessionTitle}${
-                            hasUnreadCompletion ? ", new reply ready" : ""
+                            needsInput
+                              ? ", waiting for your answer"
+                              : hasUnreadCompletion
+                                ? ", new reply ready"
+                                : ""
                           }`}
                           onClick={() => onActivateSession(session.id)}
                           className="app-session-open-button min-w-0 flex-1 text-left"
@@ -803,6 +811,12 @@ export const SessionsSidebar = ({
                                 >
                                   {sessionTitle}
                                 </p>
+                                {needsInput ? (
+                                  <span className="app-session-needs-input inline-flex shrink-0 items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 text-[9px] font-semibold tracking-wide text-amber-200 uppercase">
+                                    <AgentQuestionIcon className="h-3 w-3" />
+                                    Needs input
+                                  </span>
+                                ) : null}
                               </div>
                             </div>
                           </div>

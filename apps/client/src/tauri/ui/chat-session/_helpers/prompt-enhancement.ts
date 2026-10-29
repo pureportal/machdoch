@@ -59,12 +59,10 @@ export const createQueuedPromptEnhancementRequest = (
 
 export const shouldDeferPromptEnhancementUntilQueuedDispatch = (
   mode: PromptEnhancementMode,
-  runningAction: "stop-and-send" | "queue" | null,
+  runningAction: "steer" | "stop-and-send" | "queue" | null,
 ): boolean => {
-  return (
-    mode !== "off" &&
-    (runningAction === "stop-and-send" || runningAction === "queue")
-  );
+  // An enhanced prompt is a turn of its own, so a steer request queues too.
+  return mode !== "off" && runningAction !== null;
 };
 
 export const resolveImmediatePromptEnhancementPlacement = (input: {

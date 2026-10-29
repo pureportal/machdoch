@@ -9,7 +9,11 @@ import type {
 } from "../../core/types.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
 import type { TaskPanelTone } from "./task-panel";
-import type { TaskThinkingActionOutputSummary } from "@machdoch/fleet-protocol/task-thinking";
+import {
+  agentLiveStateSchema,
+  type AgentLiveState,
+  type TaskThinkingActionOutputSummary,
+} from "@machdoch/fleet-protocol/task-thinking";
 import { retainTaskActionOutput } from "@machdoch/client-ui/conversation/task-action-output";
 
 const THINKING_STATE_LABELS: Record<TaskExecutionState, string> = {
@@ -129,6 +133,7 @@ export interface TaskThinkingTrace {
   actionOutputLines?: TaskThinkingActionOutputLine[];
   actionOutputSummaries?: TaskThinkingActionOutputSummary[];
   tokenUsage?: TaskExecutionTokenUsage;
+  agentLive?: AgentLiveState;
 }
 
 export interface TaskThinkingSource {
@@ -222,7 +227,13 @@ const createStateTimelineEvent = (
 ): TaskThinkingTimelineEvent | undefined => {
   const detail = progress.message.trim();
 
-  if (!detail || progress.actionOutput || progress.modelStream) {
+  if (
+    !detail ||
+    progress.actionOutput ||
+    progress.modelStream ||
+    progress.agentLive ||
+    progress.agentControl !== undefined
+  ) {
     return undefined;
   }
 
@@ -551,6 +562,7 @@ export const appendThinkingProgress = (
     progress.actionOutput !== undefined ||
     progress.timelineEvent !== undefined ||
     progress.timeout !== undefined ||
+    progress.agentLive !== undefined ||
     hasTimelineChanges ||
     task !== trace.task;
 
@@ -584,6 +596,14 @@ export const appendThinkingProgress = (
   const nextTokenUsage = hasTimelineChanges
     ? (createTokenUsageSummary(nextTimelineEvents) ?? trace.tokenUsage)
     : trace.tokenUsage;
+  // Live snapshots come from a child process; keep only well-formed ones.
+  const incomingAgentLive =
+    progress.agentLive !== undefined
+      ? agentLiveStateSchema.safeParse(progress.agentLive)
+      : undefined;
+  const nextAgentLive = incomingAgentLive?.success
+    ? incomingAgentLive.data
+    : trace.agentLive;
   const completedAt =
     nextStatus === "complete"
       ? (trace.completedAt ?? timestamp)
@@ -610,6 +630,36 @@ export const appendThinkingProgress = (
       ACTION_OUTPUT_LINE_LIMIT,
     ),
     ...(nextTokenUsage ? { tokenUsage: nextTokenUsage } : {}),
+    ...(nextAgentLive
+      ? { agentLive: settleAgentLive(nextAgentLive, nextStatus) }
+      : {}),
+  };
+};
+
+/**
+ * A finished trace can no longer be steered or answered, so drop the live
+ * controls and mark anything still waiting as ended.
+ */
+const settleAgentLive = (
+  live: AgentLiveState,
+  status: TaskThinkingTrace["status"],
+): AgentLiveState => {
+  if (status !== "complete") return live;
+  return {
+    ...live,
+    capabilities: [],
+    ...(live.question?.status === "pending"
+      ? { question: { ...live.question, status: "cancelled" as const } }
+      : {}),
+    ...(live.tasks
+      ? {
+          tasks: live.tasks.map((task) =>
+            task.status === "running"
+              ? { ...task, status: "stopped" as const, canStop: false }
+              : task,
+          ),
+        }
+      : {}),
   };
 };
 

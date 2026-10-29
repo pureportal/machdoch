@@ -6,6 +6,14 @@ import {
 import { createRuntimeSettingsControls } from "./runtime-settings-controls";
 import { useFleetDeviceUiSettings } from "./use-fleet-device-ui-settings";
 import { useProviderModelCatalog } from "../../use-provider-model-catalog";
+import { expandReviewChangesCommand } from "./review-changes";
+import { stopDesktopTask } from "./graceful-stop";
+import { answerQuestionWithMessage, findPendingAgentQuestion } from "./session-needs-input";
+import {
+  getAgentControlEndpoint,
+  sendAgentControl,
+  useAgentControlEndpoint,
+} from "../../agent-control-client";
 import {
   createWorkspaceInstructionLifecycle,
   useInstructionManagement,
@@ -191,7 +199,6 @@ import {
   normalizeRequestIterationCount,
 } from "./request-iterations";
 import {
-  appendContextAttachmentsToTask,
   appendDraftBlock,
   appendTranscriptToDraft,
   clampQuickVoiceMessageLimit,
@@ -1663,6 +1670,20 @@ export const useChatSessionController = (
       settingsActions.setUiControlEnabled(enabled);
     },
     [settingsActions, updateMessageEditSession],
+  );
+
+  const handleFastModeChange = useCallback(
+    (enabled: boolean): void => {
+      const apply = (session: ChatSessionRecord): ChatSessionRecord => {
+        const next: ChatSessionRecord = { ...session, updatedAt: Date.now() };
+        if (enabled) next.fastMode = true;
+        else delete next.fastMode;
+        return next;
+      };
+      if (activeMessageEditRef.current) updateMessageEditSession(apply);
+      else state.updateActiveSession(apply);
+    },
+    [state, updateMessageEditSession],
   );
 
   useEffect(() => {
@@ -3485,6 +3506,11 @@ export const useChatSessionController = (
     },
     [],
   );
+  // Re-renders when the running turn starts or stops accepting steering.
+  const activeSessionCanSteer =
+    useAgentControlEndpoint(
+      getActiveDesktopTaskIdForSession(state.activeSession.id) ?? undefined,
+    )?.capabilities.includes("steer") === true;
 
   const getUnsettledDesktopTaskIdForSession = useCallback(
     (sessionId: string): string | null => {
@@ -3555,7 +3581,10 @@ export const useChatSessionController = (
       }
 
       for (const targetTaskId of targetTaskIds) {
-        void cancelDesktopTask(targetTaskId).catch((error) => {
+        void stopDesktopTask(targetTaskId, {
+          isActive: () => activeDesktopTasksRef.current.has(targetTaskId),
+          hardCancel: () => cancelDesktopTask(targetTaskId),
+        }).catch((error) => {
           console.error("Failed to cancel desktop task:", error);
         });
       }
@@ -7119,9 +7148,11 @@ export const useChatSessionController = (
     hasHydrated: state.hasHydrated,
     shellState: state.shellState,
     activeSession: state.activeSession,
-    runningTaskMessageAction: activeSessionPromptEnhancementBusy
-      ? "queue"
-      : runningTaskMessageAction,
+    // Remote composers cannot steer; a steer preference queues there.
+    runningTaskMessageAction:
+      activeSessionPromptEnhancementBusy || runningTaskMessageAction === "steer"
+        ? "queue"
+        : runningTaskMessageAction,
     imageInputSupported: activeSessionImageInputSupported,
     imageInputDisabledReason: activeSessionImageInputSupported
       ? null
@@ -8163,7 +8194,80 @@ export const useChatSessionController = (
         };
 
         if (submission.runningAction) {
+          // While the agent waits on a question, the next message answers it,
+          // whether it was typed here or sent from machdoch.cloud.
+          const pendingQuestion = findPendingAgentQuestion(submission.sessionSnapshot);
+          const questionTaskId = pendingQuestion
+            ? getActiveDesktopTaskIdForSession(submission.sessionSnapshot.id)
+            : null;
+          if (
+            pendingQuestion &&
+            questionTaskId &&
+            getAgentControlEndpoint(questionTaskId)?.capabilities.includes("answer") &&
+            submission.contextAttachments.length === 0
+          ) {
+            const sessionId = submission.sessionSnapshot.id;
+            clearSessionComposerInput(sessionId, submission.composerClearGuard);
+            void sendAgentControl(questionTaskId, {
+              type: "answer",
+              questionId: pendingQuestion.id,
+              answers: answerQuestionWithMessage(pendingQuestion, task),
+            }).catch((error: unknown) => {
+              restoreSessionComposerInput({
+                sessionId,
+                prompt: task,
+                contextAttachments: submission.contextAttachments,
+                composerClearGuard: submission.composerClearGuard,
+              });
+              setPromptEnhancementStatus({
+                sessionId,
+                tone: "error",
+                text: error instanceof Error ? error.message : String(error),
+              });
+            });
+            return;
+          }
           switch (submission.runningAction) {
+            case "steer": {
+              const sessionId = submission.sessionSnapshot.id;
+              const taskId = getActiveDesktopTaskIdForSession(sessionId);
+              const queueInput = {
+                sessionId,
+                task,
+                messageSettings: submission.messageSettings,
+                visibleMessageContent: task,
+                promptHistoryContent,
+                contextAttachments: submission.contextAttachments,
+              };
+              // Attachments and enhanced prompts need a turn of their own.
+              if (
+                !taskId ||
+                getAgentControlEndpoint(taskId)?.capabilities.includes("steer") !== true ||
+                submission.contextAttachments.length > 0 ||
+                promptEnhancement ||
+                promptEnhancementRequest
+              ) {
+                queueActiveSessionMessage("back", {
+                  ...queueInput,
+                  ...(promptEnhancement ? { promptEnhancement } : {}),
+                  ...(promptEnhancementRequest ? { promptEnhancementRequest } : {}),
+                  composerClearGuard: submission.composerClearGuard,
+                });
+                return;
+              }
+              clearSessionComposerInput(sessionId, submission.composerClearGuard);
+              void sendAgentControl(taskId, { type: "steer", text: task }).catch(
+                (error: unknown) => {
+                  queueActiveSessionMessage("back", { ...queueInput, clearComposer: false });
+                  setPromptEnhancementStatus({
+                    sessionId,
+                    tone: "info",
+                    text: `${error instanceof Error ? error.message : String(error)} The message was queued as the next turn instead.`,
+                  });
+                },
+              );
+              return;
+            }
             case "stop-and-send": {
               const queuedMessage = queueActiveSessionMessage("front", {
                 sessionId: submission.sessionSnapshot.id,
@@ -8341,6 +8445,7 @@ export const useChatSessionController = (
       closeMessageEdit,
       enhancePromptForSubmission,
       failQueuedPromptEnhancementFollowers,
+      getActiveDesktopTaskIdForSession,
       queueActiveSessionMessage,
       rebindQueuedPromptEnhancementFollowers,
       requestTaskCancellation,
@@ -8462,7 +8567,7 @@ export const useChatSessionController = (
     iterationMode: RequestIterationMode = DEFAULT_REQUEST_ITERATION_MODE,
     goalObjective?: string,
   ): void => {
-    const task = draft.trim();
+    const task = expandReviewChangesCommand(draft.trim());
     const goalCommand = isGoalCommand(task);
     if (
       task === "/goal pause" &&
@@ -8756,6 +8861,15 @@ export const useChatSessionController = (
         ? handleCancel
         : undefined,
       onContinueTask: taskSubmission.handleContinueTask,
+      onPickSuggestion: (suggestion: string) => {
+        composerState.handleDraftChange(suggestion);
+        window.requestAnimationFrame(() => {
+          document
+            .querySelector<HTMLTextAreaElement>(".app-composer-textarea")
+            ?.focus();
+        });
+      },
+      onSendSuggestion: (suggestion: string) => handleSend(suggestion),
       onSaveMessageAsContextPack: handleSaveMessageAsContextPack,
       onOpenWorkspaceFile: handleOpenWorkspaceFile,
       onOpenLocalFile: handleOpenLocalFile,
@@ -8887,6 +9001,7 @@ export const useChatSessionController = (
       },
       canSendMessage: canComposeMessage,
       sendDisabledReason: activeSessionSendDisabledReason,
+      canSteerRunningTask: activeSessionCanSteer,
       runningTaskMessageAction: activeSessionPromptEnhancementBusy
         ? "queue"
         : runningTaskMessageAction,
@@ -8941,6 +9056,7 @@ export const useChatSessionController = (
       onUseWorkspaceMemoryChange: handleUseWorkspaceMemoryChange,
       onUseGlobalMemoryChange: handleUseGlobalMemoryChange,
       onUiControlEnabledChange: handleUiControlEnabledChange,
+      onFastModeChange: handleFastModeChange,
       onInterviewEnabledChange: handleInterviewEnabledChange,
       onPromptEnhancementModeChange: handlePromptEnhancementModeChange,
       onSelectContextFiles: () =>

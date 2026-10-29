@@ -46,6 +46,7 @@ import {
 } from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { RunningTaskMessageAction } from "./model";
+import { SteerIcon } from "../conversation/agent-live-icons";
 import { getClipboardImageFiles } from "./clipboard-image-files";
 import {
   DEFAULT_REQUEST_ITERATION_MODE,
@@ -117,6 +118,8 @@ export interface AgentComposerProps {
   toggles?: AgentComposerToggle[];
   actions?: AgentComposerAction[];
   runningTaskMessageAction?: RunningTaskMessageAction;
+  /** The running task accepts messages into its current turn. */
+  canSteerRunningTask?: boolean;
   queuedMessages?: AgentComposerQueuedMessage[];
   iterationsEnabled?: boolean;
   iterationsDisabledReason?: string | undefined;
@@ -262,6 +265,12 @@ const useBufferedDraft = (
 
 const RUNNING_TASK_MESSAGE_ACTIONS = [
   {
+    id: "steer",
+    label: "Steer",
+    sendLabel: "Send into the running task",
+    icon: SteerIcon,
+  },
+  {
     id: "stop-and-send",
     label: "Stop & Send",
     sendLabel: "Stop task and send message",
@@ -280,12 +289,14 @@ const RUNNING_TASK_MESSAGE_ACTIONS = [
   icon: ComponentType<ComposerIconProps>;
 }>;
 
+const QUEUE_ACTION = RUNNING_TASK_MESSAGE_ACTIONS[2];
+
 const getRunningTaskMessageActionMeta = (
   action: RunningTaskMessageAction | undefined,
 ) => {
   return (
     RUNNING_TASK_MESSAGE_ACTIONS.find((entry) => entry.id === action) ??
-    RUNNING_TASK_MESSAGE_ACTIONS[1]
+    QUEUE_ACTION
   );
 };
 
@@ -422,6 +433,7 @@ export const AgentComposer = ({
   toggles = [],
   actions = [],
   runningTaskMessageAction,
+  canSteerRunningTask = false,
   queuedMessages = [],
   iterationsEnabled = false,
   iterationsDisabledReason,
@@ -484,8 +496,13 @@ export const AgentComposer = ({
   const canSubmit = canSend && Boolean(bufferedDraft.value.trim());
   const showCancelButton =
     isExecuting && canCancel && (variant === "quick" || !canSubmit);
+  const runningActions = RUNNING_TASK_MESSAGE_ACTIONS.filter(
+    (action) => action.id !== "steer" || canSteerRunningTask,
+  );
   const selectedRunningAction =
-    runningTaskMessageAction ?? RUNNING_TASK_MESSAGE_ACTIONS[1].id;
+    runningTaskMessageAction === "steer" && !canSteerRunningTask
+      ? QUEUE_ACTION.id
+      : (runningTaskMessageAction ?? QUEUE_ACTION.id);
   const selectIterationCount = useCallback(
     (count: number): void => {
       setIterationCount(count);
@@ -636,7 +653,7 @@ export const AgentComposer = ({
           className="flex min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70 p-0.5"
           role="group"
         >
-          {RUNNING_TASK_MESSAGE_ACTIONS.map((action) => {
+          {runningActions.map((action) => {
             const Icon = action.icon;
             const selected = action.id === selectedRunningAction;
 
@@ -1012,7 +1029,7 @@ export const AgentComposer = ({
           groups: [
             {
               id: "actions",
-              items: RUNNING_TASK_MESSAGE_ACTIONS.map(
+              items: runningActions.map(
                 (action, index): CommandPageItem => ({
                   id: action.id,
                   title: action.label,
@@ -1241,6 +1258,7 @@ export const AgentComposer = ({
     onSelectContextImages,
     onRunningTaskMessageActionChange,
     queuedMessages,
+    canSteerRunningTask,
     selectedRunningAction,
     sendDisabledReason,
     sendLabel,

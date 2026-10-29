@@ -21,6 +21,7 @@ export const createSessionMessageSettings = (
   ...(goalObjective ? { goalObjective } : {}),
   adaptiveControllerOverride: session.adaptiveControllerOverride ?? null,
   ...(session.reasoning ? { reasoning: session.reasoning } : {}),
+  ...(session.fastMode ? { fastMode: true } : {}),
   sessionMemoryEnabled: session.sessionMemoryEnabled,
   useWorkspaceMemory: session.useWorkspaceMemory !== false,
   useGlobalMemory: session.useGlobalMemory,
@@ -81,6 +82,12 @@ export const applySessionMessageSettings = (
     nextSession.reasoning = settings.reasoning;
   } else {
     delete nextSession.reasoning;
+  }
+
+  if (settings.fastMode) {
+    nextSession.fastMode = true;
+  } else {
+    delete nextSession.fastMode;
   }
 
   return nextSession;

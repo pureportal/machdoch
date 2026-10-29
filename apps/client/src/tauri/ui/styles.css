@@ -666,6 +666,29 @@ body {
   z-index: 1;
 }
 
+.app-session-card--needs-input {
+  border-color: rgb(251 191 36 / 0.5) !important;
+  box-shadow:
+    0 0 0 1px rgb(251 191 36 / 0.14),
+    0 10px 24px rgb(69 26 3 / 0.22);
+}
+
+.app-session-card--needs-input .app-session-needs-input svg {
+  animation: app-needs-input-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes app-needs-input-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-session-card--needs-input .app-session-needs-input svg {
+    animation: none;
+  }
+}
+
 .app-session-card-action-button {
   z-index: 3;
 }

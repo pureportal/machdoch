@@ -1,6 +1,10 @@
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { subscribeToDesktopTaskProgress } from "../../runtime";
 import {
+  forgetAgentControlEndpoint,
+  setAgentControlEndpoint,
+} from "../../agent-control-client";
+import {
   appendThinkingProgress,
   type TaskThinkingTrace,
 } from "../../task-thinking.model";
@@ -195,6 +199,14 @@ export const useDesktopTaskProgress = (options: {
 
     void subscribeToDesktopTaskProgress((progressEvent) => {
       const currentOptions = optionsRef.current;
+      if (progressEvent.progress.agentControl !== undefined) {
+        setAgentControlEndpoint(
+          progressEvent.taskId,
+          progressEvent.progress.agentControl,
+        );
+      } else if (!progressEvent.progress.cancellable) {
+        forgetAgentControlEndpoint(progressEvent.taskId);
+      }
       let sessionId = currentOptions.activeDesktopTasksRef.current.get(
         progressEvent.taskId,
       );

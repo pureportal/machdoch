@@ -72,6 +72,8 @@ import { isRecoveredTaskCrashMessage } from "../_helpers/session-task-continuati
 import { getMessageWorkspaceRoot } from "../_helpers/message-workspace";
 import { MessageAttachmentsList } from "@machdoch/client-ui/composer/context-attachments";
 import { ExecutionInsightRow } from "@machdoch/client-ui/conversation/execution-insight-row";
+import { FollowUpSuggestions } from "@machdoch/client-ui/conversation/follow-up-suggestions";
+import { AgentLiveRunExtras } from "./agent-live-run-extras";
 import { getTaskFileChangeFiles, getTaskFileChangeHunks } from "../../runtime";
 import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
 import { PromptEnhancementPending } from "./prompt-enhancement-pending";
@@ -110,6 +112,10 @@ export interface ConversationFeedProps {
   } | null;
   onCancelPromptEnhancement?: () => void;
   onContinueTask: (message: ChatSessionMessage) => void;
+  /** Puts a suggested follow-up into the composer. */
+  onPickSuggestion?: (suggestion: string) => void;
+  /** Sends a suggested follow-up as the next message. */
+  onSendSuggestion?: (suggestion: string) => void;
   onSaveMessageAsContextPack?: (message: ChatSessionMessage) => void;
   onOpenWorkspaceFile: (
     relativePath: string,
@@ -188,6 +194,9 @@ interface ConversationMessageRowProps {
   onSaveSpeech?: (message: ChatSessionMessage) => void;
   onStopSpeaking: () => void;
   onToggleOriginalPrompt: (messageId: string) => void;
+  /** Set only on the latest answer while no task runs. */
+  onPickSuggestion?: (suggestion: string) => void;
+  onSendSuggestion?: (suggestion: string) => void;
   voicePlaybackSupported: boolean;
   workspaceRoot?: string | null;
 }
@@ -226,6 +235,8 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   onSaveSpeech,
   onStopSpeaking,
   onToggleOriginalPrompt,
+  onPickSuggestion,
+  onSendSuggestion,
   voicePlaybackSupported,
   workspaceRoot,
 }: ConversationMessageRowProps): JSX.Element | null {
@@ -378,6 +389,15 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                   }
                 />
               </div>
+            ) : null}
+
+            {thinkingTrace?.agentLive ? (
+              <AgentLiveRunExtras
+                trace={thinkingTrace}
+                live={thinkingTrace.agentLive}
+                taskId={message.taskId}
+                {...(onSendSuggestion ? { onSendMessage: onSendSuggestion } : {})}
+              />
             ) : null}
 
             {thinkingTrace && <McpAppResults thinking={thinkingTrace} workspaceRoot={workspaceRoot} invoke={(root, input) => invokeWorkspaceTools("run_mcp_app_command", { workspaceRoot: root, input })} />}
@@ -589,6 +609,14 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
               />
             ) : null}
 
+            {onPickSuggestion && message.source?.kind === "execution" ? (
+              <FollowUpSuggestions
+                suggestions={thinkingTrace?.agentLive?.suggestions ?? []}
+                onPick={onPickSuggestion}
+                {...(onSendSuggestion ? { onSend: onSendSuggestion } : {})}
+              />
+            ) : null}
+
             {showCrashRecoveryActions ? (
               <div className="app-message-actions flex max-w-[90%] min-w-0 flex-wrap items-center gap-2">
                 <Button
@@ -640,6 +668,8 @@ export const ConversationFeed = ({
   editingPromptEnhancement = null,
   onCancelPromptEnhancement,
   onContinueTask,
+  onPickSuggestion,
+  onSendSuggestion,
   onSaveMessageAsContextPack,
   onOpenWorkspaceFile,
   onOpenLocalFile,
@@ -1257,6 +1287,15 @@ export const ConversationFeed = ({
             onStopSpeaking={voicePlayback.onStopSpeaking}
             onOpenMessageContextMenu={openMessageContextMenu}
             onToggleOriginalPrompt={toggleOriginalPrompt}
+            {...(!isSessionRunning &&
+            !hasActiveMessageEdit &&
+            message.id === latestRetryableAgentMessageId &&
+            onPickSuggestion
+              ? {
+                  onPickSuggestion,
+                  ...(onSendSuggestion ? { onSendSuggestion } : {}),
+                }
+              : {})}
           />
         );
       })}

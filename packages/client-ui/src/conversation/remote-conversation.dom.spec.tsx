@@ -87,6 +87,77 @@ const props = {
   mediaTransport,
 };
 
+const historyWith = (thinking: Record<string, unknown>) => ({
+  sessionId: session.id,
+  revision: "b".repeat(64),
+  messages: [{ ...message, id: "agent", role: "agent", taskId: "task", thinking }],
+  total: 1,
+  hasEarlier: false,
+});
+
+it("answers the agent's question from machdoch.cloud with an ordinary message", async () => {
+  invoke.mockResolvedValueOnce(
+    historyWith({
+      status: "running",
+      mode: "machdoch",
+      startedAt: Date.now(),
+      timelineEvents: [],
+      agentLive: {
+        provider: "codex-cli",
+        transport: "app-server",
+        capabilities: ["steer", "interrupt", "answer"],
+        usage: { contextUsedTokens: 20_000, contextWindowTokens: 100_000 },
+        question: {
+          id: "q",
+          status: "pending",
+          items: [{ id: "lang", question: "Which language?", options: [{ label: "Go" }, { label: "Rust" }] }],
+        },
+      },
+    }),
+  );
+  render(<RemoteConversationHost {...props} historyAvailable session={{ ...session, status: "running" }} />);
+
+  fireEvent.click(await screen.findByRole("radio", { name: "Rust" }));
+  fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+  await waitFor(() =>
+    expect(onCommand).toHaveBeenCalledWith({
+      kind: "submit-message",
+      sessionId: session.id,
+      prompt: "Rust",
+      promptEnhancementMode: "off",
+      interviewEnabled: false,
+    }),
+  );
+  expect(screen.getByRole("region", { name: "Codex live run details" })).toBeTruthy();
+  // The cloud cannot reach the run's background work, so it offers no stop buttons.
+  expect(screen.queryByRole("button", { name: /^Stop / })).toBeNull();
+});
+
+it("offers the finished run's follow-up suggestions in machdoch.cloud", async () => {
+  invoke.mockResolvedValueOnce(
+    historyWith({
+      status: "complete",
+      mode: "machdoch",
+      startedAt: Date.now(),
+      timelineEvents: [],
+      agentLive: {
+        provider: "claude-cli",
+        transport: "stream-json",
+        capabilities: [],
+        suggestions: ["Add tests for the parser"],
+      },
+    }),
+  );
+  render(<RemoteConversationHost {...props} historyAvailable session={{ ...session, status: "idle" }} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Add tests for the parser" }));
+  expect(onCommand).toHaveBeenCalledWith({ kind: "update-draft", sessionId: session.id, prompt: "Add tests for the parser" });
+  fireEvent.click(screen.getByRole("button", { name: "Send: Add tests for the parser" }));
+  await waitFor(() =>
+    expect(onCommand).toHaveBeenCalledWith(expect.objectContaining({ kind: "submit-message", prompt: "Add tests for the parser" })),
+  );
+});
+
 it("applies the native timeout acknowledgment before another snapshot arrives", async () => {
   const thinking = {
     status: "running",

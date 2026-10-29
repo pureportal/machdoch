@@ -67,7 +67,7 @@ import {
   type PromptEnhancementAttempt,
 } from "./chat-session/_helpers/prompt-enhancement-attempt";
 import { retainTaskActionOutput } from "@machdoch/client-ui/conversation/task-action-output";
-import { taskThinkingActionOutputSummarySchema,finalAnswerStreamSchema } from "@machdoch/fleet-protocol/task-thinking";
+import { taskThinkingActionOutputSummarySchema,finalAnswerStreamSchema,agentLiveStateSchema } from "@machdoch/fleet-protocol/task-thinking";
 
 export type ChatSessionMessageSource =
   | { kind: "preview"; preview: TaskRunPreview }
@@ -143,6 +143,8 @@ export interface ChatSessionMessageSettings {
   goalObjective?: string;
   adaptiveControllerOverride?: boolean | null;
   reasoning?: ReasoningMode;
+  /** Ask the provider CLI for its faster service tier. */
+  fastMode?: boolean;
   sessionMemoryEnabled: boolean;
   useWorkspaceMemory: boolean;
   useGlobalMemory: boolean;
@@ -267,6 +269,7 @@ export interface ChatSessionRecord {
   goal?: SessionGoal | null;
   adaptiveControllerOverride?: boolean | null;
   reasoning?: ReasoningMode;
+  fastMode?: boolean;
   draft: string;
   draftContextAttachments: ChatSessionContextAttachment[];
   manualTitle?: string;
@@ -1371,7 +1374,7 @@ export const getSessionTitle = (session: ChatSessionRecord): string => {
     return normalized;
   }
 
-  return `${normalized.slice(0, 45)}â€¦`;
+  return `${normalized.slice(0, 45)}…`;
 };
 
 export const getSavedPoseScenes = (
@@ -1883,6 +1886,7 @@ const normalizeThinkingTrace = (
     : [];
   const timelineEvents = normalizeThinkingTimelineEvents(value.timelineEvents);
   const tokenUsage = normalizeThinkingTokenUsage(value.tokenUsage);
+  const agentLive = agentLiveStateSchema.safeParse(value.agentLive);
   const startedAt = normalizeFiniteNumber(
     value.startedAt,
     timelineEvents[0]?.timestamp ?? 0,
@@ -1923,6 +1927,7 @@ const normalizeThinkingTrace = (
         : actionOutputLines.length,
     ),
     ...(tokenUsage ? { tokenUsage } : {}),
+    ...(agentLive.success ? { agentLive: agentLive.data } : {}),
   };
 };
 
@@ -2203,6 +2208,7 @@ const normalizeMessageSettings = (
         ? value.adaptiveControllerOverride
         : null,
     ...(reasoning ? { reasoning } : {}),
+    ...(value.fastMode === true ? { fastMode: true } : {}),
     sessionMemoryEnabled: value.sessionMemoryEnabled === true,
     useWorkspaceMemory: value.useWorkspaceMemory !== false,
     useGlobalMemory: value.useGlobalMemory === true,
@@ -2490,6 +2496,7 @@ const normalizeSessionRecord = (
       typeof session.adaptiveControllerOverride === "boolean"
         ? session.adaptiveControllerOverride
         : null,
+    ...(session.fastMode === true ? { fastMode: true } : {}),
     sessionMemory: isQuickTaskSession
       ? []
       : normalizeConversationMemoryEntries(session.sessionMemory, "session"),

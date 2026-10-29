@@ -60,11 +60,43 @@ const isConversationHistoryEntry = (
   return entry !== undefined;
 };
 
+/**
+ * What the user told an agent while its turn ran (steering and answers to
+ * its questions). Later turns need it as much as the answer it shaped.
+ */
+const createRunInputEntry = (
+  message: ChatSessionMessage,
+): ConversationHistoryEntry | undefined => {
+  const source = message.source;
+  const live =
+    source?.kind === "execution" || source?.kind === "thinking"
+      ? source.thinking?.agentLive
+      : undefined;
+  if (message.role !== "agent" || !live) return undefined;
+  const lines = [
+    ...(live.steering ?? [])
+      .filter((steer) => steer.status === "delivered")
+      .map((steer) => `- ${steer.text}`),
+    ...(live.question?.status === "answered"
+      ? live.question.items.flatMap((item) => {
+          const answer = live.question?.answers?.[item.id];
+          return answer ? [`- Answered "${item.header ?? item.question}": ${answer}`] : [];
+        })
+      : []),
+  ];
+  if (lines.length === 0) return undefined;
+  return {
+    role: "user",
+    content: ["Added while the previous task ran:", ...lines].join("\n"),
+    ...(typeof message.createdAt === "number" ? { createdAt: message.createdAt } : {}),
+  };
+};
+
 export const createConversationHistory = (
   messages: ChatSessionMessage[],
 ): ConversationHistoryEntry[] => {
   return createVisibleConversationMessages(messages)
-    .map(createConversationHistoryEntry)
+    .flatMap((message) => [createRunInputEntry(message), createConversationHistoryEntry(message)])
     .filter(isConversationHistoryEntry);
 };
 

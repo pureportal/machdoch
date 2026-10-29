@@ -874,6 +874,26 @@ describe("SessionComposer enhancement", () => {
     expect(onRunningTaskMessageActionChange).not.toHaveBeenCalled();
   });
 
+  it("offers steering only while the running turn accepts it", () => {
+    const props = createProps({
+      editingMessageId: null,
+      canSendMessage: true,
+      isExecuting: true,
+      runningTaskMessageAction: "steer",
+    });
+    const view = render(createElement(SessionComposer, props));
+    expect(screen.queryByText("Steer")).toBeNull();
+    expect(screen.getByRole("button", { name: "Queue message" })).toBeTruthy();
+
+    view.rerender(
+      createElement(SessionComposer, { ...props, canSteerRunningTask: true }),
+    );
+    expect(screen.getByText("Steer")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Send into the running task" }),
+    ).toBeTruthy();
+  });
+
   it("keeps the normal composer available while enhancement is shown in the conversation", () => {
     const markup = renderToStaticMarkup(
       createElement(
