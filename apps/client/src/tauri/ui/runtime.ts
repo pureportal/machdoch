@@ -183,6 +183,7 @@ import {
   replaceDiscoveredModelCapabilities,
 } from "@machdoch/model-runtime/model-capabilities";
 import { normalizeDesktopTaskRunError } from "./desktop-task-error.js";
+import { getDevTaskBridge } from "./dev-task-bridge";
 import { normalizeMcpConfigSaveError } from "./mcp-config-error.js";
 import type { RunMode } from "../../core/runtime-contract.generated.js";
 import type { MediaAssetReference } from "@machdoch/media-studio/core/media/contracts.js";
@@ -4156,6 +4157,8 @@ export const loadWorkspaceRuntimeSnapshot = async (
 };
 
 export const cancelDesktopTask = async (taskId: string): Promise<void> => {
+  const devBridge = getDevTaskBridge();
+  if (devBridge) return devBridge.cancel(taskId);
   const remote = getRemoteRalphPlatform();
   if (remote) return remote.invoke("cancel_desktop_task", { taskId });
 
@@ -6964,6 +6967,20 @@ export const runDesktopTask = async (
       ? { ...context.conversationContext, modelCapabilities }
       : context.conversationContext;
 
+  const devBridge = getDevTaskBridge();
+  if (devBridge) {
+    return devBridge.run({
+      workspaceRoot: normalizedWorkspaceRoot ?? "",
+      task: normalizedTask,
+      ...(normalizedMode ? { mode: normalizedMode } : {}),
+      ...(normalizedTaskId ? { taskId: normalizedTaskId } : {}),
+      ...(normalizedProvider ? { provider: normalizedProvider } : {}),
+      ...(normalizedModel ? { model: normalizedModel } : {}),
+      ...(normalizedReasoning ? { reasoning: normalizedReasoning } : {}),
+      ...(conversationContext ? { conversationContext } : {}),
+    });
+  }
+
   if (!canInvokeTauriCommands()) {
     return {
       preview: createPreviewFixture(normalizedTask, context),
@@ -7003,6 +7020,8 @@ export const runDesktopTask = async (
 export const subscribeToDesktopTaskProgress = async (
   onProgress: (event: DesktopTaskProgressEvent) => void,
 ): Promise<() => void> => {
+  const devBridge = getDevTaskBridge();
+  if (devBridge) return devBridge.listen(onProgress);
   const remote = getRemoteRalphPlatform();
   if (remote)
     return remote.listen<unknown>(DESKTOP_TASK_PROGRESS_EVENT, (event) => {
