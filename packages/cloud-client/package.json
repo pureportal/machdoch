@@ -1,6 +1,6 @@
 {
   "name": "@machdoch/cloud-client",
-  "version": "37.1.2",
+  "version": "37.2.0",
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
