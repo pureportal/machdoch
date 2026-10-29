@@ -2002,7 +2002,9 @@ const createClaudeCommand = ({
       : enrollmentArgs),
     ...(fastMode ? ["--settings", JSON.stringify({ fastMode: true })] : []),
   ];
-  const maxTurns = getExecutorTurnLimit(config);
+  // A native goal runs its whole loop in this one invocation, so the
+  // per-task turn cap would cut it off; the goal's own budgets bound it.
+  const maxTurns = nativeGoal ? undefined : getExecutorTurnLimit(config);
 
   if (effort) {
     if (!providerFeatures.includes("--effort")) {

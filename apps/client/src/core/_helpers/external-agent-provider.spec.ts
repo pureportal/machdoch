@@ -713,6 +713,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const params = createParams(workspaceRoot, {
       provider: "claude-cli",
       model: "claude-opus-4-6",
+      agentLimits: { executorTurns: 7, autopilotExecutorIterations: 3 },
     });
     params.nativeGoal = "All auth tests pass";
     params.captureGoalEvidence = true;
@@ -731,6 +732,8 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const call = spawnCalls[0]!;
     expect(call.child.stdinText).toBe("/goal All auth tests pass");
     expect(call.args).not.toContain("--bare");
+    // The whole goal loop runs in this invocation, so the task turn cap must not end it.
+    expect(call.args).not.toContain("--max-turns");
     expect(await readRunScopedSystemInstructions("claude-cli", call)).toContain(
       params.task,
     );
