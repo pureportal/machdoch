@@ -67,6 +67,15 @@ struct FleetSettingsSyncStatus {
     profile_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    layers: Option<Vec<machdoch_fleet_protocol::FleetManagedSettingsLayer>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    snapshot_captured_at: Option<u64>,
+    /// Schema of the last delivery; decides which report body machdoch.cloud accepts.
+    #[serde(skip)]
+    schema_version: Option<u8>,
     last_attempt_at: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     last_applied_at: Option<u64>,
@@ -186,8 +195,18 @@ pub async fn report_fleet_managed_settings_applied(
     manager_id: String,
     profile_id: Option<String>,
     revision: Option<u64>,
+    layers: Option<Vec<machdoch_fleet_protocol::FleetManagedSettingsLayerIdentity>>,
+    warnings: Option<Vec<String>>,
 ) -> Result<(), String> {
-    settings::report_applied(&state, &manager_id, profile_id.as_deref(), revision).await
+    settings::report_applied(
+        &state,
+        &manager_id,
+        profile_id.as_deref(),
+        revision,
+        layers,
+        warnings.unwrap_or_default(),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -197,8 +216,94 @@ pub async fn report_fleet_managed_settings_failure(
     profile_id: Option<String>,
     revision: Option<u64>,
     error: String,
+    layers: Option<Vec<machdoch_fleet_protocol::FleetManagedSettingsLayerIdentity>>,
 ) -> Result<(), String> {
-    settings::report_failure(&state, &manager_id, profile_id.as_deref(), revision, &error).await
+    settings::report_failure(
+        &state,
+        &manager_id,
+        profile_id.as_deref(),
+        revision,
+        &error,
+        layers,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn get_fleet_settings_snapshot_status(
+    state: tauri::State<'_, FleetConnectionState>,
+) -> Result<Option<settings::FleetSnapshotStatus>, String> {
+    settings::snapshot_status(&state).await
+}
+
+#[tauri::command]
+pub async fn upload_fleet_settings_snapshot(
+    state: tauri::State<'_, FleetConnectionState>,
+    manager_id: String,
+    instance_id: String,
+    document: machdoch_fleet_protocol::FleetManagedSettingsDocument,
+) -> Result<bool, String> {
+    settings::upload_snapshot(&state, &manager_id, &instance_id, document).await
+}
+
+#[tauri::command]
+pub async fn propose_fleet_setting(
+    state: tauri::State<'_, FleetConnectionState>,
+    manager_id: String,
+    instance_id: String,
+    proposal: serde_json::Value,
+) -> Result<String, String> {
+    settings::propose(&state, &manager_id, &instance_id, proposal).await
+}
+
+/// Managed secrets split by policy: defaults only fill keys the user has not set.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct ManagedSecretOverlay {
+    pub(crate) defaults: std::collections::HashMap<String, String>,
+    pub(crate) enforced: std::collections::HashMap<String, String>,
+}
+
+impl ManagedSecretOverlay {
+    /// Applies the overlay around the user's own values.
+    pub(crate) fn apply(
+        &self,
+        own: std::collections::HashMap<String, String>,
+        accepts: impl Fn(&str) -> bool,
+    ) -> std::collections::HashMap<String, String> {
+        let mut merged = std::collections::HashMap::new();
+        for (id, value) in &self.defaults {
+            if accepts(id) {
+                merged.insert(id.clone(), value.clone());
+            }
+        }
+        merged.extend(own);
+        for (id, value) in &self.enforced {
+            if accepts(id) {
+                merged.insert(id.clone(), value.clone());
+            }
+        }
+        merged
+    }
+}
+
+/// Reads managed secrets from the cached delivery of the current connection.
+/// Any problem yields an empty overlay so the user's own keys keep working.
+pub(crate) fn managed_secret_overlay() -> ManagedSecretOverlay {
+    let Ok(Some(delivery)) = config::load_managed_settings_cache() else {
+        return ManagedSecretOverlay::default();
+    };
+    let Some(profile) = delivery.profile else {
+        return ManagedSecretOverlay::default();
+    };
+    let mut overlay = ManagedSecretOverlay::default();
+    for (id, value) in profile.secrets {
+        if profile.document.is_enforced(&format!("secret:{id}")) {
+            overlay.enforced.insert(id, value);
+        } else {
+            overlay.defaults.insert(id, value);
+        }
+    }
+    overlay
 }
 
 #[tauri::command]

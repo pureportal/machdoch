@@ -292,6 +292,7 @@ Usage:
     --display-name <name> [--json]
   machdoch fleet enable|disable [--json]
   machdoch fleet reset [--json]
+  machdoch fleet settings-upload [--cwd <workspace>] [--json]
   machdoch fleet service [--cwd <workspace>] [--json]
   machdoch fleet service run [--cwd <workspace>] [--json]
   machdoch fleet service install [--cwd <workspace>]
@@ -304,7 +305,9 @@ Linux service management uses systemd --user. Enable lingering for boot/logout
 operation, or use the dedicated-account system unit from the headless package.
 On Windows, enable desktop autostart and Start in tray. The service run command
 is also available for terminal-only hosts without a desktop.
-Service configuration or revoked credentials exit with status 78.`;
+Service configuration or revoked credentials exit with status 78.
+settings-upload sends this host's own settings to machdoch.cloud now, without
+secrets, so administrators can build profiles from them.`;
 
 const SCHEDULER_HELP = `machdoch scheduler - scheduled and event-triggered tasks
 

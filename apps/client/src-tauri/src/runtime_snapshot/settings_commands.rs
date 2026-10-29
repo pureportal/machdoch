@@ -76,7 +76,14 @@ fn is_valid_web_search_provider(value: &str) -> bool {
     VALID_WEB_SEARCH_PROVIDERS.contains(&value)
 }
 
+/// User keys with managed machdoch.cloud secrets layered on top; managed keys
+/// are never written into the user config.
 pub(super) fn load_user_api_keys() -> Result<HashMap<String, String>, String> {
+    Ok(crate::fleet::managed_secret_overlay()
+        .apply(load_own_user_api_keys()?, is_user_api_provider))
+}
+
+fn load_own_user_api_keys() -> Result<HashMap<String, String>, String> {
     let (config, _) = load_user_config_file()?;
 
     Ok(config
@@ -117,6 +124,11 @@ fn load_user_agent_cli_paths() -> Result<HashMap<String, String>, String> {
 }
 
 fn load_user_web_search_api_keys() -> Result<HashMap<String, String>, String> {
+    Ok(crate::fleet::managed_secret_overlay()
+        .apply(load_own_user_web_search_api_keys()?, is_user_web_search_provider))
+}
+
+fn load_own_user_web_search_api_keys() -> Result<HashMap<String, String>, String> {
     let (config, _) = load_user_config_file()?;
 
     Ok(config
@@ -178,6 +190,43 @@ pub(crate) fn merge_user_web_search_api_keys_into_env(
     }
 
     Ok(())
+}
+
+/// Removes keys an older desktop copied from machdoch.cloud into the user config.
+/// Only entries that still hold the managed value are removed, so keys the user
+/// changed since then stay untouched.
+pub(super) fn release_managed_api_keys(
+    secrets: &HashMap<String, String>,
+) -> Result<Vec<String>, String> {
+    let mut released = Vec::new();
+    update_user_config_file(|config| {
+        for (id, value) in secrets {
+            let value = value.trim();
+            if value.is_empty() {
+                continue;
+            }
+            if config
+                .api_keys
+                .get(id)
+                .is_some_and(|own| own.trim() == value)
+            {
+                config.api_keys.remove(id);
+                released.push(id.clone());
+            }
+            if config
+                .web_search
+                .api_keys
+                .get(id)
+                .is_some_and(|own| own.trim() == value)
+            {
+                config.web_search.api_keys.remove(id);
+                released.push(id.clone());
+            }
+        }
+    })?;
+    released.sort();
+    released.dedup();
+    Ok(released)
 }
 
 pub(super) fn save_user_api_key(provider: &str, api_key: &str) -> Result<PathBuf, String> {

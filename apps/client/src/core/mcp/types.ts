@@ -8,7 +8,12 @@ export const MCP_WORKSPACE_DIRECTORY = ".machdoch/mcp";
 export const MCP_WORKSPACE_DISCOVERY_CACHE_FILE_NAME = "discovery-cache.json";
 export const MCP_USER_DISCOVERY_CACHE_FILE_NAME = "mcp-discovery-cache.json";
 
-export type McpConfigSource = "preset" | "user" | "workspace" | "override";
+export type McpConfigSource =
+  | "preset"
+  | "user"
+  | "workspace"
+  | "managed"
+  | "override";
 export type McpTransportType = "stdio" | "streamable-http" | "sse";
 export type McpSecurityProfile = "weak" | "balanced" | "strict";
 export type McpElicitationMode = "disabled";

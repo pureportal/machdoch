@@ -18,8 +18,12 @@ import { manageFleetService } from "../../core/fleet-service.js";
 import {
   runFleetSettingsService,
   synchronizeFleetSettings,
+  uploadFleetSettingsSnapshot,
 } from "../../core/fleet-settings.js";
-import { exportFleetLocalSettings } from "../../core/fleet-settings-export.js";
+import {
+  collectFleetLocalSettings,
+  exportFleetLocalSettings,
+} from "../../core/fleet-settings-export.js";
 
 const fail = (message: string): never => {
   throw new Error(message);
@@ -202,6 +206,32 @@ export const printFleetSummary = async (args: ParsedCliArgs): Promise<void> => {
     case "settings-export":
       printJson(await exportFleetLocalSettings(args.workspaceRoot));
       return;
+    case "settings-upload": {
+      const config = await loadFleetConnectionConfig();
+      if (!config?.enabled)
+        throw new Error("Connect this host to machdoch.cloud first.");
+      const { document, leftOut } = await collectFleetLocalSettings(
+        args.workspaceRoot,
+      );
+      const uploaded = await uploadFleetSettingsSnapshot({
+        config,
+        document,
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (!uploaded)
+        throw new Error(
+          "Update machdoch.cloud to upload device settings again.",
+        );
+      if (args.json) printJson({ uploaded: true, leftOut });
+      else {
+        writeStdoutLine("Device settings uploaded to machdoch.cloud.");
+        if (leftOut)
+          writeStdoutLine(
+            `${leftOut} local ${leftOut === 1 ? "setting was" : "settings were"} left out because machdoch.cloud cannot store ${leftOut === 1 ? "it" : "them"}.`,
+          );
+      }
+      return;
+    }
     case "status":
       await printStatus(args.json);
       return;

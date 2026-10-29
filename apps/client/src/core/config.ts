@@ -2,11 +2,15 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadFleetManagedProfile } from "./fleet-settings.js";
+import { isManagedSettingEnforced } from "@machdoch/fleet-protocol/managed-settings";
 import { loadChatDefaults } from "./chat-defaults.js";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import { parseContextWindow } from "./context-windows.js";
 import { assertReasoningExecutionModeSupportedForProviderModel } from "@machdoch/model-runtime/reasoning-execution-modes";
-import { assertReasoningModeSupportedForProviderModel } from "@machdoch/model-runtime/reasoning-modes";
+import {
+  assertReasoningModeSupportedForProviderModel,
+  normalizeReasoningModeForProviderModel,
+} from "@machdoch/model-runtime/reasoning-modes";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
 import { ensureWorkspaceStorage } from "./workspace-storage.js";
@@ -21,6 +25,7 @@ import {
   loadUserReviewModelSettings,
   loadUserWebSearchSettings,
   loadRuntimeEnvironment,
+  managedAgentLimits,
 } from "./env.js";
 import {
   getAgentCliProviders,
@@ -415,10 +420,12 @@ const resolveProvider = (
 const resolveWebSearchActiveProvider = (
   configuredProvider: WebSearchProvider,
   env: Record<string, string>,
+  enforced: boolean,
 ): WebSearchProvider => {
   const envOverride = normalizeOptionalString(env.MACHDOCH_WEB_SEARCH_PROVIDER);
 
   if (
+    !enforced &&
     envOverride &&
     VALID_WEB_SEARCH_PROVIDERS.includes(envOverride as WebSearchProvider)
   ) {
@@ -517,7 +524,10 @@ export const loadRuntimeConfig = async (
   const userInternalTaskModelSettings =
     await loadUserInternalTaskModelSettings();
   const { config, path } = await loadWorkspaceConfigFile(workspaceRoot);
-  const managedDefaults = (await loadFleetManagedProfile())?.document.defaults;
+  const managed = await loadFleetManagedProfile();
+  const managedDefaults = managed?.document.defaults;
+  const managedEnforced = (field: string): boolean =>
+    managed !== null && isManagedSettingEnforced(managed.document, field);
   const chatDefaults = await loadChatDefaults();
   const providerAvailability = getProviderAvailability(env);
   const webSearchProviderAvailability = getWebSearchProviderAvailability(env);
@@ -527,8 +537,10 @@ export const loadRuntimeConfig = async (
   const configuredMode = isRunMode(config.defaultMode)
     ? config.defaultMode
     : undefined;
+  const enforcedMode = managedEnforced("mode") ? managedDefaults?.mode : null;
   const mode =
     overrideMode ??
+    enforcedMode ??
     modeFromEnv ??
     configuredMode ??
     chatDefaults.mode ??
@@ -558,13 +570,14 @@ export const loadRuntimeConfig = async (
       "workspace.reasoning must be default, none, minimal, low, medium, high, xhigh, max, ultra, or aeon.",
     );
   }
-  const reasoning =
-    overrideReasoning ??
-    reasoningFromEnv ??
-    configuredReasoning ??
-    chatDefaults.reasoning ??
-    managedDefaults?.reasoning ??
-    "default";
+  const ownReasoning =
+    reasoningFromEnv ?? configuredReasoning ?? chatDefaults.reasoning;
+  const managedReasoning =
+    (managedEnforced("reasoning") || ownReasoning === undefined
+      ? managedDefaults?.reasoning
+      : null) ?? undefined;
+  const requestedReasoning =
+    overrideReasoning ?? managedReasoning ?? ownReasoning ?? "default";
   const rawReasoningModeFromEnv = normalizeOptionalString(
     env.MACHDOCH_REASONING_MODE,
   );
@@ -621,8 +634,12 @@ export const loadRuntimeConfig = async (
     contextWindowFromEnv ??
     configuredContextWindow ??
     "highest";
+  const enforcedProvider = managedEnforced("model")
+    ? (managedDefaults?.provider ?? undefined)
+    : undefined;
   const provider = resolveProvider(
     overrideProvider ??
+      enforcedProvider ??
       config.provider ??
       chatDefaults.provider ??
       managedDefaults?.provider ??
@@ -631,13 +648,31 @@ export const loadRuntimeConfig = async (
   );
   const managedModel =
     provider === managedDefaults?.provider ? managedDefaults?.model : null;
+  const enforcedModel =
+    enforcedProvider !== undefined && provider === enforcedProvider
+      ? managedModel
+      : null;
   const model =
     normalizeOptionalString(overrideModel) ??
+    enforcedModel ??
     normalizeOptionalString(env.MACHDOCH_MODEL) ??
     config.model ??
     (provider === "unconfigured" ? undefined : chatDefaults.models[provider]) ??
     managedModel ??
     getDefaultModelForRuntimeProvider(provider);
+
+  // Managed reasoning applies to whichever model ends up selected, so a value
+  // that model cannot use falls back instead of failing every run.
+  const reasoning =
+    overrideReasoning === undefined &&
+    managedReasoning !== undefined &&
+    provider !== "unconfigured"
+      ? normalizeReasoningModeForProviderModel(
+          managedReasoning,
+          provider,
+          model,
+        )
+      : requestedReasoning;
 
   if (provider !== "unconfigured") {
     assertReasoningModeSupportedForProviderModel(reasoning, provider, model);
@@ -650,8 +685,15 @@ export const loadRuntimeConfig = async (
 
   const offline =
     env.MACHDOCH_OFFLINE === "true" ? true : (config.offline ?? false);
+  // The user settings already contain enforced managed limits; environment and
+  // workspace limits must not bypass them either.
+  const localAgentLimits = parseAgentLimitsFromEnv(env) ?? config.agentLimits;
   const agentLimits = normalizeAgentLimitOverrides(
-    overrideAgentLimits ?? parseAgentLimitsFromEnv(env) ?? config.agentLimits,
+    overrideAgentLimits ??
+      (localAgentLimits && {
+        ...localAgentLimits,
+        ...managedAgentLimits(managed).enforced,
+      }),
     normalizeAgentLimitOverrides(userAgentLimitsSettings),
   );
 
@@ -678,6 +720,8 @@ export const loadRuntimeConfig = async (
       activeProvider: resolveWebSearchActiveProvider(
         userWebSearchSettings.activeProvider,
         env,
+        managedEnforced("webSearchProvider") &&
+          Boolean(managedDefaults?.webSearchProvider),
       ),
       providerAvailability: webSearchProviderAvailability,
     },

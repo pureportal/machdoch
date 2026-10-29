@@ -114,6 +114,10 @@ const shouldProxyServer = (
   if (server.auth && server.auth.type !== "none") {
     return "Provider enrollment files must not contain resolved secret material.";
   }
+  if (server.sources.includes("managed")) {
+    // Their values may hold substituted machdoch.cloud secrets.
+    return "machdoch.cloud MCP servers stay behind the Machdoch host so their secrets are not written to provider files.";
+  }
   if (
     server.transport.type === "stdio" &&
     (Object.keys(server.transport.env ?? {}).length > 0 ||

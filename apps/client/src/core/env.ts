@@ -2,7 +2,14 @@ import { existsSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { loadFleetManagedProfile } from "./fleet-settings.js";
+import {
+  loadFleetManagedProfile,
+  type FleetManagedProfile,
+} from "./fleet-settings.js";
+import {
+  isManagedSettingEnforced,
+  managedSecretPolicyKey,
+} from "@machdoch/fleet-protocol/managed-settings";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "./_helpers/write-file-atomically.helper.js";
@@ -399,6 +406,30 @@ export const clearUserConfigValue = async (
 };
 
 /**
+ * Layers managed secrets around the user's own keys: managed defaults only
+ * fill gaps, enforced managed keys always win. Nothing is written locally.
+ */
+const overlayManagedSecrets = (
+  userKeys: Record<string, string | undefined> | undefined,
+  managed: FleetManagedProfile | null,
+): Record<string, string> => {
+  const defaults: Record<string, string> = {};
+  const enforced: Record<string, string> = {};
+  for (const [id, value] of Object.entries(managed?.secrets ?? {})) {
+    (isManagedSettingEnforced(managed!.document, managedSecretPolicyKey(id))
+      ? enforced
+      : defaults)[id] = value;
+  }
+  const own = Object.fromEntries(
+    Object.entries(userKeys ?? {}).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[1] === "string" && hasConfiguredValue(entry[1]),
+    ),
+  );
+  return { ...defaults, ...own, ...enforced };
+};
+
+/**
  * Loads the configured provider API keys from the user-scoped config file.
  */
 export const loadUserApiKeys = async (): Promise<
@@ -406,7 +437,7 @@ export const loadUserApiKeys = async (): Promise<
 > => {
   const { config } = await loadUserConfigFile();
   const managed = await loadFleetManagedProfile();
-  const apiKeys = { ...config.apiKeys, ...managed?.secrets };
+  const apiKeys = overlayManagedSecrets(config.apiKeys, managed);
 
   return Object.fromEntries(
     Object.entries(apiKeys)
@@ -444,7 +475,7 @@ export const loadUserWebSearchApiKeys = async (): Promise<
 > => {
   const { config } = await loadUserConfigFile();
   const managed = await loadFleetManagedProfile();
-  const apiKeys = { ...config.webSearch?.apiKeys, ...managed?.secrets };
+  const apiKeys = overlayManagedSecrets(config.webSearch?.apiKeys, managed);
 
   return Object.fromEntries(
     Object.entries(apiKeys)
@@ -700,10 +731,11 @@ export const loadUserWebSearchSettings = async (): Promise<{
 }> => {
   const { config } = await loadUserConfigFile();
   const managed = await loadFleetManagedProfile();
+  const managedProvider = managed?.document.defaults.webSearchProvider;
   const selectedProvider =
-    managed?.document.defaults.webSearchProvider ??
-    config.webSearch?.activeProvider ??
-    "none";
+    managed && isManagedSettingEnforced(managed.document, "webSearchProvider")
+      ? (managedProvider ?? config.webSearch?.activeProvider ?? "none")
+      : (config.webSearch?.activeProvider ?? managedProvider ?? "none");
   const activeProvider = isWebSearchProvider(selectedProvider)
     ? selectedProvider
     : "none";
@@ -717,20 +749,49 @@ export const loadUserWebSearchSettings = async (): Promise<{
 };
 
 /**
+ * Splits the agent limits machdoch.cloud sets into defaults, which only fill
+ * gaps, and enforced values, which win over every local source.
+ */
+export const managedAgentLimits = (
+  managed: FleetManagedProfile | null,
+): {
+  defaults: RuntimeAgentLimitOverrides;
+  enforced: RuntimeAgentLimitOverrides;
+} => {
+  const defaults: RuntimeAgentLimitOverrides = {};
+  const enforced: RuntimeAgentLimitOverrides = {};
+  for (const [key, value] of Object.entries(
+    managed?.document.agentLimits ?? {},
+  )) {
+    if (value === null) continue;
+    Object.assign(
+      isManagedSettingEnforced(managed!.document, key) ? enforced : defaults,
+      { [key]: value },
+    );
+  }
+  // An enforced cap would be meaningless if the user's infinite mode skipped it.
+  if (
+    enforced.infinite === undefined &&
+    (enforced.executorTurns !== undefined ||
+      enforced.autopilotExecutorIterations !== undefined)
+  )
+    enforced.infinite = false;
+  return { defaults, enforced };
+};
+
+/**
  * Loads saved user-scoped agent loop limit settings.
  */
 export const loadUserAgentLimitsSettings =
   async (): Promise<UserAgentLimitsSettings> => {
     const { config } = await loadUserConfigFile();
-    const managed = await loadFleetManagedProfile();
-    const overrides = Object.fromEntries(
-      Object.entries(managed?.document.agentLimits ?? {}).filter(
-        ([, value]) => value !== null,
-      ),
+    const { defaults, enforced } = managedAgentLimits(
+      await loadFleetManagedProfile(),
     );
     return normalizeUserAgentLimitsSettings({
+      ...defaults,
       ...config.agentLimits,
-      ...overrides,
+      ...enforced,
     });
   };
 

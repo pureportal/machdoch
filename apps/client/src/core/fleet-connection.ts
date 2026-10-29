@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { chmod, mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { getUserConfigPath } from "./env.js";
@@ -191,9 +192,44 @@ const parseFleetConnectionConfig = (
 export const getFleetConnectionPath = (): string =>
   join(dirname(getUserConfigPath()), FLEET_CONNECTION_FILE_NAME);
 
+/** Last validated machdoch.cloud delivery; the desktop shell writes it too. */
+export const getFleetManagedSettingsPath = (): string =>
+  join(dirname(getUserConfigPath()), "fleet-managed-settings.json");
+
 const secureFleetConfigDirectory = async (path: string): Promise<void> => {
   if (process.platform === "win32") return;
   await chmod(dirname(path), 0o700);
+};
+
+const describeError = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const fleetConnectionReadFailure = (path: string, error: unknown): null => {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "ENOENT"
+  ) {
+    return null;
+  }
+  throw new Error(`Failed to read ${path}: ${describeError(error)}`, {
+    cause: error,
+  });
+};
+
+const parseFleetConnectionFile = (
+  path: string,
+  raw: string,
+  options: { allowLoopbackHttp?: boolean },
+): FleetConnectionConfig => {
+  try {
+    return parseFleetConnectionConfig(JSON.parse(raw), options);
+  } catch (error) {
+    throw new Error(`Failed to parse ${path}: ${describeError(error)}`, {
+      cause: error,
+    });
+  }
 };
 
 export const loadFleetConnectionConfig = async (
@@ -204,29 +240,23 @@ export const loadFleetConnectionConfig = async (
   try {
     raw = await readFile(path, "utf8");
   } catch (error) {
-    if (
-      typeof error === "object" &&
-      error !== null &&
-      "code" in error &&
-      error.code === "ENOENT"
-    ) {
-      return null;
-    }
-    throw new Error(
-      `Failed to read ${path}: ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    );
+    return fleetConnectionReadFailure(path, error);
   }
-
-  try {
-    return parseFleetConnectionConfig(JSON.parse(raw), options);
-  } catch (error) {
-    throw new Error(
-      `Failed to parse ${path}: ${error instanceof Error ? error.message : String(error)}`,
-      { cause: error },
-    );
-  }
+  return parseFleetConnectionFile(path, raw, options);
 };
+
+/** Synchronous variant for configuration readers that cannot await. */
+export const loadFleetConnectionConfigSync =
+  (): FleetConnectionConfig | null => {
+    const path = getFleetConnectionPath();
+    let raw: string;
+    try {
+      raw = readFileSync(path, "utf8");
+    } catch (error) {
+      return fleetConnectionReadFailure(path, error);
+    }
+    return parseFleetConnectionFile(path, raw, {});
+  };
 
 export const writeFleetConnectionConfig = async (
   config: FleetConnectionConfig,
@@ -267,6 +297,8 @@ export const resetFleetConnection = async (): Promise<string> => {
     path,
     async () => {
       await rm(path, { force: true });
+      // Managed secrets of the old enrollment can never apply again.
+      await rm(getFleetManagedSettingsPath(), { force: true });
     },
     { ownerDescription: "Fleet connection reset" },
   );

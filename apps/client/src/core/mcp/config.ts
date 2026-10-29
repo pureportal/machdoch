@@ -10,6 +10,12 @@ import { writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js
 import { getWorkspaceLocalDirectory } from "../workspace-storage-paths.js";
 import type { ToolCallEffect, ToolRiskLevel } from "../types.js";
 import { enrichMcpDiscoveryMetadata } from "./discovery-metadata.js";
+import {
+  loadFleetManagedProfile,
+  loadFleetManagedProfileSync,
+  type FleetManagedProfile,
+} from "../fleet-settings.js";
+import { managedMcpServerConfig } from "../fleet-mcp.js";
 import { getMcpPreset, listMcpPresets } from "./presets.js";
 import {
   MCP_CONFIG_FILE_NAME,
@@ -1159,11 +1165,48 @@ export const coerceMcpConfigOverride = (
   return override.defaults || override.servers ? override : undefined;
 };
 
+/** MCP servers delivered by machdoch.cloud, with secrets resolved. */
+const managedServerConfigs = (
+  profile: FleetManagedProfile | null,
+): McpServerConfig[] =>
+  (profile?.document.mcpServers ?? []).flatMap((server) => {
+    const { server: config } = managedMcpServerConfig(server, profile!.secrets);
+    const id = normalizeServerId(config.id);
+    return id ? [{ ...config, id }] : [];
+  });
+
+// A damaged or foreign cache must never prevent local MCP servers from loading.
+const loadManagedServers = async (): Promise<McpServerConfig[]> =>
+  managedServerConfigs(await loadFleetManagedProfile().catch(() => null));
+
+const loadManagedServersSync = (): McpServerConfig[] => {
+  try {
+    return managedServerConfigs(loadFleetManagedProfileSync());
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Managed servers replace a preset, user or workspace server with the same id
+ * instead of merging into it, so local credentials, OAuth state and transport
+ * options never combine with an endpoint chosen by machdoch.cloud.
+ */
+const replaceServers = (
+  map: Map<string, { server: McpServerConfig; sources: McpConfigSource[] }>,
+  servers: McpServerConfig[],
+  source: McpConfigSource,
+): void => {
+  for (const server of servers)
+    map.set(server.id, { server, sources: [source] });
+};
+
 const createEffectiveConfig = (
   workspaceRoot: string,
   userConfig: McpConfigFile,
   workspaceConfig: McpConfigFile,
   overrides?: McpConfigOverride,
+  managedServers: McpServerConfig[] = [],
 ): McpEffectiveConfig => {
   const userConfigPath = getUserMcpConfigPath();
   const workspaceConfigPath = getWorkspaceMcpConfigPath(workspaceRoot);
@@ -1189,6 +1232,7 @@ const createEffectiveConfig = (
   );
   addServerOverrides(servers, userConfig.servers ?? [], "user");
   addServerOverrides(servers, workspaceConfig.servers ?? [], "workspace");
+  replaceServers(servers, managedServers, "managed");
   addServerOverrides(
     servers,
     coerceOverrideServers(overrides?.servers),
@@ -1211,9 +1255,10 @@ export const loadMcpConfig = async (
   workspaceRoot: string,
   overrides?: McpConfigOverride,
 ): Promise<McpEffectiveConfig> => {
-  const [userConfig, workspaceConfig] = await Promise.all([
+  const [userConfig, workspaceConfig, managedServers] = await Promise.all([
     readConfigFile(getUserMcpConfigPath()),
     readConfigFile(getWorkspaceMcpConfigPath(workspaceRoot)),
+    loadManagedServers(),
   ]);
 
   return createEffectiveConfig(
@@ -1221,15 +1266,33 @@ export const loadMcpConfig = async (
     userConfig,
     workspaceConfig,
     overrides,
+    managedServers,
+  );
+};
+
+/**
+ * Servers the user defined in their own configuration, excluding presets and
+ * anything delivered by machdoch.cloud.
+ */
+export const loadOwnUserMcpServers = async (): Promise<McpServerConfig[]> => {
+  const presetIds = new Set(listMcpPresets().map((preset) => preset.server.id));
+  return ((await readConfigFile(getUserMcpConfigPath())).servers ?? []).filter(
+    (server): server is McpServerConfig =>
+      server.transport !== undefined && !presetIds.has(server.id),
   );
 };
 
 export const loadUserMcpConfig = async (): Promise<McpEffectiveConfig> => {
-  const userConfig = await readConfigFile(getUserMcpConfigPath());
+  const [userConfig, managedServers] = await Promise.all([
+    readConfigFile(getUserMcpConfigPath()),
+    loadManagedServers(),
+  ]);
   return createEffectiveConfig(
     dirname(getUserConfigPath()),
     userConfig,
     createEmptyMcpConfigFile(),
+    undefined,
+    managedServers,
   );
 };
 
@@ -1242,6 +1305,7 @@ export const loadMcpConfigSync = (
     readConfigFileSync(getUserMcpConfigPath()),
     readConfigFileSync(getWorkspaceMcpConfigPath(workspaceRoot)),
     overrides,
+    loadManagedServersSync(),
   );
 };
 

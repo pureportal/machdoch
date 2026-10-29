@@ -50,7 +50,8 @@ use settings_commands::{
     delete_user_api_key, delete_user_web_search_api_key_value, forget_user_global_memory_value,
     load_user_agent_limits_settings, load_user_api_keys, load_user_internal_task_model_settings,
     load_user_memory_settings, load_user_review_model_settings, load_user_speech_to_text_settings,
-    load_user_voice_settings, load_user_web_search_settings, save_user_agent_limits_settings_value,
+    load_user_voice_settings, load_user_web_search_settings, release_managed_api_keys,
+    save_user_agent_limits_settings_value,
     save_user_api_key, save_user_global_memory_enabled_value,
     save_user_internal_task_model_settings_value, save_user_review_model_settings_value,
     save_user_speech_to_text_active_provider_value, save_user_speech_to_text_context_value,
@@ -222,6 +223,19 @@ pub async fn get_user_desktop_settings(
 #[tauri::command]
 pub async fn get_user_provider_api_keys() -> Result<HashMap<String, String>, String> {
     load_user_api_keys()
+}
+
+/// Removes machdoch.cloud keys that an older desktop copied into the user config;
+/// they are now layered on at read time instead.
+#[tauri::command]
+pub async fn release_fleet_managed_api_keys(
+    secrets: HashMap<String, String>,
+) -> Result<Vec<String>, String> {
+    let released = release_managed_api_keys(&secrets)?;
+    if !released.is_empty() {
+        invalidate_provider_model_catalog_cache().await;
+    }
+    Ok(released)
 }
 
 #[tauri::command]

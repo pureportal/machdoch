@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
 import { getUserConfigPath } from "./env.js";
 import { loadFleetManagedProfile } from "./fleet-settings.js";
+import { normalizeManagedPromptPath } from "@machdoch/fleet-protocol/managed-settings";
 import { parseMarkdownDocument } from "./frontmatter.js";
 import type {
   CustomizationDiscoveryResult,
@@ -93,6 +94,17 @@ export const getUserCustomizationRoot = (): string =>
 
 export const getUserPromptDirectory = (): string =>
   join(getUserCustomizationRoot(), "prompts");
+
+/** Folder where the desktop shell mirrors prompts delivered by machdoch.cloud. */
+export const FLEET_MANAGED_PROMPT_DIRECTORY = ".fleet-managed";
+
+/** Returns the user prompt path relative to the prompt folder, using "/". */
+export const getUserPromptRelativePath = (path: string): string =>
+  relative(getUserPromptDirectory(), path).replaceAll("\\", "/");
+
+const isFleetManagedPromptFile = (path: string): boolean =>
+  getUserPromptRelativePath(path).split("/")[0] ===
+  FLEET_MANAGED_PROMPT_DIRECTORY;
 
 export const getUserSkillDirectory = (): string =>
   join(getUserCustomizationRoot(), "skills");
@@ -268,9 +280,27 @@ export const discoverCustomizations = async (
         .filter((path) => basename(path) === "SKILL.md")
         .sort()
     : [];
+  const managedPrompts =
+    options?.discoverUserCustomizations &&
+    options.discoverFleetManagedPrompts !== false
+      ? await loadFleetManagedProfile()
+      : null;
+  const managedPromptPaths = new Set(
+    (managedPrompts?.document.prompts ?? []).map((prompt) =>
+      normalizeManagedPromptPath(prompt.relativePath),
+    ),
+  );
+  // Managed prompts replace a same-named local prompt instead of duplicating it.
   const userPromptPaths = options?.discoverUserCustomizations
     ? (await walkFiles(join(userRoot, "prompts")))
-        .filter((path) => path.endsWith(".prompt.md"))
+        .filter(
+          (path) =>
+            path.endsWith(".prompt.md") &&
+            !isFleetManagedPromptFile(path) &&
+            !managedPromptPaths.has(
+              normalizeManagedPromptPath(getUserPromptRelativePath(path)),
+            ),
+        )
         .sort()
     : [];
   const userSkillPaths = options?.discoverUserCustomizations
@@ -291,21 +321,15 @@ export const discoverCustomizations = async (
       }),
     ),
   ]);
-  if (
-    options?.discoverUserCustomizations &&
-    options.discoverFleetManagedPrompts !== false
-  ) {
-    const managed = await loadFleetManagedProfile();
-    for (const prompt of managed?.document.prompts ?? []) {
-      prompts.push(
-        parsePrompt(
-          workspaceRoot,
-          `fleet:${managed!.profileId}/${prompt.relativePath}`,
-          prompt.content,
-          { scope: "user", pathRoot: "user" },
-        ),
-      );
-    }
+  for (const prompt of managedPrompts?.document.prompts ?? []) {
+    prompts.push(
+      parsePrompt(
+        workspaceRoot,
+        `fleet:${managedPrompts!.profileId}/${prompt.relativePath}`,
+        prompt.content,
+        { scope: "user", pathRoot: "user" },
+      ),
+    );
   }
   const skills = await Promise.all([
     ...workspaceSkillPaths.map((path) => loadSkill(workspaceRoot, path)),

@@ -6,6 +6,7 @@ import { loadInstructionLibrary } from "./library-store.js";
 import { loadFleetManagedProfile } from "../fleet-settings.js";
 import { inventoryNativeInstructions } from "./native-inventory.js";
 import { instructionTagRuleMatches } from "@machdoch/fleet-protocol/instruction-tags";
+import { normalizeManagedItemName } from "@machdoch/fleet-protocol/managed-settings";
 import {
   loadMcpInitializationInstructionSnapshot,
   mcpInitializationInstructionSupplementBytes,
@@ -590,7 +591,7 @@ export const resolveInstructionSet = async (
   );
   const managedInstructionNames = new Set(
     managedInstructions.map((profile) =>
-      profile.name.normalize("NFKC").toLocaleLowerCase("en-US"),
+      normalizeManagedItemName(profile.name),
     ),
   );
   for (const profile of library.profiles.filter(
@@ -598,7 +599,7 @@ export const resolveInstructionSet = async (
       candidate.global &&
       !managedInstructionIds.has(candidate.id) &&
       !managedInstructionNames.has(
-        candidate.name.normalize("NFKC").toLocaleLowerCase("en-US"),
+        normalizeManagedItemName(candidate.name),
       ),
   )) {
     const source = createProfileSource({
