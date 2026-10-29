@@ -53,13 +53,13 @@ describe("provider capability registry", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     release();
     const [a, b] = await Promise.all([first, second]);
-    expect(probeCommandMock).toHaveBeenCalledTimes(3);
+    expect(probeCommandMock).toHaveBeenCalledTimes(4);
     a.features.length = 0;
     b.warnings.push("caller edit");
     const cached = await probeProviderCli("codex-cli", "coalesced-probe.exe");
     expect(cached.features).toEqual(["--config", "--json"]);
     expect(cached.warnings).toEqual([]);
-    expect(probeCommandMock).toHaveBeenCalledTimes(3);
+    expect(probeCommandMock).toHaveBeenCalledTimes(4);
   });
 
   it("retains the OS launch reason when the CLI is unavailable", async () => {
@@ -175,7 +175,7 @@ describe("provider capability registry", () => {
       });
       await probeProviderCli("codex-cli", executable);
       await probeProviderCli("codex-cli", executable);
-      expect(probeCommandMock).toHaveBeenCalledTimes(3);
+      expect(probeCommandMock).toHaveBeenCalledTimes(4);
       await writeFile(executable, "replacement version two");
       probeCommandMock.mockReturnValue({
         status: 0,
@@ -185,7 +185,7 @@ describe("provider capability registry", () => {
       expect(
         (await probeProviderCli("codex-cli", executable)).features,
       ).toEqual(["--config", "--json"]);
-      expect(probeCommandMock).toHaveBeenCalledTimes(6);
+      expect(probeCommandMock).toHaveBeenCalledTimes(8);
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -205,11 +205,11 @@ describe("provider capability registry", () => {
       (await probeProviderCli("codex-cli", "long-agent-operation.exe"))
         .features,
     ).toEqual(["--config", "--json"]);
-    expect(probeCommandMock).toHaveBeenCalledTimes(3);
+    expect(probeCommandMock).toHaveBeenCalledTimes(4);
 
     now += 25 * 60 * 1_000;
     await probeProviderCli("codex-cli", "long-agent-operation.exe");
-    expect(probeCommandMock).toHaveBeenCalledTimes(6);
+    expect(probeCommandMock).toHaveBeenCalledTimes(8);
   });
 
   it("rechecks an unavailable executable immediately after recovery", async () => {
@@ -252,7 +252,7 @@ describe("provider capability registry", () => {
       "incomplete-help-cache.exe",
     );
     expect(recovered.features).toEqual(["--config", "--json"]);
-    expect(probeCommandMock).toHaveBeenCalledTimes(8);
+    expect(probeCommandMock).toHaveBeenCalledTimes(9);
   });
 
   it.runIf(process.platform === "win32")(
@@ -309,6 +309,7 @@ describe("provider capability registry", () => {
       ["--help"],
       ["--help"],
       ["exec", "--help"],
+      ["features", "list"],
     ]);
   });
 
@@ -349,6 +350,7 @@ describe("provider capability registry", () => {
       ["--version"],
       ["--help"],
       ["exec", "--help"],
+      ["features", "list"],
     ]);
   });
 
@@ -378,7 +380,7 @@ describe("provider capability registry", () => {
 
     expect(result.available).toBe(true);
     expect(result.features).not.toContain("--config");
-    expect(probeCommandMock).toHaveBeenCalledTimes(3);
+    expect(probeCommandMock).toHaveBeenCalledTimes(4);
   });
 
   it("discovers Copilot attachment, reasoning, and context controls from help output", async () => {
@@ -437,7 +439,44 @@ describe("provider capability registry", () => {
       ["--version"],
       ["--help"],
       ["exec", "--help"],
+      ["features", "list"],
     ]);
+  });
+
+  it("discovers the Codex goal and multi-agent features it switches on per run", async () => {
+    probeCommandMock.mockImplementation(async (_command, args: string[]) =>
+      args[0] === "features"
+        ? {
+            status: 0,
+            stdout: [
+              "goals                                    stable             false",
+              "multi_agent                              stable             true",
+              "multi_agent_mode                         removed            false",
+            ].join("\n"),
+            stderr: "",
+          }
+        : { status: 0, stdout: "codex-cli 0.159.1 --config --json", stderr: "" },
+    );
+
+    const result = await probeProviderCli("codex-cli", "features-codex.exe", {
+      force: true,
+    });
+    expect(result.features).toEqual([
+      "--config",
+      "--json",
+      "goals",
+      "multi_agent",
+    ]);
+
+    probeCommandMock.mockImplementation(async (_command, args: string[]) =>
+      args[0] === "features"
+        ? { status: 0, stdout: "multi_agent  removed  false", stderr: "" }
+        : { status: 0, stdout: "codex-cli 0.100.0 --config --json", stderr: "" },
+    );
+    const older = await probeProviderCli("codex-cli", "older-codex.exe", {
+      force: true,
+    });
+    expect(older.features).toEqual(["--config", "--json"]);
   });
 
   it.each([null, 1])(

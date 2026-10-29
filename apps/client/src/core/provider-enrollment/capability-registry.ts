@@ -236,6 +236,18 @@ const detectUnlistedClaudeFileFlags = async (
   return accepted;
 };
 
+// Codex features Machdoch switches on per run; `codex features list` shows
+// whether this build still has them.
+const CODEX_PROBED_FEATURES = ["goals", "multi_agent"] as const;
+
+const detectCodexFeatures = async (executable: string): Promise<string[]> => {
+  const result = await captureCommand(executable, ["features", "list"]);
+  if (result.exitCode !== 0) return [];
+  return CODEX_PROBED_FEATURES.filter((feature) =>
+    new RegExp(`^${feature}\\s+(?!removed\\b)\\S`, "mu").test(result.output),
+  );
+};
+
 export const probeProviderCli = async (
   provider: AgentCliProvider,
   executable: string,
@@ -341,15 +353,19 @@ export const probeProviderCli = async (
         ? detectFeatures(provider, helpResult.output)
         : [];
     const features =
-      provider === "claude-cli" && helpResult.exitCode === 0
-        ? [
-            ...advertisedFeatures,
-            ...(await detectUnlistedClaudeFileFlags(
-              executable,
-              advertisedFeatures,
-            )),
-          ]
-        : advertisedFeatures;
+      helpResult.exitCode !== 0
+        ? advertisedFeatures
+        : provider === "claude-cli"
+          ? [
+              ...advertisedFeatures,
+              ...(await detectUnlistedClaudeFileFlags(
+                executable,
+                advertisedFeatures,
+              )),
+            ]
+          : provider === "codex-cli"
+            ? [...advertisedFeatures, ...(await detectCodexFeatures(executable))]
+            : advertisedFeatures;
     const version =
       versionResult.exitCode === 0
         ? versionResult.output

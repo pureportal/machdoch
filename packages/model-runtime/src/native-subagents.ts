@@ -7,9 +7,9 @@ export const supportsNativeSubagents = (
   if (!model.trim()) return false;
 
   switch (provider) {
-    case "codex-cli":
     case "copilot-cli":
       return true;
+    case "codex-cli":
     case "claude-cli":
       return (
         getDiscoveredModelCapabilities(provider, model)?.nativeSubagents ?? true

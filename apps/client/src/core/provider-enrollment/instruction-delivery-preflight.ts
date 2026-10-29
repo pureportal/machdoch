@@ -119,15 +119,23 @@ export const createCliInstructionCapabilityFromProbe = (
   }
 
   if (provider === "codex-cli") {
+    const multiAgent = features.has("multi_agent");
     return {
       ...base,
       nativeDiscovery: "suppressed",
+      lifecycle: {
+        ...base.lifecycle,
+        subagents: multiAgent ? "session" : base.lifecycle.subagents,
+      },
       mechanism:
         "run-scoped CODEX_HOME config.toml developer_instructions with project configuration disabled",
       evidence: [
         ...base.evidence,
         "The adapter writes the complete developer instructions to the isolated CODEX_HOME config.toml and marks the invocation workspace and its ancestors untrusted there, so provider-native project configuration cannot override them.",
         "Only bounded control settings are passed through --config; request and instruction content are never placed on the command line.",
+        multiAgent
+          ? "codex features list includes multi_agent; Codex starts spawned agents from the same session configuration, so they receive the run-scoped developer_instructions (observed with Codex 0.159.1, including spawns that fork no history)."
+          : "codex features list does not include multi_agent; native subagent execution is blocked because instruction inheritance cannot be confirmed.",
       ],
     };
   }

@@ -1245,7 +1245,8 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0]!;
-    expect(vi.mocked(spawnSync)).toHaveBeenCalledTimes(6);
+    // Two probes of --version, --help, exec --help and features list.
+    expect(vi.mocked(spawnSync)).toHaveBeenCalledTimes(8);
     writeStructuredAnswer(call, "Codex started after the probe recovered.");
     call.child.emit("close", 0, null);
 

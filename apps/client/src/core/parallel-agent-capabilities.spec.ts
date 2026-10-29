@@ -9,6 +9,7 @@ import type { InstructionLifecycleSupport } from "./instruction-system/types.js"
 import { getAvailableParallelAgentModes, resolveParallelAgentMode } from "./parallel-agent-capabilities.js";
 import { supportsNativeSubagents } from "@machdoch/model-runtime/native-subagents";
 import { replaceDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
+import { createCliInstructionCapabilityFromProbe } from "./provider-enrollment/instruction-delivery-preflight.js";
 
 const createNativeInstructionPlan = (
   subagents: InstructionLifecycleSupport,
@@ -150,6 +151,36 @@ describe("parallel agent capabilities", () => {
       replaceDiscoveredModelCapabilities("claude-cli", []);
     }
   });
+
+  it.each([
+    [["--config", "multi_agent"], true],
+    [["--config"], false],
+  ] as const)(
+    "verifies native Codex subagents from the probed features %j",
+    (features, native) => {
+      const resolution = createInstructionResolutionFixture({
+        providerId: "codex-cli",
+        surface: "cli",
+        model: "gpt-6.1-sol",
+      });
+      const plan = createInstructionDeliveryPlan(resolution, {
+        capability: createCliInstructionCapabilityFromProbe(resolution, {
+          provider: "codex-cli",
+          executable: "codex",
+          available: true,
+          version: "codex-cli 0.159.1",
+          features: [...features],
+          warnings: [],
+        }),
+      });
+
+      expect(
+        getAvailableParallelAgentModes("codex-cli", "gpt-6.1-sol", plan).includes(
+          "native",
+        ),
+      ).toBe(native);
+    },
+  );
 
   it.each(["disabled", "read-only", "machdoch"] as const)(
     "preserves %s mode without native instruction evidence",
