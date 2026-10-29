@@ -9,6 +9,10 @@ import {
   type FleetConnectionStatus,
 } from "../runtime";
 import { requestFleetManagedSettingsSync } from "../chat-session/_helpers/fleet-managed-settings-sync";
+import {
+  ManagedSettingsSection,
+  ProposeToOrganization,
+} from "./managed-settings-details";
 
 const FLEET_STATUS_REFRESH_MS = 5_000;
 
@@ -59,84 +63,85 @@ export const RemoteAccessPanel = (): JSX.Element => {
     };
   }, []);
 
-  const enroll = async (): Promise<void> => {
-    actionPending.current = true;
-    generation.current++;
-    setLoading(true);
-    setActionError(null);
-
-    try {
-      const nextStatus = await enrollCloudServer(
-        managerUrl,
-        enrollmentKey,
-        instanceName,
-      );
-      setStatus(nextStatus);
-      setEnrollmentKey("");
-    } catch (enrollmentError) {
-      setActionError(
-        enrollmentError instanceof Error
-          ? enrollmentError.message
-          : String(enrollmentError),
-      );
-    } finally {
-      actionPending.current = false;
-      setLoading(false);
-    }
-  };
-
-  const reconnect = async (): Promise<void> => {
+  /** Runs a connection change; managed settings follow it right away. */
+  const runAction = async (
+    action: () => Promise<FleetConnectionStatus>,
+  ): Promise<boolean> => {
     actionPending.current = true;
     generation.current++;
     setLoading(true);
     setActionError(null);
     try {
-      setStatus(await reconnectCloudServer());
+      setStatus(await action());
       requestFleetManagedSettingsSync();
+      return true;
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
+      return false;
     } finally {
       actionPending.current = false;
       setLoading(false);
     }
   };
 
-  const disconnect = async (): Promise<void> => {
-    actionPending.current = true;
-    generation.current++;
-    setLoading(true);
-    setActionError(null);
-
-    try {
-      setStatus(await resetCloudServerConnection());
-    } catch (resetError) {
-      setActionError(
-        resetError instanceof Error ? resetError.message : String(resetError),
-      );
-    } finally {
-      actionPending.current = false;
-      setLoading(false);
+  const enroll = async (): Promise<void> => {
+    if (
+      await runAction(() =>
+        enrollCloudServer(managerUrl, enrollmentKey, instanceName),
+      )
+    ) {
+      setEnrollmentKey("");
     }
+  };
+
+  const retrySync = (): void => {
+    requestFleetManagedSettingsSync();
+    setStatus((current) =>
+      current?.settingsSync
+        ? {
+            ...current,
+            settingsSync: {
+              ...current.settingsSync,
+              phase: "syncing",
+              lastAttemptAt: Math.floor(Date.now() / 1000),
+              lastError: undefined,
+            },
+          }
+        : current,
+    );
   };
 
   const errors = [
-    actionError,
-    refreshError,
-    status?.lastError,
-    status?.settingsSync?.lastError,
-  ].filter((message): message is string => Boolean(message));
-  const syncDetail = status ? settingsSyncDetail(status) : null;
+    ...new Set(
+      [actionError, refreshError, status?.lastError].filter(
+        (message): message is string => Boolean(message),
+      ),
+    ),
+  ].map((message) => (
+    <p key={message} role="alert" className="break-words text-xs text-rose-300">
+      {message}
+    </p>
+  ));
 
-  return (
-    <div className="grid gap-4 px-5 py-5">
-      {status?.enabled ? (
-        <div className="grid gap-4 rounded-lg border border-slate-800 bg-slate-900/50 p-4">
+  if (status?.enabled) {
+    return (
+      <div className="grid gap-4 px-5 py-5">
+        <section
+          aria-label="Connection"
+          className="grid gap-3 rounded-lg border border-slate-800 bg-slate-900/50 p-4"
+        >
           <div className="flex items-center justify-between gap-3">
             <div className="grid min-w-0 gap-1">
-              <span className="truncate text-sm font-medium text-slate-100">
+              <span
+                title={status.displayName}
+                className="truncate text-sm font-medium text-slate-100"
+              >
                 {status.displayName}
               </span>
-              <span className="truncate text-xs text-slate-500">
+              <span
+                title={status.managerUrl}
+                className="truncate text-xs text-slate-500"
+              >
                 {status.managerUrl}
               </span>
             </div>
@@ -144,49 +149,14 @@ export const RemoteAccessPanel = (): JSX.Element => {
               {status.phase}
             </span>
           </div>
-          <div className="border-t border-slate-800 pt-3">
-            <div className="flex items-center justify-between gap-3 text-xs">
-              <span className="text-slate-500">Settings</span>
-              <span className="text-slate-300">
-                {settingsSyncLabel(status)}
-              </span>
-            </div>
-            {syncDetail ? (
-              <p className="mt-1 text-xs text-slate-500">{syncDetail}</p>
-            ) : null}
-            {status.settingsSync?.phase === "error" ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="mt-3 h-8 rounded-lg border-slate-700 bg-slate-950 px-3 text-xs text-slate-200"
-                onClick={() => {
-                  requestFleetManagedSettingsSync();
-                  setStatus((current) =>
-                    current?.settingsSync
-                      ? {
-                          ...current,
-                          settingsSync: {
-                            ...current.settingsSync,
-                            phase: "syncing",
-                            lastAttemptAt: Math.floor(Date.now() / 1000),
-                            lastError: undefined,
-                          },
-                        }
-                      : current,
-                  );
-                }}
-              >
-                Retry sync
-              </Button>
-            ) : null}
-          </div>
-          <div className="flex gap-2">
+          {errors}
+          <div className="flex flex-wrap gap-2">
             {status.phase === "error" ? (
               <Button
                 type="button"
                 variant="outline"
                 disabled={loading}
-                onClick={() => void reconnect()}
+                onClick={() => void runAction(reconnectCloudServer)}
                 className="h-9 rounded-lg border-slate-700 bg-slate-950 px-3 text-xs text-slate-200"
               >
                 Reconnect
@@ -199,10 +169,10 @@ export const RemoteAccessPanel = (): JSX.Element => {
               onClick={() => {
                 if (
                   window.confirm(
-                    "Disconnect from machdoch.cloud and remove this enrollment?",
+                    "Disconnect from machdoch.cloud and remove this enrollment? Settings from machdoch.cloud are removed from this device and your own versions come back.",
                   )
                 ) {
-                  void disconnect();
+                  void runAction(resetCloudServerConnection);
                 }
               }}
               className="h-9 rounded-lg border-rose-500/30 bg-rose-500/10 px-3 text-xs text-rose-100 hover:bg-rose-500/15 hover:text-white"
@@ -210,8 +180,20 @@ export const RemoteAccessPanel = (): JSX.Element => {
               Disconnect
             </Button>
           </div>
-        </div>
-      ) : (
+        </section>
+        <ManagedSettingsSection
+          status={status}
+          formatTime={formatSyncTime}
+          onRetry={retrySync}
+        />
+        <ProposeToOrganization status={status} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-4 px-5 py-5">
+      {status ? (
         <form
           className="grid gap-3"
           onSubmit={(event) => {
@@ -285,37 +267,15 @@ export const RemoteAccessPanel = (): JSX.Element => {
             </Button>
           </div>
         </form>
+      ) : refreshError ? null : (
+        <p role="status" className="text-xs text-slate-500">
+          Checking the machdoch.cloud connection…
+        </p>
       )}
-
-      {[...new Set(errors)].map((message) => (
-        <div key={message} role="alert" className="text-xs text-rose-300">
-          {message}
-        </div>
-      ))}
+      {errors}
     </div>
   );
 };
-
-function settingsSyncLabel(status: FleetConnectionStatus): string {
-  if (!status.settingsSync) return "Checking";
-  if (status.settingsSync.phase === "syncing") return "Syncing";
-  if (status.settingsSync.phase === "error") return "Sync failed";
-  return "Synced";
-}
-
-function settingsSyncDetail(status: FleetConnectionStatus): string | null {
-  const sync = status.settingsSync;
-  if (!sync) return null;
-  const target = sync.profileName
-    ? `${sync.profileName}${sync.revision === undefined ? "" : ` · Revision ${sync.revision}`}`
-    : sync.revision === undefined
-      ? null
-      : `Revision ${sync.revision}`;
-  const timestamp =
-    sync.phase === "applied" ? sync.lastAppliedAt : sync.lastAttemptAt;
-  const time = timestamp === undefined ? null : formatSyncTime(timestamp);
-  return [target, time].filter(Boolean).join(" · ") || null;
-}
 
 function formatSyncTime(value: number): string {
   return new Intl.DateTimeFormat(undefined, {

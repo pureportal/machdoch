@@ -358,14 +358,49 @@ export interface ShellPersistedState {
   lastRecoveredLaunchId?: string;
 }
 
+/** A stored local value that a managed default or enforced setting replaced. */
+export type FleetManagedFieldValue =
+  | string
+  | number
+  | boolean
+  | null
+  | { provider: string; model: string | null };
+
+export interface FleetManagedInstructionOriginal {
+  name: string;
+  body: string;
+  enabled: boolean;
+  global: boolean;
+  tags: string[];
+}
+
 export interface FleetManagedSettingsState {
   managerId: string;
   profileId: string;
   revision: number;
+  /** Managed instruction id -> local library profile id. */
   instructionProfileIds: Record<string, string>;
+  /** Local context pack ids that currently carry managed content. */
   contextPackIds: string[];
+  /** Keys an older desktop copied into the user config; migrated away. */
   secretIds: string[];
   appliedAt: number;
+  /** Assigned profiles, highest priority first. */
+  layers?: Array<{ profileId: string; name: string; revision: number }>;
+  /** Library profiles created for machdoch.cloud (deleted on removal). */
+  ownedInstructionIds?: string[];
+  /** Original content of local profiles that managed content took over. */
+  instructionOriginals?: Record<string, FleetManagedInstructionOriginal>;
+  /** Managed context pack id -> local pack id. */
+  contextPackProfileIds?: Record<string, string>;
+  /** Context packs created for machdoch.cloud (removed on removal). */
+  ownedContextPackIds?: string[];
+  /** Original local packs that managed content took over. */
+  contextPackOriginals?: Record<string, SmartContextPack>;
+  /** The user's values before managed settings first changed them. */
+  fieldOriginals?: Record<string, FleetManagedFieldValue>;
+  /** The managed values most recently written, per policy field. */
+  appliedFields?: Record<string, FleetManagedFieldValue>;
 }
 
 const DEFAULT_PROVIDER: RuntimeProvider = "openai";
@@ -542,16 +577,6 @@ const normalizeFleetManagedSettingsState = (
   ) {
     return undefined;
   }
-  const instructionProfileIds = isRecord(value.instructionProfileIds)
-    ? Object.fromEntries(
-        Object.entries(value.instructionProfileIds).flatMap(
-          ([managedId, localId]) =>
-            managedId.trim() && typeof localId === "string" && localId.trim()
-              ? [[managedId.trim(), localId.trim()] as const]
-              : [],
-        ),
-      )
-    : {};
   const normalizeIds = (candidate: unknown): string[] =>
     Array.isArray(candidate)
       ? [
@@ -564,14 +589,126 @@ const normalizeFleetManagedSettingsState = (
         ]
       : [];
 
+  const normalizeStringRecord = (candidate: unknown): Record<string, string> =>
+    isRecord(candidate)
+      ? Object.fromEntries(
+          Object.entries(candidate).flatMap(([key, entry]) =>
+            key.trim() && typeof entry === "string" && entry.trim()
+              ? [[key.trim(), entry.trim()] as const]
+              : [],
+          ),
+        )
+      : {};
+  const normalizeFieldValues = (
+    candidate: unknown,
+  ): Record<string, FleetManagedFieldValue> =>
+    isRecord(candidate)
+      ? Object.fromEntries(
+          Object.entries(candidate).flatMap(
+            ([key, entry]): Array<[string, FleetManagedFieldValue]> => {
+              if (
+                entry === null ||
+                typeof entry === "string" ||
+                typeof entry === "boolean" ||
+                (typeof entry === "number" && Number.isFinite(entry))
+              )
+                return [[key, entry]];
+              if (
+                isRecord(entry) &&
+                typeof entry.provider === "string" &&
+                (entry.model === null || typeof entry.model === "string")
+              )
+                return [
+                  [key, { provider: entry.provider, model: entry.model }],
+                ];
+              return [];
+            },
+          ),
+        )
+      : {};
+  const instructionOriginals = isRecord(value.instructionOriginals)
+    ? Object.fromEntries(
+        Object.entries(value.instructionOriginals).flatMap(([id, entry]) =>
+          isRecord(entry) &&
+          typeof entry.name === "string" &&
+          typeof entry.body === "string" &&
+          typeof entry.enabled === "boolean" &&
+          typeof entry.global === "boolean" &&
+          Array.isArray(entry.tags)
+            ? [
+                [
+                  id,
+                  {
+                    name: entry.name,
+                    body: entry.body,
+                    enabled: entry.enabled,
+                    global: entry.global,
+                    tags: entry.tags.filter(
+                      (tag): tag is string => typeof tag === "string",
+                    ),
+                  },
+                ] as const,
+              ]
+            : [],
+        ),
+      )
+    : undefined;
+  const contextPackOriginals = isRecord(value.contextPackOriginals)
+    ? Object.fromEntries(
+        Object.entries(value.contextPackOriginals).flatMap(([id, entry]) => {
+          const [pack] = normalizeSmartContextPacks([entry]);
+          return pack && pack.id === id ? [[id, pack] as const] : [];
+        }),
+      )
+    : undefined;
+  const layers = Array.isArray(value.layers)
+    ? value.layers.flatMap((layer) =>
+        isRecord(layer) &&
+        typeof layer.profileId === "string" &&
+        typeof layer.name === "string" &&
+        typeof layer.revision === "number" &&
+        Number.isFinite(layer.revision)
+          ? [
+              {
+                profileId: layer.profileId,
+                name: layer.name,
+                revision: layer.revision,
+              },
+            ]
+          : [],
+      )
+    : undefined;
+
   return {
     managerId,
     profileId,
     revision: Math.max(0, Math.round(revision)),
-    instructionProfileIds,
+    instructionProfileIds: normalizeStringRecord(value.instructionProfileIds),
     contextPackIds: normalizeIds(value.contextPackIds),
     secretIds: normalizeIds(value.secretIds),
     appliedAt: Math.max(0, appliedAt),
+    ...(layers ? { layers } : {}),
+    ...(Array.isArray(value.ownedInstructionIds)
+      ? { ownedInstructionIds: normalizeIds(value.ownedInstructionIds) }
+      : {}),
+    ...(instructionOriginals ? { instructionOriginals } : {}),
+    ...(isRecord(value.contextPackProfileIds)
+      ? {
+          contextPackProfileIds: normalizeStringRecord(
+            value.contextPackProfileIds,
+          ),
+        }
+      : {}),
+    ...(Array.isArray(value.ownedContextPackIds)
+      ? { ownedContextPackIds: normalizeIds(value.ownedContextPackIds) }
+      : {}),
+    ...(contextPackOriginals ? { contextPackOriginals } : {}),
+    ...(isRecord(value.fieldOriginals)
+      ? { fieldOriginals: normalizeFieldValues(value.fieldOriginals) }
+      : {}),
+    ...(isRecord(value.appliedFields)
+      ? { appliedFields: normalizeFieldValues(value.appliedFields) }
+      : {}),
   };
 };
 

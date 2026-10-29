@@ -534,10 +534,42 @@ export interface FleetManagedSettingsSyncStatus {
   profileId?: string;
   profileName?: string;
   revision?: number;
+  /** Assigned profiles, highest priority first. */
+  layers?: Array<{ profileId: string; name: string; revision: number }>;
+  /** Items that could not be applied as delivered. */
+  warnings?: string[];
+  snapshotCapturedAt?: number;
   lastAttemptAt: number;
   lastAppliedAt?: number;
   lastError?: string;
 }
+
+export interface FleetSettingsSnapshotStatus {
+  requested: boolean;
+  capturedAt: number | null;
+}
+
+export type FleetSettingsProposal =
+  | {
+      kind: "instruction";
+      item: FleetManagedSettingsDocument["instructions"][number];
+      note?: string;
+    }
+  | {
+      kind: "contextPack";
+      item: FleetManagedSettingsDocument["contextPacks"][number];
+      note?: string;
+    }
+  | {
+      kind: "prompt";
+      item: FleetManagedSettingsDocument["prompts"][number];
+      note?: string;
+    }
+  | {
+      kind: "mcpServer";
+      item: NonNullable<FleetManagedSettingsDocument["mcpServers"]>[number];
+      note?: string;
+    };
 
 export type FleetControlCommandKind = Exclude<
   ProductCommandKind,
@@ -4230,7 +4262,27 @@ const normalizeFleetManagedSettingsSyncStatus = (
   ) {
     return null;
   }
-  for (const field of ["revision", "lastAppliedAt"] as const) {
+  if (
+    (value.warnings !== undefined &&
+      (!Array.isArray(value.warnings) ||
+        value.warnings.some((warning) => typeof warning !== "string"))) ||
+    (value.layers !== undefined &&
+      (!Array.isArray(value.layers) ||
+        value.layers.some(
+          (layer) =>
+            !isRecord(layer) ||
+            typeof layer.profileId !== "string" ||
+            typeof layer.name !== "string" ||
+            typeof layer.revision !== "number",
+        )))
+  ) {
+    return null;
+  }
+  for (const field of [
+    "revision",
+    "lastAppliedAt",
+    "snapshotCapturedAt",
+  ] as const) {
     const fieldValue = value[field];
     if (
       fieldValue !== undefined &&
@@ -4295,31 +4347,94 @@ export async function fleetEnrollmentCaptureRequired(): Promise<boolean> {
   return analyticsInvoke<boolean>("fleet_enrollment_capture_required");
 }
 
+export interface FleetManagedSettingsReportIdentity {
+  profileId: string | null;
+  revision: number | null;
+  /** Present for layered (schema version 3) deliveries. */
+  layers?: Array<{ profileId: string; revision: number }>;
+}
+
 export const reportFleetManagedSettingsApplied = async (
   managerId: string,
-  profileId: string | null,
-  revision: number | null,
+  identity: FleetManagedSettingsReportIdentity,
+  warnings: string[] = [],
 ): Promise<void> => {
   if (!canInvokeTauriCommands()) return;
   await analyticsInvoke("report_fleet_managed_settings_applied", {
     managerId,
-    profileId,
-    revision,
+    profileId: identity.profileId,
+    revision: identity.revision,
+    layers: identity.layers ?? null,
+    warnings: warnings.length ? warnings : null,
   });
 };
 
 export const reportFleetManagedSettingsFailure = async (
   managerId: string,
-  profileId: string | null,
-  revision: number | null,
+  identity: FleetManagedSettingsReportIdentity,
   error: string,
 ): Promise<void> => {
   if (!canInvokeTauriCommands()) return;
   await analyticsInvoke("report_fleet_managed_settings_failure", {
     managerId,
-    profileId,
-    revision,
+    profileId: identity.profileId,
+    revision: identity.revision,
     error,
+    layers: identity.layers ?? null,
+  });
+};
+
+/**
+ * Removes keys an older desktop copied from machdoch.cloud into the user config,
+ * but only where the stored value still equals the managed value.
+ */
+export const releaseFleetManagedApiKeys = async (
+  secrets: Record<string, string>,
+): Promise<string[]> => {
+  if (!canInvokeTauriCommands() || !Object.keys(secrets).length) return [];
+  const released = await analyticsInvoke<string[]>(
+    "release_fleet_managed_api_keys",
+    { secrets },
+  );
+  if (released.length) await emitUserSettingsChanged("provider-keys");
+  return released;
+};
+
+/** Returns null when machdoch.cloud predates device settings snapshots. */
+export const getFleetSettingsSnapshotStatus =
+  async (): Promise<FleetSettingsSnapshotStatus | null> => {
+    if (!canInvokeTauriCommands()) return null;
+    return analyticsInvoke<FleetSettingsSnapshotStatus | null>(
+      "get_fleet_settings_snapshot_status",
+    );
+  };
+
+/** Uploads the device baseline; false when machdoch.cloud predates snapshots. */
+export const uploadFleetSettingsSnapshot = async (
+  managerId: string,
+  instanceId: string,
+  document: FleetManagedSettingsDocument,
+): Promise<boolean> => {
+  if (!canInvokeTauriCommands()) return false;
+  return analyticsInvoke<boolean>("upload_fleet_settings_snapshot", {
+    managerId,
+    instanceId,
+    document,
+  });
+};
+
+export const proposeFleetSetting = async (
+  managerId: string,
+  instanceId: string,
+  proposal: FleetSettingsProposal,
+): Promise<string> => {
+  if (!canInvokeTauriCommands()) {
+    throw new Error("Proposals require the Machdoch desktop app.");
+  }
+  return analyticsInvoke<string>("propose_fleet_setting", {
+    managerId,
+    instanceId,
+    proposal,
   });
 };
 
