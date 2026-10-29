@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { CreateProfile } from "./create-profile";
 import { ProfileEditor } from "./profile-editor";
+import { ProposalsQueue } from "./proposals-queue";
 import { profileDraftsReducer } from "./profile-drafts";
 import type { SettingsProfile } from "./types";
 import { useSettingsProfiles } from "./use-settings-profiles";
@@ -86,6 +87,11 @@ export function SettingsManager({
           </Button>
         </div>
       ) : null}
+      <ProposalsQueue
+        profiles={state.profiles}
+        disabled={pending || state.loading}
+        onProfile={state.receiveProfile}
+      />
       <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[200px_minmax(0,1fr)]">
         {state.profiles.length ? (
           <Select
@@ -140,7 +146,10 @@ export function SettingsManager({
                     void state.selectProfile(item.profileId);
                 }}
               >
-                <span className="block truncate text-sm font-medium">
+                <span
+                  className="block truncate text-sm font-medium"
+                  title={item.name}
+                >
                   {item.name}
                 </span>
               </button>

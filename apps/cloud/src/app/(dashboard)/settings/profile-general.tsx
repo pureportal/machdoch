@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import type { ManagedSettingsPolicyField } from "@machdoch/fleet-protocol";
 import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ShowMore } from "@/components/show-more";
+import { isDraftFieldSet } from "./profile-drafts";
 import type {
   ProfileGeneralDraft,
   ProfileGeneralValues,
@@ -37,11 +39,13 @@ const reasoningOptions = [
 export function ProfileGeneral({
   draft,
   disabled,
+  legacyPolicy,
   onChange,
   onSave,
 }: {
   draft: ProfileGeneralDraft;
   disabled: boolean;
+  legacyPolicy: boolean;
   onChange: (values: ProfileGeneralValues) => void;
   onSave: () => Promise<void>;
 }): React.ReactElement {
@@ -49,6 +53,25 @@ export function ProfileGeneral({
   const [error, setError] = useState("");
   const { values } = draft;
   const { defaults, agentLimits: limits } = values;
+  const enforce = (field: ManagedSettingsPolicyField, label: string) => {
+    // Unset values are not delivered, so there is nothing to enforce.
+    const set = isDraftFieldSet(values, field);
+    return (
+      <EnforceToggle
+        label={label}
+        set={set}
+        checked={set && values.enforced.includes(field)}
+        onChange={(checked) =>
+          onChange({
+            ...values,
+            enforced: checked
+              ? [...values.enforced, field]
+              : values.enforced.filter((entry) => entry !== field),
+          })
+        }
+      />
+    );
+  };
   const changeDefault = (
     name: keyof ProfileGeneralValues["defaults"],
     value: string,
@@ -71,7 +94,7 @@ export function ProfileGeneral({
       <fieldset disabled={pending} className="grid min-w-0 gap-6">
         <div className="grid gap-5">
           <h3 className="font-medium">Profile</h3>
-          <div className="grid gap-5 md:grid-cols-2">
+          <div className="grid items-start gap-5 md:grid-cols-2">
             <Field label="Name" htmlFor="settings-profile-name">
               <Input
                 id="settings-profile-name"
@@ -96,8 +119,22 @@ export function ProfileGeneral({
           </div>
         </div>
         <div className="grid gap-5">
-          <h3 className="font-medium">Defaults</h3>
-          <div className="grid gap-5 md:grid-cols-2">
+          <div className="grid gap-1">
+            <h3 className="font-medium">Defaults</h3>
+            <p className="text-sm text-muted-foreground">
+              Defaults are applied once and users can change them. Enforced
+              values always win on every device. Settings left unset are not
+              delivered.
+            </p>
+            {legacyPolicy ? (
+              <p role="status" className="text-sm">
+                This profile was created before per-setting enforcement, so
+                every configured value is enforced. Clear a checkbox and save to
+                turn a value into a default.
+              </p>
+            ) : null}
+          </div>
+          <div className="grid items-start gap-5 md:grid-cols-2">
             <Field label="Provider" htmlFor="provider">
               <Select
                 id="provider"
@@ -114,6 +151,7 @@ export function ProfileGeneral({
                   </option>
                 ))}
               </Select>
+              {enforce("model", "provider and model")}
             </Field>
             <Field label="Model" htmlFor="model">
               <Input
@@ -127,6 +165,7 @@ export function ProfileGeneral({
             <SelectField
               label="Mode"
               name="mode"
+              enforcement={enforce("mode", "mode")}
               value={defaults.mode}
               onChange={(value) => changeDefault("mode", value)}
               options={["ask", "machdoch"]}
@@ -134,6 +173,7 @@ export function ProfileGeneral({
             <SelectField
               label="Reasoning"
               name="reasoning"
+              enforcement={enforce("reasoning", "reasoning")}
               value={defaults.reasoning}
               onChange={(value) => changeDefault("reasoning", value)}
               options={reasoningOptions}
@@ -141,10 +181,11 @@ export function ProfileGeneral({
           </div>
         </div>
         <ShowMore>
-          <div className="grid gap-5 md:grid-cols-2">
+          <div className="grid items-start gap-5 md:grid-cols-2">
             <SelectField
               label="Web search"
               name="webSearchProvider"
+              enforcement={enforce("webSearchProvider", "web search")}
               value={defaults.webSearchProvider}
               onChange={(value) => changeDefault("webSearchProvider", value)}
               options={["none", "perplexity", "tavily", "serper"]}
@@ -152,6 +193,7 @@ export function ProfileGeneral({
             <SelectField
               label="Theme"
               name="theme"
+              enforcement={enforce("theme", "theme")}
               value={defaults.theme}
               onChange={(value) => changeDefault("theme", value)}
               options={["dark", "light"]}
@@ -159,6 +201,7 @@ export function ProfileGeneral({
             <SelectField
               label="Density"
               name="density"
+              enforcement={enforce("density", "density")}
               value={defaults.density}
               onChange={(value) => changeDefault("density", value)}
               options={["comfortable", "compact"]}
@@ -166,6 +209,7 @@ export function ProfileGeneral({
             <SelectField
               label="Accent"
               name="accent"
+              enforcement={enforce("accent", "accent")}
               value={defaults.accent}
               onChange={(value) => changeDefault("accent", value)}
               options={["sky", "emerald", "violet", "amber"]}
@@ -173,10 +217,11 @@ export function ProfileGeneral({
           </div>
           <div className="grid gap-5">
             <h3 className="font-medium">Agent limits</h3>
-            <div className="grid gap-5 md:grid-cols-3">
+            <div className="grid items-start gap-5 md:grid-cols-3">
               <SelectField
                 label="Infinite mode"
                 name="infinite"
+                enforcement={enforce("infinite", "infinite mode")}
                 value={limits.infinite}
                 onChange={(value) =>
                   onChange({
@@ -194,6 +239,7 @@ export function ProfileGeneral({
               <NumberField
                 label="Executor turns"
                 name="executorTurns"
+                enforcement={enforce("executorTurns", "executor turns")}
                 value={limits.executorTurns}
                 onChange={(value) =>
                   onChange({
@@ -205,6 +251,10 @@ export function ProfileGeneral({
               <NumberField
                 label="Autopilot iterations"
                 name="autopilotExecutorIterations"
+                enforcement={enforce(
+                  "autopilotExecutorIterations",
+                  "autopilot iterations",
+                )}
                 value={limits.autopilotExecutorIterations}
                 onChange={(value) =>
                   onChange({
@@ -236,6 +286,38 @@ export function ProfileGeneral({
   );
 }
 
+function EnforceToggle({
+  label,
+  set,
+  checked,
+  onChange,
+}: {
+  label: string;
+  set: boolean;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}): React.ReactElement {
+  return (
+    <label className="flex min-h-8 w-fit items-center gap-2 text-xs text-muted-foreground has-[:disabled]:opacity-70">
+      <input
+        type="checkbox"
+        className="size-4 accent-primary"
+        checked={checked}
+        disabled={!set}
+        aria-label={`Enforce ${label}`}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span aria-hidden="true">
+        {!set
+          ? "Not set · choose a value to deliver it"
+          : checked
+            ? "Enforced · always wins"
+            : "Default · users can change it"}
+      </span>
+    </label>
+  );
+}
+
 function SelectField({
   label,
   name,
@@ -243,6 +325,7 @@ function SelectField({
   onChange,
   options,
   labels = {},
+  enforcement,
 }: {
   label: string;
   name: string;
@@ -250,6 +333,7 @@ function SelectField({
   onChange: (value: string) => void;
   options: string[];
   labels?: Record<string, string>;
+  enforcement?: React.ReactNode;
 }): React.ReactElement {
   return (
     <Field label={label} htmlFor={name}>
@@ -266,6 +350,7 @@ function SelectField({
           </option>
         ))}
       </Select>
+      {enforcement}
     </Field>
   );
 }
@@ -275,11 +360,13 @@ function NumberField({
   name,
   value,
   onChange,
+  enforcement,
 }: {
   label: string;
   name: string;
   value: string;
   onChange: (value: string) => void;
+  enforcement?: React.ReactNode;
 }): React.ReactElement {
   return (
     <Field label={label} htmlFor={name}>
@@ -292,6 +379,7 @@ function NumberField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
+      {enforcement}
     </Field>
   );
 }

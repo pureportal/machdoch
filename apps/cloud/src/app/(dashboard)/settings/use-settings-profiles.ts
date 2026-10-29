@@ -80,13 +80,26 @@ export function useSettingsProfiles({
     };
   }, [load]);
 
+  /** Shows a created or saved profile. */
   const acceptProfile = (next: SettingsProfile): void => {
-    onLoaded(next);
     requestId.current++;
     setSelectedId(next.profileId);
     setProfile(next);
     setLoading(false);
     setError("");
+    receiveProfile(next);
+  };
+
+  /** Records a profile changed elsewhere without switching to it. */
+  const receiveProfile = (next: SettingsProfile): void => {
+    onLoaded(next);
+    if (next.profileId === selectedId) {
+      // Also supersedes a read of this profile that is still in flight.
+      requestId.current++;
+      setProfile(next);
+      setLoading(false);
+      setError("");
+    }
     setProfiles((current) => {
       const previous = current.find(
         (item) => item.profileId === next.profileId,
@@ -137,6 +150,7 @@ export function useSettingsProfiles({
     error,
     selectProfile,
     acceptProfile,
+    receiveProfile,
     deleteProfile,
     retry: () => (selectedId && catalog ? selectProfile(selectedId) : load()),
   };

@@ -55,12 +55,17 @@ export interface ManagedPrompt {
   content: string;
 }
 
+export type ManagedMcpServer = import("@machdoch/fleet-protocol").FleetManagedMcpServer;
+
 export interface ManagedSettingsDocument {
   defaults: ManagedDefaults;
   agentLimits: ManagedAgentLimits;
   instructions: ManagedInstruction[];
   contextPacks: ManagedContextPack[];
   prompts: ManagedPrompt[];
+  /** Absent on profiles created before policies: everything set is enforced. */
+  policy?: { enforced: string[] };
+  mcpServers?: ManagedMcpServer[];
 }
 
 export interface SettingsSecretSummary {
@@ -110,6 +115,24 @@ export interface SettingsCatalog {
     maximumDocumentBytes: number;
     maximumSecretBytes: number;
   };
+  policyFields: string[];
+  maximumLayers: number;
+  maximumMcpServers: number;
+  mcpSecretPattern: string;
+}
+
+export interface SettingsAssignmentLayer {
+  profileId: string;
+  profileName: string;
+  profileRevision: number;
+  position: number;
+  assignedAt: number;
+  lastAppliedRevision: number | null;
+  lastAppliedAt: number | null;
+  syncStatus: "pending" | "applied" | "failed";
+  lastSyncRevision: number | null;
+  lastSyncAttemptAt: number | null;
+  syncError: string | null;
 }
 
 export interface SettingsAssignment {
@@ -126,6 +149,32 @@ export interface SettingsAssignment {
   lastSyncRevision: number | null;
   lastSyncAttemptAt: number | null;
   syncError: string | null;
+  layers: SettingsAssignmentLayer[];
+  warnings: string[];
+  snapshot: { capturedAt: number | null; refreshRequestedAt: number | null };
+}
+
+export interface EnrollmentDevice {
+  instanceId: string;
+  displayName: string;
+  capturedAt: number;
+  refreshRequestedAt: number | null;
+}
+
+export type SettingsProposalKind =
+  | "instruction"
+  | "contextPack"
+  | "prompt"
+  | "mcpServer";
+
+export interface SettingsProposal {
+  proposalId: string;
+  instanceId: string;
+  displayName: string;
+  kind: SettingsProposalKind;
+  item: ManagedInstruction | ManagedContextPack | ManagedPrompt | ManagedMcpServer;
+  note: string | null;
+  createdAt: number;
 }
 
 export interface SettingsProfileVersion {

@@ -345,8 +345,8 @@ async function main() {
   await page.goto(`${origin}/settings`);
   await page.getByRole("tab", { name: "Device settings", exact: true }).click();
   await page
-    .getByRole("combobox", { name: "Device settings", exact: true })
-    .selectOption(devices[0].connection.instanceId);
+    .getByRole("checkbox", { name: devices[0].name })
+    .check();
   await page.getByText("Instruction: Review", { exact: true }).waitFor();
   assert.equal(
     await page
@@ -362,7 +362,7 @@ async function main() {
   await page
     .locator("fieldset")
     .filter({ has: page.locator("legend", { hasText: "Instruction: Review" }) })
-    .getByText("Use device", { exact: true })
+    .getByText("Take device", { exact: true })
     .click();
   await page.screenshot({
     path: join(fixtureRoot, "merge-desktop.png"),
@@ -410,8 +410,8 @@ async function main() {
   await small.goto(`${origin}/settings`);
   await small.getByLabel("Profile section").selectOption("device-settings");
   await small
-    .getByRole("combobox", { name: "Device settings", exact: true })
-    .selectOption(devices[1].connection.instanceId);
+    .getByRole("checkbox", { name: devices[1].name })
+    .check();
   await small.getByText("Instruction: Review", { exact: true }).waitFor();
   assert.ok(
     await small.evaluate(

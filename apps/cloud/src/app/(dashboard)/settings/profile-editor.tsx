@@ -13,6 +13,7 @@ import { EnrollmentSettingsEditor } from "./enrollment-settings-editor";
 import { ContextPacksEditor } from "./context-packs-editor";
 import { HistoryEditor } from "./history-editor";
 import { InstructionsEditor } from "./instructions-editor";
+import { McpServersEditor } from "./mcp-servers-editor";
 import { ProfileGeneral } from "./profile-general";
 import {
   prepareGeneralProfileSave,
@@ -38,6 +39,7 @@ const tabs = [
   ["instructions", "Instructions"],
   ["packs", "Context packs"],
   ["prompts", "Prompts"],
+  ["mcp", "MCP servers"],
   ["secrets", "Secrets"],
   ["instances", "Instances"],
   ["device-settings", "Device settings"],
@@ -121,7 +123,11 @@ export function ProfileEditor({
     <Card className="min-w-0 overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
         <div className="min-w-0 flex-1">
-          <h2 ref={heading} tabIndex={-1} className="truncate font-semibold">
+          <h2
+            ref={heading}
+            tabIndex={-1}
+            className="break-words font-semibold [overflow-wrap:anywhere]"
+          >
             {profile.name}
           </h2>
           <p className="text-xs text-muted-foreground">
@@ -140,7 +146,7 @@ export function ProfileEditor({
             </Button>
           }
           title={`Delete ${profile.name}?`}
-          description="Assigned instances will stop receiving this profile."
+          description="Devices it is assigned to stop receiving its settings. Other profiles assigned to them keep applying."
           actionLabel="Delete profile"
           onConfirm={async () => {
             onPendingChange(true);
@@ -235,6 +241,7 @@ export function ProfileEditor({
             <ProfileGeneral
               draft={generalDraft}
               disabled={pending || needsReload}
+              legacyPolicy={!profile.document.policy}
               onChange={(values) => onGeneralChange(generalDraft, values)}
               onSave={() =>
                 update(
@@ -259,18 +266,27 @@ export function ProfileEditor({
           <Tabs.Content value="prompts">
             <PromptsEditor profile={profile} onSave={save} />
           </Tabs.Content>
+          <Tabs.Content value="mcp">
+            <McpServersEditor
+              profile={profile}
+              catalog={catalog}
+              onSave={save}
+            />
+          </Tabs.Content>
           <Tabs.Content value="secrets">
             <fieldset disabled={pending} className="min-w-0">
               <SecretsEditor
                 profile={profile}
                 catalog={catalog}
                 onUpdate={update}
+                onSave={save}
               />
             </fieldset>
           </Tabs.Content>
           <Tabs.Content value="instances">
             <AssignmentsEditor
               profiles={profiles}
+              maximumLayers={catalog.maximumLayers}
               onPendingChange={(value) => {
                 setPending(value);
                 onPendingChange(value);

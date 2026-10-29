@@ -1,4 +1,17 @@
-import type { ManagedDefaults, SettingsProfile } from "./types";
+import {
+  managedSettingsPolicyFields,
+  type FleetManagedSettingsDocument,
+  type ManagedSettingsPolicyField,
+} from "@machdoch/fleet-protocol";
+import {
+  explicitManagedSettingsPolicy,
+  managedSettingsFieldAccess,
+} from "@machdoch/fleet-protocol/managed-settings";
+import type {
+  ManagedDefaults,
+  ManagedSettingsDocument,
+  SettingsProfile,
+} from "./types";
 import { optionalValue } from "./types";
 
 export interface ProfileGeneralValues {
@@ -10,6 +23,8 @@ export interface ProfileGeneralValues {
     executorTurns: string;
     autopilotExecutorIterations: string;
   };
+  /** Policy fields whose value always wins on devices. */
+  enforced: string[];
 }
 
 export interface ProfileGeneralDraft {
@@ -40,6 +55,40 @@ export async function receiveProfileResponse(
   onProfile(profile);
 }
 
+/** The profile policy with legacy "everything enforced" made explicit. */
+export function profilePolicy(profile: SettingsProfile): string[] {
+  return explicitManagedSettingsPolicy(
+    profile.document as FleetManagedSettingsDocument,
+    profile.secrets.map((secret) => secret.secretId),
+  );
+}
+
+export function isProfileFieldSet(
+  document: ManagedSettingsDocument,
+  field: string,
+): boolean {
+  const access =
+    managedSettingsFieldAccess[
+      field as keyof typeof managedSettingsFieldAccess
+    ];
+  return Boolean(access?.isSet(document as FleetManagedSettingsDocument));
+}
+
+/** Whether the draft configures a policy field, so enforcing it has an effect. */
+export function isDraftFieldSet(
+  values: ProfileGeneralValues,
+  field: ManagedSettingsPolicyField,
+): boolean {
+  if (field === "model") return Boolean(values.defaults.provider.trim());
+  if (field in values.agentLimits)
+    return Boolean(
+      values.agentLimits[
+        field as keyof ProfileGeneralValues["agentLimits"]
+      ].trim(),
+    );
+  return Boolean(values.defaults[field as keyof ManagedDefaults].trim());
+}
+
 export function createProfileDraft(
   profile: SettingsProfile,
 ): ProfileGeneralDraft {
@@ -65,6 +114,9 @@ export function createProfileDraft(
       autopilotExecutorIterations:
         limits.autopilotExecutorIterations?.toString() ?? "",
     },
+    enforced: profilePolicy(profile).filter((key) =>
+      (managedSettingsPolicyFields as readonly string[]).includes(key),
+    ),
   };
   return {
     profileId: profile.profileId,
@@ -86,7 +138,8 @@ export function hasProfileDraftChanges(draft: ProfileGeneralDraft): boolean {
       ([key, value]) =>
         values.agentLimits[key as keyof ProfileGeneralValues["agentLimits"]] !==
         value,
-    )
+    ) ||
+    [...values.enforced].sort().join() !== [...baseline.enforced].sort().join()
   );
 }
 
@@ -150,6 +203,15 @@ export function prepareGeneralProfileSave(
       values.agentLimits.autopilotExecutorIterations.trim()
         ? Number(values.agentLimits.autopilotExecutorIterations)
         : null,
+  };
+  document.policy = {
+    enforced: [
+      ...managedSettingsPolicyFields.filter(
+        (field) =>
+          values.enforced.includes(field) && isProfileFieldSet(document, field),
+      ),
+      ...profilePolicy(profile).filter((key) => key.startsWith("secret:")),
+    ],
   };
   return {
     expectedRevision: draft.baseRevision,

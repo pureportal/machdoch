@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createProfileDraft,
   hasProfileDraftChanges,
+  isDraftFieldSet,
   prepareGeneralProfileSave,
   profileDraftsReducer,
   receiveProfileResponse,
@@ -63,6 +64,7 @@ function edit(state: ProfileDrafts, draft: ProfileGeneralDraft): ProfileDrafts {
         executorTurns: "",
         autopilotExecutorIterations: "42",
       },
+      enforced: [],
     },
   });
 }
@@ -205,6 +207,7 @@ describe("profile general drafts", () => {
       "agentLimits",
       "defaults",
       "description",
+      "enforced",
       "name",
     ]);
     a.document.defaults.model = "Changed on server";
@@ -316,7 +319,10 @@ describe("profile general drafts", () => {
     };
     const draft = createProfileDraft(a);
     expect(draft.values.agentLimits.infinite).toBe("");
-    expect(prepareGeneralProfileSave(a, draft).document).toEqual(a.document);
+    expect(prepareGeneralProfileSave(a, draft).document).toEqual({
+      ...a.document,
+      policy: { enforced: ["secret:openai"] },
+    });
     draft.values = {
       ...draft.values,
       agentLimits: { ...draft.values.agentLimits, infinite: "false" },
@@ -324,5 +330,63 @@ describe("profile general drafts", () => {
     expect(
       prepareGeneralProfileSave(a, draft).document.agentLimits.infinite,
     ).toBe(false);
+  });
+
+  it("shows legacy profiles as enforced and saves an explicit policy", () => {
+    const legacy = profile();
+    const draft = createProfileDraft(legacy);
+    expect(draft.values.enforced).toEqual([
+      "model",
+      "mode",
+      "reasoning",
+      "webSearchProvider",
+      "theme",
+      "density",
+      "accent",
+      "infinite",
+      "executorTurns",
+      "autopilotExecutorIterations",
+    ]);
+    draft.values = {
+      ...draft.values,
+      defaults: { ...draft.values.defaults, theme: "" },
+      enforced: draft.values.enforced.filter((field) => field !== "mode"),
+    };
+    const saved = prepareGeneralProfileSave(legacy, draft).document.policy;
+    expect(saved?.enforced).toContain("secret:openai");
+    expect(saved?.enforced).toContain("model");
+    expect(saved?.enforced).not.toContain("mode");
+    expect(saved?.enforced).not.toContain("theme");
+    const current = profile();
+    current.document.policy = { enforced: ["secret:openai"] };
+    const defaults = createProfileDraft(current);
+    expect(defaults.values.enforced).toEqual([]);
+    expect(hasProfileDraftChanges(defaults)).toBe(false);
+    defaults.values = { ...defaults.values, enforced: ["mode"] };
+    expect(hasProfileDraftChanges(defaults)).toBe(true);
+    expect(
+      prepareGeneralProfileSave(current, defaults).document.policy,
+    ).toEqual({ enforced: ["mode", "secret:openai"] });
+  });
+
+  it("only offers enforcement for values the draft sets", () => {
+    const draft = createProfileDraft(profile());
+    expect(isDraftFieldSet(draft.values, "model")).toBe(true);
+    expect(isDraftFieldSet(draft.values, "executorTurns")).toBe(true);
+    const values = {
+      ...draft.values,
+      defaults: { ...draft.values.defaults, provider: "", mode: " " },
+      agentLimits: { ...draft.values.agentLimits, infinite: "" as const },
+    };
+    // A model without a provider is not delivered.
+    expect(isDraftFieldSet(values, "model")).toBe(false);
+    expect(isDraftFieldSet(values, "mode")).toBe(false);
+    expect(isDraftFieldSet(values, "infinite")).toBe(false);
+    expect(isDraftFieldSet(values, "theme")).toBe(true);
+    const saved = prepareGeneralProfileSave(profile(), {
+      ...draft,
+      values: { ...values, enforced: ["model", "mode", "theme"] },
+    });
+    expect(saved.document.policy?.enforced).toEqual(["theme", "secret:openai"]);
   });
 });

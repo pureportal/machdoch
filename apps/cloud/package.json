@@ -31,6 +31,7 @@
     "verify:cloud:runner": "node --import @oxc-node/core/register scripts/verify-cloud-runner.mjs",
     "verify:cloud:client": "node --import @oxc-node/core/register scripts/verify-cloud-client.mjs",
     "verify:cloud:desktop": "node --import @oxc-node/core/register scripts/verify-cloud-desktop.mjs",
+    "verify:cloud:managed-settings": "node --import @oxc-node/core/register scripts/verify-cloud-managed-settings.mjs",
     "verify:cloud:projects": "node scripts/verify-cloud-projects.mjs",
     "verify:cloud:workflows": "node --import @oxc-node/core/register scripts/verify-cloud-workflows.mjs",
     "verify:cloud:relations": "node --import @oxc-node/core/register scripts/verify-cloud-relations.mjs",
