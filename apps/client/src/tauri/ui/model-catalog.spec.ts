@@ -122,6 +122,38 @@ describe("provider model catalog", () => {
     ).toEqual(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.4-mini"]);
   });
 
+  it("keeps the Claude CLI picker order with aliases before pinned versions", () => {
+    const snapshot = {
+      generatedAt: 1,
+      providers: [
+        {
+          provider: "claude-cli",
+          source: "provider-probe",
+          available: true,
+          models: [
+            { id: "default", label: "Default (recommended)" },
+            { id: "opus", label: "Opus 5.5" },
+            { id: "fable", label: "Fable 5.1" },
+            { id: "sonnet", label: "Sonnet 5.5" },
+            { id: "haiku", label: "Haiku 5.5" },
+            { id: "claude-opus-5", label: "Opus 5" },
+            { id: "claude-opus-4-8", label: "Opus 4.8" },
+          ],
+        },
+      ],
+    } satisfies ProviderModelCatalogSnapshot;
+
+    expect(getCatalogModelsForProvider("claude-cli", snapshot)).toEqual([
+      { id: "default", label: "Default (recommended)" },
+      { id: "opus", label: "Opus 5.5" },
+      { id: "fable", label: "Fable 5.1" },
+      { id: "sonnet", label: "Sonnet 5.5" },
+      { id: "haiku", label: "Haiku 5.5" },
+      { id: "claude-opus-5", label: "Opus 5" },
+      { id: "claude-opus-4-8", label: "Opus 4.8" },
+    ]);
+  });
+
   it("keeps current Anthropic runtime models including Claude 5 families", () => {
     const snapshot = {
       generatedAt: 1,

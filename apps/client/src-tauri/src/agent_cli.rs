@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    io::{self, Read},
+    io::{self, Read, Write},
     path::Path,
     process::{Command, Stdio},
     thread,
@@ -120,16 +120,61 @@ pub(crate) fn run_agent_cli_command(
     run_agent_cli_process(&mut command, timeout)
 }
 
+pub(crate) fn run_agent_cli_command_with_input(
+    executable: &Path,
+    args: &[&str],
+    env_values: &HashMap<String, String>,
+    input: &str,
+    timeout: Duration,
+) -> Result<AgentCliCommandOutput, String> {
+    let mut command = Command::new(executable);
+    command.args(args).envs(env_values).env("NO_COLOR", "1");
+    run_agent_cli_process_with_input(&mut command, Some(input.as_bytes()), timeout)
+}
+
 pub(crate) fn run_agent_cli_process(
     command: &mut Command,
+    timeout: Duration,
+) -> Result<AgentCliCommandOutput, String> {
+    run_agent_cli_process_with_input(command, None, timeout)
+}
+
+fn write_agent_cli_input(child: &mut SupervisedChild, input: &[u8]) -> io::Result<()> {
+    let mut stdin = child
+        .stdin
+        .take()
+        .ok_or_else(|| io::Error::other("the agent CLI did not expose a stdin stream"))?;
+
+    match stdin.write_all(input) {
+        // The CLI may exit before reading all input; its output still tells what happened.
+        Err(error) if error.kind() == io::ErrorKind::BrokenPipe => Ok(()),
+        result => result,
+    }
+}
+
+fn run_agent_cli_process_with_input(
+    command: &mut Command,
+    input: Option<&[u8]>,
     timeout: Duration,
 ) -> Result<AgentCliCommandOutput, String> {
     let executable = command.get_program().to_owned();
     let executable = Path::new(&executable);
     command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    if input.is_some() {
+        command.stdin(Stdio::piped());
+    }
 
     let mut child = SupervisedChild::spawn_with_required_isolation(command)
         .map_err(|error| format!("Failed to start {}: {error}", executable.display()))?;
+    if let Some(input) = input {
+        if let Err(error) = write_agent_cli_input(&mut child, input) {
+            let _ = child.terminate_and_reap();
+            return Err(format!(
+                "Failed to write agent CLI input to {}: {error}",
+                executable.display()
+            ));
+        }
+    }
     let stdout = match child.stdout.take() {
         Some(stdout) => stdout,
         None => {

@@ -204,7 +204,7 @@ async fn fetch_provider_model_catalog_once(
             Ok(models) => {
                 return ProviderModelCatalogProvider {
                     provider: provider.to_string(),
-                    source: "provider-docs".to_string(),
+                    source: "provider-probe".to_string(),
                     available: true,
                     error: None,
                     models,

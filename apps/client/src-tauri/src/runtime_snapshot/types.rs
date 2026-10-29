@@ -98,6 +98,10 @@ pub struct ProviderRuntimeModelCapabilities {
     pub(super) supported_image_media_types: Option<Vec<String>>,
     pub(super) voice: Option<bool>,
     pub(super) computer_use: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) native_subagents: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) native_goal: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -39,6 +39,8 @@ fn create_copilot_cli_runtime_model_base(model_id: &str) -> ProviderRuntimeModel
             supported_image_media_types: None,
             voice: Some(false),
             computer_use: Some(false),
+            native_subagents: None,
+            native_goal: None,
         },
         warnings: vec![
             "Model availability depends on GitHub Copilot plan and organization policy."

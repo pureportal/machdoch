@@ -273,6 +273,8 @@ fn create_codex_cli_runtime_model(
             supported_image_media_types: None,
             voice: Some(false),
             computer_use,
+            native_subagents: None,
+            native_goal: None,
         },
         warnings: if is_text_only_preview {
             vec![

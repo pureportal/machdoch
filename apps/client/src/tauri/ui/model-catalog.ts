@@ -24,6 +24,8 @@ export interface RuntimeModelCapabilities {
   supportedImageMediaTypes?: readonly string[] | null;
   voice?: boolean | null;
   computerUse?: boolean | null;
+  nativeSubagents?: boolean | null;
+  nativeGoal?: boolean | null;
 }
 
 export interface RuntimeCatalogModel {
@@ -76,6 +78,9 @@ const REVIEW_MODEL_PATTERNS: Record<RuntimeProvider, readonly RegExp[]> = {
   "claude-cli": [/haiku/u, /sonnet/u],
   "copilot-cli": [/auto/u],
 };
+
+// These providers return their catalog in their own picker order (aliases first).
+const PROVIDER_ORDERED_CATALOGS = new Set<RuntimeProvider>(["claude-cli"]);
 
 const normalizeModelId = (model: string): string => model.trim().toLowerCase();
 
@@ -205,6 +210,10 @@ const getRuntimeCatalogModelsForProvider = (
     }
 
     byId.set(id, normalizedModel);
+  }
+
+  if (PROVIDER_ORDERED_CATALOGS.has(provider)) {
+    return [...byId.values()].map(toCatalogModel);
   }
 
   return [...byId.values()]

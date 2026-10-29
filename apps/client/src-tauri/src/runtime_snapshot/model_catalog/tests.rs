@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod model_catalog_parser_tests {
     use super::super::{
-        claude_cli::create_claude_cli_runtime_model,
+        claude_cli::{parse_claude_cli_initialize_output, parse_claude_cli_model_catalog},
         codex_cli::parse_codex_cli_model_catalog,
         copilot_cli::create_copilot_cli_runtime_model,
         provider_api::{finish_langdock_model_catalog, parse_langdock_model_catalog},
@@ -629,32 +629,120 @@ mod model_catalog_parser_tests {
     }
 
     #[test]
-    fn claude_cli_catalog_models_keep_documented_alias_constraints() {
-        let default = create_claude_cli_runtime_model("default");
-        let sonnet = create_claude_cli_runtime_model("sonnet");
-        let opus = create_claude_cli_runtime_model("opus");
-        let haiku = create_claude_cli_runtime_model("haiku");
+    fn claude_cli_initialize_output_lists_the_cli_model_picker() {
+        let all_efforts = ["low", "medium", "high", "xhigh", "max"];
+        let response = serde_json::json!({
+            "type": "control_response",
+            "response": {
+                "subtype": "success",
+                "request_id": "machdoch-model-catalog",
+                "response": {
+                    "commands": [{ "name": "goal" }, { "name": "effort" }],
+                    "agents": [{ "name": "Explore" }],
+                    "models": [
+                        { "value": "default", "resolvedModel": "claude-opus-5-5", "displayName": "Default (recommended)", "supportsEffort": true, "supportedEffortLevels": all_efforts },
+                        { "value": "opus", "resolvedModel": "claude-opus-5-5", "displayName": "Opus 5.5", "supportsEffort": true, "supportedEffortLevels": all_efforts },
+                        { "value": "fable", "resolvedModel": "claude-fable-5-1", "displayName": "Fable 5.1", "supportsEffort": true, "supportedEffortLevels": all_efforts },
+                        { "value": "sonnet", "resolvedModel": "claude-sonnet-5-5", "displayName": "Sonnet 5.5", "supportsEffort": true, "supportedEffortLevels": ["low", "medium", "high", "ultra"] },
+                        { "value": "haiku", "resolvedModel": "claude-haiku-5-5", "displayName": "Haiku 5.5" },
+                        { "value": "claude-opus-4-6", "displayName": "Opus 4.6", "supportsEffort": true, "supportedEffortLevels": ["low", "medium", "high", "max"] },
+                        { "value": "claude-opus-4-1", "displayName": "Opus 4.1", "disabled": true }
+                    ]
+                }
+            }
+        });
+        // The CLI writes one JSON message per line, after any startup events.
+        let stdout = format!("{{\"type\":\"system\",\"subtype\":\"hook_started\"}}\n{response}\n");
+        let stdout = stdout.as_str();
+        let models = parse_claude_cli_initialize_output(stdout, true).expect("models should parse");
 
         assert_eq!(
-            string_values(default.capabilities.reasoning_modes.as_deref()),
-            Some(vec!["default"])
+            models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "default",
+                "opus",
+                "fable",
+                "sonnet",
+                "haiku",
+                "claude-opus-4-6"
+            ]
         );
+        assert_eq!(models[1].label.as_deref(), Some("Opus 5.5"));
+        assert_eq!(models[2].label.as_deref(), Some("Fable 5.1"));
         assert_eq!(
-            string_values(sonnet.capabilities.reasoning_modes.as_deref()),
-            Some(vec!["default", "low", "medium", "high", "max"])
-        );
-        assert_eq!(
-            sonnet.capabilities.long_context_window_tokens,
-            Some(1_000_000)
-        );
-        assert_eq!(
-            string_values(opus.capabilities.reasoning_modes.as_deref()),
+            string_values(models[1].capabilities.reasoning_modes.as_deref()),
             Some(vec!["default", "low", "medium", "high", "xhigh", "max"])
         );
         assert_eq!(
-            string_values(haiku.capabilities.reasoning_modes.as_deref()),
+            string_values(models[3].capabilities.reasoning_modes.as_deref()),
+            Some(vec!["default", "low", "medium", "high"])
+        );
+        assert_eq!(
+            string_values(models[4].capabilities.reasoning_modes.as_deref()),
             Some(vec!["default"])
         );
+        assert_eq!(models[4].capabilities.reasoning, Some(false));
+        assert!(models[4].recommended_for.contains(&"cheap".to_string()));
+        assert!(models
+            .iter()
+            .all(|model| model.capabilities.long_context_window_tokens.is_none()));
+        assert!(models.iter().all(|model| {
+            model.capabilities.native_subagents == Some(true)
+                && model.capabilities.native_goal == Some(true)
+        }));
+
+        let models =
+            parse_claude_cli_initialize_output(stdout, false).expect("models should parse");
+        assert_eq!(models[0].capabilities.native_subagents, Some(false));
+    }
+
+    #[test]
+    fn claude_cli_model_catalog_folds_1m_rows_into_long_context_tiers() {
+        let models = parse_claude_cli_model_catalog(&serde_json::json!([
+            { "value": "opus", "displayName": "Opus 5.5" },
+            { "value": "opus[1m]", "displayName": "Opus 5.5 (1M context)" },
+            { "value": "sonnet", "displayName": "Sonnet 5.5" },
+            { "value": "claude-sonnet-4-6[1m]", "displayName": "Sonnet 4.6 (1M context)" }
+        ]))
+        .expect("models should parse");
+
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["opus", "sonnet", "claude-sonnet-4-6[1m]"]
+        );
+        assert_eq!(
+            models[0].capabilities.long_context_window_tokens,
+            Some(1_000_000)
+        );
+        assert_eq!(models[1].capabilities.long_context_window_tokens, None);
+        assert_eq!(
+            models[2].capabilities.context_window_tokens,
+            Some(1_000_000)
+        );
+    }
+
+    #[test]
+    fn claude_cli_initialize_output_reports_missing_or_rejected_responses() {
+        let rejected = r#"{"type":"control_response","response":{"subtype":"error","request_id":"machdoch-model-catalog","error":"Unknown request"}}"#;
+        let error = parse_claude_cli_initialize_output(rejected, true).unwrap_err();
+        assert!(error.contains("Unknown request"), "{error}");
+
+        let error = parse_claude_cli_initialize_output("not json\n", true).unwrap_err();
+        assert!(error.contains("did not answer"), "{error}");
+
+        let empty = r#"{"type":"control_response","response":{"subtype":"success","request_id":"machdoch-model-catalog","response":{"models":[]}}}"#;
+        assert!(parse_claude_cli_initialize_output(empty, true).is_err());
+
+        let older_cli = r#"{"type":"control_response","response":{"subtype":"success","request_id":"machdoch-model-catalog","response":{"models":[{"value":"sonnet","displayName":"Sonnet"}]}}}"#;
+        let models = parse_claude_cli_initialize_output(older_cli, true).unwrap();
+        assert_eq!(models[0].capabilities.native_subagents, Some(false));
+        assert_eq!(models[0].capabilities.native_goal, Some(false));
     }
 
     #[test]
