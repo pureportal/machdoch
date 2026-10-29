@@ -8,7 +8,10 @@ edition = "2021"
 
 [lib]
 name = "machdoch_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# Desktop builds only link the rlib into the binary. The Tauri mobile
+# staticlib/cdylib outputs would make release LTO compile every crate to
+# unused machine code as well as bitcode.
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -114,9 +117,11 @@ windows = { version = "0.61", features = [
   "Win32_UI_WindowsAndMessaging",
 ] }
 
+# Thin LTO with parallel codegen keeps release builds far faster than fat LTO
+# with a single codegen unit, at a small cost in binary size.
 [profile.release]
-codegen-units = 1
-lto = true
+codegen-units = 16
+lto = "thin"
 opt-level = 3
 panic = "abort"
 strip = true
