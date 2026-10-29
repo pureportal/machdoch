@@ -8,6 +8,7 @@ import { replaceDiscoveredModelCapabilities } from "@machdoch/model-runtime/mode
 afterEach(() => {
   replaceDiscoveredModelCapabilities("codex-cli", []);
   replaceDiscoveredModelCapabilities("copilot-cli", []);
+  replaceDiscoveredModelCapabilities("claude-cli", []);
 });
 
 describe("provider context presets", () => {
@@ -85,7 +86,26 @@ describe("provider context presets", () => {
     ).toBe("default");
   });
 
+  it("offers Claude 1M context only for models the CLI lists with a [1m] tier", () => {
+    replaceDiscoveredModelCapabilities("claude-cli", [
+      { id: "opus", capabilities: { longContextWindowTokens: 1_000_000 } },
+      { id: "sonnet", capabilities: { longContextWindowTokens: null } },
+    ]);
+    expect(resolveClaudeCliModelForContextWindow("opus", "highest")).toBe(
+      "opus[1m]",
+    );
+    expect(resolveClaudeCliModelForContextWindow("sonnet", "highest")).toBe(
+      "sonnet",
+    );
+    expect(resolveClaudeCliModelForContextWindow("fable", "highest")).toBe(
+      "fable",
+    );
+  });
+
   it("maps Claude highest to its long-context suffix and lowest to its base model", () => {
+    replaceDiscoveredModelCapabilities("claude-cli", [
+      { id: "sonnet", capabilities: { longContextWindowTokens: 1_000_000 } },
+    ]);
     expect(resolveClaudeCliModelForContextWindow("sonnet", "highest")).toBe(
       "sonnet[1m]",
     );

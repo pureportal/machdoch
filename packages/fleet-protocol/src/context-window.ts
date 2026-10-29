@@ -64,15 +64,11 @@ export function contextWindowCapabilities(
       return fixed;
     return { ...fixed, kind: "numeric", highestTokens: maximum };
   }
+  // Claude CLI lists `<model>[1m]` rows only when the signed-in account can use them.
   const longTokens =
-    provider === "copilot-cli"
+    provider === "copilot-cli" || provider === "claude-cli"
       ? validTokenCount(discovered?.longContextWindowTokens)
-      : provider === "claude-cli" &&
-          /^(?:(?:sonnet|opus)(?:\[1m\])?|claude-(?:sonnet|opus)-4-6(?:-\d{8})?(?:\[1m\])?)$/u.test(
-            name,
-          )
-        ? 1_000_000
-        : null;
+      : null;
   if (
     longTokens === null ||
     (defaultTokens !== null && longTokens <= defaultTokens)

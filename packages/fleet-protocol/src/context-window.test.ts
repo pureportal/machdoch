@@ -32,7 +32,8 @@ test("resolves the same highest preset after switching models or providers", () 
   for (const [provider, model, capabilities, expected] of [
     ["codex-cli", "gpt-6-astra", undefined, 1_050_000],
     ["codex-cli", "gpt-5.4-mini", undefined, 400_000],
-    ["claude-cli", "sonnet", undefined, "long"],
+    ["claude-cli", "sonnet", undefined, "default"],
+    ["claude-cli", "opus", { longContextWindowTokens: 1_000_000 }, "long"],
     [
       "copilot-cli",
       "tiered",
