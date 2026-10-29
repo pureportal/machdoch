@@ -343,12 +343,9 @@ jobs:
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: apps/client/src-tauri -> target
-          cache-directories: ${{ env.DESKTOP_TARGET_DIR }}
+          workspaces: apps/client/src-tauri -> ../../../${{ env.DESKTOP_TARGET_DIR }}
           shared-key: desktop-${{ matrix.release_target }}
           add-job-id-key: false
-          cache-workspace-crates: true
-          cache-on-failure: true
 
       - name: Install Windows Vulkan SDK
         if: matrix.release_target == 'windows-x64'
