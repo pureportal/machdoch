@@ -1,6 +1,18 @@
 import { z } from "zod";
+import {
+  isManagedSettingsPolicyKey,
+  managedMcpSecretIdPattern,
+  managedMcpServerSchema,
+  managedSettingsPolicyFields,
+  maximumManagedMcpServers,
+  maximumManagedSettingsSecrets,
+} from "@machdoch/fleet-protocol";
 import { contextWindowSchema } from "@machdoch/fleet-protocol/context-window";
 import { contextPackTextSchema } from "@machdoch/fleet-protocol/context-pack-contract";
+import {
+  normalizeManagedItemName,
+  normalizeManagedPromptPath,
+} from "@machdoch/fleet-protocol/managed-settings";
 import type { CloudServerConfig } from "./config";
 
 export class SettingsValidationError extends Error {}
@@ -169,6 +181,25 @@ const promptSchema = z.strictObject({
     .refine(noNullByte),
 });
 
+const policySchema = z
+  .strictObject({
+    enforced: z
+      .array(
+        z.string().refine(isManagedSettingsPolicyKey, {
+          message: "Settings policy key is invalid.",
+        }),
+      )
+      .max(managedSettingsPolicyFields.length + maximumManagedSettingsSecrets),
+  })
+  .refine(
+    (policy) => new Set(policy.enforced).size === policy.enforced.length,
+    {
+      message: "Settings policy keys must be unique.",
+    },
+  );
+
+// `policy` stays optional without a default: documents written before it
+// existed enforce every configured value, so its absence must stay visible.
 const documentSchema = z
   .strictObject({
     defaults: defaultsSchema,
@@ -176,6 +207,11 @@ const documentSchema = z
     instructions: z.array(instructionSchema).default([]),
     contextPacks: z.array(contextPackSchema).default([]),
     prompts: z.array(promptSchema).default([]),
+    policy: policySchema.optional(),
+    mcpServers: z
+      .array(managedMcpServerSchema)
+      .max(maximumManagedMcpServers)
+      .optional(),
   })
   .default({
     defaults: defaultsSchema.parse(undefined),
@@ -189,9 +225,14 @@ export type ManagedSettingsDocument = z.infer<typeof documentSchema>;
 export type ManagedInstruction = z.infer<typeof instructionSchema>;
 export type ManagedContextPack = z.infer<typeof contextPackSchema>;
 export type ManagedPrompt = z.infer<typeof promptSchema>;
+export type ManagedMcpServer = z.infer<typeof managedMcpServerSchema>;
 
 export function emptySettingsDocument(): ManagedSettingsDocument {
-  return documentSchema.parse({});
+  return {
+    ...documentSchema.parse({}),
+    policy: { enforced: [] },
+    mcpServers: [],
+  };
 }
 
 export function validateSettingsDocument(
@@ -225,6 +266,9 @@ export function validateSettingsDocument(
   ensureUnique(document.instructions, "Instruction");
   ensureUnique(document.contextPacks, "Context pack");
   ensureUniquePrompts(document.prompts);
+  const mcpIds = (document.mcpServers ?? []).map((server) => server.id);
+  if (new Set(mcpIds).size !== mcpIds.length)
+    throw new SettingsValidationError("MCP server ids must be unique.");
   document.instructions.forEach((instruction) =>
     ensureUniqueStrings(instruction.tags),
   );
@@ -232,6 +276,31 @@ export function validateSettingsDocument(
     ensureUniqueStrings(pack.variables.map((variable) => variable.name)),
   );
   return document;
+}
+
+const itemSchemas = {
+  instruction: instructionSchema,
+  contextPack: contextPackSchema,
+  prompt: promptSchema,
+  mcpServer: managedMcpServerSchema,
+} as const;
+
+/** Validates a single proposed item with the same rules as a profile. */
+export function validateSettingsItem<K extends keyof typeof itemSchemas>(
+  kind: K,
+  input: unknown,
+): z.infer<(typeof itemSchemas)[K]> {
+  const result = itemSchemas[kind].safeParse(input);
+  if (!result.success)
+    throw new SettingsValidationError(firstIssue(result.error));
+  const item = result.data as z.infer<(typeof itemSchemas)[K]>;
+  if (kind === "instruction")
+    ensureUniqueStrings((item as ManagedInstruction).tags);
+  if (kind === "contextPack")
+    ensureUniqueStrings(
+      (item as ManagedContextPack).variables.map((variable) => variable.name),
+    );
+  return item;
 }
 
 export function normalizeProfileName(value: unknown): string {
@@ -255,6 +324,17 @@ export function normalizeChangeSummary(value: unknown): string {
   return parseName(candidate, 120, "Change summary");
 }
 
+/** Shortens generated text to `maximum` UTF-16 code units without splitting a character. */
+export function shortenText(value: string, maximum: number): string {
+  if (value.length <= maximum) return value;
+  let shortened = "";
+  for (const character of value) {
+    if (shortened.length + character.length > maximum - 1) break;
+    shortened += character;
+  }
+  return `${shortened.trimEnd()}…`;
+}
+
 export function normalizeSecret(
   value: unknown,
   limits: CloudServerConfig["settingsManager"]["limits"],
@@ -272,8 +352,13 @@ export function normalizeSecret(
   return normalized;
 }
 
-export function isSecretId(value: string): boolean {
+/** Secret ids that every client version understands. */
+export function isCatalogSecretId(value: string): boolean {
   return secretDescriptors.some((descriptor) => descriptor.id === value);
+}
+
+export function isSecretId(value: string): boolean {
+  return isCatalogSecretId(value) || managedMcpSecretIdPattern.test(value);
 }
 
 function validName(maximum: number): z.ZodString {
@@ -305,6 +390,8 @@ function parseName(value: unknown, maximum: number, label: string): string {
   return result.data;
 }
 
+// Names and paths use the identity that composition and devices match items
+// by, so a profile never holds two items that collapse into one on delivery.
 function ensureUnique<T extends { id: string; name: string }>(
   values: T[],
   label: string,
@@ -312,7 +399,7 @@ function ensureUnique<T extends { id: string; name: string }>(
   const ids = new Set<string>();
   const names = new Set<string>();
   for (const value of values) {
-    const normalizedName = value.name.toLocaleLowerCase();
+    const normalizedName = normalizeManagedItemName(value.name);
     if (ids.has(value.id) || names.has(normalizedName)) {
       throw new SettingsValidationError(
         `${label} ids and names must be unique.`,
@@ -334,7 +421,7 @@ function ensureUniquePrompts(prompts: ManagedPrompt[]): void {
   const ids = new Set<string>();
   const paths = new Set<string>();
   for (const prompt of prompts) {
-    const normalizedPath = prompt.relativePath.toLowerCase();
+    const normalizedPath = normalizeManagedPromptPath(prompt.relativePath);
     if (ids.has(prompt.id) || paths.has(normalizedPath)) {
       throw new SettingsValidationError("Prompt ids and paths must be unique.");
     }

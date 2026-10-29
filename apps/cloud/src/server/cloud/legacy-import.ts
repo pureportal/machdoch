@@ -140,6 +140,12 @@ export async function importLegacySource(
           );
         counts[table] = rows.length;
       }
+      // Imported single-profile assignments become the first layer, exactly
+      // as the remote schema migrates them on startup.
+      await sql.query(
+        "INSERT INTO remote.settings_profile_assignments (instance_id,profile_id,position,assigned_at,last_applied_revision,last_applied_at,last_sync_revision,last_sync_attempt_at,last_sync_error) SELECT instance_id,profile_id,0,assigned_at,last_applied_revision,last_applied_at,last_sync_revision,last_sync_attempt_at,last_sync_error FROM remote.settings_assignments ON CONFLICT DO NOTHING",
+      );
+      await sql.query("DELETE FROM remote.settings_assignments");
       await sql.query(
         "SELECT setval(pg_get_serial_sequence('remote.audit_log','id'),COALESCE((SELECT MAX(id) FROM remote.audit_log),0)+1,false)",
       );

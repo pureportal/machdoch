@@ -20,13 +20,23 @@ import {
 import {
   createFleetManagedSettingsEtag,
   gatewayProtocolVersion,
+  legacyManagedSettingsSchemaVersion,
+  managedMcpSecretIdPattern,
+  managedSettingsPolicyFields,
   managedSettingsSchemaVersion,
+  maximumManagedMcpServers,
   maximumManagedSettingsDeliveryBytes,
+  maximumManagedSettingsLayers,
+  maximumManagedSettingsSecrets,
   productCommandSchema,
   runCommandSchema,
   type FleetManagedSettingsDelivery,
   type FleetManagedSettingsSyncReport,
 } from "@machdoch/fleet-protocol";
+import {
+  composeManagedSettingsLayers,
+  toLegacyManagedSettingsDocument,
+} from "@machdoch/fleet-protocol/managed-settings";
 import { z } from "zod";
 import { handleCloudApi } from "./cloud/api";
 import { streamSpeechAudio } from "./speech-audio";
@@ -35,7 +45,23 @@ import {
   captureEnrollmentSettings,
   listEnrollmentSettings,
   readEnrollmentSettings,
+  requestSnapshotRefresh,
+  snapshotStatus,
+  uploadSnapshotSettings,
 } from "./enrollment-settings";
+import {
+  applySettingsItem,
+  settingsItemKinds,
+  settingsItemLabels,
+  SettingsItemConflictError,
+} from "../lib/settings-items";
+import {
+  createProposal,
+  getPendingProposal,
+  listProposals,
+  resolveProposal,
+  SettingsProposalLimitError,
+} from "./settings-proposals";
 import packageJson from "../../package.json";
 import { productVersionStatus } from "../lib/product-version";
 import { collectFleetStatus } from "./fleet-status";
@@ -67,6 +93,7 @@ import {
 import { getRuntime, type FleetRuntime } from "./runtime";
 import {
   emptySettingsDocument,
+  isCatalogSecretId,
   isSecretId,
   normalizeChangeSummary,
   normalizeProfileDescription,
@@ -74,9 +101,16 @@ import {
   normalizeSecret,
   secretDescriptors,
   SettingsValidationError,
+  shortenText,
   validateSettingsDocument,
+  validateSettingsItem,
+  type ManagedSettingsDocument,
 } from "./settings";
-import { SettingsStoreError } from "./settings-store";
+import {
+  SettingsStoreError,
+  type SettingsDelivery,
+  type SettingsProfile,
+} from "./settings-store";
 import {
   maximumMediaRequestBodyBytes,
   maximumFleetSessionRequestBodyBytes,
@@ -132,6 +166,7 @@ const enrollmentSchema = z.strictObject({
 const createProfileSchema = z.strictObject({
   name: z.unknown(),
   description: z.unknown().optional(),
+  sourceInstanceId: z.string().optional(),
 });
 const updateProfileSchema = z.strictObject({
   expectedRevision: z.number().int().positive(),
@@ -144,24 +179,80 @@ const expectedRevisionSchema = z.strictObject({
   expectedRevision: z.number().int().positive(),
 });
 const secretSchema = expectedRevisionSchema.extend({ value: z.unknown() });
-const assignmentSchema = z.strictObject({ profileId: z.string().nullable() });
 const managerIdValueSchema = z
   .string()
   .refine((value) => validateId(value, "manager"));
 const profileIdValueSchema = z
   .string()
   .refine((value) => validateId(value, "profile"));
+const assignmentSchema = z.union([
+  z.strictObject({ profileId: z.string().nullable() }),
+  z.strictObject({
+    profileIds: z
+      .array(profileIdValueSchema)
+      .max(maximumManagedSettingsLayers)
+      .refine((ids) => new Set(ids).size === ids.length),
+  }),
+]);
+const settingsSyncLayersSchema = z
+  .array(
+    z.strictObject({
+      profileId: profileIdValueSchema,
+      revision: z.number().int().positive(),
+    }),
+  )
+  .min(1)
+  .max(maximumManagedSettingsLayers);
+function layersMatchReportIdentity(value: {
+  profileId: string | null;
+  revision: number | null;
+  layers?: Array<{ profileId: string; revision: number }> | undefined;
+}): boolean {
+  return (
+    value.layers === undefined ||
+    (value.layers[0]?.profileId === value.profileId &&
+      value.layers[0]?.revision === value.revision)
+  );
+}
+const proposalSchema = z.strictObject({
+  kind: z.enum(settingsItemKinds),
+  item: z.unknown(),
+  note: z
+    .string()
+    .trim()
+    .refine((value) => [...value].length <= 500)
+    .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value.replaceAll("\n", " ")))
+    .optional(),
+});
+const acceptProposalSchema = z.strictObject({
+  profileId: profileIdValueSchema,
+  expectedRevision: z.number().int().positive(),
+  resolution: z.enum(["add", "replace", "keep-both"]),
+});
 const appliedSettingsSyncReportSchema = z
   .strictObject({
     managerId: managerIdValueSchema,
     status: z.literal("applied"),
     profileId: profileIdValueSchema.nullable(),
     revision: z.number().int().positive().nullable(),
+    layers: settingsSyncLayersSchema.optional(),
+    warnings: z
+      .array(
+        z
+          .string()
+          .trim()
+          .min(1)
+          .refine((value) => [...value].length <= 500)
+          .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value)),
+      )
+      .max(32)
+      .optional(),
   })
   .refine(
     (value) => (value.profileId === null) === (value.revision === null),
     "Applied settings identity is invalid.",
-  );
+  )
+  .refine(layersMatchReportIdentity, "Applied settings layers are invalid.");
 const failedSettingsSyncReportSchema = z
   .strictObject({
     managerId: managerIdValueSchema,
@@ -174,11 +265,13 @@ const failedSettingsSyncReportSchema = z
       .min(1)
       .refine((value) => [...value].length <= 1_000)
       .refine((value) => !/[\p{Cc}\p{Cf}]/u.test(value)),
+    layers: settingsSyncLayersSchema.optional(),
   })
   .refine(
     (value) => (value.profileId === null) === (value.revision === null),
     "Failed settings identity is invalid.",
-  );
+  )
+  .refine(layersMatchReportIdentity, "Failed settings layers are invalid.");
 const settingsSyncReportSchema = z.union([
   appliedSettingsSyncReportSchema,
   failedSettingsSyncReportSchema,
@@ -470,53 +563,86 @@ async function routeApi(
   if (path[0] === "settings")
     return await settingsApi(runtime, request, path.slice(1));
   if (
-    method === "GET" &&
     path[0] === "client" &&
     path[1] === "settings" &&
     path[2] &&
-    path[3] === "enrollment" &&
+    (path[3] === "enrollment" || path[3] === "snapshot") &&
     path.length === 4
   ) {
-    await authenticateSettingsInstance(runtime, request, path[2]);
-    return Response.json({
-      captureRequired:
-        runtime.settingsCipher !== null &&
-        !(await runtime.database.get(
-          "SELECT instance_id FROM enrollment_settings WHERE instance_id = $1",
-          path[2],
-        )),
-    });
+    const instanceId = path[2];
+    const legacy = path[3] === "enrollment";
+    if (method === "GET") {
+      await authenticateSettingsInstance(runtime, request, instanceId);
+      const status = await snapshotStatus(runtime.database, instanceId);
+      const requested = runtime.settingsCipher !== null && status.requested;
+      return Response.json(
+        legacy
+          ? { captureRequired: requested }
+          : { requested, capturedAt: status.capturedAt },
+      );
+    }
+    if (method === "PUT") {
+      await authenticateSettingsInstance(runtime, request, instanceId);
+      if (!runtime.settingsCipher) return new Response(null, { status: 204 });
+      const input = await parseJson(
+        request,
+        z.unknown(),
+        400,
+        "Settings document is invalid.",
+        runtime.config.settingsManager.limits.maximumDocumentBytes,
+      );
+      await authenticateSettingsInstance(runtime, request, instanceId);
+      const document = validateSettingsDocument(
+        input,
+        runtime.config.settingsManager.limits,
+      );
+      await (legacy ? captureEnrollmentSettings : uploadSnapshotSettings)(
+        runtime.database,
+        runtime.settingsCipher,
+        instanceId,
+        document,
+        nowSeconds(),
+      );
+      return new Response(null, { status: 204 });
+    }
   }
   if (
-    method === "PUT" &&
+    method === "POST" &&
     path[0] === "client" &&
     path[1] === "settings" &&
     path[2] &&
-    path[3] === "enrollment" &&
+    path[3] === "proposals" &&
     path.length === 4
   ) {
-    await authenticateSettingsInstance(runtime, request, path[2]);
-    if (!runtime.settingsCipher) return new Response(null, { status: 204 });
+    const instanceId = path[2];
+    await authenticateSettingsInstance(runtime, request, instanceId);
+    if (!runtime.settingsCipher)
+      throw new HttpError(404, "Route was not found.");
     const input = await parseJson(
       request,
-      z.unknown(),
+      proposalSchema,
       400,
-      "Settings document is invalid.",
+      "Settings proposal is invalid.",
       runtime.config.settingsManager.limits.maximumDocumentBytes,
     );
-    await authenticateSettingsInstance(runtime, request, path[2]);
-    const document = validateSettingsDocument(
-      input,
-      runtime.config.settingsManager.limits,
-    );
-    await captureEnrollmentSettings(
-      runtime.database,
-      runtime.settingsCipher!,
-      path[2],
-      document,
-      nowSeconds(),
-    );
-    return new Response(null, { status: 204 });
+    await authenticateSettingsInstance(runtime, request, instanceId);
+    const item = validateSettingsItem(input.kind, input.item);
+    try {
+      const proposalId = await createProposal(
+        runtime.database,
+        runtime.settingsCipher,
+        instanceId,
+        input.kind,
+        item,
+        input.note || null,
+        nowSeconds(),
+      );
+      return Response.json({ proposalId }, { status: 201 });
+    } catch (error) {
+      if (error instanceof SettingsProposalLimitError)
+        throw new HttpError(409, error.message);
+      throw error;
+    }
   }
   if (
     method === "GET" &&
@@ -785,6 +911,42 @@ async function settingsApi(
         );
       return Response.json({ document });
     }
+    if (
+      request.method === "POST" &&
+      path[0] === "instances" &&
+      path[1] &&
+      path[2] === "snapshot" &&
+      path[3] === "refresh" &&
+      path.length === 4
+    ) {
+      await requireMutation(runtime, request);
+      await requireManagedInstance(runtime, path[1]);
+      await requestSnapshotRefresh(runtime.database, path[1], nowSeconds());
+      return Response.json({ ok: true });
+    }
+    if (request.method === "GET" && matches(path, "proposals")) {
+      await requireOwner(runtime, request);
+      return Response.json({
+        proposals: await listProposals(
+          runtime.database,
+          runtime.settingsCipher!,
+        ),
+      });
+    }
+    if (
+      request.method === "POST" &&
+      path[0] === "proposals" &&
+      path[1] &&
+      (path[2] === "accept" || path[2] === "reject") &&
+      path.length === 3
+    ) {
+      await requireMutation(runtime, request);
+      if (!validateId(path[1], "proposal"))
+        throw new HttpError(404, "Settings proposal was not found.");
+      return path[2] === "reject"
+        ? await rejectSettingsProposal(runtime, path[1])
+        : await acceptSettingsProposal(runtime, request, path[1]);
+    }
     if (request.method === "GET" && matches(path, "catalog")) {
       await requireOwner(runtime, request);
       const limits = runtime.config.settingsManager.limits;
@@ -798,6 +960,10 @@ async function settingsApi(
           maximumDocumentBytes: limits.maximumDocumentBytes,
           maximumSecretBytes: limits.maximumSecretBytes,
         },
+        policyFields: managedSettingsPolicyFields,
+        maximumLayers: maximumManagedSettingsLayers,
+        maximumMcpServers: maximumManagedMcpServers,
+        mcpSecretPattern: managedMcpSecretIdPattern.source,
       });
     }
     if (request.method === "GET" && matches(path, "profiles")) {
@@ -812,7 +978,10 @@ async function settingsApi(
       await requireMutation(runtime, request);
       const name = normalizeProfileName(input.name);
       const description = normalizeProfileDescription(input.description);
-      const document = emptySettingsDocument();
+      const document = input.sourceInstanceId
+        ? await deviceProfileDocument(runtime, input.sourceInstanceId)
+        : emptySettingsDocument();
+      await requireMutation(runtime, request);
       const profileId = await runtime.settingsStore.createProfile(
         name,
         description,
@@ -837,16 +1006,21 @@ async function settingsApi(
         await requireMutation(runtime, request);
         const input = await parseJson(request, updateProfileSchema);
         await requireMutation(runtime, request);
+        const name = normalizeProfileName(input.name);
+        const description = normalizeProfileDescription(input.description);
+        const document = validateSettingsDocument(
+          input.document,
+          runtime.config.settingsManager.limits,
+        );
+        const changeSummary = normalizeChangeSummary(input.changeSummary);
+        await requireCombinableChange(runtime, { profileId, document });
         await runtime.settingsStore.updateProfile(
           profileId,
           input.expectedRevision,
-          normalizeProfileName(input.name),
-          normalizeProfileDescription(input.description),
-          validateSettingsDocument(
-            input.document,
-            runtime.config.settingsManager.limits,
-          ),
-          normalizeChangeSummary(input.changeSummary),
+          name,
+          description,
+          document,
+          changeSummary,
           nowSeconds(),
           runtime.config.settingsManager.limits.maximumRevisionsPerProfile,
         );
@@ -880,6 +1054,13 @@ async function settingsApi(
           throw new HttpError(404, "Revision was not found.");
         const input = await parseJson(request, expectedRevisionSchema);
         await requireMutation(runtime, request);
+        await requireCombinableChange(runtime, {
+          profileId,
+          document: await runtime.settingsStore.getVersionDocument(
+            profileId,
+            revision,
+          ),
+        });
         await runtime.settingsStore.restoreVersion(
           profileId,
           revision,
@@ -899,11 +1080,16 @@ async function settingsApi(
         if (request.method === "PUT") {
           const input = await parseJson(request, secretSchema);
           await requireMutation(runtime, request);
+          const value = normalizeSecret(
+            input.value,
+            runtime.config.settingsManager.limits,
+          );
+          await requireCombinableChange(runtime, { profileId, secretId });
           await runtime.settingsStore.setSecret(
             runtime.settingsCipher!,
             profileId,
             secretId,
-            normalizeSecret(input.value, runtime.config.settingsManager.limits),
+            value,
             input.expectedRevision,
             nowSeconds(),
             runtime.config.settingsManager.limits.maximumRevisionsPerProfile,
@@ -954,9 +1140,17 @@ async function settingsApi(
       await requireMutation(runtime, request);
       const input = await parseJson(request, assignmentSchema);
       await requireMutation(runtime, request);
-      await runtime.settingsStore.setAssignment(
+      await requireManagedInstance(runtime, path[1]);
+      const profileIds =
+        "profileIds" in input
+          ? input.profileIds
+          : input.profileId
+            ? [input.profileId]
+            : [];
+      await requireCombinableProfiles(runtime, profileIds);
+      await runtime.settingsStore.setAssignments(
         path[1],
-        input.profileId,
+        profileIds,
         nowSeconds(),
       );
       return Response.json({ ok: true });
@@ -971,19 +1165,89 @@ async function settingsApi(
   }
 }
 
+const combinedLimitsMessage =
+  "The assigned profiles exceed the combined settings limits.";
+const combinedChangeMessage =
+  "This change would exceed the combined settings limits on a device that also uses other profiles.";
+
+type SettingsLimits = FleetRuntime["config"]["settingsManager"]["limits"];
+
+/** Newer clients get the newest version this cloud speaks; older ones the first layer only. */
+function requestedSettingsSchemaVersion(request: Request): 2 | 3 {
+  return Number(new URL(request.url).searchParams.get("schemaVersion")) >=
+    managedSettingsSchemaVersion
+    ? managedSettingsSchemaVersion
+    : legacyManagedSettingsSchemaVersion;
+}
+
+/** Whether composed layers fit the profile limits and the protocol's secret budget. */
+function fitsSettingsLimits(
+  composed: { document: unknown; secrets: Record<string, string> },
+  limits: SettingsLimits,
+): boolean {
+  if (Object.keys(composed.secrets).length > maximumManagedSettingsSecrets)
+    return false;
+  try {
+    validateSettingsDocument(composed.document, limits);
+    return true;
+  } catch (error) {
+    if (error instanceof SettingsValidationError) return false;
+    throw error;
+  }
+}
+
+function deliveryResponse(
+  managerId: string,
+  delivery: SettingsDelivery | null,
+  schemaVersion: 2 | 3,
+): FleetManagedSettingsDelivery {
+  if (!delivery) return { schemaVersion, managerId, profile: null };
+  const { layers, ...profile } = delivery;
+  if (schemaVersion === legacyManagedSettingsSchemaVersion) {
+    const first = layers[0]!;
+    return {
+      schemaVersion,
+      managerId,
+      profile: {
+        profileId: first.profileId,
+        name: first.name,
+        revision: first.revision,
+        document: toLegacyManagedSettingsDocument(first.document),
+        secrets: Object.fromEntries(
+          Object.entries(first.secrets).filter(([id]) => isCatalogSecretId(id)),
+        ),
+      },
+    };
+  }
+  return {
+    schemaVersion,
+    managerId,
+    profile,
+    layers: layers.map(({ profileId, name, revision }) => ({
+      profileId,
+      name,
+      revision,
+    })),
+  };
+}
+
 async function deliverSettings(
   runtime: FleetRuntime,
   request: Request,
   instanceId: string,
 ): Promise<Response> {
   await authenticateSettingsInstance(runtime, request, instanceId);
+  const schemaVersion = requestedSettingsSchemaVersion(request);
   const managerId = await runtime.database.managerId();
   const identity = runtime.settingsCipher
     ? await runtime.settingsStore.getDeliveryIdentity(instanceId)
     : null;
+  // Version 2 tags only name the first layer, which is all those clients get.
   const candidateEtag = createFleetManagedSettingsEtag({
+    schemaVersion,
     managerId,
     profile: identity,
+    layers: identity?.layers,
   });
   if (etagMatches(request.headers.get("If-None-Match"), candidateEtag)) {
     await authenticateSettingsInstance(runtime, request, instanceId);
@@ -998,17 +1262,29 @@ async function deliverSettings(
         instanceId,
       )
     : null;
-  const response: FleetManagedSettingsDelivery = {
-    schemaVersion: managedSettingsSchemaVersion,
-    managerId,
-    profile: delivery,
-  };
+  const response = deliveryResponse(managerId, delivery, schemaVersion);
   await authenticateSettingsInstance(runtime, request, instanceId);
-  const etag = createFleetManagedSettingsEtag(response);
   const body = JSON.stringify(response);
-  if (Buffer.byteLength(body) > maximumManagedSettingsDeliveryBytes) {
-    throw new Error("Managed settings delivery exceeds the protocol limit.");
+  if (
+    Buffer.byteLength(body) > maximumManagedSettingsDeliveryBytes ||
+    (response.layers &&
+      response.profile &&
+      !fitsSettingsLimits(
+        response.profile,
+        runtime.config.settingsManager.limits,
+      ))
+  ) {
+    // The device cannot report what it never received; record it instead.
+    if (response.layers)
+      await runtime.settingsStore.recordDeliveryFailure(
+        instanceId,
+        response.layers,
+        combinedLimitsMessage,
+        nowSeconds(),
+      );
+    throw new HttpError(409, combinedLimitsMessage);
   }
+  const etag = createFleetManagedSettingsEtag(response);
   return new Response(body, {
     headers: { "Content-Type": "application/json", ETag: etag },
   });
@@ -1028,56 +1304,219 @@ async function reportSettingsSync(
     maximumSettingsSyncReportBodyBytes,
   );
   await authenticateSettingsInstance(runtime, request, instanceId);
-  if (input.managerId !== (await runtime.database.managerId())) {
-    throw new HttpError(
-      409,
-      "Settings assignment changed during synchronization.",
-    );
-  }
+  const changed = () =>
+    new HttpError(409, "Settings assignment changed during synchronization.");
+  if (input.managerId !== (await runtime.database.managerId())) throw changed();
   if (
     !runtime.settingsCipher ||
     !(await runtime.settingsStore.deliveryEnabled())
   ) {
-    if (input.profileId !== null || input.revision !== null) {
-      throw new HttpError(
-        409,
-        "Settings assignment changed during synchronization.",
-      );
-    }
+    if (input.profileId !== null || input.revision !== null) throw changed();
     return new Response(null, { status: 204 });
   }
   const now = nowSeconds();
-  if (input.status === "failed") {
-    if (
-      !(await runtime.settingsStore.recordFailure(
-        instanceId,
-        input.profileId,
-        input.revision,
-        input.error,
-        now,
-      ))
-    ) {
-      throw new HttpError(
-        409,
-        "Settings assignment changed during synchronization.",
-      );
-    }
-  } else {
-    if (
-      !(await runtime.settingsStore.recordApplied(
-        instanceId,
-        input.profileId,
-        input.revision,
-        now,
-      ))
-    ) {
-      throw new HttpError(
-        409,
-        "Settings assignment changed during synchronization.",
-      );
-    }
-  }
+  const store = runtime.settingsStore;
+  const recorded =
+    input.status === "failed"
+      ? input.layers
+        ? await store.recordFailedLayers(
+            instanceId,
+            input.layers,
+            input.error,
+            now,
+          )
+        : await store.recordFailure(
+            instanceId,
+            input.profileId,
+            input.revision,
+            input.error,
+            now,
+          )
+      : input.layers
+        ? await store.recordAppliedLayers(
+            instanceId,
+            input.layers,
+            input.warnings ?? [],
+            now,
+          )
+        : await store.recordApplied(
+            instanceId,
+            input.profileId,
+            input.revision,
+            now,
+            input.warnings ?? [],
+          );
+  if (!recorded) throw changed();
   return new Response(null, { status: 204 });
+}
+
+/**
+ * Rejects stacks whose combined settings exceed the limits. With `change`,
+ * only a change that breaks a stack which fit before is rejected, so a stack
+ * that is already too large can still be shrunk.
+ */
+async function requireCombinableProfiles(
+  runtime: FleetRuntime,
+  profileIds: string[],
+  change?: ProfileChange,
+): Promise<void> {
+  if (profileIds.length < 2) return;
+  const profiles: SettingsProfile[] = [];
+  for (const profileId of profileIds)
+    profiles.push(await runtime.settingsStore.getProfile(profileId));
+  const fits = (applied: ProfileChange | undefined) =>
+    fitsSettingsLimits(
+      composeManagedSettingsLayers(
+        profiles.map((profile) => {
+          const changed =
+            profile.profileId === applied?.profileId ? applied : undefined;
+          const secretIds = profile.secrets.map(({ secretId }) => secretId);
+          if (changed?.secretId) secretIds.push(changed.secretId);
+          return {
+            document: changed?.document ?? profile.document,
+            // Only which secrets exist matters for the limits.
+            secrets: Object.fromEntries(
+              secretIds.map((secretId) => [secretId, ""]),
+            ),
+          };
+        }),
+      ),
+      runtime.config.settingsManager.limits,
+    );
+  if (fits(change) || (change && !fits(undefined))) return;
+  throw new HttpError(
+    409,
+    change ? combinedChangeMessage : combinedLimitsMessage,
+  );
+}
+
+/** A new document or an added secret for one profile. */
+interface ProfileChange {
+  profileId: string;
+  document?: ManagedSettingsDocument;
+  secretId?: string;
+}
+
+/** Rejects a profile change that would break a device stacking it with others. */
+async function requireCombinableChange(
+  runtime: FleetRuntime,
+  change: ProfileChange,
+): Promise<void> {
+  for (const profileIds of await runtime.settingsStore.listProfileStacks(
+    change.profileId,
+  ))
+    await requireCombinableProfiles(runtime, profileIds, change);
+}
+
+async function deviceProfileDocument(
+  runtime: FleetRuntime,
+  instanceId: string,
+): Promise<ManagedSettingsDocument> {
+  await requireManagedInstance(runtime, instanceId);
+  const snapshot = await readEnrollmentSettings(
+    runtime.database,
+    runtime.settingsCipher!,
+    instanceId,
+    runtime.config.settingsManager.limits,
+  );
+  if (!snapshot)
+    throw new HttpError(
+      404,
+      "Device settings have not been captured. Connect the device and retry.",
+    );
+  return {
+    ...snapshot,
+    policy: { enforced: [] },
+    mcpServers: snapshot.mcpServers ?? [],
+  };
+}
+
+async function acceptSettingsProposal(
+  runtime: FleetRuntime,
+  request: Request,
+  proposalId: string,
+): Promise<Response> {
+  const input = await parseJson(request, acceptProposalSchema);
+  await requireMutation(runtime, request);
+  const limits = runtime.config.settingsManager.limits;
+  await runtime.database.transaction(async () => {
+    const proposal = await getPendingProposal(
+      runtime.database,
+      runtime.settingsCipher!,
+      proposalId,
+    );
+    if (!proposal) throw new HttpError(404, "Settings proposal was not found.");
+    const profile = await runtime.settingsStore.getProfile(input.profileId);
+    if (profile.revision !== input.expectedRevision)
+      throw new SettingsStoreError("revision-conflict");
+    let document: ManagedSettingsDocument;
+    try {
+      document = validateSettingsDocument(
+        applySettingsItem(
+          profile.document,
+          proposal.kind,
+          validateSettingsItem(proposal.kind, proposal.item),
+          input.resolution,
+        ),
+        limits,
+      );
+    } catch (error) {
+      if (error instanceof SettingsItemConflictError)
+        throw new HttpError(409, error.message);
+      throw error;
+    }
+    await requireCombinableChange(runtime, {
+      profileId: profile.profileId,
+      document,
+    });
+    const label = settingsItemLabels[proposal.kind];
+    const now = nowSeconds();
+    await runtime.settingsStore.updateProfile(
+      profile.profileId,
+      profile.revision,
+      profile.name,
+      profile.description,
+      document,
+      normalizeChangeSummary(
+        shortenText(
+          `Accepted ${proposal.kind === "mcpServer" ? label : label.toLocaleLowerCase()} from ${proposal.displayName}`,
+          120,
+        ),
+      ),
+      now,
+      limits.maximumRevisionsPerProfile,
+    );
+    if (
+      !(await resolveProposal(
+        runtime.database,
+        proposalId,
+        "accepted",
+        profile.profileId,
+        now,
+      ))
+    )
+      throw new HttpError(409, "The proposal was already reviewed.");
+  });
+  return Response.json({
+    profile: await runtime.settingsStore.getProfile(input.profileId),
+  });
+}
+
+async function rejectSettingsProposal(
+  runtime: FleetRuntime,
+  proposalId: string,
+): Promise<Response> {
+  if (
+    !(await resolveProposal(
+      runtime.database,
+      proposalId,
+      "rejected",
+      null,
+      nowSeconds(),
+    ))
+  )
+    throw new HttpError(404, "Settings proposal was not found.");
+  return Response.json({ ok: true });
 }
 
 async function authenticateSettingsInstance(
@@ -1126,6 +1565,14 @@ function settingsHttpError(error: SettingsStoreError): HttpError {
       "The configured settings profile limit has been reached.",
     ],
     "name-conflict": [409, "A settings profile already uses that name."],
+    "layer-limit": [
+      409,
+      `A device can use at most ${maximumManagedSettingsLayers} different profiles.`,
+    ],
+    "secret-limit": [
+      409,
+      `A settings profile can store at most ${maximumManagedSettingsSecrets} secrets.`,
+    ],
   }[error.code] as [number, string];
   return new HttpError(mapped[0], mapped[1]);
 }

@@ -1,6 +1,6 @@
 import {
   gatewayProtocolVersion,
-  managedSettingsSchemaVersion,
+  legacyManagedSettingsSchemaVersion,
 } from "@machdoch/fleet-protocol";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -58,13 +58,14 @@ describe("machdoch.cloud API", () => {
           device.instanceId,
           nowSeconds(),
         );
-        return {
+        const layer = {
           profileId: "profile_hidden",
           name: "Hidden",
           revision: 1,
           document: emptySettingsDocument(),
           secrets: { openai: "hidden-api-key" },
         };
+        return { ...layer, layers: [layer] };
       },
     );
     const response = await handleApiRequest(
@@ -635,7 +636,7 @@ describe("machdoch.cloud API", () => {
     );
     expect(delivery.status).toBe(200);
     expect(await delivery.json()).toEqual({
-      schemaVersion: managedSettingsSchemaVersion,
+      schemaVersion: legacyManagedSettingsSchemaVersion,
       managerId: await runtime.database.managerId(),
       profile: null,
     });
@@ -691,7 +692,11 @@ describe("machdoch.cloud API", () => {
     );
     expect(
       await runtime.settingsStore.getDeliveryIdentity(instance.instanceId),
-    ).toEqual({ profileId, revision: 1 });
+    ).toEqual({
+      profileId,
+      revision: 1,
+      layers: [{ profileId, revision: 1 }],
+    });
     runtime.settingsCipher = cipher;
     runtime.config.settingsManager.enabled = true;
     const restored = await requestSettings(

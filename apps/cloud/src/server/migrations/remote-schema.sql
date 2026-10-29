@@ -50,3 +50,37 @@ CREATE TABLE IF NOT EXISTS remote.fleet_session_routes (
   instance_id text NOT NULL REFERENCES remote.instances(instance_id),
   workspace text NOT NULL, session_id text, created_at double precision NOT NULL
 );
+CREATE TABLE IF NOT EXISTS remote.settings_profile_assignments (
+  instance_id text NOT NULL REFERENCES remote.instances(instance_id) ON DELETE CASCADE,
+  profile_id text NOT NULL REFERENCES remote.settings_profiles(profile_id) ON DELETE CASCADE,
+  position integer NOT NULL, assigned_at double precision NOT NULL,
+  last_applied_revision integer, last_applied_at double precision,
+  last_sync_revision integer, last_sync_attempt_at double precision, last_sync_error text,
+  PRIMARY KEY (instance_id, profile_id)
+);
+CREATE INDEX IF NOT EXISTS settings_profile_assignments_profile ON remote.settings_profile_assignments (profile_id);
+DELETE FROM remote.settings_profile_assignments
+  WHERE instance_id IN (SELECT instance_id FROM remote.settings_assignments);
+INSERT INTO remote.settings_profile_assignments
+  (instance_id, profile_id, position, assigned_at, last_applied_revision, last_applied_at,
+   last_sync_revision, last_sync_attempt_at, last_sync_error)
+  SELECT instance_id, profile_id, 0, assigned_at, last_applied_revision, last_applied_at,
+         last_sync_revision, last_sync_attempt_at, last_sync_error
+  FROM remote.settings_assignments
+  ON CONFLICT DO NOTHING;
+DELETE FROM remote.settings_assignments;
+CREATE TABLE IF NOT EXISTS remote.settings_sync_warnings (
+  instance_id text PRIMARY KEY REFERENCES remote.instances(instance_id) ON DELETE CASCADE,
+  warnings_json text NOT NULL, reported_at double precision NOT NULL
+);
+CREATE TABLE IF NOT EXISTS remote.settings_snapshot_requests (
+  instance_id text PRIMARY KEY REFERENCES remote.instances(instance_id) ON DELETE CASCADE,
+  requested_at double precision NOT NULL
+);
+CREATE TABLE IF NOT EXISTS remote.settings_proposals (
+  proposal_id text PRIMARY KEY,
+  instance_id text NOT NULL REFERENCES remote.instances(instance_id) ON DELETE CASCADE,
+  kind text NOT NULL, payload_ciphertext bytea NOT NULL, created_at double precision NOT NULL,
+  status text NOT NULL, resolved_at double precision, resolved_profile_id text
+);
+CREATE INDEX IF NOT EXISTS settings_proposals_pending ON remote.settings_proposals (status, created_at)
