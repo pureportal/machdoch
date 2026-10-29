@@ -8,7 +8,7 @@ import { loadRuntimeConfig } from "../../core/config.js";
 import { loadChatDefaults } from "../../core/chat-defaults.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import { createTaskExecutionController } from "../../core/execution.js";
-import { createImageInputUnsupportedModelMessage, getImageInputMediaTypeForPath, getSupportedImageInputExtensions, modelSupportsImageInput, providerSupportsImageInputMediaType } from "@machdoch/model-runtime/model-capabilities";
+import { createImageInputUnsupportedModelMessage, getImageInputMediaTypeForPath, getSupportedImageInputExtensions, modelSupportsImageInput, providerSupportsImageInputMediaType, rememberDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
 import { previewTaskRun } from "../../core/task-runner.js";
 import type { AgentModelImageInput } from "@machdoch/model-runtime/types";
 import type { TaskConversationContext, TaskExecutionResult, TaskRunPreview } from "../../core/types.js";
@@ -276,6 +276,15 @@ export const printTaskPreview = async (
     args,
     options?.conversationContext,
   );
+  // Config loading already checks the model's reasoning modes, so the host's
+  // discovered capabilities must be known before it runs.
+  if (conversationContext?.modelCapabilities && args.runtimeProvider && args.model) {
+    rememberDiscoveredModelCapabilities(
+      args.runtimeProvider,
+      args.model,
+      conversationContext.modelCapabilities,
+    );
+  }
 
   const config = await loadRuntimeConfig(
     resolveCliWorkspaceRoot(args.workspaceRoot),

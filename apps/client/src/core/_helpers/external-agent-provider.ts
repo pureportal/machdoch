@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createManagedSkillCatalog } from "../managed-skill-delivery.js";
-import { extname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { basename, extname, join } from "node:path";
 import { loadRuntimeEnvironment } from "../env.js";
 import { createAnswerLanguageInstruction } from "./answer-language.js";
 import { materializeCliEnrollment } from "../provider-enrollment/materializer.js";
@@ -17,7 +18,34 @@ import type {
   RuntimeConfig,
 } from "../runtime-contract.generated.js";
 import type { AgentModelStreamUsage } from "@machdoch/model-runtime/types";
-import type { TaskActionOutputHandler, TaskExecutionResult, TaskExecutionSection } from "../types.js";
+import type {
+  AgentControlEndpoint,
+  AgentLiveState,
+  TaskActionOutputHandler,
+  TaskAgentFeatures,
+  TaskExecutionProgress,
+  TaskExecutionResult,
+  TaskExecutionSection,
+} from "../types.js";
+import { getDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
+import {
+  isRecord,
+  type InteractiveAgentSession,
+  type InteractiveSessionIo,
+} from "./agent-interactive-session.js";
+import {
+  CODEX_FAST_SERVICE_TIER,
+  createInteractiveAgentSession,
+  type InteractiveCommandSpec,
+} from "./agent-interactive-sessions.js";
+import { startAgentTaskControlServer } from "./agent-task-control-server.js";
+import { requestRunCancellation } from "./run-cancellation.js";
+import {
+  FOLLOW_UP_SUGGESTION_INSTRUCTIONS,
+  extractFollowUpSuggestions,
+  hideFollowUpBlock,
+  mergeFollowUpSuggestions,
+} from "./follow-up-suggestions.js";
 import {
   getAgentCliProviderLabel,
   isAgentCliProvider,
@@ -890,6 +918,15 @@ const createActionOutputBatcher = (
   };
 };
 
+export interface InteractiveRunOptions {
+  create(io: InteractiveSessionIo): InteractiveAgentSession;
+  /** Receives the run's control endpoint, then `null` once the turn has ended. */
+  onControlEndpoint?(endpoint: AgentControlEndpoint | null): void;
+}
+
+/** How long a graceful protocol interrupt may take before the tree is killed. */
+const INTERACTIVE_INTERRUPT_GRACE_MS = 6_000;
+
 export const runExternalAgentCommand = async (
   executable: string,
   args: string[],
@@ -901,6 +938,7 @@ export const runExternalAgentCommand = async (
   onActionOutput: TaskActionOutputHandler | undefined,
   captureGoalEvidence = false,
   codexGoal?: CodexNativeGoalInput,
+  interactive?: InteractiveRunOptions,
 ): Promise<SpawnedAgentResult> => {
   if (signal?.aborted) {
     throw createAbortError(signal);
@@ -913,8 +951,38 @@ export const runExternalAgentCommand = async (
       shouldUseShellForExecutable(executable),
     );
   }
+  let interactiveSession: InteractiveAgentSession | undefined;
+  // Only an attended run, whose host listens for the endpoint, takes input.
+  const controlServer = interactive?.onControlEndpoint
+    ? await startAgentTaskControlServer({
+        steer: (text) => interactiveSession?.controls.steer?.(text),
+        // A user stop ends the whole run as cancelled. The abort handler
+        // then interrupts the provider turn gracefully before escalating.
+        interrupt: () => {
+          if (!requestRunCancellation(signal, "Execution cancelled by user.")) {
+            void interactiveSession?.controls.interrupt?.();
+          }
+        },
+        answer: (questionId, answers) =>
+          interactiveSession?.controls.answer?.(questionId, answers),
+        stopTask: (taskId) => interactiveSession?.controls.stopTask?.(taskId),
+      }).catch(() => undefined)
+    : undefined;
+  const releaseControl = (): void => {
+    if (!controlServer) return;
+    interactive?.onControlEndpoint?.(null);
+    void controlServer.close();
+  };
 
-  return await new Promise<SpawnedAgentResult>((resolve, reject) => {
+  try {
+    return await runExternalAgentProcess();
+  } finally {
+    interactiveSession?.dispose();
+    releaseControl();
+  }
+
+  function runExternalAgentProcess(): Promise<SpawnedAgentResult> {
+  return new Promise<SpawnedAgentResult>((resolve, reject) => {
     const cwd = normalizeLocalCommandCwd(config.workspaceRoot);
     const childEnv = createChildEnv(provider, enrollmentEnv);
     assertSafeWindowsCommandShellInvocation(executable, args);
@@ -941,14 +1009,31 @@ export const runExternalAgentCommand = async (
           captureGoalEvidence,
         )
       : undefined;
+    interactiveSession =
+      !nativeGoalDecoder && interactive
+        ? interactive.create({
+            write: (message) => {
+              if (!settled && child.stdin?.writable) child.stdin.write(message);
+            },
+            closeInput: () => {
+              child.stdin?.end();
+              // The CLI may now wait for background work; start the normal
+              // post-result shutdown clock instead of waiting for it.
+              scheduleCompletionShutdownCheck();
+            },
+          })
+        : undefined;
     const outputDecoder: ExternalAgentCliOutputDecoder =
       nativeGoalDecoder ??
+      interactiveSession ??
       (provider === "codex-cli"
         ? new CodexCliOutputDecoder(captureGoalEvidence)
         : provider === "claude-cli"
           ? new ClaudeCliOutputDecoder(captureGoalEvidence)
           : new CopilotCliOutputDecoder(captureGoalEvidence));
     const actionOutputBatcher = createActionOutputBatcher(onActionOutput);
+    let gracefulAbortError: Error | undefined;
+    let gracefulAbortHandle: ReturnType<typeof setTimeout> | undefined;
     let settled = false;
     let authenticationRequired = false;
     let stderrDiagnosticTail = "";
@@ -995,6 +1080,10 @@ export const runExternalAgentCommand = async (
       if (providerShutdownSettlementHandle) {
         clearTimeout(providerShutdownSettlementHandle);
         providerShutdownSettlementHandle = undefined;
+      }
+      if (gracefulAbortHandle) {
+        clearTimeout(gracefulAbortHandle);
+        gracefulAbortHandle = undefined;
       }
       child.stdin?.destroy();
       child.stdout?.destroy();
@@ -1221,9 +1310,29 @@ export const runExternalAgentCommand = async (
           MAX_CAPTURED_STDERR_CHARS,
         );
       }
-      beginTermination(
-        signal ? createAbortError(signal) : new Error("Execution cancelled."),
-      );
+      const error = signal
+        ? createAbortError(signal)
+        : new Error("Execution cancelled.");
+      // Ask an interactive provider to end the turn itself first, so it can
+      // record the interrupted turn; fall back to killing the process tree.
+      if (interactiveSession && !gracefulAbortError && !settled) {
+        let interruptSent = false;
+        try {
+          interruptSent = interactiveSession.interrupt();
+        } catch {
+          interruptSent = false;
+        }
+        if (interruptSent) {
+          gracefulAbortError = error;
+          gracefulAbortHandle = setTimeout(() => {
+            gracefulAbortHandle = undefined;
+            beginTermination(error);
+          }, INTERACTIVE_INTERRUPT_GRACE_MS);
+          unrefTimer(gracefulAbortHandle);
+          return;
+        }
+      }
+      beginTermination(error);
     }
 
     function handleStdinError(error: Error): void {
@@ -1266,7 +1375,10 @@ export const runExternalAgentCommand = async (
         return;
       }
       for (const displayText of update.displayText) {
-        actionOutputBatcher.enqueue("stdout", displayText);
+        // The follow-up block is for machdoch, not for the live transcript.
+        const shown = hideFollowUpBlock(displayText);
+        if (shown === displayText) actionOutputBatcher.enqueue("stdout", displayText);
+        else if (shown.trim()) actionOutputBatcher.enqueue("stdout", `${shown}\n\n`);
       }
 
       if (update.resultExitCode === undefined) {
@@ -1359,6 +1471,15 @@ export const runExternalAgentCommand = async (
         finalizeProviderShutdownRecovery(true);
         return;
       }
+      if (gracefulAbortError && !abortError) {
+        // The provider ended the interrupted turn on its own.
+        const error = gracefulAbortError;
+        void terminateExternalAgentProcessTree(child, "SIGTERM").then(
+          () => rejectOnce(error),
+          () => rejectOnce(error),
+        );
+        return;
+      }
       if (abortError) {
         if (process.platform === "win32") {
           void (abortTerminationPromise ?? Promise.resolve()).then(
@@ -1408,6 +1529,24 @@ export const runExternalAgentCommand = async (
       return;
     }
 
+    if (interactiveSession && !abortError) {
+      try {
+        interactiveSession.start();
+        if (controlServer) {
+          // Advertise what this session accepts (a Codex review cannot be steered).
+          interactive?.onControlEndpoint?.({
+            ...controlServer.endpoint,
+            capabilities: interactiveSession.live.snapshot().capabilities,
+          });
+        }
+      } catch (error) {
+        handleStdinError(
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
+      return;
+    }
+
     if (input !== undefined && !abortError) {
       let inputAccepted: boolean;
       try {
@@ -1428,11 +1567,16 @@ export const runExternalAgentCommand = async (
 
     child.stdin?.end();
   });
+  }
 };
 
 interface ExternalAgentCommand {
   args: string[];
   input?: string;
+  /** Turns the run into a session that owns stdin for the length of the turn. */
+  interactive?: InteractiveCommandSpec;
+  /** Extra environment for this provider run. */
+  env?: Record<string, string>;
   codexGoal?: CodexNativeGoalInput;
   runDetail: string;
   startMessage: string;
@@ -1453,6 +1597,12 @@ interface ExternalAgentCommandFactoryParams {
   providerFeatures: readonly string[];
   nativeSubagents: boolean;
   scopedWorker: boolean;
+  agentFeatures?: TaskAgentFeatures;
+  /** The run-scoped Copilot agent and MCP servers, for server-mode runs. */
+  copilotServerSession?: {
+    agent: { name: string; prompt: string };
+    mcpConfig: Record<string, unknown>;
+  };
 }
 
 type ExternalAgentDelegationMode = "full-access" | "read-only-artifact";
@@ -1585,6 +1735,102 @@ const createCodexArgs = (
   };
 };
 
+/**
+ * Ordinary Codex chat turns run on the app-server so the user can steer,
+ * interrupt and answer questions while the turn runs.
+ */
+const createCodexAppServerCommand = ({
+  config,
+  prompt,
+  imageInputs,
+  enrollmentArgs,
+  nativeSubagents,
+  agentFeatures,
+}: Pick<
+  ExternalAgentCommandFactoryParams,
+  | "config"
+  | "prompt"
+  | "imageInputs"
+  | "enrollmentArgs"
+  | "nativeSubagents"
+  | "agentFeatures"
+>): ExternalAgentCommand => {
+  const contextWindow = resolveContextWindowForProviderModel(
+    config.contextWindow ?? "highest",
+    config.provider,
+    config.model,
+  );
+  const effort = mapReasoningToCodexCliEffort(config.model, config.reasoning);
+  const fastMode =
+    agentFeatures?.fastMode === true &&
+    getDiscoveredModelCapabilities("codex-cli", config.model)?.fastMode === true;
+  return {
+    args: [
+      "app-server",
+      "--listen",
+      "stdio://",
+      "--config",
+      `model=${JSON.stringify(config.model)}`,
+      "--config",
+      "features.goals=false",
+      "--config",
+      "skills.bundled.enabled=false",
+      "--config",
+      `features.multi_agent=${nativeSubagents}`,
+      "--config",
+      `agents.enabled=${nativeSubagents}`,
+      ...(effort
+        ? ["--config", `model_reasoning_effort=${JSON.stringify(effort)}`]
+        : []),
+      ...(typeof contextWindow === "number"
+        ? ["--config", `model_context_window=${contextWindow}`]
+        : []),
+      ...enrollmentArgs,
+    ],
+    interactive: {
+      kind: "codex",
+      prompt,
+      imagePaths: (imageInputs ?? []).map((image) => image.path),
+      thread: {
+        model: config.model,
+        cwd: config.workspaceRoot,
+        // Spawned sub-agents need a thread Codex keeps for the run.
+        ephemeral: !nativeSubagents,
+        ...(fastMode ? { serviceTier: CODEX_FAST_SERVICE_TIER } : {}),
+      },
+      turn: {},
+      fastMode,
+      ...(agentFeatures?.reviewChanges
+        ? { review: { target: { type: "uncommittedChanges" } } }
+        : {}),
+    },
+    startMessage: "Starting Codex with full local access.",
+    runDetail:
+      "Running a Codex app-server turn with an isolated Machdoch-managed Codex home and native instructions/MCP, while approvals and sandbox are bypassed.",
+    successDetail: "The Codex turn finished.",
+    commandLines: [
+      "access: full local access",
+      "Codex home: isolated per run",
+      "live session: steering, questions, plan and diff",
+      ...(effort ? [`reasoning effort: ${effort}`] : []),
+      ...(typeof contextWindow === "number" ? [`context window: ${contextWindow}`] : []),
+      ...(fastMode ? ["service tier: fast"] : []),
+    ],
+    metadata: {
+      access: "dangerously-bypass-approvals-and-sandbox",
+      transport: "app-server",
+      userConfig: "isolated-machdoch-projection",
+      codexHome: "isolated",
+      sessionPersistence: "ephemeral",
+      bundledSkills: false,
+      requestedReasoning: config.reasoning,
+      effectiveReasoning: effort ?? "default",
+      contextWindow,
+      fastMode,
+    },
+  };
+};
+
 const createCodexCommand = ({
   config,
   prompt,
@@ -1595,6 +1841,7 @@ const createCodexCommand = ({
   nativeSubagents,
   scopedWorker,
   nativeGoal,
+  agentFeatures,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   if (nativeGoal) {
     if (scopedWorker || delegationMode !== "full-access")
@@ -1647,6 +1894,20 @@ const createCodexCommand = ({
       },
     };
   }
+  if (
+    !scopedWorker &&
+    delegationMode === "full-access" &&
+    providerFeatures.includes("app-server")
+  ) {
+    return createCodexAppServerCommand({
+      config,
+      prompt,
+      imageInputs,
+      enrollmentArgs,
+      nativeSubagents,
+      ...(agentFeatures ? { agentFeatures } : {}),
+    });
+  }
   if (!providerFeatures.includes("--json")) {
     throw new Error(
       "The selected Codex CLI cannot provide structured result delivery. Upgrade to a version that supports codex exec --json.",
@@ -1672,6 +1933,7 @@ const createClaudeCommand = ({
   scopedWorker,
   nativeGoal,
   providerVersion,
+  agentFeatures,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   if (nativeGoal) {
     const version = /\b(\d+)\.(\d+)\.(\d+)\b/u.exec(providerVersion ?? "");
@@ -1702,8 +1964,26 @@ const createClaudeCommand = ({
       "The selected Claude CLI cannot provide structured streaming results. Upgrade to a version that supports --output-format and --verbose.",
     );
   }
+  // Normal chat runs keep stdin open as a stream-json session so the user can
+  // steer, answer questions and stop background tasks while the turn runs.
+  const interactive =
+    !nativeGoal && !scopedWorker && providerFeatures.includes("--input-format");
+  const fastMode =
+    interactive &&
+    agentFeatures?.fastMode === true &&
+    getDiscoveredModelCapabilities("claude-cli", config.model)?.fastMode === true;
   const args = [
     "-p",
+    ...(interactive
+      ? [
+          "--input-format",
+          "stream-json",
+          // Echoes each steering message once the turn reads it.
+          "--replay-user-messages",
+          "--permission-prompt-tool",
+          "stdio",
+        ]
+      : []),
     "--output-format",
     "stream-json",
     "--verbose",
@@ -1719,6 +1999,7 @@ const createClaudeCommand = ({
     ...(nativeGoal
       ? enrollmentArgs.filter((argument) => argument !== "--bare")
       : enrollmentArgs),
+    ...(fastMode ? ["--settings", JSON.stringify({ fastMode: true })] : []),
   ];
   const maxTurns = getExecutorTurnLimit(config);
 
@@ -1739,6 +2020,17 @@ const createClaudeCommand = ({
   return {
     args,
     input: nativeGoal ? `/goal ${nativeGoal}` : prompt,
+    ...(interactive
+      ? {
+          interactive: { kind: "claude" as const, prompt, fastMode },
+          // Lets Claude keep a visible task list on the models that hide it.
+          env: {
+            CLAUDE_CODE_ENABLE_TODO_TOOLS: "1",
+            // Startup refusals (such as a missing shell on Windows) arrive as results.
+            CLAUDE_CODE_STARTUP_FAILURE_RESULTS: "1",
+          },
+        }
+      : {}),
     runDetail: scopedWorker
       ? "Running claude -p with only scoped Machdoch tools."
       : "Running claude -p with permissions skipped.",
@@ -1754,6 +2046,8 @@ const createClaudeCommand = ({
       ...(contextWindow === "long" ? ["context window: long"] : []),
       ...(maxTurns !== undefined ? [`max turns: ${maxTurns}`] : []),
       "structured output: stream-json",
+      ...(interactive ? ["live session: steering, questions, background tasks"] : []),
+      ...(fastMode ? ["fast mode: on"] : []),
     ],
     metadata: {
       access: "dangerously-skip-permissions",
@@ -1763,6 +2057,133 @@ const createClaudeCommand = ({
       ...(effort ? { effort } : {}),
       ...(maxTurns !== undefined ? { maxTurns } : {}),
       structuredOutput: "stream-json",
+      liveSession: interactive,
+      fastMode,
+    },
+  };
+};
+
+/** Reads back the run-scoped agent the enrollment wrote for `--agent`. */
+const readCopilotServerSession = async (
+  enrollment: MaterializedCliEnrollment,
+): Promise<ExternalAgentCommandFactoryParams["copilotServerSession"]> => {
+  const name = enrollment.args
+    .find((arg) => arg.startsWith("--agent="))
+    ?.slice("--agent=".length);
+  const file =
+    name &&
+    enrollment.manifest.renderedFiles.find(
+      (entry) =>
+        entry.role === "instruction-transport" &&
+        basename(entry.path) === `${name}.agent.md`,
+    );
+  if (!name || !file) return undefined;
+  const content = await readFile(file.path, "utf8").catch(() => undefined);
+  const prompt = content
+    ?.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/u, "")
+    .trim();
+  return prompt
+    ? { agent: { name, prompt }, mcpConfig: enrollment.mcpProjection.config }
+    : undefined;
+};
+
+/** Flags that only switch things off, so they are safe on the shared server. */
+const COPILOT_SERVER_ENROLLMENT_FLAGS = [
+  "--no-auto-update",
+  "--no-custom-instructions",
+  "--disable-builtin-mcps",
+  "--disable-mcp-server=",
+];
+
+/**
+ * Ordinary Copilot chat turns run on `copilot --server` so the user can
+ * steer, stop, answer questions and stop background tasks while it works.
+ * The server ignores `--agent` and `--additional-mcp-config`, so the
+ * run-scoped agent and MCP servers travel inline in `session.create`.
+ */
+const createCopilotServerCommand = ({
+  config,
+  prompt,
+  imageInputs,
+  enrollmentArgs,
+  secretEnvKeys,
+  nativeSubagents,
+  effort,
+  contextWindow,
+  session,
+}: Pick<
+  ExternalAgentCommandFactoryParams,
+  "config" | "prompt" | "imageInputs" | "enrollmentArgs" | "nativeSubagents"
+> & {
+  secretEnvKeys: readonly string[];
+  effort: string | undefined;
+  contextWindow: ReturnType<typeof resolveContextWindowForProviderModel>;
+  session: NonNullable<ExternalAgentCommandFactoryParams["copilotServerSession"]>;
+}): ExternalAgentCommand => {
+  const mcpServers = isRecord(session.mcpConfig.mcpServers)
+    ? session.mcpConfig.mcpServers
+    : {};
+  return {
+    args: [
+      "--server",
+      "--stdio",
+      ...new Set([
+        "--no-auto-update",
+        ...enrollmentArgs.filter((arg) =>
+          COPILOT_SERVER_ENROLLMENT_FLAGS.some((flag) =>
+            flag.endsWith("=") ? arg.startsWith(flag) : arg === flag,
+          ),
+        ),
+      ]),
+      `--secret-env-vars=${secretEnvKeys.join(",")}`,
+    ],
+    interactive: {
+      kind: "copilot",
+      prompt,
+      imagePaths: (imageInputs ?? []).map((image) => image.path),
+      skipCustomInstructions: enrollmentArgs.includes("--no-custom-instructions"),
+      session: {
+        model: config.model,
+        workingDirectory: config.workspaceRoot,
+        customAgents: [
+          {
+            name: session.agent.name,
+            description: "Invocation-scoped Machdoch instruction adapter",
+            prompt: session.agent.prompt,
+            infer: false,
+          },
+        ],
+        agent: session.agent.name,
+        mcpServers,
+        enableConfigDiscovery: false,
+        ...(nativeSubagents
+          ? {}
+          : { excludedTools: ["task", "read_agent", "write_agent", "list_agents"] }),
+        ...(effort ? { reasoningEffort: effort } : {}),
+        ...(contextWindow === "long" ? { contextTier: "long_context" } : {}),
+      },
+    },
+    runDetail:
+      "Running a Copilot server session with all tools, paths, and URLs approved.",
+    startMessage: "Starting Copilot with full local access.",
+    successDetail: "The Copilot turn finished.",
+    commandLines: [
+      "access: approve all",
+      "live session: steering, questions, background tasks",
+      `secret env redaction: ${secretEnvKeys.join(", ")}`,
+      `model argument: ${config.model}`,
+      ...(effort ? [`effort: ${effort}`] : []),
+      ...(contextWindow === "long" ? ["context window: long"] : []),
+    ],
+    metadata: {
+      access: "allow-all",
+      transport: "sdk-server",
+      liveSession: true,
+      secretEnvRedaction: secretEnvKeys.join(","),
+      reasoning: config.reasoning,
+      modelArgument: config.model,
+      contextWindow,
+      ...(effort ? { effort } : {}),
     },
   };
 };
@@ -1776,6 +2197,8 @@ const createCopilotCommand = ({
   providerFeatures,
   nativeSubagents,
   scopedWorker,
+  delegationMode,
+  copilotServerSession,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   const contextWindow = resolveContextWindowForProviderModel(
     config.contextWindow ?? "highest",
@@ -1848,6 +2271,25 @@ const createCopilotCommand = ({
   }
 
   args.push("--allow-all");
+
+  if (
+    copilotServerSession &&
+    !scopedWorker &&
+    delegationMode === "full-access" &&
+    providerFeatures.includes("--server")
+  ) {
+    return createCopilotServerCommand({
+      config,
+      prompt,
+      imageInputs,
+      enrollmentArgs,
+      secretEnvKeys,
+      nativeSubagents,
+      effort,
+      contextWindow,
+      session: copilotServerSession,
+    });
+  }
 
   return {
     args,
@@ -1965,6 +2407,13 @@ const executeExternalAgentCliTask = async (
             ),
           ]
         : []),
+      ...(params.conversationContext?.agentFeatures?.suggestFollowUps === true &&
+      !params.resultProtocol &&
+      !poseChat &&
+      params.scopedWorkerToolDefinitions === undefined &&
+      delegationMode === "full-access"
+        ? [FOLLOW_UP_SUGGESTION_INSTRUCTIONS]
+        : []),
       ...(poseChat
         ? [
             "This is a Pose chat. Use the Machdoch MCP pose_scene_get and pose_scene_replace or pose_person_* and pose_joint_set tools to create or edit the OpenPose skeleton. Make the visible joints match the requested action for every figure; use the climbing base pose for climbers and vary their limbs and placement. The saved pose scene is the deliverable. Do not use image generation, shell commands, or file edits for this task. Do not report success until a pose tool has saved the scene. Describe only the saved skeleton, never a final image.",
@@ -2065,6 +2514,12 @@ const executeExternalAgentCliTask = async (
   };
   let command: ReturnType<typeof createExternalAgentCommand>;
   let externalAssembledRequestDigest: string;
+  const copilotServerSession =
+    provider === "copilot-cli" &&
+    params.scopedWorkerToolDefinitions === undefined &&
+    enrollment.manifest.providerFeatures.includes("--server")
+      ? await readCopilotServerSession(enrollment)
+      : undefined;
   try {
     const prompt = createExternalAgentPrompt(
       params.task,
@@ -2088,6 +2543,10 @@ const executeExternalAgentCliTask = async (
         ? { providerVersion: enrollment.manifest.providerVersion }
         : {}),
       scopedWorker: params.scopedWorkerToolDefinitions !== undefined,
+      ...(params.conversationContext?.agentFeatures
+        ? { agentFeatures: params.conversationContext.agentFeatures }
+        : {}),
+      ...(copilotServerSession ? { copilotServerSession } : {}),
     });
     if (process.platform === "win32") {
       assertWindowsCommandLineLength(
@@ -2212,6 +2671,39 @@ const executeExternalAgentCliTask = async (
   let copilotTelemetry:
     | Awaited<ReturnType<typeof readCopilotCliTelemetry>>
     | undefined;
+  const interactiveSpec = command.interactive;
+  const publishLiveProgress = (
+    extras: Pick<TaskExecutionProgress, "agentLive" | "agentControl">,
+  ): void => {
+    void emitAgentProgress(
+      params.task,
+      params.config,
+      "executing",
+      command.startMessage,
+      loopState,
+      params.onStateChange,
+      undefined,
+      extras,
+    ).catch(() => undefined);
+  };
+  let lastLive: AgentLiveState | undefined;
+  const attended = params.conversationContext?.agentFeatures?.liveControl === true;
+  const interactiveOptions: InteractiveRunOptions | undefined = interactiveSpec
+    ? {
+        create: (io) =>
+          createInteractiveAgentSession(interactiveSpec, io, (agentLive) => {
+            lastLive = agentLive;
+            publishLiveProgress({ agentLive });
+          }, {
+            model: executionConfig.model,
+            captureEvidence: params.captureGoalEvidence === true,
+            unattended: !attended,
+          }),
+        ...(attended
+          ? { onControlEndpoint: (agentControl: AgentControlEndpoint | null) => publishLiveProgress({ agentControl }) }
+          : {}),
+      }
+    : undefined;
   try {
     result = await runExternalAgentCommand(
       binary.executable,
@@ -2219,11 +2711,12 @@ const executeExternalAgentCliTask = async (
       command.input,
       executionConfig,
       provider,
-      externalAgentEnv,
+      command.env ? { ...externalAgentEnv, ...command.env } : externalAgentEnv,
       params.signal,
       params.onActionOutput,
       params.captureGoalEvidence === true,
       command.codexGoal,
+      interactiveOptions,
     );
     if (copilotTelemetryPath) {
       copilotTelemetry = await readCopilotCliTelemetry(copilotTelemetryPath);
@@ -2612,9 +3105,36 @@ const executeExternalAgentCliTask = async (
     );
   }
 
+  const followUps = params.resultProtocol
+    ? { text: stdout, suggestions: [] as string[] }
+    : extractFollowUpSuggestions(stdout);
+  const suggestions = mergeFollowUpSuggestions(
+    followUps.suggestions,
+    lastLive?.suggestions ?? [],
+  );
+  if (suggestions.length > 0) {
+    // Suggestions travel with the run's live state, so every view of the
+    // conversation (desktop and machdoch.cloud) reads them from one place.
+    await emitAgentProgress(
+      params.task,
+      params.config,
+      "executing",
+      command.startMessage,
+      loopState,
+      params.onStateChange,
+      undefined,
+      {
+        agentLive: {
+          ...(lastLive ?? { provider, transport: "exec" as const }),
+          capabilities: [],
+          suggestions,
+        },
+      },
+    ).catch(() => undefined);
+  }
   const answer = params.resultProtocol
     ? protocolResult?.answer || `${providerLabel} completed.`
-    : stdout ||
+    : followUps.text ||
       `${providerLabel} completed successfully but did not print a final message.`;
 
   await emitAgentProgress(

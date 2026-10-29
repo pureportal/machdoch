@@ -111,6 +111,19 @@ export const parseConversationContext = (
         typeof value.workspace.root !== "string"))
   )
     throw new CliUsageError("Invalid conversation workspace.");
+  if (value.agentFeatures !== undefined) {
+    if (!isRecord(value.agentFeatures))
+      throw new CliUsageError(
+        "Invalid conversation context: agentFeatures must be an object.",
+      );
+    for (const key of ["fastMode", "suggestFollowUps", "reviewChanges", "liveControl"]) {
+      const feature = value.agentFeatures[key];
+      if (feature !== undefined && typeof feature !== "boolean")
+        throw new CliUsageError(
+          `Invalid conversation context: agentFeatures.${key} must be a boolean.`,
+        );
+    }
+  }
   for (const key of ["uiControl", "workspaceRun", "modelCapabilities"]) {
     if (value[key] !== undefined && !isRecord(value[key]))
       throw new CliUsageError(

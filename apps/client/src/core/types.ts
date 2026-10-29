@@ -1,6 +1,8 @@
 import type { AgentModelImageInput, AgentModelStructuredOutput, AgentModelAdapter, ParallelAgentMode } from "@machdoch/model-runtime/types";
 import type { TaskExecutionFileChanges } from "@machdoch/fleet-protocol/task-file-changes";
 import type {FinalAnswerStreamSnapshot} from "@machdoch/fleet-protocol/task-thinking";
+import type { AgentControlEndpoint, AgentLiveState } from "@machdoch/fleet-protocol/task-thinking";
+export type { AgentControlEndpoint, AgentLiveState } from "@machdoch/fleet-protocol/task-thinking";
 export type {FinalAnswerStreamSnapshot} from "@machdoch/fleet-protocol/task-thinking";
 export type {
   TaskExecutionChangedLineRange,
@@ -168,10 +170,26 @@ export interface ConversationMemoryEntry {
   updatedAt: number;
 }
 
+export interface TaskAgentFeatures {
+  /** Ask the provider for its fast service tier when the model offers one. */
+  fastMode?: boolean;
+  /** Ask the agent for short follow-up prompts to show as suggestions. */
+  suggestFollowUps?: boolean;
+  /** Review the workspace's uncommitted changes (natively where the CLI can). */
+  reviewChanges?: boolean;
+  /**
+   * The host shows the run's live state and can steer it, answer its
+   * questions and stop its tasks. Without it the run is unattended.
+   */
+  liveControl?: boolean;
+}
+
 export interface TaskConversationContext {
   contextWindow?: import("./runtime-contract.generated.js").ContextWindow;
   /** What the provider CLI reported for the selected model when the desktop host probed it. */
   modelCapabilities?: import("@machdoch/model-runtime/model-capabilities").DiscoveredModelCapabilities;
+  /** Per-message provider features chosen in the composer. */
+  agentFeatures?: TaskAgentFeatures;
   sessionId?: string;
   adaptiveControllerOverride?: boolean | null;
   parallelAgentMode?: ParallelAgentMode;
@@ -432,6 +450,10 @@ export interface TaskExecutionProgress {
   actionOutput?: TaskActionOutput;
   timelineEvent?: TaskExecutionTimelineEvent;
   timeout?: TaskExecutionTimeoutState;
+  /** Full snapshot of what the provider CLI reported live for this run. */
+  agentLive?: AgentLiveState;
+  /** Where the host can send input into the running turn; never persisted. */
+  agentControl?: AgentControlEndpoint | null;
 }
 
 export type TaskExecutionProgressHandler = (

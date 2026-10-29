@@ -9,6 +9,7 @@ import {
   type ExternalAgentCliOutputDecoder,
   type ExternalAgentCliOutputUpdate,
 } from "./external-agent-cli-output.js";
+import { UNATTENDED_ANSWER } from "./agent-interactive-session.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -37,6 +38,39 @@ export interface CodexNativeGoalInput {
   prompt: string;
   imagePaths: string[];
 }
+
+
+/** Replies to a Codex server request without stopping an unattended goal. */
+export const answerUnattendedGoalRequest = (
+  method: string,
+  params: Record<string, unknown>,
+): Record<string, unknown> => {
+  switch (method) {
+    case "item/tool/requestUserInput": {
+      const questions = Array.isArray(params.questions) ? params.questions.filter(isRecord) : [];
+      return {
+        result: {
+          answers: Object.fromEntries(
+            questions.map((question, index) => [
+              typeof question.id === "string" ? question.id : `q${index + 1}`,
+              { answers: [UNATTENDED_ANSWER] },
+            ]),
+          ),
+        },
+      };
+    }
+    // The goal already runs with full access; approvals that still arrive are accepted.
+    case "item/commandExecution/requestApproval":
+    case "item/fileChange/requestApproval":
+    case "execCommandApproval":
+    case "applyPatchApproval":
+      return { result: { decision: "accept" } };
+    case "mcpServer/elicitation/request":
+      return { result: { action: "decline", content: null, _meta: null } };
+    default:
+      return { error: { code: -32601, message: `This goal run does not handle ${method || "this request"}.` } };
+  }
+};
 
 export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
   private readonly output: CodexCliOutputDecoder;
@@ -176,12 +210,11 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
     )
       return empty;
     if (typeof event.id === "number" || typeof event.id === "string") {
+      // Goals run unattended: answer what Codex can act on and keep going.
       this.write(
-        `${JSON.stringify({ id: event.id, error: { code: -32601, message: "This goal run cannot answer interactive requests." } })}\n`,
+        `${JSON.stringify({ id: event.id, ...answerUnattendedGoalRequest(String(event.method ?? ""), params) })}\n`,
       );
-      return this.fail(
-        "Codex requested user input. Resume after resolving it.",
-      );
+      return empty;
     }
     if (event.method === "thread/goal/updated" && isRecord(params.goal)) {
       if (!isGoalStatus(params.goal.status))

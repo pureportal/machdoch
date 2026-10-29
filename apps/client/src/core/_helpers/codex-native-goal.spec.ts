@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadRuntimeConfig } from "../config.js";
-import { CodexNativeGoalDecoder } from "./codex-native-goal.js";
+import { CodexNativeGoalDecoder, answerUnattendedGoalRequest } from "./codex-native-goal.js";
 import type { ExternalAgentCliOutputUpdate } from "./external-agent-cli-output.js";
 
 let decoder: CodexNativeGoalDecoder;
@@ -443,5 +443,25 @@ describe("native Codex goals", () => {
     expect(decoder.getFailureMessage()).toContain("invalid goal protocol");
     expect(decoder.finish().resultExitCode).toBeUndefined();
     expect(close).toHaveBeenCalledOnce();
+  });
+});
+
+describe("answerUnattendedGoalRequest", () => {
+  it("keeps an unattended goal going instead of failing on requests", () => {
+    expect(
+      answerUnattendedGoalRequest("item/tool/requestUserInput", {
+        questions: [{ id: "lang", question: "Which language?" }, { question: "Tests?" }],
+      }),
+    ).toEqual({
+      result: {
+        answers: {
+          lang: { answers: [expect.stringContaining("Choose the most reasonable option")] },
+          q2: { answers: [expect.stringContaining("Choose the most reasonable option")] },
+        },
+      },
+    });
+    expect(answerUnattendedGoalRequest("item/commandExecution/requestApproval", {})).toEqual({ result: { decision: "accept" } });
+    expect(answerUnattendedGoalRequest("mcpServer/elicitation/request", {})).toMatchObject({ result: { action: "decline" } });
+    expect(answerUnattendedGoalRequest("account/chatgptAuthTokens/refresh", {})).toMatchObject({ error: { code: -32601 } });
   });
 });

@@ -169,12 +169,13 @@ const captureCommand = async (
 const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
   const candidates =
     provider === "codex-cli"
-      ? ["--config", "--json", "developer_instructions", "mcp_servers"]
+      ? ["--config", "--json", "developer_instructions", "mcp_servers", "app-server"]
       : provider === "claude-cli"
         ? [
             "--append-system-prompt-file",
             "--append-subagent-system-prompt-file",
             "--effort",
+            "--input-format",
             "--mcp-config",
             "--output-format",
             "--strict-mcp-config",
@@ -239,6 +240,20 @@ const detectUnlistedClaudeFileFlags = async (
 // Codex features Machdoch switches on per run; `codex features list` shows
 // whether this build still has them.
 const CODEX_PROBED_FEATURES = ["goals", "multi_agent"] as const;
+
+// Copilot's SDK server mode is not listed in `--help`. With stdin closed a
+// supporting build starts and exits cleanly; older builds reject the flag.
+const detectCopilotServerMode = async (
+  executable: string,
+  advertised: readonly string[],
+): Promise<string[]> => {
+  const result = await captureCommand(executable, [
+    "--server",
+    "--stdio",
+    ...(advertised.includes("--no-auto-update") ? ["--no-auto-update"] : []),
+  ]);
+  return result.exitCode === 0 ? ["--server"] : [];
+};
 
 const detectCodexFeatures = async (executable: string): Promise<string[]> => {
   const result = await captureCommand(executable, ["features", "list"]);
@@ -365,7 +380,10 @@ export const probeProviderCli = async (
             ]
           : provider === "codex-cli"
             ? [...advertisedFeatures, ...(await detectCodexFeatures(executable))]
-            : advertisedFeatures;
+            : [
+                ...advertisedFeatures,
+                ...(await detectCopilotServerMode(executable, advertisedFeatures)),
+              ];
     const version =
       versionResult.exitCode === 0
         ? versionResult.output

@@ -1,3 +1,4 @@
+import { linkRunCancellation } from "../_helpers/run-cancellation.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type {
   ConversationHistoryEntry,
@@ -46,6 +47,7 @@ export const executeGoalRun = async (
   const signal = options.signal
     ? AbortSignal.any([options.signal, abortController.signal])
     : abortController.signal;
+  linkRunCancellation(signal, options.signal);
   let pendingPoll: Promise<void> | undefined;
   let pollFailure: Error | undefined;
   let limitReason: string | undefined;

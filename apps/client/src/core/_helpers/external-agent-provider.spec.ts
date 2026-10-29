@@ -147,8 +147,10 @@ vi.mock("./streaming-command.js", () => ({
 
 vi.mock("node:child_process", async (importOriginal) => ({
   ...(await importOriginal<typeof import("node:child_process")>()),
+  // These fixtures cover the one-shot CLI paths, so the probe sees a Copilot
+  // build without server mode.
   spawnSync: vi.fn((_executable: string, args: string[]) => ({
-    status: 0,
+    status: args.includes("--server") ? 2 : 0,
     stdout: args.includes("--help")
       ? [
           "--config",

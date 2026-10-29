@@ -53,6 +53,22 @@ import type {
 import type { RuntimeConfig } from "./runtime-contract.generated.js";
 import { isContextWindow } from "./runtime-contract.generated.js";
 import { rememberDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
+import { registerRunCancellation } from "./_helpers/run-cancellation.js";
+
+/** The runtime process has no catalog of its own; use what the host discovered. */
+const rememberConversationModelCapabilities = (
+  config: RuntimeConfig,
+  options: TaskExecutionOptions,
+): void => {
+  const modelCapabilities = options.conversationContext?.modelCapabilities;
+  if (modelCapabilities && config.provider !== "unconfigured") {
+    rememberDiscoveredModelCapabilities(
+      config.provider,
+      config.model,
+      modelCapabilities,
+    );
+  }
+};
 
 const providerIsConfigured = (config: RuntimeConfig): boolean => {
   return config.providerAvailability.some(
@@ -735,6 +751,9 @@ export const createTaskExecutionController = (
         abortController.signal,
         resolveTaskExecutionTimeouts(options),
       );
+      // A user stop sent to a provider's control endpoint cancels this run.
+      registerRunCancellation(managedTimeout.signal, controller.cancel);
+      rememberConversationModelCapabilities(config, options);
 
       let fileChangeCapture: Awaited<
         ReturnType<typeof startTaskFileChangeCapture>
@@ -798,14 +817,7 @@ const executeTaskWithoutWorkspacePresence = async (
     options.signal,
     resolveTaskExecutionTimeouts(options),
   );
-  const modelCapabilities = options.conversationContext?.modelCapabilities;
-  if (modelCapabilities && config.provider !== "unconfigured") {
-    rememberDiscoveredModelCapabilities(
-      config.provider,
-      config.model,
-      modelCapabilities,
-    );
-  }
+  rememberConversationModelCapabilities(config, options);
 
   try {
     return await runWithTaskModelUsageRecording(async () => {
