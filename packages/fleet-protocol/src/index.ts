@@ -270,9 +270,36 @@ export const maximumGatewayMessageBytes = 4 * 1024 * 1024;
 export const maximumManagedSettingsDeliveryBytes = 18 * 1024 * 1024;
 export const productCapability = "product.v4";
 export const productSnapshotVersion = 5;
-export const managedSettingsSchemaVersion = 2;
+export const managedSettingsSchemaVersion = 3;
+export const legacyManagedSettingsSchemaVersion = 2;
 export const maximumManagedSettingsCollectionEntries = 128;
 export const maximumManagedSettingsSecrets = 128;
+export const maximumManagedSettingsLayers = 8;
+export const maximumManagedMcpServers = 64;
+export const managedSettingsPolicyFields = [
+  "model",
+  "mode",
+  "reasoning",
+  "webSearchProvider",
+  "theme",
+  "density",
+  "accent",
+  "infinite",
+  "executorTurns",
+  "autopilotExecutorIterations",
+] as const;
+export type ManagedSettingsPolicyField =
+  (typeof managedSettingsPolicyFields)[number];
+export const managedSecretIdPattern = /^[a-z][a-z0-9_-]{0,63}$/;
+export const managedMcpSecretIdPattern = /^mcp_[a-z0-9_-]{1,60}$/;
+/** Matches one `{{secret:<id>}}` placeholder; capture group 1 is the id. */
+export const managedSecretPlaceholderPattern =
+  /\{\{secret:([a-z][a-z0-9_-]{0,63})\}\}/u;
+
+export const isManagedSettingsPolicyKey = (value: string): boolean =>
+  (managedSettingsPolicyFields as readonly string[]).includes(value) ||
+  (value.startsWith("secret:") &&
+    managedSecretIdPattern.test(value.slice("secret:".length)));
 
 const serializedJsonBytes = (value: unknown): number =>
   new TextEncoder().encode(JSON.stringify(value)).byteLength;
@@ -331,6 +358,36 @@ export interface FleetManagedSettingsDocument {
     uiControlEnabled: boolean | null;
   }>;
   prompts: FleetManagedPrompt[];
+  /**
+   * Keys whose managed value always wins. Absent in documents written before
+   * schema version 3, which means every configured value is enforced.
+   */
+  policy?: FleetManagedSettingsPolicy | undefined;
+  mcpServers?: FleetManagedMcpServer[] | undefined;
+}
+
+export interface FleetManagedSettingsPolicy {
+  /** Entries are {@link ManagedSettingsPolicyField} values or `secret:<id>`. */
+  enforced: string[];
+}
+
+export interface FleetManagedMcpServer {
+  id: string;
+  title: string | null;
+  enabled: boolean;
+  /** Values may contain `{{secret:<id>}}` placeholders for profile secrets. */
+  transport:
+    | {
+        type: "stdio";
+        command: string;
+        args: string[];
+        env: Record<string, string>;
+      }
+    | {
+        type: "streamable-http" | "sse";
+        url: string;
+        headers: Record<string, string>;
+      };
 }
 
 export interface FleetManagedPrompt {
@@ -339,9 +396,18 @@ export interface FleetManagedPrompt {
   content: string;
 }
 
+export interface FleetManagedSettingsLayer {
+  profileId: string;
+  name: string;
+  revision: number;
+}
+
 export interface FleetManagedSettingsDelivery {
-  schemaVersion: typeof managedSettingsSchemaVersion;
+  schemaVersion:
+    | typeof managedSettingsSchemaVersion
+    | typeof legacyManagedSettingsSchemaVersion;
   managerId: string;
+  /** Effective settings; with several layers this is their composition. */
   profile: {
     profileId: string;
     name: string;
@@ -349,6 +415,13 @@ export interface FleetManagedSettingsDelivery {
     document: FleetManagedSettingsDocument;
     secrets: Record<string, string>;
   } | null;
+  /** Assigned profiles, highest priority first (schema version 3). */
+  layers?: FleetManagedSettingsLayer[] | undefined;
+}
+
+export interface FleetManagedSettingsLayerIdentity {
+  profileId: string;
+  revision: number;
 }
 
 export type FleetManagedSettingsSyncReport =
@@ -357,6 +430,8 @@ export type FleetManagedSettingsSyncReport =
       status: "applied";
       profileId: string | null;
       revision: number | null;
+      layers?: FleetManagedSettingsLayerIdentity[] | undefined;
+      warnings?: string[] | undefined;
     }
   | {
       managerId: string;
@@ -364,15 +439,29 @@ export type FleetManagedSettingsSyncReport =
       profileId: string | null;
       revision: number | null;
       error: string;
+      layers?: FleetManagedSettingsLayerIdentity[] | undefined;
     };
 
 export const createFleetManagedSettingsEtag = (delivery: {
+  schemaVersion?: number | undefined;
   managerId: string;
   profile: { profileId: string; revision: number } | null;
-}): string =>
-  delivery.profile
+  layers?: FleetManagedSettingsLayerIdentity[] | undefined;
+}): string => {
+  if ((delivery.schemaVersion ?? legacyManagedSettingsSchemaVersion) >= 3) {
+    const layers = delivery.profile
+      ? delivery.layers?.length
+        ? delivery.layers
+        : [delivery.profile]
+      : [];
+    return layers.length
+      ? `"managed-settings.v3.${delivery.managerId}.${layers.map((layer) => `${layer.profileId}.${layer.revision}`).join("+")}"`
+      : `"managed-settings.v3.${delivery.managerId}.unassigned"`;
+  }
+  return delivery.profile
     ? `"managed-settings.${delivery.managerId}.${delivery.profile.profileId}.${delivery.profile.revision}"`
     : `"managed-settings.${delivery.managerId}.unassigned"`;
+};
 
 const identifier = z.string().trim().min(1).max(240);
 const commandId = z.string().trim().min(1).max(128).optional();
@@ -617,6 +706,74 @@ const managedSettingsPromptSchema = z.strictObject({
   content: managedSettingsText.min(1),
 });
 
+const managedSettingsPolicySchema = z
+  .strictObject({
+    enforced: z
+      .array(
+        z.string().refine(isManagedSettingsPolicyKey, {
+          message: "Managed settings policy key is invalid.",
+        }),
+      )
+      .max(managedSettingsPolicyFields.length + maximumManagedSettingsSecrets),
+  })
+  .refine((policy) => new Set(policy.enforced).size === policy.enforced.length, {
+    message: "Managed settings policy keys must be unique.",
+  });
+
+const managedMcpValue = z
+  .string()
+  .max(8_192)
+  .refine((value) => !value.includes("\0"));
+const managedMcpEntries = (key: z.ZodString) =>
+  z
+    .record(key, managedMcpValue)
+    .refine((entries) => Object.keys(entries).length <= 64, {
+      message: "Managed MCP servers support at most 64 entries per map.",
+    });
+const managedMcpUrl = z
+  .string()
+  .trim()
+  .min(1)
+  .max(4_000)
+  .refine(
+    (value) => {
+      if (/\p{Cc}/u.test(value)) return false;
+      try {
+        const url = new URL(value);
+        return url.protocol === "https:" || url.protocol === "http:";
+      } catch {
+        return false;
+      }
+    },
+    { message: "Managed MCP server URL is invalid." },
+  );
+
+export const managedMcpServerSchema = z.strictObject({
+  id: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/),
+  title: managedSettingsNullableText,
+  enabled: z.boolean(),
+  transport: z.discriminatedUnion("type", [
+    z.strictObject({
+      type: z.literal("stdio"),
+      command: z
+        .string()
+        .trim()
+        .min(1)
+        .max(4_000)
+        .refine((value) => !/\p{Cc}/u.test(value)),
+      args: z.array(managedMcpValue).max(128),
+      env: managedMcpEntries(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/)),
+    }),
+    z.strictObject({
+      type: z.enum(["streamable-http", "sse"]),
+      url: managedMcpUrl,
+      headers: managedMcpEntries(
+        z.string().regex(/^[A-Za-z0-9!#$%&'*+.^_`|~-]{1,128}$/),
+      ),
+    }),
+  ]),
+});
+
 export const managedSettingsDocumentSchema = z
   .strictObject({
     defaults: managedSettingsDefaultsSchema,
@@ -639,8 +796,20 @@ export const managedSettingsDocumentSchema = z
     prompts: z
       .array(managedSettingsPromptSchema)
       .max(maximumManagedSettingsCollectionEntries),
+    policy: managedSettingsPolicySchema.optional(),
+    mcpServers: z
+      .array(managedMcpServerSchema)
+      .max(maximumManagedMcpServers)
+      .optional(),
   })
   .superRefine((document, context) => {
+    const mcpIds = (document.mcpServers ?? []).map((server) => server.id);
+    if (new Set(mcpIds).size !== mcpIds.length) {
+      context.addIssue({
+        code: "custom",
+        message: "MCP server ids must be unique.",
+      });
+    }
     const ensureUnique = (
       values: Array<{ id: string; name: string }>,
       label: string,
@@ -676,8 +845,22 @@ export const managedSettingsDocumentSchema = z
 
 export const fleetManagedSettingsDeliverySchema = z
   .strictObject({
-    schemaVersion: z.literal(managedSettingsSchemaVersion),
+    schemaVersion: z.union([
+      z.literal(managedSettingsSchemaVersion),
+      z.literal(legacyManagedSettingsSchemaVersion),
+    ]),
     managerId: managedSettingsIdentifier("manager"),
+    layers: z
+      .array(
+        z.strictObject({
+          profileId: managedSettingsIdentifier("profile"),
+          name: managedSettingsName.max(120),
+          revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+        }),
+      )
+      .min(1)
+      .max(maximumManagedSettingsLayers)
+      .optional(),
     profile: z
       .strictObject({
         profileId: managedSettingsIdentifier("profile"),
@@ -706,6 +889,31 @@ export const fleetManagedSettingsDeliverySchema = z
       .nullable(),
   })
   .superRefine((delivery, context) => {
+    if (delivery.schemaVersion === legacyManagedSettingsSchemaVersion) {
+      const document = delivery.profile?.document;
+      if (
+        delivery.layers !== undefined ||
+        document?.policy !== undefined ||
+        document?.mcpServers !== undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Managed settings fields require schema version 3.",
+        });
+      }
+    }
+    if (
+      delivery.layers !== undefined &&
+      (delivery.profile === null ||
+        delivery.layers[0]?.profileId !== delivery.profile.profileId ||
+        new Set(delivery.layers.map((layer) => layer.profileId)).size !==
+          delivery.layers.length)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Managed settings layers are inconsistent.",
+      });
+    }
     if (serializedJsonBytes(delivery) > maximumManagedSettingsDeliveryBytes) {
       context.addIssue({
         code: "custom",

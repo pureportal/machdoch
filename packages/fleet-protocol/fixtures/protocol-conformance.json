@@ -4885,6 +4885,1175 @@
       }
     },
     {
+      "id": "settings/v3-complete",
+      "target": "managed-settings",
+      "accepted": true,
+      "payload": {
+        "schemaVersion": 3,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ],
+            "policy": {
+              "enforced": [
+                "model",
+                "secret:openai"
+              ]
+            },
+            "mcpServers": [
+              {
+                "id": "github",
+                "title": "GitHub",
+                "enabled": true,
+                "transport": {
+                  "type": "stdio",
+                  "command": "npx",
+                  "args": [
+                    "-y",
+                    "server-github"
+                  ],
+                  "env": {
+                    "GITHUB_TOKEN": "{{secret:mcp_github}}"
+                  }
+                }
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        },
+        "layers": [
+          {
+            "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+            "name": "Engineering",
+            "revision": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings/v3-without-optional-fields",
+      "target": "managed-settings",
+      "accepted": true,
+      "payload": {
+        "schemaVersion": 3,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/v2-with-policy",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 2,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ],
+            "policy": {
+              "enforced": []
+            }
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        }
+      }
+    },
+    {
+      "id": "settings/v3-unknown-policy-key",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 3,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ],
+            "policy": {
+              "enforced": [
+                "provider"
+              ]
+            },
+            "mcpServers": [
+              {
+                "id": "github",
+                "title": "GitHub",
+                "enabled": true,
+                "transport": {
+                  "type": "stdio",
+                  "command": "npx",
+                  "args": [
+                    "-y",
+                    "server-github"
+                  ],
+                  "env": {
+                    "GITHUB_TOKEN": "{{secret:mcp_github}}"
+                  }
+                }
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        },
+        "layers": [
+          {
+            "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+            "name": "Engineering",
+            "revision": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings/v3-duplicate-policy-key",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 3,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ],
+            "policy": {
+              "enforced": [
+                "model",
+                "model"
+              ]
+            },
+            "mcpServers": [
+              {
+                "id": "github",
+                "title": "GitHub",
+                "enabled": true,
+                "transport": {
+                  "type": "stdio",
+                  "command": "npx",
+                  "args": [
+                    "-y",
+                    "server-github"
+                  ],
+                  "env": {
+                    "GITHUB_TOKEN": "{{secret:mcp_github}}"
+                  }
+                }
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        },
+        "layers": [
+          {
+            "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+            "name": "Engineering",
+            "revision": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings/v3-layer-mismatch",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 3,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ],
+            "policy": {
+              "enforced": [
+                "model",
+                "secret:openai"
+              ]
+            },
+            "mcpServers": [
+              {
+                "id": "github",
+                "title": "GitHub",
+                "enabled": true,
+                "transport": {
+                  "type": "stdio",
+                  "command": "npx",
+                  "args": [
+                    "-y",
+                    "server-github"
+                  ],
+                  "env": {
+                    "GITHUB_TOKEN": "{{secret:mcp_github}}"
+                  }
+                }
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        },
+        "layers": [
+          {
+            "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY4",
+            "name": "Engineering",
+            "revision": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings/v3-mcp-invalid-id",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 3,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ],
+            "policy": {
+              "enforced": [
+                "model",
+                "secret:openai"
+              ]
+            },
+            "mcpServers": [
+              {
+                "id": "GitHub",
+                "title": "GitHub",
+                "enabled": true,
+                "transport": {
+                  "type": "stdio",
+                  "command": "npx",
+                  "args": [
+                    "-y",
+                    "server-github"
+                  ],
+                  "env": {
+                    "GITHUB_TOKEN": "{{secret:mcp_github}}"
+                  }
+                }
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        },
+        "layers": [
+          {
+            "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+            "name": "Engineering",
+            "revision": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings/v3-mcp-unknown-transport",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 3,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ],
+            "policy": {
+              "enforced": [
+                "model",
+                "secret:openai"
+              ]
+            },
+            "mcpServers": [
+              {
+                "id": "github",
+                "title": "GitHub",
+                "enabled": true,
+                "transport": {
+                  "type": "websocket",
+                  "url": "wss://x.test",
+                  "headers": {}
+                }
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        },
+        "layers": [
+          {
+            "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+            "name": "Engineering",
+            "revision": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings/v3-mcp-file-url",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 3,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ],
+            "policy": {
+              "enforced": [
+                "model",
+                "secret:openai"
+              ]
+            },
+            "mcpServers": [
+              {
+                "id": "github",
+                "title": "GitHub",
+                "enabled": true,
+                "transport": {
+                  "type": "sse",
+                  "url": "file:///etc/passwd",
+                  "headers": {}
+                }
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        },
+        "layers": [
+          {
+            "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+            "name": "Engineering",
+            "revision": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings/v3-mcp-http",
+      "target": "managed-settings",
+      "accepted": true,
+      "payload": {
+        "schemaVersion": 3,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ],
+            "policy": {
+              "enforced": [
+                "model",
+                "secret:openai"
+              ]
+            },
+            "mcpServers": [
+              {
+                "id": "github",
+                "title": "GitHub",
+                "enabled": true,
+                "transport": {
+                  "type": "streamable-http",
+                  "url": "https://mcp.example.test/v1",
+                  "headers": {
+                    "Authorization": "Bearer {{secret:mcp_api}}"
+                  }
+                }
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        },
+        "layers": [
+          {
+            "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+            "name": "Engineering",
+            "revision": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "settings/v3-mcp-extra-field",
+      "target": "managed-settings",
+      "accepted": false,
+      "payload": {
+        "schemaVersion": 3,
+        "managerId": "manager_MDEyMzQ1Njc4OTAxMjM0NTY3",
+        "profile": {
+          "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+          "name": "Engineering",
+          "revision": 1,
+          "document": {
+            "defaults": {
+              "provider": "openai",
+              "model": "gpt-5.6",
+              "mode": "machdoch",
+              "reasoning": "high",
+              "webSearchProvider": "tavily",
+              "theme": "dark",
+              "density": "compact",
+              "accent": "sky"
+            },
+            "agentLimits": {
+              "infinite": false,
+              "executorTurns": 20,
+              "autopilotExecutorIterations": 10
+            },
+            "instructions": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174000",
+                "name": "Review",
+                "body": "Review carefully.",
+                "enabled": true,
+                "global": true,
+                "tags": [
+                  "review"
+                ]
+              }
+            ],
+            "contextPacks": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174001",
+                "name": "Change review",
+                "instructions": "Review carefully.",
+                "prompt": "Review this change.",
+                "provider": "openai",
+                "model": "gpt-5.6",
+                "mode": "ask",
+                "reasoning": "medium",
+                "variables": [
+                  {
+                    "name": "target",
+                    "defaultValue": "src"
+                  }
+                ],
+                "triggerPhrases": [
+                  "review"
+                ],
+                "pathPatterns": [
+                  "src/**"
+                ],
+                "promptEnhancementMode": "web-search",
+                "interviewEnabled": true,
+                "sessionMemoryEnabled": false,
+                "useGlobalMemory": true,
+                "uiControlEnabled": false
+              }
+            ],
+            "prompts": [
+              {
+                "id": "123e4567-e89b-42d3-a456-426614174002",
+                "relativePath": "review.prompt.md",
+                "content": "Review this change."
+              }
+            ],
+            "policy": {
+              "enforced": [
+                "model",
+                "secret:openai"
+              ]
+            },
+            "mcpServers": [
+              {
+                "id": "github",
+                "title": "GitHub",
+                "enabled": true,
+                "transport": {
+                  "type": "stdio",
+                  "command": "npx",
+                  "args": [
+                    "-y",
+                    "server-github"
+                  ],
+                  "env": {
+                    "GITHUB_TOKEN": "{{secret:mcp_github}}"
+                  },
+                  "cwd": "/tmp"
+                }
+              }
+            ]
+          },
+          "secrets": {
+            "openai": "secret"
+          }
+        },
+        "layers": [
+          {
+            "profileId": "profile_MDEyMzQ1Njc4OTAxMjM0NTY3",
+            "name": "Engineering",
+            "revision": 1
+          }
+        ]
+      }
+    },
+
+    {
       "id": "settings/missing-document",
       "target": "managed-settings",
       "accepted": false,

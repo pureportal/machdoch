@@ -23,9 +23,24 @@ pub const PRODUCT_CAPABILITY: &str = "product.v4";
 pub const PRODUCT_SNAPSHOT_VERSION: u32 = 5;
 pub const MAX_GATEWAY_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_MANAGED_SETTINGS_DELIVERY_BYTES: usize = 18 * 1024 * 1024;
-pub const MANAGED_SETTINGS_SCHEMA_VERSION: u8 = 2;
+pub const MANAGED_SETTINGS_SCHEMA_VERSION: u8 = 3;
+pub const LEGACY_MANAGED_SETTINGS_SCHEMA_VERSION: u8 = 2;
 pub const MAX_MANAGED_SETTINGS_COLLECTION_ENTRIES: usize = 128;
 pub const MAX_MANAGED_SETTINGS_SECRETS: usize = 128;
+pub const MAX_MANAGED_SETTINGS_LAYERS: usize = 8;
+pub const MAX_MANAGED_MCP_SERVERS: usize = 64;
+pub const MANAGED_SETTINGS_POLICY_FIELDS: [&str; 10] = [
+    "model",
+    "mode",
+    "reasoning",
+    "webSearchProvider",
+    "theme",
+    "density",
+    "accent",
+    "infinite",
+    "executorTurns",
+    "autopilotExecutorIterations",
+];
 pub const MAX_MANAGED_SETTINGS_REVISION: u64 = 9_007_199_254_740_991;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,6 +88,23 @@ pub struct FleetManagedSettingsDelivery {
     pub schema_version: u8,
     pub manager_id: String,
     pub profile: Option<FleetManagedSettingsProfile>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layers: Option<Vec<FleetManagedSettingsLayer>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FleetManagedSettingsLayer {
+    pub profile_id: String,
+    pub name: String,
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FleetManagedSettingsLayerIdentity {
+    pub profile_id: String,
+    pub revision: u64,
 }
 
 #[derive(Deserialize)]
@@ -82,6 +114,8 @@ struct RawFleetManagedSettingsDelivery {
     manager_id: String,
     #[serde(deserialize_with = "Option::deserialize")]
     profile: Option<FleetManagedSettingsProfile>,
+    #[serde(default)]
+    layers: Option<Vec<FleetManagedSettingsLayer>>,
 }
 
 impl<'de> Deserialize<'de> for FleetManagedSettingsDelivery {
@@ -94,6 +128,7 @@ impl<'de> Deserialize<'de> for FleetManagedSettingsDelivery {
             schema_version: raw.schema_version,
             manager_id: raw.manager_id,
             profile: raw.profile,
+            layers: raw.layers,
         };
         delivery.normalize();
         delivery.validate().map_err(D::Error::custom)?;
@@ -103,11 +138,24 @@ impl<'de> Deserialize<'de> for FleetManagedSettingsDelivery {
 
 impl FleetManagedSettingsDelivery {
     fn normalize(&mut self) {
+        for layer in self.layers.iter_mut().flatten() {
+            normalize_managed_string(&mut layer.name);
+        }
         let Some(profile) = &mut self.profile else {
             return;
         };
 
         normalize_managed_string(&mut profile.name);
+        for server in profile.document.mcp_servers.iter_mut().flatten() {
+            normalize_managed_option(&mut server.title);
+            match &mut server.transport {
+                FleetManagedMcpTransport::Stdio { command, .. } => {
+                    normalize_managed_string(command)
+                }
+                FleetManagedMcpTransport::StreamableHttp { url, .. }
+                | FleetManagedMcpTransport::Sse { url, .. } => normalize_managed_string(url),
+            }
+        }
         normalize_managed_option(&mut profile.document.defaults.model);
 
         for instruction in &mut profile.document.instructions {
@@ -128,7 +176,9 @@ impl FleetManagedSettingsDelivery {
     }
 
     pub fn validate(&self) -> Result<(), ManagedSettingsValidationError> {
-        if self.schema_version != MANAGED_SETTINGS_SCHEMA_VERSION {
+        if self.schema_version != MANAGED_SETTINGS_SCHEMA_VERSION
+            && self.schema_version != LEGACY_MANAGED_SETTINGS_SCHEMA_VERSION
+        {
             return Err(managed_settings_error(
                 "Managed settings schema version is invalid.",
             ));
@@ -140,6 +190,35 @@ impl FleetManagedSettingsDelivery {
         }
         if let Some(profile) = &self.profile {
             validate_managed_profile(profile)?;
+        }
+        if self.schema_version == LEGACY_MANAGED_SETTINGS_SCHEMA_VERSION
+            && (self.layers.is_some()
+                || self.profile.as_ref().is_some_and(|profile| {
+                    profile.document.policy.is_some() || profile.document.mcp_servers.is_some()
+                }))
+        {
+            return Err(managed_settings_error(
+                "Managed settings fields require schema version 3.",
+            ));
+        }
+        if let Some(layers) = &self.layers {
+            let mut ids = BTreeSet::new();
+            if layers.is_empty()
+                || layers.len() > MAX_MANAGED_SETTINGS_LAYERS
+                || self.profile.as_ref().map(|profile| &profile.profile_id)
+                    != layers.first().map(|layer| &layer.profile_id)
+                || layers.iter().any(|layer| {
+                    !valid_managed_identifier(&layer.profile_id, "profile")
+                        || !valid_managed_name(&layer.name, 120)
+                        || layer.revision == 0
+                        || layer.revision > MAX_MANAGED_SETTINGS_REVISION
+                        || !ids.insert(layer.profile_id.clone())
+                })
+            {
+                return Err(managed_settings_error(
+                    "Managed settings layers are inconsistent.",
+                ));
+            }
         }
         let payload = serde_json::to_vec(self).map_err(|_| {
             managed_settings_error("Managed settings delivery could not be serialized.")
@@ -171,6 +250,55 @@ pub struct FleetManagedSettingsDocument {
     pub instructions: Vec<FleetManagedInstruction>,
     pub context_packs: Vec<FleetManagedContextPack>,
     pub prompts: Vec<FleetManagedPrompt>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy: Option<FleetManagedPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_servers: Option<Vec<FleetManagedMcpServer>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FleetManagedPolicy {
+    pub enforced: Vec<String>,
+}
+
+impl FleetManagedSettingsDocument {
+    /// Documents without a policy predate schema version 3 and enforce every value.
+    pub fn is_enforced(&self, key: &str) -> bool {
+        self.policy
+            .as_ref()
+            .is_none_or(|policy| policy.enforced.iter().any(|entry| entry == key))
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FleetManagedMcpServer {
+    pub id: String,
+    pub title: Option<String>,
+    pub enabled: bool,
+    pub transport: FleetManagedMcpTransport,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "type", rename_all_fields = "camelCase", deny_unknown_fields)]
+pub enum FleetManagedMcpTransport {
+    #[serde(rename = "stdio")]
+    Stdio {
+        command: String,
+        args: Vec<String>,
+        env: BTreeMap<String, String>,
+    },
+    #[serde(rename = "streamable-http")]
+    StreamableHttp {
+        url: String,
+        headers: BTreeMap<String, String>,
+    },
+    #[serde(rename = "sse")]
+    Sse {
+        url: String,
+        headers: BTreeMap<String, String>,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -399,7 +527,135 @@ fn validate_managed_document(
     }
     validate_managed_instructions(&document.instructions)?;
     validate_managed_context_packs(&document.context_packs)?;
-    validate_managed_prompts(&document.prompts)
+    validate_managed_prompts(&document.prompts)?;
+    if let Some(policy) = &document.policy {
+        validate_managed_policy(policy)?;
+    }
+    if let Some(servers) = &document.mcp_servers {
+        validate_managed_mcp_servers(servers)?;
+    }
+    Ok(())
+}
+
+fn valid_managed_policy_key(value: &str) -> bool {
+    MANAGED_SETTINGS_POLICY_FIELDS.contains(&value)
+        || value
+            .strip_prefix("secret:")
+            .is_some_and(valid_managed_secret_id)
+}
+
+fn validate_managed_policy(policy: &FleetManagedPolicy) -> Result<(), ManagedSettingsValidationError> {
+    let mut keys = BTreeSet::new();
+    if policy.enforced.len() > MANAGED_SETTINGS_POLICY_FIELDS.len() + MAX_MANAGED_SETTINGS_SECRETS
+        || policy
+            .enforced
+            .iter()
+            .any(|key| !valid_managed_policy_key(key) || !keys.insert(key.as_str()))
+    {
+        return Err(managed_settings_error(
+            "Managed settings policy is invalid.",
+        ));
+    }
+    Ok(())
+}
+
+fn valid_managed_mcp_server_id(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    matches!(bytes.next(), Some(byte) if byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        && value.len() <= 64
+        && bytes.all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'_' | b'-')
+        })
+}
+
+fn valid_managed_mcp_entries(
+    entries: &BTreeMap<String, String>,
+    valid_key: impl Fn(&str) -> bool,
+) -> bool {
+    entries.len() <= 64
+        && entries
+            .iter()
+            .all(|(key, value)| valid_key(key) && valid_managed_text(value, 8_192, false))
+}
+
+fn valid_managed_environment_name(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    matches!(bytes.next(), Some(byte) if byte.is_ascii_alphabetic() || byte == b'_')
+        && value.len() <= 128
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
+fn valid_managed_header_name(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric()
+                || matches!(
+                    byte,
+                    b'!' | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'&'
+                        | b'\''
+                        | b'*'
+                        | b'+'
+                        | b'.'
+                        | b'^'
+                        | b'_'
+                        | b'`'
+                        | b'|'
+                        | b'~'
+                        | b'-'
+                )
+        })
+}
+
+fn valid_managed_mcp_url(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    let rest = lower
+        .strip_prefix("https://")
+        .or_else(|| lower.strip_prefix("http://"));
+    value.encode_utf16().count() <= 4_000
+        && !value.chars().any(char::is_control)
+        && rest.is_some_and(|rest| {
+            rest.split(['/', '?', '#'])
+                .next()
+                .is_some_and(|host| !host.is_empty())
+        })
+}
+
+fn validate_managed_mcp_servers(
+    servers: &[FleetManagedMcpServer],
+) -> Result<(), ManagedSettingsValidationError> {
+    let mut ids = BTreeSet::new();
+    let valid = servers.len() <= MAX_MANAGED_MCP_SERVERS
+        && servers.iter().all(|server| {
+            valid_managed_mcp_server_id(&server.id)
+                && ids.insert(server.id.as_str())
+                && valid_managed_optional_text(server.title.as_deref())
+                && match &server.transport {
+                    FleetManagedMcpTransport::Stdio { command, args, env } => {
+                        let command = ecmascript_trim(command);
+                        !command.is_empty()
+                            && command.encode_utf16().count() <= 4_000
+                            && !command.chars().any(char::is_control)
+                            && args.len() <= 128
+                            && args.iter().all(|arg| valid_managed_text(arg, 8_192, false))
+                            && valid_managed_mcp_entries(env, valid_managed_environment_name)
+                    }
+                    FleetManagedMcpTransport::StreamableHttp { url, headers }
+                    | FleetManagedMcpTransport::Sse { url, headers } => {
+                        valid_managed_mcp_url(ecmascript_trim(url))
+                            && valid_managed_mcp_entries(headers, valid_managed_header_name)
+                    }
+                }
+        });
+    if !valid {
+        return Err(managed_settings_error(
+            "Managed settings MCP servers are invalid.",
+        ));
+    }
+    Ok(())
 }
 
 fn validate_managed_defaults(
@@ -602,12 +858,18 @@ pub enum FleetManagedSettingsSyncReport {
         manager_id: String,
         profile_id: Option<String>,
         revision: Option<u64>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        layers: Option<Vec<FleetManagedSettingsLayerIdentity>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        warnings: Option<Vec<String>>,
     },
     Failed {
         manager_id: String,
         profile_id: Option<String>,
         revision: Option<u64>,
         error: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        layers: Option<Vec<FleetManagedSettingsLayerIdentity>>,
     },
 }
 

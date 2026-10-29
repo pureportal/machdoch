@@ -47,7 +47,8 @@
     "./cloud-providers": "./src/cloud-providers.ts",
     "./cloud-inference": "./src/cloud-inference.ts",
     "./cloud-agent-tools": "./src/cloud-agent-tools.ts",
-    "./cloud-agent": "./src/cloud-agent.ts"
+    "./cloud-agent": "./src/cloud-agent.ts",
+    "./managed-settings": "./src/managed-settings.ts"
   },
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",
