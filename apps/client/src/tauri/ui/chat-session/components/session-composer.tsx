@@ -338,14 +338,16 @@ export const SessionComposer = ({
   const { catalog: packModelCatalog } = useProviderModelCatalog();
   const goalId = useId();
   const [goalOpen, setGoalOpen] = useState(false);
+  const [useGoalWithMessage, setUseGoalWithMessage] = useState(false);
   const showGoalControl =
     !isQuickVoiceSession(activeSession) &&
     activeSession.specialSession !== "pose";
   const goalDraft = useGoalDraft(
     activeSession.id,
     activeSession.goal,
-    showGoalControl && goalOpen && !editingMessageId,
+    showGoalControl && useGoalWithMessage && !editingMessageId,
     isExecuting,
+    resolveGoalMode(activeSession.provider, activeSession.goalMode),
   );
   const goalEnabled =
     Boolean(goalDraft.submissionObjective) ||
@@ -354,6 +356,16 @@ export const SessionComposer = ({
   useEffect(() => {
     setGoalOpen(false);
   }, [activeSession.id]);
+
+  useEffect(() => {
+    setUseGoalWithMessage(false);
+  }, [
+    activeSession.id,
+    activeSession.goal?.id,
+    activeSession.goal?.objective,
+    isExecuting,
+    editingMessageId,
+  ]);
 
   const [memoryScope, setMemoryScope] = useState<
     "session" | "workspace" | "global" | null
@@ -501,7 +513,7 @@ export const SessionComposer = ({
       {showGoalControl ? (
         <GoalTrigger
           open={goalOpen}
-          active={isExecuting && activeSession.goal?.status === "active"}
+          active={goalEnabled}
           controls={goalId}
           disabled={Boolean(editingMessageId)}
           onClick={() => setGoalOpen((open) => !open)}
@@ -857,7 +869,12 @@ export const SessionComposer = ({
               goal={activeSession.goal}
               objective={goalDraft.objective}
               error={goalDraft.error}
-              onObjectiveChange={goalDraft.setObjective}
+              onObjectiveChange={(value) => {
+                goalDraft.setObjective(value);
+                if (!value.trim()) setUseGoalWithMessage(false);
+              }}
+              useWithMessage={Boolean(goalDraft.submissionObjective)}
+              onUseWithMessageChange={setUseGoalWithMessage}
               running={isExecuting}
               disabled={Boolean(editingMessageId)}
               onClose={() => setGoalOpen(false)}
@@ -875,7 +892,10 @@ export const SessionComposer = ({
         iterationsEnabled={
           !editingMessageId &&
           !interviewEnabled &&
-          !goalDraft.submissionObjective
+          !goalEnabled
+        }
+        iterationsDisabledReason={
+          goalEnabled ? "Goals continue automatically." : undefined
         }
         onSelectContextFiles={onSelectContextFiles}
         onSelectContextFolders={onSelectContextFolders}

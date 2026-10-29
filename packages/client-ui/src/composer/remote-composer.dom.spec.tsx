@@ -182,7 +182,7 @@ afterEach(() => {
 });
 
 describe("composer adaptive control", () => {
-  it("explains the Goal restriction and restores the saved adaptive preference when Goal is hidden", () => {
+  it("explains the Goal restriction and restores the saved adaptive preference when Goal is deselected", () => {
     const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
     harness(onCommand, "", {
       adaptiveController: { override: true, defaultEnabled: false },
@@ -196,6 +196,9 @@ describe("composer adaptive control", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Goal objective" }), {
       target: { value: "Fix auth" },
     });
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Use with next message" }),
+    );
     const adaptive = screen.getByRole<HTMLButtonElement>("button", {
       name: "Adaptive context & compute: Unavailable",
     });
@@ -205,7 +208,9 @@ describe("composer adaptive control", () => {
     );
     fireEvent.click(adaptive);
     expect(onCommand).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Hide goal" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Use with next message" }),
+    );
     expect(
       screen.getByRole<HTMLButtonElement>("button", {
         name: "Adaptive context & compute: Enabled",
@@ -329,6 +334,49 @@ describe("composer voice controls", () => {
 });
 
 describe("composer submission guards", () => {
+  it.each(["complete", "budget-limited"] as const)(
+    "submits a %s goal in the newly selected mode",
+    async (status) => {
+      const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
+      harness(onCommand, "Verify auth", {
+        composer: {
+          goalMode: "native",
+          availableGoalModes: ["machdoch", "native"],
+        },
+        goal: {
+          id: "goal",
+          objective: "Fix auth",
+          mode: "machdoch",
+          status,
+          turns: 1,
+          tokensUsed: 10,
+          elapsedMs: 1,
+          reason: "",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Use with next message" }),
+      );
+      expect(
+        screen.getByRole<HTMLInputElement>("checkbox", {
+          name: "Use with next message",
+        }).checked,
+      ).toBe(true);
+      fireEvent.click(screen.getByRole("button", { name: "Hide goal" }));
+      expect(screen.getByText("Next message")).toBeTruthy();
+      await send();
+      expect(onCommand).toHaveBeenCalledWith(
+        expect.objectContaining({
+          kind: "submit-message",
+          prompt: "Verify auth",
+          goalObjective: "Fix auth",
+        }),
+      );
+    },
+  );
   it("restores an unstarted goal after reopening without attaching it to a message", async () => {
     const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
     const view = harness(onCommand, "Fix auth");
@@ -392,6 +440,14 @@ describe("composer submission guards", () => {
       expect(
         screen
           .getByRole("button", { name: "Goal" })
+          .getAttribute("aria-pressed"),
+      ).toBe("false");
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Use with next message" }),
+      );
+      expect(
+        screen
+          .getByRole("button", { name: "Goal" })
           .getAttribute("data-active"),
       ).toBe("true");
       await send();
@@ -427,6 +483,11 @@ describe("composer submission guards", () => {
           target: { value: "  All auth tests pass\nVerify sign-out  " },
         },
       );
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Use with next message" }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Hide goal" }));
+      expect(screen.getByText("Next message")).toBeTruthy();
       if (method === "button") await send();
       else {
         fireEvent.keyDown(input(), { key: "Enter" });
@@ -455,6 +516,9 @@ describe("composer submission guards", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Goal objective" }), {
       target: { value: "All auth tests pass" },
     });
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Use with next message" }),
+    );
     await send();
     expect(input().value).toBe("Fix auth");
     expect(
@@ -482,6 +546,10 @@ describe("composer submission guards", () => {
           target: { value: "All auth tests pass" },
         },
       );
+      if (scenario !== "hidden" && scenario !== "empty")
+        fireEvent.click(
+          screen.getByRole("checkbox", { name: "Use with next message" }),
+        );
       if (scenario === "hidden")
         fireEvent.click(screen.getByRole("button", { name: "Hide goal" }));
       if (scenario === "other-session") view.show("B", "Fix auth");

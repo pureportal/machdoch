@@ -181,11 +181,13 @@ export function RemoteComposer({
   const [sessionMemoryOpen, setSessionMemoryOpen] = useState(false);
   const goalId = useId();
   const [goalOpen, setGoalOpen] = useState(false);
+  const [useGoalWithMessage, setUseGoalWithMessage] = useState(false);
   const goalDraft = useGoalDraft(
     composer.sessionId,
     composer.goal,
-    goalOpen && session.specialKind !== "pose",
+    useGoalWithMessage && session.specialKind !== "pose",
     composer.isExecuting,
+    composer.goalMode ?? "machdoch",
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const closeSessionMemory = useCallback(() => setSessionMemoryOpen(false), []);
@@ -196,6 +198,15 @@ export function RemoteComposer({
   useEffect(() => {
     setGoalOpen(false);
   }, [composer.sessionId]);
+
+  useEffect(() => {
+    setUseGoalWithMessage(false);
+  }, [
+    composer.sessionId,
+    composer.goal?.id,
+    composer.goal?.objective,
+    composer.isExecuting,
+  ]);
 
   const canSubmit =
     composer.canSend && !pending && !submitting && failedSubmission === null;
@@ -420,9 +431,7 @@ export function RemoteComposer({
             {session.specialKind !== "pose" ? (
               <GoalTrigger
                 open={goalOpen}
-                active={
-                  composer.isExecuting && composer.goal?.status === "active"
-                }
+                active={goalEnabled}
                 controls={goalId}
                 disabled={pending}
                 onClick={() => setGoalOpen((open) => !open)}
@@ -529,7 +538,12 @@ export function RemoteComposer({
                 goal={composer.goal}
                 objective={goalDraft.objective}
                 error={goalDraft.error}
-                onObjectiveChange={goalDraft.setObjective}
+                onObjectiveChange={(value) => {
+                  goalDraft.setObjective(value);
+                  if (!value.trim()) setUseGoalWithMessage(false);
+                }}
+                useWithMessage={Boolean(goalDraft.submissionObjective)}
+                onUseWithMessageChange={setUseGoalWithMessage}
                 running={composer.isExecuting}
                 disabled={pending}
                 onClose={() => setGoalOpen(false)}
@@ -569,7 +583,10 @@ export function RemoteComposer({
         sendDisabledReason={composer.sendDisabledReason ?? null}
         isExecuting={composer.isExecuting}
         canCancel={canCancel}
-        iterationsEnabled={session.specialKind !== "pose"}
+        iterationsEnabled={session.specialKind !== "pose" && !goalEnabled}
+        iterationsDisabledReason={
+          goalEnabled ? "Goals continue automatically." : undefined
+        }
         runningTaskMessageAction={composer.runningTaskMessageAction ?? "queue"}
         queuedMessages={(composer.queuedMessages ?? []).map((message) => ({
           ...message,

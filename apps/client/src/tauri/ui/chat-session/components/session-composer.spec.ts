@@ -157,21 +157,39 @@ const createProps = (
 
 describe("SessionComposer feature availability", () => {
   it("offers a reset for temporary settings without removing the draft", () => {
-    const previous = createSession({ provider: "openai", model: "usual-model", draft: EDIT_DRAFT });
+    const previous = createSession({
+      provider: "openai",
+      model: "usual-model",
+      draft: EDIT_DRAFT,
+    });
     const applied = { ...previous, model: "cheap-model" };
-    let session = { ...applied, temporaryPackSettings: {
-      packName: "Commit and push", previous: createSessionMessageSettings(previous),
-      applied: createSessionMessageSettings(applied),
-    } } as typeof previous;
-    const props = createProps({ activeSession: session, editingMessageId: null,
-      onResetTemporaryContextPack: () => { session = resetTemporaryContextPackSettings(session); },
+    let session = {
+      ...applied,
+      temporaryPackSettings: {
+        packName: "Commit and push",
+        previous: createSessionMessageSettings(previous),
+        applied: createSessionMessageSettings(applied),
+      },
+    } as typeof previous;
+    const props = createProps({
+      activeSession: session,
+      editingMessageId: null,
+      onResetTemporaryContextPack: () => {
+        session = resetTemporaryContextPackSettings(session);
+      },
     });
     const view = render(createElement(SessionComposer, props));
-    fireEvent.click(screen.getByRole("button", { name: "Reset temporary settings" }));
-    view.rerender(createElement(SessionComposer, { ...props, activeSession: session }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reset temporary settings" }),
+    );
+    view.rerender(
+      createElement(SessionComposer, { ...props, activeSession: session }),
+    );
     expect(session.model).toBe("usual-model");
     expect(session.draft).toBe(EDIT_DRAFT);
-    expect(screen.queryByRole("button", { name: "Reset temporary settings" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Reset temporary settings" }),
+    ).toBeNull();
   });
 
   it.each([
@@ -248,6 +266,9 @@ describe("SessionComposer feature availability", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Goal objective" }), {
       target: { value: "Fix auth" },
     });
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Use with next message" }),
+    );
     const adaptive = screen.getByRole<HTMLButtonElement>("button", {
       name: "Adaptive context & compute: Unavailable",
     });
@@ -258,7 +279,9 @@ describe("SessionComposer feature availability", () => {
     expect(adaptive.getAttribute("data-active")).toBe("false");
     fireEvent.click(adaptive);
     expect(onChange).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Hide goal" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Use with next message" }),
+    );
     expect(
       screen.getByRole<HTMLButtonElement>("button", {
         name: "Adaptive context & compute: Enabled (workspace default)",
@@ -292,6 +315,50 @@ describe("SessionComposer feature availability", () => {
 });
 
 describe("SessionComposer goal", () => {
+  it("attaches a completed native objective when explicitly selected in Machdoch mode", () => {
+    const onSend = vi.fn();
+    const props = createProps({
+      editingMessageId: null,
+      canSendMessage: true,
+      isExecuting: false,
+      onSend,
+    });
+    render(
+      createElement(SessionComposer, {
+        ...props,
+        activeSession: {
+          ...props.activeSession,
+          goalMode: "machdoch",
+          goal: {
+            id: "goal",
+            objective: "Verify auth",
+            mode: "native",
+            status: "complete",
+            turns: 1,
+            tokensUsed: 10,
+            elapsedMs: 1,
+            reason: "",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Goal" }));
+    expect(
+      screen.getByRole("button", { name: "Goal" }).getAttribute("aria-pressed"),
+    ).toBe("false");
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Use with next message" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    expect(onSend).toHaveBeenCalledExactlyOnceWith(
+      EDIT_DRAFT,
+      1,
+      "continue",
+      "Verify auth",
+    );
+  });
   it("restores an unstarted goal after reopening with the goal disabled", () => {
     const onSend = vi.fn();
     const props = createProps({
@@ -375,7 +442,7 @@ describe("SessionComposer goal", () => {
         screen
           .getByRole("button", { name: "Goal" })
           .getAttribute("aria-pressed"),
-      ).toBe("true");
+      ).toBe("false");
       expect(
         screen.getByRole<HTMLTextAreaElement>("textbox", {
           name: "Goal objective",
@@ -417,6 +484,11 @@ describe("SessionComposer goal", () => {
           target: { value: "All tests pass" },
         },
       );
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Use with next message" }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Hide goal" }));
+      expect(screen.getByText("Next message")).toBeTruthy();
       if (method === "button") {
         fireEvent.click(screen.getByRole("button", { name: "Send message" }));
       } else {
@@ -453,6 +525,7 @@ describe("SessionComposer goal", () => {
           activeSession: { ...props.activeSession, goal },
         }),
       );
+      fireEvent.click(screen.getByRole("button", { name: "Goal" }));
       expect(screen.getByRole("status").textContent).toBe("Active");
       expect(screen.getByRole("button", { name: "Pause goal" })).toBeDefined();
       expect(
@@ -484,6 +557,10 @@ describe("SessionComposer goal", () => {
           },
         );
       }
+      if (scenario !== "hidden" && scenario !== "empty")
+        fireEvent.click(
+          screen.getByRole("checkbox", { name: "Use with next message" }),
+        );
       if (scenario === "hidden")
         fireEvent.click(screen.getByRole("button", { name: "Hide goal" }));
       if (scenario === "other-session")

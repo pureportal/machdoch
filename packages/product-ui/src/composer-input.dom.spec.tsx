@@ -103,3 +103,20 @@ it("forwards the textarea and grows and shrinks when controlled text changes", (
   view.unmount();
   expect(ref.current).toBeNull();
 });
+
+it("resizes uncontrolled typing including the textarea border", () => {
+  const onInput = vi.fn();
+  render(<ComposerInput aria-label="Task" onSubmit={vi.fn()} onInput={onInput} />);
+  const input = screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Task" });
+  Object.defineProperties(input, {
+    scrollHeight: { configurable: true, value: 96 },
+    offsetHeight: { configurable: true, value: 50 },
+    clientHeight: { configurable: true, value: 48 },
+  });
+  fireEvent.input(input, { target: { value: "First line\nSecond line" } });
+  expect(input.style.height).toBe("98px");
+  expect(onInput).toHaveBeenCalledOnce();
+  Object.defineProperty(input, "scrollHeight", { value: 48 });
+  fireEvent.input(input, { target: { value: "" } });
+  expect(input.style.height).toBe("50px");
+});

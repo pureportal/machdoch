@@ -18,7 +18,6 @@ import {
   startTransition,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -120,6 +119,7 @@ export interface AgentComposerProps {
   runningTaskMessageAction?: RunningTaskMessageAction;
   queuedMessages?: AgentComposerQueuedMessage[];
   iterationsEnabled?: boolean;
+  iterationsDisabledReason?: string | undefined;
   onSelectContextFiles: () => Promise<void>;
   onSelectContextFolders: () => Promise<void>;
   onSelectContextImages: () => Promise<void>;
@@ -396,30 +396,6 @@ const renderAction = (
   );
 };
 
-const hasMultipleComposerLines = (
-  textarea: HTMLTextAreaElement,
-  width: number,
-): boolean => {
-  const measure = textarea.cloneNode(false) as HTMLTextAreaElement;
-  measure.setAttribute("aria-hidden", "true");
-  measure.tabIndex = -1;
-  measure.style.position = "absolute";
-  measure.style.visibility = "hidden";
-  measure.style.pointerEvents = "none";
-  measure.style.width = `${width}px`;
-  measure.style.height = "auto";
-  measure.style.setProperty("min-height", "0", "important");
-  measure.style.setProperty("max-height", "none", "important");
-  measure.style.flex = "none";
-  textarea.parentElement?.append(measure);
-  measure.value = "x";
-  const singleLineHeight = measure.scrollHeight;
-  measure.value = textarea.value;
-  const contentHeight = measure.scrollHeight;
-  measure.remove();
-  return contentHeight > singleLineHeight + 1;
-};
-
 export const AgentComposer = ({
   variant,
   draftIdentity,
@@ -448,6 +424,7 @@ export const AgentComposer = ({
   runningTaskMessageAction,
   queuedMessages = [],
   iterationsEnabled = false,
+  iterationsDisabledReason,
   onSelectContextFiles,
   onSelectContextFolders,
   onSelectContextImages,
@@ -486,9 +463,6 @@ export const AgentComposer = ({
     if (inputBlocked) setIterationsOpen(false);
   }, [inputBlocked]);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const composerFormRef = useRef<HTMLFormElement | null>(null);
-  const sessionActionsRef = useRef<HTMLDivElement | null>(null);
-  const [stackSessionActions, setStackSessionActions] = useState(false);
   const handleTextareaRef = useCallback(
     (node: HTMLTextAreaElement | null): void => {
       composerTextareaRef.current = node;
@@ -506,54 +480,6 @@ export const AgentComposer = ({
     draftRevision,
     onDraftChange,
   );
-  useLayoutEffect(() => {
-    const form = composerFormRef.current;
-    const textarea = composerTextareaRef.current;
-    const actionGroup = sessionActionsRef.current;
-    if (!form || !textarea || !actionGroup) {
-      setStackSessionActions(false);
-      return;
-    }
-
-    const updateLayout = (): void => {
-      if (
-        window.matchMedia?.("(max-width: 767px), (max-height: 600px)").matches
-      ) {
-        setStackSessionActions(false);
-        return;
-      }
-
-      const formGap = parseFloat(getComputedStyle(form).columnGap) || 0;
-      const actionGap =
-        parseFloat(getComputedStyle(actionGroup).columnGap) || 0;
-      const buttons = Array.from(actionGroup.children) as HTMLElement[];
-      const actionWidth = buttons.reduce(
-        (width, button) => width + button.getBoundingClientRect().width,
-        actionGap * Math.max(0, buttons.length - 1),
-      );
-      const attachmentWidth =
-        (form.firstElementChild as HTMLElement | null)?.getBoundingClientRect()
-          .width ?? 0;
-      const horizontalTextareaWidth =
-        form.clientWidth - attachmentWidth - actionWidth - formGap * 2;
-      setStackSessionActions(
-        horizontalTextareaWidth >= 200 &&
-          hasMultipleComposerLines(textarea, horizontalTextareaWidth),
-      );
-    };
-
-    updateLayout();
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(updateLayout);
-    observer?.observe(form);
-    window.addEventListener("resize", updateLayout);
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener("resize", updateLayout);
-    };
-  }, [bufferedDraft.value, showCancelAlongsideSend, variant, actions.length]);
   const styles = getVariantStyles(variant);
   const canSubmit = canSend && Boolean(bufferedDraft.value.trim());
   const showCancelButton =
@@ -676,13 +602,7 @@ export const AgentComposer = ({
       onPaste={handleTextareaPaste}
       placeholder={placeholder}
       disabled={inputBlocked}
-      className={cn(
-        styles.textarea,
-        variant === "session" &&
-          !showCancelAlongsideSend &&
-          stackSessionActions &&
-          "app-composer-textarea-stacked min-h-[9.25rem]",
-      )}
+      className={styles.textarea}
     />
   );
   const toggleButtons = toggles.map((toggle) =>
@@ -1046,9 +966,10 @@ export const AgentComposer = ({
               ? { state: "enabled" }
               : {
                   state: "disabled",
-                  reason: showCancelAlongsideSend
-                    ? "Iterations unavailable while editing a message"
-                    : "Turn off Interview to repeat this request",
+                  reason: iterationsDisabledReason ??
+                    (showCancelAlongsideSend
+                      ? "Iterations unavailable while editing a message"
+                      : "Turn off Interview to repeat this request"),
                 },
         children: () => ({
           id: "chat-composer-iterations",
@@ -1304,6 +1225,7 @@ export const AgentComposer = ({
     isExecuting,
     iterationCount,
     iterationsEnabled,
+    iterationsDisabledReason,
     onBrowseMediaAssets,
     onCancel,
     onClearContextAttachments,
@@ -1399,13 +1321,7 @@ export const AgentComposer = ({
       {sendControl}
     </div>
   ) : (
-    <div
-      ref={sessionActionsRef}
-      className={cn(
-        "app-composer-actions flex shrink-0 items-center gap-3",
-        stackSessionActions && "flex-col gap-y-2",
-      )}
-    >
+    <div className="app-composer-actions flex shrink-0 items-center gap-3">
       {actionButtons}
       {variant === "session" ? (
         <Popover open={iterationsOpen} onOpenChange={setIterationsOpen}>
@@ -1422,9 +1338,10 @@ export const AgentComposer = ({
               tooltip={
                 iterationsEnabled
                   ? `Iterations: ${iterationCount}`
-                  : showCancelAlongsideSend
-                    ? "Iterations unavailable while editing a message"
-                    : "Turn off Interview to repeat this request"
+                  : iterationsDisabledReason ??
+                    (showCancelAlongsideSend
+                      ? "Iterations unavailable while editing a message"
+                      : "Turn off Interview to repeat this request")
               }
               disabled={!iterationsEnabled || inputBlocked}
               className={cn(
@@ -1559,18 +1476,14 @@ export const AgentComposer = ({
 
       <SubmitShortcut asChild>
         <form
-          ref={composerFormRef}
-          className={cn(
-            "app-composer-form flex min-w-0 flex-wrap gap-3",
-            showCancelAlongsideSend ? "items-end" : "items-center",
-          )}
+          className="app-composer-form"
           onSubmit={(event) => {
             event.preventDefault();
             submit();
           }}
         >
-          {attachmentMenu}
           {textarea}
+          {attachmentMenu}
           {sessionActionControls}
         </form>
       </SubmitShortcut>

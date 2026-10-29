@@ -14,7 +14,7 @@ import {
   it,
   vi,
 } from "vitest";
-import type { ComponentProps } from "react";
+import { useState, type ComponentProps } from "react";
 import { GoalControl as GoalControlView, GoalTrigger } from "./goal-control";
 import { useGoalDraft } from "./use-goal-draft";
 
@@ -24,7 +24,13 @@ function GoalControl(
     "objective" | "onObjectiveChange"
   >,
 ) {
-  const draft = useGoalDraft("session", props.goal, props.open, props.running);
+  const draft = useGoalDraft(
+    "session",
+    props.goal,
+    props.open,
+    props.running,
+    props.mode,
+  );
   return (
     <GoalControlView
       {...props}
@@ -53,6 +59,45 @@ afterAll(() => {
 });
 
 describe("goal control", () => {
+  it("does not submit Resume when a pause immediately changes the button", () => {
+    const onCommand = vi.fn();
+    function RunningGoal() {
+      const [running, setRunning] = useState(true);
+      return (
+        <GoalControlView
+          id="goal-input"
+          open
+          mode="machdoch"
+          modes={["machdoch"]}
+          objective="Fix auth"
+          onObjectiveChange={vi.fn()}
+          running={running}
+          goal={{
+            id: "goal",
+            objective: "Fix auth",
+            mode: "machdoch",
+            status: running ? "active" : "paused",
+            turns: 1,
+            tokensUsed: 10,
+            elapsedMs: 1,
+            reason: "",
+            createdAt: 1,
+            updatedAt: 1,
+          }}
+          onClose={vi.fn()}
+          onModeChange={vi.fn()}
+          onCommand={onCommand}
+          onPause={() => setRunning(false)}
+        />
+      );
+    }
+    render(<RunningGoal />);
+    fireEvent.click(screen.getByRole("button", { name: "Pause goal" }));
+    expect(screen.getByRole("button", { name: "Resume goal" })).toBeTruthy();
+    expect(onCommand).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Resume goal" }));
+    expect(onCommand).toHaveBeenCalledExactlyOnceWith("/goal resume");
+  });
   it("shows a save failure beside the goal without losing the typed text", () => {
     const consoleError = vi
       .spyOn(console, "error")
@@ -151,7 +196,7 @@ describe("goal control", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start goal" }));
     expect(onCommand).toHaveBeenCalledWith("/goal -- Fix auth");
   });
-  it("highlights an enabled goal and keeps a running goal highlighted when hidden", () => {
+  it("separates expanded state from enabled state and keeps a running goal highlighted", () => {
     const props = {
       open: true,
       controls: "goal-input",
@@ -160,8 +205,8 @@ describe("goal control", () => {
     const view = render(<GoalTrigger {...props} active={false} />);
     const trigger = screen.getByRole("button", { name: "Goal" });
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
-    expect(trigger.getAttribute("aria-pressed")).toBe("true");
-    expect(trigger.getAttribute("data-active")).toBe("true");
+    expect(trigger.getAttribute("aria-pressed")).toBe("false");
+    expect(trigger.getAttribute("data-active")).toBe("false");
     view.rerender(<GoalTrigger {...props} open={false} active={false} />);
     expect(trigger.getAttribute("aria-pressed")).toBe("false");
     expect(trigger.getAttribute("data-active")).toBe("false");
@@ -185,7 +230,7 @@ describe("goal control", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Goal objective" }), {
       target: { value: "Fix auth" },
     });
-    expect(screen.getByRole("status").textContent).toBe("Not started");
+    expect(screen.getByRole("status").textContent).toBe("Draft");
     expect(props.onCommand).not.toHaveBeenCalled();
 
     view.rerender(<GoalControl {...props} running />);
@@ -193,7 +238,7 @@ describe("goal control", () => {
       name: "Start goal",
     });
     expect(start.disabled).toBe(true);
-    expect(screen.getByRole("status").textContent).toBe("Not started");
+    expect(screen.getByRole("status").textContent).toBe("Draft");
     expect(
       document.getElementById(start.getAttribute("aria-describedby")!)
         ?.textContent,
@@ -381,7 +426,7 @@ describe("goal control", () => {
     fireEvent.change(input, {
       target: { value: "Fix auth and verify sign-out" },
     });
-    expect(screen.getByRole("status").textContent).toBe("Not started");
+    expect(screen.getByRole("status").textContent).toBe("Draft");
     expect(screen.queryByRole("button", { name: "Resume goal" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Start goal" }));
     expect(onCommand).toHaveBeenCalledWith(

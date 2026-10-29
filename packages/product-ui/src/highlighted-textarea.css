@@ -1,0 +1,75 @@
+.m-composer-editor {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
+
+.m-composer-editor > textarea {
+  display: block;
+  width: 100%;
+}
+
+.m-composer-highlight {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: pre-wrap;
+  border-style: solid;
+  border-color: transparent;
+  color: var(--app-text);
+  pointer-events: none;
+}
+
+.m-composer-editor[data-highlighted="true"] > textarea {
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--app-text, currentColor);
+}
+
+.m-composer-editor[data-highlighted="true"] > .m-composer-highlight {
+  display: block;
+}
+
+.m-composer-highlight [data-syntax="command"] {
+  color: var(--app-sky-400, #38bdf8);
+  background: color-mix(in srgb, var(--app-sky-500, #0ea5e9) 14%, transparent);
+  border-radius: 3px;
+}
+
+.m-composer-highlight [data-syntax="link"] {
+  color: var(--app-sky-400, #38bdf8);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-underline-offset: 3px;
+}
+
+.m-composer-highlight [data-syntax="code"] {
+  color: var(--app-amber-400, #fbbf24);
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+
+.m-composer-highlight
+  :is([data-syntax="heading"], [data-syntax="emphasis"], [data-syntax="list"]) {
+  color: var(--app-violet-400, #a78bfa);
+}
+
+:root[data-theme="light"] .m-composer-highlight
+  :is([data-syntax="command"], [data-syntax="link"]) {
+  color: var(--app-sky-700);
+}
+
+:root[data-theme="light"] .m-composer-highlight [data-syntax="code"] {
+  color: color-mix(in srgb, var(--app-amber-500) 40%, var(--app-text));
+}
+
+@media (forced-colors: active) {
+  .m-composer-editor[data-highlighted="true"] > textarea {
+    -webkit-text-fill-color: currentColor;
+  }
+  .m-composer-editor[data-highlighted="true"] > .m-composer-highlight {
+    display: none;
+  }
+}

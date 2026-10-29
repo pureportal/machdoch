@@ -19,7 +19,7 @@ const savedGoal: ProductGoal = {
 function renderDraft(sessionId = "first", goal: ProductGoal | null = null) {
   return renderHook(
     ({ sessionId, goal, enabled, running }) =>
-      useGoalDraft(sessionId, goal, enabled, running),
+      useGoalDraft(sessionId, goal, enabled, running, "machdoch"),
     { initialProps: { sessionId, goal, enabled: false, running: false } },
   );
 }
@@ -35,6 +35,22 @@ afterEach(() => {
 });
 
 describe("goal draft persistence", () => {
+  it.each(["complete", "budget-limited"] as const)(
+    "treats a %s objective in a different mode as a new goal",
+    (status) => {
+      const goal = { ...savedGoal, status };
+      const view = renderHook(
+        ({ mode }: { mode: ProductGoal["mode"] }) =>
+          useGoalDraft("first", goal, true, false, mode),
+        { initialProps: { mode: "machdoch" as ProductGoal["mode"] } },
+      );
+      expect(view.result.current.submissionObjective).toBeUndefined();
+      view.rerender({ mode: "native" });
+      expect(view.result.current.submissionObjective).toBe(goal.objective);
+      view.rerender({ mode: "machdoch" });
+      expect(view.result.current.submissionObjective).toBeUndefined();
+    },
+  );
   it("debounces typing and restores the exact draft without enabling it", () => {
     const setItem = vi.spyOn(Storage.prototype, "setItem");
     const view = renderDraft();

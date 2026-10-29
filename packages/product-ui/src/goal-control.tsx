@@ -2,6 +2,7 @@ import type { ProductGoal } from "@machdoch/fleet-protocol";
 import { Check, ChevronDown, X } from "lucide-react";
 import { Select } from "radix-ui";
 import { GoalIcon } from "./composer-icons";
+import { HighlightedTextarea } from "./highlighted-textarea";
 import { useEffect, useId, useRef, type ReactElement } from "react";
 
 export function GoalTrigger({
@@ -24,9 +25,9 @@ export function GoalTrigger({
       className="m-goal-trigger app-composer-toolbar-control"
       aria-label="Goal"
       aria-expanded={open}
-      aria-pressed={open || active}
+      aria-pressed={active}
       aria-controls={controls}
-      data-active={open || active}
+      data-active={active}
       disabled={disabled}
       onClick={onClick}
     >
@@ -50,6 +51,8 @@ export function GoalControl({
   onObjectiveChange,
   onCommand,
   onPause,
+  useWithMessage = false,
+  onUseWithMessageChange,
 }: {
   id: string;
   open: boolean;
@@ -65,6 +68,8 @@ export function GoalControl({
   onObjectiveChange: (objective: string) => void;
   onCommand: (command: string) => void;
   onPause: () => void;
+  useWithMessage?: boolean;
+  onUseWithMessageChange?: (enabled: boolean) => void;
 }): ReactElement {
   const objectiveId = useId();
   const disabledReasonId = useId();
@@ -89,8 +94,9 @@ export function GoalControl({
           complete: "Complete",
         }[goal.status]
       : objective.trim()
-        ? "Not started"
+        ? "Draft"
         : null;
+  const summaryStatus = useWithMessage && !running ? "Next message" : status;
   const disabledReason =
     running && !active ? "Finish or stop the current task first." : null;
   const close = (): void => {
@@ -103,171 +109,209 @@ export function GoalControl({
   }, [open]);
 
   return (
-    <form
-      id={id}
-      className="m-goal-control"
-      hidden={!open}
-      aria-label="Goal"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") {
-          event.preventDefault();
-          event.stopPropagation();
-          close();
-        } else if (
-          event.key === "Enter" &&
-          (event.ctrlKey || event.metaKey) &&
-          !event.altKey &&
-          !event.shiftKey &&
-          !event.repeat &&
-          !event.nativeEvent.isComposing
-        ) {
-          event.preventDefault();
-          event.stopPropagation();
-          event.currentTarget.requestSubmit();
-        }
-      }}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!disabled && !running && objective.trim()) {
-          onCommand(
-            canResume ? "/goal resume" : `/goal -- ${objective.trim()}`,
-          );
-        }
-      }}
-    >
-      <div className="m-goal-field">
-        <div className="m-goal-heading">
-          <label htmlFor={objectiveId}>
-            <GoalIcon aria-hidden="true" />
-            Goal
-          </label>
-          {status ? (
-            <span className="m-goal-status" role="status">
-              {status}
-            </span>
-          ) : null}
-          <Select.Root
-            value={mode}
-            disabled={disabled || running}
-            onValueChange={(value) =>
-              onModeChange(value as "machdoch" | "native")
-            }
-          >
-            <Select.Trigger
-              className="m-goal-mode-trigger"
-              aria-label="Goal mode"
-            >
-              <Select.Value />
-              <Select.Icon asChild>
-                <ChevronDown aria-hidden="true" />
-              </Select.Icon>
-            </Select.Trigger>
-            <Select.Portal>
-              <Select.Content
-                className="m-goal-mode-menu"
-                position="popper"
-                align="start"
-                sideOffset={6}
-                collisionPadding={12}
-              >
-                <Select.Viewport>
-                  {(["machdoch", "native"] as const).map((value) => (
-                    <Select.Item
-                      key={value}
-                      className="m-goal-mode-option"
-                      value={value}
-                      disabled={!modes.includes(value)}
-                      aria-describedby={
-                        !modes.includes(value)
-                          ? `${id}-${value}-unavailable`
-                          : undefined
-                      }
-                    >
-                      <Select.ItemText>
-                        {value === "machdoch" ? "Machdoch" : "Native"}
-                      </Select.ItemText>
-                      {!modes.includes(value) ? (
-                        <small id={`${id}-${value}-unavailable`}>
-                          Unavailable for this provider.
-                        </small>
-                      ) : null}
-                      <Select.ItemIndicator>
-                        <Check aria-hidden="true" />
-                      </Select.ItemIndicator>
-                    </Select.Item>
-                  ))}
-                </Select.Viewport>
-              </Select.Content>
-            </Select.Portal>
-          </Select.Root>
-          <button
-            type="button"
-            className="m-goal-close"
-            aria-label="Hide goal"
-            onClick={close}
-          >
-            <X aria-hidden="true" />
-          </button>
-        </div>
-        <textarea
-          ref={textareaRef}
-          id={objectiveId}
-          aria-label="Goal objective"
-          value={objective}
-          rows={2}
-          maxLength={4_000}
-          required
-          readOnly={running}
+    <>
+      {!open && objective.trim() ? (
+        <button
+          type="button"
+          className="m-goal-summary"
           disabled={disabled}
-          onChange={(event) => onObjectiveChange(event.target.value)}
-        />
-        {error ? (
-          <p className="m-goal-reason" role="alert">
-            {error}
-          </p>
-        ) : null}
-        {goal?.reason && !changed ? (
-          <p className="m-goal-reason">{goal.reason}</p>
-        ) : null}
-        <div className="m-goal-footer">
-          {goal && !changed ? (
-            <span className="m-goal-progress">
-              {goal.turns} turns · {goal.tokensUsed} tokens
-            </span>
-          ) : null}
-          <div className="m-goal-actions">
-            {goal ? (
-              <button
-                type="button"
-                disabled={disabled || running}
-                onClick={() => onCommand("/goal clear")}
-              >
-                Clear goal
-              </button>
+          onClick={() => document.getElementById(`${id}-trigger`)?.click()}
+        >
+          <GoalIcon aria-hidden="true" />
+          <span className="m-goal-summary-objective">{objective}</span>
+          <span className="m-goal-status">{summaryStatus}</span>
+        </button>
+      ) : null}
+      <form
+        id={id}
+        className="m-goal-control"
+        hidden={!open}
+        aria-label="Goal"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            close();
+          } else if (
+            event.key === "Enter" &&
+            (event.ctrlKey || event.metaKey) &&
+            !event.altKey &&
+            !event.shiftKey &&
+            !event.repeat &&
+            !event.nativeEvent.isComposing
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            event.currentTarget.requestSubmit();
+          }
+        }}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!disabled && !running && objective.trim()) {
+            onCommand(
+              canResume ? "/goal resume" : `/goal -- ${objective.trim()}`,
+            );
+          }
+        }}
+      >
+        <div className="m-goal-field">
+          <div className="m-goal-heading">
+            <label htmlFor={objectiveId}>
+              <GoalIcon aria-hidden="true" />
+              Goal
+            </label>
+            {status ? (
+              <span className="m-goal-status" role="status">
+                {status}
+              </span>
             ) : null}
-            {active ? (
-              <button type="button" disabled={disabled} onClick={onPause}>
-                Pause goal
-              </button>
-            ) : (
-              <button
-                type="submit"
-                aria-keyshortcuts="Control+Enter Meta+Enter"
-                className="m-goal-submit"
-                disabled={disabled || running || !objective.trim()}
-                aria-describedby={disabledReason ? disabledReasonId : undefined}
+            <Select.Root
+              value={mode}
+              disabled={disabled || running}
+              onValueChange={(value) =>
+                onModeChange(value as "machdoch" | "native")
+              }
+            >
+              <Select.Trigger
+                className="m-goal-mode-trigger"
+                aria-label="Goal mode"
               >
-                {canResume ? "Resume goal" : "Start goal"}
-              </button>
-            )}
+                <Select.Value />
+                <Select.Icon asChild>
+                  <ChevronDown aria-hidden="true" />
+                </Select.Icon>
+              </Select.Trigger>
+              <Select.Portal>
+                <Select.Content
+                  className="m-goal-mode-menu"
+                  position="popper"
+                  align="start"
+                  sideOffset={6}
+                  collisionPadding={12}
+                >
+                  <Select.Viewport>
+                    {(["machdoch", "native"] as const).map((value) => (
+                      <Select.Item
+                        key={value}
+                        className="m-goal-mode-option"
+                        value={value}
+                        disabled={!modes.includes(value)}
+                        aria-describedby={
+                          !modes.includes(value)
+                            ? `${id}-${value}-unavailable`
+                            : undefined
+                        }
+                      >
+                        <Select.ItemText>
+                          {value === "machdoch" ? "Machdoch" : "Native"}
+                        </Select.ItemText>
+                        {!modes.includes(value) ? (
+                          <small id={`${id}-${value}-unavailable`}>
+                            Unavailable for this provider.
+                          </small>
+                        ) : null}
+                        <Select.ItemIndicator>
+                          <Check aria-hidden="true" />
+                        </Select.ItemIndicator>
+                      </Select.Item>
+                    ))}
+                  </Select.Viewport>
+                </Select.Content>
+              </Select.Portal>
+            </Select.Root>
+            <button
+              type="button"
+              className="m-goal-close"
+              aria-label="Hide goal"
+              onClick={close}
+            >
+              <X aria-hidden="true" />
+            </button>
           </div>
+          <HighlightedTextarea
+            ref={textareaRef}
+            id={objectiveId}
+            aria-label="Goal objective"
+            value={objective}
+            rows={2}
+            maxLength={4_000}
+            required
+            readOnly={running}
+            disabled={disabled}
+            onChange={(event) => onObjectiveChange(event.target.value)}
+          />
+          {error ? (
+            <p className="m-goal-reason" role="alert">
+              {error}
+            </p>
+          ) : null}
+          {goal?.reason && !changed ? (
+            <p className="m-goal-reason">{goal.reason}</p>
+          ) : null}
+          <div className="m-goal-footer">
+            {goal && !changed ? (
+              <span className="m-goal-progress">
+                {goal.turns} turns · {goal.tokensUsed} tokens
+              </span>
+            ) : null}
+            {onUseWithMessageChange &&
+            !running &&
+            (!goal || changed || canResume) ? (
+              <label className="m-goal-use-message">
+                <input
+                  type="checkbox"
+                  checked={useWithMessage}
+                  disabled={disabled || !objective.trim()}
+                  onChange={(event) =>
+                    onUseWithMessageChange(event.target.checked)
+                  }
+                />
+                Use with next message
+              </label>
+            ) : null}
+            <div className="m-goal-actions">
+              {goal ? (
+                <button
+                  type="button"
+                  disabled={disabled || running}
+                  onClick={() => onCommand("/goal clear")}
+                >
+                  Clear goal
+                </button>
+              ) : null}
+              {active ? (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    onPause();
+                  }}
+                >
+                  Pause goal
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  aria-keyshortcuts="Control+Enter Meta+Enter"
+                  className="m-goal-submit"
+                  disabled={disabled || running || !objective.trim()}
+                  aria-describedby={
+                    disabledReason ? disabledReasonId : undefined
+                  }
+                >
+                  {canResume ? "Resume goal" : "Start goal"}
+                </button>
+              )}
+            </div>
+          </div>
+          {disabledReason ? (
+            <p id={disabledReasonId} className="m-goal-reason">
+              {disabledReason}
+            </p>
+          ) : null}
         </div>
-        {disabledReason ? (
-          <p id={disabledReasonId} className="m-goal-reason">
-            {disabledReason}
-          </p>
-        ) : null}
-      </div>
-    </form>
+      </form>
+    </>
   );
 }

@@ -1212,11 +1212,6 @@ body {
   margin-top: 0.5rem !important;
 }
 
-:root[data-density="compact"] .app-composer-form {
-  gap: 0.5rem !important;
-  align-items: flex-end !important;
-}
-
 :root[data-density="compact"]
   :is(.app-model-picker-button, .app-composer-toolbar-pill) {
   height: 1.85rem !important;
@@ -1314,10 +1309,6 @@ body {
   padding: 0.6rem 0.75rem !important;
   font-size: 0.8125rem !important;
   line-height: 1.3rem !important;
-}
-
-:root[data-density="compact"] .app-composer-textarea-stacked {
-  min-height: 7.45rem !important;
 }
 
 :root[data-density="compact"]

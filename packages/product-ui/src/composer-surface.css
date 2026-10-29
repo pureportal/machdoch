@@ -1,12 +1,11 @@
 .m-composer-surface {
   container: composer / inline-size;
   min-width: 0;
-  border: 1px solid color-mix(in srgb, var(--app-slate-800) 80%, transparent);
+  border: 1px solid var(--app-border-strong);
   border-radius: 1.75rem;
-  background: color-mix(in srgb, var(--app-slate-950) 75%, transparent);
+  background: var(--app-surface);
   padding: 12px;
-  box-shadow: 0 18px 48px
-    color-mix(in srgb, var(--app-slate-950) 42%, transparent);
+  box-shadow: var(--app-elevated-shadow);
 }
 
 .m-composer-surface-toolbar {
@@ -15,14 +14,13 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid
-    color-mix(in srgb, var(--app-slate-900) 80%, transparent);
+  border-bottom: 1px solid var(--app-border);
   padding-bottom: 12px;
 }
 
 .m-composer-surface-model {
   min-width: 0;
-  max-width: 100%;
+  max-width: min(100%, 18rem);
 }
 
 .m-composer-surface-model > *,
@@ -91,9 +89,10 @@
   width: 100%;
   resize: none;
   overflow-y: auto;
-  border: 1px solid var(--app-slate-800);
+  overflow-wrap: anywhere;
+  border: 1px solid var(--app-border-strong);
   border-radius: 1.4rem;
-  background: color-mix(in srgb, var(--app-slate-900) 70%, transparent);
+  background: var(--app-surface-raised);
   padding: 16px 20px;
   color: var(--app-text);
   font: inherit;
@@ -101,7 +100,7 @@
 }
 
 :where(.m-composer-input)::placeholder {
-  color: var(--app-slate-500);
+  color: var(--app-text-muted);
 }
 
 :where(.m-composer-input):focus-visible {
@@ -110,10 +109,54 @@
 
 :where(.m-composer-input):disabled {
   cursor: not-allowed;
-  color: var(--app-slate-500);
+  color: var(--app-text-muted);
 }
 
-@container composer (max-width: 800px) {
+.m-composer-surface .app-composer-form {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: end;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 16px;
+  background: var(--app-surface-raised);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.m-composer-surface .app-composer-form:focus-within {
+  border-color: var(--app-sky-600);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--app-sky-500) 25%, transparent);
+}
+
+.m-composer-surface .app-composer-form > .m-composer-editor {
+  grid-column: 1 / -1;
+}
+
+:root .m-composer-surface .app-composer-form .m-composer-input {
+  min-height: 56px !important;
+  max-height: min(240px, calc(var(--m-viewport-height, 100dvh) * 0.3)) !important;
+  padding: 8px 10px !important;
+  border: 0;
+  border-radius: 8px !important;
+  background: transparent !important;
+  box-shadow: none;
+  line-height: 1.5 !important;
+}
+
+.m-composer-surface .app-composer-actions,
+.m-composer-surface .app-composer-edit-actions {
+  grid-column: 2;
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+}
+
+@container composer (max-width: 960px) {
   .m-composer-surface-toolbar {
     gap: 6px !important;
     flex-wrap: wrap;
@@ -124,11 +167,18 @@
 
   .m-composer-surface-model {
     flex: 1;
+    max-width: none;
   }
 
   .m-composer-surface-model > *,
   .m-composer-surface-model button {
     width: 100%;
+  }
+
+  :root .m-composer-surface .m-composer-surface-model button {
+    max-width: 100% !important;
+    min-height: 44px;
+    justify-content: flex-start;
   }
 
   .m-composer-options-toggle {
@@ -145,9 +195,20 @@
   .m-composer-surface-controls {
     order: 4;
     flex-basis: 100%;
-    max-height: min(200px, calc(var(--m-viewport-height, 100dvh) * 0.3));
+    max-height: min(104px, calc(var(--m-viewport-height, 100dvh) * 0.24));
     overflow-y: auto;
     overscroll-behavior: contain;
+    border-top: 1px solid var(--app-border);
+    padding-top: 8px;
+    gap: 8px;
+  }
+
+  :root .m-composer-surface-controls :is(button, select) {
+    min-height: 44px !important;
+  }
+
+  :root .m-composer-surface-controls button:has(> svg) {
+    min-width: 44px !important;
   }
 
   .m-composer-surface[data-options-open="false"] .m-composer-surface-controls {
@@ -183,36 +244,16 @@
     white-space: nowrap;
   }
 
-  .m-composer-surface .app-composer-form {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 6px !important;
-    align-items: end;
-  }
-
-  .m-composer-surface .app-composer-form > .m-composer-input {
-    grid-column: 1 / -1;
-    grid-row: 1;
-    min-height: 48px !important;
+  :root .m-composer-surface .app-composer-form .m-composer-input {
+    min-height: 56px !important;
     max-height: min(
-      144px,
-      calc(var(--m-viewport-height, 100dvh) * 0.22)
+      160px,
+      calc(var(--m-viewport-height, 100dvh) * 0.25)
     ) !important;
-    padding: 10px 14px !important;
+    font-size: 16px !important;
   }
 
-  .m-composer-surface .app-composer-actions,
-  .m-composer-surface .app-composer-edit-actions {
-    grid-column: 2;
-    grid-row: 2;
-    justify-content: flex-end;
-    flex-direction: row;
-    gap: 4px;
-    min-width: 0;
-    flex-wrap: wrap;
-  }
-
-  .m-composer-surface .app-composer-form button {
+  :root .m-composer-surface .app-composer-form button {
     width: 44px !important;
     height: 44px !important;
     flex-shrink: 0;
@@ -248,13 +289,13 @@
     display: none;
   }
 
-  .m-composer-surface .app-composer-form > .m-composer-input {
-    min-height: 48px !important;
+  :root .m-composer-surface .app-composer-form .m-composer-input {
+    min-height: 40px !important;
     max-height: max(
-      48px,
+      40px,
       calc(var(--m-viewport-height, 100dvh) * 0.16)
     ) !important;
-    padding-block: 10px !important;
+    padding-block: 6px !important;
   }
 }
 

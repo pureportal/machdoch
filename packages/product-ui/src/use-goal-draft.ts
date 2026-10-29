@@ -34,6 +34,7 @@ export function useGoalDraft(
   goal: ProductGoal | null | undefined,
   enabled: boolean,
   running: boolean,
+  mode: ProductGoal["mode"],
 ) {
   const goalId = goal?.id ?? null;
   const goalObjective = goal?.objective ?? "";
@@ -114,6 +115,7 @@ export function useGoalDraft(
   const normalizedObjective = objective.trim();
   const terminal =
     normalizedObjective === goal?.objective &&
+    mode === goal.mode &&
     (goal.status === "complete" || goal.status === "budget-limited");
 
   return {

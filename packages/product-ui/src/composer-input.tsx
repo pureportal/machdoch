@@ -8,6 +8,7 @@ import {
   type Ref,
 } from "react";
 import "./composer-surface.css";
+import { HighlightedTextarea } from "./highlighted-textarea";
 
 export interface ComposerInputProps extends Omit<
   ComponentProps<"textarea">,
@@ -20,6 +21,7 @@ export interface ComposerInputProps extends Omit<
 export function ComposerInput({
   onSubmit,
   onKeyDown,
+  onInput,
   onCompositionStart,
   onCompositionEnd,
   className,
@@ -33,7 +35,7 @@ export function ComposerInput({
     const node = nodeRef.current;
     if (!node) return;
     node.style.height = "auto";
-    node.style.height = `${node.scrollHeight}px`;
+    node.style.height = `${node.scrollHeight + node.offsetHeight - node.clientHeight}px`;
   }, []);
   const setNode = useCallback(
     (node: HTMLTextAreaElement | null) => {
@@ -88,12 +90,16 @@ export function ComposerInput({
     if (!props.disabled) onSubmit();
   };
   return (
-    <textarea
+    <HighlightedTextarea
       {...props}
       ref={setNode}
       rows={rows}
       className={["m-composer-input", className].filter(Boolean).join(" ")}
       onKeyDown={handleKeyDown}
+      onInput={(event) => {
+        resize();
+        onInput?.(event);
+      }}
       onCompositionStart={(event) => {
         composing.current = true;
         onCompositionStart?.(event);

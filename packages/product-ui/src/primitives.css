@@ -535,11 +535,11 @@
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  border: 1px solid var(--app-slate-800);
+  border: 1px solid var(--app-border-strong);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--app-slate-950) 70%, transparent);
+  background: var(--app-surface);
   padding: 0 0.75rem;
-  color: var(--app-slate-300);
+  color: var(--app-text-soft);
   cursor: pointer;
   font-size: 0.75rem;
   font-weight: 500;
@@ -548,8 +548,8 @@
 
 .m-composer-model-trigger:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--app-sky-500) 30%, transparent);
-  background: var(--app-slate-900);
-  color: var(--app-slate-100);
+  background: var(--app-hover);
+  color: var(--app-text);
 }
 
 .m-composer-model-trigger:disabled {
@@ -572,6 +572,10 @@
 
 .m-composer-model-trigger > svg:first-child {
   color: var(--app-sky-300);
+}
+
+:root[data-theme="light"] .m-composer-model-trigger > svg:first-child {
+  color: var(--app-sky-600);
 }
 
 .m-composer-model-trigger > svg:last-child {
