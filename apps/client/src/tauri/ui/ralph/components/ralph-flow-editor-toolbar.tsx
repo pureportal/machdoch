@@ -83,13 +83,13 @@ export const RalphFlowEditorToolbar = ({
         <div className="flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-900/45 p-1">
           <FlowHistoryControls
             undo={{
-              label: "Undo Ralph edit",
+              label: "Undo flow edit",
               disabled: !canUndo,
               onClick: onUndo,
               keyShortcuts: undoShortcut?.ariaKeyShortcuts,
             }}
             redo={{
-              label: "Redo Ralph edit",
+              label: "Redo flow edit",
               disabled: !canRedo,
               onClick: onRedo,
               keyShortcuts: redoShortcut?.ariaKeyShortcuts,

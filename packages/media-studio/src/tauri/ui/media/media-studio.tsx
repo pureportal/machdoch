@@ -414,7 +414,12 @@ const recipeSnapshotFromRevision = (
   };
 };
 
-const SEMANTIC_HISTORY_LIMIT = 100;
+const FLOW_EDIT_HISTORY_LIMIT = 100;
+
+interface MediaFlowEditSnapshot {
+  flow: MediaFlow;
+  layout: MediaFlowLayout;
+}
 
 interface AdvancedLocalImageExecutionAssessment {
   supported: boolean;
@@ -654,9 +659,9 @@ export const MediaStudio = ({
   >(null);
   const [flowClipboard, setFlowClipboard] =
     useState<MediaFlowNodeClipboardPayload | null>(null);
-  const semanticUndoStack = useRef<MediaFlow[]>([]);
-  const semanticRedoStack = useRef<MediaFlow[]>([]);
-  const [, setSemanticHistoryRevision] = useState(0);
+  const flowUndoStack = useRef<MediaFlowEditSnapshot[]>([]);
+  const flowRedoStack = useRef<MediaFlowEditSnapshot[]>([]);
+  const [, setFlowEditHistoryRevision] = useState(0);
   const runtimeRefreshSequence = useRef(0);
   const runtimeRefreshInFlight = useRef(false);
   const selectedRunDetailSequence = useRef(0);
@@ -1793,52 +1798,56 @@ export const MediaStudio = ({
     [],
   );
   useOptionalRegisterCommands(sectionCommands);
-  const changeFlowLayout = useCallback((flowLayout: MediaFlowLayout) => {
-    setFlowRevisionNotice(null);
-    setState((current) => ({ ...current, flowLayout }));
-  }, []);
-  const replaceSemanticFlow = useCallback((nextFlow: MediaFlow): void => {
-    setRuntimeError(null);
-    setState((current) => ({
-      ...current,
-      flow: nextFlow,
-    }));
-  }, []);
-  const clearSemanticHistory = useCallback((): void => {
-    semanticUndoStack.current = [];
-    semanticRedoStack.current = [];
-    setSemanticHistoryRevision((revision) => revision + 1);
-  }, []);
-  const applySemanticFlow = useCallback(
-    (nextFlow: MediaFlow): void => {
-      if (
-        createMediaFlowDocumentDigest(flow) ===
-        createMediaFlowDocumentDigest(nextFlow)
-      ) {
-        return;
-      }
-      semanticUndoStack.current = [
-        ...semanticUndoStack.current.slice(-(SEMANTIC_HISTORY_LIMIT - 1)),
-        flow,
-      ];
-      semanticRedoStack.current = [];
-      setSemanticHistoryRevision((revision) => revision + 1);
-      setFlowRevisionNotice(null);
-      replaceSemanticFlow(nextFlow);
+  const replaceFlowEdit = useCallback(
+    (snapshot: MediaFlowEditSnapshot): void => {
+      setRuntimeError(null);
+      setState((current) => ({
+        ...current,
+        flow: snapshot.flow,
+        flowLayout: snapshot.layout,
+      }));
     },
-    [flow, replaceSemanticFlow],
+    [],
+  );
+  const clearFlowEditHistory = useCallback((): void => {
+    flowUndoStack.current = [];
+    flowRedoStack.current = [];
+    setFlowEditHistoryRevision((revision) => revision + 1);
+  }, []);
+  const applyFlowEdit = useCallback(
+    (
+      nextFlow: MediaFlow,
+      nextLayout = reconcileMediaFlowLayout(nextFlow, layout),
+    ): void => {
+      if (
+        createMediaFlowDocumentDigest(flow) === createMediaFlowDocumentDigest(nextFlow) &&
+        createMediaFlowLayoutDigest(layout) === createMediaFlowLayoutDigest(nextLayout)
+      ) return;
+      flowUndoStack.current = [
+        ...flowUndoStack.current.slice(-(FLOW_EDIT_HISTORY_LIMIT - 1)),
+        { flow, layout },
+      ];
+      flowRedoStack.current = [];
+      setFlowEditHistoryRevision((revision) => revision + 1);
+      setFlowRevisionNotice(null);
+      replaceFlowEdit({ flow: nextFlow, layout: nextLayout });
+    },
+    [flow, layout, replaceFlowEdit],
+  );
+  const changeFlowLayout = useCallback(
+    (nextLayout: MediaFlowLayout) => applyFlowEdit(flow, nextLayout),
+    [applyFlowEdit, flow],
   );
   const applyFlowTemplate = useCallback(
     (result: InstantiateMediaFlowTemplateResult): void => {
-      applySemanticFlow(result.flow);
-      changeFlowLayout(result.layout);
+      applyFlowEdit(result.flow, result.layout);
       setFlowHistory(null);
       setFlowRunOverlayId(null);
       setFlowRevisionNotice(
         `Forked ${result.flow.name} as a new editable flow.`,
       );
     },
-    [applySemanticFlow, changeFlowLayout],
+    [applyFlowEdit],
   );
   const useAssetAsCreateReference = useCallback(
     (asset: MediaAssetRecord): void => {
@@ -2072,14 +2081,13 @@ export const MediaStudio = ({
           transparentBackground,
         },
       });
-      applySemanticFlow(videoFlow);
-      changeFlowLayout(createMediaFlowLayout(videoFlow));
+      applyFlowEdit(videoFlow, createMediaFlowLayout(videoFlow));
       setFlowHistory(null);
       setFlowRunOverlayId(null);
       setFlowRevisionNotice("Video setup converted to Advanced.");
       setState((current) => ({ ...current, activeSection: "flow" }));
     },
-    [applySemanticFlow, changeFlowLayout, state.videoRecipe],
+    [applyFlowEdit, state.videoRecipe],
   );
   const createCurrentVideoFlow = useCallback((): MediaFlow => {
     const architecture = activeModelCatalog.models.find(
@@ -2124,41 +2132,40 @@ export const MediaStudio = ({
   ]);
   const openVideoCreationFlow = useCallback((): void => {
     const videoFlow = createCurrentVideoFlow();
-    applySemanticFlow(videoFlow);
-    changeFlowLayout(createMediaFlowLayout(videoFlow));
+    applyFlowEdit(videoFlow, createMediaFlowLayout(videoFlow));
     setFlowHistory(null);
     setFlowRunOverlayId(null);
     setFlowRevisionNotice(null);
     setState((current) => ({ ...current, activeSection: "flow" }));
-  }, [applySemanticFlow, changeFlowLayout, createCurrentVideoFlow]);
+  }, [applyFlowEdit, createCurrentVideoFlow]);
   const openAssetInLibrary = useCallback((asset: MediaAssetRecord): void => {
     setImportedAssetId(asset.id);
     setState((current) => ({ ...current, activeSection: "library" }));
   }, []);
-  const undoSemanticFlow = useCallback((): void => {
-    const previous = semanticUndoStack.current.at(-1);
+  const undoFlowEdit = useCallback((): void => {
+    const previous = flowUndoStack.current.at(-1);
     if (!previous) return;
-    semanticUndoStack.current = semanticUndoStack.current.slice(0, -1);
-    semanticRedoStack.current = [
-      ...semanticRedoStack.current.slice(-(SEMANTIC_HISTORY_LIMIT - 1)),
-      flow,
+    flowUndoStack.current = flowUndoStack.current.slice(0, -1);
+    flowRedoStack.current = [
+      ...flowRedoStack.current.slice(-(FLOW_EDIT_HISTORY_LIMIT - 1)),
+      { flow, layout },
     ];
-    replaceSemanticFlow(previous);
-    setFlowRevisionNotice("Undid semantic flow change.");
-    setSemanticHistoryRevision((revision) => revision + 1);
-  }, [flow, replaceSemanticFlow]);
-  const redoSemanticFlow = useCallback((): void => {
-    const next = semanticRedoStack.current.at(-1);
+    replaceFlowEdit(previous);
+    setFlowRevisionNotice(null);
+    setFlowEditHistoryRevision((revision) => revision + 1);
+  }, [flow, layout, replaceFlowEdit]);
+  const redoFlowEdit = useCallback((): void => {
+    const next = flowRedoStack.current.at(-1);
     if (!next) return;
-    semanticRedoStack.current = semanticRedoStack.current.slice(0, -1);
-    semanticUndoStack.current = [
-      ...semanticUndoStack.current.slice(-(SEMANTIC_HISTORY_LIMIT - 1)),
-      flow,
+    flowRedoStack.current = flowRedoStack.current.slice(0, -1);
+    flowUndoStack.current = [
+      ...flowUndoStack.current.slice(-(FLOW_EDIT_HISTORY_LIMIT - 1)),
+      { flow, layout },
     ];
-    replaceSemanticFlow(next);
-    setFlowRevisionNotice("Redid semantic flow change.");
-    setSemanticHistoryRevision((revision) => revision + 1);
-  }, [flow, replaceSemanticFlow]);
+    replaceFlowEdit(next);
+    setFlowRevisionNotice(null);
+    setFlowEditHistoryRevision((revision) => revision + 1);
+  }, [flow, layout, replaceFlowEdit]);
   const changeRecipe = useCallback((recipe: ImageRecipeSettings): void => {
     setState((current) => ({ ...current, recipe }));
   }, []);
@@ -2208,12 +2215,12 @@ export const MediaStudio = ({
           value,
           updatedAt: new Date().toISOString(),
         });
-        applySemanticFlow(nextFlow);
+        applyFlowEdit(nextFlow);
       } catch (error: unknown) {
         setRuntimeError(normalizeMediaError(error, "edit_media_flow_node"));
       }
     },
-    [applySemanticFlow, flow],
+    [applyFlowEdit, flow],
   );
   const changeFlowNodeConfigs = useCallback(
     (nodeId: string, values: Readonly<Record<string, unknown>>): void => {
@@ -2224,17 +2231,17 @@ export const MediaStudio = ({
           values,
           updatedAt: new Date().toISOString(),
         });
-        applySemanticFlow(nextFlow);
+        applyFlowEdit(nextFlow);
       } catch (error: unknown) {
         setRuntimeError(normalizeMediaError(error, "edit_media_flow_node"));
       }
     },
-    [applySemanticFlow, flow],
+    [applyFlowEdit, flow],
   );
   const changeFlowNodeLabel = useCallback(
     (nodeId: string, label: string): void => {
       try {
-        applySemanticFlow(
+        applyFlowEdit(
           updateMediaFlowNodeLabel({
             flow,
             nodeId,
@@ -2246,7 +2253,7 @@ export const MediaStudio = ({
         setRuntimeError(normalizeMediaError(error, "edit_media_flow_node"));
       }
     },
-    [applySemanticFlow, flow],
+    [applyFlowEdit, flow],
   );
   const addFlowNode = useCallback(
     (nodeType: MediaNodeType): string | null => {
@@ -2256,19 +2263,19 @@ export const MediaStudio = ({
           type: nodeType,
           updatedAt: new Date().toISOString(),
         });
-        applySemanticFlow(result.flow);
+        applyFlowEdit(result.flow);
         return result.nodeId;
       } catch (error: unknown) {
         setRuntimeError(normalizeMediaError(error, "add_media_flow_node"));
         return null;
       }
     },
-    [applySemanticFlow, flow],
+    [applyFlowEdit, flow],
   );
   const removeFlowNode = useCallback(
     (nodeId: string): void => {
       try {
-        applySemanticFlow(
+        applyFlowEdit(
           removeMediaFlowNode({
             flow,
             nodeId,
@@ -2279,12 +2286,12 @@ export const MediaStudio = ({
         setRuntimeError(normalizeMediaError(error, "remove_media_flow_node"));
       }
     },
-    [applySemanticFlow, flow],
+    [applyFlowEdit, flow],
   );
   const connectFlowPorts = useCallback(
     (request: MediaFlowConnectionRequest): void => {
       try {
-        applySemanticFlow(
+        applyFlowEdit(
           connectMediaFlowPorts({
             flow,
             request,
@@ -2295,11 +2302,11 @@ export const MediaStudio = ({
         setRuntimeError(normalizeMediaError(error, "connect_media_flow_ports"));
       }
     },
-    [applySemanticFlow, flow],
+    [applyFlowEdit, flow],
   );
   const disconnectFlowInput = useCallback(
     (nodeId: string, portId: string): void => {
-      applySemanticFlow(
+      applyFlowEdit(
         disconnectMediaFlowInput({
           flow,
           nodeId,
@@ -2308,11 +2315,11 @@ export const MediaStudio = ({
         }),
       );
     },
-    [applySemanticFlow, flow],
+    [applyFlowEdit, flow],
   );
   const disconnectFlowConnection = useCallback(
     (request: MediaFlowConnectionRequest): void => {
-      applySemanticFlow(
+      applyFlowEdit(
         disconnectMediaFlowConnection({
           flow,
           request,
@@ -2320,7 +2327,7 @@ export const MediaStudio = ({
         }),
       );
     },
-    [applySemanticFlow, flow],
+    [applyFlowEdit, flow],
   );
   const copyFlowNode = useCallback(
     (nodeId: string): void => {
@@ -2358,7 +2365,7 @@ export const MediaStudio = ({
         payload: flowClipboard,
         updatedAt: new Date().toISOString(),
       });
-      applySemanticFlow(result.flow);
+      applyFlowEdit(result.flow);
       setFlowRevisionNotice(
         flowClipboard.nodes.length === 1
           ? `Pasted ${flowClipboard.label} as an independently remapped node.`
@@ -2369,7 +2376,7 @@ export const MediaStudio = ({
       setRuntimeError(normalizeMediaError(error, "paste_media_flow_node"));
       return null;
     }
-  }, [applySemanticFlow, flow, flowClipboard]);
+  }, [applyFlowEdit, flow, flowClipboard]);
   const pasteInspection = useMemo(
     () =>
       flowClipboard
@@ -2511,7 +2518,7 @@ export const MediaStudio = ({
             throw new Error("The saved workflow has no head revision.");
           }
           const openedFlow = head.flow;
-          clearSemanticHistory();
+          clearFlowEditHistory();
           setFlowHistory(history);
           setFlowRunOverlayId(null);
           setState((current) => ({
@@ -2528,7 +2535,7 @@ export const MediaStudio = ({
         .finally(() => setSavedFlowsLoading(false));
     },
     [
-      clearSemanticHistory,
+      clearFlowEditHistory,
       flow.id,
       flow.name,
       preserveFlowDraft,
@@ -2598,7 +2605,7 @@ export const MediaStudio = ({
       openVideoCreationFlow();
       return;
     }
-    clearSemanticHistory();
+    clearFlowEditHistory();
     setFlowHistory(null);
     setFlowRunOverlayId(null);
     setFlowRevisionNotice("Basic setup converted to Advanced.");
@@ -2616,7 +2623,7 @@ export const MediaStudio = ({
       flowLayout: createMediaFlowLayout(convertedFlow),
     }));
   }, [
-    clearSemanticHistory,
+    clearFlowEditHistory,
     openVideoCreationFlow,
     recipeFlow,
     state.target,
@@ -2634,7 +2641,7 @@ export const MediaStudio = ({
         if (!result) {
           return;
         }
-        clearSemanticHistory();
+        clearFlowEditHistory();
         setState((current) => ({
           ...current,
           activeSection: "flow",
@@ -2643,7 +2650,7 @@ export const MediaStudio = ({
         }));
       });
     },
-    [clearSemanticHistory, persistFlowRevision],
+    [clearFlowEditHistory, persistFlowRevision],
   );
 
   const inspectPortableFlow = useCallback((): void => {
@@ -2705,7 +2712,7 @@ export const MediaStudio = ({
         const history = await getMediaFlow(result.targetFlowId);
         const importedFlow = result.revision.flow;
         const importedLayout = result.revision.layout;
-        clearSemanticHistory();
+        clearFlowEditHistory();
         setFlowHistory(history);
         const importedHead = history.head;
         if (importedHead) {
@@ -2736,7 +2743,7 @@ export const MediaStudio = ({
       })
       .finally(() => setFlowPortabilityLoading(false));
   }, [
-    clearSemanticHistory,
+    clearFlowEditHistory,
     flowImportInspection,
     flowImportSourcePath,
     flowPortabilityLoading,
@@ -4250,7 +4257,7 @@ export const MediaStudio = ({
           if (!revision) {
             throw new Error("The pinned flow revision is unavailable.");
           }
-          clearSemanticHistory();
+          clearFlowEditHistory();
           ++selectedRunDetailSequence.current;
           selectedRunIdRef.current = run.id;
           setSelectedRunId(run.id);
@@ -4271,7 +4278,7 @@ export const MediaStudio = ({
         })
         .finally(() => setFlowRevisionLoading(false));
     },
-    [clearSemanticHistory, preserveFlowDraft],
+    [clearFlowEditHistory, preserveFlowDraft],
   );
   const reuseRunSettings = useCallback(
     (runId: string): void => {
@@ -4297,7 +4304,7 @@ export const MediaStudio = ({
           return;
         }
         if (!revision) return;
-        clearSemanticHistory();
+        clearFlowEditHistory();
         setFlowRunOverlayId(null);
         setState((current) => ({
           ...current,
@@ -4338,7 +4345,7 @@ export const MediaStudio = ({
         })
         .finally(() => setFlowRevisionLoading(false));
     },
-    [clearSemanticHistory, selectedRun, preserveFlowDraft],
+    [clearFlowEditHistory, selectedRun, preserveFlowDraft],
   );
   const inspectRunSettings = useCallback(
     (runId: string): void => {
@@ -4972,8 +4979,7 @@ export const MediaStudio = ({
                 jobs={generationJobs}
                 onCancel={cancelRun}
                 onOpenFlow={(next) => {
-                  applySemanticFlow(next);
-                  changeFlowLayout(createMediaFlowLayout(next));
+                  applyFlowEdit(next, createMediaFlowLayout(next));
                   setFlowHistory(null);
                   setFlowRunOverlayId(null);
                   setState((current) => ({
@@ -5157,7 +5163,7 @@ export const MediaStudio = ({
                 assetMetadata={state.assetMetadata}
                 categories={state.categories}
                 onLayoutChange={changeFlowLayout}
-                onFlowVariablesChange={applySemanticFlow}
+                onFlowVariablesChange={applyFlowEdit}
                 onPoseAssetsCreated={(assets) => {
                   setRuntimeAssets((current) => [
                     ...assets,
@@ -5177,10 +5183,10 @@ export const MediaStudio = ({
                 onConnectPorts={connectFlowPorts}
                 onDisconnectInput={disconnectFlowInput}
                 onDisconnectConnection={disconnectFlowConnection}
-                canUndoSemantic={semanticUndoStack.current.length > 0}
-                canRedoSemantic={semanticRedoStack.current.length > 0}
-                onUndoSemantic={undoSemanticFlow}
-                onRedoSemantic={redoSemanticFlow}
+                canUndo={flowUndoStack.current.length > 0}
+                canRedo={flowRedoStack.current.length > 0}
+                onUndo={undoFlowEdit}
+                onRedo={redoFlowEdit}
                 onNodeCopy={copyFlowNode}
                 onNodePaste={pasteFlowNode}
                 onNodesCopy={copySelectedFlowNodes}

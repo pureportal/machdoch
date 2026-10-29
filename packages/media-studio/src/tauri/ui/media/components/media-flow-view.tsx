@@ -259,10 +259,10 @@ interface MediaFlowViewProps {
   onConnectPorts: (request: MediaFlowConnectionRequest) => void;
   onDisconnectInput: (nodeId: string, portId: string) => void;
   onDisconnectConnection?: (request: MediaFlowConnectionRequest) => void;
-  canUndoSemantic?: boolean;
-  canRedoSemantic?: boolean;
-  onUndoSemantic?: () => void;
-  onRedoSemantic?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  onUndo?: () => void;
+  onRedo?: () => void;
   onNodeCopy?: (nodeId: string) => void;
   onNodesCopy?: (nodeIds: readonly string[]) => void;
   onNodePaste?: () => string | null;
@@ -4063,10 +4063,10 @@ export const MediaFlowView = ({
   onConnectPorts,
   onDisconnectInput,
   onDisconnectConnection,
-  canUndoSemantic = false,
-  canRedoSemantic = false,
-  onUndoSemantic = () => undefined,
-  onRedoSemantic = () => undefined,
+  canUndo = false,
+  canRedo = false,
+  onUndo = () => undefined,
+  onRedo = () => undefined,
   onNodeCopy = () => undefined,
   onNodesCopy = () => undefined,
   onNodePaste = () => null,
@@ -4127,15 +4127,12 @@ export const MediaFlowView = ({
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
   const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
-  const undoStack = useRef<MediaFlowLayout[]>([]);
-  const redoStack = useRef<MediaFlowLayout[]>([]);
   const previousCanvasLayoutKey = useRef<string | null>(null);
   const flowInstance = useRef<ReactFlowInstance<
     MediaCanvasNode,
     MediaCanvasEdge
   > | null>(null);
   const lastFollowedActiveNodes = useRef("");
-  const [, setHistoryRevision] = useState(0);
   const layoutByNodeId = useMemo(
     () => new Map(layout.nodes.map((entry) => [entry.nodeId, entry])),
     [layout.nodes],
@@ -4463,8 +4460,8 @@ export const MediaFlowView = ({
   const openCommandPage = useOptionalCommandPageLauncher();
   const mediaCommandStateRef = useRef({
     canPasteNode,
-    canRedoSemantic,
-    canUndoSemantic,
+    canRedo,
+    canUndo,
     clipboardLabel,
     flow,
     hasUnsavedChanges,
@@ -4482,14 +4479,14 @@ export const MediaFlowView = ({
     onNodePaste,
     onNodesCopy,
     onOpenSavedFlow,
-    onRedoSemantic,
+    onRedo,
     onRefreshHistory,
     onRefreshSavedFlows,
     onRestoreRevision,
     onRunLocalFlow,
     onRunOverlayClear,
     onSaveRevision,
-    onUndoSemantic,
+    onUndo,
     pasteBlockedReason,
     portabilityLoading,
     portabilitySupported,
@@ -4507,8 +4504,8 @@ export const MediaFlowView = ({
   });
   mediaCommandStateRef.current = {
     canPasteNode,
-    canRedoSemantic,
-    canUndoSemantic,
+    canRedo,
+    canUndo,
     clipboardLabel,
     flow,
     hasUnsavedChanges,
@@ -4526,14 +4523,14 @@ export const MediaFlowView = ({
     onNodePaste,
     onNodesCopy,
     onOpenSavedFlow,
-    onRedoSemantic,
+    onRedo,
     onRefreshHistory,
     onRefreshSavedFlows,
     onRestoreRevision,
     onRunLocalFlow,
     onRunOverlayClear,
     onSaveRevision,
-    onUndoSemantic,
+    onUndo,
     pasteBlockedReason,
     portabilityLoading,
     portabilitySupported,
@@ -4562,20 +4559,20 @@ export const MediaFlowView = ({
       },
       {
         id: "media.flow.undo",
-        title: "Undo semantic change",
+        title: "Undo flow edit",
         group: "Media",
         scope: { kind: "view", ownerId: "media" },
         shortcuts: [{ chord: getDefaultCommandShortcut("media.flow.undo") }],
         palette: "visible",
         availability: () =>
-          mediaCommandStateRef.current.canUndoSemantic
+          mediaCommandStateRef.current.canUndo
             ? { state: "enabled" }
             : { state: "disabled", reason: "Nothing to undo" },
-        execute: () => mediaCommandStateRef.current.onUndoSemantic(),
+        execute: () => mediaCommandStateRef.current.onUndo(),
       },
       {
         id: "media.flow.redo",
-        title: "Redo semantic change",
+        title: "Redo flow edit",
         group: "Media",
         scope: { kind: "view", ownerId: "media" },
         shortcuts: [
@@ -4587,10 +4584,10 @@ export const MediaFlowView = ({
         ],
         palette: "visible",
         availability: () =>
-          mediaCommandStateRef.current.canRedoSemantic
+          mediaCommandStateRef.current.canRedo
             ? { state: "enabled" }
             : { state: "disabled", reason: "Nothing to redo" },
-        execute: () => mediaCommandStateRef.current.onRedoSemantic(),
+        execute: () => mediaCommandStateRef.current.onRedo(),
       },
       {
         id: "media.selection.copy",
@@ -5151,9 +5148,6 @@ export const MediaFlowView = ({
   }, [panelOpen, topologyKey]);
 
   useEffect(() => {
-    undoStack.current = [];
-    redoStack.current = [];
-    setHistoryRevision((revision) => revision + 1);
     setSelectedNodeId((current) =>
       current && flow.nodes.some((node) => node.id === current)
         ? current
@@ -5170,59 +5164,6 @@ export const MediaFlowView = ({
       ),
     );
   }, [collapsedNodeIds, flow.nodes]);
-
-  const commitLayout = useCallback(
-    (nextLayout: MediaFlowLayout): void => {
-      const nodesUnchanged =
-        nextLayout.nodes.length === layout.nodes.length &&
-        nextLayout.nodes.every((entry, index) => {
-          const current = layout.nodes[index];
-          return (
-            current?.nodeId === entry.nodeId &&
-            current.x === entry.x &&
-            current.y === entry.y
-          );
-        });
-      const groupsUnchanged =
-        nextLayout.groups.length === layout.groups.length &&
-        nextLayout.groups.every((group, index) => {
-          const current = layout.groups[index];
-          return (
-            current?.id === group.id &&
-            current.label === group.label &&
-            current.color === group.color &&
-            current.collapsed === group.collapsed &&
-            current.nodeIds.length === group.nodeIds.length &&
-            current.nodeIds.every(
-              (nodeId, nodeIndex) => nodeId === group.nodeIds[nodeIndex],
-            )
-          );
-        });
-      const commentsUnchanged =
-        nextLayout.comments.length === layout.comments.length &&
-        nextLayout.comments.every((comment, index) => {
-          const current = layout.comments[index];
-          return (
-            current?.id === comment.id &&
-            current.body === comment.body &&
-            current.color === comment.color &&
-            current.x === comment.x &&
-            current.y === comment.y &&
-            current.width === comment.width &&
-            current.height === comment.height
-          );
-        });
-      if (nodesUnchanged && groupsUnchanged && commentsUnchanged) {
-        return;
-      }
-
-      undoStack.current = [...undoStack.current.slice(-99), layout];
-      redoStack.current = [];
-      onLayoutChange(nextLayout);
-      setHistoryRevision((revision) => revision + 1);
-    },
-    [layout, onLayoutChange],
-  );
 
   const handleSelectionChange = useCallback(
     ({ nodes }: OnSelectionChangeParams<MediaCanvasNode, Edge>): void => {
@@ -5280,7 +5221,7 @@ export const MediaFlowView = ({
         layout,
         nodeIds: selectedNodeIds,
       });
-      commitLayout(result.layout);
+      onLayoutChange(result.layout);
       setSelectedNodeIds([]);
       setLayoutNotice(
         `Created ${result.groupId} with ${selectedNodeIds.length} nodes.`,
@@ -5300,7 +5241,7 @@ export const MediaFlowView = ({
           : "The selected nodes could not be grouped.",
       );
     }
-  }, [commitLayout, layout, selectedNodeIds]);
+  }, [onLayoutChange, layout, selectedNodeIds]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<MediaCanvasNode>[]): void => {
@@ -5332,7 +5273,7 @@ export const MediaFlowView = ({
       if (completedPositions.size === 0) {
         return;
       }
-      commitLayout({
+      onLayoutChange({
         ...layout,
         nodes: layout.nodes.map((entry) => {
           const position = completedPositions.get(entry.nodeId);
@@ -5348,98 +5289,49 @@ export const MediaFlowView = ({
         }),
       });
     },
-    [applyCanvasNodeChanges, commitLayout, flowNodesById, layout],
+    [applyCanvasNodeChanges, onLayoutChange, flowNodesById, layout],
   );
 
   const autoLayout = useCallback((): void => {
-    commitLayout({
+    onLayoutChange({
       ...createMediaFlowLayout(flow),
       groups: layout.groups,
       comments: layout.comments,
     });
-  }, [commitLayout, flow, layout.comments, layout.groups]);
+  }, [onLayoutChange, flow, layout.comments, layout.groups]);
 
-  const undoLayout = useCallback((): void => {
-    const previous = undoStack.current.at(-1);
-    if (!previous) {
-      return;
-    }
-    undoStack.current = undoStack.current.slice(0, -1);
-    redoStack.current = [...redoStack.current.slice(-99), layout];
-    onLayoutChange(previous);
-    setHistoryRevision((revision) => revision + 1);
-  }, [layout, onLayoutChange]);
-
-  const redoLayout = useCallback((): void => {
-    const next = redoStack.current.at(-1);
-    if (!next) {
-      return;
-    }
-    redoStack.current = redoStack.current.slice(0, -1);
-    undoStack.current = [...undoStack.current.slice(-99), layout];
-    onLayoutChange(next);
-    setHistoryRevision((revision) => revision + 1);
-  }, [layout, onLayoutChange]);
   const layoutCommandStateRef = useRef({
     autoLayout,
     canGroupSelection,
-    commitLayout,
+    onLayoutChange,
     flow,
     groupSelectedNodes,
     layout,
     onNodeRemove,
-    redoLayout,
     selectAllFlowNodes,
     selectedNodeId,
     selectedNodeIds,
     setGroupsPanelOpen,
     setSelectedNodeId,
     setSelectedNodeIds,
-    undoLayout,
   });
   layoutCommandStateRef.current = {
     autoLayout,
     canGroupSelection,
-    commitLayout,
+    onLayoutChange,
     flow,
     groupSelectedNodes,
     layout,
     onNodeRemove,
-    redoLayout,
     selectAllFlowNodes,
     selectedNodeId,
     selectedNodeIds,
     setGroupsPanelOpen,
     setSelectedNodeId,
     setSelectedNodeIds,
-    undoLayout,
   };
   const layoutCommands = useMemo<readonly CommandDefinition[]>(
     () => [
-      {
-        id: "media.layout.undo",
-        title: "Undo layout change",
-        group: "Media",
-        scope: { kind: "view", ownerId: "media" },
-        palette: "visible",
-        availability: () =>
-          undoStack.current.length > 0
-            ? { state: "enabled" }
-            : { state: "disabled", reason: "Nothing to undo in the layout" },
-        execute: () => layoutCommandStateRef.current.undoLayout(),
-      },
-      {
-        id: "media.layout.redo",
-        title: "Redo layout change",
-        group: "Media",
-        scope: { kind: "view", ownerId: "media" },
-        palette: "visible",
-        availability: () =>
-          redoStack.current.length > 0
-            ? { state: "enabled" }
-            : { state: "disabled", reason: "Nothing to redo in the layout" },
-        execute: () => layoutCommandStateRef.current.redoLayout(),
-      },
       {
         id: "media.layout.auto",
         title: "Auto-layout workflow",
@@ -5537,7 +5429,7 @@ export const MediaFlowView = ({
                   title: group.label,
                   execute: () => {
                     const state = layoutCommandStateRef.current;
-                    state.commitLayout(
+                    state.onLayoutChange(
                       removeMediaFlowLayoutGroup(state.layout, group.id),
                     );
                   },
@@ -5559,7 +5451,7 @@ export const MediaFlowView = ({
             : { state: "disabled", reason: "The canvas has 64 comments" },
         execute: () => {
           const state = layoutCommandStateRef.current;
-          state.commitLayout(
+          state.onLayoutChange(
             addMediaFlowLayoutComment({ layout: state.layout }).layout,
           );
           state.setGroupsPanelOpen(true);
@@ -5647,11 +5539,26 @@ export const MediaFlowView = ({
         <div className="flex max-w-full shrink-0 items-center gap-2 overflow-x-auto pb-1 xl:pb-0">
           <div
             className="flex items-center"
-            aria-label="Semantic editing controls"
+            aria-label="Flow editing controls"
           >
             <FlowHistoryControls
-              undo={{ label: "Undo semantic change", disabled: !canUndoSemantic, onClick: onUndoSemantic, keyShortcuts: undoShortcut?.ariaKeyShortcuts }}
-              redo={{ label: "Redo semantic change", disabled: !canRedoSemantic, onClick: onRedoSemantic, keyShortcuts: redoShortcut?.ariaKeyShortcuts }}
+              undo={{
+                label: "Undo flow edit",
+                disabled: !canUndo,
+                onClick: onUndo,
+                keyShortcuts: undoShortcut?.ariaKeyShortcuts,
+              }}
+              redo={{
+                label: "Redo flow edit",
+                disabled: !canRedo,
+                onClick: onRedo,
+                keyShortcuts: redoShortcut?.ariaKeyShortcuts,
+              }}
+              layout={{
+                label: "Auto-layout flow",
+                disabled: false,
+                onClick: autoLayout,
+              }}
             />
             <Button
               type="button"
@@ -5775,11 +5682,6 @@ export const MediaFlowView = ({
               <Group className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <FlowHistoryControls
-            undo={{ label: "Undo layout change", disabled: undoStack.current.length === 0, onClick: undoLayout }}
-            redo={{ label: "Redo layout change", disabled: redoStack.current.length === 0, onClick: redoLayout }}
-            layout={{ label: "Auto-layout flow", disabled: false, onClick: autoLayout }}
-          />
           <div className="flex items-center gap-1">
             <SavedWorkflowPicker
               flow={flow}
@@ -6325,7 +6227,7 @@ export const MediaFlowView = ({
           <VisualGroupsPanel
             flow={flow}
             layout={layout}
-            onChange={commitLayout}
+            onChange={onLayoutChange}
             onClose={() => setGroupsPanelOpen(false)}
           />
         ) : historyPanelOpen ? (

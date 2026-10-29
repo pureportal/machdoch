@@ -7,6 +7,8 @@ import {
   ReactFlow,
   ReactFlowProvider,
   getSmoothStepPath,
+  useNodesInitialized,
+  useReactFlow,
   type Edge,
   type EdgeProps,
   type EdgeTypes,
@@ -16,6 +18,8 @@ import {
 } from "@xyflow/react";
 import {
   useMemo,
+  useEffect,
+  useRef,
   type CSSProperties,
   type JSX,
   type Key,
@@ -96,6 +100,25 @@ export const FLOW_EDGE_TYPES = {
   [FLOW_EDGE_TYPE]: FlowEdge,
 } satisfies EdgeTypes;
 
+const FlowInitialViewport = ({
+  options,
+}: {
+  options: ReactFlowProps["fitViewOptions"];
+}): null => {
+  const initialized = useNodesInitialized();
+  const { fitView, viewportInitialized } = useReactFlow();
+  const fitted = useRef(false);
+  useEffect(() => {
+    if (!initialized || !viewportInitialized || fitted.current) return;
+    const frame = requestAnimationFrame(() => {
+      fitted.current = true;
+      void fitView(options);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [initialized, viewportInitialized, fitView, options]);
+  return null;
+};
+
 type CanonicalReactFlowProps<
   NodeType extends Node,
   EdgeType extends Edge,
@@ -135,6 +158,7 @@ export function FlowCanvas<NodeType extends Node, EdgeType extends Edge>({
   className,
   defaultEdgeOptions,
   edgeTypes,
+  fitView = true,
   fitViewOptions,
   minZoom = FLOW_CANVAS_MIN_ZOOM,
   miniMapNodeColor = "#475569",
@@ -158,7 +182,6 @@ export function FlowCanvas<NodeType extends Node, EdgeType extends Edge>({
   return (
     <ReactFlowProvider key={providerKey}>
       <ReactFlow<NodeType, EdgeType>
-        fitView
         selectionOnDrag
         multiSelectionKeyCode={["Control", "Meta"]}
         {...props}
@@ -181,6 +204,9 @@ export function FlowCanvas<NodeType extends Node, EdgeType extends Edge>({
         maxZoom={FLOW_CANVAS_MAX_ZOOM}
         proOptions={{ hideAttribution: true }}
       >
+        {fitView ? (
+          <FlowInitialViewport options={resolvedFitViewOptions} />
+        ) : null}
         {children}
         <Background gap={24} size={1} color="#1e293b" />
         {showMiniMap ? (

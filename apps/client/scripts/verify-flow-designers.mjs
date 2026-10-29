@@ -29,9 +29,8 @@ const count = async (selector, expected) =>
       document.querySelectorAll(selector).length === expected,
     { selector, expected },
   );
-const fit = async () => {
-  await page.getByRole("button", { name: "Fit View", exact: true }).click();
-  await page.waitForFunction(() => {
+const waitForFramedNodes = async () => {
+  return page.waitForFunction(() => {
     const canvas = document
       .querySelector(".react-flow")
       .getBoundingClientRect();
@@ -46,6 +45,10 @@ const fit = async () => {
       );
     });
   });
+};
+const fit = async () => {
+  await page.getByRole("button", { name: "Fit View", exact: true }).click();
+  await waitForFramedNodes();
   await page.locator(".react-flow__viewport").evaluate(
     (element) =>
       new Promise((resolve) => {
@@ -161,11 +164,13 @@ try {
     .getByRole("button", { name: "Create blank Ralph flow from canvas" })
     .click();
   await count(".react-flow__node", 2);
+  await waitForFramedNodes();
+  checks.push("RALPH: opening the flow fits all nodes automatically");
   await page.getByRole("button", { name: "Add Validate block" }).click();
   await count(".react-flow__node", 3);
-  await page.getByRole("button", { name: "Undo Ralph edit" }).click();
+  await page.getByRole("button", { name: "Undo flow edit" }).click();
   await count(".react-flow__node", 2);
-  await page.getByRole("button", { name: "Redo Ralph edit" }).click();
+  await page.getByRole("button", { name: "Redo flow edit" }).click();
   await count(".react-flow__node", 3);
   checks.push("RALPH: add node, undo, redo");
   await page.getByRole("button", { name: "Hide block settings" }).click();
@@ -204,6 +209,8 @@ try {
     .getByRole("button", { name: "Media Studio" })
     .click();
   await count(".react-flow__node", 3);
+  await waitForFramedNodes();
+  checks.push("Media Studio: opening the flow fits all nodes automatically");
   await fit();
   await checkPorts("Media Studio");
   await checkSelectionAndPan("Media Studio", "prompt", "generate");
@@ -219,17 +226,17 @@ try {
   assert.deepEqual(mediaStyle, ralphStyle);
   checks.push("Both designers: identical port typography and spacing");
   await page.getByRole("button", { name: "Add node", exact: true }).click();
-  await page.getByLabel("Search node palette").fill("Seed");
-  await page.getByRole("button", { name: "Add Seed", exact: true }).click();
+  await page.getByPlaceholder("Search nodes", { exact: true }).fill("Seed");
+  await page.getByRole("option", { name: "Seed", exact: true }).click();
   await count(".react-flow__node", 4);
   const seedId = await page
     .locator(".react-flow__node")
     .filter({ hasText: /^sourceSeed/ })
     .getAttribute("data-id");
   await page.getByRole("button", { name: "Close node inspector" }).click();
-  await page.getByRole("button", { name: "Undo semantic change" }).click();
+  await page.getByRole("button", { name: "Undo flow edit" }).click();
   await count(".react-flow__node", 3);
-  await page.getByRole("button", { name: "Redo semantic change" }).click();
+  await page.getByRole("button", { name: "Redo flow edit" }).click();
   await count(".react-flow__node", 4);
   await fit();
   checks.push("Media Studio: search, add node, undo, redo");
@@ -257,14 +264,14 @@ try {
     "Media Studio: connect typed ports and reject incompatible connection",
   );
   const seedPosition = await dragNode(seedId);
-  await page.getByRole("button", { name: "Undo layout change" }).click();
+  await page.getByRole("button", { name: "Undo flow edit" }).click();
   await page.waitForFunction(
     ({ id, position }) =>
       document.querySelector(`.react-flow__node[data-id="${id}"]`).style
         .transform === position,
     { id: seedId, position: seedPosition.before },
   );
-  await page.getByRole("button", { name: "Redo layout change" }).click();
+  await page.getByRole("button", { name: "Redo flow edit" }).click();
   await page.waitForFunction(
     ({ id, position }) =>
       document.querySelector(`.react-flow__node[data-id="${id}"]`).style
@@ -312,6 +319,20 @@ try {
   });
   checks.push("Media Studio: group bounds enclose full card and all ports");
   await page.screenshot({ path: path.join(output, "media-group.png") });
+  await page.getByRole("button", { name: "Add node", exact: true }).click();
+  await page.getByPlaceholder("Search nodes", { exact: true }).fill("Edit image");
+  await page.getByRole("option", { name: "Edit image", exact: true }).click();
+  await count(".react-flow__node", 6);
+  const editCard = page.locator(".react-flow__node").filter({ hasText: /^taskEdit image/ });
+  const maskRow = editCard.locator(".flow-port-row").filter({ hasText: /^Mask/ });
+  assert.equal(await maskRow.count(), 1);
+  assert.equal(await maskRow.locator(".react-flow__handle").count(), 1);
+  await page.getByRole("button", { name: "Close node inspector" }).click();
+  await fit();
+  await checkPorts("Media Studio masked-image task");
+  await editCard.screenshot({ path: path.join(output, "media-masked-image.png") });
+  await page.getByRole("button", { name: "Undo flow edit" }).click();
+  await count(".react-flow__node", 5);
   await page.setViewportSize({ width: 900, height: 700 });
   await fit();
   await checkPorts("Media Studio compact");
