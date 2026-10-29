@@ -205,6 +205,37 @@ const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
   });
 };
 
+// Claude Code accepts these flags but no longer lists them in `--help`.
+const CLAUDE_UNLISTED_FILE_FLAGS = [
+  "--append-system-prompt-file",
+  "--append-subagent-system-prompt-file",
+] as const;
+const CLAUDE_FLAG_PROBE_MISSING_FILE = "machdoch-flag-probe-missing-file";
+
+const detectUnlistedClaudeFileFlags = async (
+  executable: string,
+  advertised: readonly string[],
+): Promise<string[]> => {
+  const accepted: string[] = [];
+  for (const flag of CLAUDE_UNLISTED_FILE_FLAGS) {
+    if (advertised.includes(flag)) continue;
+    // A known flag fails on the missing file before any model request; an
+    // unknown flag fails earlier with "unknown option".
+    const result = await captureCommand(executable, [
+      "-p",
+      flag,
+      CLAUDE_FLAG_PROBE_MISSING_FILE,
+    ]);
+    if (
+      typeof result.exitCode === "number" &&
+      result.exitCode !== 0 &&
+      !/unknown option/iu.test(result.output)
+    )
+      accepted.push(flag);
+  }
+  return accepted;
+};
+
 export const probeProviderCli = async (
   provider: AgentCliProvider,
   executable: string,
@@ -305,6 +336,20 @@ export const probeProviderCli = async (
     }
 
     probeCompleted = versionResult.exitCode === 0 && helpResult.exitCode === 0;
+    const advertisedFeatures =
+      helpResult.exitCode === 0
+        ? detectFeatures(provider, helpResult.output)
+        : [];
+    const features =
+      provider === "claude-cli" && helpResult.exitCode === 0
+        ? [
+            ...advertisedFeatures,
+            ...(await detectUnlistedClaudeFileFlags(
+              executable,
+              advertisedFeatures,
+            )),
+          ]
+        : advertisedFeatures;
     const version =
       versionResult.exitCode === 0
         ? versionResult.output
@@ -317,10 +362,7 @@ export const probeProviderCli = async (
       executable,
       available: versionResult.exitCode === 0 || helpResult.exitCode === 0,
       ...(version ? { version } : {}),
-      features:
-        helpResult.exitCode === 0
-          ? detectFeatures(provider, helpResult.output)
-          : [],
+      features,
       warnings,
     };
   })();

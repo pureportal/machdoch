@@ -159,7 +159,8 @@ describe("provider capability registry", () => {
     );
     expect(maximum).toBe(2);
     expect(active).toBe(0);
-    expect(probeCommandMock).toHaveBeenCalledTimes(12);
+    // --version, --help and one check per instruction file flag --help omits.
+    expect(probeCommandMock).toHaveBeenCalledTimes(24);
   });
 
   it("invalidates cached capabilities when the executable changes", async () => {
@@ -225,7 +226,7 @@ describe("provider capability registry", () => {
     expect(
       (await probeProviderCli("claude-cli", "missing-cache.exe")).available,
     ).toBe(true);
-    expect(probeCommandMock).toHaveBeenCalledTimes(6);
+    expect(probeCommandMock).toHaveBeenCalledTimes(8);
   });
 
   it("rechecks incomplete help evidence even when the version probe succeeded", async () => {
@@ -535,6 +536,11 @@ describe("provider capability registry", () => {
         stdout:
           "Usage: claude --append-system-prompt-file --output-format --verbose",
         stderr: "",
+      })
+      .mockReturnValueOnce({
+        status: 1,
+        stdout: "",
+        stderr: "error: unknown option '--append-subagent-system-prompt-file'",
       });
 
     const result = await probeProviderCli(
@@ -548,6 +554,50 @@ describe("provider capability registry", () => {
       "--output-format",
       "--verbose",
     ]);
-    expect(probeCommandMock).toHaveBeenCalledTimes(2);
+    expect(probeCommandMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("confirms Claude instruction file flags that --help no longer lists", async () => {
+    probeCommandMock.mockImplementation(async (_command, args: string[]) => {
+      if (args[0] === "--version")
+        return { status: 0, stdout: "2.1.312 (Claude Code)", stderr: "" };
+      if (args[0] === "--help")
+        return {
+          status: 0,
+          stdout:
+            "--mcp-config --strict-mcp-config --setting-sources --effort --verbose\n  --bare  Minimal mode via: --system-prompt[-file], --append-system-prompt[-file]",
+          stderr: "",
+        };
+      return {
+        status: 1,
+        stdout: "",
+        stderr: `Error: ${args[1] === "--append-system-prompt-file" ? "Append" : "Append subagent"} system prompt file not found: ${args[2]}`,
+      };
+    });
+
+    const result = await probeProviderCli("claude-cli", "unlisted-flags.exe", {
+      force: true,
+    });
+
+    expect(result.features).toEqual([
+      "--effort",
+      "--mcp-config",
+      "--strict-mcp-config",
+      "--bare",
+      "--setting-sources",
+      "--verbose",
+      "--append-system-prompt-file",
+      "--append-subagent-system-prompt-file",
+    ]);
+    expect(probeCommandMock.mock.calls.map(([, args]) => args)).toEqual([
+      ["--version"],
+      ["--help"],
+      ["-p", "--append-system-prompt-file", "machdoch-flag-probe-missing-file"],
+      [
+        "-p",
+        "--append-subagent-system-prompt-file",
+        "machdoch-flag-probe-missing-file",
+      ],
+    ]);
   });
 });
