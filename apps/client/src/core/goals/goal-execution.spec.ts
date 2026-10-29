@@ -387,6 +387,15 @@ describe("goal lifecycle", () => {
     await run("/goal resume");
     expect((await read()).goal?.status).toBe("complete");
   });
+  it("names a long goal by its first line when the run ends", async () => {
+    const finished = await run(
+      "/goal Fix the login flow\nThen document every auth endpoint",
+    );
+    expect(finished.summary).toMatch(/^Goal complete: Fix the login flow…\n1 turns/u);
+    expect((await read()).goal?.objective).toBe(
+      "Fix the login flow\nThen document every auth endpoint",
+    );
+  });
   it("keeps working after a turn that stopped at the provider's turn limit", async () => {
     let workTurns = 0;
     const execute = vi.fn<GoalTurnExecutor>(async (_task, _config, turnOptions) => {

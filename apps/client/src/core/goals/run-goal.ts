@@ -374,7 +374,8 @@ export const executeGoalRun = async (
             finalGoal?.status === "budget-limited"
           ? "blocked"
           : "cancelled";
-    const summary = describeGoal(finalGoal);
+    // The composer's goal bar shows the full objective.
+    const summary = describeGoal(finalGoal, { brief: true });
     const result: TaskExecutionResult = {
       ...lastResult,
       task,
