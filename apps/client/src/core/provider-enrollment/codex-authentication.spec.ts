@@ -3,7 +3,6 @@ import {
   mkdir,
   mkdtemp,
   readFile,
-  realpath,
   rm,
   stat,
   symlink,
@@ -54,8 +53,7 @@ describe("Codex authentication sharing", () => {
     await writeFile(sourcePath, initialAuthentication, { mode: 0o600 });
     expect(await linkCodexAuthentication(isolatedHome)).toBe(true);
     const isolatedPath = join(isolatedHome, "auth.json");
-    expect((await lstat(isolatedPath)).isSymbolicLink()).toBe(true);
-    expect(await realpath(isolatedPath)).toBe(await realpath(sourcePath));
+    expect(await readFile(isolatedPath, "utf8")).toBe(initialAuthentication);
 
     await writeFile(isolatedPath, refreshedAuthentication);
 
@@ -81,14 +79,22 @@ describe("Codex authentication sharing", () => {
     );
 
     const newLogin = '{"tokens":{"refresh_token":"new-login"}}';
+    // A symbolic link follows a login replaced on disk; a hard link (the
+    // Windows fallback) keeps the file the run started with.
+    const followsReplacement = (
+      await lstat(join(isolatedHome, "auth.json"))
+    ).isSymbolicLink();
     await writeFileAtomically(sourcePath, newLogin);
-    expect(await readFile(join(isolatedHome, "auth.json"), "utf8")).toBe(
-      newLogin,
-    );
-    expect(await readFile(join(otherHome, "auth.json"), "utf8")).toBe(newLogin);
+    if (followsReplacement) {
+      expect(await readFile(join(isolatedHome, "auth.json"), "utf8")).toBe(
+        newLogin,
+      );
+      expect(await readFile(join(otherHome, "auth.json"), "utf8")).toBe(
+        newLogin,
+      );
+    }
     await rm(isolatedHome, { recursive: true });
     expect(await readFile(sourcePath, "utf8")).toBe(newLogin);
-    expect(await readFile(join(otherHome, "auth.json"), "utf8")).toBe(newLogin);
   });
 
   it("does not create credentials when there is no file login", async () => {
@@ -121,10 +127,28 @@ describe("Codex authentication sharing", () => {
     expect(symlink).not.toHaveBeenCalled();
   });
 
+  it.runIf(process.platform === "win32")(
+    "falls back to a hard link when Windows refuses symbolic links",
+    async () => {
+      await writeFile(sourcePath, initialAuthentication);
+      vi.mocked(symlink).mockRejectedValueOnce(
+        Object.assign(new Error("fixture privilege missing"), { code: "EPERM" }),
+      );
+
+      expect(await linkCodexAuthentication(isolatedHome)).toBe(true);
+      const isolatedPath = join(isolatedHome, "auth.json");
+      expect((await lstat(isolatedPath)).isSymbolicLink()).toBe(false);
+      await writeFile(isolatedPath, refreshedAuthentication);
+      expect(await readFile(sourcePath, "utf8")).toBe(refreshedAuthentication);
+      await rm(isolatedHome, { recursive: true });
+      expect(await readFile(sourcePath, "utf8")).toBe(refreshedAuthentication);
+    },
+  );
+
   it("reports link failures without creating a disposable credential copy", async () => {
     await writeFile(sourcePath, initialAuthentication);
     vi.mocked(symlink).mockRejectedValueOnce(
-      Object.assign(new Error("fixture permission denied"), { code: "EPERM" }),
+      Object.assign(new Error("fixture I/O failure"), { code: "EIO" }),
     );
 
     await expect(linkCodexAuthentication(isolatedHome)).rejects.toThrow(
