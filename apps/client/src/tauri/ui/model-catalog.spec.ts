@@ -57,7 +57,7 @@ describe("provider model catalog", () => {
     );
   });
 
-  it("treats live Codex CLI models as authoritative", () => {
+  it("keeps live Codex CLI models in the CLI's priority order", () => {
     const snapshot = {
       generatedAt: 1,
       providers: [
@@ -66,18 +66,16 @@ describe("provider model catalog", () => {
           source: "provider-probe",
           available: true,
           models: [
-            { id: "gpt-5.5", label: "GPT-5.5" },
-            { id: "gpt-5.4", label: "GPT-5.4" },
-            { id: "gpt-5.4-mini", label: "GPT-5.4 mini" },
+            { id: "gpt-6.1-sol", label: "GPT-6.1-Sol" },
+            { id: "gpt-6-astra", label: "GPT-6-Astra" },
+            { id: "gpt-6.1-terra", label: "GPT-6.1 Terra" },
             { id: "gpt-5.6-sol", label: "GPT-5.6 Sol" },
-            { id: "gpt-5.6-terra", label: "GPT-5.6 Terra" },
-            { id: "gpt-5.6-luna", label: "GPT-5.6 Luna" },
-            { id: "gpt-5.3-codex-spark", label: "GPT-5.3 Codex Spark" },
             {
               id: "gpt-5.1",
               label: "GPT-5.1",
               stage: "provider-deprecated",
             },
+            { id: "gpt-5.3-codex-spark", label: "GPT-5.3 Codex Spark" },
           ],
         },
       ],
@@ -88,12 +86,10 @@ describe("provider model catalog", () => {
         (model) => model.id,
       ),
     ).toEqual([
+      "gpt-6.1-sol",
+      "gpt-6-astra",
+      "gpt-6.1-terra",
       "gpt-5.6-sol",
-      "gpt-5.6-terra",
-      "gpt-5.6-luna",
-      "gpt-5.5",
-      "gpt-5.4",
-      "gpt-5.4-mini",
       "gpt-5.3-codex-spark",
     ]);
   });

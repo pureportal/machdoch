@@ -79,8 +79,11 @@ const REVIEW_MODEL_PATTERNS: Record<RuntimeProvider, readonly RegExp[]> = {
   "copilot-cli": [/auto/u],
 };
 
-// These providers return their catalog in their own picker order (aliases first).
-const PROVIDER_ORDERED_CATALOGS = new Set<RuntimeProvider>(["claude-cli"]);
+// These provider CLIs return their catalog in their own picker order.
+const PROVIDER_ORDERED_CATALOGS = new Set<RuntimeProvider>([
+  "codex-cli",
+  "claude-cli",
+]);
 
 const normalizeModelId = (model: string): string => model.trim().toLowerCase();
 

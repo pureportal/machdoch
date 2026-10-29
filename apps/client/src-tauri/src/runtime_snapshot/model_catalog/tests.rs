@@ -2,7 +2,9 @@
 mod model_catalog_parser_tests {
     use super::super::{
         claude_cli::{parse_claude_cli_initialize_output, parse_claude_cli_model_catalog},
-        codex_cli::parse_codex_cli_model_catalog,
+        codex_cli::{
+            apply_codex_cli_features, parse_codex_cli_features, parse_codex_cli_model_catalog,
+        },
         copilot_cli::create_copilot_cli_runtime_model,
         provider_api::{finish_langdock_model_catalog, parse_langdock_model_catalog},
         provider_api_types::{
@@ -16,6 +18,66 @@ mod model_catalog_parser_tests {
 
     fn string_values(values: Option<&[String]>) -> Option<Vec<&str>> {
         values.map(|entries| entries.iter().map(String::as_str).collect())
+    }
+
+    #[test]
+    fn codex_cli_model_catalog_keeps_the_cli_priority_order_and_features() {
+        let raw = serde_json::json!({
+            "models": [
+                { "slug": "gpt-5.6-luna", "priority": 9, "multi_agent_version": "v1" },
+                { "slug": "gpt-6-astra", "priority": 2, "multi_agent_version": "v2" },
+                { "slug": "gpt-reserve", "priority": 4, "visibility": "hide" },
+                { "slug": "gpt-6.1-sol", "priority": 1, "multi_agent_version": "v2" },
+                { "slug": "gpt-6-luna", "priority": 5 },
+                { "slug": "gpt-5.3-codex-spark" }
+            ]
+        })
+        .to_string();
+        let mut models = parse_codex_cli_model_catalog(&raw).expect("models should parse");
+
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "gpt-6.1-sol",
+                "gpt-6-astra",
+                "gpt-6-luna",
+                "gpt-5.6-luna",
+                "gpt-5.3-codex-spark"
+            ]
+        );
+
+        let features = parse_codex_cli_features(
+            "goals                                    stable             true\n\
+             multi_agent                              stable             true\n\
+             multi_agent_mode                         removed            false\n\
+             fast_mode                                stable             false\n",
+        );
+        assert_eq!(features, vec!["goals", "multi_agent", "fast_mode"]);
+        apply_codex_cli_features(&mut models, Some(&features));
+        assert!(models
+            .iter()
+            .all(|model| model.capabilities.native_goal == Some(true)));
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| model.capabilities.native_subagents)
+                .collect::<Vec<_>>(),
+            vec![Some(true), Some(true), Some(false), Some(true), Some(false)]
+        );
+
+        apply_codex_cli_features(&mut models, Some(&["goals".to_string()]));
+        assert!(models
+            .iter()
+            .all(|model| model.capabilities.native_subagents == Some(false)));
+
+        apply_codex_cli_features(&mut models, None);
+        assert!(models.iter().all(|model| {
+            model.capabilities.native_goal.is_none()
+                && model.capabilities.native_subagents.is_none()
+        }));
     }
 
     #[test]

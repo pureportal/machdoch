@@ -40,21 +40,10 @@ export function contextWindowCapabilities(
     highestTokens: defaultTokens,
   };
   if (!name) return fixed;
-  const knownCodex =
-    /^gpt-(?:6-astra|5\.6(?:-(?:sol|terra|luna))?|5\.5(?:-pro)?|5\.4(?:-(?:pro|mini|nano))?)(?:-\d{4}-\d{2}-\d{2})?$/u.test(
-      name,
-    );
+  // `codex debug models` reports each model's default and maximum window.
   if (provider === "codex-cli") {
     const maximum = validTokenCount(
-      discovered?.longContextWindowTokens ??
-        discovered?.contextWindowTokens ??
-        (knownCodex
-          ? /^gpt-(?:5\.[456](?!-(?:mini|nano))|6(?:\.1)?-(?:astra|sol))/u.test(
-              name,
-            )
-            ? 1_050_000
-            : 400_000
-          : null),
+      discovered?.longContextWindowTokens ?? discovered?.contextWindowTokens,
     );
     if (
       maximum === null ||

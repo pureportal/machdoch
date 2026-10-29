@@ -506,6 +506,8 @@ beforeEach(() => {
 
 afterEach(async () => {
   replaceDiscoveredModelCapabilities("copilot-cli", []);
+  replaceDiscoveredModelCapabilities("codex-cli", []);
+  replaceDiscoveredModelCapabilities("claude-cli", []);
   vi.useRealTimers();
   restoreEnvironment();
 
@@ -521,6 +523,15 @@ afterEach(async () => {
 describe("maybeExecuteExternalAgentProviderTask", () => {
   it("runs native Codex goals through app-server until provider continuation finishes", async () => {
     const workspaceRoot = await createWorkspace();
+    replaceDiscoveredModelCapabilities("codex-cli", [
+      {
+        id: "gpt-5.6-sol",
+        capabilities: {
+          contextWindowTokens: 272_000,
+          longContextWindowTokens: 872_000,
+        },
+      },
+    ]);
     process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
     const params = createParams(workspaceRoot, {
       provider: "codex-cli",
@@ -544,7 +555,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     ]);
     expect(call.args).toContain("features.goals=true");
     expect(call.args).toContain('model_reasoning_effort="ultra"');
-    expect(call.args).toContain("model_context_window=1050000");
+    expect(call.args).toContain("model_context_window=872000");
     expect(call.args).not.toContain("--ephemeral");
     expect(call.args).not.toContain("--json");
     expect(await readRunScopedSystemInstructions("codex-cli", call)).toContain(
@@ -2370,6 +2381,15 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
   it("passes GPT-5.6 Ultra through to Codex CLI", async () => {
     const workspaceRoot = await createWorkspace();
+    replaceDiscoveredModelCapabilities("codex-cli", [
+      {
+        id: "gpt-5.6-sol",
+        capabilities: {
+          contextWindowTokens: 272_000,
+          longContextWindowTokens: 872_000,
+        },
+      },
+    ]);
 
     process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
 
@@ -2387,7 +2407,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     expect(call?.args).toContain("--config");
     expect(call?.args).toContain('model_reasoning_effort="ultra"');
-    expect(call?.args).toContain("model_context_window=1050000");
+    expect(call?.args).toContain("model_context_window=872000");
 
     writeStructuredAnswer(call!, "Codex Ultra answer.");
     call?.child.emit("close", 0, null);
@@ -2400,6 +2420,15 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
   it("passes GPT-6 Astra Aeon through as persistent Codex reasoning", async () => {
     const workspaceRoot = await createWorkspace();
+    replaceDiscoveredModelCapabilities("codex-cli", [
+      {
+        id: "gpt-6-astra",
+        capabilities: {
+          contextWindowTokens: 272_000,
+          longContextWindowTokens: 872_000,
+        },
+      },
+    ]);
 
     process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
 
@@ -2419,7 +2448,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(call?.args).toContain("gpt-6-astra");
     expect(call?.args).toContain('model_reasoning_effort="persistent"');
     expect(call?.args).not.toContain('model_reasoning_effort="aeon"');
-    expect(call?.args).toContain("model_context_window=1050000");
+    expect(call?.args).toContain("model_context_window=872000");
 
     writeStructuredAnswer(call!, "Codex Aeon answer.");
     call?.child.emit("close", 0, null);

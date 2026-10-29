@@ -346,20 +346,75 @@ pub(super) fn parse_codex_cli_model_catalog(
         .and_then(serde_json::Value::as_array)
         .ok_or_else(|| "Codex CLI model catalog did not contain a models array.".to_string())?;
 
+    let mut priorities = HashMap::<String, u64>::new();
+    let mut multi_agent_models = Vec::<String>::new();
+
     for entry in entries {
         if let Some(model_id) = json_string(entry, "slug") {
             add_codex_cli_catalog_model(&mut by_id, &model_id, Some(entry));
+            let model_id = model_id.to_ascii_lowercase();
+            if let Some(priority) = entry.get("priority").and_then(serde_json::Value::as_u64) {
+                priorities.entry(model_id.clone()).or_insert(priority);
+            }
+            if json_string_from_keys(entry, &["multi_agent_version", "multiAgentVersion"]).is_some()
+            {
+                multi_agent_models.push(model_id);
+            }
         }
     }
 
     let mut models = by_id.into_values().collect::<Vec<_>>();
-    models.sort_by(|left, right| left.id.cmp(&right.id));
+    // Codex's own picker order; models without a priority follow alphabetically.
+    let rank =
+        |model: &ProviderRuntimeModel| priorities.get(&model.id).copied().unwrap_or(u64::MAX);
+    models.sort_by(|left, right| {
+        rank(left)
+            .cmp(&rank(right))
+            .then_with(|| left.id.cmp(&right.id))
+    });
 
     if models.is_empty() {
         return Err("Codex CLI did not return any supported model IDs.".to_string());
     }
 
+    for model in &mut models {
+        model.capabilities.native_subagents = Some(multi_agent_models.contains(&model.id));
+    }
+
     Ok(models)
+}
+
+/// Feature names from `codex features list` that this Codex build still has, enabled or not.
+/// Machdoch turns `goals` and `multi_agent` on per run, so only removal matters.
+pub(super) fn parse_codex_cli_features(raw: &str) -> Vec<String> {
+    raw.lines()
+        .filter_map(|line| {
+            let mut columns = line.split_whitespace();
+            let name = columns.next()?;
+            let rest = columns.collect::<Vec<_>>().join(" ");
+            (!rest.is_empty() && !rest.starts_with("removed")).then(|| name.to_ascii_lowercase())
+        })
+        .collect()
+}
+
+/// Applies `codex features list` to the catalog. Without a feature list (older CLIs or a
+/// failed probe) the native flags stay unknown.
+pub(super) fn apply_codex_cli_features(
+    models: &mut [ProviderRuntimeModel],
+    features: Option<&[String]>,
+) {
+    let has = |name: &str| features.map(|features| features.iter().any(|feature| feature == name));
+    let goals = has("goals");
+    let multi_agent = has("multi_agent");
+
+    for model in models {
+        model.capabilities.native_goal = goals;
+        model.capabilities.native_subagents = match multi_agent {
+            Some(true) => model.capabilities.native_subagents,
+            Some(false) => Some(false),
+            None => None,
+        };
+    }
 }
 
 pub(super) fn fetch_codex_cli_model_catalog(
@@ -373,11 +428,20 @@ pub(super) fn fetch_codex_cli_model_catalog(
     };
     let output =
         run_agent_cli_command(&binary, &["debug", "models"], env, Duration::from_secs(30))?;
-    if output.exit_code == Some(0) {
-        return parse_codex_cli_model_catalog(&output.stdout);
+    if output.exit_code != Some(0) {
+        let detail = normalize_optional_string(Some(output.stderr.as_str()))
+            .or_else(|| normalize_optional_string(Some(output.stdout.as_str())))
+            .unwrap_or_else(|| format!("exited with code {:?}", output.exit_code));
+        return Err(format!("Codex CLI model discovery failed: {detail}"));
     }
-    let detail = normalize_optional_string(Some(output.stderr.as_str()))
-        .or_else(|| normalize_optional_string(Some(output.stdout.as_str())))
-        .unwrap_or_else(|| format!("exited with code {:?}", output.exit_code));
-    Err(format!("Codex CLI model discovery failed: {detail}"))
+    let mut models = parse_codex_cli_model_catalog(&output.stdout)?;
+    let features =
+        run_agent_cli_command(&binary, &["features", "list"], env, Duration::from_secs(30))
+            .ok()
+            .filter(|features| features.exit_code == Some(0))
+            .map(|features| parse_codex_cli_features(&features.stdout))
+            .filter(|features| !features.is_empty());
+    apply_codex_cli_features(&mut models, features.as_deref());
+
+    Ok(models)
 }

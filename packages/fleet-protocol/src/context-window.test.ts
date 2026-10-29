@@ -30,8 +30,14 @@ test("resolves Codex presets from advertised model capacities", () => {
 
 test("resolves the same highest preset after switching models or providers", () => {
   for (const [provider, model, capabilities, expected] of [
-    ["codex-cli", "gpt-6-astra", undefined, 1_050_000],
-    ["codex-cli", "gpt-5.4-mini", undefined, 400_000],
+    [
+      "codex-cli",
+      "gpt-6-astra",
+      { contextWindowTokens: 272_000, longContextWindowTokens: 872_000 },
+      872_000,
+    ],
+    // Without the CLI's model report Codex keeps its own default window.
+    ["codex-cli", "gpt-6-astra", undefined, "default"],
     ["claude-cli", "sonnet", undefined, "default"],
     ["claude-cli", "opus", { longContextWindowTokens: 1_000_000 }, "long"],
     [
