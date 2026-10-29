@@ -17,7 +17,11 @@
     "./primitives.css": "./src/primitives.css",
     "./goal-control.css": "./src/goal-control.css",
     "./fleet-api": "./src/fleet-api.ts",
-    "./fleet-operation-transport": "./src/fleet-operation-transport.ts"
+    "./fleet-operation-transport": "./src/fleet-operation-transport.ts",
+    "./flow/flow-canvas": "./src/flow/flow-canvas.tsx",
+    "./flow/flow-primitives": "./src/flow/flow-primitives.tsx",
+    "./flow/flow-theme": "./src/flow/flow-theme.ts",
+    "./flow/flow-toolbar": "./src/flow/flow-toolbar.tsx"
   },
   "scripts": {
     "check": "pnpm run lint && pnpm run typecheck",
@@ -31,7 +35,10 @@
     "lucide-react": "^1.18.0",
     "radix-ui": "^1.6.7",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "@xyflow/react": "^12.11.0",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.6.0"
   },
   "peerDependencies": {
     "react": "^19.2.8",

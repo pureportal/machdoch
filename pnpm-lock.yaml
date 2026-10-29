@@ -621,6 +621,12 @@ importers:
       '@machdoch/fleet-protocol':
         specifier: workspace:*
         version: link:../fleet-protocol
+      '@xyflow/react':
+        specifier: ^12.11.0
+        version: 12.11.3(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
       lucide-react:
         specifier: ^1.18.0
         version: 1.31.0(react@19.2.8)
@@ -633,6 +639,9 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      tailwind-merge:
+        specifier: ^3.6.0
+        version: 3.6.0
     devDependencies:
       '@types/react':
         specifier: ^19.2.18

@@ -1,12 +1,5 @@
-import {
-  Globe2,
-  Images,
-  LayoutGrid,
-  Redo2,
-  Route,
-  SlidersHorizontal,
-  Undo2,
-} from "lucide-react";
+import { FlowHistoryControls } from "@machdoch/product-ui/flow/flow-toolbar";
+import { Globe2, Images, Route, SlidersHorizontal } from "lucide-react";
 import type { JSX } from "react";
 
 import type { RalphBlockType, RalphFlowScope } from "../../../../core/ralph.js";
@@ -88,60 +81,26 @@ export const RalphFlowEditorToolbar = ({
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-1">
         <div className="flex items-center gap-0.5 rounded-lg border border-slate-800 bg-slate-900/45 p-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label="Undo Ralph edit"
-                aria-keyshortcuts={undoShortcut?.ariaKeyShortcuts}
-                disabled={!canUndo}
-                onClick={onUndo}
-                className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
-              >
-                <Undo2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              Undo{undoShortcut ? ` · ${undoShortcut.label}` : null}
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label="Redo Ralph edit"
-                aria-keyshortcuts={redoShortcut?.ariaKeyShortcuts}
-                disabled={!canRedo}
-                onClick={onRedo}
-                className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
-              >
-                <Redo2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              Redo{redoShortcut ? ` · ${redoShortcut.label}` : null}
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label="Clean Ralph layout"
-                aria-keyshortcuts={layoutShortcut?.ariaKeyShortcuts}
-                disabled={!canCleanLayout}
-                onClick={onCleanLayout}
-                className="h-7 w-7 rounded-md p-0 text-xs text-slate-300 hover:bg-slate-800 hover:text-white disabled:text-slate-700"
-              >
-                <LayoutGrid className="h-4 w-4 text-slate-300" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              Clean layout{layoutShortcut ? ` · ${layoutShortcut.label}` : null}
-            </TooltipContent>
-          </Tooltip>
+          <FlowHistoryControls
+            undo={{
+              label: "Undo Ralph edit",
+              disabled: !canUndo,
+              onClick: onUndo,
+              keyShortcuts: undoShortcut?.ariaKeyShortcuts,
+            }}
+            redo={{
+              label: "Redo Ralph edit",
+              disabled: !canRedo,
+              onClick: onRedo,
+              keyShortcuts: redoShortcut?.ariaKeyShortcuts,
+            }}
+            layout={{
+              label: "Clean Ralph layout",
+              disabled: !canCleanLayout,
+              onClick: onCleanLayout,
+              keyShortcuts: layoutShortcut?.ariaKeyShortcuts,
+            }}
+          />
           {canShowInspector ? (
             <Tooltip>
               <TooltipTrigger asChild>

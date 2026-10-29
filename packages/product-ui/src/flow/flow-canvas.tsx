@@ -14,9 +14,17 @@ import {
   type Node,
   type ReactFlowProps,
 } from "@xyflow/react";
-import type { CSSProperties, JSX, Key, ReactNode } from "react";
+import {
+  useMemo,
+  type CSSProperties,
+  type JSX,
+  type Key,
+  type ReactNode,
+} from "react";
 
-import { cn } from "../lib/utils";
+import { clsx } from "clsx";
+import { twMerge } from "tailwind-merge";
+import "./flow-canvas.css";
 import {
   FLOW_CANVAS_FIT_MAX_ZOOM,
   FLOW_CANVAS_FIT_PADDING,
@@ -69,7 +77,7 @@ const FlowEdge = ({
       <BaseEdge
         id={id}
         path={edgePath}
-        markerEnd={markerEnd}
+        {...(markerEnd ? { markerEnd } : {})}
         interactionWidth={20}
         style={{
           ...style,
@@ -135,13 +143,30 @@ export function FlowCanvas<NodeType extends Node, EdgeType extends Edge>({
   showMiniMap = true,
   ...props
 }: FlowCanvasProps<NodeType, EdgeType>): JSX.Element {
+  const resolvedEdgeTypes = useMemo(
+    () => ({ ...FLOW_EDGE_TYPES, ...edgeTypes }),
+    [edgeTypes],
+  );
+  const resolvedFitViewOptions = useMemo(
+    () => ({
+      padding: FLOW_CANVAS_FIT_PADDING,
+      maxZoom: FLOW_CANVAS_FIT_MAX_ZOOM,
+      ...fitViewOptions,
+    }),
+    [fitViewOptions],
+  );
   return (
     <ReactFlowProvider key={providerKey}>
       <ReactFlow<NodeType, EdgeType>
+        fitView
+        selectionOnDrag
+        multiSelectionKeyCode={["Control", "Meta"]}
         {...props}
-        className={cn(
-          "app-flow-canvas bg-slate-950 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.055),transparent_34%)]",
-          className,
+        className={twMerge(
+          clsx(
+            "app-flow-canvas bg-slate-950 bg-[radial-gradient(circle_at_top_left,rgba(14,165,233,0.055),transparent_34%)]",
+            className,
+          ),
         )}
         colorMode="dark"
         connectionLineStyle={{ stroke: "#7dd3fc", strokeWidth: 2 }}
@@ -150,12 +175,8 @@ export function FlowCanvas<NodeType extends Node, EdgeType extends Edge>({
           ...defaultEdgeOptions,
           type: FLOW_EDGE_TYPE,
         }}
-        edgeTypes={{ ...FLOW_EDGE_TYPES, ...edgeTypes }}
-        fitViewOptions={{
-          padding: FLOW_CANVAS_FIT_PADDING,
-          maxZoom: FLOW_CANVAS_FIT_MAX_ZOOM,
-          ...fitViewOptions,
-        }}
+        edgeTypes={resolvedEdgeTypes}
+        fitViewOptions={resolvedFitViewOptions}
         minZoom={minZoom}
         maxZoom={FLOW_CANVAS_MAX_ZOOM}
         proOptions={{ hideAttribution: true }}
@@ -177,6 +198,7 @@ export function FlowCanvas<NodeType extends Node, EdgeType extends Edge>({
         ) : null}
         {showControls ? (
           <Controls
+            fitViewOptions={resolvedFitViewOptions}
             position="bottom-left"
             className="!border-slate-800 !bg-slate-950 !shadow-xl [&_button]:!border-slate-800 [&_button]:!bg-slate-950 [&_button]:!fill-slate-300 [&_button]:!text-slate-300 [&_button:hover]:!bg-slate-900"
           />

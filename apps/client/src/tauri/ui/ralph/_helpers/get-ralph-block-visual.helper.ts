@@ -30,7 +30,7 @@ import type {
   RalphFlowBlock,
   RalphUtilityType,
 } from "../../../../core/ralph.js";
-import type { FlowPortTone } from "@machdoch/media-studio/tauri/ui/flow/flow-theme.js";
+import { FLOW_NODE_TONE_CLASS_NAMES, type FlowPortTone } from "@machdoch/product-ui/flow/flow-theme";
 
 export interface RalphBlockVisual {
   icon: LucideIcon;
@@ -45,7 +45,7 @@ export const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
     case "START":
       return {
         icon: Play,
-        nodeClassName: "border-emerald-400/55 bg-emerald-950 text-emerald-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.emerald,
         badgeClassName: "text-emerald-300",
         miniMapColor: "#34d399",
         badgeLabel: "START",
@@ -53,7 +53,7 @@ export const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
     case "PROMPT":
       return {
         icon: MessageSquareText,
-        nodeClassName: "border-sky-400/55 bg-sky-950 text-sky-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.sky,
         badgeClassName: "text-sky-300",
         miniMapColor: "#38bdf8",
         badgeLabel: "PROMPT",
@@ -61,7 +61,7 @@ export const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
     case "VALIDATOR":
       return {
         icon: ShieldCheck,
-        nodeClassName: "border-lime-400/55 bg-lime-950 text-lime-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.lime,
         badgeClassName: "text-lime-300",
         miniMapColor: "#7a9a61",
         badgeLabel: "VALIDATE",
@@ -69,7 +69,7 @@ export const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
     case "DECISION":
       return {
         icon: GitBranch,
-        nodeClassName: "border-fuchsia-400/55 bg-fuchsia-950 text-fuchsia-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.fuchsia,
         badgeClassName: "text-fuchsia-300",
         miniMapColor: "#e879f9",
         badgeLabel: "DECIDE",
@@ -77,7 +77,7 @@ export const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
     case "PACK":
       return {
         icon: Package,
-        nodeClassName: "border-amber-400/55 bg-amber-950 text-amber-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.amber,
         badgeClassName: "text-amber-300",
         miniMapColor: "#fbbf24",
         badgeLabel: "PACK",
@@ -85,7 +85,7 @@ export const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
     case "ASK_USER":
       return {
         icon: ClipboardCheck,
-        nodeClassName: "border-teal-400/55 bg-teal-950 text-teal-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.teal,
         badgeClassName: "text-teal-300",
         miniMapColor: "#2dd4bf",
         badgeLabel: "ASK USER",
@@ -93,7 +93,7 @@ export const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
     case "INTERVIEW":
       return {
         icon: MessageSquareText,
-        nodeClassName: "border-rose-400/55 bg-rose-950 text-rose-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.rose,
         badgeClassName: "text-rose-300",
         miniMapColor: "#fb7185",
         badgeLabel: "INTERVIEW",
@@ -101,7 +101,7 @@ export const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
     case "UTILITY":
       return {
         icon: Wrench,
-        nodeClassName: "border-cyan-400/55 bg-cyan-950 text-cyan-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.cyan,
         badgeClassName: "text-cyan-300",
         miniMapColor: "#22d3ee",
         badgeLabel: "UTILITY",
@@ -111,7 +111,7 @@ export const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
     case "MCP_PROMPT":
       return {
         icon: Globe2,
-        nodeClassName: "border-violet-400/55 bg-violet-950 text-violet-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.violet,
         badgeClassName: "text-violet-300",
         miniMapColor: "#a78bfa",
         badgeLabel: "MCP",
@@ -119,7 +119,7 @@ export const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
     case "MEDIA_FLOW":
       return {
         icon: Images,
-        nodeClassName: "border-orange-400/55 bg-orange-950 text-orange-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.orange,
         badgeClassName: "text-orange-300",
         miniMapColor: "#fb923c",
         badgeLabel: "MEDIA FLOW",
@@ -143,7 +143,7 @@ export const getBlockTone = (type: RalphBlockType): RalphBlockVisual => {
     case "END":
       return {
         icon: Octagon,
-        nodeClassName: "border-slate-600 bg-slate-900 text-slate-100",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.slate,
         badgeClassName: "text-slate-400",
         miniMapColor: "#64748b",
         badgeLabel: "END",
@@ -156,7 +156,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "WAIT":
       return {
         icon: Hourglass,
-        nodeClassName: "border-teal-400/60 bg-teal-950 text-teal-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.teal,
         badgeClassName: "text-teal-200",
         miniMapColor: "#2dd4bf",
         badgeLabel: "WAIT",
@@ -164,7 +164,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "HTTP_FETCH":
       return {
         icon: Download,
-        nodeClassName: "border-blue-400/60 bg-blue-950 text-blue-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.blue,
         badgeClassName: "text-blue-200",
         miniMapColor: "#60a5fa",
         badgeLabel: "FETCH",
@@ -172,7 +172,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "POLL":
       return {
         icon: RefreshCw,
-        nodeClassName: "border-cyan-400/60 bg-cyan-950 text-cyan-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.cyan,
         badgeClassName: "text-cyan-200",
         miniMapColor: "#22d3ee",
         badgeLabel: "POLL",
@@ -180,7 +180,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "CONDITION":
       return {
         icon: GitBranch,
-        nodeClassName: "border-fuchsia-400/60 bg-fuchsia-950 text-fuchsia-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.fuchsia,
         badgeClassName: "text-fuchsia-200",
         miniMapColor: "#e879f9",
         badgeLabel: "CONDITION",
@@ -188,7 +188,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "RUN_COMMAND":
       return {
         icon: Terminal,
-        nodeClassName: "border-zinc-400/60 bg-zinc-900 text-zinc-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.zinc,
         badgeClassName: "text-zinc-200",
         miniMapColor: "#a1a1aa",
         badgeLabel: "COMMAND",
@@ -196,7 +196,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "READ_FILE":
       return {
         icon: FileText,
-        nodeClassName: "border-sky-400/60 bg-sky-950 text-sky-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.sky,
         badgeClassName: "text-sky-200",
         miniMapColor: "#38bdf8",
         badgeLabel: "READ",
@@ -204,7 +204,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "WRITE_FILE":
       return {
         icon: FilePlus,
-        nodeClassName: "border-orange-400/60 bg-orange-950 text-orange-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.orange,
         badgeClassName: "text-orange-200",
         miniMapColor: "#fb923c",
         badgeLabel: "WRITE",
@@ -212,7 +212,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "READ_JSON":
       return {
         icon: FileJson,
-        nodeClassName: "border-cyan-400/60 bg-cyan-950 text-cyan-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.cyan,
         badgeClassName: "text-cyan-200",
         miniMapColor: "#22d3ee",
         badgeLabel: "READ JSON",
@@ -221,7 +221,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "QUERY_JSONL":
       return {
         icon: FileJson,
-        nodeClassName: "border-cyan-400/60 bg-cyan-950 text-cyan-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.cyan,
         badgeClassName: "text-cyan-200",
         miniMapColor: "#22d3ee",
         badgeLabel: type === "QUERY_JSONL" ? "QUERY JSONL" : "READ JSONL",
@@ -231,7 +231,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "APPEND_JSONL":
       return {
         icon: FileJson,
-        nodeClassName: "border-emerald-400/60 bg-emerald-950 text-emerald-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.emerald,
         badgeClassName: "text-emerald-200",
         miniMapColor: "#34d399",
         badgeLabel:
@@ -244,7 +244,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "FILE_EXISTS":
       return {
         icon: FileText,
-        nodeClassName: "border-indigo-400/60 bg-indigo-950 text-indigo-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.indigo,
         badgeClassName: "text-indigo-200",
         miniMapColor: "#818cf8",
         badgeLabel: "EXISTS",
@@ -252,7 +252,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "DELETE_FILE":
       return {
         icon: Trash2,
-        nodeClassName: "border-red-400/60 bg-red-950 text-red-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.red,
         badgeClassName: "text-red-200",
         miniMapColor: "#f87171",
         badgeLabel: "DELETE",
@@ -261,7 +261,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "ARCHIVE_FILE":
       return {
         icon: FileText,
-        nodeClassName: "border-amber-400/60 bg-amber-950 text-amber-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.amber,
         badgeClassName: "text-amber-200",
         miniMapColor: "#f59e0b",
         badgeLabel: type === "ARCHIVE_FILE" ? "ARCHIVE" : "MOVE",
@@ -269,7 +269,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "LOOP_COUNTER":
       return {
         icon: RefreshCw,
-        nodeClassName: "border-indigo-400/60 bg-indigo-950 text-indigo-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.indigo,
         badgeClassName: "text-indigo-200",
         miniMapColor: "#818cf8",
         badgeLabel: "COUNTER",
@@ -277,7 +277,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "PROMPT_JSON":
       return {
         icon: Braces,
-        nodeClassName: "border-violet-400/60 bg-violet-950 text-violet-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.violet,
         badgeClassName: "text-violet-200",
         miniMapColor: "#a78bfa",
         badgeLabel: "AI JSON",
@@ -285,7 +285,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "VALIDATOR_JSON":
       return {
         icon: ShieldCheck,
-        nodeClassName: "border-lime-400/60 bg-lime-950 text-lime-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.lime,
         badgeClassName: "text-lime-200",
         miniMapColor: "#7a9a61",
         badgeLabel: "JSON VALID",
@@ -293,7 +293,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "ASSESS_JSON_TASKS":
       return {
         icon: ClipboardCheck,
-        nodeClassName: "border-blue-400/60 bg-blue-950 text-blue-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.blue,
         badgeClassName: "text-blue-200",
         miniMapColor: "#60a5fa",
         badgeLabel: "TASK STATE",
@@ -301,7 +301,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "SELECT_JSON_TASK":
       return {
         icon: ClipboardCheck,
-        nodeClassName: "border-cyan-400/60 bg-cyan-950 text-cyan-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.cyan,
         badgeClassName: "text-cyan-200",
         miniMapColor: "#22d3ee",
         badgeLabel: "TASK PICK",
@@ -309,7 +309,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "MARK_JSON_TASK":
       return {
         icon: ClipboardCheck,
-        nodeClassName: "border-lime-400/60 bg-lime-950 text-lime-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.lime,
         badgeClassName: "text-lime-200",
         miniMapColor: "#7a9a61",
         badgeLabel: "TASK MARK",
@@ -317,7 +317,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "CHANGE_SCOPE_GUARD":
       return {
         icon: ShieldCheck,
-        nodeClassName: "border-rose-400/60 bg-rose-950 text-rose-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.rose,
         badgeClassName: "text-rose-200",
         miniMapColor: "#fb7185",
         badgeLabel: "SCOPE GUARD",
@@ -325,7 +325,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "SCAN_SCOPE_EVIDENCE":
       return {
         icon: FileSearch,
-        nodeClassName: "border-sky-400/60 bg-sky-950 text-sky-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.sky,
         badgeClassName: "text-sky-200",
         miniMapColor: "#38bdf8",
         badgeLabel: "SCOPE SCAN",
@@ -333,7 +333,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "UPDATE_SCOPE_REGISTRY":
       return {
         icon: FileJson,
-        nodeClassName: "border-emerald-400/60 bg-emerald-950 text-emerald-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.emerald,
         badgeClassName: "text-emerald-200",
         miniMapColor: "#34d399",
         badgeLabel: "SCOPE JSON",
@@ -341,7 +341,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "BEGIN_SCOPE_CYCLE":
       return {
         icon: RefreshCw,
-        nodeClassName: "border-cyan-400/60 bg-cyan-950 text-cyan-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.cyan,
         badgeClassName: "text-cyan-200",
         miniMapColor: "#22d3ee",
         badgeLabel: "SCOPE CYCLE",
@@ -349,7 +349,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "SELECT_SCOPE":
       return {
         icon: GitBranch,
-        nodeClassName: "border-cyan-400/60 bg-cyan-950 text-cyan-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.cyan,
         badgeClassName: "text-cyan-200",
         miniMapColor: "#22d3ee",
         badgeLabel: "SCOPE PICK",
@@ -357,7 +357,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "MARK_SCOPE_RESULT":
       return {
         icon: ClipboardCheck,
-        nodeClassName: "border-lime-400/60 bg-lime-950 text-lime-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.lime,
         badgeClassName: "text-lime-200",
         miniMapColor: "#7a9a61",
         badgeLabel: "SCOPE MARK",
@@ -365,7 +365,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "SEARCH_FILES":
       return {
         icon: FileSearch,
-        nodeClassName: "border-purple-400/60 bg-purple-950 text-purple-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.purple,
         badgeClassName: "text-purple-200",
         miniMapColor: "#c084fc",
         badgeLabel: "SEARCH",
@@ -373,7 +373,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "RUN_CHECK":
       return {
         icon: ClipboardCheck,
-        nodeClassName: "border-lime-400/60 bg-lime-950 text-lime-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.lime,
         badgeClassName: "text-lime-200",
         miniMapColor: "#7a9a61",
         badgeLabel: "CHECK",
@@ -381,7 +381,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "UI_ANALYZE":
       return {
         icon: Globe2,
-        nodeClassName: "border-teal-400/60 bg-teal-950 text-teal-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.teal,
         badgeClassName: "text-teal-200",
         miniMapColor: "#14b8a6",
         badgeLabel: "UI",
@@ -389,7 +389,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "GIT_STATUS":
       return {
         icon: GitBranch,
-        nodeClassName: "border-amber-400/60 bg-amber-950 text-amber-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.amber,
         badgeClassName: "text-amber-200",
         miniMapColor: "#f59e0b",
         badgeLabel: "GIT",
@@ -398,7 +398,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "GIT_DIFF_SUMMARY":
       return {
         icon: GitBranch,
-        nodeClassName: "border-amber-400/60 bg-amber-950 text-amber-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.amber,
         badgeClassName: "text-amber-200",
         miniMapColor: "#f59e0b",
         badgeLabel: type === "GIT_SNAPSHOT" ? "GIT SNAP" : "GIT DIFF",
@@ -406,7 +406,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "DETECT_PROJECT_COMMANDS":
       return {
         icon: Terminal,
-        nodeClassName: "border-zinc-400/60 bg-zinc-900 text-zinc-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.zinc,
         badgeClassName: "text-zinc-200",
         miniMapColor: "#a1a1aa",
         badgeLabel: "COMMANDS",
@@ -414,7 +414,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "SET_VARIABLE":
       return {
         icon: Variable,
-        nodeClassName: "border-pink-400/60 bg-pink-950 text-pink-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.pink,
         badgeClassName: "text-pink-200",
         miniMapColor: "#f472b6",
         badgeLabel: "SET VAR",
@@ -422,7 +422,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "TRANSFORM_JSON":
       return {
         icon: Braces,
-        nodeClassName: "border-violet-400/60 bg-violet-950 text-violet-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.violet,
         badgeClassName: "text-violet-200",
         miniMapColor: "#a78bfa",
         badgeLabel: "JSON MAP",
@@ -430,7 +430,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "VALIDATE_JSON":
       return {
         icon: FileJson,
-        nodeClassName: "border-green-400/60 bg-green-950 text-green-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.green,
         badgeClassName: "text-green-200",
         miniMapColor: "#4ade80",
         badgeLabel: "SCHEMA",
@@ -438,7 +438,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "FINAL_REPORT":
       return {
         icon: ClipboardCheck,
-        nodeClassName: "border-teal-400/60 bg-teal-950 text-teal-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.teal,
         badgeClassName: "text-teal-200",
         miniMapColor: "#14b8a6",
         badgeLabel: "REPORT",
@@ -446,7 +446,7 @@ export const getUtilityTone = (type: RalphUtilityType): RalphBlockVisual => {
     case "NOTIFY":
       return {
         icon: Bell,
-        nodeClassName: "border-rose-400/60 bg-rose-950 text-rose-50",
+        nodeClassName: FLOW_NODE_TONE_CLASS_NAMES.rose,
         badgeClassName: "text-rose-200",
         miniMapColor: "#fb7185",
         badgeLabel: "NOTIFY",

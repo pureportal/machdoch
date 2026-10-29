@@ -3,20 +3,6 @@
   flex: 1;
 }
 
-.app-flow-canvas {
-  container-type: size;
-}
-
-@container (max-width: 640px) or (max-height: 400px) {
-  .app-flow-canvas .react-flow__minimap {
-    display: none;
-  }
-
-  .app-flow-canvas .react-flow__controls {
-    flex-direction: row;
-  }
-}
-
 @media (max-width: 1199px) {
   .app-ralph-editor {
     display: flex;

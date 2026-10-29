@@ -36,7 +36,7 @@ vi.mock("../settings-transfer", () => ({
   subscribeToSettingsImport: vi.fn().mockResolvedValue(() => {}),
 }));
 vi.mock("../lib/use-mobile", () => ({ useIsMobile: () => false }));
-vi.mock("@machdoch/media-studio/tauri/ui/flow/flow-canvas.js", () => ({
+vi.mock("@machdoch/product-ui/flow/flow-canvas", () => ({
   FlowCanvas: () => null,
 }));
 

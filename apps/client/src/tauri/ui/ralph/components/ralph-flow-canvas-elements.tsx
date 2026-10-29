@@ -26,9 +26,9 @@ import { getBlockNodePreview } from "../_helpers/get-ralph-node-preview.helper";
 import {
   FlowNodeHeader,
   FlowNodeShell,
-  FlowPort,
-} from "@machdoch/media-studio/tauri/ui/flow/flow-primitives.js";
-import { FLOW_SELECTED_NODE_CLASS_NAME } from "@machdoch/media-studio/tauri/ui/flow/flow-theme.js";
+  FlowNodePorts,
+} from "@machdoch/product-ui/flow/flow-primitives";
+import { FLOW_SELECTED_NODE_CLASS_NAME } from "@machdoch/product-ui/flow/flow-theme";
 
 const getAnnotationToneClassName = (
   tone: RalphAnnotationTone | undefined,
@@ -319,6 +319,7 @@ const RalphBlockNode = ({
 
   const visual = getBlockVisual(data.block);
   const preview = getBlockNodePreview(data.block);
+  const chips = preview.chips.filter((chip) => !data.outputs.some((output) => output === chip));
   const Icon = visual.icon;
   const isSelected = selected || data.selected;
   const locked = (data.block.locked ?? false) || Boolean(data.lockedByGroupId);
@@ -334,13 +335,6 @@ const RalphBlockNode = ({
       )}
     >
       <RalphNodeLockBadge data={data} />
-      <FlowPort
-        type="target"
-        position={Position.Left}
-        tone="slate"
-        tooltip="Input"
-        style={{ left: 0, transform: "translateY(-50%)" }}
-      />
       <FlowNodeHeader
         category={visual.badgeLabel}
         label={data.block.title}
@@ -370,9 +364,9 @@ const RalphBlockNode = ({
           {data.issueCount} issue{data.issueCount === 1 ? "" : "s"}
         </div>
       ) : null}
-      {preview.chips.length > 0 ? (
+      {chips.length > 0 ? (
         <div className="mt-2 flex flex-wrap gap-1">
-          {preview.chips.slice(0, 3).map((chip) => (
+          {chips.slice(0, 3).map((chip) => (
             <span
               key={chip}
               className="max-w-full truncate rounded border border-white/15 bg-black/25 px-1.5 py-0.5 text-[0.62rem] font-medium leading-3 text-white/75"
@@ -382,24 +376,14 @@ const RalphBlockNode = ({
           ))}
         </div>
       ) : null}
-      <div className="mt-3 grid gap-1.5">
-        {data.outputs.map((output) => (
-          <div
-            key={output}
-            className="relative flex min-h-5 items-center justify-end pr-4 text-[0.66rem] font-bold leading-4 tracking-wide text-white/80"
-          >
-            <span className="min-w-0 truncate">{output}</span>
-            <FlowPort
-              id={String(output)}
-              type="source"
-              position={Position.Right}
-              tone={getRalphOutputTone(output)}
-              tooltip={`Output: ${output}`}
-              style={{ right: -6 }}
-            />
-          </div>
-        ))}
-      </div>
+      <FlowNodePorts
+        inputs={[{ label: "Input", tone: "slate" }]}
+        outputs={data.outputs.map((output) => ({
+          id: String(output),
+          label: output,
+          tone: getRalphOutputTone(output),
+        }))}
+      />
     </FlowNodeShell>
   );
 };

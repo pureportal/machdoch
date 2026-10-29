@@ -13,7 +13,7 @@ import {
   isVisualRalphCanvasBlock,
 } from "./get-block-outputs.helper";
 import { getRalphOutputTone } from "./get-ralph-block-visual.helper";
-import { createFlowCanvasEdge } from "@machdoch/media-studio/tauri/ui/flow/flow-theme.js";
+import { createFlowCanvasEdge } from "@machdoch/product-ui/flow/flow-theme";
 
 export type RalphNodeResizeEndHandler = (
   blockId: string,

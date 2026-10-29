@@ -1,3 +1,4 @@
+import { FlowHistoryControls } from "@machdoch/product-ui/flow/flow-toolbar";
 import { MediaFlowAgentPanel } from "./media-flow-agent-panel";
 import { mediaImageLayoutInputPorts } from "../../../../core/media/image-layout-nodes.js";
 import { MediaAssetBrowser } from "./media-asset-browser";
@@ -22,7 +23,6 @@ import {
   mediaImageSamplingConstraints,
 } from "../../../../core/media/image-sampling.js";
 import {
-  Position,
   type Connection,
   type Node,
   type NodeChange,
@@ -62,7 +62,6 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
-  Redo2,
   RefreshCw,
   RotateCcw,
   Save,
@@ -72,7 +71,6 @@ import {
   StickyNote,
   Trash2,
   Ungroup,
-  Undo2,
 } from "lucide-react";
 import {
   useCallback,
@@ -216,21 +214,22 @@ import { createMediaNodeCommandPage } from "../media-node-command-page";
 import { normalizeMediaSubmissionText } from "../media-generation-recipe";
 import { MediaModelPicker } from "./media-model-picker";
 import { MediaImageMaskEditor } from "./media-image-mask-editor";
-import { FlowCanvas } from "../../flow/flow-canvas";
+import { FlowCanvas } from "@machdoch/product-ui/flow/flow-canvas";
 import { reconcileFlowElements } from "../../flow/flow-element-reconciliation";
 import {
   FlowNodeHeader,
   FlowNodeShell,
-  FlowPort,
+  FlowNodePorts,
   FlowPortDot,
-} from "../../flow/flow-primitives";
+} from "@machdoch/product-ui/flow/flow-primitives";
 import {
   FLOW_CANVAS_FIT_MAX_ZOOM,
   FLOW_CANVAS_FIT_PADDING,
   FLOW_EDGE_TYPE,
   createFlowCanvasEdge,
+  FLOW_NODE_TONE_CLASS_NAMES,
   type FlowPortTone,
-} from "../../flow/flow-theme";
+} from "@machdoch/product-ui/flow/flow-theme";
 
 interface MediaFlowViewProps {
   onGeneratePoseChat: (map: MediaPoseMap | null) => void | Promise<void>;
@@ -466,12 +465,12 @@ const reconcileMediaCanvasEdges = (
   });
 
 const LAYER_STYLES: Record<MediaNodeLayer, string> = {
-  source: "border-sky-400/35 bg-sky-950/80 text-sky-100",
-  task: "border-violet-400/35 bg-violet-950/80 text-violet-100",
-  operation: "border-cyan-400/35 bg-cyan-950/80 text-cyan-100",
-  control: "border-amber-400/35 bg-amber-950/80 text-amber-100",
-  output: "border-emerald-400/35 bg-emerald-950/80 text-emerald-100",
-  runtime: "border-slate-500/40 bg-slate-900/90 text-slate-100",
+  source: FLOW_NODE_TONE_CLASS_NAMES.sky,
+  task: FLOW_NODE_TONE_CLASS_NAMES.violet,
+  operation: FLOW_NODE_TONE_CLASS_NAMES.cyan,
+  control: FLOW_NODE_TONE_CLASS_NAMES.amber,
+  output: FLOW_NODE_TONE_CLASS_NAMES.emerald,
+  runtime: FLOW_NODE_TONE_CLASS_NAMES.slate,
 };
 
 const PORT_TONES: Record<MediaPortDataType, FlowPortTone> = {
@@ -683,18 +682,6 @@ const MediaFlowNodeCard = ({
         data.runOverlay && RUN_OVERLAY_NODE_STYLES[data.runOverlay.state],
       )}
     >
-      {data.inputs.map((port, index) => (
-        <FlowPort
-          key={port.id}
-          id={port.id}
-          type="target"
-          position={Position.Left}
-          tone={PORT_TONES[port.dataType]}
-          tooltip={`${port.label}: ${PORT_LABELS[port.dataType]} input`}
-          aria-label={`${port.label} ${port.dataType} input`}
-          style={{ top: `${((index + 1) / (data.inputs.length + 1)) * 100}%` }}
-        />
-      ))}
       <FlowNodeHeader
         category={data.layer}
         label={data.label}
@@ -728,45 +715,21 @@ const MediaFlowNodeCard = ({
       <div className="mt-2 line-clamp-2 text-[11px] leading-4 opacity-65">
         {data.detail}
       </div>
-      {data.inputs.length > 0 || data.outputs.length > 0 ? (
-        <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/10 pt-2 text-[9px]">
-          <div className="min-w-0 space-y-1">
-            {data.inputs.map((port) => (
-              <ControlTooltip
-                key={`input-${port.id}`}
-                content={`${port.label}: ${PORT_LABELS[port.dataType]} input`}
-              >
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <FlowPortDot
-                    aria-hidden="true"
-                    tone={PORT_TONES[port.dataType]}
-                  />
-                  <span className="truncate opacity-70">
-                    {port.label}
-                    {port.required ? " *" : ""}
-                  </span>
-                </div>
-              </ControlTooltip>
-            ))}
-          </div>
-          <div className="min-w-0 space-y-1 text-right">
-            {data.outputs.map((port) => (
-              <ControlTooltip
-                key={`output-${port.id}`}
-                content={`${port.label}: ${PORT_LABELS[port.dataType]} output`}
-              >
-                <div className="flex min-w-0 items-center justify-end gap-1.5">
-                  <span className="truncate opacity-70">{port.label}</span>
-                  <FlowPortDot
-                    aria-hidden="true"
-                    tone={PORT_TONES[port.dataType]}
-                  />
-                </div>
-              </ControlTooltip>
-            ))}
-          </div>
-        </div>
-      ) : null}
+      <FlowNodePorts
+        inputs={data.inputs.map((port) => ({
+          id: port.id,
+          label: port.label,
+          tone: PORT_TONES[port.dataType],
+          required: Boolean(port.required),
+          description: port.label + ": " + PORT_LABELS[port.dataType] + " input",
+        }))}
+        outputs={data.outputs.map((port) => ({
+          id: port.id,
+          label: port.label,
+          tone: PORT_TONES[port.dataType],
+          description: port.label + ": " + PORT_LABELS[port.dataType] + " output",
+        }))}
+      />
       {data.runOverlay ? (
         <ControlTooltip content={data.runOverlay.detail}>
           <div
@@ -792,18 +755,6 @@ const MediaFlowNodeCard = ({
           </div>
         </ControlTooltip>
       ) : null}
-      {data.outputs.map((port, index) => (
-        <FlowPort
-          key={port.id}
-          id={port.id}
-          type="source"
-          position={Position.Right}
-          tone={PORT_TONES[port.dataType]}
-          tooltip={`${port.label}: ${PORT_LABELS[port.dataType]} output`}
-          aria-label={`${port.label} ${port.dataType} output`}
-          style={{ top: `${((index + 1) / (data.outputs.length + 1)) * 100}%` }}
-        />
-      ))}
     </FlowNodeShell>
   );
 };
@@ -4227,19 +4178,20 @@ export const MediaFlowView = ({
     () => `${flow.id}\u001f${createMediaFlowLayoutDigest(layout)}`,
     [flow.id, layout],
   );
+  const [nodeSizes, setNodeSizes] = useState<Record<string, { width: number; height: number }>>({});
   const projectedCanvasNodes = useMemo<MediaCanvasNode[]>(() => {
     const groupNodes = layout.groups.flatMap((group) => {
       const positions = group.nodeIds.flatMap((nodeId) => {
         const position = layoutByNodeId.get(nodeId);
-        return position ? [position] : [];
+        return position ? [{ ...position, ...nodeSizes[nodeId] }] : [];
       });
       if (positions.length < 2) return [];
       const minX = Math.min(...positions.map((position) => position.x));
       const minY = Math.min(...positions.map((position) => position.y));
-      const maxX = Math.max(...positions.map((position) => position.x));
-      const maxY = Math.max(...positions.map((position) => position.y));
-      const width = group.collapsed ? 240 : Math.max(272, maxX - minX + 272);
-      const height = group.collapsed ? 54 : Math.max(130, maxY - minY + 190);
+      const maxX = Math.max(...positions.map((position) => position.x + (position.width ?? 256)));
+      const maxY = Math.max(...positions.map((position) => position.y + (position.height ?? 140)));
+      const width = group.collapsed ? 240 : maxX - minX + 64;
+      const height = group.collapsed ? 54 : maxY - minY + 84;
       return [
         {
           id: `layout-group:${group.id}`,
@@ -4349,6 +4301,7 @@ export const MediaFlowView = ({
     layout.groups,
     layoutByNodeId,
     models,
+    nodeSizes,
     resolvedNodesById,
     runOverlay,
     runOverlayProjection,
@@ -5352,6 +5305,21 @@ export const MediaFlowView = ({
   const handleNodesChange = useCallback(
     (changes: NodeChange<MediaCanvasNode>[]): void => {
       applyCanvasNodeChanges(changes);
+      const measurements = changes.filter((change): change is Extract<NodeChange<MediaCanvasNode>, { type: "dimensions" }> => change.type === "dimensions" && flowNodesById.has(change.id));
+      if (measurements.length > 0) {
+        setNodeSizes((current) => {
+          const next = { ...current };
+          let changed = false;
+          for (const change of measurements) {
+            const size = change.dimensions;
+            if (size && (current[change.id]?.width !== size.width || current[change.id]?.height !== size.height)) {
+              next[change.id] = size;
+              changed = true;
+            }
+          }
+          return changed ? next : current;
+        });
+      }
       const completedPositions = new Map(
         changes.flatMap((change) =>
           change.type === "position" &&
@@ -5380,7 +5348,7 @@ export const MediaFlowView = ({
         }),
       });
     },
-    [applyCanvasNodeChanges, commitLayout, layout],
+    [applyCanvasNodeChanges, commitLayout, flowNodesById, layout],
   );
 
   const autoLayout = useCallback((): void => {
@@ -5681,32 +5649,10 @@ export const MediaFlowView = ({
             className="flex items-center"
             aria-label="Semantic editing controls"
           >
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Undo semantic change"
-              aria-keyshortcuts={undoShortcut?.ariaKeyShortcuts}
-              tooltip={`Undo semantic change${undoShortcut ? ` (${undoShortcut.label})` : ""}`}
-              disabled={!canUndoSemantic}
-              onClick={onUndoSemantic}
-              className="text-cyan-300/70 hover:bg-cyan-400/10 hover:text-cyan-200"
-            >
-              <Undo2 className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Redo semantic change"
-              aria-keyshortcuts={redoShortcut?.ariaKeyShortcuts}
-              tooltip={`Redo semantic change${redoShortcut ? ` (${redoShortcut.label})` : ""}`}
-              disabled={!canRedoSemantic}
-              onClick={onRedoSemantic}
-              className="text-cyan-300/70 hover:bg-cyan-400/10 hover:text-cyan-200"
-            >
-              <Redo2 className="h-3.5 w-3.5" />
-            </Button>
+            <FlowHistoryControls
+              undo={{ label: "Undo semantic change", disabled: !canUndoSemantic, onClick: onUndoSemantic, keyShortcuts: undoShortcut?.ariaKeyShortcuts }}
+              redo={{ label: "Redo semantic change", disabled: !canRedoSemantic, onClick: onRedoSemantic, keyShortcuts: redoShortcut?.ariaKeyShortcuts }}
+            />
             <Button
               type="button"
               variant="ghost"
@@ -5829,43 +5775,11 @@ export const MediaFlowView = ({
               <Group className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <div
-            className="flex items-center"
-            aria-label="Layout history controls"
-          >
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Undo layout change"
-              disabled={undoStack.current.length === 0}
-              onClick={undoLayout}
-              className="text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-            >
-              <Undo2 className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Redo layout change"
-              disabled={redoStack.current.length === 0}
-              onClick={redoLayout}
-              className="text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-            >
-              <Redo2 className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Auto-layout flow"
-              onClick={autoLayout}
-              className="text-slate-400 hover:bg-slate-800 hover:text-slate-100"
-            >
-              <LayoutDashboard className="h-3.5 w-3.5" />
-            </Button>
-          </div>
+          <FlowHistoryControls
+            undo={{ label: "Undo layout change", disabled: undoStack.current.length === 0, onClick: undoLayout }}
+            redo={{ label: "Redo layout change", disabled: redoStack.current.length === 0, onClick: redoLayout }}
+            layout={{ label: "Auto-layout flow", disabled: false, onClick: autoLayout }}
+          />
           <div className="flex items-center gap-1">
             <SavedWorkflowPicker
               flow={flow}
@@ -6283,12 +6197,6 @@ export const MediaFlowView = ({
             nodeTypes={NODE_TYPES}
             onInit={(instance) => {
               flowInstance.current = instance;
-              window.requestAnimationFrame(() => {
-                void instance.fitView({
-                  padding: FLOW_CANVAS_FIT_PADDING,
-                  maxZoom: FLOW_CANVAS_FIT_MAX_ZOOM,
-                });
-              });
             }}
             onNodesChange={handleNodesChange}
             onSelectionChange={handleSelectionChange}
@@ -6324,8 +6232,6 @@ export const MediaFlowView = ({
             nodesDraggable
             nodesConnectable
             elementsSelectable
-            selectionOnDrag
-            multiSelectionKeyCode={["Control", "Meta"]}
             miniMapNodeColor={(node) =>
               node.type === "mediaNode"
                 ? {

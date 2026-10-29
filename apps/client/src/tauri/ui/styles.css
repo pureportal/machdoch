@@ -13,6 +13,7 @@
 @source "./";
 @source "../../../../../packages/media-studio/src";
 @source "../../../../../packages/client-ui/src";
+@source "../../../../../packages/product-ui/src/flow";
 @custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
 
 /*

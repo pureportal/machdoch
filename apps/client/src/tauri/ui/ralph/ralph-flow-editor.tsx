@@ -387,11 +387,11 @@ import {
   type RalphRunPanelTab,
 } from "./_helpers/ralph-flow-editor-options.helper";
 import { RALPH_NODE_TYPES } from "./components/ralph-flow-canvas-elements";
-import { FlowCanvas } from "@machdoch/media-studio/tauri/ui/flow/flow-canvas.js";
+import { FlowCanvas } from "@machdoch/product-ui/flow/flow-canvas";
 import {
   FLOW_CANVAS_FIT_MAX_ZOOM,
   FLOW_CANVAS_FIT_PADDING,
-} from "@machdoch/media-studio/tauri/ui/flow/flow-theme.js";
+} from "@machdoch/product-ui/flow/flow-theme";
 import {
   RalphInspectorDetails,
   RalphInspectorField,
@@ -1819,7 +1819,7 @@ export const RalphFlowEditor = ({
   const hasBlockingIssues = issues.some((issue) => issue.level === "error");
   const errorCount = issues.filter((issue) => issue.level === "error").length;
   const warningCount = issues.length - errorCount;
-  const showMiniMap = editorMode === "design" && canvasNodes.length >= 4;
+  const showMiniMap = editorMode === "design";
   const activeRunCount = activeRuns.length;
   const pendingInputSupersededByActiveRun = Boolean(
     pendingInput && selectedFlowActiveRunCount > 0,
@@ -9766,8 +9766,6 @@ export const RalphFlowEditor = ({
               onEdgesDelete={(deletedEdges) => {
                 removeEdges(deletedEdges.map((edge) => edge.id));
               }}
-              fitView
-              minZoom={0.04}
               showMiniMap={showMiniMap}
               miniMapNodeColor={(node) =>
                 getBlockVisual((node.data as RalphNodeData).block).miniMapColor
