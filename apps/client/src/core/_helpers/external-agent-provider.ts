@@ -117,6 +117,7 @@ export interface SpawnedAgentResult {
   retryCount?: number;
   failureMessage?: string;
   authenticationRequired?: boolean;
+  turnLimitReached?: boolean;
   providerShutdownRecovery?: {
     kind: "final-output-exit-timeout" | "child-exit-close-timeout";
     graceMs: number;
@@ -283,11 +284,10 @@ const createExternalAgentFailureReason = (
     return `${providerLabel} exited with code ${exitCode ?? "unknown"}. Last diagnostic: ${lastDiagnostic.replace(/^\d{4}-\d{2}-\d{2}T\S+Z\s+/u, "")}`;
   }
 
-  return (
-    stderr ||
-    stdout ||
-    `${providerLabel} exited with code ${exitCode ?? "unknown"}.`
-  );
+  if (stderr) return stderr;
+  // Without diagnostics, stdout is the agent's last message, which reads like
+  // a reason of its own unless it is labelled.
+  return `${providerLabel} exited with code ${exitCode ?? "unknown"} before finishing.${stdout ? ` Last message: ${stdout}` : ""}`;
 };
 
 const createExternalAgentLoopState = (
@@ -1148,6 +1148,7 @@ export const runExternalAgentCommand = async (
         ...(retryCount === undefined ? {} : { retryCount }),
         ...(failureMessage ? { failureMessage } : {}),
         ...(authenticationRequired ? { authenticationRequired: true } : {}),
+        ...(outputDecoder.reachedTurnLimit?.() ? { turnLimitReached: true } : {}),
         ...(shutdownRecovery
           ? { providerShutdownRecovery: shutdownRecovery }
           : {}),
@@ -2984,6 +2985,68 @@ const executeExternalAgentCliTask = async (
     result.providerShutdownRecovery !== undefined &&
     !result.providerShutdownRecovery.childExitObservedBeforeRecovery &&
     result.exitCode === null;
+  if (result.turnLimitReached) {
+    // Like machdoch's own turn limit, this ends the run unfinished rather
+    // than failed, so a goal keeps going and a chat can continue it.
+    const turnLimit = command.metadata.maxTurns;
+    const summary = `${providerLabel} reached its ${typeof turnLimit === "number" ? `${turnLimit}-turn ` : "turn "}limit before it finished.`;
+    const lastOutput = result.stdout.trim();
+    await emitAgentProgress(
+      params.task,
+      params.config,
+      "blocked",
+      summary,
+      loopState,
+      params.onStateChange,
+      undefined,
+      {
+        timelineEvent: {
+          kind: "model-call",
+          phase: "failed",
+          label: providerLabel,
+          detail: summary,
+          tone: "warning",
+          provider,
+          model: params.config.model,
+          metadata: {
+            durationMs,
+            ...providerShutdownMetadata,
+          },
+        },
+      },
+    );
+
+    return createExecutionResult(
+      {
+        task: params.task,
+        mode: params.config.mode,
+        status: "blocked",
+        summary,
+        executedTools: ["shell"],
+        metadata: instructionMetadata,
+        outputSections: [
+          ...params.contextSections,
+          commandSection,
+          ...(lastOutput
+            ? [createTextSection(`${providerLabel} last message`, lastOutput, 120)]
+            : []),
+        ],
+        ...(lastOutput
+          ? {
+              response: {
+                markdown: lastOutput,
+                highlights: [],
+                relatedFiles: [],
+                verification: [],
+                followUps: [],
+              },
+            }
+          : {}),
+      },
+      summary,
+    );
+  }
+
   if (result.exitCode !== 0 && !finalAnswerRecoveredWithoutExitCode) {
     const authenticationRequired =
       provider === "codex-cli" &&

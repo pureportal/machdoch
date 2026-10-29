@@ -387,6 +387,24 @@ describe("goal lifecycle", () => {
     await run("/goal resume");
     expect((await read()).goal?.status).toBe("complete");
   });
+  it("keeps working after a turn that stopped at the provider's turn limit", async () => {
+    let workTurns = 0;
+    const execute = vi.fn<GoalTurnExecutor>(async (_task, _config, turnOptions) => {
+      if (turnOptions.resultProtocol)
+        return evaluation(workTurns === 1 ? "continue" : "complete");
+      workTurns += 1;
+      return workTurns === 1
+        ? result({
+            status: "blocked",
+            summary: "Claude CLI reached its 64-turn limit before it finished.",
+            reason: "Claude CLI reached its 64-turn limit before it finished.",
+          })
+        : result();
+    });
+    await run("/goal Fix auth", execute);
+    expect(workTurns).toBe(2);
+    expect((await read()).goal).toMatchObject({ status: "complete", turns: 2 });
+  });
   it("stops on a provider failure without retrying indefinitely", async () => {
     const execute = vi.fn(async () =>
       result({ status: "failed", reason: "Authentication failed." }),

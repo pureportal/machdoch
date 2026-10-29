@@ -247,6 +247,49 @@ describe("Claude CLI output decoder", () => {
     });
   });
 
+  it("reports a turn-limit stop apart from a failure", () => {
+    const decoder = new ClaudeCliOutputDecoder();
+    const update = decoder.push(
+      [
+        eventLine({
+          type: "assistant",
+          message: {
+            id: "message-1",
+            content: [{ type: "text", text: "I'll build on it next." }],
+          },
+        }),
+        eventLine({
+          type: "result",
+          subtype: "error_max_turns",
+          is_error: true,
+          num_turns: 65,
+          errors: [],
+        }),
+      ].join(""),
+    );
+
+    expect(update.resultExitCode).toBe(1);
+    expect(decoder.reachedTurnLimit()).toBe(true);
+    expect(decoder.getFailureMessage()).toBeUndefined();
+    expect(decoder.getModelCallCount()).toBe(65);
+    expect(decoder.getFinalOutput()).toBe("I'll build on it next.");
+  });
+
+  it("explains an error result with the errors it lists", () => {
+    const decoder = new ClaudeCliOutputDecoder();
+    decoder.push(
+      eventLine({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        errors: ["Tool runner crashed", " "],
+      }),
+    );
+
+    expect(decoder.reachedTurnLimit()).toBe(false);
+    expect(decoder.getFailureMessage()).toBe("Tool runner crashed");
+  });
+
   it("prefers validated structured output from the terminal result", () => {
     const decoder = new ClaudeCliOutputDecoder();
     const update = decoder.push(

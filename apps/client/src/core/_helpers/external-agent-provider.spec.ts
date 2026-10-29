@@ -3199,6 +3199,52 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(result?.response?.markdown).toBe("Claude delegated answer.");
   });
 
+  it("ends a Claude run that used every allowed turn as unfinished, not failed", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, {
+        provider: "claude-cli",
+        agentLimits: { executorTurns: 7, autopilotExecutorIterations: 3 },
+      }),
+    );
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    call.child.stdout.write(
+      `${JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "I'll build on it next." }] } })}\n`,
+    );
+    call.child.stdout.write(
+      `${JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true, num_turns: 8, errors: [] })}\n`,
+    );
+    call.child.emit("close", 1, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "blocked",
+      summary: "Claude CLI reached its 7-turn limit before it finished.",
+      response: { markdown: "I'll build on it next." },
+    });
+  });
+
+  it("labels the agent's last message when a CLI fails without diagnostics", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, { provider: "claude-cli" }),
+    );
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    call.child.stdout.write(
+      `${JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "Checking the build next." }] } })}\n`,
+    );
+    call.child.emit("close", 1, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "failed",
+      reason:
+        "Claude CLI exited with code 1 before finishing. Last message: Checking the build next.",
+    });
+  });
+
   it.each([
     ["codex-cli", "MACHDOCH_CODEX_CLI_PATH"],
     ["claude-cli", "MACHDOCH_CLAUDE_CLI_PATH"],

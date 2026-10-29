@@ -621,6 +621,12 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
   getRetryCount(): number | undefined {
     return this.output.getRetryCount();
   }
+  getFailureMessage(): string | undefined {
+    return this.output.getFailureMessage();
+  }
+  reachedTurnLimit(): boolean {
+    return this.output.reachedTurnLimit();
+  }
   getModelCallCount(): number {
     return this.output.getModelCallCount();
   }

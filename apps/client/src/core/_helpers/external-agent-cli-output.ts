@@ -22,6 +22,8 @@ export interface ExternalAgentCliOutputDecoder {
   isModelCallCountReported(): boolean;
   hasTerminalResult(): boolean;
   getFailureMessage?(): string | undefined;
+  /** The CLI stopped because it used every turn it was allowed. */
+  reachedTurnLimit?(): boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -359,6 +361,8 @@ export class ClaudeCliOutputDecoder
   private modelCallCount = 1;
   private modelCallCountReported = false;
   private assistantMessageId: string | undefined;
+  private turnLimitReached = false;
+  private failureMessage: string | undefined;
 
   getFinalOutput(): string {
     return this.finalOutput.trim() || this.diagnostics.join("\n").trim();
@@ -370,6 +374,14 @@ export class ClaudeCliOutputDecoder
 
   getRetryCount(): number | undefined {
     return this.retryCount;
+  }
+
+  getFailureMessage(): string | undefined {
+    return this.failureMessage;
+  }
+
+  reachedTurnLimit(): boolean {
+    return this.turnLimitReached;
   }
 
   getModelCallCount(): number {
@@ -468,6 +480,18 @@ export class ClaudeCliOutputDecoder
       this.terminal = true;
       const isError = event.is_error === true || subtype !== "success";
       update.resultExitCode = isError ? 1 : 0;
+      this.turnLimitReached = subtype === "error_max_turns";
+      // Error results list what went wrong; without them only the agent's
+      // last message would explain the failure.
+      const errors = Array.isArray(event.errors)
+        ? event.errors.filter(
+            (error): error is string =>
+              typeof error === "string" && error.trim().length > 0,
+          )
+        : [];
+      if (isError && !this.turnLimitReached && errors.length > 0) {
+        this.failureMessage = errors.join("\n");
+      }
     }
   }
 }
