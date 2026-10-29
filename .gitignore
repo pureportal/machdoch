@@ -65,8 +65,10 @@ Thumbs.db
 tmp/
 temp/
 
-# Machdoch local data
-**/.machdoch/local/
+# Machdoch workspace state (created by the app when it opens a folder).
+# The test fixture keeps its own tracked copy.
+.machdoch/
+!apps/client/src/core/__test__/fixtures/*/.machdoch/
 
 # Model folder
 models/
@@ -85,6 +87,7 @@ apps/client/src-tauri/resources/speech-legal/source/
 apps/client/src-tauri/python/runtime/
 __pycache__/
 *.py[cod]
+.pytest_cache/
 
 apps/fleet-android/.gradle/
 apps/fleet-android/.kotlin/
@@ -93,3 +96,7 @@ apps/fleet-android/local.properties
 
 apps/cloud/data/
 apps/*/public/media-studio/
+
+# Downloaded model weights and scratch locks from validation runs
+docs/validation/**/*.safetensors
+docs/validation/**/reference-queue.lock
