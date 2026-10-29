@@ -26,6 +26,7 @@ export interface RuntimeModelCapabilities {
   computerUse?: boolean | null;
   nativeSubagents?: boolean | null;
   nativeGoal?: boolean | null;
+  fastMode?: boolean | null;
 }
 
 export interface RuntimeCatalogModel {

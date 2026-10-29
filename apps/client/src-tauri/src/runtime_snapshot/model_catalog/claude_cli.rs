@@ -94,6 +94,7 @@ fn create_claude_cli_runtime_model(entry: &serde_json::Value) -> Option<Provider
             computer_use: Some(false),
             native_subagents: None,
             native_goal: None,
+            fast_mode: json_bool(entry, "supportsFastMode"),
         },
         warnings: Vec::new(),
         source: "provider-probe".to_string(),

@@ -58,6 +58,8 @@ export interface DiscoveredModelCapabilities {
   voice?: boolean | null;
   nativeSubagents?: boolean | null;
   nativeGoal?: boolean | null;
+  /** The model offers a faster service tier (Codex "Fast", Claude fast mode). */
+  fastMode?: boolean | null;
 }
 
 const discoveredCapabilitiesByProviderModel = new Map<

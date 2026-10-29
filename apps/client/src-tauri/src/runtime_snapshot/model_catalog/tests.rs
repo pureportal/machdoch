@@ -81,6 +81,46 @@ mod model_catalog_parser_tests {
     }
 
     #[test]
+    fn codex_cli_model_catalog_reports_the_fast_service_tier() {
+        let raw = serde_json::json!({
+            "models": [
+                { "slug": "gpt-6.1-sol", "priority": 1, "service_tiers": [{ "id": "priority", "name": "Fast" }] },
+                { "slug": "gpt-6-astra", "priority": 2, "serviceTiers": [{ "id": "priority", "name": "Fast" }] },
+                { "slug": "gpt-6-luna", "priority": 3, "service_tiers": [] },
+                { "slug": "gpt-5.3-codex-spark", "priority": 4 }
+            ]
+        })
+        .to_string();
+        let models = parse_codex_cli_model_catalog(&raw).expect("models should parse");
+
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| model.capabilities.fast_mode)
+                .collect::<Vec<_>>(),
+            vec![Some(true), Some(true), Some(false), None]
+        );
+    }
+
+    #[test]
+    fn claude_cli_model_catalog_reports_fast_mode_support() {
+        let models = parse_claude_cli_model_catalog(&serde_json::json!([
+            { "value": "opus", "displayName": "Opus 5.5", "supportsFastMode": true },
+            { "value": "haiku", "displayName": "Haiku 5.5", "supportsFastMode": false },
+            { "value": "sonnet", "displayName": "Sonnet 5.5" }
+        ]))
+        .expect("models should parse");
+
+        assert_eq!(
+            models
+                .iter()
+                .map(|model| model.capabilities.fast_mode)
+                .collect::<Vec<_>>(),
+            vec![Some(true), Some(false), None]
+        );
+    }
+
+    #[test]
     fn codex_cli_model_catalog_parser_uses_catalog_availability() {
         let raw = r#"
         {

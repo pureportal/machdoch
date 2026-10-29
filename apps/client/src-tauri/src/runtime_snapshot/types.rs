@@ -102,6 +102,9 @@ pub struct ProviderRuntimeModelCapabilities {
     pub(super) native_subagents: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) native_goal: Option<bool>,
+    /// The model offers a faster service tier (Claude fast mode, Codex "Fast").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) fast_mode: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]

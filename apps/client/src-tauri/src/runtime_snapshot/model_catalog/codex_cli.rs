@@ -275,6 +275,7 @@ fn create_codex_cli_runtime_model(
             computer_use,
             native_subagents: None,
             native_goal: None,
+            fast_mode: entry.and_then(codex_cli_fast_tier),
         },
         warnings: if is_text_only_preview {
             vec![
@@ -395,6 +396,18 @@ pub(super) fn parse_codex_cli_features(raw: &str) -> Vec<String> {
             (!rest.is_empty() && !rest.starts_with("removed")).then(|| name.to_ascii_lowercase())
         })
         .collect()
+}
+
+/// Codex lists its "Fast" tier as the `priority` service tier. The field is snake_case in
+/// `codex debug models` and camelCase on the app-server.
+fn codex_cli_fast_tier(entry: &serde_json::Value) -> Option<bool> {
+    let tiers = ["service_tiers", "serviceTiers"]
+        .iter()
+        .find_map(|key| entry.get(*key))?
+        .as_array()?;
+    Some(tiers.iter().any(|tier| {
+        tier.get("id").and_then(serde_json::Value::as_str) == Some("priority")
+    }))
 }
 
 /// Applies `codex features list` to the catalog. Without a feature list (older CLIs or a

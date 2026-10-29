@@ -41,6 +41,7 @@ fn create_copilot_cli_runtime_model_base(model_id: &str) -> ProviderRuntimeModel
             computer_use: Some(false),
             native_subagents: None,
             native_goal: None,
+            fast_mode: None,
         },
         warnings: vec![
             "Model availability depends on GitHub Copilot plan and organization policy."
