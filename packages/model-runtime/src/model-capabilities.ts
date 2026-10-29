@@ -56,6 +56,8 @@ export interface DiscoveredModelCapabilities {
   defaultReasoningMode?: string | null;
   supportedImageMediaTypes?: readonly string[] | null;
   voice?: boolean | null;
+  nativeSubagents?: boolean | null;
+  nativeGoal?: boolean | null;
 }
 
 const discoveredCapabilitiesByProviderModel = new Map<
@@ -114,6 +116,21 @@ export const getDiscoveredDefaultReasoningMode = (
   model: string,
 ): string | null | undefined =>
   getDiscoveredModelCapabilities(provider, model)?.defaultReasoningMode;
+
+/** A provider-wide feature that the provider's discovered models report alike. */
+export const getDiscoveredProviderFeature = (
+  provider: ModelProvider,
+  feature: "nativeGoal",
+): boolean | undefined => {
+  const prefix = `${provider}:`;
+
+  for (const [key, capabilities] of discoveredCapabilitiesByProviderModel) {
+    const value = capabilities[feature];
+    if (key.startsWith(prefix) && typeof value === "boolean") return value;
+  }
+
+  return undefined;
+};
 
 export const getDiscoveredLongContextWindowTokens = (
   provider: ConfiguredModelProvider,

@@ -1,3 +1,5 @@
+import { getDiscoveredProviderFeature } from "@machdoch/model-runtime/model-capabilities";
+
 export type GoalMode = "machdoch" | "native";
 
 export const isGoalCommand = (task: string): boolean =>
@@ -26,8 +28,10 @@ export interface SessionGoal {
   updatedAt: number;
 }
 
+// A provider CLI probe can rule native goals out (e.g. a Claude CLI without `/goal`).
 export const getAvailableGoalModes = (provider: string): readonly GoalMode[] =>
-  provider === "claude-cli" || provider === "codex-cli"
+  (provider === "claude-cli" || provider === "codex-cli") &&
+  getDiscoveredProviderFeature(provider, "nativeGoal") !== false
     ? ["machdoch", "native"]
     : ["machdoch"];
 

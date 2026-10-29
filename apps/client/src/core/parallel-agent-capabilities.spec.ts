@@ -8,6 +8,7 @@ import {
 import type { InstructionLifecycleSupport } from "./instruction-system/types.js";
 import { getAvailableParallelAgentModes, resolveParallelAgentMode } from "./parallel-agent-capabilities.js";
 import { supportsNativeSubagents } from "@machdoch/model-runtime/native-subagents";
+import { replaceDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
 
 const createNativeInstructionPlan = (
   subagents: InstructionLifecycleSupport,
@@ -115,6 +116,39 @@ describe("parallel agent capabilities", () => {
         grade: "unsupported",
       }),
     ).not.toContain("native");
+  });
+
+  it("offers native Claude subagents before a run when the CLI probe confirmed them", () => {
+    try {
+      replaceDiscoveredModelCapabilities("claude-cli", [
+        { id: "opus", capabilities: { nativeSubagents: true } },
+        { id: "haiku", capabilities: { nativeSubagents: false } },
+        { id: "sonnet", capabilities: {} },
+      ]);
+      expect(getAvailableParallelAgentModes("claude-cli", "opus")).toContain(
+        "native",
+      );
+      expect(resolveParallelAgentMode("claude-cli", "opus", "native")).toBe(
+        "native",
+      );
+      expect(supportsNativeSubagents("claude-cli", "haiku")).toBe(false);
+      expect(
+        getAvailableParallelAgentModes("claude-cli", "haiku"),
+      ).not.toContain("native");
+      expect(
+        getAvailableParallelAgentModes("claude-cli", "sonnet"),
+      ).not.toContain("native");
+      // A run's instruction plan still decides once it exists.
+      expect(
+        getAvailableParallelAgentModes(
+          "claude-cli",
+          "opus",
+          createNativeInstructionPlan("unknown"),
+        ),
+      ).not.toContain("native");
+    } finally {
+      replaceDiscoveredModelCapabilities("claude-cli", []);
+    }
   });
 
   it.each(["disabled", "read-only", "machdoch"] as const)(
