@@ -5,7 +5,7 @@ const MAX_JSON_LINE_CHARS = 2_000_000;
 const MAX_DIAGNOSTIC_LINES = 20;
 const MAX_DIAGNOSTIC_LINE_CHARS = 2_000;
 const BACKGROUND_WAIT_STEP_MS = 10 * 60 * 1_000;
-const MAX_BACKGROUND_WAIT_STEPS = 3;
+const MAX_BACKGROUND_WAIT_STEPS = 6;
 const BACKGROUND_FOLLOW_UP_GRACE_MS = 2 * 60 * 1_000;
 
 const USAGE_COUNTS = [
@@ -56,6 +56,8 @@ export interface ExternalAgentCliOutputDecoder {
   getCompletionGraceMs?(): number | undefined;
   /** Status to show when background jobs may keep the run waiting longer. */
   takeBackgroundWaitNotice?(): string | undefined;
+  /** The run stopped waiting while background jobs were still running. */
+  backgroundWaitExpired?(): boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -398,6 +400,7 @@ export class ClaudeCliOutputDecoder
   private backgroundTasks = 0;
   private waitingForBackgroundTasks = false;
   private backgroundWaitSteps = 0;
+  private waitExpired = false;
   private carriedModelCalls = 0;
   private carriedUsage: AgentModelStreamUsage | undefined;
 
@@ -432,14 +435,18 @@ export class ClaudeCliOutputDecoder
   }
 
   takeBackgroundWaitNotice(): string | undefined {
-    if (
-      !this.waitingForBackgroundTasks ||
-      this.backgroundTasks === 0 ||
-      this.backgroundWaitSteps >= MAX_BACKGROUND_WAIT_STEPS - 1
-    )
+    if (!this.waitingForBackgroundTasks || this.backgroundTasks === 0)
       return undefined;
+    if (this.backgroundWaitSteps >= MAX_BACKGROUND_WAIT_STEPS - 1) {
+      this.waitExpired = true;
+      return undefined;
+    }
     this.backgroundWaitSteps += 1;
     return this.describeBackgroundWait("Still waiting for");
+  }
+
+  backgroundWaitExpired(): boolean {
+    return this.waitExpired;
   }
 
   private describeBackgroundWait(prefix: string): string {
@@ -454,6 +461,7 @@ export class ClaudeCliOutputDecoder
     this.terminal = false;
     this.waitingForBackgroundTasks = false;
     this.backgroundWaitSteps = 0;
+    this.waitExpired = false;
     this.turnLimitReached = false;
     this.failureMessage = undefined;
     this.carriedUsage = addUsage(this.carriedUsage, this.usage);

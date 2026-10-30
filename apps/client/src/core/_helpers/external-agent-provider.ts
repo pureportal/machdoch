@@ -114,6 +114,7 @@ export interface SpawnedAgentResult {
   failureMessage?: string;
   authenticationRequired?: boolean;
   turnLimitReached?: boolean;
+  backgroundWaitExpired?: boolean;
   providerShutdownRecovery?: {
     kind: "final-output-exit-timeout" | "child-exit-close-timeout";
     graceMs: number;
@@ -1133,6 +1134,9 @@ export const runExternalAgentCommand = async (
           ...(authenticationRequired ? { authenticationRequired: true } : {}),
           ...(outputDecoder.reachedTurnLimit?.()
             ? { turnLimitReached: true }
+            : {}),
+          ...(outputDecoder.backgroundWaitExpired?.()
+            ? { backgroundWaitExpired: true }
             : {}),
           ...(shutdownRecovery
             ? { providerShutdownRecovery: shutdownRecovery }
@@ -3064,14 +3068,15 @@ const executeExternalAgentCliTask = async (
     result.providerShutdownRecovery !== undefined &&
     !result.providerShutdownRecovery.childExitObservedBeforeRecovery &&
     result.exitCode === null;
-  if (result.turnLimitReached) {
+  if (result.turnLimitReached || result.backgroundWaitExpired) {
     // Like machdoch's own turn limit, this ends the run unfinished rather
     // than failed, so a goal keeps going and a chat can continue it.
     const turnLimit = command.metadata.maxTurns;
     const continuations = command.metadata.turnLimitContinuations;
     const turnLimitLabel = `${typeof turnLimit === "number" ? `${turnLimit}-turn ` : "turn "}limit`;
-    const summary =
-      typeof continuations === "number" && continuations > 0
+    const summary = result.backgroundWaitExpired
+      ? `${providerLabel} was still waiting for background jobs after an hour, and they stopped with the run before it finished. Continue the run to start them again.`
+      : typeof continuations === "number" && continuations > 0
         ? `${providerLabel} hit its ${turnLimitLabel} again after ${continuations} automatic continuation${continuations === 1 ? "" : "s"} and stopped before it finished. Continue the run, or raise Executor turns or Machdoch continuations in Settings › Agent limits.`
         : `${providerLabel} hit its ${turnLimitLabel} and stopped before it finished. Continue the run, or raise Executor turns in Settings › Agent limits.`;
     const lastOutput = result.stdout.trim();

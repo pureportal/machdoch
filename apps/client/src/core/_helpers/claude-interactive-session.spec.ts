@@ -372,6 +372,116 @@ describe("ClaudeInteractiveSession", () => {
     expect(unlimited.isClosed()).toBe(true);
   });
 
+  describe("while background jobs run after the turn", () => {
+    const jobs = (count: number) => ({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: Array.from({ length: count }, (_, index) => ({
+        task_id: `job-${index}`,
+      })),
+    });
+    const success = (text: string, inputTokens: number) => ({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      num_turns: 1,
+      result: text,
+      usage: { input_tokens: inputTokens, output_tokens: 1 },
+    });
+    const assistant = (id: string, text: string) => ({
+      type: "assistant",
+      message: { id, content: [{ type: "text", text }] },
+    });
+
+    it("keeps the session open and takes the wake-up turn's result as final", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      harness.receive(jobs(1));
+      const waiting = harness.receive(success("Tests are still running.", 10));
+      expect(harness.isClosed()).toBe(false);
+      expect(waiting.displayText.at(-1)).toContain(
+        "Waiting for 1 background job",
+      );
+      expect(harness.session.getCompletionGraceMs()).toBe(10 * 60 * 1_000);
+
+      harness.receive(jobs(0));
+      harness.receive(assistant("message-2", "All tests passed."));
+      expect(harness.session.hasTerminalResult()).toBe(false);
+      expect(harness.isClosed()).toBe(false);
+
+      const final = harness.receive(success("All tests passed.", 20));
+      expect(final.resultExitCode).toBe(0);
+      expect(harness.isClosed()).toBe(true);
+      expect(harness.session.hasTerminalResult()).toBe(true);
+      expect(harness.session.getCompletionGraceMs()).toBeUndefined();
+      expect(harness.session.getFinalOutput()).toBe("All tests passed.");
+      expect(harness.session.getUsage()).toMatchObject({ inputTokens: 30 });
+    });
+
+    it("still ends at once when no job is running", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      harness.receive(jobs(1));
+      harness.receive(jobs(0));
+      harness.receive(success("Done.", 10));
+      expect(harness.isClosed()).toBe(true);
+    });
+
+    it("ends a failed turn at once", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      harness.receive(jobs(1));
+      harness.receive({
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        errors: ["The API failed."],
+      });
+      expect(harness.isClosed()).toBe(true);
+      expect(harness.session.getCompletionGraceMs()).toBeUndefined();
+    });
+
+    it("lets the user stop or steer the waiting run", () => {
+      const stopped = createHarness();
+      sessions.push(stopped.session);
+      stopped.session.start();
+      stopped.receive(jobs(1));
+      stopped.receive(success("Waiting.", 10));
+      expect(stopped.session.interrupt()).toBe(true);
+      expect(stopped.isClosed()).toBe(true);
+      expect(stopped.session.interrupt()).toBe(false);
+
+      const steered = createHarness();
+      sessions.push(steered.session);
+      steered.session.start();
+      steered.receive(jobs(1));
+      steered.receive(success("Waiting.", 10));
+      steered.session.controls.steer?.("Skip the build.");
+      expect(steered.sent.at(-1)).toMatchObject({
+        type: "user",
+        priority: "next",
+        message: { content: "Skip the build." },
+      });
+      expect(steered.isClosed()).toBe(false);
+    });
+
+    it("reports an expired wait as unfinished", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      harness.receive(jobs(1));
+      harness.receive(success("Still running.", 10));
+      for (let step = 0; step < 5; step += 1) {
+        expect(harness.session.takeBackgroundWaitNotice()).toBeDefined();
+      }
+      expect(harness.session.takeBackgroundWaitNotice()).toBeUndefined();
+      expect(harness.session.backgroundWaitExpired()).toBe(true);
+    });
+  });
+
   it("interrupts and drops queued steering", () => {
     const harness = createHarness();
     sessions.push(harness.session);

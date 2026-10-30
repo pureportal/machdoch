@@ -332,8 +332,21 @@ describe("Claude CLI output decoder", () => {
       expect(decoder.takeBackgroundWaitNotice()).toBe(
         "Still waiting for 1 background job to finish.\n\n",
       );
-      expect(decoder.takeBackgroundWaitNotice()).toBeDefined();
+      for (let step = 0; step < 4; step += 1) {
+        expect(decoder.takeBackgroundWaitNotice()).toBeDefined();
+      }
+      expect(decoder.backgroundWaitExpired()).toBe(false);
       expect(decoder.takeBackgroundWaitNotice()).toBeUndefined();
+      expect(decoder.backgroundWaitExpired()).toBe(true);
+    });
+
+    it("does not count a quiet follow-up after the jobs finish as an expired wait", () => {
+      const decoder = new ClaudeCliOutputDecoder(true, true);
+      decoder.push(backgroundTasks(1));
+      decoder.push(result("Waiting on the build.", 1, 1));
+      decoder.push(backgroundTasks(0));
+      expect(decoder.takeBackgroundWaitNotice()).toBeUndefined();
+      expect(decoder.backgroundWaitExpired()).toBe(false);
     });
 
     it("keeps the first result final outside goal turns", () => {

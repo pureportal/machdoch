@@ -836,7 +836,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
           return;
         }
 
-        await vi.advanceTimersByTimeAsync(25 * 60 * 1_000);
+        await vi.advanceTimersByTimeAsync(55 * 60 * 1_000);
         if (process.platform === "win32") {
           expect(spawnCalls[1]).toMatchObject({ executable: "taskkill" });
           spawnCalls[1]?.child.emit("close", 0, null);
@@ -845,9 +845,11 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
           call.child.emit("close", null, "SIGTERM");
         }
         await expect(pending).resolves.toMatchObject({
-          status: "executed",
+          status: "blocked",
+          summary: expect.stringContaining(
+            "still waiting for background jobs after an hour",
+          ),
           response: { markdown: "Still in progress." },
-          metadata: { providerShutdownRecovered: true },
         });
       } finally {
         processKillSpy?.mockRestore();
@@ -3377,6 +3379,66 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       status: "blocked",
       summary:
         "Claude CLI hit its 7-turn limit again after 1 automatic continuation and stopped before it finished. Continue the run, or raise Executor turns or Machdoch continuations in Settings › Agent limits.",
+    });
+  });
+
+  it("keeps a live Claude run going until its background jobs report", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    vi.mocked(spawnSync).mockImplementation((executable, args = []) => {
+      const result = capabilityProbe(executable, [...args]);
+      return args.includes("--help")
+        ? { ...result, stdout: `${String(result.stdout)}\n--input-format` }
+        : result;
+    });
+    const params = createParams(workspaceRoot, { provider: "claude-cli" });
+    params.instructionDeliveryPlan = createExternalInstructionPlan(
+      params.taskContext.instructionResolution!,
+      undefined,
+      ["--input-format"],
+    );
+    let settled = false;
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params).finally(
+      () => {
+        settled = true;
+      },
+    );
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    const event = (value: Record<string, unknown>) =>
+      call.child.stdout.write(`${JSON.stringify(value)}\n`);
+    const result = (text: string) => ({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      num_turns: 1,
+      result: text,
+    });
+
+    event({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [{ task_id: "tests" }],
+    });
+    event(result("Tests are still running."));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(settled).toBe(false);
+    expect(call.child.stdin.writableEnded).toBe(false);
+
+    event({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+    event({
+      type: "assistant",
+      message: { id: "next", content: [{ type: "text", text: "All passed." }] },
+    });
+    event(result("All passed."));
+    await waitForCondition(() =>
+      expect(call.child.stdin.writableEnded).toBe(true),
+    );
+    call.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "executed",
+      response: { markdown: "All passed." },
     });
   });
 

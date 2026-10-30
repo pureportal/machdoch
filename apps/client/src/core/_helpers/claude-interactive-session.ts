@@ -95,7 +95,7 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
       unattended?: boolean;
     },
   ) {
-    this.output = new ClaudeCliOutputDecoder(options.captureEvidence);
+    this.output = new ClaudeCliOutputDecoder(options.captureEvidence, true);
     this.requestedFastMode = options.fastMode === true;
     this.unattended = options.unattended === true;
     this.live = new AgentLiveTracker(
@@ -155,6 +155,15 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
   interrupt(): boolean {
     if (this.turnFinished || this.inputClosed) return false;
     this.interrupted = true;
+    // Between turns nothing is listening for an interrupt, so just end the run.
+    if (this.output.getCompletionGraceMs() !== undefined) {
+      this.turnFinished = true;
+      this.live.failPendingSteers(
+        "The turn ended before Claude read this message.",
+      );
+      this.closeInput();
+      return true;
+    }
     this.cancelPendingQuestion();
     // Also drop steering messages still waiting for the next tool boundary.
     this.sendControl({ subtype: "interrupt", cancel_queued: true });
@@ -312,14 +321,30 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
       return;
     }
     if (type === "system") this.events.system(event);
-    // A background task that finishes after the answer can start a follow-up
-    // turn of its own; it must not replace the answer the user asked for.
+    // Once the run has ended, a late follow-up turn must not replace its answer.
     if (this.turnFinished) return;
     if (type === "result" && this.continueAfterTurnLimit(event)) return;
     if (type === "assistant") this.events.assistant(event);
     if (type === "user") this.events.toolResults(event);
     mergeOutputUpdate(update, this.output.pushEvent(event));
-    if (type === "result") this.finishTurn(event);
+    if (type === "result") {
+      if (this.awaitsBackgroundJobs(event))
+        this.events.result(event, this.getUsage());
+      else this.finishTurn(event);
+    }
+  }
+
+  /**
+   * Closing stdin would stop jobs still running after a successful turn. With
+   * it open, the CLI starts another turn when they finish.
+   */
+  private awaitsBackgroundJobs(event: Record<string, unknown>): boolean {
+    return (
+      !this.interrupted &&
+      event.is_error !== true &&
+      readString(event, "subtype") === "success" &&
+      this.output.getCompletionGraceMs() !== undefined
+    );
   }
 
   private handleProviderRequest(event: Record<string, unknown>): void {
@@ -472,6 +497,17 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
     return this.output.isModelCallCountReported();
   }
   hasTerminalResult(): boolean {
-    return this.output.hasTerminalResult() && this.inputClosed;
+    return this.output.hasTerminalResult();
+  }
+  getCompletionGraceMs(): number | undefined {
+    return this.turnFinished ? undefined : this.output.getCompletionGraceMs();
+  }
+  takeBackgroundWaitNotice(): string | undefined {
+    return this.turnFinished
+      ? undefined
+      : this.output.takeBackgroundWaitNotice();
+  }
+  backgroundWaitExpired(): boolean {
+    return !this.turnFinished && this.output.backgroundWaitExpired();
   }
 }
