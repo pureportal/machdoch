@@ -29,20 +29,37 @@ type Projection = ValueLimit | { readonly [key: string]: Projection };
 const control: ValueLimit = { maxChars: 8_192, truncate: false };
 const evidence: ValueLimit = { maxChars: 12_000, truncate: true };
 const message: ValueLimit = { maxChars: 512_000, truncate: true };
+const detail: ValueLimit = { maxChars: 1_024, truncate: true };
+const planSteps: ValueLimit = { maxChars: 64_000, truncate: true };
 const error = { message: control };
 const turn = { id: control, status: control, error };
 const goal = { status: control };
+const rateLimitWindow = {
+  usedPercent: detail,
+  windowDurationMins: detail,
+  resetsAt: detail,
+};
+const rateLimits = {
+  rateLimitReachedType: detail,
+  primary: rateLimitWindow,
+  secondary: rateLimitWindow,
+};
 const envelope: Projection = {
   id: control,
   method: control,
   error,
-  result: { thread: { id: control }, turn, goal },
+  result: { thread: { id: control }, turn, goal, rateLimits, ...rateLimits },
   params: {
     threadId: control,
     turn,
     goal,
     error,
     willRetry: control,
+    rateLimits,
+    plan: planSteps,
+    diff: message,
+    toModel: detail,
+    model: detail,
     tokenUsage: {
       total: {
         inputTokens: control,
@@ -51,11 +68,15 @@ const envelope: Projection = {
         cachedInputTokens: control,
         reasoningOutputTokens: control,
       },
+      last: { inputTokens: detail },
+      modelContextWindow: detail,
     },
     item: {
       id: control,
       type: control,
       text: message,
+      prompt: evidence,
+      description: evidence,
       command: evidence,
       cwd: evidence,
       aggregatedOutput: evidence,

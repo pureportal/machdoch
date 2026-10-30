@@ -78,8 +78,25 @@ import {
   stringifyUnknown,
 } from "./_helpers/runtime-text.js";
 import { randomUUID } from "node:crypto";
-import type { AgentModelAdapter, AgentModelStreamUsage, AgentModelStreamEvent, AgentModelTurn, AgentModelToolCall, AgentModelToolResult } from "@machdoch/model-runtime/types";
-import type { ResolvedTaskContext, TaskActionOutputHandler, TaskAutopilotDecision, TaskAutopilotReport, TaskExecutionProgress, TaskExecutionProgressHandler, TaskExecutionResult, TaskExecutionSection, TaskExecutionState } from "./types.js";
+import type {
+  AgentModelAdapter,
+  AgentModelStreamUsage,
+  AgentModelStreamEvent,
+  AgentModelTurn,
+  AgentModelToolCall,
+  AgentModelToolResult,
+} from "@machdoch/model-runtime/types";
+import type {
+  ResolvedTaskContext,
+  TaskActionOutputHandler,
+  TaskAutopilotDecision,
+  TaskAutopilotReport,
+  TaskExecutionProgress,
+  TaskExecutionProgressHandler,
+  TaskExecutionResult,
+  TaskExecutionSection,
+  TaskExecutionState,
+} from "./types.js";
 import type { RuntimeConfig } from "./runtime-contract.generated.js";
 
 const MODEL_STREAM_PROGRESS_INTERVAL_MS = 250;
@@ -448,7 +465,7 @@ const createModelStreamProgressEmitter = (
 } => {
   let assistantText = loopState.lastAssistantText ?? "";
   let reasoningText = "";
-  let finalAnswerStream:TaskExecutionProgress["finalAnswerStream"];
+  let finalAnswerStream: TaskExecutionProgress["finalAnswerStream"];
   let modelStream:
     | NonNullable<TaskExecutionProgress["modelStream"]>
     | undefined;
@@ -490,7 +507,7 @@ const createModelStreamProgressEmitter = (
       onStateChange,
       undefined,
       {
-        ...(finalAnswerStream?{finalAnswerStream}:{}),
+        ...(finalAnswerStream ? { finalAnswerStream } : {}),
         ...(assistantText
           ? { assistantText: limitStreamContent(assistantText) }
           : {}),
@@ -511,10 +528,15 @@ const createModelStreamProgressEmitter = (
       onStreamActivity?.();
 
       switch (event.type) {
-        case "final-answer":{
-          if(finalAnswerStream?.responseId===event.snapshot.responseId&&finalAnswerStream.answerId===event.snapshot.answerId&&event.snapshot.sequence<=finalAnswerStream.sequence)return;
-          finalAnswerStream=event.snapshot;
-          emit(event.snapshot.status!=="streaming");
+        case "final-answer": {
+          if (
+            finalAnswerStream?.responseId === event.snapshot.responseId &&
+            finalAnswerStream.answerId === event.snapshot.answerId &&
+            event.snapshot.sequence <= finalAnswerStream.sequence
+          )
+            return;
+          finalAnswerStream = event.snapshot;
+          emit(event.snapshot.status !== "streaming");
           return;
         }
         case "text-delta": {
@@ -659,7 +681,12 @@ const createModelStreamProgressEmitter = (
       }
     },
     flush: async (): Promise<void> => {
-      if (!hasPendingEmit && !assistantText && !modelStream && !finalAnswerStream) {
+      if (
+        !hasPendingEmit &&
+        !assistantText &&
+        !modelStream &&
+        !finalAnswerStream
+      ) {
         return;
       }
 
@@ -681,7 +708,7 @@ const createModelStreamProgressEmitter = (
           onStateChange,
           undefined,
           {
-            ...(finalAnswerStream?{finalAnswerStream}:{}),
+            ...(finalAnswerStream ? { finalAnswerStream } : {}),
             ...(assistantText
               ? { assistantText: limitStreamContent(assistantText) }
               : {}),
@@ -1841,7 +1868,14 @@ const runExecutorCycle = async (
             tone: result.toolResult.isError ? "danger" : "success",
             toolName: call.name,
             callId: call.id,
-            ...((resultMetadata || result.mcpAppId) ? { metadata: { ...resultMetadata, ...(result.mcpAppId ? { mcpAppId: result.mcpAppId } : {}) } } : {}),
+            ...(resultMetadata || result.mcpAppId
+              ? {
+                  metadata: {
+                    ...resultMetadata,
+                    ...(result.mcpAppId ? { mcpAppId: result.mcpAppId } : {}),
+                  },
+                }
+              : {}),
           },
         },
       );
@@ -2433,14 +2467,7 @@ export const maybeExecuteModelDrivenTask = async (
       params.conversationContext,
     );
     const executionConfig = adaptivePlan
-      ? {
-          ...params.config,
-          reasoning: adaptivePlan.reasoning,
-          agentLimits: {
-            executorTurns: adaptivePlan.executorTurns,
-            autopilotExecutorIterations: adaptivePlan.autopilotIterations,
-          },
-        }
+      ? { ...params.config, reasoning: adaptivePlan.reasoning }
       : params.config;
     if (instructionResolution && instructionPlan === undefined) {
       instructionPlan = await createInstructionDeliveryPlanForRuntime(

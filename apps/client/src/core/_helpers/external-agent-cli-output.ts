@@ -4,6 +4,34 @@ import { normalizeAnthropicUsage } from "@machdoch/model-runtime/providers/strea
 const MAX_JSON_LINE_CHARS = 2_000_000;
 const MAX_DIAGNOSTIC_LINES = 20;
 const MAX_DIAGNOSTIC_LINE_CHARS = 2_000;
+const BACKGROUND_WAIT_STEP_MS = 10 * 60 * 1_000;
+const MAX_BACKGROUND_WAIT_STEPS = 3;
+const BACKGROUND_FOLLOW_UP_GRACE_MS = 2 * 60 * 1_000;
+
+const USAGE_COUNTS = [
+  "inputTokens",
+  "outputTokens",
+  "totalTokens",
+  "cachedInputTokens",
+  "cacheReadInputTokens",
+  "cacheWriteInputTokens",
+  "toolUseInputTokens",
+  "reasoningTokens",
+] as const;
+
+/** Claude reports usage per prompt, so a run of several prompts adds them up. */
+export const addUsage = (
+  left: AgentModelStreamUsage | undefined,
+  right: AgentModelStreamUsage | undefined,
+): AgentModelStreamUsage | undefined => {
+  if (!left || !right) return left ?? right;
+  const sum: AgentModelStreamUsage = {};
+  for (const key of USAGE_COUNTS) {
+    if (left[key] !== undefined || right[key] !== undefined)
+      sum[key] = (left[key] ?? 0) + (right[key] ?? 0);
+  }
+  return sum;
+};
 
 export interface ExternalAgentCliOutputUpdate {
   displayText: string[];
@@ -24,6 +52,10 @@ export interface ExternalAgentCliOutputDecoder {
   getFailureMessage?(): string | undefined;
   /** The CLI stopped because it used every turn it was allowed. */
   reachedTurnLimit?(): boolean;
+  /** How long to wait for the CLI to exit, when longer than the usual grace. */
+  getCompletionGraceMs?(): number | undefined;
+  /** Status to show when background jobs may keep the run waiting longer. */
+  takeBackgroundWaitNotice?(): string | undefined;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -363,17 +395,71 @@ export class ClaudeCliOutputDecoder
   private assistantMessageId: string | undefined;
   private turnLimitReached = false;
   private failureMessage: string | undefined;
+  private backgroundTasks = 0;
+  private waitingForBackgroundTasks = false;
+  private backgroundWaitSteps = 0;
+  private carriedModelCalls = 0;
+  private carriedUsage: AgentModelStreamUsage | undefined;
+
+  /**
+   * With `waitForBackgroundTasks`, a result that leaves background jobs running
+   * is not final: the CLI starts another turn when they finish.
+   */
+  constructor(
+    captureToolEvidence = false,
+    private readonly waitForBackgroundTasks = false,
+  ) {
+    super(captureToolEvidence);
+  }
 
   getFinalOutput(): string {
     return this.finalOutput.trim() || this.diagnostics.join("\n").trim();
   }
 
   getUsage(): AgentModelStreamUsage | undefined {
-    return this.usage;
+    return addUsage(this.carriedUsage, this.usage);
   }
 
   getRetryCount(): number | undefined {
     return this.retryCount;
+  }
+
+  getCompletionGraceMs(): number | undefined {
+    if (!this.waitingForBackgroundTasks) return undefined;
+    return this.backgroundTasks > 0
+      ? BACKGROUND_WAIT_STEP_MS
+      : BACKGROUND_FOLLOW_UP_GRACE_MS;
+  }
+
+  takeBackgroundWaitNotice(): string | undefined {
+    if (
+      !this.waitingForBackgroundTasks ||
+      this.backgroundTasks === 0 ||
+      this.backgroundWaitSteps >= MAX_BACKGROUND_WAIT_STEPS - 1
+    )
+      return undefined;
+    this.backgroundWaitSteps += 1;
+    return this.describeBackgroundWait("Still waiting for");
+  }
+
+  private describeBackgroundWait(prefix: string): string {
+    return formatDisplayText(
+      `${prefix} ${this.backgroundTasks} background job${this.backgroundTasks === 1 ? "" : "s"} to finish.`,
+    );
+  }
+
+  /** The CLI started another turn, so the last result was not the final one. */
+  private startFollowUpTurn(): void {
+    if (!this.waitForBackgroundTasks || !this.terminal) return;
+    this.terminal = false;
+    this.waitingForBackgroundTasks = false;
+    this.backgroundWaitSteps = 0;
+    this.turnLimitReached = false;
+    this.failureMessage = undefined;
+    this.carriedUsage = addUsage(this.carriedUsage, this.usage);
+    this.usage = undefined;
+    if (this.modelCallCountReported)
+      this.carriedModelCalls = this.modelCallCount;
   }
 
   getFailureMessage(): string | undefined {
@@ -408,7 +494,17 @@ export class ClaudeCliOutputDecoder
       return;
     }
 
+    if (type === "system" && subtype === "background_tasks_changed") {
+      this.backgroundTasks = Array.isArray(event.tasks)
+        ? event.tasks.length
+        : 0;
+      if (this.waitForBackgroundTasks && this.terminal && this.backgroundTasks)
+        this.waitingForBackgroundTasks = true;
+      return;
+    }
+
     if (type === "assistant" && isRecord(event.message)) {
+      if (!getString(event, "parent_tool_use_id")) this.startFollowUpTurn();
       const content = event.message.content;
       if (Array.isArray(content)) {
         const text = content
@@ -472,8 +568,14 @@ export class ClaudeCliOutputDecoder
     this.usage = normalizeAnthropicUsage(event.usage) ?? this.usage;
     const numTurns = getNumber(event, "num_turns");
     if (numTurns !== undefined) {
-      this.modelCallCount = Math.max(1, Math.trunc(numTurns));
+      this.modelCallCount =
+        this.carriedModelCalls + Math.max(1, Math.trunc(numTurns));
       this.modelCallCountReported = true;
+    }
+    if (this.waitForBackgroundTasks && this.backgroundTasks > 0) {
+      this.waitingForBackgroundTasks = true;
+      if (!this.terminal)
+        update.displayText.push(this.describeBackgroundWait("Waiting for"));
     }
 
     if (!this.terminal) {

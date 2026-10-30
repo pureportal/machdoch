@@ -20,6 +20,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.ts";
 import type {
+  AgentLiveState,
   TaskExecutionProgress,
   TaskExecutionRole,
   TaskExecutionSection,
@@ -717,6 +718,17 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     });
     params.nativeGoal = "All auth tests pass";
     params.captureGoalEvidence = true;
+    params.conversationContext = {
+      history: [],
+      ...params.conversationContext,
+      agentFeatures: { liveControl: true },
+    };
+    const progress: AgentLiveState[] = [];
+    const controlEndpoints: unknown[] = [];
+    params.onStateChange = (event) => {
+      if (event.agentLive) progress.push(event.agentLive);
+      if (event.agentControl) controlEndpoints.push(event.agentControl);
+    };
     params.instructionDeliveryPlan = createExternalInstructionPlan(
       params.taskContext.instructionResolution!,
       "Claude Code 2.1.269",
@@ -740,6 +752,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     call.child.stdout.write(
       `${JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "test-1", content: "All auth tests passed." }] } })}\n`,
     );
+    call.child.stdout.write(
+      `${JSON.stringify({ type: "rate_limit_event", rate_limit_info: { status: "allowed", unifiedWindows: { five_hour: { utilization: 0.13, status: "allowed" } } } })}\n`,
+    );
     writeStructuredAnswer(call, "All auth tests pass.");
     call.child.emit("close", 0, null);
     await expect(pending).resolves.toMatchObject({
@@ -748,7 +763,97 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
         goalToolEvidence: expect.stringContaining("All auth tests passed."),
       },
     });
+    expect(progress.at(-1)).toMatchObject({
+      provider: "claude-cli",
+      capabilities: [],
+      limits: [{ id: "five_hour", usedPercent: 13 }],
+    });
+    expect(controlEndpoints).toEqual([]);
   });
+
+  it.each([
+    { scenario: "finish", jobsFinish: true },
+    { scenario: "outlast the wait", jobsFinish: false },
+  ])(
+    "keeps a Claude goal turn running while background jobs $scenario",
+    async ({ jobsFinish }) => {
+      const workspaceRoot = await createWorkspace();
+      const processKillSpy =
+        process.platform === "win32"
+          ? undefined
+          : vi.spyOn(process, "kill").mockReturnValue(true);
+      try {
+        process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+        const params = createParams(workspaceRoot, { provider: "claude-cli" });
+        params.captureGoalEvidence = true;
+        const pending = maybeExecuteExternalAgentProviderTask(params);
+        await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+        const call = spawnCalls[0]!;
+        vi.useFakeTimers();
+        const event = (value: Record<string, unknown>) =>
+          call.child.stdout.write(`${JSON.stringify(value)}\n`);
+        event({
+          type: "system",
+          subtype: "background_tasks_changed",
+          tasks: [{ task_id: "cargo" }],
+        });
+        event({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          num_turns: 3,
+          result: "Still in progress.",
+        });
+        await vi.advanceTimersByTimeAsync(5 * 60 * 1_000);
+        expect(spawnCalls).toHaveLength(1);
+
+        if (jobsFinish) {
+          event({
+            type: "system",
+            subtype: "background_tasks_changed",
+            tasks: [],
+          });
+          event({
+            type: "assistant",
+            message: {
+              id: "follow-up",
+              content: [{ type: "text", text: "Cargo passed." }],
+            },
+          });
+          event({
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            num_turns: 1,
+            result: "Cargo passed.",
+          });
+          await vi.advanceTimersByTimeAsync(0);
+          call.child.emit("close", 0, null);
+          await expect(pending).resolves.toMatchObject({
+            status: "executed",
+            response: { markdown: "Cargo passed." },
+          });
+          return;
+        }
+
+        await vi.advanceTimersByTimeAsync(25 * 60 * 1_000);
+        if (process.platform === "win32") {
+          expect(spawnCalls[1]).toMatchObject({ executable: "taskkill" });
+          spawnCalls[1]?.child.emit("close", 0, null);
+        } else {
+          expect(processKillSpy).toHaveBeenCalled();
+          call.child.emit("close", null, "SIGTERM");
+        }
+        await expect(pending).resolves.toMatchObject({
+          status: "executed",
+          response: { markdown: "Still in progress." },
+          metadata: { providerShutdownRecovered: true },
+        });
+      } finally {
+        processKillSpy?.mockRestore();
+      }
+    },
+  );
 
   it("rejects native goals on Claude versions without goal support", async () => {
     const workspaceRoot = await createWorkspace();
@@ -3223,9 +3328,103 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
 
     await expect(resultPromise).resolves.toMatchObject({
       status: "blocked",
-      summary: "Claude CLI reached its 7-turn limit before it finished.",
+      summary:
+        "Claude CLI hit its 7-turn limit and stopped before it finished. Continue the run, or raise Executor turns in Settings › Agent limits.",
       response: { markdown: "I'll build on it next." },
     });
+  });
+
+  it("continues a live Claude session at its turn limit before ending it unfinished", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    // The live session needs a Claude build that takes stream-json input.
+    vi.mocked(spawnSync).mockImplementation((executable, args = []) => {
+      const result = capabilityProbe(executable, [...args]);
+      return args.includes("--help")
+        ? { ...result, stdout: `${String(result.stdout)}\n--input-format` }
+        : result;
+    });
+    const params = createParams(workspaceRoot, {
+      provider: "claude-cli",
+      agentLimits: { executorTurns: 7, autopilotExecutorIterations: 1 },
+    });
+    params.instructionDeliveryPlan = createExternalInstructionPlan(
+      params.taskContext.instructionResolution!,
+      undefined,
+      ["--input-format"],
+    );
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+    await Promise.race([
+      waitForCondition(() => expect(spawnCalls).toHaveLength(1)),
+      resultPromise.then((result) => {
+        throw new Error(result?.reason ?? result?.summary);
+      }),
+    ]);
+    const call = spawnCalls[0]!;
+    expect(call.args).toEqual(
+      expect.arrayContaining(["--input-format", "--max-turns", "7"]),
+    );
+    const maxTurns = `${JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true, num_turns: 8, errors: [] })}\n`;
+
+    call.child.stdout.write(maxTurns);
+    await waitForCondition(() =>
+      expect(call.child.stdinText).toContain("Continue the task"),
+    );
+    call.child.stdout.write(maxTurns);
+    call.child.emit("close", 1, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "blocked",
+      summary:
+        "Claude CLI hit its 7-turn limit again after 1 automatic continuation and stopped before it finished. Continue the run, or raise Executor turns or Machdoch continuations in Settings › Agent limits.",
+    });
+  });
+
+  it("sends attached images to a live Claude session as image blocks", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    vi.mocked(spawnSync).mockImplementation((executable, args = []) => {
+      const result = capabilityProbe(executable, [...args]);
+      return args.includes("--help")
+        ? { ...result, stdout: `${String(result.stdout)}\n--input-format` }
+        : result;
+    });
+    const params = createParams(workspaceRoot, { provider: "claude-cli" });
+    params.instructionDeliveryPlan = createExternalInstructionPlan(
+      params.taskContext.instructionResolution!,
+      undefined,
+      ["--input-format"],
+    );
+    params.imageInputs = [
+      { path: "C:/shots/screen.png", mediaType: "image/png", data: "aW1hZ2U=" },
+    ];
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+    await Promise.race([
+      waitForCondition(() => expect(spawnCalls).toHaveLength(1)),
+      resultPromise.then((result) => {
+        throw new Error(result?.reason ?? result?.summary);
+      }),
+    ]);
+    const call = spawnCalls[0]!;
+    await waitForCondition(() =>
+      expect(call.child.stdinText).toContain('"type":"image"'),
+    );
+    const userMessage = call.child.stdinText
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((message) => message.type === "user") as {
+      message: { content: Record<string, unknown>[] };
+    };
+    expect(userMessage.message.content[0]).toEqual({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "aW1hZ2U=" },
+    });
+    expect(userMessage.message.content.at(-1)?.type).toBe("text");
+
+    writeStructuredAnswer(call, "Done.");
+    call.child.emit("close", 0, null);
+    await resultPromise;
   });
 
   it("labels the agent's last message when a CLI fails without diagnostics", async () => {

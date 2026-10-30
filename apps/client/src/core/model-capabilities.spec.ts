@@ -1,4 +1,16 @@
-import { getModelCapabilityProfile, getModelContextWindowTokens, getImageInputMediaTypeForPath, getSupportedImageInputExtensions, modelSupportsReasoning, modelSupportsStreaming, modelSupportsToolUse, modelSupportsVoice, modelSupportsImageInput, providerSupportsImageInputMediaType, replaceDiscoveredModelCapabilities } from "@machdoch/model-runtime/model-capabilities";
+import {
+  getModelCapabilityProfile,
+  getModelContextWindowTokens,
+  getImageInputMediaTypeForPath,
+  getSupportedImageInputExtensions,
+  modelSupportsReasoning,
+  modelSupportsStreaming,
+  modelSupportsToolUse,
+  modelSupportsVoice,
+  modelSupportsImageInput,
+  providerSupportsImageInputMediaType,
+  replaceDiscoveredModelCapabilities,
+} from "@machdoch/model-runtime/model-capabilities";
 
 describe("model image input capabilities", () => {
   it("detects supported image media types from paths", () => {
@@ -68,6 +80,15 @@ describe("model image input capabilities", () => {
     expect(modelSupportsImageInput("google", "gemini-3.7-flash")).toBe(true);
     expect(modelSupportsImageInput("langdock", "gpt-5.6-terra")).toBe(true);
     expect(modelSupportsImageInput("copilot-cli", "gpt-5.6-terra")).toBe(true);
+    expect(modelSupportsImageInput("claude-cli", "opus")).toBe(true);
+    expect(modelSupportsImageInput("claude-cli", "claude-opus-5-5")).toBe(true);
+    expect(getSupportedImageInputExtensions("claude-cli", "opus")).toEqual([
+      "gif",
+      "jpeg",
+      "jpg",
+      "png",
+      "webp",
+    ]);
     expect(modelSupportsImageInput("openai", "gpt-3.5-turbo")).toBe(false);
   });
 

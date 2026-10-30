@@ -275,6 +275,77 @@ describe("Claude CLI output decoder", () => {
     expect(decoder.getFinalOutput()).toBe("I'll build on it next.");
   });
 
+  describe("while background jobs run on a goal turn", () => {
+    const backgroundTasks = (count: number) =>
+      eventLine({
+        type: "system",
+        subtype: "background_tasks_changed",
+        tasks: Array.from({ length: count }, (_, index) => ({
+          task_id: `job-${index}`,
+        })),
+      });
+    const result = (text: string, numTurns: number, inputTokens: number) =>
+      eventLine({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        num_turns: numTurns,
+        result: text,
+        usage: { input_tokens: inputTokens, output_tokens: 1 },
+      });
+    const assistant = (id: string, text: string) =>
+      eventLine({
+        type: "assistant",
+        message: { id, content: [{ type: "text", text }] },
+      });
+
+    it("takes the follow-up turn's result as final and adds up usage", () => {
+      const decoder = new ClaudeCliOutputDecoder(true, true);
+      decoder.push(backgroundTasks(2));
+      const waiting = decoder.push(result("Still in progress.", 5, 10));
+      expect(waiting.displayText.at(-1)).toBe(
+        "Waiting for 2 background jobs to finish.\n\n",
+      );
+      expect(decoder.hasTerminalResult()).toBe(true);
+      expect(decoder.getCompletionGraceMs()).toBe(10 * 60 * 1_000);
+
+      decoder.push(backgroundTasks(0));
+      expect(decoder.getCompletionGraceMs()).toBe(2 * 60 * 1_000);
+
+      decoder.push(assistant("message-2", "Both jobs passed."));
+      expect(decoder.hasTerminalResult()).toBe(false);
+      expect(decoder.getCompletionGraceMs()).toBeUndefined();
+
+      const final = decoder.push(result("Both jobs passed.", 2, 20));
+      expect(final.resultExitCode).toBe(0);
+      expect(decoder.hasTerminalResult()).toBe(true);
+      expect(decoder.getCompletionGraceMs()).toBeUndefined();
+      expect(decoder.getFinalOutput()).toBe("Both jobs passed.");
+      expect(decoder.getModelCallCount()).toBe(7);
+      expect(decoder.getUsage()).toMatchObject({ inputTokens: 30 });
+    });
+
+    it("stops announcing the wait once its time is used up", () => {
+      const decoder = new ClaudeCliOutputDecoder(true, true);
+      decoder.push(backgroundTasks(1));
+      decoder.push(result("Waiting on the build.", 1, 1));
+      expect(decoder.takeBackgroundWaitNotice()).toBe(
+        "Still waiting for 1 background job to finish.\n\n",
+      );
+      expect(decoder.takeBackgroundWaitNotice()).toBeDefined();
+      expect(decoder.takeBackgroundWaitNotice()).toBeUndefined();
+    });
+
+    it("keeps the first result final outside goal turns", () => {
+      const decoder = new ClaudeCliOutputDecoder();
+      decoder.push(backgroundTasks(1));
+      decoder.push(result("Done.", 1, 1));
+      expect(decoder.getCompletionGraceMs()).toBeUndefined();
+      decoder.push(assistant("message-2", "Late background note."));
+      expect(decoder.hasTerminalResult()).toBe(true);
+    });
+  });
+
   it("explains an error result with the errors it lists", () => {
     const decoder = new ClaudeCliOutputDecoder();
     decoder.push(

@@ -788,6 +788,11 @@ mod model_catalog_parser_tests {
         );
         assert_eq!(models[4].capabilities.reasoning, Some(false));
         assert!(models[4].recommended_for.contains(&"cheap".to_string()));
+        assert!(models.iter().all(|model| {
+            model.capabilities.image_input == Some(true)
+                && string_values(model.capabilities.supported_image_media_types.as_deref())
+                    == Some(vec!["image/gif", "image/jpeg", "image/png", "image/webp"])
+        }));
         assert!(models
             .iter()
             .all(|model| model.capabilities.long_context_window_tokens.is_none()));

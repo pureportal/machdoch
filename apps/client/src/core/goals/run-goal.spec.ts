@@ -11,6 +11,7 @@ import {
 } from "../model-usage.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type {
+  AgentLiveState,
   TaskExecutionOptions,
   TaskExecutionResult,
   TaskModelUsageReport,
@@ -18,6 +19,7 @@ import type {
 import { executeWithSessionGoal } from "./goal-execution.js";
 import { getGoalPath, readGoalRecord } from "./goal-store.js";
 import type { GoalTurnExecutor } from "./run-goal.js";
+import type { FrozenInstructionSet } from "../instruction-system/types.js";
 import * as goalEvaluation from "./goal-evaluation.js";
 
 let directory: string;
@@ -348,6 +350,22 @@ describe("goal run cancellation", () => {
     },
   );
 
+  it("verifies with the instructions the goal turn already resolved", async () => {
+    const instructions = {
+      digest: "frozen",
+    } as unknown as FrozenInstructionSet;
+    const seen: Array<FrozenInstructionSet | undefined> = [];
+    await run("/goal Verify auth", async (_task, _config, turnOptions) => {
+      if (turnOptions.resultProtocol) {
+        seen.push(turnOptions.resolvedInstructions);
+        return result(true);
+      }
+      turnOptions.onInstructionsResolved?.(instructions);
+      return result();
+    });
+    expect(seen).toEqual([instructions]);
+  });
+
   it("pauses when verification times out and releases the runner for resume", async () => {
     vi.spyOn(goalEvaluation, "evaluateGoal").mockResolvedValueOnce({
       ...result(),
@@ -449,6 +467,121 @@ describe("goal run cancellation", () => {
     expect(progress.mock.calls.at(-1)?.[0]).toMatchObject({
       state: "completed",
       cancellable: false,
+    });
+  });
+
+  it("shows provider details for the whole goal across its turns", async () => {
+    const progress = vi.fn<NonNullable<TaskExecutionOptions["onStateChange"]>>();
+    options.onStateChange = progress;
+    let evaluations = 0;
+    let turns = 0;
+    const execute = vi.fn<GoalTurnExecutor>(
+      async (task, turnConfig, turnOptions) => {
+        if (turnOptions.resultProtocol) {
+          evaluations += 1;
+          return {
+            ...result(),
+            control: {
+              kind: "goal-evaluation",
+              decision: evaluations === 1 ? "continue" : "complete",
+            },
+          };
+        }
+        turns += 1;
+        const report = (agentLive: AgentLiveState) =>
+          turnOptions.onStateChange?.({
+            task,
+            mode: turnConfig.mode,
+            state: "executing",
+            message: "Working.",
+            cancellable: true,
+            executedTools: [],
+            outputSections: [],
+            agentLive,
+          });
+        const opening: AgentLiveState = {
+          provider: "claude-cli",
+          transport: "stream-json",
+          capabilities: ["steer"],
+          model: "opus",
+        };
+        await report(opening);
+        await report(
+          turns === 1
+            ? {
+                ...opening,
+                usage: {
+                  inputTokens: 100,
+                  outputTokens: 20,
+                  contextUsedTokens: 90,
+                  costUsd: 0.5,
+                },
+                limits: [{ id: "five_hour", label: "5-hour", usedPercent: 10 }],
+                fileChanges: [
+                  { path: "a.ts", kind: "update", additions: 1, deletions: 1 },
+                ],
+                tasks: [
+                  {
+                    id: "job",
+                    kind: "shell",
+                    description: "Tests",
+                    status: "running",
+                    background: true,
+                    canStop: true,
+                  },
+                ],
+                plan: [{ text: "First", status: "in_progress" }],
+              }
+            : {
+                ...opening,
+                usage: { inputTokens: 50, outputTokens: 5, costUsd: 0.25 },
+                limits: [{ id: "five_hour", label: "5-hour", usedPercent: 15 }],
+                fileChanges: [
+                  { path: "a.ts", kind: "update", additions: 2 },
+                  { path: "b.ts", kind: "add" },
+                ],
+              },
+        );
+        return result();
+      },
+    );
+
+    await run("/goal Verify auth", execute);
+
+    const snapshots = progress.mock.calls.flatMap(([update]) =>
+      update.agentLive ? [update.agentLive] : [],
+    );
+    expect(snapshots[2]).toMatchObject({
+      usage: { inputTokens: 100, outputTokens: 20 },
+      limits: [{ id: "five_hour", usedPercent: 10 }],
+    });
+    expect(snapshots.at(-1)).toEqual({
+      provider: "claude-cli",
+      transport: "stream-json",
+      capabilities: ["steer"],
+      model: "opus",
+      usage: {
+        inputTokens: 150,
+        outputTokens: 25,
+        contextUsedTokens: 90,
+        costUsd: 0.75,
+      },
+      limits: [{ id: "five_hour", label: "5-hour", usedPercent: 15 }],
+      fileChanges: [
+        { path: "a.ts", kind: "update", additions: 3, deletions: 1 },
+        { path: "b.ts", kind: "add" },
+      ],
+      tasks: [
+        {
+          id: "job",
+          kind: "shell",
+          description: "Tests",
+          status: "stopped",
+          background: true,
+          canStop: false,
+        },
+      ],
+      plan: [{ text: "First", status: "in_progress" }],
     });
   });
 

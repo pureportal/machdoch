@@ -202,7 +202,9 @@ const createClaudeCliCapabilities = (
   overrides: Partial<ProviderModelCapabilityMetadata>,
 ): ProviderModelCapabilityMetadata =>
   createCapabilities("claude-cli", {
+    imageInput: true,
     reasoning: true,
+    supportedImageMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
     ...overrides,
   });
 

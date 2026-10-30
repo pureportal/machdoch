@@ -558,7 +558,7 @@ export const AgentLimitsSettingsPanel = ({
 
         <SettingPanel
           label="Machdoch continuations"
-          detail="Executor cycles allowed after review feedback."
+          detail="Executor cycles allowed after review feedback or a Claude CLI turn-limit stop."
         >
           <SettingsNumberInput
             aria-label="Machdoch continuation limit"

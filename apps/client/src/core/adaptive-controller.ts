@@ -20,8 +20,6 @@ export interface AdaptiveExecutionPlan {
   experienceCharacters: number;
   workspaceRunCharacters: number;
   reasoning: RuntimeConfig["reasoning"];
-  executorTurns: number | null;
-  autopilotIterations: number | null;
   maxWorkers: 2 | 3;
 }
 
@@ -34,8 +32,6 @@ const PROFILES = {
     experienceLessons: 1,
     experienceCharacters: 500,
     workspaceRunCharacters: 2_000,
-    executorTurns: 16,
-    autopilotIterations: 2,
     maxWorkers: 2,
     reasoning: "low",
   },
@@ -47,8 +43,6 @@ const PROFILES = {
     experienceLessons: 3,
     experienceCharacters: 1_200,
     workspaceRunCharacters: 6_000,
-    executorTurns: 48,
-    autopilotIterations: 4,
     maxWorkers: 2,
     reasoning: "medium",
   },
@@ -60,8 +54,6 @@ const PROFILES = {
     experienceLessons: 5,
     experienceCharacters: 2_400,
     workspaceRunCharacters: 12_000,
-    executorTurns: 120,
-    autopilotIterations: 8,
     maxWorkers: 3,
     reasoning: "high",
   },
@@ -171,7 +163,6 @@ export const planAdaptiveExecution = (
       : supportedReasoning.includes(profile.reasoning)
         ? profile.reasoning
         : "default";
-  const limits = config.agentLimits;
 
   return {
     level,
@@ -185,20 +176,6 @@ export const planAdaptiveExecution = (
       workspaceRunCharacters * allocationScale,
     ),
     reasoning,
-    executorTurns:
-      limits?.executorTurns === null
-        ? null
-        : Math.min(
-            limits?.executorTurns ?? profile.executorTurns,
-            profile.executorTurns,
-          ),
-    autopilotIterations:
-      limits?.autopilotExecutorIterations === null
-        ? null
-        : Math.min(
-            limits?.autopilotExecutorIterations ?? profile.autopilotIterations,
-            profile.autopilotIterations,
-          ),
     maxWorkers: profile.maxWorkers,
   };
 };

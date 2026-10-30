@@ -68,9 +68,6 @@ describe("adaptive context and compute", () => {
     expect(deep.level).toBe("deep");
     expect(deep.historyCharacters).toBeGreaterThan(simple.historyCharacters);
     expect(deep.memoryEntries).toBeGreaterThan(simple.memoryEntries);
-    expect(deep.executorTurns).toBe(80);
-    expect(simple.executorTurns).toBe(16);
-    expect(deep.autopilotIterations).toBe(6);
     expect(simple.maxWorkers).toBe(2);
     expect(deep.maxWorkers).toBe(3);
   });

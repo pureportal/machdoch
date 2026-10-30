@@ -97,10 +97,6 @@ import {
 import { getWorkspacePresenceEnrollment } from "./workspace-agent-presence.js";
 import { startLocalMcpHost, type LocalMcpEndpoint } from "../local-mcp/http.js";
 import { upsertMemoryUpdate } from "./agent-runtime-shared.js";
-import {
-  CodexNativeGoalDecoder,
-  type CodexNativeGoalInput,
-} from "./codex-native-goal.js";
 
 export interface SpawnedAgentResult {
   exitCode: number | null;
@@ -937,7 +933,6 @@ export const runExternalAgentCommand = async (
   signal: AbortSignal | undefined,
   onActionOutput: TaskActionOutputHandler | undefined,
   captureGoalEvidence = false,
-  codexGoal?: CodexNativeGoalInput,
   interactive?: InteractiveRunOptions,
 ): Promise<SpawnedAgentResult> => {
   if (signal?.aborted) {
@@ -982,592 +977,581 @@ export const runExternalAgentCommand = async (
   }
 
   function runExternalAgentProcess(): Promise<SpawnedAgentResult> {
-  return new Promise<SpawnedAgentResult>((resolve, reject) => {
-    const cwd = normalizeLocalCommandCwd(config.workspaceRoot);
-    const childEnv = createChildEnv(provider, enrollmentEnv);
-    assertSafeWindowsCommandShellInvocation(executable, args);
+    return new Promise<SpawnedAgentResult>((resolve, reject) => {
+      const cwd = normalizeLocalCommandCwd(config.workspaceRoot);
+      const childEnv = createChildEnv(provider, enrollmentEnv);
+      assertSafeWindowsCommandShellInvocation(executable, args);
 
-    const child = spawn(executable, args, {
-      cwd,
-      env: childEnv,
-      detached: process.platform !== "win32",
-      shell: shouldUseShellForExecutable(executable),
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    const stderr: BoundedOutputBuffer = { text: "", truncated: false };
-    const nativeGoalDecoder = codexGoal
-      ? new CodexNativeGoalDecoder(
-          codexGoal,
-          config,
-          (message) => {
-            child.stdin?.write(message);
-          },
-          () => {
-            child.stdin?.end();
-          },
-          captureGoalEvidence,
-        )
-      : undefined;
-    interactiveSession =
-      !nativeGoalDecoder && interactive
-        ? interactive.create({
-            write: (message) => {
-              if (!settled && child.stdin?.writable) child.stdin.write(message);
-            },
-            closeInput: () => {
-              child.stdin?.end();
-              // The CLI may now wait for background work; start the normal
-              // post-result shutdown clock instead of waiting for it.
-              scheduleCompletionShutdownCheck();
-            },
-          })
-        : undefined;
-    const outputDecoder: ExternalAgentCliOutputDecoder =
-      nativeGoalDecoder ??
-      interactiveSession ??
-      (provider === "codex-cli"
-        ? new CodexCliOutputDecoder(captureGoalEvidence)
-        : provider === "claude-cli"
-          ? new ClaudeCliOutputDecoder(captureGoalEvidence)
-          : new CopilotCliOutputDecoder(captureGoalEvidence));
-    const actionOutputBatcher = createActionOutputBatcher(onActionOutput);
-    let gracefulAbortError: Error | undefined;
-    let gracefulAbortHandle: ReturnType<typeof setTimeout> | undefined;
-    let settled = false;
-    let authenticationRequired = false;
-    let stderrDiagnosticTail = "";
-    let abortError: Error | undefined;
-    let abortTerminationPromise: Promise<void> | undefined;
-    let abortSettlementHandle: ReturnType<typeof setTimeout> | undefined;
-    let completionShutdownHandle: ReturnType<typeof setTimeout> | undefined;
-    let providerShutdownRecovery:
-      | SpawnedAgentResult["providerShutdownRecovery"]
-      | undefined;
-    let providerShutdownTerminationPromise: Promise<void> | undefined;
-    let providerShutdownSettlementHandle:
-      | ReturnType<typeof setTimeout>
-      | undefined;
-    let providerShutdownFinalizationStarted = false;
-    let structuredResultExitCode: number | undefined;
-    let stdoutBytes = 0;
-    let stderrBytes = 0;
-    let observedChildExit:
-      | {
-          exitCode: number | null;
-          signal: NodeJS.Signals | null;
-        }
-      | undefined;
-
-    const cleanup = (): void => {
-      signal?.removeEventListener("abort", handleAbort);
-      child.stdin?.removeListener("error", handleStdinError);
-      child.stdin?.removeListener("drain", handleStdinDrain);
-      child.stdout?.removeListener("data", handleStdoutData);
-      child.stderr?.removeListener("data", handleStderrData);
-      child.removeListener("exit", handleChildExit);
-      child.removeListener("error", handleChildError);
-      child.removeListener("close", handleChildClose);
-      actionOutputBatcher.dispose();
-      if (abortSettlementHandle) {
-        clearTimeout(abortSettlementHandle);
-        abortSettlementHandle = undefined;
-      }
-      if (completionShutdownHandle) {
-        clearTimeout(completionShutdownHandle);
-        completionShutdownHandle = undefined;
-      }
-      if (providerShutdownSettlementHandle) {
-        clearTimeout(providerShutdownSettlementHandle);
-        providerShutdownSettlementHandle = undefined;
-      }
-      if (gracefulAbortHandle) {
-        clearTimeout(gracefulAbortHandle);
-        gracefulAbortHandle = undefined;
-      }
-      child.stdin?.destroy();
-      child.stdout?.destroy();
-      child.stderr?.destroy();
-    };
-
-    const rejectOnce = (error: Error): void => {
-      if (settled) {
-        return;
-      }
-
-      if (authenticationRequired) {
-        resolveOnce(1, null);
-        return;
-      }
-
-      settled = true;
-      cleanup();
-      reject(error);
-    };
-
-    const resolveOnce = (
-      exitCode: number | null,
-      exitSignal: NodeJS.Signals | null,
-      shutdownRecovery?: SpawnedAgentResult["providerShutdownRecovery"],
-    ): void => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      cleanup();
-      const usage = outputDecoder.getUsage();
-      const retryCount = outputDecoder.getRetryCount();
-      const failureMessage = authenticationRequired
-        ? CODEX_AUTHENTICATION_RECOVERY
-        : outputDecoder.getFailureMessage?.();
-      const effectiveExitCode = authenticationRequired
-        ? 1
-        : exitCode === 0 && structuredResultExitCode !== undefined
-          ? structuredResultExitCode
-          : exitCode === 0 && !outputDecoder.hasTerminalResult()
-            ? 1
-            : exitCode;
-      resolve({
-        exitCode: effectiveExitCode,
-        signal: exitSignal,
-        stdout: limitCapturedOutput(
-          outputDecoder.getFinalOutput(),
-          MAX_CAPTURED_STDOUT_CHARS,
-        ),
-        stderr: finalizeBoundedOutput(stderr),
-        stdoutBytes,
-        stderrBytes,
-        modelCallCount: outputDecoder.getModelCallCount(),
-        modelCallCountReported: outputDecoder.isModelCallCountReported(),
-        toolCallCount: outputDecoder.getToolCallCount(),
-        ...(captureGoalEvidence
-          ? { toolEvidence: outputDecoder.getToolEvidence() }
-          : {}),
-        ...(usage ? { usage } : {}),
-        ...(retryCount === undefined ? {} : { retryCount }),
-        ...(failureMessage ? { failureMessage } : {}),
-        ...(authenticationRequired ? { authenticationRequired: true } : {}),
-        ...(outputDecoder.reachedTurnLimit?.() ? { turnLimitReached: true } : {}),
-        ...(shutdownRecovery
-          ? { providerShutdownRecovery: shutdownRecovery }
-          : {}),
+      const child = spawn(executable, args, {
+        cwd,
+        env: childEnv,
+        detached: process.platform !== "win32",
+        shell: shouldUseShellForExecutable(executable),
+        stdio: ["pipe", "pipe", "pipe"],
+        windowsHide: true,
       });
-    };
+      const stderr: BoundedOutputBuffer = { text: "", truncated: false };
+      interactiveSession = interactive?.create({
+        write: (message) => {
+          if (!settled && child.stdin?.writable) child.stdin.write(message);
+        },
+        closeInput: () => {
+          child.stdin?.end();
+          // The CLI may now wait for background work; start the normal
+          // post-result shutdown clock instead of waiting for it.
+          scheduleCompletionShutdownCheck();
+        },
+      });
+      const outputDecoder: ExternalAgentCliOutputDecoder =
+        interactiveSession ??
+        (provider === "codex-cli"
+          ? new CodexCliOutputDecoder(captureGoalEvidence)
+          : provider === "claude-cli"
+            ? // A goal turn outlasts its first result while background jobs run.
+              new ClaudeCliOutputDecoder(
+                captureGoalEvidence,
+                captureGoalEvidence,
+              )
+            : new CopilotCliOutputDecoder(captureGoalEvidence));
+      const actionOutputBatcher = createActionOutputBatcher(onActionOutput);
+      let gracefulAbortError: Error | undefined;
+      let gracefulAbortHandle: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
+      let authenticationRequired = false;
+      let stderrDiagnosticTail = "";
+      let abortError: Error | undefined;
+      let abortTerminationPromise: Promise<void> | undefined;
+      let abortSettlementHandle: ReturnType<typeof setTimeout> | undefined;
+      let completionShutdownHandle: ReturnType<typeof setTimeout> | undefined;
+      let completionShutdownGraceMs: number | undefined;
+      let providerShutdownRecovery:
+        | SpawnedAgentResult["providerShutdownRecovery"]
+        | undefined;
+      let providerShutdownTerminationPromise: Promise<void> | undefined;
+      let providerShutdownSettlementHandle:
+        | ReturnType<typeof setTimeout>
+        | undefined;
+      let providerShutdownFinalizationStarted = false;
+      let structuredResultExitCode: number | undefined;
+      let stdoutBytes = 0;
+      let stderrBytes = 0;
+      let observedChildExit:
+        | {
+            exitCode: number | null;
+            signal: NodeJS.Signals | null;
+          }
+        | undefined;
 
-    const resolveProviderShutdownRecovery = (): void => {
-      if (settled || !providerShutdownRecovery) {
-        return;
-      }
-
-      handleStructuredOutputUpdate(outputDecoder.finish());
-
-      resolveOnce(
-        providerShutdownRecovery.childExitObservedBeforeRecovery
-          ? providerShutdownRecovery.childExitCode
-          : (structuredResultExitCode ?? null),
-        providerShutdownRecovery.childExitObservedBeforeRecovery
-          ? providerShutdownRecovery.childExitSignal
-          : null,
-        providerShutdownRecovery,
-      );
-    };
-
-    const finalizeProviderShutdownRecovery = (escalate: boolean): void => {
-      if (
-        settled ||
-        !providerShutdownRecovery ||
-        providerShutdownFinalizationStarted
-      ) {
-        return;
-      }
-
-      providerShutdownFinalizationStarted = true;
-      if (providerShutdownSettlementHandle) {
-        clearTimeout(providerShutdownSettlementHandle);
-        providerShutdownSettlementHandle = undefined;
-      }
-
-      const initialTermination =
-        providerShutdownTerminationPromise ?? Promise.resolve();
-      const finalTermination =
-        process.platform !== "win32" && escalate
-          ? initialTermination.then(() =>
-              terminateExternalAgentProcessTree(child, "SIGKILL"),
-            )
-          : initialTermination;
-      void finalTermination.then(
-        resolveProviderShutdownRecovery,
-        resolveProviderShutdownRecovery,
-      );
-    };
-
-    const beginProviderShutdownRecovery = (): void => {
-      const finalOutputObserved = outputDecoder.hasTerminalResult();
-      if (
-        settled ||
-        abortError ||
-        providerShutdownRecovery ||
-        (!finalOutputObserved && observedChildExit === undefined)
-      ) {
-        return;
-      }
-
-      providerShutdownRecovery = {
-        kind:
-          observedChildExit === undefined
-            ? "final-output-exit-timeout"
-            : "child-exit-close-timeout",
-        graceMs: EXTERNAL_AGENT_COMPLETION_SHUTDOWN_GRACE_MS,
-        childExitObservedBeforeRecovery: observedChildExit !== undefined,
-        childExitCode: observedChildExit?.exitCode ?? null,
-        childExitSignal: observedChildExit?.signal ?? null,
-      };
-      providerShutdownTerminationPromise = terminateExternalAgentProcessTree(
-        child,
-        "SIGTERM",
-      );
-
-      if (process.platform === "win32") {
-        finalizeProviderShutdownRecovery(false);
-        return;
-      }
-
-      providerShutdownSettlementHandle = setTimeout(() => {
-        finalizeProviderShutdownRecovery(true);
-      }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS + 1_000);
-      unrefTimer(providerShutdownSettlementHandle);
-    };
-
-    const scheduleCompletionShutdownCheck = (): void => {
-      if (settled || abortError || providerShutdownRecovery) {
-        return;
-      }
-
-      const hasCompletionEvidence =
-        outputDecoder.hasTerminalResult() || observedChildExit !== undefined;
-      if (!hasCompletionEvidence) {
+      const cleanup = (): void => {
+        signal?.removeEventListener("abort", handleAbort);
+        child.stdin?.removeListener("error", handleStdinError);
+        child.stdin?.removeListener("drain", handleStdinDrain);
+        child.stdout?.removeListener("data", handleStdoutData);
+        child.stderr?.removeListener("data", handleStderrData);
+        child.removeListener("exit", handleChildExit);
+        child.removeListener("error", handleChildError);
+        child.removeListener("close", handleChildClose);
+        actionOutputBatcher.dispose();
+        if (abortSettlementHandle) {
+          clearTimeout(abortSettlementHandle);
+          abortSettlementHandle = undefined;
+        }
         if (completionShutdownHandle) {
           clearTimeout(completionShutdownHandle);
           completionShutdownHandle = undefined;
         }
-        return;
-      }
+        if (providerShutdownSettlementHandle) {
+          clearTimeout(providerShutdownSettlementHandle);
+          providerShutdownSettlementHandle = undefined;
+        }
+        if (gracefulAbortHandle) {
+          clearTimeout(gracefulAbortHandle);
+          gracefulAbortHandle = undefined;
+        }
+        child.stdin?.destroy();
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+      };
 
-      if (completionShutdownHandle) {
-        return;
-      }
+      const rejectOnce = (error: Error): void => {
+        if (settled) {
+          return;
+        }
 
-      completionShutdownHandle = setTimeout(() => {
-        completionShutdownHandle = undefined;
-        beginProviderShutdownRecovery();
-      }, EXTERNAL_AGENT_COMPLETION_SHUTDOWN_GRACE_MS);
-      unrefTimer(completionShutdownHandle);
-    };
+        if (authenticationRequired) {
+          resolveOnce(1, null);
+          return;
+        }
 
-    const beginTermination = (
-      error: Error,
-      initialSignal: "SIGTERM" | "SIGKILL" = "SIGTERM",
-    ): void => {
-      if (settled || abortError || providerShutdownRecovery) {
-        return;
-      }
+        settled = true;
+        cleanup();
+        reject(error);
+      };
 
-      abortError = error;
-      abortTerminationPromise = terminateExternalAgentProcessTree(
-        child,
-        initialSignal,
-      );
-      if (process.platform === "win32") {
-        void abortTerminationPromise.then(
-          () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
-          () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
+      const resolveOnce = (
+        exitCode: number | null,
+        exitSignal: NodeJS.Signals | null,
+        shutdownRecovery?: SpawnedAgentResult["providerShutdownRecovery"],
+      ): void => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cleanup();
+        const usage = outputDecoder.getUsage();
+        const retryCount = outputDecoder.getRetryCount();
+        const failureMessage = authenticationRequired
+          ? CODEX_AUTHENTICATION_RECOVERY
+          : outputDecoder.getFailureMessage?.();
+        const effectiveExitCode = authenticationRequired
+          ? 1
+          : exitCode === 0 && structuredResultExitCode !== undefined
+            ? structuredResultExitCode
+            : exitCode === 0 && !outputDecoder.hasTerminalResult()
+              ? 1
+              : exitCode;
+        resolve({
+          exitCode: effectiveExitCode,
+          signal: exitSignal,
+          stdout: limitCapturedOutput(
+            outputDecoder.getFinalOutput(),
+            MAX_CAPTURED_STDOUT_CHARS,
+          ),
+          stderr: finalizeBoundedOutput(stderr),
+          stdoutBytes,
+          stderrBytes,
+          modelCallCount: outputDecoder.getModelCallCount(),
+          modelCallCountReported: outputDecoder.isModelCallCountReported(),
+          toolCallCount: outputDecoder.getToolCallCount(),
+          ...(captureGoalEvidence
+            ? { toolEvidence: outputDecoder.getToolEvidence() }
+            : {}),
+          ...(usage ? { usage } : {}),
+          ...(retryCount === undefined ? {} : { retryCount }),
+          ...(failureMessage ? { failureMessage } : {}),
+          ...(authenticationRequired ? { authenticationRequired: true } : {}),
+          ...(outputDecoder.reachedTurnLimit?.()
+            ? { turnLimitReached: true }
+            : {}),
+          ...(shutdownRecovery
+            ? { providerShutdownRecovery: shutdownRecovery }
+            : {}),
+        });
+      };
+
+      const resolveProviderShutdownRecovery = (): void => {
+        if (settled || !providerShutdownRecovery) {
+          return;
+        }
+
+        handleStructuredOutputUpdate(outputDecoder.finish());
+
+        resolveOnce(
+          providerShutdownRecovery.childExitObservedBeforeRecovery
+            ? providerShutdownRecovery.childExitCode
+            : (structuredResultExitCode ?? null),
+          providerShutdownRecovery.childExitObservedBeforeRecovery
+            ? providerShutdownRecovery.childExitSignal
+            : null,
+          providerShutdownRecovery,
         );
-      }
+      };
 
-      abortSettlementHandle = setTimeout(() => {
+      const finalizeProviderShutdownRecovery = (escalate: boolean): void => {
+        if (
+          settled ||
+          !providerShutdownRecovery ||
+          providerShutdownFinalizationStarted
+        ) {
+          return;
+        }
+
+        providerShutdownFinalizationStarted = true;
+        if (providerShutdownSettlementHandle) {
+          clearTimeout(providerShutdownSettlementHandle);
+          providerShutdownSettlementHandle = undefined;
+        }
+
+        const initialTermination =
+          providerShutdownTerminationPromise ?? Promise.resolve();
+        const finalTermination =
+          process.platform !== "win32" && escalate
+            ? initialTermination.then(() =>
+                terminateExternalAgentProcessTree(child, "SIGKILL"),
+              )
+            : initialTermination;
+        void finalTermination.then(
+          resolveProviderShutdownRecovery,
+          resolveProviderShutdownRecovery,
+        );
+      };
+
+      const beginProviderShutdownRecovery = (): void => {
+        const finalOutputObserved = outputDecoder.hasTerminalResult();
+        if (
+          settled ||
+          abortError ||
+          providerShutdownRecovery ||
+          (!finalOutputObserved && observedChildExit === undefined)
+        ) {
+          return;
+        }
+
+        providerShutdownRecovery = {
+          kind:
+            observedChildExit === undefined
+              ? "final-output-exit-timeout"
+              : "child-exit-close-timeout",
+          graceMs:
+            completionShutdownGraceMs ??
+            EXTERNAL_AGENT_COMPLETION_SHUTDOWN_GRACE_MS,
+          childExitObservedBeforeRecovery: observedChildExit !== undefined,
+          childExitCode: observedChildExit?.exitCode ?? null,
+          childExitSignal: observedChildExit?.signal ?? null,
+        };
+        providerShutdownTerminationPromise = terminateExternalAgentProcessTree(
+          child,
+          "SIGTERM",
+        );
+
         if (process.platform === "win32") {
-          void (abortTerminationPromise ?? Promise.resolve()).then(
+          finalizeProviderShutdownRecovery(false);
+          return;
+        }
+
+        providerShutdownSettlementHandle = setTimeout(() => {
+          finalizeProviderShutdownRecovery(true);
+        }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS + 1_000);
+        unrefTimer(providerShutdownSettlementHandle);
+      };
+
+      const scheduleCompletionShutdownCheck = (): void => {
+        if (settled || abortError || providerShutdownRecovery) {
+          return;
+        }
+
+        const hasCompletionEvidence =
+          outputDecoder.hasTerminalResult() || observedChildExit !== undefined;
+        if (!hasCompletionEvidence) {
+          if (completionShutdownHandle) {
+            clearTimeout(completionShutdownHandle);
+            completionShutdownHandle = undefined;
+          }
+          return;
+        }
+
+        const graceMs =
+          outputDecoder.getCompletionGraceMs?.() ??
+          EXTERNAL_AGENT_COMPLETION_SHUTDOWN_GRACE_MS;
+        if (completionShutdownHandle) {
+          if (completionShutdownGraceMs === graceMs) {
+            return;
+          }
+          clearTimeout(completionShutdownHandle);
+        }
+
+        completionShutdownGraceMs = graceMs;
+        completionShutdownHandle = setTimeout(() => {
+          completionShutdownHandle = undefined;
+          const waitNotice = outputDecoder.takeBackgroundWaitNotice?.();
+          if (waitNotice) {
+            actionOutputBatcher.enqueue("stdout", waitNotice);
+            scheduleCompletionShutdownCheck();
+            return;
+          }
+          beginProviderShutdownRecovery();
+        }, graceMs);
+        unrefTimer(completionShutdownHandle);
+      };
+
+      const beginTermination = (
+        error: Error,
+        initialSignal: "SIGTERM" | "SIGKILL" = "SIGTERM",
+      ): void => {
+        if (settled || abortError || providerShutdownRecovery) {
+          return;
+        }
+
+        abortError = error;
+        abortTerminationPromise = terminateExternalAgentProcessTree(
+          child,
+          initialSignal,
+        );
+        if (process.platform === "win32") {
+          void abortTerminationPromise.then(
             () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
             () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
           );
-          return;
         }
-        void terminateExternalAgentProcessTree(child, "SIGKILL").then(
-          () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
-          () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
-        );
-      }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS + 1_000);
-      unrefTimer(abortSettlementHandle);
-    };
 
-    function handleAbort(): void {
-      try {
-        nativeGoalDecoder?.interrupt();
-      } catch (error) {
-        appendBoundedOutput(
-          stderr,
-          `Native goal interruption failed: ${error instanceof Error ? error.message : String(error)}\n`,
-          MAX_CAPTURED_STDERR_CHARS,
+        abortSettlementHandle = setTimeout(() => {
+          if (process.platform === "win32") {
+            void (abortTerminationPromise ?? Promise.resolve()).then(
+              () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
+              () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
+            );
+            return;
+          }
+          void terminateExternalAgentProcessTree(child, "SIGKILL").then(
+            () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
+            () => rejectOnce(abortError ?? new Error("Execution cancelled.")),
+          );
+        }, EXTERNAL_AGENT_PROCESS_TREE_KILL_TIMEOUT_MS + 1_000);
+        unrefTimer(abortSettlementHandle);
+      };
+
+      function handleAbort(): void {
+        const error = signal
+          ? createAbortError(signal)
+          : new Error("Execution cancelled.");
+        // Ask an interactive provider to end the turn itself first, so it can
+        // record the interrupted turn; fall back to killing the process tree.
+        if (interactiveSession && !gracefulAbortError && !settled) {
+          let interruptSent = false;
+          try {
+            interruptSent = interactiveSession.interrupt();
+          } catch {
+            interruptSent = false;
+          }
+          if (interruptSent) {
+            gracefulAbortError = error;
+            gracefulAbortHandle = setTimeout(() => {
+              gracefulAbortHandle = undefined;
+              beginTermination(error);
+            }, INTERACTIVE_INTERRUPT_GRACE_MS);
+            unrefTimer(gracefulAbortHandle);
+            return;
+          }
+        }
+        beginTermination(error);
+      }
+
+      function handleStdinError(error: Error): void {
+        beginTermination(
+          error,
+          process.platform === "win32" ? "SIGTERM" : "SIGKILL",
         );
       }
-      const error = signal
-        ? createAbortError(signal)
-        : new Error("Execution cancelled.");
-      // Ask an interactive provider to end the turn itself first, so it can
-      // record the interrupted turn; fall back to killing the process tree.
-      if (interactiveSession && !gracefulAbortError && !settled) {
-        let interruptSent = false;
+
+      function handleStdinDrain(): void {
+        if (!settled && !abortError) {
+          child.stdin?.end();
+        }
+      }
+
+      function handleStdoutData(chunk: string): void {
+        if (settled || abortError) {
+          return;
+        }
+
+        stdoutBytes += Buffer.byteLength(chunk, "utf8");
         try {
-          interruptSent = interactiveSession.interrupt();
-        } catch {
-          interruptSent = false;
+          handleStructuredOutputUpdate(outputDecoder.push(chunk));
+        } catch (error) {
+          handleStdinError(
+            error instanceof Error ? error : new Error(String(error)),
+          );
         }
-        if (interruptSent) {
-          gracefulAbortError = error;
-          gracefulAbortHandle = setTimeout(() => {
-            gracefulAbortHandle = undefined;
-            beginTermination(error);
-          }, INTERACTIVE_INTERRUPT_GRACE_MS);
-          unrefTimer(gracefulAbortHandle);
-          return;
-        }
-      }
-      beginTermination(error);
-    }
-
-    function handleStdinError(error: Error): void {
-      beginTermination(
-        error,
-        process.platform === "win32" ? "SIGTERM" : "SIGKILL",
-      );
-    }
-
-    function handleStdinDrain(): void {
-      if (!settled && !abortError) {
-        child.stdin?.end();
-      }
-    }
-
-    function handleStdoutData(chunk: string): void {
-      if (settled || abortError) {
-        return;
+        scheduleCompletionShutdownCheck();
       }
 
-      stdoutBytes += Buffer.byteLength(chunk, "utf8");
-      try {
-        handleStructuredOutputUpdate(outputDecoder.push(chunk));
-      } catch (error) {
-        handleStdinError(
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
-      scheduleCompletionShutdownCheck();
-    }
-
-    function handleStructuredOutputUpdate(
-      update: ExternalAgentCliOutputUpdate,
-    ): void {
-      if (
-        provider === "codex-cli" &&
-        isCodexAuthenticationFailure(outputDecoder.getFailureMessage?.() ?? "")
-      ) {
-        stopForAuthenticationFailure();
-        return;
-      }
-      for (const displayText of update.displayText) {
-        // The follow-up block is for machdoch, not for the live transcript.
-        const shown = hideFollowUpBlock(displayText);
-        if (shown === displayText) actionOutputBatcher.enqueue("stdout", displayText);
-        else if (shown.trim()) actionOutputBatcher.enqueue("stdout", `${shown}\n\n`);
-      }
-
-      if (update.resultExitCode === undefined) {
-        return;
-      }
-
-      structuredResultExitCode = update.resultExitCode;
-      scheduleCompletionShutdownCheck();
-    }
-
-    function handleStderrData(chunk: string): void {
-      if (settled || authenticationRequired) {
-        return;
-      }
-
-      appendBoundedOutput(stderr, chunk, MAX_CAPTURED_STDERR_CHARS);
-      stderrBytes += Buffer.byteLength(chunk, "utf8");
-      if (provider === "codex-cli") {
-        const diagnostic = `${stderrDiagnosticTail}${chunk}`;
-        if (isCodexAuthenticationFailure(diagnostic)) {
+      function handleStructuredOutputUpdate(
+        update: ExternalAgentCliOutputUpdate,
+      ): void {
+        if (
+          provider === "codex-cli" &&
+          isCodexAuthenticationFailure(
+            outputDecoder.getFailureMessage?.() ?? "",
+          )
+        ) {
           stopForAuthenticationFailure();
           return;
         }
-        stderrDiagnosticTail = sliceUtf16SuffixAtCodePointBoundary(
-          diagnostic,
-          MAX_DIAGNOSTIC_CHARS,
+        for (const displayText of update.displayText) {
+          // The follow-up block is for machdoch, not for the live transcript.
+          const shown = hideFollowUpBlock(displayText);
+          if (shown === displayText)
+            actionOutputBatcher.enqueue("stdout", displayText);
+          else if (shown.trim())
+            actionOutputBatcher.enqueue("stdout", `${shown}\n\n`);
+        }
+
+        if (update.resultExitCode === undefined) {
+          return;
+        }
+
+        structuredResultExitCode = update.resultExitCode;
+        scheduleCompletionShutdownCheck();
+      }
+
+      function handleStderrData(chunk: string): void {
+        if (settled || authenticationRequired) {
+          return;
+        }
+
+        appendBoundedOutput(stderr, chunk, MAX_CAPTURED_STDERR_CHARS);
+        stderrBytes += Buffer.byteLength(chunk, "utf8");
+        if (provider === "codex-cli") {
+          const diagnostic = `${stderrDiagnosticTail}${chunk}`;
+          if (isCodexAuthenticationFailure(diagnostic)) {
+            stopForAuthenticationFailure();
+            return;
+          }
+          stderrDiagnosticTail = sliceUtf16SuffixAtCodePointBoundary(
+            diagnostic,
+            MAX_DIAGNOSTIC_CHARS,
+          );
+        }
+        actionOutputBatcher.enqueue("stderr", chunk);
+      }
+
+      function stopForAuthenticationFailure(): void {
+        if (authenticationRequired || settled || abortError) return;
+        authenticationRequired = true;
+        actionOutputBatcher.enqueue(
+          "stderr",
+          `${CODEX_AUTHENTICATION_RECOVERY}\n`,
+        );
+        beginTermination(new Error(CODEX_AUTHENTICATION_RECOVERY));
+      }
+
+      function handleChildExit(
+        exitCode: number | null,
+        exitSignal: NodeJS.Signals | null,
+      ): void {
+        if (settled) {
+          return;
+        }
+
+        observedChildExit = { exitCode, signal: exitSignal };
+        scheduleCompletionShutdownCheck();
+      }
+
+      function handleChildError(error: Error): void {
+        if (settled) {
+          return;
+        }
+        if (providerShutdownRecovery) {
+          finalizeProviderShutdownRecovery(true);
+          return;
+        }
+        if (!abortError) {
+          if (typeof child.pid === "number") {
+            beginTermination(
+              error,
+              process.platform === "win32" ? "SIGTERM" : "SIGKILL",
+            );
+          } else {
+            rejectOnce(error);
+          }
+          return;
+        }
+        void (abortTerminationPromise ?? Promise.resolve()).then(
+          () => rejectOnce(abortError ?? error),
+          () => rejectOnce(abortError ?? error),
         );
       }
-      actionOutputBatcher.enqueue("stderr", chunk);
-    }
 
-    function stopForAuthenticationFailure(): void {
-      if (authenticationRequired || settled || abortError) return;
-      authenticationRequired = true;
-      actionOutputBatcher.enqueue(
-        "stderr",
-        `${CODEX_AUTHENTICATION_RECOVERY}\n`,
-      );
-      beginTermination(new Error(CODEX_AUTHENTICATION_RECOVERY));
-    }
+      function handleChildClose(
+        exitCode: number | null,
+        exitSignal: NodeJS.Signals | null,
+      ): void {
+        if (settled) {
+          return;
+        }
+        handleStructuredOutputUpdate(outputDecoder.finish());
+        if (providerShutdownRecovery) {
+          // On Unix the direct child can exit before descendants in its group.
+          // Escalate the already-requested group shutdown before settling.
+          finalizeProviderShutdownRecovery(true);
+          return;
+        }
+        if (gracefulAbortError && !abortError) {
+          // The provider ended the interrupted turn on its own.
+          const error = gracefulAbortError;
+          void terminateExternalAgentProcessTree(child, "SIGTERM").then(
+            () => rejectOnce(error),
+            () => rejectOnce(error),
+          );
+          return;
+        }
+        if (abortError) {
+          if (process.platform === "win32") {
+            void (abortTerminationPromise ?? Promise.resolve()).then(
+              () => rejectOnce(abortError as Error),
+              () => rejectOnce(abortError as Error),
+            );
+          } else {
+            // The direct child can exit before descendants in its process group.
+            // Force the remaining group down before disposing run-scoped files.
+            const finalTermination = (
+              abortTerminationPromise ?? Promise.resolve()
+            ).then(() => terminateExternalAgentProcessTree(child, "SIGKILL"));
+            void finalTermination.then(
+              () => rejectOnce(abortError as Error),
+              () => rejectOnce(abortError as Error),
+            );
+          }
+          return;
+        }
 
-    function handleChildExit(
-      exitCode: number | null,
-      exitSignal: NodeJS.Signals | null,
-    ): void {
-      if (settled) {
+        resolveOnce(exitCode, exitSignal);
+      }
+
+      child.stdout?.setEncoding("utf8");
+      child.stderr?.setEncoding("utf8");
+      child.stdout?.on("data", handleStdoutData);
+      child.stderr?.on("data", handleStderrData);
+      child.on("exit", handleChildExit);
+      child.on("error", handleChildError);
+      child.on("close", handleChildClose);
+
+      signal?.addEventListener("abort", handleAbort, { once: true });
+      child.stdin?.once("error", handleStdinError);
+
+      if (signal?.aborted) {
+        handleAbort();
+      }
+
+      if (interactiveSession && !abortError) {
+        try {
+          interactiveSession.start();
+          if (controlServer) {
+            // Advertise what this session accepts (a Codex review cannot be steered).
+            interactive?.onControlEndpoint?.({
+              ...controlServer.endpoint,
+              capabilities: interactiveSession.live.snapshot().capabilities,
+            });
+          }
+        } catch (error) {
+          handleStdinError(
+            error instanceof Error ? error : new Error(String(error)),
+          );
+        }
         return;
       }
 
-      observedChildExit = { exitCode, signal: exitSignal };
-      scheduleCompletionShutdownCheck();
-    }
-
-    function handleChildError(error: Error): void {
-      if (settled) {
-        return;
-      }
-      if (providerShutdownRecovery) {
-        finalizeProviderShutdownRecovery(true);
-        return;
-      }
-      if (!abortError) {
-        if (typeof child.pid === "number") {
+      if (input !== undefined && !abortError) {
+        let inputAccepted: boolean;
+        try {
+          inputAccepted = child.stdin?.write(input) ?? true;
+        } catch (error) {
           beginTermination(
-            error,
+            error instanceof Error ? error : new Error(String(error)),
             process.platform === "win32" ? "SIGTERM" : "SIGKILL",
           );
-        } else {
-          rejectOnce(error);
+          return;
         }
-        return;
-      }
-      void (abortTerminationPromise ?? Promise.resolve()).then(
-        () => rejectOnce(abortError ?? error),
-        () => rejectOnce(abortError ?? error),
-      );
-    }
 
-    function handleChildClose(
-      exitCode: number | null,
-      exitSignal: NodeJS.Signals | null,
-    ): void {
-      if (settled) {
-        return;
-      }
-      handleStructuredOutputUpdate(outputDecoder.finish());
-      if (providerShutdownRecovery) {
-        // On Unix the direct child can exit before descendants in its group.
-        // Escalate the already-requested group shutdown before settling.
-        finalizeProviderShutdownRecovery(true);
-        return;
-      }
-      if (gracefulAbortError && !abortError) {
-        // The provider ended the interrupted turn on its own.
-        const error = gracefulAbortError;
-        void terminateExternalAgentProcessTree(child, "SIGTERM").then(
-          () => rejectOnce(error),
-          () => rejectOnce(error),
-        );
-        return;
-      }
-      if (abortError) {
-        if (process.platform === "win32") {
-          void (abortTerminationPromise ?? Promise.resolve()).then(
-            () => rejectOnce(abortError as Error),
-            () => rejectOnce(abortError as Error),
-          );
-        } else {
-          // The direct child can exit before descendants in its process group.
-          // Force the remaining group down before disposing run-scoped files.
-          const finalTermination = (
-            abortTerminationPromise ?? Promise.resolve()
-          ).then(() => terminateExternalAgentProcessTree(child, "SIGKILL"));
-          void finalTermination.then(
-            () => rejectOnce(abortError as Error),
-            () => rejectOnce(abortError as Error),
-          );
+        if (!inputAccepted) {
+          child.stdin?.once("drain", handleStdinDrain);
+          return;
         }
-        return;
       }
 
-      resolveOnce(exitCode, exitSignal);
-    }
-
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
-    child.stdout?.on("data", handleStdoutData);
-    child.stderr?.on("data", handleStderrData);
-    child.on("exit", handleChildExit);
-    child.on("error", handleChildError);
-    child.on("close", handleChildClose);
-
-    signal?.addEventListener("abort", handleAbort, { once: true });
-    child.stdin?.once("error", handleStdinError);
-
-    if (signal?.aborted) {
-      handleAbort();
-    }
-
-    if (nativeGoalDecoder && !abortError) {
-      try {
-        nativeGoalDecoder.start();
-      } catch (error) {
-        handleStdinError(
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
-      return;
-    }
-
-    if (interactiveSession && !abortError) {
-      try {
-        interactiveSession.start();
-        if (controlServer) {
-          // Advertise what this session accepts (a Codex review cannot be steered).
-          interactive?.onControlEndpoint?.({
-            ...controlServer.endpoint,
-            capabilities: interactiveSession.live.snapshot().capabilities,
-          });
-        }
-      } catch (error) {
-        handleStdinError(
-          error instanceof Error ? error : new Error(String(error)),
-        );
-      }
-      return;
-    }
-
-    if (input !== undefined && !abortError) {
-      let inputAccepted: boolean;
-      try {
-        inputAccepted = child.stdin?.write(input) ?? true;
-      } catch (error) {
-        beginTermination(
-          error instanceof Error ? error : new Error(String(error)),
-          process.platform === "win32" ? "SIGTERM" : "SIGKILL",
-        );
-        return;
-      }
-
-      if (!inputAccepted) {
-        child.stdin?.once("drain", handleStdinDrain);
-        return;
-      }
-    }
-
-    child.stdin?.end();
-  });
+      child.stdin?.end();
+    });
   }
 };
 
@@ -1578,7 +1562,6 @@ interface ExternalAgentCommand {
   interactive?: InteractiveCommandSpec;
   /** Extra environment for this provider run. */
   env?: Record<string, string>;
-  codexGoal?: CodexNativeGoalInput;
   runDetail: string;
   startMessage: string;
   successDetail: string;
@@ -1614,6 +1597,16 @@ const getExecutorTurnLimit = (config: RuntimeConfig): number | undefined => {
   return typeof limit === "number" && Number.isFinite(limit) && limit > 0
     ? Math.trunc(limit)
     : undefined;
+};
+
+/** How often a run may resume after its turn cap; null means no cap. */
+const getTurnLimitContinuations = (config: RuntimeConfig): number | null => {
+  const limit = config.agentLimits?.autopilotExecutorIterations;
+  if (limit === null) return null;
+
+  return typeof limit === "number" && Number.isFinite(limit) && limit > 0
+    ? Math.trunc(limit)
+    : 0;
 };
 
 const createCodexArgs = (
@@ -1764,7 +1757,8 @@ const createCodexAppServerCommand = ({
   const effort = mapReasoningToCodexCliEffort(config.model, config.reasoning);
   const fastMode =
     agentFeatures?.fastMode === true &&
-    getDiscoveredModelCapabilities("codex-cli", config.model)?.fastMode === true;
+    getDiscoveredModelCapabilities("codex-cli", config.model)?.fastMode ===
+      true;
   return {
     args: [
       "app-server",
@@ -1814,7 +1808,9 @@ const createCodexAppServerCommand = ({
       "Codex home: isolated per run",
       "live session: steering, questions, plan and diff",
       ...(effort ? [`reasoning effort: ${effort}`] : []),
-      ...(typeof contextWindow === "number" ? [`context window: ${contextWindow}`] : []),
+      ...(typeof contextWindow === "number"
+        ? [`context window: ${contextWindow}`]
+        : []),
       ...(fastMode ? ["service tier: fast"] : []),
     ],
     metadata: {
@@ -1876,10 +1872,12 @@ const createCodexCommand = ({
           : []),
         ...enrollmentArgs,
       ],
-      codexGoal: {
+      interactive: {
+        kind: "codex-goal",
         objective: nativeGoal,
         prompt,
         imagePaths: (imageInputs ?? []).map((image) => image.path),
+        cwd: config.workspaceRoot,
       },
       startMessage: "Starting a native Codex goal.",
       runDetail: "Running a native Codex goal through app-server.",
@@ -1928,6 +1926,7 @@ const createCodexCommand = ({
 const createClaudeCommand = ({
   config,
   prompt,
+  imageInputs,
   enrollmentArgs,
   providerFeatures,
   nativeSubagents,
@@ -1955,7 +1954,10 @@ const createClaudeCommand = ({
     config.provider,
     config.model,
   );
-  const model = resolveClaudeCliModelForContextWindow(config.model, config.contextWindow ?? "highest");
+  const model = resolveClaudeCliModelForContextWindow(
+    config.model,
+    config.contextWindow ?? "highest",
+  );
   const effort = mapReasoningToClaudeCliEffort(config.model, config.reasoning);
   if (
     !providerFeatures.includes("--output-format") ||
@@ -1972,7 +1974,8 @@ const createClaudeCommand = ({
   const fastMode =
     interactive &&
     agentFeatures?.fastMode === true &&
-    getDiscoveredModelCapabilities("claude-cli", config.model)?.fastMode === true;
+    getDiscoveredModelCapabilities("claude-cli", config.model)?.fastMode ===
+      true;
   const args = [
     "-p",
     ...(interactive
@@ -2005,6 +2008,12 @@ const createClaudeCommand = ({
   // A native goal runs its whole loop in this one invocation, so the
   // per-task turn cap would cut it off; the goal's own budgets bound it.
   const maxTurns = nativeGoal ? undefined : getExecutorTurnLimit(config);
+  // A live session resumes in place when the cap stops it, like Machdoch
+  // mode continuing its own executor, so the cap bounds a step, not the run.
+  const turnLimitContinuations =
+    interactive && maxTurns !== undefined
+      ? getTurnLimitContinuations(config)
+      : 0;
 
   if (effort) {
     if (!providerFeatures.includes("--effort")) {
@@ -2025,7 +2034,19 @@ const createClaudeCommand = ({
     input: nativeGoal ? `/goal ${nativeGoal}` : prompt,
     ...(interactive
       ? {
-          interactive: { kind: "claude" as const, prompt, fastMode },
+          interactive: {
+            kind: "claude" as const,
+            prompt,
+            imageInputs: imageInputs ?? [],
+            fastMode,
+            turnLimitContinuations,
+          },
+        }
+      : nativeGoal
+        ? { interactive: { kind: "claude-goal" as const, objective: nativeGoal } }
+        : {}),
+    ...(interactive || nativeGoal
+      ? {
           // Lets Claude keep a visible task list on the models that hide it.
           env: {
             CLAUDE_CODE_ENABLE_TODO_TOOLS: "1",
@@ -2048,8 +2069,15 @@ const createClaudeCommand = ({
       ...(effort ? [`effort: ${effort}`] : []),
       ...(contextWindow === "long" ? ["context window: long"] : []),
       ...(maxTurns !== undefined ? [`max turns: ${maxTurns}`] : []),
+      ...(turnLimitContinuations !== 0
+        ? [
+            `turn limit continuations: ${turnLimitContinuations ?? "unlimited"}`,
+          ]
+        : []),
       "structured output: stream-json",
-      ...(interactive ? ["live session: steering, questions, background tasks"] : []),
+      ...(interactive
+        ? ["live session: steering, questions, background tasks"]
+        : []),
       ...(fastMode ? ["fast mode: on"] : []),
     ],
     metadata: {
@@ -2059,6 +2087,9 @@ const createClaudeCommand = ({
       effectiveModel: model,
       ...(effort ? { effort } : {}),
       ...(maxTurns !== undefined ? { maxTurns } : {}),
+      ...(turnLimitContinuations !== 0
+        ? { turnLimitContinuations: turnLimitContinuations ?? "unlimited" }
+        : {}),
       structuredOutput: "stream-json",
       liveSession: interactive,
       fastMode,
@@ -2082,9 +2113,7 @@ const readCopilotServerSession = async (
     );
   if (!name || !file) return undefined;
   const content = await readFile(file.path, "utf8").catch(() => undefined);
-  const prompt = content
-    ?.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/u, "")
-    .trim();
+  const prompt = content?.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/u, "").trim();
   return prompt
     ? { agent: { name, prompt }, mcpConfig: enrollment.mcpProjection.config }
     : undefined;
@@ -2121,7 +2150,9 @@ const createCopilotServerCommand = ({
   secretEnvKeys: readonly string[];
   effort: string | undefined;
   contextWindow: ReturnType<typeof resolveContextWindowForProviderModel>;
-  session: NonNullable<ExternalAgentCommandFactoryParams["copilotServerSession"]>;
+  session: NonNullable<
+    ExternalAgentCommandFactoryParams["copilotServerSession"]
+  >;
 }): ExternalAgentCommand => {
   const mcpServers = isRecord(session.mcpConfig.mcpServers)
     ? session.mcpConfig.mcpServers
@@ -2144,7 +2175,9 @@ const createCopilotServerCommand = ({
       kind: "copilot",
       prompt,
       imagePaths: (imageInputs ?? []).map((image) => image.path),
-      skipCustomInstructions: enrollmentArgs.includes("--no-custom-instructions"),
+      skipCustomInstructions: enrollmentArgs.includes(
+        "--no-custom-instructions",
+      ),
       session: {
         model: config.model,
         workingDirectory: config.workspaceRoot,
@@ -2161,7 +2194,14 @@ const createCopilotServerCommand = ({
         enableConfigDiscovery: false,
         ...(nativeSubagents
           ? {}
-          : { excludedTools: ["task", "read_agent", "write_agent", "list_agents"] }),
+          : {
+              excludedTools: [
+                "task",
+                "read_agent",
+                "write_agent",
+                "list_agents",
+              ],
+            }),
         ...(effort ? { reasoningEffort: effort } : {}),
         ...(contextWindow === "long" ? { contextTier: "long_context" } : {}),
       },
@@ -2410,7 +2450,8 @@ const executeExternalAgentCliTask = async (
             ),
           ]
         : []),
-      ...(params.conversationContext?.agentFeatures?.suggestFollowUps === true &&
+      ...(params.conversationContext?.agentFeatures?.suggestFollowUps ===
+        true &&
       !params.resultProtocol &&
       !poseChat &&
       params.scopedWorkerToolDefinitions === undefined &&
@@ -2563,7 +2604,9 @@ const executeExternalAgentCliTask = async (
       executable: binary.executable,
       args: command.args,
       input: command.input,
-      ...(command.codexGoal ? { codexGoal: command.codexGoal } : {}),
+      ...(command.interactive?.kind === "codex-goal"
+        ? { codexGoal: command.interactive }
+        : {}),
       environmentKeys: Object.keys(externalAgentEnv).sort(),
       canonicalDigest: resolution.canonicalDigest,
     });
@@ -2630,7 +2673,10 @@ const executeExternalAgentCliTask = async (
   const startedAt = Date.now();
   const externalRequestBytes =
     Buffer.byteLength(
-      command.input ?? command.codexGoal?.prompt ?? "",
+      command.input ??
+        (command.interactive?.kind === "codex-goal"
+          ? command.interactive.prompt
+          : ""),
       "utf8",
     ) +
     Buffer.byteLength(JSON.stringify(command.args), "utf8") +
@@ -2663,12 +2709,35 @@ const executeExternalAgentCliTask = async (
     },
   ];
   let result: SpawnedAgentResult;
-  const stopAppEvents = enrollment.mcpProjection.servers.some((server) => server.capabilities.includes("apps"))
-    ? observeMcpApps(executionConfig.workspaceRoot, enrollment.manifest.runId, async (id) => {
-        await emitAgentProgress(params.task, params.config, "executing", "Interactive result ready", loopState, params.onStateChange, undefined, {
-          timelineEvent: { kind: "tool-call", phase: "completed", label: "Interactive result", metadata: { mcpAppId: id } },
-        });
-      }, (error) => { console.error("Could not read interactive results", error); })
+  const stopAppEvents = enrollment.mcpProjection.servers.some((server) =>
+    server.capabilities.includes("apps"),
+  )
+    ? observeMcpApps(
+        executionConfig.workspaceRoot,
+        enrollment.manifest.runId,
+        async (id) => {
+          await emitAgentProgress(
+            params.task,
+            params.config,
+            "executing",
+            "Interactive result ready",
+            loopState,
+            params.onStateChange,
+            undefined,
+            {
+              timelineEvent: {
+                kind: "tool-call",
+                phase: "completed",
+                label: "Interactive result",
+                metadata: { mcpAppId: id },
+              },
+            },
+          );
+        },
+        (error) => {
+          console.error("Could not read interactive results", error);
+        },
+      )
     : undefined;
   let enrollmentDisposal: EnrollmentDisposalResult;
   let copilotTelemetry:
@@ -2690,20 +2759,29 @@ const executeExternalAgentCliTask = async (
     ).catch(() => undefined);
   };
   let lastLive: AgentLiveState | undefined;
-  const attended = params.conversationContext?.agentFeatures?.liveControl === true;
+  const attended =
+    params.conversationContext?.agentFeatures?.liveControl === true;
   const interactiveOptions: InteractiveRunOptions | undefined = interactiveSpec
     ? {
         create: (io) =>
-          createInteractiveAgentSession(interactiveSpec, io, (agentLive) => {
-            lastLive = agentLive;
-            publishLiveProgress({ agentLive });
-          }, {
-            model: executionConfig.model,
-            captureEvidence: params.captureGoalEvidence === true,
-            unattended: !attended,
-          }),
-        ...(attended
-          ? { onControlEndpoint: (agentControl: AgentControlEndpoint | null) => publishLiveProgress({ agentControl }) }
+          createInteractiveAgentSession(
+            interactiveSpec,
+            io,
+            (agentLive) => {
+              lastLive = agentLive;
+              publishLiveProgress({ agentLive });
+            },
+            {
+              model: executionConfig.model,
+              captureEvidence: params.captureGoalEvidence === true,
+              unattended: !attended,
+            },
+          ),
+        ...(attended && !params.nativeGoal
+          ? {
+              onControlEndpoint: (agentControl: AgentControlEndpoint | null) =>
+                publishLiveProgress({ agentControl }),
+            }
           : {}),
       }
     : undefined;
@@ -2718,7 +2796,6 @@ const executeExternalAgentCliTask = async (
       params.signal,
       params.onActionOutput,
       params.captureGoalEvidence === true,
-      command.codexGoal,
       interactiveOptions,
     );
     if (copilotTelemetryPath) {
@@ -2991,7 +3068,12 @@ const executeExternalAgentCliTask = async (
     // Like machdoch's own turn limit, this ends the run unfinished rather
     // than failed, so a goal keeps going and a chat can continue it.
     const turnLimit = command.metadata.maxTurns;
-    const summary = `${providerLabel} reached its ${typeof turnLimit === "number" ? `${turnLimit}-turn ` : "turn "}limit before it finished.`;
+    const continuations = command.metadata.turnLimitContinuations;
+    const turnLimitLabel = `${typeof turnLimit === "number" ? `${turnLimit}-turn ` : "turn "}limit`;
+    const summary =
+      typeof continuations === "number" && continuations > 0
+        ? `${providerLabel} hit its ${turnLimitLabel} again after ${continuations} automatic continuation${continuations === 1 ? "" : "s"} and stopped before it finished. Continue the run, or raise Executor turns or Machdoch continuations in Settings › Agent limits.`
+        : `${providerLabel} hit its ${turnLimitLabel} and stopped before it finished. Continue the run, or raise Executor turns in Settings › Agent limits.`;
     const lastOutput = result.stdout.trim();
     await emitAgentProgress(
       params.task,
@@ -3030,7 +3112,13 @@ const executeExternalAgentCliTask = async (
           ...params.contextSections,
           commandSection,
           ...(lastOutput
-            ? [createTextSection(`${providerLabel} last message`, lastOutput, 120)]
+            ? [
+                createTextSection(
+                  `${providerLabel} last message`,
+                  lastOutput,
+                  120,
+                ),
+              ]
             : []),
         ],
         ...(lastOutput
@@ -3304,9 +3392,25 @@ export const maybeExecuteExternalAgentProviderTask = async (
         toolState.executedTools.push(definition.backingTool);
       toolState.outputSections.push(...result.sections);
       if (result.mcpAppId) {
-        await emitAgentProgress(params.task, params.config, "executing", "Interactive result ready", toolState, params.onStateChange, undefined, {
-          timelineEvent: { kind: "tool-call", phase: "completed", label: definition.spec.name, toolName: definition.spec.name, callId: result.toolResult.callId, metadata: { mcpAppId: result.mcpAppId } },
-        });
+        await emitAgentProgress(
+          params.task,
+          params.config,
+          "executing",
+          "Interactive result ready",
+          toolState,
+          params.onStateChange,
+          undefined,
+          {
+            timelineEvent: {
+              kind: "tool-call",
+              phase: "completed",
+              label: definition.spec.name,
+              toolName: definition.spec.name,
+              callId: result.toolResult.callId,
+              metadata: { mcpAppId: result.mcpAppId },
+            },
+          },
+        );
       }
       if (result.memoryUpdate)
         toolState.memoryUpdates = upsertMemoryUpdate(

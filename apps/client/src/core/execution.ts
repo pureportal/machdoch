@@ -279,6 +279,7 @@ const runTaskExecutionStateMachine = async (
               ? {}
               : { flow: options.instructionFlow }),
           }));
+        options.onInstructionsResolved?.(instructionResolution);
         runtime.taskContext = resolveTaskContext(task, customizations, {
           ...(options.executionRole
             ? { executionRole: options.executionRole }

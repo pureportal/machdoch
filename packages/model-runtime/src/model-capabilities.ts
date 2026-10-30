@@ -166,9 +166,6 @@ const IMAGE_MEDIA_TYPES = new Set<AgentModelImageMediaType>(
   Object.values(IMAGE_EXTENSION_MEDIA_TYPES),
 );
 
-const WITHOUT_IMAGE_MEDIA_TYPES =
-  [] as const satisfies readonly AgentModelImageMediaType[];
-
 const DOCUMENTED_OPENAI_MODEL_PATTERN =
   /^gpt-(?:6-(?:astra|sol)|5\.6(?:-(?:sol|terra|luna))?|5\.5(?:-pro)?|5\.4(?:-(?:pro|mini|nano))?|5\.2(?:-pro)?|5\.1|5(?:-(?:pro|mini|nano))?)(?:-\d{4}-\d{2}-\d{2})?$/u;
 
@@ -185,8 +182,8 @@ const PROVIDER_CAPABILITY_PROFILES: Record<
   },
   "claude-cli": {
     provider: "claude-cli",
-    imageInputMediaTypes: WITHOUT_IMAGE_MEDIA_TYPES,
-    providerManagedImageInput: false,
+    imageInputMediaTypes: ANTHROPIC_IMAGE_MEDIA_TYPES,
+    providerManagedImageInput: true,
     providerModes: PROVIDER_MODEL_MODES["claude-cli"],
     promptCaching: "provider-managed",
   },

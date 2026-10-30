@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { loadRuntimeConfig } from "../config.js";
+import { CodexNativeGoalSession } from "./codex-native-goal.js";
 import { runExternalAgentCommand } from "./external-agent-provider.js";
 
 describe("native Codex goal process streaming", () => {
@@ -45,9 +46,18 @@ describe("native Codex goal process streaming", () => {
         onOutput,
         true,
         {
-          objective: "Verify the work",
-          prompt: "Verify the work",
-          imagePaths: [],
+          create: (io) =>
+            new CodexNativeGoalSession(
+              {
+                objective: "Verify the work",
+                prompt: "Verify the work",
+                imagePaths: [],
+                cwd: config.workspaceRoot,
+              },
+              io,
+              () => undefined,
+              { model: config.model, captureEvidence: true },
+            ),
         },
       );
       expect(result).toMatchObject({

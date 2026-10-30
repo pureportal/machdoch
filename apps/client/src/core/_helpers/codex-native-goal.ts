@@ -1,15 +1,19 @@
-import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { AgentModelStreamUsage } from "@machdoch/model-runtime/types";
+import { AgentLiveTracker } from "./agent-live-tracker.js";
 import {
   CodexGoalProtocolError,
   CodexGoalProtocolReader,
 } from "./codex-goal-protocol.js";
+import { CodexLiveEventReader } from "./codex-live-events.js";
 import {
   CodexCliOutputDecoder,
-  type ExternalAgentCliOutputDecoder,
   type ExternalAgentCliOutputUpdate,
 } from "./external-agent-cli-output.js";
-import { UNATTENDED_ANSWER } from "./agent-interactive-session.js";
+import {
+  UNATTENDED_ANSWER,
+  type InteractiveAgentSession,
+  type InteractiveSessionIo,
+} from "./agent-interactive-session.js";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -37,8 +41,8 @@ export interface CodexNativeGoalInput {
   objective: string;
   prompt: string;
   imagePaths: string[];
+  cwd: string;
 }
-
 
 /** Replies to a Codex server request without stopping an unattended goal. */
 export const answerUnattendedGoalRequest = (
@@ -72,8 +76,16 @@ export const answerUnattendedGoalRequest = (
   }
 };
 
-export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
+/**
+ * Runs Codex's own goal loop on one thread. Codex continues the goal itself,
+ * so the run is observed but not steered.
+ */
+export class CodexNativeGoalSession implements InteractiveAgentSession {
+  readonly live: AgentLiveTracker;
+  readonly controls = {};
   private readonly output: CodexCliOutputDecoder;
+  private readonly events: CodexLiveEventReader;
+  private readonly model: string;
   private readonly protocol = new CodexGoalProtocolReader();
   private nextId = 1;
   private readonly requests = new Map<
@@ -89,16 +101,25 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
   private goalActivationAcknowledged = false;
   private terminal = false;
   private turns = 0;
-  private usage: AgentModelStreamUsage | undefined;
 
   constructor(
     private readonly input: CodexNativeGoalInput,
-    private readonly config: RuntimeConfig,
-    private readonly write: (message: string) => void,
-    private readonly closeInput: () => void,
-    captureEvidence: boolean,
+    private readonly io: InteractiveSessionIo,
+    publish: ConstructorParameters<typeof AgentLiveTracker>[1],
+    options: { model: string; captureEvidence: boolean },
   ) {
-    this.output = new CodexCliOutputDecoder(captureEvidence);
+    this.output = new CodexCliOutputDecoder(options.captureEvidence);
+    this.model = options.model;
+    this.live = new AgentLiveTracker(
+      {
+        provider: "codex-cli",
+        transport: "app-server",
+        capabilities: [],
+        model: options.model,
+      },
+      publish,
+    );
+    this.events = new CodexLiveEventReader(this.live, input.cwd);
   }
 
   start(): void {
@@ -108,7 +129,6 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
         experimentalApi: true,
         optOutNotificationMethods: [
           "thread/started",
-          "item/started",
           "item/agentMessage/delta",
           "item/commandExecution/outputDelta",
           "item/fileChange/outputDelta",
@@ -117,10 +137,12 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
         ],
       },
     });
+    this.live.flush();
   }
 
-  interrupt(): void {
-    if (!this.threadId || this.terminal) return;
+  /** Pauses the goal on the provider. The runner still ends the process right away. */
+  interrupt(): boolean {
+    if (!this.threadId || this.terminal) return false;
     this.request("thread/goal/set", {
       threadId: this.threadId,
       status: "paused",
@@ -130,17 +152,32 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
         threadId: this.threadId,
         turnId: this.activeTurnId,
       });
+    return false;
+  }
+
+  dispose(): void {
+    this.live.close();
   }
 
   private request(method: string, params: Record<string, unknown>): void {
     const id = this.nextId++;
     this.requests.set(id, { method, goalRevision: this.goalRevision });
-    this.write(`${JSON.stringify({ id, method, params })}\n`);
+    this.io.write(`${JSON.stringify({ id, method, params })}\n`);
   }
 
   private decode(event: Record<string, unknown>): ExternalAgentCliOutputUpdate {
     const empty: ExternalAgentCliOutputUpdate = { displayText: [] };
     if (this.terminal) return empty;
+    if (
+      typeof event.id === "number" &&
+      !event.method &&
+      this.requests.get(event.id)?.method === "account/rateLimits/read"
+    ) {
+      this.requests.delete(event.id);
+      if (isRecord(event.result))
+        this.events.applyRateLimits(event.result.rateLimits ?? event.result);
+      return empty;
+    }
     if (isRecord(event.error))
       return this.fail(
         String(event.error.message ?? "Codex goal request failed."),
@@ -152,12 +189,12 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
       const { method } = request;
       const result = isRecord(event.result) ? event.result : {};
       if (method === "initialize") {
-        this.write(
+        this.io.write(
           `${JSON.stringify({ method: "initialized", params: {} })}\n`,
         );
         this.request("thread/start", {
-          model: this.config.model,
-          cwd: this.config.workspaceRoot,
+          model: this.model,
+          cwd: this.input.cwd,
           approvalPolicy: "never",
           sandbox: "danger-full-access",
           ephemeral: false,
@@ -193,6 +230,7 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
           threadId: this.threadId,
           status: "active",
         });
+        this.request("account/rateLimits/read", {});
       } else if (method === "thread/goal/set" && this.goalActivated) {
         this.goalActivationAcknowledged = true;
         if (!isRecord(result.goal) || !isGoalStatus(result.goal.status))
@@ -211,11 +249,13 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
       return empty;
     if (typeof event.id === "number" || typeof event.id === "string") {
       // Goals run unattended: answer what Codex can act on and keep going.
-      this.write(
+      this.io.write(
         `${JSON.stringify({ id: event.id, ...answerUnattendedGoalRequest(String(event.method ?? ""), params) })}\n`,
       );
       return empty;
     }
+    if (typeof event.method === "string")
+      this.events.notification(event.method, params);
     if (event.method === "thread/goal/updated" && isRecord(params.goal)) {
       if (!isGoalStatus(params.goal.status))
         return this.fail("Codex returned an invalid goal status.");
@@ -228,36 +268,6 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
       return this.fail(
         "The native Codex goal was cleared before verification.",
       );
-    if (
-      event.method === "thread/tokenUsage/updated" &&
-      isRecord(params.tokenUsage)
-    ) {
-      const total = params.tokenUsage.total;
-      if (
-        isRecord(total) &&
-        [
-          total.inputTokens,
-          total.outputTokens,
-          total.totalTokens,
-          total.cachedInputTokens,
-          total.reasoningOutputTokens,
-        ].every(
-          (value) =>
-            typeof value === "number" &&
-            Number.isSafeInteger(value) &&
-            value >= 0,
-        )
-      ) {
-        this.usage = {
-          inputTokens: Number(total.inputTokens),
-          outputTokens: Number(total.outputTokens),
-          totalTokens: Number(total.totalTokens),
-          cachedInputTokens: Number(total.cachedInputTokens),
-          reasoningTokens: Number(total.reasoningOutputTokens),
-        };
-      }
-      return empty;
-    }
     if (event.method === "turn/started" && isRecord(params.turn)) {
       if (typeof params.turn.id !== "string")
         return this.fail("Codex returned an invalid goal turn.");
@@ -319,7 +329,7 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
     this.protocol.reset();
     this.requests.clear();
     const update = this.output.pushEvent({ type: "turn.completed" });
-    this.closeInput();
+    this.io.closeInput();
     return update;
   }
 
@@ -332,7 +342,7 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
       type: "turn.failed",
       error: { message },
     });
-    this.closeInput();
+    this.io.closeInput();
     return update;
   }
 
@@ -379,7 +389,7 @@ export class CodexNativeGoalDecoder implements ExternalAgentCliOutputDecoder {
     return this.output.getFinalOutput();
   }
   getUsage(): AgentModelStreamUsage | undefined {
-    return this.usage;
+    return this.events.getUsage();
   }
   getRetryCount(): undefined {
     return undefined;

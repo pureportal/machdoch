@@ -9,6 +9,7 @@ use super::super::normalize_optional_string;
 use super::{
     command::{run_agent_cli_command_with_input, AgentCliCommandOutput},
     normalize::json_string,
+    provider_api_types::ANTHROPIC_IMAGE_MEDIA_TYPES,
     resolve_agent_cli_binary, ProviderRuntimeModel, ProviderRuntimeModelCapabilities,
 };
 
@@ -64,7 +65,7 @@ fn create_claude_cli_runtime_model(entry: &serde_json::Value) -> Option<Provider
         .unwrap_or_else(|| id.clone())
         .to_ascii_lowercase();
     let reasoning_modes = claude_cli_reasoning_modes(entry);
-    let mut recommended_for = vec!["coding".to_string()];
+    let mut recommended_for = vec!["coding".to_string(), "vision".to_string()];
 
     if family.contains("haiku") {
         recommended_for.push("fast".to_string());
@@ -80,7 +81,7 @@ fn create_claude_cli_runtime_model(entry: &serde_json::Value) -> Option<Provider
         release_date: None,
         recommended_for,
         capabilities: ProviderRuntimeModelCapabilities {
-            image_input: Some(false),
+            image_input: Some(true),
             tool_use: Some(true),
             reasoning: Some(reasoning_modes.len() > 1),
             streaming: Some(true),
@@ -89,7 +90,12 @@ fn create_claude_cli_runtime_model(entry: &serde_json::Value) -> Option<Provider
             max_output_tokens: None,
             reasoning_modes: Some(reasoning_modes),
             default_reasoning_mode: None,
-            supported_image_media_types: Some(Vec::new()),
+            supported_image_media_types: Some(
+                ANTHROPIC_IMAGE_MEDIA_TYPES
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+            ),
             voice: Some(false),
             computer_use: Some(false),
             native_subagents: None,

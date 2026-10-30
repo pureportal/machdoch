@@ -2,10 +2,12 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   CodexAppServerSession,
-  describeShellCommand,
-  summarizeUnifiedDiff,
   type CodexAppServerTurnInput,
 } from "./codex-app-server-session.js";
+import {
+  describeShellCommand,
+  summarizeUnifiedDiff,
+} from "./codex-live-events.js";
 
 type Message = Record<string, unknown> & { id?: number; method?: string; params?: Record<string, unknown> };
 

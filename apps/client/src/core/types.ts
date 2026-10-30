@@ -520,6 +520,8 @@ export interface TaskExecutionOptions {
    * execution boundary resolves one before any provider call.
    */
   resolvedInstructions?: FrozenInstructionSet;
+  /** Receives the snapshot this run uses, so a follow-up run can reuse it. */
+  onInstructionsResolved?: (instructions: FrozenInstructionSet) => void;
   instructionDeliveryPlan?: InstructionDeliveryPlan;
   instructionDeliveryReceipts?: InstructionDeliveryReceipt[];
   instructionFlow?: { id: string; guidance?: string };

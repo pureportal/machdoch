@@ -10,7 +10,7 @@ use super::{
 
 const LANGDOCK_DEFAULT_REGION: &str = "eu";
 const LANGDOCK_SUPPORTED_REGIONS: [&str; 2] = ["eu", "us"];
-const ANTHROPIC_IMAGE_MEDIA_TYPES: [&str; 4] =
+pub(super) const ANTHROPIC_IMAGE_MEDIA_TYPES: [&str; 4] =
     ["image/gif", "image/jpeg", "image/png", "image/webp"];
 const CANONICAL_REASONING_MODES: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 

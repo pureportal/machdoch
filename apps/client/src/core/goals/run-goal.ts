@@ -1,6 +1,7 @@
 import { linkRunCancellation } from "../_helpers/run-cancellation.js";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type {
+  AgentLiveState,
   ConversationHistoryEntry,
   TaskExecutionOptions,
   TaskExecutionResult,
@@ -14,6 +15,7 @@ import {
 } from "./goal-store.js";
 import { commandResult, describeGoal } from "./goal-result.js";
 import { evaluateGoal } from "./goal-evaluation.js";
+import { combineGoalTurnLive } from "./goal-live-state.js";
 
 export type GoalTurnExecutor = (
   task: string,
@@ -132,6 +134,9 @@ export const executeGoalRun = async (
   let blockedAssessments = 0;
   let previousOutcome: string | undefined;
   let runTurns = 0;
+  let turnInstructions = options.resolvedInstructions;
+  let earlierTurnsLive: AgentLiveState | undefined;
+  let latestLive: AgentLiveState | undefined;
   const checkpoint = async (
     status: SessionGoal["status"],
     reason: string,
@@ -177,8 +182,12 @@ export const executeGoalRun = async (
       "cancelled",
       "planned",
     ].includes(progress.state);
+    if (progress.agentLive) {
+      latestLive = combineGoalTurnLive(earlierTurnsLive, progress.agentLive);
+    }
     await options.onStateChange?.({
       ...progress,
+      ...(progress.agentLive && latestLive ? { agentLive: latestLive } : {}),
       task,
       goal,
       ...(terminal
@@ -217,6 +226,9 @@ export const executeGoalRun = async (
           ...options,
           signal,
           onStateChange: reportProgress,
+          onInstructionsResolved: (instructions) => {
+            turnInstructions = instructions;
+          },
           captureGoalEvidence: true,
           conversationContext: {
             ...options.conversationContext,
@@ -233,6 +245,7 @@ export const executeGoalRun = async (
           ],
           ...(goal.mode === "native" ? { nativeGoal: goal.objective } : {}),
         });
+        earlierTurnsLive = latestLive;
         history.push(
           { role: "user", content: directive },
           { role: "assistant", content: resultText(lastResult) },
@@ -265,7 +278,16 @@ export const executeGoalRun = async (
           history,
           lastResult,
           config,
-          { ...options, signal, onStateChange: reportProgress },
+          {
+            ...options,
+            signal,
+            onStateChange: reportProgress,
+            // Resolving again can take minutes in a large workspace, which
+            // would use up the verification deadline before the model starts.
+            ...(turnInstructions
+              ? { resolvedInstructions: turnInstructions }
+              : {}),
+          },
           execute,
         );
         const verdict = evaluation.control;

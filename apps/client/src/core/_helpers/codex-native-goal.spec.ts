@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { loadRuntimeConfig } from "../config.js";
-import { CodexNativeGoalDecoder, answerUnattendedGoalRequest } from "./codex-native-goal.js";
+import { CodexNativeGoalSession, answerUnattendedGoalRequest } from "./codex-native-goal.js";
 import type { ExternalAgentCliOutputUpdate } from "./external-agent-cli-output.js";
 
-let decoder: CodexNativeGoalDecoder;
+let decoder: CodexNativeGoalSession;
 let messages: Array<Record<string, unknown>>;
 let close: ReturnType<typeof vi.fn<() => void>>;
 const send = (event: Record<string, unknown>): ExternalAgentCliOutputUpdate =>
@@ -17,22 +16,24 @@ const startGoal = (): void => {
   send({ id: 5, result: { goal: { status: "active" } } });
 };
 
-beforeEach(async () => {
-  const config = await loadRuntimeConfig(process.cwd());
+beforeEach(() => {
   messages = [];
   close = vi.fn();
-  decoder = new CodexNativeGoalDecoder(
+  decoder = new CodexNativeGoalSession(
     {
       objective: "Verify intake",
       prompt: "User steering and the full conversation",
       imagePaths: ["food.png"],
+      cwd: process.cwd(),
     },
-    { ...config, model: "gpt-5.5" },
-    (message) => {
-      messages.push(JSON.parse(message) as Record<string, unknown>);
+    {
+      write: (message) => {
+        messages.push(JSON.parse(message) as Record<string, unknown>);
+      },
+      closeInput: close,
     },
-    close,
-    true,
+    () => undefined,
+    { model: "gpt-5.5", captureEvidence: true },
   );
 });
 
@@ -60,6 +61,7 @@ describe("native Codex goals", () => {
       "thread/goal/set",
       "turn/start",
       "thread/goal/set",
+      "account/rateLimits/read",
     ]);
     expect(messages[2]?.params).toMatchObject({
       approvalPolicy: "never",
@@ -163,6 +165,107 @@ describe("native Codex goals", () => {
       cachedInputTokens: 30,
     });
     expect(close).toHaveBeenCalledOnce();
+  });
+
+  it("reports limits, plan, diff, work and usage while the goal runs", () => {
+    startGoal();
+    expect(messages.at(-1)?.method).toBe("account/rateLimits/read");
+    send({
+      id: messages.at(-1)!.id,
+      result: {
+        rateLimits: {
+          primary: {
+            usedPercent: 42,
+            windowDurationMins: 300,
+            resetsAt: 1793362800,
+          },
+          secondary: { usedPercent: 10, windowDurationMins: 10_080 },
+        },
+      },
+    });
+    send({
+      method: "account/rateLimits/updated",
+      params: {
+        rateLimits: { primary: { usedPercent: 55, windowDurationMins: 300 } },
+      },
+    });
+    send({
+      method: "turn/plan/updated",
+      params: {
+        threadId: "thread-1",
+        plan: [
+          { step: "Read intake", status: "completed" },
+          { step: "Run tests", status: "inProgress" },
+        ],
+      },
+    });
+    send({
+      method: "turn/diff/updated",
+      params: {
+        threadId: "thread-1",
+        diff: "diff --git a/src/intake.ts b/src/intake.ts\n--- a/src/intake.ts\n+++ b/src/intake.ts\n@@ -1 +1 @@\n-old\n+new\n",
+      },
+    });
+    send({
+      method: "item/started",
+      params: {
+        threadId: "thread-1",
+        item: { id: "cmd-1", type: "commandExecution", command: "pnpm test" },
+      },
+    });
+    send({
+      method: "thread/tokenUsage/updated",
+      params: {
+        threadId: "thread-1",
+        tokenUsage: {
+          total: {
+            inputTokens: 100,
+            outputTokens: 20,
+            totalTokens: 120,
+            cachedInputTokens: 30,
+            reasoningOutputTokens: 5,
+          },
+          last: { inputTokens: 70 },
+          modelContextWindow: 872_000,
+        },
+      },
+    });
+
+    expect(decoder.live.snapshot()).toMatchObject({
+      provider: "codex-cli",
+      transport: "app-server",
+      capabilities: [],
+      model: "gpt-5.5",
+      limits: [
+        { id: "codex-primary", label: "5-hour limit", usedPercent: 55 },
+        { id: "codex-secondary", label: "Weekly limit", usedPercent: 10 },
+      ],
+      plan: [
+        { text: "Read intake", status: "completed" },
+        { text: "Run tests", status: "in_progress" },
+      ],
+      fileChanges: [{ path: "src/intake.ts", additions: 1, deletions: 1 }],
+      tasks: [
+        { id: "cmd-1", kind: "shell", description: "pnpm test", status: "running" },
+      ],
+      usage: {
+        inputTokens: 100,
+        outputTokens: 20,
+        contextUsedTokens: 70,
+        contextWindowTokens: 872_000,
+      },
+    });
+  });
+
+  it("keeps running when the account has no plan limits to read", () => {
+    startGoal();
+    send({
+      id: messages.at(-1)!.id,
+      error: { message: "Rate limits are unavailable for API keys." },
+    });
+    expect(decoder.hasTerminalResult()).toBe(false);
+    expect(close).not.toHaveBeenCalled();
+    expect(decoder.live.snapshot().limits).toBeUndefined();
   });
 
   it("does not mistake the initial paused goal for a terminal result", () => {
