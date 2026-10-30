@@ -169,7 +169,9 @@ const createProbe = (provider: AgentCliProvider, features?: string[]) => ({
 
 const createProbedPlan = (
   resolution: FrozenInstructionSet,
-  probe = createProbe(resolution.providerId as AgentCliProvider),
+  probe: ProviderProbeResult = createProbe(
+    resolution.providerId as AgentCliProvider,
+  ),
 ) =>
   createInstructionDeliveryPlan(resolution, {
     capability: createCliInstructionCapabilityFromProbe(resolution, probe),
@@ -1658,6 +1660,32 @@ describe("CLI provider enrollment materializer", () => {
     await expect(stat(join(workspaceRoot, "AGENTS.md"))).rejects.toMatchObject({
       code: "ENOENT",
     });
+  });
+
+  it("reports why an unavailable CLI could not start", async () => {
+    const root = await createRoot();
+    const resolution = createInstructionResolutionFixture({
+      providerId: "copilot-cli",
+      surface: "cli",
+    });
+    const blockedPlan = createProbedPlan(resolution, {
+      ...createProbe("copilot-cli", []),
+      available: false,
+      failureReason: "spawn C:\\tools\\copilot.exe\n  EBUSY",
+    });
+
+    const failure = materializeCliEnrollment({
+      provider: "copilot-cli",
+      executable: process.execPath,
+      runId: "test-unavailable-cli-reason",
+      workspaceRoot: root,
+      resolution,
+      deliveryPlan: blockedPlan,
+    });
+
+    await expect(failure).rejects.toThrow(
+      /^The selected CLI did not respond to --version or --help: spawn C:\\tools\\copilot\.exe EBUSY$/u,
+    );
   });
 
   it("blocks Copilot when the probed executable cannot disable auto-update", () => {

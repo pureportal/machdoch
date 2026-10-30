@@ -216,25 +216,24 @@ const CLAUDE_FLAG_PROBE_MISSING_FILE = "machdoch-flag-probe-missing-file";
 const detectUnlistedClaudeFileFlags = async (
   executable: string,
   advertised: readonly string[],
-): Promise<string[]> => {
+): Promise<{ accepted: string[]; completed: boolean }> => {
   const accepted: string[] = [];
+  let completed = true;
   for (const flag of CLAUDE_UNLISTED_FILE_FLAGS) {
     if (advertised.includes(flag)) continue;
     // A known flag fails on the missing file before any model request; an
-    // unknown flag fails earlier with "unknown option".
+    // unknown flag fails earlier with "unknown option". A check that never
+    // finished proves neither, and the launch itself rejects an unknown flag.
     const result = await captureCommand(executable, [
       "-p",
       flag,
       CLAUDE_FLAG_PROBE_MISSING_FILE,
     ]);
-    if (
-      typeof result.exitCode === "number" &&
-      result.exitCode !== 0 &&
-      !/unknown option/iu.test(result.output)
-    )
+    completed &&= result.exitCode !== null;
+    if (result.exitCode !== 0 && !/unknown option/iu.test(result.output))
       accepted.push(flag);
   }
-  return accepted;
+  return { accepted, completed };
 };
 
 // Codex features Machdoch switches on per run; `codex features list` shows
@@ -362,22 +361,28 @@ export const probeProviderCli = async (
       );
     }
 
-    probeCompleted = versionResult.exitCode === 0 && helpResult.exitCode === 0;
     const advertisedFeatures =
       helpResult.exitCode === 0
         ? detectFeatures(provider, helpResult.output)
         : [];
+    const claudeFileFlags =
+      provider === "claude-cli" && helpResult.exitCode === 0
+        ? await detectUnlistedClaudeFileFlags(executable, advertisedFeatures)
+        : undefined;
+    if (claudeFileFlags?.completed === false) {
+      warnings.push(
+        "Claude instruction file flag probe did not complete; the launch will reject the flag if this CLI does not support it.",
+      );
+    }
+    probeCompleted =
+      versionResult.exitCode === 0 &&
+      helpResult.exitCode === 0 &&
+      claudeFileFlags?.completed !== false;
     const features =
       helpResult.exitCode !== 0
         ? advertisedFeatures
-        : provider === "claude-cli"
-          ? [
-              ...advertisedFeatures,
-              ...(await detectUnlistedClaudeFileFlags(
-                executable,
-                advertisedFeatures,
-              )),
-            ]
+        : claudeFileFlags
+          ? [...advertisedFeatures, ...claudeFileFlags.accepted]
           : provider === "codex-cli"
             ? [...advertisedFeatures, ...(await detectCodexFeatures(executable))]
             : [
@@ -391,6 +396,7 @@ export const probeProviderCli = async (
             .find((line) => /\b\d+\.\d+\.\d+\b/u.test(line))
             ?.trim()
         : undefined;
+    const failureReason = versionResult.failureReason ?? helpResult.failureReason;
     return {
       provider,
       executable,
@@ -398,6 +404,7 @@ export const probeProviderCli = async (
       ...(version ? { version } : {}),
       features,
       warnings,
+      ...(failureReason ? { failureReason } : {}),
     };
   })();
 

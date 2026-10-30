@@ -35,6 +35,7 @@ import { linkCodexAuthentication } from "./codex-authentication.js";
 import {
   canUseClaudeBareMode,
   createCliInstructionCapabilityFromProbe,
+  UNAVAILABLE_CLI_MECHANISM,
 } from "./instruction-delivery-preflight.js";
 import { summarizeEnrollmentCoverage } from "./coverage-ledger.js";
 import { renderIsolatedCopilotState } from "./copilot-state.js";
@@ -905,6 +906,12 @@ const redactArgumentValues = (args: readonly string[]): string[] =>
     arg.startsWith("--") ? (arg.split("=")[0] ?? arg) : "<value>",
   );
 
+const describeBlockedCliDelivery = (plan: InstructionDeliveryPlan): string =>
+  (plan.capability.mechanism === UNAVAILABLE_CLI_MECHANISM
+    ? plan.capability.evidence.at(-1)
+    : undefined) ??
+  `The selected CLI cannot satisfy the native instruction contract: ${plan.blockingReasons.join(" ") || "the delivery plan is unsupported."}`;
+
 const probeMatchingCliDeliveryPlan = async (
   params: MaterializeCliEnrollmentParams,
 ): Promise<{
@@ -951,9 +958,7 @@ const probeMatchingCliDeliveryPlan = async (
     latest.plan.grade === "unsupported" ||
     latest.plan.blockingReasons.length > 0
   ) {
-    throw new Error(
-      `The selected CLI cannot satisfy the native instruction contract: ${latest.plan.blockingReasons.join(" ") || "the current provider probe is unsupported."}`,
-    );
+    throw new Error(describeBlockedCliDelivery(latest.plan));
   }
   throw new Error(
     "The provider capability probe changed after instruction preflight; Machdoch blocked the invocation instead of using an unreviewed delivery route.",
@@ -982,9 +987,7 @@ export const materializeCliEnrollment = async (
     params.deliveryPlan.grade === "unsupported" ||
     params.deliveryPlan.blockingReasons.length > 0
   ) {
-    throw new Error(
-      `The selected CLI cannot satisfy the native instruction contract: ${params.deliveryPlan.blockingReasons.join(" ") || "the reviewed delivery plan is unsupported."}`,
-    );
+    throw new Error(describeBlockedCliDelivery(params.deliveryPlan));
   }
   await cleanupBeforeEnrollment();
   const rootPath = await mkdtemp(join(tmpdir(), SESSION_ROOT_PREFIX));

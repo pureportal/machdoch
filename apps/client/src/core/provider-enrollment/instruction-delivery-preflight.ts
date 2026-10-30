@@ -40,6 +40,10 @@ const REQUIRED_DELIVERY_FEATURES: Record<AgentCliProvider, readonly string[]> =
     ],
   };
 
+export const UNAVAILABLE_CLI_MECHANISM = "Unavailable CLI executable";
+const PROBE_RECOVERY_DELAYS_MS = [1_000, 3_000, 8_000] as const;
+const MAX_FAILURE_REASON_LENGTH = 300;
+
 const withProviderLimit = (
   capability: InstructionCapabilityDescriptor,
   resolution: FrozenInstructionSet,
@@ -72,6 +76,10 @@ export const createCliInstructionCapabilityFromProbe = (
     resolution,
   );
   if (!probe.available) {
+    const failureReason = probe.failureReason
+      ?.replace(/\s+/gu, " ")
+      .trim()
+      .slice(0, MAX_FAILURE_REASON_LENGTH);
     return {
       ...base,
       authority: "none",
@@ -86,10 +94,12 @@ export const createCliInstructionCapabilityFromProbe = (
         roles: "unsupported",
         subagents: "unsupported",
       },
-      mechanism: "Unavailable CLI executable",
+      mechanism: UNAVAILABLE_CLI_MECHANISM,
       evidence: [
         ...base.evidence,
-        "The selected CLI executable could not be version/help probed.",
+        failureReason
+          ? `The selected CLI did not respond to --version or --help: ${failureReason}`
+          : "The selected CLI did not respond to --version or --help.",
       ],
     };
   }
@@ -190,6 +200,26 @@ export const createCliInstructionCapabilityFromProbe = (
   };
 };
 
+const probeCliCapabilityWithRecovery = async (
+  resolution: FrozenInstructionSet,
+  provider: AgentCliProvider,
+  executable: string,
+): Promise<InstructionCapabilityDescriptor> => {
+  let capability = createCliInstructionCapabilityFromProbe(
+    resolution,
+    await probeProviderCli(provider, executable),
+  );
+  for (const delayMs of PROBE_RECOVERY_DELAYS_MS) {
+    if (capability.contentFidelity !== "none") break;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    capability = createCliInstructionCapabilityFromProbe(
+      resolution,
+      await probeProviderCli(provider, executable, { force: true }),
+    );
+  }
+  return capability;
+};
+
 export const createInstructionDeliveryPlanForRuntime = async (
   resolution: FrozenInstructionSet,
   input: {
@@ -228,17 +258,22 @@ export const createInstructionDeliveryPlanForRuntime = async (
 
   const env = await loadRuntimeEnvironment();
   const binary = resolveAgentCliProviderBinary(resolution.providerId, env);
-  const probe: ProviderProbeResult =
+  const unavailableReason = binary.reason ?? "CLI executable is unavailable.";
+  const capability =
     binary.available && binary.executable
-      ? await probeProviderCli(resolution.providerId, binary.executable)
-      : {
+      ? await probeCliCapabilityWithRecovery(
+          resolution,
+          resolution.providerId,
+          binary.executable,
+        )
+      : createCliInstructionCapabilityFromProbe(resolution, {
           provider: resolution.providerId,
           executable: binary.executable ?? "<unavailable>",
           available: false,
           features: [],
-          warnings: [binary.reason ?? "CLI executable is unavailable."],
-        };
-  const capability = createCliInstructionCapabilityFromProbe(resolution, probe);
+          warnings: [unavailableReason],
+          failureReason: unavailableReason,
+        });
   return createInstructionDeliveryPlan(resolution, {
     capability,
   });

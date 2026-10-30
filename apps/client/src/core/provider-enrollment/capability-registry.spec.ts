@@ -79,6 +79,7 @@ describe("provider capability registry", () => {
     expect(result.warnings.join("\n")).toContain(
       "spawn unavailable-provider.exe ENOENT",
     );
+    expect(result.failureReason).toBe("spawn unavailable-provider.exe ENOENT");
   });
 
   it("retains timeout and stderr diagnostics without trusting incomplete help", async () => {
@@ -638,5 +639,51 @@ describe("provider capability registry", () => {
         "machdoch-flag-probe-missing-file",
       ],
     ]);
+  });
+
+  it("keeps Claude instruction file flags whose check timed out and rechecks them", async () => {
+    const respond =
+      (flagProbe: object) => async (_command: string, args: string[]) => {
+        if (args[0] === "--version")
+          return { status: 0, stdout: "2.1.312 (Claude Code)", stderr: "" };
+        if (args[0] === "--help")
+          return { status: 0, stdout: "--mcp-config", stderr: "" };
+        return flagProbe;
+      };
+    probeCommandMock.mockImplementation(
+      respond({
+        error: Object.assign(new Error("Command timed out after 12000ms."), {
+          code: "ETIMEDOUT",
+        }),
+        stdout: "",
+        stderr: "",
+      }),
+    );
+
+    const timedOut = await probeProviderCli("claude-cli", "slow-claude.exe");
+
+    expect(timedOut.features).toEqual([
+      "--mcp-config",
+      "--append-system-prompt-file",
+      "--append-subagent-system-prompt-file",
+    ]);
+    expect(timedOut.warnings.join("\n")).toContain(
+      "instruction file flag probe did not complete",
+    );
+
+    probeCommandMock.mockReset();
+    probeCommandMock.mockImplementation(
+      respond({
+        status: 1,
+        stdout: "",
+        stderr: "error: unknown option",
+      }),
+    );
+
+    const rejected = await probeProviderCli("claude-cli", "slow-claude.exe");
+
+    expect(rejected.features).toEqual(["--mcp-config"]);
+    expect(rejected.warnings).toEqual([]);
+    expect(probeCommandMock).toHaveBeenCalledTimes(4);
   });
 });

@@ -122,6 +122,7 @@ export interface ProviderProbeResult {
   version?: string;
   features: string[];
   warnings: string[];
+  failureReason?: string;
 }
 
 export interface MaterializedInstructionDelivery {
