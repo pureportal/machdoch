@@ -61,6 +61,10 @@ pub struct ChildProcessJob {
     handle: HANDLE,
 }
 
+// A job object handle is valid on every thread of the owning process.
+#[cfg(target_os = "windows")]
+unsafe impl Send for ChildProcessJob {}
+
 #[cfg(target_os = "windows")]
 impl Drop for ChildProcessJob {
     fn drop(&mut self) {

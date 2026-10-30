@@ -19,6 +19,12 @@ const TEST_CHILD_MODE_ENV: &str = "MACHDOCH_CHILD_PROCESS_TEST_MODE";
 const TEST_DESCENDANT_PID_PATH_ENV: &str = "MACHDOCH_CHILD_PROCESS_TEST_PID_PATH";
 static NEXT_TEST_PATH_ID: AtomicU64 = AtomicU64::new(0);
 
+#[test]
+fn supervised_child_can_move_between_threads() {
+    fn assert_send<T: Send>() {}
+    assert_send::<SupervisedChild>();
+}
+
 struct TestPath(PathBuf);
 
 impl TestPath {
