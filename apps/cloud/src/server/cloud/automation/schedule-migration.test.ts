@@ -128,6 +128,14 @@ it("carries existing task allocations into the usage ledger and settles them wit
         ),
       );
     }
+    // The fixture creates its project with current code, which writes these columns.
+    const projectPlanning = "029-project-planning.sql";
+    await engine.exec(
+      await readFile(
+        new URL(`../migrations/${projectPlanning}`, import.meta.url),
+        "utf8",
+      ),
+    );
     const fixture = await createScheduleFixture(database);
     const { runtime, actor, teamId } = fixture;
     const data = scheduledTaskInput(fixture);
@@ -252,6 +260,7 @@ it("carries existing task allocations into the usage ledger and settles them wit
     for (const migration of cloudMigrations.slice(
       cloudMigrations.indexOf("022-schedule-lifecycle.sql"),
     )) {
+      if (migration === projectPlanning) continue;
       await engine.exec(
         await readFile(
           new URL(`../migrations/${migration}`, import.meta.url),
