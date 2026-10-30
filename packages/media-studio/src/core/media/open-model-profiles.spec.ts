@@ -244,12 +244,19 @@ describe("open media generation contracts", () => {
     for (const manifest of [...manifests, ...studentManifests]) {
       const model = models.find((entry) => entry.id === manifest.modelId)!;
       expect(model.management.acquisition).toBe("managed-install");
-      expect(manifest.revision).toMatch(/^[a-f0-9]{40}$/u);
+      // A package assembled from several repositories has no single commit: its
+      // revision digests the package, so no file can be fetched by that revision.
+      const assembled = manifest.revision.length === 64;
+      expect(manifest.revision).toMatch(/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/u);
       expect(new Set(manifest.files.map((file) => file.path)).size).toBe(
         manifest.files.length,
       );
       expect(
-        manifest.files.some((file) => file.path === "model_index.json"),
+        manifest.files.some(
+          (file) =>
+            file.path ===
+            (assembled ? "modular_model_index.json" : "model_index.json"),
+        ),
       ).toBe(true);
       expect(
         manifest.files.some((file) => file.sha256 === manifest.licenseDigest),
@@ -257,6 +264,11 @@ describe("open media generation contracts", () => {
       for (const file of manifest.files) {
         expect(file.sha256).toMatch(/^[a-f0-9]{64}$/u);
         expect(file.byteSize).toBeGreaterThan(0);
+        if ("downloadUrl" in file) {
+          expect(file.downloadUrl).toMatch(/\/resolve\/[a-f0-9]{40}\//u);
+        } else if (assembled) {
+          expect("content" in file).toBe(true);
+        }
         const student = openMediaModelProfile(model.architecture)?.distillation;
         if (file.path === student?.checkpointFile) {
           expect(file.byteSize).toBe(student.checkpointByteSize);
