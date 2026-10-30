@@ -87,18 +87,22 @@ export class CloudRecurrencePreview {
         worker.stdout.resume();
         worker.stderr.resume();
         let settled = false;
-        const timer = setTimeout(
-          () =>
-            finish(
-              undefined,
-              new CloudError(
-                422,
-                "search_limit",
-                "The schedule preview exceeded its time limit. Narrow the range or simplify the rule.",
-              ),
+        const expire = () =>
+          finish(
+            undefined,
+            new CloudError(
+              422,
+              "search_limit",
+              "The schedule preview exceeded its time limit. Narrow the range or simplify the rule.",
             ),
-          2500,
-        );
+          );
+        // The search budget starts once the thread runs: a busy server can
+        // take seconds to start one, which says nothing about the rule.
+        let timer = setTimeout(expire, 30_000);
+        worker.once("online", () => {
+          clearTimeout(timer);
+          timer = setTimeout(expire, 2500);
+        });
         const abort = () =>
           finish(
             undefined,
