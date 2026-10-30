@@ -1,11 +1,31 @@
 "use client";
 
+import Link from "next/link";
 import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
 import {
   chatErrorMessages,
   type CloudChatTurn,
 } from "@/lib/cloud-chat-contract";
 import { Button } from "@/components/ui/button";
+
+const answerComponents = {
+  img: ({ alt }: { alt?: string }) => <span>{alt}</span>,
+  a: ({ href, children }: { href?: string; children?: React.ReactNode }) =>
+    href?.startsWith("/cloud/") ? (
+      <Link className="app-markdown-link" href={href}>
+        {children}
+      </Link>
+    ) : (
+      <a
+        className="app-markdown-link"
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {children}
+      </a>
+    ),
+};
 
 export function ChatMessages({
   turns,
@@ -47,7 +67,7 @@ export function ChatMessages({
             {turn.answer && (
               <MarkdownContent
                 content={turn.answer}
-                components={{ img: ({ alt }) => <span>{alt}</span> }}
+                components={answerComponents}
               />
             )}
             {turn.errorCode && (

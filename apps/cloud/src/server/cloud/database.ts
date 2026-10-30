@@ -28,8 +28,8 @@ export const cloudMigrations = [
   "025-installation.sql",
   "026-cutover.sql",
   "027-client-agents.sql",
+  "028-chat-issue.sql",
   "029-project-planning.sql",
-  "027-client-agents.sql",
 ];
 
 export interface CloudSql {

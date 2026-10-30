@@ -23,10 +23,15 @@ export const chatMessageSchema = z
     providerId: cloudId,
     model: z.string().trim().min(1).max(160),
     prompt: z.string().trim().min(1).max(20_000),
+    issueId: cloudId.optional(),
   })
   .refine((input) => (input.chatId === null) === (input.revision === null), {
     path: ["revision"],
     message: "Include the current conversation revision.",
+  })
+  .refine((input) => input.chatId === null || !input.issueId, {
+    path: ["issueId"],
+    message: "Choose the issue when starting a conversation.",
   });
 export const chatRetrySchema = z.strictObject({
   revision,
@@ -40,6 +45,7 @@ export interface CloudChat {
   title: string;
   revision: number;
   updatedAt: string;
+  issueId: string | null;
 }
 export interface CloudChatTurn {
   id: string;

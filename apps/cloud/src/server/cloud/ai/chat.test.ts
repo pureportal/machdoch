@@ -12,8 +12,11 @@ import type {
   AgentModelStartParams,
   AgentModelTurn,
 } from "@machdoch/model-runtime/types";
-import type { CloudActor } from "../../../lib/cloud-contract";
-import type { ChatMessageInput } from "../../../lib/cloud-chat-contract";
+import { issueInputSchema, type CloudActor } from "../../../lib/cloud-contract";
+import {
+  chatMessageSchema,
+  type ChatMessageInput,
+} from "../../../lib/cloud-chat-contract";
 import { SettingsCipher } from "../../settings-crypto";
 import { createCloudRuntime, type CloudRuntime } from "../runtime";
 import { createTestCloudDatabase } from "../test-database";
@@ -916,3 +919,88 @@ it.each([
     expect(start).toHaveBeenCalledTimes(1);
   },
 );
+
+it("grounds answers in the workspace the user can access and keeps a focused issue", async () => {
+  const scale = [
+    { label: "1", points: 1 },
+    { label: "3", points: 3 },
+  ];
+  const visible = await runtime.planning.createTeam(owner, randomUUID(), {
+    name: "Product",
+    key: "PRD",
+    visibility: "organization",
+    estimateScale: scale,
+  });
+  const hidden = await runtime.planning.createTeam(owner, randomUUID(), {
+    name: "Finance",
+    key: "FIN",
+    visibility: "private",
+    estimateScale: scale,
+  });
+  const project = await runtime.projects.create(owner, randomUUID(), {
+    teamId: visible.id,
+    name: "Checkout redesign",
+    description: "Faster checkout",
+  });
+  const focus = await runtime.planning.createIssue(
+    owner,
+    randomUUID(),
+    issueInputSchema.parse({
+      teamId: visible.id,
+      projectId: project.id,
+      title: "Payment retries lose the basket",
+      description: "Retrying a declined payment empties the basket.",
+      acceptanceCriteria: "The basket survives three retries.",
+    }),
+  );
+  await runtime.planning.createIssue(
+    owner,
+    randomUUID(),
+    issueInputSchema.parse({
+      teamId: hidden.id,
+      title: "Payment provider contract renewal",
+      description: "Confidential payment terms.",
+      acceptanceCriteria: "",
+    }),
+  );
+  const submission = await runtime.chat.store.submit(member, randomUUID(), {
+    ...message(),
+    prompt: "Which payment issues are open and what blocks PRD-1?",
+    issueId: focus.id,
+  });
+  await runtime.inference.worker.runOne(
+    member.organizationId,
+    submission.requestId,
+  );
+  const systemPrompt = start.mock.calls[0]![0].systemPrompt!;
+  expect(systemPrompt).toContain(
+    `[PRD-1](/cloud/issues/${focus.id}) Payment retries lose the basket`,
+  );
+  expect(systemPrompt).toContain("## Focused issue");
+  expect(systemPrompt).toContain("The basket survives three retries.");
+  expect(systemPrompt).toContain("Checkout redesign");
+  expect(systemPrompt).not.toContain("contract renewal");
+  expect(systemPrompt).not.toContain("Finance");
+  const detail = await runtime.chat.store.get(member, submission.chatId);
+  expect(detail.chat.issueId).toBe(focus.id);
+  const followUp = await runtime.chat.store.submit(member, randomUUID(), {
+    ...message(),
+    chatId: submission.chatId,
+    revision: detail.chat.revision,
+    prompt: "Summarize its acceptance criteria.",
+  });
+  await runtime.inference.worker.runOne(
+    member.organizationId,
+    followUp.requestId,
+  );
+  expect(start.mock.calls[1]![0].systemPrompt).toContain("## Focused issue");
+  expect(
+    chatMessageSchema.safeParse({
+      ...message(),
+      chatId: submission.chatId,
+      revision: detail.chat.revision + 1,
+      prompt: "Switch focus",
+      issueId: focus.id,
+    }).success,
+  ).toBe(false);
+});

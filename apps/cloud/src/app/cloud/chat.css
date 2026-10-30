@@ -23,6 +23,7 @@
 }
 .cloud-chat-history nav a {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 9px;
   padding: 10px;
@@ -31,6 +32,7 @@
   font-size: 12px;
 }
 .cloud-chat-history nav a span {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -257,4 +259,63 @@
   .cloud-chat-user {
     max-width: 95%;
   }
+}
+.cloud-chat-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.cloud-chat-focus {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 420px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease;
+}
+.cloud-chat-focus:hover {
+  border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
+  color: var(--foreground);
+}
+.cloud-chat-focus span:first-of-type {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  color: var(--foreground);
+}
+.cloud-chat-focus span:last-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-chat-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 560px;
+}
+.cloud-chat-suggestions button {
+  padding: 7px 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--card) 70%, transparent);
+  color: var(--muted-foreground);
+  font-size: 13px;
+  transition:
+    border-color 120ms ease,
+    color 120ms ease,
+    background 120ms ease;
+}
+.cloud-chat-suggestions button:hover,
+.cloud-chat-suggestions button:focus-visible {
+  border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
+  background: var(--card);
+  color: var(--foreground);
 }

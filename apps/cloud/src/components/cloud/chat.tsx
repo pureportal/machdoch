@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { MessageSquare, Plus, Send, Sparkles } from "lucide-react";
+import { CircleDot, MessageSquare, Plus, Send, Sparkles } from "lucide-react";
 import type {
   ChatDetail,
   CloudChat,
@@ -34,16 +34,35 @@ function mergeTurns(
   );
 }
 
+export interface ChatFocusIssue {
+  id: string;
+  identifier: string;
+  title: string;
+}
+
+const workspaceQuestions = [
+  "What should I work on next?",
+  "How is the current cycle going?",
+  "Which issues are blocked?",
+];
+const issueQuestions = [
+  "Summarize this issue",
+  "What is missing before work can start?",
+  "Suggest acceptance criteria",
+];
+
 export function CloudChatView({
   workspace,
   settings,
   initialChats,
   initial,
+  focusIssue,
 }: {
   workspace: CloudWorkspace;
   settings: CloudProviderSettings;
   initialChats: CloudChat[];
   initial?: ChatDetail;
+  focusIssue: ChatFocusIssue | null;
 }) {
   const router = useRouter();
   const [detail, setDetail] = useState<ChatDetail | null>(initial ?? null);
@@ -282,7 +301,19 @@ export function CloudChatView({
       </aside>
       <section className="cloud-chat-main" aria-label="Chat">
         <header className="cloud-chat-header">
-          <h1>Chat</h1>
+          <div className="cloud-chat-title">
+            <h1>Ask</h1>
+            {focusIssue && (
+              <Link
+                className="cloud-chat-focus"
+                href={`/cloud/issues/${focusIssue.id}`}
+              >
+                <CircleDot size={13} aria-hidden="true" />
+                <span>{focusIssue.identifier}</span>
+                <span>{focusIssue.title}</span>
+              </Link>
+            )}
+          </div>
           <div className="cloud-chat-models">
             <Select
               aria-label="AI provider"
@@ -383,7 +414,26 @@ export function CloudChatView({
               <span className="cloud-icon-tile">
                 <Sparkles size={24} strokeWidth={1.5} />
               </span>
-              <h2>New conversation</h2>
+              <h2>
+                {focusIssue
+                  ? `Ask about ${focusIssue.identifier}`
+                  : `Ask about ${workspace.organization.name}`}
+              </h2>
+              {writable && (
+                <div className="cloud-chat-suggestions">
+                  {(focusIssue ? issueQuestions : workspaceQuestions).map(
+                    (question) => (
+                      <button
+                        key={question}
+                        type="button"
+                        onClick={() => setPrompt(question)}
+                      >
+                        {question}
+                      </button>
+                    ),
+                  )}
+                </div>
+              )}
             </div>
           )}
           {detail && (
@@ -440,6 +490,7 @@ export function CloudChatView({
                 providerId,
                 model,
                 prompt: prompt.trim(),
+                ...(!chatId && focusIssue ? { issueId: focusIssue.id } : {}),
               })
               .then(async (result) => {
                 setPrompt("");
@@ -468,6 +519,11 @@ export function CloudChatView({
         >
           <Textarea
             aria-label="Message"
+            placeholder={
+              focusIssue
+                ? `Ask about ${focusIssue.identifier}…`
+                : "Ask about issues, projects or cycles…"
+            }
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
             maxLength={20000}

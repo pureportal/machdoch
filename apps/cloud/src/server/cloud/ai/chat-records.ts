@@ -7,9 +7,10 @@ import { CloudError, requireMembership } from "../access";
 import type { CloudSql } from "../database";
 
 export const chatSystemPrompt =
-  "You are the conversational assistant in machdoch.cloud. Answer the latest user message using the supplied JSON conversation. You have no tools or access to repositories, devices, or external applications in this conversation.";
+  "You are the assistant in machdoch.cloud. Answer the latest user message using the supplied JSON conversation and the workspace snapshot below. The snapshot contains only planning data this user may access. Refer to issues, projects and cycles with the Markdown links given in the snapshot. When the snapshot does not contain the answer, say what is missing instead of guessing. You cannot change workspace data, run code, or access repositories, devices or external applications.";
+export const chatColumns = `id,title,revision,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt",issue_id AS "issueId"`;
 export const chatDeadlineSeconds = 120;
-export const maximumChatInputBytes = 64 * 1024;
+export const maximumChatInputBytes = 96 * 1024;
 export const turnColumns = `id,sequence,provider_id AS "providerId",model,prompt,answer,state,revision,error_code AS "errorCode",request_id AS "requestId",
   to_char(created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt"`;
 
@@ -22,7 +23,7 @@ export async function readChat(
   await requireMembership(sql, actor, write ? "write" : "read");
   const chat = (
     await sql.query<CloudChat & Record<string, unknown>>(
-      `SELECT id,title,revision,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"
+      `SELECT ${chatColumns}
     FROM cloud_chats WHERE organization_id=$1 AND user_id=$2 AND id=$3 FOR ${write ? "UPDATE" : "SHARE"}`,
       [actor.organizationId, actor.userId, id],
     )

@@ -22,6 +22,7 @@ import {
   requireInferenceCapacity,
 } from "./budgets";
 import {
+  chatColumns,
   chatDeadlineSeconds,
   chatSystemPrompt,
   maximumChatInputBytes,
@@ -30,6 +31,8 @@ import {
   turnColumns,
 } from "./chat-records";
 import { lockInference, reapInference } from "./inference-records";
+import { workspaceContext } from "./workspace-context";
+import { readIssue } from "../planning";
 
 export type ChatSubmission = {
   chatId: string;
@@ -40,10 +43,11 @@ export type ChatSubmission = {
 async function reserveMessage(
   sql: CloudSql,
   actor: CloudActor,
-  chatId: string,
+  chat: { id: string; issueId: string | null },
   input: { providerId: string; model: string; prompt: string },
   retry?: CloudChatTurn,
 ): Promise<ChatSubmission> {
+  const chatId = chat.id;
   const provider = await readInferenceProvider(
     sql,
     actor.organizationId,
@@ -92,7 +96,8 @@ async function reserveMessage(
     ...history,
     { role: "user", content: input.prompt },
   ]);
-  const inputBytes = Buffer.byteLength(userPrompt + chatSystemPrompt, "utf8");
+  const systemPrompt = `${chatSystemPrompt}\n\n${await workspaceContext(sql, actor, input.prompt, chat.issueId)}`;
+  const inputBytes = Buffer.byteLength(userPrompt + systemPrompt, "utf8");
   if (inputBytes > maximumChatInputBytes)
     throw new CloudError(
       422,
@@ -139,7 +144,7 @@ async function reserveMessage(
       provider.maxOutputTokens,
       budget.budgetDay,
       chatDeadlineSeconds,
-      chatSystemPrompt,
+      systemPrompt,
     ],
   );
   await sql.query(
@@ -178,19 +183,23 @@ export class CloudChatStore {
         { kind: "chat.submit", input },
         async () => {
           await reapInference(sql, actor.organizationId);
-          if (chat) checkRevision(chat.revision, input.revision!);
-          const chatId = chat?.id ?? randomUUID();
-          if (!chat)
-            await sql.query(
-              "INSERT INTO cloud_chats (organization_id,id,user_id,title) VALUES ($1,$2,$3,$4)",
-              [
-                actor.organizationId,
-                chatId,
-                actor.userId,
-                input.prompt.split("\n", 1)[0]!.slice(0, 120),
-              ],
-            );
-          return reserveMessage(sql, actor, chatId, input);
+          if (chat) {
+            checkRevision(chat.revision, input.revision!);
+            return reserveMessage(sql, actor, chat, input);
+          }
+          if (input.issueId) await readIssue(sql, actor, input.issueId);
+          const created = { id: randomUUID(), issueId: input.issueId ?? null };
+          await sql.query(
+            "INSERT INTO cloud_chats (organization_id,id,user_id,title,issue_id) VALUES ($1,$2,$3,$4,$5)",
+            [
+              actor.organizationId,
+              created.id,
+              actor.userId,
+              input.prompt.split("\n", 1)[0]!.slice(0, 120),
+              created.issueId,
+            ],
+          );
+          return reserveMessage(sql, actor, created, input);
         },
       );
     });
@@ -235,7 +244,7 @@ export class CloudChatStore {
           return reserveMessage(
             sql,
             actor,
-            turn.chatId,
+            await readChat(sql, actor, turn.chatId),
             {
               providerId: input.providerId,
               model: input.model,
@@ -300,7 +309,7 @@ export class CloudChatStore {
       await requireMembership(sql, actor);
       return (
         await sql.query<CloudChat & Record<string, unknown>>(
-          `SELECT id,title,revision,to_char(updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt" FROM cloud_chats
+          `SELECT ${chatColumns} FROM cloud_chats
         WHERE organization_id=$1 AND user_id=$2 AND ($3::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM cloud_chats WHERE organization_id=$1 AND user_id=$2 AND id=$3)) ORDER BY created_at DESC,id DESC LIMIT 50`,
           [actor.organizationId, actor.userId, beforeId ?? null],
         )

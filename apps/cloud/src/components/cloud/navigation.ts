@@ -5,7 +5,7 @@ import {
   CircleDot,
   FolderKanban,
   Layers,
-  MessageSquare,
+  Sparkles,
   Monitor,
   Plug,
   Settings2,
@@ -30,7 +30,7 @@ export const cloudNavigation = [
     label: "Automation",
     items: [
       { href: "/cloud/tasks", label: "AI tasks", icon: Bot },
-      { href: "/cloud/chat", label: "Chat", icon: MessageSquare },
+      { href: "/cloud/chat", label: "Ask", icon: Sparkles },
       { href: "/cloud/schedules", label: "Schedules", icon: CalendarClock },
       { href: "/instances", label: "Clients", icon: Monitor, admin: true },
     ],
