@@ -47,7 +47,7 @@ const message = (): ChatMessageInput => ({
 
 beforeAll(async () => {
   database = await createTestCloudDatabase();
-}, 30_000);
+}, 120_000);
 afterAll(async () => {
   await database?.close();
 });

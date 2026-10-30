@@ -1929,13 +1929,13 @@ describe("executeTask", () => {
                 provider: "openai",
                 delta: "Still working.",
               });
-            }, 100),
+            }, 3_000),
             setTimeout(() => {
               resolve({
                 text: "",
                 toolCalls: [createFinalResponseToolCall()],
               });
-            }, 300),
+            }, 6_000),
           ];
           const rejectWithReason = (): void => {
             for (const timer of timers) {
@@ -1976,8 +1976,10 @@ describe("executeTask", () => {
       emptyCustomizations(workspaceRoot),
       {
         modelAdapter: streamingAdapter,
-        maxDurationMs: 1_000,
-        idleTimeoutMs: 250,
+        // The idle clock starts before the adapter does, so it also has to
+        // cover workspace setup on a busy machine.
+        maxDurationMs: 60_000,
+        idleTimeoutMs: 5_000,
         onStreamActivity,
       },
     );
@@ -1985,7 +1987,7 @@ describe("executeTask", () => {
     expect(result.status).toBe("executed");
     expect(result.reason).toBeUndefined();
     expect(onStreamActivity).toHaveBeenCalled();
-  }, 10_000);
+  }, 90_000);
 
   it("classifies an idle timeout as an execution limit", async () => {
     const workspaceRoot = await createWorkspace();

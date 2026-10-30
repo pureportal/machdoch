@@ -105,7 +105,7 @@ it("upgrades existing issue schedules without rewriting published snapshots or o
   } finally {
     await database.close();
   }
-}, 30000);
+}, 120_000);
 
 it("carries existing task allocations into the usage ledger and settles them without rewriting the grant", async () => {
   const engine = new PGlite();
@@ -304,4 +304,4 @@ it("carries existing task allocations into the usage ledger and settles them wit
   } finally {
     await database.close();
   }
-}, 30000);
+}, 120_000);

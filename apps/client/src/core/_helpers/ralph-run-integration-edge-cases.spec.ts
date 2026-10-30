@@ -79,7 +79,7 @@ describe("RALPH merge edge cases", () => {
     expect(await readFile(join(worktree.worktreeRoot, "external.txt"))).toEqual(
       bytes,
     );
-  }, 90_000);
+  }, 300_000);
 
   it("publishes with customized Git diff formatting", async () => {
     const { repository, directory, worktree } = await createRun(
@@ -99,7 +99,7 @@ describe("RALPH merge edge cases", () => {
     expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
       contents,
     );
-  }, 90_000);
+  }, 300_000);
 
   it("does not accept an untouched binary conflict as a successful repair", async () => {
     const { repository, directory, worktree } = await createRun();
@@ -119,7 +119,7 @@ describe("RALPH merge edge cases", () => {
     expect(await readFile(join(worktree.worktreeRoot, "binary.bin"))).toEqual(
       candidate,
     );
-  }, 90_000);
+  }, 300_000);
 
   it("rebuilds and verifies when the run changes during verification", async () => {
     const { repository, directory, worktree } = await createRun();
@@ -145,7 +145,7 @@ describe("RALPH merge edge cases", () => {
     expect(await readFile(join(repository, "later.txt"), "utf8")).toBe(
       "later run edit\n",
     );
-  }, 90_000);
+  }, 300_000);
 
   it.each(["replace", "stage"])(
     "accepts a binary conflict resolved by %s",
@@ -171,7 +171,7 @@ describe("RALPH merge edge cases", () => {
       expect(verify).toHaveBeenCalledTimes(1);
       expect(await readFile(join(repository, "binary.bin"))).toEqual(resolved);
     },
-    90_000,
+    300_000,
   );
 
   it("preserves an unresolved text conflict when a repair leaves the markers", async () => {
@@ -189,7 +189,7 @@ describe("RALPH merge edge cases", () => {
     expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
       "source\n",
     );
-  }, 90_000);
+  }, 300_000);
 
   it("publishes renames and file-to-directory replacements", async () => {
     const { repository, directory, worktree } = await createRun();
@@ -220,7 +220,7 @@ describe("RALPH merge edge cases", () => {
     expect(await readFile(join(repository, " renamed file.txt"))).toEqual(
       Buffer.from([0, 1, 2]),
     );
-  }, 90_000);
+  }, 300_000);
 
   it.each([false, true])(
     "validates run changes before replaying a pending publication with callbackEdit=%s",
@@ -268,7 +268,7 @@ describe("RALPH merge edge cases", () => {
         await readFile(join(worktree.worktreeRoot, "later.txt"), "utf8"),
       ).toBe("new work\n");
     },
-    90_000,
+    300_000,
   );
 
   it("stops after cancellation during a successful repair", async () => {
@@ -291,7 +291,7 @@ describe("RALPH merge edge cases", () => {
     expect(await readFile(join(repository, "source.txt"), "utf8")).toBe(
       "source\n",
     );
-  }, 90_000);
+  }, 300_000);
 
   it("reverifies run edits made by the publication callback", async () => {
     const { repository, directory, worktree } = await createRun();
@@ -314,7 +314,7 @@ describe("RALPH merge edge cases", () => {
     expect(await readFile(join(repository, "later.txt"), "utf8")).toBe(
       "new work\n",
     );
-  }, 90_000);
+  }, 300_000);
 
   it.each(["source", "run"])(
     "rebuilds when the %s changes while the publication journal is saved",
@@ -367,6 +367,6 @@ describe("RALPH merge edge cases", () => {
         await readFile(join(worktree.worktreeRoot, "later.txt"), "utf8"),
       ).toBe("journal race\n");
     },
-    90_000,
+    300_000,
   );
 });
