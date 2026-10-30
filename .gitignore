@@ -43,6 +43,8 @@ apps/client/src-tauri/target-*/
 apps/fleet-manager/data/
 apps/fleet-manager/fleet-manager.json
 packages/fleet-protocol/target/
+apps/cloud-runner/native/target/
+packages/process-supervisor/target/
 packages/fleet-protocol/Cargo.lock
 **/*.rs.bk
 *.pdb
