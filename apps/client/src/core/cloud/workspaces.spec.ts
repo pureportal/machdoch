@@ -149,6 +149,28 @@ afterEach(async () => {
   }
 });
 
+it("treats a competing lock candidate as a lock but other files as unowned storage", async () => {
+  const fixture = await setup();
+  const link = await fixture.connect();
+  const connection = await fixture.bindings.get(link.id);
+  const storage = join(fixture.root, "managed");
+  const directory = join(storage, fixture.registration.workerId);
+  await mkdir(join(directory, "repository.machdoch.lock.candidate.1.a.b"), {
+    recursive: true,
+  });
+  await expect(
+    prepareClientWorkspace(storage, connection, fixture.claim()),
+  ).resolves.toMatchObject({ baseCommit: fixture.registration.profile.baseCommit });
+
+  const unowned = join(fixture.root, "unowned");
+  const unownedDirectory = join(unowned, fixture.registration.workerId);
+  await mkdir(unownedDirectory, { recursive: true });
+  await writeFile(join(unownedDirectory, "leftover"), "unknown\n");
+  await expect(
+    prepareClientWorkspace(unowned, connection, fixture.claim()),
+  ).rejects.toThrow("without an ownership record");
+});
+
 it("keeps dirty source files, branches and Git metadata separate from concurrent task checkouts", async () => {
   const fixture = await setup();
   await writeFile(join(fixture.source, "README"), "local unsaved work\n");

@@ -16,6 +16,10 @@ import { writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js
 import type { ClientCloudConnection } from "./bindings.js";
 import { inspectClientRepository, within, workspaceGit } from "./repository.js";
 
+// Concurrent tasks queue behind a whole checkout, which runs about ten Git
+// commands of up to a minute each.
+const preparationLockTimeoutMs = 10 * 60_000;
+
 const preparationSchema = z.strictObject({
   runId: z.string().uuid(),
   attemptId: z.string().uuid(),
@@ -171,8 +175,9 @@ export async function prepareClientWorkspace(
           )
         )
           throw error;
+        // A competing preparation keeps its lock candidate beside the lock.
         const entries = (await readdir(directory)).filter(
-          (name) => name !== "repository.machdoch.lock",
+          (name) => !name.startsWith("repository.machdoch.lock"),
         );
         if (entries.length)
           throw new Error(
@@ -319,6 +324,7 @@ export async function prepareClientWorkspace(
     },
     {
       ...(signal ? { signal } : {}),
+      timeoutMs: preparationLockTimeoutMs,
       ownerDescription: "Cloud workspace preparation",
     },
   );
