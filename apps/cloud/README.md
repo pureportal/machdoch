@@ -43,6 +43,16 @@ Open **Clients** to inspect devices, enroll or revoke them, open remote workspac
 
 The [Android controller](../fleet-android/README.md) uses the same Cloud sign-in and remote views. Updated desktop and CLI clients use the Cloud name while retaining their enrolled device identity.
 
+## Linked client agents
+
+Create an execution profile with the **Linked client** target and choose Codex CLI, Claude Code or the client's configured Machdoch agent. Enroll a runner for the profile and link the matching local checkout with `machdoch cloud connect`. Start the runner from the desktop workspace connection (**Run tasks**) or with `machdoch cloud run <connection id>`.
+
+Delegated issues run in a separate checkout of the profile's base commit. Required checks run in another checkout built from the uploaded candidate. A verified result is added to the local repository as a `machdoch/…` branch; the working tree, uncommitted files and existing branches are not changed.
+
+## Ask
+
+**Ask** answers questions about issues, projects and cycles from a snapshot of the workspace the user can access, using a configured AI provider. Ask from an issue to keep that issue in focus. No sandbox is started.
+
 ## Source
 
 ```bash
