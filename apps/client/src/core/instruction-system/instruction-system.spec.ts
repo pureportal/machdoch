@@ -1630,6 +1630,35 @@ describe("native inventory, delivery, and schemas", () => {
     ).toBe(true);
   });
 
+  it("skips generated folders while looking for nested instructions", async () => {
+    const fixture = await createTestRoot();
+    const folders = [
+      ["packages", "web"],
+      [".cache", "tool"],
+      ["test-results", "run"],
+      ["tmp", "audit"],
+    ];
+    await Promise.all(
+      folders.map(async (folder) => {
+        await mkdir(join(fixture.workspace, ...folder), { recursive: true });
+        await writeFile(
+          join(fixture.workspace, ...folder, "CLAUDE.md"),
+          "Nested memory.\n",
+        );
+      }),
+    );
+    const inventory = await inventoryNativeInstructions({
+      workspaceRoot: fixture.workspace,
+      providerId: "claude-cli",
+      surface: "cli",
+    });
+    expect(
+      inventory
+        .map((record) => record.path)
+        .filter((path) => path.endsWith("CLAUDE.md")),
+    ).toEqual(["packages/web/CLAUDE.md"]);
+  });
+
   it("inventories provider ancestors and subagent definitions outside a nested workspace", async () => {
     const fixture = await createTestRoot();
     const repository = join(fixture.root, "repository");

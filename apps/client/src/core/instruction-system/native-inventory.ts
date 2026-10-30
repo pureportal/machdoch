@@ -44,6 +44,22 @@ const IGNORED_NATIVE_DIRECTORY_NAMES = new Set([
   "dist",
   "build",
   "target",
+  // Generated folders can hold most of a workspace's directories, and every
+  // run walks them before its provider starts.
+  ".cache",
+  ".gradle",
+  ".next",
+  ".pnpm-store",
+  ".tmp",
+  ".turbo",
+  ".venv",
+  "__pycache__",
+  "playwright-report",
+  "site-packages",
+  "temp",
+  "test-results",
+  "tmp",
+  "venv",
 ]);
 const MAX_NATIVE_DISCOVERY_DIRECTORIES = 50_000;
 const MAX_NATIVE_CONFIG_BYTES = 1024 * 1024;
