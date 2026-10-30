@@ -86,6 +86,7 @@ import {
   type AgentComposerQueuedMessage,
   type AgentComposerToggle,
 } from "@machdoch/client-ui/composer/agent-composer";
+import { SessionRunStatus } from "./agent-live-run-extras";
 import { SessionModelPicker } from "./session-model-picker";
 import { SessionModePicker } from "./session-mode-picker";
 import { SessionParallelAgentPicker } from "./session-parallel-agent-picker";
@@ -465,22 +466,23 @@ export const SessionComposer = ({
         : speechInput.enabled
           ? "Speak to text"
           : "Configure speak to text";
+  const workspacePicker = (
+    <WorkspacePicker
+      currentWorkspace={activeSession.workspace}
+      workspaceLabel={composerWorkspaceLabel}
+      recentWorkspaces={recentWorkspaces}
+      hasActiveWorkspace={hasActiveWorkspace}
+      highlightSelection={false}
+      workspaceLocked={workspaceLocked}
+      workspaceSwitchBlocked={workspaceSwitchBlocked}
+      buttonClassName="app-composer-toolbar-pill app-composer-toolbar-control h-8 rounded-full px-3 text-xs font-medium shadow-none"
+      onSelectWorkspace={onWorkspaceSelection}
+      onRemoveWorkspace={onWorkspaceRemoval}
+      onChooseNewWorkspace={onSelectFolder}
+    />
+  );
   const toolbarControls = (
     <>
-      <WorkspacePicker
-        currentWorkspace={activeSession.workspace}
-        workspaceLabel={composerWorkspaceLabel}
-        recentWorkspaces={recentWorkspaces}
-        hasActiveWorkspace={hasActiveWorkspace}
-        highlightSelection={false}
-        workspaceLocked={workspaceLocked}
-        workspaceSwitchBlocked={workspaceSwitchBlocked}
-        buttonClassName="app-composer-toolbar-pill app-composer-toolbar-control h-8 max-w-40 rounded-full px-3 text-xs font-medium shadow-none"
-        onSelectWorkspace={onWorkspaceSelection}
-        onRemoveWorkspace={onWorkspaceRemoval}
-        onChooseNewWorkspace={onSelectFolder}
-      />
-
       <SessionModePicker
         activeRunMode={activeRunMode}
         activeRunModeMeta={activeRunModeMeta}
@@ -707,17 +709,17 @@ export const SessionComposer = ({
         {translateEnabled ? (
           <span
             aria-hidden="true"
-            className="absolute -right-1 -top-1 flex size-4 items-center justify-center rounded-full bg-sky-400 text-slate-950"
+            className="absolute -right-0.5 -top-0.5 flex size-3 items-center justify-center rounded-full bg-sky-400 text-slate-950"
           >
-            <Languages className="size-3" />
+            <Languages className="size-2" />
           </span>
         ) : null}
         {formatEnabled ? (
           <span
             aria-hidden="true"
-            className="absolute -bottom-1 -right-1 flex size-4 items-center justify-center rounded-full bg-amber-400 text-slate-950"
+            className="absolute -bottom-0.5 -right-0.5 flex size-3 items-center justify-center rounded-full bg-amber-400 text-slate-950"
           >
-            <WandSparkles className="size-3" />
+            <WandSparkles className="size-2" />
           </span>
         ) : null}
       </>
@@ -863,7 +865,14 @@ export const SessionComposer = ({
               : undefined
         }
         showCancelAlongsideSend={Boolean(editingMessageId)}
+        workspacePicker={workspacePicker}
         toolbarControls={toolbarControls}
+        runStatus={
+          <SessionRunStatus
+            session={activeSession}
+            onSendMessage={(text) => onSend(text)}
+          />
+        }
         toolbarActions={
           speechInput.live &&
           activeSession.workspace &&

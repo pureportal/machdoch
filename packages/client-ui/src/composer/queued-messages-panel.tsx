@@ -2,7 +2,6 @@ import {
   ArrowDown,
   ArrowUp,
   GripVertical,
-  ListOrdered,
   LoaderCircle,
   RotateCcw,
   X,
@@ -25,6 +24,8 @@ import {
 } from "./context-attachments";
 
 const QUEUED_MESSAGE_DRAG_TYPE = "application/x-machdoch-queued-message";
+const QUEUE_ICON_BUTTON_CLASS_NAME =
+  "h-6 w-6 rounded-md border-transparent bg-transparent text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:bg-transparent disabled:text-slate-700";
 
 export interface QueuedMessagePanelMessage {
   id: string;
@@ -60,7 +61,7 @@ export interface QueuedMessagesPanelProps {
 const getQueueStateLabel = (
   status: QueuedMessagePanelMessage["status"],
   index: number,
-): string => {
+): string | null => {
   const statusLabel =
     status === "enhancing"
       ? "Enhancing"
@@ -68,10 +69,10 @@ const getQueueStateLabel = (
         ? "Dispatching"
         : status === "failed"
           ? "Failed"
-          : "Queued";
+          : null;
 
   if (index === 0 && status !== "failed") {
-    return status === "queued" ? "Next" : `Next · ${statusLabel}`;
+    return statusLabel ? `Next · ${statusLabel}` : "Next";
   }
 
   return statusLabel;
@@ -82,16 +83,16 @@ const getQueueStateClassName = (
   index: number,
 ): string => {
   if (status === "enhancing" || status === "dispatching") {
-    return "border-cyan-400/30 bg-cyan-400/10 text-cyan-100";
+    return "bg-cyan-400/10 text-cyan-100";
   }
 
   if (status === "failed") {
-    return "border-rose-400/30 bg-rose-400/10 text-rose-100";
+    return "bg-rose-400/10 text-rose-100";
   }
 
   return index === 0
-    ? "border-sky-400/30 bg-sky-400/10 text-sky-100"
-    : "border-slate-800 bg-slate-950/70 text-slate-400";
+    ? "bg-sky-400/10 text-sky-100"
+    : "bg-slate-800/70 text-slate-400";
 };
 
 const getDragMessageId = (
@@ -163,29 +164,22 @@ export const QueuedMessagesPanel = ({
   return (
     <section
       aria-label="Queued messages"
-      className="app-composer-queued-messages rounded-xl border border-slate-800/80 bg-slate-900/30 p-2.5"
+      className="app-composer-queued-messages min-w-0"
     >
-      <div className="flex items-center gap-2 px-1 pb-2">
-        <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-slate-300">
-          <ListOrdered className="h-3.5 w-3.5 shrink-0 text-sky-300" />
-          <span>Queue</span>
-          <span className="rounded-full bg-slate-800 px-1.5 py-0.5 text-[11px] leading-none text-slate-400">
-            {messages.length}
-          </span>
-        </div>
-      </div>
-
-      <ol className="max-h-64 space-y-1.5 overflow-y-auto pr-1 [scrollbar-gutter:stable] [scrollbar-width:thin]">
+      <ol className="m-0 grid list-none gap-1 p-0">
         {messages.map((message, index) => {
           const isDragging = draggingMessageId === message.id;
           const isDragTarget = dragOverIndex === index && !isDragging;
           const isInProgress =
             message.status === "enhancing" || message.status === "dispatching";
           const canReorderMessage = canReorder && !message.iteration;
-          const stateLabel = getQueueStateLabel(message.status, index);
-          const displayStateLabel = message.waitingForIteration
+          const stateLabel = message.waitingForIteration
             ? `Waiting for iteration ${message.waitingForIteration}`
-            : stateLabel;
+            : getQueueStateLabel(message.status, index);
+          const hasMeta =
+            Boolean(stateLabel) ||
+            Boolean(message.iteration) ||
+            Boolean(message.promptEnhancementMode);
 
           return (
             <SubmitShortcut key={message.id} asChild>
@@ -221,7 +215,7 @@ export const QueuedMessagesPanel = ({
                   onMessageReorder?.(droppedMessageId, index);
                 }}
                 className={cn(
-                  "grid gap-2.5 rounded-lg border border-slate-800/75 bg-slate-950/45 p-2.5 transition-colors sm:grid-cols-[auto_minmax(0,1fr)_auto]",
+                  "grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-1.5 gap-y-1 rounded-lg border border-slate-800/75 bg-slate-950/45 p-1.5 transition-colors sm:grid-cols-[auto_minmax(0,1fr)_auto]",
                   isDragging && "border-sky-400/40 bg-sky-400/10 opacity-70",
                   isDragTarget && "border-sky-300/60 bg-sky-400/10",
                   message.status === "failed" &&
@@ -229,30 +223,80 @@ export const QueuedMessagesPanel = ({
                   isInProgress && "border-cyan-400/30 bg-cyan-400/5",
                 )}
               >
-                <div className="flex items-start gap-2 sm:block">
-                  <span className="inline-flex h-7 min-w-7 items-center justify-center rounded-md border border-slate-800 bg-slate-950/80 text-xs font-semibold text-slate-300">
+                <div className="flex h-6 items-center gap-0.5">
+                  {!message.iteration ? (
+                    <ControlTooltip content="Drag to reorder">
+                      <button
+                        type="button"
+                        draggable={canReorderMessage && !isInProgress}
+                        disabled={!canReorderMessage || isInProgress}
+                        aria-label={`Drag queued message ${index + 1} to reorder`}
+                        onDragStart={(event) => {
+                          if (!canReorderMessage || isInProgress) {
+                            event.preventDefault();
+                            return;
+                          }
+
+                          setDraggingMessageId(message.id);
+                          event.dataTransfer.effectAllowed = "move";
+                          event.dataTransfer.setData(
+                            QUEUED_MESSAGE_DRAG_TYPE,
+                            message.id,
+                          );
+                          event.dataTransfer.setData("text/plain", message.id);
+                        }}
+                        onDragEnd={() => {
+                          setDraggingMessageId(null);
+                          setDragOverIndex(null);
+                        }}
+                        className={cn(
+                          "inline-flex h-6 w-4 items-center justify-center rounded text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
+                          canReorderMessage && !isInProgress
+                            ? "cursor-grab hover:text-slate-100 active:cursor-grabbing"
+                            : "cursor-not-allowed opacity-40",
+                        )}
+                      >
+                        <GripVertical className="h-3 w-3" />
+                      </button>
+                    </ControlTooltip>
+                  ) : null}
+                  <span className="min-w-4 text-center text-[11px] font-semibold tabular-nums text-slate-400">
                     {index + 1}
-                  </span>
-                  <span
-                    className={cn(
-                      "inline-flex h-7 items-center gap-1.5 rounded-full border px-2 text-[11px] font-medium sm:mt-1",
-                      getQueueStateClassName(message.status, index),
-                    )}
-                  >
-                    {isInProgress ? (
-                      <LoaderCircle className="h-3 w-3 animate-spin" />
-                    ) : null}
-                    {displayStateLabel}
                   </span>
                 </div>
 
-                <div className="grid min-w-0 gap-2">
-                  {message.iteration ? (
-                    <span className="text-xs font-medium text-sky-200">
-                      Iteration {message.iteration.index} of{" "}
-                      {message.iteration.total}
-                    </span>
+                <div className="grid min-w-0 gap-1">
+                  {hasMeta ? (
+                    <div className="flex min-w-0 flex-wrap items-center gap-1 text-[10px] leading-4 font-medium">
+                      {stateLabel ? (
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded px-1.5",
+                            getQueueStateClassName(message.status, index),
+                          )}
+                        >
+                          {isInProgress ? (
+                            <LoaderCircle className="h-2.5 w-2.5 animate-spin" />
+                          ) : null}
+                          {stateLabel}
+                        </span>
+                      ) : null}
+                      {message.iteration ? (
+                        <span className="text-sky-200">
+                          Iteration {message.iteration.index} of{" "}
+                          {message.iteration.total}
+                        </span>
+                      ) : null}
+                      {message.promptEnhancementMode ? (
+                        <span className="rounded bg-violet-400/10 px-1.5 text-violet-100">
+                          {message.promptEnhancementMode === "web-search"
+                            ? "Web enhance"
+                            : "Enhance"}
+                        </span>
+                      ) : null}
+                    </div>
                   ) : null}
+
                   <Textarea
                     aria-label={`Queued message ${index + 1}`}
                     value={message.content}
@@ -261,119 +305,57 @@ export const QueuedMessagesPanel = ({
                       onMessageChange?.(message.id, event.target.value)
                     }
                     onPaste={(event) => handleMessagePaste(event, message.id)}
-                    className="max-h-20 min-h-9 resize-none border-slate-800 bg-slate-950/70 px-3 py-2 text-sm leading-5 text-slate-100 shadow-none placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500"
+                    className="max-h-[3.875rem] min-h-6 resize-none overflow-y-auto rounded-md border-transparent bg-slate-900/50 px-2 py-1 text-xs leading-[1.125rem] text-slate-100 shadow-none placeholder:text-slate-500 focus:max-h-64 focus-visible:border-slate-700 focus-visible:ring-1 focus-visible:ring-sky-500 md:text-xs [scrollbar-width:thin]"
                   />
 
-                  {message.promptEnhancementMode ? (
-                    <div className="flex">
-                      <span className="rounded-full border border-violet-400/25 bg-violet-400/10 px-2 py-0.5 text-[11px] font-medium text-violet-100">
-                        {message.promptEnhancementMode === "web-search"
-                          ? "Web enhance"
-                          : "Enhance"}
-                      </span>
-                    </div>
-                  ) : null}
-
                   {message.status === "failed" && message.failureMessage ? (
-                    <p className="text-xs text-rose-200">
+                    <p className="m-0 text-[11px] leading-4 text-rose-200">
                       {message.failureMessage}
                     </p>
                   ) : null}
 
-                  <div className="flex min-w-0 items-start gap-2 rounded-lg border border-slate-800/60 bg-slate-950/35 p-1.5">
-                    <ContextAttachmentMenuButton
-                      onSelectFiles={() =>
-                        onMessageSelectAttachments?.(message.id, "files") ??
-                        Promise.resolve()
+                  {message.attachments.length > 0 ? (
+                    <ContextAttachmentsList
+                      attachments={message.attachments}
+                      onOpen={onOpenAttachment}
+                      onRemove={(attachmentId) =>
+                        onMessageRemoveAttachment?.(message.id, attachmentId)
                       }
-                      onSelectFolders={() =>
-                        onMessageSelectAttachments?.(message.id, "folders") ??
-                        Promise.resolve()
-                      }
-                      onSelectImages={() =>
-                        onMessageSelectAttachments?.(message.id, "images") ??
-                        Promise.resolve()
-                      }
-                      buttonLabel={`Add attachments to queued message ${index + 1}`}
-                      buttonTitle="Add attachments"
+                      onClearAll={() => onMessageClearAttachments?.(message.id)}
+                      clearAllLabel={`Remove all attachments from queued message ${
+                        index + 1
+                      }`}
+                      compact
                       disabled={isInProgress}
-                      imageInputDisabled={imageInputDisabled}
-                      imageInputDisabledReason={imageInputDisabledReason}
-                      className="h-7 w-7 rounded-md border-slate-800 bg-slate-950/70 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100"
-                      iconClassName="h-3.5 w-3.5"
-                      menuSide="top"
                     />
-
-                    {message.attachments.length > 0 ? (
-                      <div className="min-w-0 flex-1">
-                        <ContextAttachmentsList
-                          attachments={message.attachments}
-                          onOpen={onOpenAttachment}
-                          onRemove={(attachmentId) =>
-                            onMessageRemoveAttachment?.(
-                              message.id,
-                              attachmentId,
-                            )
-                          }
-                          onClearAll={() =>
-                            onMessageClearAttachments?.(message.id)
-                          }
-                          clearAllLabel={`Remove all attachments from queued message ${
-                            index + 1
-                          }`}
-                          compact
-                          disabled={isInProgress}
-                        />
-                      </div>
-                    ) : message.iteration &&
-                      message.iteration.index > 1 ? null : (
-                      <div className="flex min-h-7 min-w-0 flex-1 items-center px-1 text-[11px] text-slate-500">
-                        No attachments
-                      </div>
-                    )}
-                  </div>
+                  ) : null}
                 </div>
 
-                <div className="flex items-center gap-1 sm:flex-col sm:justify-start">
+                <div className="col-span-2 flex items-center justify-end sm:col-span-1">
+                  <ContextAttachmentMenuButton
+                    onSelectFiles={() =>
+                      onMessageSelectAttachments?.(message.id, "files") ??
+                      Promise.resolve()
+                    }
+                    onSelectFolders={() =>
+                      onMessageSelectAttachments?.(message.id, "folders") ??
+                      Promise.resolve()
+                    }
+                    onSelectImages={() =>
+                      onMessageSelectAttachments?.(message.id, "images") ??
+                      Promise.resolve()
+                    }
+                    buttonLabel={`Add attachments to queued message ${index + 1}`}
+                    buttonTitle="Add attachments"
+                    disabled={isInProgress}
+                    imageInputDisabled={imageInputDisabled}
+                    imageInputDisabledReason={imageInputDisabledReason}
+                    className={QUEUE_ICON_BUTTON_CLASS_NAME}
+                    iconClassName="h-3 w-3"
+                    menuSide="bottom"
+                  />
                   {!message.iteration ? (
                     <>
-                      <ControlTooltip content="Drag to reorder">
-                        <button
-                          type="button"
-                          draggable={canReorderMessage && !isInProgress}
-                          disabled={!canReorderMessage || isInProgress}
-                          aria-label={`Drag queued message ${index + 1} to reorder`}
-                          onDragStart={(event) => {
-                            if (!canReorderMessage || isInProgress) {
-                              event.preventDefault();
-                              return;
-                            }
-
-                            setDraggingMessageId(message.id);
-                            event.dataTransfer.effectAllowed = "move";
-                            event.dataTransfer.setData(
-                              QUEUED_MESSAGE_DRAG_TYPE,
-                              message.id,
-                            );
-                            event.dataTransfer.setData(
-                              "text/plain",
-                              message.id,
-                            );
-                          }}
-                          onDragEnd={() => {
-                            setDraggingMessageId(null);
-                            setDragOverIndex(null);
-                          }}
-                          className={cn(
-                            "inline-flex h-6 w-6 items-center justify-center rounded-md border border-slate-800 bg-slate-950/70 text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
-                            canReorderMessage && !isInProgress
-                              ? "cursor-grab hover:bg-slate-800 hover:text-slate-100 active:cursor-grabbing"
-                              : "cursor-not-allowed opacity-50",
-                          )}
-                        >
-                          <GripVertical className="h-3 w-3" />
-                        </button>
-                      </ControlTooltip>
                       <Button
                         type="button"
                         variant="outline"
@@ -382,7 +364,7 @@ export const QueuedMessagesPanel = ({
                         tooltip="Move up"
                         disabled={!canReorderMessage || index === 0}
                         onClick={() => onMessageMove?.(message.id, -1)}
-                        className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
+                        className={QUEUE_ICON_BUTTON_CLASS_NAME}
                       >
                         <ArrowUp className="h-3 w-3" />
                       </Button>
@@ -396,11 +378,27 @@ export const QueuedMessagesPanel = ({
                           !canReorderMessage || index === messages.length - 1
                         }
                         onClick={() => onMessageMove?.(message.id, 1)}
-                        className="border-slate-800 bg-slate-950/70 text-slate-400 hover:bg-slate-800 hover:text-slate-100 disabled:bg-slate-950/40 disabled:text-slate-700"
+                        className={QUEUE_ICON_BUTTON_CLASS_NAME}
                       >
                         <ArrowDown className="h-3 w-3" />
                       </Button>
                     </>
+                  ) : null}
+                  {message.status === "failed" ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon-xs"
+                      aria-label={`Retry queued message ${index + 1}`}
+                      tooltip="Retry"
+                      onClick={() => onMessageRetry?.(message.id)}
+                      className={cn(
+                        QUEUE_ICON_BUTTON_CLASS_NAME,
+                        "text-sky-200 hover:bg-sky-400/20",
+                      )}
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                    </Button>
                   ) : null}
                   <Button
                     type="button"
@@ -410,23 +408,13 @@ export const QueuedMessagesPanel = ({
                     tooltip="Remove"
                     disabled={isInProgress}
                     onClick={() => onMessageRemove?.(message.id)}
-                    className="border-rose-500/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/15 hover:text-white"
+                    className={cn(
+                      QUEUE_ICON_BUTTON_CLASS_NAME,
+                      "hover:bg-rose-500/15 hover:text-rose-100",
+                    )}
                   >
                     <X className="h-3 w-3" />
                   </Button>
-                  {message.status === "failed" ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon-xs"
-                      aria-label={`Retry queued message ${index + 1}`}
-                      tooltip="Retry"
-                      onClick={() => onMessageRetry?.(message.id)}
-                      className="border-sky-400/30 bg-sky-400/10 text-sky-100 hover:bg-sky-400/20 hover:text-white"
-                    >
-                      <RotateCcw className="h-3 w-3" />
-                    </Button>
-                  ) : null}
                 </div>
               </li>
             </SubmitShortcut>

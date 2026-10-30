@@ -548,7 +548,7 @@ export const TaskThinkingPanel = ({
           "app-thinking-card relative min-w-0 gap-0 overflow-hidden border py-0 text-slate-100",
           isCollapsed
             ? "w-full rounded-2xl rounded-bl-sm border-slate-800/60 bg-slate-900/28 shadow-none"
-            : "w-full rounded-3xl border-slate-800 bg-slate-900/85 shadow-xl shadow-slate-950/25",
+            : "w-full rounded-xl border-slate-800 bg-slate-900/85 shadow-xl shadow-slate-950/25",
         )}
       >
         <CardHeader
@@ -556,7 +556,7 @@ export const TaskThinkingPanel = ({
             "app-thinking-header",
             isCollapsed
               ? "gap-0 px-3 py-1.5"
-              : "gap-0 border-b border-slate-800/90 px-4 py-2.5",
+              : "gap-0 border-b border-slate-800/90 px-2.5 py-1.5",
           )}
         >
           <div
@@ -570,7 +570,7 @@ export const TaskThinkingPanel = ({
               className={cn(
                 "app-thinking-main-icon flex items-center justify-center border",
                 headerToneClasses[headerTone],
-                isCollapsed ? "h-5 w-5 rounded-md" : "h-8 w-8 rounded-xl",
+                isCollapsed ? "h-5 w-5 rounded-md" : "h-6 w-6 rounded-lg",
               )}
             >
               <HeaderIcon
@@ -581,7 +581,7 @@ export const TaskThinkingPanel = ({
               />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <div className="flex items-center justify-between gap-x-3">
                 <div
                   className={cn(
                     "min-w-0",
@@ -591,7 +591,7 @@ export const TaskThinkingPanel = ({
                   <CardTitle
                     className={cn(
                       "font-semibold text-slate-100",
-                      isCollapsed ? "text-[12px] leading-none" : "text-sm",
+                      isCollapsed ? "text-[12px] leading-none" : "text-xs",
                     )}
                   >
                     Execution
@@ -627,12 +627,12 @@ export const TaskThinkingPanel = ({
                       "app-thinking-toggle inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-950/70 font-medium text-slate-300 transition-colors hover:bg-slate-900 hover:text-slate-100",
                       isCollapsed
                         ? "h-5 px-2 text-[10px]"
-                        : "h-7 px-2.5 text-[11px]",
+                        : "h-6 px-2 text-[11px]",
                     )}
                   >
                     <ToggleIcon
                       className={cn(
-                        isCollapsed ? "h-2.5 w-2.5" : "h-3.5 w-3.5",
+                        isCollapsed ? "h-2.5 w-2.5" : "h-3 w-3",
                       )}
                     />
                     {isCollapsed ? "Details" : "Hide details"}

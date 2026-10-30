@@ -61,7 +61,9 @@ import {
   QueuedMessagesPanel,
   type QueuedMessagePanelMessage,
 } from "./queued-messages-panel";
+import { QueueStatusButton } from "./queue-status-button";
 import { ToolToggleButton } from "./tool-toggle-button";
+import { CompactDialog } from "../common/compact-dialog";
 
 export type AgentComposerVariant = "session" | "quick";
 
@@ -112,9 +114,12 @@ export interface AgentComposerProps {
   submissionLabel?: string;
   showCancelAlongsideSend?: boolean;
   textareaRef?: Ref<HTMLTextAreaElement>;
+  workspacePicker?: ReactNode;
   toolbarControls?: ReactNode;
   toolbarActions?: ReactNode;
   inputHeader?: ReactNode;
+  /** Shown beside the running-task actions, such as the agent's plan progress. */
+  runStatus?: ReactNode;
   toggles?: AgentComposerToggle[];
   actions?: AgentComposerAction[];
   runningTaskMessageAction?: RunningTaskMessageAction;
@@ -326,18 +331,18 @@ const getVariantStyles = (variant: AgentComposerVariant) => {
     attachmentListCompact: false,
     attachmentMenuSide: "top" as const,
     attachmentButton:
-      "app-composer-attachment-button h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100",
+      "app-composer-attachment-button h-7 w-7 shrink-0 rounded-full border-transparent bg-transparent text-slate-400 shadow-none hover:text-slate-100",
     attachmentIcon: "h-4 w-4",
     textarea:
-      "app-composer-textarea max-h-[30vh] min-h-14 min-w-0 flex-1 resize-none overflow-y-auto rounded-[1.4rem] border-slate-800 bg-slate-900/70 px-5 py-4 text-base text-slate-100 shadow-inner shadow-black/20 placeholder:text-slate-500 focus-visible:ring-1 focus-visible:ring-sky-500 disabled:cursor-not-allowed disabled:bg-slate-900/50 disabled:text-slate-500 disabled:opacity-100",
+      "app-composer-textarea min-w-0 flex-1 resize-none overflow-y-auto text-slate-100 placeholder:text-slate-500 disabled:cursor-not-allowed disabled:text-slate-500 disabled:opacity-100",
     iconButton:
-      "app-composer-icon-button h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-100",
+      "app-composer-icon-button h-7 w-7 shrink-0 rounded-full border-transparent bg-transparent text-slate-400 shadow-none hover:text-slate-100 disabled:text-slate-600 disabled:opacity-100",
     sendButton:
-      "app-composer-send-button h-11 w-11 shrink-0 rounded-[1.15rem] border-slate-800 bg-slate-900 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:border-slate-800 disabled:bg-slate-900 disabled:text-slate-600 disabled:opacity-100",
+      "app-composer-send-button h-7 w-7 shrink-0 rounded-full border-transparent bg-slate-800/60 text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:bg-transparent disabled:text-slate-600 disabled:opacity-100",
     sendButtonActive:
-      "border-sky-500/20 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-white",
+      "border-sky-500/30 bg-sky-500/20 text-sky-100 hover:bg-sky-500/30 hover:text-white",
     cancelButton:
-      "app-composer-cancel-button h-11 w-11 shrink-0 rounded-[1.15rem] border-rose-500/20 bg-rose-500/10 text-rose-100 shadow-none hover:bg-rose-500/15 hover:text-white",
+      "app-composer-cancel-button h-7 w-7 shrink-0 rounded-full border-rose-500/20 bg-rose-500/10 text-rose-100 shadow-none hover:bg-rose-500/15 hover:text-white",
     iconClassName: "h-4 w-4",
   };
 };
@@ -427,9 +432,11 @@ export const AgentComposer = ({
   submissionLabel,
   showCancelAlongsideSend = false,
   textareaRef,
+  workspacePicker,
   toolbarControls,
   toolbarActions,
   inputHeader,
+  runStatus,
   toggles = [],
   actions = [],
   runningTaskMessageAction,
@@ -474,6 +481,13 @@ export const AgentComposer = ({
   useEffect(() => {
     if (inputBlocked) setIterationsOpen(false);
   }, [inputBlocked]);
+  const [queueOpen, setQueueOpen] = useState(false);
+  useEffect(() => {
+    if (queuedMessages.length === 0) setQueueOpen(false);
+  }, [queuedMessages.length]);
+  useEffect(() => {
+    setQueueOpen(false);
+  }, [draftIdentity]);
   const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const handleTextareaRef = useCallback(
     (node: HTMLTextAreaElement | null): void => {
@@ -641,42 +655,48 @@ export const AgentComposer = ({
       styles.iconButton,
     ),
   );
-  const runningTaskControls =
-    variant === "session" && isExecuting ? (
-      <div className="app-composer-running-controls flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-800/80 bg-slate-900/35 px-3 py-2">
-        <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
-          <span className="h-2 w-2 rounded-full bg-sky-400 shadow-[0_0_12px_rgba(56,189,248,0.65)]" />
-          Running
-        </div>
-        <div
-          aria-label="Running task message action"
-          className="flex min-w-0 overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70 p-0.5"
-          role="group"
-        >
-          {runningActions.map((action) => {
-            const Icon = action.icon;
-            const selected = action.id === selectedRunningAction;
+  const statusBar =
+    variant === "session" && (isExecuting || queuePanelVisible) ? (
+      <div className="m-composer-status-bar">
+        {isExecuting ? (
+          <>
+            <span className="m-composer-status-running">Running</span>
+            <div
+              aria-label="Running task message action"
+              className="m-composer-status-actions"
+              role="group"
+            >
+              {runningActions.map((action) => {
+                const Icon = action.icon;
 
-            return (
-              <button
-                key={action.id}
-                type="button"
-                aria-pressed={selected}
-                disabled={inputBlocked}
-                onClick={() => {
-                  onRunningTaskMessageActionChange?.(action.id);
-                }}
-                className={cn(
-                  "inline-flex h-8 min-w-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-slate-400 transition hover:bg-slate-800 hover:text-slate-100 disabled:cursor-not-allowed disabled:text-slate-600 disabled:hover:bg-transparent",
-                  selected &&
-                    "bg-sky-500/12 text-sky-100 shadow-[inset_0_0_0_1px_rgba(56,189,248,0.2)]",
-                )}
-              >
-                <Icon className="h-3.5 w-3.5 shrink-0" />
-                <span>{action.label}</span>
-              </button>
-            );
-          })}
+                return (
+                  <button
+                    key={action.id}
+                    type="button"
+                    aria-label={action.label}
+                    aria-pressed={action.id === selectedRunningAction}
+                    title={action.sendLabel}
+                    disabled={inputBlocked}
+                    onClick={() => {
+                      onRunningTaskMessageActionChange?.(action.id);
+                    }}
+                  >
+                    <Icon />
+                    <span>{action.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
+        <div className="m-composer-status-details">
+          {isExecuting ? runStatus : null}
+          {queuePanelVisible ? (
+            <QueueStatusButton
+              messages={queuedMessages}
+              onClick={() => setQueueOpen(true)}
+            />
+          ) : null}
         </div>
       </div>
     ) : null;
@@ -1045,6 +1065,19 @@ export const AgentComposer = ({
         }),
       },
       {
+        id: "chat.queue.open",
+        title: "Open queue",
+        group: "Chat",
+        scope: { kind: "view", ownerId: "chat" },
+        palette: "visible",
+        overlayPolicy: "replace-non-modal",
+        availability: () =>
+          queuedMessages.length > 0
+            ? { state: "enabled" }
+            : { state: "disabled", reason: "No queued messages" },
+        execute: () => setQueueOpen(true),
+      },
+      {
         id: "chat.queue.remove",
         title: "Remove queued message",
         group: "Chat",
@@ -1269,22 +1302,37 @@ export const AgentComposer = ({
     variant,
   ]);
   useOptionalRegisterCommands(composerCommands);
-  const queuedMessagesPanel = queuePanelVisible ? (
-    <QueuedMessagesPanel
-      messages={queuedMessages}
-      imageInputDisabled={!imageInputSupported}
-      imageInputDisabledReason={imageInputDisabledReason}
-      onOpenAttachment={onOpenContextAttachment}
-      onMessageChange={onQueuedMessageChange}
-      onMessageMove={onQueuedMessageMove}
-      onMessageReorder={onQueuedMessageReorder}
-      onMessageRemove={onQueuedMessageRemove}
-      onMessageRetry={onQueuedMessageRetry}
-      onMessageSelectAttachments={onQueuedMessageSelectContextAttachments}
-      onMessagePasteImages={onQueuedMessagePasteContextImages}
-      onMessageRemoveAttachment={onQueuedMessageRemoveContextAttachment}
-      onMessageClearAttachments={onQueuedMessageClearContextAttachments}
-    />
+  const queueDialog = queuePanelVisible ? (
+    <CompactDialog
+      open={queueOpen}
+      onOpenChange={setQueueOpen}
+      title={
+        <>
+          <ListOrdered className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+          Queue
+          <span className="rounded-full bg-slate-800 px-1.5 text-[11px] font-medium text-slate-400">
+            {queuedMessages.length}
+          </span>
+        </>
+      }
+      description="Edit, reorder, or remove messages waiting to be sent."
+    >
+      <QueuedMessagesPanel
+        messages={queuedMessages}
+        imageInputDisabled={!imageInputSupported}
+        imageInputDisabledReason={imageInputDisabledReason}
+        onOpenAttachment={onOpenContextAttachment}
+        onMessageChange={onQueuedMessageChange}
+        onMessageMove={onQueuedMessageMove}
+        onMessageReorder={onQueuedMessageReorder}
+        onMessageRemove={onQueuedMessageRemove}
+        onMessageRetry={onQueuedMessageRetry}
+        onMessageSelectAttachments={onQueuedMessageSelectContextAttachments}
+        onMessagePasteImages={onQueuedMessagePasteContextImages}
+        onMessageRemoveAttachment={onQueuedMessageRemoveContextAttachment}
+        onMessageClearAttachments={onQueuedMessageClearContextAttachments}
+      />
+    </CompactDialog>
   ) : null;
   const sendControl = showCancelButton ? (
     <Button
@@ -1332,14 +1380,14 @@ export const AgentComposer = ({
     <div
       role="group"
       aria-label="Edit message actions"
-      className="app-composer-edit-actions flex shrink-0 items-center gap-2"
+      className="app-composer-edit-actions"
     >
       {actionButtons}
       {editCancelControl}
       {sendControl}
     </div>
   ) : (
-    <div className="app-composer-actions flex shrink-0 items-center gap-3">
+    <div className="app-composer-actions">
       {actionButtons}
       {variant === "session" ? (
         <Popover open={iterationsOpen} onOpenChange={setIterationsOpen}>
@@ -1473,6 +1521,7 @@ export const AgentComposer = ({
       busy={inputBlocked}
       disabled={inputBlocked}
       modelPicker={modelPicker}
+      workspacePicker={workspacePicker}
       toolbarActions={toolbarActions}
       controls={
         <>
@@ -1481,7 +1530,7 @@ export const AgentComposer = ({
         </>
       }
     >
-      {runningTaskControls}
+      {statusBar}
 
       <ContextAttachmentsList
         attachments={contextAttachments}
@@ -1506,7 +1555,7 @@ export const AgentComposer = ({
         </form>
       </SubmitShortcut>
 
-      {queuedMessagesPanel}
+      {queueDialog}
     </ComposerSurface>
   );
 };

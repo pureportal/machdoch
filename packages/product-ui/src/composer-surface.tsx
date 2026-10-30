@@ -1,9 +1,10 @@
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { SlidersHorizontal } from "lucide-react";
 import "./composer-surface.css";
 
 export interface ComposerSurfaceProps {
   modelPicker: ReactNode;
+  workspacePicker?: ReactNode;
   controls: ReactNode;
   toolbarActions?: ReactNode;
   children: ReactNode;
@@ -14,6 +15,7 @@ export interface ComposerSurfaceProps {
 
 export function ComposerSurface({
   modelPicker,
+  workspacePicker,
   controls,
   toolbarActions,
   children,
@@ -23,6 +25,33 @@ export function ComposerSurface({
 }: ComposerSurfaceProps): React.ReactElement {
   const optionsId = useId();
   const [optionsOpen, setOptionsOpen] = useState(false);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!optionsOpen) return undefined;
+    const closeOnOutsidePress = (event: PointerEvent): void => {
+      const target = event.target;
+      if (
+        target instanceof Element &&
+        !toolbarRef.current?.contains(target) &&
+        !target.closest("[data-radix-popper-content-wrapper], [role='dialog']")
+      ) {
+        setOptionsOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent): void => {
+      if (event.key === "Escape" && !event.defaultPrevented) {
+        setOptionsOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [optionsOpen]);
+
   return (
     <div
       className={["m-composer-surface", "app-agent-composer", className]
@@ -33,8 +62,11 @@ export function ComposerSurface({
       aria-disabled={disabled}
       data-options-open={optionsOpen}
     >
-      <div className="m-composer-surface-toolbar app-composer-toolbar">
+      <div ref={toolbarRef} className="m-composer-surface-toolbar app-composer-toolbar">
         <div className="m-composer-surface-model">{modelPicker}</div>
+        {workspacePicker ? (
+          <div className="m-composer-surface-workspace">{workspacePicker}</div>
+        ) : null}
         <button
           type="button"
           className="m-composer-options-toggle"
@@ -44,7 +76,6 @@ export function ComposerSurface({
           onClick={() => setOptionsOpen((open) => !open)}
         >
           <SlidersHorizontal aria-hidden="true" />
-          <span>Options</span>
         </button>
         <div id={optionsId} className="m-composer-surface-controls">
           {controls}

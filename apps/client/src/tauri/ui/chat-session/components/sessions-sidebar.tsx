@@ -412,15 +412,17 @@ export const SessionsSidebar = ({
   return (
     <aside className="app-sessions-sidebar flex min-h-0 w-84 shrink-0 flex-col border-r border-slate-900 bg-slate-950/50 backdrop-blur-xl">
       <SessionSidebarCommands {...sidebarCommandState} />
-      <div className="app-sessions-sidebar-header flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-900 px-5 py-2">
-        <div>
-          <p className="text-xs font-semibold tracking-[0.24em] text-slate-500 uppercase">
+      <div className="app-sessions-sidebar-header flex min-h-11 shrink-0 items-center justify-between gap-2 border-b border-slate-900 px-3 py-1">
+        <div className="min-w-0">
+          <p className="truncate text-[10px] leading-3 font-semibold tracking-[0.18em] text-slate-500 uppercase">
             Sessions
           </p>
-          <p className="mt-1 text-sm text-slate-400">{sessionListCountLabel}</p>
+          <p className="mt-0.5 truncate text-[11px] leading-4 text-slate-400">
+            {sessionListCountLabel}
+          </p>
         </div>
 
-        <div className="app-sessions-actions flex items-center gap-1.5">
+        <div className="app-sessions-actions flex shrink-0 items-center gap-1">
           {onClose ? (
             <Button
               type="button"
@@ -454,7 +456,7 @@ export const SessionsSidebar = ({
             aria-label="Import sessions"
             tooltipProps={{ side: "bottom" }}
             onClick={() => importInputRef.current?.click()}
-            className="app-sessions-toolbar-button h-8 w-8 rounded-xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+            className="app-sessions-toolbar-button h-7 w-7 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
           >
             <Upload className="h-4 w-4" />
           </Button>
@@ -465,7 +467,7 @@ export const SessionsSidebar = ({
             aria-label="Export visible sessions"
             tooltipProps={{ side: "bottom" }}
             onClick={onExportSessions}
-            className="app-sessions-toolbar-button h-8 w-8 rounded-xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+            className="app-sessions-toolbar-button h-7 w-7 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
           >
             <Download className="h-4 w-4" />
           </Button>
@@ -473,9 +475,9 @@ export const SessionsSidebar = ({
             type="button"
             size="sm"
             onClick={onCreateSession}
-            className="app-sessions-new-button rounded-xl bg-sky-600 text-white hover:bg-sky-500"
+            className="app-sessions-new-button h-7 rounded-lg bg-sky-600 px-2 text-[11px] text-white hover:bg-sky-500"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="size-3.5" />
             New
           </Button>
         </div>

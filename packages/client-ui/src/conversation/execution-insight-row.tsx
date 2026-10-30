@@ -13,7 +13,7 @@ const insightMetadataBadgeClassName =
   "app-execution-metadata h-6 cursor-default select-none rounded-md border-transparent bg-transparent px-1.5 py-0 text-[11px] font-medium text-slate-400 shadow-none";
 
 const actionButtonClassName =
-  "app-execution-action h-9 rounded-lg px-3.5 text-xs font-semibold shadow-sm shadow-slate-950/25 transition-colors";
+  "app-execution-action h-6 rounded-full px-2 text-[11px] font-medium shadow-none transition-colors";
 
 export interface ExecutionInsightRowProps {
   execution: TaskExecutionInsight;
@@ -68,7 +68,7 @@ export const ExecutionInsightRow = ({
   }
 
   return (
-    <div className="app-execution-insight-row flex max-w-[90%] flex-wrap items-center gap-2">
+    <div className="app-execution-insight-row flex max-w-[90%] flex-wrap items-center gap-1.5">
       {continuationCount > 0 ? (
         <Badge variant="ghost" className={insightMetadataBadgeClassName}>
           <span
@@ -109,7 +109,7 @@ export const ExecutionInsightRow = ({
           onClick={onRetryTask}
           className={`${actionButtonClassName} border-amber-400/40 bg-amber-500/15 text-amber-50 hover:border-amber-300/55 hover:bg-amber-500/25 hover:text-white`}
         >
-          <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+          <RotateCcw className="size-3" />
           Retry
         </Button>
       ) : null}
@@ -122,7 +122,7 @@ export const ExecutionInsightRow = ({
           onClick={onContinueTask}
           className={`${actionButtonClassName} border-emerald-400/40 bg-emerald-500/15 text-emerald-50 hover:border-emerald-300/55 hover:bg-emerald-500/25 hover:text-white`}
         >
-          <Play className="mr-1.5 h-3.5 w-3.5" />
+          <Play className="size-3" />
           Continue
         </Button>
       ) : null}
@@ -135,7 +135,7 @@ export const ExecutionInsightRow = ({
           size="sm"
           tooltip={`${fileReference.path} \u2014 ${fileReference.description}`}
           onClick={() => onOpenWorkspaceFile(fileReference.path)}
-          className="app-related-file-button h-8 max-w-full rounded-full border-slate-700 bg-slate-950/70 px-3 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-60"
+          className="app-related-file-button h-6 max-w-full rounded-full border-slate-700 bg-slate-950/70 px-2 text-[11px] text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-60"
         >
           <span className="truncate">
             {fileReference.path.length <= 42

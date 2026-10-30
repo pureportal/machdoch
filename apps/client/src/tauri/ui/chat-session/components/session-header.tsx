@@ -101,7 +101,7 @@ export const SessionHeader = ({
   };
 
   const controls = (
-    <div className="app-session-header-controls flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
+    <div className="app-session-header-controls flex min-w-0 shrink items-center justify-end gap-1">
       <WorkspaceRunDialogControl
         workspaceRoot={activeSession.workspace}
         primaryTaskRunning={primaryTaskRunning}
@@ -125,7 +125,7 @@ export const SessionHeader = ({
                 setTagDraft(activeSession.tags.join(", "));
               }
             }}
-            className="app-session-tags-input h-9 w-44 rounded-2xl border-slate-800 bg-slate-950 text-xs text-slate-100 placeholder:text-slate-600"
+            className="app-session-tags-input h-7 w-28 min-w-14 shrink rounded-lg border-slate-800 bg-slate-950 px-2 text-[11px] text-slate-100 placeholder:text-slate-600 md:text-[11px]"
           />
         </SubmitShortcut>
       ) : null}
@@ -139,7 +139,7 @@ export const SessionHeader = ({
           tooltip={isPinned ? "Unpin session" : "Pin session"}
           onClick={onTogglePinnedSession}
           className={cn(
-            "h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100",
+            "h-7 w-7 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100",
             isPinned && "text-amber-200 hover:text-amber-100",
           )}
         >
@@ -154,7 +154,7 @@ export const SessionHeader = ({
           aria-label="Branch session"
           tooltip="Branch session"
           onClick={onBranchSession}
-          className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+          className="h-7 w-7 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
         >
           <GitBranch className="h-4 w-4" />
         </Button>
@@ -167,7 +167,7 @@ export const SessionHeader = ({
           aria-label="Clear Quick Chat history"
           disabled={!canClearSessionHistory}
           onClick={onClearSessionHistory}
-          className="h-9 rounded-2xl px-3 text-xs text-slate-400 hover:bg-slate-900 hover:text-slate-100 disabled:text-slate-700 disabled:opacity-100"
+          className="h-7 rounded-lg px-2 text-[11px] text-slate-400 hover:bg-slate-900 hover:text-slate-100 disabled:text-slate-700 disabled:opacity-100"
         >
           Clear
           <Trash2 className="h-4 w-4" />
@@ -180,7 +180,7 @@ export const SessionHeader = ({
           size="icon"
           aria-label="Rename session"
           onClick={onStartRename}
-          className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
+          className="h-7 w-7 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
         >
           <PencilLine className="h-4 w-4" />
         </Button>
@@ -192,7 +192,7 @@ export const SessionHeader = ({
           size="icon"
           aria-label="Delete session"
           onClick={onDeleteSession}
-          className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-rose-500/10 hover:text-rose-200"
+          className="h-7 w-7 rounded-lg text-slate-400 hover:bg-rose-500/10 hover:text-rose-200"
         >
           <Trash2 className="h-4 w-4" />
         </Button>
@@ -201,8 +201,8 @@ export const SessionHeader = ({
   );
 
   return (
-    <header className="app-session-header flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2 border-b border-slate-900 bg-slate-950/60 px-8 backdrop-blur-md">
-      <div className="flex min-w-0 basis-40 flex-1 items-center gap-2">
+    <header className="app-session-header flex min-h-11 shrink-0 items-center justify-between gap-3 border-b border-slate-900 bg-slate-950/60 px-4 py-1 backdrop-blur-md">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         {onOpenSessions ? (
           <Button
             type="button"
@@ -232,11 +232,11 @@ export const SessionHeader = ({
                   onRenameCancel();
                 }
               }}
-              className="app-session-rename-input h-10 w-full max-w-md rounded-2xl border-slate-800 bg-slate-950 text-slate-100"
+              className="app-session-rename-input h-7 w-full max-w-md rounded-lg border-slate-800 bg-slate-950 px-2 text-sm text-slate-100 md:text-sm"
             />
           </SubmitShortcut>
         ) : (
-          <h1 className="app-session-title-heading truncate text-2xl font-semibold tracking-tight text-white">
+          <h1 className="app-session-title-heading truncate text-sm font-semibold text-white">
             {currentSessionTitle}
           </h1>
         )}

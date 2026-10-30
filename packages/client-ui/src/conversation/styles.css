@@ -183,8 +183,6 @@
   }
 
   .app-thinking-panel .app-thinking-entry-detail {
-    font-size: 14px !important;
-    line-height: 1.6 !important;
     overflow-wrap: anywhere;
   }
 
@@ -194,10 +192,10 @@
 
   .app-thinking-disclosure > summary {
     display: flex;
-    min-height: 44px;
+    min-height: 24px;
     align-items: center;
     gap: 6px;
-    font-size: 13px;
+    font-size: 12px;
   }
 
   .app-thinking-disclosure > summary::before {
@@ -218,8 +216,6 @@
 
   .app-thinking-panel .app-thinking-code {
     padding: 8px !important;
-    font-size: 13px;
-    line-height: 1.6 !important;
     overflow-wrap: anywhere;
   }
 
@@ -239,10 +235,5 @@
     display: block;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
-  }
-
-  .app-thinking-panel .app-thinking-toggle {
-    min-height: 44px !important;
-    font-size: 12px !important;
   }
 }

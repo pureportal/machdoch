@@ -140,7 +140,7 @@ export const WorkspaceRunDialogControl = ({
           data-health-check-failed={healthCheckFailed ? "true" : "false"}
           data-primary-task-running={primaryTaskRunning ? "true" : "false"}
           className={cn(
-            "relative isolate h-9 overflow-hidden rounded-2xl border border-transparent px-3 text-slate-300 hover:bg-slate-900 hover:text-white",
+            "relative isolate h-7 shrink-0 overflow-hidden rounded-lg border border-transparent px-2 text-[11px] text-slate-300 hover:bg-slate-900 hover:text-white",
             scriptRunning &&
               "border-emerald-400/25 bg-emerald-500/10 text-emerald-100 hover:bg-emerald-500/15 hover:text-emerald-50",
             !scriptRunning &&

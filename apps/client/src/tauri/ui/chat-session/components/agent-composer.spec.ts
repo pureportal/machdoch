@@ -80,3 +80,59 @@ describe("AgentComposer draft reconciliation", () => {
     expect((textarea as HTMLTextAreaElement).value).toBe("Pending request");
   });
 });
+
+describe("AgentComposer queue", () => {
+  const queuedMessage = (
+    id: string,
+    content: string,
+    status: "queued" | "failed" = "queued",
+  ) => ({ id, content, attachments: [], status, createdAt: 1 });
+
+  it("summarises the queue and edits it in a dialog", () => {
+    const onQueuedMessageChange = vi.fn();
+    const view = render(
+      createElement(
+        AgentComposer,
+        createProps({
+          isExecuting: true,
+          onQueuedMessageChange,
+          queuedMessages: [
+            queuedMessage("first", "## Commit & Push\n\nDetails"),
+            queuedMessage("second", "Open a pull request"),
+          ],
+        }),
+      ),
+    );
+
+    expect(screen.getByText("Commit & Push")).toBeTruthy();
+    expect(screen.queryByRole("textbox", { name: "Queued message 1" })).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open queue: 2 queued messages" }),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Queued message 2" }), {
+      target: { value: "Ship it" },
+    });
+    expect(onQueuedMessageChange).toHaveBeenCalledWith("second", "Ship it");
+
+    view.rerender(
+      createElement(AgentComposer, createProps({ isExecuting: true })),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Open queue/u })).toBeNull();
+  });
+
+  it("shows failed queued messages without opening the queue", () => {
+    render(
+      createElement(
+        AgentComposer,
+        createProps({
+          queuedMessages: [queuedMessage("failed", "Retry me", "failed")],
+        }),
+      ),
+    );
+
+    expect(screen.getByText("1 failed")).toBeTruthy();
+    expect(screen.queryByText("Running")).toBeNull();
+  });
+});

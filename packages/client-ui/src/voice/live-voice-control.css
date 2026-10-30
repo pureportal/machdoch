@@ -6,7 +6,7 @@
 
 .m-live-voice-button {
   display: inline-flex;
-  height: 32px;
+  height: var(--composer-control-size, 32px);
   align-items: center;
   justify-content: center;
   gap: 6px;

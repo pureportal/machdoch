@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AgentLiveQuestion, AgentLiveState } from "@machdoch/fleet-protocol/task-thinking";
 import { afterEach, expect, it, vi } from "vitest";
-import { AgentLivePanel } from "./agent-live-panel";
+import { AgentLivePanel, AgentRunStatusButton } from "./agent-live-panel";
 import { AgentQuestionCard } from "./agent-question-card";
 import { FollowUpSuggestions } from "./follow-up-suggestions";
 import { AgentLiveRunDetails, formatQuestionAnswers } from "./agent-live-run-details";
@@ -29,29 +29,41 @@ const live: AgentLiveState = {
   steering: [{ id: "s1", text: "Also add tests.", status: "delivered" }],
 };
 
-it("summarises a running turn and stops background work on request", async () => {
+const openDetails = (): HTMLElement => {
+  fireEvent.click(screen.getByRole("button", { name: "Details" }));
+  return screen.getByRole("dialog", { name: "Run details" });
+};
+
+it("summarises a running turn on one line and keeps the rest in its details", async () => {
   const onStopTask = vi.fn(async () => undefined);
   render(<AgentLivePanel live={live} running onStopTask={onStopTask} now={NOW} />);
   const panel = screen.getByRole("region", { name: /live run details/u });
 
   expect(within(panel).getByText("5%")).toBeTruthy();
-  expect(within(panel).getByText("5-hour limit")).toBeTruthy();
-  expect(within(panel).getByText(/resets in 4 h/u)).toBeTruthy();
-  expect(within(panel).getByText(/Fast/u)).toBeTruthy();
-  expect(within(panel).getByText("Background work")).toBeTruthy();
-  expect(within(panel).getByText("Read the file")).toBeTruthy();
-  expect(within(panel).getByText(/Also add tests\./u)).toBeTruthy();
-  // A summary that only repeats the description is not shown twice.
-  expect(within(panel).getAllByText("Ping localhost")).toHaveLength(1);
+  expect(within(panel).getByText("Plan 1/2")).toBeTruthy();
+  expect(within(panel).getByText("Reply")).toBeTruthy();
+  expect(within(panel).queryByText("Read the file")).toBeNull();
+  expect(within(panel).queryByText("Background work")).toBeNull();
 
-  fireEvent.click(within(panel).getByRole("button", { name: "Stop Ping localhost" }));
+  const details = openDetails();
+  expect(within(details).getByText("5-hour limit")).toBeTruthy();
+  expect(within(details).getByText(/resets in 4 h/u)).toBeTruthy();
+  expect(within(details).getByText(/Fast/u)).toBeTruthy();
+  expect(within(details).getByText("Background work")).toBeTruthy();
+  expect(within(details).getByText("Read the file")).toBeTruthy();
+  expect(within(details).getByText(/Also add tests\./u)).toBeTruthy();
+  // A summary that only repeats the description is not shown twice.
+  expect(within(details).getAllByText("Ping localhost")).toHaveLength(1);
+
+  fireEvent.click(within(details).getByRole("button", { name: "Stop Ping localhost" }));
   await waitFor(() => expect(onStopTask).toHaveBeenCalledWith("bg-1"));
-  expect(within(panel).queryByRole("button", { name: "Stop Explore the repo" })).toBeNull();
+  expect(within(details).queryByRole("button", { name: "Stop Explore the repo" })).toBeNull();
 });
 
 it("offers no stop buttons when the run cannot stop tasks", () => {
   render(<AgentLivePanel live={live} running now={NOW} />);
-  expect(screen.queryByRole("button", { name: /^Stop /u })).toBeNull();
+  const details = openDetails();
+  expect(within(details).queryByRole("button", { name: /^Stop /u })).toBeNull();
 });
 
 it("labels foreground commands apart from background work", () => {
@@ -62,8 +74,56 @@ it("labels foreground commands apart from background work", () => {
       now={NOW}
     />,
   );
-  expect(screen.getByText("Commands & agents")).toBeTruthy();
-  expect(screen.queryByText("Background work")).toBeNull();
+  const details = openDetails();
+  expect(within(details).getByText("Commands & agents")).toBeTruthy();
+  expect(within(details).queryByText("Background work")).toBeNull();
+});
+
+it("collapses repeated finished work but keeps running work individually stoppable", () => {
+  const repeated = (id: string, status: "completed" | "running") => ({
+    id,
+    kind: "shell" as const,
+    description: "Check build",
+    status,
+    background: true,
+    canStop: status === "running",
+  });
+  render(
+    <AgentLivePanel
+      live={{ ...live, tasks: [repeated("a", "completed"), repeated("b", "completed"), repeated("c", "running"), repeated("d", "running")] }}
+      running
+      onStopTask={async () => undefined}
+      now={NOW}
+    />,
+  );
+  const details = openDetails();
+  expect(within(details).getByText("×2")).toBeTruthy();
+  expect(within(details).getAllByRole("button", { name: "Stop Check build" })).toHaveLength(2);
+});
+
+it("keeps warnings visible without opening the details", () => {
+  render(
+    <AgentLivePanel
+      live={{ ...live, notices: [{ id: "n", tone: "warning", text: "Context is almost full.", timestamp: NOW }] }}
+      running
+      now={NOW}
+    />,
+  );
+  const panel = screen.getByRole("region", { name: /live run details/u });
+  expect(within(panel).getByText("Context is almost full.")).toBeTruthy();
+});
+
+it("shows the running plan in the status button and opens its details", () => {
+  render(<AgentRunStatusButton live={live} running />);
+  expect(screen.getByText("Plan 1/2")).toBeTruthy();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open run details" }));
+  expect(within(screen.getByRole("dialog", { name: "Run details" })).getByText("Read the file")).toBeTruthy();
+});
+
+it("hides the status button when the run has no plan or running work", () => {
+  const view = render(<AgentRunStatusButton live={{ ...live, plan: [], tasks: [] }} running />);
+  expect(view.container.firstChild).toBeNull();
 });
 
 const question: AgentLiveQuestion = {
