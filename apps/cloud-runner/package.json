@@ -26,12 +26,12 @@
   },
   "dependencies": {
     "@machdoch/cloud-client": "workspace:*",
-    "@oxc-node/core": "^0.1.0",
     "@machdoch/fleet-protocol": "workspace:*",
-    "zod": "^4.4.3"
+    "@oxc-node/core": "^0.1.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "typescript": "^7.0.2",
-    "@types/node": "^25.9.3"
+    "@types/node": "^25.9.3",
+    "typescript": "^7.0.2"
   }
 }
