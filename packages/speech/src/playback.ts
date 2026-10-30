@@ -47,8 +47,14 @@ export function validatePlaybackLoop(selection: PlaybackLoop, duration: number |
   }
 }
 
+// `randomUUID` is missing outside secure contexts, and `speechPlayback` is created at import.
+const createInstanceId = (): string =>
+  typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : Array.from(crypto.getRandomValues(new Uint32Array(4)), (part) => part.toString(16)).join("-");
+
 export class SpeechPlaybackCoordinator {
-  private readonly instanceId = crypto.randomUUID();
+  private readonly instanceId = createInstanceId();
   private channel: BroadcastChannel | undefined;
   private decision = { time: 0, instanceId: "" };
   private readonly channelFactory: (() => BroadcastChannel) | undefined;

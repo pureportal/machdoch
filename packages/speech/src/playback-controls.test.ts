@@ -370,3 +370,14 @@ test("sequence seeking uses measured clip durations before metadata loads", asyn
   assert.equal(FakeAudio.instances[1]!.currentTime,1);
   handle.stop();
 }));
+
+test("creates a coordinator outside a secure context", (t) => {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, "crypto")!;
+  const { getRandomValues } = globalThis.crypto;
+  t.after(() => Object.defineProperty(globalThis, "crypto", descriptor));
+  Object.defineProperty(globalThis, "crypto", {
+    configurable: true,
+    value: { getRandomValues: getRandomValues.bind(globalThis.crypto) },
+  });
+  assert.doesNotThrow(() => new SpeechPlaybackCoordinator());
+});
