@@ -38,11 +38,11 @@
   {
     "ecosystem": "npm",
     "name": "@next/env",
-    "version": "16.3.3",
+    "version": "16.4.3",
     "files": [
       {
-        "file": "legal/third-party/supplemental/npm/%40next%2Fenv@16.3.3/license.md",
-        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.3.3/license.md",
+        "file": "legal/third-party/supplemental/npm/%40next%2Fenv@16.4.3/license.md",
+        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.4.3/license.md",
         "sha256": "ee765244e2d59f5234d474f62e0766fa0c8b99af967fdd4c0cb8dcb0c76ea224"
       }
     ]
@@ -50,11 +50,11 @@
   {
     "ecosystem": "npm",
     "name": "@next/swc-win32-x64-msvc",
-    "version": "16.3.3",
+    "version": "16.4.3",
     "files": [
       {
-        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-win32-x64-msvc@16.3.3/license.md",
-        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.3.3/license.md",
+        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-win32-x64-msvc@16.4.3/license.md",
+        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.4.3/license.md",
         "sha256": "ee765244e2d59f5234d474f62e0766fa0c8b99af967fdd4c0cb8dcb0c76ea224"
       }
     ]
@@ -320,11 +320,11 @@
   {
     "ecosystem": "npm",
     "name": "@next/swc-darwin-arm64",
-    "version": "16.3.3",
+    "version": "16.4.3",
     "files": [
       {
-        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-darwin-arm64@16.3.3/license.md",
-        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.3.3/license.md",
+        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-darwin-arm64@16.4.3/license.md",
+        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.4.3/license.md",
         "sha256": "ee765244e2d59f5234d474f62e0766fa0c8b99af967fdd4c0cb8dcb0c76ea224"
       }
     ]
@@ -332,11 +332,11 @@
   {
     "ecosystem": "npm",
     "name": "@next/swc-darwin-x64",
-    "version": "16.3.3",
+    "version": "16.4.3",
     "files": [
       {
-        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-darwin-x64@16.3.3/license.md",
-        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.3.3/license.md",
+        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-darwin-x64@16.4.3/license.md",
+        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.4.3/license.md",
         "sha256": "ee765244e2d59f5234d474f62e0766fa0c8b99af967fdd4c0cb8dcb0c76ea224"
       }
     ]
@@ -344,11 +344,11 @@
   {
     "ecosystem": "npm",
     "name": "@next/swc-linux-arm64-gnu",
-    "version": "16.3.3",
+    "version": "16.4.3",
     "files": [
       {
-        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-linux-arm64-gnu@16.3.3/license.md",
-        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.3.3/license.md",
+        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-linux-arm64-gnu@16.4.3/license.md",
+        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.4.3/license.md",
         "sha256": "ee765244e2d59f5234d474f62e0766fa0c8b99af967fdd4c0cb8dcb0c76ea224"
       }
     ]
@@ -356,11 +356,11 @@
   {
     "ecosystem": "npm",
     "name": "@next/swc-linux-arm64-musl",
-    "version": "16.3.3",
+    "version": "16.4.3",
     "files": [
       {
-        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-linux-arm64-musl@16.3.3/license.md",
-        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.3.3/license.md",
+        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-linux-arm64-musl@16.4.3/license.md",
+        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.4.3/license.md",
         "sha256": "ee765244e2d59f5234d474f62e0766fa0c8b99af967fdd4c0cb8dcb0c76ea224"
       }
     ]
@@ -368,11 +368,11 @@
   {
     "ecosystem": "npm",
     "name": "@next/swc-linux-x64-gnu",
-    "version": "16.3.3",
+    "version": "16.4.3",
     "files": [
       {
-        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-linux-x64-gnu@16.3.3/license.md",
-        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.3.3/license.md",
+        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-linux-x64-gnu@16.4.3/license.md",
+        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.4.3/license.md",
         "sha256": "ee765244e2d59f5234d474f62e0766fa0c8b99af967fdd4c0cb8dcb0c76ea224"
       }
     ]
@@ -380,11 +380,11 @@
   {
     "ecosystem": "npm",
     "name": "@next/swc-linux-x64-musl",
-    "version": "16.3.3",
+    "version": "16.4.3",
     "files": [
       {
-        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-linux-x64-musl@16.3.3/license.md",
-        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.3.3/license.md",
+        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-linux-x64-musl@16.4.3/license.md",
+        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.4.3/license.md",
         "sha256": "ee765244e2d59f5234d474f62e0766fa0c8b99af967fdd4c0cb8dcb0c76ea224"
       }
     ]
@@ -392,11 +392,11 @@
   {
     "ecosystem": "npm",
     "name": "@next/swc-win32-arm64-msvc",
-    "version": "16.3.3",
+    "version": "16.4.3",
     "files": [
       {
-        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-win32-arm64-msvc@16.3.3/license.md",
-        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.3.3/license.md",
+        "file": "legal/third-party/supplemental/npm/%40next%2Fswc-win32-arm64-msvc@16.4.3/license.md",
+        "source": "https://raw.githubusercontent.com/vercel/next.js/v16.4.3/license.md",
         "sha256": "ee765244e2d59f5234d474f62e0766fa0c8b99af967fdd4c0cb8dcb0c76ea224"
       }
     ]
@@ -935,19 +935,19 @@
   {
     "ecosystem": "npm",
     "name": "@img/sharp-libvips-linux-x64",
-    "version": "1.3.3",
+    "version": "1.3.4",
     "evidence": [
-      "https://registry.npmjs.org/%40img%2Fsharp-libvips-linux-x64/1.3.3"
+      "https://registry.npmjs.org/%40img%2Fsharp-libvips-linux-x64/1.3.4"
     ],
     "files": [
       {
-        "file": "legal/third-party/supplemental/npm/%40img%2Fsharp-libvips-linux-x64@1.3.3/THIRD-PARTY-NOTICES.md",
-        "source": "https://raw.githubusercontent.com/lovell/sharp-libvips/6e5971d333377743163edc3ad9e5d0b897abcbc9/THIRD-PARTY-NOTICES.md",
-        "sha256": "25ffcfa69e28b1913ced27ec778b90f24911a1bb3021253577e8b0af55db0d49"
+        "file": "legal/third-party/supplemental/npm/%40img%2Fsharp-libvips-linux-x64@1.3.4/THIRD-PARTY-NOTICES.md",
+        "source": "https://raw.githubusercontent.com/lovell/sharp-libvips/ebb95f8add54eee8bed840e3fb587e4cbec857d7/THIRD-PARTY-NOTICES.md",
+        "sha256": "6f0d5086e3bcbee12bcdacf5878b31d1104002aeecaeb241d3fff466108082fe"
       },
       {
-        "file": "legal/third-party/supplemental/npm/%40img%2Fsharp-libvips-linux-x64@1.3.3/LICENSE",
-        "source": "https://raw.githubusercontent.com/libvips/libvips/426af3f44246fce9cfa8dd51a353aa4dfd48c553/LICENSE",
+        "file": "legal/third-party/supplemental/npm/%40img%2Fsharp-libvips-linux-x64@1.3.4/LICENSE",
+        "source": "https://raw.githubusercontent.com/libvips/libvips/24ad4d042940e6bf99a68871ba886ca8847c9c82/LICENSE",
         "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551"
       }
     ]
