@@ -2,13 +2,13 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Plus, Workflow } from "lucide-react";
 import type { CloudAiProvider } from "@machdoch/fleet-protocol/cloud-providers";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
-import type {
-  ExecutionProfile,
-  ExecutionWorker,
+import {
+  clientAgents,
+  type ExecutionProfile,
+  type ExecutionWorker,
 } from "@machdoch/fleet-protocol/cloud-execution";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
@@ -17,7 +17,11 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ExecutionChecks, type CheckDraft } from "./execution-checks";
 import { cloudRequest, createCommandSender, formText } from "./api-client";
-import { executionTargetLabels } from "./execution-labels";
+import {
+  clientAgentLabels,
+  executionTargetLabels,
+  profileAgentLabel,
+} from "./execution-labels";
 
 export function ExecutionSettings({
   workspace,
@@ -40,6 +44,7 @@ export function ExecutionSettings({
   const [rotating, setRotating] = useState<ExecutionWorker | null>(null);
   const [token, setToken] = useState("");
   const [error, setError] = useState("");
+  const [target, setTarget] = useState<ExecutionProfile["target"]>("cloud");
   const [providerId, setProviderId] = useState("");
   const [model, setModel] = useState("");
   const [checks, setChecks] = useState<CheckDraft[]>([]);
@@ -47,8 +52,11 @@ export function ExecutionSettings({
   const profile = editing && editing !== "new" ? editing : null;
   function editProfile(entry: ExecutionProfile | "new") {
     sender.current = createCommandSender();
-    setProviderId(entry === "new" ? "" : entry.providerId);
-    setModel(entry === "new" ? "" : entry.model);
+    setTarget(entry === "new" ? "cloud" : entry.target);
+    setProviderId(
+      entry === "new" || entry.target === "client" ? "" : entry.providerId,
+    );
+    setModel(entry === "new" ? "" : (entry.model ?? ""));
     setChecks(
       (entry === "new"
         ? [{ name: "", command: "", timeoutSeconds: 60 }]
@@ -79,17 +87,12 @@ export function ExecutionSettings({
     <>
       <header className="cloud-page-header">
         <h1>AI execution</h1>
-        {workspace.projects.length > 0 &&
-          (providers.some((provider) => provider.enabled) ? (
-            <Button onClick={() => editProfile("new")}>
-              <Plus />
-              New profile
-            </Button>
-          ) : (
-            <Button asChild>
-              <Link href="/cloud/providers">AI providers</Link>
-            </Button>
-          ))}
+        {workspace.projects.length > 0 && (
+          <Button onClick={() => editProfile("new")}>
+            <Plus />
+            New profile
+          </Button>
+        )}
       </header>
       {error && (
         <p role="alert" className="cloud-error">
@@ -121,7 +124,8 @@ export function ExecutionSettings({
                 }
               </p>
               <p>
-                {executionTargetLabels[entry.target]} · {entry.model}
+                {executionTargetLabels[entry.target]} ·{" "}
+                {profileAgentLabel(entry)}
               </p>
               {!entry.enabled && <span>Disabled</span>}
               <div className="cloud-card-actions">
@@ -254,12 +258,19 @@ export function ExecutionSettings({
         onSubmit={async (form) => {
           const definition = {
             name: formText(form, "name"),
-            target: formText(form, "target"),
+            target,
             workspacePath: formText(form, "workspacePath") || undefined,
             repository: formText(form, "repository"),
             baseCommit: formText(form, "baseCommit"),
-            providerId: formText(form, "providerId"),
-            model: formText(form, "model"),
+            ...(target === "client"
+              ? {
+                  agent: formText(form, "agent"),
+                  model: formText(form, "model") || undefined,
+                }
+              : {
+                  providerId: formText(form, "providerId"),
+                  model: formText(form, "model"),
+                }),
             maxDurationSeconds: Number(formText(form, "minutes")) * 60,
             maxTokens: Number(formText(form, "maxTokens")),
             requiredChecks: checks.map(({ key: _, ...check }) => check),
@@ -303,11 +314,17 @@ export function ExecutionSettings({
           <Select
             id="profile-target"
             name="target"
-            defaultValue={profile?.target ?? "cloud"}
+            value={target}
+            onChange={(event) => {
+              setTarget(event.target.value as ExecutionProfile["target"]);
+              setModel("");
+            }}
           >
-            <option value="cloud">Cloud (Linux)</option>
-            <option value="client-linux">Client (Linux)</option>
-            <option value="client">Client (native)</option>
+            {(["cloud", "client", "client-linux"] as const).map((value) => (
+              <option key={value} value={value}>
+                {executionTargetLabels[value]}
+              </option>
+            ))}
           </Select>
         </Field>
         <Field label="Repository URL" htmlFor="profile-repository">
@@ -339,57 +356,89 @@ export function ExecutionSettings({
             placeholder="Repository root"
           />
         </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Provider" htmlFor="profile-provider">
-            <Select
-              id="profile-provider"
-              name="providerId"
-              required
-              value={providerId}
-              onChange={(event) => {
-                setProviderId(event.target.value);
-                setModel("");
-              }}
-            >
-              <option value="" disabled>
-                Select a provider
-              </option>
-              {providers
-                .filter(
-                  (provider) =>
-                    provider.enabled || provider.id === profile?.providerId,
-                )
-                .map((provider) => (
-                  <option key={provider.id} value={provider.id}>
-                    {provider.name}
-                    {provider.enabled ? "" : " (disabled)"}
+        {target === "client" ? (
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Agent" htmlFor="profile-agent">
+              <Select
+                id="profile-agent"
+                name="agent"
+                defaultValue={
+                  profile?.target === "client" ? profile.agent : "codex-cli"
+                }
+              >
+                {clientAgents.map((agent) => (
+                  <option key={agent} value={agent}>
+                    {clientAgentLabels[agent]}
                   </option>
                 ))}
-            </Select>
-          </Field>
-          <Field label="Model" htmlFor="profile-model">
-            <Select
-              id="profile-model"
-              name="model"
-              required
-              disabled={!connection}
-              value={model}
-              onChange={(event) => setModel(event.target.value)}
-            >
-              <option value="" disabled>
-                Select a model
-              </option>
-              {model && !connection?.models.includes(model) && (
-                <option value={model}>{model} (unavailable)</option>
-              )}
-              {connection?.models.map((name) => (
-                <option key={name} value={name}>
-                  {name}
+              </Select>
+            </Field>
+            <Field label="Model" htmlFor="profile-model">
+              <Input
+                id="profile-model"
+                name="model"
+                maxLength={160}
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+                placeholder="Agent default"
+              />
+            </Field>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            <Field label="Provider" htmlFor="profile-provider">
+              <Select
+                id="profile-provider"
+                name="providerId"
+                required
+                value={providerId}
+                onChange={(event) => {
+                  setProviderId(event.target.value);
+                  setModel("");
+                }}
+              >
+                <option value="" disabled>
+                  Select a provider
                 </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
+                {providers
+                  .filter(
+                    (provider) =>
+                      provider.enabled ||
+                      (profile?.target !== "client" &&
+                        provider.id === profile?.providerId),
+                  )
+                  .map((provider) => (
+                    <option key={provider.id} value={provider.id}>
+                      {provider.name}
+                      {provider.enabled ? "" : " (disabled)"}
+                    </option>
+                  ))}
+              </Select>
+            </Field>
+            <Field label="Model" htmlFor="profile-model">
+              <Select
+                id="profile-model"
+                name="model"
+                required
+                disabled={!connection}
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+              >
+                <option value="" disabled>
+                  Select a model
+                </option>
+                {model && !connection?.models.includes(model) && (
+                  <option value={model}>{model} (unavailable)</option>
+                )}
+                {connection?.models.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-4">
           <Field label="Time limit (minutes)" htmlFor="profile-minutes">
             <Input

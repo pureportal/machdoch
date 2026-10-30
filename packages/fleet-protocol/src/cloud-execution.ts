@@ -26,7 +26,6 @@ export const terminalRunStates = [
   "timed_out",
 ] as const;
 export type RunState = (typeof runStates)[number];
-export const targetKinds = ["cloud", "client", "client-linux"] as const;
 export const repositoryDirectorySchema = z
   .string()
   .trim()
@@ -56,15 +55,15 @@ export const executionCheckSchema = z.strictObject({
   timeoutSeconds: z.number().int().min(1).max(300),
 });
 export type ExecutionCheck = z.infer<typeof executionCheckSchema>;
-export const executionProfileInputSchema = z.strictObject({
+export const clientAgents = ["machdoch", "codex-cli", "claude-cli"] as const;
+export type ClientAgent = (typeof clientAgents)[number];
+const modelName = z.string().trim().min(1).max(160);
+const executionProfileFields = {
   projectId: cloudId,
   name: z.string().trim().min(1).max(120),
-  target: z.enum(targetKinds),
   workspacePath: repositoryDirectorySchema.optional(),
   repository: githubRepositorySchema,
   baseCommit: z.string().regex(/^[0-9a-f]{40}$/, "Use a full Git commit SHA."),
-  providerId: cloudId,
-  model: z.string().trim().min(1).max(160),
   maxDurationSeconds: z.number().int().min(60).max(86_400),
   maxTokens: z.number().int().min(1).max(10_000_000),
   requiredChecks: z
@@ -75,10 +74,32 @@ export const executionProfileInputSchema = z.strictObject({
       (items) => new Set(items.map((item) => item.name)).size === items.length,
       "Check names must be unique.",
     ),
+};
+const brokeredProfileInputSchema = z.strictObject({
+  ...executionProfileFields,
+  target: z.enum(["cloud", "client-linux"]),
+  providerId: cloudId,
+  model: modelName,
 });
-export const executionProfileUpdateSchema = executionProfileInputSchema
-  .omit({ projectId: true })
-  .extend({ revision, enabled: z.boolean() });
+const clientProfileInputSchema = z.strictObject({
+  ...executionProfileFields,
+  target: z.literal("client"),
+  agent: z.enum(clientAgents),
+  model: modelName.optional(),
+});
+export const executionProfileInputSchema = z.discriminatedUnion("target", [
+  brokeredProfileInputSchema,
+  clientProfileInputSchema,
+]);
+const profileUpdateFields = { revision, enabled: z.boolean() };
+export const executionProfileUpdateSchema = z.discriminatedUnion("target", [
+  brokeredProfileInputSchema
+    .omit({ projectId: true })
+    .extend(profileUpdateFields),
+  clientProfileInputSchema
+    .omit({ projectId: true })
+    .extend(profileUpdateFields),
+]);
 export const runInputSchema = z.strictObject({
   profileId: cloudId,
   subject: z.discriminatedUnion("kind", [
@@ -149,12 +170,7 @@ export type ExecutionProfileInput = z.infer<typeof executionProfileInputSchema>;
 export type ExecutionProfileUpdate = z.infer<
   typeof executionProfileUpdateSchema
 >;
-export interface ExecutionProfile extends ExecutionProfileInput {
-  id: string;
-  revision: number;
-  enabled: boolean;
-  teamId: string;
-}
+export type ExecutionProfile = z.infer<typeof executionProfileSchema>;
 export type RunInput = z.infer<typeof runInputSchema>;
 export type AttemptIdentity = z.infer<typeof attemptIdentitySchema>;
 export type WorkerProgress = z.infer<typeof workerProgressSchema>;
@@ -226,12 +242,16 @@ export interface ExecutionWorker {
   workspaceBinding: ClientWorkspaceBinding | null;
 }
 
-export const executionProfileSchema = executionProfileInputSchema.extend({
+const storedProfileFields = {
   id: cloudId,
   teamId: cloudId,
   revision,
   enabled: z.boolean(),
-});
+};
+export const executionProfileSchema = z.discriminatedUnion("target", [
+  brokeredProfileInputSchema.extend(storedProfileFields),
+  clientProfileInputSchema.extend(storedProfileFields),
+]);
 export const workerRegistrationSchema = z.strictObject({
   workerId: cloudId,
   organizationId: cloudId,
@@ -241,36 +261,44 @@ export const workerRegistrationSchema = z.strictObject({
 });
 export type WorkerRegistration = z.infer<typeof workerRegistrationSchema>;
 
-export const runManifestSchema = z.strictObject({
-  automation: z
-    .strictObject({
-      scheduleId: cloudId,
-      revision,
-      expiresAt: z.iso.datetime({ offset: true }),
-      membershipEpoch: z.string().regex(/^[1-9]\d{0,18}$/),
-      userEpoch: z.string().regex(/^[1-9]\d{0,18}$/),
-      teamEpoch: z.string().regex(/^[1-9]\d{0,18}$/),
-    })
-    .optional(),
-  contextLimitBytes: z
-    .number()
-    .int()
-    .min(256)
-    .max(48 * 1024),
-  subject: runInputSchema.shape.subject,
-  title: z.string().max(300),
-  objective: z.string().max(30302),
-  acceptanceCriteria: z.string().max(20000),
-  profile: executionProfileSchema,
-  provider: z.strictObject({
-    id: cloudId,
-    name: z.string().max(120),
-    provider: z.enum(cloudApiProviders),
-    inferenceRevision: revision,
-    maxOutputTokens: z.number().int().min(64).max(65536),
-  }),
-  actorId: cloudId,
-});
+export const runManifestSchema = z
+  .strictObject({
+    automation: z
+      .strictObject({
+        scheduleId: cloudId,
+        revision,
+        expiresAt: z.iso.datetime({ offset: true }),
+        membershipEpoch: z.string().regex(/^[1-9]\d{0,18}$/),
+        userEpoch: z.string().regex(/^[1-9]\d{0,18}$/),
+        teamEpoch: z.string().regex(/^[1-9]\d{0,18}$/),
+      })
+      .optional(),
+    contextLimitBytes: z
+      .number()
+      .int()
+      .min(256)
+      .max(48 * 1024),
+    subject: runInputSchema.shape.subject,
+    title: z.string().max(300),
+    objective: z.string().max(30302),
+    acceptanceCriteria: z.string().max(20000),
+    profile: executionProfileSchema,
+    provider: z
+      .strictObject({
+        id: cloudId,
+        name: z.string().max(120),
+        provider: z.enum(cloudApiProviders),
+        inferenceRevision: revision,
+        maxOutputTokens: z.number().int().min(64).max(65536),
+      })
+      .nullable(),
+    actorId: cloudId,
+  })
+  .refine(
+    (manifest) =>
+      (manifest.profile.target === "client") === (manifest.provider === null),
+    "Only client agents run without a cloud model provider.",
+  );
 export const workerGrantIdentitySchema = attemptIdentitySchema.extend({
   inputDigest: z.string().regex(/^[a-f0-9]{64}$/),
 });

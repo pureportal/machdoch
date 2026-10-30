@@ -1,5 +1,5 @@
 "use client";
-import { executionTargetLabels } from "./execution-labels";
+import { executionTargetLabels, profileAgentLabel } from "./execution-labels";
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -28,11 +28,13 @@ export function TaskList({
   initial = [],
   issue,
   dirty = false,
+  startRequest = 0,
 }: {
   workspace: CloudWorkspace;
   initial?: CloudRun[];
   issue?: CloudIssue;
   dirty?: boolean;
+  startRequest?: number;
 }) {
   const [runs, setRuns] = useState(initial);
   const [profiles, setProfiles] = useState<ExecutionProfile[]>([]);
@@ -93,6 +95,24 @@ export function TaskList({
   const available = profiles.filter(
     (profile) => profile.projectId === selectedProject,
   );
+  function start() {
+    if (issue && !issue.projectId) {
+      setError("Assign a project before starting a task.");
+      return;
+    }
+    if (issue && !issue.acceptanceCriteria.trim()) {
+      setError("Add acceptance criteria before starting a task.");
+      return;
+    }
+    sender.current = createCommandSender();
+    setOpen(true);
+  }
+  const handledStart = useRef(startRequest);
+  useEffect(() => {
+    if (startRequest === handledStart.current) return;
+    handledStart.current = startRequest;
+    if (canStart && !dirty) start();
+  });
   return (
     <section
       className={issue ? "cloud-issue-tasks" : undefined}
@@ -108,18 +128,7 @@ export function TaskList({
           <Button
             variant={issue ? "outline" : "default"}
             disabled={dirty}
-            onClick={() => {
-              if (issue && !issue.projectId) {
-                setError("Assign a project before starting a task.");
-                return;
-              }
-              if (issue && !issue.acceptanceCriteria.trim()) {
-                setError("Add acceptance criteria before starting a task.");
-                return;
-              }
-              sender.current = createCommandSender();
-              setOpen(true);
-            }}
+            onClick={start}
           >
             <Plus />
             New task
@@ -231,7 +240,8 @@ export function TaskList({
             </option>
             {available.map((profile) => (
               <option key={profile.id} value={profile.id}>
-                {profile.name} · {executionTargetLabels[profile.target]}
+                {profile.name} · {executionTargetLabels[profile.target]} ·{" "}
+                {profileAgentLabel(profile)}
               </option>
             ))}
           </Select>

@@ -136,6 +136,12 @@ export async function validateScheduleAction(
       profile,
     });
   }
+  if (profile.target === "client")
+    return {
+      action,
+      providerRevision: null,
+      tokenReservation: profile.maxTokens,
+    };
   const provider = await readInferenceProvider(
     sql,
     actor.organizationId,

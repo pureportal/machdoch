@@ -116,7 +116,7 @@ await test("negotiates context before purchasing inference without changing the 
   claim.manifest.profile.maxTokens =
     base +
     taskInferenceReservationOverhead +
-    claim.manifest.provider.maxOutputTokens +
+    claim.manifest.provider!.maxOutputTokens +
     2000;
   const maximum = claim.manifest.profile.maxTokens;
   const usage = { tokens: 1000, requests: 1 };
@@ -181,7 +181,7 @@ await test("passes the immutable task to the shared agent and requires process-t
     assert.equal(signal?.aborted, false);
     assert.ok(transport);
     const start = JSON.parse(String(args.start));
-    assert.equal(start.provider, claim.manifest.provider.provider);
+    assert.equal(start.provider, claim.manifest.provider?.provider);
     assert.equal(JSON.parse(start.task).objective, claim.manifest.objective);
     return {
       id: randomUUID(),

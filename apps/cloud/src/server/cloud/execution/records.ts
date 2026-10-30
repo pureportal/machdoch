@@ -116,30 +116,39 @@ export async function hasRunAuthority(
   organizationId: string,
   run: StoredRun,
 ): Promise<boolean> {
-  const grant = await sql.query(
-    `SELECT p.id FROM cloud_execution_profiles p JOIN cloud_teams t ON t.organization_id=p.organization_id AND t.id=p.team_id
+  const grant = await sql.query<{ provider_id: string | null }>(
+    `SELECT p.provider_id FROM cloud_execution_profiles p JOIN cloud_teams t ON t.organization_id=p.organization_id AND t.id=p.team_id
     JOIN cloud_memberships m ON m.organization_id=p.organization_id AND m.user_id=$3 JOIN cloud_users u ON u.id=m.user_id
-    JOIN cloud_ai_providers ai ON ai.organization_id=p.organization_id AND ai.id=p.provider_id
     WHERE p.organization_id=$1 AND p.id=$2 AND p.enabled AND p.revision=$4 AND m.active AND m.role<>'viewer' AND NOT u.disabled
-    AND ai.enabled AND ai.id=$5 AND ai.inference_revision=$6 AND ai.models ? $7
-    AND ($8::timestamptz IS NULL OR (clock_timestamp()<$8::timestamptz AND m.authentication_epoch=$9::bigint AND u.authentication_epoch=$10::bigint AND t.access_epoch=$11::bigint))
+    AND ($5::timestamptz IS NULL OR (clock_timestamp()<$5::timestamptz AND m.authentication_epoch=$6::bigint AND u.authentication_epoch=$7::bigint AND t.access_epoch=$8::bigint))
     AND (t.visibility='organization' OR m.role IN ('owner','admin') OR EXISTS (SELECT 1 FROM cloud_team_memberships tm WHERE tm.organization_id=t.organization_id AND tm.team_id=t.id AND tm.user_id=m.user_id))
-    FOR SHARE OF p,t,m,u,ai`,
+    FOR SHARE OF p,t,m,u`,
     [
       organizationId,
       run.profileId,
       run.actorId,
       run.manifest.profile.revision,
-      run.manifest.provider.id,
-      run.manifest.provider.inferenceRevision,
-      run.manifest.profile.model,
       run.manifest.automation?.expiresAt ?? null,
       run.manifest.automation?.membershipEpoch ?? null,
       run.manifest.automation?.userEpoch ?? null,
       run.manifest.automation?.teamEpoch ?? null,
     ],
   );
-  return grant.rows.length > 0;
+  const profile = grant.rows[0];
+  if (!profile) return false;
+  const provider = run.manifest.provider;
+  if (!provider) return profile.provider_id === null;
+  if (profile.provider_id !== provider.id) return false;
+  const model = await sql.query(
+    "SELECT id FROM cloud_ai_providers WHERE organization_id=$1 AND id=$2 AND enabled AND inference_revision=$3 AND models ? $4 FOR SHARE",
+    [
+      organizationId,
+      provider.id,
+      provider.inferenceRevision,
+      run.manifest.profile.model,
+    ],
+  );
+  return model.rows.length > 0;
 }
 
 export async function fenceRun(

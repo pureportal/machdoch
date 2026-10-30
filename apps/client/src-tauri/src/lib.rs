@@ -2,6 +2,7 @@ mod agent_cli;
 mod app_update;
 mod atomic_file;
 mod cli_settings_bridge;
+mod cloud_runners;
 mod cloud_workspaces;
 mod cooperative_file_lock;
 mod desktop_shell;
@@ -153,6 +154,7 @@ pub fn run() {
 
     builder
         .manage(app_update::AppUpdateState::default())
+        .manage(cloud_runners::CloudRunnerState::default())
         .manage(desktop_task::AttachmentPathGrantMap::default())
         .manage(desktop_task::DesktopTaskCancelMap::default())
         .manage(desktop_shell::FileManagerInvocationState::with_initial(
@@ -247,6 +249,9 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             cloud_workspaces::cloud_workspace_request,
+            cloud_runners::cloud_runner_list,
+            cloud_runners::cloud_runner_start,
+            cloud_runners::cloud_runner_stop,
             app_update::app_update_available,
             app_update::prepare_app_update,
             app_update::finish_app_update,
@@ -522,6 +527,7 @@ pub fn run() {
             if matches!(event, tauri::RunEvent::Exit) {
                 desktop_shell::placement::save(app);
                 app.state::<fleet::FleetConnectionState>().shutdown();
+                app.state::<cloud_runners::CloudRunnerState>().shutdown();
                 media::model_memory::shutdown();
                 app.state::<desktop_shell::display_layout::DisplayLayoutState>()
                     .shutdown();

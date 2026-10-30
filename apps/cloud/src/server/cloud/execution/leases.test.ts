@@ -16,7 +16,6 @@ import { createCloudRuntime, type CloudRuntime } from "../runtime";
 import { createTestCloudDatabase, testStatusReference } from "../test-database";
 import { SettingsCipher } from "../../settings-crypto";
 import type { ProviderUpdate } from "@machdoch/fleet-protocol/cloud-providers";
-import { executionProfileInputSchema } from "@machdoch/fleet-protocol/cloud-execution";
 
 let database: Awaited<ReturnType<typeof createTestCloudDatabase>>;
 let runtime: CloudRuntime;
@@ -147,11 +146,23 @@ async function clientWorker(target: "client" | "client-linux" = "client") {
   const profile = (await runtime.execution.profiles.list(owner)).find(
     (entry) => entry.id === profileId,
   )!;
-  const { id: _, projectId: __, teamId: ___, ...definition } = profile;
-  await runtime.execution.profiles.update(owner, randomUUID(), profileId, {
-    ...definition,
-    target,
-  });
+  if (profile.target === "client") throw new Error("Expected a cloud profile");
+  const {
+    id: _,
+    projectId: __,
+    teamId: ___,
+    providerId: ____,
+    model: _____,
+    ...definition
+  } = profile;
+  await runtime.execution.profiles.update(
+    owner,
+    randomUUID(),
+    profileId,
+    target === "client"
+      ? { ...definition, target, agent: "codex-cli" }
+      : { ...definition, target, providerId, model: "test-model" },
+  );
   worker = await runtime.execution.workers.register(owner, profileId, "Client");
   return {
     workspaceId: randomUUID(),
@@ -198,6 +209,57 @@ it("requires an immutable matching client workspace before claiming a task", asy
     (await runtime.execution.leases.claim(worker.token, randomUUID())).claim
       ?.runId,
   ).toBe(run.id);
+});
+
+it("runs native client agents without a cloud provider in an independent checkout", async () => {
+  const binding = await clientWorker();
+  await runtime.execution.clientWorkspaces.bind(worker.token, binding);
+  await runtime.execution.runs.create(member, randomUUID(), input);
+  const { claim } = await runtime.execution.leases.claim(
+    worker.token,
+    randomUUID(),
+  );
+  expect(claim?.manifest.profile).toMatchObject({
+    target: "client",
+    agent: "codex-cli",
+  });
+  expect(claim?.manifest.provider).toBeNull();
+  const acceptance = {
+    runId: claim!.runId,
+    attemptId: claim!.attemptId,
+    epoch: claim!.epoch,
+    environmentId: randomUUID(),
+    baseCommit: commit,
+  };
+  await expect(
+    runtime.execution.leases.accept(worker.token, {
+      ...acceptance,
+      isolation: "microvm",
+    }),
+  ).rejects.toMatchObject({ code: "environment_mismatch" });
+  expect(
+    await runtime.execution.leases.accept(worker.token, {
+      ...acceptance,
+      isolation: "independent-checkout",
+    }),
+  ).toMatchObject({ instruction: "continue" });
+  await expect(
+    runtime.execution.inference.submit(worker.token, {
+      runId: claim!.runId,
+      attemptId: claim!.attemptId,
+      epoch: claim!.epoch,
+      requestId: randomUUID(),
+      context: "Repository context",
+      runtimePrompt: "",
+      tools: [],
+      modelOptions: {},
+    }),
+  ).rejects.toMatchObject({ code: "inference_unavailable" });
+  await updateProvider({ enabled: false });
+  expect(
+    (await runtime.execution.leases.heartbeat(worker.token, claim!))
+      .instruction,
+  ).toBe("continue");
 });
 
 it("requires a linked workspace and microVM acceptance for explicit Linux client execution", async () => {
@@ -335,7 +397,14 @@ async function updateProvider(patch: Partial<ProviderUpdate>) {
 
 it("binds profiles to tenant-owned providers and allowed models", async () => {
   const profile = (await runtime.execution.profiles.list(owner))[0]!;
-  const definition = executionProfileInputSchema.strip().parse(profile);
+  if (profile.target === "client") throw new Error("Expected a cloud profile");
+  const {
+    id: _,
+    teamId: __,
+    revision: ___,
+    enabled: ____,
+    ...definition
+  } = profile;
   await expect(
     runtime.execution.profiles.create(owner, randomUUID(), {
       ...definition,
@@ -390,7 +459,7 @@ it("freezes provider identity and permits cosmetic changes without fencing work"
   ).toBe("continue");
   expect(
     (await runtime.execution.runs.get(owner, claim.runId)).manifest.provider
-      .name,
+      ?.name,
   ).toBe("Execution provider");
 });
 
@@ -433,7 +502,7 @@ it("disabling a provider fails queued tasks and prevents admission until explici
   const next = await runtime.execution.runs.create(owner, randomUUID(), input);
   expect(
     (await runtime.execution.runs.get(owner, next.id)).manifest.provider
-      .inferenceRevision,
+      ?.inferenceRevision,
   ).toBe(3);
 });
 

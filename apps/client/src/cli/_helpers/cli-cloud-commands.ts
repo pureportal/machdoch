@@ -15,7 +15,7 @@ export async function runCloudCommand(args: ParsedCliArgs): Promise<void> {
   if (options.action === "run") {
     const worker = await createClientCloudWorker(
       options.id,
-      resolve(options.runtime),
+      options.runtime && resolve(options.runtime),
       bindings,
     );
     const controller = new AbortController();

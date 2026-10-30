@@ -353,7 +353,7 @@ export interface ParsedCliArgs {
     | { action: "connect"; origin: string; name?: string }
     | { action: "status" | "request" }
     | { action: "disconnect"; id: string }
-    | { action: "run"; id: string; runtime: string; once: boolean };
+    | { action: "run"; id: string; runtime?: string; once: boolean };
   instructions?: InstructionCliOptions;
   mode?: RunMode;
   provider?: UserApiProvider;

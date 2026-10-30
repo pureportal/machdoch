@@ -81,9 +81,12 @@ export class CloudRuns {
       } = run;
       const usage = (
         await sql.query<RunDetail["usage"] & Record<string, unknown>>(
-          `SELECT COALESCE(sum(actual_tokens),0)::double precision AS "usedTokens",
+          run.manifest.provider
+            ? `SELECT COALESCE(sum(actual_tokens),0)::double precision AS "usedTokens",
         COALESCE(sum(reserved_tokens) FILTER (WHERE actual_tokens IS NULL),0)::double precision AS "reservedTokens",count(*)::integer AS requests
-        FROM cloud_inference_calls WHERE organization_id=$1 AND run_id=$2`,
+        FROM cloud_inference_calls WHERE organization_id=$1 AND run_id=$2`
+            : `SELECT COALESCE((result->>'tokensUsed')::double precision,0) AS "usedTokens",0::double precision AS "reservedTokens",0 AS requests
+        FROM cloud_runs WHERE organization_id=$1 AND id=$2`,
           [actor.organizationId, id],
         )
       ).rows[0]!;

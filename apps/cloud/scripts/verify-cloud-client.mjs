@@ -8,11 +8,7 @@ import { promisify } from "node:util";
 import { ClientCloudBindings } from "../../client/src/core/cloud/bindings.ts";
 import { prepareClientWorkspace } from "../../client/src/core/cloud/managed-workspace.ts";
 import { workspaceGit } from "../../client/src/core/cloud/repository.ts";
-import {
-  cloudApi,
-  cloudBrowserFixture,
-  executionProviderFixture,
-} from "./cloud-browser-fixture.mjs";
+import { cloudApi, cloudBrowserFixture } from "./cloud-browser-fixture.mjs";
 
 let dropped = false;
 const fixture = await cloudBrowserFixture({
@@ -142,18 +138,13 @@ try {
     name: "Client project",
     description: "",
   });
-  const provider = await executionProviderFixture(
-    fixture,
-    fixture.ownerContext,
-  );
   const profile = await api("execution-profiles", "POST", {
     projectId: project.id,
     name: "Client execution",
     target: "client",
     repository: "https://github.com/example/project",
     baseCommit,
-    providerId: provider.id,
-    model: "fixture",
+    agent: "codex-cli",
     maxDurationSeconds: 300,
     maxTokens: 10000,
     requiredChecks: [
@@ -194,7 +185,9 @@ try {
     workers[0].workspaceBinding.workspaceId,
     linked.binding.workspaceId,
   );
-  assert.ok(!JSON.stringify(workers).includes(JSON.stringify(workspace).slice(1, -1)));
+  assert.ok(
+    !JSON.stringify(workers).includes(JSON.stringify(workspace).slice(1, -1)),
+  );
   passed(
     "The packaged client recovers an accepted linking response across server restart and the cloud shows its workspace",
   );

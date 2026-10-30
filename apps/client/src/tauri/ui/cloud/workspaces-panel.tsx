@@ -14,7 +14,11 @@ import {
   CloudConnectionForm,
   type CloudConnectionDraft,
 } from "./connection-form";
-import { manageCloudWorkspaces } from "./workspace-runtime";
+import {
+  manageCloudRunners,
+  manageCloudWorkspaces,
+  type CloudRunnerView,
+} from "./workspace-runtime";
 
 function connectionStatus(connection: CloudWorkspaceView): string {
   if (connection.status === "disconnected") return "Disconnected";
@@ -47,6 +51,8 @@ export function CloudWorkspacesPanel({
     token: "",
   });
   const [disconnectToken, setDisconnectToken] = useState("");
+  const [runners, setRunners] = useState<CloudRunnerView[]>([]);
+  const [runnerBusy, setRunnerBusy] = useState<string | null>(null);
   const generation = useRef(0);
   const alive = useRef(true);
   const returnFocus = useRef<HTMLElement | null>(null);
@@ -83,6 +89,50 @@ export function CloudWorkspacesPanel({
       generation.current++;
     };
   }, [native]);
+  useEffect(() => {
+    if (!native) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        const next = await manageCloudRunners({ action: "list" });
+        if (active) setRunners(next);
+      } catch (reason) {
+        if (active)
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "Task runner state could not be loaded.",
+          );
+      }
+      if (active) timer = setTimeout(() => void poll(), 5000);
+    }
+    void poll();
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [native]);
+  async function toggleRunner(connection: CloudWorkspaceView, run: boolean) {
+    setRunnerBusy(connection.id);
+    setError("");
+    try {
+      const next = await manageCloudRunners({
+        action: run ? "start" : "stop",
+        id: connection.id,
+      });
+      if (alive.current) setRunners(next);
+    } catch (reason) {
+      if (alive.current)
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "The task runner could not be changed.",
+        );
+    } finally {
+      if (alive.current) setRunnerBusy(null);
+    }
+  }
   useEffect(() => {
     if (editing === null && !busy && returnFocus.current?.isConnected) {
       returnFocus.current.focus();
@@ -252,63 +302,87 @@ export function CloudWorkspacesPanel({
         <p className="text-sm text-slate-400">No workspaces linked.</p>
       ) : null}
       <ul className="grid min-w-0 gap-3">
-        {connections.map((connection) => (
-          <li
-            key={connection.id}
-            className="grid min-w-0 gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4"
-          >
-            <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
-              <div className="grid min-w-0 gap-1">
-                <h3 className="break-words text-sm font-medium text-slate-100">
-                  {connection.projectName}
-                </h3>
-                <p className="break-words text-xs text-slate-400">
-                  {connection.workspaceName} · {connection.profileName}
-                </p>
-                <span className="break-all text-xs text-slate-500">
-                  {connection.origin}
+        {connections.map((connection) => {
+          const runner = runners.find((entry) => entry.id === connection.id);
+          const running = runner?.phase === "running";
+          return (
+            <li
+              key={connection.id}
+              className="grid min-w-0 gap-3 rounded-lg border border-slate-800 bg-slate-900/40 p-4"
+            >
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                <div className="grid min-w-0 gap-1">
+                  <h3 className="break-words text-sm font-medium text-slate-100">
+                    {connection.projectName}
+                  </h3>
+                  <p className="break-words text-xs text-slate-400">
+                    {connection.workspaceName} · {connection.profileName}
+                  </p>
+                  <span className="break-all text-xs text-slate-500">
+                    {connection.origin}
+                  </span>
+                </div>
+                <span className="text-xs text-slate-400">
+                  {running ? "Running tasks" : connectionStatus(connection)}
                 </span>
               </div>
-              <span className="text-xs text-slate-400">
-                {connectionStatus(connection)}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={
-                  busy ||
-                  editing !== null ||
-                  connection.status === "disconnecting"
-                }
-                onClick={(event) => edit(connection, event.currentTarget)}
-              >
-                {connection.status === "disconnected"
-                  ? "Reconnect"
-                  : connection.status === "linking"
-                    ? "Retry link"
-                    : "Update token"}
-              </Button>
-              {connection.status !== "disconnected" && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={busy || editing !== null}
-                  onClick={() => {
-                    setError("");
-                    setDisconnectToken("");
-                    setDisconnecting(connection);
-                  }}
-                >
-                  {connection.status === "disconnecting"
-                    ? "Retry disconnect"
-                    : "Disconnect"}
-                </Button>
+              {runner?.phase === "failed" && runner.message && (
+                <p role="alert" className="break-words text-xs text-rose-300">
+                  {runner.message}
+                </p>
               )}
-            </div>
-          </li>
-        ))}
+              {runner?.lastTask && (
+                <p className="text-xs text-slate-400">
+                  Last task {runner.lastTask.replace("_", " ")}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {connection.status === "linked" && (
+                  <Button
+                    size="sm"
+                    variant={running ? "outline" : "default"}
+                    disabled={runnerBusy === connection.id}
+                    onClick={() => void toggleRunner(connection, !running)}
+                  >
+                    {running ? "Stop tasks" : "Run tasks"}
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    busy ||
+                    editing !== null ||
+                    connection.status === "disconnecting"
+                  }
+                  onClick={(event) => edit(connection, event.currentTarget)}
+                >
+                  {connection.status === "disconnected"
+                    ? "Reconnect"
+                    : connection.status === "linking"
+                      ? "Retry link"
+                      : "Update token"}
+                </Button>
+                {connection.status !== "disconnected" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={busy || editing !== null}
+                    onClick={() => {
+                      setError("");
+                      setDisconnectToken("");
+                      setDisconnecting(connection);
+                    }}
+                  >
+                    {connection.status === "disconnecting"
+                      ? "Retry disconnect"
+                      : "Disconnect"}
+                  </Button>
+                )}
+              </div>
+            </li>
+          );
+        })}
       </ul>
       {error && !disconnecting && (
         <p role="alert" className="text-sm text-rose-300">

@@ -10,6 +10,7 @@ import type {
 } from "@/lib/cloud-contract";
 import type { ScheduleAction } from "@/lib/cloud-schedule-contract";
 import { cloudRequest } from "./api-client";
+import { executionTargetLabels, profileAgentLabel } from "./execution-labels";
 import { Field } from "@/components/field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -250,9 +251,8 @@ export function ScheduleTaskFields({
       )}
       {profile && (
         <p className="text-sm text-muted-foreground">
-          {profile.target === "cloud" ? "Cloud sandbox" : "Linked client"} ·{" "}
-          {profile.model} · Up to {profile.maxTokens.toLocaleString()} tokens
-          per task
+          {executionTargetLabels[profile.target]} · {profileAgentLabel(profile)}{" "}
+          · Up to {profile.maxTokens.toLocaleString()} tokens per task
         </p>
       )}
       {initial && profile && initial.profileRevision !== profile.revision && (

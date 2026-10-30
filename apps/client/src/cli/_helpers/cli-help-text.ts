@@ -401,11 +401,13 @@ Usage:
   machdoch cloud connect --cloud-url <HTTPS origin> [--name <name>] [--cwd <workspace>] [--json]
   machdoch cloud status [--json]
   machdoch cloud disconnect <connection id> [--json]
-  machdoch cloud run <connection id> --cloud-runtime <runtime manifest> [--once] [--json]
+  machdoch cloud run <connection id> [--cloud-runtime <runtime manifest>] [--once] [--json]
 
 Set MACHDOCH_CLOUD_RUNNER_TOKEN to a token enrolled for a client execution profile.
 The workspace's origin and committed base must match that profile.
-Run processes queued tasks for a Client (Linux) profile until stopped; --once handles one task.`,
+Run processes queued tasks until stopped; --once handles one task. Linked client
+profiles run the selected agent in a separate checkout and add a machdoch/ branch
+for verified results. Client sandbox profiles require --cloud-runtime.`,
   scheduler: SCHEDULER_HELP,
 };
 

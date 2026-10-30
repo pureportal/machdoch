@@ -13,6 +13,9 @@ import {
   sourcePackRuntimeSchema,
 } from "./source-pack.js";
 import { inspectClientRepository, within } from "./repository.js";
+import { NativeClientRunner } from "./native-runner.js";
+
+const nativeRepairAttempts = 1;
 
 export const clientCloudRuntimeSchema = z.strictObject({
   sandbox: sandboxConfigurationSchema,
@@ -42,17 +45,12 @@ async function readRuntime(path: string) {
 
 export async function createClientCloudWorker(
   id: string,
-  runtimePath: string,
+  runtimePath: string | undefined,
   bindings = new ClientCloudBindings(),
 ) {
   const initial = await bindings.get(id);
   if (initial.status !== "linked")
     throw new Error("Finish connecting this workspace before running tasks.");
-  if (initial.registration.profile.target !== "client-linux")
-    throw new Error(
-      "Choose a Client (Linux) execution profile. Native client execution is not available.",
-    );
-  const runtime = await readRuntime(runtimePath);
   const storage = await realpath(bindings.directory);
   const repository = await realpath(initial.repositoryRoot);
   if (within(repository, storage) || within(storage, repository))
@@ -60,9 +58,31 @@ export async function createClientCloudWorker(
       "Keep client connection storage separate from the linked repository.",
     );
   const directory = join(storage, "workers", initial.id);
+  const connection = new RunnerConnection(initial.origin, initial.token);
+  if (initial.registration.profile.target === "client") {
+    const journal = new RunnerJournal(directory, initial.origin);
+    return {
+      runner: new NativeClientRunner(
+        initial.id,
+        bindings,
+        connection,
+        journal,
+        join(storage, "workspaces"),
+        nativeRepairAttempts,
+      ),
+      journal,
+      pollIntervalMs: 3000,
+    };
+  }
+  if (initial.registration.profile.target !== "client-linux")
+    throw new Error("Choose a client execution profile.");
+  if (!runtimePath)
+    throw new Error(
+      "Sandboxed client execution requires --cloud-runtime with the runtime manifest.",
+    );
+  const runtime = await readRuntime(runtimePath);
   const sourceDirectory = join(directory, "source");
   await mkdir(sourceDirectory, { recursive: true, mode: 0o700 });
-  const connection = new RunnerConnection(initial.origin, initial.token);
   const journal = new RunnerJournal(directory, initial.origin);
   async function currentConnection() {
     const current = await bindings.get(id);

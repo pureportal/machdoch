@@ -45,7 +45,7 @@ await test("rejects a client worker before preparing an environment or claiming 
         workerId,
         organizationId: randomUUID(),
         projectName: "Client project",
-        profile: { ...claimFixture().manifest.profile, target: "client" },
+        profile: { ...claimFixture().manifest.profile, target: "client-linux" },
         workspaceBinding: null,
       });
     },
@@ -74,7 +74,7 @@ await test("rejects a client worker before preparing an environment or claiming 
 
 await test("closes prepared environments even if journaling the failed outcome throws", async (context) => {
   const claim = claimFixture();
-  claim.manifest.profile.target = "client";
+  claim.manifest.profile.target = "client-linux";
   const directory = stateDirectory();
   const journal = new RunnerJournal(directory, "https://cloud.example.test");
   const workerId = randomUUID();

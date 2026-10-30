@@ -9,7 +9,6 @@ import { fileURLToPath } from "node:url";
 import {
   cloudApi,
   cloudBrowserFixture,
-  executionProviderFixture,
   assertEventually,
 } from "./cloud-browser-fixture.mjs";
 import { workspaceGit } from "../../client/src/core/cloud/repository.ts";
@@ -241,18 +240,13 @@ try {
     name: "Desktop project",
     description: "",
   });
-  const provider = await executionProviderFixture(
-    fixture,
-    fixture.ownerContext,
-  );
   const profile = await api("execution-profiles", "POST", {
     projectId: project.id,
     name: "Development",
     target: "client",
     repository: "https://github.com/example/project",
     baseCommit,
-    providerId: provider.id,
-    model: "fixture",
+    agent: "codex-cli",
     maxDurationSeconds: 300,
     maxTokens: 10000,
     requiredChecks: [

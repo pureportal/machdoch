@@ -1,10 +1,15 @@
 import { setTimeout as delay } from "node:timers/promises";
 import { isTransientRunnerError } from "../connection.ts";
-import type { CloudRunner } from "./runner.ts";
 import type { RunnerJournal } from "./journal.ts";
 
+export interface TaskRunner {
+  runNext(
+    signal: AbortSignal,
+  ): Promise<{ runId: string; state: string } | null>;
+}
+
 export async function runWorkerLoop(
-  runner: CloudRunner,
+  runner: TaskRunner,
   journal: RunnerJournal,
   options: {
     signal: AbortSignal;

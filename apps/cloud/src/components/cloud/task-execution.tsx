@@ -1,6 +1,6 @@
 import { Cpu, GitBranch, Workflow } from "lucide-react";
 import type { RunDetail } from "@machdoch/fleet-protocol/cloud-execution";
-import { executionTargetLabels } from "./execution-labels";
+import { clientAgentLabels, executionTargetLabels } from "./execution-labels";
 import { Timestamp } from "./timestamp";
 
 export function TaskExecution({ run }: { run: RunDetail }) {
@@ -41,19 +41,28 @@ export function TaskExecution({ run }: { run: RunDetail }) {
           Model
         </h2>
         <dl className="cloud-task-properties">
-          <div>
-            <dt>Provider</dt>
-            <dd>{provider.name}</dd>
-          </div>
-          <div>
-            <dt>Model</dt>
-            <dd>{profile.model}</dd>
-          </div>
+          {profile.target === "client" ? (
+            <div>
+              <dt>Agent</dt>
+              <dd>{clientAgentLabels[profile.agent]}</dd>
+            </div>
+          ) : (
+            <div>
+              <dt>Provider</dt>
+              <dd>{provider?.name}</dd>
+            </div>
+          )}
+          {profile.model && (
+            <div>
+              <dt>Model</dt>
+              <dd>{profile.model}</dd>
+            </div>
+          )}
           <div>
             <dt>Token limit</dt>
             <dd>{profile.maxTokens.toLocaleString()}</dd>
           </div>
-          {run.usage.requests > 0 && (
+          {run.usage.usedTokens > 0 && (
             <div>
               <dt>Tokens used</dt>
               <dd>{run.usage.usedTokens.toLocaleString()}</dd>

@@ -37,6 +37,7 @@ export async function workspaceGit(
   root: string,
   args: string[],
   signal?: AbortSignal,
+  timeoutMs = 60000,
 ): Promise<string> {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(
@@ -64,7 +65,7 @@ export async function workspaceGit(
       ],
       {
         windowsHide: true,
-        timeout: 60000,
+        timeout: timeoutMs,
         maxBuffer: 8 * 1024 * 1024,
         encoding: "utf8",
         ...(signal ? { signal } : {}),

@@ -142,17 +142,27 @@ export async function admitRun(
           "task_capacity",
           "Too many active tasks. Complete or cancel tasks before queuing another.",
         );
-      const provider = await readInferenceProvider(
-        sql,
-        actor.organizationId,
-        profile.providerId,
-      );
-      if (!provider.models.includes(profile.model))
-        throw new CloudError(
-          422,
-          "model_unavailable",
-          "Choose a configured model for this execution profile.",
+      let provider: RunManifest["provider"] = null;
+      if (profile.target !== "client") {
+        const configured = await readInferenceProvider(
+          sql,
+          actor.organizationId,
+          profile.providerId,
         );
+        if (!configured.models.includes(profile.model))
+          throw new CloudError(
+            422,
+            "model_unavailable",
+            "Choose a configured model for this execution profile.",
+          );
+        provider = {
+          id: configured.id,
+          name: configured.name,
+          provider: configured.provider,
+          inferenceRevision: configured.inferenceRevision,
+          maxOutputTokens: configured.maxOutputTokens,
+        };
+      }
       const contextLimitBytes = taskContextLimit({
         title,
         objective,
@@ -167,13 +177,7 @@ export async function admitRun(
         objective,
         acceptanceCriteria,
         profile,
-        provider: {
-          id: provider.id,
-          name: provider.name,
-          provider: provider.provider,
-          inferenceRevision: provider.inferenceRevision,
-          maxOutputTokens: provider.maxOutputTokens,
-        },
+        provider,
         actorId: actor.userId,
       };
       const serialized = JSON.stringify(manifest);

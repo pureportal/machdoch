@@ -73,17 +73,19 @@ export class CloudExecutionProfiles {
         key,
         { kind: "execution_profile.create", input },
         async () => {
-          const provider = await readInferenceProvider(
-            sql,
-            actor.organizationId,
-            input.providerId,
-          );
-          if (!provider.models.includes(input.model))
-            throw new CloudError(
-              422,
-              "model_unavailable",
-              "Choose a configured model for this provider.",
+          if (input.target !== "client") {
+            const provider = await readInferenceProvider(
+              sql,
+              actor.organizationId,
+              input.providerId,
             );
+            if (!provider.models.includes(input.model))
+              throw new CloudError(
+                422,
+                "model_unavailable",
+                "Choose a configured model for this provider.",
+              );
+          }
           const id = randomUUID();
           await sql.query(
             "INSERT INTO cloud_execution_profiles (organization_id,id,project_id,team_id,name,definition) VALUES ($1,$2,$3,$4,$5,$6)",
@@ -120,18 +122,20 @@ export class CloudExecutionProfiles {
         { kind: "execution_profile.update", id, input },
         async () => {
           checkRevision(profile.revision, input.revision);
-          const provider = await readInferenceProvider(
-            sql,
-            actor.organizationId,
-            input.providerId,
-            !input.enabled,
-          );
-          if (input.enabled && !provider.models.includes(input.model))
-            throw new CloudError(
-              422,
-              "model_unavailable",
-              "Choose a configured model for this provider.",
+          if (input.target !== "client") {
+            const provider = await readInferenceProvider(
+              sql,
+              actor.organizationId,
+              input.providerId,
+              !input.enabled,
             );
+            if (input.enabled && !provider.models.includes(input.model))
+              throw new CloudError(
+                422,
+                "model_unavailable",
+                "Choose a configured model for this provider.",
+              );
+          }
           const { revision: expected, enabled, ...definition } = input;
           await sql.query(
             "UPDATE cloud_execution_profiles SET name=$3,definition=$4,enabled=$5,revision=revision+1 WHERE organization_id=$1 AND id=$2",

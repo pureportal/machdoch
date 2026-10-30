@@ -27,6 +27,7 @@ export const cloudMigrations = [
   "024-team-workflows.sql",
   "025-installation.sql",
   "026-cutover.sql",
+  "027-client-agents.sql",
 ];
 
 export interface CloudSql {

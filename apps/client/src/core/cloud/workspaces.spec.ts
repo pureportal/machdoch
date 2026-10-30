@@ -65,8 +65,7 @@ async function setup() {
       target: "client",
       repository,
       baseCommit: commit,
-      providerId: randomUUID(),
-      model: "fixture",
+      agent: "codex-cli",
       maxDurationSeconds: 300,
       maxTokens: 10000,
       requiredChecks: [
@@ -124,13 +123,7 @@ async function setup() {
       actorId: randomUUID(),
       subject: { kind: "issue", id: randomUUID(), revision: 1 },
       profile: registration.profile,
-      provider: {
-        id: registration.profile.providerId,
-        name: "Provider",
-        provider: "openai",
-        inferenceRevision: 1,
-        maxOutputTokens: 512,
-      },
+      provider: null,
     },
   });
   return {
@@ -380,9 +373,11 @@ it("validates repository URLs and exposes a focused CLI without execution overri
     runtime: "runtime.json",
     once: true,
   });
-  expect(() => parseCliArgs(["cloud", "run", "connection"])).toThrow(
-    "--cloud-runtime",
-  );
+  expect(parseCliArgs(["cloud", "run", "connection"]).cloud).toEqual({
+    action: "run",
+    id: "connection",
+    once: false,
+  });
   expect(() => parseCliArgs(["cloud", "status", "--once"])).toThrow(
     "require machdoch cloud run",
   );
@@ -418,8 +413,17 @@ it("links an explicit Linux client only to the configured repository directory",
   fixture.registration.profile.baseCommit = (
     await workspaceGit(fixture.source, ["rev-parse", "HEAD"])
   ).trim();
-  fixture.registration.profile.target = "client-linux";
-  fixture.registration.profile.workspacePath = "apps/worker";
+  const { agent: _, ...profile } = fixture.registration.profile as Extract<
+    WorkerRegistration["profile"],
+    { target: "client" }
+  >;
+  fixture.registration.profile = {
+    ...profile,
+    target: "client-linux",
+    providerId: randomUUID(),
+    model: "fixture",
+    workspacePath: "apps/worker",
+  };
   await expect(fixture.connect()).rejects.toThrow("directory configured");
   expect(await fixture.bindings.list()).toEqual([]);
   const linked = await fixture.bindings.connect(

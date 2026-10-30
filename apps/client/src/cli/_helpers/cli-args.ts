@@ -146,9 +146,9 @@ export const parseCliArgs = (
     if (extra.length) fail("Unexpected cloud command arguments.");
     if (action === "run") {
       const runtime = values?.["cloud-runtime"]?.trim();
-      if (!id || !runtime || values?.["cloud-url"] || values?.name)
+      if (!id || runtime === "" || values?.["cloud-url"] || values?.name)
         fail(
-          "Use machdoch cloud run <connection id> --cloud-runtime <runtime manifest> [--once].",
+          "Use machdoch cloud run <connection id> [--cloud-runtime <runtime manifest>] [--once].",
         );
       return {
         command: "cloud",
@@ -158,7 +158,7 @@ export const parseCliArgs = (
         cloud: {
           action,
           id: id!,
-          runtime: runtime!,
+          ...(runtime ? { runtime } : {}),
           once: values?.once === true,
         },
       };

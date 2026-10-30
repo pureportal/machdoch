@@ -114,10 +114,17 @@ export class CloudTaskInference {
           "inference_limit",
           "The task reached its inference request limit.",
         );
+      const granted = run.manifest.provider;
+      if (!granted)
+        throw new CloudError(
+          409,
+          "inference_unavailable",
+          "This task runs with the client's own agent and cannot use cloud inference.",
+        );
       const provider = await readInferenceProvider(
         sql,
         worker.organizationId,
-        run.manifest.provider.id,
+        granted.id,
       );
       const { userPrompt, systemPrompt, toolsJson, optionsJson, inputBytes } =
         taskInferencePayload(run.manifest, input);
@@ -134,7 +141,7 @@ export class CloudTaskInference {
         );
       const maxOutputTokens = Math.min(
         provider.maxOutputTokens,
-        run.manifest.provider.maxOutputTokens,
+        granted.maxOutputTokens,
         run.manifest.profile.maxTokens -
           usage.tokens -
           inputBytes -

@@ -52,6 +52,12 @@ const resultSchema = z.strictObject({
   processTreeStopped: z.literal(true),
 });
 
+function brokeredProvider(claim: WorkerClaim) {
+  const provider = claim.manifest.provider;
+  if (!provider) throw new Error("This task requires a cloud model provider.");
+  return provider;
+}
+
 export async function authorize(
   connection: RunnerConnection,
   claim: WorkerClaim,
@@ -128,7 +134,7 @@ export async function agentInference(
       baseBytes -
       taskInferenceReservationOverhead;
     const output = Math.min(
-      claim.manifest.provider.maxOutputTokens,
+      brokeredProvider(claim).maxOutputTokens,
       Math.max(1, available - 256),
     );
     const limit = Math.min(
@@ -202,7 +208,7 @@ export async function runAgent(
   const start = cloudAgentStartSchema.parse({
     kind: "start",
     task: sharedAgentTask(claim.manifest, correction),
-    provider: claim.manifest.provider.provider,
+    provider: brokeredProvider(claim).provider,
     model: claim.manifest.profile.model,
     contextLimitBytes: claim.manifest.contextLimitBytes,
     durationMs: Math.max(
