@@ -6,6 +6,7 @@ export default async function ProjectsPage() {
     <PlanningCatalog
       kind="projects"
       workspace={await runtime.planning.workspace(actor)}
+      progress={await runtime.projects.progress(actor)}
     />
   );
 }

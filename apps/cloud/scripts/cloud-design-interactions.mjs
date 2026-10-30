@@ -18,7 +18,10 @@ export async function verifyDesignInteractions({
   await page.getByLabel("Search issues", { exact: true }).fill("Reconnect");
   await page.getByRole("button", { name: "Search", exact: true }).click();
   await page.waitForURL(/query=Reconnect/);
-  assert.equal(await page.locator(".cloud-table tbody tr").count(), 1);
+  assert.equal(
+    await page.locator(".cloud-issue-rows tr[data-issue]").count(),
+    1,
+  );
   await page.getByRole("button", { name: "Board view", exact: true }).click();
   await page.waitForURL(/view=board/);
   assert.equal(new URL(page.url()).searchParams.get("query"), "Reconnect");
@@ -26,7 +29,8 @@ export async function verifyDesignInteractions({
     .getByRole("button", { name: "Clear filters", exact: true })
     .click();
   await page.waitForURL((url) => !url.searchParams.has("query"));
-  await page.getByRole("button", { name: "New issue", exact: true }).click();
+  await page.getByRole("button", { name: "New issue", exact: true }).waitFor();
+  await page.keyboard.press("c");
   await dialog
     .getByLabel("Title", { exact: true })
     .fill("Verify the redesigned workspace");

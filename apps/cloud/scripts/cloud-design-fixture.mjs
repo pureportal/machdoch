@@ -37,17 +37,25 @@ export async function seedCloudDesign(fixture) {
     name: "Cloud workspace",
     description:
       "A shared workspace for planning, development, and connected clients.",
+    status: "active",
+    leadId: workspace.actor.id,
+    startsOn: "2026-10-05",
+    targetOn: "2026-12-11",
   });
   await api("projects", "POST", {
     teamId: team.id,
     name: "Developer experience",
     description:
       "Faster feedback, reliable automation, and thoughtful everyday tools.",
+    status: "planned",
+    targetOn: "2027-01-29",
   });
   await api("projects", "POST", {
     teamId: team.id,
     name: "Client connectivity",
     description: "Keep remote development environments within reach.",
+    status: "paused",
+    leadId: workspace.actor.id,
   });
   const cycle = await api("cycles", "POST", {
     teamId: team.id,

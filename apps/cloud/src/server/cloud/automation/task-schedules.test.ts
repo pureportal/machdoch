@@ -192,6 +192,10 @@ it.each(["profile", "project", "provider"])(
       await runtime.projects.update(actor, randomUUID(), projectId, {
         name: "Changed",
         description: "",
+        status: "planned",
+        leadId: null,
+        startsOn: null,
+        targetOn: null,
         revision: 1,
       });
     else

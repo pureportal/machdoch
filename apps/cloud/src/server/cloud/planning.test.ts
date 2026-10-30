@@ -80,7 +80,99 @@ beforeEach(async () => {
   ).id;
 });
 
+const unchangedPlanning = {
+  status: "planned",
+  leadId: null,
+  startsOn: null,
+  targetOn: null,
+} as const;
+
 describe("cloud planning integrity", () => {
+  it("plans projects with a lead, dates, status and issue progress", async () => {
+    await expect(
+      projects.create(owner, randomUUID(), {
+        teamId,
+        name: "Outside lead",
+        description: "",
+        leadId: stranger.userId,
+      }),
+    ).rejects.toMatchObject({ code: "lead_unavailable" });
+    const project = await projects.create(owner, randomUUID(), {
+      teamId,
+      name: "Launch",
+      description: "",
+      status: "active",
+      leadId: member.userId,
+      startsOn: "2026-11-02",
+      targetOn: "2026-12-18",
+    });
+    expect(await projects.get(member, project.id)).toMatchObject({
+      status: "active",
+      leadId: member.userId,
+      startsOn: "2026-11-02",
+      targetOn: "2026-12-18",
+    });
+    const estimate = defaultEstimateScale.find((card) => card.points !== null)!;
+    for (const [title, state] of [
+      ["Done", "complete"],
+      ["Started", "active"],
+      ["Open", "backlog"],
+      ["Dropped", "canceled"],
+    ] as const) {
+      const issue = await planning.createIssue(
+        owner,
+        randomUUID(),
+        issueInputSchema.parse({
+          teamId,
+          title,
+          projectId: project.id,
+          estimate: estimate.label,
+        }),
+      );
+      if (state === "backlog") continue;
+      const current = await planning.getIssue(owner, issue.id);
+      const status = (
+        await database.engine.query<{ id: string; revision: number }>(
+          "SELECT id,revision FROM cloud_workflow_statuses WHERE team_id=$1 AND category=$2 ORDER BY position LIMIT 1",
+          [teamId, state],
+        )
+      ).rows[0]!;
+      await planning.updateIssue(
+        owner,
+        randomUUID(),
+        issue.id,
+        issueUpdateSchema.strip().parse({ ...current, status }),
+      );
+    }
+    expect(
+      (await projects.progress(viewer)).find(
+        (entry) => entry.projectId === project.id,
+      ),
+    ).toEqual({
+      projectId: project.id,
+      total: 3,
+      started: 1,
+      completed: 1,
+      points: estimate.points! * 3,
+      completedPoints: estimate.points,
+    });
+    await projects.update(member, randomUUID(), project.id, {
+      revision: 1,
+      name: "Launch",
+      description: "",
+      status: "completed",
+      leadId: null,
+      startsOn: "2026-11-02",
+      targetOn: "2026-12-18",
+    });
+    expect(await projects.get(owner, project.id)).toMatchObject({
+      status: "completed",
+      leadId: null,
+      revision: 2,
+    });
+    expect(await projects.progress(stranger)).toEqual([]);
+  });
+
   it("updates projects once per command, rejects stale edits and preserves issue links", async () => {
     const project = await projects.create(owner, randomUUID(), {
       teamId,
@@ -97,7 +189,12 @@ describe("cloud planning integrity", () => {
       }),
     );
     const key = randomUUID();
-    const change = { revision: 1, name: "Edited", description: "Second" };
+    const change = {
+      revision: 1,
+      name: "Edited",
+      description: "Second",
+      ...unchangedPlanning,
+    };
     await projects.update(member, key, project.id, change);
     await projects.update(member, key, project.id, change);
     await expect(
@@ -138,7 +235,12 @@ describe("cloud planning integrity", () => {
       name: "Project",
       description: "",
     });
-    const change = { revision: 1, name: "Denied", description: "" };
+    const change = {
+      revision: 1,
+      name: "Denied",
+      description: "",
+      ...unchangedPlanning,
+    };
     await expect(
       projects.update(viewer, randomUUID(), project.id, change),
     ).rejects.toMatchObject({ code: "permission_denied" });
@@ -500,4 +602,33 @@ describe("planning poker privacy and recovery", () => {
       poker.vote(member, randomUUID(), id, 2, "8"),
     ).rejects.toMatchObject({ code: "voting_closed" });
   });
+});
+
+it("filters issue views by workflow category and the actor's assignments", async () => {
+  const backlog = await createIssue("Collect feedback");
+  const active = await createIssue("Ship reconnect");
+  const status = (
+    await database.engine.query<{ id: string; revision: number }>(
+      "SELECT id,revision FROM cloud_workflow_statuses WHERE team_id=$1 AND category='active' ORDER BY position LIMIT 1",
+      [teamId],
+    )
+  ).rows[0]!;
+  await planning.updateIssue(
+    owner,
+    randomUUID(),
+    active.id,
+    issueUpdateSchema
+      .strip()
+      .parse({ ...active, status, assigneeId: member.userId }),
+  );
+  const ids = async (
+    actor: CloudActor,
+    filters: Parameters<CloudPlanning["listIssues"]>[1],
+  ) => (await planning.listIssues(actor, filters)).map((issue) => issue.id);
+  expect(await ids(owner, { states: ["backlog"] })).toEqual([backlog.id]);
+  expect(
+    await ids(owner, { states: ["ready", "active", "blocked", "review"] }),
+  ).toEqual([active.id]);
+  expect(await ids(member, { assignedToActor: true })).toEqual([active.id]);
+  expect(await ids(owner, { assignedToActor: true })).toEqual([]);
 });

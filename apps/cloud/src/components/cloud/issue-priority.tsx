@@ -11,14 +11,21 @@ const icons = {
 
 export function IssuePriority({
   priority,
+  compact = false,
 }: {
   priority: CloudIssue["priority"];
+  compact?: boolean;
 }) {
   const Icon = icons[priority];
+  const label = priority === "none" ? "No priority" : priority;
   return (
-    <span className="cloud-priority" data-priority={priority}>
+    <span
+      className="cloud-priority"
+      data-priority={priority}
+      title={compact ? label : undefined}
+    >
       <Icon size={14} aria-hidden="true" />
-      <span>{priority === "none" ? "No priority" : priority}</span>
+      <span className={compact ? "sr-only" : undefined}>{label}</span>
     </span>
   );
 }

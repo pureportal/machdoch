@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   defaultEstimateScale,
@@ -12,6 +12,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { createCommandSender, formText } from "./api-client";
+import {
+  ProjectPlanningFields,
+  initialProjectPlanning,
+} from "./project-fields";
 
 export function PlanningCreateDialog({
   kind,
@@ -26,6 +30,7 @@ export function PlanningCreateDialog({
 }) {
   const sender = useRef(createCommandSender());
   const router = useRouter();
+  const [planning, setPlanning] = useState(initialProjectPlanning);
   const labels = {
     single: { teams: "team", projects: "project", cycles: "cycle" }[kind],
   };
@@ -36,7 +41,10 @@ export function PlanningCreateDialog({
       open={open}
       onOpenChange={(next) => {
         onOpenChange(next);
-        if (!next) sender.current = createCommandSender();
+        if (!next) {
+          sender.current = createCommandSender();
+          setPlanning(initialProjectPlanning);
+        }
       }}
       onSubmit={async (form) => {
         const name = formText(form, "name");
@@ -53,6 +61,7 @@ export function PlanningCreateDialog({
             name,
             teamId: formText(form, "teamId"),
             description: formText(form, "description"),
+            ...planning,
           };
         else
           body = {
@@ -108,13 +117,21 @@ export function PlanningCreateDialog({
         </Field>
       )}
       {kind === "projects" && (
-        <Field label="Description" htmlFor="catalog-description">
-          <Textarea
-            id="catalog-description"
-            name="description"
-            maxLength={20000}
+        <>
+          <Field label="Description" htmlFor="catalog-description">
+            <Textarea
+              id="catalog-description"
+              name="description"
+              maxLength={20000}
+            />
+          </Field>
+          <ProjectPlanningFields
+            idPrefix="catalog-project"
+            members={workspace.members}
+            value={planning}
+            onChange={setPlanning}
           />
-        </Field>
+        </>
       )}
       {kind === "cycles" && (
         <>

@@ -82,8 +82,10 @@ try {
   const { team, cycle, issues, task, chatId } = data;
   const views = [
     ["issues", "/cloud/issues"],
+    ["issues-active", "/cloud/issues?scope=active"],
     ["board", `/cloud/issues?view=board&teamId=${team.id}`],
     ["issue-detail", `/cloud/issues/${issues[0].id}`],
+    ["ask-issue", `/cloud/chat?issue=${issues[0].id}`],
     ["projects", "/cloud/projects"],
     ["teams", "/cloud/teams"],
     ["cycles", "/cloud/cycles"],

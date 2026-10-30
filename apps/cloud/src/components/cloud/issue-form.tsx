@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
@@ -19,6 +19,7 @@ export function CreateIssue({
   cycleId,
   parent,
   onCreated,
+  shortcut = false,
 }: {
   workspace: CloudWorkspace;
   teamId?: string;
@@ -26,14 +27,40 @@ export function CreateIssue({
   cycleId?: string;
   parent?: CloudIssue;
   onCreated?: () => Promise<void>;
+  shortcut?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const sender = useRef(createCommandSender());
   const router = useRouter();
-  if (workspace.actor.role === "viewer" || !workspace.teams.length) return null;
+  const available =
+    workspace.actor.role !== "viewer" && workspace.teams.length > 0;
+  useEffect(() => {
+    if (!shortcut || !available) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        event.key.toLowerCase() !== "c" ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        event.defaultPrevented ||
+        target?.closest("input,textarea,select,[contenteditable],[role=dialog]")
+      )
+        return;
+      event.preventDefault();
+      setOpen(true);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [shortcut, available]);
+  if (!available) return null;
   return (
     <>
-      <Button onClick={() => setOpen(true)}>
+      <Button
+        onClick={() => setOpen(true)}
+        aria-keyshortcuts={shortcut ? "C" : undefined}
+        title={shortcut ? "New issue (C)" : undefined}
+      >
         <Plus />
         {parent ? "New sub-issue" : "New issue"}
       </Button>

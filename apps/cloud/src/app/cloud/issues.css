@@ -1,0 +1,414 @@
+.cloud-scope-tabs {
+  display: flex;
+  gap: 4px;
+  margin: -8px 0 16px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.cloud-scope-tabs a {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 500;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
+}
+.cloud-scope-tabs a:hover {
+  background: var(--cloud-hover);
+  color: var(--foreground);
+}
+.cloud-scope-tabs a[aria-current="page"] {
+  border-color: var(--border);
+  background: var(--secondary);
+  color: var(--foreground);
+}
+.cloud-issue-rows {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+}
+.cloud-issue-rows table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.cloud-issue-group th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--cloud-subtle);
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.cloud-issue-rows tbody + tbody .cloud-issue-group th {
+  border-top: 1px solid var(--border);
+}
+.cloud-issue-group-count {
+  margin-left: 10px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.cloud-issue-rows tr[data-issue] {
+  height: 42px;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+.cloud-issue-rows tr[data-issue] + tr[data-issue] td {
+  border-top: 1px solid color-mix(in oklab, var(--border) 55%, transparent);
+}
+.cloud-issue-rows tr[data-issue]:hover,
+.cloud-issue-rows tr[data-issue]:focus-within {
+  background: var(--cloud-hover);
+}
+.cloud-issue-rows td {
+  padding: 0 6px;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.cloud-issue-col-priority {
+  width: 44px;
+}
+.cloud-issue-col-key {
+  width: 72px;
+}
+.cloud-issue-col-status {
+  width: 30px;
+}
+.cloud-issue-col-meta {
+  width: 34%;
+}
+.cloud-issue-col-assignee {
+  width: 44px;
+}
+.cloud-issue-col-updated {
+  width: 76px;
+}
+.cloud-issue-cell-priority {
+  padding-left: 16px !important;
+}
+.cloud-issue-cell-key {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+.cloud-issue-cell-status .cloud-state {
+  vertical-align: middle;
+}
+.cloud-issue-cell-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.cloud-issue-cell-title a {
+  outline: none;
+}
+.cloud-issue-cell-title a:focus-visible {
+  text-decoration: underline;
+  text-decoration-color: var(--primary);
+  text-underline-offset: 3px;
+}
+.cloud-issue-cell-meta {
+  overflow: hidden;
+  text-align: right;
+}
+.cloud-issue-chip {
+  display: inline-flex;
+  max-width: 180px;
+  margin-left: 6px;
+  padding: 1px 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.cloud-issue-estimate {
+  display: inline-grid;
+  min-width: 22px;
+  height: 20px;
+  margin-left: 6px;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+.cloud-issue-cell-assignee {
+  text-align: center;
+}
+.cloud-avatar-empty {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  border: 1.5px dashed var(--input);
+  border-radius: 50%;
+  vertical-align: middle;
+}
+.cloud-issue-cell-updated {
+  padding-right: 16px !important;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  text-align: right;
+}
+.cloud-issue-rows .cloud-priority[data-priority="none"],
+.cloud-issue-rows .cloud-priority[data-priority="low"] {
+  opacity: 0.7;
+}
+@media (max-width: 800px) {
+  .cloud-issue-rows
+    :is(.cloud-issue-col-key, .cloud-issue-col-meta, .cloud-issue-col-updated) {
+    visibility: collapse;
+  }
+  .cloud-issue-col-priority {
+    width: 34px;
+  }
+  .cloud-issue-cell-priority {
+    padding-left: 12px !important;
+  }
+  .cloud-issue-cell-assignee {
+    padding-right: 12px !important;
+  }
+}
+.cloud-issue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 36px;
+  margin: -12px 0 24px;
+}
+.cloud-issue-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.cloud-issue-breadcrumb a:hover {
+  color: var(--foreground);
+}
+.cloud-issue-breadcrumb h1 {
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.cloud-issue-flag {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11.5px;
+}
+.cloud-issue-actions {
+  display: flex;
+  gap: 4px;
+}
+.cloud-issue-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 288px;
+  grid-template-rows: auto 1fr;
+  gap: 0 44px;
+  max-width: 1240px;
+  align-items: start;
+}
+.cloud-issue-form,
+.cloud-issue-fieldset {
+  display: contents;
+}
+.cloud-issue-document {
+  display: grid;
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  gap: 10px;
+  min-width: 0;
+}
+.cloud-issue-document textarea {
+  resize: none;
+  field-sizing: content;
+}
+.cloud-issue-document .cloud-issue-title-input {
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.6px;
+  line-height: 1.25;
+}
+.cloud-issue-document .cloud-issue-description-input {
+  min-height: 120px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: color-mix(in oklab, var(--foreground) 88%, transparent);
+  font-size: 15px;
+  line-height: 1.65;
+}
+.cloud-issue-document
+  :is(.cloud-issue-title-input, .cloud-issue-description-input):focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.cloud-issue-section {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.cloud-issue-section label {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+.cloud-issue-section textarea {
+  min-height: 80px;
+  border-color: transparent;
+  background: var(--cloud-subtle);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.cloud-issue-savebar {
+  display: flex;
+  position: sticky;
+  bottom: 12px;
+  z-index: 2;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  margin-top: 6px;
+}
+.cloud-issue-save-state {
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+.cloud-issue-properties {
+  display: grid;
+  grid-column: 2;
+  grid-row: 1;
+  gap: 2px;
+  padding: 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--cloud-subtle);
+}
+.cloud-issue-properties > div {
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+}
+.cloud-issue-properties label {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 450;
+}
+.cloud-issue-properties :is(select, input) {
+  height: 32px;
+  min-height: 32px;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-color: transparent;
+  background-color: transparent;
+  font-size: 13px;
+  box-shadow: none;
+}
+.cloud-issue-properties :is(select, input):hover:not(:disabled) {
+  background-color: var(--cloud-hover);
+}
+.cloud-issue-properties :is(select, input):focus-visible {
+  border-color: var(--ring);
+}
+.cloud-issue-aside {
+  display: grid;
+  grid-column: 2;
+  grid-row: 2;
+  gap: 12px;
+  margin-top: 14px;
+  justify-items: start;
+}
+.cloud-issue-aside > :first-child {
+  justify-self: stretch;
+}
+.cloud-issue-history {
+  max-width: 1240px;
+  margin-top: 28px;
+  padding: 20px 24px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.cloud-issue-history header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.cloud-issue-history h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.cloud-issue-history ol {
+  display: grid;
+  gap: 12px;
+}
+.cloud-issue-history li {
+  display: grid;
+  gap: 2px;
+  padding-left: 14px;
+  border-left: 2px solid var(--border);
+  font-size: 13px;
+}
+.cloud-issue-history li > span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+@media (max-width: 980px) {
+  .cloud-issue-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    gap: 20px;
+  }
+  .cloud-issue-document,
+  .cloud-issue-properties,
+  .cloud-issue-aside {
+    grid-column: 1;
+    grid-row: auto;
+  }
+  .cloud-issue-aside {
+    margin-top: 0;
+  }
+}
+@media (max-width: 800px) {
+  .cloud-issue-header {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 0;
+  }
+  .cloud-issue-actions {
+    margin-left: -10px;
+  }
+  .cloud-issue-document .cloud-issue-title-input {
+    font-size: 22px;
+  }
+}

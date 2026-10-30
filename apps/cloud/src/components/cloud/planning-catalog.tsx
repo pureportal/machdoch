@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useState } from "react";
 import { CalendarRange, FolderKanban, Plus, Search, Users } from "lucide-react";
-import type { CloudWorkspace } from "@/lib/cloud-contract";
+import type {
+  CloudProjectProgress,
+  CloudWorkspace,
+} from "@/lib/cloud-contract";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -17,9 +20,11 @@ import {
 export function PlanningCatalog({
   kind,
   workspace,
+  progress = [],
 }: {
   kind: "teams" | "projects" | "cycles";
   workspace: CloudWorkspace;
+  progress?: CloudProjectProgress[];
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -113,7 +118,8 @@ export function PlanningCatalog({
           projects={workspace.projects.filter((item) =>
             visibleIds.has(item.id),
           )}
-          teams={workspace.teams}
+          workspace={workspace}
+          progress={progress}
           writable={writable}
         />
       ) : kind === "teams" ? (

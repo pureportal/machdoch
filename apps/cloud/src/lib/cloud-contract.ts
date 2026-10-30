@@ -67,14 +67,44 @@ export const teamInputSchema = z.strictObject({
   visibility: z.enum(["organization", "private"]),
   estimateScale: estimateScaleSchema,
 });
-export const projectInputSchema = z.strictObject({
-  teamId: cloudId,
-  name,
-  description: z.string().max(20_000).default(""),
-});
-export const projectUpdateSchema = projectInputSchema
-  .omit({ teamId: true })
-  .extend({ revision });
+export const projectStatuses = [
+  "backlog",
+  "planned",
+  "active",
+  "paused",
+  "completed",
+  "canceled",
+] as const;
+const projectDatesValid = (value: {
+  startsOn?: string | null;
+  targetOn?: string | null;
+}) => !value.startsOn || !value.targetOn || value.targetOn >= value.startsOn;
+const projectDatesIssue = {
+  path: ["targetOn"],
+  message: "Target date must not precede the start date.",
+};
+export const projectInputSchema = z
+  .strictObject({
+    teamId: cloudId,
+    name,
+    description: z.string().max(20_000).default(""),
+    status: z.enum(projectStatuses).optional(),
+    leadId: cloudId.nullable().optional(),
+    startsOn: z.iso.date().nullable().optional(),
+    targetOn: z.iso.date().nullable().optional(),
+  })
+  .refine(projectDatesValid, projectDatesIssue);
+export const projectUpdateSchema = z
+  .strictObject({
+    revision,
+    name,
+    description: z.string().max(20_000),
+    status: z.enum(projectStatuses),
+    leadId: cloudId.nullable(),
+    startsOn: z.iso.date().nullable(),
+    targetOn: z.iso.date().nullable(),
+  })
+  .refine(projectDatesValid, projectDatesIssue);
 const date = z.iso.date();
 export const cycleInputSchema = z
   .strictObject({
@@ -165,9 +195,24 @@ export interface CloudTeam extends TeamInput {
   revision: number;
   scaleRevision: number;
 }
-export interface CloudProject extends ProjectInput {
+export interface CloudProject {
   id: string;
+  teamId: string;
+  name: string;
+  description: string;
+  status: (typeof projectStatuses)[number];
+  leadId: string | null;
+  startsOn: string | null;
+  targetOn: string | null;
   revision: number;
+}
+export interface CloudProjectProgress {
+  projectId: string;
+  total: number;
+  started: number;
+  completed: number;
+  points: number;
+  completedPoints: number;
 }
 export interface CloudCycle extends CycleInput {
   id: string;

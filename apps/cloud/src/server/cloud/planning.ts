@@ -1,5 +1,5 @@
 import type { CloudOrganization } from "../../lib/cloud-administration-contract";
-import { cycleColumns, issueColumns } from "./planning-queries";
+import { cycleColumns, issueColumns, projectColumns } from "./planning-queries";
 import { randomUUID } from "node:crypto";
 import { lockExecution } from "./execution/records";
 import { readTeamWorkflows, resolveIssueStatus } from "./workflow-records";
@@ -141,7 +141,7 @@ export class CloudPlanning {
       const teamIds = teams.map((team) => team.id);
       const projects = (
         await sql.query<CloudProject & Record<string, unknown>>(
-          `SELECT id,team_id AS "teamId",name,description,revision FROM cloud_projects WHERE organization_id=$1 AND team_id=ANY($2::uuid[]) ORDER BY name,id`,
+          `SELECT ${projectColumns} FROM cloud_projects WHERE organization_id=$1 AND team_id=ANY($2::uuid[]) ORDER BY name,id`,
           [actor.organizationId, teamIds],
         )
       ).rows;
@@ -292,6 +292,8 @@ export class CloudPlanning {
       query?: string;
       archived?: boolean;
       offset?: number;
+      states?: CloudIssue["state"][];
+      assignedToActor?: boolean;
     } = {},
   ): Promise<CloudIssue[]> {
     return this.database.transaction(async (sql) => {
@@ -306,6 +308,8 @@ export class CloudPlanning {
         AND ($7='' OR strpos(lower(i.title || ' ' || i.identifier || ' ' || i.description), lower($7))>0)
         AND ($9::uuid IS NULL OR EXISTS (SELECT 1 FROM cloud_issue_labels a WHERE a.organization_id=i.organization_id AND a.issue_id=i.id AND a.label_id=$9))
         AND ($10::uuid IS NULL OR i.status_id=$10)
+        AND ($11::text[] IS NULL OR i.state=ANY($11::text[]))
+        AND (NOT $12::boolean OR i.assignee_id=$2)
         ORDER BY i.updated_at DESC,i.id LIMIT 100 OFFSET $8`,
           [
             actor.organizationId,
@@ -318,6 +322,8 @@ export class CloudPlanning {
             filters.offset ?? 0,
             filters.labelId ?? null,
             filters.statusId ?? null,
+            filters.states ?? null,
+            filters.assignedToActor ?? false,
           ],
         )
       ).rows;

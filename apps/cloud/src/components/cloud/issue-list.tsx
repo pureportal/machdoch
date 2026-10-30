@@ -16,6 +16,31 @@ import { CreateIssue } from "./issue-form";
 import type { CloudLabel } from "@/lib/cloud-label-contract";
 import { IssuePriority } from "./issue-priority";
 import { PersonAvatar } from "./person-avatar";
+import { IssueRows, sortIssues, type IssueGroup } from "./issue-rows";
+import {
+  issueScopes,
+  parseIssueScope,
+  type IssueScope,
+} from "@/lib/issue-scopes";
+
+const stateNames: Record<CloudIssue["state"], string> = {
+  backlog: "Backlog",
+  ready: "Ready",
+  active: "In progress",
+  blocked: "Blocked",
+  review: "In review",
+  complete: "Done",
+  canceled: "Canceled",
+};
+const groupOrder: CloudIssue["state"][] = [
+  "active",
+  "review",
+  "blocked",
+  "ready",
+  "backlog",
+  "complete",
+  "canceled",
+];
 
 export function IssueList({
   workspace,
@@ -31,10 +56,11 @@ export function IssueList({
   const board = search.get("view") === "board";
   const offset = Number(search.get("offset") ?? 0);
   const query = search.get("query") ?? "";
+  const scope = parseIssueScope(search.get("scope"));
   const workflow = workspace.workflows.find(
     (entry) => entry.teamId === search.get("teamId"),
   );
-  const columns = workflow
+  const columns: IssueGroup[] = workflow
     ? workflow.statuses
         .filter(
           (status) =>
@@ -45,14 +71,19 @@ export function IssueList({
           id: status.id,
           name: status.name,
           category: status.category,
-          issues: issues.filter((issue) => issue.status.id === status.id),
+          issues: sortIssues(
+            issues.filter((issue) => issue.status.id === status.id),
+          ),
         }))
     : issueStates.map((state) => ({
         id: state,
-        name: state[0]!.toUpperCase() + state.slice(1),
+        name: stateNames[state],
         category: state,
-        issues: issues.filter((issue) => issue.state === state),
+        issues: sortIssues(issues.filter((issue) => issue.state === state)),
       }));
+  const groups = workflow
+    ? columns
+    : groupOrder.map((state) => columns.find((column) => column.id === state)!);
   const [searchText, setSearchText] = useState(query);
   useEffect(() => setSearchText(query), [query]);
   function filter(name: string, value: string) {
@@ -68,6 +99,14 @@ export function IssueList({
     }
     router.push(`/cloud/issues?${next}`);
   }
+  function scopeHref(next: IssueScope) {
+    const parameters = new URLSearchParams(search);
+    if (next === "all") parameters.delete("scope");
+    else parameters.set("scope", next);
+    parameters.delete("offset");
+    const query = parameters.toString();
+    return `/cloud/issues${query ? `?${query}` : ""}`;
+  }
   return (
     <>
       <header className="cloud-page-header">
@@ -79,8 +118,20 @@ export function IssueList({
           teamId={search.get("teamId") ?? undefined}
           projectId={search.get("projectId") ?? undefined}
           cycleId={search.get("cycleId") ?? undefined}
+          shortcut
         />
       </header>
+      <nav className="cloud-scope-tabs" aria-label="Issue views">
+        {(Object.keys(issueScopes) as IssueScope[]).map((entry) => (
+          <Link
+            key={entry}
+            href={scopeHref(entry)}
+            aria-current={entry === scope ? "page" : undefined}
+          >
+            {issueScopes[entry].label}
+          </Link>
+        ))}
+      </nav>
       <div className="cloud-toolbar">
         <form
           className="cloud-issue-search"
@@ -184,9 +235,12 @@ export function IssueList({
         search.get("archived") === "true" ? (
           <Button
             variant="ghost"
-            onClick={() =>
-              router.push(`/cloud/issues${board ? "?view=board" : ""}`)
-            }
+            onClick={() => {
+              const kept = new URLSearchParams();
+              if (board) kept.set("view", "board");
+              if (scope !== "all") kept.set("scope", scope);
+              router.push(`/cloud/issues${kept.size ? `?${kept}` : ""}`);
+            }}
           >
             Clear filters
           </Button>
@@ -198,7 +252,9 @@ export function IssueList({
           <p>
             {search.get("query") || search.get("labelId")
               ? "No matching issues."
-              : "No issues yet."}
+              : scope === "all"
+                ? "No issues yet."
+                : `No issues in ${issueScopes[scope].label.toLowerCase()}.`}
           </p>
           {!workspace.teams.length && workspace.actor.role !== "viewer" && (
             <Link className="underline" href="/cloud/teams">
@@ -255,67 +311,7 @@ export function IssueList({
           ))}
         </div>
       ) : (
-        <div
-          className="cloud-table-wrap cloud-issue-table"
-          role="region"
-          aria-label="Issues"
-          tabIndex={0}
-        >
-          <table className="cloud-table" role="table">
-            <thead>
-              <tr>
-                <th>Issue</th>
-                <th>Status</th>
-                <th>Priority</th>
-                <th>Assignee</th>
-                <th>Estimate</th>
-              </tr>
-            </thead>
-            <tbody role="rowgroup">
-              {issues.map((issue) => (
-                <tr key={issue.id} role="row">
-                  <td role="cell">
-                    <Link
-                      className="cloud-issue-link"
-                      href={`/cloud/issues/${issue.id}`}
-                    >
-                      <span className="cloud-issue-key">
-                        {issue.identifier}
-                      </span>
-                      <span className="cloud-issue-title">{issue.title}</span>
-                    </Link>
-                  </td>
-                  <td role="cell">
-                    <span className="cloud-state" data-state={issue.state}>
-                      {issue.statusName}
-                    </span>
-                  </td>
-                  <td role="cell">
-                    <IssuePriority priority={issue.priority} />
-                  </td>
-                  <td role="cell">
-                    {issue.assigneeId ? (
-                      workspace.members
-                        .filter((member) => member.id === issue.assigneeId)
-                        .map((member) => (
-                          <span key={member.id} className="cloud-assignee">
-                            <PersonAvatar name={member.name} />
-                            {member.name}
-                          </span>
-                        ))
-                    ) : (
-                      <span className="text-muted-foreground">Unassigned</span>
-                    )}
-                  </td>
-                  <td role="cell">
-                    <span className="cloud-mobile-cell-label">Estimate </span>
-                    {issue.estimate ?? "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <IssueRows groups={groups} workspace={workspace} />
       )}
       {(offset > 0 || issues.length === 100) && (
         <div className="cloud-editor-actions mt-5">

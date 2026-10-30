@@ -1,6 +1,7 @@
 import { cloudId } from "@/lib/cloud-contract";
 import { IssueList } from "@/components/cloud/issue-list";
 import { requireCloudPageSession } from "@/server/cloud/page-auth";
+import { issueScopes, parseIssueScope } from "@/lib/issue-scopes";
 
 export default async function IssuesPage({
   searchParams,
@@ -9,7 +10,10 @@ export default async function IssuesPage({
 }) {
   const { runtime, actor } = await requireCloudPageSession();
   const params = await searchParams;
+  const scope = issueScopes[parseIssueScope(params.scope)];
   const filters = {
+    states: scope.states,
+    assignedToActor: scope.assignedToActor,
     teamId: cloudId.safeParse(params.teamId).data,
     projectId: cloudId.safeParse(params.projectId).data,
     cycleId: cloudId.safeParse(params.cycleId).data,
