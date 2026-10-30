@@ -1,7 +1,7 @@
 use std::{
     fs,
     io::{self, Read},
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 use serde::Deserialize;
@@ -157,32 +157,15 @@ pub fn resolve_working_directory(
     workspace_root: &Path,
     configured_directory: &str,
 ) -> Result<PathBuf, String> {
-    let configured = Path::new(configured_directory.trim());
-    if configured.is_absolute()
-        || configured
-            .components()
-            .any(|component| matches!(component, Component::ParentDir | Component::Prefix(_)))
-    {
-        return Err(format!(
-            "Run workingDirectory `{configured_directory}` must stay inside the workspace."
-        ));
-    }
-
-    let candidate = workspace_root.join(configured);
-    if !candidate.exists() || !candidate.is_dir() {
+    let candidate = workspace_root.join(configured_directory.trim());
+    if !candidate.is_dir() {
         return Err(format!(
             "Run workingDirectory `{configured_directory}` does not exist."
         ));
     }
-    let resolved = candidate.canonicalize().map_err(|error| {
+    candidate.canonicalize().map_err(|error| {
         format!("Unable to resolve run workingDirectory `{configured_directory}`: {error}")
-    })?;
-    if !resolved.starts_with(workspace_root) {
-        return Err(format!(
-            "Run workingDirectory `{configured_directory}` resolves outside the workspace."
-        ));
-    }
-    Ok(resolved)
+    })
 }
 
 fn validate_working_directories(
@@ -236,18 +219,28 @@ mod tests {
     }
 
     #[test]
-    fn working_directories_are_workspace_relative_on_every_platform() {
+    fn working_directories_resolve_against_the_workspace_on_every_platform() {
         let workspace = temporary_workspace("relative");
         fs::create_dir_all(workspace.join("apps").join("web"))
             .expect("nested working directory should be created");
+        let sibling = temporary_workspace("relative-sibling");
 
         let resolved = resolve_working_directory(&workspace, "apps/web")
             .expect("relative directory should resolve");
 
         assert_eq!(resolved, workspace.join("apps").join("web"));
-        assert!(resolve_working_directory(&workspace, "../outside").is_err());
+        let sibling_name = sibling.file_name().unwrap().to_string_lossy();
+        assert_eq!(
+            resolve_working_directory(&workspace, &format!("../{sibling_name}")).unwrap(),
+            sibling
+        );
+        assert_eq!(
+            resolve_working_directory(&workspace, sibling.to_str().unwrap()).unwrap(),
+            sibling
+        );
         assert!(resolve_working_directory(&workspace, "missing").is_err());
         let _ = fs::remove_dir_all(workspace);
+        let _ = fs::remove_dir_all(sibling);
     }
 
     #[test]
