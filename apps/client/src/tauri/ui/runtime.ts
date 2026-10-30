@@ -7184,31 +7184,6 @@ export const openWorkspacePath = async (
   }
 };
 
-export const openAttachedPath = async (
-  path: string,
-  workspaceRoot?: string | null,
-): Promise<void> => {
-  const normalizedPath = path.trim();
-  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
-
-  if (!normalizedPath) {
-    throw new Error("Expected an attached file path.");
-  }
-
-  if (!canInvokeTauriCommands()) {
-    return;
-  }
-
-  try {
-    await analyticsInvoke("open_attached_path", {
-      path: normalizedPath,
-      workspaceRoot: normalizedWorkspaceRoot,
-    });
-  } catch (error) {
-    throw error instanceof Error ? error : new Error(String(error));
-  }
-};
-
 export const readWorkspaceFilePreview = async (
   workspaceRoot: string | null | undefined,
   relativePath: string,
@@ -7230,34 +7205,6 @@ export const readWorkspaceFilePreview = async (
       {
         workspaceRoot: normalizedWorkspaceRoot ?? "",
         relativePath: normalizedRelativePath,
-      },
-    );
-  } catch (error) {
-    throw error instanceof Error ? error : new Error(String(error));
-  }
-};
-
-export const readAttachedFilePreview = async (
-  path: string,
-  workspaceRoot?: string | null,
-): Promise<FilePreviewReadResult> => {
-  const normalizedPath = path.trim();
-  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
-
-  if (!normalizedPath) {
-    throw new Error("Expected an attached file path to preview.");
-  }
-
-  if (!canInvokeTauriCommands()) {
-    throw new Error("File previews are only available in the desktop app.");
-  }
-
-  try {
-    return await analyticsInvoke<FilePreviewReadResult>(
-      "read_attached_file_preview",
-      {
-        path: normalizedPath,
-        workspaceRoot: normalizedWorkspaceRoot,
       },
     );
   } catch (error) {
@@ -7338,10 +7285,8 @@ const convertLocalFileSource = (path: string): string => {
 
 export const resolveAttachedImagePreviewSource = async (
   path: string,
-  workspaceRoot?: string | null,
 ): Promise<string> => {
   const normalizedPath = path.trim();
-  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
 
   if (!normalizedPath) {
     throw new Error("Expected an attached image path.");
@@ -7352,41 +7297,8 @@ export const resolveAttachedImagePreviewSource = async (
   if (canInvokeTauriCommands()) {
     try {
       resolvedPath = await analyticsInvoke<string>(
-        "resolve_attached_image_preview_path",
-        {
-          path: normalizedPath,
-          workspaceRoot: normalizedWorkspaceRoot,
-        },
-      );
-    } catch (error) {
-      throw error instanceof Error ? error : new Error(String(error));
-    }
-  }
-
-  return convertLocalFileSource(resolvedPath);
-};
-
-export const resolveAttachedFilePreviewSource = async (
-  path: string,
-  workspaceRoot?: string | null,
-): Promise<string> => {
-  const normalizedPath = path.trim();
-  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
-
-  if (!normalizedPath) {
-    throw new Error("Expected an attached file path to preview.");
-  }
-
-  let resolvedPath = normalizedPath;
-
-  if (canInvokeTauriCommands()) {
-    try {
-      resolvedPath = await analyticsInvoke<string>(
-        "resolve_attached_file_preview_path",
-        {
-          path: normalizedPath,
-          workspaceRoot: normalizedWorkspaceRoot,
-        },
+        "resolve_local_file_preview_path",
+        { path: normalizedPath },
       );
     } catch (error) {
       throw error instanceof Error ? error : new Error(String(error));

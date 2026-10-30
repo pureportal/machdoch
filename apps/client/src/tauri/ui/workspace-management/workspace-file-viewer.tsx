@@ -24,7 +24,10 @@ import {
   type JSX,
 } from "react";
 import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
-import { getWorkspaceMarkdownLinkTarget } from "@machdoch/client-ui/conversation/workspace-markdown-links";
+import {
+  getLocalMarkdownLinkTarget,
+  getWorkspaceMarkdownLinkTarget,
+} from "@machdoch/client-ui/conversation/workspace-markdown-links";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
 import { ControlTooltip } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
@@ -44,9 +47,15 @@ import {
   type WorkspaceFileDocument,
 } from "../runtime";
 import {
+  resolveLocalFilePreviewSource,
+  revealLocalFile,
+} from "../local-file-runtime";
+import { getRemoteWorkspacePlatform } from "./workspace-platform";
+import {
   formatWorkspaceFileSize,
   isWorkspaceFile,
   resolveWorkspaceMarkdownPath,
+  workspaceEntryAbsolutePath,
   workspacePathParent,
 } from "./workspace-tools-model";
 import {
@@ -61,6 +70,18 @@ const errorMessage = (error: unknown): string =>
 
 const defaultViewerMode = (document: WorkspaceFileDocument): ViewerMode =>
   document.previewKind && !document.editable ? "preview" : "edit";
+
+const getDesktopMarkdownTarget = (
+  workspaceRoot: string,
+  documentPath: string,
+  target: string,
+) =>
+  getRemoteWorkspacePlatform()
+    ? null
+    : getLocalMarkdownLinkTarget(
+        target,
+        workspaceEntryAbsolutePath(workspaceRoot, documentPath),
+      );
 
 const WorkspaceMarkdownImage = ({
   workspaceRoot,
@@ -89,11 +110,19 @@ const WorkspaceMarkdownImage = ({
       return () => {};
     }
     const path = resolveWorkspaceMarkdownPath(documentPath, source);
-    if (!path) {
+    const desktopTarget = path
+      ? null
+      : getDesktopMarkdownTarget(workspaceRoot, documentPath, source);
+    const sourceRequest = path
+      ? resolveWorkspaceFilePreviewSource(workspaceRoot, path)
+      : desktopTarget
+        ? resolveLocalFilePreviewSource(desktopTarget.path)
+        : null;
+    if (!sourceRequest) {
       setFailed(true);
       return () => {};
     }
-    void resolveWorkspaceFilePreviewSource(workspaceRoot, path)
+    void sourceRequest
       .then((nextSource) => {
         if (active) {
           previewSource = nextSource;
@@ -858,10 +887,18 @@ export const WorkspaceFileViewer = ({
                           href,
                           workspaceRoot,
                         );
+                        const desktopTarget =
+                          !workspaceTarget && !href.startsWith("//")
+                            ? getDesktopMarkdownTarget(
+                                workspaceRoot,
+                                document.path,
+                                href,
+                              )
+                            : null;
                         const external =
                           href.startsWith("//") ||
                           /^[a-z][a-z\d+.-]*:/iu.test(href);
-                        if (external && !workspaceTarget) {
+                        if (external && !workspaceTarget && !desktopTarget) {
                           const target = href.startsWith("//")
                             ? `https:${href}`
                             : href;
@@ -882,8 +919,15 @@ export const WorkspaceFileViewer = ({
                               workspaceTarget?.relativePath ?? href,
                             );
                         if (!path) {
-                          setSaveError(
-                            "This link points outside the workspace.",
+                          if (!desktopTarget) {
+                            setSaveError(
+                              "This link points outside the workspace.",
+                            );
+                            return;
+                          }
+                          void revealLocalFile(desktopTarget.path).catch(
+                            (openError: unknown) =>
+                              setSaveError(errorMessage(openError)),
                           );
                           return;
                         }

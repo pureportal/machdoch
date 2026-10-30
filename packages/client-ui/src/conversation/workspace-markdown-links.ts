@@ -400,7 +400,6 @@ export const getLocalMarkdownLinkTarget = (
   if (
     !target ||
     !isAbsoluteLocalPath(target.path) ||
-    hasUnsafeWorkspacePathSegment(target.path) ||
     /\p{Cc}/u.test(target.path)
   ) {
     return null;

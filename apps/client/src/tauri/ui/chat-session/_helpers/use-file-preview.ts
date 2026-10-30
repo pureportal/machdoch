@@ -14,11 +14,8 @@ import {
   revealLocalFile,
 } from "../../local-file-runtime";
 import {
-  openAttachedPath,
   openWorkspacePath,
-  readAttachedFilePreview,
   readWorkspaceFilePreview,
-  resolveAttachedFilePreviewSource,
   resolveWorkspaceFilePreviewSource,
 } from "../../runtime";
 import type { FilePreview } from "@machdoch/client-ui/file-preview/dialog";
@@ -67,44 +64,35 @@ const createFilePreviewState = (
 const loadFilePreviewSource = async (
   target: FilePreviewTarget,
 ): Promise<string> => {
-  if (target.kind === "local") {
-    return resolveLocalFilePreviewSource(target.path);
-  }
-  if (target.kind === "attachment") {
-    return resolveAttachedFilePreviewSource(
-      target.attachment.path,
+  if (target.kind === "workspace") {
+    return resolveWorkspaceFilePreviewSource(
       target.workspaceRoot,
+      target.relativePath,
     );
   }
-  return resolveWorkspaceFilePreviewSource(
-    target.workspaceRoot,
-    target.relativePath,
+  return resolveLocalFilePreviewSource(
+    target.kind === "attachment" ? target.attachment.path : target.path,
   );
 };
 
 const loadFilePreviewContent = async (target: FilePreviewTarget) => {
-  if (target.kind === "local") {
-    return readLocalFilePreview(target.path);
+  if (target.kind === "workspace") {
+    return readWorkspaceFilePreview(target.workspaceRoot, target.relativePath);
   }
-  if (target.kind === "attachment") {
-    return readAttachedFilePreview(
-      target.attachment.path,
-      target.workspaceRoot,
-    );
-  }
-  return readWorkspaceFilePreview(target.workspaceRoot, target.relativePath);
+  return readLocalFilePreview(
+    target.kind === "attachment" ? target.attachment.path : target.path,
+  );
 };
 
 const revealFilePreviewTarget = async (
   target: FilePreviewTarget,
 ): Promise<void> => {
-  if (target.kind === "local") {
-    return revealLocalFile(target.path);
+  if (target.kind === "workspace") {
+    return openWorkspacePath(target.workspaceRoot, target.relativePath);
   }
-  if (target.kind === "attachment") {
-    return openAttachedPath(target.attachment.path, target.workspaceRoot);
-  }
-  return openWorkspacePath(target.workspaceRoot, target.relativePath);
+  return revealLocalFile(
+    target.kind === "attachment" ? target.attachment.path : target.path,
+  );
 };
 
 export const useFilePreview = (): {

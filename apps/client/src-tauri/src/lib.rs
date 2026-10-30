@@ -155,7 +155,6 @@ pub fn run() {
     builder
         .manage(app_update::AppUpdateState::default())
         .manage(cloud_runners::CloudRunnerState::default())
-        .manage(desktop_task::AttachmentPathGrantMap::default())
         .manage(desktop_task::DesktopTaskCancelMap::default())
         .manage(desktop_shell::FileManagerInvocationState::with_initial(
             launch_context.file_manager_invocation.clone(),
@@ -283,17 +282,13 @@ pub fn run() {
             desktop_task::get_recent_desktop_task_results,
             desktop_task::get_task_file_change_files,
             desktop_task::get_task_file_change_hunks,
-            desktop_task::open_attached_path,
             desktop_task::open_ralph_flow_in_explorer,
             desktop_task::open_workspace_path,
             desktop_task::file_preview::prepare_file_preview,
             desktop_task::local_file_links::resolve_local_file_preview_path,
             desktop_task::local_file_links::read_local_file_preview,
             desktop_task::local_file_links::reveal_local_file,
-            desktop_task::read_attached_file_preview,
             desktop_task::read_workspace_file_preview,
-            desktop_task::resolve_attached_file_preview_path,
-            desktop_task::resolve_attached_image_preview_path,
             desktop_task::resolve_workspace_file_preview_path,
             desktop_task::resolve_dropped_paths,
             desktop_task::run_instruction_command,

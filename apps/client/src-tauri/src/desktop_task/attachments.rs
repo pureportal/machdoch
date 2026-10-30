@@ -10,81 +10,13 @@ use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use crate::atomic_file::{write_file_atomic, AtomicWriteOptions};
 
 use super::{
-    format_path_for_ui, AttachmentPathGrantMap, ClipboardImageAttachmentRequest,
-    DroppedPathsResolution, MAX_ATTACHMENT_PATH_GRANTS, MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES,
+    format_path_for_ui, ClipboardImageAttachmentRequest, MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES,
 };
 
 #[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 
 static CLIPBOARD_IMAGE_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-pub(super) fn remember_attachment_path_grant(
-    grants: &AttachmentPathGrantMap,
-    path: &str,
-) -> Result<(), String> {
-    if path.trim().is_empty() {
-        return Ok(());
-    }
-
-    let candidate_path = PathBuf::from(path);
-
-    if !candidate_path.is_absolute() {
-        return Ok(());
-    }
-
-    let resolved_path = candidate_path
-        .canonicalize()
-        .map_err(|error| format!("Unable to resolve trusted attachment path `{path}`: {error}"))?;
-    let metadata = fs::metadata(&resolved_path).map_err(|error| {
-        format!(
-            "Unable to inspect trusted attachment path `{}`: {error}",
-            resolved_path.display()
-        )
-    })?;
-
-    if !metadata.is_file() && !metadata.is_dir() {
-        return Ok(());
-    }
-
-    let mut granted_paths = grants
-        .0
-        .lock()
-        .map_err(|_| "Unable to update trusted attachment paths.".to_string())?;
-
-    if granted_paths.len() >= MAX_ATTACHMENT_PATH_GRANTS {
-        if let Some(path_to_remove) = granted_paths.iter().next().cloned() {
-            granted_paths.remove(&path_to_remove);
-        }
-    }
-
-    granted_paths.insert(resolved_path);
-
-    Ok(())
-}
-
-pub(super) fn remember_dropped_path_grants(
-    grants: &AttachmentPathGrantMap,
-    resolution: &DroppedPathsResolution,
-) -> Result<(), String> {
-    for entry in &resolution.entries {
-        remember_attachment_path_grant(grants, &entry.path)?;
-    }
-
-    Ok(())
-}
-
-pub(super) fn attachment_path_is_granted(
-    grants: &AttachmentPathGrantMap,
-    path: &Path,
-) -> Result<bool, String> {
-    let granted_paths = grants
-        .0
-        .lock()
-        .map_err(|_| "Unable to inspect trusted attachment paths.".to_string())?;
-
-    Ok(granted_paths.contains(path))
-}
 
 pub(super) fn clipboard_image_attachment_directory() -> PathBuf {
     env::temp_dir().join("machdoch").join("clipboard-images")

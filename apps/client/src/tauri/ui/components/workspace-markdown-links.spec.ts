@@ -24,6 +24,11 @@ describe("getLocalMarkdownLinkTarget", () => {
       "../chart.png",
       "//server/share/chart.png",
     ],
+    [
+      "C:\\Project\\docs\\guide.md",
+      "../../Downloads/chart.png",
+      "C:/Downloads/chart.png",
+    ],
   ])("resolves document links from %s", (source, href, path) => {
     expect(getLocalMarkdownLinkTarget(href, source)?.path).toBe(path);
   });
@@ -65,12 +70,17 @@ describe("getLocalMarkdownLinkTarget", () => {
     "javascript:alert(1)",
     "data:text/html,test",
     "C:relative.png",
-    "C:/Temp/../preview.png",
-    "C:/Temp/%2e%2e/preview.png",
-    "file:///tmp/%2e%2e/preview.png",
     "file:///tmp/preview%00.png",
-  ])("rejects non-absolute or unsafe file targets %s", (href) => {
+  ])("rejects non-absolute or malformed file targets %s", (href) => {
     expect(getLocalMarkdownLinkTarget(href)).toBeNull();
+  });
+
+  it.each([
+    ["C:/Temp/../preview.png", "C:/Temp/../preview.png"],
+    ["C:/Temp/%2e%2e/preview.png", "C:/Temp/../preview.png"],
+    ["file:///tmp/%2e%2e/preview.png", "/tmp/../preview.png"],
+  ])("keeps parent segments in absolute file targets %s", (href, path) => {
+    expect(getLocalMarkdownLinkTarget(href)?.path).toBe(path);
   });
 });
 

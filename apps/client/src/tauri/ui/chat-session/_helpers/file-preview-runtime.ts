@@ -30,19 +30,13 @@ export const prepareFilePreview = async (
         ? target.relativePath
         : target.path;
   const nativeTarget =
-    target.kind === "attachment"
+    target.kind === "workspace"
       ? {
           kind: target.kind,
-          path,
-          workspaceRoot: target.workspaceRoot?.trim() || null,
+          relativePath: path,
+          workspaceRoot: target.workspaceRoot?.trim() ?? "",
         }
-      : target.kind === "workspace"
-        ? {
-            kind: target.kind,
-            relativePath: path,
-            workspaceRoot: target.workspaceRoot?.trim() ?? "",
-          }
-        : { kind: target.kind, path };
+      : { kind: "local", path };
 
   return invoke<boolean>("prepare_file_preview", {
     target: nativeTarget,

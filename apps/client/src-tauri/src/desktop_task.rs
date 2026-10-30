@@ -1,11 +1,10 @@
 use std::{
-    collections::HashSet,
     fs,
     io::Read,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, AtomicU8, Ordering},
-        Arc, Mutex,
+        Arc,
     },
 };
 
@@ -38,11 +37,8 @@ mod ralph_recovery;
 mod registry;
 mod timeout;
 
-use attachment_paths::resolve_attached_path;
-use attachments::{
-    remember_attachment_path_grant, remember_dropped_path_grants,
-    save_clipboard_image_attachment_sync,
-};
+pub(crate) use attachment_paths::resolve_context_attachment_path;
+use attachments::save_clipboard_image_attachment_sync;
 use cli_commands::{
     execute_instruction_command, execute_mcp_command, execute_provider_sync_command,
     execute_scheduler_command, execute_task_interview_command,
@@ -82,12 +78,8 @@ const DESKTOP_TASK_TERMINATION_NONE: u8 = 0;
 const DESKTOP_TASK_TERMINATION_CANCELLED: u8 = 1;
 const DESKTOP_TASK_TERMINATION_IDLE_TIMEOUT: u8 = 2;
 const MAX_CLIPBOARD_IMAGE_ATTACHMENT_BYTES: usize = 20 * 1024 * 1024;
-const MAX_ATTACHMENT_PATH_GRANTS: usize = 1024;
 const MAX_FILE_PREVIEW_BYTES: u64 = 512 * 1024;
 const BINARY_PREVIEW_SCAN_BYTES: usize = 8 * 1024;
-
-#[derive(Default)]
-pub struct AttachmentPathGrantMap(pub Mutex<HashSet<PathBuf>>);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -651,99 +643,19 @@ pub async fn open_ralph_flow_in_explorer(
 }
 
 #[tauri::command]
-pub async fn open_attached_path(
-    state: tauri::State<'_, AttachmentPathGrantMap>,
-    path: String,
-    workspace_root: Option<String>,
-) -> Result<(), String> {
-    let resolved_path = resolve_attached_path(&state, workspace_root.as_deref(), &path)?;
-
-    tauri::async_runtime::spawn_blocking(move || open_path_in_system_shell(&resolved_path))
+pub async fn resolve_dropped_paths(paths: Vec<String>) -> Result<DroppedPathsResolution, String> {
+    tauri::async_runtime::spawn_blocking(move || resolve_dropped_paths_sync(paths))
         .await
-        .map_err(|error| format!("The attachment opener stopped unexpectedly. {error}"))?
-}
-
-#[tauri::command]
-pub async fn resolve_attached_file_preview_path(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, AttachmentPathGrantMap>,
-    path: String,
-    workspace_root: Option<String>,
-) -> Result<String, String> {
-    let resolved_path = resolve_attached_path(&state, workspace_root.as_deref(), &path)?;
-    let preview_path = ensure_file_preview_path(resolved_path)?;
-
-    allow_file_preview_source(&app_handle, &preview_path)
-}
-
-#[tauri::command]
-pub async fn read_attached_file_preview(
-    state: tauri::State<'_, AttachmentPathGrantMap>,
-    path: String,
-    workspace_root: Option<String>,
-) -> Result<FilePreviewReadResult, String> {
-    let resolved_path = resolve_attached_path(&state, workspace_root.as_deref(), &path)?;
-
-    tauri::async_runtime::spawn_blocking(move || read_file_preview_sync(resolved_path))
-        .await
-        .map_err(|error| {
-            format!("The attachment file preview reader stopped unexpectedly. {error}")
-        })?
-}
-
-#[tauri::command]
-pub async fn resolve_attached_image_preview_path(
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, AttachmentPathGrantMap>,
-    path: String,
-    workspace_root: Option<String>,
-) -> Result<String, String> {
-    let resolved_path = resolve_attached_path(&state, workspace_root.as_deref(), &path)?;
-
-    if !resolved_path.is_file() {
-        return Err("Expected the attached image preview path to be a file.".to_string());
-    }
-
-    allow_file_preview_source(&app_handle, &resolved_path)
-}
-
-pub(crate) fn resolve_context_attachment_path(
-    workspace_root: Option<&str>,
-    path: &str,
-) -> Result<PathBuf, String> {
-    resolve_attached_path(&AttachmentPathGrantMap::default(), workspace_root, path)
-}
-
-#[tauri::command]
-pub async fn resolve_dropped_paths(
-    state: tauri::State<'_, AttachmentPathGrantMap>,
-    paths: Vec<String>,
-) -> Result<DroppedPathsResolution, String> {
-    let resolution =
-        tauri::async_runtime::spawn_blocking(move || resolve_dropped_paths_sync(paths))
-            .await
-            .map_err(|error| format!("The dropped path resolver stopped unexpectedly. {error}"))?;
-
-    remember_dropped_path_grants(&state, &resolution)?;
-
-    Ok(resolution)
+        .map_err(|error| format!("The dropped path resolver stopped unexpectedly. {error}"))
 }
 
 #[tauri::command]
 pub async fn save_clipboard_image_attachment(
-    state: tauri::State<'_, AttachmentPathGrantMap>,
     request: ClipboardImageAttachmentRequest,
 ) -> Result<String, String> {
-    let path =
-        tauri::async_runtime::spawn_blocking(move || save_clipboard_image_attachment_sync(request))
-            .await
-            .map_err(|error| {
-                format!("The clipboard image saver stopped unexpectedly. {error}")
-            })??;
-
-    remember_attachment_path_grant(&state, &path)?;
-
-    Ok(path)
+    tauri::async_runtime::spawn_blocking(move || save_clipboard_image_attachment_sync(request))
+        .await
+        .map_err(|error| format!("The clipboard image saver stopped unexpectedly. {error}"))?
 }
 
 #[tauri::command]

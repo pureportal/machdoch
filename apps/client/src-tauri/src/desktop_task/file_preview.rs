@@ -7,9 +7,9 @@ use std::{
 use serde::Deserialize;
 
 use super::{
-    attachment_paths::resolve_attached_path, is_binary_file_preview,
-    local_file_links::resolve_local_path, paths::resolve_workspace_relative_path,
-    process::open_path_in_system_shell, AttachmentPathGrantMap, BINARY_PREVIEW_SCAN_BYTES,
+    is_binary_file_preview, local_file_links::resolve_local_path,
+    paths::resolve_workspace_relative_path, process::open_path_in_system_shell,
+    BINARY_PREVIEW_SCAN_BYTES,
 };
 
 #[derive(Deserialize)]
@@ -26,10 +26,6 @@ pub(crate) enum FilePreviewTarget {
         workspace_root: String,
         relative_path: String,
     },
-    Attachment {
-        path: String,
-        workspace_root: Option<String>,
-    },
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -40,20 +36,13 @@ pub(crate) enum FilePreviewMode {
     Text,
 }
 
-fn resolve_file_preview_target(
-    grants: &AttachmentPathGrantMap,
-    target: FilePreviewTarget,
-) -> Result<PathBuf, String> {
+fn resolve_file_preview_target(target: FilePreviewTarget) -> Result<PathBuf, String> {
     match target {
         FilePreviewTarget::Local { path } => resolve_local_path(&path),
         FilePreviewTarget::Workspace {
             workspace_root,
             relative_path,
         } => resolve_workspace_relative_path(&workspace_root, &relative_path),
-        FilePreviewTarget::Attachment {
-            path,
-            workspace_root,
-        } => resolve_attached_path(grants, workspace_root.as_deref(), &path),
     }
 }
 
@@ -84,11 +73,10 @@ fn can_preview_file(path: &Path, mode: Option<FilePreviewMode>) -> Result<bool, 
 
 #[tauri::command]
 pub async fn prepare_file_preview(
-    state: tauri::State<'_, AttachmentPathGrantMap>,
     target: FilePreviewTarget,
     mode: Option<FilePreviewMode>,
 ) -> Result<bool, String> {
-    let path = resolve_file_preview_target(&state, target)?;
+    let path = resolve_file_preview_target(target)?;
     tauri::async_runtime::spawn_blocking(move || {
         let can_preview = can_preview_file(&path, mode)?;
         if !can_preview {
@@ -171,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn targets_resolve_local_workspace_and_attached_folders_without_losing_path_checks() {
+    fn targets_resolve_local_paths_anywhere_and_keep_workspace_targets_contained() {
         let fixture = PreviewFixture::new();
         let workspace = fixture.0.join("workspace");
         let folder = workspace.join("PurePortal Logo Variants");
@@ -179,27 +167,30 @@ mod tests {
         fs::create_dir(&workspace).unwrap();
         fs::create_dir(&folder).unwrap();
         fs::create_dir(&outside).unwrap();
-        let grants = AttachmentPathGrantMap::default();
 
         for target in [
             json!({"kind": "local", "path": folder}),
             json!({"kind": "workspace", "workspaceRoot": workspace, "relativePath": "PurePortal Logo Variants"}),
-            json!({"kind": "attachment", "workspaceRoot": workspace, "path": folder}),
         ] {
             let target = serde_json::from_value(target).unwrap();
             assert_eq!(
-                resolve_file_preview_target(&grants, target).unwrap(),
+                resolve_file_preview_target(target).unwrap(),
                 folder.canonicalize().unwrap()
             );
         }
 
+        let target = serde_json::from_value(json!({"kind": "local", "path": outside})).unwrap();
+        assert_eq!(
+            resolve_file_preview_target(target).unwrap(),
+            outside.canonicalize().unwrap()
+        );
+
         for target in [
             json!({"kind": "local", "path": "relative/folder"}),
             json!({"kind": "workspace", "workspaceRoot": workspace, "relativePath": "../outside"}),
-            json!({"kind": "attachment", "workspaceRoot": workspace, "path": outside}),
         ] {
             let target = serde_json::from_value(target).unwrap();
-            assert!(resolve_file_preview_target(&grants, target).is_err());
+            assert!(resolve_file_preview_target(target).is_err());
         }
     }
 }

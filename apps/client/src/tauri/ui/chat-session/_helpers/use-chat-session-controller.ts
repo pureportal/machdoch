@@ -117,7 +117,6 @@ import {
   loadActiveDesktopTasks,
   loadRecentDesktopTaskResults,
   loadWorkspaceMemoryEntries,
-  openAttachedPath,
   openExternalUrl,
   resolveAttachedImagePreviewSource,
   resolveDroppedPaths,
@@ -129,6 +128,7 @@ import {
   type RecentDesktopTaskResult,
   type TaskInterviewResult,
 } from "../../runtime";
+import { revealLocalFile } from "../../local-file-runtime";
 import { subscribeToSettingsImport } from "../../settings-transfer";
 import {
   appendThinkingProgress,
@@ -3301,15 +3301,6 @@ export const useChatSessionController = (
     });
   };
 
-  const openAttachedPathExternally = (
-    path: string,
-    workspaceRoot: string | null | undefined,
-  ): void => {
-    void openAttachedPath(path, workspaceRoot).catch((error) => {
-      console.error("Failed to open attached path", error);
-    });
-  };
-
   const showFilePreview = (
     target: FilePreviewTarget,
     external?: boolean,
@@ -3411,7 +3402,7 @@ export const useChatSessionController = (
         error: null,
       });
 
-      void resolveAttachedImagePreviewSource(attachment.path, workspaceRoot)
+      void resolveAttachedImagePreviewSource(attachment.path)
         .then((source) => {
           setAttachmentImagePreview((current) => {
             if (
@@ -3477,7 +3468,9 @@ export const useChatSessionController = (
     }
 
     handleCloseFilePreview();
-    openAttachedPathExternally(attachment.path, workspaceRoot);
+    void revealLocalFile(attachment.path).catch((error) => {
+      console.error("Failed to open attached path", error);
+    });
   };
 
   const handleCloseAttachmentImagePreview = (): void => {

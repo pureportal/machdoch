@@ -19,11 +19,8 @@ const runtime = vi.hoisted(() => ({
   readLocalFilePreview: vi.fn(),
   resolveLocalFilePreviewSource: vi.fn(),
   revealLocalFile: vi.fn(),
-  readAttachedFilePreview: vi.fn(),
   readWorkspaceFilePreview: vi.fn(),
-  resolveAttachedFilePreviewSource: vi.fn(),
   resolveWorkspaceFilePreviewSource: vi.fn(),
-  openAttachedPath: vi.fn(),
   openWorkspacePath: vi.fn(),
 }));
 vi.mock("./file-preview-runtime", () => runtime);
@@ -149,11 +146,6 @@ describe("file preview opening", () => {
     "resolves embedded images beside a %s Markdown document",
     async (kind) => {
       const { result } = renderHook(() => useFilePreview());
-      runtime.readAttachedFilePreview.mockResolvedValue({
-        content: "Report",
-        truncated: false,
-        lossy: false,
-      });
       const target: FilePreviewTarget =
         kind === "local"
           ? { kind, path: "C:/Temp/docs/report.md" }
@@ -212,10 +204,8 @@ describe("file preview opening", () => {
       for (const reader of [
         runtime.readLocalFilePreview,
         runtime.readWorkspaceFilePreview,
-        runtime.readAttachedFilePreview,
         runtime.resolveLocalFilePreviewSource,
         runtime.resolveWorkspaceFilePreviewSource,
-        runtime.resolveAttachedFilePreviewSource,
       ]) {
         expect(reader).not.toHaveBeenCalled();
       }
@@ -240,60 +230,60 @@ describe("file preview opening", () => {
     });
   });
 
-  it.each(["workspace", "attachment"] as const)(
-    "keeps supported %s files on their own reader",
-    async (kind) => {
-      runtime.readWorkspaceFilePreview.mockResolvedValue({
-        content: "Workspace report",
-        truncated: false,
-        lossy: false,
-      });
-      runtime.readAttachedFilePreview.mockResolvedValue({
-        content: "Attached report",
-        truncated: false,
-        lossy: false,
-      });
-      const target: FilePreviewTarget =
-        kind === "workspace"
-          ? {
-              kind,
-              workspaceRoot: "/project",
-              relativePath: "report.md",
-              line: 3,
-            }
-          : {
-              kind,
-              workspaceRoot: "/project",
-              attachment: {
-                id: "report",
-                source: "path",
-                kind: "file",
-                name: "Report",
-                path: "/project/report.md",
-              },
-            };
-      const { result } = renderHook(() => useFilePreview());
-      await act(async () => result.current.showPreview(target));
-      expect(result.current.preview).toMatchObject({
-        mode: "text",
-        content: kind === "workspace" ? "Workspace report" : "Attached report",
-        loading: false,
-        error: null,
-      });
-      if (kind === "workspace") {
-        expect(runtime.readWorkspaceFilePreview).toHaveBeenCalledWith(
-          "/project",
-          "report.md",
-        );
-      } else {
-        expect(runtime.readAttachedFilePreview).toHaveBeenCalledWith(
-          "/project/report.md",
-          "/project",
-        );
-      }
-      expect(runtime.readLocalFilePreview).not.toHaveBeenCalled();
-    },
-  );
+  it("keeps supported workspace files on their own reader", async () => {
+    runtime.readWorkspaceFilePreview.mockResolvedValue({
+      content: "Workspace report",
+      truncated: false,
+      lossy: false,
+    });
+    const { result } = renderHook(() => useFilePreview());
+    await act(async () =>
+      result.current.showPreview({
+        kind: "workspace",
+        workspaceRoot: "/project",
+        relativePath: "report.md",
+        line: 3,
+      }),
+    );
+    expect(result.current.preview).toMatchObject({
+      mode: "text",
+      content: "Workspace report",
+      loading: false,
+      error: null,
+    });
+    expect(runtime.readWorkspaceFilePreview).toHaveBeenCalledWith(
+      "/project",
+      "report.md",
+    );
+    expect(runtime.readLocalFilePreview).not.toHaveBeenCalled();
+  });
+
+  it("previews attachments outside the workspace", async () => {
+    const { result } = renderHook(() => useFilePreview());
+    await act(async () =>
+      result.current.showPreview({
+        kind: "attachment",
+        workspaceRoot: "/project",
+        attachment: {
+          id: "report",
+          source: "path",
+          kind: "file",
+          name: "Report",
+          path: "/downloads/report.md",
+        },
+      }),
+    );
+    expect(result.current.preview).toMatchObject({
+      mode: "text",
+      content: "Report",
+      loading: false,
+      error: null,
+    });
+    expect(runtime.readLocalFilePreview).toHaveBeenCalledWith(
+      "/downloads/report.md",
+    );
+    expect(runtime.readWorkspaceFilePreview).not.toHaveBeenCalled();
+  });
 
   it.each(["png", "pdf"])(
     "continues previewing supported %s files",

@@ -53,11 +53,7 @@ describe("file preview routing", () => {
       workspaceRoot: undefined,
     });
     expect(native.invoke).toHaveBeenCalledWith("prepare_file_preview", {
-      target: {
-        kind: "attachment",
-        path: "/tmp/report.docx",
-        workspaceRoot: null,
-      },
+      target: { kind: "local", path: "/tmp/report.docx" },
       mode: null,
     });
   });
