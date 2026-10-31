@@ -88,11 +88,10 @@ export function RemoteConversationHost({
   }, []);
   const [menu, setMenu] =
     useState<MessageContextMenuTarget<ProductMessage> | null>(null);
-  const [folder, setFolder] = useState<{
-    attachment: Extract<ChatSessionContextAttachment, { source: "path" }>;
-    workspace: string | null | undefined;
-    messageId: string | undefined;
-  } | null>(null);
+  const [folder, setFolder] = useState<Extract<
+    ChatSessionContextAttachment,
+    { source: "path" }
+  > | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const preview = useRemoteFilePreview({
     sessionId: session.id,
@@ -117,19 +116,14 @@ export function RemoteConversationHost({
         kind: "file",
       },
       line,
-      message.id,
       external,
     );
   };
   const openAttachment = useCallback(
-    (
-      attachment: ChatSessionContextAttachment,
-      workspace?: string | null,
-      messageId?: string,
-    ) => {
+    (attachment: ChatSessionContextAttachment) => {
       if (attachment.source === "path" && attachment.kind === "directory")
-        setFolder({ attachment, workspace, messageId });
-      else preview.open(attachment, undefined, messageId);
+        setFolder(attachment);
+      else preview.open(attachment);
     },
     [preview.open],
   );
@@ -424,19 +418,16 @@ export function RemoteConversationHost({
                   kind: "file",
                 },
                 line,
-                message?.id,
                 external,
               )
             }
           />
         )}
-        renderAttachments={(attachments, isUser, message) => (
+        renderAttachments={(attachments, isUser) => (
           <MessageAttachmentsList
             attachments={attachments.map(toContextAttachment)}
             align={isUser ? "end" : "start"}
-            onOpen={(attachment) =>
-              openAttachment(attachment, message?.workspace, message?.id)
-            }
+            onOpen={openAttachment}
           />
         )}
         onOpenContextMenu={(event, message) => {
@@ -477,13 +468,10 @@ export function RemoteConversationHost({
       ) : null}
       {folder ? (
         <RemoteDirectoryPreview
-          key={`${session.id}:${folder.attachment.path}`}
-          folder={folder.attachment}
-          workspace={folder.workspace ?? undefined}
+          key={`${session.id}:${folder.path}`}
+          folder={folder}
           transport={workspaceTransport}
-          onOpenFile={(attachment) =>
-            preview.open(attachment, undefined, folder.messageId)
-          }
+          onOpenFile={preview.open}
           onClose={() => setFolder(null)}
         />
       ) : null}

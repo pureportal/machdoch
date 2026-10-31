@@ -105,7 +105,7 @@
     "accepted": true
   },
   {
-    "name": "reject \"../secret\"",
+    "name": "accept \"../secret\"",
     "request": {
       "kind": "invoke",
       "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
@@ -115,10 +115,10 @@
         "relativePath": "../secret"
       }
     },
-    "accepted": false
+    "accepted": true
   },
   {
-    "name": "reject \"x\\\\..\\\\secret\"",
+    "name": "accept \"x\\\\..\\\\secret\"",
     "request": {
       "kind": "invoke",
       "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
@@ -128,10 +128,10 @@
         "relativePath": "x\\..\\secret"
       }
     },
-    "accepted": false
+    "accepted": true
   },
   {
-    "name": "reject \"/secret\"",
+    "name": "accept \"/secret\"",
     "request": {
       "kind": "invoke",
       "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
@@ -141,10 +141,10 @@
         "relativePath": "/secret"
       }
     },
-    "accepted": false
+    "accepted": true
   },
   {
-    "name": "reject \"C:\\\\secret\"",
+    "name": "accept \"C:\\\\secret\"",
     "request": {
       "kind": "invoke",
       "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
@@ -154,10 +154,10 @@
         "relativePath": "C:\\secret"
       }
     },
-    "accepted": false
+    "accepted": true
   },
   {
-    "name": "reject \"\\\\\\\\host\\\\file\"",
+    "name": "accept \"\\\\\\\\host\\\\file\"",
     "request": {
       "kind": "invoke",
       "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
@@ -165,6 +165,38 @@
       "args": {
         "workspaceRoot": "/projects/demo",
         "relativePath": "\\\\host\\file"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "delete rejects \"../secret\"",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "delete_workspace_entry",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "relativePath": "../secret",
+          "recursive": true
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "rename rejects \"C:\\\\secret\"",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "rename_workspace_entry",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "relativePath": "C:\\secret",
+          "name": "renamed"
+        }
       }
     },
     "accepted": false
@@ -921,7 +953,7 @@
     "accepted": true
   },
   {
-    "name": "read_workspace_file_preview traversal",
+    "name": "read_workspace_file_preview outside the workspace",
     "request": {
       "kind": "invoke",
       "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
@@ -931,7 +963,7 @@
         "relativePath": "../image.png"
       }
     },
-    "accepted": false
+    "accepted": true
   },
   {
     "name": "open_workspace_path",
@@ -947,7 +979,7 @@
     "accepted": true
   },
   {
-    "name": "open_workspace_path traversal",
+    "name": "open_workspace_path outside the workspace",
     "request": {
       "kind": "invoke",
       "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
@@ -957,7 +989,7 @@
         "relativePath": "../image.png"
       }
     },
-    "accepted": false
+    "accepted": true
   },
   {
     "name": "discover_workspace_shells",
@@ -2960,44 +2992,77 @@
     "accepted": false
   },
   {
-    "name": "historical-context-preview/valid",
+    "name": "context-preview/valid",
     "accepted": true,
     "request": {
       "kind": "invoke",
       "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
       "command": "read_context_attachment_preview",
       "args": {
-        "sessionId": "session",
-        "path": "C:/historical/file.md",
-        "messageId": "message"
+        "path": "C:/anywhere/file.md"
       }
     }
   },
   {
-    "name": "historical-context-preview/blank",
+    "name": "context-preview/blank",
     "accepted": false,
     "request": {
       "kind": "invoke",
       "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
       "command": "read_context_attachment_preview",
       "args": {
-        "sessionId": "session",
-        "path": "C:/historical/file.md",
-        "messageId": ""
+        "path": " "
       }
     }
   },
   {
-    "name": "historical-context-preview/wrong-type",
+    "name": "context-preview/unknown-field",
     "accepted": false,
     "request": {
       "kind": "invoke",
       "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
       "command": "read_context_attachment_preview",
       "args": {
-        "sessionId": "session",
-        "path": "C:/historical/file.md",
-        "messageId": true
+        "path": "C:/anywhere/file.md",
+        "sessionId": "session"
+      }
+    }
+  },
+  {
+    "name": "context-directory/valid",
+    "accepted": true,
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "list_context_attachment_directory",
+      "args": {
+        "path": "C:/anywhere",
+        "offset": 0
+      }
+    }
+  },
+  {
+    "name": "context-directory/offset-limit",
+    "accepted": false,
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "list_context_attachment_directory",
+      "args": {
+        "path": "C:/anywhere",
+        "offset": 20001
+      }
+    }
+  },
+  {
+    "name": "context-directory/missing-offset",
+    "accepted": false,
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "list_context_attachment_directory",
+      "args": {
+        "path": "C:/anywhere"
       }
     }
   },

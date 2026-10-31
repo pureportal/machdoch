@@ -18,7 +18,7 @@ use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 
 static CLIPBOARD_IMAGE_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-pub(super) fn clipboard_image_attachment_directory() -> PathBuf {
+fn clipboard_image_attachment_directory() -> PathBuf {
     env::temp_dir().join("machdoch").join("clipboard-images")
 }
 

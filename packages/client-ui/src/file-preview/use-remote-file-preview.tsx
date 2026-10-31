@@ -26,9 +26,7 @@ export function useRemoteFilePreview({
   workspaceTransport: FleetOperationTransport;
   mediaTransport: FleetMediaTransport;
 }) {
-  const [preview, setPreview] = useState<
-    (FilePreview & { messageId?: string }) | null
-  >(null);
+  const [preview, setPreview] = useState<FilePreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const previewSource = useRef<string | null>(null);
   const previewVersion = useRef(0);
@@ -50,7 +48,6 @@ export function useRemoteFilePreview({
     (
       attachment: ChatSessionContextAttachment,
       line?: number,
-      messageId?: string,
       external = false,
     ): void => {
       if (
@@ -73,8 +70,7 @@ export function useRemoteFilePreview({
         setError("This file cannot be previewed.");
         return;
       }
-      const initial: FilePreview & { messageId?: string } = {
-        ...(messageId ? { messageId } : {}),
+      const initial: FilePreview = {
         title: attachment.name,
         path,
         mode,
@@ -97,11 +93,7 @@ export function useRemoteFilePreview({
           if (attachment.source === "path")
             file = await workspaceTransport.invoke(
               "read_context_attachment_preview",
-              {
-                sessionId: sessionId,
-                path: attachment.path,
-                ...(messageId ? { messageId } : {}),
-              },
+              { path: attachment.path },
             );
           else {
             const bytes = await mediaTransport.invoke<ArrayBuffer>(
@@ -164,10 +156,9 @@ export function useRemoteFilePreview({
         }
       })();
     },
-    [sessionId, workspaceTransport, mediaTransport],
+    [workspaceTransport, mediaTransport],
   );
   const sourcePath = preview?.path;
-  const messageId = preview?.messageId;
   const markdownContext = useMemo<MarkdownFileContext>(() => {
     const openPath = (path: string, line?: number, external?: boolean) =>
       open(
@@ -179,7 +170,6 @@ export function useRemoteFilePreview({
           name: path.split(/[\\/]/u).at(-1) || path,
         },
         line,
-        messageId,
         external,
       );
     const workspacePath = (path: string) =>
@@ -204,16 +194,12 @@ export function useRemoteFilePreview({
         if (!path) throw new Error("Unable to resolve this image path.");
         const file = await workspaceTransport.invoke<WorkspaceFilePreview>(
           "read_context_attachment_preview",
-          {
-            sessionId,
-            path,
-            ...(messageId ? { messageId } : {}),
-          },
+          { path },
         );
         return `data:${file.mediaType};base64,${file.dataBase64}`;
       },
     };
-  }, [sourcePath, messageId, workspace, open, workspaceTransport, sessionId]);
+  }, [sourcePath, workspace, open, workspaceTransport]);
   return {
     open,
     error,

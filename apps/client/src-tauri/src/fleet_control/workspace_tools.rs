@@ -46,7 +46,9 @@ pub(crate) async fn invoke(
     }
     if matches!(
         command.as_str(),
-        "import_context_attachment" | "read_context_attachment_preview"
+        "import_context_attachment"
+            | "list_context_attachment_directory"
+            | "read_context_attachment_preview"
     ) {
         return super::context_attachments::invoke(app, &command, &args).await;
     }

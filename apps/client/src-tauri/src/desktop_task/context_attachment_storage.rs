@@ -17,13 +17,6 @@ fn attachment_storage_id() -> Result<String, String> {
         .collect())
 }
 
-pub(super) fn is_stored_context_attachment(path: &Path) -> bool {
-    context_attachment_directory()
-        .ok()
-        .and_then(|root| root.canonicalize().ok())
-        .is_some_and(|root| path.starts_with(root))
-}
-
 pub(crate) fn persist_context_attachment(source: &Path, name: &str) -> Result<String, String> {
     persist_in_directory(source, name, &context_attachment_directory()?)
 }

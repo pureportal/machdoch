@@ -14,6 +14,7 @@ import { RemoteComposer } from "./remote-composer";
 import { LiveVoiceControl } from "../voice/live-voice-control";
 import { useRemoteComposerHistory } from "./use-remote-composer-history";
 import { RemoteContextPackPicker } from "../context-packs/remote-picker";
+import { RemoteDirectoryPreview } from "../conversation/remote-directory-preview";
 import type {
   AttachmentSelectionKind,
   ChatSessionContextAttachment,
@@ -50,6 +51,10 @@ export function RemoteComposerHost(
   const [selected, setSelected] = useState<string[]>([]);
   const [activity, setActivity] = useState<AttachmentActivity>(null);
   const [browsing, setBrowsing] = useState(false);
+  const [outsideFolder, setOutsideFolder] = useState<Extract<
+    ChatSessionContextAttachment,
+    { source: "path" }
+  > | null>(null);
   const busy = activity !== null;
   const [error, setError] = useState<string | null>(null);
   const filePreview = useRemoteFilePreview({
@@ -67,6 +72,7 @@ export function RemoteComposerHost(
     setError(null);
     setActivity(null);
     setBrowsing(false);
+    setOutsideFolder(null);
   }, [session.id, session.workspace]);
 
   const report = (reason: unknown): void =>
@@ -178,21 +184,26 @@ export function RemoteComposerHost(
         sessionId: session.id,
         workspace: session.workspace ?? null,
       };
+      const workspace = target.workspace
+        ?.replaceAll("\\", "/")
+        .replace(/\/+$/u, "");
+      const path = attachment.path.replaceAll("\\", "/").replace(/\/+$/u, "");
+      const comparisonPath = path.toLowerCase();
+      const comparisonWorkspace = workspace?.toLowerCase();
+      if (
+        !comparisonWorkspace ||
+        (comparisonPath !== comparisonWorkspace &&
+          !comparisonPath.startsWith(`${comparisonWorkspace}/`))
+      ) {
+        setOutsideFolder(attachment);
+        return;
+      }
       setSelection(target);
       setBrowsing(true);
       setDirectory(null);
       setSelected([]);
       setError(null);
-      const workspace = target.workspace?.replace(/[\\/]+$/u, "");
-      const relative =
-        workspace &&
-        attachment.path
-          .replaceAll("\\", "/")
-          .toLowerCase()
-          .startsWith(`${workspace.replaceAll("\\", "/").toLowerCase()}/`)
-          ? attachment.path.slice(workspace.length + 1).replaceAll("\\", "/")
-          : ".";
-      void browse(target, relative);
+      void browse(target, path.slice(comparisonWorkspace.length + 1) || ".");
       return;
     }
     filePreview.open(attachment);
@@ -302,6 +313,15 @@ export function RemoteComposerHost(
                 if (version === requestVersion.current) setActivity(null);
               });
           }}
+        />
+      ) : null}
+      {outsideFolder ? (
+        <RemoteDirectoryPreview
+          key={outsideFolder.path}
+          folder={outsideFolder}
+          transport={workspaceTransport}
+          onOpenFile={filePreview.open}
+          onClose={() => setOutsideFolder(null)}
         />
       ) : null}
       {filePreview.error ? (

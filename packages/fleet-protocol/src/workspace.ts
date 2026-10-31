@@ -61,6 +61,11 @@ const path = z
       !/^(?:[\\/]|[a-z]:)/iu.test(value) &&
       !value.split(/[\\/]/u).includes(".."),
   );
+const reachablePath = z
+  .string()
+  .min(1)
+  .max(2048)
+  .refine((value) => !value.includes("\0"));
 const name = z
   .string()
   .min(1)
@@ -187,10 +192,13 @@ export const workspaceRequestSchema = z.union([
     ),
     command(
       "read_context_attachment_preview",
+      z.strictObject({ path: root }),
+    ),
+    command(
+      "list_context_attachment_directory",
       z.strictObject({
         path: root,
-        sessionId: z.string().trim().min(1).max(240),
-        messageId: z.string().trim().min(1).max(240).optional(),
+        offset: z.number().int().nonnegative().max(20_000),
       }),
     ),
     command("get_runtime_snapshot", z.strictObject({ workspaceRoot: root })),
@@ -356,21 +364,21 @@ export const workspaceRequestSchema = z.union([
       "list_workspace_directory",
       z.strictObject({
         workspaceRoot: root,
-        relativePath: path,
+        relativePath: reachablePath,
         offset: z.number().int().nonnegative().max(20_000),
       }),
     ),
     command(
       "read_workspace_file",
-      z.strictObject({ workspaceRoot: root, relativePath: path }),
+      z.strictObject({ workspaceRoot: root, relativePath: reachablePath }),
     ),
     command(
       "read_workspace_file_preview",
-      z.strictObject({ workspaceRoot: root, relativePath: path }),
+      z.strictObject({ workspaceRoot: root, relativePath: reachablePath }),
     ),
     command(
       "open_workspace_path",
-      z.strictObject({ workspaceRoot: root, relativePath: path }),
+      z.strictObject({ workspaceRoot: root, relativePath: reachablePath }),
     ),
     command(
       "discover_workspace_shells",
@@ -472,7 +480,7 @@ export const workspaceRequestSchema = z.union([
       z.strictObject({
         request: z.strictObject({
           workspaceRoot: root,
-          relativePath: path,
+          relativePath: reachablePath,
           contentBase64: fileContent,
           expectedRevision: z.string().regex(/^[a-f0-9]{64}$/u),
           force: z.boolean(),
@@ -485,7 +493,7 @@ export const workspaceRequestSchema = z.union([
       z.strictObject({
         request: z.strictObject({
           workspaceRoot: root,
-          parentPath: path,
+          parentPath: reachablePath,
           name,
           kind: z.enum(["file", "directory"]),
         }),

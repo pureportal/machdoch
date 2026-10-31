@@ -47,11 +47,6 @@ import {
   type WorkspaceFileDocument,
 } from "../runtime";
 import {
-  resolveLocalFilePreviewSource,
-  revealLocalFile,
-} from "../local-file-runtime";
-import { getRemoteWorkspacePlatform } from "./workspace-platform";
-import {
   formatWorkspaceFileSize,
   isWorkspaceFile,
   resolveWorkspaceMarkdownPath,
@@ -71,17 +66,15 @@ const errorMessage = (error: unknown): string =>
 const defaultViewerMode = (document: WorkspaceFileDocument): ViewerMode =>
   document.previewKind && !document.editable ? "preview" : "edit";
 
-const getDesktopMarkdownTarget = (
+const getAbsoluteMarkdownPath = (
   workspaceRoot: string,
   documentPath: string,
   target: string,
 ) =>
-  getRemoteWorkspacePlatform()
-    ? null
-    : getLocalMarkdownLinkTarget(
-        target,
-        workspaceEntryAbsolutePath(workspaceRoot, documentPath),
-      );
+  getLocalMarkdownLinkTarget(
+    target,
+    workspaceEntryAbsolutePath(workspaceRoot, documentPath),
+  )?.path;
 
 const WorkspaceMarkdownImage = ({
   workspaceRoot,
@@ -109,20 +102,14 @@ const WorkspaceMarkdownImage = ({
       setResolvedSource(source);
       return () => {};
     }
-    const path = resolveWorkspaceMarkdownPath(documentPath, source);
-    const desktopTarget = path
-      ? null
-      : getDesktopMarkdownTarget(workspaceRoot, documentPath, source);
-    const sourceRequest = path
-      ? resolveWorkspaceFilePreviewSource(workspaceRoot, path)
-      : desktopTarget
-        ? resolveLocalFilePreviewSource(desktopTarget.path)
-        : null;
-    if (!sourceRequest) {
+    const path =
+      resolveWorkspaceMarkdownPath(documentPath, source) ??
+      getAbsoluteMarkdownPath(workspaceRoot, documentPath, source);
+    if (!path) {
       setFailed(true);
       return () => {};
     }
-    void sourceRequest
+    void resolveWorkspaceFilePreviewSource(workspaceRoot, path)
       .then((nextSource) => {
         if (active) {
           previewSource = nextSource;
@@ -887,18 +874,18 @@ export const WorkspaceFileViewer = ({
                           href,
                           workspaceRoot,
                         );
-                        const desktopTarget =
+                        const absolutePath =
                           !workspaceTarget && !href.startsWith("//")
-                            ? getDesktopMarkdownTarget(
+                            ? getAbsoluteMarkdownPath(
                                 workspaceRoot,
                                 document.path,
                                 href,
                               )
-                            : null;
+                            : undefined;
                         const external =
                           href.startsWith("//") ||
                           /^[a-z][a-z\d+.-]*:/iu.test(href);
-                        if (external && !workspaceTarget && !desktopTarget) {
+                        if (external && !workspaceTarget && !absolutePath) {
                           const target = href.startsWith("//")
                             ? `https:${href}`
                             : href;
@@ -914,21 +901,12 @@ export const WorkspaceFileViewer = ({
                             href.startsWith("//"));
                         const path = absoluteWorkspaceTarget
                           ? workspaceTarget.relativePath
-                          : resolveWorkspaceMarkdownPath(
+                          : (resolveWorkspaceMarkdownPath(
                               document.path,
                               workspaceTarget?.relativePath ?? href,
-                            );
+                            ) ?? absolutePath);
                         if (!path) {
-                          if (!desktopTarget) {
-                            setSaveError(
-                              "This link points outside the workspace.",
-                            );
-                            return;
-                          }
-                          void revealLocalFile(desktopTarget.path).catch(
-                            (openError: unknown) =>
-                              setSaveError(errorMessage(openError)),
-                          );
+                          setSaveError("This link can't be opened.");
                           return;
                         }
                         void openWorkspacePath(workspaceRoot, path).catch(

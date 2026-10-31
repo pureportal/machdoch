@@ -7,9 +7,8 @@ use std::{
 use serde::Deserialize;
 
 use super::{
-    is_binary_file_preview, local_file_links::resolve_local_path,
-    paths::resolve_workspace_relative_path, process::open_path_in_system_shell,
-    BINARY_PREVIEW_SCAN_BYTES,
+    is_binary_file_preview, local_file_links::resolve_local_path, paths::resolve_workspace_path,
+    process::open_path_in_system_shell, BINARY_PREVIEW_SCAN_BYTES,
 };
 
 #[derive(Deserialize)]
@@ -42,7 +41,7 @@ fn resolve_file_preview_target(target: FilePreviewTarget) -> Result<PathBuf, Str
         FilePreviewTarget::Workspace {
             workspace_root,
             relative_path,
-        } => resolve_workspace_relative_path(&workspace_root, &relative_path),
+        } => resolve_workspace_path(&workspace_root, &relative_path),
     }
 }
 
@@ -159,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn targets_resolve_local_paths_anywhere_and_keep_workspace_targets_contained() {
+    fn targets_resolve_local_and_workspace_paths_anywhere() {
         let fixture = PreviewFixture::new();
         let workspace = fixture.0.join("workspace");
         let folder = workspace.join("PurePortal Logo Variants");
@@ -179,18 +178,19 @@ mod tests {
             );
         }
 
-        let target = serde_json::from_value(json!({"kind": "local", "path": outside})).unwrap();
-        assert_eq!(
-            resolve_file_preview_target(target).unwrap(),
-            outside.canonicalize().unwrap()
-        );
-
         for target in [
-            json!({"kind": "local", "path": "relative/folder"}),
+            json!({"kind": "local", "path": outside}),
             json!({"kind": "workspace", "workspaceRoot": workspace, "relativePath": "../outside"}),
         ] {
             let target = serde_json::from_value(target).unwrap();
-            assert!(resolve_file_preview_target(target).is_err());
+            assert_eq!(
+                resolve_file_preview_target(target).unwrap(),
+                outside.canonicalize().unwrap()
+            );
         }
+
+        let target =
+            serde_json::from_value(json!({"kind": "local", "path": "relative/folder"})).unwrap();
+        assert!(resolve_file_preview_target(target).is_err());
     }
 }

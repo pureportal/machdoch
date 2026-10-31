@@ -67,7 +67,7 @@ pub(super) fn dispatch_fleet_command(
     }
 
     if event.kind == "add-context-attachments" {
-        super::context_attachments::validate(app_handle, &event)
+        super::context_attachments::validate(&event)
             .map_err(FleetCommandDispatchError::InvalidRequest)?;
     }
 

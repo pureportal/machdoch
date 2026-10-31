@@ -1,5 +1,5 @@
-import { readFile, realpath, stat } from "node:fs/promises";
-import { isAbsolute, relative, resolve } from "node:path";
+import { readFile, stat } from "node:fs/promises";
+import { resolve } from "node:path";
 import { loadRuntimeConfig } from "../../core/config.js";
 import { discoverCustomizations } from "../../core/customizations.js";
 import type { RalphInputValue } from "../../core/ralph.js";
@@ -28,16 +28,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
-const isPathInside = (root: string, candidate: string): boolean => {
-  const relativePath = relative(root, candidate);
-
-  return (
-    relativePath === "" ||
-    (!relativePath.startsWith("..") && !isAbsolute(relativePath))
-  );
-};
-
-const resolveWorkspaceFile = async (
+const readInterviewFile = async (
   workspaceRoot: string,
   path: string,
 ): Promise<string> => {
@@ -47,30 +38,12 @@ const resolveWorkspaceFile = async (
     throw new Error("Expected interview file path to be non-empty.");
   }
 
-  const resolvedWorkspaceRoot = await realpath(workspaceRoot);
-  const candidatePath = isAbsolute(normalizedPath)
-    ? normalizedPath
-    : resolve(resolvedWorkspaceRoot, normalizedPath);
-  const resolvedPath = await realpath(candidatePath);
-
-  if (!isPathInside(resolvedWorkspaceRoot, resolvedPath)) {
-    throw new Error("Refusing to read interview file outside the workspace.");
-  }
-
+  const resolvedPath = resolve(workspaceRoot, normalizedPath);
   const metadata = await stat(resolvedPath);
 
   if (!metadata.isFile()) {
     throw new Error("Expected interview file path to point to a file.");
   }
-
-  return resolvedPath;
-};
-
-const readInterviewWorkspaceFile = async (
-  workspaceRoot: string,
-  path: string,
-): Promise<string> => {
-  const resolvedPath = await resolveWorkspaceFile(workspaceRoot, path);
 
   return await readFile(resolvedPath, "utf8");
 };
@@ -84,10 +57,7 @@ const getInterviewPromptText = async (
   }
 
   if (options.promptFile) {
-    return (await readInterviewWorkspaceFile(
-      args.workspaceRoot,
-      options.promptFile,
-    )).trim();
+    return (await readInterviewFile(args.workspaceRoot, options.promptFile)).trim();
   }
 
   return "";
@@ -165,7 +135,7 @@ const readTaskInterviewInput = async (
   const raw =
     options.inputJson ??
     (options.inputJsonFile
-      ? await readInterviewWorkspaceFile(args.workspaceRoot, options.inputJsonFile)
+      ? await readInterviewFile(args.workspaceRoot, options.inputJsonFile)
       : undefined);
 
   if (!raw) {

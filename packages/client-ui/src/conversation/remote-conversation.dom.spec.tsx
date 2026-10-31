@@ -268,8 +268,6 @@ describe("shared remote message interactions", () => {
           expect(externalWindow.location.href).toBe("blob:preview"),
         );
         expect(invoke).toHaveBeenCalledWith("read_context_attachment_preview", {
-          sessionId: session.id,
-          messageId: message.id,
           path: "C:/Project/images/chart.png",
         });
         expect(externalWindow.opener).toBeNull();
@@ -299,8 +297,6 @@ describe("shared remote message interactions", () => {
       ).toBe("Historical file"),
     );
     expect(invoke).toHaveBeenCalledWith("read_context_attachment_preview", {
-      sessionId: session.id,
-      messageId: message.id,
       path: "C:/Project/notes/answer.md",
     });
   });
@@ -540,8 +536,6 @@ describe("shared remote message interactions", () => {
         ).toBe("Linked file"),
       );
       expect(invoke).toHaveBeenCalledWith("read_context_attachment_preview", {
-        sessionId: session.id,
-        messageId: message.id,
         path: workspace.includes("UNC")
           ? "//server/share/Project/notes/answer.md"
           : "C:/Project/notes/answer.md",
@@ -678,8 +672,6 @@ describe("shared remote message interactions", () => {
       screen.getByRole("button", { name: "Show file answer.md" }),
     );
     expect(invoke).toHaveBeenCalledWith("read_context_attachment_preview", {
-      sessionId: session.id,
-      messageId: message.id,
       path: file.path,
     });
     view.rerender(
@@ -710,13 +702,42 @@ describe("shared remote message interactions", () => {
       ).toBe("Current file"),
     );
     expect(invoke).toHaveBeenLastCalledWith("read_context_attachment_preview", {
-      sessionId: "next",
-      messageId: message.id,
       path: file.path,
     });
   });
 
-  it("browses message folders within the session root and opens their files", async () => {
+  it("previews a file attachment outside the session workspace", async () => {
+    const file = {
+      id: "file",
+      source: "path" as const,
+      kind: "file" as const,
+      name: "Untitled.txt",
+      path: "D:\\Downloads\\Untitled.txt",
+    };
+    invoke.mockResolvedValueOnce({
+      dataBase64: btoa("Outside file"),
+      mediaType: "text/plain",
+    });
+    render(
+      <RemoteConversationHost
+        {...props}
+        messages={[{ ...message, attachments: [file] }]}
+      />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Show file Untitled.txt" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("dialog", { name: "Untitled.txt" }).textContent,
+      ).toBe("Outside file"),
+    );
+    expect(invoke).toHaveBeenCalledWith("read_context_attachment_preview", {
+      path: file.path,
+    });
+  });
+
+  it("browses message folders and opens their files", async () => {
     const folder = {
       id: "folder",
       source: "path" as const,
@@ -725,8 +746,8 @@ describe("shared remote message interactions", () => {
       path: "C:\\Project\\notes",
     };
     invoke.mockResolvedValueOnce({
-      path: "notes",
-      entries: [{ path: "notes/answer.md", name: "answer.md", kind: "file" }],
+      path: ".",
+      entries: [{ path: "answer.md", name: "answer.md", kind: "file" }],
       nextOffset: null,
     });
     render(
@@ -739,9 +760,8 @@ describe("shared remote message interactions", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "answer.md" })).toBeTruthy(),
     );
-    expect(invoke).toHaveBeenCalledWith("list_workspace_directory", {
-      workspaceRoot: session.workspace,
-      relativePath: "notes",
+    expect(invoke).toHaveBeenCalledWith("list_context_attachment_directory", {
+      path: "C:/Project/notes",
       offset: 0,
     });
     invoke.mockResolvedValueOnce({
@@ -755,32 +775,80 @@ describe("shared remote message interactions", () => {
       ).toBe("Folder file"),
     );
     expect(invoke).toHaveBeenLastCalledWith("read_context_attachment_preview", {
-      sessionId: session.id,
-      messageId: message.id,
       path: "C:/Project/notes/answer.md",
     });
   });
 
-  it("rejects a folder outside the session root without contacting the host", async () => {
+  it("browses a folder outside the session workspace up to the drive root", async () => {
     const folder = {
       id: "folder",
       source: "path" as const,
       kind: "directory" as const,
       name: "Other",
-      path: "C:\\Project-other",
+      path: "D:\\Other",
     };
+    invoke.mockResolvedValue({
+      path: ".",
+      entries: [
+        {
+          path: "linked",
+          name: "linked",
+          kind: "symlink",
+          targetKind: "directory",
+        },
+      ],
+      nextOffset: null,
+    });
     render(
       <RemoteConversationHost
         {...props}
+        session={{ ...session, workspace: undefined }}
         messages={[{ ...message, attachments: [folder] }]}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open folder Other" }));
     await waitFor(() =>
-      expect(screen.getByRole("alert").textContent).toContain(
-        "outside the session workspace",
+      expect(invoke).toHaveBeenLastCalledWith(
+        "list_context_attachment_directory",
+        { path: "D:/Other", offset: 0 },
       ),
     );
-    expect(invoke).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "linked/" }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenLastCalledWith(
+        "list_context_attachment_directory",
+        { path: "D:/Other/linked", offset: 0 },
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "Up" }).disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Up" }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenLastCalledWith(
+        "list_context_attachment_directory",
+        { path: "D:/Other", offset: 0 },
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "Up" }).disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Up" }));
+    await waitFor(() =>
+      expect(invoke).toHaveBeenLastCalledWith(
+        "list_context_attachment_directory",
+        { path: "D:/", offset: 0 },
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "linked/" })).toBeTruthy(),
+    );
+    expect(
+      screen.getByRole<HTMLButtonElement>("button", { name: "Up" }).disabled,
+    ).toBe(true);
   });
 });

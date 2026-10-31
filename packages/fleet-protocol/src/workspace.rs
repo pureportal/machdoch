@@ -34,6 +34,10 @@ fn path(value: &Value) -> bool {
         })
 }
 
+fn reachable_path(value: &Value) -> bool {
+    text(value, 2048, false) && value.as_str().is_some_and(|value| !value.contains('\0'))
+}
+
 fn name(value: &Value) -> bool {
     text(value, 255, false)
         && value.as_str().is_some_and(|value| {
@@ -334,17 +338,11 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
                         && !name.chars().any(char::is_control)
                 })
         }),
-        "read_context_attachment_preview" => args.as_object().is_some_and(|args| {
-            args.keys()
-                .all(|key| matches!(key.as_str(), "path" | "sessionId" | "messageId"))
-                && args.get("path").is_some_and(root)
-                && args
-                    .get("sessionId")
-                    .is_some_and(|value| text(value, 240, true))
-                && args
-                    .get("messageId")
-                    .is_none_or(|value| text(value, 240, true))
-        }),
+        "read_context_attachment_preview" => {
+            fields(args, &["path"]).is_some_and(|args| root(&args["path"]))
+        }
+        "list_context_attachment_directory" => fields(args, &["path", "offset"])
+            .is_some_and(|args| root(&args["path"]) && integer(&args["offset"], 20_000.0)),
         "get_workspace_run_configuration_document" | "get_workspace_run_snapshot" => {
             fields(args, &["workspaceRoot"]).is_some_and(|args| root(&args["workspaceRoot"]))
         }
@@ -463,14 +461,15 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
         "list_workspace_directory" => fields(args, &["workspaceRoot", "relativePath", "offset"])
             .is_some_and(|args| {
                 root(&args["workspaceRoot"])
-                    && path(&args["relativePath"])
+                    && reachable_path(&args["relativePath"])
                     && args["offset"].as_f64().is_some_and(|offset| {
                         (0.0..=20_000.0).contains(&offset) && offset.fract() == 0.0
                     })
             }),
         "read_workspace_file" | "read_workspace_file_preview" | "open_workspace_path" => {
-            fields(args, &["workspaceRoot", "relativePath"])
-                .is_some_and(|args| root(&args["workspaceRoot"]) && path(&args["relativePath"]))
+            fields(args, &["workspaceRoot", "relativePath"]).is_some_and(|args| {
+                root(&args["workspaceRoot"]) && reachable_path(&args["relativePath"])
+            })
         }
         "discover_workspace_git_repositories"
         | "discover_workspace_shells"
@@ -491,7 +490,7 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
             )
             .is_some_and(|request| {
                 root(&request["workspaceRoot"])
-                    && path(&request["relativePath"])
+                    && reachable_path(&request["relativePath"])
                     && content(&request["contentBase64"])
                     && request["expectedRevision"].as_str().is_some_and(|value| {
                         value.len() == 64
@@ -510,7 +509,7 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
             )
             .is_some_and(|request| {
                 root(&request["workspaceRoot"])
-                    && path(&request["parentPath"])
+                    && reachable_path(&request["parentPath"])
                     && name(&request["name"])
                     && matches!(request["kind"].as_str(), Some("file" | "directory"))
             })

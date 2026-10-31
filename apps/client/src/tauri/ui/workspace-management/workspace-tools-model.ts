@@ -15,7 +15,8 @@ export const workspacePathParent = (path: string): string => {
 };
 
 export const isWorkspaceDirectory = (entry: WorkspaceDirectoryEntry): boolean =>
-  entry.kind === "directory";
+  entry.kind === "directory" ||
+  (entry.kind === "symlink" && entry.targetKind === "directory");
 
 export const isWorkspaceFile = (entry: WorkspaceDirectoryEntry): boolean =>
   entry.kind === "file" ||
@@ -72,8 +73,8 @@ export const resolveWorkspaceMarkdownPath = (
   for (const part of decoded.split("/")) {
     if (!part || part === ".") continue;
     if (part === "..") {
-      if (base.length === 0) return null;
-      base.pop();
+      if (base.length === 0 || base.at(-1) === "..") base.push(part);
+      else base.pop();
     } else {
       base.push(part);
     }

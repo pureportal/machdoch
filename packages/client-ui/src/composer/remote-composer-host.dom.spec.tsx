@@ -26,7 +26,10 @@ vi.mock("./remote-composer", () => ({
     attachments,
     pending,
   }: {
-    attachments: { select: (kind: string) => void };
+    attachments: {
+      select: (kind: string) => void;
+      open: (attachment: unknown) => void;
+    };
     pending: boolean;
   }) => (
     <>
@@ -35,6 +38,19 @@ vi.mock("./remote-composer", () => ({
       </button>
       <button onClick={() => attachments.select("images")}>Images</button>
       <button onClick={() => attachments.select("folders")}>Folders</button>
+      <button
+        onClick={() =>
+          attachments.open({
+            id: "outside",
+            source: "path",
+            kind: "directory",
+            name: "Outside",
+            path: "D:\\Outside",
+          })
+        }
+      >
+        Outside folder
+      </button>
     </>
   ),
 }));
@@ -66,6 +82,21 @@ function harness(workspace: string | null = "/workspace") {
 }
 
 describe("remote attachments", () => {
+  it.each(["/workspace", null])(
+    "browses an attached folder outside workspace %s",
+    async (workspace) => {
+      const { invoke } = harness(workspace);
+      fireEvent.click(screen.getByText("Outside folder"));
+      await waitFor(() =>
+        expect(invoke).toHaveBeenCalledWith(
+          "list_context_attachment_directory",
+          { path: "D:/Outside", offset: 0 },
+        ),
+      );
+      expect(screen.getByRole("dialog", { name: "Outside" })).toBeTruthy();
+    },
+  );
+
   it("starts with source choices and opens the local file picker without confirmation", () => {
     const { invoke, onCommand } = harness();
     fireEvent.click(screen.getByText("Files"));

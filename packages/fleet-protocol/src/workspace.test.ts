@@ -59,33 +59,38 @@ await test("workspace tools match the shared Rust conformance cases", async () =
     );
 });
 
-await test("workspace requests reject paths outside the selected root and unknown fields", () => {
+await test("workspace file requests reach any path but reject NUL bytes and unknown fields", () => {
   for (const relativePath of [
     "../secret",
     "folder/../secret",
     "C:\\secret",
     "\\\\server\\secret",
     "/secret",
-    "file\0name",
+    "src/main.ts",
   ])
-    assert.equal(
-      workspaceRequestSchema.safeParse(
-        invocation("read_workspace_file", {
-          workspaceRoot: "/projects/demo",
-          relativePath,
-        }),
-      ).success,
-      false,
-      relativePath,
-    );
+    for (const command of [
+      "read_workspace_file",
+      "read_workspace_file_preview",
+      "open_workspace_path",
+    ])
+      assert.equal(
+        workspaceRequestSchema.safeParse(
+          invocation(command, {
+            workspaceRoot: "/projects/demo",
+            relativePath,
+          }),
+        ).success,
+        true,
+        `${command} ${relativePath}`,
+      );
   assert.equal(
     workspaceRequestSchema.safeParse(
       invocation("read_workspace_file", {
         workspaceRoot: "/projects/demo",
-        relativePath: "src/main.ts",
+        relativePath: "file\0name",
       }),
     ).success,
-    true,
+    false,
   );
   assert.equal(
     workspaceRequestSchema.safeParse(
@@ -97,6 +102,43 @@ await test("workspace requests reject paths outside the selected root and unknow
     ).success,
     false,
   );
+});
+
+await test("rename and delete requests only accept paths below the workspace", () => {
+  for (const relativePath of [
+    "../secret",
+    "folder/../secret",
+    "C:\\secret",
+    "\\\\server\\secret",
+    "/secret",
+  ]) {
+    assert.equal(
+      workspaceRequestSchema.safeParse(
+        invocation("delete_workspace_entry", {
+          request: {
+            workspaceRoot: "/projects/demo",
+            relativePath,
+            recursive: true,
+          },
+        }),
+      ).success,
+      false,
+      relativePath,
+    );
+    assert.equal(
+      workspaceRequestSchema.safeParse(
+        invocation("rename_workspace_entry", {
+          request: {
+            workspaceRoot: "/projects/demo",
+            relativePath,
+            name: "renamed",
+          },
+        }),
+      ).success,
+      false,
+      relativePath,
+    );
+  }
 });
 
 await test("Git requests require only the fields used by their action", () => {

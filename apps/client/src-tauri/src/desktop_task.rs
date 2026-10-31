@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::Manager as _;
 
-mod attachment_paths;
 mod context_attachment_storage;
 pub(crate) use context_attachment_storage::persist_context_attachment;
 mod attachments;
@@ -37,7 +36,6 @@ mod ralph_recovery;
 mod registry;
 mod timeout;
 
-pub(crate) use attachment_paths::resolve_context_attachment_path;
 use attachments::save_clipboard_image_attachment_sync;
 use cli_commands::{
     execute_instruction_command, execute_mcp_command, execute_provider_sync_command,
@@ -52,7 +50,7 @@ use file_changes::{
     FileChangeHunkPage, FileChangeHunkPageRequest, FileChangePage, FileChangePageRequest,
 };
 pub(crate) use paths::format_path_for_ui;
-use paths::resolve_workspace_relative_path;
+use paths::resolve_workspace_path;
 use process::open_path_in_system_shell;
 use progress::create_progress_timestamp;
 use ralph::{execute_ralph_command, resolve_ralph_flow_path_for_open};
@@ -506,7 +504,7 @@ pub async fn open_workspace_path(
     relative_path: String,
 ) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let resolved_path = resolve_workspace_relative_path(&workspace_root, &relative_path)?;
+        let resolved_path = resolve_workspace_path(&workspace_root, &relative_path)?;
         open_path_in_system_shell(&resolved_path)
     })
     .await
@@ -603,7 +601,7 @@ pub async fn resolve_workspace_file_preview_path(
     relative_path: String,
 ) -> Result<String, String> {
     let preview_path = tauri::async_runtime::spawn_blocking(move || {
-        let resolved_path = resolve_workspace_relative_path(&workspace_root, &relative_path)?;
+        let resolved_path = resolve_workspace_path(&workspace_root, &relative_path)?;
         ensure_file_preview_path(resolved_path)
     })
     .await
@@ -618,7 +616,7 @@ pub async fn read_workspace_file_preview(
     relative_path: String,
 ) -> Result<FilePreviewReadResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let resolved_path = resolve_workspace_relative_path(&workspace_root, &relative_path)?;
+        let resolved_path = resolve_workspace_path(&workspace_root, &relative_path)?;
 
         read_file_preview_sync(resolved_path)
     })

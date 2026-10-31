@@ -11,32 +11,26 @@ import {
   DialogTitle,
 } from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
 
+const parentFolder = (path: string): string | null => {
+  const separator = path.lastIndexOf("/");
+  if (separator < 0) return null;
+  const parent = path.slice(0, separator);
+  return !parent || /^[A-Za-z]:$/u.test(parent) ? `${parent}/` : parent;
+};
+
 export function RemoteDirectoryPreview({
   folder,
-  workspace,
   transport,
   onOpenFile,
   onClose,
 }: {
   folder: Extract<ChatSessionContextAttachment, { source: "path" }>;
-  workspace: string | undefined;
   transport: FleetOperationTransport;
   onOpenFile: (attachment: ChatSessionContextAttachment) => void;
   onClose: () => void;
 }): React.ReactElement {
-  const root = workspace ? normalizeLocalPath(workspace).replace(/\/+$/u, "") : undefined;
-  const path = normalizeLocalPath(folder.path).replace(/\/+$/u, "");
-  const caseInsensitive = root ? /^(?:[A-Za-z]:|\/\/)/u.test(root) : false;
-  const comparisonRoot = caseInsensitive ? root?.toLowerCase() : root;
-  const comparisonPath = caseInsensitive ? path.toLowerCase() : path;
-  const relative =
-    comparisonRoot && comparisonPath === comparisonRoot
-      ? ""
-      : comparisonRoot && comparisonPath.startsWith(comparisonRoot + "/")
-        ? path.slice(root!.length + 1)
-        : null;
   const [request, setRequest] = useState({
-    path: relative,
+    path: normalizeLocalPath(folder.path),
     offset: 0,
     revision: 0,
   });
@@ -45,28 +39,21 @@ export function RemoteDirectoryPreview({
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const parent = parentFolder(request.path.replace(/\/+$/u, ""));
 
   useEffect(() => {
     let current = true;
     setLoading(true);
     setError(null);
-    if (request.path === null || !workspace) {
-      setError(
-        "This folder is outside the session workspace. Select its workspace to browse it.",
-      );
-      setLoading(false);
-      return;
-    }
     void transport
-      .invoke<WorkspaceDirectoryPage>("list_workspace_directory", {
-        workspaceRoot: workspace,
-        relativePath: request.path,
+      .invoke<WorkspaceDirectoryPage>("list_context_attachment_directory", {
+        path: request.path,
         offset: request.offset,
       })
       .then((result) => {
         if (current)
           setDirectory((previous) =>
-            request.offset && previous?.path === result.path
+            request.offset && previous
               ? { ...result, entries: [...previous.entries, ...result.entries] }
               : result,
           );
@@ -81,7 +68,7 @@ export function RemoteDirectoryPreview({
     return () => {
       current = false;
     };
-  }, [workspace, transport, request]);
+  }, [transport, request]);
 
   return (
     <Dialog
@@ -100,42 +87,43 @@ export function RemoteDirectoryPreview({
         >
           <Button
             variant="outline"
-            disabled={loading || !request.path}
+            disabled={loading || parent === null}
             onClick={() =>
-              setRequest({
-                path: request.path!.split("/").slice(0, -1).join("/"),
-                offset: 0,
-                revision: 0,
-              })
+              setRequest({ path: parent!, offset: 0, revision: 0 })
             }
           >
             Up
           </Button>
-          {directory?.entries.map((entry) => (
-            <Button
-              key={entry.path}
-              variant="ghost"
-              disabled={loading}
-              className="flex w-full justify-start truncate"
-              onClick={() => {
-                if (entry.kind === "directory")
-                  setRequest({ path: entry.path, offset: 0, revision: 0 });
-                else {
-                  onClose();
-                  onOpenFile({
-                    id: entry.path,
-                    source: "path",
-                    name: entry.name,
-                    path: `${root}/${entry.path}`,
-                    kind: "file",
-                  });
-                }
-              }}
-            >
-              {entry.name}
-              {entry.kind === "directory" ? "/" : ""}
-            </Button>
-          ))}
+          {directory?.entries.map((entry) => {
+            const isFolder =
+              entry.kind === "directory" ||
+              (entry.kind === "symlink" && entry.targetKind === "directory");
+            const path = `${request.path.replace(/\/+$/u, "")}/${entry.path}`;
+            return (
+              <Button
+                key={entry.path}
+                variant="ghost"
+                disabled={loading}
+                className="flex w-full justify-start truncate"
+                onClick={() => {
+                  if (isFolder) setRequest({ path, offset: 0, revision: 0 });
+                  else {
+                    onClose();
+                    onOpenFile({
+                      id: path,
+                      source: "path",
+                      name: entry.name,
+                      path,
+                      kind: "file",
+                    });
+                  }
+                }}
+              >
+                {entry.name}
+                {isFolder ? "/" : ""}
+              </Button>
+            );
+          })}
           {directory?.nextOffset !== null &&
           directory?.nextOffset !== undefined ? (
             <Button
@@ -154,19 +142,17 @@ export function RemoteDirectoryPreview({
           {error ? (
             <p role="alert" className="m-product-inline-error">
               {error}
-              {request.path !== null ? (
-                <Button
-                  variant="outline"
-                  onClick={() =>
-                    setRequest((current) => ({
-                      ...current,
-                      revision: current.revision + 1,
-                    }))
-                  }
-                >
-                  Retry
-                </Button>
-              ) : null}
+              <Button
+                variant="outline"
+                onClick={() =>
+                  setRequest((current) => ({
+                    ...current,
+                    revision: current.revision + 1,
+                  }))
+                }
+              >
+                Retry
+              </Button>
             </p>
           ) : null}
         </div>

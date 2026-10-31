@@ -5,7 +5,7 @@ use super::{
     read_file_preview_sync, FilePreviewReadResult,
 };
 
-pub(super) fn resolve_local_path(path: &str) -> Result<PathBuf, String> {
+pub(crate) fn resolve_local_path(path: &str) -> Result<PathBuf, String> {
     let candidate = PathBuf::from(path);
 
     if !candidate.is_absolute() {

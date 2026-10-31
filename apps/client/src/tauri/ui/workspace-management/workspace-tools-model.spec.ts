@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   formatWorkspaceFileSize,
+  isWorkspaceDirectory,
+  isWorkspaceFile,
   reconcileWorkspaceTreeFocus,
   resolveWorkspaceMarkdownPath,
   workspacePathParent,
@@ -35,7 +37,23 @@ describe("workspace tools model", () => {
     expect(formatWorkspaceFileSize(12 * 1024 * 1024)).toBe("12 MB");
   });
 
-  it("resolves local Markdown targets without escaping the workspace", () => {
+  it("treats links to folders as directories", () => {
+    const entry = {
+      name: "linked",
+      path: "linked",
+      kind: "symlink",
+      targetKind: "directory",
+      size: null,
+      modifiedAt: null,
+    } as const;
+    expect(isWorkspaceDirectory(entry)).toBe(true);
+    expect(isWorkspaceFile(entry)).toBe(false);
+    expect(
+      isWorkspaceDirectory({ ...entry, targetKind: "file" }),
+    ).toBe(false);
+  });
+
+  it("resolves local Markdown targets inside and outside the workspace", () => {
     expect(
       resolveWorkspaceMarkdownPath("docs/guide.md", "../assets/logo.png"),
     ).toBe("assets/logo.png");
@@ -45,9 +63,15 @@ describe("workspace tools model", () => {
     expect(
       resolveWorkspaceMarkdownPath("docs/guide.md", "%2E%2E/README.md"),
     ).toBe("README.md");
+    expect(resolveWorkspaceMarkdownPath("README.md", "../outside.md")).toBe(
+      "../outside.md",
+    );
     expect(
-      resolveWorkspaceMarkdownPath("README.md", "../outside.md"),
-    ).toBeNull();
+      resolveWorkspaceMarkdownPath("docs/guide.md", "../../../outside.png"),
+    ).toBe("../../outside.png");
+    expect(
+      resolveWorkspaceMarkdownPath("../notes/guide.md", "./logo.png"),
+    ).toBe("../notes/logo.png");
     expect(
       resolveWorkspaceMarkdownPath("README.md", "https://example.test/a"),
     ).toBeNull();

@@ -90,7 +90,7 @@ pub(super) fn prepare(
             {
                 continue;
             }
-            crate::desktop_task::resolve_context_attachment_path(workspace.as_deref(), path)?;
+            crate::desktop_task::local_file_links::resolve_local_path(path)?;
         }
         return Ok(());
     }

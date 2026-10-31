@@ -61,36 +61,20 @@ pub(crate) fn format_path_for_ui(path: &Path) -> String {
     format_path_string_for_ui(&path.display().to_string())
 }
 
-pub(super) fn resolve_workspace_relative_path(
+pub(super) fn resolve_workspace_path(
     workspace_root: &str,
-    relative_path: &str,
+    requested_path: &str,
 ) -> Result<PathBuf, String> {
-    let normalized_relative_path = relative_path.trim();
+    let normalized_path = requested_path.trim();
 
-    if normalized_relative_path.is_empty() {
-        return Err("Expected a workspace-relative path to open.".to_string());
+    if normalized_path.is_empty() {
+        return Err("Expected a path to open.".to_string());
     }
 
-    let workspace_path = resolve_workspace_root_path(workspace_root)?;
-
-    let candidate_relative_path = PathBuf::from(normalized_relative_path);
-
-    if candidate_relative_path.is_absolute() {
-        return Err("Expected a workspace-relative path, not an absolute path.".to_string());
-    }
-
-    let resolved_path = workspace_path
-        .join(&candidate_relative_path)
+    resolve_workspace_root_path(workspace_root)?
+        .join(normalized_path)
         .canonicalize()
-        .map_err(|error| {
-            format!("Unable to resolve `{normalized_relative_path}` inside the workspace: {error}")
-        })?;
-
-    if !resolved_path.starts_with(&workspace_path) {
-        return Err("Refused to open a path outside the active workspace.".to_string());
-    }
-
-    Ok(resolved_path)
+        .map_err(|error| format!("Unable to find `{normalized_path}`: {error}"))
 }
 
 #[cfg(test)]
@@ -134,14 +118,29 @@ mod tests {
     }
 
     #[test]
-    fn relative_workspace_paths_reject_absolute_input() {
-        let absolute_path = std::env::temp_dir().join("absolute.txt");
-        let error = resolve_workspace_relative_path(
-            std::env::temp_dir().to_string_lossy().as_ref(),
-            absolute_path.to_string_lossy().as_ref(),
-        )
-        .expect_err("absolute relative path input should be rejected");
+    fn workspace_paths_resolve_files_outside_the_workspace() {
+        let fixture = std::env::temp_dir().join(format!(
+            "machdoch-workspace-path-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let workspace = fixture.join("workspace");
+        let outside = fixture.join("outside");
+        std::fs::create_dir_all(&workspace).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        let file = outside.join("Logo.png");
+        std::fs::write(&file, "image").unwrap();
+        let root = workspace.to_string_lossy();
+        let expected = file.canonicalize().unwrap();
 
-        assert!(error.contains("not an absolute path"));
+        for requested in ["../outside/Logo.png", file.to_str().unwrap()] {
+            assert_eq!(resolve_workspace_path(&root, requested).unwrap(), expected);
+        }
+        assert!(resolve_workspace_path(&root, "   ").is_err());
+        assert!(resolve_workspace_path(&root, "../outside/missing.png").is_err());
+        std::fs::remove_dir_all(fixture).unwrap();
     }
 }

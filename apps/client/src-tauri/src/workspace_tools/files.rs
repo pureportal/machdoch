@@ -117,71 +117,39 @@ fn canonical_workspace_root(workspace_root: &str) -> Result<PathBuf, String> {
     resolve_workspace_root_path(workspace_root)
 }
 
-fn looks_like_windows_absolute_path(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    (bytes.len() >= 3
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
-        && matches!(bytes[2], b'/' | b'\\'))
-        || value.starts_with("\\\\")
-}
-
-fn validate_relative_path(relative_path: &str, allow_root: bool) -> Result<PathBuf, String> {
-    if relative_path.is_empty() || relative_path.chars().any(|character| character == '\0') {
-        return Err("Expected a workspace-relative path.".to_string());
+fn parse_requested_path(requested_path: &str, allow_root: bool) -> Result<PathBuf, String> {
+    if requested_path.is_empty() || requested_path.contains('\0') {
+        return Err("Expected a file or folder path.".to_string());
     }
 
-    if looks_like_windows_absolute_path(relative_path) {
-        return Err("Expected a workspace-relative path, not an absolute path.".to_string());
-    }
+    let path = Path::new(requested_path)
+        .components()
+        .filter(|component| *component != Component::CurDir)
+        .collect::<PathBuf>();
 
-    let path = PathBuf::from(relative_path);
-    if path.is_absolute() {
-        return Err("Expected a workspace-relative path, not an absolute path.".to_string());
-    }
-
-    for component in path.components() {
-        match component {
-            Component::Normal(_) | Component::CurDir => {}
-            Component::ParentDir => {
-                return Err("Parent path traversal is not allowed.".to_string());
-            }
-            Component::Prefix(_) | Component::RootDir => {
-                return Err("Expected a workspace-relative path.".to_string());
-            }
-        }
-    }
-
-    if !allow_root
-        && path
-            .components()
-            .all(|component| component == Component::CurDir)
-    {
+    if !allow_root && path.as_os_str().is_empty() {
         return Err("The workspace root cannot be changed by this action.".to_string());
     }
 
     Ok(path)
 }
 
-fn ensure_contained(root: &Path, candidate: &Path) -> Result<(), String> {
-    if candidate.starts_with(root) {
-        Ok(())
+fn parse_entry_path(requested_path: &str) -> Result<PathBuf, String> {
+    let path = parse_requested_path(requested_path, false)?;
+    if path
+        .components()
+        .all(|component| matches!(component, Component::Normal(_)))
+    {
+        Ok(path)
     } else {
-        Err("Refused to access a path outside the workspace.".to_string())
+        Err("Expected a workspace-relative path.".to_string())
     }
 }
 
-fn resolve_existing_path(
-    root: &Path,
-    relative_path: &str,
-    allow_root: bool,
-) -> Result<PathBuf, String> {
-    let relative = validate_relative_path(relative_path, allow_root)?;
-    let candidate = root.join(relative).canonicalize().map_err(|error| {
-        format!("Unable to resolve `{relative_path}` inside the workspace: {error}")
-    })?;
-    ensure_contained(root, &candidate)?;
-    Ok(candidate)
+fn resolve_existing_path(root: &Path, requested_path: &Path) -> Result<PathBuf, String> {
+    root.join(requested_path)
+        .canonicalize()
+        .map_err(|error| format!("Unable to find `{}`: {error}", requested_path.display()))
 }
 
 fn path_for_ui(path: &Path) -> String {
@@ -190,17 +158,6 @@ fn path_for_ui(path: &Path) -> String {
         ".".to_string()
     } else {
         normalized
-    }
-}
-
-fn relative_path_for_ui(root: &Path, path: &Path) -> Result<String, String> {
-    let relative = path
-        .strip_prefix(root)
-        .map_err(|_| "Unable to create a workspace-relative path.".to_string())?;
-    if relative.as_os_str().is_empty() {
-        Ok(".".to_string())
-    } else {
-        Ok(path_for_ui(relative))
     }
 }
 
@@ -219,14 +176,15 @@ struct DirectoryEntryCandidate {
     name: String,
     sort_name: String,
     path: PathBuf,
+    requested_path: PathBuf,
     file_type: fs::FileType,
 }
 
 impl DirectoryEntryCandidate {
-    fn into_entry(self, root: &Path) -> Result<WorkspaceDirectoryEntry, String> {
+    fn into_entry(self) -> WorkspaceDirectoryEntry {
         let metadata = fs::symlink_metadata(&self.path).ok();
         let (kind, target_kind) = if self.file_type.is_symlink() {
-            ("symlink", classify_symlink_target(root, &self.path))
+            ("symlink", classify_symlink_target(&self.path))
         } else if self.file_type.is_dir() {
             ("directory", None)
         } else if self.file_type.is_file() {
@@ -234,9 +192,9 @@ impl DirectoryEntryCandidate {
         } else {
             ("other", None)
         };
-        Ok(WorkspaceDirectoryEntry {
+        WorkspaceDirectoryEntry {
             name: self.name,
-            path: relative_path_for_ui(root, &self.path)?,
+            path: path_for_ui(&self.requested_path),
             size: metadata
                 .as_ref()
                 .filter(|metadata| metadata.is_file())
@@ -244,16 +202,12 @@ impl DirectoryEntryCandidate {
             modified_at: metadata.as_ref().and_then(metadata_modified_at),
             kind: kind.to_string(),
             target_kind,
-        })
+        }
     }
 }
 
-fn classify_symlink_target(root: &Path, path: &Path) -> Option<String> {
-    let resolved = path.canonicalize().ok()?;
-    if ensure_contained(root, &resolved).is_err() {
-        return None;
-    }
-    let metadata = fs::metadata(resolved).ok()?;
+fn classify_symlink_target(path: &Path) -> Option<String> {
+    let metadata = fs::metadata(path).ok()?;
     Some(if metadata.is_dir() {
         "directory".to_string()
     } else if metadata.is_file() {
@@ -276,7 +230,8 @@ fn list_directory_sync(
     offset: usize,
 ) -> Result<WorkspaceDirectoryPage, String> {
     let root = canonical_workspace_root(workspace_root)?;
-    let directory = resolve_existing_path(&root, relative_path, true)?;
+    let requested_directory = parse_requested_path(relative_path, true)?;
+    let directory = resolve_existing_path(&root, &requested_directory)?;
     if !directory.is_dir() {
         return Err("Expected a directory to list.".to_string());
     }
@@ -318,6 +273,7 @@ fn list_directory_sync(
         };
         entries.push(DirectoryEntryCandidate {
             sort_name: name.to_lowercase(),
+            requested_path: requested_directory.join(&name),
             name,
             path,
             file_type,
@@ -339,11 +295,11 @@ fn list_directory_sync(
         .into_iter()
         .skip(page_start)
         .take(page_end - page_start)
-        .map(|entry| entry.into_entry(&root))
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(DirectoryEntryCandidate::into_entry)
+        .collect();
 
     Ok(WorkspaceDirectoryPage {
-        path: relative_path_for_ui(&root, &directory)?,
+        path: path_for_ui(&requested_directory),
         entries: page_entries,
         next_offset,
         total_entries,
@@ -442,7 +398,9 @@ fn read_file_sync(
     relative_path: &str,
 ) -> Result<WorkspaceFileDocument, String> {
     let root = canonical_workspace_root(workspace_root)?;
-    let path = resolve_existing_path(&root, relative_path, false)?;
+    let requested_path = parse_requested_path(relative_path, false)?;
+    let document_path = path_for_ui(&requested_path);
+    let path = resolve_existing_path(&root, &requested_path)?;
     let metadata = fs::metadata(&path)
         .map_err(|error| format!("Unable to inspect `{relative_path}`: {error}"))?;
     if !metadata.is_file() {
@@ -460,7 +418,7 @@ fn read_file_sync(
 
     if media_only {
         return Ok(WorkspaceFileDocument {
-            path: relative_path_for_ui(&root, &path)?,
+            path: document_path,
             name,
             size: metadata.len(),
             modified_at: metadata_modified_at(&metadata),
@@ -482,7 +440,7 @@ fn read_file_sync(
     };
     if oversized {
         return Ok(WorkspaceFileDocument {
-            path: relative_path_for_ui(&root, &path)?,
+            path: document_path,
             name,
             size: metadata.len(),
             modified_at: metadata_modified_at(&metadata),
@@ -499,7 +457,7 @@ fn read_file_sync(
 
     if bytes.iter().take(BINARY_SCAN_BYTES).any(|byte| *byte == 0) {
         return Ok(WorkspaceFileDocument {
-            path: relative_path_for_ui(&root, &path)?,
+            path: document_path,
             name,
             size: metadata.len(),
             modified_at: metadata_modified_at(&metadata),
@@ -521,7 +479,7 @@ fn read_file_sync(
         Ok(content) => content.to_string(),
         Err(_) => {
             return Ok(WorkspaceFileDocument {
-                path: relative_path_for_ui(&root, &path)?,
+                path: document_path,
                 name,
                 size: metadata.len(),
                 modified_at: metadata_modified_at(&metadata),
@@ -538,7 +496,7 @@ fn read_file_sync(
     };
 
     Ok(WorkspaceFileDocument {
-        path: relative_path_for_ui(&root, &path)?,
+        path: document_path,
         name,
         size: metadata.len(),
         modified_at: metadata_modified_at(&metadata),
@@ -577,7 +535,8 @@ fn write_options_for(metadata: &fs::Metadata) -> AtomicWriteOptions {
 
 fn save_file_sync(request: SaveWorkspaceFileRequest) -> Result<SaveWorkspaceFileResult, String> {
     let root = canonical_workspace_root(&request.workspace_root)?;
-    let path = resolve_existing_path(&root, &request.relative_path, false)?;
+    let requested_path = parse_requested_path(&request.relative_path, false)?;
+    let path = resolve_existing_path(&root, &requested_path)?;
     let mut output = Vec::with_capacity(request.content.len() + usize::from(request.bom) * 3);
     if request.bom {
         output.extend_from_slice(&[0xef, 0xbb, 0xbf]);
@@ -687,7 +646,8 @@ fn validate_entry_name(name: &str) -> Result<(), String> {
 fn create_entry_sync(request: CreateWorkspaceEntryRequest) -> Result<String, String> {
     validate_entry_name(&request.name)?;
     let root = canonical_workspace_root(&request.workspace_root)?;
-    let parent = resolve_existing_path(&root, &request.parent_path, true)?;
+    let requested_parent = parse_requested_path(&request.parent_path, true)?;
+    let parent = resolve_existing_path(&root, &requested_parent)?;
     if !parent.is_dir() {
         return Err("Choose a folder for the new entry.".to_string());
     }
@@ -709,7 +669,7 @@ fn create_entry_sync(request: CreateWorkspaceEntryRequest) -> Result<String, Str
         _ => return Err("Expected a file or folder.".to_string()),
     }
 
-    relative_path_for_ui(&root, &destination)
+    Ok(path_for_ui(&requested_parent.join(&request.name)))
 }
 
 #[tauri::command]
@@ -721,44 +681,42 @@ pub async fn create_workspace_entry(
         .map_err(|error| format!("The workspace entry creator stopped unexpectedly: {error}"))?
 }
 
-fn contained_entry_without_following_final_symlink(
+fn entry_without_following_final_symlink(
     root: &Path,
-    relative_path: &str,
+    requested_entry: &Path,
 ) -> Result<PathBuf, String> {
-    let relative = validate_relative_path(relative_path, false)?;
-    let file_name = relative
+    let file_name = requested_entry
         .file_name()
         .ok_or_else(|| "Expected a file or folder.".to_string())?;
-    let parent_relative = relative.parent().unwrap_or_else(|| Path::new("."));
+    let requested_parent = requested_entry.parent().unwrap_or_else(|| Path::new("."));
     let parent = root
-        .join(parent_relative)
+        .join(requested_parent)
         .canonicalize()
         .map_err(|error| format!("Unable to resolve the entry's parent folder: {error}"))?;
-    ensure_contained(root, &parent)?;
     let entry = parent.join(file_name);
-    fs::symlink_metadata(&entry).map_err(|error| {
-        format!("Unable to inspect `{relative_path}` inside the workspace: {error}")
-    })?;
+    fs::symlink_metadata(&entry)
+        .map_err(|error| format!("Unable to inspect `{}`: {error}", requested_entry.display()))?;
     Ok(entry)
 }
 
 fn rename_entry_sync(request: RenameWorkspaceEntryRequest) -> Result<String, String> {
     validate_entry_name(&request.name)?;
     let root = canonical_workspace_root(&request.workspace_root)?;
-    let source = contained_entry_without_following_final_symlink(&root, &request.relative_path)?;
+    let requested_entry = parse_entry_path(&request.relative_path)?;
+    let source = entry_without_following_final_symlink(&root, &requested_entry)?;
     let parent = source
         .parent()
         .ok_or_else(|| "Unable to resolve the entry's parent folder.".to_string())?;
     let destination = parent.join(&request.name);
     if destination == source {
-        return relative_path_for_ui(&root, &source);
+        return Ok(path_for_ui(&requested_entry));
     }
     if destination.exists() || fs::symlink_metadata(&destination).is_ok() {
         return Err("An entry with that name already exists.".to_string());
     }
     fs::rename(&source, &destination)
         .map_err(|error| format!("Unable to rename the entry: {error}"))?;
-    relative_path_for_ui(&root, &destination)
+    Ok(path_for_ui(&requested_entry.with_file_name(&request.name)))
 }
 
 #[tauri::command]
@@ -779,7 +737,8 @@ fn remove_symlink(path: &Path) -> std::io::Result<()> {
 
 fn delete_entry_sync(request: DeleteWorkspaceEntryRequest) -> Result<(), String> {
     let root = canonical_workspace_root(&request.workspace_root)?;
-    let path = contained_entry_without_following_final_symlink(&root, &request.relative_path)?;
+    let requested_entry = parse_entry_path(&request.relative_path)?;
+    let path = entry_without_following_final_symlink(&root, &requested_entry)?;
     let metadata = fs::symlink_metadata(&path)
         .map_err(|error| format!("Unable to inspect the entry: {error}"))?;
 
@@ -791,7 +750,6 @@ fn delete_entry_sync(request: DeleteWorkspaceEntryRequest) -> Result<(), String>
     let canonical = path
         .canonicalize()
         .map_err(|error| format!("Unable to resolve the entry: {error}"))?;
-    ensure_contained(&root, &canonical)?;
     if metadata.is_dir() {
         if request.recursive {
             fs::remove_dir_all(&canonical)
@@ -934,7 +892,7 @@ mod tests {
     }
 
     #[test]
-    fn create_rename_and_delete_stay_in_workspace() {
+    fn create_rename_and_delete_workspace_entries() {
         let root = create_workspace("operations");
         let workspace_root = root.to_string_lossy().into_owned();
         let created = create_entry_sync(CreateWorkspaceEntryRequest {
@@ -963,16 +921,87 @@ mod tests {
     }
 
     #[test]
-    fn workspace_boundaries_reject_parent_and_absolute_paths() {
-        let root = create_workspace("boundary");
-        let workspace_root = root.to_string_lossy();
-        let parent_error = list_directory_sync(workspace_root.as_ref(), "../", 0)
-            .expect_err("parent traversal should fail");
-        assert!(parent_error.contains("traversal"));
-        let absolute_error = read_file_sync(workspace_root.as_ref(), r"C:\outside.txt")
-            .expect_err("Windows absolute path should fail on every host");
-        assert!(absolute_error.contains("absolute"));
-        let _ = fs::remove_dir_all(root);
+    fn file_tools_reach_paths_outside_the_workspace() {
+        let fixture = create_workspace("outside-paths");
+        let root = fixture.join("workspace");
+        let outside = fixture.join("outside");
+        fs::create_dir(&root).expect("workspace should create");
+        fs::create_dir(&outside).expect("outside folder should create");
+        let outside_file = outside.join("notes.txt");
+        fs::write(&outside_file, "outside").expect("outside file should write");
+        let workspace_root = root.to_string_lossy().into_owned();
+
+        let page = list_directory_sync(&workspace_root, "../outside", 0)
+            .expect("parent paths should list");
+        assert_eq!(page.path, "../outside");
+        assert_eq!(page.entries[0].path, "../outside/notes.txt");
+        let document = read_file_sync(&workspace_root, "../outside/notes.txt")
+            .expect("parent paths should read");
+        assert_eq!(document.path, "../outside/notes.txt");
+        assert_eq!(document.content.as_deref(), Some("outside"));
+        let absolute = read_file_sync(&workspace_root, outside_file.to_str().unwrap())
+            .expect("absolute paths should read");
+        assert_eq!(absolute.content.as_deref(), Some("outside"));
+        save_file_sync(SaveWorkspaceFileRequest {
+            workspace_root: workspace_root.clone(),
+            relative_path: "../outside/notes.txt".to_string(),
+            content: "edited".to_string(),
+            expected_revision: document.revision.expect("revision should exist"),
+            force: false,
+            bom: false,
+        })
+        .expect("parent paths should save");
+        assert_eq!(fs::read_to_string(&outside_file).unwrap(), "edited");
+        let created = create_entry_sync(CreateWorkspaceEntryRequest {
+            workspace_root,
+            parent_path: "../outside".to_string(),
+            name: "created.txt".to_string(),
+            kind: "file".to_string(),
+        })
+        .expect("parent paths should create");
+        assert_eq!(created, "../outside/created.txt");
+        assert!(outside.join("created.txt").is_file());
+        let _ = fs::remove_dir_all(fixture);
+    }
+
+    #[test]
+    fn rename_and_delete_only_accept_paths_below_the_workspace() {
+        let fixture = create_workspace("entry-paths");
+        let root = fixture.join("workspace");
+        fs::create_dir(&root).expect("workspace should create");
+        let sibling = fixture.join("sibling.txt");
+        fs::write(&sibling, "kept").expect("sibling should write");
+        let workspace_root = root.to_string_lossy().into_owned();
+
+        for requested in [
+            "../sibling.txt".to_string(),
+            "folder/../../sibling.txt".to_string(),
+            sibling.to_string_lossy().into_owned(),
+        ] {
+            assert!(delete_entry_sync(DeleteWorkspaceEntryRequest {
+                workspace_root: workspace_root.clone(),
+                relative_path: requested.clone(),
+                recursive: true,
+            })
+            .is_err());
+            assert!(rename_entry_sync(RenameWorkspaceEntryRequest {
+                workspace_root: workspace_root.clone(),
+                relative_path: requested,
+                name: "renamed.txt".to_string(),
+            })
+            .is_err());
+        }
+        for requested in [".", "./"] {
+            assert!(delete_entry_sync(DeleteWorkspaceEntryRequest {
+                workspace_root: workspace_root.clone(),
+                relative_path: requested.to_string(),
+                recursive: true,
+            })
+            .is_err());
+        }
+        assert!(sibling.is_file());
+        assert!(root.is_dir());
+        let _ = fs::remove_dir_all(fixture);
     }
 
     #[test]
@@ -1029,17 +1058,95 @@ mod tests {
     }
 
     #[cfg(unix)]
+    fn link_file(target: &Path, link: &Path) {
+        std::os::unix::fs::symlink(target, link).expect("file link should create");
+    }
+
+    #[cfg(windows)]
+    fn link_file(target: &Path, link: &Path) {
+        std::os::windows::fs::symlink_file(target, link).expect("file link should create");
+    }
+
+    #[cfg(unix)]
+    fn link_directory(target: &Path, link: &Path) {
+        std::os::unix::fs::symlink(target, link).expect("folder link should create");
+    }
+
+    #[cfg(windows)]
+    fn link_directory(target: &Path, link: &Path) {
+        std::os::windows::fs::symlink_dir(target, link).expect("folder link should create");
+    }
+
     #[test]
-    fn symlink_targets_outside_workspace_are_not_read() {
+    fn links_to_outside_targets_work_with_every_file_tool() {
         let root = create_workspace("symlink-root");
         let outside = create_workspace("symlink-outside");
-        let outside_file = outside.join("secret.txt");
+        let outside_file = outside.join("notes.txt");
         fs::write(&outside_file, "outside").expect("outside file should write");
-        std::os::unix::fs::symlink(&outside_file, root.join("linked.txt"))
-            .expect("symlink should create");
-        let error = read_file_sync(root.to_string_lossy().as_ref(), "linked.txt")
-            .expect_err("outside symlink should be rejected");
-        assert!(error.contains("outside"));
+        fs::write(outside.join("old.txt"), "old").expect("outside file should write");
+        fs::write(outside.join("doomed.txt"), "doomed").expect("outside file should write");
+        link_file(&outside_file, &root.join("linked.txt"));
+        link_directory(&outside, &root.join("linked-folder"));
+        let workspace_root = root.to_string_lossy().into_owned();
+
+        let page = list_directory_sync(&workspace_root, ".", 0).expect("root should list");
+        let target_kind = |name: &str| {
+            page.entries
+                .iter()
+                .find(|entry| entry.name == name)
+                .and_then(|entry| entry.target_kind.as_deref())
+        };
+        assert_eq!(target_kind("linked.txt"), Some("file"));
+        assert_eq!(target_kind("linked-folder"), Some("directory"));
+
+        let document = read_file_sync(&workspace_root, "linked.txt").expect("link should read");
+        assert_eq!(document.path, "linked.txt");
+        assert_eq!(document.content.as_deref(), Some("outside"));
+
+        let folder = list_directory_sync(&workspace_root, "linked-folder", 0)
+            .expect("linked folder should list");
+        assert_eq!(folder.path, "linked-folder");
+        assert!(folder
+            .entries
+            .iter()
+            .any(|entry| entry.path == "linked-folder/notes.txt"));
+        let linked_document = read_file_sync(&workspace_root, "linked-folder/notes.txt")
+            .expect("file in linked folder should read");
+        save_file_sync(SaveWorkspaceFileRequest {
+            workspace_root: workspace_root.clone(),
+            relative_path: "linked-folder/notes.txt".to_string(),
+            content: "edited".to_string(),
+            expected_revision: linked_document.revision.expect("revision should exist"),
+            force: false,
+            bom: false,
+        })
+        .expect("file in linked folder should save");
+        assert_eq!(fs::read_to_string(&outside_file).unwrap(), "edited");
+
+        let renamed = rename_entry_sync(RenameWorkspaceEntryRequest {
+            workspace_root: workspace_root.clone(),
+            relative_path: "linked-folder/old.txt".to_string(),
+            name: "new.txt".to_string(),
+        })
+        .expect("file in linked folder should rename");
+        assert_eq!(renamed, "linked-folder/new.txt");
+        assert!(outside.join("new.txt").is_file());
+        delete_entry_sync(DeleteWorkspaceEntryRequest {
+            workspace_root: workspace_root.clone(),
+            relative_path: "linked-folder/doomed.txt".to_string(),
+            recursive: false,
+        })
+        .expect("file in linked folder should delete");
+        assert!(!outside.join("doomed.txt").exists());
+
+        delete_entry_sync(DeleteWorkspaceEntryRequest {
+            workspace_root,
+            relative_path: "linked-folder".to_string(),
+            recursive: true,
+        })
+        .expect("folder link should delete");
+        assert!(fs::symlink_metadata(root.join("linked-folder")).is_err());
+        assert!(outside_file.is_file());
         let _ = fs::remove_dir_all(root);
         let _ = fs::remove_dir_all(outside);
     }
