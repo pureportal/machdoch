@@ -86,6 +86,10 @@ import {
   type RequestIterationMode,
 } from "@machdoch/client-ui/composer/model";
 import {
+  getQueuedMessageStepTargetIndex,
+  moveQueuedMessageBlock,
+} from "@machdoch/client-ui/composer/queued-message-blocks";
+import {
   beginCrossWindowOperation,
   completeCrossWindowOperation,
   releaseCrossWindowOperation,
@@ -549,26 +553,15 @@ const reorderQueuedMessagesWithinSession = (
   const sessionMessages = sortQueuedMessages(
     messages.filter((message) => message.sessionId === movingMessage.sessionId),
   );
-  const sourceIndex = sessionMessages.findIndex(
-    (message) => message.id === messageId,
-  );
-  const clampedTargetIndex = Math.max(
-    0,
-    Math.min(targetIndex, sessionMessages.length - 1),
+  const reorderedSessionMessages = moveQueuedMessageBlock(
+    sessionMessages,
+    messageId,
+    targetIndex,
   );
 
-  if (sourceIndex < 0 || sourceIndex === clampedTargetIndex) {
+  if (reorderedSessionMessages === sessionMessages) {
     return messages;
   }
-
-  const reorderedSessionMessages = [...sessionMessages];
-  const [removedMessage] = reorderedSessionMessages.splice(sourceIndex, 1);
-
-  if (!removedMessage) {
-    return messages;
-  }
-
-  reorderedSessionMessages.splice(clampedTargetIndex, 0, removedMessage);
 
   let nextSessionMessageIndex = 0;
 
@@ -6237,7 +6230,6 @@ export const useChatSessionController = (
 
         if (
           !movingMessage ||
-          movingMessage.iteration ||
           isQueuedMessageInProgress(movingMessage) ||
           current.some(
             (message) =>
@@ -6248,16 +6240,20 @@ export const useChatSessionController = (
           return current;
         }
 
-        const sessionIndex = sortQueuedMessages(
+        const sessionMessages = sortQueuedMessages(
           current.filter(
             (message) => message.sessionId === movingMessage.sessionId,
           ),
-        ).findIndex((message) => message.id === messageId);
+        );
 
         return reorderQueuedMessagesWithinSession(
           current,
           messageId,
-          sessionIndex + direction,
+          getQueuedMessageStepTargetIndex(
+            sessionMessages,
+            messageId,
+            direction,
+          ),
         );
       });
     },
@@ -6271,7 +6267,6 @@ export const useChatSessionController = (
 
         if (
           !message ||
-          message.iteration ||
           isQueuedMessageInProgress(message) ||
           current.some(
             (entry) =>

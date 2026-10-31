@@ -33,6 +33,7 @@
     "./composer/agent-composer": "./src/composer/agent-composer.tsx",
     "./composer/context-attachments": "./src/composer/context-attachments.tsx",
     "./composer/queued-messages-panel": "./src/composer/queued-messages-panel.tsx",
+    "./composer/queued-message-blocks": "./src/composer/queued-message-blocks.ts",
     "./composer/tool-toggle-button": "./src/composer/tool-toggle-button.tsx",
     "./composer/model": "./src/composer/model.ts",
     "./composer/clipboard-image-files": "./src/composer/clipboard-image-files.ts",

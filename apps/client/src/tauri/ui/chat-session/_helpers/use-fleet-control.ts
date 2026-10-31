@@ -1656,13 +1656,12 @@ export const useFleetControl = (options: {
           if (
             (command.kind === "move-queued-message" ||
               command.kind === "reorder-queued-message") &&
-            (message.iteration ||
-              options.shellState.queuedSessionMessages.some(
-                (entry) =>
-                  entry.sessionId === sourceSession.id &&
-                  (entry.status === "enhancing" ||
-                    entry.status === "dispatching"),
-              ))
+            options.shellState.queuedSessionMessages.some(
+              (entry) =>
+                entry.sessionId === sourceSession.id &&
+                (entry.status === "enhancing" ||
+                  entry.status === "dispatching"),
+            )
           )
             throw new NonRetryableFleetCommandError(
               "Wait for queued work to finish before reordering messages.",

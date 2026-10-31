@@ -2,8 +2,8 @@
 
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, vi } from "vitest";
 import { QueuedMessagesPanel } from "@machdoch/client-ui/composer/queued-messages-panel";
 
 afterEach(() => {
@@ -131,6 +131,36 @@ describe("QueuedMessagesPanel", () => {
     ).toBe(true);
   });
 
+  it("offers reordering only when there is more than one message", () => {
+    const message = {
+      id: "only",
+      content: "Send this request.",
+      attachments: [],
+      status: "queued" as const,
+      createdAt: 1,
+    };
+    const singleMarkup = renderToStaticMarkup(
+      createElement(QueuedMessagesPanel, {
+        messages: [message],
+        imageInputDisabled: false,
+        imageInputDisabledReason: null,
+      }),
+    );
+    const pairMarkup = renderToStaticMarkup(
+      createElement(QueuedMessagesPanel, {
+        messages: [message, { ...message, id: "second" }],
+        imageInputDisabled: false,
+        imageInputDisabledReason: null,
+      }),
+    );
+
+    expect(singleMarkup).not.toContain("to reorder");
+    expect(singleMarkup).not.toContain("Move queued message");
+    expect(singleMarkup).toContain('aria-label="Remove queued message 1"');
+    expect(pairMarkup).toContain('aria-label="Drag queued message 2 to reorder"');
+    expect(pairMarkup).toContain('aria-label="Move queued message 2 up"');
+  });
+
   it("keeps the next marker on an in-progress queue head", () => {
     const markup = renderToStaticMarkup(
       createElement(QueuedMessagesPanel, {
@@ -182,5 +212,138 @@ describe("QueuedMessagesPanel", () => {
     expect(markup).toContain("Waiting for iteration 1");
     expect(markup).not.toContain("Next · Failed");
     expect(markup).not.toContain('aria-label="Move queued message 2 up"');
+  });
+
+  it("moves an iteration group as one unit", () => {
+    const onMessageMove = vi.fn();
+    const message = {
+      content: "Improve the UI",
+      attachments: [],
+      status: "queued" as const,
+      createdAt: 1,
+    };
+
+    render(
+      createElement(QueuedMessagesPanel, {
+        messages: [
+          { ...message, id: "single" },
+          {
+            ...message,
+            id: "first",
+            iteration: { groupId: "group", index: 1, total: 2 },
+          },
+          {
+            ...message,
+            id: "second",
+            iteration: { groupId: "group", index: 2, total: 2 },
+            waitingForIteration: 1,
+          },
+        ],
+        imageInputDisabled: false,
+        imageInputDisabledReason: null,
+        onMessageMove,
+      }),
+    );
+
+    const moveButton = (name: string): HTMLButtonElement =>
+      screen.getByRole<HTMLButtonElement>("button", { name });
+
+    expect(moveButton("Move queued message 2 down").disabled).toBe(true);
+    expect(moveButton("Move queued message 3 down").disabled).toBe(true);
+    expect(
+      moveButton("Drag queued message 3 to reorder").getAttribute("draggable"),
+    ).toBe("true");
+
+    fireEvent.click(moveButton("Move queued message 3 up"));
+
+    expect(onMessageMove).toHaveBeenCalledWith("second", -1);
+  });
+
+  it("drags an iteration group and highlights every row in the drop target", () => {
+    const onMessageReorder = vi.fn();
+    const message = {
+      content: "Improve the UI",
+      attachments: [],
+      status: "queued" as const,
+      createdAt: 1,
+    };
+
+    render(
+      createElement(QueuedMessagesPanel, {
+        messages: [
+          {
+            ...message,
+            id: "first",
+            iteration: { groupId: "group", index: 1, total: 2 },
+          },
+          {
+            ...message,
+            id: "second",
+            iteration: { groupId: "group", index: 2, total: 2 },
+            waitingForIteration: 1,
+          },
+          { ...message, id: "single" },
+        ],
+        imageInputDisabled: false,
+        imageInputDisabledReason: null,
+        onMessageReorder,
+      }),
+    );
+
+    const row = (position: number): HTMLElement =>
+      screen.getByRole("listitem", {
+        name: `Queued message ${position} of 3`,
+      });
+    const dataTransfer = {
+      effectAllowed: "",
+      dropEffect: "",
+      setData: vi.fn(),
+      getData: vi.fn(() => ""),
+    };
+
+    fireEvent.dragStart(
+      screen.getByRole("button", { name: "Drag queued message 3 to reorder" }),
+      { dataTransfer },
+    );
+    fireEvent.dragEnter(row(2), { dataTransfer });
+
+    expect(row(1).className).toContain("border-sky-300/60");
+    expect(row(2).className).toContain("border-sky-300/60");
+    expect(row(3).className).toContain("opacity-70");
+
+    fireEvent.drop(row(1), { dataTransfer });
+
+    expect(onMessageReorder).toHaveBeenCalledWith("single", 0);
+  });
+
+  it("hides reorder controls when one iteration group fills the queue", () => {
+    const message = {
+      content: "Improve the UI",
+      attachments: [],
+      status: "queued" as const,
+      createdAt: 1,
+    };
+
+    const markup = renderToStaticMarkup(
+      createElement(QueuedMessagesPanel, {
+        messages: [
+          {
+            ...message,
+            id: "first",
+            iteration: { groupId: "group", index: 1, total: 2 },
+          },
+          {
+            ...message,
+            id: "second",
+            iteration: { groupId: "group", index: 2, total: 2 },
+          },
+        ],
+        imageInputDisabled: false,
+        imageInputDisabledReason: null,
+      }),
+    );
+
+    expect(markup).not.toContain("to reorder");
+    expect(markup).not.toContain("Move queued message");
   });
 });
