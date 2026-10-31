@@ -216,6 +216,7 @@ const ENV_KEYS = [
   "GOOGLE_API_KEY",
   "PERPLEXITY_API_KEY",
   "CLAUDE_CONFIG_DIR",
+  "CLAUDE_SECURESTORAGE_CONFIG_DIR",
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_AUTH_TOKEN",
   "ANTHROPIC_MODEL",
@@ -3509,6 +3510,26 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     });
   });
 
+  it("blocks with sign-in recovery when the Claude login cannot be refreshed", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, { provider: "claude-cli" }),
+    );
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    call.child.stdout.write(
+      `${JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "Failed to authenticate: OAuth session expired and could not be refreshed" }] } })}\n`,
+    );
+    call.child.emit("close", 1, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "blocked",
+      failure: { kind: "authentication", retryable: false },
+      reason: expect.stringContaining("claude auth login"),
+    });
+  });
+
   it.each([
     ["codex-cli", "MACHDOCH_CODEX_CLI_PATH"],
     ["claude-cli", "MACHDOCH_CLAUDE_CLI_PATH"],
@@ -3661,6 +3682,9 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     expect(childEnv?.ANTHROPIC_API_KEY).toBe("anthropic-process-key");
     expect(childEnv?.CLAUDE_CONFIG_DIR).toContain("machdoch-instruction-run-");
     expect(childEnv?.CLAUDE_CONFIG_DIR).not.toBe(
+      join(workspaceRoot, ".claude-config"),
+    );
+    expect(childEnv?.CLAUDE_SECURESTORAGE_CONFIG_DIR).toBe(
       join(workspaceRoot, ".claude-config"),
     );
     expect(childEnv?.CLAUDE_CODE_DISABLE_CLAUDE_MDS).toBe("1");

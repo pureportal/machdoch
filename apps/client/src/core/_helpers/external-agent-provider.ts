@@ -94,6 +94,10 @@ import {
   CODEX_AUTHENTICATION_RECOVERY,
   isCodexAuthenticationFailure,
 } from "./codex-authentication-failure.js";
+import {
+  CLAUDE_AUTHENTICATION_RECOVERY,
+  isClaudeAuthenticationFailure,
+} from "./claude-authentication-failure.js";
 import { getWorkspacePresenceEnrollment } from "./workspace-agent-presence.js";
 import { startLocalMcpHost, type LocalMcpEndpoint } from "../local-mcp/http.js";
 import { upsertMemoryUpdate } from "./agent-runtime-shared.js";
@@ -3143,21 +3147,25 @@ const executeExternalAgentCliTask = async (
   }
 
   if (result.exitCode !== 0 && !finalAnswerRecoveredWithoutExitCode) {
-    const authenticationRequired =
+    const authenticationRecovery =
       provider === "codex-cli" &&
       (result.authenticationRequired === true ||
         isCodexAuthenticationFailure(
           [stderr, result.failureMessage].filter(Boolean).join("\n"),
-        ));
-    const reason = authenticationRequired
-      ? CODEX_AUTHENTICATION_RECOVERY
-      : createExternalAgentFailureReason(
-          provider,
-          stdout,
-          stderr,
-          result.exitCode,
-          result.failureMessage,
-        );
+        ))
+        ? CODEX_AUTHENTICATION_RECOVERY
+        : provider === "claude-cli" && isClaudeAuthenticationFailure(stdout)
+          ? CLAUDE_AUTHENTICATION_RECOVERY
+          : undefined;
+    const reason =
+      authenticationRecovery ??
+      createExternalAgentFailureReason(
+        provider,
+        stdout,
+        stderr,
+        result.exitCode,
+        result.failureMessage,
+      );
     const summary = reason.startsWith(`${providerLabel} `)
       ? reason
       : `${providerLabel} execution failed: ${reason}`;
@@ -3191,8 +3199,8 @@ const executeExternalAgentCliTask = async (
       {
         task: params.task,
         mode: params.config.mode,
-        status: authenticationRequired ? "blocked" : "failed",
-        ...(authenticationRequired
+        status: authenticationRecovery ? "blocked" : "failed",
+        ...(authenticationRecovery
           ? {
               failure: {
                 kind: "authentication" as const,

@@ -30,7 +30,6 @@ import {
 } from "../_helpers/write-file-atomically.helper.js";
 import { readStableRegularFile as readStableRegularFileBytes } from "../_helpers/read-stable-regular-file.helper.js";
 import { probeProviderCli } from "./capability-registry.js";
-import { linkClaudeAuthentication } from "./claude-authentication.js";
 import { linkCodexAuthentication } from "./codex-authentication.js";
 import {
   canUseClaudeBareMode,
@@ -668,7 +667,6 @@ const renderClaudeEnrollment = async (
 ): Promise<RenderedEnrollmentFiles> => {
   const claudeHome = join(rootPath, "claude-home");
   await mkdir(claudeHome, { recursive: true, mode: 0o700 });
-  await linkClaudeAuthentication(claudeHome);
   const instructionPath = join(rootPath, "system-prompt.md");
   const mcpPath = join(rootPath, "mcp.json");
   const instructionDigest = await writePrivateFile(
@@ -694,6 +692,10 @@ const renderClaudeEnrollment = async (
     args,
     env: {
       CLAUDE_CONFIG_DIR: claudeHome,
+      CLAUDE_SECURESTORAGE_CONFIG_DIR:
+        process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR ??
+        process.env.CLAUDE_CONFIG_DIR?.trim() ??
+        "",
       CLAUDE_CODE_DISABLE_AUTO_MEMORY: "1",
       CLAUDE_CODE_DISABLE_CLAUDE_MDS: "1",
     },

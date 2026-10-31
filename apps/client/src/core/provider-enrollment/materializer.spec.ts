@@ -1,4 +1,5 @@
 import {
+  lstat,
   mkdtemp,
   mkdir,
   readFile,
@@ -935,6 +936,40 @@ describe("CLI provider enrollment materializer", () => {
     expect(enrollment.env.CLAUDE_CONFIG_DIR).toContain("claude-home");
     await enrollment.dispose();
   });
+
+  it.each([
+    ["the default login", undefined, undefined, ""],
+    ["a custom config directory", undefined, "custom-home", "custom-home"],
+    ["an inherited credential store", "store", "custom-home", "store"],
+  ])(
+    "shares %s with the isolated Claude run instead of copying it",
+    async (_label, inheritedStore, configDirectory, expectedStore) => {
+      const root = await createRoot();
+      const workspaceRoot = join(root, "workspace");
+      await mkdir(workspaceRoot, { recursive: true });
+      vi.stubEnv("CLAUDE_SECURESTORAGE_CONFIG_DIR", inheritedStore);
+      vi.stubEnv("CLAUDE_CONFIG_DIR", configDirectory);
+      const resolution = createInstructionResolutionFixture({
+        providerId: "claude-cli",
+        surface: "cli",
+      });
+
+      const enrollment = await materializeCliEnrollment({
+        provider: "claude-cli",
+        executable: process.execPath,
+        runId: "test-shared-login",
+        workspaceRoot,
+        resolution,
+        deliveryPlan: createProbedPlan(resolution),
+      });
+
+      expect(enrollment.env.CLAUDE_SECURESTORAGE_CONFIG_DIR).toBe(expectedStore);
+      await expect(
+        lstat(join(enrollment.env.CLAUDE_CONFIG_DIR!, ".credentials.json")),
+      ).rejects.toMatchObject({ code: "ENOENT" });
+      await enrollment.dispose();
+    },
+  );
 
   it("keeps large Codex instructions in the invocation-scoped config", async () => {
     const root = await createRoot();
