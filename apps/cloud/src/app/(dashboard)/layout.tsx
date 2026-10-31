@@ -11,6 +11,14 @@ export default async function DashboardLayout({
 }) {
   const actor = await requirePageSession();
   const runtime = await getCloudRuntime();
-  const workspace = await runtime.planning.workspace(actor);
-  return <CloudShell workspace={workspace}>{children}</CloudShell>;
+  const [workspace, unread, views] = await Promise.all([
+    runtime.planning.workspace(actor),
+    runtime.inbox.unread(actor),
+    runtime.views.list(actor),
+  ]);
+  return (
+    <CloudShell workspace={workspace} unread={unread} views={views}>
+      {children}
+    </CloudShell>
+  );
 }

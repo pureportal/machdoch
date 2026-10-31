@@ -20,6 +20,7 @@ export function CreateIssue({
   parent,
   onCreated,
   shortcut = false,
+  autoOpen = false,
 }: {
   workspace: CloudWorkspace;
   teamId?: string;
@@ -28,8 +29,9 @@ export function CreateIssue({
   parent?: CloudIssue;
   onCreated?: () => Promise<void>;
   shortcut?: boolean;
+  autoOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
   const sender = useRef(createCommandSender());
   const router = useRouter();
   const available =

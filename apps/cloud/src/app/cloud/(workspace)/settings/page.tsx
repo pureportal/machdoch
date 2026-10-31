@@ -1,10 +1,13 @@
 import { redirect } from "next/navigation";
 import { CloudSettings } from "@/components/cloud/settings";
-import { requireCloudPageSession } from "@/server/cloud/page-auth";
+import {
+  requireCloudPageSession,
+  requireCloudWorkspace,
+} from "@/server/cloud/page-auth";
 
 export default async function SettingsPage() {
   const { runtime, actor } = await requireCloudPageSession();
-  const workspace = await runtime.planning.workspace(actor);
+  const workspace = (await requireCloudWorkspace()).workspace;
   if (!["owner", "admin"].includes(workspace.actor.role))
     redirect("/cloud/issues");
   return (

@@ -12,6 +12,7 @@ import {
   requireMembership,
 } from "./access";
 import type { CloudDatabase, CloudSql } from "./database";
+import { notifyComment } from "./notifications";
 import { readIssue } from "./planning";
 
 async function recordComment(
@@ -97,6 +98,7 @@ export class CloudComments {
             [actor.organizationId, id, issueId, actor.userId, body],
           );
           await recordComment(sql, actor, id, "comment.created");
+          await notifyComment(sql, actor, issue, body);
           return { id };
         },
       );

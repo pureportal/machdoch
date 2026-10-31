@@ -231,6 +231,34 @@ export interface CloudIssue extends IssueInput {
   updatedAt: string;
 }
 export type IssueSnapshot = Omit<CloudIssue, "status" | "statusName">;
+export interface CloudIssueSummary extends Omit<
+  CloudIssue,
+  "description" | "acceptanceCriteria"
+> {
+  labels: { id: string; name: string; color: string }[];
+  activeRun: { id: string; state: string } | null;
+  createdAt: string;
+}
+export const issueSorts = ["updated", "created", "priority", "due"] as const;
+export type IssueSort = (typeof issueSorts)[number];
+export interface IssueFilters {
+  teamId?: string;
+  projectId?: string;
+  cycleId?: string;
+  labelId?: string;
+  statusId?: string;
+  query?: string;
+  archived?: boolean;
+  offset?: number;
+  states?: CloudIssue["state"][];
+  assignedToActor?: boolean;
+  assigneeId?: string;
+  unassigned?: boolean;
+  priority?: CloudIssue["priority"];
+  unestimated?: boolean;
+  noCycle?: boolean;
+  sort?: IssueSort;
+}
 export interface CloudMember {
   id: string;
   name: string;

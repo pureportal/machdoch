@@ -1,18 +1,29 @@
 import type { CloudOrganization } from "../../lib/cloud-administration-contract";
-import { cycleColumns, issueColumns, projectColumns } from "./planning-queries";
+import {
+  cycleColumns,
+  issueColumns,
+  issueFilterClause,
+  issueFilterParameters,
+  issueSummaryColumns,
+  projectColumns,
+} from "./planning-queries";
 import { randomUUID } from "node:crypto";
 import { lockExecution } from "./execution/records";
+import { notifyAssignment } from "./notifications";
 import { readTeamWorkflows, resolveIssueStatus } from "./workflow-records";
 import type {
   CloudActor,
   CloudCycle,
   CloudIssue,
+  CloudIssueSummary,
   CloudMember,
   CloudProject,
   CloudTeam,
   CloudWorkspace,
   CycleInput,
+  IssueFilters,
   IssueInput,
+  IssueSort,
   IssueUpdate,
   IssueSnapshot,
   TeamInput,
@@ -28,6 +39,15 @@ import {
   requireTeam,
   teamVisibility,
 } from "./access";
+
+export const issueSummaryPageSize = 200;
+const issueSummaryOrder: Record<IssueSort, string> = {
+  updated: "i.updated_at DESC,i.id",
+  created: "i.created_at DESC,i.id",
+  priority:
+    "CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,i.updated_at DESC,i.id",
+  due: "i.due_on ASC NULLS LAST,i.updated_at DESC,i.id",
+};
 
 export async function readIssue(
   sql: CloudSql,
@@ -109,7 +129,9 @@ export async function createIssueInTransaction(
       status.id,
     ],
   );
-  await recordIssue(sql, actor, await readIssue(sql, actor, id));
+  const issue = await readIssue(sql, actor, id);
+  await recordIssue(sql, actor, issue);
+  await notifyAssignment(sql, actor, issue, null);
   return { id };
 }
 
@@ -283,18 +305,7 @@ export class CloudPlanning {
 
   listIssues(
     actor: CloudActor,
-    filters: {
-      teamId?: string;
-      projectId?: string;
-      cycleId?: string;
-      labelId?: string;
-      statusId?: string;
-      query?: string;
-      archived?: boolean;
-      offset?: number;
-      states?: CloudIssue["state"][];
-      assignedToActor?: boolean;
-    } = {},
+    filters: IssueFilters = {},
   ): Promise<CloudIssue[]> {
     return this.database.transaction(async (sql) => {
       await requireMembership(sql, actor);
@@ -303,28 +314,30 @@ export class CloudPlanning {
           `SELECT ${issueColumns} FROM cloud_issues i
         JOIN cloud_teams t ON t.organization_id=i.organization_id AND t.id=i.team_id
         JOIN cloud_memberships m ON m.organization_id=i.organization_id AND m.user_id=$2
-        WHERE i.organization_id=$1 AND ${teamVisibility} AND i.archived=$3
-        AND ($4::uuid IS NULL OR i.team_id=$4) AND ($5::uuid IS NULL OR i.project_id=$5) AND ($6::uuid IS NULL OR i.cycle_id=$6)
-        AND ($7='' OR strpos(lower(i.title || ' ' || i.identifier || ' ' || i.description), lower($7))>0)
-        AND ($9::uuid IS NULL OR EXISTS (SELECT 1 FROM cloud_issue_labels a WHERE a.organization_id=i.organization_id AND a.issue_id=i.id AND a.label_id=$9))
-        AND ($10::uuid IS NULL OR i.status_id=$10)
-        AND ($11::text[] IS NULL OR i.state=ANY($11::text[]))
-        AND (NOT $12::boolean OR i.assignee_id=$2)
+        WHERE ${issueFilterClause} AND ${teamVisibility}
         ORDER BY i.updated_at DESC,i.id LIMIT 100 OFFSET $8`,
-          [
-            actor.organizationId,
-            actor.userId,
-            filters.archived ?? false,
-            filters.teamId ?? null,
-            filters.projectId ?? null,
-            filters.cycleId ?? null,
-            filters.query ?? "",
-            filters.offset ?? 0,
-            filters.labelId ?? null,
-            filters.statusId ?? null,
-            filters.states ?? null,
-            filters.assignedToActor ?? false,
-          ],
+          issueFilterParameters(actor, filters),
+        )
+      ).rows;
+    });
+  }
+
+  listIssueSummaries(
+    actor: CloudActor,
+    filters: IssueFilters = {},
+    limit = issueSummaryPageSize,
+  ): Promise<CloudIssueSummary[]> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor);
+      return (
+        await sql.query<CloudIssueSummary & Record<string, unknown>>(
+          `SELECT ${issueSummaryColumns} FROM cloud_issues i
+        JOIN cloud_workflow_statuses s ON s.organization_id=i.organization_id AND s.id=i.status_id
+        JOIN cloud_teams t ON t.organization_id=i.organization_id AND t.id=i.team_id
+        JOIN cloud_memberships m ON m.organization_id=i.organization_id AND m.user_id=$2
+        WHERE ${issueFilterClause} AND ${teamVisibility}
+        ORDER BY ${issueSummaryOrder[filters.sort ?? "updated"]} LIMIT $18 OFFSET $8`,
+          [...issueFilterParameters(actor, filters), limit],
         )
       ).rows;
     });
@@ -407,7 +420,9 @@ export class CloudPlanning {
               status.id,
             ],
           );
-          await recordIssue(sql, actor, await readIssue(sql, actor, id));
+          const updated = await readIssue(sql, actor, id);
+          await recordIssue(sql, actor, updated);
+          await notifyAssignment(sql, actor, updated, issue.assigneeId);
           return { id };
         },
       );

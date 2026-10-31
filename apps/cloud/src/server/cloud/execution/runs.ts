@@ -20,11 +20,11 @@ import {
 import type { CloudDatabase } from "../database";
 import { readIssue } from "../planning";
 import {
-  expireRuns,
   fenceRun,
   lockExecution,
   readRun,
   runColumns,
+  settleExpiredRuns,
   terminalStates,
 } from "./records";
 
@@ -41,10 +41,9 @@ export class CloudRuns {
 
   list(actor: CloudActor, issueId?: string): Promise<CloudRun[]> {
     return this.database.transaction(async (sql) => {
-      await lockExecution(sql, actor.organizationId);
       await requireMembership(sql, actor);
+      await settleExpiredRuns(sql, actor.organizationId);
       if (issueId) await readIssue(sql, actor, issueId);
-      await expireRuns(sql, actor.organizationId);
       return (
         await sql.query<CloudRun & Record<string, unknown>>(
           `SELECT ${runColumns} FROM cloud_runs r
@@ -56,11 +55,35 @@ export class CloudRuns {
     });
   }
 
+  activeForIssue(actor: CloudActor, issueId: string): Promise<string | null> {
+    return this.database.transaction(async (sql) => {
+      await readIssue(sql, actor, issueId);
+      const run = await sql.query<{ id: string }>(
+        "SELECT id FROM cloud_runs WHERE organization_id=$1 AND issue_id=$2 AND state NOT IN ('succeeded','failed','canceled','timed_out')",
+        [actor.organizationId, issueId],
+      );
+      return run.rows[0]?.id ?? null;
+    });
+  }
+
+  listForProject(actor: CloudActor, projectId: string): Promise<CloudRun[]> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor);
+      return (
+        await sql.query<CloudRun & Record<string, unknown>>(
+          `SELECT ${runColumns} FROM cloud_runs r
+        JOIN cloud_teams t ON t.organization_id=r.organization_id AND t.id=r.team_id JOIN cloud_memberships m ON m.organization_id=r.organization_id AND m.user_id=$2
+        WHERE r.organization_id=$1 AND ${teamVisibility} AND r.project_id=$3 ORDER BY r.created_at DESC,r.id DESC LIMIT 20`,
+          [actor.organizationId, actor.userId, projectId],
+        )
+      ).rows;
+    });
+  }
+
   get(actor: CloudActor, id: string): Promise<RunDetail> {
     return this.database.transaction(async (sql) => {
-      await lockExecution(sql, actor.organizationId);
-      await expireRuns(sql, actor.organizationId);
-      const run = await readRun(sql, actor.organizationId, id);
+      await settleExpiredRuns(sql, actor.organizationId);
+      const run = await readRun(sql, actor.organizationId, id, false);
       await requireTeam(sql, actor, run.teamId);
       const attempts = (
         await sql.query<RunAttempt & Record<string, unknown>>(

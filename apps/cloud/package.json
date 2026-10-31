@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "verify:cloud:design": "node scripts/verify-cloud-design.mjs",
+    "verify:cloud:surfaces": "node scripts/verify-cloud-surfaces.mjs",
     "verify:cloud:design:remote": "node --import @oxc-node/core/register scripts/verify-cloud-remote-design.mjs",
     "test:cloud": "pnpm build:workers && vitest run src/server/cloud src/components/cloud --maxWorkers=1",
     "verify:cloud": "node scripts/verify-cloud.mjs && node scripts/verify-cloud-cycles.mjs && node scripts/verify-cloud-comments.mjs && node scripts/verify-cloud-projects.mjs && node scripts/verify-cloud-labels.mjs && pnpm verify:cloud:relations && pnpm verify:cloud:workflows && node scripts/verify-cloud-request-recovery.mjs && pnpm verify:cloud:magic-links && pnpm verify:cloud:email-transport && pnpm verify:cloud:sso && pnpm verify:cloud:sso-resilience && pnpm verify:cloud:sessions && pnpm verify:cloud:invitations && node --import @oxc-node/core/register scripts/verify-cloud-execution.mjs && node scripts/verify-cloud-execution-providers.mjs && node scripts/verify-cloud-task-inference.mjs && node scripts/verify-cloud-access.mjs && node scripts/verify-cloud-providers.mjs && node scripts/verify-cloud-chat.mjs && pnpm verify:cloud:artifacts && pnpm verify:cloud:mcp && pnpm verify:cloud:client && pnpm verify:cloud:schedules && pnpm verify:cloud:schedule-lifecycle",

@@ -22,6 +22,13 @@ export interface CycleTotals {
   completedPoints: number;
   unestimated: number;
 }
+export interface CycleBurnupPoint {
+  date: string;
+  scope: number;
+  completed: number;
+  scopeIssues: number;
+  completedIssues: number;
+}
 export interface CycleDetail {
   cycle: CloudCycle;
   issues: IssueSnapshot[];

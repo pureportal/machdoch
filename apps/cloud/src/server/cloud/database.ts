@@ -30,6 +30,7 @@ export const cloudMigrations = [
   "027-client-agents.sql",
   "028-chat-issue.sql",
   "029-project-planning.sql",
+  "030-planning-surfaces.sql",
 ];
 
 export interface CloudSql {

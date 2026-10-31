@@ -23,18 +23,20 @@ import {
   formText,
 } from "./api-client";
 
+function enabledProfiles(profiles: ExecutionProfile[]): ExecutionProfile[] {
+  return profiles.filter((profile) => profile.enabled);
+}
+
 export function TaskList({
   workspace,
   initial = [],
   issue,
   dirty = false,
-  startRequest = 0,
 }: {
   workspace: CloudWorkspace;
   initial?: CloudRun[];
   issue?: CloudIssue;
   dirty?: boolean;
-  startRequest?: number;
 }) {
   const [runs, setRuns] = useState(initial);
   const [profiles, setProfiles] = useState<ExecutionProfile[]>([]);
@@ -49,6 +51,7 @@ export function TaskList({
   useEffect(() => {
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
+    let profilesLoaded = false;
     async function poll() {
       try {
         if (!document.hidden) {
@@ -57,14 +60,19 @@ export function TaskList({
               `runs${issueId ? `?issueId=${issueId}` : ""}`,
               { signal: abort.signal },
             ),
-            cloudRequest<{ profiles: ExecutionProfile[] }>(
-              "execution-profiles",
-              { signal: abort.signal },
-            ),
+            profilesLoaded
+              ? null
+              : cloudRequest<{ profiles: ExecutionProfile[] }>(
+                  "execution-profiles",
+                  { signal: abort.signal },
+                ),
           ]);
           if (!abort.signal.aborted) {
             setRuns(tasks.runs);
-            setProfiles(settings.profiles.filter((profile) => profile.enabled));
+            if (settings) {
+              setProfiles(enabledProfiles(settings.profiles));
+              profilesLoaded = true;
+            }
             setError("");
           }
         }
@@ -100,19 +108,12 @@ export function TaskList({
       setError("Assign a project before starting a task.");
       return;
     }
-    if (issue && !issue.acceptanceCriteria.trim()) {
-      setError("Add acceptance criteria before starting a task.");
-      return;
-    }
     sender.current = createCommandSender();
     setOpen(true);
+    void cloudRequest<{ profiles: ExecutionProfile[] }>("execution-profiles")
+      .then((settings) => setProfiles(enabledProfiles(settings.profiles)))
+      .catch((reason: Error) => setError(reason.message));
   }
-  const handledStart = useRef(startRequest);
-  useEffect(() => {
-    if (startRequest === handledStart.current) return;
-    handledStart.current = startRequest;
-    if (canStart && !dirty) start();
-  });
   return (
     <section
       className={issue ? "cloud-issue-tasks" : undefined}

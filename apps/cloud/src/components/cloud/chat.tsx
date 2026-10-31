@@ -57,12 +57,14 @@ export function CloudChatView({
   initialChats,
   initial,
   focusIssue,
+  initialPrompt = "",
 }: {
   workspace: CloudWorkspace;
   settings: CloudProviderSettings;
   initialChats: CloudChat[];
   initial?: ChatDetail;
   focusIssue: ChatFocusIssue | null;
+  initialPrompt?: string;
 }) {
   const router = useRouter();
   const [detail, setDetail] = useState<ChatDetail | null>(initial ?? null);
@@ -70,7 +72,7 @@ export function CloudChatView({
   const [moreChats, setMoreChats] = useState(initialChats.length === 50);
   const [available, setAvailable] = useState(settings);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [prompt, setPrompt] = useState("");
+  const [prompt, setPrompt] = useState(initialPrompt);
   const [providerId, setProviderId] = useState(
     initial?.turns.at(-1)?.providerId ?? settings.providers[0]?.id ?? "",
   );

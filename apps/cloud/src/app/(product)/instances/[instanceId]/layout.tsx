@@ -1,12 +1,11 @@
-import { requireCloudPageSession } from "@/server/cloud/page-auth";
+import { requireCloudWorkspace } from "@/server/cloud/page-auth";
 
 export default async function RemoteClientLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { runtime, actor } = await requireCloudPageSession();
-  const { organization } = await runtime.planning.workspace(actor);
+  const { organization } = (await requireCloudWorkspace()).workspace;
   return (
     <div
       className="cloud-remote-surface"

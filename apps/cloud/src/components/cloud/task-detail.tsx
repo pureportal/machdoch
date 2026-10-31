@@ -25,6 +25,9 @@ import {
   createCommandSender,
 } from "./api-client";
 
+const activePollMs = 3000;
+const settledPollMs = 30_000;
+
 export function TaskDetail({
   initial,
   workspace,
@@ -39,6 +42,7 @@ export function TaskDetail({
   useEffect(() => {
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
+    let delay = activePollMs;
     async function poll() {
       try {
         if (!document.hidden) {
@@ -46,6 +50,9 @@ export function TaskDetail({
             signal: abort.signal,
           });
           if (!abort.signal.aborted) {
+            delay = terminalRunStates.some((state) => state === next.state)
+              ? settledPollMs
+              : activePollMs;
             setRun((previous) =>
               previous && previous.revision > next.revision ? previous : next,
             );
@@ -61,7 +68,7 @@ export function TaskDetail({
           setRun(null);
         setError((reason as Error).message);
       }
-      if (!abort.signal.aborted) timer = setTimeout(() => void poll(), 3000);
+      if (!abort.signal.aborted) timer = setTimeout(() => void poll(), delay);
     }
     void poll();
     return () => {
@@ -114,7 +121,7 @@ export function TaskDetail({
             Open issue <ArrowUpRight size={14} aria-hidden="true" />
           </Link>
         ) : (
-          <Link href={`/cloud/projects#planning-${run.projectId}`}>
+          <Link href={`/cloud/projects/${run.projectId}`}>
             Open project <ArrowUpRight size={14} aria-hidden="true" />
           </Link>
         )}

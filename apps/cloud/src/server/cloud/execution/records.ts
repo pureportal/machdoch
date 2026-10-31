@@ -12,6 +12,7 @@ import {
   requireTeam,
 } from "../access";
 import type { CloudSql } from "../database";
+import { notifyRunFinished } from "../notifications";
 
 export const terminalStates = new Set<RunState>([
   "succeeded",
@@ -78,11 +79,12 @@ export async function readRun(
   sql: CloudSql,
   organizationId: string,
   id: string,
+  lock = true,
 ): Promise<StoredRun> {
   const row = (
     await sql.query<StoredRun>(
       `SELECT ${runColumns},r.result->>'candidateCommit' AS "candidateCommit",r.actor_id AS "actorId",r.profile_id AS "profileId",r.manifest,r.input_digest AS "inputDigest",r.planning_digest AS "planningDigest",r.stop_reason AS "stopReason",r.stop_message AS "stopMessage"
-    FROM cloud_runs r WHERE r.organization_id=$1 AND r.id=$2 FOR UPDATE`,
+    FROM cloud_runs r WHERE r.organization_id=$1 AND r.id=$2 ${lock ? "FOR UPDATE" : ""}`,
       [organizationId, id],
     )
   ).rows[0];
@@ -109,6 +111,8 @@ export async function recordRun(
     run.revision,
     { state: run.state, epoch: run.epoch },
   );
+  if (terminalStates.has(run.state))
+    await notifyRunFinished(sql, { ...run, organizationId });
 }
 
 export async function hasRunAuthority(
@@ -190,6 +194,21 @@ export async function fenceRun(
       ],
     );
   await recordRun(sql, organizationId, run.id, message);
+}
+
+export async function settleExpiredRuns(
+  sql: CloudSql,
+  organizationId: string,
+): Promise<void> {
+  const due = await sql.query(
+    `SELECT 1 FROM cloud_runs r LEFT JOIN cloud_run_attempts a ON a.organization_id=r.organization_id AND a.id=r.attempt_id
+    WHERE r.organization_id=$1 AND r.state IN ('queued','preparing','running','waiting','validating','publishing','cancel_requested')
+      AND (r.deadline_at<=clock_timestamp() OR (a.state<>'stopped' AND a.lease_expires_at<=clock_timestamp())) LIMIT 1`,
+    [organizationId],
+  );
+  if (!due.rows.length) return;
+  await lockExecution(sql, organizationId);
+  await expireRuns(sql, organizationId);
 }
 
 export async function expireRuns(

@@ -59,7 +59,8 @@ export async function admitRun(
       );
     title = issue.title;
     objective = `${issue.title}\n\n${issue.description}`.trim();
-    acceptanceCriteria = issue.acceptanceCriteria.trim();
+    acceptanceCriteria =
+      issue.acceptanceCriteria.trim() || "The issue is resolved as described.";
   } else {
     if (input.subject.id !== profile.projectId)
       throw new CloudError(

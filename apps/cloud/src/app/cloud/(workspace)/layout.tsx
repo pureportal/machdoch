@@ -1,5 +1,5 @@
 import { CloudShell } from "@/components/cloud/cloud-shell";
-import { requireCloudPageSession } from "@/server/cloud/page-auth";
+import { requireCloudWorkspace } from "@/server/cloud/page-auth";
 
 export const dynamic = "force-dynamic";
 export default async function WorkspaceLayout({
@@ -7,7 +7,14 @@ export default async function WorkspaceLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { runtime, actor } = await requireCloudPageSession();
-  const workspace = await runtime.planning.workspace(actor);
-  return <CloudShell workspace={workspace}>{children}</CloudShell>;
+  const { runtime, actor, workspace } = await requireCloudWorkspace();
+  const [unread, views] = await Promise.all([
+    runtime.inbox.unread(actor),
+    runtime.views.list(actor),
+  ]);
+  return (
+    <CloudShell workspace={workspace} unread={unread} views={views}>
+      {children}
+    </CloudShell>
+  );
 }

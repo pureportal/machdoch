@@ -5,10 +5,12 @@ import type {
   IssueSnapshot,
 } from "../../lib/cloud-contract";
 import type {
+  CycleBurnupPoint,
   CycleCommand,
   CycleDetail,
   CycleTotals,
 } from "../../lib/cloud-cycle-contract";
+import { cycleBurnup, type IssueChange } from "./cycle-burnup";
 import {
   checkRevision,
   CloudError,
@@ -114,6 +116,24 @@ export class CloudCycles {
         committedTotals: totals(commitment),
         carriedIssueIds: carried_issue_ids,
       };
+    });
+  }
+
+  burnup(actor: CloudActor, id: string): Promise<CycleBurnupPoint[]> {
+    return this.database.transaction(async (sql) => {
+      const cycle = await readCycle(sql, actor, id);
+      const changes = (
+        await sql.query<IssueChange & Record<string, unknown>>(
+          `SELECT h.issue_id AS "issueId",h.revision,h.snapshot->>'cycleId' AS "cycleId",h.snapshot->>'state' AS state,
+             (h.snapshot->>'estimatePoints')::double precision AS points,COALESCE((h.snapshot->>'archived')::boolean,false) AS archived,
+             h.created_at AS "changedAt"
+           FROM cloud_issue_history h WHERE h.organization_id=$1 AND h.issue_id IN
+             (SELECT issue_id FROM cloud_issue_history WHERE organization_id=$1 AND snapshot->>'cycleId'=$2)
+           ORDER BY h.issue_id,h.revision`,
+          [actor.organizationId, id],
+        )
+      ).rows;
+      return cycleBurnup(cycle, changes, new Date());
     });
   }
 

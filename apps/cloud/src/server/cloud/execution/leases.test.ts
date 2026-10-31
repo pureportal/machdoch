@@ -171,6 +171,44 @@ async function clientWorker(target: "client" | "client-linux" = "client") {
   };
 }
 
+it("shows project members which clients are connected and hides sandbox runners and revoked clients", async () => {
+  const cloudRunner = worker;
+  expect(
+    await runtime.execution.workers.listForProject(viewer, projectId),
+  ).toEqual([]);
+  await runtime.execution.workers.revoke(owner, randomUUID(), cloudRunner.id);
+  const binding = await clientWorker();
+  const unlinked = await runtime.execution.workers.listForProject(
+    member,
+    projectId,
+  );
+  expect(unlinked).toMatchObject([
+    { id: worker.id, name: "Client", workspaceName: null, online: false },
+  ]);
+  expect(JSON.stringify(unlinked)).not.toContain(worker.token);
+  await runtime.execution.clientWorkspaces.bind(worker.token, binding);
+  expect(
+    await runtime.execution.workers.listForProject(viewer, projectId),
+  ).toMatchObject([
+    {
+      workspaceName: "Local checkout",
+      online: true,
+      profile: { id: profileId, target: "client", agent: "codex-cli" },
+    },
+  ]);
+  await database.engine.query(
+    "UPDATE cloud_execution_workers SET last_seen_at=clock_timestamp()-interval '3 minutes' WHERE id=$1",
+    [worker.id],
+  );
+  expect(
+    await runtime.execution.workers.listForProject(member, projectId),
+  ).toMatchObject([{ online: false }]);
+  await runtime.execution.workers.revoke(owner, randomUUID(), worker.id);
+  expect(
+    await runtime.execution.workers.listForProject(member, projectId),
+  ).toEqual([]);
+});
+
 it("requires an immutable matching client workspace before claiming a task", async () => {
   const binding = await clientWorker();
   const run = await runtime.execution.runs.create(member, randomUUID(), input);

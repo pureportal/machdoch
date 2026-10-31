@@ -8,69 +8,55 @@
 .cloud-sidebar {
   display: flex;
   flex-direction: column;
-  width: 240px;
+  width: 224px;
   flex-shrink: 0;
   position: sticky;
   top: 0;
   height: 100dvh;
-  padding: 22px 14px 14px;
+  padding: 12px 10px 10px;
   background: var(--cloud-sidebar);
 }
 .cloud-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 8px;
-  font-weight: 650;
-  letter-spacing: -0.6px;
-  font-size: 17px;
+  gap: 9px;
+  min-width: 0;
+  padding: 4px 8px 14px;
 }
 .cloud-brand-mark {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
-  border: 1px solid var(--border);
-  background: var(--card);
-  border-radius: 8px;
-  color: var(--primary);
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 7px;
+  color: var(--primary-foreground);
+  background: var(--primary);
 }
-.cloud-brand-suffix {
-  color: var(--muted-foreground);
-  font-weight: 450;
-}
-.cloud-organization {
-  display: flex;
-  gap: 10px;
-  align-items: center;
+.cloud-brand-text {
+  display: grid;
   min-width: 0;
-  margin: 24px 4px 20px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px;
-  font-size: 12px;
-  font-weight: 550;
-  background: var(--cloud-subtle);
+  line-height: 1.25;
 }
-.cloud-organization > span:last-child {
+.cloud-brand-text > span {
   overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cloud-organization-mark {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 5px;
-  flex-shrink: 0;
-  color: var(--primary-foreground);
-  background: var(--primary);
-  font-weight: 650;
+.cloud-brand-text small {
+  color: var(--muted-foreground);
+  font-size: 10.5px;
+}
+.cloud-brand-suffix {
+  font-weight: 400;
 }
 .cloud-navigation-groups {
   display: grid;
-  gap: 22px;
+  align-content: start;
+  gap: 14px;
+  flex: 1;
   overflow-y: auto;
   min-height: 0;
   padding: 2px;
@@ -78,28 +64,23 @@
 }
 .cloud-navigation-group {
   display: grid;
-  gap: 3px;
+  gap: 1px;
 }
 .cloud-navigation-label {
   color: var(--muted-foreground);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  padding: 0 10px 7px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 0 8px 3px;
 }
 .cloud-navigation-group a {
   display: flex;
-  gap: 11px;
+  gap: 9px;
   align-items: center;
-  min-height: 35px;
-  padding: 7px 10px;
-  border: 1px solid transparent;
+  min-height: 28px;
+  padding: 3px 8px;
   border-radius: 6px;
-  color: var(--muted-foreground);
-  transition:
-    background-color 0.15s,
-    color 0.15s;
+  color: color-mix(in oklab, var(--foreground) 76%, transparent);
+  font-size: 13px;
 }
 .cloud-navigation-group a svg {
   flex-shrink: 0;
@@ -110,9 +91,8 @@
 }
 .cloud-navigation-group a[aria-current="page"] {
   color: var(--foreground);
-  background: color-mix(in srgb, var(--primary) 12%, var(--cloud-sidebar));
-  border-color: color-mix(in srgb, var(--primary) 15%, transparent);
-  font-weight: 550;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  font-weight: 500;
 }
 .cloud-navigation-group a[aria-current="page"] svg {
   color: var(--primary);
@@ -121,21 +101,20 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-top: auto;
-  padding-top: 18px;
+  padding-top: 8px;
 }
 .cloud-account-link {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   flex: 1;
   min-width: 0;
-  padding: 8px;
-  border-radius: 8px;
+  padding: 5px 8px;
+  border-radius: 6px;
 }
 .cloud-account-link:hover,
 .cloud-account-link[aria-current="page"] {
-  background: var(--muted);
+  background: var(--cloud-hover);
 }
 .cloud-account-link > span:nth-child(2) {
   flex: 1;
@@ -143,34 +122,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
-  font-weight: 550;
-}
-.cloud-account-link small {
-  display: block;
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--muted-foreground);
-}
-.cloud-account-link > svg {
-  color: var(--muted-foreground);
+  font-size: 12.5px;
+  font-weight: 500;
 }
 .cloud-workspace {
   flex: 1;
   min-width: 0;
-  margin: 10px 10px 10px 0;
+  margin: 6px 6px 6px 0;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--background);
-  box-shadow: var(--cloud-shadow);
 }
 .cloud-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  height: 54px;
-  padding: 0 28px;
+  height: 44px;
+  padding: 0 20px;
   border-bottom: 1px solid var(--border);
 }
 .cloud-breadcrumb {
@@ -196,11 +165,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 174px;
+  min-width: 200px;
   cursor: pointer;
   color: var(--muted-foreground);
-  font-size: 11px;
-  padding: 5px 8px;
+  font-size: 12px;
+  padding: 4px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--cloud-subtle);
@@ -211,33 +180,41 @@
 }
 .cloud-quick-navigation kbd {
   margin-left: auto;
-  font-size: 9px;
+  font-size: 10px;
   font-family: inherit;
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 0 4px;
 }
 .cloud-command [cmdk-group-heading] {
-  padding: 14px 10px 6px;
+  padding: 10px 10px 4px;
   font-size: 11px;
   color: var(--muted-foreground);
 }
 .cloud-command [cmdk-item] {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px;
+  gap: 10px;
+  min-height: 34px;
+  padding: 5px 10px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
 }
 .cloud-command [cmdk-item][data-selected="true"] {
-  background: var(--muted);
-  color: var(--primary);
+  background: var(--cloud-hover);
+}
+.cloud-command [cmdk-item] kbd {
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--muted-foreground);
+  font-family: inherit;
+  font-size: 10px;
 }
 .cloud-content {
   min-width: 0;
-  padding: 32px clamp(20px, 2.8vw, 44px) 48px;
+  padding: 20px clamp(16px, 2.2vw, 32px) 40px;
   outline: none;
 }
 .cloud-page-header {
@@ -245,15 +222,15 @@
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 16px;
-  margin-bottom: 28px;
+  gap: 12px;
+  margin-bottom: 14px;
   min-width: 0;
 }
 .cloud-page-header h1 {
-  font-size: 25px;
-  line-height: 1.25;
-  font-weight: 620;
-  letter-spacing: -0.85px;
+  font-size: 19px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.3px;
   overflow-wrap: anywhere;
 }
 .cloud-page-header h2 {
@@ -353,7 +330,7 @@
     margin-bottom: 22px;
   }
   .cloud-page-header h1 {
-    font-size: 23px;
+    font-size: 19px;
   }
   .cloud-sidebar-mobile {
     display: flex;
@@ -371,16 +348,5 @@
   }
   .cloud-client-navigation {
     gap: 20px;
-  }
-}
-@media (max-height: 780px) and (min-width: 801px) {
-  .cloud-sidebar {
-    padding-top: 16px;
-  }
-  .cloud-organization {
-    margin-block: 16px;
-  }
-  .cloud-navigation-groups {
-    gap: 14px;
   }
 }

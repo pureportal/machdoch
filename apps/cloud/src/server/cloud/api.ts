@@ -44,6 +44,13 @@ import {
   teamUpdateSchema,
 } from "../../lib/cloud-administration-contract";
 import { cycleCommandSchema } from "../../lib/cloud-cycle-contract";
+import { inboxUpdateSchema } from "../../lib/cloud-inbox-contract";
+import { issueChangesSchema } from "../../lib/cloud-issue-changes-contract";
+import {
+  milestoneInputSchema,
+  milestoneUpdateSchema,
+} from "../../lib/cloud-milestone-contract";
+import { savedViewInputSchema } from "../../lib/cloud-view-contract";
 import {
   commentInputSchema,
   commentUpdateSchema,
@@ -62,6 +69,7 @@ import {
   teamInputSchema,
   type CloudActor,
 } from "../../lib/cloud-contract";
+import { issueFiltersFromParameters } from "../../lib/issue-scopes";
 import { CredentialValidationError } from "../crypto";
 import { cookieValue } from "../request-auth";
 import { CloudError, isCloudError } from "./access";
@@ -401,6 +409,42 @@ async function route(
     return handleExecutionApi(runtime, request, actor);
   if (routeKey === "GET workspace")
     return Response.json(await runtime.planning.workspace(actor));
+  if (routeKey === "GET inbox")
+    return Response.json({ entries: await runtime.inbox.list(actor) });
+  if (routeKey === "GET inbox/unread")
+    return Response.json({ unread: await runtime.inbox.unread(actor) });
+  if (routeKey === "POST inbox/update") {
+    await runtime.inbox.update(actor, await readBody(request, inboxUpdateSchema));
+    return Response.json({ ok: true });
+  }
+  if (routeKey === "GET views")
+    return Response.json({ views: await runtime.views.list(actor) });
+  if (method === "POST" && path[0] === "views" && path[2] === "remove") {
+    await runtime.views.remove(actor, cloudId.parse(path[1]));
+    return Response.json({ ok: true });
+  }
+  if (
+    method === "GET" &&
+    path[0] === "cycles" &&
+    path.length === 3 &&
+    path[2] === "burnup"
+  )
+    return Response.json({
+      points: await runtime.cycles.burnup(actor, cloudId.parse(path[1])),
+    });
+  if (
+    method === "GET" &&
+    path[0] === "projects" &&
+    path.length === 3 &&
+    path[2] === "milestones"
+  )
+    return Response.json({
+      milestones: await runtime.milestones.list(actor, cloudId.parse(path[1])),
+    });
+  if (method === "POST" && path[0] === "milestones" && path[2] === "remove") {
+    await runtime.milestones.remove(actor, cloudId.parse(path[1]));
+    return Response.json({ ok: true });
+  }
   if (
     method === "GET" &&
     path[0] === "teams" &&
@@ -461,6 +505,23 @@ async function route(
       issues: await runtime.planning.listIssues(
         actor,
         querySchema.parse(Object.fromEntries(url.searchParams)),
+      ),
+    });
+  if (routeKey === "GET issues/search")
+    return Response.json({
+      issues: await runtime.planning.listIssueSummaries(
+        actor,
+        {
+          query: z.string().max(200).parse(url.searchParams.get("query") ?? ""),
+        },
+        12,
+      ),
+    });
+  if (routeKey === "GET issues/page")
+    return Response.json({
+      issues: await runtime.planning.listIssueSummaries(
+        actor,
+        issueFiltersFromParameters(Object.fromEntries(url.searchParams)),
       ),
     });
   if (path[0] === "issues" && path.length >= 2 && method === "GET") {
@@ -747,6 +808,47 @@ async function route(
         { status: 201 },
       );
     }
+    if (routeKey === "POST issues/changes")
+      return Response.json(
+        await runtime.issueChanges.apply(
+          actor,
+          key.data,
+          await readBody(request, issueChangesSchema),
+        ),
+      );
+    if (routeKey === "POST views")
+      return Response.json(
+        await runtime.views.create(
+          actor,
+          key.data,
+          await readBody(request, savedViewInputSchema),
+        ),
+        { status: 201 },
+      );
+    if (
+      method === "POST" &&
+      path[0] === "projects" &&
+      path.length === 3 &&
+      path[2] === "milestones"
+    )
+      return Response.json(
+        await runtime.milestones.create(
+          actor,
+          key.data,
+          cloudId.parse(path[1]),
+          await readBody(request, milestoneInputSchema),
+        ),
+        { status: 201 },
+      );
+    if (method === "PATCH" && path[0] === "milestones" && path.length === 2)
+      return Response.json(
+        await runtime.milestones.update(
+          actor,
+          key.data,
+          cloudId.parse(path[1]),
+          await readBody(request, milestoneUpdateSchema),
+        ),
+      );
     if (path[0] === "issues" && path.length === 2 && method === "PATCH")
       return Response.json(
         await runtime.planning.updateIssue(

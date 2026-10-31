@@ -241,6 +241,13 @@ export interface ExecutionWorker {
   expiresAt: string;
   workspaceBinding: ClientWorkspaceBinding | null;
 }
+export interface ProjectClient {
+  id: string;
+  name: string;
+  workspaceName: string | null;
+  profile: ExecutionProfile;
+  online: boolean;
+}
 
 const storedProfileFields = {
   id: cloudId,

@@ -8,7 +8,11 @@ import { CycleDates } from "./cycle-dates";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
-import type { CycleDetail } from "@/lib/cloud-cycle-contract";
+import type {
+  CycleBurnupPoint,
+  CycleDetail,
+} from "@/lib/cloud-cycle-contract";
+import { CycleBurnupChart } from "./cycle-burnup-chart";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
@@ -17,9 +21,11 @@ import { createCommandSender, formReference } from "./api-client";
 
 export function CyclePlanning({
   detail,
+  burnup,
   workspace,
 }: {
   detail: CycleDetail;
+  burnup: CycleBurnupPoint[];
   workspace: CloudWorkspace;
 }) {
   const { cycle, commitment } = detail;
@@ -71,6 +77,7 @@ export function CyclePlanning({
         </Link>
       </div>
       <CycleOverview detail={detail} />
+      <CycleBurnupChart cycle={cycle} points={burnup} />
       <CycleIssues detail={detail} />
       {cycle.status !== "planned" && (
         <details className="cloud-cycle-commitment">

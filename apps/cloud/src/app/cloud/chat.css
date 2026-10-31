@@ -76,7 +76,7 @@
   width: auto;
   min-width: 0;
   max-width: 230px;
-  flex: 1;
+  flex: 0 1 auto;
   font-size: 12px;
 }
 .cloud-chat-transcript {

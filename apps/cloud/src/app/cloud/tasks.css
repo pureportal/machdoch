@@ -11,8 +11,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px 24px;
-  padding: 22px;
+  gap: 4px 24px;
+  padding: 11px 16px;
   transition: background-color 0.15s;
 }
 .cloud-task-row:hover {

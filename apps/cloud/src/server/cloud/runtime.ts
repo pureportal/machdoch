@@ -20,6 +20,10 @@ import { CloudMailDispatcher } from "./auth/mail-dispatcher";
 import type { MailSender } from "./auth/smtp";
 import { CloudPlanning } from "./planning";
 import { CloudProjects } from "./projects";
+import { CloudProjectMilestones } from "./project-milestones";
+import { CloudIssueChanges } from "./issue-changes";
+import { CloudInbox } from "./notifications";
+import { CloudSavedViews } from "./saved-views";
 import { CloudLabels } from "./labels";
 import { CloudIssueRelations } from "./relations";
 import { CloudWorkflows } from "./workflows";
@@ -72,7 +76,11 @@ export interface CloudRuntime {
   authorization: CloudAuthorization;
   oauthTokens: CloudOAuthTokens;
   planning: CloudPlanning;
+  issueChanges: CloudIssueChanges;
+  inbox: CloudInbox;
+  views: CloudSavedViews;
   projects: CloudProjects;
+  milestones: CloudProjectMilestones;
   labels: CloudLabels;
   relations: CloudIssueRelations;
   workflows: CloudWorkflows;
@@ -197,7 +205,11 @@ export function createCloudRuntime(
     authorization: new CloudAuthorization(database, origin),
     oauthTokens: new CloudOAuthTokens(database, origin),
     planning: new CloudPlanning(database),
+    issueChanges: new CloudIssueChanges(database),
+    inbox: new CloudInbox(database),
+    views: new CloudSavedViews(database),
     projects: new CloudProjects(database),
+    milestones: new CloudProjectMilestones(database),
     labels: new CloudLabels(database),
     relations: new CloudIssueRelations(database),
     workflows: new CloudWorkflows(database),

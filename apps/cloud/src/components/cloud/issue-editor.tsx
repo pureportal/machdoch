@@ -1,90 +1,222 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState } from "react";
-import { Bot, ChevronRight, History, Sparkles } from "lucide-react";
-import {
-  issuePriorities,
-  issueUpdateSchema,
-  type CloudIssue,
-  type IssueSnapshot,
-  type CloudWorkspace,
-} from "@/lib/cloud-contract";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Archive, ArchiveRestore, Bot, ChevronRight, Sparkles } from "lucide-react";
+import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
+import type {
+  IssueChangeSet,
+  IssueChangesResult,
+} from "@/lib/cloud-issue-changes-contract";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Field } from "@/components/field";
-import {
-  cloudRequest,
-  createCommandSender,
-  formReference,
-  formText,
-} from "./api-client";
+import { CloudRequestError, cloudRequest } from "./api-client";
+import type { IssueHistoryEntry } from "./issue-activity";
 import { PokerPanel } from "./poker-panel";
 import { IssueComments } from "./comments";
 import { TaskList } from "./task-list";
+import { IssueDelegate } from "./issue-delegate";
 import { IssueLabels } from "./issue-labels";
+import { IssuePriority } from "./issue-priority";
 import { IssueRelations } from "./issue-relations";
-import { Timestamp } from "./timestamp";
 import {
-  WorkflowStatusField,
-  formIssueStatus,
-  isWorkflowConflict,
-} from "./workflow-status-field";
+  applyIssueChanges,
+  assigneeOptions,
+  cycleOptions,
+  estimateOptions,
+  noValue,
+  priorityNames,
+  priorityOptions,
+  projectOptions,
+  referenceValue,
+  statusChange,
+  statusOptions,
+} from "./issue-properties";
+import { PersonAvatar } from "./person-avatar";
+import { PropertyMenu, type PropertyOption } from "./property-menu";
+import { useToast } from "./toast";
 
-type IssueHistory = {
-  revision: number;
-  actor: string;
-  snapshot: IssueSnapshot;
-  statusName: string;
-  createdAt: string;
-}[];
+type TextField = "title" | "description" | "acceptanceCriteria";
+type Drafts = Record<TextField, string>;
+
+const textFields: TextField[] = ["title", "description", "acceptanceCriteria"];
+const pollMs = 15_000;
+
+function draftsFrom(issue: CloudIssue): Drafts {
+  return {
+    title: issue.title,
+    description: issue.description,
+    acceptanceCriteria: issue.acceptanceCriteria,
+  };
+}
+
+function Property({
+  label,
+  writable,
+  options,
+  value,
+  display,
+  onSelect,
+}: {
+  label: string;
+  writable: boolean;
+  options: PropertyOption[];
+  value: string;
+  display: React.ReactNode;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <div className="cloud-property">
+      <span className="cloud-property-label">{label}</span>
+      {writable ? (
+        <PropertyMenu
+          label={label}
+          options={options}
+          value={value}
+          onSelect={onSelect}
+        >
+          <button type="button" className="cloud-property-value" aria-label={label}>
+            {display}
+          </button>
+        </PropertyMenu>
+      ) : (
+        <span className="cloud-property-value">{display}</span>
+      )}
+    </div>
+  );
+}
 
 export function IssueEditor({
   initial,
   workspace,
+  activeRunId,
 }: {
   initial: CloudIssue;
   workspace: CloudWorkspace;
+  activeRunId: string | null;
 }) {
+  const router = useRouter();
+  const toast = useToast();
   const [issue, setIssue] = useState(initial);
-  const [pending, setPending] = useState(false);
-  const [dirty, setDirty] = useState(false);
-  const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
-  const [workflowReload, setWorkflowReload] = useState(0);
-  const [history, setHistory] = useState<IssueHistory | null>(null);
+  const [drafts, setDrafts] = useState(() => draftsFrom(initial));
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">(
+    "idle",
+  );
+  const [conflict, setConflict] = useState("");
+  const [history, setHistory] = useState<IssueHistoryEntry[]>([]);
   const [panel, setPanel] = useState("activity");
-  const [delegateRequest, setDelegateRequest] = useState(0);
-  const sender = useRef(createCommandSender());
+  const [visited, setVisited] = useState(() => new Set(["activity"]));
+  const latest = useRef(initial);
+  const queue = useRef(Promise.resolve());
+  const dirtyRef = useRef(false);
+  latest.current = issue;
   const writable = workspace.actor.role !== "viewer";
   const team = workspace.teams.find((entry) => entry.id === issue.teamId)!;
-  async function reload() {
-    const latest = await cloudRequest<CloudIssue>(`issues/${issue.id}`);
-    setIssue(latest);
-    setDirty(false);
-    setError("");
-    setHistory(null);
-    sender.current = createCommandSender();
+  const dirty = textFields.some((field) => drafts[field] !== issue[field]);
+  dirtyRef.current = dirty;
+  const refreshHistory = useCallback(() => {
+    void cloudRequest<{ history: IssueHistoryEntry[] }>(
+      `issues/${initial.id}/history`,
+    )
+      .then((value) => setHistory(value.history))
+      .catch(() => undefined);
+  }, [initial.id]);
+  const reload = useCallback(
+    async (replaceDrafts: boolean) => {
+      const next = await cloudRequest<CloudIssue>(`issues/${initial.id}`);
+      setIssue(next);
+      if (replaceDrafts) {
+        setDrafts(draftsFrom(next));
+        setConflict("");
+      } else if (!dirtyRef.current) setDrafts(draftsFrom(next));
+      refreshHistory();
+      return next;
+    },
+    [initial.id, refreshHistory],
+  );
+  useEffect(() => {
+    refreshHistory();
+    const timer = setInterval(() => {
+      if (!document.hidden) void reload(false).catch(() => undefined);
+    }, pollMs);
+    return () => clearInterval(timer);
+  }, [refreshHistory, reload]);
+  function changeProperties(changes: IssueChangeSet) {
+    const previous = latest.current;
+    setIssue(applyIssueChanges(previous, changes, workspace));
+    queue.current = queue.current
+      .then(async () => {
+        await cloudRequest<IssueChangesResult>("issues/changes", {
+          method: "POST",
+          key: crypto.randomUUID(),
+          body: { issues: [{ id: previous.id }], changes },
+        });
+        await reload(false);
+        router.refresh();
+      })
+      .catch((reason: Error) => {
+        setIssue(previous);
+        toast(reason.message, "error");
+        if (
+          reason instanceof CloudRequestError &&
+          reason.code === "workflow_changed"
+        )
+          router.refresh();
+      });
   }
-  function archive() {
-    setPending(true);
-    setError("");
-    void sender
-      .current(
-        `issues/${issue.id}`,
-        {
-          ...issueUpdateSchema.strip().parse(issue),
-          archived: !issue.archived,
+  function saveText(field: TextField) {
+    const value = field === "title" ? drafts.title.trim() : drafts[field];
+    if (value === latest.current[field] || (field === "title" && !value)) {
+      if (field === "title" && !value)
+        setDrafts((current) => ({ ...current, title: latest.current.title }));
+      return;
+    }
+    const base = latest.current[field];
+    setSaveState("saving");
+    setConflict("");
+    const send = (revision: number) =>
+      cloudRequest<IssueChangesResult>("issues/changes", {
+        method: "POST",
+        key: crypto.randomUUID(),
+        body: {
+          issues: [{ id: issue.id, revision }],
+          changes: { [field]: value },
         },
-        "PATCH",
-      )
-      .then(reload)
-      .catch((reason: Error) => setError(reason.message))
-      .finally(() => setPending(false));
+      });
+    queue.current = queue.current
+      .then(async () => {
+        try {
+          await send(latest.current.revision);
+        } catch (reason) {
+          if (
+            !(reason instanceof CloudRequestError) ||
+            reason.code !== "revision_conflict"
+          )
+            throw reason;
+          const current = await cloudRequest<CloudIssue>(`issues/${issue.id}`);
+          if (current[field] !== base) throw reason;
+          await send(current.revision);
+        }
+        const next = await cloudRequest<CloudIssue>(`issues/${issue.id}`);
+        setIssue(next);
+        setSaveState("saved");
+        refreshHistory();
+        router.refresh();
+      })
+      .catch((reason: Error) => {
+        setSaveState("idle");
+        setConflict(reason.message);
+      });
   }
+  const assignee = workspace.members.find(
+    (member) => member.id === issue.assigneeId,
+  );
+  const project = workspace.projects.find(
+    (entry) => entry.id === issue.projectId,
+  );
+  const cycle = workspace.cycles.find((entry) => entry.id === issue.cycleId);
   return (
     <>
       <header className="cloud-issue-header">
@@ -93,22 +225,36 @@ export function IssueEditor({
           <ChevronRight size={13} aria-hidden="true" />
           <h1 className="cloud-issue-key">{issue.identifier}</h1>
           {issue.archived && <span className="cloud-issue-flag">Archived</span>}
+          <span role="status" className="cloud-issue-save-state">
+            {saveState === "saving"
+              ? "Saving…"
+              : saveState === "saved" && !dirty
+                ? "Saved"
+                : ""}
+          </span>
         </nav>
         <div className="cloud-issue-actions">
           {writable &&
             !issue.archived &&
             !["complete", "canceled"].includes(issue.state) && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setPanel("tasks");
-                  setDelegateRequest((previous) => previous + 1);
+              <IssueDelegate
+                issue={issue}
+                workspace={workspace}
+                onBeforeStart={async (projectId) => {
+                  const result = await cloudRequest<IssueChangesResult>(
+                    "issues/changes",
+                    {
+                      method: "POST",
+                      key: crypto.randomUUID(),
+                      body: {
+                        issues: [{ id: issue.id }],
+                        changes: { projectId },
+                      },
+                    },
+                  );
+                  return result.updated[0]!.revision;
                 }}
-              >
-                <Bot />
-                Delegate
-              </Button>
+              />
             )}
           <Button asChild variant="ghost" size="sm">
             <Link href={`/cloud/chat?issue=${issue.id}`}>
@@ -116,285 +262,226 @@ export function IssueEditor({
               Ask
             </Link>
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() =>
-              void cloudRequest<{ history: IssueHistory }>(
-                `issues/${issue.id}/history`,
-              )
-                .then((value) => setHistory(value.history))
-                .catch((reason: Error) => setError(reason.message))
-            }
-          >
-            <History />
-            History
-          </Button>
         </div>
       </header>
       <div className="cloud-issue-layout">
-        <form
-          className="cloud-issue-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (pending || !writable) return;
-            const form = new FormData(event.currentTarget);
-            const parsed = issueUpdateSchema.strip().safeParse({
-              ...issue,
-              title: formText(form, "title"),
-              description: formText(form, "description"),
-              acceptanceCriteria: formText(form, "acceptanceCriteria"),
-              status: formIssueStatus(form),
-              priority: formText(form, "priority"),
-              projectId: formReference(form, "projectId"),
-              cycleId: formReference(form, "cycleId"),
-              assigneeId: formReference(form, "assigneeId"),
-              estimate: formReference(form, "estimate"),
-              dueOn: formReference(form, "dueOn"),
-            });
-            if (!parsed.success) {
-              setError(parsed.error.issues[0]!.message);
-              return;
+        <div className="cloud-issue-document">
+          <label className="sr-only" htmlFor="title">
+            Title
+          </label>
+          <Textarea
+            id="title"
+            name="title"
+            className="cloud-issue-title-input"
+            value={drafts.title}
+            rows={1}
+            disabled={!writable}
+            maxLength={300}
+            onChange={(event) =>
+              setDrafts((current) => ({
+                ...current,
+                title: event.target.value.replace(/[\r\n]+/g, " "),
+              }))
             }
-            setPending(true);
-            setError("");
-            setSaved(false);
-            void sender
-              .current(`issues/${issue.id}`, parsed.data, "PATCH")
-              .then(reload)
-              .then(() => setSaved(true))
-              .catch((reason: Error) => {
-                setError(reason.message);
-                if (isWorkflowConflict(reason))
-                  setWorkflowReload((previous) => previous + 1);
-              })
-              .finally(() => setPending(false));
-          }}
-        >
-          <fieldset
-            className="cloud-issue-fieldset"
-            key={`${issue.id}:${issue.revision}`}
-            disabled={pending || !writable}
-            onChange={() => {
-              setDirty(true);
-              setSaved(false);
+            onBlur={() => saveText("title")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                event.currentTarget.blur();
+              }
             }}
-          >
-            <div className="cloud-issue-document">
-              <label className="sr-only" htmlFor="title">
-                Title
-              </label>
-              <Textarea
-                id="title"
-                name="title"
-                className="cloud-issue-title-input"
-                defaultValue={issue.title}
-                rows={1}
-                onChange={(event) => {
-                  event.currentTarget.value = event.currentTarget.value.replace(
-                    /[\r\n]+/g,
-                    " ",
-                  );
-                }}
-                maxLength={300}
-                required
-              />
-              <label className="sr-only" htmlFor="description">
-                Description
-              </label>
-              <Textarea
-                id="description"
-                name="description"
-                className="cloud-issue-description-input"
-                placeholder="Add a description…"
-                defaultValue={issue.description}
-                maxLength={30000}
-              />
-              <div className="cloud-issue-section">
-                <label htmlFor="acceptance">Acceptance criteria</label>
-                <Textarea
-                  id="acceptance"
-                  name="acceptanceCriteria"
-                  defaultValue={issue.acceptanceCriteria}
-                  maxLength={20000}
-                />
-              </div>
-              {writable && (
-                <div className="cloud-issue-savebar">
-                  <span role="status" className="cloud-issue-save-state">
-                    {saved ? "Saved" : dirty ? "Unsaved changes" : ""}
-                  </span>
-                  <Button type="submit" disabled={!dirty}>
-                    {pending ? "Saving…" : "Save changes"}
-                  </Button>
-                </div>
-              )}
-              {error && (
-                <div role="alert" className="cloud-error">
-                  <p>{error}</p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() =>
-                      void reload().catch((reason: Error) =>
-                        setError(reason.message),
-                      )
-                    }
-                  >
-                    Reload issue
-                  </Button>
-                </div>
-              )}
+          />
+          <label className="sr-only" htmlFor="description">
+            Description
+          </label>
+          <Textarea
+            id="description"
+            name="description"
+            className="cloud-issue-description-input"
+            placeholder="Add a description…"
+            value={drafts.description}
+            disabled={!writable}
+            maxLength={30000}
+            onChange={(event) =>
+              setDrafts((current) => ({
+                ...current,
+                description: event.target.value,
+              }))
+            }
+            onBlur={() => saveText("description")}
+          />
+          <div className="cloud-issue-section">
+            <label htmlFor="acceptance">Acceptance criteria</label>
+            <Textarea
+              id="acceptance"
+              name="acceptanceCriteria"
+              placeholder="What must be true when this is done?"
+              value={drafts.acceptanceCriteria}
+              disabled={!writable}
+              maxLength={20000}
+              onChange={(event) =>
+                setDrafts((current) => ({
+                  ...current,
+                  acceptanceCriteria: event.target.value,
+                }))
+              }
+              onBlur={() => saveText("acceptanceCriteria")}
+            />
+          </div>
+          {conflict && (
+            <div role="alert" className="cloud-error">
+              <p>{conflict}</p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() =>
+                  void reload(true).catch((reason: Error) =>
+                    setConflict(reason.message),
+                  )
+                }
+              >
+                Reload issue
+              </Button>
             </div>
-            <div className="cloud-issue-properties">
-              <WorkflowStatusField
-                id="issue-status"
-                initial={workspace.workflows.find(
-                  (workflow) => workflow.teamId === issue.teamId,
-                )!}
-                current={issue}
-                reloadRequest={workflowReload}
+          )}
+        </div>
+        <aside className="cloud-issue-aside" aria-label="Issue properties">
+          <div className="cloud-issue-properties">
+            <Property
+              label="Status"
+              writable={writable}
+              options={statusOptions(workspace, [issue.teamId])}
+              value={JSON.stringify(issue.status)}
+              display={
+                <span className="cloud-state" data-state={issue.state}>
+                  {issue.statusName}
+                </span>
+              }
+              onSelect={(value) => changeProperties(statusChange(value))}
+            />
+            <Property
+              label="Priority"
+              writable={writable}
+              options={priorityOptions}
+              value={issue.priority}
+              display={
+                <>
+                  <IssuePriority priority={issue.priority} compact />
+                  {priorityNames[issue.priority]}
+                </>
+              }
+              onSelect={(value) =>
+                changeProperties({ priority: value as CloudIssue["priority"] })
+              }
+            />
+            <Property
+              label="Assignee"
+              writable={writable}
+              options={assigneeOptions(workspace)}
+              value={issue.assigneeId ?? noValue}
+              display={
+                assignee ? (
+                  <>
+                    <PersonAvatar
+                      name={assignee.name}
+                      className="cloud-avatar-small"
+                    />
+                    {assignee.name}
+                  </>
+                ) : (
+                  <span className="cloud-property-empty">Unassigned</span>
+                )
+              }
+              onSelect={(value) =>
+                changeProperties({ assigneeId: referenceValue(value) })
+              }
+            />
+            <Property
+              label="Project"
+              writable={writable}
+              options={projectOptions(workspace, issue.teamId)}
+              value={issue.projectId ?? noValue}
+              display={
+                project?.name ?? (
+                  <span className="cloud-property-empty">No project</span>
+                )
+              }
+              onSelect={(value) =>
+                changeProperties({ projectId: referenceValue(value) })
+              }
+            />
+            <Property
+              label="Cycle"
+              writable={writable}
+              options={cycleOptions(workspace, issue.teamId, issue.cycleId)}
+              value={issue.cycleId ?? noValue}
+              display={
+                cycle?.name ?? (
+                  <span className="cloud-property-empty">No cycle</span>
+                )
+              }
+              onSelect={(value) =>
+                changeProperties({ cycleId: referenceValue(value) })
+              }
+            />
+            <Property
+              label="Estimate"
+              writable={writable}
+              options={estimateOptions(team, issue.estimate)}
+              value={issue.estimate ?? noValue}
+              display={
+                issue.estimate ?? (
+                  <span className="cloud-property-empty">Not estimated</span>
+                )
+              }
+              onSelect={(value) =>
+                changeProperties({ estimate: referenceValue(value) })
+              }
+            />
+            <div className="cloud-property">
+              <label className="cloud-property-label" htmlFor="due">
+                Due date
+              </label>
+              <input
+                className="cloud-property-value cloud-property-date"
+                type="date"
+                id="due"
+                disabled={!writable}
+                value={issue.dueOn ?? ""}
+                onChange={(event) =>
+                  changeProperties({ dueOn: event.target.value || null })
+                }
               />
-              <Field label="Priority" htmlFor="priority">
-                <Select
-                  id="priority"
-                  name="priority"
-                  defaultValue={issue.priority}
-                >
-                  {issuePriorities.map((priority) => (
-                    <option key={priority} value={priority}>
-                      {priority[0]!.toUpperCase() + priority.slice(1)}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Assignee" htmlFor="assignee">
-                <Select
-                  id="assignee"
-                  name="assigneeId"
-                  defaultValue={issue.assigneeId ?? ""}
-                >
-                  <option value="">Unassigned</option>
-                  {workspace.members.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.name}
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Project" htmlFor="project">
-                <Select
-                  id="project"
-                  name="projectId"
-                  defaultValue={issue.projectId ?? ""}
-                >
-                  <option value="">No project</option>
-                  {workspace.projects
-                    .filter((project) => project.teamId === issue.teamId)
-                    .map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                </Select>
-              </Field>
-              <Field label="Cycle" htmlFor="cycle">
-                <Select
-                  id="cycle"
-                  name="cycleId"
-                  defaultValue={issue.cycleId ?? ""}
-                >
-                  <option value="">No cycle</option>
-                  {workspace.cycles
-                    .filter(
-                      (cycle) =>
-                        cycle.teamId === issue.teamId &&
-                        (cycle.status !== "closed" ||
-                          cycle.id === issue.cycleId),
-                    )
-                    .map((cycle) => (
-                      <option key={cycle.id} value={cycle.id}>
-                        {cycle.name}
-                      </option>
-                    ))}
-                </Select>
-              </Field>
-              <Field label="Estimate" htmlFor="estimate">
-                <Select
-                  id="estimate"
-                  name="estimate"
-                  defaultValue={issue.estimate ?? ""}
-                >
-                  <option value="">Not estimated</option>
-                  {issue.estimate &&
-                    !team.estimateScale.some(
-                      (card) => card.label === issue.estimate,
-                    ) && (
-                      <option value={issue.estimate}>{issue.estimate}</option>
-                    )}
-                  {team.estimateScale
-                    .filter((card) => card.points !== null)
-                    .map((card) => (
-                      <option key={card.label} value={card.label}>
-                        {card.label}
-                      </option>
-                    ))}
-                </Select>
-              </Field>
-              <Field label="Due date" htmlFor="due">
-                <Input
-                  type="date"
-                  id="due"
-                  name="dueOn"
-                  defaultValue={issue.dueOn ?? ""}
-                />
-              </Field>
             </div>
-          </fieldset>
-        </form>
-        <aside className="cloud-issue-aside" aria-label="Issue organization">
+          </div>
           <IssueLabels issue={issue} writable={writable} />
+          {activeRunId && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/cloud/tasks/${activeRunId}`}>
+                <Bot />
+                AI task running
+              </Link>
+            </Button>
+          )}
           {writable && (
             <Button
               type="button"
               variant="ghost"
               size="sm"
-              onClick={archive}
-              disabled={dirty || pending}
+              onClick={() => changeProperties({ archived: !issue.archived })}
             >
+              {issue.archived ? <ArchiveRestore /> : <Archive />}
               {issue.archived ? "Restore issue" : "Archive issue"}
             </Button>
           )}
         </aside>
       </div>
-      {history && (
-        <section className="cloud-issue-history" aria-label="Issue history">
-          <header>
-            <h2>History</h2>
-            <Button variant="ghost" size="sm" onClick={() => setHistory(null)}>
-              Close history
-            </Button>
-          </header>
-          <ol>
-            {history.map((entry) => (
-              <li key={entry.revision}>
-                <span>
-                  {entry.actor} · <Timestamp value={entry.createdAt} />
-                </span>
-                <p>
-                  {entry.snapshot.title} · {entry.statusName}
-                  {entry.snapshot.estimate
-                    ? ` · ${entry.snapshot.estimate} points`
-                    : ""}
-                </p>
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
       <Tabs
         value={panel}
-        onValueChange={setPanel}
+        onValueChange={(next) => {
+          setPanel(next);
+          setVisited((current) => new Set(current).add(next));
+        }}
         className="cloud-issue-panels"
       >
         <TabsList aria-label="Issue details">
@@ -404,30 +491,33 @@ export function IssueEditor({
           <TabsTrigger value="tasks">AI tasks</TabsTrigger>
         </TabsList>
         <TabsContent value="activity" forceMount>
-          <IssueComments issue={issue} workspace={workspace} />
+          <IssueComments issue={issue} workspace={workspace} history={history} />
         </TabsContent>
         <TabsContent value="relationships" forceMount>
-          <IssueRelations
-            issue={issue}
-            workspace={workspace}
-            writable={writable}
-          />
+          {visited.has("relationships") && (
+            <IssueRelations
+              issue={issue}
+              workspace={workspace}
+              writable={writable}
+            />
+          )}
         </TabsContent>
         <TabsContent value="poker" forceMount>
-          <PokerPanel
-            issue={issue}
-            workspace={workspace}
-            dirty={dirty}
-            onDecision={reload}
-          />
+          {visited.has("poker") && (
+            <PokerPanel
+              issue={issue}
+              workspace={workspace}
+              dirty={dirty}
+              onDecision={async () => {
+                await reload(false);
+              }}
+            />
+          )}
         </TabsContent>
         <TabsContent value="tasks" forceMount>
-          <TaskList
-            issue={issue}
-            workspace={workspace}
-            dirty={dirty}
-            startRequest={delegateRequest}
-          />
+          {visited.has("tasks") && (
+            <TaskList issue={issue} workspace={workspace} dirty={dirty} />
+          )}
         </TabsContent>
       </Tabs>
     </>

@@ -25,9 +25,7 @@ export function CycleIssues({ detail }: { detail: CycleDetail }) {
         </h2>
         {cycle.status !== "closed" && (
           <Button asChild variant="outline" size="sm">
-            <Link
-              href={`/cloud/issues?cycleId=${cycle.id}&teamId=${cycle.teamId}`}
-            >
+            <Link href={`/cloud/cycles/${cycle.id}/plan`}>
               Plan issues
               <ArrowUpRight />
             </Link>

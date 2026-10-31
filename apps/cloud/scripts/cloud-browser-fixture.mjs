@@ -256,7 +256,7 @@ export async function cloudBrowserFixture({
           return (await ownerContext.request.get(`${origin}/healthz`)).ok();
         },
         () => `Production server did not become ready. ${manager.logs()}`,
-        60000,
+        180000,
       );
       process.stdout.write(
         `Production server ready in ${Date.now() - started}ms.\n`,

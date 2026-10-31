@@ -203,7 +203,7 @@ try {
   });
   await projectLink.focus();
   await page.keyboard.press("Enter");
-  await page.waitForURL(`**/cloud/issues?projectId=${created.id}`);
+  await page.waitForURL(`**/cloud/projects/${created.id}`);
   passed(
     "Project search, team filtering, mobile creation, persisted editing and keyboard navigation",
   );

@@ -61,7 +61,7 @@ export function ProjectDirectory({
             </span>
             <div className="cloud-project-description">
               <h2>
-                <Link href={`/cloud/issues?projectId=${project.id}`}>
+                <Link href={`/cloud/projects/${project.id}`} prefetch={false}>
                   {project.name}
                   <ArrowUpRight size={14} aria-hidden="true" />
                 </Link>

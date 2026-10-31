@@ -2,7 +2,10 @@ import { notFound } from "next/navigation";
 import { TaskDetail } from "@/components/cloud/task-detail";
 import { cloudId } from "@/lib/cloud-contract";
 import { isCloudError } from "@/server/cloud/access";
-import { requireCloudPageSession } from "@/server/cloud/page-auth";
+import {
+  requireCloudPageSession,
+  requireCloudWorkspace,
+} from "@/server/cloud/page-auth";
 
 export default async function TaskPage({
   params,
@@ -16,7 +19,7 @@ export default async function TaskPage({
     return (
       <TaskDetail
         initial={await runtime.execution.runs.get(actor, id.data)}
-        workspace={await runtime.planning.workspace(actor)}
+        workspace={(await requireCloudWorkspace()).workspace}
       />
     );
   } catch (error) {

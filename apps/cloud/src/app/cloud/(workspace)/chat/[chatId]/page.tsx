@@ -2,7 +2,10 @@ import { notFound } from "next/navigation";
 import { CloudChatView } from "@/components/cloud/chat";
 import { cloudId } from "@/lib/cloud-contract";
 import { isCloudError } from "@/server/cloud/access";
-import { requireCloudPageSession } from "@/server/cloud/page-auth";
+import {
+  requireCloudPageSession,
+  requireCloudWorkspace,
+} from "@/server/cloud/page-auth";
 import { readFocusIssue } from "../focus-issue";
 
 export default async function ChatPage({
@@ -23,7 +26,7 @@ export default async function ChatPage({
   return (
     <CloudChatView
       key={id.data}
-      workspace={await runtime.planning.workspace(actor)}
+      workspace={(await requireCloudWorkspace()).workspace}
       settings={await runtime.aiProviders.list(actor)}
       initialChats={await runtime.chat.store.list(actor)}
       initial={initial}

@@ -3,8 +3,11 @@ import {
   CalendarClock,
   CalendarRange,
   CircleDot,
+  CircleUserRound,
   FolderKanban,
+  Inbox,
   Layers,
+  Map,
   Sparkles,
   Monitor,
   Plug,
@@ -20,8 +23,11 @@ export const cloudNavigation = [
   {
     label: "Workspace",
     items: [
+      { href: "/cloud/inbox", label: "Inbox", icon: Inbox },
+      { href: "/cloud/issues?scope=mine", label: "My issues", icon: CircleUserRound },
       { href: "/cloud/issues", label: "Issues", icon: CircleDot },
       { href: "/cloud/projects", label: "Projects", icon: FolderKanban },
+      { href: "/cloud/roadmap", label: "Roadmap", icon: Map },
       { href: "/cloud/cycles", label: "Cycles", icon: CalendarRange },
       { href: "/cloud/teams", label: "Teams", icon: Users },
     ],
@@ -80,4 +86,18 @@ export function navigationForRole(role: CloudRole) {
         role === "admin",
     ),
   }));
+}
+
+export function isNavigationActive(
+  href: string,
+  pathname: string,
+  search: URLSearchParams,
+): boolean {
+  const [path, query] = href.split("?") as [string, string | undefined];
+  if (pathname !== path && !pathname.startsWith(`${path}/`)) return false;
+  if (query) {
+    const expected = new URLSearchParams(query);
+    return [...expected].every(([name, value]) => search.get(name) === value);
+  }
+  return !(path === "/cloud/issues" && search.get("scope") === "mine");
 }

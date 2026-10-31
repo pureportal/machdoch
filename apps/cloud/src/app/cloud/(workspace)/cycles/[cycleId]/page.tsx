@@ -2,7 +2,10 @@ import { notFound } from "next/navigation";
 import { CyclePlanning } from "@/components/cloud/cycle-detail";
 import { cloudId } from "@/lib/cloud-contract";
 import { isCloudError } from "@/server/cloud/access";
-import { requireCloudPageSession } from "@/server/cloud/page-auth";
+import {
+  requireCloudPageSession,
+  requireCloudWorkspace,
+} from "@/server/cloud/page-auth";
 
 export default async function CyclePage({
   params,
@@ -13,11 +16,13 @@ export default async function CyclePage({
   if (!id.success) notFound();
   const { runtime, actor } = await requireCloudPageSession();
   try {
+    const [detail, burnup, { workspace }] = await Promise.all([
+      runtime.cycles.get(actor, id.data),
+      runtime.cycles.burnup(actor, id.data),
+      requireCloudWorkspace(),
+    ]);
     return (
-      <CyclePlanning
-        detail={await runtime.cycles.get(actor, id.data)}
-        workspace={await runtime.planning.workspace(actor)}
-      />
+      <CyclePlanning detail={detail} burnup={burnup} workspace={workspace} />
     );
   } catch (error) {
     if (isCloudError(error) && error.status === 404) notFound();

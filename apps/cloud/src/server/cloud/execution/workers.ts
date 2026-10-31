@@ -4,9 +4,16 @@ import type {
   ExecutionWorker,
   ClientWorkspaceBinding,
   ExecutionProfile,
+  ProjectClient,
 } from "@machdoch/fleet-protocol/cloud-execution";
 import { createSecret, hashSecret, validateSecret } from "../../crypto";
-import { CloudError, command, recordEvent, requireMembership } from "../access";
+import {
+  CloudError,
+  command,
+  recordEvent,
+  requireMembership,
+  teamVisibility,
+} from "../access";
 import type { CloudDatabase, CloudSql } from "../database";
 import { fenceRun, lockExecution, readProfile, readRun } from "./records";
 
@@ -96,6 +103,53 @@ export class CloudWorkers {
           [actor.organizationId, profileId],
         )
       ).rows;
+    });
+  }
+
+  listForProject(
+    actor: CloudActor,
+    projectId: string,
+  ): Promise<ProjectClient[]> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor);
+      const rows = (
+        await sql.query<{
+          id: string;
+          name: string;
+          workspace_name: string | null;
+          online: boolean;
+          profile_id: string;
+          definition: ExecutionProfile;
+          team_id: string;
+          revision: number;
+        }>(
+          `SELECT w.id,w.name,w.workspace_binding->>'name' AS workspace_name,
+        COALESCE(w.last_seen_at>clock_timestamp()-interval '2 minutes',false) AS online,
+        p.id AS profile_id,p.definition,p.team_id,p.revision
+        FROM cloud_execution_workers w
+        JOIN cloud_execution_profiles p ON p.organization_id=w.organization_id AND p.id=w.profile_id
+        JOIN cloud_teams t ON t.organization_id=p.organization_id AND t.id=p.team_id
+        JOIN cloud_memberships m ON m.organization_id=w.organization_id AND m.user_id=$2
+        WHERE w.organization_id=$1 AND ${teamVisibility} AND p.project_id=$3 AND p.enabled AND p.definition->>'target'<>'cloud'
+        AND w.enabled AND w.profile_revision=p.revision AND w.expires_at>clock_timestamp()
+        ORDER BY w.name,w.id LIMIT 50`,
+          [actor.organizationId, actor.userId, projectId],
+        )
+      ).rows;
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        workspaceName: row.workspace_name,
+        online: row.online,
+        profile: {
+          ...row.definition,
+          id: row.profile_id,
+          teamId: row.team_id,
+          projectId,
+          revision: row.revision,
+          enabled: true,
+        },
+      }));
     });
   }
 
