@@ -13,6 +13,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 
 use super::{
+    desktop_state::{read_desktop_state, DesktopStateQuery},
     manager::RunManager,
     presence::{WorkspaceAgentRegistration, WorkspacePresenceRegistry},
 };
@@ -37,7 +38,10 @@ pub struct RunControlBridge {
 }
 
 impl RunControlBridge {
-    pub fn start(manager: Arc<RunManager>) -> Result<Self, String> {
+    pub fn start(
+        manager: Arc<RunManager>,
+        app: Option<tauri::AppHandle>,
+    ) -> Result<Self, String> {
         let listener = TcpListener::bind("127.0.0.1:0")
             .map_err(|error| format!("Failed to bind the run-control bridge: {error}"))?;
         listener
@@ -93,6 +97,7 @@ impl RunControlBridge {
                             break;
                         }
                         let connection_manager = manager.clone();
+                        let connection_app = app.clone();
                         let connection_token = worker_credentials.token.clone();
                         let connection_presence_token = worker_credentials.presence_token.clone();
                         let connection_presence = worker_presence.clone();
@@ -110,6 +115,7 @@ impl RunControlBridge {
                             let _ = handle_connection(
                                 stream,
                                 &connection_manager,
+                                connection_app.as_ref(),
                                 &connection_presence,
                                 connection_id,
                                 &connection_token,
@@ -184,6 +190,7 @@ struct ControlRequest {
     configuration_id: Option<String>,
     registration: Option<WorkspaceAgentRegistration>,
     agent_id: Option<String>,
+    query: Option<DesktopStateQuery>,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -196,6 +203,7 @@ enum ControlAction {
     RegisterPresence,
     GetPresence,
     UnregisterPresence,
+    ReadState,
 }
 
 #[derive(Serialize)]
@@ -209,6 +217,7 @@ struct ControlResponse {
 fn handle_connection(
     stream: Arc<TcpStream>,
     manager: &Arc<RunManager>,
+    app: Option<&tauri::AppHandle>,
     presence: &Arc<WorkspacePresenceRegistry>,
     connection_id: u64,
     expected_control_token: &str,
@@ -244,7 +253,7 @@ fn handle_connection(
 
     write_response(
         stream.as_ref(),
-        execute_request(manager, presence, connection_id, request),
+        execute_request(manager, app, presence, connection_id, request),
     )
 }
 
@@ -351,6 +360,7 @@ fn request_is_authenticated(
 
 fn execute_request(
     manager: &Arc<RunManager>,
+    app: Option<&tauri::AppHandle>,
     presence: &WorkspacePresenceRegistry,
     connection_id: u64,
     request: ControlRequest,
@@ -365,6 +375,15 @@ fn execute_request(
         ),
         ControlAction::Restart => serialize_snapshot(
             manager.restart(&request.workspace_root, request.configuration_id.as_deref())?,
+        ),
+        ControlAction::ReadState => read_desktop_state(
+            app.ok_or_else(|| "Desktop state is unavailable.".to_string())?,
+            manager,
+            presence,
+            &request.workspace_root,
+            request
+                .query
+                .ok_or_else(|| "A desktop state query is required.".to_string())?,
         ),
         ControlAction::GetPresence
         | ControlAction::RegisterPresence
@@ -404,7 +423,8 @@ fn execute_presence_request(
         ControlAction::Status
         | ControlAction::Start
         | ControlAction::Stop
-        | ControlAction::Restart => {
+        | ControlAction::Restart
+        | ControlAction::ReadState => {
             Err("Run-control actions are not valid on a presence connection.".to_string())
         }
     }
@@ -553,7 +573,7 @@ mod tests {
     fn registers_and_discovers_other_workspace_agents() {
         let workspace = temporary_workspace("discovery");
         let mut bridge =
-            RunControlBridge::start(Arc::new(RunManager::default())).expect("bridge should start");
+            RunControlBridge::start(Arc::new(RunManager::default()), None).expect("bridge should start");
         let credentials = bridge.credentials();
         let mut first = PresenceClient::connect(&credentials);
         let mut second = PresenceClient::connect(&credentials);
@@ -589,7 +609,7 @@ mod tests {
     fn unregisters_presence_on_graceful_completion() {
         let workspace = temporary_workspace("graceful");
         let mut bridge =
-            RunControlBridge::start(Arc::new(RunManager::default())).expect("bridge should start");
+            RunControlBridge::start(Arc::new(RunManager::default()), None).expect("bridge should start");
         let credentials = bridge.credentials();
         let mut client = PresenceClient::connect(&credentials);
         client.request(registration_request(&credentials, &workspace, "agent-a"));
@@ -611,7 +631,7 @@ mod tests {
     fn recovers_stale_presence_after_an_interrupted_connection() {
         let workspace = temporary_workspace("interrupted");
         let mut bridge =
-            RunControlBridge::start(Arc::new(RunManager::default())).expect("bridge should start");
+            RunControlBridge::start(Arc::new(RunManager::default()), None).expect("bridge should start");
         let credentials = bridge.credentials();
         let mut client = PresenceClient::connect(&credentials);
         client.request(registration_request(&credentials, &workspace, "agent-a"));
@@ -631,7 +651,7 @@ mod tests {
     fn clears_presence_when_the_bridge_shuts_down() {
         let workspace = temporary_workspace("bridge-shutdown");
         let mut bridge =
-            RunControlBridge::start(Arc::new(RunManager::default())).expect("bridge should start");
+            RunControlBridge::start(Arc::new(RunManager::default()), None).expect("bridge should start");
         let credentials = bridge.credentials();
         let mut client = PresenceClient::connect(&credentials);
         client.request(registration_request(&credentials, &workspace, "agent-a"));
@@ -648,7 +668,7 @@ mod tests {
     fn presence_credentials_cannot_execute_run_control_actions() {
         let workspace = temporary_workspace("presence-auth");
         let mut bridge =
-            RunControlBridge::start(Arc::new(RunManager::default())).expect("bridge should start");
+            RunControlBridge::start(Arc::new(RunManager::default()), None).expect("bridge should start");
         let credentials = bridge.credentials();
         let mut client = PresenceClient::connect(&credentials);
 
@@ -660,6 +680,32 @@ mod tests {
 
         assert_eq!(response["ok"], false);
         assert_eq!(response["error"], "Run-control authentication failed.");
+        bridge.shutdown();
+        fs::remove_dir_all(workspace).expect("temporary workspace should be removed");
+    }
+
+    #[test]
+    fn desktop_state_requires_control_credentials_and_a_valid_query() {
+        let workspace = temporary_workspace("state-auth");
+        let mut bridge = RunControlBridge::start(Arc::new(RunManager::default()), None)
+            .expect("bridge should start");
+        let credentials = bridge.credentials();
+        let read = |token: &str, query: Value| {
+            PresenceClient::connect(&credentials).request(json!({
+                "token": token,
+                "action": "readState",
+                "workspaceRoot": workspace,
+                "query": query
+            }))
+        };
+
+        let presence_read = read(&credentials.presence_token, json!({ "kind": "overview" }));
+        assert_eq!(presence_read["error"], "Run-control authentication failed.");
+        let unavailable = read(&credentials.token, json!({ "kind": "overview" }));
+        assert_eq!(unavailable["error"], "Desktop state is unavailable.");
+        let unknown = read(&credentials.token, json!({ "kind": "writeEverything" }));
+        assert_eq!(unknown["ok"], false);
+
         bridge.shutdown();
         fs::remove_dir_all(workspace).expect("temporary workspace should be removed");
     }

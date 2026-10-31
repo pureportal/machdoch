@@ -675,6 +675,11 @@ fn execute_ralph_command_attempt(
                 credentials.presence_token,
             );
     }
+    if let Some(task_id) = task_id.as_deref() {
+        cli_command
+            .command
+            .env("MACHDOCH_DESKTOP_TASK_ID", task_id);
+    }
 
     cli_command
         .command

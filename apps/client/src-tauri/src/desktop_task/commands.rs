@@ -290,6 +290,11 @@ pub(super) fn execute_desktop_task(
                 credentials.presence_token,
             );
     }
+    if let Some(task_id) = task_id.as_deref() {
+        cli_command
+            .command
+            .env("MACHDOCH_DESKTOP_TASK_ID", task_id);
+    }
 
     let mut child = SupervisedChild::spawn_with_required_isolation(&mut cli_command.command)
         .map_err(|error| {

@@ -18,6 +18,7 @@ import {
   recordMacroToolCall,
 } from "./macro-recorder-tool-definitions.js";
 import { createPackageToolDefinitions } from "./package-tool-definitions.js";
+import { createMachdochStateToolDefinitions } from "./machdoch-state-tool-definitions.js";
 import { createRunToolDefinitions } from "./run-tool-definitions.js";
 import { createSchedulerToolDefinitions } from "./scheduler-tool-definitions.js";
 import { createUtilityToolDefinitions } from "./utility-tool-definitions.js";
@@ -101,6 +102,7 @@ export const createToolDefinitions = (
     ...createGitToolDefinitions(),
     ...createPackageToolDefinitions(),
     ...createRunToolDefinitions(),
+    ...createMachdochStateToolDefinitions(),
     createWorkspaceAgentPresenceToolDefinition(),
     ...createUtilityToolDefinitions(),
     ...createMacroRecorderToolDefinitions(),

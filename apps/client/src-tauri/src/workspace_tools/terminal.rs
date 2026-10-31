@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     env,
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -9,7 +9,7 @@ use std::{
         mpsc, Arc, Condvar, Mutex,
     },
     thread,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 #[cfg(any(test, all(not(windows), not(target_os = "macos"))))]
@@ -30,6 +30,7 @@ use tauri::ipc::Channel;
 
 #[cfg(windows)]
 use machdoch_process::terminate_child_process_tree_by_id;
+use super::terminal_text::render_terminal_text;
 use crate::runtime_snapshot::resolve_workspace_root_path;
 
 const MAX_TERMINAL_SESSIONS: usize = 32;
@@ -45,6 +46,8 @@ const TERMINAL_OUTPUT_HIGH_WATERMARK_BYTES: usize = 448 * 1024;
 const TERMINAL_OUTPUT_LOW_WATERMARK_BYTES: usize = 128 * 1024;
 const TERMINAL_OUTPUT_DRAIN_GRACE: Duration = Duration::from_secs(1);
 const TERMINAL_STARTUP_STABILITY_WINDOW: Duration = Duration::from_millis(250);
+const TERMINAL_SCROLLBACK_BYTES: usize = 256 * 1024;
+const MAX_TERMINAL_TEXT_CHARS: usize = 40_000;
 
 #[derive(Debug, Clone)]
 struct ShellSpec {
@@ -128,7 +131,31 @@ pub enum WorkspaceTerminalEvent {
     Error { message: String },
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkspaceTerminalSummary {
+    id: String,
+    pub(crate) workspace_root: String,
+    shell: String,
+    started_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkspaceTerminalOutput {
+    #[serde(flatten)]
+    terminal: WorkspaceTerminalSummary,
+    total_lines: usize,
+    returned_lines: usize,
+    text: String,
+}
+
 struct TerminalSession {
+    workspace_root: String,
+    shell_label: String,
+    started_at: u64,
+    size: Mutex<PtySize>,
+    scrollback: Mutex<VecDeque<u8>>,
     workspace_key: String,
     canonical_workspace_key: String,
     #[cfg(windows)]
@@ -209,6 +236,23 @@ impl TerminalOutputFlow {
 }
 
 impl TerminalSession {
+    fn record_scrollback(&self, output: &[u8]) {
+        if let Ok(mut scrollback) = self.scrollback.lock() {
+            scrollback.extend(output);
+            let excess = scrollback.len().saturating_sub(TERMINAL_SCROLLBACK_BYTES);
+            scrollback.drain(..excess);
+        }
+    }
+
+    fn summary(&self, id: &str) -> WorkspaceTerminalSummary {
+        WorkspaceTerminalSummary {
+            id: id.to_string(),
+            workspace_root: self.workspace_root.clone(),
+            shell: self.shell_label.clone(),
+            started_at: self.started_at,
+        }
+    }
+
     fn close_handles(&self) {
         if let Ok(mut writer) = self.writer.lock() {
             writer.take();
@@ -288,6 +332,68 @@ impl Default for WorkspaceTerminalState {
             sessions: Arc::new(Mutex::new(HashMap::new())),
         }
     }
+}
+
+impl WorkspaceTerminalState {
+    pub(crate) fn summaries(&self) -> Result<Vec<WorkspaceTerminalSummary>, String> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| "The terminal session registry is unavailable.".to_string())?;
+        let mut summaries = sessions
+            .iter()
+            .map(|(id, session)| session.summary(id))
+            .collect::<Vec<_>>();
+        summaries.sort_by(|left, right| {
+            left.started_at
+                .cmp(&right.started_at)
+                .then_with(|| left.id.cmp(&right.id))
+        });
+        Ok(summaries)
+    }
+
+    pub(crate) fn read_output(
+        &self,
+        terminal_id: &str,
+        tail_lines: usize,
+    ) -> Result<WorkspaceTerminalOutput, String> {
+        let session = find_session(&self.sessions, terminal_id)?;
+        let size = *session
+            .size
+            .lock()
+            .map_err(|_| "The terminal size lock is unavailable.".to_string())?;
+        let output = session
+            .scrollback
+            .lock()
+            .map_err(|_| "The terminal scrollback is unavailable.".to_string())?
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+        let lines = render_terminal_text(&output, size.cols, size.rows);
+        let (text, returned_lines) = tail_terminal_text(&lines, tail_lines);
+        Ok(WorkspaceTerminalOutput {
+            terminal: session.summary(terminal_id),
+            total_lines: lines.len(),
+            returned_lines,
+            text,
+        })
+    }
+}
+
+fn tail_terminal_text(lines: &[String], tail_lines: usize) -> (String, usize) {
+    let mut remaining_chars = MAX_TERMINAL_TEXT_CHARS;
+    let returned = lines
+        .iter()
+        .rev()
+        .take(tail_lines)
+        .take_while(|line| {
+            let line_chars = line.chars().count() + 1;
+            let fits = line_chars <= remaining_chars;
+            remaining_chars = remaining_chars.saturating_sub(line_chars);
+            fits
+        })
+        .count();
+    (lines[lines.len() - returned..].join("\n"), returned)
 }
 
 impl Drop for WorkspaceTerminalState {
@@ -408,7 +514,7 @@ fn shell_workspace_root(workspace_root: &str) -> Result<(PathBuf, PathBuf), Stri
     Ok((canonical, shell_path))
 }
 
-fn normalized_workspace_key(workspace_root: &str) -> String {
+pub(crate) fn normalized_workspace_key(workspace_root: &str) -> String {
     let normalized = normalize_workspace_root_input(workspace_root).replace('\\', "/");
     let without_trailing_separators = normalized.trim_end_matches('/');
     let key = if without_trailing_separators.is_empty() {
@@ -933,6 +1039,13 @@ fn start_terminal_sync(
         }
     };
     let session = Arc::new(TerminalSession {
+        workspace_root: request.workspace_root.clone(),
+        shell_label: shell.label.clone(),
+        started_at: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_millis() as u64),
+        size: Mutex::new(size),
+        scrollback: Mutex::new(VecDeque::new()),
         workspace_key,
         canonical_workspace_key,
         #[cfg(windows)]
@@ -1094,6 +1207,7 @@ fn start_terminal_sync(
                 match reader.read(&mut buffer) {
                     Ok(0) => break None,
                     Ok(read) => {
+                        reader_session.record_scrollback(&buffer[..read]);
                         if reader_sender
                             .send(TerminalWorkerEvent::Output(buffer[..read].to_vec()))
                             .is_err()
@@ -1294,7 +1408,11 @@ pub async fn resize_workspace_terminal(
             .as_ref()
             .ok_or_else(|| "This terminal is no longer running.".to_string())?
             .resize(size)
-            .map_err(|error| format!("Unable to resize the terminal: {error}"))
+            .map_err(|error| format!("Unable to resize the terminal: {error}"))?;
+        if let Ok(mut current) = session.size.lock() {
+            *current = size;
+        }
+        Ok(())
     })
     .await
     .map_err(|error| format!("Terminal resize stopped unexpectedly: {error}"))?

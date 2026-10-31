@@ -116,9 +116,13 @@ export const runLocalMcpStdioConnection = async (): Promise<void> => {
         requestInit: { headers: { Authorization: `Bearer ${token}` } },
       }) as unknown as Transport,
     );
+    const instructions = client.getInstructions();
     const server = new Server(
       { name: "machdoch", version: "1.0.0" },
-      { capabilities: { tools: {} } },
+      {
+        capabilities: { tools: {} },
+        ...(instructions ? { instructions } : {}),
+      },
     );
     server.setRequestHandler(ListToolsRequestSchema, async (request, extra) =>
       client.listTools(request.params, { signal: extra.signal }),

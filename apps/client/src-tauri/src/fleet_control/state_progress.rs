@@ -4,10 +4,21 @@ use serde_json::Value;
 
 use super::{
     commands::truncate_chars, push_bounded, string_field, FleetControlInner, FleetControlShared,
-    FleetLogEntry, FleetTaskSession, FleetTimelineEntry, MAX_COMMAND_TEXT_CHARS,
-    MAX_FLEET_TEXT_CHARS, MAX_LOG_ENTRIES, MAX_PROGRESS_LOG_BYTES, MAX_SESSIONS,
-    MAX_TIMELINE_ENTRIES,
+    FleetLogEntry, FleetTaskLiveDetail, FleetTaskSession, FleetTimelineEntry,
+    MAX_COMMAND_TEXT_CHARS, MAX_FLEET_TEXT_CHARS, MAX_LOG_ENTRIES, MAX_PROGRESS_LOG_BYTES,
+    MAX_SESSIONS, MAX_TIMELINE_ENTRIES,
 };
+
+const MAX_LIVE_ASSISTANT_TEXT_CHARS: usize = 8_000;
+const MAX_AGENT_LIVE_BYTES: usize = 256 * 1024;
+
+pub(super) fn task_activity_value(session: &FleetTaskSession) -> Result<Value, String> {
+    let serialize_error =
+        |error: serde_json::Error| format!("Failed to serialize the task activity: {error}");
+    let mut activity = serde_json::to_value(session).map_err(serialize_error)?;
+    activity["live"] = serde_json::to_value(&session.live).map_err(serialize_error)?;
+    Ok(activity)
+}
 
 pub(super) fn record_progress_update(
     shared: &FleetControlShared,
@@ -28,6 +39,7 @@ pub(super) fn record_progress_update(
     let (added_log_bytes, removed_log_bytes) = {
         let session = progress_session(&mut inner, normalized_task_id, timestamp);
         apply_progress_fields(session, progress, timestamp);
+        record_live_detail(session, progress);
         let log_delta = record_action_output(session, progress, timestamp);
         record_timeline_event(session, progress, timestamp);
         log_delta
@@ -62,6 +74,7 @@ fn progress_session<'a>(
             progress_count: 0,
             logs: VecDeque::new(),
             timeline: VecDeque::new(),
+            live: FleetTaskLiveDetail::default(),
         })
 }
 
@@ -109,6 +122,23 @@ fn apply_progress_fields(session: &mut FleetTaskSession, progress: &Value, times
 
     if let Some(cancellable) = progress.get("cancellable").and_then(Value::as_bool) {
         session.cancellable = cancellable;
+    }
+}
+
+fn record_live_detail(session: &mut FleetTaskSession, progress: &Value) {
+    if let Some(text) = progress.get("assistantText").and_then(Value::as_str) {
+        let skipped = text
+            .chars()
+            .count()
+            .saturating_sub(MAX_LIVE_ASSISTANT_TEXT_CHARS);
+        session.live.assistant_text = Some(text.chars().skip(skipped).collect());
+    }
+    if let Some(agent_live) = progress
+        .get("agentLive")
+        .filter(|agent_live| agent_live.is_object())
+        .filter(|agent_live| agent_live.to_string().len() <= MAX_AGENT_LIVE_BYTES)
+    {
+        session.live.agent_live = Some(agent_live.clone());
     }
 }
 
@@ -223,4 +253,83 @@ fn record_timeline_event(session: &mut FleetTaskSession, progress: &Value, times
 
 fn notify_state_changed(inner: &mut FleetControlInner) {
     inner.event_id = inner.event_id.saturating_add(1);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Condvar, Mutex};
+
+    use serde_json::json;
+
+    use super::*;
+
+    fn shared() -> FleetControlShared {
+        FleetControlShared {
+            inner: Mutex::new(FleetControlInner::default()),
+            command_completed: Condvar::new(),
+        }
+    }
+
+    fn activity(shared: &FleetControlShared, task_id: &str) -> Value {
+        let inner = shared.inner.lock().expect("state lock");
+        task_activity_value(&inner.sessions[task_id]).expect("activity")
+    }
+
+    #[test]
+    fn activity_exposes_live_detail_that_the_fleet_snapshot_omits() {
+        let shared = shared();
+        let long_text = format!("{}ü", "x".repeat(MAX_LIVE_ASSISTANT_TEXT_CHARS));
+        record_progress_update(
+            &shared,
+            "task-1",
+            &json!({
+                "state": "executing",
+                "message": "Running tests",
+                "assistantText": long_text,
+                "agentLive": { "provider": "claude-cli", "plan": [{ "text": "step" }] },
+                "agentControl": { "url": "http://127.0.0.1:1", "token": "secret-control-token" },
+                "timelineEvent": { "kind": "tool-call", "phase": "started", "label": "shell" },
+                "actionOutput": { "toolName": "shell", "stream": "stdout", "chunk": "12 passed" },
+            }),
+            5,
+        );
+
+        let activity = activity(&shared, "task-1");
+        assert_eq!(activity["state"], "executing");
+        assert_eq!(activity["logs"][0]["chunk"], "12 passed");
+        assert_eq!(activity["timeline"][0]["label"], "shell");
+        assert_eq!(activity["live"]["agentLive"]["plan"][0]["text"], "step");
+        let assistant_text = activity["live"]["assistantText"].as_str().expect("text");
+        assert_eq!(
+            assistant_text.chars().count(),
+            MAX_LIVE_ASSISTANT_TEXT_CHARS
+        );
+        assert!(assistant_text.ends_with('ü'));
+        assert!(!activity.to_string().contains("secret-control-token"));
+
+        let inner = shared.inner.lock().expect("state lock");
+        let wire = serde_json::to_value(&inner.sessions["task-1"]).expect("wire session");
+        assert!(wire.get("live").is_none());
+    }
+
+    #[test]
+    fn oversized_live_snapshots_keep_the_previous_one() {
+        let shared = shared();
+        record_progress_update(
+            &shared,
+            "task-1",
+            &json!({ "agentLive": { "model": "kept" } }),
+            1,
+        );
+        record_progress_update(
+            &shared,
+            "task-1",
+            &json!({ "agentLive": { "model": "x".repeat(MAX_AGENT_LIVE_BYTES) } }),
+            2,
+        );
+        assert_eq!(
+            activity(&shared, "task-1")["live"]["agentLive"]["model"],
+            "kept"
+        );
+    }
 }

@@ -16,6 +16,7 @@ export interface WorkspaceAgentClaims {
 export interface ActiveWorkspaceAgent {
   agentId: string;
   parentAgentId?: string;
+  taskId?: string;
   role: WorkspaceAgentRole;
   access: WorkspaceAgentAccess;
   activity: TaskExecutionRole;
@@ -48,6 +49,7 @@ interface PresenceRegistration {
   agentId: string;
   registrationKey: string;
   parentAgentId?: string;
+  taskId?: string;
   role: WorkspaceAgentRole;
   access: WorkspaceAgentAccess;
   activity: TaskExecutionRole;
@@ -63,6 +65,7 @@ interface PendingResponse {
 const CONNECTION_TIMEOUT_MS = 2_000;
 const QUERY_TIMEOUT_MS = 5_000;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const PRESENCE_TASK_ID_PATTERN = /^[\w.:-]{1,128}$/u;
 const presenceContext = new AsyncLocalStorage<WorkspacePresenceContext>();
 
 const readControlEndpoint = ():
@@ -450,6 +453,7 @@ const readActiveWorkspaceAgent = (
     typeof agent.agentId === "string" &&
     (agent.parentAgentId === undefined ||
       typeof agent.parentAgentId === "string") &&
+    (agent.taskId === undefined || typeof agent.taskId === "string") &&
     (agent.role === "parent" || agent.role === "worker") &&
     (agent.access === "read-only" || agent.access === "write") &&
     (agent.activity === "executor" ||
@@ -465,6 +469,7 @@ const readActiveWorkspaceAgent = (
       ...(typeof agent.parentAgentId === "string"
         ? { parentAgentId: agent.parentAgentId }
         : {}),
+      ...(typeof agent.taskId === "string" ? { taskId: agent.taskId } : {}),
       role: agent.role,
       access: agent.access,
       activity: agent.activity,
@@ -598,10 +603,12 @@ export const runWithWorkspaceAgentPresence = async <T>(
   const parent = presenceContext.getStore();
   const parentAgentId =
     parent?.workspaceRoot === workspaceRoot ? parent.agentId : undefined;
+  const taskId = process.env.MACHDOCH_DESKTOP_TASK_ID;
   const registration: PresenceRegistration = {
     agentId: randomUUID(),
     registrationKey: randomUUID(),
     ...(parentAgentId ? { parentAgentId } : {}),
+    ...(taskId && PRESENCE_TASK_ID_PATTERN.test(taskId) ? { taskId } : {}),
     role: parentAgentId ? "worker" : "parent",
     access: mode === "ask" ? "read-only" : "write",
     activity,

@@ -64,6 +64,7 @@ pub(super) struct WorkspaceAgentRegistration {
     pub(super) agent_id: String,
     pub(super) registration_key: String,
     pub(super) parent_agent_id: Option<String>,
+    pub(super) task_id: Option<String>,
     pub(super) role: WorkspaceAgentRole,
     pub(super) access: WorkspaceAgentAccess,
     pub(super) activity: WorkspaceAgentActivity,
@@ -80,6 +81,9 @@ impl WorkspaceAgentRegistration {
             if parent_agent_id == self.agent_id {
                 return Err("Workspace agent parentAgentId must differ from agentId.".to_string());
             }
+        }
+        if let Some(task_id) = self.task_id.as_deref() {
+            validate_agent_id("taskId", task_id)?;
         }
         match (self.role, self.parent_agent_id.is_some()) {
             (WorkspaceAgentRole::Parent, true) => {
@@ -100,6 +104,8 @@ pub(super) struct ActiveWorkspaceAgent {
     agent_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     parent_agent_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    task_id: Option<String>,
     role: WorkspaceAgentRole,
     access: WorkspaceAgentAccess,
     activity: WorkspaceAgentActivity,
@@ -204,6 +210,7 @@ impl WorkspacePresenceRegistry {
                 agent: ActiveWorkspaceAgent {
                     agent_id: registration.agent_id,
                     parent_agent_id: registration.parent_agent_id,
+                    task_id: registration.task_id,
                     role: registration.role,
                     access: registration.access,
                     activity: registration.activity,
@@ -295,6 +302,24 @@ impl WorkspacePresenceRegistry {
         })
     }
 
+    pub(super) fn all_agents(&self) -> Result<Vec<(String, ActiveWorkspaceAgent)>, String> {
+        let state = self
+            .0
+            .lock()
+            .map_err(|_| "Workspace presence is unavailable.".to_string())?;
+        let mut agents = state
+            .agents
+            .values()
+            .map(|entry| (entry.workspace_root.clone(), entry.agent.clone()))
+            .collect::<Vec<_>>();
+        agents.sort_by(|(_, left), (_, right)| {
+            left.started_at
+                .cmp(&right.started_at)
+                .then_with(|| left.agent_id.cmp(&right.agent_id))
+        });
+        Ok(agents)
+    }
+
     pub(super) fn clear(&self) {
         if let Ok(mut state) = self.0.lock() {
             *state = WorkspacePresenceState::default();
@@ -357,6 +382,7 @@ mod tests {
             agent_id: agent_id.to_string(),
             registration_key: format!("{agent_id}-key"),
             parent_agent_id: None,
+            task_id: None,
             role: WorkspaceAgentRole::Parent,
             access: WorkspaceAgentAccess::Write,
             activity: WorkspaceAgentActivity::Executor,
@@ -399,6 +425,7 @@ mod tests {
                     agent_id: "worker".to_string(),
                     registration_key: "worker-key".to_string(),
                     parent_agent_id: Some("parent".to_string()),
+                    task_id: None,
                     role: WorkspaceAgentRole::Worker,
                     access: WorkspaceAgentAccess::ReadOnly,
                     activity: WorkspaceAgentActivity::Executor,
@@ -423,6 +450,7 @@ mod tests {
                 agent_id: "worker".to_string(),
                 registration_key: "worker-key".to_string(),
                 parent_agent_id: Some("missing-parent".to_string()),
+                task_id: None,
                 role: WorkspaceAgentRole::Worker,
                 access: WorkspaceAgentAccess::ReadOnly,
                 activity: WorkspaceAgentActivity::Executor,

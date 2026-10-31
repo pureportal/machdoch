@@ -1,4 +1,6 @@
+mod agent_activity;
 mod control;
+mod desktop_state;
 mod health;
 mod health_dns;
 mod manager;
@@ -55,7 +57,10 @@ impl WorkspaceRunState {
             .lock()
             .map_err(|_| "Run-control state is unavailable.".to_string())?;
         if bridge.is_none() {
-            *bridge = Some(RunControlBridge::start(self.manager.clone())?);
+            *bridge = Some(RunControlBridge::start(
+                self.manager.clone(),
+                Some(app.clone()),
+            )?);
         }
         Ok(())
     }
@@ -250,7 +255,7 @@ fn trim_snapshot_for_ai(snapshot: &mut RunWorkspaceSnapshot) {
     }
 }
 
-fn trim_status_for_ai(status: &mut model::RunConfigurationStatus) {
+fn status_environment_values(status: &model::RunConfigurationStatus) -> Vec<String> {
     let mut environment_values = match &status.configuration {
         model::RunConfiguration::Task { environment, .. } => environment
             .values()
@@ -262,6 +267,11 @@ fn trim_status_for_ai(status: &mut model::RunConfigurationStatus) {
     environment_values
         .sort_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
     environment_values.dedup();
+    environment_values
+}
+
+fn trim_status_for_ai(status: &mut model::RunConfigurationStatus) {
+    let environment_values = status_environment_values(status);
 
     if let model::RunConfiguration::Task {
         command,

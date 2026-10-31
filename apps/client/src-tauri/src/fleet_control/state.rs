@@ -9,7 +9,7 @@ use super::{
     commands::{command_payload_hash, command_payloads_match, create_command_record},
     now_millis, push_bounded,
     sanitize::sanitize_shell_snapshot,
-    state_progress::record_progress_update,
+    state_progress::{record_progress_update, task_activity_value},
     state_store::persist_state_locked,
     CompletedFleetCommandReceipt, FleetControlCommandEvent, FleetControlInner, FleetControlShared,
     FleetControlState, FleetShellSnapshot, MAX_COMMAND_ENTRIES, MAX_COMPLETED_COMMAND_ENTRIES,
@@ -123,6 +123,20 @@ impl FleetControlState {
         if self.ensure_state_loaded().is_ok() {
             record_progress_update(&self.shared, task_id, progress, timestamp);
         }
+    }
+
+    pub(crate) fn task_activity(&self, task_id: &str) -> Result<Option<Value>, String> {
+        self.ensure_state_loaded()?;
+        let inner = self
+            .shared
+            .inner
+            .lock()
+            .map_err(|_| "Unable to inspect the task activity.".to_string())?;
+        inner
+            .sessions
+            .get(task_id)
+            .map(task_activity_value)
+            .transpose()
     }
 
     pub(super) fn record_command(

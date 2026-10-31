@@ -1,7 +1,7 @@
 import { createConnection } from "node:net";
 import type { AgentToolDefinition } from "./agent-tools-shared.js";
 
-type RunControlAction = "status" | "start" | "stop" | "restart";
+type RunControlAction = "status" | "start" | "stop" | "restart" | "readState";
 
 interface RunControlResponse {
   ok: boolean;
@@ -18,11 +18,18 @@ const readConfigurationId = (
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 };
 
-const sendRunControlRequest = async (
+export const isRunControlAvailable = (): boolean =>
+  Boolean(
+    process.env.MACHDOCH_RUN_CONTROL_ADDRESS &&
+    process.env.MACHDOCH_RUN_CONTROL_TOKEN,
+  );
+
+export const sendRunControlRequest = async (
   action: RunControlAction,
   workspaceRoot: string,
   configurationId: string | undefined,
   signal: AbortSignal | undefined,
+  query?: Record<string, unknown>,
 ): Promise<unknown> => {
   const address = process.env.MACHDOCH_RUN_CONTROL_ADDRESS;
   const token = process.env.MACHDOCH_RUN_CONTROL_TOKEN;
@@ -63,6 +70,7 @@ const sendRunControlRequest = async (
           action,
           workspaceRoot,
           ...(configurationId ? { configurationId } : {}),
+          ...(query ? { query } : {}),
         })}\n`,
       );
     });
@@ -163,12 +171,7 @@ const lifecycleDefinition = (
 });
 
 export const createRunToolDefinitions = (): AgentToolDefinition[] => {
-  if (
-    !process.env.MACHDOCH_RUN_CONTROL_ADDRESS ||
-    !process.env.MACHDOCH_RUN_CONTROL_TOKEN
-  ) {
-    return [];
-  }
+  if (!isRunControlAvailable()) return [];
   return [
     {
       spec: {

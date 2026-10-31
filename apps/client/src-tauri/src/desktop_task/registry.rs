@@ -295,7 +295,7 @@ pub(super) fn record_active_ralph_progress(
     task.ralph_progress.record(progress, timestamp)
 }
 
-pub(super) fn active_task_summaries(
+pub(crate) fn active_task_summaries(
     state: &DesktopTaskCancelMap,
 ) -> Result<Vec<ActiveDesktopTaskSummary>, String> {
     let cancel_state = state.0.lock().map_err(|_| {

@@ -197,7 +197,7 @@ pub struct RunLogBatch {
     pub entries: Vec<RunLogUpdate>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum RunLogStream {
     System,

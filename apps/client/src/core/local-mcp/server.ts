@@ -3,23 +3,35 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { MACHDOCH_STATE_GUIDANCE } from "../_helpers/machdoch-state-tool-definitions.js";
 import type { LocalToolRuntime } from "./runtime.js";
 
 export const createLocalMcpServer = (runtime: LocalToolRuntime): Server => {
   const server = new Server(
     { name: "machdoch", version: "1.0.0" },
-    { capabilities: { tools: {} } },
+    {
+      capabilities: { tools: {} },
+      ...(runtime.definitions.some(
+        (definition) => definition.spec.name === "get_machdoch_state",
+      )
+        ? { instructions: MACHDOCH_STATE_GUIDANCE }
+        : {}),
+    },
   );
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: runtime.definitions.map((definition) => ({
-      ...definition.spec,
-      inputSchema: { ...definition.spec.inputSchema, type: "object" as const },
-      annotations: {
-        readOnlyHint:
-          definition.effect === "read" || definition.effect === "external-read",
-        openWorldHint: definition.effect.startsWith("external-"),
-      },
-    })),
+    tools: runtime.definitions.map(({ effect, spec }) => {
+      const readOnly = effect === "read" || effect === "external-read";
+      return {
+        name: spec.name,
+        description: spec.description,
+        inputSchema: { ...spec.inputSchema, type: "object" as const },
+        annotations: {
+          readOnlyHint: readOnly,
+          ...(readOnly ? { destructiveHint: false, idempotentHint: true } : {}),
+          openWorldHint: effect.startsWith("external-"),
+        },
+      };
+    }),
   }));
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     try {

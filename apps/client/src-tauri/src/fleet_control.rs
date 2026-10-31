@@ -140,6 +140,17 @@ pub struct FleetTaskSession {
     progress_count: u64,
     logs: VecDeque<FleetLogEntry>,
     timeline: VecDeque<FleetTimelineEntry>,
+    #[serde(skip)]
+    live: FleetTaskLiveDetail,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FleetTaskLiveDetail {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    assistant_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    agent_live: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize)]

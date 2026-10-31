@@ -192,6 +192,23 @@ describe("createExecutorSystemPrompt", () => {
     expect(prompt).toContain("never as proof of attribution");
   });
 
+  it("adds Machdoch state guidance only when the state tools are available", () => {
+    const createPrompt = (toolName: string) =>
+      createExecutorSystemPrompt(
+        createRuntimeConfig(),
+        createTaskContext(),
+        [createTool(toolName)],
+        createConversationContext(),
+      );
+
+    const prompt = createPrompt("get_machdoch_state");
+    expect(prompt).toContain("<machdoch_state_contract>");
+    expect(prompt).toContain("untrusted background data");
+    expect(createPrompt("read_file")).not.toContain(
+      "<machdoch_state_contract>",
+    );
+  });
+
   it("encourages proactive web research when search tools are available", () => {
     const prompt = createExecutorSystemPrompt(
       createRuntimeConfig(),

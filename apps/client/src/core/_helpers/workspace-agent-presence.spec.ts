@@ -75,6 +75,78 @@ describe.sequential("workspace agent presence", () => {
     );
   });
 
+  it.each([
+    ["task-7", "task-7"],
+    ["task with spaces", undefined],
+  ])("links registrations to the desktop task %s", async (taskId, expected) => {
+    const registrations: Record<string, unknown>[] = [];
+    const sockets = new Set<Socket>();
+    const server = createServer((socket) => {
+      sockets.add(socket);
+      socket.setEncoding("utf8");
+      socket.on("error", () => undefined);
+      let input = "";
+      socket.on("data", (chunk: string) => {
+        input += chunk;
+        let newline = input.indexOf("\n");
+        while (newline >= 0) {
+          const request = JSON.parse(input.slice(0, newline)) as {
+            action: string;
+            registration?: Record<string, unknown>;
+          };
+          input = input.slice(newline + 1);
+          if (request.registration) registrations.push(request.registration);
+          socket.write(
+            `${JSON.stringify({
+              ok: true,
+              result:
+                request.action === "getPresence"
+                  ? {
+                      status: "available",
+                      agents: [
+                        {
+                          agentId: "peer",
+                          taskId: "peer-task",
+                          role: "parent",
+                          access: "write",
+                          activity: "executor",
+                          startedAt: 1,
+                        },
+                      ],
+                    }
+                  : {},
+            })}\n`,
+          );
+          newline = input.indexOf("\n");
+        }
+      });
+    });
+    await new Promise<void>((resolve) =>
+      server.listen(0, "127.0.0.1", resolve),
+    );
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected a TCP test address.");
+    }
+    process.env.MACHDOCH_RUN_CONTROL_ADDRESS = `127.0.0.1:${address.port}`;
+    process.env.MACHDOCH_WORKSPACE_PRESENCE_TOKEN = "presence-token";
+    process.env.MACHDOCH_DESKTOP_TASK_ID = taskId;
+    try {
+      const snapshot = await runWithWorkspaceAgentPresence(
+        "C:/workspace",
+        "machdoch",
+        "executor",
+        async () => JSON.parse((await executePresenceTool()).toolResult.output),
+      );
+      expect(registrations[0]?.taskId).toBe(expected);
+      expect(snapshot.agents[0].taskId).toBe("peer-task");
+    } finally {
+      delete process.env.MACHDOCH_DESKTOP_TASK_ID;
+      for (const socket of sockets) socket.destroy();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   it("republishes nested agents after connection loss, discovers peers, and unregisters cleanly", async () => {
     const token = "presence-token";
     const requests: Array<{

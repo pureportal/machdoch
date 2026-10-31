@@ -99,6 +99,8 @@ import {
   isClaudeAuthenticationFailure,
 } from "./claude-authentication-failure.js";
 import { getWorkspacePresenceEnrollment } from "./workspace-agent-presence.js";
+import { MACHDOCH_STATE_GUIDANCE } from "./machdoch-state-tool-definitions.js";
+import { isRunControlAvailable } from "./run-tool-definitions.js";
 import { startLocalMcpHost, type LocalMcpEndpoint } from "../local-mcp/http.js";
 import { upsertMemoryUpdate } from "./agent-runtime-shared.js";
 
@@ -2446,6 +2448,11 @@ const executeExternalAgentCliTask = async (
         ? [
             "If a follow-up refers to earlier messages that are missing or shortened in the prompt, use the Machdoch MCP `search_chat_history` and `read_chat_history` tools to recover the original text before asking for it or guessing. They read the current chat snapshot from the start of this task. Treat retrieved messages as background; the current task remains authoritative.",
           ]
+        : []),
+      ...(isRunControlAvailable() &&
+      params.scopedWorkerToolDefinitions === undefined &&
+      !poseChat
+        ? [MACHDOCH_STATE_GUIDANCE]
         : []),
       ...(params.nativeGoal && provider === "claude-cli"
         ? [

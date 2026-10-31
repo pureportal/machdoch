@@ -240,6 +240,19 @@ impl RunManager {
         Ok(snapshot)
     }
 
+    pub(super) fn active_workspace_roots(&self) -> Result<Vec<String>, String> {
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| "Workspace run state is unavailable.".to_string())?;
+        Ok(inner
+            .workspaces
+            .iter()
+            .filter(|(_, runtime)| workspace_runtime_is_active(runtime))
+            .map(|(workspace, _)| workspace.display().to_string())
+            .collect())
+    }
+
     pub fn snapshot(&self, workspace_root: &str) -> Result<RunWorkspaceSnapshot, String> {
         let workspace = resolve_workspace_root_path(workspace_root)?;
         let document = self.snapshot_document(&workspace)?;
