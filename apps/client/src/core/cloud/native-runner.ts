@@ -8,6 +8,7 @@ import type {
 import {
   workerLeaseReceiptSchema,
   workerProgressReceiptSchema,
+  type RunActivityStatus,
   type WorkerClaim,
   type WorkerFinish,
 } from "@machdoch/fleet-protocol/cloud-execution";
@@ -41,6 +42,11 @@ import {
 
 const heartbeatIntervalMs = 15000;
 const heartbeatToleranceMs = 60000;
+const nativeAgentLabels = {
+  machdoch: "Machdoch",
+  "codex-cli": "Codex CLI",
+  "claude-cli": "Claude Code",
+};
 
 class NativeLease {
   readonly signal: AbortSignal;
@@ -272,6 +278,24 @@ export class NativeClientRunner implements TaskRunner {
       throw new Error("Task execution authority ended");
   }
 
+  private async report(
+    claim: WorkerClaim,
+    title: string,
+    status: RunActivityStatus,
+    detail = "",
+  ): Promise<void> {
+    try {
+      await this.connection.command("activity", {
+        runId: claim.runId,
+        attemptId: claim.attemptId,
+        epoch: claim.epoch,
+        entries: [{ title, status, detail: detail.slice(0, 2000) }],
+      });
+    } catch (error) {
+      if (!isTransientRunnerError(error)) throw error;
+    }
+  }
+
   private async store(
     claim: WorkerClaim,
     kind: ArtifactInput["kind"],
@@ -321,8 +345,15 @@ export class NativeClientRunner implements TaskRunner {
     let environmentId = initialEnvironmentId;
     let feedback = "";
     let previousTree: string | null = null;
+    const agentLabel = nativeAgentLabels[profile.agent];
     for (let attempt = 0; ; attempt++) {
       await this.progress(claim, "running", signal);
+      await this.report(
+        claim,
+        attempt ? `${agentLabel} repairing failed checks` : `${agentLabel} started`,
+        "started",
+        connection.binding.name,
+      );
       const { result, receipt } = await runNativeAgent({
         agent: profile.agent,
         model: profile.model,
@@ -341,6 +372,12 @@ export class NativeClientRunner implements TaskRunner {
       });
       this.journal.recordStop(receipt);
       usage.tokens += result.tokens;
+      await this.report(
+        claim,
+        `${agentLabel} finished`,
+        result.status === "executed" ? "passed" : "failed",
+        result.summary,
+      );
       await this.progress(claim, "validating", signal);
       const candidate = await snapshotNativeCandidate(
         workspace.checkoutRoot,
@@ -412,6 +449,12 @@ export class NativeClientRunner implements TaskRunner {
           evidence.exitCode === 0 &&
           evidence.signal === null &&
           !evidence.timedOut;
+        await this.report(
+          claim,
+          `Check ${check.name} ${passed ? "passed" : "failed"}`,
+          passed ? "passed" : "failed",
+          check.command,
+        );
         checks.push({
           name: check.name,
           passed,
@@ -429,6 +472,7 @@ export class NativeClientRunner implements TaskRunner {
           runId: claim.runId,
           signal,
         });
+        await this.report(claim, `Branch ${branch} created`, "passed");
         return {
           ...identity,
           outcome: "succeeded",

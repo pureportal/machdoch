@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type {
+  RunActivityStatus,
   WorkerClaim,
   WorkerFinish,
 } from "@machdoch/fleet-protocol/cloud-execution";
@@ -8,7 +9,7 @@ import type {
   ArtifactInput,
   VerificationEvidence,
 } from "@machdoch/fleet-protocol/cloud-artifacts";
-import { RunnerConnection } from "@machdoch/cloud-client";
+import { RunnerConnection, isTransientRunnerError } from "@machdoch/cloud-client";
 import { uploadArtifact } from "./artifact-uploader.ts";
 import { runAgent, authorize, type TaskUsage } from "./agent-loop.ts";
 import { TaskEnvironments } from "./task-environments.ts";
@@ -82,6 +83,30 @@ async function collect(
   );
   return bytes;
 }
+async function reportActivity(
+  connection: RunnerConnection,
+  claim: WorkerClaim,
+  environment: ActiveEnvironment,
+  title: string,
+  status: RunActivityStatus,
+  detail = "",
+): Promise<void> {
+  try {
+    await connection.command(
+      "activity",
+      {
+        runId: claim.runId,
+        attemptId: claim.attemptId,
+        epoch: claim.epoch,
+        entries: [{ title, status, detail: detail.slice(0, 2000) }],
+      },
+      environment.signal,
+    );
+  } catch (error) {
+    if (!isTransientRunnerError(error)) throw error;
+  }
+}
+
 export async function executeTask(
   connection: RunnerConnection,
   claim: WorkerClaim,
@@ -133,6 +158,14 @@ export async function executeTask(
       "diff",
       candidate.candidateCommit,
     );
+    await reportActivity(
+      connection,
+      claim,
+      agent,
+      "Candidate captured",
+      "passed",
+      candidate.candidateCommit,
+    );
     await environments.close(agent.sandbox.environmentId);
     if (agentResult.status !== "executed")
       return {
@@ -152,6 +185,13 @@ export async function executeTask(
       "validation",
       bundle,
       candidate.candidateCommit,
+    );
+    await reportActivity(
+      connection,
+      claim,
+      validator,
+      "Validating in a fresh VM",
+      "started",
     );
     const receipts: WorkerFinish["checks"] = [];
     const failed: VerificationEvidence[] = [];
@@ -190,6 +230,14 @@ export async function executeTask(
       );
       const passed =
         record.exitCode === 0 && record.signal === null && !record.timedOut;
+      await reportActivity(
+        connection,
+        claim,
+        validator,
+        `Check ${check.name} ${passed ? "passed" : "failed"}`,
+        passed ? "passed" : "failed",
+        check.command,
+      );
       receipts.push({
         name: check.name,
         passed,

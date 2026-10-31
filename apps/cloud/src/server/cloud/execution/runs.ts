@@ -1,5 +1,6 @@
 import { admitRun } from "./admission";
 import { runPlanningChanged } from "./planning-context";
+import { readRunTimeline } from "./run-timeline";
 import type { TaskArtifact } from "@machdoch/fleet-protocol/cloud-artifacts";
 import { artifactColumns } from "./artifact-records";
 import type { CloudActor } from "../../../lib/cloud-contract";
@@ -124,6 +125,7 @@ export class CloudRuns {
         attempts,
         usage,
         artifacts,
+        timeline: await readRunTimeline(sql, actor.organizationId, id),
         reason: stopMessage,
         contextChanged: await runPlanningChanged(
           sql,

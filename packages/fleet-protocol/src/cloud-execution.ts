@@ -141,6 +141,34 @@ export const workerAcceptSchema = attemptIdentitySchema.extend({
 export const workerProgressSchema = attemptIdentitySchema.extend({
   state: z.enum(["running", "waiting", "validating"]),
 });
+export const runActivityStatuses = [
+  "info",
+  "started",
+  "passed",
+  "failed",
+] as const;
+export const workerActivitySchema = attemptIdentitySchema.extend({
+  entries: z
+    .array(
+      z.strictObject({
+        title: z.string().trim().min(1).max(300),
+        detail: z.string().max(2000).default(""),
+        status: z.enum(runActivityStatuses).default("info"),
+      }),
+    )
+    .min(1)
+    .max(20),
+});
+export type WorkerActivity = z.infer<typeof workerActivitySchema>;
+export type RunActivityStatus = (typeof runActivityStatuses)[number];
+export interface RunTimelineEntry {
+  id: string;
+  at: string;
+  kind: "state" | "activity" | "model";
+  status: RunActivityStatus;
+  title: string;
+  detail: string;
+}
 export const workerFinishSchema = attemptIdentitySchema.extend({
   outcome: z.enum(terminalRunStates),
   summary: z.string().trim().min(1).max(20_000),
@@ -220,6 +248,7 @@ export interface RunDetail extends CloudRun {
   inputDigest: string;
   attempts: RunAttempt[];
   artifacts: TaskArtifact[];
+  timeline: RunTimelineEntry[];
   usage: {
     usedTokens: number;
     reservedTokens: number;

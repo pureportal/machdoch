@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type {
   AttemptIdentity,
   WorkerAccept,
+  WorkerActivity,
   WorkerClaim,
   WorkerFinish,
   WorkerCompletionReceipt,
@@ -31,6 +32,8 @@ import {
   terminalStates,
 } from "./records";
 import { requireWorker } from "./workers";
+
+const maximumRunActivity = 2000;
 
 export class CloudExecutionLeases {
   constructor(private readonly database: CloudDatabase) {}
@@ -338,6 +341,37 @@ export class CloudExecutionLeases {
           `Runner entered ${input.state}`,
         );
       }
+      return { instruction: "continue" };
+    });
+  }
+
+  activity(
+    token: string,
+    input: WorkerActivity,
+  ): Promise<{ instruction: "continue" | "stop" }> {
+    return this.database.transaction(async (sql) => {
+      const worker = await requireWorker(sql, token);
+      const { run, attempt } = await readAttempt(sql, worker, input);
+      if (!(await mayExecute(sql, worker, run, attempt)))
+        return { instruction: "stop" };
+      const recorded = await sql.query<{ count: number }>(
+        "SELECT count(*)::integer AS count FROM cloud_run_activity WHERE organization_id=$1 AND run_id=$2",
+        [worker.organizationId, run.id],
+      );
+      if (recorded.rows[0]!.count + input.entries.length > maximumRunActivity)
+        return { instruction: "continue" };
+      for (const entry of input.entries)
+        await sql.query(
+          "INSERT INTO cloud_run_activity (organization_id,id,run_id,title,detail,status) VALUES ($1,$2,$3,$4,$5,$6)",
+          [
+            worker.organizationId,
+            randomUUID(),
+            run.id,
+            entry.title,
+            entry.detail,
+            entry.status,
+          ],
+        );
       return { instruction: "continue" };
     });
   }

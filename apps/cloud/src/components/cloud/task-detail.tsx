@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { TaskFiles } from "./task-files";
 import { TaskState } from "./task-state";
 import { TaskExecution } from "./task-execution";
+import { TaskTimeline } from "./task-timeline";
 import {
   CloudRequestError,
   cloudRequest,
@@ -165,6 +166,7 @@ export function TaskDetail({
               <p>{run.summary}</p>
             </section>
           )}
+          <TaskTimeline entries={run.timeline} live={!terminal} />
           <section className="cloud-card cloud-task-brief">
             {objective && (
               <div>

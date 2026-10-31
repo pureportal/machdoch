@@ -16,6 +16,7 @@ import {
   workerClaimSchema,
   workerFinishSchema,
   workerInputSchema,
+  workerActivitySchema,
   workerProgressSchema,
   clientWorkspaceBindingSchema,
 } from "@machdoch/fleet-protocol/cloud-execution";
@@ -154,6 +155,13 @@ export async function handleRunnerApi(
       await leases.progress(
         token,
         await readBody(request, workerProgressSchema),
+      ),
+    );
+  if (endpoint === "/api/v1/runner/activity")
+    return Response.json(
+      await leases.activity(
+        token,
+        await readBody(request, workerActivitySchema),
       ),
     );
   if (endpoint === "/api/v1/runner/finish")
