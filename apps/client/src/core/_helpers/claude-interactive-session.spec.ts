@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentModelImageInput } from "@machdoch/model-runtime/types";
 import { ClaudeInteractiveSession } from "./claude-interactive-session.js";
 
@@ -370,6 +370,124 @@ describe("ClaudeInteractiveSession", () => {
     unlimited.session.interrupt();
     unlimited.receive(maxTurnsResult);
     expect(unlimited.isClosed()).toBe(true);
+  });
+
+  describe("when another process holds the login refresh", () => {
+    const busyMessage =
+      "Failed to refresh OAuth token: another Claude Code process is refreshing it or exited mid-refresh. This is usually transient; retry in a minute, and if it persists close other Claude Code processes or sign in again";
+    const receiveBusyFailure = (harness: ReturnType<typeof createHarness>) => {
+      harness.receive({
+        type: "assistant",
+        error: "server_error",
+        message: { content: [{ type: "text", text: busyMessage }] },
+      });
+      return harness.receive({
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        result: busyMessage,
+      });
+    };
+    const lastPrompt = (harness: ReturnType<typeof createHarness>) =>
+      harness.sent.filter((message) => message.type === "user").at(-1)?.message;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("retries in the same session after a minute without showing the error", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+
+      const update = receiveBusyFailure(harness);
+      expect(update.resultExitCode).toBeUndefined();
+      expect(update.displayText).toEqual([]);
+      expect(harness.isClosed()).toBe(false);
+      expect(harness.session.getFinalOutput()).toBe("");
+      expect(harness.session.live.snapshot().notices?.at(-1)?.text).toContain(
+        "(1 of 2)",
+      );
+
+      vi.advanceTimersByTime(59_999);
+      expect(lastPrompt(harness)).toMatchObject({ content: "Do the task." });
+      vi.advanceTimersByTime(1);
+      expect(lastPrompt(harness)).toMatchObject({
+        content: expect.stringContaining("Continue the task"),
+      });
+    });
+
+    it("reports the failure once the retries run out", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+
+      receiveBusyFailure(harness);
+      vi.advanceTimersByTime(60_000);
+      receiveBusyFailure(harness);
+      vi.advanceTimersByTime(60_000);
+      const update = receiveBusyFailure(harness);
+
+      expect(update.resultExitCode).toBe(1);
+      expect(harness.isClosed()).toBe(true);
+      expect(harness.session.getFinalOutput()).toContain(
+        "Failed to refresh OAuth token",
+      );
+    });
+
+    it("ends the run when interrupted during the wait", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      receiveBusyFailure(harness);
+      const prompts = harness.sent.length;
+
+      expect(harness.session.interrupt()).toBe(true);
+      expect(harness.isClosed()).toBe(true);
+      expect(harness.controlRequest("interrupt")).toBeUndefined();
+      vi.advanceTimersByTime(60_000);
+      expect(harness.sent).toHaveLength(prompts);
+    });
+
+    it("lets a steering message replace the pending retry", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      receiveBusyFailure(harness);
+
+      harness.session.controls.steer?.("Use the other file.");
+      vi.advanceTimersByTime(60_000);
+
+      expect(lastPrompt(harness)).toMatchObject({
+        content: "Use the other file.",
+      });
+    });
+
+    it("still ends the turn on a login that cannot be renewed", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      const message =
+        "Failed to authenticate: OAuth session expired and could not be refreshed";
+      harness.receive({
+        type: "assistant",
+        error: "authentication_failed",
+        message: { content: [{ type: "text", text: message }] },
+      });
+      const update = harness.receive({
+        type: "result",
+        subtype: "success",
+        is_error: true,
+        result: message,
+      });
+
+      expect(update.resultExitCode).toBe(1);
+      expect(harness.isClosed()).toBe(true);
+      expect(harness.session.authenticationFailed()).toBe(true);
+    });
   });
 
   describe("while background jobs run after the turn", () => {

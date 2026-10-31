@@ -24,6 +24,7 @@ import {
   AgentControlRequestError,
   type AgentTaskControlHandlers,
 } from "./agent-task-control-server.js";
+import { isClaudeLoginRefreshBusy } from "./claude-authentication-failure.js";
 import { ClaudeLiveEventReader } from "./claude-live-events.js";
 import {
   ClaudeCliOutputDecoder,
@@ -45,6 +46,21 @@ export interface ClaudeInteractiveTurnInput {
 
 const TURN_LIMIT_CONTINUE_PROMPT =
   "You reached the turn limit for this step before finishing. Continue the task from where you stopped.";
+
+const LOGIN_REFRESH_RETRY_DELAY_MS = 60_000;
+const MAX_LOGIN_REFRESH_RETRIES = 2;
+const LOGIN_REFRESH_RETRY_PROMPT =
+  "The last request did not reach the model because the Claude sign-in was being renewed. Continue the task from where you stopped.";
+
+const isLoginRefreshBusyMessage = (event: Record<string, unknown>): boolean =>
+  readString(event, "error") === "server_error" &&
+  isRecord(event.message) &&
+  Array.isArray(event.message.content) &&
+  event.message.content.some(
+    (block) =>
+      isRecord(block) &&
+      isClaudeLoginRefreshBusy(readString(block, "text") ?? ""),
+  );
 
 type ClaudeUserContentBlock =
   | { type: "text"; text: string }
@@ -78,6 +94,8 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
   private inputClosed = false;
   private interrupted = false;
   private continuations = 0;
+  private loginRefreshRetries = 0;
+  private loginRefreshRetryTimer: ReturnType<typeof setTimeout> | undefined;
   private carriedModelCalls = 0;
   private carriedUsage: AgentModelStreamUsage | undefined;
   private nextSteer = 1;
@@ -156,7 +174,10 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
     if (this.turnFinished || this.inputClosed) return false;
     this.interrupted = true;
     // Between turns nothing is listening for an interrupt, so just end the run.
-    if (this.output.getCompletionGraceMs() !== undefined) {
+    if (
+      this.output.getCompletionGraceMs() !== undefined ||
+      this.loginRefreshRetryTimer
+    ) {
       this.turnFinished = true;
       this.live.failPendingSteers(
         "The turn ended before Claude read this message.",
@@ -171,11 +192,18 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
   }
 
   dispose(): void {
+    this.cancelLoginRefreshRetry();
     this.live.close();
+  }
+
+  private cancelLoginRefreshRetry(): void {
+    clearTimeout(this.loginRefreshRetryTimer);
+    this.loginRefreshRetryTimer = undefined;
   }
 
   private steer(text: string): void {
     if (this.turnFinished || this.inputClosed) throw turnFinishedError();
+    this.cancelLoginRefreshRetry();
     const id = `steer-${this.nextSteer++}`;
     // Claude echoes the message once the turn takes it in (--replay-user-messages).
     this.live.recordSteer(id, text, "pending");
@@ -253,6 +281,7 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
   private closeInput(): void {
     if (this.inputClosed) return;
     this.inputClosed = true;
+    this.cancelLoginRefreshRetry();
     this.cancelPendingQuestion();
     this.live.setCapabilities([]);
     this.live.flush();
@@ -323,7 +352,13 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
     if (type === "system") this.events.system(event);
     // Once the run has ended, a late follow-up turn must not replace its answer.
     if (this.turnFinished) return;
-    if (type === "result" && this.continueAfterTurnLimit(event)) return;
+    if (
+      type === "result" &&
+      (this.continueAfterTurnLimit(event) ||
+        this.retryAfterLoginRefreshBusy(event))
+    )
+      return;
+    if (type === "assistant" && isLoginRefreshBusyMessage(event)) return;
     if (type === "assistant") this.events.assistant(event);
     if (type === "user") this.events.toolResults(event);
     mergeOutputUpdate(update, this.output.pushEvent(event));
@@ -455,6 +490,33 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
       `Claude used its turns for this step; continuing where it stopped (${limit === null ? this.continuations : `${this.continuations} of ${limit}`}).`,
     );
     this.sendUser(TURN_LIMIT_CONTINUE_PROMPT);
+    return true;
+  }
+
+  /**
+   * A crashed or killed Claude process leaves the refresh lock behind until it
+   * goes stale, which fails other runs before they reach the model. The session
+   * keeps its context and picks up the renewed login on the next prompt.
+   */
+  private retryAfterLoginRefreshBusy(event: Record<string, unknown>): boolean {
+    if (
+      event.is_error !== true ||
+      !isClaudeLoginRefreshBusy(readString(event, "result") ?? "") ||
+      this.interrupted ||
+      this.inputClosed ||
+      this.loginRefreshRetries >= MAX_LOGIN_REFRESH_RETRIES
+    )
+      return false;
+    this.loginRefreshRetries += 1;
+    this.live.addNotice(
+      "info",
+      `Claude's sign-in is being renewed; retrying in a minute (${this.loginRefreshRetries} of ${MAX_LOGIN_REFRESH_RETRIES}).`,
+    );
+    this.loginRefreshRetryTimer = setTimeout(() => {
+      this.loginRefreshRetryTimer = undefined;
+      this.sendUser(LOGIN_REFRESH_RETRY_PROMPT);
+    }, LOGIN_REFRESH_RETRY_DELAY_MS);
+    this.loginRefreshRetryTimer.unref();
     return true;
   }
 
