@@ -30,7 +30,7 @@ const Textarea = React.forwardRef<
     }
 
     node.style.height = "auto";
-    const nextHeight = node.scrollHeight;
+    const nextHeight = node.scrollHeight + node.offsetHeight - node.clientHeight;
 
     if (lastMeasuredHeightRef.current !== nextHeight) {
       lastMeasuredHeightRef.current = nextHeight;
