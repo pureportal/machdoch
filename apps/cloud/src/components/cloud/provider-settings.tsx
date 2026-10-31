@@ -4,8 +4,10 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Cpu, Plus } from "lucide-react";
 import {
-  cloudApiProviders,
+  cloudProviderKinds,
+  isCloudCliProvider,
   type CloudAiProvider,
+  type CloudProviderKind,
   type CloudProviderSettings,
 } from "@machdoch/fleet-protocol/cloud-providers";
 import { Field } from "@/components/field";
@@ -17,11 +19,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { createCommandSender, formText } from "./api-client";
 import { ProviderUsage } from "./provider-usage";
 
-const providerNames = {
+const providerNames: Record<CloudProviderKind, string> = {
   openai: "OpenAI",
   anthropic: "Anthropic",
   google: "Google",
   langdock: "Langdock",
+  "claude-code-cli": "Claude Code CLI",
+  "codex-cli": "Codex CLI",
 };
 
 export function AiProviderSettings({
@@ -174,7 +178,7 @@ export function AiProviderSettings({
                   setKind(event.target.value as CloudAiProvider["provider"])
                 }
               >
-                {cloudApiProviders.map((value) => (
+                {cloudProviderKinds.map((value) => (
                   <option key={value} value={value}>
                     {providerNames[value]}
                   </option>
@@ -207,13 +211,21 @@ export function AiProviderSettings({
             </label>
           )}
           {(!provider || replaceKey) && (
-            <Field label="API key" htmlFor="ai-provider-key">
+            <Field
+              label="API key"
+              htmlFor="ai-provider-key"
+              hint={
+                isCloudCliProvider(kind)
+                  ? "Leave empty to use the CLI's own sign-in on the cloud host."
+                  : undefined
+              }
+            >
               <Input
                 id="ai-provider-key"
                 type="password"
                 name="apiKey"
                 autoComplete="new-password"
-                required
+                required={!isCloudCliProvider(kind)}
                 maxLength={8192}
               />
             </Field>

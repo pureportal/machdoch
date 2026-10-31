@@ -10,7 +10,13 @@ import { readIssue } from "../planning";
 import { issuePlanningState } from "../issue-graph";
 import { taskContextLimit } from "./task-context";
 import { readInferenceProvider } from "../ai/budgets";
-import { expireRuns, lockExecution, readProfile, recordRun } from "./records";
+import {
+  expireRuns,
+  lockExecution,
+  readProfile,
+  recordRun,
+  requireSandboxProvider,
+} from "./records";
 
 export async function admitRun(
   sql: CloudSql,
@@ -150,6 +156,7 @@ export async function admitRun(
           actor.organizationId,
           profile.providerId,
         );
+        requireSandboxProvider(configured);
         if (!configured.models.includes(profile.model))
           throw new CloudError(
             422,

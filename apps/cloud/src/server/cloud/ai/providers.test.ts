@@ -99,7 +99,7 @@ it("encrypts credentials and omits them from metadata, receipts and events", asy
   ).not.toContain(secret);
   expect(
     (await runtime.aiProviders.resolve(member, created.id, "gpt-5.5"))
-      .connection.apiKey,
+      .connection?.apiKey,
   ).toBe(secret);
 });
 
@@ -149,7 +149,7 @@ it("preserves the key on ordinary edits, rotates it explicitly, rejects stale sa
   await runtime.aiProviders.update(owner, randomUUID(), created.id, update);
   expect(
     (await runtime.aiProviders.resolve(member, created.id, "gpt-5.5"))
-      .connection.apiKey,
+      .connection?.apiKey,
   ).toBe(secret);
   await expect(
     runtime.aiProviders.update(owner, randomUUID(), created.id, update),
@@ -166,7 +166,7 @@ it("preserves the key on ordinary edits, rotates it explicitly, rejects stale sa
   );
   expect(
     (await runtime.aiProviders.resolve(member, created.id, "gpt-5.5"))
-      .connection.apiKey,
+      .connection?.apiKey,
   ).toBe("replacement-test-key");
   await runtime.aiProviders.update(owner, randomUUID(), created.id, {
     ...update,
@@ -180,6 +180,40 @@ it("preserves the key on ordinary edits, rotates it explicitly, rejects stale sa
   await expect(
     runtime.aiProviders.resolve(member, created.id, "gpt-5.5"),
   ).rejects.toMatchObject({ status: 404 });
+});
+
+it("lets only CLI providers clear their key and fall back to the CLI's own sign-in", async () => {
+  const api = await runtime.aiProviders.create(
+    owner,
+    randomUUID(),
+    configuration,
+  );
+  const apiMetadata = (await runtime.aiProviders.list(owner, true)).providers[0]!;
+  await expect(
+    runtime.aiProviders.update(owner, randomUUID(), api.id, {
+      ...providerUpdateSchema.strip().parse(apiMetadata),
+      apiKey: "",
+    }),
+  ).rejects.toMatchObject({ code: "provider_key" });
+  const cli = await runtime.aiProviders.create(owner, randomUUID(), {
+    ...configuration,
+    name: "Claude Code",
+    provider: "claude-code-cli",
+    models: ["sonnet"],
+  });
+  expect(
+    (await runtime.aiProviders.resolve(member, cli.id, "sonnet")).cli?.apiKey,
+  ).toBe(secret);
+  const cliMetadata = (await runtime.aiProviders.list(owner, true)).providers.find(
+    (provider) => provider.id === cli.id,
+  )!;
+  await runtime.aiProviders.update(owner, randomUUID(), cli.id, {
+    ...providerUpdateSchema.strip().parse(cliMetadata),
+    apiKey: "",
+  });
+  expect(
+    (await runtime.aiProviders.resolve(member, cli.id, "sonnet")).cli?.apiKey,
+  ).toBe("");
 });
 
 it("rejects missing or changed storage keys and ciphertext swapped between connections", async () => {

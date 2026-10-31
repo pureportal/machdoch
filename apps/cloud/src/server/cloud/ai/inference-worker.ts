@@ -8,6 +8,7 @@ import {
   validateInferenceTools,
   ModelWorkerFailure,
 } from "./isolated-model";
+import { CliModelFailure, createCliModelAdapter } from "./cli-model";
 import { isCloudError } from "../access";
 import { maximumInferenceAnswerBytes } from "./inference-records";
 import { CloudInferenceStore } from "./inference-store";
@@ -206,7 +207,11 @@ export class CloudInferenceWorker {
       );
       if (resolved.configuration.inferenceRevision !== call.providerRevision)
         throw new InferenceStopped("permission_changed");
-      const adapter = await this.factory(resolved.connection, call.tools);
+      if (resolved.cli && call.runId)
+        throw new InferenceStopped("cli_provider_requires_client");
+      const adapter = resolved.cli
+        ? createCliModelAdapter(resolved.cli)
+        : await this.factory(resolved.connection, call.tools);
       controller.signal.throwIfAborted();
       const startedAt = performance.now();
       const grant = await this.store.guard(
@@ -335,6 +340,7 @@ export class CloudInferenceWorker {
 
   private errorCode(error: unknown): string {
     if (error instanceof InferenceStopped) return error.code;
+    if (error instanceof CliModelFailure) return error.code;
     if (error instanceof ModelWorkerFailure && error.code === "output_limit")
       return "output_limit";
     if (error instanceof ModelWorkerFailure && error.code === "worker_timeout")

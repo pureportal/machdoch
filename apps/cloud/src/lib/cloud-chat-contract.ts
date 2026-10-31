@@ -101,4 +101,9 @@ export const chatErrorMessages: Record<string, string> = {
     "The provider requested a tool that is unavailable in this conversation.",
   credential_storage:
     "Provider credentials could not be unlocked. Contact your administrator.",
+  cli_unavailable:
+    "The CLI is not installed on the cloud host. Ask an administrator to install it.",
+  cli_authentication:
+    "The CLI is not signed in on the cloud host. Ask an administrator to sign in or add an API key.",
+  cli_failed: "The CLI could not complete the response. Retry when you are ready.",
 };

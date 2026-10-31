@@ -1,12 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { fenceRun, lockExecution, readRun } from "../execution/records";
 import type { CloudActor } from "../../../lib/cloud-contract";
-import type {
-  CloudAiProvider,
-  CloudProviderSettings,
-  ProviderInput,
-  ProviderUpdate,
+import {
+  isCloudCliProvider,
+  type CloudAiProvider,
+  type CloudProviderSettings,
+  type ProviderInput,
+  type ProviderUpdate,
 } from "@machdoch/fleet-protocol/cloud-providers";
+import type { CliModelConnection } from "./cli-model";
 import type { ModelConnection } from "@machdoch/model-runtime/connections";
 import type { SettingsCipher } from "../../settings-crypto";
 import {
@@ -20,7 +22,12 @@ import type { CloudDatabase } from "../database";
 import { providerSecretContext } from "./credential-storage";
 import { requireCredentialStorage } from "../credential-storage";
 
-export const providerColumns = `id,name,provider,region,models,max_output_tokens AS "maxOutputTokens",daily_token_budget AS "dailyTokenBudget",max_concurrent_requests AS "maxConcurrentRequests",revision,inference_revision AS "inferenceRevision",enabled`;
+export type ResolvedProvider = { configuration: CloudAiProvider } & (
+  | { connection: ModelConnection; cli?: undefined }
+  | { cli: CliModelConnection; connection?: undefined }
+);
+
+export const providerColumns =`id,name,provider,region,models,max_output_tokens AS "maxOutputTokens",daily_token_budget AS "dailyTokenBudget",max_concurrent_requests AS "maxConcurrentRequests",revision,inference_revision AS "inferenceRevision",enabled`;
 
 export class CloudAiProviders {
   constructor(
@@ -142,6 +149,8 @@ export class CloudAiProviders {
               "provider_region",
               "Select a region only for Langdock.",
             );
+          if (input.apiKey === "" && !isCloudCliProvider(current.provider))
+            throw new CloudError(422, "provider_key", "Enter an API key.");
           const secret =
             input.apiKey === undefined
               ? null
@@ -202,11 +211,7 @@ export class CloudAiProviders {
     });
   }
 
-  resolve(
-    actor: CloudActor,
-    id: string,
-    model: string,
-  ): Promise<{ configuration: CloudAiProvider; connection: ModelConnection }> {
+  resolve(actor: CloudActor, id: string, model: string): Promise<ResolvedProvider> {
     return this.database.transaction(async (sql) => {
       await requireMembership(sql, actor, "write");
       const cipher = await requireCredentialStorage(sql, this.cipher);
@@ -242,6 +247,11 @@ export class CloudAiProviders {
         );
       }
       const { secret: _, ...configuration } = row;
+      if (isCloudCliProvider(row.provider))
+        return {
+          configuration,
+          cli: { provider: row.provider, model, apiKey },
+        };
       return {
         configuration,
         connection: {

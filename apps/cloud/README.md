@@ -53,6 +53,8 @@ Delegated issues run in a separate checkout of the profile's base commit. Requir
 
 **Ask** answers questions about issues, projects and cycles from a snapshot of the workspace the user can access, using a configured AI provider. Ask from an issue to keep that issue in focus. No sandbox is started.
 
+The server image includes the Claude Code and Codex CLIs for Ask providers. Enter an API key on the provider, or leave it empty and sign in on the host: run `claude` or `codex login` inside the container and keep `/home/node` on a volume. `MACHDOCH_CLOUD_CLAUDE_CLI` and `MACHDOCH_CLOUD_CODEX_CLI` override the executables. Cloud sandboxes need an API provider; use a **Linked client** profile to run tasks through a CLI.
+
 ## Source
 
 ```bash

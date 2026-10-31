@@ -7,6 +7,19 @@ export const cloudApiProviders = [
   "google",
   "langdock",
 ] as const;
+export const cloudCliProviders = ["claude-code-cli", "codex-cli"] as const;
+export const cloudProviderKinds = [
+  ...cloudApiProviders,
+  ...cloudCliProviders,
+] as const;
+export type CloudApiProvider = (typeof cloudApiProviders)[number];
+export type CloudCliProvider = (typeof cloudCliProviders)[number];
+export type CloudProviderKind = (typeof cloudProviderKinds)[number];
+export function isCloudCliProvider(
+  provider: CloudProviderKind,
+): provider is CloudCliProvider {
+  return (cloudCliProviders as readonly string[]).includes(provider);
+}
 const modelId = z
   .string()
   .trim()
@@ -33,25 +46,29 @@ const providerConfiguration = z.strictObject({
 });
 export const providerInputSchema = providerConfiguration
   .extend({
-    provider: z.enum(cloudApiProviders),
+    provider: z.enum(cloudProviderKinds),
     region: z.enum(["eu", "us"]).nullable(),
-    apiKey: z.string().trim().min(1).max(8192),
+    apiKey: z.string().trim().max(8192),
   })
   .refine(
     (input) => (input.provider === "langdock") === (input.region !== null),
     { path: ["region"], message: "Select a region only for Langdock." },
+  )
+  .refine(
+    (input) => isCloudCliProvider(input.provider) || input.apiKey.length > 0,
+    { path: ["apiKey"], message: "Enter an API key." },
   );
 export const providerUpdateSchema = providerConfiguration.extend({
   revision,
   enabled: z.boolean(),
   region: z.enum(["eu", "us"]).nullable(),
-  apiKey: z.string().trim().min(1).max(8192).optional(),
+  apiKey: z.string().trim().max(8192).optional(),
 });
 export type ProviderInput = z.infer<typeof providerInputSchema>;
 export type ProviderUpdate = z.infer<typeof providerUpdateSchema>;
 export interface CloudAiProvider extends z.infer<typeof providerConfiguration> {
   id: string;
-  provider: (typeof cloudApiProviders)[number];
+  provider: CloudProviderKind;
   region: "eu" | "us" | null;
   revision: number;
   inferenceRevision: number;

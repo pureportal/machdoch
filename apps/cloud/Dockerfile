@@ -123,6 +123,12 @@ CMD []
 
 FROM application AS server
 
+USER root
+
+RUN npm install --global @anthropic-ai/claude-code@2.1.316 @openai/codex@0.166.0
+
+USER node
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 CMD ["node", "-e", "fetch('http://127.0.0.1:43188/healthz').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1));"]
 
 ENTRYPOINT ["node", "--enable-source-maps", "--import", "@oxc-node/core/register", "src/server.ts"]

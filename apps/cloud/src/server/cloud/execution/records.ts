@@ -6,6 +6,11 @@ import type {
   RunState,
 } from "@machdoch/fleet-protocol/cloud-execution";
 import {
+  isCloudCliProvider,
+  type CloudAiProvider,
+  type CloudApiProvider,
+} from "@machdoch/fleet-protocol/cloud-providers";
+import {
   CloudError,
   recordEvent,
   requireMembership,
@@ -13,6 +18,17 @@ import {
 } from "../access";
 import type { CloudSql } from "../database";
 import { notifyRunFinished } from "../notifications";
+
+export function requireSandboxProvider(
+  provider: CloudAiProvider,
+): asserts provider is CloudAiProvider & { provider: CloudApiProvider } {
+  if (isCloudCliProvider(provider.provider))
+    throw new CloudError(
+      422,
+      "provider_requires_client",
+      "Use a linked client profile to run this CLI. Sandbox profiles need an API provider.",
+    );
+}
 
 export const terminalStates = new Set<RunState>([
   "succeeded",

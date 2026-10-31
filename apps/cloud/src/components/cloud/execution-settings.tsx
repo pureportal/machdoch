@@ -3,7 +3,10 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Workflow } from "lucide-react";
-import type { CloudAiProvider } from "@machdoch/fleet-protocol/cloud-providers";
+import {
+  isCloudCliProvider,
+  type CloudAiProvider,
+} from "@machdoch/fleet-protocol/cloud-providers";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import {
   clientAgents,
@@ -401,6 +404,7 @@ export function ExecutionSettings({
                   Select a provider
                 </option>
                 {providers
+                  .filter((provider) => !isCloudCliProvider(provider.provider))
                   .filter(
                     (provider) =>
                       provider.enabled ||
