@@ -50,6 +50,8 @@ export interface ExternalAgentCliOutputDecoder {
   isModelCallCountReported(): boolean;
   hasTerminalResult(): boolean;
   getFailureMessage?(): string | undefined;
+  /** The CLI's latest message reports that its credential was rejected. */
+  authenticationFailed?(): boolean;
   /** The CLI stopped because it used every turn it was allowed. */
   reachedTurnLimit?(): boolean;
   /** How long to wait for the CLI to exit, when longer than the usual grace. */
@@ -395,6 +397,7 @@ export class ClaudeCliOutputDecoder
   private modelCallCount = 1;
   private modelCallCountReported = false;
   private assistantMessageId: string | undefined;
+  private assistantError: string | undefined;
   private turnLimitReached = false;
   private failureMessage: string | undefined;
   private backgroundTasks = 0;
@@ -474,6 +477,10 @@ export class ClaudeCliOutputDecoder
     return this.failureMessage;
   }
 
+  authenticationFailed(): boolean {
+    return this.assistantError === "authentication_failed";
+  }
+
   reachedTurnLimit(): boolean {
     return this.turnLimitReached;
   }
@@ -512,7 +519,10 @@ export class ClaudeCliOutputDecoder
     }
 
     if (type === "assistant" && isRecord(event.message)) {
-      if (!getString(event, "parent_tool_use_id")) this.startFollowUpTurn();
+      if (!getString(event, "parent_tool_use_id")) {
+        this.startFollowUpTurn();
+        this.assistantError = getString(event, "error");
+      }
       const content = event.message.content;
       if (Array.isArray(content)) {
         const text = content

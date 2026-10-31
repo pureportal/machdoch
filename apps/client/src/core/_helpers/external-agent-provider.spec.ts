@@ -3519,7 +3519,7 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
     const call = spawnCalls[0]!;
     call.child.stdout.write(
-      `${JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "Failed to authenticate: OAuth session expired and could not be refreshed" }] } })}\n`,
+      `${JSON.stringify({ type: "assistant", error: "authentication_failed", message: { content: [{ type: "text", text: "Failed to authenticate: OAuth session expired and could not be refreshed" }] } })}\n`,
     );
     call.child.emit("close", 1, null);
 
@@ -3528,6 +3528,22 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
       failure: { kind: "authentication", retryable: false },
       reason: expect.stringContaining("claude auth login"),
     });
+  });
+
+  it("keeps agent prose about login errors from blocking the run", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    const resultPromise = maybeExecuteExternalAgentProviderTask(
+      createParams(workspaceRoot, { provider: "claude-cli" }),
+    );
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    call.child.stdout.write(
+      `${JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "Failed to authenticate: OAuth session expired and could not be refreshed" }] } })}\n`,
+    );
+    call.child.emit("close", 1, null);
+
+    await expect(resultPromise).resolves.toMatchObject({ status: "failed" });
   });
 
   it.each([

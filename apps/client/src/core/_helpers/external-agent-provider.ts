@@ -94,10 +94,7 @@ import {
   CODEX_AUTHENTICATION_RECOVERY,
   isCodexAuthenticationFailure,
 } from "./codex-authentication-failure.js";
-import {
-  CLAUDE_AUTHENTICATION_RECOVERY,
-  isClaudeAuthenticationFailure,
-} from "./claude-authentication-failure.js";
+import { createClaudeAuthenticationRecovery } from "./claude-authentication-failure.js";
 import { getWorkspacePresenceEnrollment } from "./workspace-agent-presence.js";
 import { MACHDOCH_STATE_GUIDANCE } from "./machdoch-state-tool-definitions.js";
 import { isRunControlAvailable } from "./run-tool-definitions.js";
@@ -1137,7 +1134,9 @@ export const runExternalAgentCommand = async (
           ...(usage ? { usage } : {}),
           ...(retryCount === undefined ? {} : { retryCount }),
           ...(failureMessage ? { failureMessage } : {}),
-          ...(authenticationRequired ? { authenticationRequired: true } : {}),
+          ...(authenticationRequired || outputDecoder.authenticationFailed?.()
+            ? { authenticationRequired: true }
+            : {}),
           ...(outputDecoder.reachedTurnLimit?.()
             ? { turnLimitReached: true }
             : {}),
@@ -3161,8 +3160,8 @@ const executeExternalAgentCliTask = async (
           [stderr, result.failureMessage].filter(Boolean).join("\n"),
         ))
         ? CODEX_AUTHENTICATION_RECOVERY
-        : provider === "claude-cli" && isClaudeAuthenticationFailure(stdout)
-          ? CLAUDE_AUTHENTICATION_RECOVERY
+        : provider === "claude-cli" && result.authenticationRequired === true
+          ? createClaudeAuthenticationRecovery(stdout)
           : undefined;
     const reason =
       authenticationRecovery ??

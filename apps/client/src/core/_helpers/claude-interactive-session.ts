@@ -481,6 +481,9 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
   getFailureMessage(): string | undefined {
     return this.output.getFailureMessage();
   }
+  authenticationFailed(): boolean {
+    return this.output.authenticationFailed();
+  }
   reachedTurnLimit(): boolean {
     return this.output.reachedTurnLimit();
   }

@@ -1,24 +1,55 @@
 import { describe, expect, it } from "vitest";
-import { isClaudeAuthenticationFailure } from "./claude-authentication-failure.js";
+import {
+  createClaudeAuthenticationRecovery,
+  isClaudeLoginRefreshBusy,
+} from "./claude-authentication-failure.js";
 
 describe("Claude authentication failures", () => {
-  it.each([
-    "Failed to authenticate: OAuth session expired and could not be refreshed",
-    "Not logged in · Please run /login",
-    "Login expired · Please run /login",
-    "Authentication required · Sign in again to continue",
-    "Reading the config.\n\nFailed to authenticate: OAuth session expired and could not be refreshed\n",
-  ])("recognizes terminal Claude credentials: %s", (lastMessage) => {
-    expect(isClaudeAuthenticationFailure(lastMessage)).toBe(true);
+  it("asks for a new sign-in when the saved login is the credential", () => {
+    expect(
+      createClaudeAuthenticationRecovery(
+        "Failed to authenticate: OAuth session expired and could not be refreshed",
+        {},
+      ),
+    ).toContain("claude auth login");
   });
 
   it.each([
-    "Failed to refresh OAuth token: another Claude Code process is refreshing it or exited mid-refresh.",
-    "The error said OAuth session expired and could not be refreshed, so I am fixing it.",
-    "Failed to authenticate: OAuth session expired and could not be refreshed\nFixed by signing in again.",
-    "Not logged in yet.",
-    "",
-  ])("keeps transient errors and agent prose retryable: %s", (lastMessage) => {
-    expect(isClaudeAuthenticationFailure(lastMessage)).toBe(false);
+    ["ANTHROPIC_AUTH_TOKEN"],
+    ["ANTHROPIC_API_KEY"],
+    ["CLAUDE_CODE_OAUTH_TOKEN"],
+  ])("names %s instead of asking for a sign-in it would ignore", (key) => {
+    const recovery = createClaudeAuthenticationRecovery("Invalid API key", {
+      [key]: "configured",
+    });
+    expect(recovery).toContain("Invalid API key");
+    expect(recovery).toContain(key);
+    expect(recovery).not.toContain("claude auth login");
+  });
+
+  it("ignores a blank credential variable", () => {
+    expect(
+      createClaudeAuthenticationRecovery("Not logged in", {
+        ANTHROPIC_API_KEY: "  ",
+      }),
+    ).toContain("claude auth login");
+  });
+
+  it("recognizes only the CLI's busy-refresh error", () => {
+    expect(
+      isClaudeLoginRefreshBusy(
+        "Failed to refresh OAuth token: another Claude Code process is refreshing it or exited mid-refresh. This is usually transient; retry in a minute, and if it persists close other Claude Code processes or sign in again",
+      ),
+    ).toBe(true);
+    expect(
+      isClaudeLoginRefreshBusy(
+        "Failed to authenticate: OAuth session expired and could not be refreshed",
+      ),
+    ).toBe(false);
+    expect(
+      isClaudeLoginRefreshBusy(
+        "The log says Failed to refresh OAuth token: another Claude Code process is refreshing it",
+      ),
+    ).toBe(false);
   });
 });
