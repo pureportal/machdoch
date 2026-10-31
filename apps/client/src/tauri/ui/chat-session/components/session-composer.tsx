@@ -709,17 +709,17 @@ export const SessionComposer = ({
         {translateEnabled ? (
           <span
             aria-hidden="true"
-            className="absolute -right-0.5 -top-0.5 flex size-3 items-center justify-center rounded-full bg-sky-400 text-slate-950"
+            className="absolute right-[3px] top-[3px] flex size-[9px] items-center justify-center rounded-full bg-sky-400 text-slate-950"
           >
-            <Languages className="size-2" />
+            <Languages className="size-[7px]" />
           </span>
         ) : null}
         {formatEnabled ? (
           <span
             aria-hidden="true"
-            className="absolute -bottom-0.5 -right-0.5 flex size-3 items-center justify-center rounded-full bg-amber-400 text-slate-950"
+            className="absolute bottom-[3px] right-[3px] flex size-[9px] items-center justify-center rounded-full bg-amber-400 text-slate-950"
           >
-            <WandSparkles className="size-2" />
+            <WandSparkles className="size-[7px]" />
           </span>
         ) : null}
       </>

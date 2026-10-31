@@ -1308,14 +1308,15 @@ export const AgentComposer = ({
       onOpenChange={setQueueOpen}
       title={
         <>
-          <ListOrdered className="h-3.5 w-3.5 shrink-0 text-sky-300" />
+          <ListOrdered className="h-4 w-4 shrink-0 text-sky-300" />
           Queue
-          <span className="rounded-full bg-slate-800 px-1.5 text-[11px] font-medium text-slate-400">
+          <span className="rounded-full bg-slate-800 px-2 text-xs leading-5 font-medium text-slate-300">
             {queuedMessages.length}
           </span>
         </>
       }
       description="Edit, reorder, or remove messages waiting to be sent."
+      className="sm:max-w-2xl"
     >
       <QueuedMessagesPanel
         messages={queuedMessages}
@@ -1412,20 +1413,20 @@ export const AgentComposer = ({
               disabled={!iterationsEnabled || inputBlocked}
               className={cn(
                 styles.iconButton,
-                "relative",
                 iterationCount > 1 &&
                   "border-sky-500/35 bg-sky-500/10 text-sky-100 hover:bg-sky-500/15",
               )}
             >
-              <Repeat2 className={styles.iconClassName} />
               {iterationCount > 1 ? (
                 <span
                   aria-hidden="true"
-                  className="absolute -right-1 -top-1 flex min-h-4 min-w-4 items-center justify-center rounded-full bg-sky-400 px-0.5 text-[9px] font-semibold leading-none text-slate-950"
+                  className="text-[11px] font-semibold tabular-nums"
                 >
-                  {iterationCount}
+                  ×{iterationCount}
                 </span>
-              ) : null}
+              ) : (
+                <Repeat2 className={styles.iconClassName} />
+              )}
             </Button>
           </PopoverTrigger>
           <PopoverContent

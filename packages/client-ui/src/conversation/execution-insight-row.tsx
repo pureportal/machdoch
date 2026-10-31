@@ -10,10 +10,10 @@ import { ExecutionFileChanges } from "./execution-file-changes";
 import { InstructionDeliveryInsight } from "./instruction-delivery-insight";
 
 const insightMetadataBadgeClassName =
-  "app-execution-metadata h-6 cursor-default select-none rounded-md border-transparent bg-transparent px-1.5 py-0 text-[11px] font-medium text-slate-400 shadow-none";
+  "app-execution-metadata h-6 cursor-default select-none rounded-md border-transparent bg-transparent px-2 py-0 text-xs font-medium text-slate-400 shadow-none";
 
 const actionButtonClassName =
-  "app-execution-action h-6 rounded-full px-2 text-[11px] font-medium shadow-none transition-colors";
+  "app-execution-action h-7 rounded-full px-2.5 text-xs font-medium shadow-none transition-colors";
 
 export interface ExecutionInsightRowProps {
   execution: TaskExecutionInsight;
@@ -68,7 +68,7 @@ export const ExecutionInsightRow = ({
   }
 
   return (
-    <div className="app-execution-insight-row flex max-w-[90%] flex-wrap items-center gap-1.5">
+    <div className="app-execution-insight-row flex max-w-[90%] flex-wrap items-center gap-2">
       {continuationCount > 0 ? (
         <Badge variant="ghost" className={insightMetadataBadgeClassName}>
           <span
@@ -135,7 +135,7 @@ export const ExecutionInsightRow = ({
           size="sm"
           tooltip={`${fileReference.path} \u2014 ${fileReference.description}`}
           onClick={() => onOpenWorkspaceFile(fileReference.path)}
-          className="app-related-file-button h-6 max-w-full rounded-full border-slate-700 bg-slate-950/70 px-2 text-[11px] text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-60"
+          className="app-related-file-button h-7 max-w-full rounded-full border-slate-700 bg-slate-950/70 px-2.5 text-xs text-slate-300 hover:bg-slate-900 hover:text-slate-100 disabled:opacity-60"
         >
           <span className="truncate">
             {fileReference.path.length <= 42

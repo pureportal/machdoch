@@ -101,7 +101,7 @@ export const SessionHeader = ({
   };
 
   const controls = (
-    <div className="app-session-header-controls flex min-w-0 shrink items-center justify-end gap-1">
+    <div className="app-session-header-controls flex min-w-0 shrink items-center justify-end gap-1.5">
       <WorkspaceRunDialogControl
         workspaceRoot={activeSession.workspace}
         primaryTaskRunning={primaryTaskRunning}
@@ -201,7 +201,7 @@ export const SessionHeader = ({
   );
 
   return (
-    <header className="app-session-header flex min-h-11 shrink-0 items-center justify-between gap-3 border-b border-slate-900 bg-slate-950/60 px-4 py-1 backdrop-blur-md">
+    <header className="app-session-header flex min-h-12 shrink-0 items-center justify-between gap-4 border-b border-slate-900 bg-slate-950/60 px-5 py-1.5 backdrop-blur-md">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {onOpenSessions ? (
           <Button
@@ -232,11 +232,11 @@ export const SessionHeader = ({
                   onRenameCancel();
                 }
               }}
-              className="app-session-rename-input h-7 w-full max-w-md rounded-lg border-slate-800 bg-slate-950 px-2 text-sm text-slate-100 md:text-sm"
+              className="app-session-rename-input h-8 w-full max-w-md rounded-lg border-slate-800 bg-slate-950 px-2.5 text-sm text-slate-100 md:text-sm"
             />
           </SubmitShortcut>
         ) : (
-          <h1 className="app-session-title-heading truncate text-sm font-semibold text-white">
+          <h1 className="app-session-title-heading truncate text-[15px] font-semibold text-white">
             {currentSessionTitle}
           </h1>
         )}

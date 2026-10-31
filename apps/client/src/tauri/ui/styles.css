@@ -1162,8 +1162,16 @@ body {
 }
 
 :root[data-density="compact"] .app-agent-composer-session {
-  --composer-control-size: 1.625rem;
+  --composer-control-size: 1.75rem;
+  --composer-label-size: 0.6875rem;
+  --composer-input-size: 0.8125rem;
+  --composer-gap: 4px;
+  padding: 6px;
   box-shadow: none !important;
+}
+
+:root[data-density="compact"] .app-session-footer {
+  padding: 0.375rem 1rem 0.5rem;
 }
 
 :root[data-density="compact"] .app-context-attachments-list {
@@ -1171,10 +1179,10 @@ body {
 }
 
 :root[data-density="compact"] .app-context-attachments-clear {
-  height: 1.35rem !important;
-  padding-right: 0.45rem !important;
-  padding-left: 0.45rem !important;
-  font-size: 0.625rem !important;
+  height: 1.625rem !important;
+  padding-right: 0.5rem !important;
+  padding-left: 0.5rem !important;
+  font-size: 0.6875rem !important;
 }
 
 :root[data-density="compact"] .app-context-attachments-items {
@@ -1185,11 +1193,11 @@ body {
 }
 
 :root[data-density="compact"] .app-context-attachment-item {
-  height: 1.5rem !important;
+  height: 1.625rem !important;
   gap: 0.3rem !important;
-  padding-right: 0.45rem !important;
-  padding-left: 0.45rem !important;
-  font-size: 0.625rem !important;
+  padding-right: 0.15rem !important;
+  padding-left: 0.5rem !important;
+  font-size: 0.6875rem !important;
 }
 
 :root[data-density="compact"] .app-composer-status {

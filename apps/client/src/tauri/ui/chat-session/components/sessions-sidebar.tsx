@@ -412,17 +412,17 @@ export const SessionsSidebar = ({
   return (
     <aside className="app-sessions-sidebar flex min-h-0 w-84 shrink-0 flex-col border-r border-slate-900 bg-slate-950/50 backdrop-blur-xl">
       <SessionSidebarCommands {...sidebarCommandState} />
-      <div className="app-sessions-sidebar-header flex min-h-11 shrink-0 items-center justify-between gap-2 border-b border-slate-900 px-3 py-1">
+      <div className="app-sessions-sidebar-header flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-slate-900 px-4 py-1.5">
         <div className="min-w-0">
-          <p className="truncate text-[10px] leading-3 font-semibold tracking-[0.18em] text-slate-500 uppercase">
+          <p className="truncate text-[11px] leading-4 font-semibold tracking-[0.18em] text-slate-500 uppercase">
             Sessions
           </p>
-          <p className="mt-0.5 truncate text-[11px] leading-4 text-slate-400">
+          <p className="truncate text-xs leading-4 text-slate-400">
             {sessionListCountLabel}
           </p>
         </div>
 
-        <div className="app-sessions-actions flex shrink-0 items-center gap-1">
+        <div className="app-sessions-actions flex shrink-0 items-center gap-1.5">
           {onClose ? (
             <Button
               type="button"

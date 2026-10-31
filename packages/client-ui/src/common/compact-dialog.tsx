@@ -34,17 +34,15 @@ export const CompactDialog = ({
         }
       }}
       className={cn(
-        "flex max-h-[min(85dvh,48rem)] flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-w-3xl [&>[data-slot=dialog-close]]:top-2 [&>[data-slot=dialog-close]]:right-2",
+        "flex max-h-[min(85dvh,48rem)] flex-col gap-0 overflow-hidden rounded-xl p-0 sm:max-w-3xl [&>[data-slot=dialog-close]]:top-2.5 [&>[data-slot=dialog-close]]:right-2.5",
         className,
       )}
     >
-      <DialogTitle className="flex shrink-0 items-center gap-2 border-b border-slate-800 py-2.5 pr-10 pl-3.5 text-[0.8125rem] leading-5 font-semibold">
+      <DialogTitle className="flex shrink-0 items-center gap-2 border-b border-slate-800 py-3 pr-12 pl-4 text-sm leading-5 font-semibold">
         {title}
       </DialogTitle>
       <DialogDescription className="sr-only">{description}</DialogDescription>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2.5 [scrollbar-width:thin]">
-        {children}
-      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-3">{children}</div>
     </DialogContent>
   </Dialog>
 );

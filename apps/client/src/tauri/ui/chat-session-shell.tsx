@@ -1116,7 +1116,7 @@ export const ChatSession = (): JSX.Element => {
                     />
                   </div>
 
-                  <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-4 pb-2 pt-1.5 backdrop-blur-xl">
+                  <footer className="app-session-footer min-w-0 border-t border-slate-900/80 bg-slate-950/40 px-5 pb-3 pt-2.5 backdrop-blur-xl">
                     <div className="mx-auto w-full max-w-5xl min-w-0">
                       <SessionComposer
                         key={controller.composer.activeSession.id}

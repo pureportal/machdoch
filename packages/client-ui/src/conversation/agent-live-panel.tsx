@@ -44,7 +44,7 @@ const AgentPlanSummary = ({
       <PlanStepIcon
         status={current?.status ?? "completed"}
         className={cn(
-          "h-3 w-3 shrink-0",
+          "h-3.5 w-3.5 shrink-0",
           current ? "text-sky-300" : "text-emerald-300",
         )}
       />
@@ -85,7 +85,7 @@ export const AgentRunStatusButton = ({
         aria-haspopup="dialog"
         aria-label="Open run details"
         onClick={() => setOpen(true)}
-        className="flex h-5 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-[11px] transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40"
+        className="flex h-6 min-w-0 flex-1 items-center gap-2 rounded-md px-1.5 text-xs transition-colors hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40"
       >
         {plan.length > 0 ? <AgentPlanSummary plan={plan} /> : null}
         {plan.length === 0 ? <RunningTasksIndicator count={runningTasks} /> : null}
@@ -149,9 +149,9 @@ export const AgentLivePanel = ({
   return (
     <section
       aria-label={`${PROVIDER_NAMES[live.provider]} live run details`}
-      className="app-agent-live @container w-full min-w-0 rounded-lg border border-slate-800/70 bg-slate-950/40 px-2 py-0.5 text-[11px] text-slate-300"
+      className="app-agent-live @container w-full min-w-0 rounded-xl border border-slate-800/70 bg-slate-950/40 px-3 py-1 text-xs text-slate-300"
     >
-      <div className="flex h-6 min-w-0 flex-nowrap items-center gap-2.5">
+      <div className="flex h-7 min-w-0 flex-nowrap items-center gap-3">
         {contextRatio !== undefined ? (
           <div
             className="flex shrink-0 items-center gap-1"
@@ -159,7 +159,7 @@ export const AgentLivePanel = ({
           >
             <ContextGauge
               ratio={contextRatio}
-              size={14}
+              size={15}
               label={`Context ${Math.round(contextRatio * 100)}% full`}
             />
             <span className="font-medium tabular-nums text-slate-200">
@@ -227,7 +227,7 @@ export const AgentLivePanel = ({
           type="button"
           aria-haspopup="dialog"
           onClick={() => setDetailsOpen(true)}
-          className="shrink-0 rounded px-1.5 text-[10px] leading-5 font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+          className="shrink-0 rounded-md px-2 text-[11px] leading-6 font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
         >
           Details
         </button>

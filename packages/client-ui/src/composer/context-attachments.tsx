@@ -278,7 +278,7 @@ export const ContextAttachmentsList = ({
       <ul
         aria-label="Attached context"
         className={cn(
-          "app-context-attachments-items flex min-w-0 flex-wrap content-start items-start gap-1.5 overflow-y-auto overscroll-contain pr-1 [scrollbar-gutter:stable] [scrollbar-width:thin]",
+          "app-context-attachments-items flex min-w-0 flex-wrap content-start items-start gap-1.5 overflow-y-auto overscroll-contain pr-1",
           compact ? "max-h-20 px-0.5" : "max-h-32 px-1",
         )}
       >
@@ -312,7 +312,7 @@ export const ContextAttachmentsList = ({
                   "app-context-attachment-item flex max-w-full items-center gap-1.5 rounded-full border border-slate-800 bg-slate-900/80 text-slate-200",
                   attachment.kind === "image" &&
                     "border-sky-400/30 bg-sky-400/10 text-sky-50",
-                  compact ? "h-7 px-2 text-[11px]" : "h-8 px-2.5 text-xs",
+                  compact ? "h-7 pr-1 pl-2 text-[11px]" : "h-7 pr-1 pl-2.5 text-xs",
                 )}
               >
                 {onOpen ? (
@@ -340,11 +340,11 @@ export const ContextAttachmentsList = ({
                     disabled={disabled}
                     onClick={() => onRemove(attachment.id)}
                     className={cn(
-                      "ml-0.5 flex shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-500",
-                      "h-6 w-6",
+                      "flex shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-slate-500",
+                      "h-5 w-5",
                     )}
                   >
-                    <X className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
+                    <X className="h-3 w-3" />
                   </button>
                 </ControlTooltip>
               </li>

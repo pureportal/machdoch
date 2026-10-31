@@ -38,14 +38,14 @@ export const QueueStatusButton = ({
       title={nextTitle ? `Next: ${nextTitle}` : undefined}
       onClick={onClick}
       className={cn(
-        "m-composer-queue-button inline-flex h-5 max-w-[min(100%,20rem)] min-w-0 shrink items-center gap-1 rounded-md px-1.5 text-[11px] text-slate-300 transition-colors hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
+        "m-composer-queue-button inline-flex h-6 max-w-[min(100%,20rem)] min-w-0 shrink items-center gap-1.5 rounded-md px-1.5 text-xs text-slate-300 transition-colors hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
         failedCount > 0 && "bg-rose-400/10 text-rose-100 hover:bg-rose-400/15",
       )}
     >
       {inProgress ? (
-        <LoaderCircle className="h-3 w-3 shrink-0 animate-spin text-cyan-200" />
+        <LoaderCircle className="h-3.5 w-3.5 shrink-0 animate-spin text-cyan-200" />
       ) : (
-        <ListOrdered className="h-3 w-3 shrink-0 text-sky-300" />
+        <ListOrdered className="h-3.5 w-3.5 shrink-0 text-sky-300" />
       )}
       <span className="shrink-0 font-semibold tabular-nums">
         {failedCount ? `${failedCount} failed` : messages.length}

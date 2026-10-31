@@ -86,8 +86,8 @@
 
   .app-session-footer {
     flex-shrink: 0;
-    padding: 0.25rem !important;
-    padding-bottom: max(0.25rem, env(safe-area-inset-bottom)) !important;
+    padding: 0.5rem !important;
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom)) !important;
   }
 
   .app-conversation-feed {
@@ -114,11 +114,11 @@
 
 @container application (max-height: 600px) {
   :root[data-density] .app-session-header {
-    min-height: 36px;
+    min-height: 40px;
   }
 
   :root[data-density] .app-session-footer {
-    padding-block: 2px max(2px, env(safe-area-inset-bottom)) !important;
+    padding-block: 4px max(4px, env(safe-area-inset-bottom)) !important;
   }
 }
 

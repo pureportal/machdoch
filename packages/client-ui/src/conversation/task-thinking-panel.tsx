@@ -555,8 +555,8 @@ export const TaskThinkingPanel = ({
           className={cn(
             "app-thinking-header",
             isCollapsed
-              ? "gap-0 px-3 py-1.5"
-              : "gap-0 border-b border-slate-800/90 px-2.5 py-1.5",
+              ? "gap-0 px-3 py-2"
+              : "gap-0 border-b border-slate-800/90 px-3 py-2",
           )}
         >
           <div
@@ -570,12 +570,12 @@ export const TaskThinkingPanel = ({
               className={cn(
                 "app-thinking-main-icon flex items-center justify-center border",
                 headerToneClasses[headerTone],
-                isCollapsed ? "h-5 w-5 rounded-md" : "h-6 w-6 rounded-lg",
+                isCollapsed ? "h-6 w-6 rounded-md" : "h-7 w-7 rounded-lg",
               )}
             >
               <HeaderIcon
                 className={cn(
-                  isCollapsed ? "h-2.5 w-2.5" : "h-3.5 w-3.5",
+                  isCollapsed ? "h-3 w-3" : "h-4 w-4",
                   isRunning && "animate-spin",
                 )}
               />
@@ -591,7 +591,7 @@ export const TaskThinkingPanel = ({
                   <CardTitle
                     className={cn(
                       "font-semibold text-slate-100",
-                      isCollapsed ? "text-[12px] leading-none" : "text-xs",
+                      isCollapsed ? "text-[12px] leading-none" : "text-[13px]",
                     )}
                   >
                     Execution
@@ -602,7 +602,7 @@ export const TaskThinkingPanel = ({
                       <span>{formatElapsedTime(elapsedMs)}</span>
                     </div>
                   ) : (
-                    <div className="flex shrink-0 items-center gap-1 text-[11px] font-medium tabular-nums text-slate-400">
+                    <div className="flex shrink-0 items-center gap-1 text-xs font-medium tabular-nums text-slate-400">
                       <Clock3 className="h-3 w-3 text-slate-500" />
                       <span
                         aria-label={`Elapsed time ${formatElapsedTime(elapsedMs)}`}
@@ -626,13 +626,13 @@ export const TaskThinkingPanel = ({
                     className={cn(
                       "app-thinking-toggle inline-flex items-center gap-1.5 rounded-full border border-slate-800 bg-slate-950/70 font-medium text-slate-300 transition-colors hover:bg-slate-900 hover:text-slate-100",
                       isCollapsed
-                        ? "h-5 px-2 text-[10px]"
-                        : "h-6 px-2 text-[11px]",
+                        ? "h-6 px-2 text-[11px]"
+                        : "h-7 px-2.5 text-xs",
                     )}
                   >
                     <ToggleIcon
                       className={cn(
-                        isCollapsed ? "h-2.5 w-2.5" : "h-3 w-3",
+                        isCollapsed ? "h-3 w-3" : "h-3.5 w-3.5",
                       )}
                     />
                     {isCollapsed ? "Details" : "Hide details"}
