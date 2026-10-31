@@ -19,6 +19,16 @@ const CLAUDE_CLI_LONG_CONTEXT_TOKENS: u64 = 1_000_000;
 const CLAUDE_CLI_INITIALIZE_REQUEST_ID: &str = "machdoch-model-catalog";
 const CLAUDE_CLI_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(30);
 const CLAUDE_CLI_SUBAGENT_PROMPT_FLAG: &str = "--append-subagent-system-prompt-file";
+pub(super) const CLAUDE_CLI_DISCOVERY_ARGS: [&str; 8] = [
+    "--bare",
+    "-p",
+    "--input-format",
+    "stream-json",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--strict-mcp-config",
+];
 
 fn json_bool(value: &serde_json::Value, key: &str) -> Option<bool> {
     value.get(key).and_then(serde_json::Value::as_bool)
@@ -107,8 +117,9 @@ fn create_claude_cli_runtime_model(entry: &serde_json::Value) -> Option<Provider
     })
 }
 
-/// Parses the `models` list of a Claude CLI `initialize` control response. This is the
-/// same list the CLI's own `/model` picker shows for the signed-in account. Rows with the
+/// Parses the `models` list of a Claude CLI `initialize` control response. Discovery runs
+/// in bare mode, so this is the CLI's `/model` list without account entitlements, and a
+/// short-lived probe can never abandon a login refresh. Rows with the
 /// `[1m]` suffix are folded into their base model as its long-context tier, because
 /// Machdoch selects the 1M window through the context-size control instead.
 pub(super) fn parse_claude_cli_model_catalog(
@@ -260,16 +271,8 @@ fn run_claude_cli_initialize(
         "request_id": CLAUDE_CLI_INITIALIZE_REQUEST_ID,
         "request": { "subtype": "initialize" },
     });
-    let mut args = vec![
-        "-p",
-        "--input-format",
-        "stream-json",
-        "--output-format",
-        "stream-json",
-        "--verbose",
-        "--strict-mcp-config",
-        "--no-session-persistence",
-    ];
+    let mut args = CLAUDE_CLI_DISCOVERY_ARGS.to_vec();
+    args.push("--no-session-persistence");
     args.extend_from_slice(extra_args);
 
     run_agent_cli_command_with_input(

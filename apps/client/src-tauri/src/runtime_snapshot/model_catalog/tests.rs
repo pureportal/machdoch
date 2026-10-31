@@ -1,7 +1,10 @@
 #[cfg(test)]
 mod model_catalog_parser_tests {
     use super::super::{
-        claude_cli::{parse_claude_cli_initialize_output, parse_claude_cli_model_catalog},
+        claude_cli::{
+            parse_claude_cli_initialize_output, parse_claude_cli_model_catalog,
+            CLAUDE_CLI_DISCOVERY_ARGS,
+        },
         codex_cli::{
             apply_codex_cli_features, parse_codex_cli_features, parse_codex_cli_model_catalog,
         },
@@ -100,6 +103,11 @@ mod model_catalog_parser_tests {
                 .collect::<Vec<_>>(),
             vec![Some(true), Some(true), Some(false), None]
         );
+    }
+
+    #[test]
+    fn claude_cli_discovery_runs_bare_so_it_cannot_refresh_the_saved_login() {
+        assert!(CLAUDE_CLI_DISCOVERY_ARGS.contains(&"--bare"));
     }
 
     #[test]
