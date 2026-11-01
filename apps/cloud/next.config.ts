@@ -7,7 +7,7 @@ const securityHeaders = [
   { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
   {
     key: "Content-Security-Policy",
-    value: `default-src 'self'; script-src ${scriptSources.join(" ")}; style-src 'self' 'unsafe-inline'; connect-src 'self' https://swetrix.pureportal.io; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
+    value: `default-src 'self'; script-src ${scriptSources.join(" ")}; style-src 'self' 'unsafe-inline'; connect-src 'self' https://swetrix.pureportal.io; img-src 'self' data: blob:; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`,
   },
   { key: "Referrer-Policy", value: "no-referrer" },
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -37,6 +37,21 @@ const nextConfig: NextConfig = {
           ],
         }),
       ),
+      {
+        source: "/instances/:path*",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: securityHeaders
+              .find((header) => header.key === "Content-Security-Policy")!
+              .value.replace("script-src", "script-src blob:")
+              .replace(
+                "connect-src 'self'",
+                "connect-src 'self' wss://api.openai.com wss://generativelanguage.googleapis.com",
+              ),
+          },
+        ],
+      },
       {
         source: "/media-studio/:path*",
         headers: [
