@@ -248,7 +248,7 @@ describe("executeTask", () => {
     expect(captureMemory).not.toHaveBeenCalled();
     expect(captureReasoning).not.toHaveBeenCalled();
   });
-  it("executes goal work and evaluates it with only the result tool", async () => {
+  it("executes goal work and evaluates it with inspection tools only", async () => {
     const workspaceRoot = await createWorkspace();
     const config = createConfig(workspaceRoot, "machdoch", {
       provider: "openai",
@@ -257,9 +257,9 @@ describe("executeTask", () => {
     const adapter: AgentModelAdapter = {
       startTurn: async (params) => {
         seenTools.push(params.tools.map((tool) => tool.name));
-        const evaluating =
-          params.tools.length === 1 &&
-          params.tools[0]?.name === "submit_final_response";
+        const evaluating = params.systemPrompt.includes(
+          "independent goal evaluator",
+        );
         return {
           text: "",
           toolCalls: [
@@ -298,7 +298,11 @@ describe("executeTask", () => {
       turns: 1,
     });
     expect(seenTools[0]).toContain("read_file");
-    expect(seenTools[1]).toEqual(["submit_final_response"]);
+    expect(seenTools[0]).toContain("create_file");
+    expect(seenTools[1]).toContain("read_file");
+    expect(seenTools[1]).toContain("run_shell_command");
+    expect(seenTools[1]).toContain("submit_final_response");
+    expect(seenTools[1]).not.toContain("create_file");
   });
   it("exposes managed parallel work only when the chat mode enables it", async () => {
     const workspaceRoot = await createWorkspace();

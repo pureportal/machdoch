@@ -25,10 +25,14 @@ export class ClaudeNativeGoalSession
     private readonly objective: string,
     private readonly io: InteractiveSessionIo,
     publish: ConstructorParameters<typeof AgentLiveTracker>[1],
-    options: { model: string; captureEvidence: boolean },
+    options: {
+      model: string;
+      captureEvidence: boolean;
+      backgroundWaitMs?: number | undefined;
+    },
   ) {
     // A goal turn outlasts its first result while background jobs run.
-    super(options.captureEvidence, true);
+    super(options.captureEvidence, true, options.backgroundWaitMs);
     this.live = new AgentLiveTracker(
       {
         provider: "claude-cli",

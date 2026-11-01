@@ -22,6 +22,12 @@ import type { GoalTurnExecutor } from "./run-goal.js";
 import type { FrozenInstructionSet } from "../instruction-system/types.js";
 import * as goalEvaluation from "./goal-evaluation.js";
 
+vi.mock("../_helpers/task-file-change-capture.js", () => ({
+  startTaskFileChangeCapture: vi.fn(async () => undefined),
+}));
+
+const EVALUATION_TIMEOUT_MS = 5 * 60 * 1_000;
+
 let directory: string;
 let config: RuntimeConfig;
 let options: TaskExecutionOptions;
@@ -305,6 +311,7 @@ describe("goal run cancellation", () => {
           onStreamActivity: activity,
         },
         execute,
+        { timeoutMs: EVALUATION_TIMEOUT_MS },
       );
       const settled = pending.then(
         (value) => ({ value }),
@@ -313,7 +320,7 @@ describe("goal run cancellation", () => {
       await vi.advanceTimersByTimeAsync(0);
       if (cause === "deadline") {
         await vi.advanceTimersByTimeAsync(
-          goalEvaluation.GOAL_EVALUATION_TIMEOUT_MS,
+          EVALUATION_TIMEOUT_MS,
         );
         expect(await settled).toMatchObject({
           value: {
@@ -330,7 +337,7 @@ describe("goal run cancellation", () => {
       const turnOptions = execute.mock.calls[0]![2];
       expect(turnOptions.signal?.aborted).toBe(true);
       expect(turnOptions.maxDurationMs).toBe(
-        goalEvaluation.GOAL_EVALUATION_TIMEOUT_MS,
+        EVALUATION_TIMEOUT_MS,
       );
       await turnOptions.onStateChange?.({
         task: "Late evaluator event",
@@ -425,9 +432,10 @@ describe("goal run cancellation", () => {
       config,
       { ...options, onStreamActivity: vi.fn() },
       execute,
+      { timeoutMs: EVALUATION_TIMEOUT_MS },
     );
     await vi.advanceTimersByTimeAsync(
-      goalEvaluation.GOAL_EVALUATION_TIMEOUT_MS,
+      EVALUATION_TIMEOUT_MS,
     );
     expect(await pending).toMatchObject({
       status: "cancelled",

@@ -206,7 +206,7 @@ describe("goal and parallel agent combinations", () => {
               : undefined,
           );
           if (evaluating) {
-            expect(params.scopedWorkerToolDefinitions).toEqual([]);
+            expect(params.scopedWorkerToolDefinitions).toBeUndefined();
             evaluationTools.push(tools);
             evaluations += 1;
           } else {
@@ -246,8 +246,9 @@ describe("goal and parallel agent combinations", () => {
       const modelAdapter: AgentModelAdapter = {
         startTurn: async (params) => {
           const toolNames = params.tools.map((tool) => tool.name);
-          const evaluating =
-            toolNames.length === 1 && toolNames[0] === "submit_final_response";
+          const evaluating = params.systemPrompt.includes(
+            "independent goal evaluator",
+          );
           if (evaluating) {
             evaluationTools.push(toolNames);
             evaluations += 1;
@@ -343,8 +344,17 @@ describe("goal and parallel agent combinations", () => {
         );
       }
       expect(evaluationTools).toHaveLength(expectedTurns);
-      for (const tools of evaluationTools)
-        expect(tools).toEqual(cliProvider ? [] : ["submit_final_response"]);
+      for (const tools of evaluationTools) {
+        expect(tools).not.toContain("run_parallel_agents");
+        expect(tools).not.toContain("create_file");
+        expect(tools).not.toContain("replace_in_file");
+        expect(tools).not.toContain("create_git_commit");
+        if (!cliProvider) {
+          expect(tools).toContain("read_file");
+          expect(tools).toContain("run_shell_command");
+          expect(tools).toContain("navigate_browser_page");
+        }
+      }
       const expectedDelegations =
         parallelMode === "disabled" ? 0 : expectedTurns;
       expect(parallelResults).toHaveLength(expectedDelegations);

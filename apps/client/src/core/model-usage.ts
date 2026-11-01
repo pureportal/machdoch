@@ -148,7 +148,11 @@ const createDefaultAttempt = (
 export class TaskModelUsageRecorder {
   private readonly calls: TaskModelUsageCall[] = [];
   private readonly pendingCalls = new Map<number, PendingObservedModelCall>();
-  private readonly tokenUsage = { totalTokens: 0, unavailableCallCount: 0 };
+  private readonly tokenUsage = {
+    totalTokens: 0,
+    uncachedTokens: 0,
+    unavailableCallCount: 0,
+  };
   private nextPendingCallId = 1;
 
   beginObservedCall(call: ObservedModelCall, startedAt: number): number {
@@ -216,10 +220,21 @@ export class TaskModelUsageRecorder {
       this.tokenUsage.unavailableCallCount += 1;
     } else {
       this.tokenUsage.totalTokens += normalizedUsage.totalTokens;
+      this.tokenUsage.uncachedTokens += Math.max(
+        0,
+        normalizedUsage.totalTokens -
+          (normalizedUsage.cacheReadInputTokens ??
+            normalizedUsage.cachedInputTokens ??
+            0),
+      );
     }
   }
 
-  getTokenUsage(): { totalTokens: number; unavailableCallCount: number } {
+  getTokenUsage(): {
+    totalTokens: number;
+    uncachedTokens: number;
+    unavailableCallCount: number;
+  } {
     return { ...this.tokenUsage };
   }
 

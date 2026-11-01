@@ -5,7 +5,7 @@ const MAX_JSON_LINE_CHARS = 2_000_000;
 const MAX_DIAGNOSTIC_LINES = 20;
 const MAX_DIAGNOSTIC_LINE_CHARS = 2_000;
 const BACKGROUND_WAIT_STEP_MS = 10 * 60 * 1_000;
-const MAX_BACKGROUND_WAIT_STEPS = 6;
+export const DEFAULT_BACKGROUND_WAIT_MS = 60 * 60 * 1_000;
 const BACKGROUND_FOLLOW_UP_GRACE_MS = 2 * 60 * 1_000;
 
 const USAGE_COUNTS = [
@@ -405,6 +405,7 @@ export class ClaudeCliOutputDecoder
   private backgroundTasks = 0;
   private waitingForBackgroundTasks = false;
   private backgroundWaitSteps = 0;
+  private readonly maxBackgroundWaitSteps: number;
   private waitExpired = false;
   private carriedModelCalls = 0;
   private carriedUsage: AgentModelStreamUsage | undefined;
@@ -416,8 +417,13 @@ export class ClaudeCliOutputDecoder
   constructor(
     captureToolEvidence = false,
     private readonly waitForBackgroundTasks = false,
+    backgroundWaitMs = DEFAULT_BACKGROUND_WAIT_MS,
   ) {
     super(captureToolEvidence);
+    this.maxBackgroundWaitSteps = Math.max(
+      1,
+      Math.ceil(backgroundWaitMs / BACKGROUND_WAIT_STEP_MS),
+    );
   }
 
   getFinalOutput(): string {
@@ -442,7 +448,7 @@ export class ClaudeCliOutputDecoder
   takeBackgroundWaitNotice(): string | undefined {
     if (!this.waitingForBackgroundTasks || this.backgroundTasks === 0)
       return undefined;
-    if (this.backgroundWaitSteps >= MAX_BACKGROUND_WAIT_STEPS - 1) {
+    if (this.backgroundWaitSteps >= this.maxBackgroundWaitSteps - 1) {
       this.waitExpired = true;
       return undefined;
     }

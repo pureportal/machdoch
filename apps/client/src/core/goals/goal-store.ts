@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { getUserConfigPath } from "../env.js";
-import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
+import {
+  CooperativeFileLockTimeoutError,
+  withCooperativeFileLock,
+} from "../_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
 import {
   isSessionGoal,
@@ -10,11 +13,36 @@ import {
   type SessionGoal,
 } from "../../shared/goals.js";
 
+export const GOAL_REQUIREMENT_STATUSES = [
+  "verified",
+  "missing",
+  "failed",
+] as const;
+export type GoalRequirementStatus = (typeof GOAL_REQUIREMENT_STATUSES)[number];
+
+export interface GoalRequirement {
+  text: string;
+  status: GoalRequirementStatus;
+  evidence: string;
+}
+
+export interface GoalVerdict {
+  turn: number;
+  decision: "complete" | "continue" | "blocked";
+  summary: string;
+  requirements: GoalRequirement[];
+  createdAt: number;
+}
+
 export interface GoalRecord {
   version: 1;
   mode: GoalMode;
   goal: SessionGoal | null;
+  nextStep?: string;
+  verdicts?: GoalVerdict[];
 }
+
+const MAX_SAVED_VERDICTS = 20;
 
 class InvalidGoalRecordError extends Error {
   constructor(options?: ErrorOptions) {
@@ -23,6 +51,9 @@ class InvalidGoalRecordError extends Error {
   }
 }
 
+const getGoalsDirectory = (): string =>
+  join(dirname(getUserConfigPath()), "goals");
+
 export const getGoalPath = (
   workspaceRoot: string,
   sessionId: string,
@@ -30,7 +61,32 @@ export const getGoalPath = (
   const key = createHash("sha256")
     .update(JSON.stringify([resolve(workspaceRoot), sessionId]))
     .digest("hex");
-  return join(dirname(getUserConfigPath()), "goals", `${key}.json`);
+  return join(getGoalsDirectory(), `${key}.json`);
+};
+
+const isGoalRequirement = (value: unknown): value is GoalRequirement => {
+  if (typeof value !== "object" || value === null) return false;
+  const requirement = value as Record<string, unknown>;
+  return (
+    typeof requirement.text === "string" &&
+    typeof requirement.evidence === "string" &&
+    GOAL_REQUIREMENT_STATUSES.includes(
+      requirement.status as GoalRequirementStatus,
+    )
+  );
+};
+
+const isGoalVerdict = (value: unknown): value is GoalVerdict => {
+  if (typeof value !== "object" || value === null) return false;
+  const verdict = value as Record<string, unknown>;
+  return (
+    typeof verdict.turn === "number" &&
+    typeof verdict.summary === "string" &&
+    typeof verdict.createdAt === "number" &&
+    ["complete", "continue", "blocked"].includes(String(verdict.decision)) &&
+    Array.isArray(verdict.requirements) &&
+    verdict.requirements.every(isGoalRequirement)
+  );
 };
 
 export const readGoalRecord = async (path: string): Promise<GoalRecord> => {
@@ -49,7 +105,19 @@ export const readGoalRecord = async (path: string): Promise<GoalRecord> => {
     ) {
       throw new InvalidGoalRecordError();
     }
-    return { version: value.version, mode: value.mode, goal: value.goal };
+    return {
+      version: value.version,
+      mode: value.mode,
+      goal: value.goal,
+      ...("nextStep" in value && typeof value.nextStep === "string"
+        ? { nextStep: value.nextStep }
+        : {}),
+      ...("verdicts" in value &&
+      Array.isArray(value.verdicts) &&
+      value.verdicts.every(isGoalVerdict)
+        ? { verdicts: value.verdicts }
+        : {}),
+    };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT")
       return { version: 1, mode: "machdoch", goal: null };
@@ -68,6 +136,14 @@ export const updateGoalRecord = async (
     await writeJsonAtomically(path, record, { mode: 0o600 });
     return record;
   });
+
+export const appendGoalVerdict = (
+  record: GoalRecord,
+  verdict: GoalVerdict,
+): GoalRecord => ({
+  ...record,
+  verdicts: [...(record.verdicts ?? []), verdict].slice(-MAX_SAVED_VERDICTS),
+});
 
 export const clearGoalRecord = async (
   path: string,
@@ -88,3 +164,63 @@ export const clearGoalRecord = async (
     await writeJsonAtomically(path, record, { mode: 0o600 });
     return record;
   });
+
+export const INTERRUPTED_GOAL_REASON =
+  "Execution interrupted. Resume to continue.";
+
+/**
+ * Pauses the active goal unless a live run holds it. Returns the current record.
+ */
+export const pauseGoalIfInterrupted = async (
+  path: string,
+  signal?: AbortSignal,
+): Promise<GoalRecord> => {
+  try {
+    return await withCooperativeFileLock(
+      `${path}.run`,
+      () =>
+        updateGoalRecord(path, (current) => ({
+          ...current,
+          goal:
+            current.goal?.status === "active"
+              ? {
+                  ...current.goal,
+                  status: "paused",
+                  reason: INTERRUPTED_GOAL_REASON,
+                  updatedAt: Date.now(),
+                }
+              : current.goal,
+        })),
+      { timeoutMs: 1_000, ...(signal ? { signal } : {}) },
+    );
+  } catch (error) {
+    if (
+      !(error instanceof CooperativeFileLockTimeoutError) ||
+      !["active", "initializing"].includes(error.inspection.state)
+    )
+      throw error;
+    return readGoalRecord(path);
+  }
+};
+
+/** Goals left `active` by a run that died stay that way until something looks. */
+export const pauseInterruptedGoals = async (): Promise<void> => {
+  const directory = getGoalsDirectory();
+  const names = await readdir(directory).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  });
+  for (const name of names) {
+    if (!/^[0-9a-f]{64}\.json$/u.test(name)) continue;
+    const path = join(directory, name);
+    try {
+      if ((await readGoalRecord(path)).goal?.status === "active") {
+        await pauseGoalIfInterrupted(path);
+      }
+    } catch (error) {
+      if (!(error instanceof InvalidGoalRecordError)) {
+        console.error(`Could not check saved goal ${name}`, error);
+      }
+    }
+  }
+};

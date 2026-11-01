@@ -17,7 +17,7 @@ export const describeGoal = (
   { brief = false }: { brief?: boolean } = {},
 ): string =>
   goal
-    ? `Goal ${goal.status === "budget-limited" ? "limit reached" : goal.status}: ${brief ? briefObjective(goal.objective) : goal.objective}\n${goal.turns} turns · ${goal.tokensUsed} tokens · ${Math.round(goal.elapsedMs / 1_000)}s${goal.turnBudget ? ` · turn limit ${goal.turnBudget}` : ""}${goal.tokenBudget ? ` · token limit ${goal.tokenBudget}` : ""}${goal.timeBudgetMs ? ` · time limit ${Math.round(goal.timeBudgetMs / 60_000)}m` : ""}${goal.reason ? `\n${goal.reason}` : ""}`
+    ? `Goal ${goal.status === "budget-limited" ? "limit reached" : goal.status}: ${brief ? briefObjective(goal.objective) : goal.objective}\n${goal.turns} turns · ${goal.tokensUsed} tokens · ${Math.round(goal.elapsedMs / 1_000)}s${goal.costUsd ? ` · $${goal.costUsd.toFixed(2)}` : ""}${goal.totalRequirements ? ` · ${goal.verifiedRequirements ?? 0} of ${goal.totalRequirements} verified` : ""}${goal.turnBudget ? ` · turn limit ${goal.turnBudget}` : ""}${goal.tokenBudget ? ` · token limit ${goal.tokenBudget}` : ""}${goal.timeBudgetMs ? ` · time limit ${Math.round(goal.timeBudgetMs / 60_000)}m` : ""}${goal.costBudgetUsd ? ` · cost limit $${goal.costBudgetUsd}` : ""}${goal.reason ? `\n${goal.reason}` : ""}`
     : "No goal set.";
 
 export const commandResult = (

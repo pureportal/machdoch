@@ -6,15 +6,19 @@ import { parseGoalCommand } from "./goal-command.js";
 import {
   clearGoalRecord,
   getGoalPath,
+  pauseGoalIfInterrupted,
   readGoalRecord,
   updateGoalRecord,
 } from "./goal-store.js";
 import { commandResult, describeGoal } from "./goal-result.js";
 import { executeGoalRun, type GoalTurnExecutor } from "./run-goal.js";
-import {
-  CooperativeFileLockTimeoutError,
-  withCooperativeFileLock,
-} from "../_helpers/with-cooperative-file-lock.helper.js";
+import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
+
+const COST_LIMIT_UNAVAILABLE =
+  "Only Claude CLI reports cost. Select it, or set a goal without --cost.";
+
+const reportsGoalCost = (provider: string): boolean =>
+  provider === "claude-cli";
 
 export const executeWithSessionGoal = async (
   task: string,
@@ -64,35 +68,7 @@ export const executeWithSessionGoal = async (
     record.goal?.status === "active" &&
     (command?.kind === "status" || command?.kind === "mode")
   ) {
-    try {
-      record = await withCooperativeFileLock(
-        `${path}.run`,
-        () =>
-          updateGoalRecord(path, (current) => ({
-            ...current,
-            goal:
-              current.goal?.status === "active"
-                ? {
-                    ...current.goal,
-                    status: "paused",
-                    reason: "Execution interrupted. Resume to continue.",
-                    updatedAt: Date.now(),
-                  }
-                : current.goal,
-          })),
-        {
-          timeoutMs: 1_000,
-          ...(options.signal ? { signal: options.signal } : {}),
-        },
-      );
-    } catch (error) {
-      if (
-        !(error instanceof CooperativeFileLockTimeoutError) ||
-        !["active", "initializing"].includes(error.inspection.state)
-      )
-        throw error;
-      record = await readGoalRecord(path);
-    }
+    record = await pauseGoalIfInterrupted(path, options.signal);
   }
   if (
     selectedMode &&
@@ -175,10 +151,8 @@ export const executeWithSessionGoal = async (
           throw new Error(
             "Native goals are unavailable for this provider. Choose Machdoch mode.",
           );
-        if (mode === "native" && (command.tokenBudget || command.turnBudget)) {
-          throw new Error(
-            "Use Machdoch mode for token or turn limits. Native goals support --minutes.",
-          );
+        if (command.costBudgetUsd && !reportsGoalCost(config.provider)) {
+          throw new Error(COST_LIMIT_UNAVAILABLE);
         }
         record = await updateGoalRecord(path, (current) => {
           if (
@@ -188,7 +162,8 @@ export const executeWithSessionGoal = async (
             current.goal.mode === mode &&
             current.goal.tokenBudget === command.tokenBudget &&
             current.goal.turnBudget === command.turnBudget &&
-            current.goal.timeBudgetMs === command.timeBudgetMs
+            current.goal.timeBudgetMs === command.timeBudgetMs &&
+            current.goal.costBudgetUsd === command.costBudgetUsd
           ) {
             return {
               ...current,
@@ -223,6 +198,9 @@ export const executeWithSessionGoal = async (
               ...(command.timeBudgetMs
                 ? { timeBudgetMs: command.timeBudgetMs }
                 : {}),
+              ...(command.costBudgetUsd
+                ? { costBudgetUsd: command.costBudgetUsd }
+                : {}),
             },
           };
         });
@@ -237,6 +215,11 @@ export const executeWithSessionGoal = async (
             throw new Error(
               "This goal uses an unavailable native provider. Select its provider or clear the goal.",
             );
+          if (
+            current.goal.costBudgetUsd &&
+            !reportsGoalCost(config.provider)
+          )
+            throw new Error(COST_LIMIT_UNAVAILABLE);
           if (current.goal.status === "complete")
             throw new Error("This goal is complete. Set a new goal.");
           if (current.goal.status === "budget-limited")

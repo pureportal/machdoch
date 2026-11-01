@@ -4397,4 +4397,44 @@ describe("chat provider sessions", () => {
     );
     expect(call.args).toContain("--no-session-persistence");
   });
+
+  it("gives a goal check inspection tools but no Claude edit tools", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    const pending = maybeExecuteExternalAgentProviderTask({
+      ...createChatParams(workspaceRoot, []),
+      resultProtocol: { kind: "goal-evaluation" },
+    });
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    expect(call.args).toContain("--no-session-persistence");
+    expect(call.args).not.toContain("--tools");
+    expect(flagValue(call, "--disallowedTools")).toBe(
+      "Agent,Edit,Write,NotebookEdit",
+    );
+    call.child.emit("close", 1, null);
+    await pending;
+  });
+
+  it("lets a goal check run commands under Codex", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const pending = maybeExecuteExternalAgentProviderTask({
+      ...createChatParams(workspaceRoot, [], {
+        provider: "codex-cli",
+        model: "gpt-5.5",
+      }),
+      resultProtocol: { kind: "goal-evaluation" },
+    });
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    if (process.platform === "win32") {
+      expect(call.args).toContain("--dangerously-bypass-approvals-and-sandbox");
+    } else {
+      expect(flagValue(call, "--sandbox")).toBe("workspace-write");
+    }
+    expect(call.args).toContain("--ephemeral");
+    call.child.emit("close", 1, null);
+    await pending;
+  });
 });

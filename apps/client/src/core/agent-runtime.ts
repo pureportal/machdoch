@@ -1052,19 +1052,16 @@ const runExecutorCycle = async (
 ): Promise<ExecutorCycleOutcome> => {
   throwIfExecutionAborted(signal);
 
-  const toolDefinitions =
-    resultProtocol?.kind === "goal-evaluation"
-      ? []
-      : [
-          ...createToolDefinitions(
-            config,
-            conversationContext.memory,
-            conversationContext.uiControlEnabled
-              ? conversationContext.uiControl
-              : undefined,
-          ),
-          ...(additionalToolDefinitions ?? []),
-        ].filter(isAgentToolGranted);
+  const toolDefinitions = [
+    ...createToolDefinitions(
+      config,
+      conversationContext.memory,
+      conversationContext.uiControlEnabled
+        ? conversationContext.uiControl
+        : undefined,
+    ),
+    ...(additionalToolDefinitions ?? []),
+  ].filter(isAgentToolGranted);
   const finalResponseTool = createFinalResponseTool(resultProtocol);
   const toolSpecs = [
     ...toolDefinitions.map((toolDefinition) => toolDefinition.spec),
@@ -2566,7 +2563,8 @@ export const maybeExecuteModelDrivenTask = async (
           ? { instructionDeliveryPlan: instructionPlan }
           : {}),
         instructionDeliveryReceipts: instructionReceipts,
-        ...(params.resultProtocol?.kind === "goal-evaluation"
+        ...(params.resultProtocol?.kind === "goal-evaluation" &&
+        executionConfig.mode !== "machdoch"
           ? { scopedWorkerToolDefinitions: [] }
           : {}),
         ...(parallelTool

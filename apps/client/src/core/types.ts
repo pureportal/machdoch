@@ -505,6 +505,8 @@ export interface TaskExecutionNarrative {
 export interface TaskExecutionOptions {
   nativeGoal?: string | undefined;
   captureGoalEvidence?: boolean;
+  /** How long a goal turn waits for background jobs before ending. */
+  goalBackgroundWaitMs?: number | undefined;
   signal?: AbortSignal;
   runId?: string;
   skipUnreachableMcpServers?: boolean;

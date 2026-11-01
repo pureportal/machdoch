@@ -241,7 +241,10 @@ const createStateTimelineEvent = (
     id: createTimelineEventId(timestamp, index),
     kind: "state",
     phase: progress.cancellable ? "started" : "completed",
-    label: THINKING_STATE_LABELS[progress.state],
+    label:
+      progress.state === "cancelled" && progress.goal?.status === "paused"
+        ? "Paused"
+        : THINKING_STATE_LABELS[progress.state],
     detail: limitTimelineDetail(detail),
     tone: THINKING_STATE_TONES[progress.state],
     timestamp,

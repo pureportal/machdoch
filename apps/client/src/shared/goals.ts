@@ -2,6 +2,8 @@ import { getDiscoveredProviderFeature } from "@machdoch/model-runtime/model-capa
 
 export type GoalMode = "machdoch" | "native";
 
+export const MAX_GOAL_OBJECTIVE_CHARS = 4_000;
+
 export const isGoalCommand = (task: string): boolean =>
   /^\/goal(?:\s|$)/u.test(task.trim());
 
@@ -20,9 +22,14 @@ export interface SessionGoal {
   turns: number;
   tokensUsed: number;
   elapsedMs: number;
+  costUsd?: number;
   tokenBudget?: number;
   turnBudget?: number;
   timeBudgetMs?: number;
+  costBudgetUsd?: number;
+  /** Requirements the last check verified, out of those it listed. */
+  verifiedRequirements?: number;
+  totalRequirements?: number;
   reason: string;
   createdAt: number;
   updatedAt: number;
@@ -44,6 +51,9 @@ export const resolveGoalMode = (
 const isNonnegativeInteger = (value: unknown): value is number =>
   Number.isSafeInteger(value) && (value as number) >= 0;
 
+const isNonnegativeNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0;
+
 export const isSessionGoal = (value: unknown): value is SessionGoal => {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return false;
@@ -53,7 +63,7 @@ export const isSessionGoal = (value: unknown): value is SessionGoal => {
     goal.id.length > 0 &&
     typeof goal.objective === "string" &&
     goal.objective.trim().length > 0 &&
-    goal.objective.length <= 4_000 &&
+    goal.objective.length <= MAX_GOAL_OBJECTIVE_CHARS &&
     (goal.mode === "machdoch" || goal.mode === "native") &&
     typeof goal.status === "string" &&
     ["active", "paused", "blocked", "budget-limited", "complete"].includes(
@@ -67,6 +77,12 @@ export const isSessionGoal = (value: unknown): value is SessionGoal => {
         goal[key] === undefined ||
         (isNonnegativeInteger(goal[key]) && (goal[key] as number) > 0),
     ) &&
+    ["verifiedRequirements", "totalRequirements"].every(
+      (key) => goal[key] === undefined || isNonnegativeInteger(goal[key]),
+    ) &&
+    (goal.costUsd === undefined || isNonnegativeNumber(goal.costUsd)) &&
+    (goal.costBudgetUsd === undefined ||
+      (isNonnegativeNumber(goal.costBudgetUsd) && goal.costBudgetUsd > 0)) &&
     typeof goal.reason === "string"
   );
 };

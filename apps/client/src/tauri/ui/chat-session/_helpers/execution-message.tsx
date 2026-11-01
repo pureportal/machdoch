@@ -1,9 +1,15 @@
 import type { TaskExecutionResult } from "../../../../core/types.js";
+import { isSessionGoal } from "../../../../shared/goals.js";
 import type { ChatSessionMessage } from "../../chat-session.model";
 import type { TaskThinkingTrace } from "../../task-thinking.model";
 import { stripContextAttachmentsTaskBlock } from "./session-context-attachments";
 import { getTaskActionDisplayContent } from "./task-action-prompts";
 import { answerSpeechRevision, markdownToSpeech, type FinalAnswerEvent } from "@machdoch/speech";
+
+const isPausedGoalExecution = (execution: TaskExecutionResult): boolean => {
+  const goal = execution.metadata?.goal;
+  return isSessionGoal(goal) && goal.status === "paused";
+};
 
 export const createFallbackExecutionMarkdown = (
   execution: TaskExecutionResult,
@@ -11,6 +17,8 @@ export const createFallbackExecutionMarkdown = (
   const summary =
     execution.summary.trim() ||
     "The task completed without a detailed summary.";
+
+  if (isPausedGoalExecution(execution)) return `**Paused.** ${summary}`;
 
   switch (execution.status) {
     case "planned":
@@ -173,6 +181,9 @@ export const createExecutionThinkingTrace = (
   execution: TaskExecutionResult,
 ): TaskThinkingTrace => {
   const summaryTone = createExecutionThinkingTone(execution.status);
+  const summaryLabel = isPausedGoalExecution(execution)
+    ? "Paused"
+    : createExecutionThinkingLabel(execution.status);
   const timelineEvents: TaskThinkingTrace["timelineEvents"] = [];
   const normalizedSummary = execution.summary.trim();
   let omittedEntryCount = 0;
@@ -207,7 +218,7 @@ export const createExecutionThinkingTrace = (
 
   if (normalizedSummary.length > 0) {
     appendEntry(
-      createExecutionThinkingLabel(execution.status),
+      summaryLabel,
       normalizedSummary,
       summaryTone,
     );
@@ -249,7 +260,7 @@ export const createExecutionThinkingTrace = (
       id: `${execution.task}-empty`,
       kind: "state",
       phase: "completed",
-      label: createExecutionThinkingLabel(execution.status),
+      label: summaryLabel,
       detail: "Task finished without additional execution trace details.",
       tone: summaryTone,
       timestamp: 0,

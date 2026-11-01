@@ -15,6 +15,10 @@ import type { GoalTurnExecutor } from "./run-goal.js";
 import { parseGoalCommand } from "./goal-command.js";
 import { getGoalPath, readGoalRecord, updateGoalRecord } from "./goal-store.js";
 
+vi.mock("../_helpers/task-file-change-capture.js", () => ({
+  startTaskFileChangeCapture: vi.fn(async () => undefined),
+}));
+
 let directory: string;
 let config: RuntimeConfig;
 let options: TaskExecutionOptions;
@@ -338,7 +342,7 @@ describe("goal lifecycle", () => {
         adaptiveControllerOverride: false,
       },
     });
-    expect(execute.mock.calls[1]![1].mode).toBe("ask");
+    expect(execute.mock.calls[1]![1].mode).toBe("machdoch");
     expect(progress.at(-1)).toBe("completed");
     expect(progress.filter((state) => state === "completed")).toHaveLength(1);
   });
@@ -900,14 +904,196 @@ describe("native goals", () => {
       });
     },
   );
-  it("requires Machdoch mode for token and turn limits", async () => {
+  it.each(["claude-cli", "codex-cli"] as const)(
+    "reruns a %s goal on the evaluator's next step until it stalls, and carries it into the resumed goal",
+    async (provider) => {
+      config.provider = provider;
+      options.conversationContext!.goalMode = "native";
+      const firstRun = vi.fn<GoalTurnExecutor>(
+        async (_task, _config, turnOptions) =>
+          turnOptions.resultProtocol ? evaluation("continue") : result(),
+      );
+      const paused = await run("/goal Fix auth", firstRun);
+      const workCalls = firstRun.mock.calls.filter(
+        (call) => !call[2].resultProtocol,
+      );
+      expect(workCalls).toHaveLength(4);
+      expect(workCalls[0]![2].conversationContext?.continueProviderSession).toBe(
+        false,
+      );
+      expect(workCalls[1]![2].conversationContext?.continueProviderSession).toBe(
+        true,
+      );
+      expect(workCalls[1]![2].nativeGoal).toBe(
+        "Fix auth\n\nNext step from the last check: Run the remaining tests.",
+      );
+      expect(paused.summary).toContain("Run the remaining tests.");
+      expect(await read()).toMatchObject({
+        nextStep: "Run the remaining tests.",
+        goal: {
+          status: "paused",
+          reason: "No new progress in 3 checks. Run the remaining tests.",
+        },
+      });
+
+      const resumedRun = vi.fn<GoalTurnExecutor>(
+        async (_task, _config, turnOptions) =>
+          turnOptions.resultProtocol ? evaluation("complete") : result(),
+      );
+      await run("/goal resume", resumedRun);
+      expect(resumedRun.mock.calls[0]![2].nativeGoal).toBe(
+        "Fix auth\n\nNext step from the last check: Run the remaining tests.",
+      );
+      expect(resumedRun.mock.calls[1]![0]).toContain('Goal: "Fix auth"');
+      expect((await read()).goal).toMatchObject({
+        objective: "Fix auth",
+        status: "complete",
+      });
+    },
+  );
+  it("keeps a native goal with its next step within the objective limit", async () => {
     config.provider = "claude-cli";
     options.conversationContext!.goalMode = "native";
-    await expect(run("/goal --tokens 100 Fix auth")).rejects.toThrow(
-      "Machdoch mode",
+    const objective = "o".repeat(3_990);
+    const nativeGoals: Array<string | undefined> = [];
+    const execute = vi.fn<GoalTurnExecutor>(
+      async (_task, _config, turnOptions) => {
+        if (turnOptions.resultProtocol) return evaluation("continue");
+        nativeGoals.push(turnOptions.nativeGoal);
+        return result();
+      },
     );
-    await expect(run("/goal --turns 5 Fix auth")).rejects.toThrow(
-      "Machdoch mode",
+    await run(`/goal ${objective}`, execute);
+    await run("/goal resume", execute);
+    expect(nativeGoals[0]).toBe(objective);
+    expect(nativeGoals[1]).toHaveLength(4_000);
+    expect(nativeGoals[1]!.startsWith(objective)).toBe(true);
+  });
+  it("tells the evaluator how a native run ended and what it covered", async () => {
+    config.provider = "claude-cli";
+    options.conversationContext!.goalMode = "native";
+    let evaluatorPrompt = "";
+    await run(
+      "/goal Fix auth",
+      vi.fn<GoalTurnExecutor>(async (task, turnConfig, turnOptions) => {
+        if (turnOptions.resultProtocol) {
+          evaluatorPrompt = task;
+          return evaluation("continue");
+        }
+        await turnOptions.onStateChange?.({
+          task,
+          mode: turnConfig.mode,
+          state: "executing",
+          message: "Working.",
+          cancellable: true,
+          executedTools: [],
+          outputSections: [],
+          agentLive: {
+            provider: "claude-cli",
+            transport: "stream-json",
+            capabilities: [],
+            model: "opus",
+            plan: [{ text: "Update login", status: "completed" }],
+            fileChanges: [{ path: "src/auth.ts", kind: "update" }],
+          },
+        });
+        return result({
+          status: "blocked",
+          summary: "Background jobs stopped with the run.",
+          response: {
+            markdown: "Waiting on the build.",
+            highlights: [],
+            relatedFiles: [],
+            verification: [],
+            followUps: [],
+          },
+        });
+      }),
     );
+    expect(evaluatorPrompt).toContain("Background jobs stopped with the run.");
+    expect(evaluatorPrompt).toContain("Waiting on the build.");
+    expect(evaluatorPrompt).toContain("Update login");
+    expect(evaluatorPrompt).toContain("src/auth.ts");
+  });
+  it("stops native reruns at a goal's own turn limit", async () => {
+    config.provider = "claude-cli";
+    options.conversationContext!.goalMode = "native";
+    const execute = vi.fn<GoalTurnExecutor>(
+      async (_task, _config, turnOptions) =>
+        turnOptions.resultProtocol ? evaluation("continue") : result(),
+    );
+    await run("/goal --turns 2 Fix auth", execute);
+    expect((await read()).goal).toMatchObject({
+      status: "budget-limited",
+      turnBudget: 2,
+      turns: 2,
+    });
+  });
+  it("pauses at the configured pass limit and allows another round on resume", async () => {
+    config.provider = "claude-cli";
+    config.agentLimits = {
+      executorTurns: 64,
+      autopilotExecutorIterations: 16,
+      goalPasses: 2,
+    };
+    options.conversationContext!.goalMode = "native";
+    const execute = vi.fn<GoalTurnExecutor>(
+      async (_task, _config, turnOptions) =>
+        turnOptions.resultProtocol ? evaluation("continue") : result(),
+    );
+    await run("/goal Fix auth", execute);
+    expect((await read()).goal).toMatchObject({
+      status: "paused",
+      turns: 2,
+      reason: "Stopped after 2 passes. Resume to continue. Run the remaining tests.",
+    });
+    await run("/goal resume", execute);
+    expect((await read()).goal?.turns).toBe(4);
+  });
+  it("rejects a cost limit on a provider that reports no cost", async () => {
+    config.provider = "codex-cli";
+    options.conversationContext!.goalMode = "native";
+    await expect(run("/goal --cost 5 Fix auth")).rejects.toThrow(
+      "Only Claude CLI reports cost",
+    );
+  });
+  it("keeps a cost-limited goal from resuming on a provider without cost", async () => {
+    config.provider = "claude-cli";
+    await run(
+      "/goal --cost 5 Fix auth",
+      vi.fn(async () => result()),
+    );
+    config.provider = "openai";
+    await expect(run("/goal resume")).rejects.toThrow(
+      "Only Claude CLI reports cost",
+    );
+  });
+  it("resumes a native goal on another native provider without its old session", async () => {
+    config.provider = "claude-cli";
+    options.conversationContext!.goalMode = "native";
+    const execute = vi.fn<GoalTurnExecutor>(
+      async (_task, _config, turnOptions) =>
+        turnOptions.resultProtocol ? evaluation("continue") : result(),
+    );
+    config.agentLimits = {
+      executorTurns: 64,
+      autopilotExecutorIterations: 16,
+      goalPasses: 1,
+    };
+    await run("/goal Fix auth", execute);
+    config.provider = "codex-cli";
+    const resumed = vi.fn<GoalTurnExecutor>(
+      async (_task, turnConfig, turnOptions) => {
+        if (turnOptions.resultProtocol) return evaluation("complete");
+        expect(turnConfig.provider).toBe("codex-cli");
+        expect(turnOptions.conversationContext?.continueProviderSession).toBe(
+          false,
+        );
+        expect(turnOptions.nativeGoal).toContain("Run the remaining tests.");
+        return result();
+      },
+    );
+    await run("/goal resume", resumed);
+    expect((await read()).goal?.status).toBe("complete");
   });
 });

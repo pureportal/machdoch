@@ -453,6 +453,9 @@ const runTaskExecutionStateMachine = async (
             ...(options.captureGoalEvidence
               ? { captureGoalEvidence: true }
               : {}),
+            ...(options.goalBackgroundWaitMs !== undefined
+              ? { goalBackgroundWaitMs: options.goalBackgroundWaitMs }
+              : {}),
             ...(instructionDeliveryPlan === undefined
               ? {}
               : { instructionDeliveryPlan }),

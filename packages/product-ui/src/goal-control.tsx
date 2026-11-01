@@ -252,6 +252,10 @@ export function GoalControl({
             {goal && !changed ? (
               <span className="m-goal-progress">
                 {goal.turns} turns · {goal.tokensUsed} tokens
+                {goal.costUsd ? ` · $${goal.costUsd.toFixed(2)}` : ""}
+                {goal.totalRequirements
+                  ? ` · ${goal.verifiedRequirements ?? 0} of ${goal.totalRequirements} verified`
+                  : ""}
               </span>
             ) : null}
             {onUseWithMessageChange &&

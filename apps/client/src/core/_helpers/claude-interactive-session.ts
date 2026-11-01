@@ -111,9 +111,14 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
       captureEvidence: boolean;
       fastMode?: boolean;
       unattended?: boolean;
+      backgroundWaitMs?: number | undefined;
     },
   ) {
-    this.output = new ClaudeCliOutputDecoder(options.captureEvidence, true);
+    this.output = new ClaudeCliOutputDecoder(
+      options.captureEvidence,
+      true,
+      options.backgroundWaitMs,
+    );
     this.requestedFastMode = options.fastMode === true;
     this.unattended = options.unattended === true;
     this.live = new AgentLiveTracker(

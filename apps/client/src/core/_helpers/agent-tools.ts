@@ -81,7 +81,7 @@ export const resolveActionDecision = (
   };
 };
 
-const isReadOnlyToolDefinition = (definition: AgentToolDefinition): boolean => {
+export const isReadOnlyToolDefinition = (definition: AgentToolDefinition): boolean => {
   return isReadOnlyAction(definition.effect);
 };
 

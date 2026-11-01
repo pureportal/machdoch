@@ -10,6 +10,8 @@ import {
   formatCliErrorMessage,
 } from "./_helpers/cli-error.js";
 import { createCliStyle } from "./_helpers/cli-terminal.js";
+import { pruneProviderSessions } from "../core/_helpers/provider-session-store.js";
+import { pauseInterruptedGoals } from "../core/goals/goal-store.js";
 
 const retainRalphExecution = Boolean(process.env.MACHDOCH_RALPH_CANCEL_PATH?.trim());
 
@@ -40,6 +42,12 @@ const exitAfterOutputFlush = async (): Promise<never> => {
   );
   process.exit();
 };
+
+void Promise.all([pauseInterruptedGoals(), pruneProviderSessions()]).catch(
+  (error: unknown) => {
+    console.error("Startup cleanup failed", error);
+  },
+);
 
 runCli(process.argv.slice(2))
   .then(async (command) => {
