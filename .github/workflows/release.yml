@@ -332,7 +332,7 @@ jobs:
       - name: Setup pnpm and Node
         uses: pnpm/setup@v2
         with:
-          runtime: node@22.13
+          runtime: node@24.22
           cache: true
           install: false
 
@@ -719,7 +719,7 @@ jobs:
       - name: Setup pnpm and Node
         uses: pnpm/setup@v2
         with:
-          runtime: node@22.13
+          runtime: node@24.22
           install: false
 
       - name: Install dependencies

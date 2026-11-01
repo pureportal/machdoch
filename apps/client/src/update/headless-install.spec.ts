@@ -43,7 +43,7 @@ async function createArchive(
     "package.json": JSON.stringify({
       name: "machdoch-headless",
       version: "2.0.0",
-      engines: { node: options.node ?? ">=22.13" },
+      engines: { node: options.node ?? ">=24" },
     }),
     "machdoch-cli.cjs": options.broken
       ? "process.exit(1)"

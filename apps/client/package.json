@@ -44,7 +44,7 @@
     "build:fleet-media": "vite build --config vite.fleet-media.config.ts"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": ">=24"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.1",

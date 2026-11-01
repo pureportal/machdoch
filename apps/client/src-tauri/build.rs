@@ -1,5 +1,7 @@
 use std::{
-    env, fs,
+    env,
+    ffi::OsStr,
+    fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -7,6 +9,8 @@ use std::{
 mod embedded_runtime_inputs;
 
 use embedded_runtime_inputs::EmbeddedRuntimeInputs;
+
+const SEARCH_INDEX_PROBE: &str = "new (require('node:sqlite').DatabaseSync)(':memory:').exec(`CREATE VIRTUAL TABLE chunks USING fts5(content, tokenize='unicode61'); INSERT INTO chunks(chunks, rank) VALUES('secure-delete', 1);`)";
 
 fn find_node_binary() -> Option<PathBuf> {
     if let Some(path) = env::var_os("MACHDOCH_NODE_BINARY").map(PathBuf::from) {
@@ -115,13 +119,23 @@ fn copy_file_or_panic(source: &Path, destination: &Path, label: &str) {
 }
 
 fn validate_runtime(node_binary: &Path, cli_bundle: &Path) -> Result<(), String> {
-    run_node_check(node_binary, "--version", None).map_err(|error| {
+    run_node_check(node_binary, &[OsStr::new("--version")]).map_err(|error| {
         format!(
             "The embedded Node runtime is required for this distributable build but the selected executable at {} is invalid: {error}",
             node_binary.display()
         )
     })?;
-    run_node_check(node_binary, "--check", Some(cli_bundle)).map_err(|error| {
+    run_node_check(
+        node_binary,
+        &[OsStr::new("--eval"), OsStr::new(SEARCH_INDEX_PROBE)],
+    )
+    .map_err(|error| {
+        format!(
+            "The Node runtime at {} cannot create the workspace search index because its SQLite lacks FTS5: {error}",
+            node_binary.display()
+        )
+    })?;
+    run_node_check(node_binary, &[OsStr::new("--check"), cli_bundle.as_os_str()]).map_err(|error| {
         format!(
             "The embedded CLI bundle is required for this distributable build but is invalid at {}: {error}",
             cli_bundle.display()
@@ -145,14 +159,9 @@ fn validate_licence_bundle(manifest_dir: &Path, node_binary: &Path) {
     }
 }
 
-fn run_node_check(node_binary: &Path, argument: &str, input: Option<&Path>) -> Result<(), String> {
-    let mut command = Command::new(node_binary);
-    command.arg(argument);
-    if let Some(input) = input {
-        command.arg(input);
-    }
-
-    let status = command
+fn run_node_check(node_binary: &Path, arguments: &[&OsStr]) -> Result<(), String> {
+    let status = Command::new(node_binary)
+        .args(arguments)
         .status()
         .map_err(|error| format!("could not start it: {error}"))?;
     if status.success() {

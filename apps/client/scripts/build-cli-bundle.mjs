@@ -46,7 +46,7 @@ await build({
   },
   platform: "node",
   transform: {
-    target: "node22.13",
+    target: "node24",
   },
   tsconfig: resolve(projectRoot, "tsconfig.json"),
 });
