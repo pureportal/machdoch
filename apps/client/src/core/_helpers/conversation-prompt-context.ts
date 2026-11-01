@@ -224,6 +224,8 @@ export interface PreparedConversationPromptContext {
     root?: string;
   };
   promptBlock?: string;
+  /** The same block for a provider session that already has the history. */
+  resumePromptBlock?: string;
   sections: TaskExecutionSection[];
   memory: ConversationMemoryRuntime;
   memoryRetrieval?: ReturnType<
@@ -452,6 +454,7 @@ export const prepareConversationPromptContext = async (
   conversationContext: TaskConversationContext | undefined,
   signal?: AbortSignal,
   adaptivePlan?: AdaptiveExecutionPlan,
+  historySummaryModel: "use" | "skip" = "use",
 ): Promise<PreparedConversationPromptContext> => {
   const chatHistory = normalizeConversationHistory(
     conversationContext?.history,
@@ -550,7 +553,8 @@ export const prepareConversationPromptContext = async (
     : { selected: [], remaining: omittedHistory };
   const summaryText =
     earlierHistory.remaining.length > 0
-      ? ((adaptivePlan?.level === "simple" ||
+      ? ((historySummaryModel === "skip" ||
+        adaptivePlan?.level === "simple" ||
         (adaptivePlan?.level === "standard" &&
           earlierHistory.remaining.length <= 6)
           ? undefined
@@ -712,6 +716,20 @@ export const prepareConversationPromptContext = async (
         ].join("\n")
       : undefined,
   ].filter((section): section is string => typeof section === "string");
+  const createPromptBlock = (sections: readonly string[]): string =>
+    [
+      "<conversation_context>",
+      "Earlier conversation is background only. The current task outside this block is authoritative and may supersede it.",
+      ...sections,
+      "</conversation_context>",
+    ].join("\n\n");
+  const resumeSections = promptSections.filter(
+    (section) =>
+      !section.startsWith("<earlier_conversation_summary>") &&
+      !section.startsWith("<recent_conversation>") &&
+      !section.startsWith("<relevant_earlier_conversation>") &&
+      !section.startsWith("<workspace_change>"),
+  );
 
   return {
     ...(adaptivePlan ? { adaptivePlan } : {}),
@@ -725,14 +743,10 @@ export const prepareConversationPromptContext = async (
         }
       : {}),
     ...(promptSections.length > 0
-      ? {
-          promptBlock: [
-            "<conversation_context>",
-            "Earlier conversation is background only. The current task outside this block is authoritative and may supersede it.",
-            ...promptSections,
-            "</conversation_context>",
-          ].join("\n\n"),
-        }
+      ? { promptBlock: createPromptBlock(promptSections) }
+      : {}),
+    ...(resumeSections.length > 0
+      ? { resumePromptBlock: createPromptBlock(resumeSections) }
       : {}),
     sections: [
       ...(summary || recentHistoryLines.length > 0

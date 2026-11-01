@@ -291,3 +291,37 @@ describe("CopilotServerSession", () => {
     expect(harness.last("session.destroy")).toBeUndefined();
   });
 });
+
+describe("resuming a stored session", () => {
+  it("resumes with the run's settings and flags a session Copilot no longer has", () => {
+    const harness = createHarness({ resumeSessionId: "stored" });
+    disposeAll.push(() => harness.session.dispose());
+    harness.session.start();
+    harness.reply("connect", { ok: true, protocolVersion: 3 });
+    expect(harness.last("session.create")).toBeUndefined();
+    expect(harness.last("session.resume")?.params).toMatchObject({
+      sessionId: "stored",
+      model: "claude-haiku-5.5",
+    });
+    harness.receive({
+      id: harness.last("session.resume")?.id,
+      error: { code: -32603, message: "Session not found" },
+    });
+    expect(harness.session.providerSessionRejected()).toBe(true);
+  });
+
+  it("continues the turn once the session is back", () => {
+    const harness = createHarness({ resumeSessionId: SESSION_ID });
+    disposeAll.push(() => harness.session.dispose());
+    harness.session.start();
+    harness.reply("connect", { ok: true, protocolVersion: 3 });
+    harness.reply("session.resume", { sessionId: SESSION_ID });
+    harness.reply("session.permissions.setApproveAll", { success: true });
+    harness.reply("session.options.update", { success: true });
+    expect(harness.last("session.send")?.params).toMatchObject({
+      sessionId: SESSION_ID,
+      prompt: "Do the task.",
+    });
+    expect(harness.session.providerSessionRejected()).toBe(false);
+  });
+});

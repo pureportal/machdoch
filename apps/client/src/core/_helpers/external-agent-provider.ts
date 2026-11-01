@@ -89,6 +89,11 @@ import {
   type ExternalAgentCliOutputDecoder,
   type ExternalAgentCliOutputUpdate,
 } from "./external-agent-cli-output.js";
+import {
+  planProviderSessionRun,
+  withProviderSessionLock,
+  type ProviderSessionTarget,
+} from "./provider-session-store.js";
 import { recordExternalAgentModelCall } from "../model-usage.js";
 import {
   CODEX_AUTHENTICATION_RECOVERY,
@@ -118,6 +123,7 @@ export interface SpawnedAgentResult {
   authenticationRequired?: boolean;
   turnLimitReached?: boolean;
   backgroundWaitExpired?: boolean;
+  providerSessionRejected?: boolean;
   providerShutdownRecovery?: {
     kind: "final-output-exit-timeout" | "child-exit-close-timeout";
     graceMs: number;
@@ -424,6 +430,10 @@ const createExternalAgentPrompt = (
   contextSections: TaskExecutionSection[],
   conversationContext: PreparedConversationPromptContext,
   attachmentPaths: readonly string[],
+  session?: {
+    resumed: boolean;
+    runGuidance: readonly string[];
+  },
 ): string => {
   const attachmentBlock =
     attachmentPaths.length > 0
@@ -437,10 +447,15 @@ const createExternalAgentPrompt = (
     .join("\n\n");
   const prompt = [
     attachmentBlock,
+    session && session.runGuidance.length > 0
+      ? ["Guidance for this run:", ...session.runGuidance].join("\n\n")
+      : undefined,
     `Queued before delivery: ${conversationContext.wasQueued ? "yes" : "no"}`,
     "User task:",
     task,
-    conversationContext.promptBlock,
+    session?.resumed
+      ? conversationContext.resumePromptBlock
+      : conversationContext.promptBlock,
     "Resolved Machdoch context:",
     resolvedContext,
   ]
@@ -1143,6 +1158,10 @@ export const runExternalAgentCommand = async (
           ...(outputDecoder.backgroundWaitExpired?.()
             ? { backgroundWaitExpired: true }
             : {}),
+          ...(outputDecoder.providerSessionRejected?.() ||
+          /No conversation found with session ID/iu.test(stderr.text)
+            ? { providerSessionRejected: true }
+            : {}),
           ...(shutdownRecovery
             ? { providerShutdownRecovery: shutdownRecovery }
             : {}),
@@ -1596,6 +1615,8 @@ interface ExternalAgentCommandFactoryParams {
     agent: { name: string; prompt: string };
     mcpConfig: Record<string, unknown>;
   };
+  /** Keeps this conversation so the chat's next run can continue it. */
+  providerSession?: { resumeId?: string; newSessionId: string };
 }
 
 type ExternalAgentDelegationMode = "full-access" | "read-only-artifact";
@@ -1749,6 +1770,7 @@ const createCodexAppServerCommand = ({
   enrollmentArgs,
   nativeSubagents,
   agentFeatures,
+  providerSession,
 }: Pick<
   ExternalAgentCommandFactoryParams,
   | "config"
@@ -1757,6 +1779,7 @@ const createCodexAppServerCommand = ({
   | "enrollmentArgs"
   | "nativeSubagents"
   | "agentFeatures"
+  | "providerSession"
 >): ExternalAgentCommand => {
   const contextWindow = resolveContextWindowForProviderModel(
     config.contextWindow ?? "highest",
@@ -1799,10 +1822,15 @@ const createCodexAppServerCommand = ({
         model: config.model,
         cwd: config.workspaceRoot,
         // Spawned sub-agents need a thread Codex keeps for the run.
-        ephemeral: !nativeSubagents,
+        ephemeral: !nativeSubagents && !providerSession,
         ...(fastMode ? { serviceTier: CODEX_FAST_SERVICE_TIER } : {}),
       },
-      turn: {},
+      turn: providerSession
+        ? { model: config.model, ...(effort ? { effort } : {}) }
+        : {},
+      ...(providerSession?.resumeId
+        ? { resumeThreadId: providerSession.resumeId }
+        : {}),
       fastMode,
       ...(agentFeatures?.reviewChanges
         ? { review: { target: { type: "uncommittedChanges" } } }
@@ -1827,7 +1855,7 @@ const createCodexAppServerCommand = ({
       transport: "app-server",
       userConfig: "isolated-machdoch-projection",
       codexHome: "isolated",
-      sessionPersistence: "ephemeral",
+      sessionPersistence: providerSession ? "chat" : "ephemeral",
       bundledSkills: false,
       requestedReasoning: config.reasoning,
       effectiveReasoning: effort ?? "default",
@@ -1848,6 +1876,7 @@ const createCodexCommand = ({
   scopedWorker,
   nativeGoal,
   agentFeatures,
+  providerSession,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   if (nativeGoal) {
     if (scopedWorker || delegationMode !== "full-access")
@@ -1887,6 +1916,9 @@ const createCodexCommand = ({
         prompt,
         imagePaths: (imageInputs ?? []).map((image) => image.path),
         cwd: config.workspaceRoot,
+        ...(providerSession?.resumeId
+          ? { resumeThreadId: providerSession.resumeId }
+          : {}),
       },
       startMessage: "Starting a native Codex goal.",
       runDetail: "Running a native Codex goal through app-server.",
@@ -1914,6 +1946,7 @@ const createCodexCommand = ({
       enrollmentArgs,
       nativeSubagents,
       ...(agentFeatures ? { agentFeatures } : {}),
+      ...(providerSession ? { providerSession } : {}),
     });
   }
   if (!providerFeatures.includes("--json")) {
@@ -1943,6 +1976,7 @@ const createClaudeCommand = ({
   nativeGoal,
   providerVersion,
   agentFeatures,
+  providerSession,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   if (nativeGoal) {
     const version = /\b(\d+)\.(\d+)\.(\d+)\b/u.exec(providerVersion ?? "");
@@ -2003,7 +2037,15 @@ const createClaudeCommand = ({
     "--model",
     model,
     "--dangerously-skip-permissions",
-    "--no-session-persistence",
+    ...(providerSession
+      ? [
+          ...(providerSession.resumeId
+            ? ["--resume", providerSession.resumeId]
+            : ["--session-id", providerSession.newSessionId]),
+          "--system-prompt-snapshot",
+          "off",
+        ]
+      : ["--no-session-persistence"]),
     ...(scopedWorker
       ? ["--tools", ""]
       : nativeSubagents
@@ -2152,9 +2194,15 @@ const createCopilotServerCommand = ({
   effort,
   contextWindow,
   session,
+  providerSession,
 }: Pick<
   ExternalAgentCommandFactoryParams,
-  "config" | "prompt" | "imageInputs" | "enrollmentArgs" | "nativeSubagents"
+  | "config"
+  | "prompt"
+  | "imageInputs"
+  | "enrollmentArgs"
+  | "nativeSubagents"
+  | "providerSession"
 > & {
   secretEnvKeys: readonly string[];
   effort: string | undefined;
@@ -2187,6 +2235,9 @@ const createCopilotServerCommand = ({
       skipCustomInstructions: enrollmentArgs.includes(
         "--no-custom-instructions",
       ),
+      ...(providerSession?.resumeId
+        ? { resumeSessionId: providerSession.resumeId }
+        : {}),
       session: {
         model: config.model,
         workingDirectory: config.workspaceRoot,
@@ -2251,6 +2302,7 @@ const createCopilotCommand = ({
   scopedWorker,
   delegationMode,
   copilotServerSession,
+  providerSession,
 }: ExternalAgentCommandFactoryParams): ExternalAgentCommand => {
   const contextWindow = resolveContextWindowForProviderModel(
     config.contextWindow ?? "highest",
@@ -2340,6 +2392,7 @@ const createCopilotCommand = ({
       effort,
       contextWindow,
       session: copilotServerSession,
+      ...(providerSession ? { providerSession } : {}),
     });
   }
 
@@ -2387,10 +2440,44 @@ const createExternalAgentCommand = (
   }
 };
 
+const supportsProviderSession = (
+  provider: AgentCliProvider,
+  features: readonly string[],
+  nativeGoal: boolean,
+  copilotServerAvailable: boolean,
+): boolean => {
+  switch (provider) {
+    case "claude-cli":
+      return (
+        features.includes("--session-id") &&
+        features.includes("--system-prompt-snapshot")
+      );
+    case "codex-cli":
+      return nativeGoal || features.includes("app-server");
+    case "copilot-cli":
+      return !nativeGoal && copilotServerAvailable;
+  }
+};
+
+const getProviderSessionTarget = (
+  params: ExternalAgentExecutionParams,
+): ProviderSessionTarget | undefined => {
+  const chatSessionId = params.conversationContext?.sessionId;
+  return chatSessionId &&
+    !params.resultProtocol &&
+    params.scopedWorkerToolDefinitions === undefined &&
+    (params.taskContext.executionRole ?? "executor") === "executor" &&
+    !params.conversationContext?.agentFeatures?.reviewChanges &&
+    getExternalAgentDelegationMode(params) === "full-access"
+    ? { chatSessionId, workspaceRoot: normalizeLocalCommandCwd(params.config.workspaceRoot) }
+    : undefined;
+};
+
 const executeExternalAgentCliTask = async (
   params: ExternalAgentExecutionParams,
   provider: AgentCliProvider,
   localMcp: LocalMcpEndpoint,
+  sessionTarget?: ProviderSessionTarget,
 ): Promise<TaskExecutionResult> => {
   const env = await loadRuntimeEnvironment();
   const binary = resolveAgentCliProviderBinary(provider, env);
@@ -2437,11 +2524,35 @@ const executeExternalAgentCliTask = async (
     params.preparedConversationContext.memory,
     "poseScene",
   );
+  const managedSkillCatalog = await createManagedSkillCatalog();
+  const suggestFollowUps =
+    params.conversationContext?.agentFeatures?.suggestFollowUps === true;
+  const sessionPlan = sessionTarget
+    ? await planProviderSessionRun(sessionTarget, {
+        provider,
+        instructionDigest: canonicalDigest({
+          instructions: params.taskContext.instructionResolution?.canonicalDigest,
+          mode: executionConfig.mode,
+          answerLanguage: executionConfig.answerLanguage,
+          managedSkillCatalog,
+          suggestFollowUps,
+        }),
+        history: params.conversationContext?.history ?? [],
+        continuing: params.conversationContext?.continueProviderSession === true,
+      })
+    : undefined;
+  const runGuidance =
+    sessionPlan && provider !== "claude-cli"
+      ? (params.systemPromptSections ?? [])
+      : [];
+  const promptSession = sessionPlan
+    ? { resumed: sessionPlan.resumeId !== undefined, runGuidance }
+    : undefined;
   const runtimeSystemInstructions = createExternalAgentSystemInstructions(
     executionConfig,
     [
-      await createManagedSkillCatalog(),
-      ...(params.systemPromptSections ?? []),
+      managedSkillCatalog,
+      ...(runGuidance.length > 0 ? [] : (params.systemPromptSections ?? [])),
       ...(params.preparedConversationContext.memory.chatHistory !== undefined &&
       params.scopedWorkerToolDefinitions === undefined
         ? [
@@ -2461,11 +2572,11 @@ const executeExternalAgentCliTask = async (
               delegatedContextSections,
               params.preparedConversationContext,
               imagePaths,
+              promptSession,
             ),
           ]
         : []),
-      ...(params.conversationContext?.agentFeatures?.suggestFollowUps ===
-        true &&
+      ...(suggestFollowUps &&
       !params.resultProtocol &&
       !poseChat &&
       params.scopedWorkerToolDefinitions === undefined &&
@@ -2527,6 +2638,7 @@ const executeExternalAgentCliTask = async (
       ...(params.skipUnreachableMcpServers
         ? { skipUnreachableMcpServers: true }
         : {}),
+      ...(sessionPlan ? { providerSessionStore: sessionPlan.storePath } : {}),
     });
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
@@ -2578,12 +2690,25 @@ const executeExternalAgentCliTask = async (
     enrollment.manifest.providerFeatures.includes("--server")
       ? await readCopilotServerSession(enrollment)
       : undefined;
+  if (
+    sessionPlan &&
+    !supportsProviderSession(
+      provider,
+      enrollment.manifest.providerFeatures,
+      params.nativeGoal !== undefined,
+      copilotServerSession !== undefined,
+    )
+  ) {
+    await enrollment.dispose();
+    return executeExternalAgentCliTask(params, provider, localMcp);
+  }
   try {
     const prompt = createExternalAgentPrompt(
       params.task,
       delegatedContextSections,
       params.preparedConversationContext,
       imagePaths,
+      promptSession,
     );
     assertExternalAgentInputSize(provider, prompt);
     command = createExternalAgentCommand(provider, {
@@ -2605,6 +2730,16 @@ const executeExternalAgentCliTask = async (
         ? { agentFeatures: params.conversationContext.agentFeatures }
         : {}),
       ...(copilotServerSession ? { copilotServerSession } : {}),
+      ...(sessionPlan
+        ? {
+            providerSession: {
+              ...(sessionPlan.resumeId
+                ? { resumeId: sessionPlan.resumeId }
+                : {}),
+              newSessionId: sessionPlan.newSessionId,
+            },
+          }
+        : {}),
     });
     if (process.platform === "win32") {
       assertWindowsCommandLineLength(
@@ -2775,6 +2910,18 @@ const executeExternalAgentCliTask = async (
   let lastLive: AgentLiveState | undefined;
   const attended =
     params.conversationContext?.agentFeatures?.liveControl === true;
+  let sessionSave: Promise<void> = Promise.resolve();
+  const saveProviderSession = (sessionId: string): void => {
+    if (!sessionPlan) return;
+    sessionSave = sessionSave
+      .then(() => sessionPlan.save(sessionId))
+      .catch((error: unknown) => {
+        console.error("Could not save the provider session", error);
+      });
+  };
+  if (sessionPlan && provider === "claude-cli") {
+    saveProviderSession(sessionPlan.resumeId ?? sessionPlan.newSessionId);
+  }
   const interactiveOptions: InteractiveRunOptions | undefined = interactiveSpec
     ? {
         create: (io) =>
@@ -2789,6 +2936,7 @@ const executeExternalAgentCliTask = async (
               model: executionConfig.model,
               captureEvidence: params.captureGoalEvidence === true,
               unattended: !attended,
+              onProviderSessionId: saveProviderSession,
             },
           ),
         ...(attended && !params.nativeGoal
@@ -2865,6 +3013,20 @@ const executeExternalAgentCliTask = async (
   } finally {
     await stopAppEvents?.();
     enrollmentDisposal = await enrollment.dispose();
+    await sessionSave;
+  }
+  if (sessionPlan?.resumeId && result.providerSessionRejected) {
+    await sessionPlan.clear();
+    return executeExternalAgentCliTask(params, provider, localMcp, sessionTarget);
+  }
+  if (
+    sessionPlan?.resumeId &&
+    result.exitCode !== 0 &&
+    !result.authenticationRequired &&
+    !params.signal?.aborted &&
+    !lastLive?.limits?.some((limit) => limit.limited)
+  ) {
+    await sessionPlan.clear();
   }
   const deliveryReceipt = createInstructionDeliveryReceipt({
     plan: instructionPlan,
@@ -3439,12 +3601,23 @@ export const maybeExecuteExternalAgentProviderTask = async (
     },
   });
   let result: TaskExecutionResult;
+  const provider = params.config.provider;
+  const sessionTarget = getProviderSessionTarget(params);
   try {
-    result = await executeExternalAgentCliTask(
-      params,
-      params.config.provider,
-      host.endpoint,
-    );
+    result = sessionTarget
+      ? await withProviderSessionLock(
+          sessionTarget,
+          () =>
+            executeExternalAgentCliTask(
+              params,
+              provider,
+              host.endpoint,
+              sessionTarget,
+            ),
+          () => executeExternalAgentCliTask(params, provider, host.endpoint),
+          params.signal,
+        )
+      : await executeExternalAgentCliTask(params, provider, host.endpoint);
   } finally {
     await host.close();
   }

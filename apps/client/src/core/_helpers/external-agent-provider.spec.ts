@@ -170,6 +170,8 @@ vi.mock("node:child_process", async (importOriginal) => ({
           "--no-custom-instructions",
           "--output-format",
           "--verbose",
+          "--session-id",
+          "--system-prompt-snapshot",
           "--stream",
           "--additional-mcp-config",
           "--disable-builtin-mcps",
@@ -383,6 +385,8 @@ const createExternalInstructionPlan = (
               "--setting-sources",
               "--strict-mcp-config",
               "--verbose",
+              "--session-id",
+              "--system-prompt-snapshot",
             ]
           : resolution.providerId === "copilot-cli"
             ? [
@@ -4263,5 +4267,134 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const result = await resultPromise;
 
     expect(result?.status).toBe("executed");
+  });
+});
+
+describe("chat provider sessions", () => {
+  const exchange = [
+    { role: "user" as const, content: "first" },
+    { role: "assistant" as const, content: "answer" },
+  ];
+
+  const createChatParams = (
+    workspaceRoot: string,
+    history: typeof exchange,
+    overrides: Parameters<typeof createParams>[1] = {},
+  ) => {
+    const params = createParams(workspaceRoot, {
+      provider: "claude-cli",
+      model: "sonnet",
+      ...overrides,
+    });
+    return {
+      ...params,
+      conversationContext: { sessionId: "chat-1", history },
+      preparedConversationContext: {
+        ...params.preparedConversationContext,
+        promptBlock: "FULL-HISTORY-BLOCK",
+        resumePromptBlock: "CURRENT-CONTEXT-BLOCK",
+      },
+    };
+  };
+
+  const finishWith = async (
+    params: Parameters<typeof maybeExecuteExternalAgentProviderTask>[0],
+  ): Promise<SpawnCall> => {
+    const already = spawnCalls.length;
+    const pending = maybeExecuteExternalAgentProviderTask(params);
+    await waitForCondition(() =>
+      expect(spawnCalls.length).toBeGreaterThan(already),
+    );
+    const call = spawnCalls.at(-1)!;
+    writeStructuredAnswer(call, "Done.");
+    call.child.emit("close", 0, null);
+    const result = await pending;
+    expect(result?.status).toBe("executed");
+    return call;
+  };
+
+  const flagValue = (call: SpawnCall, flag: string): string | undefined => {
+    const index = call.args.indexOf(flag);
+    return index < 0 ? undefined : call.args[index + 1];
+  };
+
+  it("keeps a Claude conversation and resumes it with only the new context", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+
+    const first = await finishWith(createChatParams(workspaceRoot, []));
+    const sessionId = flagValue(first, "--session-id");
+    expect(sessionId).toBeTruthy();
+    expect(first.args).not.toContain("--no-session-persistence");
+    expect(flagValue(first, "--system-prompt-snapshot")).toBe("off");
+    expect(first.child.stdinText).toContain("FULL-HISTORY-BLOCK");
+
+    const second = await finishWith(createChatParams(workspaceRoot, exchange));
+    expect(flagValue(second, "--resume")).toBe(sessionId);
+    expect(second.args).not.toContain("--session-id");
+    expect(flagValue(second, "--system-prompt-snapshot")).toBe("off");
+    expect(second.child.stdinText).toContain("CURRENT-CONTEXT-BLOCK");
+    expect(second.child.stdinText).not.toContain("FULL-HISTORY-BLOCK");
+  });
+
+  it("starts over with the full history when Claude no longer has the conversation", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    await finishWith(createChatParams(workspaceRoot, []));
+
+    const already = spawnCalls.length;
+    const pending = maybeExecuteExternalAgentProviderTask(
+      createChatParams(workspaceRoot, exchange),
+    );
+    await waitForCondition(() =>
+      expect(spawnCalls.length).toBeGreaterThan(already),
+    );
+    const rejected = spawnCalls.at(-1)!;
+    expect(rejected.args).toContain("--resume");
+    rejected.child.stderr.write(
+      "No conversation found with session ID: gone\n",
+    );
+    rejected.child.emit("close", 1, null);
+
+    await waitForCondition(() =>
+      expect(spawnCalls.length).toBeGreaterThan(already + 1),
+    );
+    const retried = spawnCalls.at(-1)!;
+    expect(retried.args).toContain("--session-id");
+    expect(retried.args).not.toContain("--resume");
+    expect(retried.child.stdinText).toContain("FULL-HISTORY-BLOCK");
+    writeStructuredAnswer(retried, "Recovered.");
+    retried.child.emit("close", 0, null);
+    expect((await pending)?.response?.markdown).toBe("Recovered.");
+  });
+
+  it("does not resume after another provider answered in between", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    process.env.MACHDOCH_COPILOT_CLI_PATH = process.execPath;
+    await finishWith(createChatParams(workspaceRoot, []));
+    await finishWith(
+      createChatParams(workspaceRoot, exchange, {
+        provider: "copilot-cli",
+        model: "auto",
+      }),
+    );
+    const back = await finishWith(
+      createChatParams(workspaceRoot, [...exchange, ...exchange]),
+    );
+    expect(back.args).not.toContain("--resume");
+    expect(back.child.stdinText).toContain("FULL-HISTORY-BLOCK");
+  });
+
+  it.each([
+    ["a validator", { executionRole: "validator" as const }],
+    ["a generator", { executionRole: "generator" as const }],
+  ])("keeps no conversation for %s", async (_label, overrides) => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    const call = await finishWith(
+      createChatParams(workspaceRoot, [], overrides),
+    );
+    expect(call.args).toContain("--no-session-persistence");
   });
 });

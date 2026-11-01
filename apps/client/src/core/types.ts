@@ -191,6 +191,8 @@ export interface TaskConversationContext {
   /** Per-message provider features chosen in the composer. */
   agentFeatures?: TaskAgentFeatures;
   sessionId?: string;
+  /** A later turn of one goal run, so its provider session has the history. */
+  continueProviderSession?: boolean;
   adaptiveControllerOverride?: boolean | null;
   parallelAgentMode?: ParallelAgentMode;
   goalMode?: GoalMode;

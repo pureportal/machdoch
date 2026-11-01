@@ -60,6 +60,8 @@ export interface ExternalAgentCliOutputDecoder {
   takeBackgroundWaitNotice?(): string | undefined;
   /** The run stopped waiting while background jobs were still running. */
   backgroundWaitExpired?(): boolean;
+  /** The provider could not find the conversation this run asked to resume. */
+  providerSessionRejected?(): boolean;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>

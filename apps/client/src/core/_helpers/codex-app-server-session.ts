@@ -36,6 +36,8 @@ export interface CodexAppServerTurnInput {
   turn: Record<string, unknown>;
   /** Runs a native Codex review instead of a prompt turn. */
   review?: { target: Record<string, unknown> };
+  /** Continues this stored thread instead of starting one. */
+  resumeThreadId?: string;
 }
 
 const ITEM_TYPES: Record<string, string> = {
@@ -66,15 +68,24 @@ export class CodexAppServerSession implements InteractiveAgentSession {
   private nextSteer = 1;
   private readonly queuedSteers: { steerId: string; text: string }[] = [];
   private readonly unattended: boolean;
+  private readonly onProviderSessionId: ((sessionId: string) => void) | undefined;
+  private resumeRejected = false;
 
   constructor(
     private readonly input: CodexAppServerTurnInput,
     private readonly io: InteractiveSessionIo,
     publish: ConstructorParameters<typeof AgentLiveTracker>[1],
-    options: { model: string; captureEvidence: boolean; fastMode?: boolean; unattended?: boolean },
+    options: {
+      model: string;
+      captureEvidence: boolean;
+      fastMode?: boolean;
+      unattended?: boolean;
+      onProviderSessionId?: ((sessionId: string) => void) | undefined;
+    },
   ) {
     this.output = new CodexCliOutputDecoder(options.captureEvidence);
     this.unattended = options.unattended === true;
+    this.onProviderSessionId = options.onProviderSessionId;
     this.rpc = new JsonRpcPeer((message) => {
       if (!this.inputClosed) this.io.write(`${JSON.stringify(message)}\n`);
     });
@@ -256,16 +267,16 @@ export class CodexAppServerSession implements InteractiveAgentSession {
         return empty;
       }
       if (method === "turn/interrupt" || method === "account/rateLimits/read") return empty;
+      if (method === "thread/resume") this.resumeRejected = true;
       return this.fail(error);
     }
     switch (method) {
-      case "initialize":
+      case "initialize": {
         this.rpc.notify("initialized", {});
         this.rpc.request("account/rateLimits/read", {});
-        this.rpc.request("thread/start", {
+        const threadParams = {
           approvalPolicy: "never",
           sandbox: "danger-full-access",
-          ephemeral: true,
           ...this.input.thread,
           config: {
             // Lets Codex ask clarifying questions outside Plan mode, when
@@ -273,13 +284,26 @@ export class CodexAppServerSession implements InteractiveAgentSession {
             "features.default_mode_request_user_input": !this.unattended,
             ...(isRecord(this.input.thread.config) ? this.input.thread.config : {}),
           },
-        });
+        };
+        if (this.input.resumeThreadId) {
+          const resumeParams: Record<string, unknown> = {
+            ...threadParams,
+            threadId: this.input.resumeThreadId,
+          };
+          delete resumeParams.ephemeral;
+          this.rpc.request("thread/resume", resumeParams);
+        } else {
+          this.rpc.request("thread/start", { ephemeral: true, ...threadParams });
+        }
         return empty;
-      case "thread/start": {
+      }
+      case "thread/start":
+      case "thread/resume": {
         const thread = isRecord(result.thread) ? result.thread : {};
         const threadId = readString(thread, "id");
         if (!threadId) return this.fail("Codex did not return a thread.");
         this.threadId = threadId;
+        this.onProviderSessionId?.(threadId);
         if (this.input.review) {
           this.rpc.request("review/start", {
             threadId,
@@ -481,5 +505,8 @@ export class CodexAppServerSession implements InteractiveAgentSession {
   }
   getFailureMessage(): string | undefined {
     return this.output.getFailureMessage();
+  }
+  providerSessionRejected(): boolean {
+    return this.resumeRejected;
   }
 }

@@ -42,6 +42,8 @@ export interface CodexNativeGoalInput {
   prompt: string;
   imagePaths: string[];
   cwd: string;
+  /** Continues this stored thread instead of starting one. */
+  resumeThreadId?: string;
 }
 
 /** Replies to a Codex server request without stopping an unattended goal. */
@@ -101,15 +103,22 @@ export class CodexNativeGoalSession implements InteractiveAgentSession {
   private goalActivationAcknowledged = false;
   private terminal = false;
   private turns = 0;
+  private readonly onProviderSessionId: ((sessionId: string) => void) | undefined;
+  private resumeRejected = false;
 
   constructor(
     private readonly input: CodexNativeGoalInput,
     private readonly io: InteractiveSessionIo,
     publish: ConstructorParameters<typeof AgentLiveTracker>[1],
-    options: { model: string; captureEvidence: boolean },
+    options: {
+      model: string;
+      captureEvidence: boolean;
+      onProviderSessionId?: ((sessionId: string) => void) | undefined;
+    },
   ) {
     this.output = new CodexCliOutputDecoder(options.captureEvidence);
     this.model = options.model;
+    this.onProviderSessionId = options.onProviderSessionId;
     this.live = new AgentLiveTracker(
       {
         provider: "codex-cli",
@@ -178,10 +187,16 @@ export class CodexNativeGoalSession implements InteractiveAgentSession {
         this.events.applyRateLimits(event.result.rateLimits ?? event.result);
       return empty;
     }
-    if (isRecord(event.error))
+    if (isRecord(event.error)) {
+      if (
+        typeof event.id === "number" &&
+        this.requests.get(event.id)?.method === "thread/resume"
+      )
+        this.resumeRejected = true;
       return this.fail(
         String(event.error.message ?? "Codex goal request failed."),
       );
+    }
     if (typeof event.id === "number" && !event.method) {
       const request = this.requests.get(event.id);
       this.requests.delete(event.id);
@@ -192,18 +207,29 @@ export class CodexNativeGoalSession implements InteractiveAgentSession {
         this.io.write(
           `${JSON.stringify({ method: "initialized", params: {} })}\n`,
         );
-        this.request("thread/start", {
+        const threadParams = {
           model: this.model,
           cwd: this.input.cwd,
           approvalPolicy: "never",
           sandbox: "danger-full-access",
-          ephemeral: false,
-          allowProviderModelFallback: false,
-        });
-      } else if (method === "thread/start") {
+        };
+        if (this.input.resumeThreadId) {
+          this.request("thread/resume", {
+            ...threadParams,
+            threadId: this.input.resumeThreadId,
+          });
+        } else {
+          this.request("thread/start", {
+            ...threadParams,
+            ephemeral: false,
+            allowProviderModelFallback: false,
+          });
+        }
+      } else if (method === "thread/start" || method === "thread/resume") {
         if (!isRecord(result.thread) || typeof result.thread.id !== "string")
           return this.fail("Codex did not return a goal thread.");
         this.threadId = result.thread.id;
+        this.onProviderSessionId?.(this.threadId);
         this.request("thread/goal/set", {
           threadId: this.threadId,
           objective: this.input.objective,
@@ -264,6 +290,8 @@ export class CodexNativeGoalSession implements InteractiveAgentSession {
       if (this.goalStatus === "active") this.goalActivationAcknowledged = true;
       return this.finishGoal();
     }
+    if (event.method === "thread/goal/cleared" && !this.goalActivated)
+      return empty;
     if (event.method === "thread/goal/cleared")
       return this.fail(
         "The native Codex goal was cleared before verification.",
@@ -411,5 +439,8 @@ export class CodexNativeGoalSession implements InteractiveAgentSession {
   }
   getFailureMessage(): string | undefined {
     return this.output.getFailureMessage();
+  }
+  providerSessionRejected(): boolean {
+    return this.resumeRejected;
   }
 }

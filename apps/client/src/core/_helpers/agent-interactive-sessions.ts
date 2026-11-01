@@ -35,7 +35,14 @@ export const createInteractiveAgentSession = (
   spec: InteractiveCommandSpec,
   io: InteractiveSessionIo,
   publish: (state: AgentLiveState) => void,
-  options: { model: string; captureEvidence: boolean; unattended: boolean },
+  options: {
+    model: string;
+    captureEvidence: boolean;
+    unattended: boolean;
+    backgroundWaitMs?: number | undefined;
+    /** Reports the provider's id for this conversation once it has one. */
+    onProviderSessionId?: ((sessionId: string) => void) | undefined;
+  },
 ): InteractiveAgentSession => {
   switch (spec.kind) {
     case "claude":

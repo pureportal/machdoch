@@ -182,6 +182,8 @@ const detectFeatures = (provider: AgentCliProvider, help: string): string[] => {
             "--bare",
             "--setting-sources",
             "--verbose",
+            "--session-id",
+            "--system-prompt-snapshot",
           ]
         : [
             "--agent",

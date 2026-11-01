@@ -230,3 +230,52 @@ describe("CodexAppServerSession", () => {
     expect(update.resultExitCode).not.toBe(0);
   });
 });
+
+describe("resuming a stored thread", () => {
+  const create = (reported: string[] = []) => {
+    const sent: Message[] = [];
+    const session = new CodexAppServerSession(
+      {
+        prompt: "Continue.",
+        imagePaths: [],
+        thread: { model: "gpt-6-luna", cwd: WORKSPACE, ephemeral: false },
+        turn: {},
+        resumeThreadId: "stored-thread",
+      },
+      {
+        write: (text) => {
+          for (const line of text.split("\n").filter(Boolean)) sent.push(JSON.parse(line) as Message);
+        },
+        closeInput: () => undefined,
+      },
+      () => undefined,
+      { model: "gpt-6-luna", captureEvidence: false, onProviderSessionId: (id) => reported.push(id) },
+    );
+    sessions.push(session);
+    const find = (method: string) => sent.find((message) => message.method === method);
+    session.start();
+    session.push(`${JSON.stringify({ id: find("initialize")?.id, result: {} })}\n`);
+    return { session, find };
+  };
+
+  it("resumes instead of starting and reports the thread", () => {
+    const reported: string[] = [];
+    const { session, find } = create(reported);
+    expect(find("thread/start")).toBeUndefined();
+    expect(find("thread/resume")?.params).toMatchObject({ threadId: "stored-thread", model: "gpt-6-luna" });
+    expect(find("thread/resume")?.params).not.toHaveProperty("ephemeral");
+    session.push(`${JSON.stringify({ id: find("thread/resume")?.id, result: { thread: { id: "stored-thread" } } })}\n`);
+    expect(find("turn/start")?.params).toMatchObject({ threadId: "stored-thread" });
+    expect(reported).toEqual(["stored-thread"]);
+    expect(session.providerSessionRejected()).toBe(false);
+  });
+
+  it("flags a thread Codex no longer has", () => {
+    const { session, find } = create();
+    session.push(
+      `${JSON.stringify({ id: find("thread/resume")?.id, error: { code: -32600, message: "no rollout found" } })}\n`,
+    );
+    expect(session.providerSessionRejected()).toBe(true);
+    expect(session.hasTerminalResult()).toBe(true);
+  });
+});

@@ -6,6 +6,7 @@ import {
   readdir,
   realpath,
   rm,
+  symlink,
 } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import {
@@ -93,6 +94,8 @@ interface MaterializeCliEnrollmentParams {
   localMcp?: LocalMcpEndpoint;
   localMcpOnly?: boolean;
   skipUnreachableMcpServers?: boolean;
+  /** Lasting folder for the provider's conversation transcripts. */
+  providerSessionStore?: string;
 }
 
 interface RenderedEnrollmentFiles {
@@ -784,6 +787,30 @@ const renderCopilotEnrollment = async (
   };
 };
 
+/**
+ * Provider homes live only as long as one run. Linking the folder where the CLI
+ * keeps its transcripts to a lasting store lets a later run, or the run after a
+ * crash, continue the conversation. Removing the home removes just the link.
+ */
+const linkProviderSessionStore = async (
+  provider: AgentCliProvider,
+  env: NodeJS.ProcessEnv,
+  store: string,
+): Promise<void> => {
+  const [home, transcripts] =
+    provider === "claude-cli"
+      ? [env.CLAUDE_CONFIG_DIR, "projects"]
+      : provider === "codex-cli"
+        ? [env.CODEX_HOME, "sessions"]
+        : [env.COPILOT_HOME, "session-state"];
+  if (!home) throw new Error("The provider home is missing from enrollment.");
+  await symlink(
+    store,
+    join(home, transcripts),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+};
+
 const renderEnrollment = async (
   provider: AgentCliProvider,
   rootPath: string,
@@ -1046,6 +1073,13 @@ export const materializeCliEnrollment = async (
       params.workspaceRoot,
       providerFeatures,
     );
+    if (params.providerSessionStore) {
+      await linkProviderSessionStore(
+        params.provider,
+        rendered.env,
+        params.providerSessionStore,
+      );
+    }
     const skillHome = params.provider === "codex-cli" ? rendered.env.CODEX_HOME : params.provider === "copilot-cli" ? rendered.env.COPILOT_HOME : undefined;
     if (skillHome) {
       const skills = await materializeManagedSkills(join(skillHome, "skills"));

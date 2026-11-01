@@ -43,6 +43,7 @@ import {
   type PreparedConversationPromptContext,
 } from "./_helpers/conversation-prompt-context.js";
 import { maybeExecuteExternalAgentProviderTask } from "./_helpers/external-agent-provider.js";
+import { hasAlignedProviderSession } from "./_helpers/provider-session-store.js";
 import { createParallelAgentSessionTool } from "./_helpers/parallel-agent-sessions.js";
 import { resolveParallelAgentMode } from "./parallel-agent-capabilities.js";
 import { finalizePoseSceneResult } from "./_helpers/pose-scene-result.js";
@@ -2484,6 +2485,18 @@ export const maybeExecuteModelDrivenTask = async (
       params.conversationContext,
       params.signal,
       adaptivePlan,
+      isAgentCliProvider(executionConfig.provider) &&
+        params.conversationContext?.sessionId &&
+        (await hasAlignedProviderSession(
+          {
+            chatSessionId: params.conversationContext.sessionId,
+            workspaceRoot: executionConfig.workspaceRoot,
+          },
+          executionConfig.provider,
+          params.conversationContext.history ?? [],
+        ))
+        ? "skip"
+        : "use",
     );
 
     if (

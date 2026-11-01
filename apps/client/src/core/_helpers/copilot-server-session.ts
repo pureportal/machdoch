@@ -34,6 +34,8 @@ export interface CopilotServerTurnInput {
   session: Record<string, unknown>;
   /** Drops workspace instruction files, like `--no-custom-instructions`. */
   skipCustomInstructions: boolean;
+  /** Continues this stored session instead of creating one. */
+  resumeSessionId?: string;
 }
 
 const MAX_FRAME_BYTES = 16 * 1024 * 1024;
@@ -122,6 +124,8 @@ export class CopilotServerSession implements InteractiveAgentSession {
   private lastError: string | undefined;
   private modelCalls = 0;
   private readonly unattended: boolean;
+  private readonly onProviderSessionId: ((sessionId: string) => void) | undefined;
+  private resumeRejected = false;
   private readonly usage = {
     inputTokens: 0,
     outputTokens: 0,
@@ -133,10 +137,16 @@ export class CopilotServerSession implements InteractiveAgentSession {
     private readonly input: CopilotServerTurnInput,
     private readonly io: InteractiveSessionIo,
     publish: ConstructorParameters<typeof AgentLiveTracker>[1],
-    options: { model: string; captureEvidence: boolean; unattended?: boolean },
+    options: {
+      model: string;
+      captureEvidence: boolean;
+      unattended?: boolean;
+      onProviderSessionId?: ((sessionId: string) => void) | undefined;
+    },
   ) {
     this.output = new CopilotCliOutputDecoder(options.captureEvidence);
     this.unattended = options.unattended === true;
+    this.onProviderSessionId = options.onProviderSessionId;
     this.rpc = new JsonRpcPeer(
       (message) => {
         if (!this.inputClosed) this.io.write(encodeContentLengthFrame(message));
@@ -296,6 +306,9 @@ export class CopilotServerSession implements InteractiveAgentSession {
         case "session.tasks.cancel":
           if (meta.taskId) this.live.upsertTask({ id: meta.taskId, canStop: true, summary: text });
           return empty;
+        case "session.resume":
+          this.resumeRejected = true;
+          return this.finishTurn(this.fail(text));
         case "connect":
         case "session.create":
           return this.finishTurn(this.fail(text));
@@ -312,7 +325,8 @@ export class CopilotServerSession implements InteractiveAgentSession {
     switch (method) {
       case "connect":
         this.rpc.request("account.getQuota", {});
-        this.rpc.request("session.create", {
+        this.rpc.request(this.input.resumeSessionId ? "session.resume" : "session.create", {
+          ...(this.input.resumeSessionId ? { sessionId: this.input.resumeSessionId } : {}),
           clientName: "machdoch",
           streaming: true,
           // Only offer ask_user when someone can answer it.
@@ -327,10 +341,12 @@ export class CopilotServerSession implements InteractiveAgentSession {
           ...this.input.session,
         });
         return empty;
-      case "session.create": {
+      case "session.create":
+      case "session.resume": {
         const sessionId = readString(result, "sessionId");
         if (!sessionId) return this.finishTurn(this.fail("Copilot did not create a session."));
         this.sessionId = sessionId;
+        this.onProviderSessionId?.(sessionId);
         this.setupPending = this.input.skipCustomInstructions ? 2 : 1;
         this.rpc.request("session.permissions.setApproveAll", { sessionId, enabled: true });
         if (this.input.skipCustomInstructions) {
@@ -710,5 +726,8 @@ export class CopilotServerSession implements InteractiveAgentSession {
   }
   getFailureMessage(): string | undefined {
     return this.terminal && this.output.hasTerminalResult() ? undefined : this.lastError;
+  }
+  providerSessionRejected(): boolean {
+    return this.resumeRejected;
   }
 }
