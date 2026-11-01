@@ -90,7 +90,12 @@ export const DEFAULT_USER_AGENT_LIMITS_SETTINGS = {
   "retryAttempts": 2,
   "infinite": false,
   "executorTurns": 64,
-  "autopilotExecutorIterations": 16
+  "autopilotExecutorIterations": 16,
+  "goalPasses": 10,
+  "goalStalledPasses": 3,
+  "goalVerificationMinutes": 30,
+  "goalBackgroundWaitMinutes": 120,
+  "goalUsageWaitMinutes": 360
 } as const satisfies UserAgentLimitsSettings;
 export const AGENT_LIMIT_BOUNDS = {
   "retryAttempts": {
@@ -104,6 +109,26 @@ export const AGENT_LIMIT_BOUNDS = {
   "autopilotExecutorIterations": {
     "min": 1,
     "max": 100
+  },
+  "goalPasses": {
+    "min": 1,
+    "max": 1000
+  },
+  "goalStalledPasses": {
+    "min": 1,
+    "max": 100
+  },
+  "goalVerificationMinutes": {
+    "min": 1,
+    "max": 1440
+  },
+  "goalBackgroundWaitMinutes": {
+    "min": 10,
+    "max": 10080
+  },
+  "goalUsageWaitMinutes": {
+    "min": 0,
+    "max": 10080
   }
 } as const;
 export const DEFAULT_USER_WORKSPACE_RUN_SETTINGS = {
@@ -248,11 +273,21 @@ export interface RuntimeAgentLimitOverrides {
   infinite?: boolean;
   executorTurns?: number;
   autopilotExecutorIterations?: number;
+  goalPasses?: number;
+  goalStalledPasses?: number;
+  goalVerificationMinutes?: number;
+  goalBackgroundWaitMinutes?: number;
+  goalUsageWaitMinutes?: number;
 }
 
 export interface RuntimeAgentLimits {
   executorTurns: number | null;
   autopilotExecutorIterations: number | null;
+  goalPasses?: number | null;
+  goalStalledPasses?: number;
+  goalVerificationMinutes?: number;
+  goalBackgroundWaitMinutes?: number;
+  goalUsageWaitMinutes?: number;
 }
 
 export interface WorkspaceConfigFile {
@@ -465,6 +500,11 @@ export interface UserAgentLimitsSettings {
   infinite: boolean;
   executorTurns: number;
   autopilotExecutorIterations: number;
+  goalPasses: number;
+  goalStalledPasses: number;
+  goalVerificationMinutes: number;
+  goalBackgroundWaitMinutes: number;
+  goalUsageWaitMinutes: number;
 }
 
 export interface UserWorkspaceRunSettings {

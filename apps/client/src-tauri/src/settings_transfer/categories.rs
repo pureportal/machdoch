@@ -19,7 +19,9 @@ use crate::runtime_contract_generated::{
     DEFAULT_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
     DEFAULT_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     DEFAULT_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES,
-    DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
+    DEFAULT_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS, DEFAULT_GOAL_BACKGROUND_WAIT_MINUTES,
+    DEFAULT_GOAL_PASSES, DEFAULT_GOAL_STALLED_PASSES, DEFAULT_GOAL_USAGE_WAIT_MINUTES,
+    DEFAULT_GOAL_VERIFICATION_MINUTES, DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
     DEFAULT_MAX_EXECUTOR_TURNS, DEFAULT_MODEL_BY_PROVIDER, DEFAULT_MODEL_PROVIDER,
     DEFAULT_USER_AGENT_LIMITS_INFINITE, DEFAULT_USER_INTERNAL_TASK_MODEL_REASONING,
     DEFAULT_USER_REVIEW_MODEL_MODE, MAX_CONFIGURED_AUTOPILOT_ITERATIONS,
@@ -28,14 +30,18 @@ use crate::runtime_contract_generated::{
     MAX_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
     MAX_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MAX_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MAX_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
+    MAX_GOAL_BACKGROUND_WAIT_MINUTES, MAX_GOAL_PASSES, MAX_GOAL_STALLED_PASSES,
+    MAX_GOAL_USAGE_WAIT_MINUTES, MAX_GOAL_VERIFICATION_MINUTES,
     MIN_DESKTOP_SETTING_AI_CONTEXT_MAX_MESSAGES,
     MIN_DESKTOP_SETTING_ARCHIVED_SESSION_RETENTION_DAYS,
     MIN_DESKTOP_SETTING_CHAT_IDLE_TIMEOUT_MINUTES,
     MIN_DESKTOP_SETTING_INACTIVE_SESSION_ARCHIVE_DAYS,
     MIN_DESKTOP_SETTING_QUICK_VOICE_MAX_MESSAGES, MIN_DESKTOP_SETTING_QUICK_VOICE_SILENCE_SECONDS,
-    REASONING_MODES, RUN_MODES, USER_API_PROVIDERS, USER_REVIEW_MODEL_MODES,
-    USER_WEB_SEARCH_PROVIDERS, VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS,
-    VALID_SPEECH_TO_TEXT_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS,
+    MIN_GOAL_BACKGROUND_WAIT_MINUTES, MIN_GOAL_PASSES, MIN_GOAL_STALLED_PASSES,
+    MIN_GOAL_USAGE_WAIT_MINUTES, MIN_GOAL_VERIFICATION_MINUTES, REASONING_MODES, RUN_MODES,
+    USER_API_PROVIDERS, USER_REVIEW_MODEL_MODES, USER_WEB_SEARCH_PROVIDERS,
+    VALID_AUDIO_AI_PROVIDERS, VALID_MODEL_PROVIDERS, VALID_SPEECH_TO_TEXT_PROVIDERS,
+    VALID_WEB_SEARCH_PROVIDERS,
 };
 use crate::{
     cooperative_file_lock::{acquire_cooperative_file_lock, CooperativeFileLock},
@@ -299,6 +305,11 @@ fn snapshot_agent_provider_preferences() -> Result<CategorySnapshot, String> {
             "infinite": bool_or(limits.get("infinite"), DEFAULT_USER_AGENT_LIMITS_INFINITE),
             "executorTurns": u64_clamped(limits.get("executorTurns"), u64::from(DEFAULT_MAX_EXECUTOR_TURNS), 1, u64::from(MAX_CONFIGURED_EXECUTOR_TURNS)),
             "autopilotExecutorIterations": u64_clamped(limits.get("autopilotExecutorIterations"), u64::from(DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS), 1, u64::from(MAX_CONFIGURED_AUTOPILOT_ITERATIONS)),
+            "goalPasses": u64_clamped(limits.get("goalPasses"), u64::from(DEFAULT_GOAL_PASSES), u64::from(MIN_GOAL_PASSES), u64::from(MAX_GOAL_PASSES)),
+            "goalStalledPasses": u64_clamped(limits.get("goalStalledPasses"), u64::from(DEFAULT_GOAL_STALLED_PASSES), u64::from(MIN_GOAL_STALLED_PASSES), u64::from(MAX_GOAL_STALLED_PASSES)),
+            "goalVerificationMinutes": u64_clamped(limits.get("goalVerificationMinutes"), u64::from(DEFAULT_GOAL_VERIFICATION_MINUTES), u64::from(MIN_GOAL_VERIFICATION_MINUTES), u64::from(MAX_GOAL_VERIFICATION_MINUTES)),
+            "goalBackgroundWaitMinutes": u64_clamped(limits.get("goalBackgroundWaitMinutes"), u64::from(DEFAULT_GOAL_BACKGROUND_WAIT_MINUTES), u64::from(MIN_GOAL_BACKGROUND_WAIT_MINUTES), u64::from(MAX_GOAL_BACKGROUND_WAIT_MINUTES)),
+            "goalUsageWaitMinutes": u64_clamped(limits.get("goalUsageWaitMinutes"), u64::from(DEFAULT_GOAL_USAGE_WAIT_MINUTES), u64::from(MIN_GOAL_USAGE_WAIT_MINUTES), u64::from(MAX_GOAL_USAGE_WAIT_MINUTES)),
         },
         "reviewModel": normalized_review_model(&review),
         "internalTaskModel": normalized_internal_task_model(&internal_task),
@@ -1226,8 +1237,47 @@ fn validate_agent_provider_value(value: &Value) -> Result<(), String> {
         .ok_or_else(|| "Agent limits are invalid.".to_string())?;
     require_exact_keys(
         limits,
-        &["infinite", "executorTurns", "autopilotExecutorIterations"],
+        &[
+            "infinite",
+            "executorTurns",
+            "autopilotExecutorIterations",
+            "goalPasses",
+            "goalStalledPasses",
+            "goalVerificationMinutes",
+            "goalBackgroundWaitMinutes",
+            "goalUsageWaitMinutes",
+        ],
     )?;
+    let goal_limit_in_range = |key: &str, min: u32, max: u32| {
+        limits
+            .get(key)
+            .and_then(Value::as_u64)
+            .is_some_and(|value| (u64::from(min)..=u64::from(max)).contains(&value))
+    };
+    if !goal_limit_in_range("goalPasses", MIN_GOAL_PASSES, MAX_GOAL_PASSES)
+        || !goal_limit_in_range(
+            "goalStalledPasses",
+            MIN_GOAL_STALLED_PASSES,
+            MAX_GOAL_STALLED_PASSES,
+        )
+        || !goal_limit_in_range(
+            "goalVerificationMinutes",
+            MIN_GOAL_VERIFICATION_MINUTES,
+            MAX_GOAL_VERIFICATION_MINUTES,
+        )
+        || !goal_limit_in_range(
+            "goalBackgroundWaitMinutes",
+            MIN_GOAL_BACKGROUND_WAIT_MINUTES,
+            MAX_GOAL_BACKGROUND_WAIT_MINUTES,
+        )
+        || !goal_limit_in_range(
+            "goalUsageWaitMinutes",
+            MIN_GOAL_USAGE_WAIT_MINUTES,
+            MAX_GOAL_USAGE_WAIT_MINUTES,
+        )
+    {
+        return Err("Agent limits are outside their supported range.".to_string());
+    }
     if !limits.get("infinite").is_some_and(Value::is_boolean)
         || !(1..=u64::from(MAX_CONFIGURED_EXECUTOR_TURNS)).contains(
             &limits
@@ -2241,7 +2291,12 @@ mod tests {
             "agentLimits": {
                 "infinite": false,
                 "executorTurns": 64,
-                "autopilotExecutorIterations": 16
+                "autopilotExecutorIterations": 16,
+                "goalPasses": 10,
+                "goalStalledPasses": 3,
+                "goalVerificationMinutes": 30,
+                "goalBackgroundWaitMinutes": 120,
+                "goalUsageWaitMinutes": 360
             },
             "reviewModel": { "mode": "base", "provider": null, "model": null },
             "internalTaskModel": { "provider": null, "model": null, "reasoning": "default" },

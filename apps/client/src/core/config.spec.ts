@@ -16,6 +16,14 @@ import {
 } from "./config.ts";
 import { saveUserAnswerLanguage } from "./env.js";
 
+const GOAL_LIMIT_DEFAULTS = {
+  goalPasses: 10,
+  goalStalledPasses: 3,
+  goalVerificationMinutes: 30,
+  goalBackgroundWaitMinutes: 120,
+  goalUsageWaitMinutes: 360,
+};
+
 const workspacesToClean: string[] = [];
 const originalEnvironment = new Map<string, string | undefined>();
 const ISOLATED_ENV_KEYS = [
@@ -120,6 +128,7 @@ describe("loadRuntimeConfig", () => {
     expect(config.agentLimits).toEqual({
       executorTurns: 64,
       autopilotExecutorIterations: 16,
+      ...GOAL_LIMIT_DEFAULTS,
     });
     expect(config.reviewModel).toEqual({
       mode: "base",
@@ -301,6 +310,7 @@ describe("loadRuntimeConfig", () => {
     expect((await loadRuntimeConfig(workspaceRoot)).agentLimits).toEqual({
       executorTurns: 96,
       autopilotExecutorIterations: 18,
+      ...GOAL_LIMIT_DEFAULTS,
     });
 
     await mkdir(join(workspaceRoot, ".machdoch"), { recursive: true });
@@ -321,12 +331,15 @@ describe("loadRuntimeConfig", () => {
     expect((await loadRuntimeConfig(workspaceRoot)).agentLimits).toEqual({
       executorTurns: 128,
       autopilotExecutorIterations: 24,
+      ...GOAL_LIMIT_DEFAULTS,
     });
 
     process.env.MACHDOCH_INFINITE = "true";
     expect((await loadRuntimeConfig(workspaceRoot)).agentLimits).toEqual({
       executorTurns: null,
       autopilotExecutorIterations: null,
+      ...GOAL_LIMIT_DEFAULTS,
+      goalPasses: null,
     });
 
     expect(
@@ -345,6 +358,7 @@ describe("loadRuntimeConfig", () => {
     ).toEqual({
       executorTurns: 256,
       autopilotExecutorIterations: 32,
+      ...GOAL_LIMIT_DEFAULTS,
     });
   });
 

@@ -2612,6 +2612,36 @@ const normalizeUserAgentLimitsSettings = (
       AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.max,
       DEFAULT_USER_AGENT_LIMITS_SETTINGS.autopilotExecutorIterations,
     ),
+    goalPasses: clampIntegerSetting(
+      settings.goalPasses,
+      AGENT_LIMIT_BOUNDS.goalPasses.min,
+      AGENT_LIMIT_BOUNDS.goalPasses.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalPasses,
+    ),
+    goalStalledPasses: clampIntegerSetting(
+      settings.goalStalledPasses,
+      AGENT_LIMIT_BOUNDS.goalStalledPasses.min,
+      AGENT_LIMIT_BOUNDS.goalStalledPasses.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalStalledPasses,
+    ),
+    goalVerificationMinutes: clampIntegerSetting(
+      settings.goalVerificationMinutes,
+      AGENT_LIMIT_BOUNDS.goalVerificationMinutes.min,
+      AGENT_LIMIT_BOUNDS.goalVerificationMinutes.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalVerificationMinutes,
+    ),
+    goalBackgroundWaitMinutes: clampIntegerSetting(
+      settings.goalBackgroundWaitMinutes,
+      AGENT_LIMIT_BOUNDS.goalBackgroundWaitMinutes.min,
+      AGENT_LIMIT_BOUNDS.goalBackgroundWaitMinutes.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalBackgroundWaitMinutes,
+    ),
+    goalUsageWaitMinutes: clampIntegerSetting(
+      settings.goalUsageWaitMinutes,
+      AGENT_LIMIT_BOUNDS.goalUsageWaitMinutes.min,
+      AGENT_LIMIT_BOUNDS.goalUsageWaitMinutes.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalUsageWaitMinutes,
+    ),
   };
 };
 

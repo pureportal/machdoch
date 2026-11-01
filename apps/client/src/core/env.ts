@@ -147,6 +147,31 @@ const normalizeUserAgentLimitsSettings = (
       settings?.autopilotExecutorIterations,
       DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
     ),
+    goalPasses: normalizeBoundedIntegerSetting(
+      settings?.goalPasses,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalPasses,
+      AGENT_LIMIT_BOUNDS.goalPasses,
+    ),
+    goalStalledPasses: normalizeBoundedIntegerSetting(
+      settings?.goalStalledPasses,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalStalledPasses,
+      AGENT_LIMIT_BOUNDS.goalStalledPasses,
+    ),
+    goalVerificationMinutes: normalizeBoundedIntegerSetting(
+      settings?.goalVerificationMinutes,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalVerificationMinutes,
+      AGENT_LIMIT_BOUNDS.goalVerificationMinutes,
+    ),
+    goalBackgroundWaitMinutes: normalizeBoundedIntegerSetting(
+      settings?.goalBackgroundWaitMinutes,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalBackgroundWaitMinutes,
+      AGENT_LIMIT_BOUNDS.goalBackgroundWaitMinutes,
+    ),
+    goalUsageWaitMinutes: normalizeBoundedIntegerSetting(
+      settings?.goalUsageWaitMinutes,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalUsageWaitMinutes,
+      AGENT_LIMIT_BOUNDS.goalUsageWaitMinutes,
+    ),
   };
 };
 

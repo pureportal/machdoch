@@ -11,6 +11,7 @@ import { resolveRuntimeAgentLimits } from "../../core/_helpers/agent-runtime-typ
 import {
   AGENT_LIMIT_BOUNDS,
   DEFAULT_ANSWER_LANGUAGE,
+  DEFAULT_USER_AGENT_LIMITS_SETTINGS,
   VALID_MODEL_PROVIDERS,
 } from "../../core/runtime-contract.generated.js";
 import type {
@@ -96,6 +97,34 @@ export const ANSWER_LANGUAGE_CONFIG_DEFINITIONS: readonly CliConfigSettingDefini
       acceptedValues: "language",
     },
   ];
+const GOAL_LIMIT_SETTINGS = {
+  "agent-limits.goal-passes": {
+    key: "goalPasses",
+    description: "Native goal reruns before pausing.",
+  },
+  "agent-limits.goal-stalled-passes": {
+    key: "goalStalledPasses",
+    description: "Goal passes without new progress before pausing.",
+  },
+  "agent-limits.goal-verification-minutes": {
+    key: "goalVerificationMinutes",
+    description: "Maximum minutes for one goal check.",
+  },
+  "agent-limits.goal-background-wait-minutes": {
+    key: "goalBackgroundWaitMinutes",
+    description: "Minutes a goal waits for background jobs.",
+  },
+  "agent-limits.goal-usage-wait-minutes": {
+    key: "goalUsageWaitMinutes",
+    description: "Minutes a goal waits for a plan limit to reset; 0 pauses it.",
+  },
+} as const;
+
+const getGoalLimitSetting = (setting: string) =>
+  Object.hasOwn(GOAL_LIMIT_SETTINGS, setting)
+    ? GOAL_LIMIT_SETTINGS[setting as keyof typeof GOAL_LIMIT_SETTINGS]
+    : undefined;
+
 export const AGENT_PREFERENCE_CONFIG_DEFINITIONS: readonly CliConfigSettingDefinition[] =
   [
     {
@@ -120,6 +149,15 @@ export const AGENT_PREFERENCE_CONFIG_DEFINITIONS: readonly CliConfigSettingDefin
       description: "Maximum Machdoch continuation cycles.",
       acceptedValues: `${AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.min}..${AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.max}`,
     },
+    ...Object.entries(GOAL_LIMIT_SETTINGS).map(
+      ([setting, { key, description }]) => ({
+        setting,
+        category: "Agent",
+        scope: "user" as const,
+        description,
+        acceptedValues: `${AGENT_LIMIT_BOUNDS[key].min}..${AGENT_LIMIT_BOUNDS[key].max}`,
+      }),
+    ),
     {
       setting: "review-model",
       category: "Agent",
@@ -198,6 +236,25 @@ const saveAgentConfigSetting = async (
       configPath: await saveUserAgentLimitsSettings({ ...current, infinite }),
       status: "configured",
       value: infinite,
+    };
+  }
+
+  const goalLimit = getGoalLimitSetting(normalizedSetting);
+  if (goalLimit) {
+    const value = parseConfigNumber(normalizedSetting, normalizedValue, {
+      integer: true,
+      ...AGENT_LIMIT_BOUNDS[goalLimit.key],
+    });
+    const current = await loadUserAgentLimitsSettings();
+    return {
+      setting: normalizedSetting,
+      scope: "user",
+      configPath: await saveUserAgentLimitsSettings({
+        ...current,
+        [goalLimit.key]: value,
+      }),
+      status: "configured",
+      value,
     };
   }
 
@@ -317,6 +374,12 @@ const resetSetting = async (
       "agentLimits",
       "autopilotExecutorIterations",
     ],
+    ...Object.fromEntries(
+      Object.entries(GOAL_LIMIT_SETTINGS).map(([setting, { key }]) => [
+        setting,
+        ["agentLimits", key],
+      ]),
+    ),
   };
   return {
     setting: normalizedSetting,
@@ -333,9 +396,17 @@ const resolveEntry = (
   const { setting } = definition;
   let value: string | number | boolean;
   let source = "default";
+  const goalLimit = getGoalLimitSetting(setting);
   if (setting === "fleet.enabled") {
     value = snapshot.fleet.enabled;
     source = snapshot.fleet.configured ? "saved" : "default";
+  } else if (goalLimit) {
+    const runtimeValue = resolveRuntimeAgentLimits(snapshot.runtime)[goalLimit.key];
+    value =
+      runtimeValue === null
+        ? "infinite"
+        : (runtimeValue ?? DEFAULT_USER_AGENT_LIMITS_SETTINGS[goalLimit.key]);
+    source = configSource(snapshot.userConfig.agentLimits?.[goalLimit.key]);
   } else {
     switch (setting) {
       case "answer-language":

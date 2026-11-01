@@ -43,6 +43,14 @@ const normalizePositiveIntegerLimit = (
   return Math.max(1, Math.trunc(value));
 };
 
+const GOAL_LIMIT_KEYS = [
+  "goalPasses",
+  "goalStalledPasses",
+  "goalVerificationMinutes",
+  "goalBackgroundWaitMinutes",
+  "goalUsageWaitMinutes",
+] as const;
+
 export const createDefaultAgentLimits = (): RuntimeAgentLimits => ({
   executorTurns: DEFAULT_MAX_EXECUTOR_TURNS,
   autopilotExecutorIterations: DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
@@ -56,10 +64,19 @@ export const normalizeAgentLimitOverrides = (
     return fallback;
   }
 
+  const goalSettings: Partial<Record<(typeof GOAL_LIMIT_KEYS)[number], number>> =
+    {};
+  for (const key of GOAL_LIMIT_KEYS) {
+    const value = overrides[key] ?? fallback[key];
+    if (typeof value === "number") goalSettings[key] = value;
+  }
+
   if (overrides?.infinite) {
     return {
       executorTurns: null,
       autopilotExecutorIterations: null,
+      ...goalSettings,
+      goalPasses: null,
     };
   }
 
@@ -73,6 +90,7 @@ export const normalizeAgentLimitOverrides = (
       fallback.autopilotExecutorIterations ??
         DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS,
     ),
+    ...goalSettings,
   };
 };
 
@@ -80,6 +98,35 @@ export const resolveRuntimeAgentLimits = (
   config: Pick<RuntimeConfig, "agentLimits">,
 ): RuntimeAgentLimits => {
   return config.agentLimits ?? createDefaultAgentLimits();
+};
+
+export interface GoalLimits {
+  /** Automatic native goal passes; null means no limit. */
+  passes: number | null;
+  stalledPasses: number;
+  verificationMs: number;
+  backgroundWaitMs: number;
+  usageWaitMs: number;
+}
+
+export const resolveGoalLimits = (
+  config: Pick<RuntimeConfig, "agentLimits">,
+): GoalLimits => {
+  const limits = config.agentLimits;
+  const defaults = DEFAULT_USER_AGENT_LIMITS_SETTINGS;
+  return {
+    passes:
+      limits?.goalPasses === undefined ? defaults.goalPasses : limits.goalPasses,
+    stalledPasses: limits?.goalStalledPasses ?? defaults.goalStalledPasses,
+    verificationMs:
+      (limits?.goalVerificationMinutes ?? defaults.goalVerificationMinutes) *
+      60_000,
+    backgroundWaitMs:
+      (limits?.goalBackgroundWaitMinutes ??
+        defaults.goalBackgroundWaitMinutes) * 60_000,
+    usageWaitMs:
+      (limits?.goalUsageWaitMinutes ?? defaults.goalUsageWaitMinutes) * 60_000,
+  };
 };
 
 export interface AgentLoopState {
@@ -107,6 +154,7 @@ export interface TaskFinalResponsePayload {
 export interface ModelDrivenExecutionParams {
   nativeGoal?: string;
   captureGoalEvidence?: boolean;
+  goalBackgroundWaitMs?: number;
   task: string;
   config: RuntimeConfig;
   taskContext: ResolvedTaskContext;

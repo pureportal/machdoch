@@ -99,6 +99,36 @@ export const normalizeAgentLimitsDraft = (
       AGENT_LIMIT_BOUNDS.autopilotExecutorIterations.max,
       DEFAULT_USER_AGENT_LIMITS_SETTINGS.autopilotExecutorIterations,
     ),
+    goalPasses: clampIntegerSetting(
+      settings.goalPasses,
+      AGENT_LIMIT_BOUNDS.goalPasses.min,
+      AGENT_LIMIT_BOUNDS.goalPasses.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalPasses,
+    ),
+    goalStalledPasses: clampIntegerSetting(
+      settings.goalStalledPasses,
+      AGENT_LIMIT_BOUNDS.goalStalledPasses.min,
+      AGENT_LIMIT_BOUNDS.goalStalledPasses.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalStalledPasses,
+    ),
+    goalVerificationMinutes: clampIntegerSetting(
+      settings.goalVerificationMinutes,
+      AGENT_LIMIT_BOUNDS.goalVerificationMinutes.min,
+      AGENT_LIMIT_BOUNDS.goalVerificationMinutes.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalVerificationMinutes,
+    ),
+    goalBackgroundWaitMinutes: clampIntegerSetting(
+      settings.goalBackgroundWaitMinutes,
+      AGENT_LIMIT_BOUNDS.goalBackgroundWaitMinutes.min,
+      AGENT_LIMIT_BOUNDS.goalBackgroundWaitMinutes.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalBackgroundWaitMinutes,
+    ),
+    goalUsageWaitMinutes: clampIntegerSetting(
+      settings.goalUsageWaitMinutes,
+      AGENT_LIMIT_BOUNDS.goalUsageWaitMinutes.min,
+      AGENT_LIMIT_BOUNDS.goalUsageWaitMinutes.max,
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.goalUsageWaitMinutes,
+    ),
   };
 };
 
@@ -111,9 +141,22 @@ export const hasAgentLimitsDraftChanges = (
     left.automaticRetries !== right.automaticRetries ||
     left.retryAttempts !== right.retryAttempts ||
     left.executorTurns !== right.executorTurns ||
-    left.autopilotExecutorIterations !== right.autopilotExecutorIterations
+    left.autopilotExecutorIterations !== right.autopilotExecutorIterations ||
+    left.goalPasses !== right.goalPasses ||
+    left.goalStalledPasses !== right.goalStalledPasses ||
+    left.goalVerificationMinutes !== right.goalVerificationMinutes ||
+    left.goalBackgroundWaitMinutes !== right.goalBackgroundWaitMinutes ||
+    left.goalUsageWaitMinutes !== right.goalUsageWaitMinutes
   );
 };
+
+const GOAL_LIMIT_FIELDS = [
+  ["goalPasses", "Goal passes", "Native goal reruns before pausing."],
+  ["goalStalledPasses", "Stalled goal passes", "Passes without new progress before pausing."],
+  ["goalVerificationMinutes", "Goal check minutes", undefined],
+  ["goalBackgroundWaitMinutes", "Background job wait minutes", undefined],
+  ["goalUsageWaitMinutes", "Usage limit wait minutes", "0 pauses the goal instead of waiting."],
+] as const;
 
 export const AgentLimitsSettingsPanel = ({
   setup,
@@ -576,6 +619,21 @@ export const AgentLimitsSettingsPanel = ({
             className="h-10 max-w-32 rounded-lg border-slate-800 bg-slate-950 text-slate-100 disabled:opacity-50"
           />
         </SettingPanel>
+
+        {GOAL_LIMIT_FIELDS.map(([key, label, detail]) => (
+          <SettingPanel key={key} label={label} {...(detail ? { detail } : {})}>
+            <SettingsNumberInput
+              aria-label={label}
+              min={AGENT_LIMIT_BOUNDS[key].min}
+              max={AGENT_LIMIT_BOUNDS[key].max}
+              step="1"
+              value={draft[key]}
+              disabled={setup.saving || (key === "goalPasses" && draft.infinite)}
+              onValueChange={(value) => setDraft({ ...draft, [key]: value })}
+              className="h-10 max-w-32 rounded-lg border-slate-800 bg-slate-950 text-slate-100 disabled:opacity-50"
+            />
+          </SettingPanel>
+        ))}
 
         <SettingPanel
           label="Review model"

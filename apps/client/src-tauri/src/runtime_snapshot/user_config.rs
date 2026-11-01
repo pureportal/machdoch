@@ -216,6 +216,11 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
             "infinite",
             "executorTurns",
             "autopilotExecutorIterations",
+            "goalPasses",
+            "goalStalledPasses",
+            "goalVerificationMinutes",
+            "goalBackgroundWaitMinutes",
+            "goalUsageWaitMinutes",
         ],
     );
     merge_known_object_members(

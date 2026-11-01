@@ -169,6 +169,31 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 100
+        },
+        "goalPasses": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "goalStalledPasses": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "goalVerificationMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440
+        },
+        "goalBackgroundWaitMinutes": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 10080
+        },
+        "goalUsageWaitMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10080
         }
       }
     },
@@ -186,7 +211,16 @@
           "type": ["integer", "null"],
           "minimum": 1,
           "maximum": 100
-        }
+        },
+        "goalPasses": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 1000
+        },
+        "goalStalledPasses": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "goalVerificationMinutes": { "type": "integer", "minimum": 1, "maximum": 1440 },
+        "goalBackgroundWaitMinutes": { "type": "integer", "minimum": 10, "maximum": 10080 },
+        "goalUsageWaitMinutes": { "type": "integer", "minimum": 0, "maximum": 10080 }
       }
     },
     "WorkspaceConfigFile": {
@@ -598,7 +632,12 @@
         "executorTurns",
         "autopilotExecutorIterations",
         "automaticRetries",
-        "retryAttempts"
+        "retryAttempts",
+        "goalPasses",
+        "goalStalledPasses",
+        "goalVerificationMinutes",
+        "goalBackgroundWaitMinutes",
+        "goalUsageWaitMinutes"
       ],
       "properties": {
         "automaticRetries": {
@@ -626,6 +665,36 @@
           "minimum": 1,
           "maximum": 100,
           "default": 16
+        },
+        "goalPasses": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "default": 10
+        },
+        "goalStalledPasses": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 3
+        },
+        "goalVerificationMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1440,
+          "default": 30
+        },
+        "goalBackgroundWaitMinutes": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 10080,
+          "default": 120
+        },
+        "goalUsageWaitMinutes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10080,
+          "default": 360
         }
       }
     },

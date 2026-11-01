@@ -291,11 +291,21 @@ export interface RuntimeAgentLimitOverrides {
   infinite?: boolean;
   executorTurns?: number;
   autopilotExecutorIterations?: number;
+  goalPasses?: number;
+  goalStalledPasses?: number;
+  goalVerificationMinutes?: number;
+  goalBackgroundWaitMinutes?: number;
+  goalUsageWaitMinutes?: number;
 }
 
 export interface RuntimeAgentLimits {
   executorTurns: number | null;
   autopilotExecutorIterations: number | null;
+  goalPasses?: number | null;
+  goalStalledPasses?: number;
+  goalVerificationMinutes?: number;
+  goalBackgroundWaitMinutes?: number;
+  goalUsageWaitMinutes?: number;
 }
 
 export interface WorkspaceConfigFile {
@@ -508,6 +518,11 @@ export interface UserAgentLimitsSettings {
   infinite: boolean;
   executorTurns: number;
   autopilotExecutorIterations: number;
+  goalPasses: number;
+  goalStalledPasses: number;
+  goalVerificationMinutes: number;
+  goalBackgroundWaitMinutes: number;
+  goalUsageWaitMinutes: number;
 }
 
 export interface UserWorkspaceRunSettings {
@@ -642,6 +657,21 @@ pub const DEFAULT_MAX_EXECUTOR_TURNS: u32 = ${defaultAgentLimits.executorTurns};
 pub const DEFAULT_MAX_AUTOPILOT_EXECUTOR_ITERATIONS: u32 = ${defaultAgentLimits.autopilotExecutorIterations};
 pub const MAX_CONFIGURED_EXECUTOR_TURNS: u32 = ${agentLimitBounds.executorTurns.max};
 pub const MAX_CONFIGURED_AUTOPILOT_ITERATIONS: u32 = ${agentLimitBounds.autopilotExecutorIterations.max};
+pub const DEFAULT_GOAL_PASSES: u32 = ${defaultAgentLimits.goalPasses};
+pub const MIN_GOAL_PASSES: u32 = ${agentLimitBounds.goalPasses.min};
+pub const MAX_GOAL_PASSES: u32 = ${agentLimitBounds.goalPasses.max};
+pub const DEFAULT_GOAL_STALLED_PASSES: u32 = ${defaultAgentLimits.goalStalledPasses};
+pub const MIN_GOAL_STALLED_PASSES: u32 = ${agentLimitBounds.goalStalledPasses.min};
+pub const MAX_GOAL_STALLED_PASSES: u32 = ${agentLimitBounds.goalStalledPasses.max};
+pub const DEFAULT_GOAL_VERIFICATION_MINUTES: u32 = ${defaultAgentLimits.goalVerificationMinutes};
+pub const MIN_GOAL_VERIFICATION_MINUTES: u32 = ${agentLimitBounds.goalVerificationMinutes.min};
+pub const MAX_GOAL_VERIFICATION_MINUTES: u32 = ${agentLimitBounds.goalVerificationMinutes.max};
+pub const DEFAULT_GOAL_BACKGROUND_WAIT_MINUTES: u32 = ${defaultAgentLimits.goalBackgroundWaitMinutes};
+pub const MIN_GOAL_BACKGROUND_WAIT_MINUTES: u32 = ${agentLimitBounds.goalBackgroundWaitMinutes.min};
+pub const MAX_GOAL_BACKGROUND_WAIT_MINUTES: u32 = ${agentLimitBounds.goalBackgroundWaitMinutes.max};
+pub const DEFAULT_GOAL_USAGE_WAIT_MINUTES: u32 = ${defaultAgentLimits.goalUsageWaitMinutes};
+pub const MIN_GOAL_USAGE_WAIT_MINUTES: u32 = ${agentLimitBounds.goalUsageWaitMinutes.min};
+pub const MAX_GOAL_USAGE_WAIT_MINUTES: u32 = ${agentLimitBounds.goalUsageWaitMinutes.max};
 
 pub const DEFAULT_WORKSPACE_RUN_STARTUP_DELAY_MS: u64 = ${defaultWorkspaceRunSettings.startupDelayMs};
 pub const MIN_WORKSPACE_RUN_STARTUP_DELAY_MS: u64 = ${workspaceRunSettingBounds.startupDelayMs.min};
