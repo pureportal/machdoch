@@ -59,6 +59,7 @@ try {
   for (const [width, height] of [
     [320, 740],
     [390, 844],
+    [450, 1000],
     [920, 414],
     [390, 420],
   ]) {
@@ -125,9 +126,28 @@ try {
       composerHeight: surface.height,
       conversationHeight: conversation.height,
     });
+    if (width < 640) {
+      const formBox = await page.locator(".app-composer-form").boundingBox();
+      const inputBox = await input.boundingBox();
+      const sendBox = await page
+        .getByRole("button", { name: "Send message", exact: true })
+        .boundingBox();
+      assert.ok(
+        inputBox.width > formBox.width * 0.9,
+        "Actions squeeze the message input",
+      );
+      assert.ok(
+        sendBox.y >= inputBox.y + inputBox.height - 1,
+        "Actions share a row with the message input",
+      );
+    }
     await options.click();
     assert.equal(await options.getAttribute("aria-expanded"), "true");
-    await insideViewport(page, page.locator(".m-composer-surface-controls"));
+    const controls = page.locator(".m-composer-surface-controls");
+    await insideViewport(page, controls);
+    for (const control of await controls.getByRole("button").all()) {
+      await insideViewport(page, control);
+    }
     await options.click();
     await page.locator(".m-composer-surface-model button").click();
     const modelPicker = page.getByRole("dialog", {

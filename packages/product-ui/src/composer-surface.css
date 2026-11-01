@@ -234,6 +234,7 @@
   border-radius: 6px !important;
   background: transparent !important;
   box-shadow: none;
+  outline: none;
   font-size: var(--composer-input-size) !important;
   line-height: 1.25rem !important;
 }
@@ -367,8 +368,12 @@
     display: inline-flex;
   }
 
+  .m-composer-surface[data-options-open="true"] .m-composer-surface-toolbar {
+    flex-wrap: wrap;
+  }
+
   .m-composer-surface-model {
-    flex: 1 1 auto;
+    flex: 1 1 0;
     max-width: none;
   }
 
@@ -384,22 +389,22 @@
   }
 
   .m-composer-surface-controls {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    z-index: 40;
-    width: max-content;
-    max-width: min(100%, 17.5rem);
+    order: 1;
+    flex: 1 0 100%;
     flex-wrap: wrap;
     border: 1px solid var(--app-border-strong);
     border-radius: 12px;
-    background: var(--app-surface);
     padding: 6px;
-    box-shadow: var(--app-elevated-shadow);
   }
 
   .m-composer-surface-controls > fieldset {
+    flex: 1 1 100%;
     flex-wrap: wrap;
+    max-width: 100%;
+  }
+
+  .m-composer-surface-controls .m-product-composer-toolbar-spacer {
+    display: none;
   }
 
   .m-composer-surface[data-options-open="false"] .m-composer-surface-controls {
@@ -494,27 +499,32 @@
     display: inline-flex;
   }
 
+  .m-composer-surface[data-options-open="true"] .m-composer-surface-toolbar {
+    flex-wrap: wrap;
+  }
+
   .m-composer-surface-model {
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    max-width: none;
   }
 
   .m-composer-surface-controls {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    z-index: 40;
-    width: max-content;
-    max-width: 100%;
+    order: 1;
+    flex: 1 0 100%;
     flex-wrap: wrap;
     border: 1px solid var(--app-border-strong);
     border-radius: 12px;
-    background: var(--app-surface);
     padding: 6px;
-    box-shadow: var(--app-elevated-shadow);
   }
 
   .m-composer-surface-controls > fieldset {
+    flex: 1 1 100%;
     flex-wrap: wrap;
+    max-width: 100%;
+  }
+
+  .m-composer-surface-controls .m-product-composer-toolbar-spacer {
+    display: none;
   }
 
   .m-composer-surface[data-options-open="false"] .m-composer-surface-controls {
@@ -531,5 +541,28 @@
 
   .m-composer-surface :is(input, textarea, select) {
     font-size: max(16px, 1em) !important;
+  }
+
+  .m-composer-surface .app-context-attachment-item {
+    height: var(--composer-control-size);
+    padding-right: 0;
+  }
+
+  .m-composer-surface .app-context-attachments-clear {
+    height: var(--composer-control-size);
+  }
+
+  @container composer (max-width: 640px) {
+    .m-composer-surface .app-composer-form {
+      grid-template-columns: auto minmax(0, 1fr);
+      grid-template-areas:
+        "editor editor"
+        "attach actions";
+      row-gap: 0;
+    }
+
+    :root .m-composer-surface .app-composer-form .m-composer-input {
+      padding-inline: 8px !important;
+    }
   }
 }

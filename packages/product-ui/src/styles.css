@@ -2990,6 +2990,26 @@
       max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
     backdrop-filter: none;
   }
+  .m-product-composer-wrap .m-composer-surface-toolbar:has(.m-live-voice-panel) {
+    flex-wrap: wrap;
+  }
+  .m-product-composer-wrap .m-composer-surface-actions:has(.m-live-voice-panel),
+  .m-product-composer-wrap .m-live-voice:has(.m-live-voice-panel) {
+    display: contents;
+  }
+  .m-product-composer-wrap
+    .m-live-voice:has(.m-live-voice-panel)
+    .m-live-voice-button {
+    margin-left: auto;
+  }
+  .m-product-composer-wrap .m-live-voice-panel {
+    position: static;
+    order: 1;
+    box-sizing: border-box;
+    flex: 0 0 100%;
+    width: 100%;
+    box-shadow: none;
+  }
   .m-product-composer {
     padding: 10px;
     border-radius: 20px;
