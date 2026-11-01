@@ -497,8 +497,35 @@
   border-top: 1px solid var(--m-control-border);
 }
 
-.m-product-session-unread {
-  color: var(--m-accent);
+.m-product-session-item[data-unread="true"] {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--app-emerald-500) 48%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--app-emerald-500) 14%, transparent),
+    color-mix(in srgb, var(--app-sky-500) 8%, transparent) 58%,
+    color-mix(in srgb, var(--m-bg) 72%, transparent)
+  );
+  box-shadow: 0 0 0 1px
+    color-mix(in srgb, var(--app-emerald-500) 12%, transparent);
+}
+
+.m-product-session-item[data-unread="true"]::before {
+  position: absolute;
+  top: 0.7rem;
+  bottom: 0.7rem;
+  left: 0;
+  width: 0.18rem;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    var(--app-sky-300),
+    var(--app-emerald-300)
+  );
+  box-shadow: 0 0 16px
+    color-mix(in srgb, var(--app-emerald-300) 42%, transparent);
+  content: "";
 }
 
 .m-product-session-item[data-active="true"] {

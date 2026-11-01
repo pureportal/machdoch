@@ -33,13 +33,19 @@ const session = (
   ...values,
 });
 
-function Sidebar({ sessions }: { sessions: ProductSession[] }) {
+function Sidebar({
+  sessions,
+  activeSessionId,
+}: {
+  sessions: ProductSession[];
+  activeSessionId: string | undefined;
+}) {
   const index = useSessionSidebarIndex(undefined, sessions);
   return (
     <SessionSidebar
       index={index}
       sessions={sessions}
-      activeSessionId={undefined}
+      activeSessionId={activeSessionId}
       workspace={undefined}
       pending={false}
       onCommand={vi.fn().mockResolvedValue(true)}
@@ -47,8 +53,8 @@ function Sidebar({ sessions }: { sessions: ProductSession[] }) {
   );
 }
 
-const renderSessions = (sessions: ProductSession[]) =>
-  render(<Sidebar sessions={sessions} />);
+const renderSessions = (sessions: ProductSession[], activeSessionId?: string) =>
+  render(<Sidebar sessions={sessions} activeSessionId={activeSessionId} />);
 
 it("keeps chats with equivalent Windows paths visible when selecting a workspace", () => {
   renderSessions([
@@ -128,5 +134,31 @@ it("filters authoritative unread state and combines it with other selected statu
     screen.getByRole("button", { name: "Status: Failed" }),
   );
   expect(screen.getByText("Failed")).toBeTruthy();
-  expect(screen.queryByLabelText("Unread reply")).toBeTruthy();
+  expect(screen.getByRole("button", { name: /^Status: done Unread/u })).toBeTruthy();
+});
+
+it("highlights finished chats with an unread reply unless they are open or archived", () => {
+  const view = renderSessions(
+    [
+      session("Unread", { unread: true }),
+      session("Read", { unread: false }),
+      session("Open", { unread: true }),
+      session("Archived", { unread: true, archivedAt: 1 }),
+    ],
+    "Open",
+  );
+
+  const highlighted = [
+    ...view.container.querySelectorAll(
+      '.m-product-session-item[data-unread="true"]',
+    ),
+  ];
+
+  expect(
+    highlighted.map(
+      (row) => row.querySelector(".m-product-session-title")?.textContent,
+    ),
+  ).toEqual(["Unread"]);
+  expect(highlighted[0]?.textContent).toContain("New reply ready");
+  expect(screen.getAllByText("New reply ready")).toHaveLength(1);
 });

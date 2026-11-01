@@ -2374,6 +2374,7 @@ export interface ChatSessionShellStateController {
   setCatalogOpen: Dispatch<SetStateAction<boolean>>;
   setSettingsSection: Dispatch<SetStateAction<SettingsSection>>;
   setActiveSessionId: (sessionId: string) => void;
+  markSessionAsRead: (sessionId: string) => void;
   setSessionScopeFilter: Dispatch<SetStateAction<SessionScopeFilter>>;
   setSessionStatusFilters: Dispatch<
     SetStateAction<SessionStatusFilterSelection>
@@ -3477,6 +3478,18 @@ export const useChatSessionShellState = (
     [applyShellState, persistActiveSession, trackSessionReads],
   );
 
+  const markSessionAsRead = useCallback(
+    (sessionId: string): void => {
+      applyShellState((prev) => ({
+        ...prev,
+        sessions: prev.sessions.map((session) =>
+          session.id === sessionId ? markSessionRead(session) : session,
+        ),
+      }));
+    },
+    [applyShellState],
+  );
+
   return {
     shellState,
     activeSessionId: activeSession.id,
@@ -3506,6 +3519,7 @@ export const useChatSessionShellState = (
     setCatalogOpen,
     setSettingsSection,
     setActiveSessionId,
+    markSessionAsRead,
     setSessionScopeFilter,
     setSessionStatusFilters,
     setSessionSearchQuery,

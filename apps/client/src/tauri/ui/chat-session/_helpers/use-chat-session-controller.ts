@@ -7233,6 +7233,7 @@ export const useChatSessionController = (
         ...(sessionId ? { id: sessionId } : {}),
       }),
     onActivateSession: state.setActiveSessionId,
+    onMarkSessionRead: state.markSessionAsRead,
     onArchiveSession: lifecycleActions.archiveSession,
     onTogglePinnedSession: lifecycleActions.togglePinnedSession,
     onDuplicateSession: (sessionId: string) =>

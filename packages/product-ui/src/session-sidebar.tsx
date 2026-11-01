@@ -420,6 +420,10 @@ export function SessionSidebar({
       <div className="m-product-session-list">
         {filteredSessions.map((session, index) => {
           const StatusIcon = statusIconById.get(session.status) ?? CircleDashed;
+          const hasUnreadCompletion =
+            session.unread === true &&
+            session.id !== activeSessionId &&
+            session.archivedAt === undefined;
           return (
             <button
               key={session.id}
@@ -427,6 +431,7 @@ export function SessionSidebar({
               className="m-product-session-item"
               data-unpinned-divider={index === dividerIndex || undefined}
               data-active={session.id === activeSessionId}
+              data-unread={hasUnreadCompletion || undefined}
               aria-current={session.id === activeSessionId ? "page" : undefined}
               disabled={pending}
               onClick={() =>
@@ -445,12 +450,9 @@ export function SessionSidebar({
                   <StatusIcon aria-hidden="true" />
                 </span>
                 <span className="m-product-session-title">{session.title}</span>
-                {session.unread ? (
-                  <span
-                    className="m-product-session-unread"
-                    aria-label="Unread reply"
-                  >
-                    •
+                {hasUnreadCompletion ? (
+                  <span className="m-product-visually-hidden">
+                    New reply ready
                   </span>
                 ) : null}
                 {session.pinnedAt !== undefined ? (

@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
   createInitialShellState,
   createSession,
+  hasUnreadCompletedSessionResponse,
   normalizeShellState,
 } from "../../chat-session.model";
 import { useChatSessionShellState } from "./use-chat-session-shell-state";
@@ -53,6 +54,55 @@ it("saves a draft without rereading an unchanged browser snapshot", async () => 
   expect(result.current.activeSession.id).toBe("second-session");
   act(() => result.current.setActiveSessionId("first-session"));
   expect(result.current.activeSession.draft).toBe("Draft text");
+});
+
+it("clears the unread reply of a session left through remote control", async () => {
+  const finished = createSession({
+    id: "finished-session",
+    createdAt: 100,
+    updatedAt: 200,
+    lastReadAt: 150,
+    messages: [
+      {
+        id: "request",
+        taskId: "task",
+        role: "user",
+        content: "Request",
+        createdAt: 100,
+      },
+      {
+        id: "reply",
+        taskId: "task",
+        role: "agent",
+        content: "Reply",
+        createdAt: 200,
+        outcome: { status: "succeeded" },
+      },
+    ],
+  });
+  const initial = normalizeShellState({
+    ...createInitialShellState(),
+    sessions: [createSession({ id: "open-session" }), finished],
+    activeSessionId: "open-session",
+  });
+  localStorage.setItem(
+    snapshotKey,
+    JSON.stringify({ state: initial, revision: 1 }),
+  );
+  localStorage.setItem(revisionKey, "1");
+
+  const { result } = renderHook(() => useChatSessionShellState());
+  await waitFor(() => expect(result.current.hasHydrated).toBe(true));
+  const readFinished = () =>
+    result.current.shellState.sessions.find(
+      (session) => session.id === "finished-session",
+    )!;
+  expect(hasUnreadCompletedSessionResponse(readFinished())).toBe(true);
+
+  act(() => result.current.markSessionAsRead("finished-session"));
+
+  expect(hasUnreadCompletedSessionResponse(readFinished())).toBe(false);
+  expect(result.current.activeSession.id).toBe("open-session");
 });
 
 it.each([true, false])(

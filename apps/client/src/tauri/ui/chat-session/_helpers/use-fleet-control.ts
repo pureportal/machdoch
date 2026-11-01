@@ -654,6 +654,7 @@ export const useFleetControl = (options: {
   onCreatePoseChat: (scene: MediaPoseMap | null, sessionId: string) => string;
   onOpenQuickChat: (sessionId: string) => void;
   onActivateSession: (sessionId: string) => void;
+  onMarkSessionRead: (sessionId: string) => void;
   onArchiveSession: (sessionId: string) => void;
   onTogglePinnedSession: (sessionId: string) => void;
   onDuplicateSession: (sessionId: string) => void;
@@ -1732,6 +1733,7 @@ export const useFleetControl = (options: {
 
         case "create-session": {
           const sessionId = await createFleetSessionId(command.commandId);
+          options.onMarkSessionRead(options.activeSession.id);
           if (command.specialKind === "pose") {
             options.onCreatePoseChat(command.poseScene ?? null, sessionId);
           } else {
@@ -1742,6 +1744,7 @@ export const useFleetControl = (options: {
 
         case "activate-session": {
           if (command.sessionId) {
+            options.onMarkSessionRead(options.activeSession.id);
             options.onActivateSession(command.sessionId);
           }
           break;
