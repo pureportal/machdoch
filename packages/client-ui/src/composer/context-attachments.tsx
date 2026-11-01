@@ -297,7 +297,9 @@ export const ContextAttachmentsList = ({
               <span className="min-w-0 max-w-48 truncate">
                 {attachment.name}
               </span>
-              <span className="shrink-0 text-slate-500">{kindLabel}</span>
+              {shouldShowAttachmentKindLabel(attachment) ? (
+                <span className="shrink-0 text-slate-500">{kindLabel}</span>
+              ) : null}
             </>
           );
 
@@ -353,19 +355,21 @@ export const ContextAttachmentsList = ({
         })}
       </ul>
 
-      <button
-        type="button"
-        aria-label={clearAllLabel}
-        disabled={disabled}
-        onClick={onClearAll}
-        className={cn(
-          "app-context-attachments-clear inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-slate-800 bg-slate-950/70 text-slate-500 hover:border-rose-500/25 hover:bg-rose-500/10 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-slate-800 disabled:hover:bg-slate-950/70 disabled:hover:text-slate-500",
-          compact ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs",
-        )}
-      >
-        <X className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
-        Clear all
-      </button>
+      {attachments.length > 1 ? (
+        <button
+          type="button"
+          aria-label={clearAllLabel}
+          disabled={disabled}
+          onClick={onClearAll}
+          className={cn(
+            "app-context-attachments-clear inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-slate-800 bg-slate-950/70 text-slate-500 hover:border-rose-500/25 hover:bg-rose-500/10 hover:text-rose-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-slate-800 disabled:hover:bg-slate-950/70 disabled:hover:text-slate-500",
+            compact ? "h-6 px-2 text-[11px]" : "h-7 px-2.5 text-xs",
+          )}
+        >
+          <X className={compact ? "h-3 w-3" : "h-3.5 w-3.5"} />
+          Clear all
+        </button>
+      ) : null}
     </div>
   );
 };
