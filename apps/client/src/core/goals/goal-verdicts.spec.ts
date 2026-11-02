@@ -241,17 +241,20 @@ describe("goal verification", () => {
       goalVerificationMinutes: 45,
     };
     const durations: Array<number | null | undefined> = [];
+    const prompts: string[] = [];
     await run(
       "/goal Ship it",
-      vi.fn<GoalTurnExecutor>(async (_task, _config, turnOptions) => {
+      vi.fn<GoalTurnExecutor>(async (task, _config, turnOptions) => {
         if (turnOptions.resultProtocol) {
           durations.push(turnOptions.maxDurationMs);
+          prompts.push(task);
           return check("complete");
         }
         return work();
       }),
     );
     expect(durations).toEqual([45 * 60_000]);
+    expect(prompts[0]).toContain("within 45 minutes");
   });
 
   it("does not accept complete when files changed during the check", async () => {
