@@ -84,6 +84,7 @@ import {
 import { CopilotCliOutputDecoder } from "./copilot-cli-output.js";
 import { readCopilotCliTelemetry } from "./copilot-cli-telemetry.js";
 import {
+  CLAUDE_FINAL_ANSWER_INSTRUCTIONS,
   ClaudeCliOutputDecoder,
   CodexCliOutputDecoder,
   DEFAULT_BACKGROUND_WAIT_MS,
@@ -2626,6 +2627,13 @@ const executeExternalAgentCliTask = async (
               promptSession,
             ),
           ]
+        : []),
+      ...(provider === "claude-cli" &&
+      delegationMode === "full-access" &&
+      !params.resultProtocol &&
+      !poseChat &&
+      params.scopedWorkerToolDefinitions === undefined
+        ? [CLAUDE_FINAL_ANSWER_INSTRUCTIONS]
         : []),
       ...(suggestFollowUps &&
       !params.resultProtocol &&

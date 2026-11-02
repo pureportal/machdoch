@@ -3447,6 +3447,62 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     });
   });
 
+  it("keeps a live Claude answer when a later background notice changes nothing", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;
+    vi.mocked(spawnSync).mockImplementation((executable, args = []) => {
+      const result = capabilityProbe(executable, [...args]);
+      return args.includes("--help")
+        ? { ...result, stdout: `${String(result.stdout)}\n--input-format` }
+        : result;
+    });
+    const params = createParams(workspaceRoot, { provider: "claude-cli" });
+    params.instructionDeliveryPlan = createExternalInstructionPlan(
+      params.taskContext.instructionResolution!,
+      undefined,
+      ["--input-format"],
+    );
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+    expect(await readRunScopedSystemInstructions("claude-cli", call)).toContain(
+      "reply with only <machdoch-answer-unchanged/>",
+    );
+    const event = (value: Record<string, unknown>) =>
+      call.child.stdout.write(`${JSON.stringify(value)}\n`);
+    const answer = (id: string, text: string) => {
+      event({
+        type: "assistant",
+        message: { id, content: [{ type: "text", text }] },
+      });
+      event({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        num_turns: 1,
+        result: text,
+      });
+    };
+
+    event({
+      type: "system",
+      subtype: "background_tasks_changed",
+      tasks: [{ task_id: "monitor" }],
+    });
+    answer("summary", "Season packs work end to end.");
+    event({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+    answer("unchanged", "<machdoch-answer-unchanged/>");
+    await waitForCondition(() =>
+      expect(call.child.stdin.writableEnded).toBe(true),
+    );
+    call.child.emit("close", 0, null);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: "executed",
+      response: { markdown: "Season packs work end to end." },
+    });
+  });
+
   it("sends attached images to a live Claude session as image blocks", async () => {
     const workspaceRoot = await createWorkspace();
     process.env.MACHDOCH_CLAUDE_CLI_PATH = process.execPath;

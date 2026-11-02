@@ -359,6 +359,112 @@ describe("Claude CLI output decoder", () => {
     });
   });
 
+  describe("when Claude is prompted again after its final answer", () => {
+    const unchanged =
+      "<machdoch-answer-unchanged/>\n\n<machdoch-follow-ups>\n- Run the full suite\n</machdoch-follow-ups>";
+    const assistant = (id: string, text: string) =>
+      eventLine({
+        type: "assistant",
+        message: { id, content: [{ type: "text", text }] },
+      });
+    const result = (text: string) =>
+      eventLine({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        num_turns: 1,
+        result: text,
+      });
+    const stopHookFeedback = eventLine({
+      type: "user",
+      isSynthetic: true,
+      parent_tool_use_id: null,
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "Stop hook feedback:\nNot met yet." }],
+      },
+    });
+
+    it("keeps the answer when a background job notice changes nothing", () => {
+      const decoder = new ClaudeCliOutputDecoder(true, true);
+      decoder.push(
+        eventLine({
+          type: "system",
+          subtype: "background_tasks_changed",
+          tasks: [{ task_id: "monitor" }],
+        }),
+      );
+      decoder.push(assistant("summary", "Season packs work."));
+      decoder.push(result("Season packs work."));
+      decoder.push(
+        eventLine({
+          type: "system",
+          subtype: "background_tasks_changed",
+          tasks: [],
+        }),
+      );
+      const followUp = decoder.push(
+        [
+          assistant("check", "Checking the monitor output."),
+          assistant("unchanged", unchanged),
+          result(unchanged),
+        ].join(""),
+      );
+
+      expect(followUp.resultExitCode).toBe(0);
+      expect(followUp.displayText.join("")).not.toContain(
+        "machdoch-answer-unchanged",
+      );
+      expect(decoder.getFinalOutput()).toBe("Season packs work.");
+    });
+
+    it("keeps the answer through repeated goal checks", () => {
+      const decoder = new ClaudeCliOutputDecoder(true, true);
+      decoder.push(
+        [
+          assistant("summary", "The redesign is finished."),
+          stopHookFeedback,
+          assistant("unchanged-1", unchanged),
+          stopHookFeedback,
+          assistant("unchanged-2", unchanged),
+          result(unchanged),
+        ].join(""),
+      );
+
+      expect(decoder.getFinalOutput()).toBe("The redesign is finished.");
+    });
+
+    it("takes a new complete answer after a goal check", () => {
+      const decoder = new ClaudeCliOutputDecoder(true, true);
+      decoder.push(
+        [
+          assistant("summary", "Two screens are left."),
+          stopHookFeedback,
+          assistant("update", "All screens are redesigned."),
+          result("All screens are redesigned."),
+        ].join(""),
+      );
+
+      expect(decoder.getFinalOutput()).toBe("All screens are redesigned.");
+    });
+
+    it("takes an answer that only mentions the marker", () => {
+      const decoder = new ClaudeCliOutputDecoder(true, true);
+      const answer =
+        "Replies that start with <machdoch-answer-unchanged/> now keep the earlier answer.";
+      decoder.push(
+        [
+          assistant("summary", "Started."),
+          stopHookFeedback,
+          assistant("update", answer),
+          result(answer),
+        ].join(""),
+      );
+
+      expect(decoder.getFinalOutput()).toBe(answer);
+    });
+  });
+
   it("explains an error result with the errors it lists", () => {
     const decoder = new ClaudeCliOutputDecoder();
     decoder.push(

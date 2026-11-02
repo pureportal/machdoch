@@ -8,6 +8,21 @@ const BACKGROUND_WAIT_STEP_MS = 10 * 60 * 1_000;
 export const DEFAULT_BACKGROUND_WAIT_MS = 60 * 60 * 1_000;
 const BACKGROUND_FOLLOW_UP_GRACE_MS = 2 * 60 * 1_000;
 
+const UNCHANGED_ANSWER_MARKER = "<machdoch-answer-unchanged/>";
+
+const isUnchangedAnswer = (text: string): boolean =>
+  text.trimStart().startsWith(UNCHANGED_ANSWER_MARKER);
+
+/**
+ * Background job notices and stop hooks such as a native goal's check prompt
+ * Claude again after its final answer, and only its last reply is the answer.
+ */
+export const CLAUDE_FINAL_ANSWER_INSTRUCTIONS = [
+  "Only your last message reaches the user as your answer.",
+  "Before your final answer, stop background tasks and monitors you no longer need; the run stays open until they finish.",
+  `When a background task notification or a stop hook such as the goal check prompts you after your final answer and that answer still stands, reply with only ${UNCHANGED_ANSWER_MARKER}. Otherwise write the complete final answer again with what changed, because it replaces the earlier one.`,
+].join("\n");
+
 const USAGE_COUNTS = [
   "inputTokens",
   "outputTokens",
@@ -409,6 +424,9 @@ export class ClaudeCliOutputDecoder
   private waitExpired = false;
   private carriedModelCalls = 0;
   private carriedUsage: AgentModelStreamUsage | undefined;
+  /** The answer that stood when an automatic prompt made Claude reply again. */
+  private standingAnswer: string | undefined;
+  private unchangedAnswerMessageId: string | undefined;
 
   /**
    * With `waitForBackgroundTasks`, a result that leaves background jobs running
@@ -469,6 +487,7 @@ export class ClaudeCliOutputDecoder
   /** The CLI started another turn, so the last result was not the final one. */
   private startFollowUpTurn(): void {
     if (!this.waitForBackgroundTasks || !this.terminal) return;
+    this.standingAnswer = this.finalOutput;
     this.terminal = false;
     this.waitingForBackgroundTasks = false;
     this.backgroundWaitSteps = 0;
@@ -479,6 +498,12 @@ export class ClaudeCliOutputDecoder
     this.usage = undefined;
     if (this.modelCallCountReported)
       this.carriedModelCalls = this.modelCallCount;
+  }
+
+  private keepStandingAnswer(): void {
+    if (this.standingAnswer !== undefined)
+      this.finalOutput = this.standingAnswer;
+    this.assistantMessageId = undefined;
   }
 
   getFailureMessage(): string | undefined {
@@ -526,6 +551,15 @@ export class ClaudeCliOutputDecoder
       return;
     }
 
+    if (
+      type === "user" &&
+      event.isSynthetic === true &&
+      !getString(event, "parent_tool_use_id")
+    ) {
+      this.standingAnswer = this.finalOutput;
+      return;
+    }
+
     if (type === "assistant" && isRecord(event.message)) {
       if (!getString(event, "parent_tool_use_id")) {
         this.startFollowUpTurn();
@@ -546,6 +580,15 @@ export class ClaudeCliOutputDecoder
             return;
           }
           const messageId = getString(event.message, "id");
+          if (
+            isUnchangedAnswer(text) ||
+            (messageId !== undefined &&
+              messageId === this.unchangedAnswerMessageId)
+          ) {
+            this.unchangedAnswerMessageId = messageId;
+            this.keepStandingAnswer();
+            return;
+          }
           const previousText =
             messageId && messageId === this.assistantMessageId
               ? this.finalOutput
@@ -577,7 +620,9 @@ export class ClaudeCliOutputDecoder
     const result =
       stringifyStructuredOutput(event.structured_output) ??
       getString(event, "result");
-    if (result) {
+    if (result && isUnchangedAnswer(result)) {
+      this.keepStandingAnswer();
+    } else if (result) {
       const assistantOutput = this.finalOutput.trim();
       const normalizedResult = result.trim();
 
