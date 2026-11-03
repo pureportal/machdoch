@@ -711,6 +711,7 @@ const CORE_CHILD_ENV_KEYS = new Set([
 interface ProviderChildEnvDescriptor {
   key: string;
   sensitivity: "public" | "secret";
+  matchesPrefix?: true;
 }
 
 const publicEnv = (key: string): ProviderChildEnvDescriptor => ({
@@ -720,6 +721,11 @@ const publicEnv = (key: string): ProviderChildEnvDescriptor => ({
 const secretEnv = (key: string): ProviderChildEnvDescriptor => ({
   key,
   sensitivity: "secret",
+});
+const publicEnvPrefix = (prefix: string): ProviderChildEnvDescriptor => ({
+  key: prefix,
+  sensitivity: "public",
+  matchesPrefix: true,
 });
 
 const PROVIDER_CHILD_ENV_KEYS = {
@@ -734,21 +740,59 @@ const PROVIDER_CHILD_ENV_KEYS = {
   "claude-cli": [
     secretEnv("ANTHROPIC_API_KEY"),
     secretEnv("ANTHROPIC_AUTH_TOKEN"),
+    secretEnv("ANTHROPIC_AWS_API_KEY"),
+    publicEnv("ANTHROPIC_AWS_BASE_URL"),
+    publicEnv("ANTHROPIC_AWS_WORKSPACE_ID"),
+    publicEnv("ANTHROPIC_BASE_URL"),
+    publicEnv("ANTHROPIC_BEDROCK_BASE_URL"),
+    publicEnv("ANTHROPIC_BEDROCK_MANTLE_BASE_URL"),
+    publicEnv("ANTHROPIC_BEDROCK_REGION_PREFIX"),
+    publicEnv("ANTHROPIC_BEDROCK_SERVICE_TIER"),
+    secretEnv("ANTHROPIC_CUSTOM_HEADERS"),
+    publicEnvPrefix("ANTHROPIC_DEFAULT_"),
+    publicEnv("ANTHROPIC_FEDERATION_RULE_ID"),
+    secretEnv("ANTHROPIC_FOUNDRY_API_KEY"),
+    secretEnv("ANTHROPIC_FOUNDRY_AUTH_TOKEN"),
+    publicEnv("ANTHROPIC_FOUNDRY_BASE_URL"),
+    publicEnv("ANTHROPIC_FOUNDRY_RESOURCE"),
+    publicEnv("ANTHROPIC_ORGANIZATION_ID"),
+    publicEnv("ANTHROPIC_SMALL_FAST_MODEL_AWS_REGION"),
+    publicEnv("ANTHROPIC_VERTEX_BASE_URL"),
+    publicEnv("ANTHROPIC_VERTEX_PROJECT_ID"),
     publicEnv("ANTHROPIC_WORKSPACE_ID"),
     publicEnv("API_FORCE_IDLE_TIMEOUT"),
     publicEnv("API_TIMEOUT_MS"),
     secretEnv("AWS_ACCESS_KEY_ID"),
     secretEnv("AWS_BEARER_TOKEN_BEDROCK"),
+    publicEnv("AWS_CONFIG_FILE"),
     publicEnv("AWS_DEFAULT_REGION"),
     publicEnv("AWS_PROFILE"),
     publicEnv("AWS_REGION"),
     secretEnv("AWS_SECRET_ACCESS_KEY"),
     secretEnv("AWS_SESSION_TOKEN"),
+    publicEnv("AWS_SHARED_CREDENTIALS_FILE"),
     publicEnv("BASH_DEFAULT_TIMEOUT_MS"),
     publicEnv("BASH_MAX_OUTPUT_LENGTH"),
     publicEnv("BASH_MAX_TIMEOUT_MS"),
+    publicEnv("CLAUDE_CODE_CERT_STORE"),
+    publicEnv("CLAUDE_CODE_CLIENT_CERT"),
+    publicEnv("CLAUDE_CODE_CLIENT_KEY"),
+    secretEnv("CLAUDE_CODE_CLIENT_KEY_PASSPHRASE"),
+    publicEnv("CLAUDE_CODE_GIT_BASH_PATH"),
     secretEnv("CLAUDE_CODE_OAUTH_TOKEN"),
+    publicEnv("CLAUDE_CODE_SHELL"),
+    publicEnv("CLAUDE_CODE_SKIP_ANTHROPIC_AWS_AUTH"),
+    publicEnv("CLAUDE_CODE_SKIP_BEDROCK_AUTH"),
+    publicEnv("CLAUDE_CODE_SKIP_FOUNDRY_AUTH"),
+    publicEnv("CLAUDE_CODE_SKIP_MANTLE_AUTH"),
+    publicEnv("CLAUDE_CODE_SKIP_VERTEX_AUTH"),
+    publicEnv("CLAUDE_CODE_USE_ANTHROPIC_AWS"),
+    publicEnv("CLAUDE_CODE_USE_BEDROCK"),
+    publicEnv("CLAUDE_CODE_USE_FOUNDRY"),
+    publicEnv("CLAUDE_CODE_USE_MANTLE"),
+    publicEnv("CLAUDE_CODE_USE_VERTEX"),
     publicEnv("CLAUDE_CONFIG_DIR"),
+    publicEnv("CLOUD_ML_REGION"),
     publicEnv("DISABLE_TELEMETRY"),
     publicEnv("DO_NOT_TRACK"),
     publicEnv("ENABLE_TOOL_SEARCH"),
@@ -756,6 +800,7 @@ const PROVIDER_CHILD_ENV_KEYS = {
     publicEnv("GOOGLE_APPLICATION_CREDENTIALS"),
     publicEnv("GOOGLE_CLOUD_PROJECT"),
     publicEnv("MAX_THINKING_TOKENS"),
+    publicEnvPrefix("VERTEX_REGION_CLAUDE_"),
   ],
   "copilot-cli": [
     publicEnv("COPILOT_CACHE_HOME"),
@@ -795,9 +840,13 @@ const getProviderChildEnvKey = (
     return undefined;
   }
 
-  return PROVIDER_CHILD_ENV_KEYS[provider].find(
-    (descriptor) => descriptor.key === normalizedKey,
-  )?.key;
+  const descriptor = PROVIDER_CHILD_ENV_KEYS[provider].find(
+    (candidate: ProviderChildEnvDescriptor) =>
+      candidate.matchesPrefix
+        ? normalizedKey.startsWith(candidate.key)
+        : candidate.key === normalizedKey,
+  );
+  return descriptor && normalizedKey;
 };
 
 const getProviderSecretEnvKeys = (provider: AgentCliProvider): string[] =>

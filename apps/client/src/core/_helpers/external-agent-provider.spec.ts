@@ -224,6 +224,10 @@ const ENV_KEYS = [
   "ANTHROPIC_MODEL",
   "CLAUDE_CODE_EFFORT_LEVEL",
   "CLAUDE_CODE_OAUTH_TOKEN",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLOUD_ML_REGION",
+  "VERTEX_REGION_CLAUDE_HAIKU_5_5",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
   "COPILOT_HOME",
   "COPILOT_MODEL",
   "COPILOT_GITHUB_TOKEN",
@@ -3743,6 +3747,10 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     process.env.ANTHROPIC_MODEL = "claude-haiku-4-5";
     process.env.CLAUDE_CODE_EFFORT_LEVEL = "low";
     process.env.PERPLEXITY_API_KEY = "perplexity-process-key";
+    process.env.CLAUDE_CODE_USE_VERTEX = "1";
+    process.env.CLOUD_ML_REGION = "global";
+    process.env.VERTEX_REGION_CLAUDE_HAIKU_5_5 = "us-east5";
+    process.env.ANTHROPIC_DEFAULT_OPUS_MODEL = "claude-opus-5-5";
 
     const resultPromise = maybeExecuteExternalAgentProviderTask(
       createParams(workspaceRoot, {
@@ -3756,6 +3764,12 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     const childEnv = call?.options.env as NodeJS.ProcessEnv | undefined;
 
     expect(childEnv?.ANTHROPIC_API_KEY).toBe("anthropic-process-key");
+    expect(childEnv).toMatchObject({
+      CLAUDE_CODE_USE_VERTEX: "1",
+      CLOUD_ML_REGION: "global",
+      VERTEX_REGION_CLAUDE_HAIKU_5_5: "us-east5",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5",
+    });
     expect(childEnv?.CLAUDE_CONFIG_DIR).toContain("machdoch-instruction-run-");
     expect(childEnv?.CLAUDE_CONFIG_DIR).not.toBe(
       join(workspaceRoot, ".claude-config"),
