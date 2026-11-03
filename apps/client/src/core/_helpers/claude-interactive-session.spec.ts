@@ -600,6 +600,73 @@ describe("ClaudeInteractiveSession", () => {
     });
   });
 
+  describe("when Claude closes work that never reached the model", () => {
+    const zeroTurnResult = (result: string) => ({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      num_turns: 0,
+      result,
+      usage: { input_tokens: 0, output_tokens: 0 },
+    });
+
+    it("answers the prompt after a resumed session reports a leftover job", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      harness.receive({
+        type: "system",
+        subtype: "task_notification",
+        task_id: "job-1",
+        status: "stopped",
+        summary:
+          "Background shell command didn't finish before the previous session ended",
+      });
+      harness.receive(zeroTurnResult(""));
+      expect(harness.isClosed()).toBe(false);
+      expect(harness.session.hasTerminalResult()).toBe(false);
+
+      harness.receive({
+        type: "user",
+        isReplay: true,
+        message: { role: "user", content: "Do the task." },
+      });
+      harness.receive({
+        type: "assistant",
+        message: { id: "message-1", content: [{ type: "text", text: "Done." }] },
+      });
+      const final = harness.receive({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        num_turns: 1,
+        result: "Done.",
+        usage: { input_tokens: 10, output_tokens: 2 },
+      });
+      expect(final.resultExitCode).toBe(0);
+      expect(harness.isClosed()).toBe(true);
+      expect(harness.session.getFinalOutput()).toBe("Done.");
+      expect(harness.session.getUsage()).toMatchObject({
+        inputTokens: 10,
+        outputTokens: 2,
+      });
+    });
+
+    it("still ends the turn when a hook blocks the prompt", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      const blocked = harness.receive(
+        zeroTurnResult("UserPromptSubmit operation blocked by hook:\nNo."),
+      );
+      expect(blocked.resultExitCode).toBe(0);
+      expect(harness.isClosed()).toBe(true);
+      expect(harness.session.getFinalOutput()).toContain(
+        "operation blocked by hook",
+      );
+    });
+  });
+
   it("interrupts and drops queued steering", () => {
     const harness = createHarness();
     sessions.push(harness.session);

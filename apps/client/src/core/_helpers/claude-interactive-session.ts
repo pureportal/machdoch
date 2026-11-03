@@ -29,6 +29,7 @@ import { ClaudeLiveEventReader } from "./claude-live-events.js";
 import {
   ClaudeCliOutputDecoder,
   addUsage,
+  isClaudeResultWithoutTurn,
   type ExternalAgentCliOutputUpdate,
 } from "./external-agent-cli-output.js";
 
@@ -357,6 +358,7 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
     if (type === "system") this.events.system(event);
     // Once the run has ended, a late follow-up turn must not replace its answer.
     if (this.turnFinished) return;
+    if (isClaudeResultWithoutTurn(event)) return;
     if (
       type === "result" &&
       (this.continueAfterTurnLimit(event) ||

@@ -6,6 +6,7 @@ import type {
 import { ClaudeLiveEventReader } from "./claude-live-events.js";
 import {
   ClaudeCliOutputDecoder,
+  isClaudeResultWithoutTurn,
   type ExternalAgentCliOutputUpdate,
 } from "./external-agent-cli-output.js";
 
@@ -78,7 +79,8 @@ export class ClaudeNativeGoalSession
         this.events.toolResults(event);
         break;
       case "result":
-        this.events.result(event, this.getUsage());
+        if (!isClaudeResultWithoutTurn(event))
+          this.events.result(event, this.getUsage());
         break;
     }
   }

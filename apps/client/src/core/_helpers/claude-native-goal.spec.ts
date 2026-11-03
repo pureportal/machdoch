@@ -40,6 +40,22 @@ describe("ClaudeNativeGoalSession", () => {
     });
   });
 
+  it("keeps running after a resumed session reports a leftover job", () => {
+    start();
+    receive({
+      type: "result",
+      subtype: "success",
+      is_error: false,
+      num_turns: 0,
+      result: "",
+      total_cost_usd: 4,
+      usage: { input_tokens: 0, output_tokens: 0 },
+    });
+    expect(session.hasTerminalResult()).toBe(false);
+    expect(session.getUsage()).toBeUndefined();
+    expect(session.live.snapshot().usage).toBeUndefined();
+  });
+
   it("reports plan limits, plan, files and usage from the goal's event stream", () => {
     start();
     receive({

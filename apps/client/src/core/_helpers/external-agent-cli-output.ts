@@ -107,6 +107,21 @@ const parseJsonRecord = (line: string): Record<string, unknown> | undefined => {
   }
 };
 
+/**
+ * Claude closes queued work that never reaches the model, such as its notice on
+ * resume that a job of the previous process did not finish, with an empty
+ * zero-turn result. That result answers no prompt.
+ */
+export const isClaudeResultWithoutTurn = (
+  event: Record<string, unknown>,
+): boolean =>
+  getString(event, "type") === "result" &&
+  getString(event, "subtype") === "success" &&
+  event.is_error !== true &&
+  getNumber(event, "num_turns") === 0 &&
+  !getString(event, "result")?.trim() &&
+  event.structured_output === undefined;
+
 const stringifyStructuredOutput = (value: unknown): string | undefined => {
   if (value === undefined) {
     return undefined;
@@ -613,7 +628,7 @@ export class ClaudeCliOutputDecoder
       return;
     }
 
-    if (type !== "result") {
+    if (type !== "result" || isClaudeResultWithoutTurn(event)) {
       return;
     }
 
