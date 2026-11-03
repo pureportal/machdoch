@@ -99,7 +99,7 @@ const parseTodoMarkdown = (text: string): AgentLivePlanStep[] =>
   });
 
 /**
- * Drives one Copilot turn through `copilot --server --stdio`, the JSON-RPC
+ * Drives one Copilot turn through `copilot --headless --stdio`, the JSON-RPC
  * protocol the Copilot SDKs use. On top of the one-shot `-p` run it adds
  * steering, abort, clarifying questions, background-task control, and live
  * usage, context and quota reporting.

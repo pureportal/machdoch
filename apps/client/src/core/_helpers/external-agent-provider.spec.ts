@@ -151,7 +151,7 @@ vi.mock("node:child_process", async (importOriginal) => ({
   // These fixtures cover the one-shot CLI paths, so the probe sees a Copilot
   // build without server mode.
   spawnSync: vi.fn((_executable: string, args: string[]) => ({
-    status: args.includes("--server") ? 2 : 0,
+    status: args.includes("--headless") ? 2 : 0,
     stdout: args.includes("--help")
       ? [
           "--config",

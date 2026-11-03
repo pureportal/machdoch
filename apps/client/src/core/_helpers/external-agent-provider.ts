@@ -2229,7 +2229,7 @@ const COPILOT_SERVER_ENROLLMENT_FLAGS = [
 ];
 
 /**
- * Ordinary Copilot chat turns run on `copilot --server` so the user can
+ * Ordinary Copilot chat turns run on `copilot --headless` so the user can
  * steer, stop, answer questions and stop background tasks while it works.
  * The server ignores `--agent` and `--additional-mcp-config`, so the
  * run-scoped agent and MCP servers travel inline in `session.create`.
@@ -2266,7 +2266,7 @@ const createCopilotServerCommand = ({
     : {};
   return {
     args: [
-      "--server",
+      "--headless",
       "--stdio",
       ...new Set([
         "--no-auto-update",
@@ -2432,7 +2432,7 @@ const createCopilotCommand = ({
     copilotServerSession &&
     !scopedWorker &&
     delegationMode === "full-access" &&
-    providerFeatures.includes("--server")
+    providerFeatures.includes("--headless")
   ) {
     return createCopilotServerCommand({
       config,
@@ -2746,7 +2746,7 @@ const executeExternalAgentCliTask = async (
   const copilotServerSession =
     provider === "copilot-cli" &&
     params.scopedWorkerToolDefinitions === undefined &&
-    enrollment.manifest.providerFeatures.includes("--server")
+    enrollment.manifest.providerFeatures.includes("--headless")
       ? await readCopilotServerSession(enrollment)
       : undefined;
   if (

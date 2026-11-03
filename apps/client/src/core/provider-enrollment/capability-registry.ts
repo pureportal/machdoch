@@ -242,18 +242,18 @@ const detectUnlistedClaudeFileFlags = async (
 // whether this build still has them.
 const CODEX_PROBED_FEATURES = ["goals", "multi_agent"] as const;
 
-// Copilot's SDK server mode is not listed in `--help`. With stdin closed a
+// Copilot's SDK mode is not listed in `--help`. With stdin closed a
 // supporting build starts and exits cleanly; older builds reject the flag.
-const detectCopilotServerMode = async (
+const detectCopilotHeadlessMode = async (
   executable: string,
   advertised: readonly string[],
 ): Promise<string[]> => {
   const result = await captureCommand(executable, [
-    "--server",
+    "--headless",
     "--stdio",
     ...(advertised.includes("--no-auto-update") ? ["--no-auto-update"] : []),
   ]);
-  return result.exitCode === 0 ? ["--server"] : [];
+  return result.exitCode === 0 ? ["--headless"] : [];
 };
 
 const detectCodexFeatures = async (executable: string): Promise<string[]> => {
@@ -389,7 +389,10 @@ export const probeProviderCli = async (
             ? [...advertisedFeatures, ...(await detectCodexFeatures(executable))]
             : [
                 ...advertisedFeatures,
-                ...(await detectCopilotServerMode(executable, advertisedFeatures)),
+                ...(await detectCopilotHeadlessMode(
+                  executable,
+                  advertisedFeatures,
+                )),
               ];
     const version =
       versionResult.exitCode === 0
