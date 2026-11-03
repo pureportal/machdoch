@@ -7,7 +7,8 @@ use super::{resolve_agent_cli_binary, ProviderRuntimeModel, ProviderRuntimeModel
 
 const COPILOT_SDK_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 const COPILOT_SDK_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
-const CANONICAL_REASONING_MODES: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
+const CANONICAL_REASONING_MODES: [&str; 7] =
+    ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
 fn create_copilot_cli_runtime_model_base(model_id: &str) -> ProviderRuntimeModel {
     let normalized = model_id.to_ascii_lowercase();

@@ -186,6 +186,13 @@ const COPILOT_CLI_REASONING_MODES = [
   "max",
 ] as const satisfies readonly ReasoningMode[];
 
+const COPILOT_CLI_TRANSPORT_REASONING_MODES = [
+  "default",
+  "none",
+  "minimal",
+  ...COPILOT_CLI_REASONING_MODES.slice(1),
+] as const satisfies readonly ReasoningMode[];
+
 const TRANSPORT_REASONING_MODES: Record<
   ConfiguredModelProvider,
   readonly ReasoningMode[]
@@ -196,7 +203,7 @@ const TRANSPORT_REASONING_MODES: Record<
   langdock: ["default", "none", "minimal", "low", "medium", "high", "xhigh"],
   "codex-cli": ALL_REASONING_MODES,
   "claude-cli": ["default", "low", "medium", "high", "xhigh", "max"],
-  "copilot-cli": COPILOT_CLI_REASONING_MODES,
+  "copilot-cli": COPILOT_CLI_TRANSPORT_REASONING_MODES,
 };
 
 const isOpenAiGpt6AstraModel = (model: string): boolean =>

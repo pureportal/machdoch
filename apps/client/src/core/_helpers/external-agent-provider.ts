@@ -166,7 +166,14 @@ type CodexCliReasoningEffort =
 
 type ClaudeCliReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
 
-type CopilotCliReasoningEffort = "low" | "medium" | "high" | "xhigh" | "max";
+type CopilotCliReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max";
 
 const mapReasoningToCodexCliEffort = (
   model: string,
@@ -213,12 +220,7 @@ const mapReasoningToCopilotCliEffort = (
 
   assertReasoningModeSupportedForProviderModel(reasoning, "copilot-cli", model);
 
-  if (
-    reasoning === "none" ||
-    reasoning === "minimal" ||
-    reasoning === "ultra" ||
-    reasoning === "aeon"
-  ) {
+  if (reasoning === "ultra" || reasoning === "aeon") {
     throw new Error(`Copilot CLI does not accept reasoning mode ${reasoning}.`);
   }
 

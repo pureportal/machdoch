@@ -297,6 +297,13 @@ describe("provider model reasoning modes", () => {
       ]),
     ).toEqual(["default", "low", "high"]);
     expect(
+      getReasoningModesForProviderModel("copilot-cli", "gpt-6-sol", [
+        "none",
+        "low",
+        "max",
+      ]),
+    ).toEqual(["default", "none", "low", "max"]);
+    expect(
       getReasoningModesForProviderModel("codex-cli", "gpt-5.6-sol", [
         "none",
         "low",

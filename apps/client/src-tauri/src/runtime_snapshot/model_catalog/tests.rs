@@ -314,7 +314,7 @@ mod model_catalog_parser_tests {
         );
         assert_eq!(
             string_values(runtime_model.capabilities.reasoning_modes.as_deref()),
-            Some(vec!["default", "low", "high"])
+            Some(vec!["default", "none", "minimal", "low", "high"])
         );
         assert_eq!(
             runtime_model.capabilities.default_reasoning_mode.as_deref(),
