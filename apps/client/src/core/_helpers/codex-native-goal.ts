@@ -68,8 +68,6 @@ export const answerUnattendedGoalRequest = (
     // The goal already runs with full access; approvals that still arrive are accepted.
     case "item/commandExecution/requestApproval":
     case "item/fileChange/requestApproval":
-    case "execCommandApproval":
-    case "applyPatchApproval":
       return { result: { decision: "accept" } };
     case "mcpServer/elicitation/request":
       return { result: { action: "decline", content: null, _meta: null } };

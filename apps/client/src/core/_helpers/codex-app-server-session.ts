@@ -356,8 +356,6 @@ export class CodexAppServerSession implements InteractiveAgentSession {
       // The run keeps full access; approvals that still arrive are accepted.
       case "item/commandExecution/requestApproval":
       case "item/fileChange/requestApproval":
-      case "execCommandApproval":
-      case "applyPatchApproval":
         this.rpc.respond(id, { decision: "accept" });
         return;
       case "mcpServer/elicitation/request":
