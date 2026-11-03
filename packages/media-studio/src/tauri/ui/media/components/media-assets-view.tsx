@@ -13,6 +13,7 @@ import { MediaAssetDetailsDialog } from "./media-asset-details-dialog";
 import { MediaRemoveResourceButton } from "./media-remove-resource-button";
 import {
   Copy,
+  Box,
   FileImage,
   FileType,
   Import,
@@ -59,6 +60,7 @@ import {
   isMediaModelReady,
 } from "../../../../core/media/model-readiness.js";
 import { mediaAssetLabel } from "../../../../core/media/asset-label.js";
+import { mediaSplatGaussianCount } from "../../../../core/media/splat-flow.js";
 import { isMediaOpenPoseAsset } from "../../../../core/media/pose-map.js";
 import type {
   ImportMediaLocalModelRequest,
@@ -152,6 +154,7 @@ interface MediaAssetsViewProps {
   onUseAsPose: (asset: MediaAssetRecord) => void;
   onEditImage: (asset: MediaAssetRecord) => void;
   onAnimateImage: (asset: MediaAssetRecord) => void;
+  onCreateSplat: (asset: MediaAssetRecord) => void;
   onUpscale: (asset: MediaAssetRecord) => void;
   onOpenVideoAsFlow: (asset: MediaAssetRecord) => void;
   onInspectSettings: (runId: string) => void;
@@ -184,6 +187,7 @@ const FILTERS: ReadonlyArray<{ id: MediaAssetTypeFilter; label: string }> = [
   { id: "openpose", label: "OpenPose" },
   { id: "video", label: "Videos" },
   { id: "audio", label: "Audio" },
+  { id: "splat", label: "3D" },
   { id: "svg", label: "SVGs" },
 ];
 
@@ -235,6 +239,7 @@ export const MediaAssetsView = ({
   onUseAsPose,
   onEditImage,
   onAnimateImage,
+  onCreateSplat,
   onUpscale,
   onOpenVideoAsFlow,
   onInspectSettings,
@@ -1180,6 +1185,10 @@ export const MediaAssetsView = ({
                                 label: "Animate in Advanced",
                                 onSelect: () => onOpenVideoAsFlow(asset),
                               },
+                              {
+                                label: "Create 3D",
+                                onSelect: () => onCreateSplat(asset),
+                              },
                             ]
                           : []),
                         ...(asset.operation?.kind !== "local-import"
@@ -1243,6 +1252,8 @@ export const MediaAssetsView = ({
                           <div className="flex items-center gap-2">
                             {asset.kind === "video" ? (
                               <Video className="h-4 w-4 text-emerald-300" />
+                            ) : asset.kind === "splat" ? (
+                              <Box className="h-4 w-4 text-violet-300" />
                             ) : asset.kind === "vector" ? (
                               <FileType className="h-4 w-4 text-violet-300" />
                             ) : (
@@ -1251,6 +1262,10 @@ export const MediaAssetsView = ({
                             {asset.kind === "audio" ? (
                               <span className="text-xs text-slate-400">
                                 WAV
+                              </span>
+                            ) : asset.kind === "splat" ? (
+                              <span className="truncate text-xs text-slate-400">
+                                {mediaSplatGaussianCount(asset).toLocaleString()} Gaussians
                               </span>
                             ) : (
                               <span className="truncate text-xs text-slate-400">
@@ -1479,6 +1494,7 @@ export const MediaAssetsView = ({
           onEdit={onEditImage}
           onUseAsReference={onUseAsReference}
           onAnimate={onAnimateImage}
+          onCreateSplat={onCreateSplat}
           onUpscale={onUpscale}
           onInspectSettings={onInspectSettings}
           onReuseSettings={onReuseSettings}

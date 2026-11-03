@@ -10,6 +10,8 @@ import {
 } from "../../components/ui/dialog";
 import { MediaAssetPreview } from "./media-visual-preview";
 import { MediaSaveAssetButton } from "./media-save-asset-button";
+import { MediaSplatViewer } from "./media-splat-viewer";
+import { mediaSplatGaussianCount } from "../../../../core/media/splat-flow.js";
 
 export const MediaAssetDetailsDialog = ({
   asset,
@@ -17,6 +19,7 @@ export const MediaAssetDetailsDialog = ({
   onEdit,
   onUseAsReference,
   onAnimate,
+  onCreateSplat,
   onUpscale,
   onInspectSettings,
   onReuseSettings,
@@ -27,6 +30,7 @@ export const MediaAssetDetailsDialog = ({
   onEdit: (asset: MediaAssetRecord) => void;
   onUseAsReference: (asset: MediaAssetRecord) => void;
   onAnimate: (asset: MediaAssetRecord) => void;
+  onCreateSplat: (asset: MediaAssetRecord) => void;
   onUpscale: (asset: MediaAssetRecord) => void;
   onInspectSettings: (runId: string) => void;
   onReuseSettings: (runId: string) => void;
@@ -46,16 +50,28 @@ export const MediaAssetDetailsDialog = ({
         <DialogTitle>{mediaAssetLabel(asset)}</DialogTitle>
       </DialogHeader>
       <div className="grid min-h-0 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_300px]">
-        <MediaAssetPreview
-          key={asset.id}
-          asset={asset}
-          maxEdge={2048}
-          controls={asset.kind === "video" || asset.kind === "audio"}
-          fit="contain"
-          className="h-[min(65dvh,720px)] min-h-48 w-full bg-slate-950"
-        />
+        {asset.kind === "splat" ? (
+          <MediaSplatViewer
+            key={asset.id}
+            asset={asset}
+            className="h-[min(65dvh,720px)] min-h-48 w-full rounded-none"
+          />
+        ) : (
+          <MediaAssetPreview
+            key={asset.id}
+            asset={asset}
+            maxEdge={2048}
+            controls={asset.kind === "video" || asset.kind === "audio"}
+            fit="contain"
+            className="h-[min(65dvh,720px)] min-h-48 w-full bg-slate-950"
+          />
+        )}
         <div className="min-w-0 space-y-4 border-t border-slate-800 p-4 lg:border-l lg:border-t-0">
-          {asset.kind !== "audio" ? (
+          {asset.kind === "splat" ? (
+            <p className="text-xs text-slate-400">
+              {mediaSplatGaussianCount(asset).toLocaleString()} Gaussians
+            </p>
+          ) : asset.kind !== "audio" ? (
             <p className="text-xs text-slate-400">
               {asset.width} × {asset.height}
             </p>
@@ -95,6 +111,14 @@ export const MediaAssetDetailsDialog = ({
                 onClick={() => onAnimate(asset)}
               >
                 Animate image
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onCreateSplat(asset)}
+              >
+                Create 3D
               </Button>
             </div>
           ) : null}

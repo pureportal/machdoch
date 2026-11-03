@@ -33,6 +33,8 @@ use super::{
 
 #[path = "database_audio.rs"]
 pub(crate) mod audio;
+#[path = "database_splat.rs"]
+pub(crate) mod splat;
 
 pub(crate) const SCHEMA_VERSION: u32 = 26;
 
@@ -4696,6 +4698,7 @@ pub(crate) fn auto_tag_asset(
         "image/jpeg" => Some(("jpeg", "JPEG")),
         "image/webp" => Some(("webp", "WebP")),
         "image/svg+xml" => Some(("svg-vector", "SVG vector")),
+        super::splat::SPLAT_MIME_TYPE => Some(("gaussian-splat", "Gaussian splat")),
         "application/json" => Some(("json-report", "JSON report")),
         _ => None,
     };

@@ -19,6 +19,7 @@ export type MediaAssetKind =
   | "image"
   | "video"
   | "audio"
+  | "splat"
   | "vector"
   | "alpha-matte"
   | "report"
@@ -59,6 +60,7 @@ export type MediaCapability =
   | "video-composite"
   | "text-to-audio"
   | "audio-to-audio"
+  | "image-to-3d"
   | "background-remove"
   | "image-quality-analysis"
   | "transparent-output";
@@ -92,6 +94,7 @@ export type MediaModelPackageType =
   | "agent-cli"
   | "diffusers"
   | "transformers"
+  | "idol"
   | "safetensors"
   | "onnx"
   | "native-utility";
@@ -133,7 +136,7 @@ export type MediaLocalModelArchitecture =
   | MediaBuiltinLocalModelArchitecture
   | (string & Record<never, never>);
 
-export type MediaModality = "image" | "video" | "audio";
+export type MediaModality = "image" | "video" | "audio" | "splat";
 
 export type MediaLocalModelArchitectureConfidence =
   | "high"
@@ -229,6 +232,7 @@ export type MediaNodeType =
   | "task.edit-image"
   | "task.generate-video"
   | "task.generate-audio"
+  | "task.generate-splat"
   | "operation.crop"
   | "operation.resize"
   | "operation.text-overlay"
@@ -250,7 +254,8 @@ export type MediaNodeType =
   | "control.human-review"
   | "output.asset"
   | "output.video"
-  | "output.audio";
+  | "output.audio"
+  | "output.splat";
 
 export type MediaPortDataType =
   | "image-layout"
@@ -261,6 +266,7 @@ export type MediaPortDataType =
   | "seed"
   | "video"
   | "audio"
+  | "splat"
   | "quality-report";
 
 export interface MediaFlowNode {
@@ -1106,7 +1112,7 @@ export interface ImageRecipeSettings {
   modelAddons: MediaModelAddonSelection[];
 }
 
-export type MediaGenerationTarget = "image" | "video" | "svg" | "audio";
+export type MediaGenerationTarget = "image" | "video" | "svg" | "audio" | "splat";
 
 export interface MediaAudioRecipeSettings {
   prompt: string;
@@ -1116,6 +1122,41 @@ export interface MediaAudioRecipeSettings {
   numInferenceSteps: number;
   guidanceScale: number;
   seed: number | null;
+}
+
+export type MediaSplatInputKind = "synthetic" | "real";
+
+export interface MediaSplatRecipeSettings {
+  sourceAssetId: string | null;
+  modelId: string | null;
+  inputKind: MediaSplatInputKind;
+  gaussianCount: number;
+  numInferenceSteps: number;
+  guidanceScale: number;
+  timeShift: number;
+  minOpacity: number;
+  seed: number | null;
+}
+
+export interface GenerateMediaSplatRequest {
+  schemaVersion: 1;
+  runId: string;
+  flowId: string;
+  flowRevisionId: string;
+  flowName: string;
+  planId: string;
+  modelId: string;
+  modelLabel: string;
+  sourceAssetId: string;
+  inputKind: MediaSplatInputKind;
+  gaussianCount: number;
+  numInferenceSteps: number;
+  guidanceScale: number;
+  timeShift: number;
+  minOpacity: number;
+  seed: number;
+  diagnosticCount: number;
+  planSnapshot: MediaRunPlanSnapshot;
 }
 
 export interface GenerateMediaAudioRequest {
@@ -1357,6 +1398,7 @@ export interface MediaExecutionStep {
     | "generate-image"
     | "generate-video"
     | "generate-audio"
+    | "generate-splat"
     | "generate-svg"
     | "vectorize-svg"
     | "validate-svg"
@@ -1526,6 +1568,7 @@ export interface MediaRuntimeRunRecord extends MediaRunRecord {
     | "local-analysis"
     | "local-video"
     | "local-audio"
+    | "local-splat"
     | "local-wan-video"
     | "mock-remote-provider"
     | "svg-ai-pipeline";
@@ -1626,7 +1669,7 @@ export interface MediaAssetRecord {
   id: string;
   runId: string;
   digest: string;
-  kind: "image" | "video" | "audio" | "vector" | "report";
+  kind: "image" | "video" | "audio" | "splat" | "vector" | "report";
   mimeType:
     | "image/png"
     | "image/jpeg"
@@ -1634,6 +1677,7 @@ export interface MediaAssetRecord {
     | "image/svg+xml"
     | "video/webm"
     | "audio/wav"
+    | "model/x-ply"
     | "application/json";
   byteSize: number;
   width: number;
@@ -2160,9 +2204,48 @@ export type MediaAssetOperation =
   | MediaLocalDiffusionGenerationOperation
   | MediaLocalVideoGenerationOperation
   | MediaLocalAudioGenerationOperation
+  | MediaLocalSplatGenerationOperation
   | MediaLocalWanVideoGenerationOperation
   | MediaRemoteImageEditOperation
   | MediaRemoteSvgGenerationOperation;
+
+export interface MediaLocalSplatGenerationOperation {
+  kind: "local-splat-generation";
+  providerId: "local-diffusers";
+  modelId: string;
+  flowRevisionId: string;
+  sourceAssetId: string;
+  generation: {
+    schemaVersion: number;
+    workerVersion: string;
+    modelArchitecture: string;
+    modelRevision: string;
+    modelDigest: string;
+    device: string;
+    deviceLabel: string;
+    inputKind: MediaSplatInputKind;
+    seed: number;
+    numInferenceSteps: number;
+    guidanceScale: number;
+    timeShift: number;
+    gaussianCount: number;
+    minOpacity: number;
+    output: {
+      fileName: string;
+      digest: string;
+      byteSize: number;
+      gaussianCount: number;
+      boundsMin: [number, number, number];
+      boundsMax: [number, number, number];
+    };
+    camera: { yaw: number; pitch: number; radius: number; fov: number };
+    performance: {
+      loadSeconds: number;
+      generationSeconds: number;
+      totalSeconds: number;
+    };
+  };
+}
 
 export interface MediaLocalAudioGenerationOperation {
   kind: "local-audio-generation";
@@ -2737,6 +2820,7 @@ export interface MediaStudioState {
   recipe: ImageRecipeSettings;
   videoRecipe: MediaVideoRecipeSettings;
   audioRecipe: MediaAudioRecipeSettings;
+  splatRecipe: MediaSplatRecipeSettings;
   categories: MediaAssetCategory[];
   assetMetadata: Record<string, MediaGenerationAssetMetadata>;
   flow: MediaFlow | null;

@@ -81,9 +81,13 @@ import {
 } from "../../../../core/media/pose-map.js";
 import { MediaPoseWorkspace } from "./media-pose-workspace";
 import { MediaAudioGenerateView } from "./media-audio-generate-view";
+import { MediaSplatGenerateView } from "./media-splat-generate-view";
 import { MediaRefModControls } from "./media-refmod-controls";
 import { MediaRefModLibraryAction } from "./media-refmod-library-action";
-import type { MediaAudioRecipeSettings } from "../../../../core/media/contracts.js";
+import type {
+  MediaAudioRecipeSettings,
+  MediaSplatRecipeSettings,
+} from "../../../../core/media/contracts.js";
 
 interface MediaGenerateViewProps {
   workspaceRoot?: string;
@@ -95,6 +99,11 @@ interface MediaGenerateViewProps {
   onAudioSettingsChange: (settings: MediaAudioRecipeSettings) => void;
   audioGenerationSupported: boolean;
   audioGenerationBlockedReason: string | null;
+  splatSettings: MediaSplatRecipeSettings;
+  onSplatSettingsChange: (settings: MediaSplatRecipeSettings) => void;
+  splatGenerationSupported: boolean;
+  splatGenerationBlockedReason: string | null;
+  onAddSplatImage: () => void;
   assetMetadata: Record<string, MediaGenerationAssetMetadata>;
   categories: readonly MediaAssetCategory[];
   plan: MediaCompiledPlan;
@@ -132,6 +141,7 @@ interface MediaGenerateViewProps {
   poseInstallPending: boolean;
   onEditResult: (asset: MediaAssetRecord) => void;
   onAnimateResult: (asset: MediaAssetRecord) => void;
+  onCreateSplatResult: (asset: MediaAssetRecord) => void;
   onUpscaleResult: (asset: MediaAssetRecord) => void;
   onOpenResult: (asset: MediaAssetRecord) => void;
   generationPending: boolean;
@@ -145,6 +155,7 @@ const TARGETS: ReadonlyArray<{
   { id: "video", label: "Video" },
   { id: "svg", label: "SVG" },
   { id: "audio", label: "Audio" },
+  { id: "splat", label: "3D" },
 ];
 
 export const MediaGenerateView = ({
@@ -157,6 +168,11 @@ export const MediaGenerateView = ({
   onAudioSettingsChange,
   audioGenerationSupported,
   audioGenerationBlockedReason,
+  splatSettings,
+  onSplatSettingsChange,
+  splatGenerationSupported,
+  splatGenerationBlockedReason,
+  onAddSplatImage,
   assetMetadata,
   categories,
   plan,
@@ -194,6 +210,7 @@ export const MediaGenerateView = ({
   poseInstallPending,
   onEditResult,
   onAnimateResult,
+  onCreateSplatResult,
   onUpscaleResult,
   onOpenResult,
   generationPending,
@@ -793,6 +810,35 @@ export const MediaGenerateView = ({
       </div>
     </header>
   );
+
+  if (target === "splat") {
+    return (
+      <MediaSplatGenerateView
+        header={targetHeader}
+        settings={splatSettings}
+        onSettingsChange={onSplatSettingsChange}
+        generationSupported={splatGenerationSupported}
+        generationBlockedReason={splatGenerationBlockedReason}
+        models={catalog.models}
+        plan={plan}
+        imageAssets={visualReferenceAssets}
+        assetMetadata={assetMetadata}
+        categories={categories}
+        imageImportSupported={referenceImportSupported}
+        imageImportPending={referenceImportPending}
+        generationJob={generationJob}
+        generationJobs={generationJobs}
+        generationPending={generationPending}
+        onAddImage={onAddSplatImage}
+        onSelectGenerationJob={onSelectGenerationJob}
+        onCancelGeneration={onCancelGeneration}
+        onOpenActivity={onOpenActivity}
+        onOpenAssets={onOpenAssets}
+        onOpenResult={onOpenResult}
+        onGenerate={onGenerate}
+      />
+    );
+  }
 
   if (target === "audio") {
     return (
@@ -1803,6 +1849,14 @@ export const MediaGenerateView = ({
                                 onClick={() => onAnimateResult(asset)}
                               >
                                 Animate
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onCreateSplatResult(asset)}
+                              >
+                                Create 3D
                               </Button>
                             </>
                           ) : null}

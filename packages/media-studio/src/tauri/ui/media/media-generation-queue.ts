@@ -9,6 +9,7 @@ import type {
   MediaRuntimeRunStatus,
   MediaVideoRecipeSettings,
   MediaAudioRecipeSettings,
+  MediaSplatRecipeSettings,
 } from "../../../core/media/contracts.js";
 import { normalizeMediaError } from "./media-runtime.js";
 
@@ -31,6 +32,7 @@ export interface MediaGenerationRecipeSnapshot {
   imageSettings: ImageRecipeSettings | null;
   videoSettings: MediaVideoRecipeSettings | null;
   audioSettings?: MediaAudioRecipeSettings;
+  splatSettings?: MediaSplatRecipeSettings;
   resultDestination: "assets";
 }
 
@@ -93,7 +95,9 @@ const immutableClone = <T>(value: T): T => deepFreeze(structuredClone(value));
 const mediaTypeLabel = (target: MediaGenerationTarget): string =>
   target === "svg"
     ? "SVG"
-    : `${target[0]?.toLocaleUpperCase()}${target.slice(1)}`;
+    : target === "splat"
+      ? "3D"
+      : `${target[0]?.toLocaleUpperCase()}${target.slice(1)}`;
 
 const errorMessage = (error: unknown): string => {
   if (error instanceof Error && error.message.trim())
@@ -242,7 +246,7 @@ export class MediaGenerationQueue {
     this.patchJob(next.id, {
       status: "running",
       startedAt: this.now().toISOString(),
-      currentStep: `Starting ${next.recipe.target} generation`,
+      currentStep: `Starting ${next.recipe.target === "splat" ? "3D" : next.recipe.target} generation`,
     });
     this.startPolling(next.id);
     try {

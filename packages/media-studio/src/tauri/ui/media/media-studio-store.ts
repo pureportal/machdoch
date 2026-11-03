@@ -16,6 +16,7 @@ import type {
   MediaStudioState,
   MediaVideoRecipeSettings,
   MediaAudioRecipeSettings,
+  MediaSplatRecipeSettings,
 } from "../../../core/media/contracts.js";
 import {
   DEFAULT_MEDIA_ASSET_CATEGORIES,
@@ -30,6 +31,7 @@ import { getMediaNodeDefinition } from "../../../core/media/node-registry.js";
 import { normalizeMediaImageMask } from "../../../core/media/image-mask.js";
 import { MEDIA_VIDEO_QUALITY_PRESETS } from "../../../core/media/video-quality.js";
 import { DEFAULT_AUDIO_RECIPE_SETTINGS } from "../../../core/media/audio-flow.js";
+import { DEFAULT_SPLAT_RECIPE_SETTINGS } from "../../../core/media/splat-flow.js";
 import { validateMediaFlowVariableDocument } from "../../../core/media/variables.js";
 import {
   loadStoredValue,
@@ -89,6 +91,7 @@ export const DEFAULT_MEDIA_STUDIO_STATE = {
   recipe: DEFAULT_IMAGE_RECIPE_SETTINGS,
   videoRecipe: DEFAULT_VIDEO_RECIPE_SETTINGS,
   audioRecipe: DEFAULT_AUDIO_RECIPE_SETTINGS,
+  splatRecipe: DEFAULT_SPLAT_RECIPE_SETTINGS,
   categories: DEFAULT_MEDIA_ASSET_CATEGORIES.map((category) => ({
     ...category,
   })),
@@ -115,6 +118,31 @@ const normalizeAudioRecipeSettings = (
       normalizeBoundedNumber(value.numInferenceSteps, 100, 1, 200),
     ),
     guidanceScale: normalizeBoundedNumber(value.guidanceScale, 3.5, 0, 20),
+    seed: typeof value.seed === "number" && Number.isSafeInteger(value.seed) && value.seed >= 0 ? value.seed : null,
+  };
+};
+
+const normalizeSplatRecipeSettings = (
+  value: unknown,
+): MediaSplatRecipeSettings => {
+  if (!isRecord(value)) return { ...DEFAULT_SPLAT_RECIPE_SETTINGS };
+  const gaussianCount = Math.round(
+    normalizeBoundedNumber(value.gaussianCount, 262_144, 32_768, 1_048_576) / 32,
+  ) * 32;
+  return {
+    sourceAssetId:
+      typeof value.sourceAssetId === "string" && value.sourceAssetId.trim()
+        ? value.sourceAssetId.slice(0, 256)
+        : null,
+    modelId: typeof value.modelId === "string" ? value.modelId.slice(0, 128) : null,
+    inputKind: value.inputKind === "real" ? "real" : "synthetic",
+    gaussianCount,
+    numInferenceSteps: Math.round(
+      normalizeBoundedNumber(value.numInferenceSteps, 50, 4, 100),
+    ),
+    guidanceScale: normalizeBoundedNumber(value.guidanceScale, 3, 0, 10),
+    timeShift: normalizeBoundedNumber(value.timeShift, 3, 1, 6),
+    minOpacity: normalizeBoundedNumber(value.minOpacity, 0, 0, 0.5),
     seed: typeof value.seed === "number" && Number.isSafeInteger(value.seed) && value.seed >= 0 ? value.seed : null,
   };
 };
@@ -885,6 +913,7 @@ export const normalizeMediaStudioState = (value: unknown): MediaStudioState => {
       ...DEFAULT_MEDIA_STUDIO_STATE,
       recipe: { ...DEFAULT_IMAGE_RECIPE_SETTINGS },
       videoRecipe: { ...DEFAULT_VIDEO_RECIPE_SETTINGS },
+      splatRecipe: { ...DEFAULT_SPLAT_RECIPE_SETTINGS },
       categories: DEFAULT_MEDIA_ASSET_CATEGORIES.map((category) => ({
         ...category,
       })),
@@ -912,12 +941,13 @@ export const normalizeMediaStudioState = (value: unknown): MediaStudioState => {
     ),
     target: normalizeOneOf<MediaGenerationTarget>(
       value.target,
-      ["image", "video", "svg", "audio"],
+      ["image", "video", "svg", "audio", "splat"],
       DEFAULT_MEDIA_STUDIO_STATE.target,
     ),
     recipe: normalizeImageRecipeSettings(value.recipe),
     videoRecipe: normalizeVideoRecipeSettings(value.videoRecipe),
     audioRecipe: normalizeAudioRecipeSettings(value.audioRecipe),
+    splatRecipe: normalizeSplatRecipeSettings(value.splatRecipe),
     categories,
     assetMetadata: normalizeAssetMetadata(value.assetMetadata, categories),
     flow: normalizeStoredFlow(value.flow),

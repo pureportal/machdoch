@@ -247,6 +247,13 @@ describe("selectMediaRunOutputAssetForNode", () => {
   it("shows each completed output by node, clears it while rerunning, and replaces it on the next run", () => {
     const firstResult = asset("result-one", 1, "png-output");
     const webpResult = asset("result-webp", 0, "webp-output");
+    const splatResult: MediaAssetRecord = {
+      ...asset("result-3d", 0, "splat-output"),
+      kind: "splat",
+      mimeType: "model/x-ply",
+      width: 0,
+      height: 0,
+    };
     const completed = run(
       "completed",
       [
@@ -254,7 +261,7 @@ describe("selectMediaRunOutputAssetForNode", () => {
         nodeExecution("task", "completed"),
         nodeExecution("output", "completed"),
       ],
-      [asset("later", 2, "other-output"), firstResult, webpResult],
+      [asset("later", 2, "other-output"), firstResult, webpResult, splatResult],
     );
     const completedProjection = projectMediaRunOverlay({
       flow,
@@ -292,6 +299,13 @@ describe("selectMediaRunOutputAssetForNode", () => {
         "webp-output",
       )?.id,
     ).toBe("result-webp");
+    expect(
+      selectMediaRunOutputAssetForNode(
+        completed,
+        completedProjection,
+        "splat-output",
+      )?.id,
+    ).toBe("result-3d");
     expect(
       selectMediaRunOutputAssetForNode(
         rerunning,

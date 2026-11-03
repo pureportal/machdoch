@@ -48,6 +48,7 @@ const validators: {
     "openpose",
     "video",
     "audio",
+    "splat",
     "svg",
   ]),
   assetQuery: isString,

@@ -408,6 +408,15 @@ pub(crate) async fn invoke(
             )
             .map_err(|error| json!(error.to_string()))?
         }
+        "media_generate_splat" => {
+            check_arguments(&args, &["request"])?;
+            serde_json::to_value(
+                super::splat::media_generate_splat(app.clone(), argument(&args, "request")?)
+                    .await
+                    .map_err(error_value)?,
+            )
+            .map_err(|error| json!(error.to_string()))?
+        }
         "media_generate_video" => {
             check_arguments(&args, &["request"])?;
             serde_json::to_value(
@@ -627,6 +636,14 @@ pub(crate) async fn invoke(
                     .map_err(error_value)?,
             )
             .map_err(|error| json!(error.to_string()))?
+        }
+        "media_read_splat" => {
+            check_arguments(&args, &["assetId"])?;
+            binary_value(
+                super::splat::media_read_splat(app.clone(), argument(&args, "assetId")?)
+                    .await
+                    .map_err(error_value)?,
+            )?
         }
         "media_read_asset_preview" => {
             check_arguments(&args, &["assetId", "maxEdge"])?;

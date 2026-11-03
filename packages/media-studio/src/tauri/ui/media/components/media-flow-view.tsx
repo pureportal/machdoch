@@ -482,6 +482,7 @@ const PORT_TONES: Record<MediaPortDataType, FlowPortTone> = {
   seed: "amber",
   video: "emerald",
   audio: "orange",
+  splat: "violet",
   "quality-report": "amber",
 };
 
@@ -494,6 +495,7 @@ const PORT_LABELS: Record<MediaPortDataType, string> = {
   seed: "Seed",
   video: "Video",
   audio: "Audio",
+  splat: "3D",
   "quality-report": "Quality",
 };
 
@@ -2956,6 +2958,8 @@ const NodeInspector = ({
   const requiredModelCapabilities: readonly MediaCapability[] =
     node.type === "task.generate-audio"
       ? ["text-to-audio"]
+      : node.type === "task.generate-splat"
+        ? ["image-to-3d"]
       : node.type === "task.generate-video"
         ? videoNeedsTerminalConditioning
           ? ["image-to-video", "start-end-to-video"]
@@ -4275,7 +4279,9 @@ export const MediaFlowView = ({
           assetLabel: runOutputAsset
             ? runOutputAsset.kind === "vector"
               ? "Final SVG"
-              : node.type === "operation.segment"
+              : runOutputAsset.kind === "splat"
+                ? "3D object"
+                : node.type === "operation.segment"
                 ? "Mask"
                 : `${runOutputAsset.width} \u00d7 ${runOutputAsset.height}`
             : configuredAsset

@@ -196,7 +196,7 @@ impl ResidentWorker {
                     if let Some(error) = result.get("error").and_then(|error| error.as_str()) {
                         return Err(error.to_string());
                     }
-                    if matches!(command, "generate" | "generate-video") {
+                    if matches!(command, "generate" | "generate-video" | "generate-splat") {
                         let retention = envelope["retentionSeconds"]
                             .as_f64()
                             .filter(|seconds| {

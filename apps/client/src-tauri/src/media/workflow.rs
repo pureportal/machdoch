@@ -31,6 +31,7 @@ enum WorkflowValue {
     Image(String),
     Video(String),
     Audio(String),
+    Splat(String),
     Mask { asset_id: String, source_id: String },
     Report(MediaQualityReport),
     Seed(u64),
@@ -227,6 +228,27 @@ fn execute_started(
                     )?))
                 }
                 "control.repeat" => None,
+                "task.generate-splat" => {
+                    let seed = node
+                        .config
+                        .get("seed")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(base_seed)
+                        .wrapping_add(u64::from(iteration - 1) * seed_step)
+                        & MAX_IMAGE_GENERATION_SEED;
+                    output_port = "splat";
+                    Some(WorkflowValue::Splat(av::generate_splat(
+                        app, paths, request, flow, node, image()?, seed, iteration,
+                    )?))
+                }
+                "output.splat" => {
+                    let WorkflowValue::Splat(source) = input(flow, &values, node, "splat")? else {
+                        return Err("Connect a 3D object".into());
+                    };
+                    av::save_splat(paths, request, node, iteration, source)?;
+                    final_outputs += 1;
+                    None
+                }
                 "task.generate-prompt"
                 | "task.generate-image"
                 | "task.edit-image"

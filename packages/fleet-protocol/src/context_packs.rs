@@ -105,6 +105,7 @@ pub fn valid_attachment(value: &Value) -> bool {
                             | "vector"
                             | "alpha-matte"
                             | "report"
+                            | "splat"
                             | "collection"
                     )
                 )

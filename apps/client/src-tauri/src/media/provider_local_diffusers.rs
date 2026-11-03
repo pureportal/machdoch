@@ -22,6 +22,9 @@ mod image_layout;
 #[path = "provider_layout_refinement.rs"]
 mod layout_refinement;
 pub(crate) use audio::generate_audio;
+#[path = "provider_splat.rs"]
+mod splat;
+pub(crate) use splat::generate_splat;
 #[path = "provider_video_composition.rs"]
 mod video_composition;
 pub(crate) use video_composition::{compose_video, inspect_video, upscale_video};
@@ -986,6 +989,7 @@ pub(super) fn installed_model(
     let (package_kind, path, config_path) = match row.2.as_str() {
         "diffusers" => ("diffusers-directory".to_string(), package_root, None),
         "transformers" => ("transformers-directory".to_string(), package_root, None),
+        "idol" => ("idol-directory".to_string(), package_root, None),
         "safetensors" => (
             "single-file".to_string(),
             safe_managed_path(&package_root, "checkpoint.safetensors")?,

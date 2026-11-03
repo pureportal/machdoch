@@ -82,6 +82,7 @@ SUPPORTED_ARCHITECTURES = (
     "ltx-video",
     "wan-2.2-ti2v",
     "intro-svg",
+    "idol",
 ) + tuple(media_open_models.PROFILES)
 NATIVE_MASKED_EDIT_ARCHITECTURES = frozenset(
     {
@@ -144,6 +145,7 @@ BASE_CAPABILITIES = (
     "text-to-svg",
     "image-to-svg",
     "text-to-audio",
+    "image-to-3d",
 )
 
 # Never resolve model components or custom Python code over the network.

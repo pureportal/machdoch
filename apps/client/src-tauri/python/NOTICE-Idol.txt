@@ -1,0 +1,21 @@
+Machdoch Idol integration
+
+The idol/ package is adapted from the Idol SDK by Speridlabs
+https://github.com/speridlabs/idol-sdk (revision 4702a7f00850e34b6e83a2170cc123c3e9570744)
+Apache License 2.0: LICENSE-Idol.txt
+
+idol/models/dit.py is adapted by Speridlabs from the Wan transformer in Diffusers,
+Copyright 2025 The Wan Team and The HuggingFace Team, Apache License 2.0.
+Idol builds on TripoSplat by VAST-AI-Research (MIT).
+
+Machdoch modified the SDK on 2026-11-03:
+- removed the TensorDict dependency; the denoiser and sampler pass plain tensor dictionaries;
+- replaced the GPL-licensed plyfile writer with a NumPy PLY writer and added Gaussian cleanup;
+- loads every model from a local package instead of the Hugging Face Hub, with no gated-access checks;
+- loads the DINOv3 ViT-H+/16 encoder from the timm checkpoint, renamed to the transformers layout;
+- uses the Apache-2.0 FLUX.2 klein 4B autoencoder instead of downloading it from FLUX.2-dev;
+- reports progress per sampling step, builds models on the target device and uploads weights from pinned memory;
+- removed the torch.compile sampling path, the command-line sampler and the demo.
+
+The Idol, DINOv3 and FLUX.2 autoencoder weights are downloaded separately and keep their own licences:
+Idol (Apache-2.0), DINOv3 (DINOv3 License, Meta Platforms) and FLUX.2 klein 4B (Apache-2.0).

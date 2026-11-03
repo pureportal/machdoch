@@ -14,7 +14,9 @@ export const MediaSaveAssetButton = ({
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const label =
-    asset.kind === "audio"
+    asset.kind === "splat"
+      ? "Save 3D"
+      : asset.kind === "audio"
       ? "Save audio"
       : asset.kind === "video"
         ? "Save video"
@@ -35,6 +37,7 @@ export const MediaSaveAssetButton = ({
         "image/svg+xml": "svg",
         "video/webm": "webm",
         "audio/wav": "wav",
+        "model/x-ply": "ply",
         "application/json": "json",
       }[asset.mimeType];
       const destinationPath = await save({

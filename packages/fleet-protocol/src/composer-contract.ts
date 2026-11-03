@@ -113,6 +113,7 @@ export const productAttachmentSchema = z.discriminatedUnion("source", [
       "vector",
       "alpha-matte",
       "report",
+      "splat",
       "collection",
     ]),
     displayName: text.optional(),

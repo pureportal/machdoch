@@ -249,6 +249,7 @@ fn execute(
                     let node_types: &[&str] = match work.command.as_str() {
                         "generate-video" => &["task.generate-video"],
                         "generate-audio" => &["task.generate-audio"],
+                        "generate-splat" => &["task.generate-splat"],
                         _ => &["task.generate-image", "task.edit-image"],
                     };
                     database::transition_nodes_by_type(
@@ -267,14 +268,14 @@ fn execute(
     };
     monitor(None)?;
     let identity = format!("{:?}", work.process);
-    let model = if matches!(work.command.as_str(), "generate" | "generate-video") {
+    let model = if matches!(work.command.as_str(), "generate" | "generate-video" | "generate-splat") {
         let request: serde_json::Value = serde_json::from_slice(work.input.as_deref().ok_or("Model request is missing")?)
             .map_err(|error| format!("Invalid model request: {error}"))?;
         Some(request.get("model").filter(|model| model.is_object()).cloned().ok_or("Model identity is missing")?)
     } else { None };
     let uses_model_worker = matches!(
         work.command.as_str(),
-        "generate" | "generate-video" | "probe"
+        "generate" | "generate-video" | "generate-splat" | "probe"
     );
     if let Some(worker) = resident.as_mut() {
         if (uses_model_worker && worker.identity != identity)
@@ -286,7 +287,7 @@ fn execute(
             release(resident)?;
         }
     }
-    if matches!(work.command.as_str(), "generate" | "generate-video")
+    if matches!(work.command.as_str(), "generate" | "generate-video" | "generate-splat")
         || (work.command == "probe" && resident.is_some())
     {
         if resident.is_none() {

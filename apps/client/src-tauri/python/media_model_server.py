@@ -31,13 +31,18 @@ def serve(worker) -> int:
                 result = worker.probe()
             elif command == "memory":
                 result = memory_snapshot(cache.torch, cache.device) if cache else {"pressure": False}
-            elif command in ("generate", "generate-video"):
+            elif command in ("generate", "generate-video", "generate-splat"):
                 if cache is None:
                     torch, _ = worker._runtime()
                     device, _, _ = worker._device(torch)
                     cache = ModelPipelineCache(torch, device, worker.PROCESS_STARTED_AT)
-                operation = worker.generate if command == "generate" else worker.generate_video
-                result = operation(envelope["request"], cache)
+                if command == "generate-splat":
+                    from media_idol import generate as generate_splat
+
+                    result = generate_splat(envelope["request"], worker, cache)
+                else:
+                    operation = worker.generate if command == "generate" else worker.generate_video
+                    result = operation(envelope["request"], cache)
                 release_allocator(cache.torch, cache.device)
             else:
                 raise ValueError("Unknown model worker command")

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { DEFAULT_SPLAT_RECIPE_SETTINGS } from "../../../../core/media/splat-flow.js";
 
 import { createElement, type ComponentProps } from "react";
 import {
@@ -145,6 +146,11 @@ const createProps = (
   audioSettings: baseState.audioRecipe,
   audioGenerationSupported: true,
   audioGenerationBlockedReason: null,
+  splatSettings: DEFAULT_SPLAT_RECIPE_SETTINGS,
+  onSplatSettingsChange: noop,
+  splatGenerationSupported: true,
+  splatGenerationBlockedReason: null,
+  onAddSplatImage: noop,
   onAudioSettingsChange: noop,
   assetMetadata: {},
   categories: [],
@@ -182,6 +188,7 @@ const createProps = (
   onEditResult: noop,
   onUpscaleResult: noop,
   onAnimateResult: noop,
+  onCreateSplatResult: noop,
   onOpenResult: noop,
   generationPending: false,
   ...overrides,

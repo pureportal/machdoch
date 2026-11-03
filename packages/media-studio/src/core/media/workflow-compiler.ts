@@ -45,6 +45,14 @@ export const requiresWorkflowCompilation = (flow: MediaFlow): boolean =>
           node.type,
         ),
     )) ||
+  (flow.nodes.some((node) => node.type === "task.generate-splat") &&
+    (flow.nodes.filter((node) => node.type === "task.generate-splat").length > 1 ||
+      flow.nodes.some(
+        (node) =>
+          !["source.image", "task.generate-splat", "output.splat"].includes(
+            node.type,
+          ),
+      ))) ||
   flow.nodes.filter((node) =>
     ["task.generate-image", "task.edit-image"].includes(node.type),
   ).length > 1 ||
@@ -78,6 +86,7 @@ export const WORKFLOW_EXECUTABLE_TYPES = new Set([
   "task.edit-image",
   "task.generate-video",
   "task.generate-audio",
+  "task.generate-splat",
   "operation.video-sequence",
   "operation.video-audio",
   "operation.lip-sync",
@@ -102,7 +111,17 @@ export const WORKFLOW_EXECUTABLE_TYPES = new Set([
   "output.asset",
   "output.video",
   "output.audio",
+  "output.splat",
 ]);
+
+const workflowOutputPort = (outputType: MediaFlowNode["type"]): string =>
+  outputType === "output.video"
+    ? "video"
+    : outputType === "output.audio"
+      ? "audio"
+      : outputType === "output.splat"
+        ? "splat"
+        : "image";
 
 export function workflowTaskFlow(
   flow: MediaFlow,
@@ -169,7 +188,9 @@ export function workflowTaskFlow(
       ? "output.video"
       : task.type === "task.generate-audio"
         ? "output.audio"
-        : "output.asset";
+        : task.type === "task.generate-splat"
+          ? "output.splat"
+          : "output.asset";
   if (
     task.type === "task.generate-video" &&
     !edges.some((edge) => edge.toPortId === "last-frame")
@@ -201,9 +222,9 @@ export function workflowTaskFlow(
   edges.push({
     id: "workflow-output",
     fromNodeId: task.id,
-    fromPortId: outputType === "output.video" ? "video" : outputType === "output.audio" ? "audio" : "image",
+    fromPortId: workflowOutputPort(outputType),
     toNodeId: outputId,
-    toPortId: outputType === "output.video" ? "video" : outputType === "output.audio" ? "audio" : "image",
+    toPortId: workflowOutputPort(outputType),
   });
   return { ...flow, nodes, edges };
 }
@@ -307,6 +328,7 @@ export function compileConnectedMediaFlow(
         "task.edit-image",
         "task.generate-video",
         "task.generate-audio",
+        "task.generate-splat",
       ].includes(node.type)
     ) {
       const connectedMask = effective.edges.some(
@@ -428,6 +450,7 @@ export function compileConnectedMediaFlow(
         "control.repeat": "repeat-flow",
         "output.asset": "ingest-asset",
         "output.audio": "ingest-asset",
+        "output.splat": "ingest-asset",
         "output.video": "ingest-asset",
       };
       const kind = kinds[node.type];

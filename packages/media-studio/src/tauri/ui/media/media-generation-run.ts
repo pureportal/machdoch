@@ -44,6 +44,8 @@ export const generationJobToRunDetail = (
     executor:
       job.recipe.target === "audio"
         ? "local-audio"
+        : job.recipe.target === "splat"
+        ? "local-splat"
         : job.recipe.target === "video"
         ? "local-video"
         : job.recipe.target === "svg"

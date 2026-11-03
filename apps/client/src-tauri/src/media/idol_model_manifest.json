@@ -1,0 +1,95 @@
+[
+  {
+    "modelId": "local:idol",
+    "slug": "idol",
+    "displayName": "Idol",
+    "revision": "2731c2291fc65a797c5cb627a5e5526fc1490902",
+    "sourceUrl": "https://huggingface.co/speridlabs/idol",
+    "downloadRoot": "https://huggingface.co/speridlabs/idol/resolve/2731c2291fc65a797c5cb627a5e5526fc1490902",
+    "licenseDigest": "25d122eb8f5b880fd23c736fb6ea8018ee45c12237e00b8a86d14c653904999e",
+    "licenseName": "Apache License 2.0 and DINOv3 License",
+    "licenseSpdxId": null,
+    "licenseSourceUrl": "https://huggingface.co/timm/vit_huge_plus_patch16_dinov3.lvd1689m/resolve/dd0addc09788111fa893d24799a44744ba022eee/LICENSE.md",
+    "licenseRequiresAcceptance": true,
+    "packageDescription": "Idol image-to-3D weights, DINOv3 ViT-H+/16 encoder and FLUX.2 autoencoder",
+    "files": [
+      {
+        "path": "idol/config.json",
+        "byteSize": 1335,
+        "sha256": "ddd89dcc6dcf4a5ac8d951b8c59afa1eceafe377615c5912c59f4e1f5ae35b32",
+        "downloadUrl": "https://huggingface.co/speridlabs/idol/resolve/2731c2291fc65a797c5cb627a5e5526fc1490902/config.json"
+      },
+      {
+        "path": "idol/denoiser.safetensors",
+        "byteSize": 1482258308,
+        "sha256": "ded2cacf671bf3978ebc62729087abdbd318ef4752e6805b4c9fc8ffa51fe716",
+        "downloadUrl": "https://huggingface.co/speridlabs/idol/resolve/2731c2291fc65a797c5cb627a5e5526fc1490902/denoiser.safetensors"
+      },
+      {
+        "path": "idol/decoder.safetensors",
+        "byteSize": 203171696,
+        "sha256": "9da4d7676bfcadb1c3fdfbff796e6257dadf82d26ec05be7717c79b2b13a1c4e",
+        "downloadUrl": "https://huggingface.co/speridlabs/idol/resolve/2731c2291fc65a797c5cb627a5e5526fc1490902/decoder.safetensors"
+      },
+      {
+        "path": "idol/decoder_gs.safetensors",
+        "byteSize": 949083036,
+        "sha256": "3087eb8ee5763206a53e4078acf2a1bf382dab5147d407ec13a2cf39c04cc544",
+        "downloadUrl": "https://huggingface.co/speridlabs/idol/resolve/2731c2291fc65a797c5cb627a5e5526fc1490902/decoder_gs.safetensors"
+      },
+      {
+        "path": "idol/birefnet.safetensors",
+        "byteSize": 444466856,
+        "sha256": "44bbc97b041f879975d0d6d538b8e66a25eb04d1f49aab40697544cdd97eaa8e",
+        "downloadUrl": "https://huggingface.co/speridlabs/idol/resolve/2731c2291fc65a797c5cb627a5e5526fc1490902/birefnet.safetensors"
+      },
+      {
+        "path": "idol/LICENSE",
+        "byteSize": 11358,
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "downloadUrl": "https://raw.githubusercontent.com/speridlabs/idol-sdk/4702a7f00850e34b6e83a2170cc123c3e9570744/LICENSE"
+      },
+      {
+        "path": "dinov3/model.safetensors",
+        "byteSize": 3362084520,
+        "sha256": "0d54131c846c91a78ec7641482f32e45b27cb4895f83653c038f305f18c7e61c",
+        "downloadUrl": "https://huggingface.co/timm/vit_huge_plus_patch16_dinov3.lvd1689m/resolve/dd0addc09788111fa893d24799a44744ba022eee/model.safetensors"
+      },
+      {
+        "path": "dinov3/LICENSE.md",
+        "byteSize": 7503,
+        "sha256": "25d122eb8f5b880fd23c736fb6ea8018ee45c12237e00b8a86d14c653904999e",
+        "downloadUrl": "https://huggingface.co/timm/vit_huge_plus_patch16_dinov3.lvd1689m/resolve/dd0addc09788111fa893d24799a44744ba022eee/LICENSE.md"
+      },
+      {
+        "path": "dinov3/config.json",
+        "byteSize": 744,
+        "sha256": "35770e98e425c9383534bcbfa7f3b7a3cb1d943f6d26a37d7d19fea0735eab57",
+        "content": "{\n  \"architectures\": [\n    \"DINOv3ViTModel\"\n  ],\n  \"attention_dropout\": 0.0,\n  \"drop_path_rate\": 0.0,\n  \"hidden_act\": \"silu\",\n  \"hidden_size\": 1280,\n  \"image_size\": 224,\n  \"initializer_range\": 0.02,\n  \"intermediate_size\": 5120,\n  \"key_bias\": false,\n  \"layer_norm_eps\": 1e-05,\n  \"layerscale_value\": 1.0,\n  \"mlp_bias\": true,\n  \"model_type\": \"dinov3_vit\",\n  \"num_attention_heads\": 20,\n  \"num_channels\": 3,\n  \"num_hidden_layers\": 32,\n  \"num_register_tokens\": 4,\n  \"patch_size\": 16,\n  \"pos_embed_jitter\": null,\n  \"pos_embed_rescale\": 2.0,\n  \"pos_embed_shift\": null,\n  \"proj_bias\": true,\n  \"query_bias\": true,\n  \"rope_theta\": 100.0,\n  \"torch_dtype\": \"float32\",\n  \"transformers_version\": \"4.56.0.dev0\",\n  \"use_gated_mlp\": true,\n  \"value_bias\": true\n}\n"
+      },
+      {
+        "path": "vae/config.json",
+        "byteSize": 821,
+        "sha256": "0d6dfb69ae95a5e2ac9836284bbb63d8b38ce67b25ba2dff380752b2a10ab948",
+        "downloadUrl": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/resolve/e7b7dc27f91deacad38e78976d1f2b499d76a294/vae/config.json"
+      },
+      {
+        "path": "vae/diffusion_pytorch_model.safetensors",
+        "byteSize": 168120878,
+        "sha256": "ca70d2202afe6415bdbcb8793ba8cd99fd159cfe6192381504d6c4d3036e0f04",
+        "downloadUrl": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/resolve/e7b7dc27f91deacad38e78976d1f2b499d76a294/vae/diffusion_pytorch_model.safetensors"
+      },
+      {
+        "path": "vae/LICENSE.md",
+        "byteSize": 9584,
+        "sha256": "ca02bc51900ab07789d1b70283329e7137f5af98f5161c23a1c81fc38a4af1fe",
+        "downloadUrl": "https://huggingface.co/black-forest-labs/FLUX.2-klein-4B/resolve/e7b7dc27f91deacad38e78976d1f2b499d76a294/LICENSE.md"
+      }
+    ],
+    "excludedPaths": [
+      "Idol gallery images and demo video",
+      "the gated FLUX.2-dev transformer and text encoder; only the Apache-2.0 FLUX.2 klein 4B autoencoder is used",
+      "the duplicate DINOv3 pytorch_model.bin"
+    ]
+  }
+]

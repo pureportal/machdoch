@@ -26,6 +26,7 @@ const EXECUTOR_LABELS: Record<MediaRunDetail["executor"], string> = {
   "local-analysis": "Local analysis",
   "local-video": "Local video generation",
   "local-audio": "Local audio generation",
+  "local-splat": "Local 3D generation",
   "local-wan-video": "Local WAN video generation",
   "mock-remote-provider": "Remote adapter",
   "svg-ai-pipeline": "SVG generation",
@@ -231,6 +232,17 @@ export const MediaRunInspector = ({
               <dd className="text-slate-300">
                 WAV · {recipe.audioSettings.durationSeconds} s · Seed{" "}
                 {recipe.audioSettings.seed}
+              </dd>
+            </div>
+          ) : null}
+          {recipe?.splatSettings ? (
+            <div className="col-span-2">
+              <dt className="text-slate-400">3D</dt>
+              <dd className="text-slate-300">
+                {recipe.splatSettings.gaussianCount.toLocaleString()} Gaussians ·{" "}
+                {recipe.splatSettings.inputKind === "real" ? "Photo" : "Render"} ·{" "}
+                {recipe.splatSettings.numInferenceSteps} steps · Seed{" "}
+                {recipe.splatSettings.seed}
               </dd>
             </div>
           ) : null}

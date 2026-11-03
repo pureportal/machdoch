@@ -96,6 +96,7 @@ export const readMediaGenerationTarget = (
     return "video";
   }
   if (flow.nodes.some((node) => node.type === "output.audio" || node.type === "task.generate-audio")) return "audio";
+  if (flow.nodes.some((node) => node.type === "output.splat" || node.type === "task.generate-splat")) return "splat";
   const imageSettings = readImageRecipeSettings(flow);
   return imageSettings?.outputFormat === "svg" ? "svg" : "image";
 };

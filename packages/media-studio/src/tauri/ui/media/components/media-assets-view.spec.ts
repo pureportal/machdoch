@@ -116,6 +116,7 @@ const createProps = (overrides: Partial<Props> = {}): Props => ({
   onEditImage: vi.fn(),
   onUpscale: vi.fn(),
   onAnimateImage: vi.fn(),
+  onCreateSplat: vi.fn(),
   onOpenVideoAsFlow: vi.fn(),
   onInspectSettings: vi.fn(),
   onReuseSettings: vi.fn(),

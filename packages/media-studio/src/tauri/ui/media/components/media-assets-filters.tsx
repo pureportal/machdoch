@@ -9,6 +9,7 @@ export type MediaAssetTypeFilter =
   | "openpose"
   | "video"
   | "audio"
+  | "splat"
   | "svg";
 
 export interface MediaLibraryModelFilters {

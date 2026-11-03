@@ -43,7 +43,7 @@ export const MediaGenerationJobs = ({
           >
             <span className="flex items-center justify-between gap-3 text-xs">
               <span className="truncate font-semibold text-slate-100">
-                {job.recipe.modelLabel} · {job.recipe.target}
+                {job.recipe.modelLabel} · {job.recipe.target === "splat" ? "3D" : job.recipe.target}
               </span>
               <span className="flex shrink-0 items-center gap-1 capitalize text-slate-300">
                 {active ? (

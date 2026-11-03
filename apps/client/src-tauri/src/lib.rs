@@ -344,6 +344,8 @@ pub fn run() {
             media::media_generate_video,
             media::refmods::media_refmod_operation,
             media::audio::media_generate_audio,
+            media::splat::media_generate_splat,
+            media::splat::media_read_splat,
             media::media_generate_svg,
             media::media_execute_remote_image_edit_flow,
             media::media_enqueue_mock_remote_run,

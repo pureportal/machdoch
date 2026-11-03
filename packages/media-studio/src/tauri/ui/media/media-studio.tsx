@@ -11,7 +11,12 @@ import {
   readAudioRecipeSettings,
 } from "../../../core/media/audio-flow.js";
 import { prepareAudioSubmission } from "./media-audio-execution.js";
-import { generateMediaAudio } from "./media-runtime.js";
+import { generateMediaAudio, generateMediaSplat } from "./media-runtime.js";
+import {
+  createSplatRecipeFlow,
+  readSplatRecipeSettings,
+} from "../../../core/media/splat-flow.js";
+import { prepareSplatSubmission } from "./media-splat-execution.js";
 import { trackView } from "@machdoch/analytics/browser";
 import { assessRemoteEditExecution } from "./media-remote-edit-assessment";
 import { useMediaGenerationTiming } from "./use-media-generation-timing";
@@ -379,6 +384,18 @@ const recipeSnapshotFromRevision = (
           seed: audioOperation.generation.output.seed,
         }
       : savedAudioSettings;
+  const savedSplatSettings = readSplatRecipeSettings(revision.flow);
+  const splatOperation = run.assets.find(
+    (asset) => asset.kind === "splat",
+  )?.operation;
+  const splatSettings =
+    savedSplatSettings && splatOperation?.kind === "local-splat-generation"
+      ? {
+          ...savedSplatSettings,
+          modelId: splatOperation.modelId,
+          seed: splatOperation.generation.seed,
+        }
+      : savedSplatSettings;
   let outputBranches: MediaImageOutputBranch[] = [];
   if (target === "image") {
     try {
@@ -400,6 +417,8 @@ const recipeSnapshotFromRevision = (
     modelId:
       target === "audio"
         ? (audioSettings?.modelId ?? null)
+        : target === "splat"
+          ? (splatSettings?.modelId ?? null)
         : target === "video"
           ? (videoSettings?.modelId ?? null)
           : (imageSettings?.modelId ?? null),
@@ -410,6 +429,7 @@ const recipeSnapshotFromRevision = (
     imageSettings,
     videoSettings,
     ...(audioSettings ? { audioSettings } : {}),
+    ...(splatSettings ? { splatSettings } : {}),
     resultDestination: "assets",
   };
 };
@@ -1259,6 +1279,12 @@ export const MediaStudio = ({
         createdAt: draftCreatedAt,
         settings: state.audioRecipe,
       });
+    if (state.target === "splat")
+      return createSplatRecipeFlow({
+        id: basicImageFlowId,
+        createdAt: draftCreatedAt,
+        settings: state.splatRecipe,
+      });
     const settings = {
       ...state.recipe,
       prompt: normalizeMediaSubmissionText(state.recipe.prompt, 8_000),
@@ -1275,6 +1301,7 @@ export const MediaStudio = ({
     models,
     state.recipe,
     state.audioRecipe,
+    state.splatRecipe,
     state.target,
   ]);
   const recipeLayout = useMemo(
@@ -1900,6 +1927,22 @@ export const MediaStudio = ({
     },
     [],
   );
+  const useAssetAsSplatSource = useCallback(
+    (asset: MediaAssetRecord): void => {
+      if (asset.kind !== "image") return;
+      ++selectedRunDetailSequence.current;
+      selectedRunIdRef.current = null;
+      setSelectedRunId(null);
+      setSelectedRun(null);
+      setState((current) => ({
+        ...current,
+        activeSection: "generate",
+        target: "splat",
+        splatRecipe: { ...current.splatRecipe, sourceAssetId: asset.id },
+      }));
+    },
+    [],
+  );
   const useAssetAsBaseImage = useCallback((asset: MediaAssetRecord): void => {
     if (asset.kind !== "image") return;
     ++selectedRunDetailSequence.current;
@@ -1920,6 +1963,15 @@ export const MediaStudio = ({
           activeSection: "generate",
           target,
           audioRecipe: { ...current.audioRecipe, modelId: model.id },
+        }));
+        return;
+      }
+      if (target === "splat") {
+        setState((current) => ({
+          ...current,
+          activeSection: "generate",
+          target,
+          splatRecipe: { ...current.splatRecipe, modelId: model.id },
         }));
         return;
       }
@@ -4097,9 +4149,60 @@ export const MediaStudio = ({
     },
     [localFlowPending, models, persistBasicFlowRevision, persistFlowRevision],
   );
+  const runSplatFlowDocument = useCallback(
+    (
+      sourceFlow: MediaFlow,
+      sourceLayout: MediaFlowLayout,
+      basic: boolean,
+    ): void => {
+      if (localFlowPending) return;
+      const preparation = setLocalFlowPending(true);
+      setRuntimeError(null);
+      const submittedFlow = normalizeMediaFlowForPersistence(sourceFlow);
+      const submittedLayout =
+        normalizeMediaFlowLayoutForPersistence(sourceLayout);
+      const persist = basic ? persistBasicFlowRevision : persistFlowRevision;
+      void preparation
+        .then(() =>
+          persist(submittedFlow, submittedLayout, "Pinned for 3D generation"),
+        )
+        .then((saved) => {
+          if (!saved) return;
+          const runId = createRunId();
+          const submission = prepareSplatSubmission({
+            revision: saved.revision,
+            models,
+            runId,
+            mode: basic ? "basic" : "advanced",
+            compiledAt: new Date().toISOString(),
+            randomSeed: Math.floor(Math.random() * Number.MAX_SAFE_INTEGER),
+          });
+          ++selectedRunDetailSequence.current;
+          selectedRunIdRef.current = runId;
+          setSelectedRunId(runId);
+          setSelectedRun(null);
+          if (!basic) setFlowRunOverlayId(runId);
+          enqueueMediaGeneration({
+            runId,
+            recipe: submission.recipe,
+            execute: () => generateMediaSplat(submission.request),
+            cancel: () => cancelMediaRun(runId),
+          });
+        })
+        .catch((error: unknown) =>
+          setRuntimeError(normalizeMediaError(error, "media_generate_splat")),
+        )
+        .finally(() => setLocalFlowPending(false));
+    },
+    [localFlowPending, models, persistBasicFlowRevision, persistFlowRevision],
+  );
   const runGeneration = useCallback(() => {
     if (state.target === "audio") {
       runAudioFlowDocument(recipeFlow, recipeLayout, true);
+      return;
+    }
+    if (state.target === "splat") {
+      runSplatFlowDocument(recipeFlow, recipeLayout, true);
       return;
     }
     if (state.target === "video") {
@@ -4111,6 +4214,7 @@ export const MediaStudio = ({
     runQuickVideo,
     runRecipeGeneration,
     runAudioFlowDocument,
+    runSplatFlowDocument,
     recipeFlow,
     recipeLayout,
     state.target,
@@ -4300,6 +4404,9 @@ export const MediaStudio = ({
             audioRecipe: recipe.audioSettings
               ? structuredClone(recipe.audioSettings)
               : current.audioRecipe,
+            splatRecipe: recipe.splatSettings
+              ? structuredClone(recipe.splatSettings)
+              : current.splatRecipe,
           }));
           return;
         }
@@ -4709,6 +4816,43 @@ export const MediaStudio = ({
       })
       .finally(() => setImportLoading(false));
   }, [importLoading, refreshRuntime]);
+  const importSplatImage = useCallback((): void => {
+    if (importLoading || !supportsNativeMediaImport()) return;
+    setImportLoading(true);
+    setRuntimeError(null);
+    void (async () => {
+      const selected = await openDialog({
+        multiple: false,
+        directory: false,
+        title: "Add object image",
+        filters: [
+          {
+            name: "Supported images",
+            extensions: ["png", "jpg", "jpeg", "webp"],
+          },
+        ],
+      });
+      if (typeof selected !== "string") return;
+      const result = await importMediaAsset(selected);
+      setRuntimeAssets((current) => [
+        result.asset,
+        ...current.filter((asset) => asset.id !== result.asset.id),
+      ]);
+      if (result.asset.kind !== "image")
+        throw new Error("Choose a PNG, JPEG, or WebP image.", {
+          cause: "basic-image-input",
+        });
+      setState((current) => ({
+        ...current,
+        splatRecipe: { ...current.splatRecipe, sourceAssetId: result.asset.id },
+      }));
+      await refreshRuntime();
+    })()
+      .catch((error: unknown) => {
+        setRuntimeError(basicImageImportFailure(error, "import_splat_image"));
+      })
+      .finally(() => setImportLoading(false));
+  }, [importLoading, refreshRuntime]);
   const createPoseAsset = useCallback(
     async (map: MediaPoseMap): Promise<void> => {
       if (importLoading || !supportsNativeMediaImport())
@@ -5044,6 +5188,22 @@ export const MediaStudio = ({
               onAudioSettingsChange={(audioRecipe) =>
                 setState((current) => ({ ...current, audioRecipe }))
               }
+              splatSettings={state.splatRecipe}
+              onSplatSettingsChange={(splatRecipe) =>
+                setState((current) => ({ ...current, splatRecipe }))
+              }
+              splatGenerationSupported={
+                runtimeStatus?.mode === "native" &&
+                runtimeStatus.localDiffusers.ready
+              }
+              splatGenerationBlockedReason={
+                !runtimeStatus
+                  ? "Loading Media Studio…"
+                  : runtimeStatus.mode === "browser-preview"
+                    ? "Open the desktop app to generate 3D objects."
+                    : null
+              }
+              onAddSplatImage={importSplatImage}
               assetMetadata={state.assetMetadata}
               categories={state.categories}
               plan={recipePlan}
@@ -5094,6 +5254,7 @@ export const MediaStudio = ({
               poseInstallPending={poseInstallPending}
               onEditResult={useAssetAsBaseImage}
               onAnimateResult={useAssetAsBasicVideoReference}
+              onCreateSplatResult={useAssetAsSplatSource}
               onUpscaleResult={useAssetForUpscale}
               onOpenResult={openAssetInLibrary}
               generationPending={generationPending || localFlowPending}
@@ -5213,6 +5374,9 @@ export const MediaStudio = ({
                 onExportRevision={exportCurrentFlowRevision}
                 onRunLocalFlow={
                   !isConnectedMediaFlow(flow) &&
+                  flow.nodes.some((node) => node.type === "task.generate-splat")
+                    ? () => runSplatFlowDocument(flow, layout, false)
+                    : !isConnectedMediaFlow(flow) &&
                   flow.nodes.some((node) => node.type === "task.generate-audio")
                     ? () => runAudioFlowDocument(flow, layout, false)
                     : isConnectedMediaFlow(flow)
@@ -5225,8 +5389,10 @@ export const MediaStudio = ({
                 }
                 localRunPending={localFlowPending}
                 localRunSupported={
-                  !isConnectedMediaFlow(flow) &&
-                  flow.nodes.some((node) => node.type === "task.generate-audio")
+                  (!isConnectedMediaFlow(flow) &&
+                  flow.nodes.some((node) => node.type === "task.generate-splat")) ||
+                  (!isConnectedMediaFlow(flow) &&
+                  flow.nodes.some((node) => node.type === "task.generate-audio"))
                     ? plan.status === "ready" &&
                       runtimeStatus?.mode === "native" &&
                       runtimeStatus.localDiffusers.ready
@@ -5237,8 +5403,10 @@ export const MediaStudio = ({
                         videoFlowExecution.supported
                 }
                 localRunDescription={
-                  !isConnectedMediaFlow(flow) &&
-                  flow.nodes.some((node) => node.type === "task.generate-audio")
+                  (!isConnectedMediaFlow(flow) &&
+                  flow.nodes.some((node) => node.type === "task.generate-splat")) ||
+                  (!isConnectedMediaFlow(flow) &&
+                  flow.nodes.some((node) => node.type === "task.generate-audio"))
                     ? !runtimeStatus
                       ? "Loading Media Studio…"
                       : runtimeStatus.mode === "native"
@@ -5248,7 +5416,7 @@ export const MediaStudio = ({
                             )?.message ?? "")
                           : (runtimeStatus.localDiffusers.diagnostic ??
                             "Set up Media Studio.")
-                        : "Open the desktop app to generate audio."
+                        : "Open the desktop app to run this flow."
                     : isConnectedMediaFlow(flow)
                       ? localFlowExecution.reason
                       : advancedLocalImageExecution.supported
@@ -5415,6 +5583,7 @@ export const MediaStudio = ({
               onUseAsPose={useAssetAsPose}
               onEditImage={useAssetAsBaseImage}
               onAnimateImage={useAssetAsBasicVideoReference}
+              onCreateSplat={useAssetAsSplatSource}
               onUpscale={useAssetForUpscale}
               onOpenVideoAsFlow={openAssetAsVideoFlow}
               onInspectSettings={inspectRunSettings}
