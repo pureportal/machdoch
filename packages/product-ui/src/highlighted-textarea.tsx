@@ -58,6 +58,7 @@ export function HighlightedTextarea({
     overlay.style.width = `${input.clientWidth + parseFloat(style.borderLeftWidth || "0") + parseFloat(style.borderRightWidth || "0")}px`;
     overlay.style.height = `${input.offsetHeight}px`;
     overlay.style.clipPath = `inset(${style.paddingTop} ${style.borderRightWidth} ${style.paddingBottom} ${style.borderLeftWidth} round ${style.borderRadius})`;
+    input.style.scrollPaddingBlock = `${style.paddingTop} ${style.paddingBottom}`;
     overlay.scrollTop = input.scrollTop;
     overlay.scrollLeft = input.scrollLeft;
   }, []);
