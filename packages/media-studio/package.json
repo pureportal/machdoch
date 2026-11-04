@@ -52,6 +52,8 @@
     "./tauri/ui/commands/shortcut-resolver.js": "./src/tauri/ui/commands/shortcut-resolver.ts",
     "./tauri/ui/commands/shortcut.js": "./src/tauri/ui/commands/shortcut.ts",
     "./tauri/ui/commands/use-command-overlay.js": "./src/tauri/ui/commands/use-command-overlay.ts",
+    "./tauri/ui/find/find-in-view.js": "./src/tauri/ui/find/find-in-view.tsx",
+    "./tauri/ui/find/find-in-view.css": "./src/tauri/ui/find/find-in-view.css",
     "./tauri/ui/flow/flow-element-reconciliation.js": "./src/tauri/ui/flow/flow-element-reconciliation.ts",
     "./tauri/ui/lib/clipboard.js": "./src/tauri/ui/lib/clipboard.ts",
     "./tauri/ui/lib/utils.js": "./src/tauri/ui/lib/utils.ts",

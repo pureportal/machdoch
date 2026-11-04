@@ -20,6 +20,7 @@ const INTENTIONAL_SHARED_BINDINGS = [
     "ralph.flow.save",
     "workspaces.settings.save",
   ],
+  ["app.find.open", "file-preview.search.focus"],
   ["media.flow.undo", "ralph.flow.undo"],
   ["media.flow.redo", "ralph.flow.redo"],
   ["media.flow.redo-alternate", "ralph.flow.redo-alternate"],

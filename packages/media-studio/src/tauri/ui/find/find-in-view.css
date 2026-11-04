@@ -1,0 +1,8 @@
+::highlight(app-find-match) {
+  background-color: color-mix(in srgb, var(--app-amber-400) 32%, transparent);
+}
+
+::highlight(app-find-active) {
+  background-color: var(--app-amber-300);
+  color: var(--app-slate-950);
+}

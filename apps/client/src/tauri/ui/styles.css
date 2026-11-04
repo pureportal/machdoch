@@ -9,6 +9,7 @@
 @import "@machdoch/client-ui/menu.css";
 @import "@machdoch/client-ui/file-preview.css";
 @import "@machdoch/client-ui/conversation.css";
+@import "@machdoch/media-studio/tauri/ui/find/find-in-view.css";
 @source "../ui";
 @source "./";
 @source "../../../../../packages/media-studio/src";

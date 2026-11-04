@@ -109,7 +109,7 @@ export interface CommandDefinition {
   when?: (context: CommandContextSnapshot) => boolean;
   current?: (context: CommandContextSnapshot) => boolean;
   availability?: (context: CommandContextSnapshot) => CommandAvailability;
-  overlayPolicy?: "blocked" | "replace-non-modal";
+  overlayPolicy?: "blocked" | "replace-non-modal" | "contextual";
   overrideOf?: string;
   execute?: CommandAction;
   children?: (

@@ -4,6 +4,7 @@ import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { cn } from "../../lib/utils";
 import { useCommandOverlay } from "../../commands/use-command-overlay";
+import { isFindBarTarget } from "../../find/find-dom";
 import { Button } from "./button";
 
 interface DialogInteractOutsideConfirmationOptions {
@@ -125,6 +126,7 @@ function DialogContent({
   onPointerDownOutside,
   onOpenAutoFocus,
   onCloseAutoFocus,
+  onEscapeKeyDown,
   ...props
 }: DialogContentProps) {
   const [showInteractOutsideConfirmation, setShowInteractOutsideConfirmation] =
@@ -159,6 +161,13 @@ function DialogContent({
         onCloseAutoFocus={(event) => {
           setShowInteractOutsideConfirmation(false);
           onCloseAutoFocus?.(event);
+        }}
+        onEscapeKeyDown={(event) => {
+          if (isFindBarTarget(event.target)) {
+            event.preventDefault();
+            return;
+          }
+          onEscapeKeyDown?.(event);
         }}
         onInteractOutside={(event) => {
           onInteractOutside?.(event);

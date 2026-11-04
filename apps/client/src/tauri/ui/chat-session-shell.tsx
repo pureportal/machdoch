@@ -65,6 +65,7 @@ import {
 } from "./runtime";
 import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
+import { FindInView } from "@machdoch/media-studio/tauri/ui/find/find-in-view.js";
 import { useCommandOverlay } from "@machdoch/media-studio/tauri/ui/commands/use-command-overlay.js";
 import type { CommandDefinition } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import {
@@ -908,6 +909,7 @@ export const ChatSession = (): JSX.Element => {
 
   return (
     <CommandProvider activeView={activeApp} commands={shellCommands}>
+      <FindInView activeView={activeApp} />
       <Dialog
         open={controller.catalogOpen}
         onOpenChange={controller.setCatalogOpen}
@@ -1075,7 +1077,10 @@ export const ChatSession = (): JSX.Element => {
                     onOpenWorkspaces={() => selectApp("workspaces")}
                   />
 
-                  <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <div
+                    data-find-scope="conversation"
+                    className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
+                  >
                     <ScrollArea className="h-full min-w-0" type="always">
                       <ConversationFeed
                         key={controller.composer.activeSession.id}
@@ -1140,7 +1145,10 @@ export const ChatSession = (): JSX.Element => {
           ) : null}
 
           {activeApp === "ralph" ? (
-            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <div
+              data-find-scope="RALPH"
+              className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
+            >
               <Suspense fallback={appLoadingFallback}>
                 <RalphApp
                   isActive
@@ -1155,7 +1163,10 @@ export const ChatSession = (): JSX.Element => {
           ) : null}
 
           {activeApp === "media" ? (
-            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <div
+              data-find-scope="Media Studio"
+              className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
+            >
               <Suspense fallback={appLoadingFallback}>
                 <MediaStudio
                   savedPoseScenes={controller.savedPoseScenes}
@@ -1183,7 +1194,10 @@ export const ChatSession = (): JSX.Element => {
           ) : null}
 
           {activeApp === "tts" ? (
-            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <div
+              data-find-scope="Text to Speech"
+              className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
+            >
               <Suspense fallback={appLoadingFallback}>
                 <TextToSpeechStudio runtime={speechRuntime} assetUrl={speechAssetUrl} openProjectId={pendingSpeechProjectId} onProjectOpened={speechProjectOpened}
                   onMediaHandoff={handoff => { setPendingMediaAssetId(handoff.assetId);setPendingMediaSection("library");selectApp("media"); }} />
@@ -1192,7 +1206,10 @@ export const ChatSession = (): JSX.Element => {
           ) : null}
 
           {activeApp === "instructions" ? (
-            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <div
+              data-find-scope="Instructions"
+              className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
+            >
               <Suspense fallback={appLoadingFallback}>
                 <InstructionManager
                   setup={controller.instructionManagement}
@@ -1203,7 +1220,10 @@ export const ChatSession = (): JSX.Element => {
           ) : null}
 
           {activeApp === "workspaces" ? (
-            <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <div
+              data-find-scope="Workspace Management"
+              className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
+            >
               <Suspense fallback={appLoadingFallback}>
                 <WorkspaceManager
                   setup={controller.instructionManagement}

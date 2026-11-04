@@ -630,4 +630,72 @@ describe("shortcut resolution", () => {
       }).type,
     ).toBe("command");
   });
+
+  it("routes contextual Find above modals while overlay-owned Find keeps precedence", () => {
+    const findInView = command(
+      "app.find.open",
+      { kind: "global", ownerId: "app" },
+      {
+        overlayPolicy: "contextual",
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("app.find.open"),
+            runtimes: ["tauri"],
+            allowIn: ["document", "text-entry", "editor"],
+          },
+        ],
+      },
+    );
+    const findInPreview = command(
+      "file-preview.search.focus",
+      { kind: "overlay", ownerId: "file-preview" },
+      {
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("file-preview.search.focus"),
+            runtimes: ["tauri"],
+            allowIn: ["document", "text-entry"],
+          },
+        ],
+      },
+    );
+    const modal = (id: string) =>
+      createShortcutContext({
+        platform: "windows",
+        runtime: "tauri",
+        focus: { kind: "text-entry", ownerPath: [] },
+        overlays: [{ id, kind: "modal", openedAt: 1, allowGlobalCommands: [] }],
+      });
+    const findEvent = event({ key: "f", code: "KeyF" });
+
+    const inSettings = resolveShortcut(
+      findEvent,
+      [findInView, findInPreview],
+      modal("settings-dialog"),
+    );
+    expect(inSettings.type === "command" && inSettings.command.id).toBe(
+      "app.find.open",
+    );
+    const inPreview = resolveShortcut(
+      findEvent,
+      [findInView, findInPreview],
+      modal("file-preview"),
+    );
+    expect(inPreview.type === "command" && inPreview.command.id).toBe(
+      "file-preview.search.focus",
+    );
+    expect(
+      resolveShortcut(findEvent, [findInView], {
+        ...modal("settings-dialog"),
+        runtime: "browser",
+      }).type,
+    ).toBe("none");
+    expect(
+      resolveShortcut(
+        findEvent,
+        [{ ...findInView, overlayPolicy: undefined }],
+        modal("settings-dialog"),
+      ).type,
+    ).toBe("none");
+  });
 });

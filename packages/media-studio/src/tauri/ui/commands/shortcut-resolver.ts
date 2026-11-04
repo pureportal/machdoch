@@ -63,7 +63,7 @@ export const isCommandAllowedByOverlay = (
   context: CommandContextSnapshot,
 ): boolean => {
   const top = context.overlays[context.overlays.length - 1];
-  if (!top) return true;
+  if (!top || command.overlayPolicy === "contextual") return true;
   if (command.scope.kind === "overlay" && command.scope.ownerId === top.id)
     return true;
   if (top.allowGlobalCommands.includes(command.id)) return true;
