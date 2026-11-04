@@ -610,21 +610,28 @@ describe("ClaudeInteractiveSession", () => {
       usage: { input_tokens: 0, output_tokens: 0 },
     });
 
-    it("answers the prompt after a resumed session reports a leftover job", () => {
+    const leftoverJob = (taskId: string) => ({
+      type: "system",
+      subtype: "task_notification",
+      task_id: taskId,
+      tool_use_id: `toolu-${taskId}`,
+      status: "stopped",
+      output_file: "",
+      summary:
+        "Orphaned by a previous Claude Code process exit and reported in an aggregate summary.",
+    });
+
+    it("answers the prompt after a resumed session reports leftover jobs", () => {
       const harness = createHarness();
       sessions.push(harness.session);
       harness.session.start();
-      harness.receive({
-        type: "system",
-        subtype: "task_notification",
-        task_id: "job-1",
-        status: "stopped",
-        summary:
-          "Background shell command didn't finish before the previous session ended",
-      });
+      harness.receive(leftoverJob("job-1"));
+      harness.receive(leftoverJob("job-2"));
+      harness.receive({ type: "system", subtype: "init" });
       harness.receive(zeroTurnResult(""));
       expect(harness.isClosed()).toBe(false);
       expect(harness.session.hasTerminalResult()).toBe(false);
+      expect(harness.session.live.snapshot().tasks ?? []).toEqual([]);
 
       harness.receive({
         type: "user",
@@ -650,6 +657,29 @@ describe("ClaudeInteractiveSession", () => {
         inputTokens: 10,
         outputTokens: 2,
       });
+    });
+
+    it("still reports a job this run started", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      harness.receive({
+        type: "system",
+        subtype: "task_started",
+        task_id: "job-3",
+        description: "npm test",
+        is_backgrounded: true,
+      });
+      harness.receive({
+        type: "system",
+        subtype: "task_notification",
+        task_id: "job-3",
+        status: "completed",
+        summary: "Tests passed",
+      });
+      expect(harness.session.live.snapshot().tasks).toMatchObject([
+        { id: "job-3", status: "completed", summary: "Tests passed" },
+      ]);
     });
 
     it("still ends the turn when a hook blocks the prompt", () => {

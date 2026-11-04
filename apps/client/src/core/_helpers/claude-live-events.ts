@@ -188,7 +188,7 @@ export class ClaudeLiveEventReader {
         return;
       }
       case "task_notification": {
-        if (!taskId) return;
+        if (!taskId || !this.live.getTask(taskId)) return;
         const status = readTaskStatus(event.status) ?? "completed";
         this.live.upsertTask({
           id: taskId,
