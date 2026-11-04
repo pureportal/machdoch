@@ -33,11 +33,11 @@ use windows::{
                 JOBOBJECT_CPU_RATE_CONTROL_INFORMATION_0, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
                 JOB_OBJECT_CPU_RATE_CONTROL_ENABLE, JOB_OBJECT_CPU_RATE_CONTROL_HARD_CAP,
                 JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
-                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PRIORITY_CLASS,
             },
             Threading::{
                 GetActiveProcessorCount, OpenThread, ResumeThread, ALL_PROCESSOR_GROUPS,
-                THREAD_SUSPEND_RESUME,
+                BELOW_NORMAL_PRIORITY_CLASS, THREAD_SUSPEND_RESUME,
             },
         },
     },
@@ -52,6 +52,8 @@ const CREATE_SUSPENDED: u32 = 0x00000004;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 const TERMINATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
+#[cfg(unix)]
+const BACKGROUND_NICE_VALUE: i32 = 10;
 #[cfg(unix)]
 const GRACEFUL_TERMINATION_TIMEOUT: Duration = Duration::from_millis(500);
 const FORCED_TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
@@ -221,6 +223,41 @@ impl SupervisedChild {
         command: &mut Command,
     ) -> Result<Self, SupervisedChildSpawnError> {
         Self::spawn_with_job_requirement(command, true, |_| Ok(()))
+    }
+
+    /// Spawns an isolated child whose whole process tree runs below normal CPU priority.
+    pub fn spawn_with_background_priority(
+        command: &mut Command,
+    ) -> Result<Self, SupervisedChildSpawnError> {
+        #[cfg(unix)]
+        unsafe {
+            command.pre_exec(|| {
+                // Priority is advisory; a failed adjustment must not block the command.
+                libc::setpriority(libc::PRIO_PROCESS, 0, BACKGROUND_NICE_VALUE);
+                Ok(())
+            });
+        }
+        Self::spawn_with_job_requirement(command, true, |job| {
+            #[cfg(target_os = "windows")]
+            unsafe {
+                let mut information = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+                information.BasicLimitInformation.LimitFlags =
+                    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PRIORITY_CLASS;
+                information.BasicLimitInformation.PriorityClass = BELOW_NORMAL_PRIORITY_CLASS.0;
+                SetInformationJobObject(
+                    job.handle,
+                    JobObjectExtendedLimitInformation,
+                    (&information as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
+                    std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                )
+                .map_err(|error| format!("Failed to lower the process priority: {error}"))
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = job;
+                Ok(())
+            }
+        })
     }
 
     pub fn spawn_preserving_descendants_after_exit(

@@ -95,8 +95,52 @@ fn child_process_supervision_test_entrypoint() {
                 thread::sleep(Duration::from_secs(60));
             }
         }
+        Ok("report-priority") => {
+            let report_path = env::var_os(TEST_DESCENDANT_PID_PATH_ENV)
+                .map(PathBuf::from)
+                .expect("priority report path should be provided");
+            #[cfg(target_os = "windows")]
+            let priority = unsafe {
+                windows::Win32::System::Threading::GetPriorityClass(
+                    windows::Win32::System::Threading::GetCurrentProcess(),
+                )
+            };
+            #[cfg(unix)]
+            let priority = unsafe { libc::getpriority(libc::PRIO_PROCESS, 0) };
+            fs::write(report_path, priority.to_string()).expect("priority should be recorded");
+        }
         _ => {}
     }
+}
+
+#[test]
+fn background_priority_children_run_below_normal_priority() {
+    let report_path = TestPath::new();
+    let mut command = test_child_command("report-priority");
+    command.env(TEST_DESCENDANT_PID_PATH_ENV, &report_path.0);
+    let mut child = SupervisedChild::spawn_with_background_priority(&mut command)
+        .expect("background child should start");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while child
+        .try_wait()
+        .expect("background child should remain observable")
+        .is_none()
+    {
+        assert!(Instant::now() < deadline, "background child did not exit");
+        thread::sleep(Duration::from_millis(10));
+    }
+    let priority = fs::read_to_string(&report_path.0)
+        .expect("priority report should exist")
+        .parse::<i64>()
+        .expect("priority report should be numeric");
+
+    #[cfg(target_os = "windows")]
+    assert_eq!(
+        priority,
+        i64::from(windows::Win32::System::Threading::BELOW_NORMAL_PRIORITY_CLASS.0)
+    );
+    #[cfg(unix)]
+    assert!(priority >= 10);
 }
 
 #[cfg(target_os = "windows")]
