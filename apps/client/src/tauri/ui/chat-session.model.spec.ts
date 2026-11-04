@@ -23,6 +23,7 @@ import {
   normalizeShellState,
   recoverInactiveRunningTasks,
   recoverInterruptedTasksForLaunch,
+  rememberRecentWorkspace,
   resetSessionTime,
   sortSessionsByUpdatedAt,
   QUICK_VOICE_SESSION_KIND,
@@ -727,6 +728,18 @@ describe("normalizeShellState", () => {
     expect(normalizeRecentWorkspaces(["/work/Client", "/work/client"])).toEqual(
       ["/work/Client", "/work/client"],
     );
+  });
+
+  it("keeps every distinct recent workspace", () => {
+    const workspaces = Array.from(
+      { length: 25 },
+      (_, index) => `/work/project-${index}`,
+    );
+
+    expect(normalizeRecentWorkspaces(workspaces)).toEqual(workspaces);
+    expect(
+      rememberRecentWorkspace(workspaces, "/work/project-new"),
+    ).toEqual(["/work/project-new", ...workspaces]);
   });
 
   it("preserves the active timeout state across session restoration", () => {

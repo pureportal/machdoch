@@ -493,7 +493,6 @@ const EXECUTION_RESPONSE_MARKDOWN_LIMIT = 32_000;
 const MAX_SESSION_TAGS = 12;
 const MAX_SESSION_TAG_LENGTH = 32;
 const SESSION_RETENTION_DAY_MS = 24 * 60 * 60 * 1000;
-const MAX_RECENT_WORKSPACES = 10;
 const CONTEXT_ATTACHMENT_KINDS: ChatSessionContextAttachmentKind[] = [
   "file",
   "directory",
@@ -840,10 +839,6 @@ export const normalizeRecentWorkspaces = (value: unknown): string[] => {
 
     seenWorkspaces.add(workspaceKey);
     workspaces.push(workspace);
-
-    if (workspaces.length >= MAX_RECENT_WORKSPACES) {
-      break;
-    }
   }
 
   return workspaces;
