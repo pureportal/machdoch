@@ -105,6 +105,11 @@ pub fn run() {
         }
     };
 
+    #[cfg(target_os = "windows")]
+    if let Err(error) = desktop_shell::complete_path_from_logon_environment() {
+        eprintln!("Failed to restore the Windows logon PATH: {error}");
+    }
+
     match desktop_shell::relaunch_as_administrator_if_configured() {
         Ok(true) => {
             return;

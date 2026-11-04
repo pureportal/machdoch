@@ -12,6 +12,8 @@ use tauri::{AppHandle, Manager};
 
 pub(crate) mod display_layout;
 pub(crate) mod file_manager;
+#[cfg(target_os = "windows")]
+mod logon_path;
 pub(crate) mod placement;
 mod shortcut;
 pub(crate) mod startup;
@@ -22,6 +24,8 @@ pub(crate) use file_manager::{
     handle_secondary_instance, parse_invocation_args, FileManagerInvocation,
     FileManagerInvocationState,
 };
+#[cfg(target_os = "windows")]
+pub(crate) use logon_path::complete_path_from_logon_environment;
 #[cfg(test)]
 pub(crate) use shortcut::sync_shortcut_registration;
 pub(crate) use shortcut::{
