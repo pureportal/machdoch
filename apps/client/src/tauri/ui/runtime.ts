@@ -37,6 +37,8 @@ import type {
   WorkspaceGitRepositoryDiscovery,
   WorkspaceGitOverview,
   WorkspaceGitAction,
+  WorkspaceGitActionOptions,
+  WorkspaceGitSummary,
   WorkspaceEntryKind,
   WorkspaceDirectoryPage,
   WorkspaceFileDocument,
@@ -53,12 +55,16 @@ export type {
   WorkspaceGitBranch,
   WorkspaceGitRemote,
   WorkspaceGitCommit,
+  WorkspaceGitStash,
+  WorkspaceGitOperation,
+  WorkspaceGitSummary,
   WorkspacePullRequest,
   WorkspacePullRequestOverview,
   WorkspaceGitRepository,
   WorkspaceGitRepositoryDiscovery,
   WorkspaceGitOverview,
   WorkspaceGitAction,
+  WorkspaceGitActionOptions,
   WorkspaceEntryKind,
   WorkspaceDirectoryEntry,
   WorkspaceDirectoryPage,
@@ -237,6 +243,7 @@ import {
   createEmptyWorkspaceRunDocument,
   workspaceRunPrimaryConfigurationId,
   type WorkspaceRunConfigurationDocument,
+  type WorkspaceRunInputValues,
   type WorkspaceRunLogBatch,
   type WorkspaceRunSnapshot,
 } from "../../shared/workspace-run.js";
@@ -288,12 +295,8 @@ import {
 import {
   createPreviewWorkspaceEntry,
   deletePreviewWorkspaceEntry,
-  discoverPreviewWorkspaceGitRepositories,
   discoverPreviewWorkspaceShells,
   listPreviewWorkspaceDirectory,
-  loadPreviewWorkspaceGitDiff,
-  loadPreviewWorkspaceGitOverview,
-  loadPreviewWorkspacePullRequests,
   readPreviewWorkspaceFile,
   renamePreviewWorkspaceEntry,
   resolvePreviewWorkspaceFileSource,
@@ -303,6 +306,14 @@ import {
   stopPreviewWorkspaceTerminals,
   writePreviewWorkspaceTerminal,
 } from "./workspace-management/workspace-preview-runtime";
+import {
+  discoverPreviewWorkspaceGitRepositories,
+  loadPreviewWorkspaceGitDiff,
+  loadPreviewWorkspaceGitOverview,
+  loadPreviewWorkspaceGitSummary,
+  loadPreviewWorkspacePullRequests,
+  runPreviewWorkspaceGitAction,
+} from "./workspace-management/workspace-preview-git";
 
 export type UserApiKeyProvider = SharedUserApiProvider;
 
@@ -4669,6 +4680,13 @@ export const listInstructions = async (
           tags: [],
           scopes: [{ path: ".", profiles: [] }],
         },
+        {
+          id: "preview-alphartis",
+          root: "C:\\Projects\\alphartis",
+          displayName: "Alphartis",
+          tags: [],
+          scopes: [{ path: ".", profiles: [] }],
+        },
       ],
     };
   }
@@ -4702,6 +4720,26 @@ export const loadWorkspaceGitRepositories = async (
   try {
     return await invokeWorkspaceTools<WorkspaceGitRepositoryDiscovery>(
       "discover_workspace_git_repositories",
+      { workspaceRoot: normalizedWorkspaceRoot },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const loadWorkspaceGitSummary = async (
+  workspaceRoot: string,
+): Promise<WorkspaceGitSummary | null> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before loading Git information.");
+  }
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
+    return loadPreviewWorkspaceGitSummary(normalizedWorkspaceRoot);
+  }
+  try {
+    return await invokeWorkspaceTools<WorkspaceGitSummary | null>(
+      "get_workspace_git_summary",
       { workspaceRoot: normalizedWorkspaceRoot },
     );
   } catch (error) {
@@ -4806,25 +4844,47 @@ export const loadWorkspacePullRequests = async (
   }
 };
 
+const createWorkspaceGitActionFields = (
+  options: WorkspaceGitActionOptions,
+): WorkspaceGitActionOptions => {
+  const fields: WorkspaceGitActionOptions = {};
+  for (const key of [
+    "branchName",
+    "startPoint",
+    "parentBranch",
+    "remoteName",
+    "remoteUrl",
+    "message",
+    "stashRef",
+  ] as const) {
+    const value = options[key]?.trim();
+    if (value) fields[key] = value;
+  }
+  if (options.paths?.length) fields.paths = options.paths;
+  for (const key of ["includeUntracked", "force", "draft"] as const) {
+    if (options[key]) fields[key] = true;
+  }
+  return fields;
+};
+
 export const runWorkspaceGitAction = async (
   workspaceRoot: string,
   repositoryRoot: string,
   action: WorkspaceGitAction,
-  options: {
-    branchName?: string;
-    remoteName?: string;
-    remoteUrl?: string;
-  } = {},
+  options: WorkspaceGitActionOptions = {},
 ): Promise<WorkspaceGitOverview> => {
   const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
   const normalizedRepositoryRoot = normalizeWorkspaceRoot(repositoryRoot);
   if (!normalizedWorkspaceRoot || !normalizedRepositoryRoot) {
     throw new Error("Select a Git repository before running an action.");
   }
+  const fields = createWorkspaceGitActionFields(options);
   if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
-    return loadPreviewWorkspaceGitOverview(
+    return runPreviewWorkspaceGitAction(
       normalizedWorkspaceRoot,
       normalizedRepositoryRoot,
+      action,
+      fields,
     );
   }
   try {
@@ -4835,15 +4895,7 @@ export const runWorkspaceGitAction = async (
           workspaceRoot: normalizedWorkspaceRoot,
           repositoryRoot: normalizedRepositoryRoot,
           action,
-          ...(options.branchName?.trim()
-            ? { branchName: options.branchName.trim() }
-            : {}),
-          ...(options.remoteName?.trim()
-            ? { remoteName: options.remoteName.trim() }
-            : {}),
-          ...(options.remoteUrl?.trim()
-            ? { remoteUrl: options.remoteUrl.trim() }
-            : {}),
+          ...fields,
         },
       },
     );
@@ -4860,6 +4912,7 @@ const createEmptyWorkspaceRunSnapshot = (
 ): WorkspaceRunSnapshot => ({
   workspaceRoot,
   primaryConfigurationId: null,
+  inputs: [],
   configurations: [],
 });
 
@@ -4937,6 +4990,7 @@ const runWorkspaceConfigurationAction = async (
     | "restart_workspace_run_configuration",
   workspaceRoot: string,
   configurationId?: string,
+  inputs?: WorkspaceRunInputValues,
 ): Promise<WorkspaceRunSnapshot> => {
   const root = requireWorkspaceRoot(workspaceRoot);
   if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform())
@@ -4948,6 +5002,7 @@ const runWorkspaceConfigurationAction = async (
         ...(configurationId?.trim()
           ? { configurationId: configurationId.trim() }
           : {}),
+        ...(inputs ? { inputs } : {}),
       },
     });
   } catch (error) {
@@ -4958,11 +5013,13 @@ const runWorkspaceConfigurationAction = async (
 export const startWorkspaceRunConfiguration = async (
   workspaceRoot: string,
   configurationId?: string,
+  inputs?: WorkspaceRunInputValues,
 ): Promise<WorkspaceRunSnapshot> =>
   runWorkspaceConfigurationAction(
     "start_workspace_run_configuration",
     workspaceRoot,
     configurationId,
+    inputs,
   );
 
 export const stopWorkspaceRunConfiguration = async (
@@ -4978,12 +5035,31 @@ export const stopWorkspaceRunConfiguration = async (
 export const restartWorkspaceRunConfiguration = async (
   workspaceRoot: string,
   configurationId?: string,
+  inputs?: WorkspaceRunInputValues,
 ): Promise<WorkspaceRunSnapshot> =>
   runWorkspaceConfigurationAction(
     "restart_workspace_run_configuration",
     workspaceRoot,
     configurationId,
+    inputs,
   );
+
+export const runWorkspaceRunDetection = async (
+  workspaceRoot: string,
+): Promise<unknown> => {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
+    throw new Error("Run detection is only available in the desktop app.");
+  }
+  try {
+    return await invokeWorkspaceTools<unknown>(
+      "run_workspace_run_detection_command",
+      { workspaceRoot: root },
+    );
+  } catch (error) {
+    throw normalizeWorkspaceToolsError(error);
+  }
+};
 
 export const precheckWorkspaceRunConfigurationJson = async (
   workspaceRoot: string,
@@ -7207,6 +7283,29 @@ export const openWorkspacePath = async (
   try {
     await invokeWorkspaceTools("open_workspace_path", {
       workspaceRoot: normalizedWorkspaceRoot ?? "",
+      relativePath: normalizedRelativePath,
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const openWorkspaceFile = async (
+  workspaceRoot: string,
+  relativePath: string,
+): Promise<void> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  const normalizedRelativePath = relativePath.trim();
+  if (!normalizedWorkspaceRoot || !normalizedRelativePath) {
+    throw new Error("Expected a workspace file to open.");
+  }
+  if (getRemoteWorkspacePlatform()) {
+    throw new Error("Files can only be opened on the device that hosts them.");
+  }
+  if (!canInvokeTauriCommands()) return;
+  try {
+    await analyticsInvoke("open_workspace_file", {
+      workspaceRoot: normalizedWorkspaceRoot,
       relativePath: normalizedRelativePath,
     });
   } catch (error) {

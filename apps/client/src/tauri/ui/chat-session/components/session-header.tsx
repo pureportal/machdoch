@@ -12,6 +12,7 @@ import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import { SubmitShortcut } from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
 import type { ChatSessionRecord } from "../../chat-session.model";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
+import { WorkspaceQuickAccessControl } from "./workspace-quick-access-control";
 import { WorkspaceRunDialogControl } from "./workspace-run-dialog-control";
 import {
   Popover,
@@ -21,6 +22,7 @@ import {
 
 export interface SessionHeaderProps {
   onOpenSessions?: () => void;
+  onOpenWorkspaces?: () => boolean;
   activeSession: ChatSessionRecord;
   currentSessionTitle: string;
   isRenamingSession: boolean;
@@ -47,6 +49,7 @@ export interface SessionHeaderProps {
 
 export const SessionHeader = ({
   onOpenSessions,
+  onOpenWorkspaces,
   activeSession,
   currentSessionTitle,
   isRenamingSession,
@@ -102,6 +105,11 @@ export const SessionHeader = ({
 
   const controls = (
     <div className="app-session-header-controls flex min-w-0 shrink items-center justify-end gap-1.5">
+      <WorkspaceQuickAccessControl
+        workspaceRoot={activeSession.workspace}
+        primaryTaskRunning={primaryTaskRunning}
+        onOpenWorkspaces={onOpenWorkspaces}
+      />
       <WorkspaceRunDialogControl
         workspaceRoot={activeSession.workspace}
         primaryTaskRunning={primaryTaskRunning}

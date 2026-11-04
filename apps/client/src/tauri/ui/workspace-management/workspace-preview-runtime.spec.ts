@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  discoverPreviewWorkspaceGitRepositories,
   listPreviewWorkspaceDirectory,
-  loadPreviewWorkspaceGitDiff,
-  loadPreviewWorkspaceGitOverview,
-  loadPreviewWorkspacePullRequests,
   readPreviewWorkspaceFile,
   resolvePreviewWorkspaceFileSource,
   startPreviewWorkspaceTerminal,
@@ -27,86 +23,6 @@ describe("workspace browser preview runtime", () => {
     expect(resolvePreviewWorkspaceFileSource("assets/tone.wav")).toMatch(
       /^data:audio\/wav;base64,/u,
     );
-  });
-
-  it("covers status, renamed, binary, diff, and pull-request Git states", () => {
-    const workspaceRoot = "C:\\Projects\\machdoch";
-    const repositories =
-      discoverPreviewWorkspaceGitRepositories(workspaceRoot).repositories;
-    expect(repositories.map((repository) => repository.relativePath)).toEqual([
-      ".",
-      "packages/desktop",
-    ]);
-    const repositoryRoot = repositories[0]?.repositoryRoot ?? workspaceRoot;
-    const overview = loadPreviewWorkspaceGitOverview(
-      workspaceRoot,
-      repositoryRoot,
-    );
-    expect(overview.totalChanges).toBe(overview.changes.length);
-    expect(overview.changes.some((change) => change.conflicted)).toBe(true);
-    const renamed = overview.changes.find((change) => change.originalPath);
-    expect(renamed?.path).toBe("assets/branding/machdoch.svg");
-    expect(
-      loadPreviewWorkspaceGitDiff(
-        workspaceRoot,
-        repositoryRoot,
-        renamed?.path ?? "",
-      ).originalPath,
-    ).toBe("assets/old-logo.svg");
-    expect(
-      loadPreviewWorkspaceGitDiff(
-        workspaceRoot,
-        repositoryRoot,
-        "assets/sample.bin",
-      ).patches[0]?.binary,
-    ).toBe(true);
-    expect(
-      loadPreviewWorkspacePullRequests(workspaceRoot, repositoryRoot).items,
-    ).toHaveLength(1);
-  });
-
-  it("keeps preview status, diffs, and pull requests repository-specific", () => {
-    const workspaceRoot = "C:\\Projects\\machdoch";
-    const repositories =
-      discoverPreviewWorkspaceGitRepositories(workspaceRoot).repositories;
-    const rootRepository = repositories[0]?.repositoryRoot ?? workspaceRoot;
-    const desktopRepository = repositories[1]?.repositoryRoot ?? workspaceRoot;
-    const rootOverview = loadPreviewWorkspaceGitOverview(
-      workspaceRoot,
-      rootRepository,
-    );
-    const desktopOverview = loadPreviewWorkspaceGitOverview(
-      workspaceRoot,
-      desktopRepository,
-    );
-
-    expect(rootOverview.branch).toBe("main");
-    expect(desktopOverview.branch).toBe("feature/desktop-shell");
-    expect(desktopOverview.changes.map((change) => change.path)).toEqual([
-      "src/window.ts",
-    ]);
-    expect(() =>
-      loadPreviewWorkspaceGitDiff(
-        workspaceRoot,
-        rootRepository,
-        "src/window.ts",
-      ),
-    ).toThrow("This file is no longer changed.");
-    expect(
-      loadPreviewWorkspaceGitDiff(
-        workspaceRoot,
-        desktopRepository,
-        "src/window.ts",
-      ).patches[0]?.content,
-    ).toContain("packages/desktop");
-    expect(
-      loadPreviewWorkspacePullRequests(workspaceRoot, rootRepository).items[0]
-        ?.number,
-    ).toBe(128);
-    expect(
-      loadPreviewWorkspacePullRequests(workspaceRoot, desktopRepository)
-        .items[0]?.number,
-    ).toBe(42);
   });
 
   it("keeps terminal sessions isolated when a workspace is removed", () => {

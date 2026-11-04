@@ -1,12 +1,22 @@
 import type {
   WorkspaceRunConfigurationStatus,
   WorkspaceRunFailure,
+  WorkspaceRunInput,
+  WorkspaceRunInputValue,
+  WorkspaceRunInputValues,
   WorkspaceRunLifecycleState,
   WorkspaceRunLogBatch,
   WorkspaceRunLogEntry,
   WorkspaceRunSnapshot,
+  WorkspaceRunType,
 } from "../../../shared/workspace-run.js";
 import { WORKSPACE_RUN_MAX_LOG_ENTRIES } from "../../../shared/workspace-run.js";
+import {
+  resolveWorkspaceRunInputText,
+  workspaceRunDefaultInputValue,
+  workspaceRunInputValueError,
+  workspaceRunTaskInputIds,
+} from "../../../shared/workspace-run-inputs.js";
 
 export interface WorkspaceRunStatePresentation {
   label: string;
@@ -60,12 +70,160 @@ const workspaceRunCompleted = (
   );
 };
 
+export const workspaceRunType = (
+  status: WorkspaceRunConfigurationStatus,
+): WorkspaceRunType => {
+  if (status.configuration.kind === "task") return status.configuration.runType;
+  return status.children.length > 0 &&
+    status.children.every((child) => workspaceRunType(child) === "job")
+    ? "job"
+    : "service";
+};
+
 export const workspaceRunStatusPresentation = (
   status: WorkspaceRunConfigurationStatus,
-): WorkspaceRunStatePresentation =>
-  workspaceRunCompleted(status)
-    ? { label: "Completed", tone: "success" }
-    : workspaceRunStatePresentation(status.state);
+): WorkspaceRunStatePresentation => {
+  if (workspaceRunCompleted(status)) {
+    return { label: "Completed", tone: "success" };
+  }
+  if (workspaceRunType(status) === "job") {
+    if (status.state === "crashed") return { label: "Failed", tone: "danger" };
+    if (status.state === "stopped" && status.startedAt === null) {
+      return { label: "Not run", tone: "idle" };
+    }
+  }
+  return workspaceRunStatePresentation(status.state);
+};
+
+export const formatWorkspaceRunDuration = (milliseconds: number): string => {
+  const seconds = Math.max(0, milliseconds) / 1_000;
+  if (seconds < 10) return `${seconds.toFixed(1)}s`;
+  if (seconds < 60) return `${Math.floor(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${Math.floor(seconds % 60)}s`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+};
+
+export const workspaceRunElapsed = (
+  status: WorkspaceRunConfigurationStatus,
+  now: number,
+): number | null => {
+  if (status.startedAt === null) return null;
+  if (workspaceRunIsActive(status)) return now - status.startedAt;
+  return status.stoppedAt !== null && status.stoppedAt >= status.startedAt
+    ? status.stoppedAt - status.startedAt
+    : null;
+};
+
+export interface WorkspaceRunListGroup {
+  name: string | null;
+  statuses: WorkspaceRunConfigurationStatus[];
+}
+
+export interface WorkspaceRunListSection {
+  runType: WorkspaceRunType;
+  groups: WorkspaceRunListGroup[];
+}
+
+const matchesWorkspaceRunQuery = (
+  status: WorkspaceRunConfigurationStatus,
+  query: string,
+): boolean => {
+  const { configuration } = status;
+  return [
+    configuration.name,
+    configuration.id,
+    configuration.group ?? "",
+    configuration.kind === "task" ? configuration.command : "",
+  ].some((value) => value.toLocaleLowerCase().includes(query));
+};
+
+export const workspaceRunListSections = (
+  statuses: readonly WorkspaceRunConfigurationStatus[],
+  query: string,
+): WorkspaceRunListSection[] => {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  return (["service", "job"] as const).flatMap((runType) => {
+    const groups: WorkspaceRunListGroup[] = [];
+    for (const status of statuses) {
+      if (
+        workspaceRunType(status) !== runType ||
+        (normalizedQuery && !matchesWorkspaceRunQuery(status, normalizedQuery))
+      ) {
+        continue;
+      }
+      const name = status.configuration.group ?? null;
+      const group = groups.find((candidate) => candidate.name === name);
+      if (group) group.statuses.push(status);
+      else groups.push({ name, statuses: [status] });
+    }
+    groups.sort(
+      (left, right) => Number(left.name !== null) - Number(right.name !== null),
+    );
+    return groups.length > 0 ? [{ runType, groups }] : [];
+  });
+};
+
+export const workspaceRunStatusInputs = (
+  status: WorkspaceRunConfigurationStatus,
+  inputs: readonly WorkspaceRunInput[],
+): WorkspaceRunInput[] => {
+  const ids =
+    status.configuration.kind === "task"
+      ? workspaceRunTaskInputIds(status.configuration)
+      : Array.from(
+          new Set(
+            status.children.flatMap((child) =>
+              child.configuration.kind === "task"
+                ? workspaceRunTaskInputIds(child.configuration)
+                : [],
+            ),
+          ),
+        );
+  return ids.flatMap((id) => inputs.filter((input) => input.id === id));
+};
+
+export const workspaceRunInitialInputValues = (
+  inputs: readonly WorkspaceRunInput[],
+): WorkspaceRunInputValues =>
+  Object.fromEntries(
+    inputs.map((input) => [input.id, workspaceRunDefaultInputValue(input)]),
+  );
+
+export const workspaceRunInputErrors = (
+  inputs: readonly WorkspaceRunInput[],
+  values: WorkspaceRunInputValues,
+): Record<string, string> =>
+  Object.fromEntries(
+    inputs.flatMap((input) => {
+      const error = workspaceRunInputValueError(
+        input,
+        values[input.id] ?? workspaceRunDefaultInputValue(input),
+      );
+      return error ? [[input.id, error] as const] : [];
+    }),
+  );
+
+export const workspaceRunCommandPreview = (
+  status: WorkspaceRunConfigurationStatus,
+  inputs: readonly WorkspaceRunInput[],
+  values: WorkspaceRunInputValues,
+): string | null =>
+  status.configuration.kind === "task"
+    ? resolveWorkspaceRunInputText(status.configuration.command, inputs, values)
+    : null;
+
+export const workspaceRunInputValueLabel = (
+  input: WorkspaceRunInput,
+  value: WorkspaceRunInputValue,
+): string => {
+  if (input.type === "boolean") return value === true ? "On" : "Off";
+  if (input.type === "select") {
+    const option = input.options.find((candidate) => candidate.value === value);
+    return option?.label ?? (option?.value || "None");
+  }
+  return String(value) || "Empty";
+};
 
 export const workspaceRunPrimaryStatus = (
   snapshot: WorkspaceRunSnapshot | null,

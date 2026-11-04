@@ -77,6 +77,7 @@ const taskStatus = (
     name: id,
     kind: "task",
     primary: true,
+    runType: "service",
     command,
     workingDirectory: ".",
     environment: { API_TOKEN: "secret-value" },
@@ -114,6 +115,7 @@ const taskStatus = (
       line: "server printed secret-value",
     },
   ],
+  inputValues: {},
   children: [],
 });
 
@@ -198,6 +200,7 @@ describe("workspace run prompt context", () => {
     const serialized = serializeWorkspaceRunContext({
       workspaceRoot: "C:/workspace",
       primaryConfigurationId: "application",
+      inputs: [],
       configurations: [taskStatus("application", "run secret-value")],
     });
 
@@ -220,6 +223,7 @@ describe("workspace run prompt context", () => {
     const snapshot: WorkspaceRunSnapshot = {
       workspaceRoot: "C:/workspace",
       primaryConfigurationId: "application-0",
+      inputs: [],
       configurations: Array.from({ length: 64 }, (_, index) =>
         taskStatus(`application-${index}`, "x".repeat(8_192)),
       ),

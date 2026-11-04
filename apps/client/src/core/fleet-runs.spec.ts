@@ -44,6 +44,7 @@ function task(overrides: Partial<RunTask> = {}): RunTask {
     name: "Web",
     kind: "task",
     primary: true,
+    runType: "service",
     command: `"${process.execPath}" server.cjs`,
     workingDirectory: ".",
     environment: {},
@@ -70,7 +71,7 @@ async function save(
     action: "save",
     commandId: randomUUID(),
     expectedRevision: (await manager.snapshot(root)).revision,
-    document: { schemaVersion: 2, configurations },
+    document: { schemaVersion: 2, inputs: [], configurations },
   });
 }
 async function unusedPort(): Promise<number> {
@@ -116,6 +117,7 @@ describe.sequential("headless project services", () => {
     const persisted = await readFile(path, "utf8");
     expect(JSON.parse(persisted)).toEqual({
       schemaVersion: 2,
+      inputs: [],
       configurations: [current],
     });
     for (const snapshot of snapshots) {
@@ -144,6 +146,7 @@ describe.sequential("headless project services", () => {
     });
     expect(JSON.parse(await readFile(path, "utf8"))).toEqual({
       schemaVersion: 2,
+      inputs: [],
       configurations: [current],
     });
   });
@@ -438,6 +441,66 @@ describe.sequential("headless project services", () => {
           configurations: [task({ urls: [url] })],
         }).success,
       ).toBe(false);
+  });
+  it("validates run inputs and starts jobs with their default arguments", async () => {
+    const env = {
+      type: "select",
+      id: "env",
+      label: "Environment",
+      options: [{ value: "dev" }, { value: "prod" }],
+    };
+    expect(
+      runDocumentSchema.safeParse({
+        schemaVersion: 2,
+        inputs: [env],
+        configurations: [task({ command: "run ${input:missing}" })],
+      }).success,
+    ).toBe(false);
+    expect(
+      runDocumentSchema.safeParse({
+        schemaVersion: 2,
+        inputs: [{ ...env, default: "staging" }],
+        configurations: [task()],
+      }).success,
+    ).toBe(false);
+    expect(
+      runDocumentSchema.safeParse({
+        schemaVersion: 2,
+        configurations: [
+          task({ runType: "job", restartPolicy: { ...task().restartPolicy, onCrash: true } }),
+        ],
+      }).success,
+    ).toBe(false);
+
+    const f = await setup('console.log("target=" + process.argv[2])');
+    await f.manager.execute(f.root, {
+      action: "save",
+      commandId: randomUUID(),
+      expectedRevision: (await f.manager.snapshot(f.root)).revision,
+      document: runDocumentSchema.parse({
+        schemaVersion: 2,
+        inputs: [{ ...env, default: "prod" }],
+        configurations: [
+          task({
+            runType: "job",
+            hotReload: false,
+            command: `"${process.execPath}" server.cjs \${input:env}`,
+          }),
+        ],
+      }),
+    });
+    await f.manager.execute(f.root, {
+      action: "start",
+      commandId: randomUUID(),
+      configurationId: "web",
+    });
+    await vi.waitFor(async () =>
+      expect(
+        (await f.manager.snapshot(f.root)).statuses[0]!.logs.map(
+          (entry) => entry.line,
+        ),
+      ).toContain("target=prod"),
+    );
   });
   it("keeps Unicode logs within the snapshot byte budget", async () => {
     const f = await setup(

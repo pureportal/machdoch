@@ -1,6 +1,6 @@
 use std::io::{self, Cursor, Read};
 
-use crate::workspace_run::model::{RunRestartPolicy, RUN_SCHEMA_VERSION};
+use crate::workspace_run::model::{RunRestartPolicy, RunType, RUN_SCHEMA_VERSION};
 
 use super::{tests::temporary_workspace, *};
 
@@ -9,11 +9,14 @@ const LIMIT: usize = 1024 * 1024;
 fn boundary_document(size: usize, multibyte: bool) -> (RunConfigurationDocument, Vec<u8>) {
     let mut document = RunConfigurationDocument {
         schema_version: RUN_SCHEMA_VERSION,
+        inputs: Vec::new(),
         configurations: (0..8)
             .map(|index| RunConfiguration::Task {
                 id: format!("task-{index}"),
                 name: format!("Task {index}"),
                 primary: index == 0,
+                run_type: RunType::Service,
+                group: None,
                 command: "echo ready".to_string(),
                 working_directory: ".".to_string(),
                 environment: (0..24)

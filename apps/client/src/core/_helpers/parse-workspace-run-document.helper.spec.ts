@@ -69,12 +69,14 @@ describe("run document migration", () => {
         migrated: true,
         document: {
           schemaVersion: 2,
+          inputs: [],
           configurations: [
             {
               id: "server",
               name: "Server",
               kind: "task",
               primary: false,
+              runType: "service",
               command: "echo ready",
               workingDirectory: "apps/server",
               environment: { TOKEN: "stored-value" },
@@ -120,7 +122,7 @@ describe("run document migration", () => {
     ])
       expect(parseWorkspaceRunDocument(source)).toEqual({
         migrated: true,
-        document: { schemaVersion: 2, configurations: [] },
+        document: { schemaVersion: 2, inputs: [], configurations: [] },
       });
     const result = parseWorkspaceRunDocument({
       schemaVersion: 1,

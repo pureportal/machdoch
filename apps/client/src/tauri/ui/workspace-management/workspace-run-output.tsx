@@ -1,6 +1,8 @@
 import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
-import { ArrowDown, TerminalSquare } from "lucide-react";
+import { copyText } from "@machdoch/media-studio/tauri/ui/lib/clipboard.js";
+import { ArrowDown, Check, Copy, TerminalSquare } from "lucide-react";
 import {
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -18,17 +20,19 @@ import {
 
 const OUTPUT_BOTTOM_THRESHOLD = 24;
 const MAX_COMBINED_OUTPUT_ENTRIES = 400;
+const COPIED_FEEDBACK_MS = 1_500;
 
 export const WorkspaceRunOutput = ({
   status,
-  compact,
+  className,
 }: {
   status: WorkspaceRunConfigurationStatus;
-  compact: boolean;
+  className?: string;
 }): JSX.Element => {
   const outputRef = useRef<HTMLDivElement | null>(null);
   const followingRef = useRef(true);
   const [following, setFollowing] = useState(true);
+  const [copied, setCopied] = useState(false);
   const [configurationFilter, setConfigurationFilter] = useState("all");
   const logs = useMemo(() => collectWorkspaceRunLogs(status), [status]);
   const showsTaskLabels = status.configuration.kind === "composite";
@@ -41,6 +45,12 @@ export const WorkspaceRunOutput = ({
     return showsTaskLabels ? logs.slice(-MAX_COMBINED_OUTPUT_ENTRIES) : logs;
   }, [configurationFilter, logs, showsTaskLabels]);
   const latestSequence = visibleLogs.at(-1)?.entry.sequence ?? 0;
+  const copyValue = visibleLogs
+    .map(
+      ({ label, entry }) =>
+        `${showsTaskLabels ? `[${label}] ` : ""}${entry.line}`,
+    )
+    .join("\n");
 
   useLayoutEffect(() => {
     followingRef.current = true;
@@ -62,6 +72,12 @@ export const WorkspaceRunOutput = ({
     if (output && followingRef.current) output.scrollTop = output.scrollHeight;
   }, [latestSequence, logs.length]);
 
+  useEffect(() => {
+    if (!copied) return;
+    const timeout = window.setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
+    return () => window.clearTimeout(timeout);
+  }, [copied]);
+
   const handleScroll = (event: UIEvent<HTMLDivElement>): void => {
     const output = event.currentTarget;
     const nextFollowing =
@@ -82,8 +98,8 @@ export const WorkspaceRunOutput = ({
   };
 
   return (
-    <div className="border-t border-slate-800">
-      <div className="flex h-9 items-center gap-2 px-3 text-xs text-slate-400">
+    <div className={cn("flex min-h-0 flex-col", className)}>
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-slate-800 px-4 text-xs text-slate-400">
         <TerminalSquare aria-hidden="true" className="size-3.5" />
         <span>Output</span>
         {status.configuration.kind === "composite" &&
@@ -107,32 +123,41 @@ export const WorkspaceRunOutput = ({
             ))}
           </select>
         ) : null}
-        {!following ? (
+        <div className="ml-auto flex items-center gap-1">
+          {!following ? (
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              onClick={scrollToLatest}
+            >
+              <ArrowDown aria-hidden="true" className="size-3" />
+              Latest
+            </Button>
+          ) : null}
           <Button
             type="button"
-            size="xs"
+            size="icon-xs"
             variant="ghost"
-            className="ml-auto"
-            onClick={scrollToLatest}
-          >
-            <ArrowDown aria-hidden="true" className="size-3" />
-            Latest
-          </Button>
-        ) : null}
-      </div>
-      <CopyContextMenu
-        values={[
-          {
-            label: "Copy output",
-            value: visibleLogs
-              .map(
-                ({ label, entry }) =>
-                  `${showsTaskLabels ? `[${label}] ` : ""}${entry.line}`,
+            aria-label={copied ? "Output copied" : "Copy output"}
+            disabled={visibleLogs.length === 0}
+            onClick={() =>
+              void copyText(copyValue).then(
+                () => setCopied(true),
+                (cause: unknown) =>
+                  console.error("Failed to copy run output", cause),
               )
-              .join("\n"),
-          },
-        ]}
-      >
+            }
+          >
+            {copied ? (
+              <Check aria-hidden="true" className="text-emerald-300" />
+            ) : (
+              <Copy aria-hidden="true" />
+            )}
+          </Button>
+        </div>
+      </div>
+      <CopyContextMenu values={[{ label: "Copy output", value: copyValue }]}>
         <div
           ref={outputRef}
           role="log"
@@ -140,12 +165,7 @@ export const WorkspaceRunOutput = ({
           aria-live="off"
           tabIndex={0}
           onScroll={handleScroll}
-          className={cn(
-            "app-workspace-run-output cursor-text select-text overflow-y-auto border-t border-slate-800 bg-slate-950 px-3 py-2 font-mono text-[11px] leading-5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/70",
-            compact
-              ? "max-h-[min(13rem,32vh)] min-h-24"
-              : "max-h-[min(22rem,42vh)] min-h-32",
-          )}
+          className="app-workspace-run-output min-h-0 flex-1 cursor-text overflow-y-auto bg-slate-950 px-4 py-2 font-mono text-[11px] leading-5 outline-none select-text focus-visible:ring-2 focus-visible:ring-sky-500/70 focus-visible:ring-inset"
         >
           {visibleLogs.length === 0 ? (
             <span className="text-slate-600">No output yet</span>
@@ -162,10 +182,12 @@ export const WorkspaceRunOutput = ({
                   data-configuration-id={configurationId}
                   data-stream={entry.stream}
                   className={cn(
-                    "min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]",
+                    "min-w-0 [overflow-wrap:anywhere] break-words whitespace-pre-wrap",
                     entry.stream === "system"
-                      ? "text-slate-500"
-                      : "text-slate-300",
+                      ? "text-sky-300/70"
+                      : entry.stream === "stderr"
+                        ? "text-amber-100/80"
+                        : "text-slate-300",
                   )}
                 >
                   {entry.line || " "}

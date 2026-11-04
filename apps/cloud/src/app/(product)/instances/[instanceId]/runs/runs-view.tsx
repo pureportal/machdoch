@@ -245,6 +245,7 @@ export function RunsView({
       name,
       kind: "task",
       primary: document.configurations.length === 0,
+      runType: "service",
       command,
       workingDirectory: directory,
       environment: {},

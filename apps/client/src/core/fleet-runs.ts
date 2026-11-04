@@ -21,6 +21,7 @@ import { terminateProcessTree } from "./_helpers/process-tree.js";
 import { writeFileAtomically } from "./_helpers/write-file-atomically.helper.js";
 import { withCooperativeFileLock } from "./_helpers/with-cooperative-file-lock.helper.js";
 import { parseWorkspaceRunDocument } from "./_helpers/parse-workspace-run-document.helper.js";
+import { resolveWorkspaceRunTaskInputs } from "../shared/workspace-run-inputs.js";
 
 type Status = RunSnapshot["statuses"][number];
 interface Run {
@@ -50,6 +51,7 @@ const digest = (value: string): string =>
   createHash("sha256").update(value).digest("hex");
 const emptyDocument = (): RunDocument => ({
   schemaVersion: 2,
+  inputs: [],
   configurations: [],
 });
 const active = (run: Run): boolean => run.desired || Boolean(run.child);
@@ -224,6 +226,12 @@ export class FleetRunManager {
                   (c): c is RunTask => c.kind === "task" && c.id === id,
                 )!,
               );
+        const launchTasks =
+          command.action === "stop"
+            ? []
+            : tasks.map((task) =>
+                resolveWorkspaceRunTaskInputs(task, document.inputs, {}),
+              );
         if (command.action !== "start") {
           for (const [key, controller] of this.sequences)
             if (key.startsWith(`${root}\0`)) controller.abort();
@@ -236,7 +244,8 @@ export class FleetRunManager {
         }
         if (command.action !== "stop") {
           // Validate the entire group before any child starts.
-          for (const task of tasks) await this.cwd(root, task.workingDirectory);
+          for (const task of launchTasks)
+            await this.cwd(root, task.workingDirectory);
           if (config.kind === "composite" && config.startOrder === "sequence") {
             const key = this.key(root, config.id);
             if (
@@ -247,7 +256,7 @@ export class FleetRunManager {
               this.sequences.set(key, controller);
               const settled = this.startSequence(
                 root,
-                tasks,
+                launchTasks,
                 controller,
               ).finally(() => {
                 if (this.sequences.get(key) === controller)
@@ -259,7 +268,7 @@ export class FleetRunManager {
           } else {
             const started: Run[] = [];
             try {
-              for (const task of tasks) {
+              for (const task of launchTasks) {
                 const run = this.runs.get(this.key(root, task.id));
                 if (!run || !active(run))
                   started.push(await this.start(root, task, true));
@@ -738,8 +747,10 @@ export class FleetRunManager {
             started.push({ run: result, generation: result.generation });
           return result;
         });
-        const deadline = Date.now() + 150000;
+        const job = config.runType === "job";
+        const deadline = job ? Number.POSITIVE_INFINITY : Date.now() + 150000;
         while (
+          job ||
           run.status.state !== "running" ||
           (config.healthCheck && run.status.health !== "Healthy")
         ) {
@@ -748,7 +759,8 @@ export class FleetRunManager {
           if (
             controller.signal.aborted ||
             Date.now() > deadline ||
-            !run.desired
+            !run.desired ||
+            (job && ["stopped", "crashed"].includes(run.status.state))
           )
             throw new Error("A dependency failed to become ready.");
           await new Promise<void>((done) => setTimeout(done, 100));

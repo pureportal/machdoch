@@ -114,4 +114,67 @@ describe.sequential("workspace run tools", () => {
       ),
     ).toBe(false);
   });
+
+  it("forwards run input values when starting a configuration", async () => {
+    let request: Record<string, unknown> | null = null;
+    const server = createServer((socket) => {
+      socket.setEncoding("utf8");
+      let input = "";
+      socket.on("data", (chunk: string) => {
+        input += chunk;
+        const newline = input.indexOf("\n");
+        if (newline < 0) return;
+        request = JSON.parse(input.slice(0, newline)) as Record<
+          string,
+          unknown
+        >;
+        socket.end(`${JSON.stringify({ ok: true, result: {} })}\n`);
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("Expected a TCP test address.");
+    }
+    process.env.MACHDOCH_RUN_CONTROL_ADDRESS = `127.0.0.1:${address.port}`;
+    process.env.MACHDOCH_RUN_CONTROL_TOKEN = "test-token";
+    const definitions = createRunToolDefinitions();
+    const start = definitions.find(
+      (definition) => definition.spec.name === "start_workspace_run",
+    );
+    const stop = definitions.find(
+      (definition) => definition.spec.name === "stop_workspace_run",
+    );
+    if (!start || !stop) throw new Error("Expected lifecycle tools.");
+    const context = {
+      workspaceRoot: "C:/workspace",
+      memory: {
+        sessionEnabled: false,
+        sessionEntries: [],
+        globalEnabled: false,
+        globalEntries: [],
+      },
+    };
+
+    await expect(
+      start.execute({ configurationId: "write-env", inputs: [] }, context),
+    ).rejects.toThrow("Run inputs must map input ids");
+    await start.execute(
+      { configurationId: "write-env", inputs: { env: "prod", dryRun: false } },
+      context,
+    );
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+
+    expect(request).toMatchObject({
+      action: "start",
+      configurationId: "write-env",
+      inputs: { env: "prod", dryRun: false },
+    });
+    expect(Object.keys(stop.spec.inputSchema.properties ?? {})).toEqual([
+      "configurationId",
+    ]);
+  });
 });

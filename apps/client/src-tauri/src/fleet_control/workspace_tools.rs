@@ -77,6 +77,10 @@ pub(crate) async fn invoke(
             return crate::desktop_task::run_live_voice_command(workspace.to_owned(), args["input"].clone())
                 .await.map_err(|error| json!(error));
         }
+        "run_workspace_run_detection_command" => {
+            return crate::desktop_task::run_workspace_run_detection_command(workspace.to_owned())
+                .await.map_err(|error| json!(error));
+        }
         "run_workspace_library_command" => {
             return crate::desktop_task::run_workspace_library_command(workspace.to_owned(), args["input"].clone())
                 .await.map_err(|error| json!(error));
@@ -193,6 +197,11 @@ pub(crate) async fn invoke(
         ),
         "discover_workspace_git_repositories" => serde_json::to_value(
             crate::workspace_git::discover_workspace_git_repositories(workspace.to_owned())
+                .await
+                .map_err(|error| json!(error))?,
+        ),
+        "get_workspace_git_summary" => serde_json::to_value(
+            crate::workspace_git::get_workspace_git_summary(workspace.to_owned())
                 .await
                 .map_err(|error| json!(error))?,
         ),

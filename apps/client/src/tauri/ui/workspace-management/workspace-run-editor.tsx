@@ -21,6 +21,7 @@ import {
   type WorkspaceRunDetectionResult,
 } from "./workspace-run-detection-state";
 import { createWorkspaceRootKey } from "./workspace-management-model";
+import { formatWorkspaceRunDuration } from "./workspace-run-model";
 
 interface WorkspaceRunEditorProps {
   workspaceRoot: string;
@@ -66,6 +67,7 @@ const WorkspaceRunEditorSession = ({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const detectionState = useWorkspaceRunDetectionState(workspaceRoot);
+  const [detectionElapsed, setDetectionElapsed] = useState(0);
   const errorId = useId();
   const dirty = draft !== baseline;
   const busy =
@@ -115,6 +117,17 @@ const WorkspaceRunEditorSession = ({
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    if (detectionState.phase !== "detecting") return;
+    const startedAt = Date.now();
+    setDetectionElapsed(0);
+    const interval = window.setInterval(
+      () => setDetectionElapsed(Date.now() - startedAt),
+      1_000,
+    );
+    return () => window.clearInterval(interval);
+  }, [detectionState.phase, detectionState.revision]);
 
   const detect = (): void => {
     if (savingRef.current || busy || dirty) return;
@@ -175,7 +188,9 @@ const WorkspaceRunEditorSession = ({
             ) : (
               <Sparkles aria-hidden="true" className="size-4" />
             )}
-            {busy === "detect" ? "Detecting" : "Detect"}
+            {busy === "detect"
+              ? `Detecting ${formatWorkspaceRunDuration(detectionElapsed)}`
+              : "Detect"}
           </Button>
           <Button
             type="button"
@@ -213,6 +228,18 @@ const WorkspaceRunEditorSession = ({
                 <div key={configuration.id} className="grid gap-1">
                   <div className="font-medium text-slate-200">
                     {configuration.name}
+                    <span className="ml-2 font-normal text-slate-500">
+                      {[
+                        configuration.kind === "composite"
+                          ? "Group"
+                          : configuration.runType === "job"
+                            ? "Job"
+                            : "Service",
+                        configuration.group,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
                     {configuration.primary ? (
                       <span className="ml-2 text-sky-300">Default</span>
                     ) : null}

@@ -95,6 +95,7 @@ describe("resolveConversationContext", () => {
       workspaceRun: {
         workspaceRoot: "C:/workspace",
         primaryConfigurationId: null,
+        inputs: [],
         configurations: [],
       },
       sessionMemoryEnabled: true,
@@ -387,6 +388,7 @@ describe("createChatSession", () => {
       workspaceRun: {
         workspaceRoot: "C:/workspace",
         primaryConfigurationId: null,
+        inputs: [],
         configurations: [],
       },
       uiControl: {
@@ -407,6 +409,7 @@ describe("createChatSession", () => {
       workspaceRun: {
         workspaceRoot: "C:/workspace",
         primaryConfigurationId: null,
+        inputs: [],
         configurations: [],
       },
       sessionMemoryEnabled: false,

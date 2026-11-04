@@ -15,6 +15,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::Semaphore;
 
+#[cfg(test)]
+mod action_tests;
+mod actions;
+mod stack;
+mod summary;
+
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
@@ -22,6 +28,8 @@ use std::os::windows::process::CommandExt;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 const MAX_GIT_ENTRIES: usize = 300;
+const MAX_RECENT_COMMITS: usize = 30;
+const MAX_STASH_ENTRIES: usize = 50;
 const MAX_GIT_DIFF_BYTES: usize = 128 * 1024;
 const MAX_GIT_ERROR_BYTES: usize = 32 * 1024;
 const MAX_GIT_COMMAND_BYTES: usize = 32 * 1024 * 1024;
@@ -99,6 +107,20 @@ pub struct WorkspaceGitBranch {
     current: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     upstream: Option<String>,
+    ahead: u64,
+    behind: u64,
+    upstream_gone: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent: Option<String>,
+    needs_restack: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceGitStash {
+    reference: String,
+    message: String,
+    created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -184,11 +206,13 @@ pub struct WorkspaceGitOverview {
     local_branches: Vec<WorkspaceGitBranch>,
     remote_branches: Vec<WorkspaceGitBranch>,
     remotes: Vec<WorkspaceGitRemote>,
+    recent_commits: Vec<WorkspaceGitCommit>,
+    stashes: Vec<WorkspaceGitStash>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    head_commit: Option<WorkspaceGitCommit>,
+    operation: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct WorkspaceGitActionRequest {
     workspace_root: String,
@@ -197,6 +221,14 @@ pub struct WorkspaceGitActionRequest {
     branch_name: Option<String>,
     remote_name: Option<String>,
     remote_url: Option<String>,
+    start_point: Option<String>,
+    parent_branch: Option<String>,
+    paths: Option<Vec<String>>,
+    message: Option<String>,
+    stash_ref: Option<String>,
+    include_untracked: Option<bool>,
+    force: Option<bool>,
+    draft: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -224,6 +256,9 @@ fn configured_command(program: &str, args: &[&str], cwd: &Path) -> Command {
         .env("GIT_OPTIONAL_LOCKS", "0")
         .env("GCM_INTERACTIVE", "Never")
         .env("GH_PROMPT_DISABLED", "1")
+        .env("GIT_EDITOR", "true")
+        .env("GIT_SEQUENCE_EDITOR", "true")
+        .env("GIT_MERGE_AUTOEDIT", "no")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -262,7 +297,7 @@ fn command_output_bounded(
     stdout_limit: usize,
 ) -> Result<Output, String> {
     let mut command = configured_command(program, args, cwd);
-    let mut child = SupervisedChild::spawn_with_required_isolation(&mut command)
+    let mut child = SupervisedChild::spawn_with_background_priority(&mut command)
         .map_err(|error| format!("Failed to run {program}: {error}"))?;
     let stdout = child
         .stdout
@@ -850,14 +885,39 @@ fn parse_branches(output: &str, remote: bool) -> Vec<WorkspaceGitBranch> {
                     return None;
                 }
             }
+            let (ahead, behind, upstream_gone) =
+                parse_upstream_track(parts.next().unwrap_or_default());
             Some(WorkspaceGitBranch {
                 name,
                 commit,
                 current: marker == "*",
                 upstream: (!upstream.is_empty()).then(|| upstream.to_string()),
+                ahead,
+                behind,
+                upstream_gone,
+                parent: None,
+                needs_restack: false,
             })
         })
         .collect()
+}
+
+fn parse_upstream_track(track: &str) -> (u64, u64, bool) {
+    let track = track.trim();
+    if track == "gone" {
+        return (0, 0, true);
+    }
+    let mut ahead = 0;
+    let mut behind = 0;
+    for part in track.split(',') {
+        let mut words = part.split_whitespace();
+        match (words.next(), words.next().and_then(|count| count.parse().ok())) {
+            (Some("ahead"), Some(count)) => ahead = count,
+            (Some("behind"), Some(count)) => behind = count,
+            _ => {}
+        }
+    }
+    (ahead, behind, false)
 }
 
 fn parse_remotes(output: &str) -> Vec<WorkspaceGitRemote> {
@@ -884,15 +944,64 @@ fn parse_remotes(output: &str) -> Vec<WorkspaceGitRemote> {
         .collect()
 }
 
-fn parse_head_commit(output: &str) -> Option<WorkspaceGitCommit> {
-    let mut parts = output.split('\u{1f}');
-    Some(WorkspaceGitCommit {
-        hash: parts.next()?.to_string(),
-        short_hash: parts.next()?.to_string(),
-        subject: parts.next()?.to_string(),
-        author: parts.next()?.to_string(),
-        authored_at: parts.next()?.to_string(),
-    })
+fn parse_commits(output: &str) -> Vec<WorkspaceGitCommit> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split('\u{1f}');
+            Some(WorkspaceGitCommit {
+                hash: parts.next()?.to_string(),
+                short_hash: parts.next()?.to_string(),
+                subject: parts.next()?.to_string(),
+                author: parts.next()?.to_string(),
+                authored_at: parts.next()?.to_string(),
+            })
+        })
+        .collect()
+}
+
+fn parse_stashes(output: &str) -> Vec<WorkspaceGitStash> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.split('\u{1f}');
+            Some(WorkspaceGitStash {
+                reference: parts.next()?.to_string(),
+                message: parts.next()?.to_string(),
+                created_at: parts.next()?.to_string(),
+            })
+        })
+        .take(MAX_STASH_ENTRIES)
+        .collect()
+}
+
+fn command_succeeds(program: &str, args: &[&str], cwd: &Path) -> Result<bool, String> {
+    let output = command_output(program, args, cwd)?;
+    match output.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => Err(output_error(program, args, &output)),
+    }
+}
+
+fn current_operation(repository: &Path) -> Option<String> {
+    let markers = [
+        ("rebase", "rebase-merge"),
+        ("rebase", "rebase-apply"),
+        ("merge", "MERGE_HEAD"),
+        ("cherry-pick", "CHERRY_PICK_HEAD"),
+        ("revert", "REVERT_HEAD"),
+    ];
+    let mut arguments = vec!["rev-parse"];
+    for (_, marker) in markers {
+        arguments.extend(["--git-path", marker]);
+    }
+    let output = run_optional("git", &arguments, repository)?;
+    output
+        .lines()
+        .zip(markers)
+        .find(|(path, _)| repository.join(path.trim()).exists())
+        .map(|(_, (operation, _))| operation.to_string())
 }
 
 fn pull_request_overview(repository: &Path, has_remote: bool) -> WorkspacePullRequestOverview {
@@ -985,7 +1094,7 @@ fn load_overview(
                 "git",
                 &[
                     "for-each-ref",
-                    "--format=%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(HEAD)%09%(refname)",
+                    "--format=%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(HEAD)%09%(refname)%09%(upstream:track,nobracket)",
                     "refs/heads",
                     "refs/remotes",
                 ],
@@ -993,13 +1102,25 @@ fn load_overview(
             )
         });
         let remotes_worker = scope.spawn(|| run_required("git", &["remote", "-v"], &repository));
-        let head_worker = scope.spawn(|| {
+        let commits_worker = scope.spawn(|| {
             run_optional(
                 "git",
-                &["log", "-1", "--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI"],
+                &[
+                    "log",
+                    &format!("-{MAX_RECENT_COMMITS}"),
+                    "--format=%H%x1f%h%x1f%s%x1f%an%x1f%aI",
+                ],
                 &repository,
             )
         });
+        let stash_worker = scope.spawn(|| {
+            run_optional(
+                "git",
+                &["stash", "list", "--format=%gd%x1f%gs%x1f%cI"],
+                &repository,
+            )
+        });
+        let operation_worker = scope.spawn(|| current_operation(&repository));
         let branch = run_optional(
             "git",
             &["symbolic-ref", "--quiet", "--short", "HEAD"],
@@ -1049,19 +1170,34 @@ fn load_overview(
                     commit: "unborn".to_string(),
                     current: true,
                     upstream: upstream.clone(),
+                    ahead: 0,
+                    behind: 0,
+                    upstream_gone: false,
+                    parent: None,
+                    needs_restack: false,
                 },
             );
         }
+        stack::annotate_branches(&repository, &mut local_branches);
         let remote_branches = parse_branches(&branch_output, true);
         let remotes = parse_remotes(
             &remotes_worker
                 .join()
                 .map_err(|_| "Git remote worker stopped unexpectedly.".to_string())??,
         );
-        let head_commit = head_worker
+        let recent_commits = commits_worker
             .join()
             .map_err(|_| "Git commit worker stopped unexpectedly.".to_string())?
-            .and_then(|value| parse_head_commit(&value));
+            .map(|value| parse_commits(&value))
+            .unwrap_or_default();
+        let stashes = stash_worker
+            .join()
+            .map_err(|_| "Git stash worker stopped unexpectedly.".to_string())?
+            .map(|value| parse_stashes(&value))
+            .unwrap_or_default();
+        let operation = operation_worker
+            .join()
+            .map_err(|_| "Git operation worker stopped unexpectedly.".to_string())?;
         let status_output = status_worker
             .join()
             .map_err(|_| "Git status worker stopped unexpectedly.".to_string())??;
@@ -1093,45 +1229,11 @@ fn load_overview(
             local_branches,
             remote_branches,
             remotes,
-            head_commit,
+            recent_commits,
+            stashes,
+            operation,
         })
     })
-}
-
-fn validate_branch_name(branch_name: Option<&str>, repository: &Path) -> Result<String, String> {
-    let name = branch_name.unwrap_or_default().trim();
-    if name.is_empty() || name.chars().count() > 255 || name.chars().any(char::is_control) {
-        return Err("Enter a valid branch name.".to_string());
-    }
-    run_required("git", &["check-ref-format", "--branch", name], repository)
-        .map_err(|_| "Enter a valid branch name.".to_string())?;
-    Ok(name.to_string())
-}
-
-fn validate_remote_name(remote_name: Option<&str>) -> Result<String, String> {
-    let name = remote_name.unwrap_or_default().trim();
-    if name.is_empty()
-        || name.chars().count() > 100
-        || name.starts_with('-')
-        || !name.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-')
-        })
-    {
-        return Err("Enter a valid remote name.".to_string());
-    }
-    Ok(name.to_string())
-}
-
-fn validate_remote_url(remote_url: Option<&str>) -> Result<String, String> {
-    let url = remote_url.unwrap_or_default().trim();
-    if url.is_empty()
-        || url.starts_with('-')
-        || url.chars().count() > 2_000
-        || url.chars().any(char::is_control)
-    {
-        return Err("Enter a valid remote URL.".to_string());
-    }
-    Ok(url.to_string())
 }
 
 #[tauri::command]
@@ -1139,6 +1241,13 @@ pub async fn discover_workspace_git_repositories(
     workspace_root: String,
 ) -> Result<WorkspaceGitRepositoryDiscovery, String> {
     run_git_read(move || discover_repositories(&workspace_root)).await
+}
+
+#[tauri::command]
+pub async fn get_workspace_git_summary(
+    workspace_root: String,
+) -> Result<Option<summary::WorkspaceGitSummary>, String> {
+    run_git_read(move || summary::load_summary(&workspace_root)).await
 }
 
 #[tauri::command]
@@ -1168,57 +1277,11 @@ pub async fn get_workspace_pull_requests(
     .await
 }
 
-fn execute_workspace_git_action(
-    request: WorkspaceGitActionRequest,
-) -> Result<WorkspaceGitOverview, String> {
-    let (_, repository) = repository_context(&request.workspace_root, &request.repository_root)?;
-    match request.action.as_str() {
-        "fetch" => {
-            run_required("git", &["fetch", "--all", "--prune"], &repository)?;
-        }
-        "pull" => {
-            run_required("git", &["pull", "--ff-only"], &repository)?;
-        }
-        "checkout" => {
-            let branch = validate_branch_name(request.branch_name.as_deref(), &repository)?;
-            run_required("git", &["switch", &branch], &repository)?;
-        }
-        "checkout-remote" => {
-            let branch = request.branch_name.as_deref().unwrap_or_default().trim();
-            if branch.is_empty() || branch.starts_with('-') {
-                return Err("Select a valid remote branch.".to_string());
-            }
-            run_required(
-                "git",
-                &["check-ref-format", &format!("refs/remotes/{branch}")],
-                &repository,
-            )
-            .map_err(|_| "Select a valid remote branch.".to_string())?;
-            run_required("git", &["switch", "--track", branch], &repository)?;
-        }
-        "create-branch" => {
-            let branch = validate_branch_name(request.branch_name.as_deref(), &repository)?;
-            run_required("git", &["switch", "-c", &branch], &repository)?;
-        }
-        "add-remote" => {
-            let name = validate_remote_name(request.remote_name.as_deref())?;
-            let url = validate_remote_url(request.remote_url.as_deref())?;
-            run_required("git", &["remote", "add", &name, &url], &repository)?;
-        }
-        "remove-remote" => {
-            let name = validate_remote_name(request.remote_name.as_deref())?;
-            run_required("git", &["remote", "remove", &name], &repository)?;
-        }
-        _ => return Err("Unsupported workspace Git action.".to_string()),
-    }
-    load_overview(&request.workspace_root, &request.repository_root)
-}
-
 #[tauri::command]
 pub async fn run_workspace_git_action(
     request: WorkspaceGitActionRequest,
 ) -> Result<WorkspaceGitOverview, String> {
-    tauri::async_runtime::spawn_blocking(move || execute_workspace_git_action(request))
+    tauri::async_runtime::spawn_blocking(move || actions::execute_workspace_git_action(request))
         .await
         .map_err(|error| format!("The workspace Git action stopped unexpectedly: {error}"))?
 }
@@ -1228,10 +1291,10 @@ mod tests {
     use std::{env, fs, time::SystemTime};
 
     use super::{
-        command_output, discover_repositories, execute_workspace_git_action, load_diff,
-        load_overview, parse_branches, parse_remotes, parse_status, repository_context,
-        run_required, validate_remote_url, WorkspaceGitActionRequest, WorkspaceGitDiffRequest,
-        MAX_GIT_DIFF_BYTES, MAX_GIT_ENTRIES,
+        actions::{execute_workspace_git_action, validate_remote_url},
+        command_output, discover_repositories, load_diff, load_overview, parse_branches,
+        parse_remotes, parse_status, repository_context, run_required, WorkspaceGitActionRequest,
+        WorkspaceGitDiffRequest, MAX_GIT_DIFF_BYTES, MAX_GIT_ENTRIES,
     };
 
     #[test]
@@ -1505,8 +1568,7 @@ mod tests {
             repository_root: beta_root,
             action: "create-branch".to_string(),
             branch_name: Some("feature/beta-only".to_string()),
-            remote_name: None,
-            remote_url: None,
+            ..Default::default()
         })
         .expect("the beta branch action should succeed");
         assert_eq!(action_overview.branch, "feature/beta-only");
@@ -1718,10 +1780,16 @@ mod tests {
 
     #[test]
     fn branch_and_remote_parsers_preserve_repository_data() {
-        let branches = parse_branches("main\tabc123\torigin/main\t*\nfeature\tdef456\t\t\n", false);
+        let branches = parse_branches(
+            "main\tabc123\torigin/main\t*\trefs/heads/main\tahead 2, behind 1\nfeature\tdef456\torigin/feature\t\trefs/heads/feature\tgone\n",
+            false,
+        );
         assert_eq!(branches.len(), 2);
         assert!(branches[0].current);
         assert_eq!(branches[0].upstream.as_deref(), Some("origin/main"));
+        assert_eq!((branches[0].ahead, branches[0].behind), (2, 1));
+        assert!(!branches[0].upstream_gone);
+        assert!(branches[1].upstream_gone);
         let remotes = parse_remotes(
             "origin https://example.test/repo.git (fetch)\norigin ssh://example.test/repo.git (push)\n",
         );
@@ -1750,8 +1818,7 @@ mod tests {
             repository_root: root.display().to_string(),
             action: "create-branch".to_string(),
             branch_name: Some("feature/workspace-ui".to_string()),
-            remote_name: None,
-            remote_url: None,
+            ..Default::default()
         })
         .expect("branch creation should succeed");
 

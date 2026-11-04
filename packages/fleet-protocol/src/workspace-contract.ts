@@ -28,6 +28,11 @@ export interface WorkspaceGitBranch {
   commit: string;
   current: boolean;
   upstream?: string;
+  ahead: number;
+  behind: number;
+  upstreamGone: boolean;
+  parent?: string;
+  needsRestack: boolean;
 }
 
 export interface WorkspaceGitRemote {
@@ -42,6 +47,24 @@ export interface WorkspaceGitCommit {
   subject: string;
   author: string;
   authoredAt: string;
+}
+
+export interface WorkspaceGitStash {
+  reference: string;
+  message: string;
+  createdAt: string;
+}
+
+export type WorkspaceGitOperation = "merge" | "rebase" | "cherry-pick" | "revert";
+
+export interface WorkspaceGitSummary {
+  branch: string;
+  detached: boolean;
+  upstream?: string;
+  ahead: number;
+  behind: number;
+  changes: number;
+  conflicts: number;
 }
 
 export interface WorkspacePullRequest {
@@ -93,17 +116,54 @@ export interface WorkspaceGitOverview {
   localBranches: WorkspaceGitBranch[];
   remoteBranches: WorkspaceGitBranch[];
   remotes: WorkspaceGitRemote[];
-  headCommit?: WorkspaceGitCommit;
+  recentCommits: WorkspaceGitCommit[];
+  stashes: WorkspaceGitStash[];
+  operation?: WorkspaceGitOperation;
 }
 
 export type WorkspaceGitAction =
   | "fetch"
   | "pull"
+  | "push"
   | "checkout"
   | "checkout-remote"
   | "create-branch"
+  | "create-stacked-branch"
+  | "stack-branch"
+  | "unstack-branch"
+  | "delete-branch"
+  | "restack"
+  | "submit-pull-requests"
+  | "merge"
+  | "rebase"
+  | "continue-operation"
+  | "abort-operation"
+  | "skip-operation"
+  | "stage"
+  | "unstage"
+  | "stage-all"
+  | "unstage-all"
+  | "commit"
+  | "stash-push"
+  | "stash-apply"
+  | "stash-pop"
+  | "stash-drop"
   | "add-remote"
   | "remove-remote";
+
+export interface WorkspaceGitActionOptions {
+  branchName?: string;
+  startPoint?: string;
+  parentBranch?: string;
+  remoteName?: string;
+  remoteUrl?: string;
+  paths?: string[];
+  message?: string;
+  stashRef?: string;
+  includeUntracked?: boolean;
+  force?: boolean;
+  draft?: boolean;
+}
 
 export type WorkspaceEntryKind = "file" | "directory";
 

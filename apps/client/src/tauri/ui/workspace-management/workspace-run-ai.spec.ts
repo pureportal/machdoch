@@ -1,25 +1,30 @@
 import type { WorkspaceRunConfigurationDocument } from "../../../shared/workspace-run.js";
 import {
-  createWorkspaceRunDetectionTask,
-  extractWorkspaceRunDetection,
   generateWorkspaceRunDetection,
+  readWorkspaceRunDetectionResponse,
   validateWorkspaceRunDetections,
 } from "./workspace-run-ai";
 
 const internalTask = vi.hoisted(() => ({
-  runInternalDesktopTask: vi.fn(),
+  loadInternalTaskModelSelection: vi.fn(),
+}));
+const runtime = vi.hoisted(() => ({
+  runWorkspaceRunDetection: vi.fn(),
 }));
 
 vi.mock("../internal-task-model", () => internalTask);
+vi.mock("../runtime", () => runtime);
 
 const document: WorkspaceRunConfigurationDocument = {
   schemaVersion: 2,
+  inputs: [],
   configurations: [
     {
       id: "server",
       name: "Server",
       kind: "task",
       primary: true,
+      runType: "service",
       command: "pnpm run dev",
       workingDirectory: "apps/server",
       environment: {},
@@ -37,56 +42,41 @@ const document: WorkspaceRunConfigurationDocument = {
   ],
 };
 
+const detection = {
+  configurationId: "server",
+  confidence: "high" as const,
+  evidence: ["apps/server/package.json defines the dev script."],
+  uncertainFields: ["ports"],
+};
+
 describe("workspace run AI detection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("requires evidence-based read-only workspace inspection", () => {
-    const task = createWorkspaceRunDetectionTask();
-
-    expect(task).toContain("read-only workspace tools");
-    expect(task).toContain("Do not execute project commands");
-    expect(task).toContain("Do not select from or assume a fixed catalog");
-    expect(task).toContain("workingDirectory must be relative");
-    expect(task).toContain("Set primary to true on exactly one configuration");
-    expect(task).toContain("Do not choose it from configuration names");
-    expect(task).toContain('"schemaVersion":2');
-  });
-
-  it("extracts tagged JSON and rejects malformed output", () => {
-    const result = extractWorkspaceRunDetection(
-      `<machdoch_workspace_run_detection>${JSON.stringify({
-        document,
-        detections: [
-          {
-            configurationId: "server",
-            confidence: "high",
-            evidence: ["apps/server/package.json defines the dev script."],
-            uncertainFields: ["ports"],
-          },
-        ],
-      })}</machdoch_workspace_run_detection>`,
-    );
+  it("reads the detection response and rejects malformed metadata", () => {
+    const result = readWorkspaceRunDetectionResponse({
+      document,
+      detections: [detection],
+    });
 
     expect(JSON.parse(result.documentJson)).toEqual(document);
-    expect(result.detections[0]?.configurationId).toBe("server");
+    expect(result.detections).toEqual([detection]);
+    expect(() => readWorkspaceRunDetectionResponse({ detections: [] })).toThrow(
+      "configuration document",
+    );
     expect(() =>
-      extractWorkspaceRunDetection(
-        "<machdoch_workspace_run_detection>{</machdoch_workspace_run_detection>",
-      ),
-    ).toThrow("invalid JSON");
+      readWorkspaceRunDetectionResponse({
+        document,
+        detections: [{ ...detection, confidence: "low" }],
+      }),
+    ).toThrow("invalid detection metadata");
   });
 
   it("requires detection metadata to match every generated configuration", () => {
     expect(() =>
       validateWorkspaceRunDetections(document, [
-        {
-          configurationId: "other",
-          confidence: "medium",
-          evidence: [],
-          uncertainFields: [],
-        },
+        { ...detection, configurationId: "other" },
       ]),
     ).toThrow("does not match");
   });
@@ -101,51 +91,35 @@ describe("workspace run AI detection", () => {
     };
 
     expect(() =>
-      validateWorkspaceRunDetections(withoutPrimary, [
-        {
-          configurationId: "server",
-          confidence: "high",
-          evidence: [],
-          uncertainFields: [],
-        },
-      ]),
+      validateWorkspaceRunDetections(withoutPrimary, [detection]),
     ).toThrow("exactly one primary");
   });
 
-  it("runs the AI inspection in the active workspace and Ask mode", async () => {
-    const response = `<machdoch_workspace_run_detection>${JSON.stringify({
+  it("runs a single detection command with the configured internal model", async () => {
+    internalTask.loadInternalTaskModelSelection.mockResolvedValue({
+      provider: "openai",
+      model: "gpt-5.4-mini",
+      reasoning: "low",
+    });
+    runtime.runWorkspaceRunDetection.mockResolvedValue({
       document,
-      detections: [
-        {
-          configurationId: "server",
-          confidence: "high",
-          evidence: ["apps/server/package.json"],
-          uncertainFields: [],
-        },
-      ],
-    })}</machdoch_workspace_run_detection>`;
-    internalTask.runInternalDesktopTask.mockResolvedValue({
-      execution: {
-        task: "detect",
-        mode: "ask",
-        status: "executed",
-        summary: response,
-        executedTools: ["files"],
-        outputSections: [],
-      },
+      detections: [detection],
     });
 
-    await generateWorkspaceRunDetection("C:/active-workspace");
+    const result = await generateWorkspaceRunDetection("C:/active-workspace");
 
-    expect(internalTask.runInternalDesktopTask).toHaveBeenCalledWith(
+    expect(runtime.runWorkspaceRunDetection).toHaveBeenCalledWith(
       "C:/active-workspace",
-      expect.stringContaining("Inspect the active workspace"),
-      expect.objectContaining({
-        mode: "ask",
-      }),
     );
-    expect(
-      internalTask.runInternalDesktopTask.mock.calls[0]?.[2],
-    ).not.toHaveProperty("sessionId");
+    expect(result.detections).toEqual([detection]);
+  });
+
+  it("asks for an internal model before detecting", async () => {
+    internalTask.loadInternalTaskModelSelection.mockResolvedValue(null);
+
+    await expect(
+      generateWorkspaceRunDetection("C:/active-workspace"),
+    ).rejects.toThrow("Choose an internal task model");
+    expect(runtime.runWorkspaceRunDetection).not.toHaveBeenCalled();
   });
 });

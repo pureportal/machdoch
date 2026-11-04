@@ -84,6 +84,7 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
     args.command !== "skills" &&
     args.command !== "mcp-apps" &&
     args.command !== "live-voice" &&
+    args.command !== "run-detection" &&
     args.command !== "speech" &&
     args.command !== "cloud" &&
     !isInternalProviderProcess &&
@@ -106,6 +107,14 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
     case "cloud": {
       const { runCloudCommand } = await import("./_helpers/cli-cloud-commands.js");
       await runCloudCommand(args);
+      return;
+    }
+    case "run-detection": {
+      const { detectWorkspaceRunConfigurations } =
+        await import("../core/workspace-run-detection.js");
+      writeStdoutLine(
+        JSON.stringify(await detectWorkspaceRunConfigurations(args.workspaceRoot)),
+      );
       return;
     }
     case "live-voice": {

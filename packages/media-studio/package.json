@@ -89,6 +89,7 @@
     "./tauri/ui/components/ui/notification.js": "./src/tauri/ui/components/ui/notification.tsx",
     "./tauri/ui/components/ui/popover.js": "./src/tauri/ui/components/ui/popover.tsx",
     "./tauri/ui/components/ui/search-field.js": "./src/tauri/ui/components/ui/search-field.tsx",
+    "./tauri/ui/components/ui/searchable-select.js": "./src/tauri/ui/components/ui/searchable-select.tsx",
     "./tauri/ui/components/ui/submit-shortcut.js": "./src/tauri/ui/components/ui/submit-shortcut.tsx",
     "./tauri/ui/components/ui/textarea.js": "./src/tauri/ui/components/ui/textarea.tsx",
     "./tauri/ui/components/ui/tooltip.js": "./src/tauri/ui/components/ui/tooltip.tsx",

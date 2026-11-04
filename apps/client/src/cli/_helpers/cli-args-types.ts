@@ -10,6 +10,7 @@ import type { TaskDeterministicAction } from "../../core/types.js";
 
 export type CommandName =
   | "live-voice"
+  | "run-detection"
   | "skills"
   | "mcp-apps"
   | "knowledge"

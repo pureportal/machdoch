@@ -1,4 +1,8 @@
-import type { InstructionWorkspaceView } from "../runtime";
+import { instructionTagRuleMatches } from "@machdoch/fleet-protocol/instruction-tags";
+import type {
+  InstructionProfileView,
+  InstructionWorkspaceView,
+} from "../runtime";
 
 export interface ManagedWorkspaceView {
   key: string;
@@ -94,3 +98,11 @@ export const getManagedWorkspaceName = (
 export const getManagedWorkspaceTags = (
   workspace: ManagedWorkspaceView,
 ): string[] => workspace.instructionWorkspace?.tags ?? [];
+
+export const profileIsAutomaticForWorkspace = (
+  profile: InstructionProfileView,
+  workspace: InstructionWorkspaceView | null,
+): boolean =>
+  workspace !== null &&
+  profile.match !== undefined &&
+  instructionTagRuleMatches(profile.match, workspace.tags);

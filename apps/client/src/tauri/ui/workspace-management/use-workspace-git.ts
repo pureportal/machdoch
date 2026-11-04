@@ -5,6 +5,7 @@ import {
   loadWorkspacePullRequests,
   runWorkspaceGitAction,
   type WorkspaceGitAction,
+  type WorkspaceGitActionOptions,
   type WorkspaceGitOverview,
   type WorkspaceGitRepositoryDiscovery,
   type WorkspacePullRequestOverview,
@@ -12,467 +13,491 @@ import {
 import {
   selectWorkspaceGitRepository,
   workspaceGitActionChangesFiles,
-  workspaceGitOverviewForSelection,
+  workspaceGitActionChangesPullRequests,
+  workspaceGitActionDoneLabel,
 } from "./workspace-git-model";
 import {
-  startExclusiveWorkspaceOperation,
-  type WorkspaceOperationLock,
-} from "./workspace-operation-lock";
-type GitSection = "status" | "branches" | "remotes" | "pull-requests";
+  workspaceGitSummaryFromOverview,
+  workspaceGitSummaryStore,
+} from "./workspace-git-summary-store";
+import { createWorkspaceRootKey } from "./workspace-management-model";
+import {
+  readWorkspaceViewPreferences,
+  withRememberedRepository,
+  writeWorkspaceViewPreferences,
+} from "./workspace-view-preferences";
+
+interface WorkspaceGitViewState {
+  workspaceKey: string | null;
+  repositories: WorkspaceGitRepositoryDiscovery | null;
+  repositoriesError: string | null;
+  repositoryRoot: string | null;
+  overview: WorkspaceGitOverview | null;
+  loading: boolean;
+  error: string | null;
+  pullRequests: WorkspacePullRequestOverview | null;
+  pullRequestsLoading: boolean;
+  pullRequestsError: string | null;
+}
+
+export interface WorkspaceGitFeedback {
+  id: number;
+  tone: "success" | "error";
+  text: string;
+  action: WorkspaceGitAction;
+  options: WorkspaceGitActionOptions;
+}
+
+interface ScopedValue<T> {
+  workspaceKey: string;
+  repositoryRoot: string;
+  value: T;
+}
+
+const FOCUS_REFRESH_INTERVAL_MS = 4_000;
+
+const discoveryCache = new Map<string, WorkspaceGitRepositoryDiscovery>();
+const overviewCache = new Map<string, WorkspaceGitOverview>();
+const pullRequestCache = new Map<string, WorkspacePullRequestOverview>();
+
+const repositoryKey = (repositoryRoot: string): string =>
+  createWorkspaceRootKey(repositoryRoot);
+
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const initialRepositoryRoot = (
+  workspaceRoot: string,
+  workspaceKey: string,
+  discovery: WorkspaceGitRepositoryDiscovery | undefined,
+): string => {
+  const remembered =
+    readWorkspaceViewPreferences().repositoryRoots[workspaceKey];
+  if (!discovery) return remembered ?? workspaceRoot;
+  return (
+    selectWorkspaceGitRepository(
+      discovery.repositories,
+      remembered,
+      workspaceRoot,
+    )?.repositoryRoot ?? workspaceRoot
+  );
+};
+
+const createInitialState = (
+  workspaceRoot: string | null,
+): WorkspaceGitViewState => {
+  if (!workspaceRoot) {
+    return {
+      workspaceKey: null,
+      repositories: null,
+      repositoriesError: null,
+      repositoryRoot: null,
+      overview: null,
+      loading: false,
+      error: null,
+      pullRequests: null,
+      pullRequestsLoading: false,
+      pullRequestsError: null,
+    };
+  }
+  const workspaceKey = createWorkspaceRootKey(workspaceRoot);
+  const repositories = discoveryCache.get(workspaceKey);
+  const repositoryRoot = initialRepositoryRoot(
+    workspaceRoot,
+    workspaceKey,
+    repositories,
+  );
+  return {
+    workspaceKey,
+    repositories: repositories ?? null,
+    repositoriesError: null,
+    repositoryRoot,
+    overview: overviewCache.get(repositoryKey(repositoryRoot)) ?? null,
+    loading: true,
+    error: null,
+    pullRequests: pullRequestCache.get(repositoryKey(repositoryRoot)) ?? null,
+    pullRequestsLoading: false,
+    pullRequestsError: null,
+  };
+};
+
 export function useWorkspaceGit(
   workspaceRoot: string | null,
-  workspaceToolsDirty: boolean,
-  onFilesChanged: () => void,
+  {
+    filesDirty = false,
+    onFilesChanged,
+  }: { filesDirty?: boolean; onFilesChanged?: () => void } = {},
 ) {
-  const [gitSection, setGitSection] = useState<GitSection>("status");
-  const [gitOverview, setGitOverview] = useState<WorkspaceGitOverview | null>(
-    null,
+  const workspaceKey = workspaceRoot
+    ? createWorkspaceRootKey(workspaceRoot)
+    : null;
+  const [state, setState] = useState(() => createInitialState(workspaceRoot));
+  let current = state;
+  if (state.workspaceKey !== workspaceKey) {
+    current = createInitialState(workspaceRoot);
+    setState(current);
+  }
+  const [pendingAction, setPendingAction] =
+    useState<ScopedValue<WorkspaceGitAction> | null>(null);
+  const [feedback, setFeedback] =
+    useState<ScopedValue<WorkspaceGitFeedback> | null>(null);
+
+  const workspaceRootRef = useRef(workspaceRoot);
+  workspaceRootRef.current = workspaceRoot;
+  const repositoryRootRef = useRef(current.repositoryRoot);
+  repositoryRootRef.current = current.repositoryRoot;
+  const filesDirtyRef = useRef(filesDirty);
+  filesDirtyRef.current = filesDirty;
+  const onFilesChangedRef = useRef(onFilesChanged);
+  onFilesChangedRef.current = onFilesChanged;
+  const overviewRequestRef = useRef(0);
+  const pullRequestRequestRef = useRef(0);
+  const actionLockRef = useRef(false);
+  const lastOverviewLoadRef = useRef(0);
+  const feedbackIdRef = useRef(0);
+
+  const updateScoped = useCallback(
+    (
+      scopeWorkspaceKey: string,
+      scopeRepositoryRoot: string | null,
+      update: (current: WorkspaceGitViewState) => WorkspaceGitViewState,
+    ): void => {
+      setState((current) =>
+        current.workspaceKey === scopeWorkspaceKey &&
+        (scopeRepositoryRoot === null ||
+          current.repositoryRoot === scopeRepositoryRoot)
+          ? update(current)
+          : current,
+      );
+    },
+    [],
   );
-  const [gitRepositories, setGitRepositories] =
-    useState<WorkspaceGitRepositoryDiscovery | null>(null);
-  const [gitRepositoriesLoading, setGitRepositoriesLoading] = useState(false);
-  const [gitRepositoriesError, setGitRepositoriesError] = useState<
-    string | null
-  >(null);
-  const [selectedGitRepositoryRoot, setSelectedGitRepositoryRoot] = useState<
-    string | null
-  >(null);
-  const [gitLoading, setGitLoading] = useState(false);
-  const [gitError, setGitError] = useState<string | null>(null);
-  const [gitAction, setGitAction] = useState<WorkspaceGitAction | null>(null);
-  const [pullRequests, setPullRequests] =
-    useState<WorkspacePullRequestOverview | null>(null);
-  const [pullRequestsLoading, setPullRequestsLoading] = useState(false);
-  const [pullRequestsError, setPullRequestsError] = useState<string | null>(
-    null,
+
+  const applyOverview = useCallback(
+    (
+      root: string,
+      repositoryRoot: string,
+      overview: WorkspaceGitOverview,
+    ): void => {
+      overviewCache.set(repositoryKey(repositoryRoot), overview);
+      if (repositoryKey(repositoryRoot) === createWorkspaceRootKey(root)) {
+        workspaceGitSummaryStore.publish(
+          root,
+          workspaceGitSummaryFromOverview(overview),
+        );
+      }
+      updateScoped(createWorkspaceRootKey(root), repositoryRoot, (current) => ({
+        ...current,
+        overview,
+        error: null,
+      }));
+    },
+    [updateScoped],
   );
-  const [branchName, setBranchName] = useState("");
-  const [remoteName, setRemoteName] = useState("");
-  const [remoteUrl, setRemoteUrl] = useState("");
 
-  const selectedGitRepositoryRootRef = useRef<string | null>(null);
-  const gitOverviewWorkspaceRootRef = useRef<string | null>(null);
-  const gitRepositoriesRequestRef = useRef(0);
-  const gitOverviewRequestRef = useRef(0);
-  const gitActionRequestRef = useRef(0);
-  const pullRequestRef = useRef(0);
-  const gitActionLockRef = useRef<WorkspaceOperationLock>({ pending: false });
+  const loadOverview = useCallback(
+    async (root: string, repositoryRoot: string): Promise<void> => {
+      const requestId = ++overviewRequestRef.current;
+      const scopeKey = createWorkspaceRootKey(root);
+      lastOverviewLoadRef.current = Date.now();
+      updateScoped(scopeKey, repositoryRoot, (current) => ({
+        ...current,
+        loading: true,
+      }));
+      try {
+        const overview = await loadWorkspaceGitOverview(root, repositoryRoot);
+        if (requestId === overviewRequestRef.current) {
+          applyOverview(root, repositoryRoot, overview);
+        }
+      } catch (error) {
+        if (requestId === overviewRequestRef.current) {
+          updateScoped(scopeKey, repositoryRoot, (current) => ({
+            ...current,
+            error: errorMessage(error),
+          }));
+        }
+      } finally {
+        if (requestId === overviewRequestRef.current) {
+          updateScoped(scopeKey, repositoryRoot, (current) => ({
+            ...current,
+            loading: false,
+          }));
+        }
+      }
+    },
+    [applyOverview, updateScoped],
+  );
 
-  const selectedRootRef = useRef(workspaceRoot);
-  selectedRootRef.current = workspaceRoot;
-  selectedGitRepositoryRootRef.current = selectedGitRepositoryRoot;
+  const loadPullRequests = useCallback(
+    async (root: string, repositoryRoot: string): Promise<void> => {
+      const requestId = ++pullRequestRequestRef.current;
+      const scopeKey = createWorkspaceRootKey(root);
+      updateScoped(scopeKey, repositoryRoot, (current) => ({
+        ...current,
+        pullRequestsLoading: true,
+        pullRequestsError: null,
+      }));
+      try {
+        const pullRequests = await loadWorkspacePullRequests(
+          root,
+          repositoryRoot,
+        );
+        pullRequestCache.set(repositoryKey(repositoryRoot), pullRequests);
+        if (requestId === pullRequestRequestRef.current) {
+          updateScoped(scopeKey, repositoryRoot, (current) => ({
+            ...current,
+            pullRequests,
+          }));
+        }
+      } catch (error) {
+        if (requestId === pullRequestRequestRef.current) {
+          updateScoped(scopeKey, repositoryRoot, (current) => ({
+            ...current,
+            pullRequestsError: errorMessage(error),
+          }));
+        }
+      } finally {
+        if (requestId === pullRequestRequestRef.current) {
+          updateScoped(scopeKey, repositoryRoot, (current) => ({
+            ...current,
+            pullRequestsLoading: false,
+          }));
+        }
+      }
+    },
+    [updateScoped],
+  );
 
-  const refreshGitOverview = useCallback(
-    async (
-      repositoryRoot = selectedGitRepositoryRootRef.current,
-    ): Promise<void> => {
-      const workspaceRoot = selectedRootRef.current;
-      if (!workspaceRoot || !repositoryRoot) {
-        gitOverviewRequestRef.current += 1;
-        gitOverviewWorkspaceRootRef.current = null;
-        setGitOverview(null);
-        setGitError(null);
-        setGitLoading(false);
+  const refresh = useCallback(async (): Promise<void> => {
+    const root = workspaceRootRef.current;
+    const preferredRoot = repositoryRootRef.current;
+    if (!root) return;
+    const scopeKey = createWorkspaceRootKey(root);
+    const preferredOverview = preferredRoot
+      ? loadOverview(root, preferredRoot)
+      : Promise.resolve();
+    try {
+      const discovery = await loadWorkspaceGitRepositories(root);
+      discoveryCache.set(scopeKey, discovery);
+      const selectedRoot =
+        selectWorkspaceGitRepository(
+          discovery.repositories,
+          repositoryRootRef.current,
+          readWorkspaceViewPreferences().repositoryRoots[scopeKey],
+          root,
+        )?.repositoryRoot ?? null;
+      updateScoped(scopeKey, null, (current) => {
+        const repositoryChanged = current.repositoryRoot !== selectedRoot;
+        return {
+          ...current,
+          repositories: discovery,
+          repositoriesError: null,
+          repositoryRoot: selectedRoot,
+          ...(repositoryChanged
+            ? {
+                overview: selectedRoot
+                  ? (overviewCache.get(repositoryKey(selectedRoot)) ?? null)
+                  : null,
+                error: null,
+                loading: selectedRoot !== null,
+                pullRequests: selectedRoot
+                  ? (pullRequestCache.get(repositoryKey(selectedRoot)) ?? null)
+                  : null,
+                pullRequestsError: null,
+              }
+            : {}),
+        };
+      });
+      if (selectedRoot && selectedRoot !== preferredRoot) {
+        repositoryRootRef.current = selectedRoot;
+        await loadOverview(root, selectedRoot);
+      }
+    } catch (error) {
+      updateScoped(scopeKey, null, (current) => ({
+        ...current,
+        repositoriesError: errorMessage(error),
+      }));
+    }
+    await preferredOverview;
+  }, [loadOverview, updateScoped]);
+
+  useEffect(() => {
+    if (workspaceRoot) void refresh();
+  }, [refresh, workspaceRoot]);
+
+  useEffect(() => {
+    const refreshOnFocus = (): void => {
+      const root = workspaceRootRef.current;
+      const repositoryRoot = repositoryRootRef.current;
+      if (
+        !root ||
+        !repositoryRoot ||
+        document.visibilityState !== "visible" ||
+        actionLockRef.current ||
+        Date.now() - lastOverviewLoadRef.current < FOCUS_REFRESH_INTERVAL_MS
+      ) {
         return;
       }
-      const requestId = ++gitOverviewRequestRef.current;
-      setGitLoading(true);
-      setGitError(null);
-      try {
-        const overview = await loadWorkspaceGitOverview(
-          workspaceRoot,
-          repositoryRoot,
-        );
-        if (
-          requestId === gitOverviewRequestRef.current &&
-          selectedRootRef.current === workspaceRoot &&
-          selectedGitRepositoryRootRef.current === repositoryRoot
-        ) {
-          gitOverviewWorkspaceRootRef.current = workspaceRoot;
-          setGitOverview(overview);
-        }
-      } catch (error) {
-        if (
-          requestId === gitOverviewRequestRef.current &&
-          selectedRootRef.current === workspaceRoot &&
-          selectedGitRepositoryRootRef.current === repositoryRoot
-        ) {
-          gitOverviewWorkspaceRootRef.current = null;
-          setGitOverview(null);
-          setGitError(error instanceof Error ? error.message : String(error));
-        }
-      } finally {
-        if (
-          requestId === gitOverviewRequestRef.current &&
-          selectedRootRef.current === workspaceRoot &&
-          selectedGitRepositoryRootRef.current === repositoryRoot
-        ) {
-          setGitLoading(false);
-        }
-      }
-    },
-    [],
-  );
+      void loadOverview(root, repositoryRoot);
+    };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnFocus);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnFocus);
+    };
+  }, [loadOverview]);
 
-  const refreshGitRepositories = useCallback(async (): Promise<
-    string | null
-  > => {
-    const workspaceRoot = selectedRootRef.current;
-    if (!workspaceRoot) {
-      gitRepositoriesRequestRef.current += 1;
-      gitOverviewRequestRef.current += 1;
-      selectedGitRepositoryRootRef.current = null;
-      setGitRepositories(null);
-      setSelectedGitRepositoryRoot(null);
-      gitOverviewWorkspaceRootRef.current = null;
-      setGitOverview(null);
-      setGitError(null);
-      setGitLoading(false);
-      return null;
-    }
-    const requestId = ++gitRepositoriesRequestRef.current;
-    setGitRepositoriesLoading(true);
-    setGitRepositoriesError(null);
-    const rootOverview = selectedGitRepositoryRootRef.current
-      ? null
-      : loadWorkspaceGitOverview(workspaceRoot, workspaceRoot)
-          .then((overview) => {
-            if (
-              requestId === gitRepositoriesRequestRef.current &&
-              selectedRootRef.current === workspaceRoot &&
-              !selectedGitRepositoryRootRef.current
-            ) {
-              selectedGitRepositoryRootRef.current = overview.repositoryRoot;
-              setSelectedGitRepositoryRoot(overview.repositoryRoot);
-              gitOverviewWorkspaceRootRef.current = workspaceRoot;
-              setGitOverview(overview);
-            }
-            return overview;
-          })
-          .catch(() => null);
-    try {
-      const discovery = await loadWorkspaceGitRepositories(workspaceRoot);
-      if (
-        requestId !== gitRepositoriesRequestRef.current ||
-        selectedRootRef.current !== workspaceRoot
-      ) {
-        return null;
-      }
-      const selectedRepository = selectWorkspaceGitRepository(
-        discovery.repositories,
-        selectedGitRepositoryRootRef.current,
+  const selectRepository = useCallback(
+    (repositoryRoot: string): void => {
+      const root = workspaceRootRef.current;
+      if (!root || repositoryRoot === repositoryRootRef.current) return;
+      const scopeKey = createWorkspaceRootKey(root);
+      repositoryRootRef.current = repositoryRoot;
+      writeWorkspaceViewPreferences((current) =>
+        withRememberedRepository(current, scopeKey, repositoryRoot),
       );
-      const nextRepositoryRoot = selectedRepository?.repositoryRoot ?? null;
-      const repositoryChanged =
-        nextRepositoryRoot !== selectedGitRepositoryRootRef.current;
-      setGitRepositories(discovery);
-      selectedGitRepositoryRootRef.current = nextRepositoryRoot;
-      setSelectedGitRepositoryRoot(nextRepositoryRoot);
-      if (repositoryChanged) {
-        gitOverviewRequestRef.current += 1;
-        gitOverviewWorkspaceRootRef.current = null;
-        setGitOverview(null);
-        setGitLoading(false);
-        setGitError(null);
-        pullRequestRef.current += 1;
-        setPullRequests(null);
-        setPullRequestsLoading(false);
-        setPullRequestsError(null);
-      }
-      if (!nextRepositoryRoot) {
-        gitOverviewRequestRef.current += 1;
-        gitOverviewWorkspaceRootRef.current = null;
-        setGitOverview(null);
-        setGitError(null);
-        setGitLoading(false);
-        return null;
-      }
-      if (rootOverview && nextRepositoryRoot === discovery.workspaceRoot) {
-        const overview = await rootOverview;
-        if (overview?.repositoryRoot === nextRepositoryRoot) {
-          if (
-            requestId === gitRepositoriesRequestRef.current &&
-            selectedRootRef.current === workspaceRoot &&
-            selectedGitRepositoryRootRef.current === nextRepositoryRoot
-          ) {
-            gitOverviewWorkspaceRootRef.current = workspaceRoot;
-            setGitOverview(overview);
-          }
-          return nextRepositoryRoot;
-        }
-      }
-      await refreshGitOverview(nextRepositoryRoot);
-      return nextRepositoryRoot;
-    } catch (error) {
-      if (
-        requestId === gitRepositoriesRequestRef.current &&
-        selectedRootRef.current === workspaceRoot
-      ) {
-        setGitRepositoriesError(
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-      return null;
-    } finally {
-      if (
-        requestId === gitRepositoriesRequestRef.current &&
-        selectedRootRef.current === workspaceRoot
-      ) {
-        setGitRepositoriesLoading(false);
-      }
-    }
-  }, [refreshGitOverview]);
-
-  useEffect(() => {
-    gitRepositoriesRequestRef.current += 1;
-    gitOverviewRequestRef.current += 1;
-    gitActionRequestRef.current += 1;
-    pullRequestRef.current += 1;
-    selectedGitRepositoryRootRef.current = null;
-    gitOverviewWorkspaceRootRef.current = null;
-    setGitRepositories(null);
-    setGitRepositoriesLoading(false);
-    setGitRepositoriesError(null);
-    setSelectedGitRepositoryRoot(null);
-    setGitAction(null);
-    setGitOverview(null);
-    setGitLoading(false);
-    setGitError(null);
-    setPullRequests(null);
-    setPullRequestsLoading(false);
-    setPullRequestsError(null);
-    void refreshGitRepositories();
-  }, [refreshGitRepositories, workspaceRoot]);
-
-  const refreshPullRequests = useCallback(
-    async (
-      repositoryRoot = selectedGitRepositoryRootRef.current,
-    ): Promise<void> => {
-      const workspaceRoot = selectedRootRef.current;
-      if (!workspaceRoot || !repositoryRoot) return;
-      const requestId = ++pullRequestRef.current;
-      setPullRequestsLoading(true);
-      setPullRequestsError(null);
-      try {
-        const overview = await loadWorkspacePullRequests(
-          workspaceRoot,
-          repositoryRoot,
-        );
-        if (
-          requestId === pullRequestRef.current &&
-          selectedRootRef.current === workspaceRoot &&
-          selectedGitRepositoryRootRef.current === repositoryRoot
-        ) {
-          setPullRequests(overview);
-        }
-      } catch (error) {
-        if (
-          requestId === pullRequestRef.current &&
-          selectedRootRef.current === workspaceRoot &&
-          selectedGitRepositoryRootRef.current === repositoryRoot
-        ) {
-          setPullRequests(null);
-          setPullRequestsError(
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      } finally {
-        if (
-          requestId === pullRequestRef.current &&
-          selectedRootRef.current === workspaceRoot &&
-          selectedGitRepositoryRootRef.current === repositoryRoot
-        ) {
-          setPullRequestsLoading(false);
-        }
-      }
+      updateScoped(scopeKey, null, (current) => ({
+        ...current,
+        repositoryRoot,
+        overview: overviewCache.get(repositoryKey(repositoryRoot)) ?? null,
+        error: null,
+        pullRequests:
+          pullRequestCache.get(repositoryKey(repositoryRoot)) ?? null,
+        pullRequestsError: null,
+        pullRequestsLoading: false,
+      }));
+      void loadOverview(root, repositoryRoot);
     },
-    [],
+    [loadOverview, updateScoped],
   );
 
-  useEffect(() => {
-    if (
-      gitSection === "pull-requests" &&
-      gitOverview &&
-      !pullRequests &&
-      !pullRequestsLoading &&
-      !pullRequestsError
-    ) {
-      void refreshPullRequests();
-    }
-  }, [
-    gitOverview,
-    gitSection,
-    pullRequests,
-    pullRequestsError,
-    pullRequestsLoading,
-    refreshPullRequests,
-  ]);
+  const ensurePullRequests = useCallback((): void => {
+    const root = workspaceRootRef.current;
+    const repositoryRoot = repositoryRootRef.current;
+    if (!root || !repositoryRoot) return;
+    void loadPullRequests(root, repositoryRoot);
+  }, [loadPullRequests]);
 
-  const runGitAction = async (
-    action: WorkspaceGitAction,
-    options: {
-      branchName?: string;
-      remoteName?: string;
-      remoteUrl?: string;
-    } = {},
-  ): Promise<void> => {
-    const repositoryRoot = selectedGitRepositoryRootRef.current;
-    if (
-      !workspaceRoot ||
-      !repositoryRoot ||
-      gitOverviewWorkspaceRootRef.current !== workspaceRoot ||
-      gitOverview?.repositoryRoot !== repositoryRoot ||
-      gitActionLockRef.current.pending
-    )
-      return;
-    const operation = startExclusiveWorkspaceOperation(
-      gitActionLockRef.current,
-      async () => {
-        const changesFiles = workspaceGitActionChangesFiles(action);
-        if (
-          changesFiles &&
-          workspaceToolsDirty &&
-          !window.confirm(
-            "Run this Git action with unsaved changes? Your draft will be kept.",
-          )
-        ) {
-          return;
+  const reload = useCallback((): void => {
+    const root = workspaceRootRef.current;
+    const repositoryRoot = repositoryRootRef.current;
+    if (!root || !repositoryRoot || actionLockRef.current) return;
+    void loadOverview(root, repositoryRoot);
+  }, [loadOverview]);
+
+  const runAction = useCallback(
+    async (
+      action: WorkspaceGitAction,
+      options: WorkspaceGitActionOptions = {},
+    ): Promise<boolean> => {
+      const root = workspaceRootRef.current;
+      const repositoryRoot = repositoryRootRef.current;
+      if (!root || !repositoryRoot || actionLockRef.current) return false;
+      const changesFiles = workspaceGitActionChangesFiles(action);
+      if (
+        changesFiles &&
+        filesDirtyRef.current &&
+        !window.confirm(
+          "Run this Git action with unsaved changes? Your draft will be kept.",
+        )
+      ) {
+        return false;
+      }
+      const scope = {
+        workspaceKey: createWorkspaceRootKey(root),
+        repositoryRoot,
+      };
+      actionLockRef.current = true;
+      overviewRequestRef.current += 1;
+      setPendingAction({ ...scope, value: action });
+      setFeedback(null);
+      try {
+        const overview = await runWorkspaceGitAction(
+          root,
+          repositoryRoot,
+          action,
+          options,
+        );
+        applyOverview(root, repositoryRoot, overview);
+        if (changesFiles) onFilesChangedRef.current?.();
+        if (workspaceGitActionChangesPullRequests(action)) {
+          pullRequestCache.delete(repositoryKey(repositoryRoot));
+          void loadPullRequests(root, repositoryRoot);
         }
-        const actionWorkspaceRoot = workspaceRoot;
-        const actionRequestId = ++gitActionRequestRef.current;
-        gitOverviewRequestRef.current += 1;
-        setGitAction(action);
-        setGitError(null);
-        try {
-          const overview = await runWorkspaceGitAction(
-            actionWorkspaceRoot,
-            repositoryRoot,
+        setFeedback({
+          ...scope,
+          value: {
+            id: ++feedbackIdRef.current,
+            tone: "success",
+            text: workspaceGitActionDoneLabel(action),
             action,
             options,
-          );
-          if (
-            actionRequestId === gitActionRequestRef.current &&
-            selectedRootRef.current === actionWorkspaceRoot &&
-            selectedGitRepositoryRootRef.current === repositoryRoot
-          ) {
-            gitOverviewRequestRef.current += 1;
-            gitOverviewWorkspaceRootRef.current = actionWorkspaceRoot;
-            setGitOverview(overview);
-            if (changesFiles) {
-              onFilesChanged();
-            }
-            setBranchName("");
-            setRemoteName("");
-            setRemoteUrl("");
-            if (
-              action === "fetch" ||
-              action === "pull" ||
-              action === "add-remote" ||
-              action === "remove-remote"
-            ) {
-              pullRequestRef.current += 1;
-              setPullRequests(null);
-              setPullRequestsLoading(false);
-              setPullRequestsError(null);
-            }
-          }
-        } catch (error) {
-          if (
-            actionRequestId === gitActionRequestRef.current &&
-            selectedRootRef.current === actionWorkspaceRoot &&
-            selectedGitRepositoryRootRef.current === repositoryRoot
-          ) {
-            setGitError(error instanceof Error ? error.message : String(error));
-          }
-        } finally {
-          if (
-            actionRequestId === gitActionRequestRef.current &&
-            selectedRootRef.current === actionWorkspaceRoot &&
-            selectedGitRepositoryRootRef.current === repositoryRoot
-          ) {
-            setGitAction(null);
-          }
-        }
-      },
-    );
-    if (operation) await operation;
-  };
-
-  const selectedGitRepository = selectWorkspaceGitRepository(
-    gitRepositories?.repositories ?? [],
-    selectedGitRepositoryRoot,
+          },
+        });
+        return true;
+      } catch (error) {
+        setFeedback({
+          ...scope,
+          value: {
+            id: ++feedbackIdRef.current,
+            tone: "error",
+            text: errorMessage(error),
+            action,
+            options,
+          },
+        });
+        void loadOverview(root, repositoryRoot);
+        return false;
+      } finally {
+        actionLockRef.current = false;
+        setPendingAction(null);
+      }
+    },
+    [applyOverview, loadOverview, loadPullRequests],
   );
-  const selectedGitOverview = workspaceGitOverviewForSelection(
-    gitOverview,
-    gitOverviewWorkspaceRootRef.current,
-    workspaceRoot,
-    selectedGitRepositoryRoot,
-  );
-  const gitBusy = gitRepositoriesLoading || gitLoading;
-  const gitDiscoveryNotice = gitRepositories?.scanLimited
-    ? "Repository scan limit reached. Some repositories may be missing."
-    : (gitRepositories?.issues[0] ?? null);
 
-  const selectGitRepository = (repositoryRoot: string): void => {
-    if (repositoryRoot === selectedGitRepositoryRootRef.current) return;
-    gitOverviewRequestRef.current += 1;
-    pullRequestRef.current += 1;
-    selectedGitRepositoryRootRef.current = repositoryRoot;
-    setSelectedGitRepositoryRoot(repositoryRoot);
-    gitOverviewWorkspaceRootRef.current = null;
-    setGitOverview(null);
-    setGitLoading(false);
-    setGitError(null);
-    setPullRequests(null);
-    setPullRequestsLoading(false);
-    setPullRequestsError(null);
-    setBranchName("");
-    setRemoteName("");
-    setRemoteUrl("");
-    void refreshGitOverview(repositoryRoot);
-  };
+  const dismissFeedback = useCallback(() => setFeedback(null), []);
 
-  const refreshGit = async (): Promise<void> => {
-    const repositoryRoot = await refreshGitRepositories();
-    if (gitSection === "pull-requests" && repositoryRoot) {
-      await refreshPullRequests(repositoryRoot);
-    }
-  };
+  const inScope = <T>(value: ScopedValue<T> | null): T | null =>
+    value &&
+    value.workspaceKey === workspaceKey &&
+    value.repositoryRoot === current.repositoryRoot
+      ? value.value
+      : null;
 
-  const removeRemote = (name: string): void => {
-    if (!window.confirm(`Remove Git remote ${name}?`)) return;
-    void runGitAction("remove-remote", { remoteName: name });
-  };
+  const selectedRepository = current.repositories
+    ? selectWorkspaceGitRepository(
+        current.repositories.repositories,
+        current.repositoryRoot,
+      )
+    : null;
 
   return {
-    gitSection,
-    setGitSection,
-    gitRepositories,
-    gitRepositoriesLoading,
-    gitRepositoriesError,
-    selectedGitRepositoryRoot,
-    selectedGitRepository,
-    selectedGitOverview,
-    gitLoading,
-    gitError,
-    gitAction,
-    gitBusy,
-    gitDiscoveryNotice,
-    pullRequests,
-    pullRequestsLoading,
-    pullRequestsError,
-    branchName,
-    setBranchName,
-    remoteName,
-    setRemoteName,
-    remoteUrl,
-    setRemoteUrl,
-    refreshGitOverview,
-    refreshGit,
-    refreshPullRequests,
-    runGitAction,
-    selectGitRepository,
-    removeRemote,
+    workspaceRoot,
+    repositories: current.repositories,
+    repositoriesError: current.repositoriesError,
+    repositoryRoot: current.repositoryRoot,
+    selectedRepository,
+    overview: current.overview,
+    loading: current.loading,
+    error: current.error,
+    pullRequests: current.pullRequests,
+    pullRequestsLoading: current.pullRequestsLoading,
+    pullRequestsError: current.pullRequestsError,
+    pendingAction: inScope(pendingAction),
+    busy: pendingAction !== null,
+    feedback: inScope(feedback),
+    discoveryNotice: current.repositories?.scanLimited
+      ? "Repository scan limit reached. Some repositories may be missing."
+      : (current.repositories?.issues[0] ?? null),
+    refresh,
+    reload,
+    selectRepository,
+    ensurePullRequests,
+    runAction,
+    dismissFeedback,
   };
 }
+
 export type WorkspaceGitControls = ReturnType<typeof useWorkspaceGit>;

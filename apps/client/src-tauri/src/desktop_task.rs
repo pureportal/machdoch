@@ -511,6 +511,20 @@ pub async fn open_workspace_path(
     .map_err(|error| format!("The workspace path opener stopped unexpectedly. {error}"))?
 }
 
+#[tauri::command]
+pub async fn open_workspace_file(
+    workspace_root: String,
+    relative_path: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved_path = resolve_workspace_path(&workspace_root, &relative_path)?;
+        tauri_plugin_opener::open_path(&resolved_path, None::<&str>)
+            .map_err(|error| format!("The file could not be opened: {error}"))
+    })
+    .await
+    .map_err(|error| format!("The workspace file opener stopped unexpectedly. {error}"))?
+}
+
 fn ensure_file_preview_path(path: PathBuf) -> Result<PathBuf, String> {
     let metadata = fs::metadata(&path).map_err(|error| {
         format!(
@@ -869,6 +883,13 @@ pub async fn run_live_voice_command(workspace_root: String, input: Value) -> Res
     tauri::async_runtime::spawn_blocking(move || cli_commands::execute_json_payload_command(&workspace_root, &input, "live-voice"))
         .await
         .map_err(|error| format!("The live voice command stopped unexpectedly. {error}"))?
+}
+
+#[tauri::command]
+pub async fn run_workspace_run_detection_command(workspace_root: String) -> Result<Value, String> {
+    tauri::async_runtime::spawn_blocking(move || cli_commands::execute_workspace_run_detection_command(&workspace_root))
+        .await
+        .map_err(|error| format!("The run detection command stopped unexpectedly. {error}"))?
 }
 
 #[tauri::command]

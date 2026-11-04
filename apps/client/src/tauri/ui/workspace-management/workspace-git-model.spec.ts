@@ -1,16 +1,23 @@
 import { describe, expect, it } from "vitest";
 import type {
+  WorkspaceGitBranch,
   WorkspaceGitChange,
-  WorkspaceGitOverview,
   WorkspaceGitRepository,
 } from "../runtime";
 import {
+  createWorkspaceGitBranchTree,
+  filterWorkspaceGitBranches,
+  groupWorkspaceGitChanges,
   selectWorkspaceGitRepository,
   workspaceDiffLineTone,
   workspaceGitActionChangesFiles,
+  workspaceGitActionChangesPullRequests,
+  workspaceGitActionDoneLabel,
+  workspaceGitActionProgressLabel,
   workspaceGitChangeLabel,
-  workspaceGitOverviewForSelection,
+  workspaceGitPathInWorkspace,
   workspaceGitRepositoryLabel,
+  workspaceGitStackMembers,
 } from "./workspace-git-model";
 
 const change = (
@@ -25,19 +32,37 @@ const change = (
   ...overrides,
 });
 
+const branch = (
+  name: string,
+  overrides: Partial<WorkspaceGitBranch> = {},
+): WorkspaceGitBranch => ({
+  name,
+  commit: "abc1234",
+  current: false,
+  ahead: 0,
+  behind: 0,
+  upstreamGone: false,
+  needsRestack: false,
+  ...overrides,
+});
+
 describe("workspace Git presentation", () => {
-  it("preserves a discovered repository selection and falls back predictably", () => {
+  it("selects the first available preferred repository", () => {
     const repositories: WorkspaceGitRepository[] = [
       { repositoryRoot: "C:\\work\\api", relativePath: "apps/api" },
       { repositoryRoot: "C:\\work\\web", relativePath: "apps/web" },
     ];
-    expect(selectWorkspaceGitRepository(repositories, "C:\\work\\web")).toBe(
-      repositories[1],
-    );
     expect(
-      selectWorkspaceGitRepository(repositories, "C:\\work\\missing"),
-    ).toBe(repositories[0]);
-    expect(selectWorkspaceGitRepository([], null)).toBeNull();
+      selectWorkspaceGitRepository(
+        repositories,
+        "C:\\missing",
+        "C:\\work\\web",
+      ),
+    ).toBe(repositories[1]);
+    expect(selectWorkspaceGitRepository(repositories, null, undefined)).toBe(
+      repositories[0],
+    );
+    expect(selectWorkspaceGitRepository([], "C:\\work")).toBeNull();
     expect(workspaceGitRepositoryLabel(repositories[0]!)).toBe("apps/api");
     expect(
       workspaceGitRepositoryLabel({
@@ -47,51 +72,131 @@ describe("workspace Git presentation", () => {
     ).toBe("Workspace root");
   });
 
-  it("identifies actions that can replace workspace files", () => {
-    expect(workspaceGitActionChangesFiles("pull")).toBe(true);
-    expect(workspaceGitActionChangesFiles("checkout")).toBe(true);
-    expect(workspaceGitActionChangesFiles("checkout-remote")).toBe(true);
-    expect(workspaceGitActionChangesFiles("fetch")).toBe(false);
-    expect(workspaceGitActionChangesFiles("create-branch")).toBe(false);
-    expect(workspaceGitActionChangesFiles("add-remote")).toBe(false);
+  it("maps repository paths into the workspace", () => {
+    expect(
+      workspaceGitPathInWorkspace(
+        { repositoryRoot: "C:\\work\\api", relativePath: "apps/api/" },
+        "src/main.ts",
+      ),
+    ).toBe("apps/api/src/main.ts");
+    expect(
+      workspaceGitPathInWorkspace(
+        { repositoryRoot: "C:\\work", relativePath: "." },
+        "README.md",
+      ),
+    ).toBe("README.md");
+    expect(workspaceGitPathInWorkspace(null, "README.md")).toBe("README.md");
   });
 
-  it("never presents an overview for a different repository selection", () => {
-    const overview = {
-      repositoryRoot: "C:\\work\\api",
-    } as WorkspaceGitOverview;
+  it("identifies actions that rewrite files or pull requests", () => {
+    for (const action of [
+      "pull",
+      "checkout",
+      "merge",
+      "rebase",
+      "restack",
+      "stash-pop",
+      "abort-operation",
+    ] as const) {
+      expect(workspaceGitActionChangesFiles(action)).toBe(true);
+    }
+    for (const action of [
+      "fetch",
+      "commit",
+      "stage",
+      "create-stacked-branch",
+    ] as const) {
+      expect(workspaceGitActionChangesFiles(action)).toBe(false);
+    }
+    expect(workspaceGitActionChangesPullRequests("submit-pull-requests")).toBe(
+      true,
+    );
+    expect(workspaceGitActionChangesPullRequests("commit")).toBe(false);
+    expect(workspaceGitActionProgressLabel("push")).toBe("Pushing…");
+    expect(workspaceGitActionDoneLabel("stash-push")).toBe("Stashed changes");
+  });
+
+  it("groups conflicts, staged, and working tree changes", () => {
+    const both = change({ path: "both.ts", status: "MM", staged: true });
+    const staged = change({
+      path: "staged.ts",
+      status: "M ",
+      staged: true,
+      unstaged: false,
+    });
+    const untracked = change({
+      path: "new.ts",
+      status: "??",
+      unstaged: false,
+      untracked: true,
+    });
+    const conflict = change({
+      path: "conflict.ts",
+      status: "UU",
+      conflicted: true,
+    });
+    const groups = groupWorkspaceGitChanges([
+      both,
+      staged,
+      untracked,
+      conflict,
+    ]);
+    expect(groups.conflicts).toEqual([conflict]);
+    expect(groups.staged).toEqual([both, staged]);
+    expect(groups.unstaged).toEqual([both, untracked]);
+  });
+
+  it("orders stacked branches below their parents", () => {
+    const branches = [
+      branch("feature/api", { parent: "main" }),
+      branch("feature/ui", { parent: "feature/api" }),
+      branch("hotfix"),
+      branch("main"),
+      branch("orphan", { parent: "deleted" }),
+    ];
     expect(
-      workspaceGitOverviewForSelection(
-        overview,
-        "C:\\work",
-        "C:\\work",
-        "C:\\work\\api",
-      ),
-    ).toBe(overview);
+      createWorkspaceGitBranchTree(branches).map((node) => [
+        node.branch.name,
+        node.depth,
+        node.stacked,
+      ]),
+    ).toEqual([
+      ["hotfix", 0, false],
+      ["main", 0, true],
+      ["feature/api", 1, true],
+      ["feature/ui", 2, true],
+      ["orphan", 0, false],
+    ]);
+  });
+
+  it("keeps cyclic stack metadata visible exactly once", () => {
+    const branches = [
+      branch("a", { parent: "b" }),
+      branch("b", { parent: "a" }),
+    ];
     expect(
-      workspaceGitOverviewForSelection(
-        overview,
-        "C:\\work",
-        "C:\\work",
-        "C:\\work\\web",
-      ),
-    ).toBeNull();
+      createWorkspaceGitBranchTree(branches).map((node) => node.branch.name),
+    ).toEqual(["a", "b"]);
+    expect(workspaceGitStackMembers(branches, "a").sort()).toEqual(["a", "b"]);
+  });
+
+  it("collects every stack member below the trunk", () => {
+    const branches = [
+      branch("main"),
+      branch("feature/api", { parent: "main" }),
+      branch("feature/ui", { parent: "feature/api" }),
+      branch("feature/docs", { parent: "main" }),
+      branch("other"),
+    ];
+    expect(workspaceGitStackMembers(branches, "feature/ui")).toEqual([
+      "feature/api",
+      "feature/docs",
+      "feature/ui",
+    ]);
+    expect(workspaceGitStackMembers(branches, "other")).toEqual([]);
     expect(
-      workspaceGitOverviewForSelection(
-        overview,
-        "C:\\other",
-        "C:\\work",
-        "C:\\work\\api",
-      ),
-    ).toBeNull();
-    expect(
-      workspaceGitOverviewForSelection(
-        null,
-        "C:\\work",
-        "C:\\work",
-        "C:\\work\\api",
-      ),
-    ).toBeNull();
+      filterWorkspaceGitBranches(branches, " API ").map((item) => item.name),
+    ).toEqual(["feature/api"]);
   });
 
   it("prioritizes actionable combined status labels", () => {

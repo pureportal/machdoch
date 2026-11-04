@@ -805,6 +805,12 @@ export const parseCliArgs = (
 
   const [first, ...rest] = positionals;
 
+  if (first === "run-detection") {
+    if (rest.length || rawRalphInputJson || rawRalphInputJsonFile)
+      fail("Use run-detection without arguments.");
+    return { ...sharedOptions, command: "run-detection" };
+  }
+
   if (first === "live-voice") {
     if (rawRalphInputJson && rawRalphInputJsonFile)
       fail("Choose --input-json or --input-json-file.");

@@ -135,6 +135,7 @@ const compactWorkspaceRunStatus = (
   health: status.health,
   ...(status.configuration.kind === "task"
     ? {
+        runType: status.configuration.runType,
         workingDirectory: status.configuration.workingDirectory,
         hotReload: status.configuration.hotReload,
         ports: status.configuration.ports,

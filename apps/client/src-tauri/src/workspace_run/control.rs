@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     desktop_state::{read_desktop_state, DesktopStateQuery},
+    inputs::RunInputValues,
     manager::RunManager,
     presence::{WorkspaceAgentRegistration, WorkspacePresenceRegistry},
 };
@@ -188,6 +189,7 @@ struct ControlRequest {
     action: ControlAction,
     workspace_root: String,
     configuration_id: Option<String>,
+    inputs: Option<RunInputValues>,
     registration: Option<WorkspaceAgentRegistration>,
     agent_id: Option<String>,
     query: Option<DesktopStateQuery>,
@@ -367,15 +369,19 @@ fn execute_request(
 ) -> Result<serde_json::Value, String> {
     match request.action {
         ControlAction::Status => serialize_snapshot(manager.snapshot(&request.workspace_root)?),
-        ControlAction::Start => serialize_snapshot(
-            manager.start(&request.workspace_root, request.configuration_id.as_deref())?,
-        ),
+        ControlAction::Start => serialize_snapshot(manager.start(
+            &request.workspace_root,
+            request.configuration_id.as_deref(),
+            &request.inputs.unwrap_or_default(),
+        )?),
         ControlAction::Stop => serialize_snapshot(
             manager.stop(&request.workspace_root, request.configuration_id.as_deref())?,
         ),
-        ControlAction::Restart => serialize_snapshot(
-            manager.restart(&request.workspace_root, request.configuration_id.as_deref())?,
-        ),
+        ControlAction::Restart => serialize_snapshot(manager.restart(
+            &request.workspace_root,
+            request.configuration_id.as_deref(),
+            request.inputs.as_ref(),
+        )?),
         ControlAction::ReadState => read_desktop_state(
             app.ok_or_else(|| "Desktop state is unavailable.".to_string())?,
             manager,

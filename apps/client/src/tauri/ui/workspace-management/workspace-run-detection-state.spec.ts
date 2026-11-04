@@ -24,11 +24,13 @@ import {
 
 const document: WorkspaceRunConfigurationDocument = {
   schemaVersion: 2,
+  inputs: [],
   configurations: [],
 };
 const snapshot: WorkspaceRunSnapshot = {
   workspaceRoot: "C:/workspace",
   primaryConfigurationId: null,
+  inputs: [],
   configurations: [],
 };
 

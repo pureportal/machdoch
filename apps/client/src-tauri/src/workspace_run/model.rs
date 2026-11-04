@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
+use super::inputs::{validate_input_references, validate_inputs, RunInput, RunInputValues};
+
 pub const RUN_SCHEMA_VERSION: u32 = 2;
 pub const RUN_EVENT_NAME: &str = "workspace-run-state-changed";
 pub const RUN_LOG_EVENT_NAME: &str = "workspace-run-log-appended";
@@ -12,6 +14,8 @@ pub const MAX_FAILURE_ENTRIES: usize = 12;
 #[serde(rename_all = "camelCase")]
 pub struct RunConfigurationDocument {
     pub schema_version: u32,
+    #[serde(default)]
+    pub inputs: Vec<RunInput>,
     pub configurations: Vec<RunConfiguration>,
 }
 
@@ -19,9 +23,18 @@ impl Default for RunConfigurationDocument {
     fn default() -> Self {
         Self {
             schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
             configurations: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RunType {
+    #[default]
+    Service,
+    Job,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -35,6 +48,10 @@ pub enum RunConfiguration {
         id: String,
         name: String,
         primary: bool,
+        #[serde(default)]
+        run_type: RunType,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        group: Option<String>,
         command: String,
         #[serde(default = "default_working_directory")]
         working_directory: String,
@@ -54,6 +71,8 @@ pub enum RunConfiguration {
         id: String,
         name: String,
         primary: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        group: Option<String>,
         children: Vec<String>,
         #[serde(default)]
         start_order: CompositeStartOrder,
@@ -80,6 +99,12 @@ impl RunConfiguration {
     pub fn is_primary(&self) -> bool {
         match self {
             Self::Task { primary, .. } | Self::Composite { primary, .. } => *primary,
+        }
+    }
+
+    fn group(&self) -> Option<&str> {
+        match self {
+            Self::Task { group, .. } | Self::Composite { group, .. } => group.as_deref(),
         }
     }
 }
@@ -252,6 +277,7 @@ pub struct RunConfigurationStatus {
     pub health: Option<RunHealthStatus>,
     pub recent_failures: Vec<RunFailure>,
     pub logs: Vec<RunLogEntry>,
+    pub input_values: RunInputValues,
     pub children: Vec<RunConfigurationStatus>,
 }
 
@@ -260,6 +286,7 @@ pub struct RunConfigurationStatus {
 pub struct RunWorkspaceSnapshot {
     pub workspace_root: String,
     pub primary_configuration_id: Option<String>,
+    pub inputs: Vec<RunInput>,
     pub configurations: Vec<RunConfigurationStatus>,
 }
 
@@ -283,11 +310,13 @@ pub fn validate_document(document: &RunConfigurationDocument) -> Result<(), Stri
     if document.configurations.len() > 64 {
         return Err("A workspace can contain at most 64 run configurations.".to_string());
     }
+    validate_inputs(&document.inputs)?;
 
     let mut ids = HashSet::new();
     for configuration in &document.configurations {
         validate_identifier(configuration.id())?;
         validate_name(configuration.name())?;
+        validate_group(configuration.id(), configuration.group())?;
         if !ids.insert(configuration.id()) {
             return Err(format!(
                 "Run configuration id `{}` is duplicated.",
@@ -297,6 +326,7 @@ pub fn validate_document(document: &RunConfigurationDocument) -> Result<(), Stri
 
         match configuration {
             RunConfiguration::Task {
+                run_type,
                 command,
                 working_directory,
                 environment,
@@ -358,6 +388,13 @@ pub fn validate_document(document: &RunConfigurationDocument) -> Result<(), Stri
                 if let Some(health_check) = health_check {
                     validate_health_check(configuration.id(), health_check)?;
                 }
+                if *run_type == RunType::Job && (health_check.is_some() || restart_policy.on_crash)
+                {
+                    return Err(format!(
+                        "Job run configuration `{}` cannot use a health check or restart on crash.",
+                        configuration.id()
+                    ));
+                }
             }
             RunConfiguration::Composite { children, .. } => {
                 if children.is_empty() || children.len() > 32 {
@@ -418,6 +455,20 @@ pub fn validate_document(document: &RunConfigurationDocument) -> Result<(), Stri
         }
     }
 
+    validate_input_references(document)
+}
+
+fn validate_group(id: &str, group: Option<&str>) -> Result<(), String> {
+    if group.is_some_and(|group| {
+        group.trim().is_empty()
+            || group.trim() != group
+            || group.chars().count() > 60
+            || group.chars().any(char::is_control)
+    }) {
+        return Err(format!(
+            "Run configuration `{id}` needs a group of 1 to 60 characters."
+        ));
+    }
     Ok(())
 }
 
@@ -515,6 +566,8 @@ mod tests {
             id: id.to_string(),
             name: id.to_string(),
             primary: false,
+            run_type: RunType::Service,
+            group: None,
             command: "example".to_string(),
             working_directory: ".".to_string(),
             environment: BTreeMap::new(),
@@ -538,6 +591,7 @@ mod tests {
     fn validates_task_and_composite_documents() {
         let document = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
             configurations: vec![
                 task("backend"),
                 task("frontend"),
@@ -545,6 +599,7 @@ mod tests {
                     id: "fullstack".to_string(),
                     name: "Fullstack Start".to_string(),
                     primary: true,
+                    group: None,
                     children: vec!["backend".to_string(), "frontend".to_string()],
                     start_order: CompositeStartOrder::Parallel,
                 },
@@ -558,6 +613,7 @@ mod tests {
     fn requires_exactly_one_primary_configuration() {
         let without_primary = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
             configurations: vec![task("application"), task("worker")],
         };
         assert_eq!(
@@ -567,6 +623,7 @@ mod tests {
 
         let multiple_primary = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
             configurations: vec![primary(task("application")), primary(task("worker"))],
         };
         assert_eq!(
@@ -579,6 +636,7 @@ mod tests {
     fn serializes_primary_on_camel_case_configurations() {
         let document = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
             configurations: vec![primary(task("application"))],
         };
 
@@ -601,11 +659,13 @@ mod tests {
     fn rejects_missing_and_composite_children() {
         let document = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
             configurations: vec![
                 RunConfiguration::Composite {
                     id: "inner".to_string(),
                     name: "Inner".to_string(),
                     primary: false,
+                    group: None,
                     children: vec!["missing".to_string()],
                     start_order: CompositeStartOrder::Parallel,
                 },
@@ -613,6 +673,7 @@ mod tests {
                     id: "outer".to_string(),
                     name: "Outer".to_string(),
                     primary: true,
+                    group: None,
                     children: vec!["inner".to_string()],
                     start_order: CompositeStartOrder::Parallel,
                 },
@@ -644,6 +705,7 @@ mod tests {
         }
         let document = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
             configurations: vec![configuration],
         };
 
@@ -666,18 +728,21 @@ mod tests {
         }
         let invalid_document = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
             configurations: vec![invalid_task],
         };
         assert!(validate_document(&invalid_document).is_err());
 
         let shared_document = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
             configurations: vec![
                 task("server"),
                 RunConfiguration::Composite {
                     id: "first".to_string(),
                     name: "First".to_string(),
                     primary: true,
+                    group: None,
                     children: vec!["server".to_string()],
                     start_order: CompositeStartOrder::Parallel,
                 },
@@ -685,6 +750,7 @@ mod tests {
                     id: "second".to_string(),
                     name: "Second".to_string(),
                     primary: false,
+                    group: None,
                     children: vec!["server".to_string()],
                     start_order: CompositeStartOrder::Parallel,
                 },
@@ -699,7 +765,56 @@ mod tests {
         }
         assert!(validate_document(&RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
             configurations: vec![invalid_name],
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn rejects_jobs_with_service_supervision_and_invalid_groups() {
+        let mut supervised_job = primary(task("migrate"));
+        if let RunConfiguration::Task {
+            run_type,
+            restart_policy,
+            ..
+        } = &mut supervised_job
+        {
+            *run_type = RunType::Job;
+            restart_policy.on_crash = true;
+        }
+        assert!(validate_document(&RunConfigurationDocument {
+            schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
+            configurations: vec![supervised_job],
+        })
+        .is_err());
+
+        let mut grouped = primary(task("migrate"));
+        if let RunConfiguration::Task {
+            run_type, group, ..
+        } = &mut grouped
+        {
+            *run_type = RunType::Job;
+            *group = Some("Database".to_string());
+        }
+        let document = RunConfigurationDocument {
+            schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
+            configurations: vec![grouped.clone()],
+        };
+        validate_document(&document).expect("grouped job should be valid");
+        let serialized = serde_json::to_value(&document).expect("document should serialize");
+        assert_eq!(serialized["configurations"][0]["runType"], "job");
+        assert_eq!(serialized["configurations"][0]["group"], "Database");
+
+        if let RunConfiguration::Task { group, .. } = &mut grouped {
+            *group = Some(" Database".to_string());
+        }
+        assert!(validate_document(&RunConfigurationDocument {
+            schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
+            configurations: vec![grouped],
         })
         .is_err());
     }

@@ -23,6 +23,29 @@ fn root(value: &Value) -> bool {
     text(value, 2048, true) && value.as_str().is_some_and(|value| !value.contains('\0'))
 }
 
+fn run_identifier(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 64
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+fn run_input_values(value: &Value) -> bool {
+    value.as_object().is_some_and(|values| {
+        values.len() <= 64
+            && values.iter().all(|(id, value)| {
+                run_identifier(id)
+                    && (value.is_boolean()
+                        || value.as_str().is_some_and(|value| {
+                            value.encode_utf16().count() <= 1024 && !value.contains('\0')
+                        }))
+            })
+    })
+}
+
 fn path(value: &Value) -> bool {
     text(value, 2048, false)
         && value.as_str().is_some_and(|value| {
@@ -120,38 +143,81 @@ fn repository(request: &Map<String, Value>) -> bool {
     root(&request["workspaceRoot"]) && root(&request["repositoryRoot"])
 }
 
+fn stash_reference(value: &Value) -> bool {
+    value.as_str().is_some_and(|value| {
+        value
+            .strip_prefix("stash@{")
+            .and_then(|rest| rest.strip_suffix('}'))
+            .is_some_and(|index| {
+                !index.is_empty() && index.bytes().all(|byte| byte.is_ascii_digit())
+            })
+    })
+}
+
 fn git_action(value: &Value) -> bool {
     let Some(action) = value["action"].as_str() else {
         return false;
     };
-    let names: &[&str] = match action {
-        "fetch" | "pull" => &["workspaceRoot", "repositoryRoot", "action"],
-        "checkout" | "checkout-remote" | "create-branch" => {
-            &["workspaceRoot", "repositoryRoot", "action", "branchName"]
-        }
-        "add-remote" => &[
-            "workspaceRoot",
-            "repositoryRoot",
-            "action",
-            "remoteName",
-            "remoteUrl",
-        ],
-        "remove-remote" => &["workspaceRoot", "repositoryRoot", "action", "remoteName"],
+    let (required, optional): (&[&str], &[&str]) = match action {
+        "fetch" | "pull" | "stage-all" | "unstage-all" | "restack" | "continue-operation"
+        | "abort-operation" | "skip-operation" => (&[], &[]),
+        "push" => (&[], &["force"]),
+        "submit-pull-requests" => (&[], &["draft"]),
+        "checkout"
+        | "checkout-remote"
+        | "create-stacked-branch"
+        | "unstack-branch"
+        | "merge"
+        | "rebase" => (&["branchName"], &[]),
+        "create-branch" => (&["branchName"], &["startPoint"]),
+        "delete-branch" => (&["branchName"], &["force"]),
+        "stack-branch" => (&["branchName", "parentBranch"], &[]),
+        "stage" | "unstage" => (&["paths"], &[]),
+        "commit" => (&["message"], &[]),
+        "stash-push" => (&[], &["message", "includeUntracked"]),
+        "stash-apply" | "stash-pop" | "stash-drop" => (&["stashRef"], &[]),
+        "add-remote" => (&["remoteName", "remoteUrl"], &[]),
+        "remove-remote" => (&["remoteName"], &[]),
         _ => return false,
     };
-    let Some(request) = fields(value, names) else {
+    let base = ["workspaceRoot", "repositoryRoot", "action"];
+    let Some(request) = value.as_object() else {
         return false;
     };
+    let known =
+        |key: &str| base.contains(&key) || required.contains(&key) || optional.contains(&key);
+    if !base
+        .iter()
+        .chain(required)
+        .all(|name| request.contains_key(*name))
+        || !request.keys().all(|key| known(key))
+    {
+        return false;
+    }
+    let message_limit = if action == "commit" { 20_000 } else { 500 };
     repository(request)
-        && request
-            .get("branchName")
-            .is_none_or(|value| text(value, 240, true))
-        && request
-            .get("remoteName")
-            .is_none_or(|value| text(value, 240, true))
+        && ["branchName", "parentBranch", "startPoint", "remoteName"]
+            .iter()
+            .all(|field| {
+                request
+                    .get(*field)
+                    .is_none_or(|value| text(value, 240, true))
+            })
         && request
             .get("remoteUrl")
             .is_none_or(|value| text(value, 2048, true))
+        && request
+            .get("message")
+            .is_none_or(|value| text(value, message_limit, true))
+        && request.get("stashRef").is_none_or(stash_reference)
+        && ["force", "draft", "includeUntracked"]
+            .iter()
+            .all(|field| request.get(*field).is_none_or(Value::is_boolean))
+        && request.get("paths").is_none_or(|value| {
+            value
+                .as_array()
+                .is_some_and(|paths| (1..=2000).contains(&paths.len()) && paths.iter().all(path))
+        })
 }
 
 fn mcp_command(args: &Value) -> bool {
@@ -356,28 +422,26 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
                 )
             })
         }
+        "run_workspace_run_detection_command" => {
+            fields(args, &["workspaceRoot"]).is_some_and(|args| root(&args["workspaceRoot"]))
+        }
         "start_workspace_run_configuration"
         | "stop_workspace_run_configuration"
         | "restart_workspace_run_configuration" => fields(args, &["request"]).is_some_and(|args| {
             let request = &args["request"];
-            let names: &[&str] = if request.get("configurationId").is_some() {
-                &["workspaceRoot", "configurationId"]
-            } else {
-                &["workspaceRoot"]
-            };
-            fields(request, names).is_some_and(|request| {
+            let mut names = vec!["workspaceRoot"];
+            if request.get("configurationId").is_some() {
+                names.push("configurationId");
+            }
+            if command != "stop_workspace_run_configuration" && request.get("inputs").is_some() {
+                names.push("inputs");
+            }
+            fields(request, &names).is_some_and(|request| {
                 root(&request["workspaceRoot"])
-                    && request.get("configurationId").is_none_or(|value| {
-                        value.as_str().is_some_and(|value| {
-                            let bytes = value.as_bytes();
-                            !bytes.is_empty()
-                                && bytes.len() <= 64
-                                && bytes[0].is_ascii_alphanumeric()
-                                && bytes.iter().all(|byte| {
-                                    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
-                                })
-                        })
-                    })
+                    && request
+                        .get("configurationId")
+                        .is_none_or(|value| value.as_str().is_some_and(run_identifier))
+                    && request.get("inputs").is_none_or(run_input_values)
             })
         }),
         "run_mcp_command" => mcp_command(args),
@@ -534,6 +598,9 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
                     && request["recursive"].is_boolean()
             })
         }),
+        "get_workspace_git_summary" => {
+            fields(args, &["workspaceRoot"]).is_some_and(|args| root(&args["workspaceRoot"]))
+        }
         "get_workspace_git_overview" | "get_workspace_pull_requests" => fields(args, &["request"])
             .is_some_and(|args| {
                 fields(&args["request"], &["workspaceRoot", "repositoryRoot"])

@@ -3,6 +3,7 @@ mod control;
 mod desktop_state;
 mod health;
 mod health_dns;
+mod inputs;
 mod manager;
 mod migration;
 pub mod model;
@@ -18,6 +19,7 @@ use tauri::{Emitter as _, Manager as _};
 
 use self::{
     control::{ControlCredentials, RunControlBridge},
+    inputs::RunInputValues,
     manager::RunManager,
     model::{RunConfigurationDocument, RunWorkspaceSnapshot, RUN_EVENT_NAME, RUN_LOG_EVENT_NAME},
     persistence::precheck_document,
@@ -92,6 +94,8 @@ impl WorkspaceRunState {
 pub struct RunConfigurationRequest {
     workspace_root: String,
     configuration_id: Option<String>,
+    #[serde(default)]
+    inputs: Option<RunInputValues>,
 }
 
 #[derive(Deserialize)]
@@ -152,7 +156,11 @@ pub async fn start_workspace_run_configuration(
 ) -> Result<RunWorkspaceSnapshot, String> {
     let manager = state.manager();
     tauri::async_runtime::spawn_blocking(move || {
-        manager.start(&request.workspace_root, request.configuration_id.as_deref())
+        manager.start(
+            &request.workspace_root,
+            request.configuration_id.as_deref(),
+            &request.inputs.unwrap_or_default(),
+        )
     })
     .await
     .map_err(|error| format!("Run startup worker failed: {error}"))?
@@ -178,7 +186,11 @@ pub async fn restart_workspace_run_configuration(
 ) -> Result<RunWorkspaceSnapshot, String> {
     let manager = state.manager();
     tauri::async_runtime::spawn_blocking(move || {
-        manager.restart(&request.workspace_root, request.configuration_id.as_deref())
+        manager.restart(
+            &request.workspace_root,
+            request.configuration_id.as_deref(),
+            request.inputs.as_ref(),
+        )
     })
     .await
     .map_err(|error| format!("Run restart worker failed: {error}"))?
@@ -366,7 +378,7 @@ mod tests {
 
     use super::*;
     use crate::workspace_run::model::{
-        RunConfiguration, RunConfigurationStatus, RunLifecycleState, RunRestartPolicy,
+        RunConfiguration, RunConfigurationStatus, RunLifecycleState, RunRestartPolicy, RunType,
         RUN_SCHEMA_VERSION,
     };
 
@@ -548,11 +560,14 @@ mod tests {
         let mut snapshot = RunWorkspaceSnapshot {
             workspace_root: "C:/workspace".to_string(),
             primary_configuration_id: Some("server".to_string()),
+            inputs: Vec::new(),
             configurations: vec![RunConfigurationStatus {
                 configuration: RunConfiguration::Task {
                     id: "server".to_string(),
                     name: "Server".to_string(),
                     primary: true,
+                    run_type: RunType::Service,
+                    group: None,
                     command: "start-server secret-value".to_string(),
                     working_directory: ".".to_string(),
                     environment,
@@ -584,6 +599,7 @@ mod tests {
                         line: format!("output exposed secret-value {}", "x".repeat(2_000)),
                     })
                     .collect(),
+                input_values: Default::default(),
                 children: Vec::new(),
             }],
         };

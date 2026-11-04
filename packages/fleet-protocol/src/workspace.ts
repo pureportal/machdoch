@@ -103,35 +103,59 @@ const mcpArguments = z.union([
       .refine((value) => !value.includes("\0")),
   ]),
 ]);
+const gitBranch = z.string().trim().min(1).max(240);
+const gitAction = <T extends string, S extends z.ZodRawShape>(value: T, shape: S) =>
+  z.strictObject({ ...repository, action: z.literal(value), ...shape });
 const action = z.discriminatedUnion("action", [
-  z.strictObject({ ...repository, action: z.literal("fetch") }),
-  z.strictObject({ ...repository, action: z.literal("pull") }),
-  z.strictObject({
-    ...repository,
-    action: z.literal("checkout"),
-    branchName: z.string().trim().min(1).max(240),
+  gitAction("push", { force: z.boolean().optional() }),
+  gitAction("submit-pull-requests", { draft: z.boolean().optional() }),
+  ...(
+    [
+      "fetch",
+      "pull",
+      "stage-all",
+      "unstage-all",
+      "restack",
+      "continue-operation",
+      "abort-operation",
+      "skip-operation",
+    ] as const
+  ).map((value) => gitAction(value, {})),
+  ...(
+    [
+      "checkout",
+      "checkout-remote",
+      "create-stacked-branch",
+      "unstack-branch",
+      "merge",
+      "rebase",
+    ] as const
+  ).map((value) => gitAction(value, { branchName: gitBranch })),
+  gitAction("create-branch", {
+    branchName: gitBranch,
+    startPoint: gitBranch.optional(),
   }),
-  z.strictObject({
-    ...repository,
-    action: z.literal("checkout-remote"),
-    branchName: z.string().trim().min(1).max(240),
+  gitAction("delete-branch", {
+    branchName: gitBranch,
+    force: z.boolean().optional(),
   }),
-  z.strictObject({
-    ...repository,
-    action: z.literal("create-branch"),
-    branchName: z.string().trim().min(1).max(240),
+  gitAction("stack-branch", { branchName: gitBranch, parentBranch: gitBranch }),
+  ...(["stage", "unstage"] as const).map((value) =>
+    gitAction(value, { paths: z.array(path).min(1).max(2000) }),
+  ),
+  gitAction("commit", { message: z.string().trim().min(1).max(20_000) }),
+  gitAction("stash-push", {
+    message: z.string().trim().min(1).max(500).optional(),
+    includeUntracked: z.boolean().optional(),
   }),
-  z.strictObject({
-    ...repository,
-    action: z.literal("add-remote"),
-    remoteName: z.string().trim().min(1).max(240),
+  ...(["stash-apply", "stash-pop", "stash-drop"] as const).map((value) =>
+    gitAction(value, { stashRef: z.string().regex(/^stash@\{\d+\}$/u) }),
+  ),
+  gitAction("add-remote", {
+    remoteName: gitBranch,
     remoteUrl: z.string().trim().min(1).max(2048),
   }),
-  z.strictObject({
-    ...repository,
-    action: z.literal("remove-remote"),
-    remoteName: z.string().trim().min(1).max(240),
-  }),
+  gitAction("remove-remote", { remoteName: gitBranch }),
 ]);
 const command = <T extends string, S extends z.ZodType>(value: T, args: S) =>
   z.strictObject({
@@ -248,9 +272,30 @@ export const workspaceRequestSchema = z.union([
               .string()
               .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/)
               .optional(),
+            ...(value === "stop_workspace_run_configuration"
+              ? {}
+              : {
+                  inputs: z
+                    .record(
+                      z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/),
+                      z.union([
+                        z.boolean(),
+                        z
+                          .string()
+                          .max(1024)
+                          .refine((input) => !input.includes("\0")),
+                      ]),
+                    )
+                    .refine((inputs) => Object.keys(inputs).length <= 64)
+                    .optional(),
+                }),
           }),
         }),
       ),
+    ),
+    command(
+      "run_workspace_run_detection_command",
+      z.strictObject({ workspaceRoot: root }),
     ),
     command(
       "run_mcp_command",
@@ -521,6 +566,10 @@ export const workspaceRequestSchema = z.union([
     ),
     command(
       "discover_workspace_git_repositories",
+      z.strictObject({ workspaceRoot: root }),
+    ),
+    command(
+      "get_workspace_git_summary",
       z.strictObject({ workspaceRoot: root }),
     ),
     command(

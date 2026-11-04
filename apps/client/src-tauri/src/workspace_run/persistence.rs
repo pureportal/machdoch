@@ -201,7 +201,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::workspace_run::model::{RunRestartPolicy, RUN_SCHEMA_VERSION};
+    use crate::workspace_run::model::{RunRestartPolicy, RunType, RUN_SCHEMA_VERSION};
 
     pub(super) fn temporary_workspace(name: &str) -> PathBuf {
         static NEXT_WORKSPACE_ID: AtomicU64 = AtomicU64::new(0);
@@ -252,10 +252,13 @@ mod tests {
 
         let document = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
             configurations: vec![RunConfiguration::Task {
                 id: "server".to_string(),
                 name: "Server".to_string(),
                 primary: true,
+                run_type: RunType::Service,
+                group: None,
                 command: "run-server".to_string(),
                 working_directory: "apps/server".to_string(),
                 environment: BTreeMap::new(),

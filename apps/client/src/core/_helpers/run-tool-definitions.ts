@@ -11,11 +11,29 @@ interface RunControlResponse {
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
+type RunInputValues = Record<string, string | boolean>;
+
 const readConfigurationId = (
   args: Record<string, unknown>,
 ): string | undefined => {
   const value = args.configurationId;
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+};
+
+const readInputs = (args: Record<string, unknown>): RunInputValues | undefined => {
+  const value = args.inputs;
+  if (value === undefined) return undefined;
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    Object.values(value).some(
+      (entry) => typeof entry !== "string" && typeof entry !== "boolean",
+    )
+  ) {
+    throw new Error("Run inputs must map input ids to text or true/false.");
+  }
+  return value as RunInputValues;
 };
 
 export const isRunControlAvailable = (): boolean =>
@@ -30,6 +48,7 @@ export const sendRunControlRequest = async (
   configurationId: string | undefined,
   signal: AbortSignal | undefined,
   query?: Record<string, unknown>,
+  inputs?: RunInputValues,
 ): Promise<unknown> => {
   const address = process.env.MACHDOCH_RUN_CONTROL_ADDRESS;
   const token = process.env.MACHDOCH_RUN_CONTROL_TOKEN;
@@ -71,6 +90,7 @@ export const sendRunControlRequest = async (
           workspaceRoot,
           ...(configurationId ? { configurationId } : {}),
           ...(query ? { query } : {}),
+          ...(inputs ? { inputs } : {}),
         })}\n`,
       );
     });
@@ -133,24 +153,38 @@ const createResult = (
   traceLines: [trace],
 });
 
-const lifecycleInputSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    configurationId: {
-      type: "string",
-      description:
-        "Saved configuration id. Omit it to use the primary configuration.",
-    },
-  },
+const configurationIdProperty = {
+  type: "string",
+  description:
+    "Saved configuration id. Omit it to use the primary configuration.",
 } as const;
+
+const lifecycleInputSchema = (action: "start" | "stop" | "restart") =>
+  ({
+    type: "object",
+    additionalProperties: false,
+    properties:
+      action === "stop"
+        ? { configurationId: configurationIdProperty }
+        : {
+            configurationId: configurationIdProperty,
+            inputs: {
+              type: "object",
+              description:
+                action === "start"
+                  ? "Values for the run inputs the configuration references, keyed by input id. Select and text inputs take strings, boolean inputs take true or false. Omitted inputs use their defaults."
+                  : "Values for the run inputs the configuration references, keyed by input id. Omit to reuse the values of the previous run.",
+              additionalProperties: { type: ["string", "boolean"] },
+            },
+          },
+  }) as const;
 
 const lifecycleDefinition = (
   name: "start_workspace_run" | "stop_workspace_run" | "restart_workspace_run",
   action: "start" | "stop" | "restart",
   description: string,
 ): AgentToolDefinition => ({
-  spec: { name, description, inputSchema: lifecycleInputSchema },
+  spec: { name, description, inputSchema: lifecycleInputSchema(action) },
   backingTool: "run",
   riskLevel: "medium",
   effect: "write",
@@ -161,6 +195,8 @@ const lifecycleDefinition = (
       context.workspaceRoot,
       configurationId,
       context.signal,
+      undefined,
+      action === "stop" ? undefined : readInputs(args),
     );
     return createResult(
       name,
@@ -204,7 +240,7 @@ export const createRunToolDefinitions = (): AgentToolDefinition[] => {
     lifecycleDefinition(
       "start_workspace_run",
       "start",
-      "Start a saved workspace run configuration once. An already active task is reused instead of launched again.",
+      "Start a saved workspace run configuration once. Services keep running until stopped; jobs run to completion. An already active task is reused instead of launched again.",
     ),
     lifecycleDefinition(
       "stop_workspace_run",

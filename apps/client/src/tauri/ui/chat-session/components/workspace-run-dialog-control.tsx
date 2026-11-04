@@ -202,16 +202,15 @@ export const WorkspaceRunDialogControl = ({
       </DialogTrigger>
       <DialogContent
         aria-describedby={undefined}
-        className="grid max-h-[min(52rem,calc(100dvh-2rem))] w-[min(64rem,calc(100vw-2rem))] max-w-none grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-2xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl shadow-black/50 sm:max-w-none"
+        className="grid h-[min(48rem,calc(100dvh-2rem))] w-[min(76rem,calc(100vw-2rem))] max-w-none grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-2xl border-slate-800 bg-slate-950 p-0 text-slate-100 shadow-2xl shadow-black/50 sm:max-w-none"
       >
         <DialogHeader className="border-b border-slate-800/80 px-5 py-4 pr-12 text-left">
           <DialogTitle>Run</DialogTitle>
         </DialogHeader>
-        <div className="min-h-0 overflow-y-auto p-5">
+        <div className="min-h-0 p-4">
           {open ? (
             <WorkspaceRunPanel
               workspaceRoot={normalizedRoot}
-              view="all"
               onDocumentDirtyChange={setDocumentDirty}
             />
           ) : null}

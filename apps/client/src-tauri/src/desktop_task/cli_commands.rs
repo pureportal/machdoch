@@ -124,6 +124,15 @@ const TASK_INTERVIEW_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
     timeout_ms: AUXILIARY_CLI_COMMAND_TIMEOUT_MS,
 };
 
+const WORKSPACE_RUN_DETECTION_CLI_SPEC: AuxiliaryCliSpec = AuxiliaryCliSpec {
+    subcommand: "run-detection",
+    command_name: "run detection",
+    parse_name: "run detection",
+    failure_name: "run detection",
+    stdout_capture_limit_bytes: SUBPROCESS_OUTPUT_CAPTURE_LIMIT_BYTES,
+    timeout_ms: 5 * 60 * 1000,
+};
+
 #[derive(Debug, PartialEq, Eq)]
 enum SchedulerServiceOwnerClassification {
     Missing,
@@ -671,6 +680,16 @@ pub(super) fn execute_json_payload_command(
     );
     cleanup_temporary_files(&[path]);
     result
+}
+
+pub(super) fn execute_workspace_run_detection_command(
+    workspace_root: &str,
+) -> Result<Value, String> {
+    run_auxiliary_json_command(
+        workspace_root,
+        Vec::<String>::new(),
+        &WORKSPACE_RUN_DETECTION_CLI_SPEC,
+    )
 }
 
 pub(super) fn execute_task_interview_command(

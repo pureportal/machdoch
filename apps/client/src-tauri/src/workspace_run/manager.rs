@@ -22,11 +22,12 @@ use crate::runtime_snapshot::{
 
 use super::{
     health::{start_health_probe, HealthProbe, HealthProbeStartError},
+    inputs::{resolve_input_values, resolve_task_configuration, task_input_ids, RunInputValues},
     model::{
         CompositeStartOrder, RunConfiguration, RunConfigurationDocument, RunConfigurationStatus,
         RunFailure, RunFailureKind, RunHealthCheck, RunHealthState, RunHealthStatus,
         RunLifecycleState, RunLogBatch, RunLogEntry, RunLogStream, RunLogUpdate, RunRestartPolicy,
-        RunWorkspaceSnapshot, MAX_FAILURE_ENTRIES, MAX_LOG_ENTRIES,
+        RunType, RunWorkspaceSnapshot, MAX_FAILURE_ENTRIES, MAX_LOG_ENTRIES,
     },
     persistence::{load_document, resolve_working_directory, save_document},
     process::create_run_command,
@@ -69,8 +70,14 @@ struct TaskRuntime {
     health: Option<RunHealthStatus>,
     recent_failures: VecDeque<RunFailure>,
     logs: VecDeque<RunLogEntry>,
+    input_values: RunInputValues,
     cancel: Option<Arc<AtomicBool>>,
     generation: u64,
+}
+
+struct PreparedTask {
+    configuration: RunConfiguration,
+    input_values: RunInputValues,
 }
 
 struct LogReaderWorker {
@@ -126,6 +133,7 @@ impl Default for TaskRuntime {
             health: None,
             recent_failures: VecDeque::new(),
             logs: VecDeque::new(),
+            input_values: RunInputValues::new(),
             cancel: None,
             generation: 0,
         }
@@ -315,6 +323,7 @@ impl RunManager {
         self: &Arc<Self>,
         workspace_root: &str,
         configuration_id: Option<&str>,
+        input_values: &RunInputValues,
     ) -> Result<RunWorkspaceSnapshot, String> {
         let workspace = resolve_workspace_root_path(workspace_root)?;
         let operation_lock = self.operation_lock(&workspace)?;
@@ -326,13 +335,9 @@ impl RunManager {
         }
         let document = self.configuration_document_for_start(&workspace)?;
         let configuration = resolve_configuration(&document, configuration_id)?.clone();
+        let tasks = prepare_tasks(&document, &configuration, input_values)?;
         let settings = self.workspace_run_settings()?;
-        self.start_resolved_configuration(
-            workspace.clone(),
-            document.clone(),
-            configuration,
-            settings,
-        )?;
+        self.start_resolved_configuration(workspace.clone(), configuration, tasks, settings)?;
         self.snapshot_for_path(&workspace, &document)
     }
 
@@ -359,6 +364,7 @@ impl RunManager {
         self: &Arc<Self>,
         workspace_root: &str,
         configuration_id: Option<&str>,
+        input_values: Option<&RunInputValues>,
     ) -> Result<RunWorkspaceSnapshot, String> {
         let workspace = resolve_workspace_root_path(workspace_root)?;
         let operation_lock = self.operation_lock(&workspace)?;
@@ -367,15 +373,15 @@ impl RunManager {
             .map_err(|_| "Workspace run operations are unavailable.".to_string())?;
         let document = self.configuration_document_for_operation(&workspace)?;
         let configuration = resolve_configuration(&document, configuration_id)?.clone();
+        let input_values = match input_values {
+            Some(input_values) => input_values.clone(),
+            None => self.last_input_values(&workspace, &configuration),
+        };
+        let tasks = prepare_tasks(&document, &configuration, &input_values)?;
         self.stop_resolved_configuration(&workspace, &configuration);
         self.wait_for_configuration_stop(&workspace, &configuration, Duration::from_secs(15))?;
         let settings = self.workspace_run_settings()?;
-        self.start_resolved_configuration(
-            workspace.clone(),
-            document.clone(),
-            configuration,
-            settings,
-        )?;
+        self.start_resolved_configuration(workspace.clone(), configuration, tasks, settings)?;
         self.snapshot_for_path(&workspace, &document)
     }
 
@@ -513,15 +519,40 @@ impl RunManager {
         }
     }
 
+    fn last_input_values(
+        &self,
+        workspace: &Path,
+        configuration: &RunConfiguration,
+    ) -> RunInputValues {
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|inner| {
+                let runtime = inner.workspaces.get(workspace)?;
+                Some(
+                    task_ids(configuration)
+                        .into_iter()
+                        .filter_map(|id| runtime.tasks.get(id))
+                        .flat_map(|task| task.input_values.clone())
+                        .collect(),
+                )
+            })
+            .unwrap_or_default()
+    }
+
     fn start_resolved_configuration(
         self: &Arc<Self>,
         workspace: PathBuf,
-        document: RunConfigurationDocument,
         configuration: RunConfiguration,
+        tasks: Vec<PreparedTask>,
         settings: UserWorkspaceRunSettings,
     ) -> Result<(), String> {
         match configuration {
-            task @ RunConfiguration::Task { .. } => {
+            RunConfiguration::Task { .. } => {
+                let task = tasks
+                    .into_iter()
+                    .next()
+                    .ok_or_else(|| "The run task could not be prepared.".to_string())?;
                 self.start_task(workspace, task, settings).map(|_| ())
             }
             RunConfiguration::Composite {
@@ -530,24 +561,10 @@ impl RunManager {
                 start_order,
                 ..
             } => {
-                let by_id = document
-                    .configurations
-                    .iter()
-                    .map(|candidate| (candidate.id(), candidate.clone()))
-                    .collect::<HashMap<_, _>>();
-                let child_tasks = children
-                    .iter()
-                    .map(|child_id| {
-                        by_id
-                            .get(child_id.as_str())
-                            .cloned()
-                            .ok_or_else(|| format!("Run child `{child_id}` does not exist."))
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                for task in &child_tasks {
+                for task in &tasks {
                     let RunConfiguration::Task {
                         working_directory, ..
-                    } = task
+                    } = &task.configuration
                     else {
                         return Err("Composite runs can only contain tasks.".to_string());
                     };
@@ -557,8 +574,8 @@ impl RunManager {
 
                 if start_order == CompositeStartOrder::Parallel {
                     let mut started_tasks = Vec::new();
-                    for task in child_tasks {
-                        let task_id = task.id().to_string();
+                    for task in tasks {
+                        let task_id = task.configuration.id().to_string();
                         match self.start_task(workspace.clone(), task, settings.clone()) {
                             Ok(true) => started_tasks.push(task_id),
                             Ok(false) => {}
@@ -592,11 +609,15 @@ impl RunManager {
                 let manager = Arc::clone(self);
                 thread::spawn(move || {
                     let mut started_tasks = Vec::new();
-                    for task in child_tasks {
+                    for task in tasks {
                         if cancel.load(Ordering::SeqCst) {
                             break;
                         }
-                        let task_id = task.id().to_string();
+                        let task_id = task.configuration.id().to_string();
+                        let RunConfiguration::Task { run_type, .. } = &task.configuration else {
+                            break;
+                        };
+                        let run_type = *run_type;
                         match manager.start_sequential_task(
                             workspace.clone(),
                             task,
@@ -611,9 +632,10 @@ impl RunManager {
                                 break;
                             }
                         }
-                        if !manager.wait_for_task_ready(
+                        if !manager.wait_for_sequence_step(
                             &workspace,
                             &task_id,
+                            run_type,
                             &cancel,
                             Duration::from_millis(settings.sequential_readiness_timeout_ms),
                         ) {
@@ -644,23 +666,23 @@ impl RunManager {
     fn start_task(
         self: &Arc<Self>,
         workspace: PathBuf,
-        configuration: RunConfiguration,
+        task: PreparedTask,
         settings: UserWorkspaceRunSettings,
     ) -> Result<bool, String> {
-        self.start_task_with_admission(workspace, configuration, settings, None)
+        self.start_task_with_admission(workspace, task, settings, None)
     }
 
     fn start_sequential_task(
         self: &Arc<Self>,
         workspace: PathBuf,
-        configuration: RunConfiguration,
+        task: PreparedTask,
         settings: UserWorkspaceRunSettings,
         composite_id: &str,
         composite_cancel: &Arc<AtomicBool>,
     ) -> Result<bool, String> {
         self.start_task_with_admission(
             workspace,
-            configuration,
+            task,
             settings,
             Some((composite_id, composite_cancel)),
         )
@@ -669,10 +691,14 @@ impl RunManager {
     fn start_task_with_admission(
         self: &Arc<Self>,
         workspace: PathBuf,
-        configuration: RunConfiguration,
+        task: PreparedTask,
         settings: UserWorkspaceRunSettings,
         composite_admission: Option<(&str, &Arc<AtomicBool>)>,
     ) -> Result<bool, String> {
+        let PreparedTask {
+            configuration,
+            input_values,
+        } = task;
         let RunConfiguration::Task {
             id,
             working_directory,
@@ -732,6 +758,7 @@ impl RunManager {
             });
             runtime.recent_failures.clear();
             runtime.logs.clear();
+            runtime.input_values = input_values;
             runtime.cancel = Some(cancel.clone());
             runtime.generation = generation;
             generation
@@ -807,6 +834,13 @@ impl RunManager {
             generation,
             RunLogStream::System,
             format!("Starting {name} in {}", working_directory.display()),
+        );
+        self.append_log(
+            &workspace,
+            &id,
+            generation,
+            RunLogStream::System,
+            format!("$ {command}"),
         );
 
         loop {
@@ -1308,15 +1342,18 @@ impl RunManager {
         ))
     }
 
-    fn wait_for_task_ready(
+    fn wait_for_sequence_step(
         &self,
         workspace: &Path,
         configuration_id: &str,
+        run_type: RunType,
         cancel: &AtomicBool,
-        timeout: Duration,
+        readiness_timeout: Duration,
     ) -> bool {
-        let deadline = Instant::now() + timeout;
-        while Instant::now() < deadline && !cancel.load(Ordering::SeqCst) {
+        let deadline = (run_type == RunType::Service).then(|| Instant::now() + readiness_timeout);
+        while deadline.is_none_or(|deadline| Instant::now() < deadline)
+            && !cancel.load(Ordering::SeqCst)
+        {
             let task_status = self.inner.lock().ok().and_then(|inner| {
                 inner
                     .workspaces
@@ -1325,8 +1362,10 @@ impl RunManager {
                     .map(|runtime| (runtime.state, runtime.exit_code))
             });
             match task_status {
-                Some((RunLifecycleState::Running, _))
-                | Some((RunLifecycleState::Stopped, Some(0))) => return true,
+                Some((RunLifecycleState::Running, _)) if run_type == RunType::Service => {
+                    return true
+                }
+                Some((RunLifecycleState::Stopped, Some(0))) => return true,
                 Some((
                     RunLifecycleState::Stopped
                     | RunLifecycleState::Crashed
@@ -1726,6 +1765,7 @@ impl RunManager {
             primary_configuration_id: document
                 .primary_configuration()
                 .map(|configuration| configuration.id().to_string()),
+            inputs: document.inputs.clone(),
             configurations: statuses,
         })
     }
@@ -1837,6 +1877,40 @@ fn terminate_managed_process(child: &mut Child, child_job: &ChildProcessJob) {
     }
 }
 
+fn prepare_tasks(
+    document: &RunConfigurationDocument,
+    configuration: &RunConfiguration,
+    input_values: &RunInputValues,
+) -> Result<Vec<PreparedTask>, String> {
+    let tasks = match configuration {
+        RunConfiguration::Task { .. } => vec![configuration],
+        RunConfiguration::Composite { children, .. } => children
+            .iter()
+            .map(|child_id| {
+                document
+                    .configurations
+                    .iter()
+                    .find(|candidate| candidate.id() == child_id)
+                    .ok_or_else(|| format!("Run child `{child_id}` does not exist."))
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+    };
+    tasks
+        .into_iter()
+        .map(|task| {
+            if matches!(task, RunConfiguration::Composite { .. }) {
+                return Err("Composite runs can only contain tasks.".to_string());
+            }
+            let input_ids = task_input_ids(task)?;
+            let task_values = resolve_input_values(&document.inputs, &input_ids, input_values)?;
+            Ok(PreparedTask {
+                configuration: resolve_task_configuration(task, &document.inputs, &task_values)?,
+                input_values: task_values,
+            })
+        })
+        .collect()
+}
+
 fn resolve_configuration<'a>(
     document: &'a RunConfigurationDocument,
     requested_id: Option<&str>,
@@ -1888,6 +1962,9 @@ fn status_for(
                 logs: task
                     .map(|task| task.logs.iter().cloned().collect())
                     .unwrap_or_default(),
+                input_values: task
+                    .map(|task| task.input_values.clone())
+                    .unwrap_or_default(),
                 children: Vec::new(),
             }
         }
@@ -1925,6 +2002,10 @@ fn status_for(
                 health: None,
                 recent_failures: Vec::new(),
                 logs: Vec::new(),
+                input_values: child_statuses
+                    .iter()
+                    .flat_map(|child| child.input_values.clone())
+                    .collect(),
                 children: child_statuses,
             }
         }
@@ -2085,6 +2166,7 @@ mod tests {
 
     use super::*;
     use crate::workspace_run::{
+        inputs::{RunInput, RunInputOption, RunInputValue},
         model::{RunHealthCheck, RunHealthCheckKind, RUN_SCHEMA_VERSION},
         persistence::configuration_path,
     };
@@ -2154,6 +2236,8 @@ mod tests {
                 id: "task".to_string(),
                 name: "Task".to_string(),
                 primary: false,
+                run_type: RunType::Service,
+                group: None,
                 command: "example".to_string(),
                 working_directory: ".".to_string(),
                 environment: Default::default(),
@@ -2172,6 +2256,7 @@ mod tests {
             health: None,
             recent_failures: Vec::new(),
             logs: Vec::new(),
+            input_values: Default::default(),
             children: Vec::new(),
         }
     }
@@ -2218,6 +2303,8 @@ mod tests {
             id: id.to_string(),
             name: id.to_string(),
             primary: false,
+            run_type: RunType::Service,
+            group: None,
             command: child_command(),
             working_directory: working_directory.to_string(),
             environment,
@@ -2254,6 +2341,7 @@ mod tests {
                 workspace.to_string_lossy().as_ref(),
                 &RunConfigurationDocument {
                     schema_version: RUN_SCHEMA_VERSION,
+                    inputs: Vec::new(),
                     configurations,
                 },
             )
@@ -2286,6 +2374,7 @@ mod tests {
         }
         let document = RunConfigurationDocument {
             schema_version: RUN_SCHEMA_VERSION,
+            inputs: Vec::new(),
             configurations: vec![named_like_a_default, flagged_primary],
         };
 
@@ -2516,7 +2605,11 @@ mod tests {
         save_test_document(&manager, &workspace, "command", vec![task]);
 
         manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new(),
+            )
             .expect("task should start");
         let completed = wait_for_status(
             &manager,
@@ -2568,7 +2661,11 @@ mod tests {
         save_test_document(&manager, &workspace, "server", vec![task]);
 
         manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new(),
+            )
             .expect("task should start");
         wait_for_status(
             &manager,
@@ -2654,7 +2751,11 @@ mod tests {
         save_test_document(&manager, &workspace, "server", vec![task]);
 
         manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new(),
+            )
             .expect("task should start");
         wait_for_status(
             &manager,
@@ -2707,7 +2808,13 @@ mod tests {
             .map(|_| {
                 let manager = manager.clone();
                 let workspace = workspace.clone();
-                thread::spawn(move || manager.start(workspace.to_string_lossy().as_ref(), None))
+                thread::spawn(move || {
+                    manager.start(
+                        workspace.to_string_lossy().as_ref(),
+                        None,
+                        &RunInputValues::new(),
+                    )
+                })
             })
             .collect::<Vec<_>>();
         for handle in handles {
@@ -2757,7 +2864,11 @@ mod tests {
         );
         save_test_document(&manager, &workspace, "server", vec![task]);
         manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new(),
+            )
             .expect("task should start");
         wait_for_status(
             &manager,
@@ -2779,7 +2890,11 @@ mod tests {
         );
         assert_eq!(
             manager
-                .start(workspace.to_string_lossy().as_ref(), None)
+                .start(
+                    workspace.to_string_lossy().as_ref(),
+                    None,
+                    &RunInputValues::new()
+                )
                 .expect("repeated active start should reuse cached state")
                 .configurations[0]
                 .state,
@@ -2826,6 +2941,7 @@ mod tests {
             id: "fullstack".to_string(),
             name: "Fullstack".to_string(),
             primary: false,
+            group: None,
             children: vec!["valid".to_string(), "missing".to_string()],
             start_order: CompositeStartOrder::Parallel,
         };
@@ -2838,7 +2954,11 @@ mod tests {
         fs::remove_dir_all(missing_directory).expect("directory should be removed");
 
         assert!(manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new()
+            )
             .is_err());
         thread::sleep(Duration::from_millis(200));
         assert!(!marker.exists());
@@ -2878,6 +2998,7 @@ mod tests {
             id: "fullstack".to_string(),
             name: "Fullstack Start".to_string(),
             primary: false,
+            group: None,
             children: vec!["backend".to_string(), "frontend".to_string()],
             start_order: CompositeStartOrder::Parallel,
         };
@@ -2889,7 +3010,11 @@ mod tests {
         );
 
         manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new(),
+            )
             .expect("composite should start");
         let running = wait_for_status(
             &manager,
@@ -2941,6 +3066,7 @@ mod tests {
             id: "application".to_string(),
             name: "Application".to_string(),
             primary: false,
+            group: None,
             children: vec!["prepare".to_string(), "server".to_string()],
             start_order: CompositeStartOrder::Sequence,
         };
@@ -2952,7 +3078,11 @@ mod tests {
         );
 
         manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new(),
+            )
             .expect("sequential composite should start");
         let running = wait_for_status(
             &manager,
@@ -2998,6 +3128,228 @@ mod tests {
         let _ = fs::remove_dir_all(workspace);
     }
 
+    fn job(mut configuration: RunConfiguration) -> RunConfiguration {
+        if let RunConfiguration::Task { run_type, .. } = &mut configuration {
+            *run_type = RunType::Job;
+        }
+        configuration
+    }
+
+    #[test]
+    fn sequential_jobs_must_finish_successfully_before_the_next_step() {
+        let _process_test = serialize_child_process_test();
+        let workspace = temporary_workspace("sequential-jobs");
+        let manager = Arc::new(RunManager::default());
+        let migrate = job(task_configuration(
+            "migrate",
+            "hold",
+            ".",
+            RunRestartPolicy::default(),
+            None,
+            None,
+        ));
+        let failing = job(task_configuration(
+            "seed",
+            "crash",
+            ".",
+            RunRestartPolicy::default(),
+            None,
+            None,
+        ));
+        let server = task_configuration(
+            "server",
+            "hold",
+            ".",
+            RunRestartPolicy::default(),
+            None,
+            None,
+        );
+        let api = task_configuration("api", "hold", ".", RunRestartPolicy::default(), None, None);
+        let blocked = RunConfiguration::Composite {
+            id: "blocked".to_string(),
+            name: "Blocked".to_string(),
+            primary: false,
+            group: None,
+            children: vec!["migrate".to_string(), "server".to_string()],
+            start_order: CompositeStartOrder::Sequence,
+        };
+        let aborted = RunConfiguration::Composite {
+            id: "aborted".to_string(),
+            name: "Aborted".to_string(),
+            primary: false,
+            group: None,
+            children: vec!["seed".to_string(), "api".to_string()],
+            start_order: CompositeStartOrder::Sequence,
+        };
+        save_test_document(
+            &manager,
+            &workspace,
+            "blocked",
+            vec![migrate, failing, server, api, blocked, aborted],
+        );
+        let root = workspace.to_string_lossy().to_string();
+
+        manager
+            .start(&root, Some("blocked"), &RunInputValues::new())
+            .expect("job sequence should start");
+        wait_for_status(
+            &manager,
+            &workspace,
+            "migrate",
+            Duration::from_secs(10),
+            |status| status.state == RunLifecycleState::Running,
+        );
+        thread::sleep(Duration::from_millis(600));
+        let server = wait_for_status(
+            &manager,
+            &workspace,
+            "server",
+            Duration::from_secs(1),
+            |_| true,
+        );
+        assert_eq!(server.started_at, None);
+        manager
+            .stop(&root, Some("blocked"))
+            .expect("job sequence should stop");
+
+        manager
+            .start(&root, Some("aborted"), &RunInputValues::new())
+            .expect("failing job sequence should start");
+        let seed = wait_for_status(
+            &manager,
+            &workspace,
+            "seed",
+            Duration::from_secs(10),
+            |status| status.state == RunLifecycleState::Crashed,
+        );
+        assert_eq!(seed.exit_code, Some(9));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while manager
+            .inner
+            .lock()
+            .expect("manager state should be available")
+            .workspaces
+            .get(&workspace)
+            .is_some_and(|runtime| runtime.composite_cancellations.contains_key("aborted"))
+        {
+            assert!(
+                Instant::now() < deadline,
+                "sequence should finish after the failed job"
+            );
+            thread::sleep(Duration::from_millis(50));
+        }
+        let api = wait_for_status(&manager, &workspace, "api", Duration::from_secs(1), |_| {
+            true
+        });
+        assert_eq!(api.started_at, None);
+        manager.shutdown();
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn start_applies_input_values_and_restart_reuses_them() {
+        let _process_test = serialize_child_process_test();
+        let workspace = temporary_workspace("input-values");
+        let manager = Arc::new(RunManager::default());
+        let mut server = task_configuration(
+            "server",
+            "output-exit",
+            ".",
+            RunRestartPolicy::default(),
+            None,
+            None,
+        );
+        if let RunConfiguration::Task {
+            primary,
+            environment,
+            ..
+        } = &mut server
+        {
+            *primary = true;
+            environment.insert(CHILD_MODE_ENV.to_string(), "${input:mode}".to_string());
+        }
+        let root = workspace.to_string_lossy().to_string();
+        manager
+            .save_configuration_document(
+                &root,
+                &RunConfigurationDocument {
+                    schema_version: RUN_SCHEMA_VERSION,
+                    inputs: vec![RunInput::Select {
+                        id: "mode".to_string(),
+                        label: "Mode".to_string(),
+                        description: None,
+                        options: ["output-exit", "hold"]
+                            .into_iter()
+                            .map(|value| RunInputOption {
+                                value: value.to_string(),
+                                label: None,
+                            })
+                            .collect(),
+                        default: None,
+                    }],
+                    configurations: vec![server],
+                },
+            )
+            .expect("document with inputs should save");
+
+        let hold =
+            RunInputValues::from([("mode".to_string(), RunInputValue::Text("hold".to_string()))]);
+        assert!(manager
+            .start(
+                &root,
+                None,
+                &RunInputValues::from([(
+                    "mode".to_string(),
+                    RunInputValue::Text("missing".to_string()),
+                )]),
+            )
+            .is_err());
+        assert!(manager
+            .start(
+                &root,
+                None,
+                &RunInputValues::from([("other".to_string(), RunInputValue::Boolean(true))]),
+            )
+            .is_err());
+        manager
+            .start(&root, None, &hold)
+            .expect("server should start with the chosen input");
+        let running = wait_for_status(
+            &manager,
+            &workspace,
+            "server",
+            Duration::from_secs(10),
+            |status| {
+                status.state == RunLifecycleState::Running
+                    && status.logs.iter().any(|entry| entry.line == "ready")
+            },
+        );
+        assert_eq!(running.input_values, hold);
+        assert!(running
+            .logs
+            .iter()
+            .any(|entry| entry.line.starts_with("$ ")));
+
+        manager
+            .restart(&root, None, None)
+            .expect("restart should reuse the previous input values");
+        thread::sleep(Duration::from_millis(600));
+        let restarted = wait_for_status(
+            &manager,
+            &workspace,
+            "server",
+            Duration::from_secs(10),
+            |status| {
+                status.state == RunLifecycleState::Running
+                    && status.logs.iter().any(|entry| entry.line == "ready")
+            },
+        );
+        assert_eq!(restarted.input_values, hold);
+        manager.stop(&root, None).expect("server should stop");
+        manager.shutdown();
+        let _ = fs::remove_dir_all(workspace);
+    }
+
     #[test]
     fn stopping_a_sequential_composite_waits_for_admission_cleanup() {
         let _process_test = serialize_child_process_test();
@@ -3024,6 +3376,7 @@ mod tests {
             id: "application".to_string(),
             name: "Application".to_string(),
             primary: false,
+            group: None,
             children: vec!["prepare".to_string(), "server".to_string()],
             start_order: CompositeStartOrder::Sequence,
         };
@@ -3042,7 +3395,11 @@ mod tests {
             resume: Mutex::new(resume_receiver),
         }));
         manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new(),
+            )
             .expect("sequential composite should start");
         reached
             .recv_timeout(Duration::from_secs(10))
@@ -3114,6 +3471,7 @@ mod tests {
             id: "application".to_string(),
             name: "Application".to_string(),
             primary: false,
+            group: None,
             children: vec!["prepare".to_string(), "server".to_string()],
             start_order: CompositeStartOrder::Sequence,
         };
@@ -3132,7 +3490,11 @@ mod tests {
             resume: Mutex::new(resume_receiver),
         }));
         manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new(),
+            )
             .expect("sequential composite should start");
         reached
             .recv_timeout(Duration::from_secs(10))
@@ -3142,7 +3504,7 @@ mod tests {
         let workspace_root = workspace.to_string_lossy().to_string();
         let (finished_sender, finished) = mpsc::channel();
         let restart_worker = thread::spawn(move || {
-            let _ = finished_sender.send(manager_for_restart.restart(&workspace_root, None));
+            let _ = finished_sender.send(manager_for_restart.restart(&workspace_root, None, None));
         });
         let deadline = Instant::now() + Duration::from_secs(5);
         while !manager
@@ -3216,7 +3578,11 @@ mod tests {
         save_test_document(&manager, &workspace, "server", vec![task]);
 
         manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new(),
+            )
             .expect("task should start");
         let status = wait_for_status(
             &manager,
@@ -3272,7 +3638,11 @@ mod tests {
         save_test_document(&manager, &workspace, "server", vec![task]);
 
         manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new(),
+            )
             .expect("task should start");
         let status = wait_for_status(
             &manager,
@@ -3475,7 +3845,11 @@ mod tests {
         save_test_document(&manager, &workspace, "server", vec![task]);
 
         manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new(),
+            )
             .expect("task should start");
         accepted_receiver
             .recv_timeout(Duration::from_secs(10))
@@ -3517,7 +3891,11 @@ mod tests {
         save_test_document(&manager, &workspace, "server", vec![task]);
 
         manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new(),
+            )
             .expect("task should start");
         let deadline = Instant::now() + Duration::from_secs(10);
         while !marker.exists() && Instant::now() < deadline {
@@ -3555,7 +3933,11 @@ mod tests {
         save_test_document(&manager, &workspace, "server", vec![task]);
 
         manager
-            .start(workspace.to_string_lossy().as_ref(), None)
+            .start(
+                workspace.to_string_lossy().as_ref(),
+                None,
+                &RunInputValues::new(),
+            )
             .expect("task should start");
         let marker_deadline = Instant::now() + Duration::from_secs(10);
         let descendant_id = loop {

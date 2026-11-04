@@ -752,6 +752,445 @@
     "accepted": false
   },
   {
+    "name": "git push",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "push"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git force push",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "push",
+          "force": true
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git push rejects non-boolean force",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "push",
+          "force": "yes"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git stage files",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "stage",
+          "paths": [
+            "src/a.ts",
+            "docs/read me.md"
+          ]
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git stage rejects empty paths",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "stage",
+          "paths": []
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git unstage rejects escaping paths",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "unstage",
+          "paths": [
+            "../secret"
+          ]
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git stage-all",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "stage-all"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git commit",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "commit",
+          "message": "Add workspace git stacks"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git commit requires a message",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "commit",
+          "message": "  "
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git stash-push",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "stash-push",
+          "message": "wip",
+          "includeUntracked": true
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git stash-push without options",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "stash-push"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git stash-pop",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "stash-pop",
+          "stashRef": "stash@{2}"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git stash-drop rejects other references",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "stash-drop",
+          "stashRef": "refs/heads/main"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git merge",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "merge",
+          "branchName": "origin/main"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git rebase",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "rebase",
+          "branchName": "main"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git abort-operation",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "abort-operation"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git create-branch from start point",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "create-branch",
+          "branchName": "hotfix",
+          "startPoint": "v1.2.0"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git create-stacked-branch",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "create-stacked-branch",
+          "branchName": "feat/b"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git stack-branch",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "stack-branch",
+          "branchName": "feat/b",
+          "parentBranch": "feat/a"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git stack-branch requires a parent",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "stack-branch",
+          "branchName": "feat/b"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git delete-branch force",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "delete-branch",
+          "branchName": "feat/a",
+          "force": true
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git restack",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "restack"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git submit-pull-requests draft",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "submit-pull-requests",
+          "draft": true
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git submit-pull-requests rejects unknown fields",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "submit-pull-requests",
+          "base": "main"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "get_workspace_git_summary",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_summary",
+      "args": {
+        "workspaceRoot": "/projects/demo"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "get_workspace_git_summary rejects requests",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_summary",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
     "name": "save UTF8",
     "request": {
       "kind": "invoke",
@@ -2779,6 +3218,118 @@
       }
     },
     "accepted": true
+  },
+  {
+    "name": "start_workspace_run_configuration inputs",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "start_workspace_run_configuration",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "configurationId": "write-env",
+          "inputs": {
+            "env": "prod",
+            "dry-run": false
+          }
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "restart_workspace_run_configuration inputs",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "restart_workspace_run_configuration",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "inputs": {
+            "env": "dev"
+          }
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "stop_workspace_run_configuration rejects inputs",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "stop_workspace_run_configuration",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "inputs": {
+            "env": "dev"
+          }
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "start_workspace_run_configuration rejects invalid input ids",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "start_workspace_run_configuration",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "inputs": {
+            "-env": "dev"
+          }
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "start_workspace_run_configuration rejects non-scalar inputs",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "start_workspace_run_configuration",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "inputs": {
+            "env": ["dev"]
+          }
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "run_workspace_run_detection_command",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_run_detection_command",
+      "args": {
+        "workspaceRoot": "/projects/demo"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "run_workspace_run_detection_command rejects extra fields",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_run_detection_command",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "input": {}
+      }
+    },
+    "accepted": false
   },
   {
     "name": "restart_workspace_run_configuration invalid ",

@@ -1238,6 +1238,7 @@ mod tests {
         serde_json::from_value(json!({
             "workspaceRoot": "C:\\Work\\Alpha",
             "primaryConfigurationId": "app",
+            "inputs": [],
             "configurations": [{
                 "configuration": {
                     "kind": "composite",
@@ -1255,6 +1256,7 @@ mod tests {
                 "health": null,
                 "recentFailures": [],
                 "logs": [],
+                "inputValues": {},
                 "children": [{
                     "configuration": {
                         "kind": "task",
@@ -1277,6 +1279,7 @@ mod tests {
                         { "sequence": 2, "at": 6, "stream": "stderr", "line": "ERROR boom" },
                         { "sequence": 3, "at": 7, "stream": "stdout", "line": "recovered" }
                     ],
+                    "inputValues": {},
                     "children": []
                 }]
             }]

@@ -28,11 +28,53 @@ export interface WorkspaceRunRestartPolicy {
   maxBackoffMs: number;
 }
 
+export type WorkspaceRunType = "service" | "job";
+
+export interface WorkspaceRunInputOption {
+  value: string;
+  label?: string;
+}
+
+interface WorkspaceRunInputBase {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export interface WorkspaceRunSelectInput extends WorkspaceRunInputBase {
+  type: "select";
+  options: WorkspaceRunInputOption[];
+  default?: string;
+}
+
+export interface WorkspaceRunTextInput extends WorkspaceRunInputBase {
+  type: "text";
+  default: string;
+  required: boolean;
+}
+
+export interface WorkspaceRunBooleanInput extends WorkspaceRunInputBase {
+  type: "boolean";
+  default: boolean;
+  trueValue: string;
+  falseValue: string;
+}
+
+export type WorkspaceRunInput =
+  | WorkspaceRunSelectInput
+  | WorkspaceRunTextInput
+  | WorkspaceRunBooleanInput;
+
+export type WorkspaceRunInputValue = string | boolean;
+export type WorkspaceRunInputValues = Record<string, WorkspaceRunInputValue>;
+
 export interface WorkspaceRunTaskConfiguration {
   id: string;
   name: string;
   kind: "task";
   primary: boolean;
+  runType: WorkspaceRunType;
+  group?: string;
   command: string;
   workingDirectory: string;
   environment: Record<string, string>;
@@ -48,6 +90,7 @@ export interface WorkspaceRunCompositeConfiguration {
   name: string;
   kind: "composite";
   primary: boolean;
+  group?: string;
   children: string[];
   startOrder: "parallel" | "sequence";
 }
@@ -58,6 +101,7 @@ export type WorkspaceRunConfiguration =
 
 export interface WorkspaceRunConfigurationDocument {
   schemaVersion: typeof WORKSPACE_RUN_SCHEMA_VERSION;
+  inputs: WorkspaceRunInput[];
   configurations: WorkspaceRunConfiguration[];
 }
 
@@ -103,12 +147,14 @@ export interface WorkspaceRunConfigurationStatus {
   health: WorkspaceRunHealthStatus | null;
   recentFailures: WorkspaceRunFailure[];
   logs: WorkspaceRunLogEntry[];
+  inputValues: WorkspaceRunInputValues;
   children: WorkspaceRunConfigurationStatus[];
 }
 
 export interface WorkspaceRunSnapshot {
   workspaceRoot: string;
   primaryConfigurationId: string | null;
+  inputs: WorkspaceRunInput[];
   configurations: WorkspaceRunConfigurationStatus[];
 }
 
@@ -122,6 +168,7 @@ export interface WorkspaceRunDetection {
 export const createEmptyWorkspaceRunDocument =
   (): WorkspaceRunConfigurationDocument => ({
     schemaVersion: WORKSPACE_RUN_SCHEMA_VERSION,
+    inputs: [],
     configurations: [],
   });
 

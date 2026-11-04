@@ -89,11 +89,59 @@ const localUrl = z
       return false;
     }
   }, "Use an HTTP loopback URL with a port of 1024 or higher.");
+const runGroup = z
+  .string()
+  .trim()
+  .min(1)
+  .max(60)
+  .refine((value) => !/\p{Cc}/u.test(value));
+const runInputValue = z
+  .string()
+  .max(1024)
+  .refine((value) => !/\p{Cc}/u.test(value));
+const runInputLabel = z.string().trim().min(1).max(120);
+const runInputFields = {
+  id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/),
+  label: runInputLabel,
+  description: z.string().max(500).optional(),
+};
+export const runInputSchema = z.discriminatedUnion("type", [
+  z.strictObject({
+    ...runInputFields,
+    type: z.literal("select"),
+    options: z
+      .array(
+        z.strictObject({
+          value: runInputValue,
+          label: runInputLabel.optional(),
+        }),
+      )
+      .min(1)
+      .max(64),
+    default: runInputValue.optional(),
+  }),
+  z.strictObject({
+    ...runInputFields,
+    type: z.literal("text"),
+    default: runInputValue.default(""),
+    required: z.boolean().default(false),
+  }),
+  z.strictObject({
+    ...runInputFields,
+    type: z.literal("boolean"),
+    default: z.boolean().default(false),
+    trueValue: runInputValue.default("true"),
+    falseValue: runInputValue.default("false"),
+  }),
+]);
+export type RunInput = z.infer<typeof runInputSchema>;
 export const runTaskSchema = z.strictObject({
   id,
   name: z.string().trim().min(1).max(120),
   kind: z.literal("task"),
   primary: z.boolean(),
+  runType: z.enum(["service", "job"]).default("service"),
+  group: runGroup.optional(),
   command: z
     .string()
     .trim()
@@ -155,6 +203,7 @@ export const runTaskSchema = z.strictObject({
 export const runDocumentSchema = z
   .strictObject({
     schemaVersion: z.literal(2),
+    inputs: z.array(runInputSchema).max(64).default([]),
     configurations: z
       .array(
         z.discriminatedUnion("kind", [
@@ -164,6 +213,7 @@ export const runDocumentSchema = z
             name: z.string().trim().min(1).max(120),
             kind: z.literal("composite"),
             primary: z.boolean(),
+            group: runGroup.optional(),
             children: z.array(id).min(1).max(16),
             startOrder: z.enum(["parallel", "sequence"]).default("parallel"),
           }),
@@ -174,8 +224,18 @@ export const runDocumentSchema = z
   .superRefine((doc, ctx) => {
     const ids = new Set<string>();
     const children = new Set<string>();
+    const inputIds = new Set(doc.inputs.map((input) => input.id));
     const fail = (message: string): void =>
       ctx.addIssue({ code: "custom", message });
+    if (inputIds.size !== doc.inputs.length)
+      fail("Run input ids must be unique.");
+    for (const input of doc.inputs)
+      if (
+        input.type === "select" &&
+        input.default !== undefined &&
+        !input.options.some((option) => option.value === input.default)
+      )
+        fail("A select input default must be one of its options.");
     if (
       doc.configurations.length &&
       doc.configurations.filter((c) => c.primary).length !== 1
@@ -184,6 +244,16 @@ export const runDocumentSchema = z
     for (const c of doc.configurations) {
       if (ids.has(c.id)) fail("Configuration ids must be unique.");
       ids.add(c.id);
+      if (c.kind === "task") {
+        if (c.runType === "job" && (c.healthCheck || c.restartPolicy.onCrash))
+          fail("Jobs cannot use a health check or restart on crash.");
+        for (const text of [c.command, ...Object.values(c.environment)])
+          for (const [, inputId] of text.matchAll(
+            /\$\{input:([A-Za-z0-9][A-Za-z0-9_-]{0,63})\}/gu,
+          ))
+            if (!inputIds.has(inputId!))
+              fail(`Configuration ${c.id} references an undefined input.`);
+      }
       if (c.kind === "composite")
         for (const child of c.children) {
           if (

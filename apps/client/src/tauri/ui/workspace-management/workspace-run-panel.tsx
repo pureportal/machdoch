@@ -1,13 +1,4 @@
-import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
-import {
-  ChevronDown,
-  CircleAlert,
-  ExternalLink,
-  LoaderCircle,
-  Play,
-  RotateCw,
-  Square,
-} from "lucide-react";
+import { ArrowLeft, CircleAlert, LoaderCircle, Play, Settings2, Sparkles } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -21,15 +12,12 @@ import {
   createEmptyWorkspaceRunDocument,
   type WorkspaceRunConfigurationDocument,
   type WorkspaceRunConfigurationStatus,
+  type WorkspaceRunInputValues,
   type WorkspaceRunSnapshot,
 } from "../../../shared/workspace-run.js";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
+import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
 import { AppNotification } from "@machdoch/media-studio/tauri/ui/components/ui/notification.js";
-import {
-  SUBMIT_SHORTCUT_ACTION_PROPS,
-  SubmitShortcut,
-} from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
-import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   listenWorkspaceRunLogs,
   listenWorkspaceRunState,
@@ -41,148 +29,51 @@ import {
   stopWorkspaceRunConfiguration,
 } from "../runtime";
 import { createWorkspaceRootKey } from "./workspace-management-model";
+import { startWorkspaceRunDetection } from "./workspace-run-detection-state";
+import {
+  WorkspaceRunDetails,
+  type WorkspaceRunAction,
+} from "./workspace-run-details";
 import { WorkspaceRunEditor } from "./workspace-run-editor";
+import { WorkspaceRunList } from "./workspace-run-list";
 import {
   applyWorkspaceRunLogBatch,
   mergeWorkspaceRunSnapshotLogs,
-  workspaceRunCanRestart,
-  workspaceRunConfigurationLabel,
-  workspaceRunCurrentFailure,
-  workspaceRunDirectAction,
+  workspaceRunInitialInputValues,
+  workspaceRunInputErrors,
   workspaceRunIsActive,
   workspaceRunPrimaryStatus,
-  workspaceRunStatusPorts,
-  workspaceRunStatusPresentation,
-  workspaceRunStatusUrls,
+  workspaceRunStatusInputs,
 } from "./workspace-run-model";
-import { WorkspaceRunOutput } from "./workspace-run-output";
 
-const STATE_TONE_CLASS = {
-  idle: "bg-slate-500",
-  progress: "bg-sky-400",
-  success: "bg-emerald-400",
-  warning: "bg-amber-400",
-  danger: "bg-red-400",
-} as const;
 const RUN_RECONCILIATION_IDLE_MS = 10_000;
-
-export type WorkspaceRunPanelView = "all" | "output" | "configuration";
 
 const errorMessage = (cause: unknown): string =>
   cause instanceof Error ? cause.message : String(cause);
 
-const hasOutput = (status: WorkspaceRunConfigurationStatus): boolean =>
-  status.logs.length > 0 || status.children.some(hasOutput);
+const documentFromSnapshot = (
+  snapshot: WorkspaceRunSnapshot,
+): WorkspaceRunConfigurationDocument => ({
+  schemaVersion: WORKSPACE_RUN_SCHEMA_VERSION,
+  inputs: snapshot.inputs,
+  configurations: snapshot.configurations.map((status) => status.configuration),
+});
 
-const ConfigurationSummary = ({
-  status,
-  onOpenUrl,
-}: {
-  status: WorkspaceRunConfigurationStatus;
-  onOpenUrl: (url: string) => void;
-}): JSX.Element | null => {
-  const ports = workspaceRunStatusPorts(status);
-  const urls = workspaceRunStatusUrls(status);
-  const failure = workspaceRunCurrentFailure(status);
-  const failedHealth = [status, ...status.children]
-    .filter((candidate) => candidate.health?.state === "failed")
-    .sort(
-      (left, right) =>
-        (right.health?.checkedAt ?? 0) - (left.health?.checkedAt ?? 0),
-    )[0]?.health;
-  const diagnostic = failure?.message ?? failedHealth?.message;
-  if (
-    status.children.length === 0 &&
-    ports.length === 0 &&
-    urls.length === 0 &&
-    status.restartCount === 0 &&
-    !diagnostic
-  ) {
-    return null;
-  }
-
-  return (
-    <div className="grid gap-2 border-t border-slate-800 px-3 py-2.5 text-xs">
-      {status.children.length > 0 ? (
-        <div className="grid gap-1.5 sm:grid-cols-2">
-          {status.children.map((child) => {
-            const presentation = workspaceRunStatusPresentation(child);
-            return (
-              <div
-                key={child.configuration.id}
-                className="flex min-w-0 items-center gap-2 rounded-md border border-slate-800/80 px-2.5 py-2"
-              >
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "size-2 shrink-0 rounded-full",
-                    STATE_TONE_CLASS[presentation.tone],
-                  )}
-                />
-                <span className="min-w-0 flex-1 truncate text-slate-300">
-                  {workspaceRunConfigurationLabel(child, status.children)}
-                </span>
-                <span className="shrink-0 text-slate-500">
-                  {presentation.label}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-      {ports.length > 0 || urls.length > 0 || status.restartCount > 0 ? (
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-slate-500">
-          {ports.length > 0 ? <span>Ports {ports.join(", ")}</span> : null}
-          {status.restartCount > 0 ? (
-            <span>
-              {status.restartCount} restart
-              {status.restartCount === 1 ? "" : "s"}
-            </span>
-          ) : null}
-          {urls.map((url) => (
-            <CopyContextMenu
-              key={url}
-              selectable={false}
-              values={[{ label: "Copy URL", value: url }]}
-            >
-              <button
-                type="button"
-                className="inline-flex max-w-full items-center gap-1 text-sky-300 outline-none hover:text-sky-200 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-sky-500"
-                onClick={() => onOpenUrl(url)}
-              >
-                <span className="truncate">{url}</span>
-                <ExternalLink aria-hidden="true" className="size-3 shrink-0" />
-              </button>
-            </CopyContextMenu>
-          ))}
-        </div>
-      ) : null}
-      {diagnostic ? (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-md border border-red-900/60 bg-red-950/25 px-2.5 py-2 text-red-200"
-        >
-          <CircleAlert
-            aria-hidden="true"
-            className="mt-0.5 size-3.5 shrink-0"
-          />
-          <span className="min-w-0 break-words">{diagnostic}</span>
-        </div>
-      ) : null}
-    </div>
-  );
-};
+const keepSelection = (
+  current: string | null,
+  snapshot: WorkspaceRunSnapshot,
+): string | null =>
+  current &&
+  snapshot.configurations.some((status) => status.configuration.id === current)
+    ? current
+    : (workspaceRunPrimaryStatus(snapshot)?.configuration.id ?? null);
 
 export const WorkspaceRunPanel = ({
   workspaceRoot,
-  view,
   onDocumentDirtyChange,
-  onConfigurationRequired,
 }: {
   workspaceRoot: string | null | undefined;
-  view: WorkspaceRunPanelView;
   onDocumentDirtyChange?: (dirty: boolean) => void;
-  onConfigurationRequired?: () => void;
 }): JSX.Element | null => {
   const normalizedRoot = workspaceRoot?.trim() || null;
   const rootKey = normalizedRoot
@@ -190,22 +81,24 @@ export const WorkspaceRunPanel = ({
     : null;
   const activeRootKeyRef = useRef(rootKey);
   activeRootKeyRef.current = rootKey;
-  const actionTokenRef = useRef<symbol | null>(null);
+  const pendingActionsRef = useRef(new Set<string>());
   const lastRunEventAtRef = useRef(0);
   const documentDirtyRef = useRef(false);
-  const documentRootKeyRef = useRef<string | null>(null);
-  const configurationRequestRootKeyRef = useRef<string | null>(null);
   const [snapshot, setSnapshot] = useState<WorkspaceRunSnapshot | null>(null);
   const [document, setDocument] =
     useState<WorkspaceRunConfigurationDocument | null>(null);
   const [selectedConfigurationId, setSelectedConfigurationId] = useState<
     string | null
   >(null);
-  const [configurationOpen, setConfigurationOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<
-    "start" | "stop" | "restart" | null
-  >(null);
+  const [busyActions, setBusyActions] = useState<
+    Record<string, WorkspaceRunAction>
+  >({});
+  const [editedInputValues, setEditedInputValues] = useState<
+    Record<string, WorkspaceRunInputValues>
+  >({});
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [documentError, setDocumentError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -233,14 +126,7 @@ export const WorkspaceRunPanel = ({
       setSnapshot((current) =>
         current ? mergeWorkspaceRunSnapshotLogs(current, next) : next,
       );
-      setSelectedConfigurationId((current) =>
-        current &&
-        next.configurations.some(
-          (status) => status.configuration.id === current,
-        )
-          ? current
-          : (workspaceRunPrimaryStatus(next)?.configuration.id ?? null),
-      );
+      setSelectedConfigurationId((current) => keepSelection(current, next));
       setSnapshotError(null);
     } catch (cause) {
       if (activeRootKeyRef.current === rootKey) {
@@ -261,13 +147,7 @@ export const WorkspaceRunPanel = ({
     if (snapshotResult.status === "fulfilled") {
       setSnapshot(snapshotResult.value);
       setSelectedConfigurationId((current) =>
-        current &&
-        snapshotResult.value.configurations.some(
-          (status) => status.configuration.id === current,
-        )
-          ? current
-          : (workspaceRunPrimaryStatus(snapshotResult.value)?.configuration
-              .id ?? null),
+        keepSelection(current, snapshotResult.value),
       );
       setSnapshotError(null);
     } else {
@@ -275,35 +155,30 @@ export const WorkspaceRunPanel = ({
     }
 
     if (documentResult.status === "fulfilled") {
-      documentRootKeyRef.current = rootKey;
       setDocument(documentResult.value);
       setDocumentError(null);
-      if (documentResult.value.configurations.length === 0) {
-        setConfigurationOpen(true);
-      }
     } else {
-      documentRootKeyRef.current = rootKey;
       setDocument((current) => current ?? createEmptyWorkspaceRunDocument());
       setDocumentError(errorMessage(documentResult.reason));
-      setConfigurationOpen(true);
+      setEditing(true);
     }
     setLoading(false);
   }, [normalizedRoot, rootKey]);
 
   useEffect(() => {
-    actionTokenRef.current = null;
+    pendingActionsRef.current.clear();
     documentDirtyRef.current = false;
-    documentRootKeyRef.current = null;
-    configurationRequestRootKeyRef.current = null;
     setSnapshot(null);
     setDocument(null);
     setSelectedConfigurationId(null);
-    setConfigurationOpen(false);
+    setQuery("");
+    setEditing(false);
     setSnapshotError(null);
     setDocumentError(null);
     setActionError(null);
     setDetectionCompletionRevision(0);
-    setBusyAction(null);
+    setBusyActions({});
+    setEditedInputValues({});
     if (!normalizedRoot || !rootKey) {
       setLoading(false);
       return;
@@ -325,36 +200,25 @@ export const WorkspaceRunPanel = ({
     let unlistenLogs: (() => void) | undefined;
     void listenWorkspaceRunState((nextSnapshot) => {
       if (
-        active &&
-        activeRootKeyRef.current === rootKey &&
-        createWorkspaceRootKey(nextSnapshot.workspaceRoot) === rootKey
+        !active ||
+        activeRootKeyRef.current !== rootKey ||
+        createWorkspaceRootKey(nextSnapshot.workspaceRoot) !== rootKey
       ) {
-        lastRunEventAtRef.current = Date.now();
-        setSnapshot((current) =>
-          current
-            ? mergeWorkspaceRunSnapshotLogs(current, nextSnapshot)
-            : nextSnapshot,
-        );
-        if (!documentDirtyRef.current) {
-          documentRootKeyRef.current = rootKey;
-          setDocument({
-            schemaVersion: WORKSPACE_RUN_SCHEMA_VERSION,
-            configurations: nextSnapshot.configurations.map(
-              (status) => status.configuration,
-            ),
-          });
-        }
-        setSelectedConfigurationId((current) =>
-          current &&
-          nextSnapshot.configurations.some(
-            (status) => status.configuration.id === current,
-          )
-            ? current
-            : (workspaceRunPrimaryStatus(nextSnapshot)?.configuration.id ??
-              null),
-        );
-        setSnapshotError(null);
+        return;
       }
+      lastRunEventAtRef.current = Date.now();
+      setSnapshot((current) =>
+        current
+          ? mergeWorkspaceRunSnapshotLogs(current, nextSnapshot)
+          : nextSnapshot,
+      );
+      if (!documentDirtyRef.current) {
+        setDocument(documentFromSnapshot(nextSnapshot));
+      }
+      setSelectedConfigurationId((current) =>
+        keepSelection(current, nextSnapshot),
+      );
+      setSnapshotError(null);
     }, normalizedRoot)
       .then((listener) => {
         if (active) unlisten = listener;
@@ -387,42 +251,55 @@ export const WorkspaceRunPanel = ({
     };
   }, [loadPanel, normalizedRoot, refreshSnapshot, rootKey]);
 
-  useEffect(() => {
-    if (
-      view !== "all" &&
-      !loading &&
-      document &&
-      documentRootKeyRef.current === rootKey &&
-      document.configurations.length === 0 &&
-      onConfigurationRequired &&
-      configurationRequestRootKeyRef.current !== rootKey
-    ) {
-      configurationRequestRootKeyRef.current = rootKey;
-      onConfigurationRequired();
-    }
-  }, [document, loading, onConfigurationRequired, rootKey, view]);
-
-  const primaryStatus = workspaceRunPrimaryStatus(snapshot);
-  const displayedStatus = useMemo(() => {
-    if (!snapshot) return null;
-    return (
-      snapshot.configurations.find(
-        (status) => status.configuration.id === selectedConfigurationId,
-      ) ?? primaryStatus
-    );
-  }, [primaryStatus, selectedConfigurationId, snapshot]);
+  const statuses = useMemo(
+    () => snapshot?.configurations ?? [],
+    [snapshot?.configurations],
+  );
+  const inputs = useMemo(() => snapshot?.inputs ?? [], [snapshot?.inputs]);
+  const selectedStatus =
+    statuses.find(
+      (status) => status.configuration.id === selectedConfigurationId,
+    ) ??
+    workspaceRunPrimaryStatus(snapshot) ??
+    statuses[0] ??
+    null;
 
   if (!normalizedRoot) return null;
 
+  const statusInputValues = (
+    status: WorkspaceRunConfigurationStatus,
+  ): WorkspaceRunInputValues => {
+    const statusInputs = workspaceRunStatusInputs(status, inputs);
+    const defaults = workspaceRunInitialInputValues(statusInputs);
+    const edited = editedInputValues[status.configuration.id];
+    if (edited) return { ...defaults, ...edited };
+    if (!workspaceRunIsActive(status)) return defaults;
+    return Object.fromEntries(
+      statusInputs.map((input) => [
+        input.id,
+        status.inputValues[input.id] ?? defaults[input.id]!,
+      ]),
+    );
+  };
+
   const runAction = async (
-    action: "start" | "stop" | "restart",
+    status: WorkspaceRunConfigurationStatus,
+    action: WorkspaceRunAction,
   ): Promise<void> => {
-    if (!displayedStatus || actionTokenRef.current) return;
-    const token = Symbol(action);
+    const configurationId = status.configuration.id;
+    if (pendingActionsRef.current.has(configurationId)) return;
+    const statusInputs = workspaceRunStatusInputs(status, inputs);
+    const values = statusInputValues(status);
+    if (
+      action !== "stop" &&
+      Object.keys(workspaceRunInputErrors(statusInputs, values)).length > 0
+    ) {
+      setSelectedConfigurationId(configurationId);
+      return;
+    }
     const actionRootKey = rootKey;
-    const configurationId = displayedStatus.configuration.id;
-    actionTokenRef.current = token;
-    setBusyAction(action);
+    pendingActionsRef.current.add(configurationId);
+    setBusyActions((current) => ({ ...current, [configurationId]: action }));
     setActionError(null);
     try {
       const next =
@@ -430,6 +307,7 @@ export const WorkspaceRunPanel = ({
           ? await startWorkspaceRunConfiguration(
               normalizedRoot,
               configurationId,
+              statusInputs.length > 0 ? values : undefined,
             )
           : action === "stop"
             ? await stopWorkspaceRunConfiguration(
@@ -439,6 +317,7 @@ export const WorkspaceRunPanel = ({
             : await restartWorkspaceRunConfiguration(
                 normalizedRoot,
                 configurationId,
+                editedInputValues[configurationId] ? values : undefined,
               );
       if (activeRootKeyRef.current === actionRootKey) {
         setSnapshot((current) =>
@@ -450,255 +329,233 @@ export const WorkspaceRunPanel = ({
         setActionError(errorMessage(cause));
       }
     } finally {
-      if (actionTokenRef.current === token) {
-        actionTokenRef.current = null;
-        setBusyAction(null);
+      pendingActionsRef.current.delete(configurationId);
+      if (activeRootKeyRef.current === actionRootKey) {
+        setBusyActions((current) => {
+          const { [configurationId]: _finished, ...remaining } = current;
+          return remaining;
+        });
       }
     }
   };
 
-  const directAction = displayedStatus
-    ? workspaceRunDirectAction(displayedStatus)
-    : "none";
-  const presentation = displayedStatus
-    ? workspaceRunStatusPresentation(displayedStatus)
-    : null;
+  const leaveEditor = (): void => {
+    if (
+      documentDirtyRef.current &&
+      !window.confirm("Discard unsaved run configuration changes?")
+    ) {
+      return;
+    }
+    handleDocumentDirtyChange(false);
+    setEditing(false);
+  };
+
+  const detect = (): void => {
+    setEditing(true);
+    void startWorkspaceRunDetection(normalizedRoot);
+  };
+
   const loadError = documentError ?? snapshotError;
   const error = actionError ?? loadError;
-  const showOutput = Boolean(
-    displayedStatus &&
-    (displayedStatus.startedAt !== null ||
-      workspaceRunIsActive(displayedStatus) ||
-      hasOutput(displayedStatus)),
-  );
-  const outputVisible = view === "output" || (view === "all" && showOutput);
+  const showEditor = editing;
+  const empty = Boolean(document && document.configurations.length === 0);
+
+  const editor = document ? (
+    <WorkspaceRunEditor
+      workspaceRoot={normalizedRoot}
+      document={document}
+      onDirtyChange={handleDocumentDirtyChange}
+      onDetectionComplete={handleDetectionComplete}
+      onSaved={(nextDocument, nextSnapshot) => {
+        setDocument(nextDocument);
+        setSnapshot(nextSnapshot);
+        setSelectedConfigurationId((current) =>
+          keepSelection(current, nextSnapshot),
+        );
+        setEditedInputValues({});
+        setDocumentError(null);
+        setSnapshotError(null);
+        setActionError(null);
+      }}
+    />
+  ) : null;
+
+  const errorBanner = error ? (
+    <div
+      role="alert"
+      className="flex shrink-0 items-start gap-2 border-b border-red-900/50 bg-red-950/20 px-4 py-2 text-xs text-red-200"
+    >
+      <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+      <span className="min-w-0 flex-1 break-words">{error}</span>
+      {loadError ? (
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          disabled={loading}
+          onClick={() => void loadPanel()}
+        >
+          Retry
+        </Button>
+      ) : null}
+    </div>
+  ) : null;
+
+  const detectionNotice =
+    detectionCompletionRevision > 0 ? (
+      <AppNotification
+        key={detectionCompletionRevision}
+        tone="success"
+        onDismiss={dismissDetectionCompletion}
+      >
+        Run configuration detected and saved.
+      </AppNotification>
+    ) : null;
+
+  const selectedInputs = selectedStatus
+    ? workspaceRunStatusInputs(selectedStatus, inputs)
+    : [];
+  const selectedValues = selectedStatus ? statusInputValues(selectedStatus) : {};
 
   return (
     <section
       aria-label="Workspace run"
-      aria-busy={loading || busyAction !== null}
-      className="min-w-0 overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20 shadow-[0_16px_48px_rgba(0,0,0,0.16)]"
+      aria-busy={loading}
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900/20 sm:flex-row"
     >
-      <SubmitShortcut asChild>
-        <div className="flex min-w-0 flex-wrap items-center gap-2.5 px-4 py-3.5">
-          <div className="min-w-[8rem] flex-1">
-            {(snapshot?.configurations.length ?? 0) > 1 && displayedStatus ? (
-              <select
-                aria-label="Run configuration"
-                value={displayedStatus.configuration.id}
-                onChange={(event) =>
-                  setSelectedConfigurationId(event.currentTarget.value)
+      {!empty ? (
+        <aside className="flex max-h-56 min-h-0 shrink-0 flex-col border-b border-slate-800 bg-slate-950/40 sm:max-h-none sm:w-64 sm:border-r sm:border-b-0">
+          <WorkspaceRunList
+            statuses={statuses}
+            selectedConfigurationId={showEditor ? null : selectedStatus?.configuration.id ?? null}
+            query={query}
+            busyConfigurationIds={new Set(Object.keys(busyActions))}
+            configurationHasArguments={(status) =>
+              workspaceRunStatusInputs(status, inputs).length > 0
+            }
+            onQueryChange={setQuery}
+            onSelect={(configurationId) => {
+              if (showEditor) {
+                if (
+                  documentDirtyRef.current &&
+                  !window.confirm("Discard unsaved run configuration changes?")
+                ) {
+                  return;
                 }
-                className="h-7 max-w-full rounded-md border border-slate-700 bg-slate-950 px-2 text-sm font-medium text-slate-100 outline-none focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-500/40"
-              >
-                {snapshot?.configurations.map((status) => (
-                  <option
-                    key={status.configuration.id}
-                    value={status.configuration.id}
-                  >
-                    {workspaceRunConfigurationLabel(
-                      status,
-                      snapshot?.configurations ?? [],
-                    )}
-                    {status.configuration.primary ? " (Default)" : ""}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <div className="truncate text-sm font-medium text-slate-100">
-                {displayedStatus?.configuration.name ?? "Run"}
-              </div>
-            )}
-            {presentation ? (
-              <div
-                role="status"
-                aria-live="polite"
-                className="mt-0.5 flex items-center gap-1.5 text-[11px] text-slate-500"
-              >
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    STATE_TONE_CLASS[presentation.tone],
-                    presentation.tone === "progress" && "animate-pulse",
-                  )}
-                />
-                {presentation.label}
-              </div>
-            ) : null}
-          </div>
-          {loading && !snapshot ? (
-            <LoaderCircle
-              aria-label="Loading run state"
-              className="size-4 animate-spin text-slate-500"
-            />
-          ) : null}
-          {displayedStatus && workspaceRunCanRestart(displayedStatus) ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={busyAction !== null}
-              onClick={() => void runAction("restart")}
-            >
-              {busyAction === "restart" ? (
-                <LoaderCircle
-                  aria-hidden="true"
-                  className="size-4 animate-spin"
-                />
-              ) : (
-                <RotateCw aria-hidden="true" className="size-4" />
-              )}
-              Restart
-            </Button>
-          ) : null}
-          {directAction !== "none" && displayedStatus ? (
-            <Button
-              type="button"
-              size="sm"
-              variant={directAction === "start" ? "default" : "outline"}
-              aria-label={
-                directAction === "start"
-                  ? `Run ${displayedStatus.configuration.name}`
-                  : `Stop ${displayedStatus.configuration.name}`
+                handleDocumentDirtyChange(false);
+                setEditing(false);
               }
-              disabled={busyAction !== null}
-              onClick={() => void runAction(directAction)}
-              {...(directAction === "start"
-                ? SUBMIT_SHORTCUT_ACTION_PROPS
-                : {})}
-            >
-              {busyAction === directAction ? (
-                <LoaderCircle
-                  aria-hidden="true"
-                  className="size-4 animate-spin"
-                />
-              ) : directAction === "start" ? (
-                <Play aria-hidden="true" className="size-4" />
-              ) : (
-                <Square aria-hidden="true" className="size-3.5 fill-current" />
-              )}
-              {directAction === "start" ? "Run" : "Stop"}
-            </Button>
-          ) : null}
-        </div>
-      </SubmitShortcut>
-      {detectionCompletionRevision > 0 ? (
-        <div className="border-t border-slate-800 px-3 py-2">
-          <AppNotification
-            key={detectionCompletionRevision}
-            tone="success"
-            onDismiss={dismissDetectionCompletion}
-          >
-            Run configuration detected and saved.
-          </AppNotification>
-        </div>
-      ) : null}
-      {error ? (
-        <div
-          role="alert"
-          className="flex items-start gap-2 border-t border-red-900/50 px-3 py-2 text-xs text-red-200"
-        >
-          <CircleAlert
-            aria-hidden="true"
-            className="mt-0.5 size-3.5 shrink-0"
-          />
-          <span className="min-w-0 flex-1 break-words">{error}</span>
-          {loadError ? (
-            <Button
-              type="button"
-              size="xs"
-              variant="outline"
-              disabled={loading}
-              onClick={() => void loadPanel()}
-            >
-              Retry
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-      {displayedStatus ? (
-        <ConfigurationSummary
-          status={displayedStatus}
-          onOpenUrl={(url) => {
-            setActionError(null);
-            const source = [displayedStatus, ...displayedStatus.children].find(
-              (status) =>
-                status.configuration.kind === "task" &&
-                status.configuration.urls.includes(url),
-            );
-            void openWorkspaceRunUrl(
-              normalizedRoot,
-              (source ?? displayedStatus).configuration.id,
-              url,
-            ).catch((cause) => setActionError(errorMessage(cause)));
-          }}
-        />
-      ) : null}
-      {displayedStatus ? (
-        <div hidden={!outputVisible}>
-          <WorkspaceRunOutput status={displayedStatus} compact={false} />
-        </div>
-      ) : null}
-      {document && view === "all" ? (
-        <details
-          open={configurationOpen}
-          onToggle={(event) => setConfigurationOpen(event.currentTarget.open)}
-          className="group/config border-t border-slate-800/80"
-        >
-          <summary className="flex cursor-pointer list-none items-center px-3 py-2 text-xs text-slate-400 outline-none hover:text-slate-200 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500/70">
-            Configuration
-            <ChevronDown
-              aria-hidden="true"
-              className="ml-auto size-3.5 transition-transform group-open/config:rotate-180"
-            />
-          </summary>
-          <div className="border-t border-slate-800 p-4">
-            <WorkspaceRunEditor
-              workspaceRoot={normalizedRoot}
-              document={document}
-              onDirtyChange={handleDocumentDirtyChange}
-              onDetectionComplete={handleDetectionComplete}
-              onSaved={(nextDocument, nextSnapshot) => {
-                setDocument(nextDocument);
-                setSnapshot(nextSnapshot);
-                setSelectedConfigurationId(
-                  workspaceRunPrimaryStatus(nextSnapshot)?.configuration.id ??
-                    null,
-                );
-                setDocumentError(null);
-                setSnapshotError(null);
-                setActionError(null);
-                setConfigurationOpen(false);
-              }}
-            />
-          </div>
-        </details>
-      ) : null}
-      {document && view !== "all" ? (
-        <div
-          hidden={view !== "configuration"}
-          className="border-t border-slate-800 p-4"
-        >
-          <WorkspaceRunEditor
-            workspaceRoot={normalizedRoot}
-            document={document}
-            onDirtyChange={handleDocumentDirtyChange}
-            onDetectionComplete={handleDetectionComplete}
-            onSaved={(nextDocument, nextSnapshot) => {
-              setDocument(nextDocument);
-              setSnapshot(nextSnapshot);
-              setSelectedConfigurationId(
-                workspaceRunPrimaryStatus(nextSnapshot)?.configuration.id ??
-                  null,
+              setSelectedConfigurationId(configurationId);
+            }}
+            onQuickAction={(configurationId, action) => {
+              const status = statuses.find(
+                (candidate) => candidate.configuration.id === configurationId,
               );
-              setDocumentError(null);
-              setSnapshotError(null);
-              setActionError(null);
+              if (status) void runAction(status, action);
             }}
           />
-        </div>
+          <div className="shrink-0 border-t border-slate-800 p-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-pressed={editing}
+              onClick={() => (editing ? leaveEditor() : setEditing(true))}
+              className="w-full justify-start text-slate-400 hover:text-slate-100"
+            >
+              <Settings2 aria-hidden="true" />
+              Edit configuration
+            </Button>
+          </div>
+        </aside>
       ) : null}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {errorBanner}
+        {showEditor ? (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex shrink-0 items-center gap-2 border-b border-slate-800 px-3 py-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={leaveEditor}
+              >
+                <ArrowLeft aria-hidden="true" />
+                Back
+              </Button>
+              <h2 className="text-sm font-medium text-slate-200">
+                Configuration
+              </h2>
+            </div>
+            <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto p-4">
+              {detectionNotice}
+              {editor}
+            </div>
+          </div>
+        ) : loading && !snapshot ? (
+          <div className="grid flex-1 place-items-center">
+            <LoaderCircle
+              aria-label="Loading run state"
+              className="size-5 animate-spin text-slate-500"
+            />
+          </div>
+        ) : empty ? (
+          <div className="grid flex-1 place-items-center p-6">
+            <EmptyState
+              icon={Play}
+              title="No run configurations"
+              className="w-full max-w-md"
+              action={
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button type="button" size="sm" onClick={detect}>
+                    <Sparkles aria-hidden="true" />
+                    Detect
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setEditing(true)}
+                  >
+                    <Settings2 aria-hidden="true" />
+                    Edit configuration
+                  </Button>
+                </div>
+              }
+            />
+          </div>
+        ) : selectedStatus ? (
+          <WorkspaceRunDetails
+            key={selectedStatus.configuration.id}
+            status={selectedStatus}
+            inputs={selectedInputs}
+            values={selectedValues}
+            errors={workspaceRunInputErrors(selectedInputs, selectedValues)}
+            busyAction={busyActions[selectedStatus.configuration.id] ?? null}
+            onValuesChange={(values) =>
+              setEditedInputValues((current) => ({
+                ...current,
+                [selectedStatus.configuration.id]: values,
+              }))
+            }
+            onAction={(action) => void runAction(selectedStatus, action)}
+            onSelectConfiguration={setSelectedConfigurationId}
+            onOpenUrl={(url) => {
+              setActionError(null);
+              const source = [selectedStatus, ...selectedStatus.children].find(
+                (status) =>
+                  status.configuration.kind === "task" &&
+                  status.configuration.urls.includes(url),
+              );
+              void openWorkspaceRunUrl(
+                normalizedRoot,
+                (source ?? selectedStatus).configuration.id,
+                url,
+              ).catch((cause) => setActionError(errorMessage(cause)));
+            }}
+          />
+        ) : null}
+      </div>
     </section>
   );
 };
