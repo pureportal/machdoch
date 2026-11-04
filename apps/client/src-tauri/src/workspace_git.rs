@@ -1101,6 +1101,7 @@ fn load_overview(
                 &repository,
             )
         });
+        let parents_worker = scope.spawn(|| stack::read_parents(&repository));
         let remotes_worker = scope.spawn(|| run_required("git", &["remote", "-v"], &repository));
         let commits_worker = scope.spawn(|| {
             run_optional(
@@ -1121,43 +1122,27 @@ fn load_overview(
             )
         });
         let operation_worker = scope.spawn(|| current_operation(&repository));
-        let branch = run_optional(
-            "git",
-            &["symbolic-ref", "--quiet", "--short", "HEAD"],
-            &repository,
-        )
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "Detached HEAD".to_string());
-        let detached = branch == "Detached HEAD";
-        let upstream = run_optional(
-            "git",
-            &[
-                "rev-parse",
-                "--abbrev-ref",
-                "--symbolic-full-name",
-                "@{upstream}",
-            ],
-            &repository,
-        )
-        .filter(|value| !value.is_empty());
-        let (ahead, behind) = upstream
-            .as_ref()
-            .and_then(|_| {
-                run_optional(
-                    "git",
-                    &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
-                    &repository,
-                )
-            })
-            .and_then(|value| {
-                let mut parts = value.split_whitespace();
-                Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
-            })
-            .unwrap_or((0, 0));
         let branch_output = branches_worker
             .join()
             .map_err(|_| "Git branch worker stopped unexpectedly.".to_string())??;
         let mut local_branches = parse_branches(&branch_output, false);
+        let current_branch = local_branches.iter().find(|candidate| candidate.current);
+        let upstream = current_branch
+            .filter(|candidate| !candidate.upstream_gone)
+            .and_then(|candidate| candidate.upstream.clone());
+        let (ahead, behind) =
+            current_branch.map_or((0, 0), |candidate| (candidate.ahead, candidate.behind));
+        let head = match current_branch {
+            Some(candidate) => Some(candidate.name.clone()),
+            None => run_optional(
+                "git",
+                &["symbolic-ref", "--quiet", "--short", "HEAD"],
+                &repository,
+            )
+            .filter(|value| !value.is_empty()),
+        };
+        let detached = head.is_none();
+        let branch = head.unwrap_or_else(|| "Detached HEAD".to_string());
         if !detached
             && !local_branches
                 .iter()
@@ -1178,7 +1163,10 @@ fn load_overview(
                 },
             );
         }
-        stack::annotate_branches(&repository, &mut local_branches);
+        let parents = parents_worker
+            .join()
+            .map_err(|_| "Git stack worker stopped unexpectedly.".to_string())?;
+        stack::annotate_branches(&repository, &parents, &mut local_branches);
         let remote_branches = parse_branches(&branch_output, true);
         let remotes = parse_remotes(
             &remotes_worker

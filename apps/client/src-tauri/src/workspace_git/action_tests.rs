@@ -7,7 +7,7 @@ use std::{
 
 use super::{
     actions::execute_workspace_git_action, command_succeeds, load_overview, run_required,
-    stack::parents_for_test, WorkspaceGitActionRequest, WorkspaceGitOverview,
+    stack::read_parents, WorkspaceGitActionRequest, WorkspaceGitOverview,
 };
 
 static NEXT_REPOSITORY: AtomicU64 = AtomicU64::new(0);
@@ -265,14 +265,14 @@ fn stacked_branches_restack_after_parent_changes() {
         })
         .expect("a forced delete should succeed");
     assert_eq!(
-        parents_for_test(repository.path()).get("feat/b").map(String::as_str),
+        read_parents(repository.path()).get("feat/b").map(String::as_str),
         Some("main")
     );
 
     repository
         .action("unstack-branch", branch("feat/b"))
         .expect("the branch should unstack");
-    assert!(parents_for_test(repository.path()).is_empty());
+    assert!(read_parents(repository.path()).is_empty());
 }
 
 #[test]
@@ -307,4 +307,40 @@ fn branches_start_from_a_chosen_point_and_push_with_upstream() {
         .expect("the branch should publish");
     assert_eq!(pushed.upstream.as_deref(), Some("origin/hotfix"));
     assert_eq!((pushed.ahead, pushed.behind), (0, 0));
+}
+
+#[test]
+fn overview_tracks_the_current_branch_upstream() {
+    let repository = TestRepository::new("tracking");
+    let remote = TestRepository::new("tracking-remote");
+    remote.git(&["fetch", &repository.path().display().to_string(), "main"]);
+    remote.git(&["reset", "--hard", "FETCH_HEAD"]);
+    repository.git(&["remote", "add", "origin", &remote.path().display().to_string()]);
+    repository
+        .action("fetch", |_| {})
+        .expect("the remote should fetch");
+    repository.git(&["branch", "--set-upstream-to", "origin/main"]);
+    repository.commit_file("local.txt", "local\n", "local");
+    remote.commit_file("remote.txt", "remote\n", "remote");
+    let fetched = repository
+        .action("fetch", |_| {})
+        .expect("the remote should fetch again");
+    assert_eq!(fetched.branch, "main");
+    assert_eq!(fetched.upstream.as_deref(), Some("origin/main"));
+    assert_eq!((fetched.ahead, fetched.behind), (1, 1));
+    assert!(fetched
+        .remote_branches
+        .iter()
+        .any(|branch| branch.name == "origin/main"));
+
+    repository.git(&["update-ref", "-d", "refs/remotes/origin/main"]);
+    let gone = repository.overview();
+    assert_eq!(gone.upstream, None);
+    assert_eq!((gone.ahead, gone.behind), (0, 0));
+
+    repository.git(&["switch", "--detach", "HEAD"]);
+    let detached = repository.overview();
+    assert!(detached.detached);
+    assert_eq!(detached.branch, "Detached HEAD");
+    assert_eq!(detached.upstream, None);
 }

@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     path::Path,
+    thread,
 };
 
 use serde_json::Value;
@@ -14,6 +15,7 @@ use super::{
 const PARENT_KEY: &str = "machdoch-parent";
 const PARENT_REVISION_KEY: &str = "machdoch-parent-revision";
 const MAX_RESTACK_CHECKS: usize = 64;
+const MAX_PARALLEL_RESTACK_CHECKS: usize = 8;
 const STACK_SECTION_START: &str = "<!-- machdoch-stack -->";
 const STACK_SECTION_END: &str = "<!-- /machdoch-stack -->";
 
@@ -27,7 +29,7 @@ fn config_key(branch: &str, key: &str) -> String {
     format!("branch.{branch}.{key}")
 }
 
-fn read_parents(repository: &Path) -> BTreeMap<String, String> {
+pub(super) fn read_parents(repository: &Path) -> BTreeMap<String, String> {
     run_optional(
         "git",
         &[
@@ -181,8 +183,11 @@ fn stack_trunk(parents: &BTreeMap<String, String>, branch: &str) -> String {
     cursor
 }
 
-pub(super) fn annotate_branches(repository: &Path, branches: &mut [WorkspaceGitBranch]) {
-    let parents = read_parents(repository);
+pub(super) fn annotate_branches(
+    repository: &Path,
+    parents: &BTreeMap<String, String>,
+    branches: &mut [WorkspaceGitBranch],
+) {
     if parents.is_empty() {
         return;
     }
@@ -190,15 +195,30 @@ pub(super) fn annotate_branches(repository: &Path, branches: &mut [WorkspaceGitB
         .iter()
         .map(|branch| branch.name.clone())
         .collect::<HashSet<_>>();
-    let mut checks = 0;
-    for branch in branches.iter_mut() {
+    let mut checks = Vec::new();
+    for (index, branch) in branches.iter_mut().enumerate() {
         let Some(parent) = parents.get(&branch.name) else {
             continue;
         };
         branch.parent = Some(parent.clone());
-        if local.contains(parent) && checks < MAX_RESTACK_CHECKS {
-            checks += 1;
-            branch.needs_restack = !is_ancestor(repository, parent, &branch.name).unwrap_or(true);
+        if local.contains(parent) && checks.len() < MAX_RESTACK_CHECKS {
+            checks.push((index, parent.clone(), branch.name.clone()));
+        }
+    }
+    for batch in checks.chunks(MAX_PARALLEL_RESTACK_CHECKS) {
+        let results = thread::scope(|scope| {
+            batch
+                .iter()
+                .map(|(_, parent, name)| {
+                    scope.spawn(move || !is_ancestor(repository, parent, name).unwrap_or(true))
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|worker| worker.join().unwrap_or(false))
+                .collect::<Vec<_>>()
+        });
+        for ((index, _, _), needs_restack) in batch.iter().zip(results) {
+            branches[*index].needs_restack = needs_restack;
         }
     }
 }
@@ -472,11 +492,6 @@ pub(super) fn submit_pull_requests(repository: &Path, draft: bool) -> Result<(),
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-pub(super) fn parents_for_test(repository: &Path) -> BTreeMap<String, String> {
-    read_parents(repository)
 }
 
 #[cfg(test)]
