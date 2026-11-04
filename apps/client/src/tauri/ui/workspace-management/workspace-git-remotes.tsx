@@ -47,7 +47,11 @@ export const WorkspaceGitRemotes = ({
           <Button
             type="button"
             size="sm"
-            disabled={controls.busy || !remoteName.trim() || !remoteUrl.trim()}
+            disabled={
+              controls.isActionBlocked("add-remote") ||
+              !remoteName.trim() ||
+              !remoteUrl.trim()
+            }
             onClick={() => void addRemote()}
             {...SUBMIT_SHORTCUT_ACTION_PROPS}
           >
@@ -89,7 +93,7 @@ export const WorkspaceGitRemotes = ({
                 size="icon-xs"
                 variant="ghost"
                 aria-label={`Remove ${remote.name}`}
-                disabled={controls.busy}
+                disabled={controls.isActionBlocked("remove-remote")}
                 onClick={() => {
                   if (window.confirm(`Remove Git remote ${remote.name}?`)) {
                     void controls.runAction("remove-remote", {

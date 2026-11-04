@@ -34,31 +34,35 @@ const SyncButton = ({
   icon: typeof CloudDownload;
   disabled?: boolean;
   tooltip?: string;
-}): JSX.Element => (
-  <Button
-    type="button"
-    size="sm"
-    variant="ghost"
-    disabled={controls.busy || disabled}
-    tooltip={tooltip}
-    onClick={() => void controls.runAction(action)}
-    className="text-slate-300"
-  >
-    {controls.pendingAction === action ? (
-      <LoaderCircle className="size-3.5 animate-spin" />
-    ) : (
-      <Icon className="size-3.5" />
-    )}
-    {label}
-  </Button>
-);
+}): JSX.Element => {
+  const running =
+    action === "fetch" ? controls.fetching : controls.pendingAction === action;
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="ghost"
+      disabled={controls.isActionBlocked(action) || disabled}
+      tooltip={tooltip}
+      onClick={() => void controls.runAction(action)}
+      className="text-slate-300"
+    >
+      {running ? (
+        <LoaderCircle className="size-3.5 animate-spin" />
+      ) : (
+        <Icon className="size-3.5" />
+      )}
+      {label}
+    </Button>
+  );
+};
 
 const ActionStatus = ({
   controls,
 }: {
   controls: WorkspaceGitControls;
 }): JSX.Element | null => {
-  const { feedback, pendingAction } = controls;
+  const { feedback, pendingAction, fetching } = controls;
   const [visibleSuccessId, setVisibleSuccessId] = useState<number | null>(null);
   useEffect(() => {
     if (feedback?.tone !== "success") return;
@@ -70,14 +74,15 @@ const ActionStatus = ({
     return () => window.clearTimeout(timeout);
   }, [feedback]);
 
-  if (pendingAction) {
+  const progressAction = pendingAction ?? (fetching ? "fetch" : null);
+  if (progressAction) {
     return (
       <span
         role="status"
         className="flex items-center gap-1.5 text-xs text-sky-200"
       >
         <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
-        {workspaceGitActionProgressLabel(pendingAction)}
+        {workspaceGitActionProgressLabel(progressAction)}
       </span>
     );
   }

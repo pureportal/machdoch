@@ -12,9 +12,9 @@ import {
   selectWorkspaceGitRepository,
   workspaceDiffLineTone,
   workspaceGitActionChangesFiles,
-  workspaceGitActionChangesPullRequests,
   workspaceGitActionDoneLabel,
   workspaceGitActionProgressLabel,
+  workspaceGitActionUsesRemote,
   workspaceGitChangeLabel,
   workspaceGitPathInWorkspace,
   workspaceGitRepositoryLabel,
@@ -89,7 +89,7 @@ describe("workspace Git presentation", () => {
     expect(workspaceGitPathInWorkspace(null, "README.md")).toBe("README.md");
   });
 
-  it("identifies actions that rewrite files or pull requests", () => {
+  it("identifies actions that rewrite files or use the remote", () => {
     for (const action of [
       "pull",
       "checkout",
@@ -109,10 +109,18 @@ describe("workspace Git presentation", () => {
     ] as const) {
       expect(workspaceGitActionChangesFiles(action)).toBe(false);
     }
-    expect(workspaceGitActionChangesPullRequests("submit-pull-requests")).toBe(
-      true,
-    );
-    expect(workspaceGitActionChangesPullRequests("commit")).toBe(false);
+    for (const action of [
+      "fetch",
+      "pull",
+      "push",
+      "submit-pull-requests",
+      "remove-remote",
+    ] as const) {
+      expect(workspaceGitActionUsesRemote(action)).toBe(true);
+    }
+    for (const action of ["commit", "checkout", "restack"] as const) {
+      expect(workspaceGitActionUsesRemote(action)).toBe(false);
+    }
     expect(workspaceGitActionProgressLabel("push")).toBe("Pushing…");
     expect(workspaceGitActionDoneLabel("stash-push")).toBe("Stashed changes");
   });

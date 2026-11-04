@@ -13,8 +13,8 @@ import {
 import {
   selectWorkspaceGitRepository,
   workspaceGitActionChangesFiles,
-  workspaceGitActionChangesPullRequests,
   workspaceGitActionDoneLabel,
+  workspaceGitActionUsesRemote,
 } from "./workspace-git-model";
 import {
   workspaceGitSummaryFromOverview,
@@ -142,6 +142,9 @@ export function useWorkspaceGit(
     useState<ScopedValue<WorkspaceGitAction> | null>(null);
   const [feedback, setFeedback] =
     useState<ScopedValue<WorkspaceGitFeedback> | null>(null);
+  const [fetchingRepositories, setFetchingRepositories] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
 
   const workspaceRootRef = useRef(workspaceRoot);
   workspaceRootRef.current = workspaceRoot;
@@ -154,6 +157,9 @@ export function useWorkspaceGit(
   const overviewRequestRef = useRef(0);
   const pullRequestRequestRef = useRef(0);
   const actionLockRef = useRef(false);
+  const localActionRunsRef = useRef(0);
+  const reloadAfterActionRef = useRef(false);
+  const fetchingRef = useRef(new Set<string>());
   const lastOverviewLoadRef = useRef(0);
   const feedbackIdRef = useRef(0);
 
@@ -190,11 +196,18 @@ export function useWorkspaceGit(
       updateScoped(createWorkspaceRootKey(root), repositoryRoot, (current) => ({
         ...current,
         overview,
+        loading: false,
         error: null,
       }));
     },
     [updateScoped],
   );
+
+  const updateFetching = useCallback((key: string, active: boolean): void => {
+    if (active) fetchingRef.current.add(key);
+    else fetchingRef.current.delete(key);
+    setFetchingRepositories(new Set(fetchingRef.current));
+  }, []);
 
   const loadOverview = useCallback(
     async (root: string, repositoryRoot: string): Promise<void> => {
@@ -387,6 +400,72 @@ export function useWorkspaceGit(
     void loadOverview(root, repositoryRoot);
   }, [loadOverview]);
 
+  const fetchRemotes = useCallback(
+    async (root: string, repositoryRoot: string): Promise<boolean> => {
+      const key = repositoryKey(repositoryRoot);
+      if (actionLockRef.current || fetchingRef.current.has(key)) return false;
+      const scope = {
+        workspaceKey: createWorkspaceRootKey(root),
+        repositoryRoot,
+      };
+      const localActionRunsAtStart = localActionRunsRef.current;
+      updateFetching(key, true);
+      setFeedback(null);
+      try {
+        const overview = await runWorkspaceGitAction(
+          root,
+          repositoryRoot,
+          "fetch",
+        );
+        const selectedRoot = workspaceRootRef.current;
+        const selected =
+          selectedRoot !== null &&
+          createWorkspaceRootKey(selectedRoot) === scope.workspaceKey &&
+          repositoryRootRef.current === repositoryRoot;
+        if (localActionRunsRef.current === localActionRunsAtStart) {
+          if (selected) overviewRequestRef.current += 1;
+          applyOverview(root, repositoryRoot, overview);
+        } else if (selected && actionLockRef.current) {
+          reloadAfterActionRef.current = true;
+        } else if (selected) {
+          void loadOverview(root, repositoryRoot);
+        }
+        pullRequestCache.delete(key);
+        if (selected) void loadPullRequests(root, repositoryRoot);
+        workspaceGitBranchStatusStore.invalidate(root);
+        const success: ScopedValue<WorkspaceGitFeedback> = {
+          ...scope,
+          value: {
+            id: ++feedbackIdRef.current,
+            tone: "success",
+            text: workspaceGitActionDoneLabel("fetch"),
+            action: "fetch",
+            options: {},
+          },
+        };
+        setFeedback((current) =>
+          current?.value.tone === "error" ? current : success,
+        );
+        return true;
+      } catch (error) {
+        setFeedback({
+          ...scope,
+          value: {
+            id: ++feedbackIdRef.current,
+            tone: "error",
+            text: errorMessage(error),
+            action: "fetch",
+            options: {},
+          },
+        });
+        return false;
+      } finally {
+        updateFetching(key, false);
+      }
+    },
+    [applyOverview, loadOverview, loadPullRequests, updateFetching],
+  );
+
   const runAction = useCallback(
     async (
       action: WorkspaceGitAction,
@@ -394,7 +473,15 @@ export function useWorkspaceGit(
     ): Promise<boolean> => {
       const root = workspaceRootRef.current;
       const repositoryRoot = repositoryRootRef.current;
-      if (!root || !repositoryRoot || actionLockRef.current) return false;
+      if (!root || !repositoryRoot) return false;
+      if (action === "fetch") return fetchRemotes(root, repositoryRoot);
+      if (
+        actionLockRef.current ||
+        (workspaceGitActionUsesRemote(action) &&
+          fetchingRef.current.has(repositoryKey(repositoryRoot)))
+      ) {
+        return false;
+      }
       const changesFiles = workspaceGitActionChangesFiles(action);
       if (
         changesFiles &&
@@ -410,6 +497,7 @@ export function useWorkspaceGit(
         repositoryRoot,
       };
       actionLockRef.current = true;
+      localActionRunsRef.current += 1;
       overviewRequestRef.current += 1;
       setPendingAction({ ...scope, value: action });
       setFeedback(null);
@@ -422,7 +510,7 @@ export function useWorkspaceGit(
         );
         applyOverview(root, repositoryRoot, overview);
         if (changesFiles) onFilesChangedRef.current?.();
-        if (workspaceGitActionChangesPullRequests(action)) {
+        if (workspaceGitActionUsesRemote(action)) {
           pullRequestCache.delete(repositoryKey(repositoryRoot));
           void loadPullRequests(root, repositoryRoot);
         }
@@ -454,9 +542,13 @@ export function useWorkspaceGit(
         actionLockRef.current = false;
         setPendingAction(null);
         workspaceGitBranchStatusStore.invalidate(root);
+        if (reloadAfterActionRef.current) {
+          reloadAfterActionRef.current = false;
+          void loadOverview(root, repositoryRoot);
+        }
       }
     },
-    [applyOverview, loadOverview, loadPullRequests],
+    [applyOverview, fetchRemotes, loadOverview, loadPullRequests],
   );
 
   const dismissFeedback = useCallback(() => setFeedback(null), []);
@@ -474,6 +566,10 @@ export function useWorkspaceGit(
         current.repositoryRoot,
       )
     : null;
+  const busy = pendingAction !== null;
+  const fetching =
+    current.repositoryRoot !== null &&
+    fetchingRepositories.has(repositoryKey(current.repositoryRoot));
 
   return {
     workspaceRoot,
@@ -488,7 +584,10 @@ export function useWorkspaceGit(
     pullRequestsLoading: current.pullRequestsLoading,
     pullRequestsError: current.pullRequestsError,
     pendingAction: inScope(pendingAction),
-    busy: pendingAction !== null,
+    busy,
+    fetching,
+    isActionBlocked: (action: WorkspaceGitAction): boolean =>
+      busy || (fetching && workspaceGitActionUsesRemote(action)),
     feedback: inScope(feedback),
     discoveryNotice: current.repositories?.scanLimited
       ? "Repository scan limit reached. Some repositories may be missing."

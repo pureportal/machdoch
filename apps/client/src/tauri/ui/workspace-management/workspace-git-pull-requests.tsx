@@ -74,7 +74,10 @@ export const WorkspaceGitPullRequests = ({
             type="button"
             size="sm"
             variant="outline"
-            disabled={controls.busy || overview.remotes.length === 0}
+            disabled={
+              controls.isActionBlocked("submit-pull-requests") ||
+              overview.remotes.length === 0
+            }
             onClick={() => void controls.runAction("submit-pull-requests")}
           >
             <GitPullRequest className="size-4" />

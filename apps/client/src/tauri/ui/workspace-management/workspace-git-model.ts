@@ -32,7 +32,7 @@ export const workspaceGitActionChangesFiles = (
   action: WorkspaceGitAction,
 ): boolean => FILE_CHANGING_ACTIONS.has(action);
 
-const PULL_REQUEST_ACTIONS = new Set<WorkspaceGitAction>([
+const REMOTE_ACTIONS = new Set<WorkspaceGitAction>([
   "fetch",
   "pull",
   "push",
@@ -41,9 +41,9 @@ const PULL_REQUEST_ACTIONS = new Set<WorkspaceGitAction>([
   "remove-remote",
 ]);
 
-export const workspaceGitActionChangesPullRequests = (
+export const workspaceGitActionUsesRemote = (
   action: WorkspaceGitAction,
-): boolean => PULL_REQUEST_ACTIONS.has(action);
+): boolean => REMOTE_ACTIONS.has(action);
 
 const INVALID_BRANCH_CHARACTERS = /[~^:?*[\\]/u;
 

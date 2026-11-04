@@ -11,6 +11,7 @@ import {
   openExternalUrl,
   type InstructionProfileView,
   type InstructionWorkspaceView,
+  type WorkspaceGitAction,
 } from "../runtime";
 import type { WorkspaceManagementControls } from "./types";
 import type { WorkspaceGitControls } from "./use-workspace-git";
@@ -90,10 +91,10 @@ export const useWorkspaceCommands = (
       state().selectedWorkspace
         ? { state: "enabled" as const }
         : { state: "hidden" as const };
-    const gitAvailability = () => {
+    const gitAvailability = (action: WorkspaceGitAction) => {
       const current = state();
       if (!current.selectedWorkspace) return { state: "hidden" as const };
-      return current.git.busy || !current.git.overview
+      return current.git.isActionBlocked(action) || !current.git.overview
         ? { state: "disabled" as const, reason: "Git is unavailable or busy." }
         : { state: "enabled" as const };
     };
@@ -328,7 +329,7 @@ export const useWorkspaceCommands = (
         title: "Fetch Git repository",
         group: "Workspace Git",
         scope,
-        availability: gitAvailability,
+        availability: () => gitAvailability("fetch"),
         execute: () => runGit("fetch"),
       },
       {
@@ -337,7 +338,7 @@ export const useWorkspaceCommands = (
         group: "Workspace Git",
         scope,
         availability: () => {
-          const available = gitAvailability();
+          const available = gitAvailability("pull");
           if (available.state !== "enabled") return available;
           return state().git.overview?.upstream
             ? available
@@ -351,7 +352,7 @@ export const useWorkspaceCommands = (
         group: "Workspace Git",
         scope,
         availability: () => {
-          const available = gitAvailability();
+          const available = gitAvailability("push");
           if (available.state !== "enabled") return available;
           return state().git.overview?.remotes.length
             ? available
@@ -364,7 +365,7 @@ export const useWorkspaceCommands = (
         title: "Restack Git branches",
         group: "Workspace Git",
         scope,
-        availability: gitAvailability,
+        availability: () => gitAvailability("restack"),
         execute: () => runGit("restack"),
       },
       {
@@ -372,7 +373,7 @@ export const useWorkspaceCommands = (
         title: "Submit pull requests",
         group: "Workspace Git",
         scope,
-        availability: gitAvailability,
+        availability: () => gitAvailability("submit-pull-requests"),
         execute: () => runGit("submit-pull-requests"),
       },
       {
@@ -381,7 +382,7 @@ export const useWorkspaceCommands = (
         group: "Workspace Git",
         scope,
         availability: () => {
-          const available = gitAvailability();
+          const available = gitAvailability("stash-push");
           if (available.state !== "enabled") return available;
           return state().git.overview?.clean
             ? { state: "disabled", reason: "Nothing to stash." }
@@ -394,7 +395,7 @@ export const useWorkspaceCommands = (
         title: "Switch Git branch",
         group: "Workspace Git",
         scope,
-        availability: gitAvailability,
+        availability: () => gitAvailability("checkout"),
         children: () => ({
           id: "workspaces.git.branch.switch.page",
           title: "Switch Git branch",
@@ -436,7 +437,7 @@ export const useWorkspaceCommands = (
         title: "Remove Git remote",
         group: "Workspace Git",
         scope,
-        availability: gitAvailability,
+        availability: () => gitAvailability("remove-remote"),
         children: () => ({
           id: "workspaces.git.remote.remove.page",
           title: "Remove Git remote",

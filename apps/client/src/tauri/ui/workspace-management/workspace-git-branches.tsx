@@ -164,7 +164,10 @@ const StackActions = ({
         type="button"
         size="sm"
         variant="outline"
-        disabled={controls.busy || overview.remotes.length === 0}
+        disabled={
+          controls.isActionBlocked("submit-pull-requests") ||
+          overview.remotes.length === 0
+        }
         tooltip={
           overview.remotes.length === 0 ? "Add a remote first." : undefined
         }
