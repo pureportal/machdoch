@@ -51,6 +51,24 @@ it("persists conversation speech overrides without changing the global voice pro
   expect(normalized.voice).toEqual(state.voice);
 });
 
+it("persists a valid session Git branch and drops invalid stored names", () => {
+  const state = createInitialShellState();
+  const assigned = createSession({ gitBranch: "feature/ABC-1" });
+  const invalid = { ...createSession(), gitBranch: "bad branch" };
+  const normalized = normalizeShellState({
+    ...state,
+    activeSessionId: assigned.id,
+    sessions: [assigned, invalid],
+  });
+  expect(
+    normalized.sessions.find((session) => session.id === assigned.id)
+      ?.gitBranch,
+  ).toBe("feature/ABC-1");
+  expect(
+    normalized.sessions.find((session) => session.id === invalid.id),
+  ).not.toHaveProperty("gitBranch");
+});
+
 describe("session goal state", () => {
   it("preserves a submitted goal in saved message settings and queued tasks", () => {
     const session = createSession();

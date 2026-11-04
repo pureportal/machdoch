@@ -61,6 +61,7 @@ export const OPERATIONS = {
   delete_workspace_entry: "files",
   rename_workspace_entry: "files",
   run_workspace_git_action: "git",
+  switch_workspace_git_branches: "git",
   start_workspace_run_configuration: "workspaces",
   stop_workspace_run_configuration: "workspaces",
   restart_workspace_run_configuration: "workspaces",

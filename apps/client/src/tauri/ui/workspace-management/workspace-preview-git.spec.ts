@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   discoverPreviewWorkspaceGitRepositories,
+  loadPreviewWorkspaceGitBranchStatus,
   loadPreviewWorkspaceGitDiff,
   loadPreviewWorkspaceGitOverview,
   loadPreviewWorkspaceGitSummary,
   loadPreviewWorkspacePullRequests,
   resetPreviewWorkspaceGit,
   runPreviewWorkspaceGitAction,
+  switchPreviewWorkspaceGitBranches,
 } from "./workspace-preview-git";
 
 const workspaceRoot = "C:\\Projects\\machdoch";
@@ -193,5 +195,133 @@ describe("workspace browser preview Git", () => {
     );
     expect(overview.operation).toBeUndefined();
     expect(overview.clean).toBe(true);
+  });
+
+  it("reports and aligns session branches across preview repositories", () => {
+    const apiRoot = `${cleanRoot}\\api`;
+    const appRoot = `${cleanRoot}\\app`;
+    runPreviewWorkspaceGitAction(cleanRoot, appRoot, "create-branch", {
+      branchName: "feature/ticket",
+    });
+    runPreviewWorkspaceGitAction(cleanRoot, appRoot, "push", {});
+    runPreviewWorkspaceGitAction(cleanRoot, appRoot, "checkout", {
+      branchName: "main",
+    });
+
+    const status = loadPreviewWorkspaceGitBranchStatus(
+      cleanRoot,
+      "feature/ticket",
+    );
+    expect(
+      status.repositories.map((repository) => ({
+        path: repository.relativePath,
+        current: repository.currentBranch,
+        defaultBranch: repository.defaultBranch,
+        local: repository.branchLocal,
+        remote: repository.branchRemote,
+      })),
+    ).toEqual([
+      {
+        path: ".",
+        current: "develop",
+        defaultBranch: "main",
+        local: false,
+        remote: undefined,
+      },
+      {
+        path: "api",
+        current: "develop",
+        defaultBranch: "main",
+        local: false,
+        remote: undefined,
+      },
+      {
+        path: "app",
+        current: "main",
+        defaultBranch: "main",
+        local: true,
+        remote: "origin/feature/ticket",
+      },
+    ]);
+    expect(status.branches).toContain("feature/ticket");
+
+    expect(() =>
+      switchPreviewWorkspaceGitBranches(
+        cleanRoot,
+        [{ repositoryRoot: apiRoot, branchName: "feature/ticket", create: false }],
+        true,
+      ),
+    ).toThrow("Branch `feature/ticket` does not exist in api.");
+
+    const results = switchPreviewWorkspaceGitBranches(
+      cleanRoot,
+      [
+        { repositoryRoot: apiRoot, branchName: "main", create: false },
+        { repositoryRoot: appRoot, branchName: "feature/ticket", create: false },
+      ],
+      true,
+    );
+    expect(results.map((result) => [result.relativePath, result.switched])).toEqual([
+      ["api", true],
+      ["app", true],
+    ]);
+    expect(loadPreviewWorkspaceGitOverview(cleanRoot, apiRoot).branch).toBe(
+      "main",
+    );
+    expect(loadPreviewWorkspaceGitOverview(cleanRoot, appRoot).branch).toBe(
+      "feature/ticket",
+    );
+  });
+
+  it("stashes changes before switching and refuses conflicted repositories", () => {
+    const desktopStatus = loadPreviewWorkspaceGitBranchStatus(
+      workspaceRoot,
+      "feature/desktop-shell",
+    );
+    expect(desktopStatus.repositories[0]).toMatchObject({
+      conflicts: 1,
+      branchLocal: false,
+    });
+    expect(() =>
+      switchPreviewWorkspaceGitBranches(
+        workspaceRoot,
+        [
+          {
+            repositoryRoot: workspaceRoot,
+            branchName: "feature/workspace",
+            create: false,
+          },
+        ],
+        true,
+      ),
+    ).toThrow("Resolve the conflicts in machdoch first.");
+
+    const [result] = switchPreviewWorkspaceGitBranches(
+      workspaceRoot,
+      [{ repositoryRoot: desktopRoot, branchName: "main", create: true }],
+      true,
+    );
+    expect(result).toMatchObject({ switched: true, stashed: false });
+    const created = loadPreviewWorkspaceGitOverview(workspaceRoot, desktopRoot);
+    expect(created.branch).toBe("main");
+    expect(created.totalChanges).toBe(1);
+
+    const [stashedResult] = switchPreviewWorkspaceGitBranches(
+      workspaceRoot,
+      [
+        {
+          repositoryRoot: desktopRoot,
+          branchName: "feature/desktop-shell",
+          create: false,
+        },
+      ],
+      true,
+    );
+    expect(stashedResult).toMatchObject({ switched: true, stashed: true });
+    const switched = loadPreviewWorkspaceGitOverview(workspaceRoot, desktopRoot);
+    expect(switched.totalChanges).toBe(0);
+    expect(switched.stashes[0]?.message).toBe(
+      "On main: Before switching to feature/desktop-shell",
+    );
   });
 });

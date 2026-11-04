@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use serde::Serialize;
 
 use super::{canonical_workspace_root, command_output, output_error};
@@ -5,14 +7,14 @@ use super::{canonical_workspace_root, command_output, output_error};
 #[derive(Debug, Clone, Default, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceGitSummary {
-    branch: String,
-    detached: bool,
+    pub(super) branch: String,
+    pub(super) detached: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     upstream: Option<String>,
     ahead: u64,
     behind: u64,
-    changes: usize,
-    conflicts: usize,
+    pub(super) changes: usize,
+    pub(super) conflicts: usize,
 }
 
 fn parse_summary(output: &str) -> WorkspaceGitSummary {
@@ -57,8 +59,7 @@ fn parse_summary(output: &str) -> WorkspaceGitSummary {
     summary
 }
 
-pub(super) fn load_summary(workspace_root: &str) -> Result<Option<WorkspaceGitSummary>, String> {
-    let workspace = canonical_workspace_root(workspace_root)?;
+pub(super) fn read_summary(repository: &Path) -> Result<Option<WorkspaceGitSummary>, String> {
     let arguments = [
         "status",
         "--porcelain=v2",
@@ -66,7 +67,7 @@ pub(super) fn load_summary(workspace_root: &str) -> Result<Option<WorkspaceGitSu
         "-z",
         "--untracked-files=all",
     ];
-    let output = command_output("git", &arguments, &workspace)?;
+    let output = command_output("git", &arguments, repository)?;
     if !output.status.success() {
         let detail = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
         if detail.contains("not a git repository") {
@@ -77,6 +78,10 @@ pub(super) fn load_summary(workspace_root: &str) -> Result<Option<WorkspaceGitSu
     Ok(Some(parse_summary(&String::from_utf8_lossy(
         &output.stdout,
     ))))
+}
+
+pub(super) fn load_summary(workspace_root: &str) -> Result<Option<WorkspaceGitSummary>, String> {
+    read_summary(&canonical_workspace_root(workspace_root)?)
 }
 
 #[cfg(test)]

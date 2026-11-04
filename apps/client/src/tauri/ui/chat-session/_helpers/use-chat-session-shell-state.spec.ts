@@ -151,6 +151,37 @@ describe("shell-state conflict patches", () => {
       normalized.sessions.find((session) => session.id === "session-1"),
     ]);
   });
+
+  it("keeps a local Git branch assignment alongside a remote edit of the same session", () => {
+    const base = createState([]);
+    const local = {
+      ...base,
+      sessions: [
+        {
+          ...base.sessions[0],
+          gitBranch: "feature/ABC-1",
+          updatedAt: base.sessions[0].updatedAt + 1,
+        },
+      ],
+    };
+    const external = {
+      ...base,
+      sessions: [
+        {
+          ...base.sessions[0],
+          manualTitle: "Remote title",
+          updatedAt: base.sessions[0].updatedAt + 2,
+        },
+      ],
+    };
+
+    const merged = mergeShellStateForPersistence(local, base, external);
+
+    expect(merged.sessions[0]).toMatchObject({
+      gitBranch: "feature/ABC-1",
+      manualTitle: "Remote title",
+    });
+  });
 });
 
 describe("queued message persistence", () => {

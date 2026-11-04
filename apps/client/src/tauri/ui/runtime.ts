@@ -39,6 +39,9 @@ import type {
   WorkspaceGitAction,
   WorkspaceGitActionOptions,
   WorkspaceGitSummary,
+  WorkspaceGitBranchStatus,
+  WorkspaceGitBranchSwitchTarget,
+  WorkspaceGitBranchSwitchResult,
   WorkspaceEntryKind,
   WorkspaceDirectoryPage,
   WorkspaceFileDocument,
@@ -62,6 +65,10 @@ export type {
   WorkspacePullRequestOverview,
   WorkspaceGitRepository,
   WorkspaceGitRepositoryDiscovery,
+  WorkspaceGitBranchRepository,
+  WorkspaceGitBranchStatus,
+  WorkspaceGitBranchSwitchTarget,
+  WorkspaceGitBranchSwitchResult,
   WorkspaceGitOverview,
   WorkspaceGitAction,
   WorkspaceGitActionOptions,
@@ -308,11 +315,13 @@ import {
 } from "./workspace-management/workspace-preview-runtime";
 import {
   discoverPreviewWorkspaceGitRepositories,
+  loadPreviewWorkspaceGitBranchStatus,
   loadPreviewWorkspaceGitDiff,
   loadPreviewWorkspaceGitOverview,
   loadPreviewWorkspaceGitSummary,
   loadPreviewWorkspacePullRequests,
   runPreviewWorkspaceGitAction,
+  switchPreviewWorkspaceGitBranches,
 } from "./workspace-management/workspace-preview-git";
 
 export type UserApiKeyProvider = SharedUserApiProvider;
@@ -4896,6 +4905,69 @@ export const runWorkspaceGitAction = async (
           repositoryRoot: normalizedRepositoryRoot,
           action,
           ...fields,
+        },
+      },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const loadWorkspaceGitBranchStatus = async (
+  workspaceRoot: string,
+  branchName: string | null,
+  { fetch = false }: { fetch?: boolean } = {},
+): Promise<WorkspaceGitBranchStatus> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before loading Git information.");
+  }
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
+    return loadPreviewWorkspaceGitBranchStatus(
+      normalizedWorkspaceRoot,
+      branchName,
+    );
+  }
+  try {
+    return await invokeWorkspaceTools<WorkspaceGitBranchStatus>(
+      "get_workspace_git_branch_status",
+      {
+        request: {
+          workspaceRoot: normalizedWorkspaceRoot,
+          ...(branchName ? { branchName } : {}),
+          ...(fetch ? { fetch: true } : {}),
+        },
+      },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const switchWorkspaceGitBranches = async (
+  workspaceRoot: string,
+  targets: readonly WorkspaceGitBranchSwitchTarget[],
+  stashChanges: boolean,
+): Promise<WorkspaceGitBranchSwitchResult[]> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before switching branches.");
+  }
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
+    return switchPreviewWorkspaceGitBranches(
+      normalizedWorkspaceRoot,
+      targets,
+      stashChanges,
+    );
+  }
+  try {
+    return await invokeWorkspaceTools<WorkspaceGitBranchSwitchResult[]>(
+      "switch_workspace_git_branches",
+      {
+        request: {
+          workspaceRoot: normalizedWorkspaceRoot,
+          targets,
+          stashChanges,
         },
       },
     );

@@ -20,6 +20,7 @@ import {
   workspaceGitSummaryFromOverview,
   workspaceGitSummaryStore,
 } from "./workspace-git-summary-store";
+import { workspaceGitBranchStatusStore } from "./workspace-git-branch-status-store";
 import { createWorkspaceRootKey } from "./workspace-management-model";
 import {
   readWorkspaceViewPreferences,
@@ -452,6 +453,7 @@ export function useWorkspaceGit(
       } finally {
         actionLockRef.current = false;
         setPendingAction(null);
+        workspaceGitBranchStatusStore.invalidate(root);
       }
     },
     [applyOverview, loadOverview, loadPullRequests],

@@ -15,6 +15,7 @@ import {
   type ShellPersistedState,
 } from "../../chat-session.model";
 import { getDefaultModelForProvider } from "../../model-catalog";
+import { isValidGitBranchName } from "../../workspace-management/workspace-git-model";
 import { resolveGoalMode } from "../../../../shared/goals.js";
 import { resolveParallelAgentMode } from "../../../../core/parallel-agent-capabilities.js";
 import { normalizeSessionReasoningOverride } from "./session-reasoning";
@@ -35,6 +36,7 @@ export interface SessionLifecycleActions {
   moveSessionToTop: (sessionId: string) => void;
   cloneSession: (sessionId: string, mode: "duplicate" | "branch") => void;
   commitSessionTags: (tags: string[]) => void;
+  commitSessionGitBranch: (branchName: string | null) => void;
   toggleSessionTagFilter: (tag: string) => void;
   exportSessions: () => void;
   importSessions: (file: File) => void;
@@ -53,6 +55,7 @@ const isReusableNewSession = (session: ChatSessionRecord): boolean => {
     typeof session.archivedAt !== "number" &&
     typeof session.pinnedAt !== "number" &&
     !session.manualTitle?.trim() &&
+    !session.gitBranch &&
     session.tags.length === 0 &&
     session.messages.length === 0 &&
     session.draft.trim().length === 0 &&
@@ -366,6 +369,28 @@ export const useSessionLifecycle = (options: {
             tags: normalizedTags,
             updatedAt: Date.now(),
           };
+        });
+      },
+      commitSessionGitBranch: (branchName: string | null): void => {
+        const nextBranch =
+          branchName && isValidGitBranchName(branchName)
+            ? branchName
+            : undefined;
+
+        state.updateActiveSession((session) => {
+          if (session.gitBranch === nextBranch) {
+            return session;
+          }
+
+          const nextSession = { ...session, updatedAt: Date.now() };
+
+          if (nextBranch) {
+            nextSession.gitBranch = nextBranch;
+          } else {
+            delete nextSession.gitBranch;
+          }
+
+          return nextSession;
         });
       },
       toggleSessionTagFilter: (tag: string): void => {

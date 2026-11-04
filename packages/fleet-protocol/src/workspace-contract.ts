@@ -97,6 +97,43 @@ export interface WorkspaceGitRepositoryDiscovery {
   issues: string[];
 }
 
+export interface WorkspaceGitBranchRepository {
+  repositoryRoot: string;
+  relativePath: string;
+  currentBranch?: string;
+  defaultBranch?: string;
+  branchLocal: boolean;
+  branchRemote?: string;
+  changes: number;
+  conflicts: number;
+  operation?: WorkspaceGitOperation;
+  error?: string;
+}
+
+export interface WorkspaceGitBranchStatus {
+  workspaceRoot: string;
+  branchName?: string;
+  repositories: WorkspaceGitBranchRepository[];
+  branches: string[];
+  scanLimited: boolean;
+  issues: string[];
+}
+
+export interface WorkspaceGitBranchSwitchTarget {
+  repositoryRoot: string;
+  branchName: string;
+  create: boolean;
+}
+
+export interface WorkspaceGitBranchSwitchResult {
+  repositoryRoot: string;
+  relativePath: string;
+  branchName: string;
+  switched: boolean;
+  stashed: boolean;
+  error?: string;
+}
+
 export interface WorkspaceGitOverview {
   workspaceRoot: string;
   repositoryRoot: string;

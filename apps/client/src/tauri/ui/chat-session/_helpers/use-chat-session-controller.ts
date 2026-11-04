@@ -8684,6 +8684,17 @@ export const useChatSessionController = (
   const activeSessionExecuting =
     getSessionOverviewStatus(state.activeSession) === "running" &&
     !activeSessionPromptEnhancementBusy;
+  const activeWorkspaceTaskRunning = useMemo(() => {
+    const workspace = state.activeSession.workspace;
+    if (!workspace) return false;
+    const workspaceKey = createWorkspaceRootKey(workspace);
+    return state.shellState.sessions.some(
+      (session) =>
+        session.workspace !== null &&
+        createWorkspaceRootKey(session.workspace) === workspaceKey &&
+        getSessionOverviewStatus(session) === "running",
+    );
+  }, [state.activeSession.workspace, state.shellState.sessions]);
   const savedPoseScenes = useMemo(
     () => getSavedPoseScenes(state.shellState.sessions),
     [state.shellState.sessions],
@@ -8797,6 +8808,7 @@ export const useChatSessionController = (
       canPinSession: canPinSession(state.activeSession),
       canBranchSession: canDuplicateSession(state.activeSession),
       primaryTaskRunning: activeSessionExecuting,
+      workspaceTaskRunning: activeWorkspaceTaskRunning,
       showClearSessionHistory: isQuickVoiceSession(state.activeSession),
       canClearSessionHistory:
         isQuickVoiceSession(state.activeSession) &&
@@ -8811,6 +8823,7 @@ export const useChatSessionController = (
       runtimeLoading: runtime.runtimeLoading,
       runtimeError: runtime.runtimeError,
       onTagCommit: lifecycleActions.commitSessionTags,
+      onGitBranchCommit: lifecycleActions.commitSessionGitBranch,
       onTogglePinnedSession: () =>
         lifecycleActions.togglePinnedSession(state.activeSession.id),
       onBranchSession: () =>

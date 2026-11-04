@@ -1190,6 +1190,12 @@ const mergeSessionConcurrentFields = (
       baseSession.manualTitle,
       latestSession.manualTitle,
     ),
+    gitBranch: mergeSessionFieldForPersistence(
+      primarySession.gitBranch,
+      localSession.gitBranch,
+      baseSession.gitBranch,
+      latestSession.gitBranch,
+    ),
     tags: mergeSessionFieldForPersistence(
       primarySession.tags,
       localSession.tags,
@@ -1627,6 +1633,7 @@ const createSessionMutationComparable = (
     draft: session.draft,
     draftContextAttachments: session.draftContextAttachments,
     manualTitle: session.manualTitle,
+    gitBranch: session.gitBranch,
     tags: session.tags,
     messageTombstones: session.messageTombstones,
     messages: session.messages,

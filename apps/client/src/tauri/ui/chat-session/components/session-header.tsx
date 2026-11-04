@@ -12,6 +12,7 @@ import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
 import { SubmitShortcut } from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
 import type { ChatSessionRecord } from "../../chat-session.model";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
+import { SessionGitBranchControl } from "./session-git-branch-control";
 import { WorkspaceQuickAccessControl } from "./workspace-quick-access-control";
 import { WorkspaceRunDialogControl } from "./workspace-run-dialog-control";
 import {
@@ -33,9 +34,11 @@ export interface SessionHeaderProps {
   canPinSession: boolean;
   canBranchSession: boolean;
   primaryTaskRunning: boolean;
+  workspaceTaskRunning: boolean;
   showClearSessionHistory: boolean;
   canClearSessionHistory: boolean;
   onTagCommit: (tags: string[]) => void;
+  onGitBranchCommit: (branchName: string | null) => void;
   onTogglePinnedSession: () => void;
   onBranchSession: () => void;
   onRenameValueChange: (value: string) => void;
@@ -60,9 +63,11 @@ export const SessionHeader = ({
   canPinSession,
   canBranchSession,
   primaryTaskRunning,
+  workspaceTaskRunning,
   showClearSessionHistory,
   canClearSessionHistory,
   onTagCommit,
+  onGitBranchCommit,
   onTogglePinnedSession,
   onBranchSession,
   onRenameValueChange,
@@ -105,6 +110,15 @@ export const SessionHeader = ({
 
   const controls = (
     <div className="app-session-header-controls flex min-w-0 shrink items-center justify-end gap-1.5">
+      {canEditSessionMetadata ? (
+        <SessionGitBranchControl
+          sessionId={activeSession.id}
+          workspaceRoot={activeSession.workspace}
+          branchName={activeSession.gitBranch}
+          workspaceTaskRunning={workspaceTaskRunning}
+          onBranchChange={onGitBranchCommit}
+        />
+      ) : null}
       <WorkspaceQuickAccessControl
         workspaceRoot={activeSession.workspace}
         primaryTaskRunning={primaryTaskRunning}

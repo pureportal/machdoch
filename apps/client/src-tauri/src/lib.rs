@@ -319,6 +319,8 @@ pub fn run() {
             workspace_git::get_workspace_git_summary,
             workspace_git::get_workspace_pull_requests,
             workspace_git::run_workspace_git_action,
+            workspace_git::get_workspace_git_branch_status,
+            workspace_git::switch_workspace_git_branches,
             workspace_run::get_workspace_run_configuration_document,
             workspace_run::get_workspace_run_snapshot,
             workspace_run::precheck_workspace_run_configuration_json,

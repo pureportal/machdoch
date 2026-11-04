@@ -58,6 +58,7 @@ import {
 } from "./task-thinking.model";
 import { normalizeChatSessionOptionalString } from "./chat-session/_helpers/normalize-chat-session-optional-string.helper";
 import { createWorkspaceRootKey } from "./workspace-management/workspace-management-model";
+import { isValidGitBranchName } from "./workspace-management/workspace-git-model";
 import {
   normalizeExecutionAttempt,
   type ExecutionAttempt,
@@ -273,6 +274,7 @@ export interface ChatSessionRecord {
   draft: string;
   draftContextAttachments: ChatSessionContextAttachment[];
   manualTitle?: string;
+  gitBranch?: string;
   tags: string[];
   messages: ChatSessionMessage[];
   promptHistory: string[];
@@ -1459,6 +1461,7 @@ export const createSession = (
     draft: overrides.draft ?? "",
     draftContextAttachments,
     ...(overrides.manualTitle ? { manualTitle: overrides.manualTitle } : {}),
+    ...(overrides.gitBranch ? { gitBranch: overrides.gitBranch } : {}),
     tags: normalizeSessionTags(overrides.tags),
     messages: (overrides.messages ?? []).filter(
       (message) => messageTombstones[message.id] === undefined,
@@ -2601,6 +2604,11 @@ const normalizeSessionRecord = (
     workspace: typeof session.workspace === "string" ? session.workspace : null,
     manualTitle:
       typeof session.manualTitle === "string" ? session.manualTitle : undefined,
+    gitBranch:
+      typeof session.gitBranch === "string" &&
+      isValidGitBranchName(session.gitBranch)
+        ? session.gitBranch
+        : undefined,
     messages: trimSessionTaskGroupsToVisibleMessageLimit(
       normalizeSessionMessages(session.messages, session.id),
       PERSISTED_VISIBLE_MESSAGE_LIMIT,

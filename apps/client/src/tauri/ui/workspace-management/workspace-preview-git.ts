@@ -2,6 +2,9 @@ import type {
   WorkspaceGitAction,
   WorkspaceGitActionOptions,
   WorkspaceGitBranch,
+  WorkspaceGitBranchStatus,
+  WorkspaceGitBranchSwitchResult,
+  WorkspaceGitBranchSwitchTarget,
   WorkspaceGitDiff,
   WorkspaceGitOverview,
   WorkspaceGitRepositoryDiscovery,
@@ -576,4 +579,161 @@ export const runPreviewWorkspaceGitAction = (
 
 export const resetPreviewWorkspaceGit = (): void => {
   repositories.clear();
+};
+
+const PREVIEW_DEFAULT_BRANCHES = ["main", "master"];
+
+const previewRemoteBranch = (
+  repository: PreviewRepository,
+  branchName: string,
+): string | undefined =>
+  repository.remoteBranches.find(
+    (candidate) => candidate.name === `origin/${branchName}`,
+  )?.name;
+
+const previewDefaultBranch = (
+  repository: PreviewRepository,
+): string | undefined =>
+  PREVIEW_DEFAULT_BRANCHES.find(
+    (name) =>
+      repository.localBranches.some((candidate) => candidate.name === name) ||
+      previewRemoteBranch(repository, name) !== undefined,
+  );
+
+const previewRelativePath = (
+  workspaceRoot: string,
+  repositoryRoot: string,
+): string =>
+  discoverPreviewWorkspaceGitRepositories(workspaceRoot).repositories.find(
+    (candidate) =>
+      repositoryKey(candidate.repositoryRoot) === repositoryKey(repositoryRoot),
+  )?.relativePath ?? repositoryRoot;
+
+export const loadPreviewWorkspaceGitBranchStatus = (
+  workspaceRoot: string,
+  branchName: string | null,
+): WorkspaceGitBranchStatus => {
+  const branches = new Set<string>();
+  const discovered =
+    discoverPreviewWorkspaceGitRepositories(workspaceRoot).repositories;
+  return {
+    workspaceRoot,
+    ...(branchName ? { branchName } : {}),
+    repositories: discovered.map(({ repositoryRoot, relativePath }) => {
+      const repository = repositoryFor(workspaceRoot, repositoryRoot);
+      for (const candidate of repository.localBranches) {
+        branches.add(candidate.name);
+      }
+      for (const candidate of repository.remoteBranches) {
+        branches.add(candidate.name.replace(/^[^/]+\//u, ""));
+      }
+      const defaultBranch = previewDefaultBranch(repository);
+      const branchRemote = branchName
+        ? previewRemoteBranch(repository, branchName)
+        : undefined;
+      return {
+        repositoryRoot,
+        relativePath,
+        currentBranch: repository.branch,
+        ...(defaultBranch ? { defaultBranch } : {}),
+        branchLocal: branchName
+          ? repository.localBranches.some(
+              (candidate) => candidate.name === branchName,
+            )
+          : false,
+        ...(branchRemote ? { branchRemote } : {}),
+        changes: repository.changes.length,
+        conflicts: repository.changes.filter((entry) => entry.conflicted)
+          .length,
+        ...(repository.operation ? { operation: repository.operation } : {}),
+      };
+    }),
+    branches: [...branches],
+    scanLimited: false,
+    issues: [],
+  };
+};
+
+type PreviewSwitchSource = "current" | "local" | "remote" | "create";
+
+export const switchPreviewWorkspaceGitBranches = (
+  workspaceRoot: string,
+  targets: readonly WorkspaceGitBranchSwitchTarget[],
+  stashChanges: boolean,
+): WorkspaceGitBranchSwitchResult[] => {
+  const prepared = targets.map((target) => {
+    const repository = repositoryFor(workspaceRoot, target.repositoryRoot);
+    const relativePath = previewRelativePath(
+      workspaceRoot,
+      target.repositoryRoot,
+    );
+    const name =
+      relativePath === "."
+        ? (normalizePreviewPath(workspaceRoot).split("\\").at(-1) ??
+          relativePath)
+        : relativePath;
+    const branchName = requireText(
+      target.branchName,
+      `${name}: Enter a valid branch name.`,
+    );
+    let source: PreviewSwitchSource;
+    if (repository.branch === branchName) {
+      source = "current";
+    } else if (repository.operation) {
+      throw new Error(`Finish the ${repository.operation} in ${name} first.`);
+    } else if (repository.changes.some((entry) => entry.conflicted)) {
+      throw new Error(`Resolve the conflicts in ${name} first.`);
+    } else if (
+      repository.localBranches.some((candidate) => candidate.name === branchName)
+    ) {
+      source = "local";
+    } else if (previewRemoteBranch(repository, branchName)) {
+      source = "remote";
+    } else if (target.create) {
+      source = "create";
+    } else {
+      throw new Error(`Branch \`${branchName}\` does not exist in ${name}.`);
+    }
+    return { target, repository, relativePath, branchName, source };
+  });
+  return prepared.map(
+    ({ target, repository, relativePath, branchName, source }) => {
+      const result: WorkspaceGitBranchSwitchResult = {
+        repositoryRoot: target.repositoryRoot,
+        relativePath,
+        branchName,
+        switched: false,
+        stashed: false,
+      };
+      if (source === "current") return result;
+      if (
+        stashChanges &&
+        source !== "create" &&
+        repository.changes.length > 0
+      ) {
+        runPreviewWorkspaceGitAction(
+          workspaceRoot,
+          target.repositoryRoot,
+          "stash-push",
+          {
+            includeUntracked: true,
+            message: `Before switching to ${branchName}`,
+          },
+        );
+        result.stashed = true;
+      }
+      if (source === "remote") {
+        repository.localBranches.push(
+          branch(branchName, "0d1e2f3", { upstream: `origin/${branchName}` }),
+        );
+      } else if (source === "create") {
+        repository.localBranches.push(
+          branch(branchName, currentBranch(repository)?.commit ?? "0000000"),
+        );
+      }
+      repository.branch = branchName;
+      result.switched = true;
+      return result;
+    },
+  );
 };

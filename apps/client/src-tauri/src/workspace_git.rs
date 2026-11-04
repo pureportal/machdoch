@@ -18,6 +18,7 @@ use tokio::sync::Semaphore;
 #[cfg(test)]
 mod action_tests;
 mod actions;
+mod branch_alignment;
 mod stack;
 mod summary;
 
@@ -1272,6 +1273,22 @@ pub async fn run_workspace_git_action(
     tauri::async_runtime::spawn_blocking(move || actions::execute_workspace_git_action(request))
         .await
         .map_err(|error| format!("The workspace Git action stopped unexpectedly: {error}"))?
+}
+
+#[tauri::command]
+pub async fn get_workspace_git_branch_status(
+    request: branch_alignment::WorkspaceGitBranchStatusRequest,
+) -> Result<branch_alignment::WorkspaceGitBranchStatus, String> {
+    run_git_read(move || branch_alignment::load_branch_status(request)).await
+}
+
+#[tauri::command]
+pub async fn switch_workspace_git_branches(
+    request: branch_alignment::WorkspaceGitBranchSwitchRequest,
+) -> Result<Vec<branch_alignment::WorkspaceGitBranchSwitchResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || branch_alignment::switch_branches(request))
+        .await
+        .map_err(|error| format!("The branch switch stopped unexpectedly: {error}"))?
 }
 
 #[cfg(test)]
