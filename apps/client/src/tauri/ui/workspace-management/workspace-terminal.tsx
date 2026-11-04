@@ -139,12 +139,16 @@ const WorkspaceTerminalViewport = ({
         role="tabpanel"
         aria-label={terminal.label}
         hidden={!active}
-        ref={containerRef}
-        className="h-full w-full overflow-hidden px-2 py-1.5 [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto"
+        className="h-full w-full px-2 py-1.5"
         onMouseDown={(event) => {
           if (event.button === 0) store.fitActiveTerminal(true);
         }}
-      />
+      >
+        <div
+          ref={containerRef}
+          className="h-full w-full overflow-hidden [&_.xterm]:h-full [&_.xterm-viewport]:!overflow-y-auto [&_.xterm-viewport]:!bg-transparent"
+        />
+      </div>
     </ContextActionMenu>
   );
 };
