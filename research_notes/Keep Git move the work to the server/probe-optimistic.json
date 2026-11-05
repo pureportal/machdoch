@@ -1,0 +1,51 @@
+{
+  "gitVersion": "git version 2.53.0.windows.2",
+  "trackedFiles": 5945,
+  "workers": 8,
+  "changesPerWorker": 10,
+  "fullLocalCloneSeconds": 52.93,
+  "fullCheckoutSeconds": 18.77,
+  "serverSideCommitMs": 537,
+  "scenarios": [
+    {
+      "scenario": "disjoint",
+      "attempted": 80,
+      "landed": 80,
+      "conflicts": 0,
+      "rebases": 418,
+      "lockRetries": 0,
+      "commitsAddedToMain": 80,
+      "wallSeconds": 143.3,
+      "landedPerSecond": 0.6,
+      "medianChangeMs": 10842,
+      "p95ChangeMs": 35825
+    },
+    {
+      "scenario": "same file, separate lines",
+      "attempted": 80,
+      "landed": 80,
+      "conflicts": 0,
+      "rebases": 372,
+      "lockRetries": 0,
+      "commitsAddedToMain": 80,
+      "wallSeconds": 82.82,
+      "landedPerSecond": 1,
+      "medianChangeMs": 6319,
+      "p95ChangeMs": 20224
+    },
+    {
+      "scenario": "same line",
+      "attempted": 80,
+      "landed": 12,
+      "conflicts": 68,
+      "rebases": 68,
+      "lockRetries": 0,
+      "commitsAddedToMain": 12,
+      "wallSeconds": 32.58,
+      "landedPerSecond": 0.4,
+      "medianChangeMs": 3178,
+      "p95ChangeMs": 4811
+    }
+  ],
+  "connectivityCheckPassed": true
+}
