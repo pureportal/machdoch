@@ -8,7 +8,7 @@ import {
   rm,
   symlink,
 } from "node:fs/promises";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import {
   basename,
   dirname,
@@ -18,6 +18,7 @@ import {
   resolve,
 } from "node:path";
 import type { AgentCliProvider } from "../runtime-contract.generated.js";
+import { getUserConfigPath } from "../env.js";
 import { materializeManagedSkills } from "../managed-skill-delivery.js";
 import type {
   FrozenInstructionSet,
@@ -105,15 +106,20 @@ interface RenderedEnrollmentFiles {
   files: EnrollmentManifest["renderedFiles"];
 }
 
-const isContainedTemporarySession = async (path: string): Promise<boolean> => {
-  const canonicalTmp = await realpath(tmpdir()).catch(() => resolve(tmpdir()));
+const getEnrollmentDirectory = (): string =>
+  resolve(dirname(getUserConfigPath()), "instruction-runs");
+
+const isContainedTemporarySession = async (
+  path: string,
+  directory: string,
+): Promise<boolean> => {
+  const canonicalDirectory = await realpath(directory);
   const canonicalPath = await realpath(path).catch(() => resolve(path));
-  const rel = relative(canonicalTmp, canonicalPath);
+  const rel = relative(canonicalDirectory, canonicalPath);
   return (
     basename(canonicalPath).startsWith(SESSION_ROOT_PREFIX) &&
     rel.length > 0 &&
-    rel !== ".." &&
-    !rel.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`) &&
+    dirname(rel) === "." &&
     !isAbsolute(rel)
   );
 };
@@ -259,8 +265,9 @@ const removeSessionEntry = async (path: string): Promise<void> => {
 
 const removeSessionRootOnce = async (
   path: string,
+  directory: string,
 ): Promise<EnrollmentDisposalResult> => {
-  if (!(await isContainedTemporarySession(path))) {
+  if (!(await isContainedTemporarySession(path, directory))) {
     throw new Error(
       `Refusing to remove an invalid temporary session root: ${path}`,
     );
@@ -291,7 +298,7 @@ const removeSessionRootOnce = async (
   if (
     before.isSymbolicLink() ||
     !before.isDirectory() ||
-    !(await isContainedTemporarySession(path))
+    !(await isContainedTemporarySession(path, directory))
   ) {
     throw new Error(`Temporary session root changed before cleanup: ${path}`);
   }
@@ -320,10 +327,13 @@ const sessionRootRemovalPromises = new Map<
   Promise<EnrollmentDisposalResult>
 >();
 
-const removeSessionRoot = (path: string): Promise<EnrollmentDisposalResult> => {
+const removeSessionRoot = (
+  path: string,
+  directory: string,
+): Promise<EnrollmentDisposalResult> => {
   const existingRemoval = sessionRootRemovalPromises.get(path);
   if (existingRemoval) return existingRemoval;
-  const removal = removeSessionRootOnce(path).finally(() => {
+  const removal = removeSessionRootOnce(path, directory).finally(() => {
     if (sessionRootRemovalPromises.get(path) === removal) {
       sessionRootRemovalPromises.delete(path);
     }
@@ -334,15 +344,16 @@ const removeSessionRoot = (path: string): Promise<EnrollmentDisposalResult> => {
 
 export const cleanupStaleEnrollmentArtifacts = async (
   now = Date.now(),
+  directory = getEnrollmentDirectory(),
 ): Promise<void> => {
-  const entries = await readdir(tmpdir(), { withFileTypes: true }).catch(
+  const entries = await readdir(directory, { withFileTypes: true }).catch(
     () => [],
   );
   for (const entry of entries) {
     if (!entry.isDirectory() || !entry.name.startsWith(SESSION_ROOT_PREFIX)) {
       continue;
     }
-    const path = join(tmpdir(), entry.name);
+    const path = join(directory, entry.name);
     const metadata = await lstat(path).catch(() => undefined);
     if (!metadata || !metadata.isDirectory() || metadata.isSymbolicLink()) {
       continue;
@@ -357,12 +368,11 @@ export const cleanupStaleEnrollmentArtifacts = async (
     ) {
       continue;
     }
-    await removeSessionRoot(path).catch(() => undefined);
+    await removeSessionRoot(path, directory).catch(() => undefined);
   }
 };
 
-const cleanupBeforeEnrollment = async (): Promise<void> => {
-  const directory = tmpdir();
+const cleanupBeforeEnrollment = async (directory: string): Promise<void> => {
   const now = Date.now();
   if (startupCleanup?.directory === directory) {
     if (startupCleanup.pending) return startupCleanup.pending;
@@ -377,7 +387,7 @@ const cleanupBeforeEnrollment = async (): Promise<void> => {
     completedAt: -Infinity,
   };
   startupCleanup = cleanup;
-  cleanup.pending = cleanupStaleEnrollmentArtifacts(now);
+  cleanup.pending = cleanupStaleEnrollmentArtifacts(now, directory);
   try {
     await cleanup.pending;
     cleanup.completedAt = Date.now();
@@ -1018,8 +1028,10 @@ export const materializeCliEnrollment = async (
   ) {
     throw new Error(describeBlockedCliDelivery(params.deliveryPlan));
   }
-  await cleanupBeforeEnrollment();
-  const rootPath = await mkdtemp(join(tmpdir(), SESSION_ROOT_PREFIX));
+  const directory = getEnrollmentDirectory();
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  await cleanupBeforeEnrollment(directory);
+  const rootPath = await mkdtemp(join(directory, SESSION_ROOT_PREFIX));
   await chmod(rootPath, 0o700).catch(() => undefined);
   await writeSessionMarker({
     schemaVersion: SESSION_MARKER_SCHEMA_VERSION,
@@ -1169,11 +1181,11 @@ export const materializeCliEnrollment = async (
       manifest,
       manifestPath,
       dispose: async (): Promise<EnrollmentDisposalResult> =>
-        removeSessionRoot(rootPath),
+        removeSessionRoot(rootPath, directory),
     };
   } catch (error) {
     try {
-      const cleanupResult = await removeSessionRoot(rootPath);
+      const cleanupResult = await removeSessionRoot(rootPath, directory);
       if (cleanupResult.status === "deferred") {
         throw new Error(
           `Temporary enrollment cleanup was deferred after ${cleanupResult.errorCode ?? "an unknown filesystem error"}.`,

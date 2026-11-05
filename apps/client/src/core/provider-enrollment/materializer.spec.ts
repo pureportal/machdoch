@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createInstructionPlanFixture,
@@ -258,10 +258,10 @@ const openExclusiveWindowsFileLock = async (
   };
 };
 
-const createCodexEnrollment = async (runId: string) => {
+const createCodexEnrollment = async (runId: string, configRoot?: string) => {
   const root = await createRoot();
   const workspaceRoot = join(root, "workspace");
-  const userConfigRoot = join(root, "user-config");
+  const userConfigRoot = configRoot ?? join(root, "user-config");
   await Promise.all([
     mkdir(workspaceRoot, { recursive: true }),
     mkdir(userConfigRoot, { recursive: true }),
@@ -294,6 +294,16 @@ afterEach(async () => {
 });
 
 describe("CLI provider enrollment materializer", () => {
+  it("keeps run homes in app storage and disposes them after the config directory changes", async () => {
+    const enrollment = await createCodexEnrollment("app-storage-home");
+    const directory = join(process.env.MACHDOCH_USER_CONFIG_DIR!, "instruction-runs");
+    expect(dirname(enrollment.rootPath)).toBe(directory);
+    expect(enrollment.env.CODEX_HOME).toBe(join(enrollment.rootPath, "codex-home"));
+    vi.stubEnv("MACHDOCH_USER_CONFIG_DIR", join(await createRoot(), "other-config"));
+    await expect(enrollment.dispose()).resolves.toEqual({ status: "removed" });
+    await expect(stat(enrollment.rootPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("keeps an existing native Codex configuration while a new run receives synced HTTP changes with apps disabled", async () => {
     const root = await createRoot();
     const workspaceRoot = join(root, "workspace");
@@ -412,21 +422,22 @@ describe("CLI provider enrollment materializer", () => {
     }
   });
 
-  it("throttles automatic temporary-directory scans while allowing explicit cleanup", async () => {
+  it("throttles automatic enrollment-directory scans while allowing explicit cleanup", async () => {
+    const userConfigRoot = join(await createRoot(), "user-config");
     const now = Date.now() + 10 * 60_000;
     const clock = vi.spyOn(Date, "now").mockReturnValue(now);
     readdirMock.mockClear();
     const enrollments: Awaited<ReturnType<typeof createCodexEnrollment>>[] = [];
     try {
-      enrollments.push(await createCodexEnrollment("cleanup-throttle-one"));
-      enrollments.push(await createCodexEnrollment("cleanup-throttle-two"));
+      enrollments.push(await createCodexEnrollment("cleanup-throttle-one", userConfigRoot));
+      enrollments.push(await createCodexEnrollment("cleanup-throttle-two", userConfigRoot));
       const scans = () =>
-        readdirMock.mock.calls.filter(([path]) => path === tmpdir()).length;
+        readdirMock.mock.calls.filter(([path]) => path === join(userConfigRoot, "instruction-runs")).length;
       expect(scans()).toBe(1);
       await cleanupStaleEnrollmentArtifacts();
       expect(scans()).toBe(2);
       clock.mockReturnValue(now + 5 * 60_000 + 1);
-      enrollments.push(await createCodexEnrollment("cleanup-throttle-expired"));
+      enrollments.push(await createCodexEnrollment("cleanup-throttle-expired", userConfigRoot));
       expect(scans()).toBe(3);
     } finally {
       clock.mockRestore();
