@@ -38,6 +38,26 @@ beforeEach(() => {
 });
 
 describe("native Codex goals", () => {
+  it("resumes a goal without hydrating its previous turns", () => {
+    const session = new CodexNativeGoalSession(
+      { objective: "Continue", prompt: "Continue", imagePaths: [], cwd: process.cwd(), resumeThreadId: "stored-thread" },
+      { write: (message) => messages.push(JSON.parse(message) as Record<string, unknown>), closeInput: close },
+      () => undefined,
+      { model: "gpt-5.5", captureEvidence: false },
+    );
+    try {
+      session.start();
+      session.push(`${JSON.stringify({ id: 1, result: {} })}\n`);
+      expect(messages.find((message) => message.method === "thread/resume")?.params)
+        .toMatchObject({ threadId: "stored-thread", excludeTurns: true });
+      session.push(`${JSON.stringify({ id: 2, result: { thread: { id: "stored-thread" } } })}\n`);
+      expect(messages.find((message) => message.method === "thread/goal/set")?.params)
+        .toMatchObject({ threadId: "stored-thread", status: "paused" });
+    } finally {
+      session.dispose();
+    }
+  });
+
   const completeGoal = (): ExternalAgentCliOutputUpdate => {
     send({
       method: "thread/goal/updated",

@@ -215,6 +215,7 @@ export class CodexNativeGoalSession implements InteractiveAgentSession {
           this.request("thread/resume", {
             ...threadParams,
             threadId: this.input.resumeThreadId,
+            excludeTurns: true,
           });
         } else {
           this.request("thread/start", {

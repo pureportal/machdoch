@@ -289,6 +289,7 @@ export class CodexAppServerSession implements InteractiveAgentSession {
           const resumeParams: Record<string, unknown> = {
             ...threadParams,
             threadId: this.input.resumeThreadId,
+            excludeTurns: true,
           };
           delete resumeParams.ephemeral;
           this.rpc.request("thread/resume", resumeParams);

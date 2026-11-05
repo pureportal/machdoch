@@ -262,7 +262,7 @@ describe("resuming a stored thread", () => {
     const reported: string[] = [];
     const { session, find } = create(reported);
     expect(find("thread/start")).toBeUndefined();
-    expect(find("thread/resume")?.params).toMatchObject({ threadId: "stored-thread", model: "gpt-6-luna" });
+    expect(find("thread/resume")?.params).toMatchObject({ threadId: "stored-thread", model: "gpt-6-luna", excludeTurns: true });
     expect(find("thread/resume")?.params).not.toHaveProperty("ephemeral");
     session.push(`${JSON.stringify({ id: find("thread/resume")?.id, result: { thread: { id: "stored-thread" } } })}\n`);
     expect(find("turn/start")?.params).toMatchObject({ threadId: "stored-thread" });
