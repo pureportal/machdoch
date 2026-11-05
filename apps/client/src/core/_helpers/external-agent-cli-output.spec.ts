@@ -349,6 +349,110 @@ describe("Claude CLI output decoder", () => {
       expect(decoder.backgroundWaitExpired()).toBe(false);
     });
 
+    describe("when a job finishes during the reply", () => {
+      const jobNotice = (taskId: string, runId: string, status: string) =>
+        eventLine({
+          type: "system",
+          subtype: "task_notification",
+          task_id: taskId,
+          run_id: runId,
+          status,
+        });
+      const noticeOrigin = (runId: string) => ({
+        kind: "task-notification",
+        producer: "session-task",
+        runId,
+      });
+
+      it("waits for the turn that reads its notice", () => {
+        const decoder = new ClaudeCliOutputDecoder(true, true);
+        decoder.push(backgroundTasks(1));
+        decoder.push(jobNotice("job-0", "run-0", "completed"));
+        decoder.push(backgroundTasks(0));
+        const waiting = decoder.push(
+          result("Waiting for the log check.", 4, 10),
+        );
+        expect(waiting.resultExitCode).toBe(0);
+        expect(waiting.displayText.join("")).not.toContain("background job");
+        expect(decoder.getCompletionGraceMs()).toBe(2 * 60 * 1_000);
+
+        decoder.push(assistant("message-2", "The gallery passed."));
+        expect(decoder.hasTerminalResult()).toBe(false);
+        decoder.push(
+          eventLine({
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            num_turns: 1,
+            result: "The gallery passed.",
+            origin: noticeOrigin("run-0"),
+          }),
+        );
+        expect(decoder.hasTerminalResult()).toBe(true);
+        expect(decoder.getCompletionGraceMs()).toBeUndefined();
+        expect(decoder.getFinalOutput()).toBe("The gallery passed.");
+      });
+
+      it("counts a notice closed by an empty result as read", () => {
+        const decoder = new ClaudeCliOutputDecoder(true, true);
+        decoder.push(backgroundTasks(2));
+        decoder.push(jobNotice("job-0", "run-0", "completed"));
+        decoder.push(jobNotice("job-1", "run-1", "completed"));
+        decoder.push(backgroundTasks(0));
+        decoder.push(result("Waiting for both.", 4, 10));
+        decoder.push(
+          eventLine({
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            num_turns: 0,
+            result: "",
+            origin: noticeOrigin("run-0"),
+          }),
+        );
+        decoder.push(assistant("message-2", "Both passed."));
+        decoder.push(
+          eventLine({
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            num_turns: 1,
+            result: "Both passed.",
+            origin: noticeOrigin("run-1"),
+          }),
+        );
+        expect(decoder.getCompletionGraceMs()).toBeUndefined();
+        expect(decoder.getFinalOutput()).toBe("Both passed.");
+      });
+
+      it("ends at once when the turn already read the notice", () => {
+        const decoder = new ClaudeCliOutputDecoder(true, true);
+        decoder.push(backgroundTasks(1));
+        decoder.push(jobNotice("job-0", "run-0", "completed"));
+        decoder.push(backgroundTasks(0));
+        decoder.push(
+          eventLine({
+            type: "user",
+            isReplay: true,
+            origin: noticeOrigin("run-0"),
+            message: { role: "user", content: "<task-notification>" },
+          }),
+        );
+        decoder.push(result("Done.", 3, 10));
+        expect(decoder.getCompletionGraceMs()).toBeUndefined();
+      });
+
+      it("does not wait for stopped or foreground jobs", () => {
+        const decoder = new ClaudeCliOutputDecoder(true, true);
+        decoder.push(backgroundTasks(1));
+        decoder.push(jobNotice("job-0", "run-0", "stopped"));
+        decoder.push(backgroundTasks(0));
+        decoder.push(jobNotice("foreground", "run-1", "completed"));
+        decoder.push(result("Done.", 3, 10));
+        expect(decoder.getCompletionGraceMs()).toBeUndefined();
+      });
+    });
+
     it("keeps the first result final outside goal turns", () => {
       const decoder = new ClaudeCliOutputDecoder();
       decoder.push(backgroundTasks(1));

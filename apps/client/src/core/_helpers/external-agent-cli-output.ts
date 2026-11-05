@@ -433,6 +433,8 @@ export class ClaudeCliOutputDecoder
   private turnLimitReached = false;
   private failureMessage: string | undefined;
   private backgroundTasks = 0;
+  private readonly backgroundTaskIds = new Set<string>();
+  private readonly unreadJobNoticeRunIds = new Set<string>();
   private waitingForBackgroundTasks = false;
   private backgroundWaitSteps = 0;
   private readonly maxBackgroundWaitSteps: number;
@@ -444,8 +446,9 @@ export class ClaudeCliOutputDecoder
   private unchangedAnswerMessageId: string | undefined;
 
   /**
-   * With `waitForBackgroundTasks`, a result that leaves background jobs running
-   * is not final: the CLI starts another turn when they finish.
+   * With `waitForBackgroundTasks`, a result that leaves background jobs running,
+   * or finished jobs whose notice the model has not read yet, is not final: the
+   * CLI starts another turn to deliver those notices.
    */
   constructor(
     captureToolEvidence = false,
@@ -521,6 +524,29 @@ export class ClaudeCliOutputDecoder
     this.assistantMessageId = undefined;
   }
 
+  /** A stopped job sends the model no notice, so no turn follows it. */
+  private recordJobNotice(event: Record<string, unknown>): void {
+    const taskId = getString(event, "task_id");
+    const runId = getString(event, "run_id");
+    if (
+      taskId !== undefined &&
+      runId !== undefined &&
+      this.backgroundTaskIds.has(taskId) &&
+      getString(event, "status") !== "stopped" &&
+      event.skip_transcript !== true &&
+      event.ambient !== true
+    )
+      this.unreadJobNoticeRunIds.add(runId);
+  }
+
+  /** The prompt or result of the turn that read a job notice names its run. */
+  private markJobNoticeRead(event: Record<string, unknown>): void {
+    const origin = isRecord(event.origin) ? event.origin : undefined;
+    if (!origin || getString(origin, "kind") !== "task-notification") return;
+    const runId = getString(origin, "runId");
+    if (runId) this.unreadJobNoticeRunIds.delete(runId);
+  }
+
   getFailureMessage(): string | undefined {
     return this.failureMessage;
   }
@@ -552,17 +578,29 @@ export class ClaudeCliOutputDecoder
     const type = getString(event, "type");
     const subtype = getString(event, "subtype");
 
+    this.markJobNoticeRead(event);
+
     if (type === "system" && subtype === "api_retry") {
       this.retryCount += 1;
       return;
     }
 
     if (type === "system" && subtype === "background_tasks_changed") {
-      this.backgroundTasks = Array.isArray(event.tasks)
-        ? event.tasks.length
-        : 0;
+      const tasks: unknown[] = Array.isArray(event.tasks) ? event.tasks : [];
+      this.backgroundTasks = tasks.length;
+      for (const task of tasks) {
+        const taskId = isRecord(task)
+          ? (getString(task, "task_id") ?? getString(task, "id"))
+          : undefined;
+        if (taskId) this.backgroundTaskIds.add(taskId);
+      }
       if (this.waitForBackgroundTasks && this.terminal && this.backgroundTasks)
         this.waitingForBackgroundTasks = true;
+      return;
+    }
+
+    if (type === "system" && subtype === "task_notification") {
+      this.recordJobNotice(event);
       return;
     }
 
@@ -658,9 +696,12 @@ export class ClaudeCliOutputDecoder
         this.carriedModelCalls + Math.max(1, Math.trunc(numTurns));
       this.modelCallCountReported = true;
     }
-    if (this.waitForBackgroundTasks && this.backgroundTasks > 0) {
+    if (
+      this.waitForBackgroundTasks &&
+      (this.backgroundTasks > 0 || this.unreadJobNoticeRunIds.size > 0)
+    ) {
       this.waitingForBackgroundTasks = true;
-      if (!this.terminal)
+      if (!this.terminal && this.backgroundTasks > 0)
         update.displayText.push(this.describeBackgroundWait("Waiting for"));
     }
 

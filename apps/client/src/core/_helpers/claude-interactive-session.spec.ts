@@ -537,6 +537,72 @@ describe("ClaudeInteractiveSession", () => {
       expect(harness.session.getUsage()).toMatchObject({ inputTokens: 30 });
     });
 
+    it("keeps the session open for the notice of a job that finished during the reply", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      harness.receive(jobs(2));
+      for (const index of [0, 1]) {
+        harness.receive({
+          type: "system",
+          subtype: "task_notification",
+          task_id: `job-${index}`,
+          run_id: `run-${index}`,
+          status: "completed",
+        });
+      }
+      harness.receive(jobs(0));
+      harness.receive(assistant("message-1", "Waiting for the log check."));
+      harness.receive(success("Waiting for the log check.", 10));
+      expect(harness.isClosed()).toBe(false);
+
+      const noticeOrigin = (runId: string) => ({
+        kind: "task-notification",
+        producer: "session-task",
+        runId,
+      });
+      harness.receive({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        num_turns: 0,
+        result: "",
+        origin: noticeOrigin("run-0"),
+      });
+      expect(harness.isClosed()).toBe(false);
+
+      harness.receive(assistant("message-2", "The gallery passed."));
+      harness.receive({
+        ...success("The gallery passed.", 20),
+        origin: noticeOrigin("run-1"),
+      });
+      expect(harness.isClosed()).toBe(true);
+      expect(harness.session.getFinalOutput()).toBe("The gallery passed.");
+    });
+
+    it("ends at once when the turn read the job's notice", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      harness.receive(jobs(1));
+      harness.receive({
+        type: "system",
+        subtype: "task_notification",
+        task_id: "job-0",
+        run_id: "run-0",
+        status: "completed",
+      });
+      harness.receive(jobs(0));
+      harness.receive({
+        type: "user",
+        isReplay: true,
+        origin: { kind: "task-notification", runId: "run-0" },
+        message: { role: "user", content: "<task-notification>" },
+      });
+      harness.receive(success("Done.", 10));
+      expect(harness.isClosed()).toBe(true);
+    });
+
     it("still ends at once when no job is running", () => {
       const harness = createHarness();
       sessions.push(harness.session);

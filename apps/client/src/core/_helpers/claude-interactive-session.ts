@@ -349,16 +349,20 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
       return;
     }
     if (type === "user" && event.isReplay === true) {
-      // An echoed steering message: the turn has now read it.
+      // An echoed steering message or job notice: the turn has now read it.
       const message = isRecord(event.message) ? event.message : {};
       if (typeof message.content === "string")
         this.live.confirmSteer(message.content);
+      mergeOutputUpdate(update, this.output.pushEvent(event));
       return;
     }
     if (type === "system") this.events.system(event);
     // Once the run has ended, a late follow-up turn must not replace its answer.
     if (this.turnFinished) return;
-    if (isClaudeResultWithoutTurn(event)) return;
+    if (isClaudeResultWithoutTurn(event)) {
+      mergeOutputUpdate(update, this.output.pushEvent(event));
+      return;
+    }
     if (
       type === "result" &&
       (this.continueAfterTurnLimit(event) ||
