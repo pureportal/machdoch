@@ -428,7 +428,7 @@ describe("shortcut resolution", () => {
   });
 
   it("reuses Escape only across mutually exclusive auxiliary surfaces", () => {
-    const surfaceIds = ["quick-chat", "quick-voice", "tray"] as const;
+    const surfaceIds = ["quick-voice", "tray"] as const;
     const commands = surfaceIds.map((surfaceId) =>
       command(
         `${surfaceId}.hide`,

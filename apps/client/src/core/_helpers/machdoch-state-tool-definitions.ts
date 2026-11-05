@@ -74,9 +74,7 @@ const createStateTool = (
       const result = await sendRunControlRequest(
         "readState",
         context.workspaceRoot,
-        undefined,
-        context.signal,
-        createQuery(args, context),
+        { signal: context.signal, query: createQuery(args, context) },
       );
       return {
         toolResult: {

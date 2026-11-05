@@ -1,7 +1,24 @@
 import { createConnection } from "node:net";
 import type { AgentToolDefinition } from "./agent-tools-shared.js";
 
-type RunControlAction = "status" | "start" | "stop" | "restart" | "readState";
+type RunControlAction =
+  | "status"
+  | "start"
+  | "stop"
+  | "restart"
+  | "readState"
+  | "appControl";
+
+interface RunControlRequestOptions {
+  configurationId?: string | undefined;
+  signal?: AbortSignal | undefined;
+  query?: Record<string, unknown>;
+  inputs?: RunInputValues | undefined;
+  appControl?: Record<string, unknown>;
+  timeoutMs?: number;
+}
+
+const DEFAULT_RUN_CONTROL_TIMEOUT_MS = 30_000;
 
 interface RunControlResponse {
   ok: boolean;
@@ -45,10 +62,14 @@ export const isRunControlAvailable = (): boolean =>
 export const sendRunControlRequest = async (
   action: RunControlAction,
   workspaceRoot: string,
-  configurationId: string | undefined,
-  signal: AbortSignal | undefined,
-  query?: Record<string, unknown>,
-  inputs?: RunInputValues,
+  {
+    configurationId,
+    signal,
+    query,
+    inputs,
+    appControl,
+    timeoutMs = DEFAULT_RUN_CONTROL_TIMEOUT_MS,
+  }: RunControlRequestOptions = {},
 ): Promise<unknown> => {
   const address = process.env.MACHDOCH_RUN_CONTROL_ADDRESS;
   const token = process.env.MACHDOCH_RUN_CONTROL_TOKEN;
@@ -81,7 +102,7 @@ export const sendRunControlRequest = async (
       finish(() => reject(new Error("Workspace run control was cancelled.")));
     signal?.addEventListener("abort", abort, { once: true });
     socket.setEncoding("utf8");
-    socket.setTimeout(30_000);
+    socket.setTimeout(timeoutMs);
     socket.on("connect", () => {
       socket.write(
         `${JSON.stringify({
@@ -91,6 +112,7 @@ export const sendRunControlRequest = async (
           ...(configurationId ? { configurationId } : {}),
           ...(query ? { query } : {}),
           ...(inputs ? { inputs } : {}),
+          ...(appControl ? { appControl } : {}),
         })}\n`,
       );
     });
@@ -190,14 +212,11 @@ const lifecycleDefinition = (
   effect: "write",
   execute: async (args, context) => {
     const configurationId = readConfigurationId(args);
-    const result = await sendRunControlRequest(
-      action,
-      context.workspaceRoot,
+    const result = await sendRunControlRequest(action, context.workspaceRoot, {
       configurationId,
-      context.signal,
-      undefined,
-      action === "stop" ? undefined : readInputs(args),
-    );
+      signal: context.signal,
+      inputs: action === "stop" ? undefined : readInputs(args),
+    });
     return createResult(
       name,
       result,
@@ -227,8 +246,7 @@ export const createRunToolDefinitions = (): AgentToolDefinition[] => {
         const result = await sendRunControlRequest(
           "status",
           context.workspaceRoot,
-          undefined,
-          context.signal,
+          { signal: context.signal },
         );
         return createResult(
           "get_workspace_run_status",

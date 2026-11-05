@@ -19,6 +19,7 @@ import type { ConversationHistoryEntry, TaskConversationContext, TaskExecutionSe
 import type { ParallelAgentMode } from "@machdoch/model-runtime/types";
 import type { RuntimeConfig } from "../runtime-contract.generated.js";
 import type { ConversationMemoryRuntime } from "./agent-tools-shared.js";
+import { createAppControlPromptSection } from "./app-control-prompt.js";
 import {
   executeInternalTaskModelInference,
   resolveInternalTaskRuntimeConfig,
@@ -636,6 +637,9 @@ export const prepareConversationPromptContext = async (
           "</workspace_change>",
         ].join("\n")
       : undefined,
+    conversationContext?.chatType === "quick"
+      ? createAppControlPromptSection(conversationContext.appView, config.mode)
+      : undefined,
     conversationContext?.chatType === "pose"
       ? "This is a dedicated Pose chat. Create and refine OpenPose skeleton scenes, including multiple characters. Call pose_scene_get, then save the requested scene with pose_scene_replace or the pose_person_* and pose_joint_set tools. Make every figure's visible joint geometry match the requested action; a standing base pose with merely raised arms is not a climbing pose. Use climbing for climbers and vary the limbs and placement for multiple figures. Use reference images to reconstruct body positions. Do not generate a final image or call an image generation tool. A written pose scene is the deliverable; do not claim success unless a pose tool saved it. Briefly describe the saved pose and invite edits."
       : undefined,
@@ -826,6 +830,7 @@ export const prepareConversationPromptContext = async (
       ...(conversationContext?.chatType === "pose"
         ? { poseScene: conversationContext.poseScene }
         : {}),
+      ...(conversationContext?.chatType === "quick" ? { appControl: true } : {}),
       sessionEnabled,
       sessionEntries,
       workspaceEnabled,

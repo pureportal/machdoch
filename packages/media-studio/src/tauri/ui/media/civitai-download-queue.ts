@@ -16,13 +16,16 @@ export function enqueueCivitaiDownload(input: {
   source: string;
   inspection: CivitaiInspection;
   images: readonly CivitaiPreview[];
-}): void {
+}): string {
   const { label, source, inspection, images } = structuredClone(input);
-  if (!inspection.canDownload || !inspection.file) return;
+  if (!inspection.canDownload || !inspection.file)
+    throw new Error(
+      inspection.blockingReason ?? "This Civitai file cannot be downloaded.",
+    );
   const file = inspection.file;
   let downloaded: CivitaiDownloadedResource | null = null;
   let resourceId: string | null = null;
-  mediaImportQueue.enqueue(
+  return mediaImportQueue.enqueue(
     label,
     async ({ signal, update }) => {
       if (!downloaded) {

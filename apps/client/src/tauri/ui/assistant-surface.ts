@@ -12,6 +12,7 @@ import {
 } from "@tauri-apps/api/window";
 import {
   MAIN_WINDOW_LABEL,
+  OPEN_QUICK_CHAT_EVENT,
   QUICK_VOICE_START_EVENT,
   QUICK_VOICE_WINDOW_LABEL,
 } from "./runtime";
@@ -181,6 +182,16 @@ export const revealMainWindow = async (): Promise<void> => {
     await mainWindow.setFocus();
   } catch (error) {
     console.error("Failed to reveal the main window", error);
+  }
+};
+
+export const revealQuickChat = async (): Promise<void> => {
+  await revealMainWindow();
+  if (!isTauri()) return;
+  try {
+    await getCurrentWindow().emitTo(MAIN_WINDOW_LABEL, OPEN_QUICK_CHAT_EVENT);
+  } catch (error) {
+    console.error("Failed to open Quick Chat", error);
   }
 };
 

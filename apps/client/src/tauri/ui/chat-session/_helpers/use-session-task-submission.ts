@@ -12,6 +12,7 @@ import type {
   TaskExecutionProgress,
   TaskExecutionResult,
 } from "../../../../core/types.js";
+import type { AppControlSnapshot } from "@machdoch/media-studio/tauri/ui/app-control/app-control-contract.js";
 import {
   loadUserMemorySettings,
   runDesktopTask,
@@ -208,6 +209,7 @@ export interface SubmitTaskToSessionOptions {
   conversationCutoffMessageId?: string;
   consumedQueuedMessageId?: string;
   queuedMessageRecovery?: ChatSessionQueuedMessage;
+  appView?: AppControlSnapshot;
   onTaskStarted?: (taskId: string) => void;
 }
 
@@ -568,6 +570,7 @@ export const useSessionTaskSubmission = (options: {
         wasQueued:
           submitOptions.consumedQueuedMessageId !== undefined ||
           submitOptions.queuedMessageRecovery !== undefined,
+        ...(submitOptions.appView ? { appView: submitOptions.appView } : {}),
       };
       const nextRunMode = getEffectiveSessionMode(
         sessionMode,

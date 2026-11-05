@@ -613,6 +613,12 @@ mod tests {
         );
         assert!(options.base_models_by_type["Checkpoint"]
             .contains(&"Wan Video 2.2 TI2V-5B".to_string()));
+        assert_eq!(
+            options.base_model_architectures["NoobAI"],
+            "stable-diffusion-xl"
+        );
+        assert_eq!(options.base_model_architectures["Pony"], "pony");
+        assert_eq!(options.base_model_architectures.len(), 4);
     }
 
     #[test]
@@ -916,6 +922,7 @@ pub(crate) struct CivitaiOptions {
     model_types: Vec<String>,
     base_models: Vec<String>,
     base_models_by_type: HashMap<String, Vec<String>>,
+    base_model_architectures: HashMap<String, String>,
 }
 
 fn supported_options(enums: CivitaiEnums) -> CivitaiOptions {
@@ -948,10 +955,18 @@ fn supported_options(enums: CivitaiEnums) -> CivitaiOptions {
             )
         })
         .collect();
+    let base_model_architectures = base_models
+        .iter()
+        .filter_map(|base_model| {
+            civitai_compatibility::architecture_for_base_model(Some(base_model))
+                .map(|architecture| (base_model.clone(), architecture.to_string()))
+        })
+        .collect();
     CivitaiOptions {
         model_types,
         base_models,
         base_models_by_type,
+        base_model_architectures,
     }
 }
 

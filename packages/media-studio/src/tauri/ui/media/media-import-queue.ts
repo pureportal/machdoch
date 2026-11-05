@@ -54,16 +54,15 @@ export class MediaImportQueue {
     label: string,
     execute: (context: MediaImportTaskContext) => Promise<string>,
     downloadKey?: string,
-  ): void {
-    if (
-      downloadKey &&
-      this.jobs.some(
-        (job) =>
-          job.downloadKey === downloadKey &&
-          !["failed", "cancelled"].includes(job.status),
-      )
-    )
-      return;
+  ): string {
+    const existing = downloadKey
+      ? this.jobs.find(
+          (job) =>
+            job.downloadKey === downloadKey &&
+            !["failed", "cancelled"].includes(job.status),
+        )
+      : undefined;
+    if (existing) return existing.id;
     const id = crypto.randomUUID();
     this.tasks.set(id, execute);
     this.jobs = [
@@ -79,6 +78,49 @@ export class MediaImportQueue {
     ];
     this.emit();
     void this.pump();
+    return id;
+  }
+
+  waitFor(id: string, signal?: AbortSignal): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      const settle = (): boolean => {
+        const job = this.jobs.find((candidate) => candidate.id === id);
+        if (!job) {
+          finish(() => reject(new Error("The import was dismissed.")));
+          return true;
+        }
+        if (job.status === "completed" && job.resourceId) {
+          finish(() => resolve(job.resourceId!));
+          return true;
+        }
+        if (job.status === "failed" || job.status === "cancelled") {
+          finish(() =>
+            reject(
+              new Error(
+                job.status === "cancelled"
+                  ? "The import was cancelled."
+                  : (job.error ?? "The import failed."),
+              ),
+            ),
+          );
+          return true;
+        }
+        return false;
+      };
+      const abort = (): void =>
+        finish(() =>
+          reject(new Error("Waiting for the import was cancelled.")),
+        );
+      let unsubscribe = (): void => undefined;
+      const finish = (callback: () => void): void => {
+        unsubscribe();
+        signal?.removeEventListener("abort", abort);
+        callback();
+      };
+      if (settle()) return;
+      unsubscribe = this.subscribe(() => void settle());
+      signal?.addEventListener("abort", abort, { once: true });
+    });
   }
 
   retry(id: string): void {

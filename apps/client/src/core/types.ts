@@ -198,8 +198,10 @@ export interface TaskConversationContext {
   goalMode?: GoalMode;
   goalObjective?: string;
   wasQueued?: boolean;
-  chatType?: "pose";
+  chatType?: "pose" | "quick";
   poseScene?: import("@machdoch/media-studio/core/media/contracts.js").MediaPoseMap;
+  /** What the user saw in the desktop app when sending a Quick Chat message. */
+  appView?: import("@machdoch/media-studio/tauri/ui/app-control/app-control-contract.js").AppControlSnapshot;
   workspace?: {
     selection: "selected" | "not-set";
     root?: string;

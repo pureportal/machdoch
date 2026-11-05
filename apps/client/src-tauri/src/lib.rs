@@ -1,4 +1,5 @@
 mod agent_cli;
+mod app_control;
 mod app_update;
 mod atomic_file;
 mod cli_settings_bridge;
@@ -158,6 +159,7 @@ pub fn run() {
     }
 
     builder
+        .manage(app_control::AppControlState::default())
         .manage(app_update::AppUpdateState::default())
         .manage(cloud_runners::CloudRunnerState::default())
         .manage(desktop_task::DesktopTaskCancelMap::default())
@@ -442,6 +444,9 @@ pub fn run() {
             fleet::reconnect_cloud_server,
             fleet::synchronize_fleet_managed_prompts,
             fleet_control::client_requests::complete_fleet_client_request,
+            app_control::attach_app_control,
+            app_control::detach_app_control,
+            app_control::complete_app_control_request,
             fleet_control::get_pending_fleet_control_commands,
             fleet_control::acknowledge_fleet_control_command,
             fleet_control::update_fleet_control_shell_snapshot,

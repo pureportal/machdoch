@@ -107,4 +107,29 @@ describe("background model imports", () => {
     queue.dismiss(queue.getSnapshot()[0]!.id);
     expect(queue.getSnapshot()).toEqual([]);
   });
+  it("returns the active job for a duplicate download and waits for its resource", async () => {
+    const queue = new MediaImportQueue();
+    let finish!: (id: string) => void;
+    const id = queue.enqueue(
+      "LoRA",
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+      "hash-1",
+    );
+    expect(queue.enqueue("LoRA again", async () => "other", "hash-1")).toBe(id);
+    const waiting = queue.waitFor(id);
+    finish("addon-1");
+    await expect(waiting).resolves.toBe("addon-1");
+    await expect(queue.waitFor(id)).resolves.toBe("addon-1");
+  });
+
+  it("rejects waits for failed imports with their error", async () => {
+    const queue = new MediaImportQueue();
+    const id = queue.enqueue("Broken", async () => {
+      throw new Error("Disk full");
+    });
+    await expect(queue.waitFor(id)).rejects.toThrow("Disk full");
+  });
 });

@@ -247,6 +247,17 @@ const modelBaseIdentities = (model: MediaModelDescriptor): Set<string> =>
       .filter(Boolean),
   );
 
+const KREA_ARCHITECTURES = ["krea-2", "krea-2-raw", "krea-2-turbo"];
+
+export const mediaModelAcceptsAddonArchitecture = (
+  model: MediaModelDescriptor,
+  architecture: MediaLocalModelArchitecture,
+): boolean =>
+  modelRuntimeArchitecture(model.architecture) ===
+    modelRuntimeArchitecture(architecture) ||
+  (KREA_ARCHITECTURES.includes(model.architecture ?? "") &&
+    KREA_ARCHITECTURES.includes(architecture));
+
 export const inspectMediaModelAddonCompatibility = (
   model: MediaModelDescriptor,
   addon: MediaModelAddonDescriptor,
@@ -260,15 +271,7 @@ export const inspectMediaModelAddonCompatibility = (
       reason: `${model.displayName} does not expose ${addon.kind} loading.`,
     };
   }
-  const kreaArchitectures = ["krea-2", "krea-2-raw", "krea-2-turbo"];
-  if (
-    modelRuntimeArchitecture(model.architecture) !==
-      modelRuntimeArchitecture(addon.architecture) &&
-    !(
-      kreaArchitectures.includes(model.architecture ?? "") &&
-      kreaArchitectures.includes(addon.architecture)
-    )
-  ) {
+  if (!mediaModelAcceptsAddonArchitecture(model, addon.architecture)) {
     return {
       status: "incompatible",
       reason: `${addon.displayName} targets ${addon.architecture}, but ${model.displayName} uses ${model.architecture ?? "an unknown architecture"}.`,

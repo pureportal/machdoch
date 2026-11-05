@@ -35,6 +35,7 @@ export interface ConversationMemoryRuntime {
     | import("@machdoch/media-studio/core/media/contracts.js").MediaPoseMap
     | null;
   poseSceneSaved?: boolean;
+  appControl?: boolean;
   sessionEnabled: boolean;
   sessionEntries: ConversationMemoryEntry[];
   workspaceEnabled?: boolean;

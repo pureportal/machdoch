@@ -11,7 +11,7 @@ import {
   type JSX,
 } from "react";
 import {
-  revealMainWindow,
+  revealQuickChat,
   resolveAssistantSurfaceLayout,
   setWindowPosition,
   setWindowSize,
@@ -502,9 +502,9 @@ export const QuickVoiceShell = (): JSX.Element => {
     controller.flushPersistence,
     resetVoiceActivity,
   ]);
-  const openFullApp = useCallback((): void => {
-    void revealMainWindow().catch((error) => {
-      console.error("Failed to reveal main window", error);
+  const openQuickChat = useCallback((): void => {
+    void revealQuickChat().catch((error) => {
+      console.error("Failed to open Quick Chat", error);
     });
   }, []);
   const quickVoiceCommandStateRef = useRef({
@@ -514,7 +514,7 @@ export const QuickVoiceShell = (): JSX.Element => {
     hasConfiguredProvider: configuredProvider !== null,
     hideQuickVoice,
     loaded: controller.quickVoiceSettingsLoaded,
-    openFullApp,
+    openQuickChat,
     recording,
     startRecording,
     stopRecording: finalizeRecording,
@@ -527,7 +527,7 @@ export const QuickVoiceShell = (): JSX.Element => {
     hasConfiguredProvider: configuredProvider !== null,
     hideQuickVoice,
     loaded: controller.quickVoiceSettingsLoaded,
-    openFullApp,
+    openQuickChat,
     recording,
     startRecording,
     stopRecording: finalizeRecording,
@@ -588,10 +588,10 @@ export const QuickVoiceShell = (): JSX.Element => {
       },
       {
         id: "quick-voice.app.open",
-        title: "Open full app",
+        title: "Open Quick Chat",
         group: "Quick Voice",
         scope,
-        execute: () => state().openFullApp(),
+        execute: () => state().openQuickChat(),
       },
       {
         id: "quick-voice.hide",
@@ -658,8 +658,8 @@ export const QuickVoiceShell = (): JSX.Element => {
                 type="button"
                 variant="ghost"
                 size="icon"
-                aria-label="Open full app"
-                onClick={openFullApp}
+                aria-label="Open Quick Chat"
+                onClick={openQuickChat}
                 className="h-9 w-9 rounded-2xl text-slate-400 hover:bg-slate-900 hover:text-slate-100"
               >
                 <ArrowUpRight className="h-4 w-4" />

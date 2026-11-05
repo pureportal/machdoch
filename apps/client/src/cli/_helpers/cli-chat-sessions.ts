@@ -3,6 +3,7 @@ import { readFile, readdir, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { getUserConfigPath } from "../../core/env.js";
 import { isMediaPoseMap } from "@machdoch/media-studio/core/media/contracts.js";
+import { isAppControlSnapshot } from "@machdoch/media-studio/tauri/ui/app-control/app-control-contract.js";
 import { writeJsonAtomically } from "../../core/_helpers/write-file-atomically.helper.js";
 import { withCooperativeFileLock } from "../../core/_helpers/with-cooperative-file-lock.helper.js";
 import { normalizeConversationMemoryEntries } from "../../core/memory.js";
@@ -88,8 +89,17 @@ export const parseConversationContext = (
     typeof value.earlierWorkspace !== "string"
   )
     throw new CliUsageError("Invalid conversation earlier workspace.");
-  if (value.chatType !== undefined && value.chatType !== "pose")
+  if (
+    value.chatType !== undefined &&
+    value.chatType !== "pose" &&
+    value.chatType !== "quick"
+  )
     throw new CliUsageError("Invalid conversation chat type.");
+  if (
+    value.appView !== undefined &&
+    (value.chatType !== "quick" || !isAppControlSnapshot(value.appView))
+  )
+    throw new CliUsageError("Invalid conversation app view.");
   if (
     value.parallelAgentMode !== undefined &&
     (typeof value.parallelAgentMode !== "string" ||

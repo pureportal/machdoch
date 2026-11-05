@@ -283,6 +283,7 @@ import {
 } from "./use-session-task-submission";
 import { useSessionWindowControls } from "./use-session-window-controls";
 import { useSpeechInputDevices } from "./use-speech-input-devices";
+import { appControl } from "@machdoch/media-studio/tauri/ui/app-control/app-control-registry.js";
 
 type ChatInputNeededSubmission =
   | {
@@ -1202,6 +1203,13 @@ export const useChatSessionController = (
       getActiveChatOperationIds(session),
     );
   }, [state.shellState.sessions]);
+  const chatViewOperationIds = useMemo(
+    () =>
+      state.shellState.sessions.flatMap((session) =>
+        isQuickVoiceSession(session) ? [] : getActiveChatOperationIds(session),
+      ),
+    [state.shellState.sessions],
+  );
   const hasRunningSession = activeChatOperationIds.length > 0;
   const activeChatOperationIdsSignature = activeChatOperationIds.join("\0");
   const sessionOwnershipSignature = useMemo(
@@ -7362,16 +7370,43 @@ export const useChatSessionController = (
         return false;
       }
 
-      return taskSubmission.submitTaskToSession({
+      const appView = appControl.snapshot();
+      const viewed = appView.location.length > 0 || appView.actions.length > 0;
+      const viewWorkspace = viewed ? appView.workspaceRoot : null;
+      const previousWorkspace = quickTaskSession?.workspace;
+      const switchWorkspace =
+        viewWorkspace !== null && viewWorkspace !== previousWorkspace;
+      if (switchWorkspace) {
+        updateQuickTaskSession((session) => ({
+          ...session,
+          workspace: viewWorkspace,
+          updatedAt: Date.now(),
+        }));
+      }
+
+      const submitted = taskSubmission.submitTaskToSession({
         sessionSnapshot: buildQuickVoiceSessionSnapshot(),
         task: normalizedTranscript,
         contextAttachments,
         clearDraft: true,
         createSessionIfMissing: true,
         activateSession: false,
+        ...(viewed ? { appView } : {}),
       });
+      if (!submitted && switchWorkspace && previousWorkspace !== undefined) {
+        updateQuickTaskSession((session) => ({
+          ...session,
+          workspace: previousWorkspace,
+        }));
+      }
+      return submitted;
     },
-    [buildQuickVoiceSessionSnapshot, taskSubmission],
+    [
+      buildQuickVoiceSessionSnapshot,
+      quickTaskSession?.workspace,
+      taskSubmission,
+      updateQuickTaskSession,
+    ],
   );
 
   const handleQuickTaskDraftSend = useCallback(
@@ -8699,6 +8734,11 @@ export const useChatSessionController = (
     () => getSavedPoseScenes(state.shellState.sessions),
     [state.shellState.sessions],
   );
+  const sidebarSessions = useMemo(
+    () =>
+      state.filteredSessions.filter((session) => !isQuickVoiceSession(session)),
+    [state.filteredSessions],
+  );
 
   return {
     isDesktop,
@@ -8750,7 +8790,7 @@ export const useChatSessionController = (
     setCatalogOpen: state.setCatalogOpen,
     hasAnyProvider: providerChooserState.hasAnyProvider,
     hasRunningSession,
-    activeChatOperationIds,
+    chatViewOperationIds,
     titlebar: {
       shutdownWhenIdle,
       providerStatuses: providerChooserState.activeProviderStats,
@@ -8765,9 +8805,9 @@ export const useChatSessionController = (
     renamePoseScene: handleRemoteRenameSession,
     openProviderSettings: () => settingsActions.openSettings("providers"),
     sidebar: {
-      totalSessions: state.shellState.sessions.length,
+      totalSessions: state.shellState.sessions.length - (quickTaskSession ? 1 : 0),
       activeSessionId: state.activeSession.id,
-      filteredSessions: state.filteredSessions,
+      filteredSessions: sidebarSessions,
       queuedSessionMessages: state.shellState.queuedSessionMessages,
       sessionScopeFilter: state.sessionScopeFilter,
       sessionStatusFilters: state.sessionStatusFilters,

@@ -27,7 +27,7 @@ const INTENTIONAL_SHARED_BINDINGS = [
   ["media.create.generate", "media.flow.run", "ralph.flow.run"],
   ["media.selection.delete", "ralph.selection.delete"],
   ["media.selection.delete-backspace", "ralph.selection.delete-backspace"],
-  ["quick-chat.hide", "quick-voice.hide", "tray.hide"],
+  ["quick-voice.hide", "tray.hide"],
 ] as const satisfies readonly (readonly DefaultCommandShortcutId[])[];
 
 const sharedBindings = (platform: CommandPlatform): string[][] => {

@@ -622,6 +622,9 @@ export const createConversationContextFromSession = (
     ...(session.contextWindow !== undefined ? { contextWindow: session.contextWindow } : {}),
     adaptiveControllerOverride: session.adaptiveControllerOverride ?? null,
     ...(session.specialSession === "pose" ? { chatType: "pose" as const } : {}),
+    ...(session.specialSession === "quick-voice"
+      ? { chatType: "quick" as const }
+      : {}),
     ...(session.specialSession === "pose" && session.poseScene
       ? { poseScene: session.poseScene }
       : {}),

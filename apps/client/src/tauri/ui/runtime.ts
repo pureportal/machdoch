@@ -345,6 +345,7 @@ export const DESKTOP_SETTINGS_CHANGED_EVENT =
   "machdoch://desktop-settings-changed";
 export const USER_SETTINGS_CHANGED_EVENT = "machdoch://user-settings-changed";
 export const QUICK_VOICE_START_EVENT = "machdoch://quick-voice-start";
+export const OPEN_QUICK_CHAT_EVENT = "machdoch://open-quick-chat";
 export const FILE_MANAGER_INVOCATION_EVENT =
   "machdoch://file-manager-invocation";
 

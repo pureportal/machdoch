@@ -67,6 +67,7 @@ import {
   type WorkspaceDetailSection,
   type WorkspaceGitSection,
 } from "./workspace-view-preferences";
+import { useWorkspaceViewControl } from "./use-workspace-view-control";
 
 const DETAIL_SCOPE = "workspace-detail";
 
@@ -368,6 +369,19 @@ export const WorkspaceManager = ({
       selectedWorkspaceKey: workspaceKey,
     }));
   };
+
+  useWorkspaceViewControl({
+    workspaces,
+    selectedWorkspace,
+    section,
+    gitSection,
+    gitSummary,
+    draftDirty: workspaceDraftDirty,
+    busy: workspaceConfigurationBusy,
+    onSelectWorkspace: selectWorkspace,
+    onSelectSection: selectSection,
+    onSelectGitSection: selectGitSection,
+  });
 
   const refreshWorkspaces = (): void => {
     if (setup.saving || workspaceConfigurationBusy) return;

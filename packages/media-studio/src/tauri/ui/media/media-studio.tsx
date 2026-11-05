@@ -5,6 +5,7 @@ import {
 } from "../../../core/media/open-model-profiles.js";
 import { useMediaStudioAutosave } from "./use-media-studio-autosave";
 import { useMediaModelLibraryRefresh } from "./use-media-model-library-refresh";
+import { useMediaAppControl } from "./use-media-app-control";
 import { selectMediaAddonImageModel } from "./media-addon-model";
 import {
   createAudioRecipeFlow,
@@ -2257,6 +2258,18 @@ export const MediaStudio = ({
     },
     [],
   );
+  useMediaAppControl({
+    enabled: loaded && loadError === null,
+    state,
+    setState,
+    catalog: activeModelCatalog,
+    runnableImageModelIds: runtimeStatus?.directGenerationModelIds ?? null,
+    generationJobs,
+    refreshCatalog: refreshModelCatalog,
+    onSelectSection: selectSection,
+    onSelectTarget: changeGenerationTarget,
+    onUseModel: useModelInCreate,
+  });
   const changeFlowNodeConfig = useCallback(
     (nodeId: string, fieldId: string, value: unknown): void => {
       try {

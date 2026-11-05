@@ -18,7 +18,7 @@ use super::{
     manager::RunManager,
     presence::{WorkspaceAgentRegistration, WorkspacePresenceRegistry},
 };
-use crate::runtime_snapshot::resolve_workspace_root_path;
+use crate::{app_control::AppControlRequest, runtime_snapshot::resolve_workspace_root_path};
 
 const MAX_REQUEST_BYTES: u64 = 64 * 1024;
 const MAX_ACTIVE_CONNECTIONS: usize = 128;
@@ -193,6 +193,7 @@ struct ControlRequest {
     registration: Option<WorkspaceAgentRegistration>,
     agent_id: Option<String>,
     query: Option<DesktopStateQuery>,
+    app_control: Option<AppControlRequest>,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -206,6 +207,7 @@ enum ControlAction {
     GetPresence,
     UnregisterPresence,
     ReadState,
+    AppControl,
 }
 
 #[derive(Serialize)]
@@ -255,7 +257,7 @@ fn handle_connection(
 
     write_response(
         stream.as_ref(),
-        execute_request(manager, app, presence, connection_id, request),
+        execute_request(manager, app, presence, connection_id, stream.as_ref(), request),
     )
 }
 
@@ -365,6 +367,7 @@ fn execute_request(
     app: Option<&tauri::AppHandle>,
     presence: &WorkspacePresenceRegistry,
     connection_id: u64,
+    connection: &TcpStream,
     request: ControlRequest,
 ) -> Result<serde_json::Value, String> {
     match request.action {
@@ -390,6 +393,13 @@ fn execute_request(
             request
                 .query
                 .ok_or_else(|| "A desktop state query is required.".to_string())?,
+        ),
+        ControlAction::AppControl => crate::app_control::request(
+            app.ok_or_else(|| "Machdoch app control is unavailable.".to_string())?,
+            request
+                .app_control
+                .ok_or_else(|| "An app control request is required.".to_string())?,
+            &|| peer_closed(connection),
         ),
         ControlAction::GetPresence
         | ControlAction::RegisterPresence
@@ -430,10 +440,29 @@ fn execute_presence_request(
         | ControlAction::Start
         | ControlAction::Stop
         | ControlAction::Restart
-        | ControlAction::ReadState => {
+        | ControlAction::ReadState
+        | ControlAction::AppControl => {
             Err("Run-control actions are not valid on a presence connection.".to_string())
         }
     }
+}
+
+fn peer_closed(stream: &TcpStream) -> bool {
+    if stream.set_nonblocking(true).is_err() {
+        return false;
+    }
+    let mut probe = [0_u8; 1];
+    let closed = match stream.peek(&mut probe) {
+        Ok(read) => read == 0,
+        Err(error) => !matches!(
+            error.kind(),
+            std::io::ErrorKind::WouldBlock
+                | std::io::ErrorKind::Interrupted
+                | std::io::ErrorKind::TimedOut
+        ),
+    };
+    let _ = stream.set_nonblocking(false);
+    closed
 }
 
 fn canonical_workspace_root(workspace_root: &str) -> Result<String, String> {
@@ -711,8 +740,29 @@ mod tests {
         assert_eq!(unavailable["error"], "Desktop state is unavailable.");
         let unknown = read(&credentials.token, json!({ "kind": "writeEverything" }));
         assert_eq!(unknown["ok"], false);
+        let app_control = PresenceClient::connect(&credentials).request(json!({
+            "token": credentials.token,
+            "action": "appControl",
+            "workspaceRoot": workspace,
+            "appControl": { "kind": "snapshot" }
+        }));
+        assert_eq!(app_control["error"], "Machdoch app control is unavailable.");
 
         bridge.shutdown();
         fs::remove_dir_all(workspace).expect("temporary workspace should be removed");
+    }
+
+    #[test]
+    fn detects_callers_that_hang_up() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
+        let client = TcpStream::connect(listener.local_addr().unwrap()).expect("client connects");
+        let (server, _) = listener.accept().expect("server accepts");
+        assert!(!peer_closed(&server));
+        drop(client);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while !peer_closed(&server) {
+            assert!(std::time::Instant::now() < deadline, "hang-up was not detected");
+            thread::sleep(Duration::from_millis(20));
+        }
     }
 }

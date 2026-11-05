@@ -84,6 +84,7 @@ export interface CivitaiOptions {
   modelTypes: string[];
   baseModels: string[];
   baseModelsByType: Record<string, string[]>;
+  baseModelArchitectures: Record<string, MediaLocalModelArchitecture>;
 }
 
 export const civitaiImportArchitecture = (

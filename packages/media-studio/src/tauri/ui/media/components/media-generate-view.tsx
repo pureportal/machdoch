@@ -19,6 +19,10 @@ import { defaultMediaImageSteps } from "../../../../core/media/image-sampling.js
 import { MediaSaveAssetButton } from "./media-save-asset-button";
 import { MediaGenerationJobs } from "./media-generation-jobs";
 import {
+  APP_CONTROL_LEVEL,
+  useAppControlView,
+} from "../../app-control/use-app-control";
+import {
   AlertTriangle,
   ChevronDown,
   ImagePlus,
@@ -553,6 +557,46 @@ export const MediaGenerateView = ({
                           : target !== "video" && settings.qualityGateEnabled
                             ? "Run quality gates in Advanced"
                             : null);
+  const otherTargetSupported =
+    target === "audio" ? audioGenerationSupported : splatGenerationSupported;
+  const generationReady =
+    target === "audio" || target === "splat"
+      ? otherTargetSupported && !generationPending
+      : canGenerate;
+  const generationReadinessReason =
+    target === "audio"
+      ? audioGenerationBlockedReason
+      : target === "splat"
+        ? splatGenerationBlockedReason
+        : generationBlockedReason;
+  useAppControlView("media-basic", APP_CONTROL_LEVEL.detail, {
+    location: [],
+    state: () => ({
+      generation: generationReady
+        ? { ready: true }
+        : {
+            ready: false,
+            blockedReason: generationReadinessReason ?? "Generation is busy.",
+          },
+    }),
+    actions: [
+      {
+        id: "media.generate",
+        description:
+          "Start a Basic generation with the current settings, like pressing Generate.",
+        effect: "write",
+        input: { type: "object", properties: {} },
+        run: () => {
+          if (!generationReady)
+            throw new Error(
+              generationReadinessReason ?? "Generation is not ready yet.",
+            );
+          onGenerate();
+          return { started: true };
+        },
+      },
+    ],
+  });
   const resultAssets =
     generationJob?.assets.filter((asset) =>
       generationJob.recipe.target === "video"

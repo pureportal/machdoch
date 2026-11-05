@@ -1,4 +1,6 @@
 import { ApplicationShell } from "@machdoch/product-ui";
+import { isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   Suspense,
   lazy,
@@ -46,6 +48,7 @@ import {
   loadOnboardingState,
   saveAppShellState,
   saveOnboardingState,
+  getCurrentShellWindowLabel,
   type AppShellState,
   type MainAppId,
 } from "./lib/shell-store";
@@ -61,6 +64,7 @@ import {
   subscribeToFileManagerInvocations,
   syncScheduledPrompts,
   takeFileManagerInvocations,
+  OPEN_QUICK_CHAT_EVENT,
   type FileManagerInvocation,
 } from "./runtime";
 import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
@@ -75,6 +79,12 @@ import {
 import { UpdateDialog } from "./update/update-dialog";
 import { UpdateStatus } from "./update/update-status";
 import { speechRuntime, speechAssetUrl } from "./speech-runtime";
+import { useAppControlBridge } from "./app-control/use-app-control-bridge";
+import { useAppShellControl } from "./app-shell/use-app-shell-control";
+import { useChatViewControl } from "./app-shell/use-chat-view-control";
+import { AppControlViewMarker } from "./app-shell/app-control-view-marker";
+import { QuickChatButton } from "./quick-chat/quick-chat-button";
+import { QuickChatPanel } from "./quick-chat/quick-chat-panel";
 
 const SettingsDialog = lazy(async () => {
   const module = await import("./chat-session/components/settings-dialog");
@@ -178,6 +188,7 @@ export const ChatSession = (): JSX.Element => {
   const [chatCompletedSinceView, setChatCompletedSinceView] = useState(false);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
   const [cloudServerOpen, setCloudServerOpen] = useState(false);
+  const [quickChatOpen, setQuickChatOpen] = useState(false);
   const [pendingMediaRunId, setPendingMediaRunId] = useState<string | null>(
     null,
   );
@@ -239,7 +250,7 @@ export const ChatSession = (): JSX.Element => {
     kind: "modal",
   });
 
-  const chatRunning = controller.activeChatOperationIds.length > 0;
+  const chatRunning = controller.chatViewOperationIds.length > 0;
   const chatActivity = toAppActivityState(chatRunning, chatCompletedSinceView);
   const updater = useDesktopUpdate({
     flush: controller.flushPersistence,
@@ -335,6 +346,91 @@ export const ChatSession = (): JSX.Element => {
     [activeApp, unsavedChangesMessage],
   );
 
+  useAppControlBridge();
+  useAppShellControl({
+    activeApp,
+    workspaceRoot: controller.composer.activeSession.workspace,
+    unsavedChangesMessage,
+    settingsSection: controller.catalogOpen
+      ? controller.settingsDialog.settingsSection
+      : null,
+    schedulerOpen,
+    onSelectApp: selectApp,
+    onOpenSettings: (section) => {
+      controller.settingsDialog.onSettingsSectionChange(section);
+      controller.setCatalogOpen(true);
+    },
+    onOpenScheduler: () => setSchedulerOpen(true),
+  });
+  useChatViewControl({
+    enabled: activeApp === "chat",
+    activeSession: controller.header.activeSession,
+    sessions: controller.sidebar.filteredSessions,
+    onActivateSession: controller.sidebar.onActivateSession,
+    onCreateSession: controller.sidebar.onCreateSession,
+    onDraftChange: controller.composer.onDraftChange,
+  });
+  const quickChatRunning = controller.quickTask.status === "running";
+  const latestQuickChatReplyId =
+    controller.quickTask.visibleMessages
+      .filter(
+        (message) =>
+          message.role === "agent" && message.source?.kind === "execution",
+      )
+      .at(-1)?.id ?? null;
+  const [seenQuickChatReplyId, setSeenQuickChatReplyId] = useState(
+    latestQuickChatReplyId,
+  );
+  const quickChatVisible =
+    quickChatOpen ||
+    (activeApp === "chat" &&
+      controller.quickTask.session?.id === controller.header.activeSession.id);
+  useEffect(() => {
+    if (quickChatVisible) setSeenQuickChatReplyId(latestQuickChatReplyId);
+  }, [latestQuickChatReplyId, quickChatVisible]);
+  const quickChatUnread =
+    !quickChatVisible &&
+    latestQuickChatReplyId !== null &&
+    latestQuickChatReplyId !== seenQuickChatReplyId;
+  const [quickChatFocusRequest, setQuickChatFocusRequest] = useState(0);
+  const quickChatOpenRef = useRef(quickChatOpen);
+  quickChatOpenRef.current = quickChatOpen;
+  const toggleQuickChatFromShortcut = useCallback((): void => {
+    if (!quickChatOpenRef.current) {
+      setQuickChatOpen(true);
+      return;
+    }
+    const panel = document.querySelector(".app-quick-chat-panel");
+    if (panel?.contains(document.activeElement)) setQuickChatOpen(false);
+    else setQuickChatFocusRequest((request) => request + 1);
+  }, []);
+  const openQuickChatInChat = (): void => {
+    const quickSessionId = controller.quickTask.session?.id;
+    if (!quickSessionId || !selectApp("chat")) return;
+    controller.sidebar.onActivateSession(quickSessionId);
+    setQuickChatOpen(false);
+  };
+  useEffect(() => {
+    if (!isTauri() || getCurrentShellWindowLabel() !== "main") return;
+    let disposed = false;
+    let stop: (() => void) | undefined;
+    void listen(OPEN_QUICK_CHAT_EVENT, () => {
+      setQuickChatOpen(true);
+      setQuickChatFocusRequest((request) => request + 1);
+    })
+      .then((unlisten) => {
+        if (disposed) unlisten();
+        else stop = unlisten;
+      })
+      .catch((error: unknown) =>
+        console.error("Failed to listen for Quick Chat requests", error),
+      );
+    return () => {
+      disposed = true;
+      stop?.();
+    };
+  }, []);
+
   const [pendingSpeechProjectId, setPendingSpeechProjectId] = useState<string | null>(null);
   const speechProjectOpened = useCallback(() => setPendingSpeechProjectId(null), []);
   useEffect(() => {
@@ -422,8 +518,18 @@ export const ChatSession = (): JSX.Element => {
     };
   }, [appShellLoaded, controller.hasHydrated, controller.isDesktop]);
 
-  const shellCommandStateRef = useRef({ activeApp, controller, selectApp });
-  shellCommandStateRef.current = { activeApp, controller, selectApp };
+  const shellCommandStateRef = useRef({
+    activeApp,
+    controller,
+    selectApp,
+    toggleQuickChatFromShortcut,
+  });
+  shellCommandStateRef.current = {
+    activeApp,
+    controller,
+    selectApp,
+    toggleQuickChatFromShortcut,
+  };
   const shellCommands = useMemo<readonly CommandDefinition[]>(() => {
     const state = () => shellCommandStateRef.current;
     const viewCommands: Array<{
@@ -467,6 +573,29 @@ export const ChatSession = (): JSX.Element => {
         palette: "visible",
         overlayPolicy: "replace-non-modal",
         execute: () => state().controller.openProviderSettings(),
+      },
+      {
+        id: "app.quick-chat.toggle",
+        title: "Toggle Quick Chat",
+        group: "Navigation",
+        keywords: ["assistant", "ask"],
+        scope: { kind: "global", ownerId: "app" },
+        shortcuts: [
+          {
+            chord: getDefaultCommandShortcut("app.quick-chat.toggle"),
+            runtimes: ["tauri"],
+            allowIn: [
+              "document",
+              "text-entry",
+              "interactive-control",
+              "command-surface",
+            ],
+          },
+        ],
+        palette: "visible",
+        order: 5,
+        overlayPolicy: "replace-non-modal",
+        execute: () => state().toggleQuickChatFromShortcut(),
       },
       ...viewCommands.map(
         ({ id, app, title }, order): CommandDefinition => ({
@@ -756,7 +885,7 @@ export const ChatSession = (): JSX.Element => {
   }, [activeApp]);
 
   useEffect(() => {
-    const activeOperationIds = new Set(controller.activeChatOperationIds);
+    const activeOperationIds = new Set(controller.chatViewOperationIds);
     const completedOperationIds = getCompletedOperationIds(
       previousChatOperationIdsRef.current,
       activeOperationIds,
@@ -767,7 +896,7 @@ export const ChatSession = (): JSX.Element => {
     }
 
     previousChatOperationIdsRef.current = activeOperationIds;
-  }, [activeApp, controller.activeChatOperationIds]);
+  }, [activeApp, controller.chatViewOperationIds]);
 
   useEffect(() => {
     if (isTestEnvironment()) {
@@ -922,6 +1051,16 @@ export const ChatSession = (): JSX.Element => {
             <ShellTitlebar
               {...controller.titlebar}
               updateStatus={<UpdateStatus updater={updater} />}
+              quickChat={
+                controller.isDesktop && !controller.hasAnyProvider ? null : (
+                  <QuickChatButton
+                    open={quickChatOpen}
+                    running={quickChatRunning}
+                    unread={quickChatUnread}
+                    onToggle={() => setQuickChatOpen((open) => !open)}
+                  />
+                )
+              }
             />
           }
           navigation={
@@ -1150,6 +1289,7 @@ export const ChatSession = (): JSX.Element => {
               className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
             >
               <Suspense fallback={appLoadingFallback}>
+                <AppControlViewMarker id="ralph" />
                 <RalphApp
                   isActive
                   providerStatuses={controller.titlebar.providerStatuses}
@@ -1199,6 +1339,7 @@ export const ChatSession = (): JSX.Element => {
               className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
             >
               <Suspense fallback={appLoadingFallback}>
+                <AppControlViewMarker id="tts" />
                 <TextToSpeechStudio runtime={speechRuntime} assetUrl={speechAssetUrl} openProjectId={pendingSpeechProjectId} onProjectOpened={speechProjectOpened}
                   onMediaHandoff={handoff => { setPendingMediaAssetId(handoff.assetId);setPendingMediaSection("library");selectApp("media"); }} />
               </Suspense>
@@ -1211,6 +1352,7 @@ export const ChatSession = (): JSX.Element => {
               className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
             >
               <Suspense fallback={appLoadingFallback}>
+                <AppControlViewMarker id="instructions" />
                 <InstructionManager
                   setup={controller.instructionManagement}
                   onDirtyChange={setInstructionDraftDirty}
@@ -1315,6 +1457,22 @@ export const ChatSession = (): JSX.Element => {
           />
         </Suspense>
       ) : null}
+
+      <QuickChatPanel
+        open={quickChatOpen}
+        onOpenChange={setQuickChatOpen}
+        quickTask={controller.quickTask}
+        composer={controller.quickTaskComposer}
+        focusRequest={quickChatFocusRequest}
+        onClearHistory={controller.clearQuickTaskHistory}
+        onOpenInChat={openQuickChatInChat}
+        onOpenAttachment={(attachment) =>
+          controller.conversation.onOpenAttachment(
+            attachment,
+            controller.quickTask.workspaceRoot,
+          )
+        }
+      />
 
       <ChatInputNeededDialog {...controller.inputNeeded} />
 

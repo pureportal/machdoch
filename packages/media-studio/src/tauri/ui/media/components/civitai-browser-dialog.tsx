@@ -66,6 +66,7 @@ export function CivitaiBrowserDialog({
     modelTypes: [],
     baseModels: [],
     baseModelsByType: {},
+    baseModelArchitectures: {},
   });
   const baseModels = filters.modelType
     ? (options.baseModelsByType[filters.modelType] ?? [])

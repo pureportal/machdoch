@@ -4,6 +4,7 @@ import { canonicalShortcut } from "./shortcut";
 export const DEFAULT_COMMAND_SHORTCUTS = {
   "app.palette.toggle": "Mod+K",
   "app.settings.open": "Mod+,",
+  "app.quick-chat.toggle": "Mod+Shift+K",
   "app.view.chat": "Mod+1",
   "app.view.ralph": "Mod+2",
   "app.view.media": "Mod+3",
@@ -25,7 +26,6 @@ export const DEFAULT_COMMAND_SHORTCUTS = {
   "app.find.previous": "Shift+F3",
   "app.find.previous-alternate": "Mod+Shift+G",
   "file-preview.search.focus": "Mod+F",
-  "quick-chat.hide": "Escape",
   "quick-voice.hide": "Escape",
   "tray.hide": "Escape",
   "ralph.flow.save": "Mod+S",
