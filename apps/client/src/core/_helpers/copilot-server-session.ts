@@ -312,8 +312,8 @@ export class CopilotServerSession implements InteractiveAgentSession {
         case "connect":
         case "session.create":
           return this.finishTurn(this.fail(text));
-        case "session.permissions.setApproveAll":
-          return this.finishTurn(this.fail(`Copilot could not allow all tools: ${text}`));
+        case "session.permissions.setMode":
+          return this.finishTurn(this.fail(`Copilot could not allow all tools, paths, and URLs: ${text}`));
         case "session.options.update":
           this.live.addNotice("warning", `Copilot kept workspace instruction files: ${text}`);
           this.setupDone();
@@ -331,7 +331,7 @@ export class CopilotServerSession implements InteractiveAgentSession {
           streaming: true,
           // Only offer ask_user when someone can answer it.
           requestUserInput: !this.unattended,
-          requestPermission: true,
+          requestPermission: false,
           requestExitPlanMode: false,
           requestAutoModeSwitch: false,
           requestElicitation: false,
@@ -348,13 +348,18 @@ export class CopilotServerSession implements InteractiveAgentSession {
         this.sessionId = sessionId;
         this.onProviderSessionId?.(sessionId);
         this.setupPending = this.input.skipCustomInstructions ? 2 : 1;
-        this.rpc.request("session.permissions.setApproveAll", { sessionId, enabled: true });
+        this.rpc.request("session.permissions.setMode", { sessionId, mode: "allow-all" });
         if (this.input.skipCustomInstructions) {
           this.rpc.request("session.options.update", { sessionId, skipCustomInstructions: true });
         }
         return empty;
       }
-      case "session.permissions.setApproveAll":
+      case "session.permissions.setMode":
+        if (readString(result, "mode") !== "allow-all") {
+          return this.finishTurn(this.fail("Copilot could not allow all tools, paths, and URLs."));
+        }
+        this.setupDone();
+        return empty;
       case "session.options.update":
         this.setupDone();
         return empty;

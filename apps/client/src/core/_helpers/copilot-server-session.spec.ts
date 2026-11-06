@@ -44,7 +44,7 @@ const createHarness = (input: Partial<ConstructorParameters<typeof CopilotServer
     session.start();
     reply("connect", { ok: true, protocolVersion: 3 });
     reply("session.create", { sessionId: SESSION_ID });
-    reply("session.permissions.setApproveAll", { success: true });
+    reply("session.permissions.setMode", { success: true, mode: "allow-all" });
     reply("session.options.update", { success: true });
   };
   return { session, sent, states, receive, reply, event, open, last, isClosed: () => closed };
@@ -74,7 +74,7 @@ describe("ContentLengthFrameReader", () => {
 });
 
 describe("CopilotServerSession", () => {
-  it("creates an approve-all session with the run-scoped agent before sending the prompt", () => {
+  it("creates an allow-all session with the run-scoped agent before sending the prompt", () => {
     const harness = createHarness({
       session: {
         model: "claude-haiku-5.5",
@@ -90,10 +90,11 @@ describe("CopilotServerSession", () => {
     expect(create).toMatchObject({
       agent: "machdoch-run",
       requestUserInput: true,
+      requestPermission: false,
       streaming: true,
       includeSubAgentStreamingEvents: true,
     });
-    expect(harness.last("session.permissions.setApproveAll")?.params).toEqual({ sessionId: SESSION_ID, enabled: true });
+    expect(harness.last("session.permissions.setMode")?.params).toEqual({ sessionId: SESSION_ID, mode: "allow-all" });
     expect(harness.last("session.options.update")?.params).toEqual({ sessionId: SESSION_ID, skipCustomInstructions: true });
     expect(harness.last("session.send")?.params).toEqual({
       sessionId: SESSION_ID,
@@ -167,7 +168,7 @@ describe("CopilotServerSession", () => {
     expect(harness.last("session.send")).toBeUndefined();
 
     harness.reply("session.create", { sessionId: SESSION_ID });
-    harness.reply("session.permissions.setApproveAll", { success: true });
+    harness.reply("session.permissions.setMode", { success: true, mode: "allow-all" });
     harness.reply("session.options.update", { success: true });
     expect(harness.last("session.send")?.params).toMatchObject({ prompt: "Do the task.\n\nAlso mention tests." });
     expect(harness.session.live.snapshot().steering).toEqual([
@@ -185,6 +186,19 @@ describe("CopilotServerSession", () => {
     harness.session.controls.steer?.("One more thing.");
     harness.event("assistant.idle", {}, { ephemeral: true });
     expect(harness.session.live.snapshot().steering?.at(-1)).toMatchObject({ text: "One more thing.", status: "failed" });
+  });
+
+  it("fails the turn when Copilot refuses the allow-all permission mode", () => {
+    const harness = createHarness();
+    disposeAll.push(() => harness.session.dispose());
+    harness.session.start();
+    harness.reply("connect", { ok: true });
+    harness.reply("session.create", { sessionId: SESSION_ID });
+    const update = harness.reply("session.permissions.setMode", { success: false, mode: "manual" });
+    expect(update.resultExitCode).toBe(1);
+    expect(harness.session.getFailureMessage()).toBe("Copilot could not allow all tools, paths, and URLs.");
+    expect(harness.last("session.send")).toBeUndefined();
+    expect(harness.last("session.destroy")?.params).toEqual({ sessionId: SESSION_ID });
   });
 
   it("shuts the server down when the session cannot be created", () => {
@@ -316,7 +330,7 @@ describe("resuming a stored session", () => {
     harness.session.start();
     harness.reply("connect", { ok: true, protocolVersion: 3 });
     harness.reply("session.resume", { sessionId: SESSION_ID });
-    harness.reply("session.permissions.setApproveAll", { success: true });
+    harness.reply("session.permissions.setMode", { success: true, mode: "allow-all" });
     harness.reply("session.options.update", { success: true });
     expect(harness.last("session.send")?.params).toMatchObject({
       sessionId: SESSION_ID,
