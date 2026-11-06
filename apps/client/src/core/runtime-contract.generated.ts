@@ -16,6 +16,9 @@ export type ReasoningExecutionMode = (typeof REASONING_EXECUTION_MODES)[number];
 export const CONTEXT_WINDOW_MODES = ["lowest", "default", "highest"] as const;
 export type ContextWindow = (typeof CONTEXT_WINDOW_MODES)[number];
 
+export const RELEASE_STAGES = ["early-alpha", "beta", "production"] as const;
+export type ReleaseStage = (typeof RELEASE_STAGES)[number];
+
 export const VALID_TOOLS = ["filesystem", "shell", "network", "browser", "git", "packages", "run", "mcp", "scheduler", "workflows", "utilities"] as const;
 export type ToolName = (typeof VALID_TOOLS)[number];
 
@@ -231,6 +234,9 @@ export const isReasoningExecutionMode = (
 export const isContextWindow = (value: unknown): value is ContextWindow =>
   typeof value === "string" && isRuntimeContractValue(CONTEXT_WINDOW_MODES, value);
 
+export const isReleaseStage = (value: unknown): value is ReleaseStage =>
+  typeof value === "string" && isRuntimeContractValue(RELEASE_STAGES, value);
+
 export const isConfiguredModelProvider = (
   value: string | undefined,
 ): value is ConfiguredModelProvider =>
@@ -304,6 +310,7 @@ export interface WorkspaceConfigFile {
   reasoningBankEnabled?: boolean;
   autoGitignore?: boolean;
   adaptiveControllerEnabled?: boolean | null;
+  releaseStage?: ReleaseStage;
 }
 
 export interface ProviderAvailability {
@@ -403,6 +410,7 @@ export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits" | "co
   reasoningBankEnabled?: boolean;
   autoGitignore?: boolean;
   adaptiveControllerOverride?: boolean | null;
+  releaseStage?: ReleaseStage;
   workspaceMemoryOverride: boolean | null;
   contextWindow?: ContextWindow;
   agentLimits: RuntimeAgentLimits;

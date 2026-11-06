@@ -17,7 +17,11 @@ import {
 } from "../reasoning-bank.js";
 import type { ConversationHistoryEntry, TaskConversationContext, TaskExecutionSection, UiControlRuntimeInfo } from "../types.js";
 import type { ParallelAgentMode } from "@machdoch/model-runtime/types";
-import type { RuntimeConfig } from "../runtime-contract.generated.js";
+import type {
+  ReleaseStage,
+  RuntimeConfig,
+} from "../runtime-contract.generated.js";
+import { resolveWorkspaceReleaseStage } from "../release-stages.js";
 import type { ConversationMemoryRuntime } from "./agent-tools-shared.js";
 import { createAppControlPromptSection } from "./app-control-prompt.js";
 import {
@@ -225,6 +229,7 @@ export interface PreparedConversationPromptContext {
     selection: "selected" | "not-set";
     root?: string;
   };
+  releaseStage?: ReleaseStage;
   promptBlock?: string;
   /** The same block for a provider session that already has the history. */
   resumePromptBlock?: string;
@@ -489,11 +494,14 @@ export const prepareConversationPromptContext = async (
   const uiControl = conversationContext?.uiControl;
   const workspace = normalizeWorkspaceContext(conversationContext);
   const workspaceRoot = config.workspaceRoot;
-  const workspaceMemoryOverride =
+  const workspaceConfig =
     workspace.selection === "selected"
       ? (await loadWorkspaceConfigFile(workspaceRoot)).config
-          .workspaceMemoryEnabled
       : undefined;
+  const workspaceMemoryOverride = workspaceConfig?.workspaceMemoryEnabled;
+  const releaseStage = resolveWorkspaceReleaseStage(
+    workspaceConfig?.releaseStage,
+  );
   const workspaceEnabled =
     workspace.selection === "selected" &&
     resolveWorkspaceMemoryEnabled(
@@ -740,6 +748,7 @@ export const prepareConversationPromptContext = async (
     ...(adaptivePlan ? { adaptivePlan } : {}),
     wasQueued: conversationContext?.wasQueued === true,
     workspace,
+    ...(releaseStage ? { releaseStage } : {}),
     ...(reasoningLessons.length > 0
       ? {
           reasoningBankRetrievedIds: reasoningLessons.map(

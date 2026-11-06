@@ -5,6 +5,7 @@ import type { ExecutorContinuationRequest } from "./agent-runtime-types.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
 import { createAnswerLanguageInstruction } from "./answer-language.js";
 import { MACHDOCH_STATE_GUIDANCE } from "./machdoch-state-tool-definitions.js";
+import { createReleaseStagePromptSection } from "../release-stages.js";
 
 export interface TaskStrategyProfile {
   reasoningEffort: "low" | "medium" | "high";
@@ -350,6 +351,9 @@ export const createExecutorUserPrompt = (
   return [
     ...(conversationContext.promptBlock
       ? [conversationContext.promptBlock]
+      : []),
+    ...(conversationContext.releaseStage
+      ? [createReleaseStagePromptSection(conversationContext.releaseStage)]
       : []),
     "<current_task_authority>The current task below supersedes earlier conversation context.</current_task_authority>",
     `<queued_message>${conversationContext.wasQueued}</queued_message>`,

@@ -93,6 +93,14 @@ pub(super) async fn invoke(
             .await
             .map_err(|error| json!(error))?,
         ),
+        "save_workspace_release_stage" => serde_json::to_value(
+            runtime_snapshot::save_workspace_release_stage(
+                workspace,
+                args["releaseStage"].as_str().map(str::to_owned),
+            )
+            .await
+            .map_err(|error| json!(error))?,
+        ),
         "save_workspace_reasoning_mode" => serde_json::to_value(
             runtime_snapshot::save_workspace_reasoning_mode(
                 workspace,

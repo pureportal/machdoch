@@ -9,6 +9,7 @@ pub const RUN_MODES: [&str; 2] = ["ask", "machdoch"];
 pub const REASONING_MODES: [&str; 10] = ["default", "none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "aeon"];
 pub const REASONING_EXECUTION_MODES: [&str; 2] = ["standard", "pro"];
 pub const CONTEXT_WINDOW_MODES: [&str; 3] = ["lowest", "default", "highest"];
+pub const RELEASE_STAGES: [&str; 3] = ["early-alpha", "beta", "production"];
 pub const VALID_TOOLS: [&str; 11] = ["filesystem", "shell", "network", "browser", "git", "packages", "run", "mcp", "scheduler", "workflows", "utilities"];
 pub const VALID_MODEL_PROVIDERS: [&str; 7] = ["openai", "anthropic", "google", "langdock", "codex-cli", "claude-cli", "copilot-cli"];
 pub const MODEL_PROVIDERS: [&str; 8] = ["openai", "anthropic", "google", "langdock", "codex-cli", "claude-cli", "copilot-cli", "unconfigured"];

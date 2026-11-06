@@ -104,6 +104,7 @@ const runtimeModes = getEnum("RunMode");
 const reasoningModes = getEnum("ReasoningMode");
 const reasoningExecutionModes = getEnum("ReasoningExecutionMode");
 const contextWindowModes = getEnum("ContextWindow");
+const releaseStages = getEnum("ReleaseStage");
 const validTools = getEnum("ToolName");
 const configuredModelProviders = getEnum("ConfiguredModelProvider");
 const modelProviders = getEnum("ModelProvider");
@@ -170,6 +171,9 @@ export type ReasoningExecutionMode = (typeof REASONING_EXECUTION_MODES)[number];
 
 export const CONTEXT_WINDOW_MODES = ${tsReadonlyArray(contextWindowModes)} as const;
 export type ContextWindow = (typeof CONTEXT_WINDOW_MODES)[number];
+
+export const RELEASE_STAGES = ${tsReadonlyArray(releaseStages)} as const;
+export type ReleaseStage = (typeof RELEASE_STAGES)[number];
 
 export const VALID_TOOLS = ${tsReadonlyArray(validTools)} as const;
 export type ToolName = (typeof VALID_TOOLS)[number];
@@ -249,6 +253,9 @@ export const isReasoningExecutionMode = (
 export const isContextWindow = (value: unknown): value is ContextWindow =>
   typeof value === "string" && isRuntimeContractValue(CONTEXT_WINDOW_MODES, value);
 
+export const isReleaseStage = (value: unknown): value is ReleaseStage =>
+  typeof value === "string" && isRuntimeContractValue(RELEASE_STAGES, value);
+
 export const isConfiguredModelProvider = (
   value: string | undefined,
 ): value is ConfiguredModelProvider =>
@@ -322,6 +329,7 @@ export interface WorkspaceConfigFile {
   reasoningBankEnabled?: boolean;
   autoGitignore?: boolean;
   adaptiveControllerEnabled?: boolean | null;
+  releaseStage?: ReleaseStage;
 }
 
 export interface ProviderAvailability {
@@ -421,6 +429,7 @@ export interface RuntimeSnapshot extends Omit<RuntimeConfig, "agentLimits" | "co
   reasoningBankEnabled?: boolean;
   autoGitignore?: boolean;
   adaptiveControllerOverride?: boolean | null;
+  releaseStage?: ReleaseStage;
   workspaceMemoryOverride: boolean | null;
   contextWindow?: ContextWindow;
   agentLimits: RuntimeAgentLimits;
@@ -628,6 +637,7 @@ pub const RUN_MODES: [&str; ${runtimeModes.length}] = ${rustStringArray(runtimeM
 pub const REASONING_MODES: [&str; ${reasoningModes.length}] = ${rustStringArray(reasoningModes)};
 pub const REASONING_EXECUTION_MODES: [&str; ${reasoningExecutionModes.length}] = ${rustStringArray(reasoningExecutionModes)};
 pub const CONTEXT_WINDOW_MODES: [&str; ${contextWindowModes.length}] = ${rustStringArray(contextWindowModes)};
+pub const RELEASE_STAGES: [&str; ${releaseStages.length}] = ${rustStringArray(releaseStages)};
 pub const VALID_TOOLS: [&str; ${validTools.length}] = ${rustStringArray(validTools)};
 pub const VALID_MODEL_PROVIDERS: [&str; ${configuredModelProviders.length}] = ${rustStringArray(configuredModelProviders)};
 pub const MODEL_PROVIDERS: [&str; ${modelProviders.length}] = ${rustStringArray(modelProviders)};

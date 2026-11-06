@@ -53,6 +53,97 @@
     "accepted": false
   },
   {
+    "name": "Set the early alpha release stage",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "save_workspace_release_stage",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "releaseStage": "early-alpha"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "Set the beta release stage",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "save_workspace_release_stage",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "releaseStage": "beta"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "Set the production release stage",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "save_workspace_release_stage",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "releaseStage": "production"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "Clear the release stage",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "save_workspace_release_stage",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "releaseStage": null
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "Reject an unknown release stage",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "save_workspace_release_stage",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "releaseStage": "stable"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "Reject a missing release stage",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "save_workspace_release_stage",
+      "args": {
+        "workspaceRoot": "/projects/demo"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "Reject extra release stage fields",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "save_workspace_release_stage",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "releaseStage": "beta",
+        "extra": true
+      }
+    },
+    "accepted": false
+  },
+  {
     "name": "read .",
     "request": {
       "kind": "invoke",

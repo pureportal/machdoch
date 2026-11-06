@@ -61,6 +61,7 @@ import type {
   ModelDrivenExecutionParams,
 } from "./agent-runtime-types.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
+import { createReleaseStagePromptSection } from "../release-stages.js";
 import {
   createExternalAgentResultProtocolInstructions,
   parseExternalAgentProtocolResult,
@@ -472,6 +473,9 @@ const createExternalAgentPrompt = (
     attachmentBlock,
     session && session.runGuidance.length > 0
       ? ["Guidance for this run:", ...session.runGuidance].join("\n\n")
+      : undefined,
+    conversationContext.releaseStage
+      ? createReleaseStagePromptSection(conversationContext.releaseStage)
       : undefined,
     `Queued before delivery: ${conversationContext.wasQueued ? "yes" : "no"}`,
     "User task:",

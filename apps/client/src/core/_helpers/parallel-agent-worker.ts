@@ -167,6 +167,11 @@ const runCliWorker = async (
         preparedConversationContext: {
           wasQueued: options.preparedConversationContext.wasQueued,
           workspace: options.preparedConversationContext.workspace,
+          ...(options.preparedConversationContext.releaseStage
+            ? {
+                releaseStage: options.preparedConversationContext.releaseStage,
+              }
+            : {}),
           parallelAgentMode: "disabled",
           sections: [],
           uiControlEnabled: false,

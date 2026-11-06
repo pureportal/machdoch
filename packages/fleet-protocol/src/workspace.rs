@@ -485,6 +485,15 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
             fields(args, &["workspaceRoot", "enabled"])
                 .is_some_and(|args| root(&args["workspaceRoot"]) && args["enabled"].is_boolean())
         }
+        "save_workspace_release_stage" => fields(args, &["workspaceRoot", "releaseStage"])
+            .is_some_and(|args| {
+                root(&args["workspaceRoot"])
+                    && (args["releaseStage"].is_null()
+                        || matches!(
+                            args["releaseStage"].as_str(),
+                            Some("early-alpha" | "beta" | "production")
+                        ))
+            }),
         "save_workspace_reasoning_mode" => fields(args, &["workspaceRoot", "reasoning"])
             .is_some_and(|args| {
                 root(&args["workspaceRoot"])

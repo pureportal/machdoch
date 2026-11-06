@@ -195,6 +195,59 @@ describe("message delivery prompt context", () => {
   });
 });
 
+describe("workspace release stage prompt context", () => {
+  const prepareWithConfig = async (
+    config: Record<string, unknown>,
+    selection: "selected" | "not-set" = "selected",
+  ) => {
+    const workspaceRoot = await mkdtemp(
+      join(tmpdir(), "machdoch-release-stage-"),
+    );
+    workspaceRoots.push(workspaceRoot);
+    await mkdir(join(workspaceRoot, ".machdoch"), { recursive: true });
+    await writeFile(
+      join(workspaceRoot, ".machdoch", "config.json"),
+      JSON.stringify(config),
+    );
+    return await prepareConversationPromptContext(
+      "Rework the storage layer",
+      { ...runtimeConfig, workspaceRoot },
+      {
+        history: [],
+        workspace:
+          selection === "selected"
+            ? { selection, root: workspaceRoot }
+            : { selection },
+        globalMemoryEnabled: false,
+      },
+    );
+  };
+
+  it("carries the configured stage of the selected workspace", async () => {
+    const context = await prepareWithConfig({ releaseStage: "production" });
+
+    expect(context.releaseStage).toBe("production");
+  });
+
+  it("adds nothing while the stage is unset or no workspace is selected", async () => {
+    const unset = await prepareWithConfig({});
+    const notSelected = await prepareWithConfig(
+      { releaseStage: "early-alpha" },
+      "not-set",
+    );
+
+    expect(unset).not.toHaveProperty("releaseStage");
+    expect(notSelected).not.toHaveProperty("releaseStage");
+    expect(unset.promptBlock ?? "").not.toContain("Release stage");
+  });
+
+  it("rejects an unknown stage", async () => {
+    await expect(prepareWithConfig({ releaseStage: "stable" })).rejects.toThrow(
+      "workspace.releaseStage must be early-alpha, beta, or production.",
+    );
+  });
+});
+
 describe("workspace run prompt context", () => {
   it("redacts environment values while preserving structured state", () => {
     const serialized = serializeWorkspaceRunContext({

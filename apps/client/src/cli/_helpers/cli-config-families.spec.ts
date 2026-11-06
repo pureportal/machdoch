@@ -236,6 +236,7 @@ it("preserves the complete catalogue order", () => {
     "workspace.offline",
     "workspace.github-customizations",
     "workspace.auto-gitignore",
+    "workspace.release-stage",
     "api.openai.key",
     "api.anthropic.key",
     "api.google.key",

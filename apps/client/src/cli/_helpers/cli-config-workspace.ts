@@ -8,12 +8,14 @@ import {
   saveWorkspaceOffline,
   saveWorkspaceReasoningExecutionMode,
   saveWorkspaceReasoningMode,
+  saveWorkspaceReleaseStage,
   saveWorkspaceRuntimeProvider,
 } from "../../core/config.js";
 import { parseContextWindow } from "../../core/context-windows.js";
 import {
   REASONING_EXECUTION_MODES,
   REASONING_MODES,
+  RELEASE_STAGES,
   VALID_MODEL_PROVIDERS,
   isReasoningExecutionMode,
 } from "../../core/runtime-contract.generated.js";
@@ -104,6 +106,15 @@ export const WORKSPACE_CONFIG_DEFINITIONS: readonly CliConfigSettingDefinition[]
       description: "Automatically add Machdoch .gitignore rules.",
       acceptedValues: "on|off",
       choices: BOOLEAN_CHOICES,
+    },
+    {
+      setting: "workspace.release-stage",
+      category: "Workspace",
+      scope: "workspace",
+      description:
+        "How freely agents may make breaking changes in this workspace.",
+      acceptedValues: RELEASE_STAGES.join("|"),
+      choices: RELEASE_STAGES,
     },
   ];
 
@@ -225,6 +236,20 @@ const saveWorkspaceConfigSetting = async (
     };
   }
 
+  if (normalizedSetting === "workspace.release-stage") {
+    const configPath = await saveWorkspaceReleaseStage(
+      workspaceRoot,
+      normalizedValue,
+    );
+    return {
+      setting: normalizedSetting,
+      scope: "workspace",
+      configPath,
+      status: "configured",
+      value: normalizedValue.toLowerCase(),
+    };
+  }
+
   if (normalizedSetting === "workspace.github-customizations") {
     const enabled = parseConfigBoolean(normalizedSetting, normalizedValue);
     return {
@@ -255,6 +280,7 @@ const resetSetting = async (
     "workspace.context-window": ["contextWindow"],
     "workspace.offline": ["offline"],
     "workspace.auto-gitignore": ["autoGitignore"],
+    "workspace.release-stage": ["releaseStage"],
     "workspace.github-customizations": [
       "compatibility",
       "discoverGithubCustomizations",
@@ -367,6 +393,10 @@ const resolveEntry = (
     case "workspace.auto-gitignore":
       value = snapshot.workspaceConfig.autoGitignore ?? true;
       source = configSource(snapshot.workspaceConfig.autoGitignore);
+      break;
+    case "workspace.release-stage":
+      value = snapshot.workspaceConfig.releaseStage ?? "unset";
+      source = configSource(snapshot.workspaceConfig.releaseStage);
       break;
     default:
       return unsupportedConfigSetting(setting);

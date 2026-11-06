@@ -101,6 +101,40 @@ describe("CLI configuration catalog", () => {
     ).not.toHaveProperty("autoGitignore");
   });
 
+  it("saves and resets the workspace release stage", async () => {
+    isolateEnvironment();
+    const workspaceRoot = await createWorkspace();
+    const setting = "workspace.release-stage";
+    const getSetting = async () =>
+      (await loadCliConfigEntries(workspaceRoot)).find(
+        (entry) => entry.setting === setting,
+      );
+    expect(await getSetting()).toMatchObject({
+      value: "unset",
+      source: "default",
+    });
+    const result = await saveConfigSetting(workspaceRoot, setting, "Beta");
+    expect(result).toMatchObject({ value: "beta", scope: "workspace" });
+    expect(JSON.parse(await readFile(result.configPath, "utf8"))).toMatchObject(
+      { releaseStage: "beta" },
+    );
+    expect(await getSetting()).toMatchObject({
+      value: "beta",
+      source: "saved",
+    });
+    await expect(
+      saveConfigSetting(workspaceRoot, setting, "stable"),
+    ).rejects.toThrow("early-alpha, beta, or production");
+    await clearConfigSetting(workspaceRoot, setting);
+    expect(await getSetting()).toMatchObject({
+      value: "unset",
+      source: "default",
+    });
+    expect(
+      JSON.parse(await readFile(result.configPath, "utf8")),
+    ).not.toHaveProperty("releaseStage");
+  });
+
   it("defaults answer language to English and clears its prompt instruction", async () => {
     isolateEnvironment();
     const workspaceRoot = await createWorkspace();

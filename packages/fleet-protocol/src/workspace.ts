@@ -366,6 +366,13 @@ export const workspaceRequestSchema = z.union([
       z.strictObject({ workspaceRoot: root, enabled: z.boolean() }),
     ),
     command(
+      "save_workspace_release_stage",
+      z.strictObject({
+        workspaceRoot: root,
+        releaseStage: z.enum(["early-alpha", "beta", "production"]).nullable(),
+      }),
+    ),
+    command(
       "save_workspace_reasoning_mode",
       z.strictObject({
         workspaceRoot: root,

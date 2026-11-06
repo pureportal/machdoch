@@ -273,6 +273,39 @@ pub(super) fn save_workspace_reasoning_mode_value(
     Ok(config_path)
 }
 
+pub(super) fn save_workspace_release_stage_value(
+    workspace_root: &str,
+    release_stage: Option<&str>,
+) -> Result<PathBuf, String> {
+    if release_stage
+        .is_some_and(|stage| !crate::runtime_contract_generated::RELEASE_STAGES.contains(&stage))
+    {
+        return Err(
+            "Expected workspace release stage to be early-alpha, beta, or production.".to_string(),
+        );
+    }
+
+    let workspace_path = resolve_workspace_root_path(workspace_root)?;
+    let config_path = workspace_path.join(".machdoch").join("config.json");
+    with_cooperative_file_lock(&config_path, || {
+        let mut config = load_workspace_config_json(&config_path)?;
+        match release_stage {
+            Some(stage) => {
+                config.insert(
+                    "releaseStage".to_string(),
+                    serde_json::Value::String(stage.to_string()),
+                );
+            }
+            None => {
+                config.remove("releaseStage");
+            }
+        }
+        write_workspace_config_json(&config_path, &config)
+    })?;
+
+    Ok(config_path)
+}
+
 pub(super) fn save_workspace_auto_gitignore_value(
     workspace_root: &str,
     enabled: bool,
@@ -303,7 +336,7 @@ mod tests {
     use super::{
         save_workspace_auto_gitignore_value, save_workspace_memory_override_value,
         save_workspace_reasoning_bank_enabled_value, save_workspace_reasoning_execution_mode_value,
-        ReasoningExecutionMode,
+        save_workspace_release_stage_value, ReasoningExecutionMode,
     };
 
     #[test]
@@ -422,6 +455,33 @@ mod tests {
         let (config, _) = super::load_workspace_config(&workspace).unwrap();
         assert_eq!(config.auto_gitignore, Some(true));
         assert_eq!(config.default_mode.as_deref(), Some("ask"));
+        fs::remove_dir_all(workspace).unwrap();
+    }
+
+    #[test]
+    fn release_stage_saves_clears_and_rejects_unknown_stages() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let workspace = std::env::temp_dir().join(format!("machdoch-release-stage-{unique}"));
+        let directory = workspace.join(".machdoch");
+        fs::create_dir_all(&directory).unwrap();
+        let config_path = directory.join("config.json");
+        fs::write(&config_path, r#"{"defaultMode":"ask"}"#).unwrap();
+        let workspace_root = workspace.to_string_lossy();
+
+        save_workspace_release_stage_value(&workspace_root, Some("production")).unwrap();
+        let (config, _) = super::load_workspace_config(&workspace).unwrap();
+        assert_eq!(config.release_stage.as_deref(), Some("production"));
+        assert_eq!(config.default_mode.as_deref(), Some("ask"));
+
+        assert!(save_workspace_release_stage_value(&workspace_root, Some("stable")).is_err());
+        save_workspace_release_stage_value(&workspace_root, None).unwrap();
+        let config: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&config_path).unwrap()).unwrap();
+        assert!(config.get("releaseStage").is_none());
+        assert_eq!(config["defaultMode"], "ask");
         fs::remove_dir_all(workspace).unwrap();
     }
 }

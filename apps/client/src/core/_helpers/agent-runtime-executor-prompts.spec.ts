@@ -486,6 +486,47 @@ describe("createExecutorSystemPrompt", () => {
     );
   });
 
+  it.each([
+    [
+      "early-alpha",
+      "Release stage: Early Alpha.",
+      "Breaking changes are welcome",
+    ],
+    ["beta", "Release stage: Beta.", "name every breaking change"],
+    ["production", "Release stage: In Production.", "Be cautious"],
+  ] as const)(
+    "tells the executor how to treat the %s release stage",
+    (releaseStage, label, guidance) => {
+      const taskContext = createTaskContext();
+      const prompt = createExecutorUserPrompt(
+        createRuntimeConfig(),
+        taskContext.task,
+        taskContext,
+        createConversationContext({ releaseStage }),
+      );
+
+      expect(prompt).toContain("<workspace_release_stage>");
+      expect(prompt).toContain(label);
+      expect(prompt).toContain(guidance);
+      expect(prompt.indexOf("<workspace_release_stage>")).toBeLessThan(
+        prompt.indexOf("<current_task>"),
+      );
+    },
+  );
+
+  it("omits release stage guidance while the stage is unset", () => {
+    const taskContext = createTaskContext();
+
+    expect(
+      createExecutorUserPrompt(
+        createRuntimeConfig(),
+        taskContext.task,
+        taskContext,
+        createConversationContext(),
+      ),
+    ).not.toContain("<workspace_release_stage>");
+  });
+
   it("marks queued and direct messages and explains how to interpret the queue", () => {
     const config = createRuntimeConfig();
     const taskContext = createTaskContext();

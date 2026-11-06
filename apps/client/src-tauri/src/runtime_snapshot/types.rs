@@ -18,6 +18,8 @@ pub struct RuntimeSnapshot {
     pub(super) auto_gitignore: bool,
     pub(super) workspace_memory_override: Option<bool>,
     pub(super) adaptive_controller_override: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) release_stage: Option<String>,
     pub(super) mode: String,
     pub(super) provider: String,
     pub(super) model: String,

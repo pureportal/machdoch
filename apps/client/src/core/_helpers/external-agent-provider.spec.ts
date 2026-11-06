@@ -2317,6 +2317,31 @@ describe("maybeExecuteExternalAgentProviderTask", () => {
     await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
   });
 
+  it("delivers the workspace release stage to the CLI agent", async () => {
+    const workspaceRoot = await createWorkspace();
+    process.env.MACHDOCH_CODEX_CLI_PATH = process.execPath;
+    const params = createParams(workspaceRoot);
+    params.preparedConversationContext = {
+      ...params.preparedConversationContext,
+      releaseStage: "beta",
+    };
+
+    const resultPromise = maybeExecuteExternalAgentProviderTask(params);
+    await waitForCondition(() => expect(spawnCalls).toHaveLength(1));
+    const call = spawnCalls[0]!;
+
+    expect(call.child.stdinText).toContain(
+      "<workspace_release_stage>\nRelease stage: Beta.",
+    );
+    expect(call.child.stdinText.indexOf("Release stage: Beta.")).toBeLessThan(
+      call.child.stdinText.indexOf("User task:"),
+    );
+
+    writeStructuredAnswer(call, "Delegated answer.");
+    call.child.emit("close", 0, null);
+    await expect(resultPromise).resolves.toMatchObject({ status: "executed" });
+  });
+
   it.each([true, false])(
     "delivers queued status %s to the CLI agent",
     async (wasQueued) => {

@@ -6,6 +6,7 @@ import { isManagedSettingEnforced } from "@machdoch/fleet-protocol/managed-setti
 import { loadChatDefaults } from "./chat-defaults.js";
 import { normalizeOptionalString } from "../helpers/normalize-optional-string.helper.js";
 import { parseContextWindow } from "./context-windows.js";
+import { parseReleaseStage } from "./release-stages.js";
 import { assertReasoningExecutionModeSupportedForProviderModel } from "@machdoch/model-runtime/reasoning-execution-modes";
 import {
   assertReasoningModeSupportedForProviderModel,
@@ -309,6 +310,23 @@ export const saveWorkspaceContextWindow = async (
 
   return saveWorkspaceConfigFile(workspaceRoot, {
     contextWindow: parsedContextWindow,
+  });
+};
+
+export const saveWorkspaceReleaseStage = async (
+  workspaceRoot: string,
+  releaseStage: string,
+): Promise<string> => {
+  const parsedReleaseStage = parseReleaseStage(releaseStage);
+
+  if (parsedReleaseStage === undefined) {
+    throw new Error(
+      "Expected workspace.release-stage to be early-alpha, beta, or production.",
+    );
+  }
+
+  return saveWorkspaceConfigFile(workspaceRoot, {
+    releaseStage: parsedReleaseStage,
   });
 };
 

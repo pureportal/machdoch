@@ -50,6 +50,10 @@
       "type": "string",
       "enum": ["lowest", "default", "highest"]
     },
+    "ReleaseStage": {
+      "type": "string",
+      "enum": ["early-alpha", "beta", "production"]
+    },
     "ToolName": {
       "type": "string",
       "enum": [
@@ -268,6 +272,9 @@
         },
         "adaptiveControllerEnabled": {
           "type": ["boolean", "null"]
+        },
+        "releaseStage": {
+          "$ref": "#/$defs/ReleaseStage"
         }
       }
     },
@@ -1165,6 +1172,9 @@
         },
         "adaptiveControllerOverride": {
           "type": ["boolean", "null"]
+        },
+        "releaseStage": {
+          "$ref": "#/$defs/ReleaseStage"
         },
         "mode": {
           "$ref": "#/$defs/RunMode"

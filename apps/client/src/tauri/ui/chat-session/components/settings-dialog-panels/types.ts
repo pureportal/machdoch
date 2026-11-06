@@ -13,6 +13,7 @@ import type {
   ReasoningMode,
   ReasoningExecutionMode,
   ContextWindow,
+  ReleaseStage,
   UserWebSearchApiKeyProvider,
   WebSearchProviderAvailability,
   VoiceAiProvider,
@@ -85,6 +86,7 @@ export interface WorkspaceSettingsControls {
   workspaceMemoryEnabled?: boolean;
   reasoningBankEnabled?: boolean;
   autoGitignore?: boolean;
+  releaseStage?: ReleaseStage | null;
   reasoningProvider?: RuntimeProvider;
   reasoningModel?: string;
   saving: boolean;
@@ -98,6 +100,9 @@ export interface WorkspaceSettingsControls {
   ) => Promise<void> | void;
   onReasoningBankEnabledChange?: (enabled: boolean) => Promise<void> | void;
   onAutoGitignoreChange?: (enabled: boolean) => Promise<void> | void;
+  onReleaseStageChange?: (
+    releaseStage: ReleaseStage | null,
+  ) => Promise<void> | void;
   onReasoningModeChange: (reasoning: ReasoningMode) => Promise<void> | void;
   onReasoningExecutionModeChange: (
     reasoningMode: ReasoningExecutionMode,

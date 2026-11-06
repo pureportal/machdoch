@@ -106,6 +106,7 @@ pub(crate) async fn invoke(
         | "save_workspace_adaptive_controller_override"
         | "save_workspace_reasoning_bank_enabled"
         | "save_workspace_auto_gitignore"
+        | "save_workspace_release_stage"
         | "save_workspace_reasoning_mode"
         | "save_workspace_reasoning_execution_mode"
         | "save_workspace_context_window"

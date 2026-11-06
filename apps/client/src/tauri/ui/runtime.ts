@@ -271,6 +271,7 @@ import type {
   ReasoningMode as SharedReasoningMode,
   ReasoningExecutionMode as SharedReasoningExecutionMode,
   ContextWindow as SharedContextWindow,
+  ReleaseStage as SharedReleaseStage,
   RuntimeWebSearchConfig as SharedRuntimeWebSearchConfig,
   SpeechToTextProvider as SharedSpeechToTextProvider,
   UserAgentLimitsSettings as SharedUserAgentLimitsSettings,
@@ -513,6 +514,7 @@ export type RuntimeSnapshot = SharedRuntimeSnapshot;
 export type ReasoningMode = SharedReasoningMode;
 export type ReasoningExecutionMode = SharedReasoningExecutionMode;
 export type ContextWindow = SharedContextWindow;
+export type ReleaseStage = SharedReleaseStage;
 
 export const REASONING_MODE_ORDER: readonly ReasoningMode[] = [
   ...REASONING_MODES,
@@ -3823,6 +3825,21 @@ export const saveWorkspaceAutoGitignore = async (
   return await invokeWorkspaceTools<string>("save_workspace_auto_gitignore", {
     workspaceRoot: normalizedWorkspaceRoot,
     enabled,
+  });
+};
+
+export const saveWorkspaceReleaseStage = async (
+  workspaceRoot: string | null | undefined,
+  releaseStage: ReleaseStage | null,
+): Promise<string | null> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before changing its release stage.");
+  }
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) return null;
+  return await invokeWorkspaceTools<string>("save_workspace_release_stage", {
+    workspaceRoot: normalizedWorkspaceRoot,
+    releaseStage,
   });
 };
 

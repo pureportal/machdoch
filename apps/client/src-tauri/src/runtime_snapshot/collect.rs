@@ -13,7 +13,7 @@ use super::{
 use super::{normalize_optional_string, AudioProviderAvailability};
 use crate::runtime_contract_generated::{
     AGENT_CLI_PROVIDERS, CONTEXT_WINDOW_MODES, DEFAULT_ANSWER_LANGUAGE, DEFAULT_MODEL_BY_PROVIDER,
-    DEFAULT_MODEL_PROVIDER, PROVIDER_ENV_KEYS, REASONING_MODES, USER_AUDIO_AI_PROVIDERS, VALID_AUDIO_AI_PROVIDERS,
+    DEFAULT_MODEL_PROVIDER, PROVIDER_ENV_KEYS, REASONING_MODES, RELEASE_STAGES, USER_AUDIO_AI_PROVIDERS, VALID_AUDIO_AI_PROVIDERS,
     VALID_MODEL_PROVIDERS, VALID_SPEECH_TO_TEXT_PROVIDERS, VALID_WEB_SEARCH_PROVIDERS,
     WEB_SEARCH_ENV_KEYS,
 };
@@ -391,6 +391,16 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
         .reasoning_mode
         .clone()
         .unwrap_or(ReasoningExecutionMode::Standard);
+    let release_stage = match config.release_stage.as_deref() {
+        Some(value) if RELEASE_STAGES.contains(&value) => Some(value.to_string()),
+        Some(value) => {
+            return Err(format!(
+                "Invalid workspace release stage '{value}'. Expected one of: {}.",
+                RELEASE_STAGES.join(", ")
+            ));
+        }
+        None => None,
+    };
     let workspace_memory_override = config.workspace_memory_enabled;
     let workspace_memory_enabled = resolve_workspace_memory_enabled(
         user_config.memory.workspace_default_enabled,
@@ -465,6 +475,7 @@ pub(super) fn collect_runtime_snapshot(workspace_root: &str) -> Result<RuntimeSn
         auto_gitignore: config.auto_gitignore.unwrap_or(true),
         workspace_memory_override,
         adaptive_controller_override: config.adaptive_controller_enabled,
+        release_stage,
         mode,
         provider,
         model,

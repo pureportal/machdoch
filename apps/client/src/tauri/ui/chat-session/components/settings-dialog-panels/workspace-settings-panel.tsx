@@ -9,6 +9,8 @@ import {
   type ProviderModelCatalogSnapshot,
 } from "../../../model-catalog";
 import { loadProviderModelCatalog } from "../../../runtime";
+import { RELEASE_STAGES } from "../../../../../core/runtime-contract.generated.js";
+import { RELEASE_STAGE_LABELS } from "../../../../../core/release-stages.js";
 import { RUN_MODE_META } from "../../_helpers/session-shell";
 import {
   getReasoningModesForProvider,
@@ -150,6 +152,28 @@ export const WorkspaceSettingsPanel = ({
       title="Workspace defaults"
       description="Defaults apply when a session uses Workspace default."
     >
+      {setup.onReleaseStageChange ? (
+        <SettingPanel label="Release stage">
+          <ChoiceButtons
+            label="Release stage"
+            value={setup.releaseStage ?? "unset"}
+            options={[
+              { value: "unset", label: "Unset" },
+              ...RELEASE_STAGES.map((releaseStage) => ({
+                value: releaseStage,
+                label: RELEASE_STAGE_LABELS[releaseStage],
+              })),
+            ]}
+            disabled={setup.saving || !setup.workspaceRoot}
+            onChange={(value) => {
+              void setup.onReleaseStageChange?.(
+                value === "unset" ? null : value,
+              );
+            }}
+          />
+        </SettingPanel>
+      ) : null}
+
       <SettingPanel label="Workspace memory">
         <ChoiceButtons
           label="Workspace memory override"

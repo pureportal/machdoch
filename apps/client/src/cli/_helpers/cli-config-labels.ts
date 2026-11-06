@@ -9,6 +9,7 @@ const labels: Readonly<Record<string, string>> = {
   "workspace.offline": "Offline",
   "workspace.github-customizations": "GitHub prompts and skills",
   "workspace.auto-gitignore": "Automatic .gitignore rules",
+  "workspace.release-stage": "Release stage",
   "web-search.provider": "Search provider",
   "agent-limits.infinite": "Unlimited agent turns",
   "agent-limits.executor-turns": "Executor turns",
