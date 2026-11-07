@@ -81,6 +81,10 @@
   margin-left: auto;
 }
 
+.m-composer-surface .m-live-voice-button {
+  min-height: var(--composer-control-size);
+}
+
 :root .m-composer-surface
   :is(.app-model-picker-button, .app-composer-toolbar-pill) {
   height: var(--composer-control-size) !important;
@@ -545,13 +549,14 @@
     min-width: 0;
   }
 
-  :root .m-composer-surface-workspace button {
+  :root .m-composer-surface .m-composer-surface-workspace button {
     width: var(--composer-control-size) !important;
     justify-content: center;
     padding-inline: 0 !important;
   }
 
-  .m-composer-surface-workspace button > span {
+  .m-composer-surface-workspace button > span,
+  .m-composer-surface-workspace button > span ~ svg {
     display: none;
   }
 
