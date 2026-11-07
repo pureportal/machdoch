@@ -3,6 +3,7 @@ import {
   type SmartContextPackEditorInitialValue,
   type PackModelOption,
 } from "./editor";
+import { ContextPackDeleteDialog, type ContextPackDeletion } from "./delete-dialog";
 import { ContextPacksIcon } from "@machdoch/product-ui";
 import {
   Download,
@@ -18,7 +19,6 @@ import {
 import {
   useCallback,
   useMemo,
-  useEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -112,7 +112,6 @@ interface SmartContextPackListItem {
   pack: SmartContextPack;
   scope: SmartContextPackScope;
   isMatched: boolean;
-  ralphFlowNames: string[];
 }
 
 interface SmartContextPackDialogState {
@@ -266,22 +265,18 @@ const formatScopeFilterLabel = (
 const SmartContextPackCard = ({
   item,
   applyingPackId,
-  pendingDeletePackId,
   onEditPack,
   onApplyPack,
   onDeleteContextPack,
 }: {
   item: SmartContextPackListItem;
   applyingPackId: string | null;
-  pendingDeletePackId: string | null;
   onEditPack: (pack: SmartContextPack) => void;
   onApplyPack: (pack: SmartContextPack) => void;
-  onDeleteContextPack: (pack: SmartContextPack) => void | Promise<void>;
+  onDeleteContextPack: (pack: SmartContextPack) => void;
 }): JSX.Element => {
-  const { pack, isMatched, ralphFlowNames } = item;
+  const { pack, isMatched } = item;
   const scopeLabel = getSmartContextPackScopeLabel(item.scope);
-  const isPendingUsedPackDelete =
-    pendingDeletePackId === pack.id && ralphFlowNames.length > 0;
 
   return (
     <div
@@ -341,19 +336,13 @@ const SmartContextPackCard = ({
             aria-label={`Delete context pack ${pack.name}`}
             tooltip={`Delete ${pack.name}`}
             disabled={applyingPackId === pack.id}
-            onClick={() => void onDeleteContextPack(pack)}
+            onClick={() => onDeleteContextPack(pack)}
             className="h-7 w-7 rounded-full border-rose-500/20 bg-transparent text-rose-200 shadow-none hover:bg-rose-500/10 hover:text-white disabled:border-slate-800 disabled:bg-transparent disabled:text-slate-600"
           >
             <Trash2 className="h-3 w-3" />
           </Button>
         </div>
       </div>
-      {isPendingUsedPackDelete ? (
-        <div className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-1.5 text-xs leading-5 text-amber-100">
-          This pack is used by {ralphFlowNames.join(", ")}. Click delete again
-          to remove it anyway.
-        </div>
-      ) : null}
     </div>
   );
 };
@@ -400,12 +389,7 @@ export const SmartContextPackPicker = ({
   );
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applyingPackId, setApplyingPackId] = useState<string | null>(null);
-  const [pendingDeletePackId, setPendingDeletePackId] = useState<string | null>(
-    null,
-  );
-  const [ralphPackUsageById, setRalphPackUsageById] = useState<
-    Record<string, string[]>
-  >({});
+  const [deletion, setDeletion] = useState<ContextPackDeletion | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const importScopeRef = useRef<SmartContextPackScope | null>(null);
   const packSearchInputRef = useRef<HTMLInputElement | null>(null);
@@ -426,9 +410,8 @@ export const SmartContextPackPicker = ({
       pack,
       scope: getSmartContextPackScope(pack),
       isMatched: matchedPackIds.has(pack.id),
-      ralphFlowNames: ralphPackUsageById[pack.id] ?? [],
     }));
-  }, [matchedPackIds, ralphPackUsageById, sortedPacks]);
+  }, [matchedPackIds, sortedPacks]);
   const scopedPackItems = useMemo(
     () =>
       packItems.filter(
@@ -661,79 +644,49 @@ export const SmartContextPackPicker = ({
     return loadUsage(workspaceRoot);
   }, [workspaceRoot, loadUsage]);
 
-  useEffect(() => {
-    if (!open || !workspaceRoot) {
-      setRalphPackUsageById({});
-      setPendingDeletePackId(null);
+  const requestDeletePack = useCallback(
+    (pack: SmartContextPack): void => {
+      const updateDeletion = (change: Partial<ContextPackDeletion>): void =>
+        setDeletion((current) =>
+          current?.pack.id === pack.id ? { ...current, ...change } : current,
+        );
+
+      setDeletion({ pack, ralphFlowNames: null, deleting: false, error: null });
+      void loadRalphPackUsage().then(
+        (usage) => updateDeletion({ ralphFlowNames: usage[pack.id] ?? [] }),
+        (reason: unknown) =>
+          updateDeletion({
+            error: reason instanceof Error ? reason.message : String(reason),
+          }),
+      );
+    },
+    [loadRalphPackUsage],
+  );
+
+  const confirmDeletePack = (): void => {
+    if (!deletion) {
       return;
     }
 
-    let cancelled = false;
-
-    void (async () => {
-      const nextUsage = await loadRalphPackUsage();
-
-      if (!cancelled) {
-        setRalphPackUsageById(nextUsage);
-      }
-    })().catch((reason: unknown) => {
-      if (!cancelled) {
-        setApplyError(
-          reason instanceof Error ? reason.message : String(reason),
-        );
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [loadRalphPackUsage, open, workspaceRoot]);
-
-  const requestDeletePack = useCallback(
-    async (pack: SmartContextPack): Promise<void> => {
-      let latestUsage = ralphPackUsageById;
-
-      try {
-        latestUsage = await loadRalphPackUsage();
-        setRalphPackUsageById(latestUsage);
-      } catch (reason: unknown) {
-        setApplyError(
-          reason instanceof Error ? reason.message : String(reason),
-        );
-        setOpen(true);
-        return;
-      }
-
-      const ralphFlowNames = latestUsage[pack.id] ?? [];
-
-      if (ralphFlowNames.length > 0 && pendingDeletePackId !== pack.id) {
-        if (!open) {
-          setScopeFilter(getSmartContextPackScope(pack));
-          setPackSearchText("");
-        }
-        setPendingDeletePackId(pack.id);
-        setOpen(true);
-        return;
-      }
-
-      setPendingDeletePackId(null);
-      try {
-        await onDeleteContextPack(pack.id);
-      } catch (reason: unknown) {
-        setApplyError(
-          reason instanceof Error ? reason.message : String(reason),
-        );
-        setOpen(true);
-      }
-    },
-    [
-      loadRalphPackUsage,
-      onDeleteContextPack,
-      open,
-      pendingDeletePackId,
-      ralphPackUsageById,
-    ],
-  );
+    const { pack } = deletion;
+    setDeletion({ ...deletion, deleting: true, error: null });
+    void Promise.resolve()
+      .then(() => onDeleteContextPack(pack.id))
+      .then(
+        () => setDeletion(null),
+        (reason: unknown) =>
+          setDeletion((current) =>
+            current?.pack.id === pack.id
+              ? {
+                  ...current,
+                  deleting: false,
+                  error:
+                    reason instanceof Error ? reason.message : String(reason),
+                }
+              : current,
+          ),
+      );
+  };
 
   const handleConfiguredApply = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
@@ -892,7 +845,7 @@ export const SmartContextPackPicker = ({
               items: sortedPacks.map((pack) => ({
                 id: pack.id,
                 title: pack.name,
-                execute: async () => requestDeletePack(pack),
+                execute: () => requestDeletePack(pack),
               })),
             },
           ],
@@ -1020,7 +973,7 @@ export const SmartContextPackPicker = ({
           sideOffset={8}
           className="w-[28rem] max-w-[calc(100vw-2rem)] overflow-hidden rounded-3xl border-slate-800 bg-slate-950/98 p-0 shadow-xl shadow-slate-950/40 backdrop-blur-xl"
           onFocusOutside={(event) => {
-            if (view === "configure" || pendingDeletePackId !== null) {
+            if (view === "configure" || deletion !== null) {
               event.preventDefault();
             }
           }}
@@ -1149,7 +1102,6 @@ export const SmartContextPackPicker = ({
                   key={item.pack.id}
                   item={item}
                   applyingPackId={applyingPackId}
-                  pendingDeletePackId={pendingDeletePackId}
                   onEditPack={openEditDialog}
                   onApplyPack={applyPack}
                   onDeleteContextPack={requestDeletePack}
@@ -1244,6 +1196,13 @@ export const SmartContextPackPicker = ({
             }
           }}
           onSubmit={handlePackDialogSubmit}
+        />
+      ) : null}
+      {deletion ? (
+        <ContextPackDeleteDialog
+          deletion={deletion}
+          onCancel={() => setDeletion(null)}
+          onConfirm={confirmDeletePack}
         />
       ) : null}
     </>
