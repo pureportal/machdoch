@@ -1,13 +1,6 @@
 import { Check, CornerDownRight } from "lucide-react";
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type FormEvent,
-  type JSX,
-} from "react";
-import type { ChatInputNeededPlaceholder } from "../_helpers/chat-input-needed-placeholders";
+import { useId, useRef, useState, type FormEvent, type JSX } from "react";
+import type { ChatInputNeededPlaceholder } from "./chat-input-needed-placeholders";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import {
   Dialog,
@@ -23,20 +16,14 @@ import {
   SubmitShortcut,
 } from "@machdoch/media-studio/tauri/ui/components/ui/submit-shortcut.js";
 
-export interface ChatInputNeededDialogRequest {
-  placeholder: ChatInputNeededPlaceholder;
-  currentIndex: number;
-  totalCount: number;
-}
-
 interface ChatInputNeededDialogProps {
-  request: ChatInputNeededDialogRequest | null;
+  placeholders: readonly ChatInputNeededPlaceholder[];
   onCancel: () => void;
-  onSubmitValue: (value: string) => void;
+  onComplete: (valuesByLookupKey: Record<string, string>) => void;
 }
 
 const getInitialPlaceholderValue = (
-  placeholder: ChatInputNeededPlaceholder | null | undefined,
+  placeholder: ChatInputNeededPlaceholder | undefined,
 ): string => {
   if (!placeholder) {
     return "";
@@ -54,35 +41,55 @@ const getInitialPlaceholderValue = (
 };
 
 export const ChatInputNeededDialog = ({
-  request,
+  placeholders,
   onCancel,
-  onSubmitValue,
-}: ChatInputNeededDialogProps): JSX.Element => {
-  const [value, setValue] = useState("");
+  onComplete,
+}: ChatInputNeededDialogProps): JSX.Element | null => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [valuesByLookupKey, setValuesByLookupKey] = useState<
+    Record<string, string>
+  >({});
+  const [value, setValue] = useState(() =>
+    getInitialPlaceholderValue(placeholders[0]),
+  );
   const inputRef = useRef<HTMLTextAreaElement | HTMLSelectElement | null>(null);
   const inputId = useId();
-  const normalizedValue = value.trim();
-  const isLastRequest =
-    request !== null && request.currentIndex >= request.totalCount - 1;
-  const canSubmit = request?.placeholder.optional || Boolean(normalizedValue);
+  const placeholder = placeholders[currentIndex];
 
-  useEffect(() => {
-    setValue(getInitialPlaceholderValue(request?.placeholder));
-  }, [request?.currentIndex, request?.placeholder]);
+  if (!placeholder) {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+  const isLastRequest = currentIndex >= placeholders.length - 1;
+  const canSubmit = placeholder.optional || Boolean(normalizedValue);
 
   const submitValue = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
 
-    if (!request || !canSubmit) {
+    if (!canSubmit) {
       return;
     }
 
-    onSubmitValue(normalizedValue);
+    const nextValuesByLookupKey = {
+      ...valuesByLookupKey,
+      [placeholder.lookupKey]: normalizedValue,
+    };
+    const nextPlaceholder = placeholders[currentIndex + 1];
+
+    if (!nextPlaceholder) {
+      onComplete(nextValuesByLookupKey);
+      return;
+    }
+
+    setValuesByLookupKey(nextValuesByLookupKey);
+    setCurrentIndex(currentIndex + 1);
+    setValue(getInitialPlaceholderValue(nextPlaceholder));
   };
 
   return (
     <Dialog
-      open={Boolean(request)}
+      open
       onOpenChange={(open) => {
         if (!open) {
           onCancel();
@@ -106,16 +113,13 @@ export const ChatInputNeededDialog = ({
                 Enter the missing value before submitting the chat message.
               </DialogDescription>
             </div>
-            {request ? (
-              <span className="shrink-0 rounded-full border border-cyan-400/25 bg-cyan-400/10 px-2.5 py-1 text-xs font-semibold text-cyan-100">
-                {request.currentIndex + 1} / {request.totalCount}
-              </span>
-            ) : null}
+            <span className="shrink-0 rounded-full border border-cyan-400/25 bg-cyan-400/10 px-2.5 py-1 text-xs font-semibold text-cyan-100">
+              {currentIndex + 1} / {placeholders.length}
+            </span>
           </div>
         </DialogHeader>
 
-        {request ? (
-          <SubmitShortcut asChild>
+        <SubmitShortcut asChild>
             <form onSubmit={submitValue} className="grid gap-4 p-5">
               <div className="grid gap-2">
                 <div className="flex min-w-0 items-center justify-between gap-3">
@@ -123,34 +127,34 @@ export const ChatInputNeededDialog = ({
                     htmlFor={inputId}
                     className="min-w-0 truncate text-sm font-semibold text-slate-50"
                   >
-                    {request.placeholder.key}
+                    {placeholder.key}
                   </label>
-                  {request.placeholder.occurrenceCount > 1 ? (
+                  {placeholder.occurrenceCount > 1 ? (
                     <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-400">
-                      {request.placeholder.occurrenceCount} uses
+                      {placeholder.occurrenceCount} uses
                     </span>
                   ) : null}
-                  {request.placeholder.optional ? (
+                  {placeholder.optional ? (
                     <span className="shrink-0 rounded-full border border-slate-700 bg-slate-900 px-2 py-0.5 text-[11px] font-medium text-slate-400">
                       optional
                     </span>
                   ) : null}
                 </div>
-                {request.placeholder.options ? (
+                {placeholder.options ? (
                   <select
                     id={inputId}
                     ref={(node) => {
                       inputRef.current = node;
                     }}
-                    aria-label={`Value for ${request.placeholder.key}`}
+                    aria-label={`Value for ${placeholder.key}`}
                     value={value}
                     onChange={(event) => setValue(event.target.value)}
                     className="h-10 w-full rounded-md border border-slate-700 bg-slate-900 px-3 text-sm text-slate-100 outline-none focus-visible:border-cyan-500/70 focus-visible:ring-1 focus-visible:ring-cyan-500/40"
                   >
-                    {request.placeholder.optional ? (
+                    {placeholder.optional ? (
                       <option value="">No value</option>
                     ) : null}
-                    {request.placeholder.options.map((option) => (
+                    {placeholder.options.map((option) => (
                       <option key={option} value={option}>
                         {option}
                       </option>
@@ -162,10 +166,10 @@ export const ChatInputNeededDialog = ({
                     ref={(node) => {
                       inputRef.current = node;
                     }}
-                    aria-label={`Value for ${request.placeholder.key}`}
+                    aria-label={`Value for ${placeholder.key}`}
                     value={value}
                     onChange={(event) => setValue(event.target.value)}
-                    placeholder={`Enter ${request.placeholder.key}`}
+                    placeholder={`Enter ${placeholder.key}`}
                     className="min-h-28 resize-y border-slate-700 bg-slate-900 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:ring-cyan-500/40"
                   />
                 )}
@@ -198,7 +202,6 @@ export const ChatInputNeededDialog = ({
               </DialogFooter>
             </form>
           </SubmitShortcut>
-        ) : null}
       </DialogContent>
     </Dialog>
   );

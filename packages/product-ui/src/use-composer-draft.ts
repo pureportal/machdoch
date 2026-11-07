@@ -92,15 +92,22 @@ export function useComposerDraft(
     });
   }
 
-  function submitDraft(
-    goalObjective?: string,
-    iterationCount?: number,
-    iterationMode?: ProductIterationMode,
-    runningAction?: ProductRunningMessageAction,
-  ): Promise<void> {
+  function submitDraft({
+    prompt: resolvedPrompt,
+    goalObjective,
+    iterationCount,
+    iterationMode,
+    runningAction,
+  }: {
+    prompt?: string | undefined;
+    goalObjective?: string | undefined;
+    iterationCount?: number | undefined;
+    iterationMode?: ProductIterationMode | undefined;
+    runningAction?: ProductRunningMessageAction | undefined;
+  } = {}): Promise<void> {
     const entry = getDraft();
     const submittedText = entry.text;
-    const prompt = submittedText.trim();
+    const prompt = (resolvedPrompt ?? submittedText).trim();
     if (
       !prompt ||
       !composer.canSend ||

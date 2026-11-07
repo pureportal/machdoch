@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { RalphFlowEditor } from "../ralph/ralph-flow-editor";
-import { ChatInputNeededDialog } from "../chat-session/components/chat-input-needed-dialog";
+import { ChatInputNeededDialog } from "@machdoch/client-ui/composer/chat-input-needed-dialog";
 import { ChatInterviewDialog } from "../chat-session/components/chat-interview-dialog";
 import type { ChatInterviewDialogState } from "../chat-session/_helpers/chat-interview";
 import { AttachmentImagePreviewDialog } from "../chat-session/components/attachment-image-preview-dialog";
@@ -317,10 +317,8 @@ function Surface({ name }: { name: string }): JSX.Element {
   if (name === "input" || name === "input-options")
     return (
       <ChatInputNeededDialog
-        request={{
-          currentIndex: 0,
-          totalCount: 2,
-          placeholder: {
+        placeholders={[
+          {
             key: longName,
             lookupKey: longName,
             occurrenceCount: 1,
@@ -328,9 +326,10 @@ function Surface({ name }: { name: string }): JSX.Element {
               ? { options: [longName, "Short option"] }
               : {}),
           },
-        }}
+          { key: "Second", lookupKey: "second", occurrenceCount: 1 },
+        ]}
         onCancel={() => {}}
-        onSubmitValue={() => {}}
+        onComplete={() => {}}
       />
     );
   if (name === "image" || name === "image-error")

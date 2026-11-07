@@ -25,7 +25,7 @@ import { useUnsavedChangesGuard } from "./chat-session/_helpers/use-unsaved-chan
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
 import { AttachmentImagePreviewDialog } from "./chat-session/components/attachment-image-preview-dialog";
 import { ChatInterviewDialog } from "./chat-session/components/chat-interview-dialog";
-import { ChatInputNeededDialog } from "./chat-session/components/chat-input-needed-dialog";
+import { ChatInputNeededDialog } from "@machdoch/client-ui/composer/chat-input-needed-dialog";
 import { FileDropOverlay } from "./chat-session/components/file-drop-overlay";
 import { FilePreviewDialogFallback } from "./chat-session/components/file-preview-dialog-fallback";
 import { CloudPanel } from "./cloud/cloud-panel";
@@ -1474,7 +1474,9 @@ export const ChatSession = (): JSX.Element => {
         }
       />
 
-      <ChatInputNeededDialog {...controller.inputNeeded} />
+      {controller.inputNeeded ? (
+        <ChatInputNeededDialog {...controller.inputNeeded} />
+      ) : null}
 
       <ChatInterviewDialog {...controller.chatInterview} />
       <UpdateDialog

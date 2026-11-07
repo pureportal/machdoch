@@ -32,6 +32,13 @@ import {
   type KeyboardEvent,
 } from "react";
 import { AgentComposer } from "./agent-composer";
+import { ChatInputNeededDialog } from "./chat-input-needed-dialog";
+import {
+  extractChatInputNeededPlaceholders,
+  replaceChatInputNeededPlaceholders,
+  type ChatInputNeededPlaceholder,
+} from "./chat-input-needed-placeholders";
+import type { RequestIterationMode } from "./model";
 import type { RemoteComposerProps } from "@machdoch/product-ui";
 import { toContextAttachment } from "./remote-attachments";
 import type { RemoteAttachmentControls } from "./remote-attachments";
@@ -46,6 +53,13 @@ import { useComposerDraft } from "@machdoch/product-ui/composer-controls";
 
 type ProductComposer = NonNullable<ProductShell["composer"]>;
 const WORKSPACE_DEFAULT_VALUE = "workspace-default";
+
+interface InputNeededSubmission {
+  task: string;
+  placeholders: ChatInputNeededPlaceholder[];
+  iterationCount: number | undefined;
+  iterationMode: RequestIterationMode | undefined;
+}
 
 const REASONING_OPTIONS: Record<
   ProductComposer["reasoningOptions"][number],
@@ -179,6 +193,9 @@ export function RemoteComposer({
     discardFailedSubmission,
   } = useComposerDraft(composer, onCommand, drafts);
   const [sessionMemoryOpen, setSessionMemoryOpen] = useState(false);
+  const [inputNeeded, setInputNeeded] = useState<InputNeededSubmission | null>(
+    null,
+  );
   const goalId = useId();
   const [goalOpen, setGoalOpen] = useState(false);
   const [useGoalWithMessage, setUseGoalWithMessage] = useState(false);
@@ -193,6 +210,7 @@ export function RemoteComposer({
   const closeSessionMemory = useCallback(() => setSessionMemoryOpen(false), []);
   useEffect(() => {
     setSessionMemoryOpen(false);
+    setInputNeeded(null);
   }, [composer.sessionId]);
 
   useEffect(() => {
@@ -595,15 +613,22 @@ export function RemoteComposer({
         onDraftChange={updateDraft}
         onAdditionalTextareaKeyDown={onHistoryKeyDown}
         onSend={(currentDraft, iterationCount, iterationMode) => {
-          if (canSubmit && !drafts.submitting) {
-            updateDraft(currentDraft);
-            void submitDraft(
-              goalDraft.submissionObjective,
-              iterationCount,
-              iterationMode,
-              composer.runningTaskMessageAction,
-            );
+          if (!canSubmit || drafts.submitting) return;
+          updateDraft(currentDraft);
+          const task = currentDraft.trim();
+          const placeholders = /^\/goal(?:\s|$)/u.test(task)
+            ? []
+            : extractChatInputNeededPlaceholders(task);
+          if (placeholders.length > 0) {
+            setInputNeeded({ task, placeholders, iterationCount, iterationMode });
+            return;
           }
+          void submitDraft({
+            goalObjective: goalDraft.submissionObjective,
+            iterationCount,
+            iterationMode,
+            runningAction: composer.runningTaskMessageAction,
+          });
         }}
         onCancel={() => {
           if (session.runningTaskId && canCancel)
@@ -760,6 +785,25 @@ export function RemoteComposer({
         <p className="m-product-composer-error">
           {composer.sendDisabledReason}
         </p>
+      ) : null}
+      {inputNeeded ? (
+        <ChatInputNeededDialog
+          placeholders={inputNeeded.placeholders}
+          onCancel={() => setInputNeeded(null)}
+          onComplete={(valuesByLookupKey) => {
+            setInputNeeded(null);
+            void submitDraft({
+              prompt: replaceChatInputNeededPlaceholders(
+                inputNeeded.task,
+                valuesByLookupKey,
+              ),
+              goalObjective: goalDraft.submissionObjective,
+              iterationCount: inputNeeded.iterationCount,
+              iterationMode: inputNeeded.iterationMode,
+              runningAction: composer.runningTaskMessageAction,
+            });
+          }}
+        />
       ) : null}
       <MemoryDialog
         title="Session memory"

@@ -9,6 +9,7 @@ import {
   fireEvent,
   render,
   screen,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RemoteComposer as Composer } from "./remote-composer";
@@ -1460,5 +1461,58 @@ describe("session composer drafts", () => {
       prompt: "Second",
     });
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("composer input placeholders", () => {
+  const submissions = (onCommand: ReturnType<typeof vi.fn<ProductCommandHandler>>) =>
+    onCommand.mock.calls.filter(([command]) => command.kind === "submit-message");
+
+  it("asks for placeholder values before sending the resolved prompt", async () => {
+    const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
+    harness(onCommand, "Deploy [[branch=main]] to [[target|staging,production]]");
+    await send();
+    expect(submissions(onCommand)).toEqual([]);
+
+    const dialog = screen.getByRole("dialog", { name: "Input Needed" });
+    const branch = within(dialog).getByRole("textbox", {
+      name: "Value for branch",
+    });
+    expect(branch).toHaveProperty("value", "main");
+    fireEvent.change(branch, { target: { value: "release" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+    fireEvent.change(
+      within(dialog).getByRole("combobox", { name: "Value for target" }),
+      { target: { value: "production" } },
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Start" }));
+    await flush();
+
+    expect(submissions(onCommand)).toEqual([
+      [
+        expect.objectContaining({
+          sessionId: "A",
+          prompt: "Deploy release to production",
+        }),
+      ],
+    ]);
+    expect(input().value).toBe("");
+  });
+
+  it("keeps the draft unsent when placeholder input is cancelled", async () => {
+    const onCommand = vi.fn<ProductCommandHandler>().mockResolvedValue(true);
+    harness(onCommand, "Merge [[branch=main]]");
+    await send();
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Input Needed" })).getByRole(
+        "button",
+        { name: "Cancel" },
+      ),
+    );
+    await flush();
+
+    expect(screen.queryByRole("dialog", { name: "Input Needed" })).toBeNull();
+    expect(submissions(onCommand)).toEqual([]);
+    expect(input().value).toBe("Merge [[branch=main]]");
   });
 });

@@ -28,6 +28,8 @@
     "./instructions": "./src/instructions/index.ts",
     "./composer/remote-composer-host": "./src/composer/remote-composer-host.tsx",
     "./composer/remote-composer": "./src/composer/remote-composer.tsx",
+    "./composer/chat-input-needed-dialog": "./src/composer/chat-input-needed-dialog.tsx",
+    "./composer/chat-input-needed-placeholders": "./src/composer/chat-input-needed-placeholders.ts",
     "./composer/adaptive-controller-picker": "./src/composer/adaptive-controller-picker.tsx",
     "./composer/adaptive-controller-command": "./src/composer/adaptive-controller-command.ts",
     "./composer/agent-composer": "./src/composer/agent-composer.tsx",

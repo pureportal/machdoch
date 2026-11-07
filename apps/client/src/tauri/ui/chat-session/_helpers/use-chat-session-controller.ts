@@ -145,7 +145,7 @@ import {
   extractChatInputNeededPlaceholders,
   replaceChatInputNeededPlaceholders,
   type ChatInputNeededPlaceholder,
-} from "./chat-input-needed-placeholders";
+} from "@machdoch/client-ui/composer/chat-input-needed-placeholders";
 import {
   getChatOperationRecoveryAction,
   getOrphanedChatOperationIds,
@@ -310,8 +310,6 @@ type ChatInputNeededSubmission =
 interface ChatInputNeededState {
   submission: ChatInputNeededSubmission;
   placeholders: ChatInputNeededPlaceholder[];
-  valuesByLookupKey: Record<string, string>;
-  currentIndex: number;
 }
 
 interface ComposerStatusMessage {
@@ -5615,12 +5613,7 @@ export const useChatSessionController = (
         return false;
       }
 
-      setChatInputNeeded({
-        submission,
-        placeholders,
-        valuesByLookupKey: {},
-        currentIndex: 0,
-      });
+      setChatInputNeeded({ submission, placeholders });
 
       return true;
     },
@@ -8542,44 +8535,19 @@ export const useChatSessionController = (
     setChatInputNeeded(null);
   }, []);
 
-  const submitChatInputNeededValue = useCallback(
-    (value: string): void => {
+  const completeChatInputNeeded = useCallback(
+    (valuesByLookupKey: Record<string, string>): void => {
       if (!chatInputNeeded) {
         return;
       }
 
-      const currentPlaceholder =
-        chatInputNeeded.placeholders[chatInputNeeded.currentIndex];
-
-      if (!currentPlaceholder) {
-        setChatInputNeeded(null);
-        return;
-      }
-
-      const nextValuesByLookupKey = {
-        ...chatInputNeeded.valuesByLookupKey,
-        [currentPlaceholder.lookupKey]: value,
-      };
-      const nextIndex = chatInputNeeded.currentIndex + 1;
-
-      if (nextIndex < chatInputNeeded.placeholders.length) {
-        setChatInputNeeded({
-          ...chatInputNeeded,
-          valuesByLookupKey: nextValuesByLookupKey,
-          currentIndex: nextIndex,
-        });
-        return;
-      }
-
-      const resolvedTask = replaceChatInputNeededPlaceholders(
-        chatInputNeeded.submission.task,
-        nextValuesByLookupKey,
-      );
-
       setChatInputNeeded(null);
       submitResolvedChatInputNeededSubmission(
         chatInputNeeded.submission,
-        resolvedTask,
+        replaceChatInputNeededPlaceholders(
+          chatInputNeeded.submission.task,
+          valuesByLookupKey,
+        ),
       );
     },
     [chatInputNeeded, submitResolvedChatInputNeededSubmission],
@@ -8696,8 +8664,6 @@ export const useChatSessionController = (
     submitResolvedChatInputNeededSubmission(submission, task);
   };
 
-  const currentChatInputNeededPlaceholder =
-    chatInputNeeded?.placeholders[chatInputNeeded.currentIndex] ?? null;
   const conversationPromptEnhancementPreview =
     promptEnhancementPreview?.sessionId === state.activeSession.id
       ? {
@@ -8954,18 +8920,13 @@ export const useChatSessionController = (
       onStartNow: startTaskFromChatInterviewNow,
       onSubmitAnswers: () => void submitChatInterviewAnswers(),
     },
-    inputNeeded: {
-      request:
-        chatInputNeeded && currentChatInputNeededPlaceholder
-          ? {
-              placeholder: currentChatInputNeededPlaceholder,
-              currentIndex: chatInputNeeded.currentIndex,
-              totalCount: chatInputNeeded.placeholders.length,
-            }
-          : null,
-      onCancel: cancelChatInputNeeded,
-      onSubmitValue: submitChatInputNeededValue,
-    },
+    inputNeeded: chatInputNeeded
+      ? {
+          placeholders: chatInputNeeded.placeholders,
+          onCancel: cancelChatInputNeeded,
+          onComplete: completeChatInputNeeded,
+        }
+      : null,
     composer: {
       activeSession: activeComposerSession,
       editingMessageId: activeMessageEdit?.messageId ?? null,
