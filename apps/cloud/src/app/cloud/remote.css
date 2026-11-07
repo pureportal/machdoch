@@ -46,8 +46,12 @@ html[data-theme="light"] .cloud-remote-surface {
   background: var(--muted);
   color: var(--foreground);
 }
-.cloud-remote-surface .m-composer-surface-controls button span {
+.cloud-remote-surface .m-composer-surface-workspace button span {
   color: var(--foreground);
+}
+.cloud-remote-surface .app-composer-toolbar {
+  --app-sky-100: var(--primary);
+  --app-sky-200: var(--primary);
 }
 .cloud-remote-surface .machdoch-product .m-composer-surface {
   border-color: var(--border);

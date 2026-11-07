@@ -1516,3 +1516,31 @@ describe("composer input placeholders", () => {
     expect(input().value).toBe("Merge [[branch=main]]");
   });
 });
+
+describe("composer options", () => {
+  it("keeps the workspace beside the model and marks active options", () => {
+    harness();
+    const options = document.getElementById(
+      screen
+        .getByRole("button", { name: "Composer options" })
+        .getAttribute("aria-controls")!,
+    )!;
+
+    expect(
+      screen.getByRole("button", { name: "Workspace: No workspace" }),
+    ).toBeTruthy();
+    expect(
+      within(options).queryByRole("button", { name: /^Workspace:/ }),
+    ).toBeNull();
+    expect(
+      within(options)
+        .getByRole("button", { name: "Execution mode: Machdoch" })
+        .getAttribute("data-active"),
+    ).toBe("true");
+    expect(
+      within(options)
+        .getByRole("button", { name: "Reasoning mode: Provider default" })
+        .getAttribute("data-active"),
+    ).toBe("false");
+  });
+});

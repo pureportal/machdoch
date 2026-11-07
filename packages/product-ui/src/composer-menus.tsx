@@ -2,6 +2,7 @@ import type { ProductSession, ProductShell } from "@machdoch/fleet-protocol";
 import { Check } from "lucide-react";
 import {
   DropdownIcon,
+  WorkspaceDefaultIcon,
   WorkspaceIcon,
   type ComposerIconProps,
 } from "./composer-icons";
@@ -18,22 +19,11 @@ import {
 import type { ProductCommandHandler } from "./product-runtime";
 import { ProductModal } from "./product-modal";
 
-type ControlTone =
-  | "neutral"
-  | "teal"
-  | "cyan"
-  | "sky"
-  | "amber"
-  | "fuchsia"
-  | "rose"
-  | "violet";
-
 export interface OptionMenuItem {
   value: string;
   label: string;
   description: string;
   icon: ComponentType<ComposerIconProps>;
-  tone: ControlTone;
   disabled?: boolean;
   disabledReason?: string | null;
 }
@@ -102,7 +92,8 @@ export function OptionMenu({
   activeValue,
   activeLabel,
   activeIcon: ActiveIcon,
-  activeTone,
+  active,
+  usingDefault = false,
   options,
   disabled,
   disabledReason,
@@ -112,7 +103,8 @@ export function OptionMenu({
   activeValue: string;
   activeLabel: string;
   activeIcon: ComponentType<ComposerIconProps>;
-  activeTone: ControlTone;
+  active: boolean;
+  usingDefault?: boolean;
   options: OptionMenuItem[];
   disabled: boolean;
   disabledReason?: string | null;
@@ -129,12 +121,21 @@ export function OptionMenu({
       trigger={
         <button
           type="button"
+          className="app-composer-toolbar-control"
           aria-label={`${label}: ${activeLabel}`}
           aria-description={disabledReason ?? undefined}
+          aria-disabled={disabledReason ? true : undefined}
           title={disabledReason ?? `${label}: ${activeLabel}`}
-          data-tone={activeTone}
+          data-active={active}
         >
           <ActiveIcon aria-hidden="true" />
+          {usingDefault ? (
+            <WorkspaceDefaultIcon
+              aria-hidden="true"
+              className="app-composer-default-indicator"
+            />
+          ) : null}
+          <span className="m-composer-control-label">{label}</span>
         </button>
       }
     >
@@ -165,7 +166,6 @@ export function OptionMenu({
               <button
                 type="button"
                 data-active={option.value === activeValue}
-                data-tone={option.tone}
                 disabled={
                   disabled || option.disabled || Boolean(option.disabledReason)
                 }
@@ -259,6 +259,7 @@ export function WorkspaceMenu({
         trigger={
           <button
             type="button"
+            className="app-composer-toolbar-pill app-composer-toolbar-control"
             aria-label={`Workspace: ${label}`}
             title={session.workspace}
           >

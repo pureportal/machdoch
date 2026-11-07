@@ -32,6 +32,7 @@ export function GoalTrigger({
       onClick={onClick}
     >
       <GoalIcon aria-hidden="true" />
+      <span className="m-composer-control-label">Goal</span>
     </button>
   );
 }

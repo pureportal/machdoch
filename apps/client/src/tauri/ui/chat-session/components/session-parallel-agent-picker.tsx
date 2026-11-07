@@ -103,6 +103,7 @@ export const SessionParallelAgentPicker = ({
                   className="app-composer-mode-icon h-3 w-3"
                 />
               ) : null}
+              <span className="m-composer-control-label">Parallel agents</span>
             </Button>
           </PopoverTrigger>
         </span>

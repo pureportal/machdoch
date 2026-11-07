@@ -101,8 +101,7 @@
     .app-parallel-agent-button,
     .app-prompt-enhancement-button,
     .app-composer-toggle-button,
-    .m-product-option-menu > button,
-    .m-product-toggle-button
+    .m-product-option-menu > button
   ) {
   width: var(--composer-control-size) !important;
   height: var(--composer-control-size) !important;
@@ -130,8 +129,7 @@
     .app-reasoning-picker-button,
     .m-goal-trigger,
     .app-composer-toggle-button,
-    .m-product-option-menu > button,
-    .m-product-toggle-button
+    .m-product-option-menu > button
   )
   svg {
   width: 1rem !important;
@@ -154,6 +152,73 @@
 :root .m-composer-surface .app-composer-toolbar svg.app-composer-mode-icon {
   width: 0.75rem !important;
   height: 0.75rem !important;
+}
+
+.app-composer-toolbar .app-composer-toolbar-control {
+  position: relative;
+  border-color: var(--app-border-strong);
+  background-color: transparent;
+  color: var(--app-text-soft);
+}
+
+.app-composer-toolbar .app-composer-toolbar-control > svg {
+  width: 0.9375rem;
+  height: 0.9375rem;
+  flex-shrink: 0;
+}
+
+.app-composer-toolbar
+  .app-composer-toolbar-control:hover:not(:disabled):not(
+    [aria-disabled="true"]
+  ) {
+  background-color: var(--app-hover);
+  color: var(--app-text);
+}
+
+.app-composer-toolbar .app-composer-toolbar-control[data-active="true"] {
+  border-color: color-mix(in srgb, var(--app-sky-500) 45%, var(--app-border));
+  background-color: color-mix(in srgb, var(--app-sky-500) 13%, transparent);
+  color: var(--app-sky-200);
+}
+
+.app-composer-toolbar
+  .app-composer-toolbar-control[data-active="true"]:hover:not(:disabled):not(
+    [aria-disabled="true"]
+  ) {
+  background-color: color-mix(in srgb, var(--app-sky-500) 19%, transparent);
+  color: var(--app-sky-100);
+}
+
+.app-composer-toolbar
+  .app-composer-toolbar-control:is(
+    :disabled:not(fieldset:disabled *),
+    [aria-disabled="true"]
+  ) {
+  border-style: dashed;
+  background-color: transparent;
+  color: var(--app-text-faint);
+  cursor: not-allowed;
+}
+
+.app-composer-toolbar svg.app-composer-default-indicator {
+  position: absolute;
+  pointer-events: none;
+  fill: currentColor;
+  color: var(--app-sky-300);
+}
+
+:root[data-theme="light"]
+  .app-composer-toolbar
+  .app-composer-toolbar-control[data-active="true"],
+:root[data-theme="light"]
+  .app-composer-toolbar
+  svg.app-composer-default-indicator {
+  color: var(--app-sky-600);
+}
+
+.m-composer-control-label,
+.m-composer-controls-divider {
+  display: none;
 }
 
 .m-composer-options-toggle svg {
@@ -388,23 +453,76 @@
     text-align: left;
   }
 
+  .m-composer-surface-controls,
+  .m-composer-surface-controls > fieldset {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+    align-items: stretch;
+    gap: 6px;
+  }
+
   .m-composer-surface-controls {
     order: 1;
     flex: 1 0 100%;
-    flex-wrap: wrap;
     border: 1px solid var(--app-border-strong);
     border-radius: 12px;
     padding: 6px;
   }
 
-  .m-composer-surface-controls > fieldset {
-    flex: 1 1 100%;
-    flex-wrap: wrap;
-    max-width: 100%;
+  .m-composer-surface-controls > :is(fieldset, .m-composer-controls-divider) {
+    grid-column: 1 / -1;
   }
 
-  .m-composer-surface-controls .m-product-composer-toolbar-spacer {
-    display: none;
+  .m-composer-surface-controls > :is(div, span),
+  .m-composer-surface-controls > fieldset > :is(div, span) {
+    display: flex;
+    min-width: 0;
+  }
+
+  :root
+    .m-composer-surface
+    .m-composer-surface-controls
+    .app-composer-toolbar-control {
+    display: flex;
+    width: 100% !important;
+    min-width: 0;
+    height: auto !important;
+    min-height: 2.5rem;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px !important;
+    border-radius: 12px !important;
+    padding: 6px 12px !important;
+    text-align: left;
+  }
+
+  .m-composer-surface-controls .m-composer-control-label {
+    display: -webkit-box;
+    min-width: 0;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: normal;
+  }
+
+  .m-composer-surface-controls > .m-composer-controls-divider {
+    display: block;
+    height: 1px;
+    margin: 0;
+    border: 0;
+    background: var(--app-border);
+  }
+
+  :root
+    .m-composer-surface
+    .m-composer-surface-controls
+    svg.app-composer-default-indicator {
+    top: calc(50% - 0.75rem);
+    right: auto;
+    left: calc(12px + 0.8rem);
   }
 
   .m-composer-surface[data-options-open="false"] .m-composer-surface-controls {
@@ -508,23 +626,76 @@
     max-width: none;
   }
 
+  .m-composer-surface-controls,
+  .m-composer-surface-controls > fieldset {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+    align-items: stretch;
+    gap: 6px;
+  }
+
   .m-composer-surface-controls {
     order: 1;
     flex: 1 0 100%;
-    flex-wrap: wrap;
     border: 1px solid var(--app-border-strong);
     border-radius: 12px;
     padding: 6px;
   }
 
-  .m-composer-surface-controls > fieldset {
-    flex: 1 1 100%;
-    flex-wrap: wrap;
-    max-width: 100%;
+  .m-composer-surface-controls > :is(fieldset, .m-composer-controls-divider) {
+    grid-column: 1 / -1;
   }
 
-  .m-composer-surface-controls .m-product-composer-toolbar-spacer {
-    display: none;
+  .m-composer-surface-controls > :is(div, span),
+  .m-composer-surface-controls > fieldset > :is(div, span) {
+    display: flex;
+    min-width: 0;
+  }
+
+  :root
+    .m-composer-surface
+    .m-composer-surface-controls
+    .app-composer-toolbar-control {
+    display: flex;
+    width: 100% !important;
+    min-width: 0;
+    height: auto !important;
+    min-height: 2.5rem;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 10px !important;
+    border-radius: 12px !important;
+    padding: 6px 12px !important;
+    text-align: left;
+  }
+
+  .m-composer-surface-controls .m-composer-control-label {
+    display: -webkit-box;
+    min-width: 0;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: normal;
+  }
+
+  .m-composer-surface-controls > .m-composer-controls-divider {
+    display: block;
+    height: 1px;
+    margin: 0;
+    border: 0;
+    background: var(--app-border);
+  }
+
+  :root
+    .m-composer-surface
+    .m-composer-surface-controls
+    svg.app-composer-default-indicator {
+    top: calc(50% - 0.75rem);
+    right: auto;
+    left: calc(12px + 0.8rem);
   }
 
   .m-composer-surface[data-options-open="false"] .m-composer-surface-controls {

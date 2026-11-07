@@ -1527,6 +1527,9 @@ export const AgentComposer = ({
       controls={
         <>
           {toolbarControls}
+          {toolbarControls && toggleButtons.length > 0 ? (
+            <hr className="m-composer-controls-divider" />
+          ) : null}
           {toggleButtons}
         </>
       }

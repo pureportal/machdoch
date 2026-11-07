@@ -69,61 +69,51 @@ const REASONING_OPTIONS: Record<
     label: "Provider default",
     description: "Use the model's default reasoning effort.",
     icon: ReasoningIcons.default,
-    tone: "neutral",
   },
   none: {
     label: "None",
     description: "Use the lowest available reasoning setting.",
     icon: ReasoningIcons.none,
-    tone: "neutral",
   },
   minimal: {
     label: "Minimal",
     description: "Prefer minimal reasoning where supported.",
     icon: ReasoningIcons.minimal,
-    tone: "teal",
   },
   low: {
     label: "Low",
     description: "Favor speed and lower token use.",
     icon: ReasoningIcons.low,
-    tone: "cyan",
   },
   medium: {
     label: "Medium",
     description: "Balance quality, cost, and latency.",
     icon: ReasoningIcons.medium,
-    tone: "sky",
   },
   high: {
     label: "High",
     description: "Spend more effort on complex tasks.",
     icon: ReasoningIcons.high,
-    tone: "amber",
   },
   xhigh: {
     label: "XHigh",
     description: "Use extended effort for long-horizon tasks.",
     icon: ReasoningIcons.xhigh,
-    tone: "fuchsia",
   },
   max: {
     label: "Max",
     description: "Use the highest mapped reasoning effort.",
     icon: ReasoningIcons.max,
-    tone: "rose",
   },
   ultra: {
     label: "Ultra",
     description: "Use maximum reasoning effort.",
     icon: ReasoningIcons.ultra,
-    tone: "violet",
   },
   aeon: {
     label: "Aeon",
     description: "Keep working until stopped.",
     icon: ReasoningIcons.aeon,
-    tone: "violet",
   },
 };
 
@@ -133,14 +123,12 @@ const MODE_OPTION_BY_VALUE: Record<"ask" | "machdoch", OptionMenuItem> = {
     label: "Machdoch",
     description: "Use all available tools and verify the work.",
     icon: ExecuteIcon,
-    tone: "violet",
   },
   ask: {
     value: "ask",
     label: "Ask mode",
     description: "Use read-only tools.",
     icon: AskIcon,
-    tone: "amber",
   },
 };
 
@@ -252,7 +240,6 @@ export function RemoteComposer({
       label: "Workspace default",
       description: `Currently ${defaultReasoning.label}.`,
       icon: defaultReasoning.icon,
-      tone: defaultReasoning.tone,
     },
     ...composer.reasoningOptions.map((value) => ({
       value,
@@ -332,16 +319,55 @@ export function RemoteComposer({
             }
           />
         }
+        workspacePicker={
+          <WorkspaceMenu
+            disabled={pending}
+            session={session}
+            workspaces={workspaces}
+            onCommand={onCommand}
+          />
+        }
         toolbarControls={
           <fieldset className="m-product-composer-toolbar" disabled={pending}>
-            <ContextWindowPicker provider={composer.provider} model={composer.model} value={composer.contextWindow} inheritedValue={composer.workspaceContextWindow} capabilities={composer} onChange={(value) => void onCommand({ kind: "set-session-context-window", sessionId: session.id, mode: value ?? "inherit" })} />
+            <OptionMenu
+              disabled={pending}
+              label="Execution mode"
+              activeValue={session.mode ?? WORKSPACE_DEFAULT_VALUE}
+              activeLabel={mode.label}
+              activeIcon={mode.icon}
+              active={composer.mode === "machdoch"}
+              usingDefault={session.mode === undefined}
+              options={[
+                {
+                  value: WORKSPACE_DEFAULT_VALUE,
+                  label: "Workspace default",
+                  description: `Currently ${MODE_OPTION_BY_VALUE[composer.defaultMode].label}.`,
+                  icon: MODE_OPTION_BY_VALUE[composer.defaultMode].icon,
+                },
+                ...MODE_OPTIONS,
+              ]}
+              onSelect={(value) =>
+                void onCommand(
+                  value === WORKSPACE_DEFAULT_VALUE
+                    ? { kind: "clear-session-mode", sessionId: session.id }
+                    : {
+                        kind: "set-session-mode",
+                        sessionId: session.id,
+                        mode: value as "ask" | "machdoch",
+                      },
+                )
+              }
+            />
             <OptionMenu
               disabled={pending}
               label="Reasoning mode"
               activeValue={session.reasoning ?? WORKSPACE_DEFAULT_VALUE}
               activeLabel={reasoning.label}
               activeIcon={reasoning.icon}
-              activeTone={reasoning.tone}
+              active={
+                composer.reasoning !== "default" && composer.reasoning !== "none"
+              }
+              usingDefault={session.reasoning === undefined}
               options={reasoningOptions}
               onSelect={(value) =>
                 void onCommand(
@@ -359,71 +385,7 @@ export function RemoteComposer({
                 )
               }
             />
-            <OptionMenu
-              disabled={pending}
-              label="Execution mode"
-              activeValue={session.mode ?? WORKSPACE_DEFAULT_VALUE}
-              activeLabel={mode.label}
-              activeIcon={mode.icon}
-              activeTone={mode.tone}
-              options={[
-                {
-                  value: WORKSPACE_DEFAULT_VALUE,
-                  label: "Workspace default",
-                  description: `Currently ${MODE_OPTION_BY_VALUE[composer.defaultMode].label}.`,
-                  icon: MODE_OPTION_BY_VALUE[composer.defaultMode].icon,
-                  tone: "neutral",
-                },
-                ...MODE_OPTIONS,
-              ]}
-              onSelect={(value) =>
-                void onCommand(
-                  value === WORKSPACE_DEFAULT_VALUE
-                    ? { kind: "clear-session-mode", sessionId: session.id }
-                    : {
-                        kind: "set-session-mode",
-                        sessionId: session.id,
-                        mode: value as "ask" | "machdoch",
-                      },
-                )
-              }
-            />
-            <OptionMenu
-              disabled={pending || !parallelAvailable}
-              disabledReason={
-                parallelAvailable ? null : parallelOptions[1]!.disabledReason
-              }
-              label="Parallel agents"
-              activeValue={parallelAgentMode}
-              activeLabel={
-                {
-                  disabled: "Disabled",
-                  "read-only": "Read Only",
-                  machdoch: "Full Mode",
-                  native: "Native",
-                }[parallelAgentMode]
-              }
-              activeIcon={ParallelAgentsIcon}
-              activeTone="violet"
-              options={parallelOptions.map((option) => ({
-                ...option,
-                description: "",
-                icon: PARALLEL_AGENT_ICONS[option.value],
-                tone:
-                  option.value === "machdoch" || option.value === "native"
-                    ? "violet"
-                    : "neutral",
-              }))}
-              onSelect={(value) =>
-                void onCommand({
-                  kind: "set-parallel-agent-mode",
-                  sessionId: session.id,
-                  mode: value as NonNullable<
-                    ProductComposer["parallelAgentMode"]
-                  >,
-                })
-              }
-            />
+            <ContextWindowPicker provider={composer.provider} model={composer.model} value={composer.contextWindow} inheritedValue={composer.workspaceContextWindow} capabilities={composer} onChange={(value) => void onCommand({ kind: "set-session-context-window", sessionId: session.id, mode: value ?? "inherit" })} />
             {composer.adaptiveController ? (
               <SessionAdaptiveControllerPicker
                 override={composer.adaptiveController.override}
@@ -446,6 +408,38 @@ export function RemoteComposer({
                 }
               />
             ) : null}
+            <OptionMenu
+              disabled={pending || !parallelAvailable}
+              disabledReason={
+                parallelAvailable ? null : parallelOptions[1]!.disabledReason
+              }
+              label="Parallel agents"
+              activeValue={parallelAgentMode}
+              activeLabel={
+                {
+                  disabled: "Disabled",
+                  "read-only": "Read Only",
+                  machdoch: "Full Mode",
+                  native: "Native",
+                }[parallelAgentMode]
+              }
+              activeIcon={ParallelAgentsIcon}
+              active={parallelAgentMode !== "disabled"}
+              options={parallelOptions.map((option) => ({
+                ...option,
+                description: "",
+                icon: PARALLEL_AGENT_ICONS[option.value],
+              }))}
+              onSelect={(value) =>
+                void onCommand({
+                  kind: "set-parallel-agent-mode",
+                  sessionId: session.id,
+                  mode: value as NonNullable<
+                    ProductComposer["parallelAgentMode"]
+                  >,
+                })
+              }
+            />
             {session.specialKind !== "pose" ? (
               <GoalTrigger
                 open={goalOpen}
@@ -468,82 +462,89 @@ export function RemoteComposer({
                 })
               }
             />
-            <WorkspaceMenu
-              disabled={pending}
-              session={session}
-              workspaces={workspaces}
-              onCommand={onCommand}
-            />
             {renderContextPackPicker(draft)}
-            <div className="m-product-composer-toolbar-spacer" />
-            <Toggle
-              label="Session memory"
-              icon={<SessionMemoryIcon />}
-              pressed={composer.sessionMemoryEnabled}
-              onManage={() => setSessionMemoryOpen(true)}
-              onClick={() =>
-                onCommand({
-                  kind: "set-session-memory",
-                  sessionId: session.id,
-                  enabled: !composer.sessionMemoryEnabled,
-                })
-              }
-            />
-            <Toggle
-              label="Workspace memory"
-              icon={<WorkspaceMemoryIcon />}
-              pressed={composer.workspaceMemoryEnabled === true}
-              disabled={composer.workspaceMemoryAvailable !== true}
-              onClick={() =>
-                onCommand({
-                  kind: "set-workspace-memory",
-                  sessionId: session.id,
-                  enabled: composer.workspaceMemoryEnabled !== true,
-                })
-              }
-            />
-            <Toggle
-              label="Global memory"
-              icon={<GlobalMemoryIcon />}
-              pressed={composer.globalMemoryEnabled}
-              disabled={!composer.globalMemoryAvailable}
-              onClick={() =>
-                onCommand({
-                  kind: "set-global-memory",
-                  sessionId: session.id,
-                  enabled: !composer.globalMemoryEnabled,
-                })
-              }
-            />
-            <Toggle
-              label="Interview"
-              icon={<InterviewIcon />}
-              pressed={composer.interviewEnabled}
-              disabled={!composer.interviewAvailable}
-              onClick={() =>
-                onCommand({
-                  kind: "set-interview",
-                  sessionId: session.id,
-                  enabled: !composer.interviewEnabled,
-                })
-              }
-            />
-            <Toggle
-              label="UI control"
-              title={composer.uiControlDescription}
-              icon={<UiControlIcon />}
-              pressed={composer.uiControlEnabled}
-              disabled={!composer.uiControlAvailable}
-              onClick={() =>
-                onCommand({
-                  kind: "set-ui-control",
-                  sessionId: session.id,
-                  enabled: !composer.uiControlEnabled,
-                })
-              }
-            />
           </fieldset>
         }
+        toggles={[
+          {
+            id: "session-memory",
+            label: "Session memory",
+            icon: <SessionMemoryIcon />,
+            pressed: composer.sessionMemoryEnabled,
+            onPressedChange: (enabled) => {
+              if (!pending)
+                void onCommand({
+                  kind: "set-session-memory",
+                  sessionId: session.id,
+                  enabled,
+                });
+            },
+            onManage: () => setSessionMemoryOpen(true),
+          },
+          {
+            id: "workspace-memory",
+            label: "Workspace memory",
+            icon: <WorkspaceMemoryIcon />,
+            pressed: composer.workspaceMemoryEnabled === true,
+            disabled: composer.workspaceMemoryAvailable !== true,
+            onPressedChange: (enabled) => {
+              if (!pending)
+                void onCommand({
+                  kind: "set-workspace-memory",
+                  sessionId: session.id,
+                  enabled,
+                });
+            },
+          },
+          {
+            id: "global-memory",
+            label: "Global memory",
+            icon: <GlobalMemoryIcon />,
+            pressed: composer.globalMemoryEnabled,
+            disabled: !composer.globalMemoryAvailable,
+            onPressedChange: (enabled) => {
+              if (!pending)
+                void onCommand({
+                  kind: "set-global-memory",
+                  sessionId: session.id,
+                  enabled,
+                });
+            },
+          },
+          {
+            id: "interview",
+            label: "Interview",
+            icon: <InterviewIcon />,
+            pressed: composer.interviewEnabled,
+            disabled: !composer.interviewAvailable,
+            onPressedChange: (enabled) => {
+              if (!pending)
+                void onCommand({
+                  kind: "set-interview",
+                  sessionId: session.id,
+                  enabled,
+                });
+            },
+          },
+          {
+            id: "ui-control",
+            label: "UI control",
+            ...(composer.uiControlDescription
+              ? { title: composer.uiControlDescription }
+              : {}),
+            icon: <UiControlIcon />,
+            pressed: composer.uiControlEnabled,
+            disabled: !composer.uiControlAvailable,
+            onPressedChange: (enabled) => {
+              if (!pending)
+                void onCommand({
+                  kind: "set-ui-control",
+                  sessionId: session.id,
+                  enabled,
+                });
+            },
+          },
+        ]}
         inputHeader={
           session.specialKind !== "pose" ? (
             <div className="m-product-composer-goal">
@@ -837,62 +838,5 @@ export function RemoteComposer({
         onClose={closeSessionMemory}
       />
     </div>
-  );
-}
-
-function Toggle({
-  icon,
-  label,
-  title,
-  pressed,
-  disabled = false,
-  onManage,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  title?: string;
-  pressed: boolean;
-  disabled?: boolean;
-  onManage?: () => void;
-  onClick: () => Promise<boolean>;
-}): React.ReactElement {
-  return (
-    <button
-      type="button"
-      className="m-product-toggle-button app-composer-toggle-button"
-      data-active={pressed && !disabled}
-      aria-label={label}
-      aria-pressed={pressed}
-      aria-disabled={disabled || undefined}
-      title={title || label}
-      onClick={() => {
-        if (!disabled) void onClick();
-      }}
-      onContextMenu={
-        onManage
-          ? (event) => {
-              event.preventDefault();
-              event.currentTarget.focus();
-              onManage();
-            }
-          : undefined
-      }
-      onKeyDown={
-        onManage
-          ? (event) => {
-              if (
-                event.key === "ContextMenu" ||
-                (event.shiftKey && event.key === "F10")
-              ) {
-                event.preventDefault();
-                onManage();
-              }
-            }
-          : undefined
-      }
-    >
-      {icon}
-    </button>
   );
 }

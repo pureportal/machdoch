@@ -965,6 +965,7 @@ export const SmartContextPackPicker = ({
               className="app-context-pack-trigger app-composer-toolbar-icon-button app-composer-toolbar-control h-8 w-8 rounded-full p-0 shadow-none"
             >
               <ContextPacksIcon className="h-3.5 w-3.5" />
+              <span className="m-composer-control-label">Context packs</span>
             </Button>
           </PopoverTrigger>
         </ControlTooltip>

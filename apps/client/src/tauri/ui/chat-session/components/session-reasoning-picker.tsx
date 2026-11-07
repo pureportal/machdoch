@@ -250,6 +250,7 @@ export const SessionReasoningPicker = ({
             {isUsingWorkspaceDefaultReasoning ? (
               <WorkspaceDefaultIndicator />
             ) : null}
+            <span className="m-composer-control-label">Reasoning mode</span>
           </Button>
         </PopoverTrigger>
       </ControlTooltip>

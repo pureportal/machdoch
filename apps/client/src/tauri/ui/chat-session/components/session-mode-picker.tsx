@@ -107,6 +107,7 @@ export const SessionModePicker = ({
           >
             <ActiveRunModeIcon className="h-3.5 w-3.5" />
             {isUsingWorkspaceDefaultMode ? <WorkspaceDefaultIndicator /> : null}
+            <span className="m-composer-control-label">Execution mode</span>
           </Button>
         </PopoverTrigger>
       </ControlTooltip>

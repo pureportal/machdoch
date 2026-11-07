@@ -75,8 +75,10 @@ export function ContextWindowPicker({
           }
         >
           <ContextWindowIcon mode={value ?? "workspace"} />
-          {presentation === "field" && (
+          {presentation === "field" ? (
             <span>{disabled ? "Unavailable" : current}</span>
+          ) : (
+            <span className="m-composer-control-label">Context size</span>
           )}
         </Button>
       </DialogTrigger>

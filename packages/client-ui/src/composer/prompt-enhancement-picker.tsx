@@ -145,6 +145,7 @@ export const SessionPromptEnhancementPicker = ({
                 className="app-composer-mode-icon h-3 w-3"
               />
             ) : null}
+            <span className="m-composer-control-label">Prompt enhancement</span>
           </Button>
         </PopoverTrigger>
       </ControlTooltip>

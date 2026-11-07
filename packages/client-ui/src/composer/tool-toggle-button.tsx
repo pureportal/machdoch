@@ -102,6 +102,7 @@ export const ToolToggleButton = ({
       className={cn(effectiveBaseClassName, stateClassName, className)}
     >
       {icon}
+      <span className="m-composer-control-label">{label}</span>
     </Button>
   );
 

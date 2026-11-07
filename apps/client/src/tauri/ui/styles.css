@@ -1090,76 +1090,14 @@ body {
 
 
 
-.app-composer-toolbar .app-composer-toolbar-control {
-  border-color: var(--app-border-strong);
-  background-color: transparent;
-}
-
-.app-composer-toolbar .app-composer-toolbar-control > svg {
-  width: 0.9375rem;
-  height: 0.9375rem;
-  flex-shrink: 0;
-}
-
-.app-composer-toolbar
-  :is(.app-composer-toolbar-control, .m-composer-model-trigger) {
+.app-composer-toolbar .m-composer-model-trigger {
   color: var(--app-text-soft);
 }
 
-.app-composer-toolbar
-  :is(.app-composer-toolbar-control, .m-composer-model-trigger):hover:not(
-    :disabled
-  ):not([aria-disabled="true"]) {
+.app-composer-toolbar .m-composer-model-trigger:hover:not(:disabled):not(
+    [aria-disabled="true"]
+  ) {
   color: var(--app-text);
-}
-
-.app-composer-toolbar
-  .app-composer-toolbar-control:hover:not(:disabled):not(
-    [aria-disabled="true"]
-  ) {
-  background-color: var(--app-hover);
-}
-
-.app-composer-toolbar .app-composer-toolbar-control[data-active="true"] {
-  border-color: color-mix(in srgb, var(--app-sky-500) 45%, var(--app-border));
-  background-color: color-mix(in srgb, var(--app-sky-500) 13%, transparent);
-  color: var(--app-sky-200);
-}
-
-.app-composer-toolbar
-  .app-composer-toolbar-control[data-active="true"]:hover:not(:disabled):not(
-    [aria-disabled="true"]
-  ) {
-  background-color: color-mix(in srgb, var(--app-sky-500) 19%, transparent);
-  color: var(--app-sky-100);
-}
-
-.app-composer-toolbar
-  .app-composer-toolbar-control:is(:disabled, [aria-disabled="true"]) {
-  border-style: dashed;
-  background-color: transparent;
-  color: var(--app-text-faint);
-  cursor: not-allowed;
-}
-
-.app-composer-toolbar svg.app-composer-default-indicator {
-  width: 0.55rem;
-  height: 0.55rem;
-  color: var(--app-sky-300);
-}
-
-.app-composer-toolbar svg.app-composer-mode-icon {
-  width: 0.875rem;
-  height: 0.875rem;
-}
-
-:root[data-theme="light"]
-  .app-composer-toolbar
-  .app-composer-toolbar-control[data-active="true"],
-:root[data-theme="light"]
-  .app-composer-toolbar
-  svg.app-composer-default-indicator {
-  color: var(--app-sky-600);
 }
 
 :root[data-density="compact"] .app-agent-composer-session {

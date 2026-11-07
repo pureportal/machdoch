@@ -1191,55 +1191,17 @@
   display: grid;
   width: 32px;
   height: 32px;
+  flex: 0 0 32px;
   place-items: center;
-  border: 1px solid var(--app-slate-800);
+  border: 1px solid;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--app-slate-950) 70%, transparent);
-  color: var(--app-text-soft);
   cursor: pointer;
   list-style: none;
-}
-
-.m-product-option-menu > button:hover {
-  border-color: color-mix(in srgb, currentColor 30%, var(--app-slate-800));
-  background: var(--app-surface-raised);
 }
 
 .m-product-option-menu > button > svg {
   width: 18px;
   height: 18px;
-}
-
-.m-product-option-menu > button[data-tone="teal"] {
-  border-color: color-mix(in srgb, var(--app-emerald-500) 25%, transparent);
-  background: color-mix(in srgb, var(--app-emerald-500) 10%, transparent);
-  color: var(--app-emerald-100);
-}
-
-.m-product-option-menu > button[data-tone="cyan"],
-.m-product-option-menu > button[data-tone="sky"] {
-  border-color: color-mix(in srgb, var(--app-sky-500) 25%, transparent);
-  background: color-mix(in srgb, var(--app-sky-500) 10%, transparent);
-  color: var(--app-sky-100);
-}
-
-.m-product-option-menu > button[data-tone="amber"] {
-  border-color: color-mix(in srgb, var(--app-amber-500) 25%, transparent);
-  background: color-mix(in srgb, var(--app-amber-500) 10%, transparent);
-  color: var(--app-amber-100);
-}
-
-.m-product-option-menu > button[data-tone="fuchsia"],
-.m-product-option-menu > button[data-tone="violet"] {
-  border-color: color-mix(in srgb, var(--app-violet-500) 30%, transparent);
-  background: color-mix(in srgb, var(--app-violet-500) 10%, transparent);
-  color: var(--app-violet-100);
-}
-
-.m-product-option-menu > button[data-tone="rose"] {
-  border-color: color-mix(in srgb, var(--app-rose-500) 30%, transparent);
-  background: color-mix(in srgb, var(--app-rose-500) 10%, transparent);
-  color: var(--app-rose-100);
 }
 
 .m-product-option-popover {
@@ -1470,55 +1432,6 @@
   white-space: nowrap;
 }
 
-.m-product-composer-toolbar-spacer {
-  min-width: 0;
-  flex: 1;
-}
-
-.m-product-toggle-button {
-  display: grid;
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
-  place-items: center;
-  border: 1px solid var(--app-border-strong);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--app-text-soft);
-  cursor: pointer;
-}
-
-.m-product-toggle-button:hover:not([aria-disabled="true"]) {
-  background: var(--app-hover);
-  color: var(--app-text);
-}
-
-.m-product-toggle-button[data-active="true"] {
-  border-color: color-mix(in srgb, var(--app-sky-500) 45%, var(--app-border));
-  background: color-mix(in srgb, var(--app-sky-500) 13%, transparent);
-  color: var(--app-sky-200);
-}
-
-.m-product-toggle-button[data-active="true"]:hover:not([aria-disabled="true"]) {
-  background: color-mix(in srgb, var(--app-sky-500) 19%, transparent);
-  color: var(--app-sky-100);
-}
-
-:root[data-theme="light"] .m-product-toggle-button[data-active="true"] {
-  color: var(--app-sky-600);
-}
-
-.m-product-toggle-button[aria-disabled="true"] {
-  cursor: not-allowed;
-  border-style: dashed;
-  background: transparent;
-  color: var(--app-text-faint);
-}
-
-.m-product-toggle-button > svg {
-  width: 18px;
-  height: 18px;
-}
 
 .m-product-composer-attachments {
   margin: 8px 0 0;
@@ -1865,10 +1778,6 @@
 
   .m-product-composer-toolbar {
     overflow: visible;
-  }
-
-  .m-product-composer-toolbar-spacer {
-    flex: 0 0 8px;
   }
 }
 
