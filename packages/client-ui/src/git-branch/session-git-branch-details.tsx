@@ -22,7 +22,7 @@ import {
   type SessionGitBranchRepositoryEvaluation,
   type SessionGitBranchRepositoryState,
   type SessionGitBranchStatus,
-} from "../_helpers/session-git-branch";
+} from "./session-git-branch";
 
 interface Presentation {
   label: string;

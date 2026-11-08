@@ -7,15 +7,16 @@ import {
   PopoverTrigger,
 } from "@machdoch/media-studio/tauri/ui/components/ui/popover.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
-import { switchWorkspaceGitBranches } from "../../runtime";
+import type {
+  WorkspaceGitBranchSwitchResult,
+  WorkspaceGitBranchSwitchTarget,
+} from "@machdoch/fleet-protocol/workspace-contract";
+import { isValidGitBranchName } from "./branch-name";
 import {
   useWorkspaceGitBranchStatus,
   useWorkspaceGitBranchSwitching,
-  workspaceGitBranchStatusStore,
-} from "../../workspace-management/workspace-git-branch-status-store";
-import { isValidGitBranchName } from "../../workspace-management/workspace-git-model";
-import { workspaceGitSummaryStore } from "../../workspace-management/workspace-git-summary-store";
-import { createWorkspaceRootKey } from "../../workspace-management/workspace-management-model";
+  type WorkspaceGitBranchStatusStore,
+} from "./branch-status-store";
 import {
   describeSessionGitBranchBlocker,
   evaluateSessionGitBranch,
@@ -24,7 +25,7 @@ import {
   sessionGitRepositoryName,
   summarizeSessionGitBranchSwitch,
   type SessionGitBranchPlan,
-} from "../_helpers/session-git-branch";
+} from "./session-git-branch";
 import {
   SESSION_GIT_BRANCH_STATUS,
   SessionGitBranchDetails,
@@ -46,9 +47,7 @@ const primaryPlanLabel = (
   branchName: string,
 ): string => {
   if (plan.kind === "create") return `Create ${branchName}`;
-  const target = plan.targets.every(
-    (entry) => entry.branchName === branchName,
-  )
+  const target = plan.targets.every((entry) => entry.branchName === branchName)
     ? `switch to ${branchName}`
     : "switch branches";
   return plan.dirtyRepositories.length > 0
@@ -61,26 +60,39 @@ export const SessionGitBranchControl = ({
   workspaceRoot,
   branchName,
   workspaceTaskRunning,
+  store,
+  switchBranches,
   onBranchChange,
+  onSwitched,
 }: {
   sessionId: string;
   workspaceRoot: string | null | undefined;
   branchName: string | undefined;
   workspaceTaskRunning: boolean;
+  store: WorkspaceGitBranchStatusStore;
+  switchBranches: (
+    workspaceRoot: string,
+    targets: readonly WorkspaceGitBranchSwitchTarget[],
+    stashChanges: boolean,
+  ) => Promise<WorkspaceGitBranchSwitchResult[]>;
   onBranchChange: (branchName: string | null) => void;
+  onSwitched?: (workspaceRoot: string) => void;
 }): JSX.Element | null => {
   const root = workspaceRoot?.trim() || null;
   const branch = branchName ?? null;
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState<ScopedNotice | null>(null);
-  const scope = root
-    ? `${sessionId}\n${createWorkspaceRootKey(root)}\n${branch ?? ""}`
-    : "";
+  const scope = root ? `${sessionId}\n${root}\n${branch ?? ""}` : "";
   const scopeRef = useRef(scope);
   scopeRef.current = scope;
-  const entry = useWorkspaceGitBranchStatus(root, branch, branch !== null || open);
-  const switching = useWorkspaceGitBranchSwitching(root);
+  const entry = useWorkspaceGitBranchStatus(
+    store,
+    root,
+    branch,
+    branch !== null || open,
+  );
+  const switching = useWorkspaceGitBranchSwitching(store, root);
   const previousTaskRunningRef = useRef(workspaceTaskRunning);
   const status = entry?.status ?? null;
 
@@ -91,10 +103,10 @@ export const SessionGitBranchControl = ({
 
   useEffect(() => {
     if (previousTaskRunningRef.current && !workspaceTaskRunning && root) {
-      workspaceGitBranchStatusStore.invalidate(root);
+      store.invalidate(root);
     }
     previousTaskRunningRef.current = workspaceTaskRunning;
-  }, [root, workspaceTaskRunning]);
+  }, [root, store, workspaceTaskRunning]);
 
   const evaluation = useMemo(
     () => (branch && status ? evaluateSessionGitBranch(branch, status) : null),
@@ -132,20 +144,16 @@ export const SessionGitBranchControl = ({
       plan.targets.length === 0 ||
       plan.blockers.length > 0 ||
       workspaceTaskRunning ||
-      workspaceGitBranchStatusStore.isSwitching(root)
+      store.isSwitching(root)
     ) {
       return;
     }
     const runScope = scope;
     let outcome: SessionGitBranchNotice | null = null;
-    workspaceGitBranchStatusStore.setSwitching(root, true);
+    store.setSwitching(root, true);
     setNotice(null);
     try {
-      const results = await switchWorkspaceGitBranches(
-        root,
-        plan.targets,
-        stashChanges,
-      );
+      const results = await switchBranches(root, plan.targets, stashChanges);
       const summary = summarizeSessionGitBranchSwitch(results, repositoryName);
       if (summary.failures.length > 0) {
         outcome = { tone: "error", text: summary.failures.join("\n") };
@@ -158,9 +166,9 @@ export const SessionGitBranchControl = ({
     } catch (error) {
       outcome = { tone: "error", text: errorMessage(error) };
     } finally {
-      workspaceGitBranchStatusStore.setSwitching(root, false);
-      workspaceGitBranchStatusStore.invalidate(root);
-      workspaceGitSummaryStore.request(root, { force: true });
+      store.setSwitching(root, false);
+      store.invalidate(root);
+      onSwitched?.(root);
     }
     if (outcome && scopeRef.current === runScope) {
       setNotice({ ...outcome, scope: runScope });
@@ -175,8 +183,8 @@ export const SessionGitBranchControl = ({
     setNotice(null);
     if (trimmed === branch) return;
     onBranchChange(trimmed);
-    workspaceGitBranchStatusStore.request(root, trimmed, { force: true });
-    workspaceGitBranchStatusStore.request(root, trimmed, { fetch: true });
+    store.request(root, trimmed, { force: true });
+    store.request(root, trimmed, { fetch: true });
   };
 
   const removeBranch = (): void => {
@@ -225,7 +233,7 @@ export const SessionGitBranchControl = ({
             <button
               type="button"
               aria-label={`Session branch ${branch}: ${presentation?.label ?? "Loading"}`}
-              className="flex h-7 max-w-44 min-w-0 items-center gap-1.5 rounded-lg px-2 text-[11px] text-slate-300 outline-none hover:bg-slate-900 hover:text-white focus-visible:ring-2 focus-visible:ring-sky-400/50"
+              className="flex h-7 max-w-28 min-w-0 items-center sm:max-w-44 gap-1.5 rounded-lg px-2 text-[11px] text-slate-300 outline-none hover:bg-slate-900 hover:text-white focus-visible:ring-2 focus-visible:ring-sky-400/50"
             >
               <StatusIcon
                 aria-hidden="true"
@@ -302,7 +310,7 @@ export const SessionGitBranchControl = ({
             notices={notices}
             repositoryName={repositoryName}
             onFetch={() =>
-              workspaceGitBranchStatusStore.request(root, branch, {
+              store.request(root, branch, {
                 fetch: true,
               })
             }

@@ -58,7 +58,7 @@ import {
 } from "./task-thinking.model";
 import { normalizeChatSessionOptionalString } from "./chat-session/_helpers/normalize-chat-session-optional-string.helper";
 import { createWorkspaceRootKey } from "./workspace-management/workspace-management-model";
-import { isValidGitBranchName } from "./workspace-management/workspace-git-model";
+import { isValidGitBranchName } from "@machdoch/client-ui/git-branch/branch-name";
 import {
   normalizeExecutionAttempt,
   type ExecutionAttempt,

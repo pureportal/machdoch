@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import type { WorkspaceGitBranchStatus } from "../runtime";
-import { createWorkspaceGitBranchStatusStore } from "./workspace-git-branch-status-store";
+import type { WorkspaceGitBranchStatus } from "@machdoch/fleet-protocol/workspace-contract";
+import { createWorkspaceGitBranchStatusStore } from "./branch-status-store";
 
-vi.mock("../runtime", () => ({ loadWorkspaceGitBranchStatus: vi.fn() }));
+const windowsRootKey = (workspaceRoot: string): string =>
+  workspaceRoot.trim().replaceAll("\\", "/").replace(/\/+$/, "").toLowerCase();
 
 const branchStatus = (
   workspaceRoot: string,
@@ -54,6 +55,7 @@ const createHarness = (maxConcurrent = 2) => {
     schedule: (task) => tasks.push(task),
     maxConcurrent,
     staleMs: 100,
+    keyOf: windowsRootKey,
   });
   const flush = async (): Promise<void> => {
     for (let round = 0; round < 3; round += 1) {

@@ -9,7 +9,7 @@ import {
   CommandList,
 } from "@machdoch/media-studio/tauri/ui/components/ui/command.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
-import { isValidGitBranchName } from "../../workspace-management/workspace-git-model";
+import { isValidGitBranchName } from "./branch-name";
 import { SESSION_GIT_BRANCH_TONE } from "./session-git-branch-details";
 
 export const SessionGitBranchPicker = ({

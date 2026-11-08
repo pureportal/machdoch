@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   WorkspaceGitBranchRepository,
   WorkspaceGitBranchStatus,
-} from "../../runtime";
+} from "@machdoch/fleet-protocol/workspace-contract";
 import {
   describeSessionGitBranchBlocker,
   evaluateSessionGitBranch,
@@ -67,9 +67,8 @@ describe("session Git branch evaluation", () => {
 
   it("matches when the assigned branch is checked out", () => {
     expect(
-      evaluate(
-        repository(".", { currentBranch: BRANCH, branchLocal: true }),
-      ).status,
+      evaluate(repository(".", { currentBranch: BRANCH, branchLocal: true }))
+        .status,
     ).toBe("matched");
   });
 
@@ -248,11 +247,15 @@ describe("session Git branch plans", () => {
       targets: [{ repositoryRoot: "C:\\work\\.", create: true }],
     });
     expect(
-      sessionGitBranchPrimaryPlan(evaluate(repository("ui"), repository("api"))),
+      sessionGitBranchPrimaryPlan(
+        evaluate(repository("ui"), repository("api")),
+      ),
     ).toBeNull();
     expect(
       sessionGitBranchPrimaryPlan(
-        evaluate(repository("ui", { currentBranch: BRANCH, branchLocal: true })),
+        evaluate(
+          repository("ui", { currentBranch: BRANCH, branchLocal: true }),
+        ),
       ),
     ).toBeNull();
   });

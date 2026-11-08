@@ -3,7 +3,7 @@ import type {
   WorkspaceGitBranchStatus,
   WorkspaceGitBranchSwitchResult,
   WorkspaceGitBranchSwitchTarget,
-} from "../../runtime";
+} from "@machdoch/fleet-protocol/workspace-contract";
 
 export type SessionGitBranchRepositoryState =
   | "on-branch"
@@ -222,7 +222,10 @@ export const planSessionGitBranchCreate = (
 export const sessionGitBranchPrimaryPlan = (
   evaluation: SessionGitBranchEvaluation,
 ): SessionGitBranchPlan | null => {
-  if (evaluation.status === "mismatch" || evaluation.status === "not-switched") {
+  if (
+    evaluation.status === "mismatch" ||
+    evaluation.status === "not-switched"
+  ) {
     const plan = planSessionGitBranchSwitch(evaluation);
     return plan.targets.length > 0 || plan.blockers.length > 0 ? plan : null;
   }

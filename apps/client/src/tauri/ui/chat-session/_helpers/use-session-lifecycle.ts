@@ -15,7 +15,7 @@ import {
   type ShellPersistedState,
 } from "../../chat-session.model";
 import { getDefaultModelForProvider } from "../../model-catalog";
-import { isValidGitBranchName } from "../../workspace-management/workspace-git-model";
+import { isValidGitBranchName } from "@machdoch/client-ui/git-branch/branch-name";
 import { resolveGoalMode } from "../../../../shared/goals.js";
 import { resolveParallelAgentMode } from "../../../../core/parallel-agent-capabilities.js";
 import { normalizeSessionReasoningOverride } from "./session-reasoning";
