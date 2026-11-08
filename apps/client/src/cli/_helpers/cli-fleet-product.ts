@@ -1084,6 +1084,8 @@ export class FleetCliProductRuntime {
       case "generate-media":
       case "cancel-media-run":
       case "refresh-provider-models":
+      case "set-session-git-branch":
+      case "clear-session-git-branch":
         throw new FleetProductError(
           "unavailable",
           "This operation is not available in the Fleet CLI service.",

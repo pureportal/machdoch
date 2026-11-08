@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 mod agent_cli;
 mod app_control;
 mod app_update;

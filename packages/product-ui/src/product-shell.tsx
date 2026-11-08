@@ -23,7 +23,7 @@ import { Inspector } from "./inspector";
 import type { ProductCommandHandler } from "./product-runtime";
 import { ProductRail, type ProductView } from "./product-rail";
 import { Ralph } from "./ralph";
-import { SessionHeader } from "./session-header";
+import { SessionHeader, type SessionHeaderAccessoryProps } from "./session-header";
 import { SessionSidebar } from "./session-sidebar";
 import { useSessionSidebarIndex } from "./use-session-sidebar-index";
 import { ProductPanel } from "./product-panel";
@@ -37,6 +37,7 @@ export function ProductShell({
   Composer,
   Conversation,
   SidebarCommands,
+  SessionHeaderAccessory,
   initialView = "projects",
   instanceName,
   mediaHref,
@@ -60,6 +61,9 @@ export function ProductShell({
   Composer: ComponentType<RemoteComposerProps>;
   Conversation: ComponentType<RemoteConversationProps>;
   SidebarCommands?: ComponentType<SessionSidebarCommandState> | undefined;
+  SessionHeaderAccessory?:
+    | ComponentType<SessionHeaderAccessoryProps>
+    | undefined;
   initialView?: ProductView;
   instanceName: string;
   mediaHref?: string | undefined;
@@ -543,6 +547,7 @@ export function ProductShell({
                       session={activeSession}
                       pending={commandsBlocked}
                       onCommand={onCommand}
+                      Accessory={SessionHeaderAccessory}
                     />
                     {activeSession.specialKind === "pose" &&
                     shell.poseSceneSvg ? (

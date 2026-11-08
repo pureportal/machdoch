@@ -37,6 +37,8 @@ const SESSION_ID_COMMANDS: &[&str] = &[
     "set-session-context-window",
     "set-session-workspace",
     "clear-session-workspace",
+    "set-session-git-branch",
+    "clear-session-git-branch",
     "set-prompt-enhancement-mode",
     "set-interview",
     "set-session-memory",

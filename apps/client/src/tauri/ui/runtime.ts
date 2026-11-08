@@ -633,6 +633,7 @@ export interface FleetControlCommandEvent {
   promptEnhancementMode?: string;
   workspace?: string;
   destinationWorkspace?: string;
+  branch?: string;
   enabled?: boolean;
   memoryId?: string;
   attachmentId?: string;
@@ -1013,6 +1014,8 @@ const FLEET_CONTROL_COMMAND_KINDS = [
   "remove-workspace",
   "relink-workspace",
   "clear-session-workspace",
+  "set-session-git-branch",
+  "clear-session-git-branch",
   "set-prompt-enhancement-mode",
   "set-interview",
   "cancel-prompt-enhancement",
@@ -1526,6 +1529,8 @@ const isFleetControlCommandEvent = (
     (value.workspace === undefined || typeof value.workspace === "string") &&
     (value.destinationWorkspace === undefined ||
       typeof value.destinationWorkspace === "string") &&
+    (value.kind !== "set-session-git-branch" ||
+      (typeof value.branch === "string" && value.branch.trim().length > 0)) &&
     (value.enabled === undefined || typeof value.enabled === "boolean") &&
     (value.memoryId === undefined || typeof value.memoryId === "string") &&
     (value.attachmentId === undefined ||

@@ -11,19 +11,27 @@ import {
   ArrowUpToLine,
   RotateCcw,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ComponentType } from "react";
 import { DropdownMenu } from "radix-ui";
 import type { ProductCommandHandler } from "./product-runtime";
 import { ProductModal } from "./product-modal";
+
+export interface SessionHeaderAccessoryProps {
+  session: ProductSession;
+  pending: boolean;
+  onCommand: ProductCommandHandler;
+}
 
 export function SessionHeader({
   session,
   pending,
   onCommand,
+  Accessory,
 }: {
   session: ProductSession;
   pending: boolean;
   onCommand: ProductCommandHandler;
+  Accessory?: ComponentType<SessionHeaderAccessoryProps> | undefined;
 }): React.ReactElement {
   const [title, setTitle] = useState(session.title);
   const [renaming, setRenaming] = useState(false);
@@ -145,6 +153,13 @@ export function SessionHeader({
         )}
       </div>
       <div className="m-product-session-actions">
+        {Accessory ? (
+          <Accessory
+            session={session}
+            pending={pending}
+            onCommand={onCommand}
+          />
+        ) : null}
         <input
           ref={tagsRef}
           className="m-product-session-tags-input"

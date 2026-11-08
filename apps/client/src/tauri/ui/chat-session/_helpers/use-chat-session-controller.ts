@@ -67,6 +67,7 @@ import {
   rememberRecentWorkspace,
   removeRecentWorkspace,
   trimSessionTaskGroupsToVisibleMessageLimit,
+  withSessionGitBranch,
   type ChatSessionMessage,
   type ChatSessionMessagePromptEnhancement,
   type ChatSessionMessageSettings,
@@ -7291,6 +7292,11 @@ export const useChatSessionController = (
       state.applyShellState((previous) => ({ ...previous, sessions: previous.sessions.map((entry) => entry.id === sessionId ? { ...entry, contextWindow, updatedAt: Date.now() } : entry) }));
     },
     onSetSessionWorkspace: applyRemoteWorkspaceSelection,
+    onSetSessionGitBranch: (sessionId, branch) => {
+      state.updateSessionById(sessionId, (session) =>
+        withSessionGitBranch(session, branch),
+      );
+    },
     onAddWorkspace: addWorkspaceToHistory,
     onRemoveWorkspace: removeWorkspaceFromHistory,
     onRelinkWorkspace: relinkWorkspaceInHistory,

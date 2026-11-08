@@ -2121,6 +2121,46 @@
       }
     },
     {
+      "id": "command/set-session-git-branch/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "set-session-git-branch",
+        "sessionId": "session-1",
+        "branch": "feature/session-branch"
+      }
+    },
+    {
+      "id": "command/set-session-git-branch/missing-branch",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-git-branch",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/set-session-git-branch/blank-branch",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-git-branch",
+        "sessionId": "session-1",
+        "branch": "   "
+      }
+    },
+    {
+      "id": "command/set-session-git-branch/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "set-session-git-branch",
+        "sessionId": "session-1",
+        "branch": "main",
+        "unexpected": true
+      }
+    },
+    {
       "id": "command/set-prompt-enhancement-mode/accepted",
       "target": "command",
       "accepted": true,
@@ -3084,6 +3124,33 @@
         "kind": "clear-session-workspace",
         "sessionId": "session-1",
         "unexpected": true
+      }
+    },
+    {
+      "id": "command/clear-session-git-branch/accepted",
+      "target": "command",
+      "accepted": true,
+      "payload": {
+        "kind": "clear-session-git-branch",
+        "sessionId": "session-1"
+      }
+    },
+    {
+      "id": "command/clear-session-git-branch/missing-sessionId",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clear-session-git-branch"
+      }
+    },
+    {
+      "id": "command/clear-session-git-branch/unknown-field",
+      "target": "command",
+      "accepted": false,
+      "payload": {
+        "kind": "clear-session-git-branch",
+        "sessionId": "session-1",
+        "branch": "main"
       }
     },
     {

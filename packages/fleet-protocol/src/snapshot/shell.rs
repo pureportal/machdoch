@@ -62,6 +62,7 @@ fn product_session() -> Shape {
         required("title", text()),
         required("status", short_text()),
         optional("workspace", workspace()),
+        optional("gitBranch", string(240)),
         required("provider", string(240)),
         required("model", string(240)),
         optional("mode", string(240)),

@@ -31,6 +31,7 @@
     "./git-branch/branch-name": "./src/git-branch/branch-name.ts",
     "./git-branch/branch-status-store": "./src/git-branch/branch-status-store.ts",
     "./git-branch/session-git-branch-control": "./src/git-branch/session-git-branch-control.tsx",
+    "./git-branch/remote-session-git-branch-control": "./src/git-branch/remote-session-git-branch-control.tsx",
     "./composer/chat-input-needed-dialog": "./src/composer/chat-input-needed-dialog.tsx",
     "./composer/chat-input-needed-placeholders": "./src/composer/chat-input-needed-placeholders.ts",
     "./composer/adaptive-controller-picker": "./src/composer/adaptive-controller-picker.tsx",

@@ -7,6 +7,7 @@ import type { RemoteComposerProps } from "./remote-composer-props";
 import type { RemoteConversationProps } from "./conversation";
 import type { ProductRuntime } from "./product-runtime";
 import { ProductShell } from "./product-shell";
+import type { SessionHeaderAccessoryProps } from "./session-header";
 import type { ProductView } from "./product-rail";
 import { SnapshotRefreshCoordinator } from "./snapshot-refresh-coordinator";
 import { createComposerDraftStore } from "./use-composer-draft";
@@ -26,6 +27,7 @@ export function RemoteProductApp({
   Composer,
   Conversation,
   SidebarCommands,
+  SessionHeaderAccessory,
   initialView,
   instanceName,
   runtime,
@@ -34,6 +36,9 @@ export function RemoteProductApp({
   Composer: ComponentType<RemoteComposerProps>;
   Conversation: ComponentType<RemoteConversationProps>;
   SidebarCommands?: ComponentType<SessionSidebarCommandState> | undefined;
+  SessionHeaderAccessory?:
+    | ComponentType<SessionHeaderAccessoryProps>
+    | undefined;
   initialView?: ProductView;
   instanceName: string;
   runtime: ProductRuntime;
@@ -159,6 +164,7 @@ export function RemoteProductApp({
       Composer={Composer}
       Conversation={Conversation}
       SidebarCommands={SidebarCommands}
+      SessionHeaderAccessory={SessionHeaderAccessory}
       {...(initialView ? { initialView } : {})}
       drafts={drafts}
       mediaHref={runtime.mediaHref}

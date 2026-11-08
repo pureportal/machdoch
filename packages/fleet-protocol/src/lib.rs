@@ -1279,10 +1279,12 @@ pub enum ProductCommandKind {
     SetSessionReasoning,
     SetSessionContextWindow,
     SetSessionWorkspace,
+    SetSessionGitBranch,
     AddWorkspace,
     RemoveWorkspace,
     RelinkWorkspace,
     ClearSessionWorkspace,
+    ClearSessionGitBranch,
     SetPromptEnhancementMode,
     SetInterview,
     CancelPromptEnhancement,
@@ -1634,7 +1636,8 @@ impl ProductCommand {
             | ProductCommandKind::ClearSessionMode
             | ProductCommandKind::ClearSessionReasoning
             | ProductCommandKind::ClearAttachments
-            | ProductCommandKind::ClearSessionWorkspace => {
+            | ProductCommandKind::ClearSessionWorkspace
+            | ProductCommandKind::ClearSessionGitBranch => {
                 required.push(("sessionId", self.session_id.is_some()))
             }
             ProductCommandKind::RenameSession => required.extend([
@@ -1722,6 +1725,10 @@ impl ProductCommand {
             ProductCommandKind::SetSessionWorkspace => required.extend([
                 ("sessionId", self.session_id.is_some()),
                 ("workspace", self.workspace.is_some()),
+            ]),
+            ProductCommandKind::SetSessionGitBranch => required.extend([
+                ("sessionId", self.session_id.is_some()),
+                ("branch", self.branch.is_some()),
             ]),
             ProductCommandKind::AddWorkspace | ProductCommandKind::RemoveWorkspace => {
                 required.push(("workspace", self.workspace.is_some()))
@@ -1892,7 +1899,8 @@ impl ProductCommand {
             | ProductCommandKind::ClearSessionMode
             | ProductCommandKind::ClearSessionReasoning
             | ProductCommandKind::ClearAttachments
-            | ProductCommandKind::ClearSessionWorkspace => {
+            | ProductCommandKind::ClearSessionWorkspace
+            | ProductCommandKind::ClearSessionGitBranch => {
                 valid_identifier(self.session_id.as_deref())
             }
             ProductCommandKind::RenameSession => {
@@ -2017,6 +2025,15 @@ impl ProductCommand {
             ProductCommandKind::SetSessionWorkspace => {
                 valid_identifier(self.session_id.as_deref())
                     && valid_workspace(self.workspace.as_deref().unwrap())
+            }
+            ProductCommandKind::SetSessionGitBranch => {
+                valid_identifier(self.session_id.as_deref())
+                    && self.branch.as_deref().is_some_and(|branch| {
+                        let branch = ecmascript_trim(branch);
+                        !branch.is_empty()
+                            && branch.encode_utf16().count() <= 240
+                            && !branch.chars().any(char::is_control)
+                    })
             }
             ProductCommandKind::SetPromptEnhancementMode => {
                 valid_identifier(self.session_id.as_deref())
@@ -2389,7 +2406,8 @@ impl ProductCommandKind {
             | Self::ClearSessionMode
             | Self::ClearSessionReasoning
             | Self::ClearAttachments
-            | Self::ClearSessionWorkspace => &["kind", "commandId", "sessionId"],
+            | Self::ClearSessionWorkspace
+            | Self::ClearSessionGitBranch => &["kind", "commandId", "sessionId"],
             Self::RenameSession => &["kind", "commandId", "sessionId", "title"],
             Self::TagSession => &["kind", "commandId", "sessionId", "tags"],
             Self::UpdateDraft => &["kind", "commandId", "sessionId", "prompt"],
@@ -2426,6 +2444,7 @@ impl ProductCommandKind {
             Self::SetSessionReasoning => &["kind", "commandId", "sessionId", "reasoning"],
             Self::SetSessionContextWindow => &["kind", "commandId", "sessionId", "mode"],
             Self::SetSessionWorkspace => &["kind", "commandId", "sessionId", "workspace"],
+            Self::SetSessionGitBranch => &["kind", "commandId", "sessionId", "branch"],
             Self::AddWorkspace | Self::RemoveWorkspace => &["kind", "commandId", "workspace"],
             Self::RelinkWorkspace => &["kind", "commandId", "workspace", "destinationWorkspace"],
             Self::SetPromptEnhancementMode => {
@@ -2542,10 +2561,12 @@ impl ProductCommandKind {
             Self::SetSessionReasoning => "set-session-reasoning",
             Self::SetSessionContextWindow => "set-session-context-window",
             Self::SetSessionWorkspace => "set-session-workspace",
+            Self::SetSessionGitBranch => "set-session-git-branch",
             Self::AddWorkspace => "add-workspace",
             Self::RemoveWorkspace => "remove-workspace",
             Self::RelinkWorkspace => "relink-workspace",
             Self::ClearSessionWorkspace => "clear-session-workspace",
+            Self::ClearSessionGitBranch => "clear-session-git-branch",
             Self::SetPromptEnhancementMode => "set-prompt-enhancement-mode",
             Self::SetInterview => "set-interview",
             Self::CancelPromptEnhancement => "cancel-prompt-enhancement",
@@ -2783,6 +2804,7 @@ mod tests {
             "promptEnhancementMode": "web-search",
             "interviewEnabled": true,
             "workspace": "C:\\workspace",
+            "branch": "feature/session-branch",
             "enabled": true,
             "memoryId": "memory-1",
             "attachmentId": "attachment-1",
@@ -3073,6 +3095,8 @@ mod tests {
             ("set-session-reasoning", &["sessionId", "reasoning"][..]),
             ("set-session-workspace", &["sessionId", "workspace"][..]),
             ("clear-session-workspace", &["sessionId"][..]),
+            ("set-session-git-branch", &["sessionId", "branch"][..]),
+            ("clear-session-git-branch", &["sessionId"][..]),
             (
                 "set-prompt-enhancement-mode",
                 &["sessionId", "promptEnhancementMode"][..],
@@ -3159,6 +3183,8 @@ mod tests {
             "set-session-reasoning",
             "set-session-workspace",
             "clear-session-workspace",
+            "set-session-git-branch",
+            "clear-session-git-branch",
             "set-prompt-enhancement-mode",
             "set-interview",
             "cancel-prompt-enhancement",

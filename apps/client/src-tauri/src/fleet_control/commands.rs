@@ -70,6 +70,8 @@ pub struct FleetControlCommandEvent {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) destination_workspace: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) enabled: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) memory_id: Option<String>,
@@ -146,6 +148,7 @@ struct NormalizedCommandFields {
     prompt_enhancement_mode: Option<String>,
     workspace: Option<String>,
     destination_workspace: Option<String>,
+    branch: Option<String>,
     enabled: Option<bool>,
     memory_id: Option<String>,
     attachment_id: Option<String>,
@@ -211,6 +214,7 @@ pub(super) fn normalize_command(
         prompt_enhancement_mode: fields.prompt_enhancement_mode,
         workspace: fields.workspace,
         destination_workspace: fields.destination_workspace,
+        branch: fields.branch,
         enabled: fields.enabled,
         memory_id: fields.memory_id,
         attachment_id: fields.attachment_id,
@@ -371,6 +375,10 @@ fn normalize_command_fields(
     if kind == "set-session-workspace" && workspace.is_none() {
         return Err("Workspace selection requires a workspace.".to_string());
     }
+    let branch = optional_trimmed_string(request.branch.as_deref());
+    if kind == "set-session-git-branch" && branch.is_none() {
+        return Err("Branch selection requires a branch.".to_string());
+    }
     if matches!(kind, "ralph-run" | "ralph-resume-run") && workspace.is_none() {
         return Err("RALPH commands require a workspace.".to_string());
     }
@@ -502,6 +510,7 @@ fn normalize_command_fields(
         prompt_enhancement_mode,
         workspace,
         destination_workspace,
+        branch,
         enabled,
         memory_id,
         attachment_id,
@@ -567,6 +576,7 @@ pub(super) fn command_payloads_match(
         && left.prompt_enhancement_mode == right.prompt_enhancement_mode
         && left.workspace == right.workspace
         && left.destination_workspace == right.destination_workspace
+        && left.branch == right.branch
         && left.enabled == right.enabled
         && left.memory_id == right.memory_id
         && left.attachment_id == right.attachment_id
@@ -612,6 +622,7 @@ pub(super) fn command_payload_hash(event: &FleetControlCommandEvent) -> String {
         "promptEnhancementMode": event.prompt_enhancement_mode,
         "workspace": event.workspace,
         "destinationWorkspace": event.destination_workspace,
+        "branch": event.branch,
         "enabled": event.enabled,
         "memoryId": event.memory_id,
         "attachmentId": event.attachment_id,

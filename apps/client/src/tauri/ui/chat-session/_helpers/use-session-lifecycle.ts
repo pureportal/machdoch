@@ -11,11 +11,11 @@ import {
   rememberRecentWorkspace,
   resetSessionTime as resetSessionRecordTime,
   sortSessionsByUpdatedAt,
+  withSessionGitBranch,
   type ChatSessionRecord,
   type ShellPersistedState,
 } from "../../chat-session.model";
 import { getDefaultModelForProvider } from "../../model-catalog";
-import { isValidGitBranchName } from "@machdoch/client-ui/git-branch/branch-name";
 import { resolveGoalMode } from "../../../../shared/goals.js";
 import { resolveParallelAgentMode } from "../../../../core/parallel-agent-capabilities.js";
 import { normalizeSessionReasoningOverride } from "./session-reasoning";
@@ -372,26 +372,9 @@ export const useSessionLifecycle = (options: {
         });
       },
       commitSessionGitBranch: (branchName: string | null): void => {
-        const nextBranch =
-          branchName && isValidGitBranchName(branchName)
-            ? branchName
-            : undefined;
-
-        state.updateActiveSession((session) => {
-          if (session.gitBranch === nextBranch) {
-            return session;
-          }
-
-          const nextSession = { ...session, updatedAt: Date.now() };
-
-          if (nextBranch) {
-            nextSession.gitBranch = nextBranch;
-          } else {
-            delete nextSession.gitBranch;
-          }
-
-          return nextSession;
-        });
+        state.updateActiveSession((session) =>
+          withSessionGitBranch(session, branchName),
+        );
       },
       toggleSessionTagFilter: (tag: string): void => {
         state.setSessionTagFilters((prev) => {

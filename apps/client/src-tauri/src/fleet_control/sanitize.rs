@@ -105,6 +105,7 @@ fn sanitize_shell_session(mut session: FleetShellSession) -> Option<FleetShellSe
     }
     session.status = sanitize_text(session.status, MAX_FLEET_SHORT_TEXT_CHARS);
     session.workspace = sanitize_optional_text(session.workspace, MAX_FLEET_TEXT_CHARS);
+    session.git_branch = sanitize_optional_text(session.git_branch, MAX_FLEET_SHORT_TEXT_CHARS);
     session.provider = sanitize_text(session.provider, MAX_FLEET_SHORT_TEXT_CHARS);
     session.model = sanitize_text(session.model, MAX_FLEET_SHORT_TEXT_CHARS);
     session.mode = sanitize_optional_text(session.mode, MAX_FLEET_SHORT_TEXT_CHARS);

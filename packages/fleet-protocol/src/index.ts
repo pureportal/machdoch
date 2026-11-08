@@ -1252,6 +1252,15 @@ export const productCommandSchema = z
     }),
     z.strictObject({
       ...sessionCommandShape,
+      kind: z.literal("set-session-git-branch"),
+      branch: z.string().trim().min(1).max(240),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
+      kind: z.literal("clear-session-git-branch"),
+    }),
+    z.strictObject({
+      ...sessionCommandShape,
       kind: z.literal("set-prompt-enhancement-mode"),
       promptEnhancementMode: promptEnhancementModeSchema,
     }),
@@ -1422,6 +1431,7 @@ export const productSessionSchema = z.strictObject({
   title: text,
   status: shortText,
   workspace: workspace.optional(),
+  gitBranch: z.string().max(240).optional(),
   provider: z.string().max(240),
   model: z.string().max(240),
   mode: z.string().max(240).optional(),

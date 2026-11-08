@@ -5,10 +5,12 @@ import {
   createFleetOperationTransport,
   type RemoteComposerProps,
   type RemoteConversationProps,
+  type SessionHeaderAccessoryProps,
 } from "@machdoch/product-ui";
 import { SessionSidebarCommands } from "@machdoch/client-ui/sessions/sidebar-commands";
 import { RemoteComposerHost } from "@machdoch/client-ui/composer/remote-composer-host";
 import { RemoteConversationHost } from "@machdoch/client-ui/conversation/remote-conversation-host";
+import { RemoteSessionGitBranchControl } from "@machdoch/client-ui/git-branch/remote-session-git-branch-control";
 import { createSessionDataSource } from "@machdoch/client-ui/conversation/session-data-source";
 import { createFleetMediaTransport } from "@machdoch/media-studio/fleet-transport.js";
 import {
@@ -111,6 +113,21 @@ export function InstanceProduct({
     [workspaceTransport, mediaTransport],
   );
 
+  const SessionHeaderAccessory = useMemo(
+    () =>
+      function InstanceSessionHeaderAccessory(
+        props: SessionHeaderAccessoryProps,
+      ): React.ReactElement | null {
+        return (
+          <RemoteSessionGitBranchControl
+            {...props}
+            workspaceTransport={workspaceTransport}
+          />
+        );
+      },
+    [workspaceTransport],
+  );
+
   return (
     <TooltipProvider>
       <CommandProvider activeView="chat">
@@ -118,6 +135,7 @@ export function InstanceProduct({
           Composer={Composer}
           Conversation={Conversation}
           SidebarCommands={SessionSidebarCommands}
+          SessionHeaderAccessory={SessionHeaderAccessory}
           instanceName={instanceName}
           runtime={runtime}
           sessionData={sessionData}

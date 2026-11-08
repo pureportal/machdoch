@@ -374,6 +374,7 @@ const createSessionSnapshot = (
     title: getSessionTitle(session),
     status: getSessionOverviewStatus(session, queuedSessionMessages),
     ...(session.workspace ? { workspace: session.workspace } : {}),
+    ...(session.gitBranch ? { gitBranch: session.gitBranch } : {}),
     provider: session.provider,
     model: session.model,
     ...(session.mode ? { mode: session.mode } : {}),
@@ -695,6 +696,7 @@ export const useFleetControl = (options: {
   ) => void;
   onSetSessionContextWindow?: (sessionId: string, value: import("@machdoch/fleet-protocol/context-window").ContextWindow | undefined) => void;
   onSetSessionWorkspace: (sessionId: string, workspace: string | null) => void;
+  onSetSessionGitBranch: (sessionId: string, branch: string | null) => void;
   onAddWorkspace: (workspace: string) => void | Promise<void>;
   onRemoveWorkspace: (workspace: string) => Promise<void>;
   onRelinkWorkspace: (
@@ -1999,6 +2001,20 @@ export const useFleetControl = (options: {
         case "clear-session-workspace": {
           if (command.sessionId) {
             options.onSetSessionWorkspace(command.sessionId, null);
+          }
+          break;
+        }
+
+        case "set-session-git-branch": {
+          if (command.sessionId && command.branch) {
+            options.onSetSessionGitBranch(command.sessionId, command.branch);
+          }
+          break;
+        }
+
+        case "clear-session-git-branch": {
+          if (command.sessionId) {
+            options.onSetSessionGitBranch(command.sessionId, null);
           }
           break;
         }

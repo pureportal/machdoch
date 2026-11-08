@@ -3251,6 +3251,26 @@ export const canChangeSessionWorkspace = (
   );
 };
 
+export const withSessionGitBranch = (
+  session: ChatSessionRecord,
+  branchName: string | null,
+): ChatSessionRecord => {
+  const nextBranch =
+    branchName && isValidGitBranchName(branchName) ? branchName : undefined;
+
+  if (session.gitBranch === nextBranch) {
+    return session;
+  }
+
+  const { gitBranch: _previousBranch, ...rest } = session;
+
+  return {
+    ...rest,
+    ...(nextBranch ? { gitBranch: nextBranch } : {}),
+    updatedAt: Date.now(),
+  };
+};
+
 export const canDeleteSession = (session: ChatSessionRecord): boolean => {
   return (
     !isQuickVoiceSession(session) &&

@@ -130,3 +130,4 @@ export type {
   SessionSidebarAction,
   SessionSidebarStatus,
 } from "./session-sidebar-commands-state";
+export type { SessionHeaderAccessoryProps } from "./session-header";

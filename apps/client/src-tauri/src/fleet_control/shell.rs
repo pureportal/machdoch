@@ -48,6 +48,8 @@ pub(super) struct FleetShellSession {
     pub(super) status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) workspace: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) git_branch: Option<String>,
     pub(super) provider: String,
     pub(super) model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
