@@ -13,10 +13,13 @@ import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { WorkspaceGitAction, WorkspaceGitOverview } from "../runtime";
 import type { WorkspaceGitControls } from "./use-workspace-git";
 import { WorkspaceGitBranchPicker } from "./workspace-git-branch-picker";
+import { WorkspaceGitBranchTarget } from "./workspace-git-branch-target";
 import {
   workspaceGitActionProgressLabel,
   workspaceGitRepositoryLabel,
 } from "./workspace-git-model";
+
+const ALL_REPOSITORIES = "";
 
 const SUCCESS_VISIBLE_MS = 2_500;
 
@@ -62,7 +65,7 @@ const ActionStatus = ({
 }: {
   controls: WorkspaceGitControls;
 }): JSX.Element | null => {
-  const { feedback, pendingAction, fetching } = controls;
+  const { feedback, pendingAction, fetching, fetchAllProgress } = controls;
   const [visibleSuccessId, setVisibleSuccessId] = useState<number | null>(null);
   useEffect(() => {
     if (feedback?.tone !== "success") return;
@@ -74,6 +77,17 @@ const ActionStatus = ({
     return () => window.clearTimeout(timeout);
   }, [feedback]);
 
+  if (fetchAllProgress) {
+    return (
+      <span
+        role="status"
+        className="flex items-center gap-1.5 text-xs text-sky-200"
+      >
+        <LoaderCircle aria-hidden="true" className="size-3.5 animate-spin" />
+        Fetching {fetchAllProgress.completed} of {fetchAllProgress.total}
+      </span>
+    );
+  }
   const progressAction = pendingAction ?? (fetching ? "fetch" : null);
   if (progressAction) {
     return (
@@ -108,31 +122,49 @@ export const WorkspaceGitToolbar = ({
   overview: WorkspaceGitOverview | null;
 }): JSX.Element => {
   const repositories = controls.repositories?.repositories ?? [];
+  const all = controls.scope === "all";
   const publish = overview && !overview.upstream && !overview.detached;
+  const currentBranch = overview?.localBranches.find(
+    (branch) => branch.current,
+  );
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
       {repositories.length > 1 ? (
         <SearchableSelect
           label="Git repository"
-          value={controls.repositoryRoot ?? ""}
-          options={repositories.map((repository) => ({
-            value: repository.repositoryRoot,
-            label: workspaceGitRepositoryLabel(repository),
-          }))}
+          value={all ? ALL_REPOSITORIES : (controls.repositoryRoot ?? "")}
+          options={[
+            { value: ALL_REPOSITORIES, label: "All repositories" },
+            ...repositories.map((repository) => ({
+              value: repository.repositoryRoot,
+              label: workspaceGitRepositoryLabel(repository),
+            })),
+          ]}
           disabled={controls.busy}
-          onChange={controls.selectRepository}
+          onChange={(value) =>
+            value === ALL_REPOSITORIES
+              ? controls.showAllRepositories()
+              : controls.selectRepository(value)
+          }
           className="h-8 max-w-56 rounded-md border-slate-700 bg-slate-950 font-mono text-xs"
         />
       ) : null}
-      {overview ? (
+      {!all && overview ? (
         <WorkspaceGitBranchPicker controls={controls} overview={overview} />
       ) : null}
-      {overview?.upstream ? (
+      {!all && overview && !overview.detached ? (
+        <WorkspaceGitBranchTarget
+          branchName={overview.branch}
+          parent={currentBranch?.parent}
+          trunk={overview.defaultBranch}
+        />
+      ) : null}
+      {!all && overview?.upstream ? (
         <span className="hidden min-w-0 truncate text-[11px] text-slate-500 md:inline">
           {overview.upstream}
         </span>
       ) : null}
-      {overview?.ahead ? (
+      {!all && overview?.ahead ? (
         <span
           aria-label={`${overview.ahead} ahead`}
           className="text-xs text-emerald-300"
@@ -140,7 +172,7 @@ export const WorkspaceGitToolbar = ({
           ↑{overview.ahead}
         </span>
       ) : null}
-      {overview?.behind ? (
+      {!all && overview?.behind ? (
         <span
           aria-label={`${overview.behind} behind`}
           className="text-xs text-amber-300"
@@ -150,7 +182,23 @@ export const WorkspaceGitToolbar = ({
       ) : null}
       <span className="min-w-4 flex-1" />
       <ActionStatus controls={controls} />
-      {overview ? (
+      {all ? (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={controls.busy || repositories.length === 0}
+          onClick={() => void controls.fetchAllRepositories()}
+          className="text-slate-300"
+        >
+          {controls.fetchAllProgress ? (
+            <LoaderCircle className="size-3.5 animate-spin" />
+          ) : (
+            <CloudDownload className="size-3.5" />
+          )}
+          Fetch all
+        </Button>
+      ) : overview ? (
         <div className="flex items-center">
           <SyncButton
             controls={controls}
@@ -187,7 +235,11 @@ export const WorkspaceGitToolbar = ({
         onClick={() => void controls.refresh()}
       >
         <RefreshCw
-          className={cn("size-3.5", controls.loading && "animate-spin")}
+          className={cn(
+            "size-3.5",
+            (all ? controls.repositoriesStatusLoading : controls.loading) &&
+              "animate-spin",
+          )}
         />
       </Button>
     </div>

@@ -30,6 +30,7 @@ import {
 import { WorkspaceGitHistory } from "./workspace-git-history";
 import { WorkspaceGitPullRequests } from "./workspace-git-pull-requests";
 import { WorkspaceGitRemotes } from "./workspace-git-remotes";
+import { WorkspaceGitRepositories } from "./workspace-git-repositories";
 import { WorkspaceGitStashes } from "./workspace-git-stashes";
 import { WorkspaceGitToolbar } from "./workspace-git-toolbar";
 import { workspaceGitPathInWorkspace } from "./workspace-git-model";
@@ -219,7 +220,7 @@ const SectionContent = ({
     case "stashes":
       return <WorkspaceGitStashes controls={controls} overview={overview} />;
     case "history":
-      return <WorkspaceGitHistory overview={overview} />;
+      return <WorkspaceGitHistory controls={controls} overview={overview} />;
     case "pull-requests":
       return (
         <WorkspaceGitPullRequests controls={controls} overview={overview} />
@@ -244,8 +245,15 @@ const PanelState = ({
       />
     );
   }
-  const error = controls.error ?? controls.repositoriesError;
-  if (error && !controls.loading) {
+  const error =
+    controls.scope === "all"
+      ? controls.repositoriesStatusError
+      : (controls.error ?? controls.repositoriesError);
+  const loading =
+    controls.scope === "all"
+      ? controls.repositoriesStatusLoading
+      : controls.loading;
+  if (error && !loading) {
     return (
       <EmptyState
         icon={Unplug}
@@ -316,6 +324,43 @@ export const WorkspaceGitPanel = ({
         <OperationBanner controls={controls} overview={overview} />
       ) : null}
       <ActionError controls={controls} />
+      {controls.scope === "all" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto border-t border-slate-800 p-3">
+          {controls.repositoriesStatus ? (
+            <WorkspaceGitRepositories
+              controls={controls}
+              onOpenPath={onOpenPath}
+            />
+          ) : (
+            <PanelState controls={controls} />
+          )}
+        </div>
+      ) : (
+        <RepositoryContent
+          controls={controls}
+          section={section}
+          onSectionChange={onSectionChange}
+          onOpenPath={openRepositoryPath}
+        />
+      )}
+    </section>
+  );
+};
+
+const RepositoryContent = ({
+  controls,
+  section,
+  onSectionChange,
+  onOpenPath,
+}: {
+  controls: WorkspaceGitControls;
+  section: WorkspaceGitSection;
+  onSectionChange: (section: WorkspaceGitSection) => void;
+  onOpenPath: (path: string, action: WorkspaceGitPathAction) => void;
+}): JSX.Element => {
+  const { overview } = controls;
+  return (
+    <>
       {overview && controls.error ? (
         <p role="alert" className="px-3 pt-2 text-xs text-red-300">
           {controls.error}
@@ -340,12 +385,12 @@ export const WorkspaceGitPanel = ({
             section={section}
             controls={controls}
             overview={overview}
-            onOpenPath={openRepositoryPath}
+            onOpenPath={onOpenPath}
           />
         ) : (
           <PanelState controls={controls} />
         )}
       </div>
-    </section>
+    </>
   );
 };

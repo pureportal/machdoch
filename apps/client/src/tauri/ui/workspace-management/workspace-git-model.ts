@@ -2,7 +2,9 @@ import type {
   WorkspaceGitAction,
   WorkspaceGitBranch,
   WorkspaceGitChange,
+  WorkspaceGitOverview,
   WorkspaceGitRepository,
+  WorkspaceGitRepositoryStatus,
 } from "../runtime";
 
 export type WorkspaceDiffLineTone =
@@ -20,6 +22,7 @@ const FILE_CHANGING_ACTIONS = new Set<WorkspaceGitAction>([
   "merge",
   "rebase",
   "restack",
+  "reset",
   "continue-operation",
   "abort-operation",
   "skip-operation",
@@ -88,6 +91,7 @@ const ACTION_LABELS: Record<WorkspaceGitAction, [string, string]> = {
   "unstack-branch": ["Unstacking branch", "Unstacked branch"],
   "delete-branch": ["Deleting branch", "Deleted branch"],
   restack: ["Restacking", "Restacked"],
+  reset: ["Resetting branch", "Reset branch"],
   "submit-pull-requests": ["Submitting pull requests", "Pull requests updated"],
   merge: ["Merging", "Merged"],
   rebase: ["Rebasing", "Rebased"],
@@ -175,49 +179,129 @@ export const selectWorkspaceGitRepository = (
   return repositories[0] ?? null;
 };
 
-export interface WorkspaceGitBranchNode {
+export interface WorkspaceGitBranchTarget {
+  base: string | null;
+  nested: boolean;
+}
+
+export const workspaceGitBranchTarget = (
+  branchName: string,
+  parent: string | undefined,
+  trunk: string | undefined,
+): WorkspaceGitBranchTarget => {
+  if (trunk && branchName === trunk) return { base: null, nested: false };
+  if (parent && parent !== branchName) {
+    return { base: parent, nested: parent !== trunk };
+  }
+  return { base: trunk ?? null, nested: false };
+};
+
+export interface WorkspaceGitBranchNode extends WorkspaceGitBranchTarget {
   branch: WorkspaceGitBranch;
   depth: number;
-  stacked: boolean;
+  guides: boolean[];
+  last: boolean;
 }
 
 export const createWorkspaceGitBranchTree = (
   branches: readonly WorkspaceGitBranch[],
+  trunk?: string,
 ): WorkspaceGitBranchNode[] => {
   const names = new Set(branches.map((branch) => branch.name));
-  const children = new Map<string, WorkspaceGitBranch[]>();
-  const roots: WorkspaceGitBranch[] = [];
-  for (const branch of branches) {
+  const trunkName = trunk && names.has(trunk) ? trunk : undefined;
+  const parentOf = (branch: WorkspaceGitBranch): string | undefined => {
+    if (branch.name === trunkName) return undefined;
     if (
       branch.parent &&
       names.has(branch.parent) &&
       branch.parent !== branch.name
     ) {
-      children.set(branch.parent, [
-        ...(children.get(branch.parent) ?? []),
-        branch,
-      ]);
+      return branch.parent;
+    }
+    return trunkName;
+  };
+  const children = new Map<string, WorkspaceGitBranch[]>();
+  const roots: WorkspaceGitBranch[] = [];
+  for (const branch of branches) {
+    const parent = parentOf(branch);
+    if (parent) {
+      children.set(parent, [...(children.get(parent) ?? []), branch]);
+    } else if (branch.name === trunkName) {
+      roots.unshift(branch);
     } else {
       roots.push(branch);
     }
   }
   const nodes: WorkspaceGitBranchNode[] = [];
   const visited = new Set<string>();
-  const visit = (branch: WorkspaceGitBranch, depth: number): void => {
+  const visit = (
+    branch: WorkspaceGitBranch,
+    depth: number,
+    guides: boolean[],
+    last: boolean,
+  ): void => {
     if (visited.has(branch.name)) return;
     visited.add(branch.name);
-    const descendants = children.get(branch.name) ?? [];
     nodes.push({
       branch,
       depth,
-      stacked: depth > 0 || descendants.length > 0,
+      guides,
+      last,
+      ...workspaceGitBranchTarget(
+        branch.name,
+        branch.parent && names.has(branch.parent) ? branch.parent : undefined,
+        trunk,
+      ),
     });
-    for (const child of descendants) visit(child, depth + 1);
+    const descendants = (children.get(branch.name) ?? []).filter(
+      (child) => !visited.has(child.name),
+    );
+    descendants.forEach((child, index) =>
+      visit(
+        child,
+        depth + 1,
+        depth === 0 ? [] : [...guides, !last],
+        index === descendants.length - 1,
+      ),
+    );
   };
-  for (const root of roots) visit(root, 0);
-  for (const branch of branches) visit(branch, 0);
+  roots.forEach((root, index) =>
+    visit(root, 0, [], index === roots.length - 1),
+  );
+  for (const branch of branches) visit(branch, 0, [], true);
   return nodes;
 };
+
+export const workspaceGitRepositoryStatusFromOverview = (
+  overview: WorkspaceGitOverview,
+  relativePath: string,
+): WorkspaceGitRepositoryStatus => {
+  const current = overview.localBranches.find((branch) => branch.current);
+  return {
+    repositoryRoot: overview.repositoryRoot,
+    relativePath,
+    branch: overview.branch,
+    detached: overview.detached,
+    ...(overview.upstream ? { upstream: overview.upstream } : {}),
+    upstreamGone: current?.upstreamGone ?? false,
+    ahead: overview.ahead,
+    behind: overview.behind,
+    ...(overview.defaultBranch
+      ? { defaultBranch: overview.defaultBranch }
+      : {}),
+    ...(current?.parent ? { parentBranch: current.parent } : {}),
+    stagedCount: overview.stagedCount,
+    unstagedCount: overview.unstagedCount,
+    untrackedCount: overview.untrackedCount,
+    conflictedCount: overview.conflictedCount,
+    totalChanges: overview.totalChanges,
+    changes: overview.changes.slice(0, REPOSITORY_STATUS_CHANGE_LIMIT),
+    changesTruncated: overview.totalChanges > REPOSITORY_STATUS_CHANGE_LIMIT,
+    ...(overview.operation ? { operation: overview.operation } : {}),
+  };
+};
+
+const REPOSITORY_STATUS_CHANGE_LIMIT = 100;
 
 export const workspaceGitStackMembers = (
   branches: readonly WorkspaceGitBranch[],

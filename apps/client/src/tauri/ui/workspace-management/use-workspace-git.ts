@@ -2,11 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   loadWorkspaceGitOverview,
   loadWorkspaceGitRepositories,
+  loadWorkspaceGitRepositoriesStatus,
   loadWorkspacePullRequests,
   runWorkspaceGitAction,
+  switchWorkspaceGitBranches,
   type WorkspaceGitAction,
   type WorkspaceGitActionOptions,
   type WorkspaceGitOverview,
+  type WorkspaceGitRepositoriesStatus,
   type WorkspaceGitRepositoryDiscovery,
   type WorkspacePullRequestOverview,
 } from "../runtime";
@@ -15,6 +18,8 @@ import {
   workspaceGitActionChangesFiles,
   workspaceGitActionDoneLabel,
   workspaceGitActionUsesRemote,
+  workspaceGitRepositoryLabel,
+  workspaceGitRepositoryStatusFromOverview,
 } from "./workspace-git-model";
 import {
   workspaceGitSummaryFromOverview,
@@ -25,13 +30,20 @@ import { createWorkspaceRootKey } from "./workspace-management-model";
 import {
   readWorkspaceViewPreferences,
   withRememberedRepository,
+  withWorkspaceGitScope,
+  workspaceGitScope,
   writeWorkspaceViewPreferences,
+  type WorkspaceGitScope,
 } from "./workspace-view-preferences";
 
 interface WorkspaceGitViewState {
   workspaceKey: string | null;
+  scope: WorkspaceGitScope;
   repositories: WorkspaceGitRepositoryDiscovery | null;
   repositoriesError: string | null;
+  repositoriesStatus: WorkspaceGitRepositoriesStatus | null;
+  repositoriesStatusLoading: boolean;
+  repositoriesStatusError: string | null;
   repositoryRoot: string | null;
   overview: WorkspaceGitOverview | null;
   loading: boolean;
@@ -49,6 +61,11 @@ export interface WorkspaceGitFeedback {
   options: WorkspaceGitActionOptions;
 }
 
+export interface WorkspaceGitFetchAllProgress {
+  completed: number;
+  total: number;
+}
+
 interface ScopedValue<T> {
   workspaceKey: string;
   repositoryRoot: string;
@@ -56,8 +73,15 @@ interface ScopedValue<T> {
 }
 
 const FOCUS_REFRESH_INTERVAL_MS = 4_000;
+const PREFETCHED_OVERVIEWS = 8;
+const FETCH_ALL_CONCURRENCY = 3;
+const ALL_REPOSITORIES = "";
 
 const discoveryCache = new Map<string, WorkspaceGitRepositoryDiscovery>();
+const repositoriesStatusCache = new Map<
+  string,
+  WorkspaceGitRepositoriesStatus
+>();
 const overviewCache = new Map<string, WorkspaceGitOverview>();
 const pullRequestCache = new Map<string, WorkspacePullRequestOverview>();
 
@@ -66,6 +90,37 @@ const repositoryKey = (repositoryRoot: string): string =>
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+const discoveryFromStatus = (
+  status: WorkspaceGitRepositoriesStatus,
+): WorkspaceGitRepositoryDiscovery => ({
+  workspaceRoot: status.workspaceRoot,
+  repositories: status.repositories.map(({ repositoryRoot, relativePath }) => ({
+    repositoryRoot,
+    relativePath,
+  })),
+  scanLimited: status.scanLimited,
+  issues: status.issues,
+});
+
+const withRepositoryStatus = (
+  status: WorkspaceGitRepositoriesStatus | null,
+  overview: WorkspaceGitOverview,
+): WorkspaceGitRepositoriesStatus | null => {
+  if (!status) return null;
+  const key = repositoryKey(overview.repositoryRoot);
+  return {
+    ...status,
+    repositories: status.repositories.map((repository) =>
+      repositoryKey(repository.repositoryRoot) === key
+        ? workspaceGitRepositoryStatusFromOverview(
+            overview,
+            repository.relativePath,
+          )
+        : repository,
+    ),
+  };
+};
 
 const initialRepositoryRoot = (
   workspaceRoot: string,
@@ -90,8 +145,12 @@ const createInitialState = (
   if (!workspaceRoot) {
     return {
       workspaceKey: null,
+      scope: "all",
       repositories: null,
       repositoriesError: null,
+      repositoriesStatus: null,
+      repositoriesStatusLoading: false,
+      repositoriesStatusError: null,
       repositoryRoot: null,
       overview: null,
       loading: false,
@@ -108,13 +167,18 @@ const createInitialState = (
     workspaceKey,
     repositories,
   );
+  const scope = workspaceGitScope(readWorkspaceViewPreferences(), workspaceKey);
   return {
     workspaceKey,
+    scope,
     repositories: repositories ?? null,
     repositoriesError: null,
+    repositoriesStatus: repositoriesStatusCache.get(workspaceKey) ?? null,
+    repositoriesStatusLoading: scope === "all",
+    repositoriesStatusError: null,
     repositoryRoot,
     overview: overviewCache.get(repositoryKey(repositoryRoot)) ?? null,
-    loading: true,
+    loading: scope === "repository",
     error: null,
     pullRequests: pullRequestCache.get(repositoryKey(repositoryRoot)) ?? null,
     pullRequestsLoading: false,
@@ -145,16 +209,21 @@ export function useWorkspaceGit(
   const [fetchingRepositories, setFetchingRepositories] = useState<
     ReadonlySet<string>
   >(() => new Set());
+  const [fetchAllProgress, setFetchAllProgress] =
+    useState<WorkspaceGitFetchAllProgress | null>(null);
 
   const workspaceRootRef = useRef(workspaceRoot);
   workspaceRootRef.current = workspaceRoot;
   const repositoryRootRef = useRef(current.repositoryRoot);
   repositoryRootRef.current = current.repositoryRoot;
+  const scopeRef = useRef(current.scope);
+  scopeRef.current = current.scope;
   const filesDirtyRef = useRef(filesDirty);
   filesDirtyRef.current = filesDirty;
   const onFilesChangedRef = useRef(onFilesChanged);
   onFilesChangedRef.current = onFilesChanged;
   const overviewRequestRef = useRef(0);
+  const statusRequestRef = useRef(0);
   const pullRequestRequestRef = useRef(0);
   const actionLockRef = useRef(false);
   const localActionRunsRef = useRef(0);
@@ -162,6 +231,7 @@ export function useWorkspaceGit(
   const fetchingRef = useRef(new Set<string>());
   const lastOverviewLoadRef = useRef(0);
   const feedbackIdRef = useRef(0);
+  const prefetchRunRef = useRef(0);
 
   const updateScoped = useCallback(
     (
@@ -186,18 +256,25 @@ export function useWorkspaceGit(
       repositoryRoot: string,
       overview: WorkspaceGitOverview,
     ): void => {
+      const scopeKey = createWorkspaceRootKey(root);
       overviewCache.set(repositoryKey(repositoryRoot), overview);
-      if (repositoryKey(repositoryRoot) === createWorkspaceRootKey(root)) {
+      if (repositoryKey(repositoryRoot) === scopeKey) {
         workspaceGitSummaryStore.publish(
           root,
           workspaceGitSummaryFromOverview(overview),
         );
       }
-      updateScoped(createWorkspaceRootKey(root), repositoryRoot, (current) => ({
-        ...current,
+      const status = withRepositoryStatus(
+        repositoriesStatusCache.get(scopeKey) ?? null,
         overview,
-        loading: false,
-        error: null,
+      );
+      if (status) repositoriesStatusCache.set(scopeKey, status);
+      updateScoped(scopeKey, null, (current) => ({
+        ...current,
+        ...(status ? { repositoriesStatus: status } : {}),
+        ...(current.repositoryRoot === repositoryRoot
+          ? { overview, loading: false, error: null }
+          : {}),
       }));
     },
     [updateScoped],
@@ -222,6 +299,8 @@ export function useWorkspaceGit(
         const overview = await loadWorkspaceGitOverview(root, repositoryRoot);
         if (requestId === overviewRequestRef.current) {
           applyOverview(root, repositoryRoot, overview);
+        } else {
+          overviewCache.set(repositoryKey(repositoryRoot), overview);
         }
       } catch (error) {
         if (requestId === overviewRequestRef.current) {
@@ -240,6 +319,116 @@ export function useWorkspaceGit(
       }
     },
     [applyOverview, updateScoped],
+  );
+
+  const prefetchOverviews = useCallback(
+    async (root: string, status: WorkspaceGitRepositoriesStatus) => {
+      const run = ++prefetchRunRef.current;
+      const scopeKey = createWorkspaceRootKey(root);
+      const candidates = [...status.repositories]
+        .filter(
+          (repository) =>
+            !repository.error &&
+            !overviewCache.has(repositoryKey(repository.repositoryRoot)),
+        )
+        .sort((left, right) => right.totalChanges - left.totalChanges)
+        .slice(0, PREFETCHED_OVERVIEWS);
+      for (const repository of candidates) {
+        const activeRoot = workspaceRootRef.current;
+        if (
+          run !== prefetchRunRef.current ||
+          !activeRoot ||
+          createWorkspaceRootKey(activeRoot) !== scopeKey ||
+          actionLockRef.current
+        ) {
+          return;
+        }
+        try {
+          overviewCache.set(
+            repositoryKey(repository.repositoryRoot),
+            await loadWorkspaceGitOverview(root, repository.repositoryRoot),
+          );
+        } catch {
+          return;
+        }
+      }
+    },
+    [],
+  );
+
+  const loadRepositoriesStatus = useCallback(
+    async (root: string, rescan: boolean): Promise<void> => {
+      const requestId = ++statusRequestRef.current;
+      const scopeKey = createWorkspaceRootKey(root);
+      lastOverviewLoadRef.current = Date.now();
+      updateScoped(scopeKey, null, (current) => ({
+        ...current,
+        repositoriesStatusLoading: true,
+      }));
+      try {
+        const status = await loadWorkspaceGitRepositoriesStatus(root, {
+          refresh: rescan,
+        });
+        const discovery = discoveryFromStatus(status);
+        repositoriesStatusCache.set(scopeKey, status);
+        discoveryCache.set(scopeKey, discovery);
+        const rootStatus = status.repositories.find(
+          (repository) => repository.relativePath === ".",
+        );
+        if (rootStatus && !rootStatus.error) {
+          workspaceGitSummaryStore.publish(root, {
+            branch: rootStatus.branch,
+            detached: rootStatus.detached,
+            ...(rootStatus.upstream ? { upstream: rootStatus.upstream } : {}),
+            ahead: rootStatus.ahead,
+            behind: rootStatus.behind,
+            changes: rootStatus.totalChanges,
+            conflicts: rootStatus.conflictedCount,
+          });
+        }
+        if (requestId !== statusRequestRef.current) return;
+        const selectedRoot =
+          selectWorkspaceGitRepository(
+            discovery.repositories,
+            repositoryRootRef.current,
+            readWorkspaceViewPreferences().repositoryRoots[scopeKey],
+            root,
+          )?.repositoryRoot ?? null;
+        repositoryRootRef.current = selectedRoot;
+        updateScoped(scopeKey, null, (current) => ({
+          ...current,
+          repositories: discovery,
+          repositoriesError: null,
+          repositoriesStatus: status,
+          repositoriesStatusError: null,
+          repositoryRoot: selectedRoot,
+          overview: selectedRoot
+            ? (overviewCache.get(repositoryKey(selectedRoot)) ??
+              current.overview)
+            : null,
+        }));
+        if (discovery.repositories.length === 1 && selectedRoot) {
+          await loadOverview(root, selectedRoot);
+        } else {
+          void prefetchOverviews(root, status);
+        }
+      } catch (error) {
+        if (requestId === statusRequestRef.current) {
+          updateScoped(scopeKey, null, (current) => ({
+            ...current,
+            repositoriesStatusError: errorMessage(error),
+          }));
+        }
+      } finally {
+        if (requestId === statusRequestRef.current) {
+          updateScoped(scopeKey, null, (current) => ({
+            ...current,
+            repositoriesStatusLoading: false,
+          }));
+        }
+      }
+    },
+    [loadOverview, prefetchOverviews, updateScoped],
   );
 
   const loadPullRequests = useCallback(
@@ -282,62 +471,81 @@ export function useWorkspaceGit(
     [updateScoped],
   );
 
-  const refresh = useCallback(async (): Promise<void> => {
-    const root = workspaceRootRef.current;
-    const preferredRoot = repositoryRootRef.current;
-    if (!root) return;
-    const scopeKey = createWorkspaceRootKey(root);
-    const preferredOverview = preferredRoot
-      ? loadOverview(root, preferredRoot)
-      : Promise.resolve();
-    try {
-      const discovery = await loadWorkspaceGitRepositories(root);
-      discoveryCache.set(scopeKey, discovery);
-      const selectedRoot =
-        selectWorkspaceGitRepository(
-          discovery.repositories,
-          repositoryRootRef.current,
-          readWorkspaceViewPreferences().repositoryRoots[scopeKey],
-          root,
-        )?.repositoryRoot ?? null;
-      updateScoped(scopeKey, null, (current) => {
-        const repositoryChanged = current.repositoryRoot !== selectedRoot;
-        return {
+  const loadRepository = useCallback(
+    async (root: string, rescan: boolean): Promise<void> => {
+      const preferredRoot = repositoryRootRef.current;
+      const scopeKey = createWorkspaceRootKey(root);
+      const preferredOverview = preferredRoot
+        ? loadOverview(root, preferredRoot)
+        : Promise.resolve();
+      try {
+        const discovery = await loadWorkspaceGitRepositories(root, {
+          refresh: rescan,
+        });
+        discoveryCache.set(scopeKey, discovery);
+        const selectedRoot =
+          selectWorkspaceGitRepository(
+            discovery.repositories,
+            repositoryRootRef.current,
+            readWorkspaceViewPreferences().repositoryRoots[scopeKey],
+            root,
+          )?.repositoryRoot ?? null;
+        updateScoped(scopeKey, null, (current) => {
+          const repositoryChanged = current.repositoryRoot !== selectedRoot;
+          return {
+            ...current,
+            repositories: discovery,
+            repositoriesError: null,
+            repositoryRoot: selectedRoot,
+            ...(repositoryChanged
+              ? {
+                  overview: selectedRoot
+                    ? (overviewCache.get(repositoryKey(selectedRoot)) ?? null)
+                    : null,
+                  error: null,
+                  loading: selectedRoot !== null,
+                  pullRequests: selectedRoot
+                    ? (pullRequestCache.get(repositoryKey(selectedRoot)) ??
+                      null)
+                    : null,
+                  pullRequestsError: null,
+                }
+              : {}),
+          };
+        });
+        if (selectedRoot && selectedRoot !== preferredRoot) {
+          repositoryRootRef.current = selectedRoot;
+          await loadOverview(root, selectedRoot);
+        }
+      } catch (error) {
+        updateScoped(scopeKey, null, (current) => ({
           ...current,
-          repositories: discovery,
-          repositoriesError: null,
-          repositoryRoot: selectedRoot,
-          ...(repositoryChanged
-            ? {
-                overview: selectedRoot
-                  ? (overviewCache.get(repositoryKey(selectedRoot)) ?? null)
-                  : null,
-                error: null,
-                loading: selectedRoot !== null,
-                pullRequests: selectedRoot
-                  ? (pullRequestCache.get(repositoryKey(selectedRoot)) ?? null)
-                  : null,
-                pullRequestsError: null,
-              }
-            : {}),
-        };
-      });
-      if (selectedRoot && selectedRoot !== preferredRoot) {
-        repositoryRootRef.current = selectedRoot;
-        await loadOverview(root, selectedRoot);
+          repositoriesError: errorMessage(error),
+        }));
       }
-    } catch (error) {
-      updateScoped(scopeKey, null, (current) => ({
-        ...current,
-        repositoriesError: errorMessage(error),
-      }));
-    }
-    await preferredOverview;
-  }, [loadOverview, updateScoped]);
+      await preferredOverview;
+    },
+    [loadOverview, updateScoped],
+  );
+
+  const load = useCallback(
+    async (rescan: boolean): Promise<void> => {
+      const root = workspaceRootRef.current;
+      if (!root) return;
+      if (scopeRef.current === "all") {
+        await loadRepositoriesStatus(root, rescan);
+      } else {
+        await loadRepository(root, rescan);
+      }
+    },
+    [loadRepository, loadRepositoriesStatus],
+  );
+
+  const refresh = useCallback(() => load(true), [load]);
 
   useEffect(() => {
-    if (workspaceRoot) void refresh();
-  }, [refresh, workspaceRoot]);
+    if (workspaceRoot) void load(false);
+  }, [load, workspaceRoot]);
 
   useEffect(() => {
     const refreshOnFocus = (): void => {
@@ -345,14 +553,17 @@ export function useWorkspaceGit(
       const repositoryRoot = repositoryRootRef.current;
       if (
         !root ||
-        !repositoryRoot ||
         document.visibilityState !== "visible" ||
         actionLockRef.current ||
         Date.now() - lastOverviewLoadRef.current < FOCUS_REFRESH_INTERVAL_MS
       ) {
         return;
       }
-      void loadOverview(root, repositoryRoot);
+      if (scopeRef.current === "all") {
+        void loadRepositoriesStatus(root, false);
+      } else if (repositoryRoot) {
+        void loadOverview(root, repositoryRoot);
+      }
     };
     window.addEventListener("focus", refreshOnFocus);
     document.addEventListener("visibilitychange", refreshOnFocus);
@@ -360,21 +571,36 @@ export function useWorkspaceGit(
       window.removeEventListener("focus", refreshOnFocus);
       document.removeEventListener("visibilitychange", refreshOnFocus);
     };
-  }, [loadOverview]);
+  }, [loadOverview, loadRepositoriesStatus]);
 
   const selectRepository = useCallback(
     (repositoryRoot: string): void => {
       const root = workspaceRootRef.current;
-      if (!root || repositoryRoot === repositoryRootRef.current) return;
+      if (!root) return;
+      if (
+        repositoryRoot === repositoryRootRef.current &&
+        scopeRef.current === "repository"
+      ) {
+        return;
+      }
       const scopeKey = createWorkspaceRootKey(root);
       repositoryRootRef.current = repositoryRoot;
+      scopeRef.current = "repository";
+      prefetchRunRef.current += 1;
       writeWorkspaceViewPreferences((current) =>
-        withRememberedRepository(current, scopeKey, repositoryRoot),
+        withWorkspaceGitScope(
+          withRememberedRepository(current, scopeKey, repositoryRoot),
+          scopeKey,
+          "repository",
+        ),
       );
+      const cached = overviewCache.get(repositoryKey(repositoryRoot)) ?? null;
       updateScoped(scopeKey, null, (current) => ({
         ...current,
+        scope: "repository",
         repositoryRoot,
-        overview: overviewCache.get(repositoryKey(repositoryRoot)) ?? null,
+        overview: cached,
+        loading: cached === null,
         error: null,
         pullRequests:
           pullRequestCache.get(repositoryKey(repositoryRoot)) ?? null,
@@ -386,6 +612,23 @@ export function useWorkspaceGit(
     [loadOverview, updateScoped],
   );
 
+  const showAllRepositories = useCallback((): void => {
+    const root = workspaceRootRef.current;
+    if (!root || scopeRef.current === "all") return;
+    const scopeKey = createWorkspaceRootKey(root);
+    scopeRef.current = "all";
+    writeWorkspaceViewPreferences((current) =>
+      withWorkspaceGitScope(current, scopeKey, "all"),
+    );
+    updateScoped(scopeKey, null, (current) => ({
+      ...current,
+      scope: "all",
+      repositoriesStatus:
+        repositoriesStatusCache.get(scopeKey) ?? current.repositoriesStatus,
+    }));
+    void loadRepositoriesStatus(root, false);
+  }, [loadRepositoriesStatus, updateScoped]);
+
   const ensurePullRequests = useCallback((): void => {
     const root = workspaceRootRef.current;
     const repositoryRoot = repositoryRootRef.current;
@@ -396,9 +639,13 @@ export function useWorkspaceGit(
   const reload = useCallback((): void => {
     const root = workspaceRootRef.current;
     const repositoryRoot = repositoryRootRef.current;
-    if (!root || !repositoryRoot || actionLockRef.current) return;
-    void loadOverview(root, repositoryRoot);
-  }, [loadOverview]);
+    if (!root || actionLockRef.current) return;
+    if (scopeRef.current === "all") {
+      void loadRepositoriesStatus(root, false);
+    } else if (repositoryRoot) {
+      void loadOverview(root, repositoryRoot);
+    }
+  }, [loadOverview, loadRepositoriesStatus]);
 
   const fetchRemotes = useCallback(
     async (root: string, repositoryRoot: string): Promise<boolean> => {
@@ -466,15 +713,85 @@ export function useWorkspaceGit(
     [applyOverview, loadOverview, loadPullRequests, updateFetching],
   );
 
-  const runAction = useCallback(
+  const fetchAllRepositories = useCallback(async (): Promise<boolean> => {
+    const root = workspaceRootRef.current;
+    if (!root || actionLockRef.current || fetchAllProgress) return false;
+    const scopeKey = createWorkspaceRootKey(root);
+    const repositories =
+      discoveryCache.get(scopeKey)?.repositories ??
+      current.repositories?.repositories ??
+      [];
+    if (repositories.length === 0) return false;
+    const failures: string[] = [];
+    let completed = 0;
+    let next = 0;
+    setFeedback(null);
+    setFetchAllProgress({ completed, total: repositories.length });
+    const worker = async (): Promise<void> => {
+      while (next < repositories.length) {
+        const repository = repositories[next++]!;
+        const key = repositoryKey(repository.repositoryRoot);
+        updateFetching(key, true);
+        try {
+          applyOverview(
+            root,
+            repository.repositoryRoot,
+            await runWorkspaceGitAction(
+              root,
+              repository.repositoryRoot,
+              "fetch",
+            ),
+          );
+          pullRequestCache.delete(key);
+        } catch (error) {
+          failures.push(
+            `${workspaceGitRepositoryLabel(repository)}: ${errorMessage(error)}`,
+          );
+        } finally {
+          updateFetching(key, false);
+          completed += 1;
+          setFetchAllProgress({ completed, total: repositories.length });
+        }
+      }
+    };
+    await Promise.all(
+      Array.from(
+        { length: Math.min(FETCH_ALL_CONCURRENCY, repositories.length) },
+        worker,
+      ),
+    );
+    setFetchAllProgress(null);
+    workspaceGitBranchStatusStore.invalidate(root);
+    setFeedback({
+      workspaceKey: scopeKey,
+      repositoryRoot: ALL_REPOSITORIES,
+      value: {
+        id: ++feedbackIdRef.current,
+        tone: failures.length > 0 ? "error" : "success",
+        text:
+          failures.length > 0
+            ? failures.join("\n")
+            : workspaceGitActionDoneLabel("fetch"),
+        action: "fetch",
+        options: {},
+      },
+    });
+    return failures.length === 0;
+  }, [applyOverview, current.repositories, fetchAllProgress, updateFetching]);
+
+  const runLocked = useCallback(
     async (
       action: WorkspaceGitAction,
-      options: WorkspaceGitActionOptions = {},
+      options: WorkspaceGitActionOptions,
+      execute: (
+        root: string,
+        repositoryRoot: string,
+      ) => Promise<WorkspaceGitOverview>,
+      successText = workspaceGitActionDoneLabel(action),
     ): Promise<boolean> => {
       const root = workspaceRootRef.current;
       const repositoryRoot = repositoryRootRef.current;
       if (!root || !repositoryRoot) return false;
-      if (action === "fetch") return fetchRemotes(root, repositoryRoot);
       if (
         actionLockRef.current ||
         (workspaceGitActionUsesRemote(action) &&
@@ -502,12 +819,7 @@ export function useWorkspaceGit(
       setPendingAction({ ...scope, value: action });
       setFeedback(null);
       try {
-        const overview = await runWorkspaceGitAction(
-          root,
-          repositoryRoot,
-          action,
-          options,
-        );
+        const overview = await execute(root, repositoryRoot);
         applyOverview(root, repositoryRoot, overview);
         if (changesFiles) onFilesChangedRef.current?.();
         if (workspaceGitActionUsesRemote(action)) {
@@ -519,7 +831,7 @@ export function useWorkspaceGit(
           value: {
             id: ++feedbackIdRef.current,
             tone: "success",
-            text: workspaceGitActionDoneLabel(action),
+            text: successText,
             action,
             options,
           },
@@ -548,15 +860,82 @@ export function useWorkspaceGit(
         }
       }
     },
-    [applyOverview, fetchRemotes, loadOverview, loadPullRequests],
+    [applyOverview, loadOverview, loadPullRequests],
+  );
+
+  const runAction = useCallback(
+    (
+      action: WorkspaceGitAction,
+      options: WorkspaceGitActionOptions = {},
+    ): Promise<boolean> => {
+      const root = workspaceRootRef.current;
+      const repositoryRoot = repositoryRootRef.current;
+      if (action === "fetch" && root && repositoryRoot) {
+        return fetchRemotes(root, repositoryRoot);
+      }
+      return runLocked(action, options, (activeRoot, activeRepositoryRoot) =>
+        runWorkspaceGitAction(
+          activeRoot,
+          activeRepositoryRoot,
+          action,
+          options,
+        ),
+      );
+    },
+    [fetchRemotes, runLocked],
+  );
+
+  const switchBranch = useCallback(
+    (branchName: string): Promise<boolean> => {
+      const repositoryRoot = repositoryRootRef.current;
+      const overview = repositoryRoot
+        ? overviewCache.get(repositoryKey(repositoryRoot))
+        : undefined;
+      if (!overview || overview.clean) {
+        return runAction("checkout", { branchName });
+      }
+      return runLocked(
+        "checkout",
+        { branchName },
+        async (root, activeRepositoryRoot) => {
+          const [result] = await switchWorkspaceGitBranches(
+            root,
+            [
+              {
+                repositoryRoot: activeRepositoryRoot,
+                branchName,
+                create: false,
+              },
+            ],
+            true,
+          );
+          if (result?.error) throw new Error(result.error);
+          return loadWorkspaceGitOverview(root, activeRepositoryRoot);
+        },
+        `Stashed changes and switched to ${branchName}`,
+      );
+    },
+    [runAction, runLocked],
   );
 
   const dismissFeedback = useCallback(() => setFeedback(null), []);
 
+  const multipleRepositories =
+    (current.repositories?.repositories.length ??
+      current.repositoriesStatus?.repositories.length ??
+      0) > 1;
+  const scope: WorkspaceGitScope =
+    current.scope === "all" &&
+    (multipleRepositories ||
+      (current.repositories === null && current.repositoriesStatus === null))
+      ? "all"
+      : "repository";
+  const scopedRepositoryRoot =
+    scope === "all" ? ALL_REPOSITORIES : current.repositoryRoot;
   const inScope = <T>(value: ScopedValue<T> | null): T | null =>
     value &&
     value.workspaceKey === workspaceKey &&
-    value.repositoryRoot === current.repositoryRoot
+    value.repositoryRoot === scopedRepositoryRoot
       ? value.value
       : null;
 
@@ -566,15 +945,19 @@ export function useWorkspaceGit(
         current.repositoryRoot,
       )
     : null;
-  const busy = pendingAction !== null;
+  const busy = pendingAction !== null || fetchAllProgress !== null;
   const fetching =
     current.repositoryRoot !== null &&
     fetchingRepositories.has(repositoryKey(current.repositoryRoot));
 
   return {
     workspaceRoot,
+    scope,
     repositories: current.repositories,
     repositoriesError: current.repositoriesError,
+    repositoriesStatus: current.repositoriesStatus,
+    repositoriesStatusLoading: current.repositoriesStatusLoading,
+    repositoriesStatusError: current.repositoriesStatusError,
     repositoryRoot: current.repositoryRoot,
     selectedRepository,
     overview: current.overview,
@@ -586,6 +969,8 @@ export function useWorkspaceGit(
     pendingAction: inScope(pendingAction),
     busy,
     fetching,
+    fetchingRepositories,
+    fetchAllProgress,
     isActionBlocked: (action: WorkspaceGitAction): boolean =>
       busy || (fetching && workspaceGitActionUsesRemote(action)),
     feedback: inScope(feedback),
@@ -595,8 +980,11 @@ export function useWorkspaceGit(
     refresh,
     reload,
     selectRepository,
+    showAllRepositories,
     ensurePullRequests,
     runAction,
+    switchBranch,
+    fetchAllRepositories,
     dismissFeedback,
   };
 }

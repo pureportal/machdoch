@@ -35,6 +35,7 @@ import type {
   WorkspaceGitDiff,
   WorkspacePullRequestOverview,
   WorkspaceGitRepositoryDiscovery,
+  WorkspaceGitRepositoriesStatus,
   WorkspaceGitOverview,
   WorkspaceGitAction,
   WorkspaceGitActionOptions,
@@ -65,6 +66,9 @@ export type {
   WorkspacePullRequestOverview,
   WorkspaceGitRepository,
   WorkspaceGitRepositoryDiscovery,
+  WorkspaceGitRepositoryStatus,
+  WorkspaceGitRepositoriesStatus,
+  WorkspaceGitResetMode,
   WorkspaceGitBranchRepository,
   WorkspaceGitBranchStatus,
   WorkspaceGitBranchSwitchTarget,
@@ -317,6 +321,7 @@ import {
 import {
   discoverPreviewWorkspaceGitRepositories,
   loadPreviewWorkspaceGitBranchStatus,
+  loadPreviewWorkspaceGitRepositoriesStatus,
   loadPreviewWorkspaceGitDiff,
   loadPreviewWorkspaceGitOverview,
   loadPreviewWorkspaceGitSummary,
@@ -4736,6 +4741,7 @@ export const mutateInstructions = async (
 
 export const loadWorkspaceGitRepositories = async (
   workspaceRoot: string,
+  { refresh = false }: { refresh?: boolean } = {},
 ): Promise<WorkspaceGitRepositoryDiscovery> => {
   const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
   if (!normalizedWorkspaceRoot) {
@@ -4747,7 +4753,36 @@ export const loadWorkspaceGitRepositories = async (
   try {
     return await invokeWorkspaceTools<WorkspaceGitRepositoryDiscovery>(
       "discover_workspace_git_repositories",
-      { workspaceRoot: normalizedWorkspaceRoot },
+      {
+        workspaceRoot: normalizedWorkspaceRoot,
+        ...(refresh ? { refresh: true } : {}),
+      },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const loadWorkspaceGitRepositoriesStatus = async (
+  workspaceRoot: string,
+  { refresh = false }: { refresh?: boolean } = {},
+): Promise<WorkspaceGitRepositoriesStatus> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before loading Git information.");
+  }
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
+    return loadPreviewWorkspaceGitRepositoriesStatus(normalizedWorkspaceRoot);
+  }
+  try {
+    return await invokeWorkspaceTools<WorkspaceGitRepositoriesStatus>(
+      "get_workspace_git_repositories_status",
+      {
+        request: {
+          workspaceRoot: normalizedWorkspaceRoot,
+          ...(refresh ? { refresh: true } : {}),
+        },
+      },
     );
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error));
@@ -4891,6 +4926,7 @@ const createWorkspaceGitActionFields = (
   for (const key of ["includeUntracked", "force", "draft"] as const) {
     if (options[key]) fields[key] = true;
   }
+  if (options.resetMode) fields.resetMode = options.resetMode;
   return fields;
 };
 

@@ -4,6 +4,8 @@ import {
   parseWorkspaceViewPreferences,
   reconcileWorkspaceSelection,
   withRememberedRepository,
+  withWorkspaceGitScope,
+  workspaceGitScope,
   type WorkspaceViewPreferences,
 } from "./workspace-view-preferences";
 
@@ -54,7 +56,26 @@ describe("workspace view preferences", () => {
       selectedWorkspaceKey: "c:/work",
       activeWorkspaceKey: "c:/chat",
       repositoryRoots: {},
+      singleRepositoryWorkspaces: [],
     });
+  });
+
+  it("remembers whether a workspace shows one or all repositories", () => {
+    const single = withWorkspaceGitScope(
+      DEFAULT_WORKSPACE_VIEW_PREFERENCES,
+      "c:/work",
+      "repository",
+    );
+    expect(workspaceGitScope(single, "c:/work")).toBe("repository");
+    expect(workspaceGitScope(single, "c:/other")).toBe("all");
+    expect(
+      parseWorkspaceViewPreferences(JSON.stringify(single))
+        .singleRepositoryWorkspaces,
+    ).toEqual(["c:/work"]);
+    expect(
+      withWorkspaceGitScope(single, "c:/work", "all")
+        .singleRepositoryWorkspaces,
+    ).toEqual([]);
   });
 
   it("remembers a bounded set of repository selections", () => {

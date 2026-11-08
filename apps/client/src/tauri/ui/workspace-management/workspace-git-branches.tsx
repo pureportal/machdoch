@@ -11,6 +11,7 @@ import {
   ListTree,
   MoreHorizontal,
   Plus,
+  RotateCcw,
   Trash2,
   TriangleAlert,
   Unlink,
@@ -43,8 +44,54 @@ import type { WorkspaceGitControls } from "./use-workspace-git";
 import {
   createWorkspaceGitBranchTree,
   filterWorkspaceGitBranches,
+  workspaceGitBranchTarget,
   workspaceGitStackMembers,
+  type WorkspaceGitBranchNode,
 } from "./workspace-git-model";
+import {
+  WorkspaceGitResetDialog,
+  type WorkspaceGitResetTarget,
+} from "./workspace-git-reset-dialog";
+
+const TREE_INDENT_REM = 1;
+const TREE_INSET_REM = 0.5;
+const TREE_LINE_OFFSET_REM = 0.4375;
+
+const treeColumn = (column: number): string =>
+  `${TREE_INSET_REM + column * TREE_INDENT_REM + TREE_LINE_OFFSET_REM}rem`;
+
+const TreeGuides = ({
+  node,
+}: {
+  node: WorkspaceGitBranchNode;
+}): JSX.Element | null => {
+  if (node.depth === 0) return null;
+  const elbow = treeColumn(node.depth - 1);
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-y-0 left-0"
+    >
+      {node.guides.map((line, column) =>
+        line ? (
+          <span
+            key={column}
+            className="absolute inset-y-0 w-px bg-slate-700/80"
+            style={{ left: treeColumn(column) }}
+          />
+        ) : null,
+      )}
+      <span
+        className="absolute top-0 w-px bg-slate-700/80"
+        style={{ left: elbow, height: node.last ? "50%" : "100%" }}
+      />
+      <span
+        className="absolute top-1/2 h-px bg-slate-700/80"
+        style={{ left: elbow, width: `${TREE_INDENT_REM - 0.125}rem` }}
+      />
+    </span>
+  );
+};
 
 const NewBranchForm = ({
   overview,
@@ -186,13 +233,20 @@ const BranchMenu = ({
   branch,
   current,
   controls,
+  onReset,
 }: {
   branch: WorkspaceGitBranch;
   current: string;
   controls: WorkspaceGitControls;
+  onReset: (target: WorkspaceGitResetTarget) => void;
 }): JSX.Element | null => {
   const isCurrent = branch.name === current;
-  if (isCurrent && !branch.parent) return null;
+  const resetTarget = isCurrent
+    ? branch.upstream && !branch.upstreamGone
+      ? branch.upstream
+      : null
+    : branch.name;
+  if (isCurrent && !branch.parent && !resetTarget) return null;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -265,6 +319,18 @@ const BranchMenu = ({
             Remove from stack
           </DropdownMenuItem>
         ) : null}
+        {resetTarget && current ? (
+          <DropdownMenuItem
+            onSelect={() =>
+              onReset({ revision: resetTarget, label: resetTarget })
+            }
+          >
+            <RotateCcw className="size-3.5" />
+            {isCurrent
+              ? `Reset to ${resetTarget}…`
+              : `Reset ${current} to this…`}
+          </DropdownMenuItem>
+        ) : null}
         {!isCurrent ? (
           <>
             <DropdownMenuSeparator />
@@ -289,42 +355,50 @@ const BranchMenu = ({
 };
 
 const BranchRow = ({
-  branch,
-  depth,
+  node,
   current,
+  trunk,
+  dirty,
   pullRequest,
   controls,
+  onReset,
 }: {
-  branch: WorkspaceGitBranch;
-  depth: number;
+  node: WorkspaceGitBranchNode;
   current: string;
+  trunk: string | undefined;
+  dirty: boolean;
   pullRequest: WorkspacePullRequest | undefined;
   controls: WorkspaceGitControls;
+  onReset: (target: WorkspaceGitResetTarget) => void;
 }): JSX.Element => {
+  const { branch, depth } = node;
   const isCurrent = branch.name === current;
+  const BranchIcon = node.nested ? Layers : GitBranch;
   return (
     <li
       className={cn(
-        "group flex min-w-0 items-center gap-2 rounded-md py-1.5 pr-1 hover:bg-slate-900/70",
+        "group relative flex min-w-0 items-center gap-2 rounded-md py-1.5 pr-1 hover:bg-slate-900/70",
         isCurrent && "bg-sky-950/30",
       )}
-      style={{ paddingLeft: `${0.5 + depth * 1.25}rem` }}
+      style={{
+        paddingLeft: `${TREE_INSET_REM + depth * TREE_INDENT_REM}rem`,
+      }}
     >
-      {depth > 0 ? (
-        <CornerDownRight
-          aria-hidden="true"
-          className="size-3.5 shrink-0 text-violet-400/70"
-        />
-      ) : (
-        <GitBranch
-          aria-hidden="true"
-          className={cn(
-            "size-3.5 shrink-0",
-            isCurrent ? "text-sky-300" : "text-slate-500",
-          )}
-        />
-      )}
+      <TreeGuides node={node} />
+      <BranchIcon
+        aria-label={node.nested ? `Nested on ${node.base}` : undefined}
+        aria-hidden={node.nested ? undefined : true}
+        className={cn(
+          "relative size-3.5 shrink-0",
+          isCurrent
+            ? "text-sky-300"
+            : node.nested
+              ? "text-violet-300"
+              : "text-slate-500",
+        )}
+      />
       <span
+        title={node.nested ? `Nested on ${node.base}` : undefined}
         className={cn(
           "min-w-0 truncate text-xs",
           isCurrent ? "font-medium text-sky-100" : "text-slate-200",
@@ -332,6 +406,11 @@ const BranchRow = ({
       >
         {branch.name}
       </span>
+      {branch.name === trunk ? (
+        <span className="shrink-0 rounded-full border border-slate-700 px-1.5 text-[10px] text-slate-400">
+          default
+        </span>
+      ) : null}
       {branch.ahead ? (
         <span className="text-[10px] text-emerald-300">↑{branch.ahead}</span>
       ) : null}
@@ -366,15 +445,18 @@ const BranchRow = ({
           size="xs"
           variant="ghost"
           disabled={controls.busy}
-          onClick={() =>
-            void controls.runAction("checkout", { branchName: branch.name })
-          }
+          onClick={() => void controls.switchBranch(branch.name)}
           className="opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
         >
-          Switch
+          {dirty ? "Stash & switch" : "Switch"}
         </Button>
       )}
-      <BranchMenu branch={branch} current={current} controls={controls} />
+      <BranchMenu
+        branch={branch}
+        current={current}
+        controls={controls}
+        onReset={onReset}
+      />
     </li>
   );
 };
@@ -388,6 +470,8 @@ export const WorkspaceGitBranches = ({
 }): JSX.Element => {
   const [query, setQuery] = useState("");
   const [remotesOpen, setRemotesOpen] = useState(false);
+  const [resetTarget, setResetTarget] =
+    useState<WorkspaceGitResetTarget | null>(null);
   const {
     ensurePullRequests,
     pullRequests,
@@ -413,9 +497,16 @@ export const WorkspaceGitBranches = ({
     overview.localBranches,
     query,
   );
-  const nodes = query.trim()
-    ? filteredLocal.map((branch) => ({ branch, depth: 0, stacked: false }))
-    : createWorkspaceGitBranchTree(overview.localBranches);
+  const trunk = overview.defaultBranch;
+  const nodes: WorkspaceGitBranchNode[] = query.trim()
+    ? filteredLocal.map((branch) => ({
+        branch,
+        depth: 0,
+        guides: [],
+        last: true,
+        ...workspaceGitBranchTarget(branch.name, branch.parent, trunk),
+      }))
+    : createWorkspaceGitBranchTree(overview.localBranches, trunk);
   const remoteBranches = filterWorkspaceGitBranches(
     overview.remoteBranches,
     query,
@@ -443,15 +534,17 @@ export const WorkspaceGitBranches = ({
         className="h-8 border-slate-800 bg-slate-950 text-xs"
       />
       <section aria-label="Local branches">
-        <ul className="space-y-px">
-          {nodes.map(({ branch, depth }) => (
+        <ul>
+          {nodes.map((node) => (
             <BranchRow
-              key={branch.name}
-              branch={branch}
-              depth={depth}
+              key={node.branch.name}
+              node={node}
               current={current}
-              pullRequest={pullRequestFor(branch.name)}
+              trunk={trunk}
+              dirty={!overview.clean}
+              pullRequest={pullRequestFor(node.branch.name)}
               controls={controls}
+              onReset={setResetTarget}
             />
           ))}
         </ul>
@@ -510,6 +603,14 @@ export const WorkspaceGitBranches = ({
             </ul>
           ) : null}
         </section>
+      ) : null}
+      {resetTarget && current ? (
+        <WorkspaceGitResetDialog
+          controls={controls}
+          branch={current}
+          target={resetTarget}
+          onClose={() => setResetTarget(null)}
+        />
       ) : null}
     </div>
   );

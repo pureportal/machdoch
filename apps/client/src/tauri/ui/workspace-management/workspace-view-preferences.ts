@@ -21,12 +21,15 @@ export const WORKSPACE_GIT_SECTIONS = [
 
 export type WorkspaceGitSection = (typeof WORKSPACE_GIT_SECTIONS)[number];
 
+export type WorkspaceGitScope = "all" | "repository";
+
 export interface WorkspaceViewPreferences {
   section: WorkspaceDetailSection;
   gitSection: WorkspaceGitSection;
   selectedWorkspaceKey: string | null;
   activeWorkspaceKey: string | null;
   repositoryRoots: Readonly<Record<string, string>>;
+  singleRepositoryWorkspaces: readonly string[];
 }
 
 export const WORKSPACE_VIEW_STORAGE_KEY = "machdoch.workspace-view";
@@ -37,6 +40,7 @@ export const DEFAULT_WORKSPACE_VIEW_PREFERENCES: WorkspaceViewPreferences = {
   selectedWorkspaceKey: null,
   activeWorkspaceKey: null,
   repositoryRoots: {},
+  singleRepositoryWorkspaces: [],
 };
 
 const MAX_REMEMBERED_REPOSITORIES = 64;
@@ -61,6 +65,18 @@ const repositoryRootsFrom = (value: unknown): Record<string, string> => {
       .slice(-MAX_REMEMBERED_REPOSITORIES),
   );
 };
+
+const workspaceKeysFrom = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? [
+        ...new Set(
+          value.filter(
+            (entry): entry is string =>
+              typeof entry === "string" && entry.length > 0,
+          ),
+        ),
+      ].slice(-MAX_REMEMBERED_REPOSITORIES)
+    : [];
 
 export const parseWorkspaceViewPreferences = (
   raw: string | null,
@@ -90,6 +106,37 @@ export const parseWorkspaceViewPreferences = (
     selectedWorkspaceKey: optionalText(record.selectedWorkspaceKey),
     activeWorkspaceKey: optionalText(record.activeWorkspaceKey),
     repositoryRoots: repositoryRootsFrom(record.repositoryRoots),
+    singleRepositoryWorkspaces: workspaceKeysFrom(
+      record.singleRepositoryWorkspaces,
+    ),
+  };
+};
+
+export const workspaceGitScope = (
+  preferences: WorkspaceViewPreferences,
+  workspaceKey: string,
+): WorkspaceGitScope =>
+  preferences.singleRepositoryWorkspaces.includes(workspaceKey)
+    ? "repository"
+    : "all";
+
+export const withWorkspaceGitScope = (
+  preferences: WorkspaceViewPreferences,
+  workspaceKey: string,
+  scope: WorkspaceGitScope,
+): WorkspaceViewPreferences => {
+  if (workspaceGitScope(preferences, workspaceKey) === scope) {
+    return preferences;
+  }
+  const others = preferences.singleRepositoryWorkspaces.filter(
+    (key) => key !== workspaceKey,
+  );
+  return {
+    ...preferences,
+    singleRepositoryWorkspaces:
+      scope === "repository"
+        ? workspaceKeysFrom([...others, workspaceKey])
+        : others,
   };
 };
 

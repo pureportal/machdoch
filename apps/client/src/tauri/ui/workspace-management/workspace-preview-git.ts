@@ -7,6 +7,7 @@ import type {
   WorkspaceGitBranchSwitchTarget,
   WorkspaceGitDiff,
   WorkspaceGitOverview,
+  WorkspaceGitRepositoriesStatus,
   WorkspaceGitRepositoryDiscovery,
   WorkspaceGitSummary,
   WorkspacePullRequestOverview,
@@ -37,7 +38,7 @@ const isMachdochWorkspace = (workspaceRoot: string): boolean =>
 
 const previewRepositoryPaths = (workspaceRoot: string): string[] =>
   isMachdochWorkspace(workspaceRoot)
-    ? [".", "packages/desktop"]
+    ? [".", "packages/cloud", "packages/desktop"]
     : [".", "api", "app"];
 
 const repositoryFor = (
@@ -53,7 +54,9 @@ const repositoryFor = (
   const created = isMachdochWorkspace(workspaceRoot)
     ? relative === "packages\\desktop"
       ? seedDesktop(workspaceRoot, repositoryRoot)
-      : seedMachdoch(workspaceRoot, repositoryRoot)
+      : relative === "packages\\cloud"
+        ? seedClean(workspaceRoot, repositoryRoot, "machdoch-cloud")
+        : seedMachdoch(workspaceRoot, repositoryRoot)
     : seedClean(
         workspaceRoot,
         repositoryRoot,
@@ -75,15 +78,36 @@ const currentBranch = (
 const statusFor = (staged: string, unstaged: string): string =>
   `${staged}${unstaged}`;
 
+const PREVIEW_DEFAULT_BRANCHES = ["main", "master"];
+
+const previewRemoteBranch = (
+  repository: PreviewRepository,
+  branchName: string,
+): string | undefined =>
+  repository.remoteBranches.find(
+    (candidate) => candidate.name === `origin/${branchName}`,
+  )?.name;
+
+const previewDefaultBranch = (
+  repository: PreviewRepository,
+): string | undefined =>
+  PREVIEW_DEFAULT_BRANCHES.find(
+    (name) =>
+      repository.localBranches.some((candidate) => candidate.name === name) ||
+      previewRemoteBranch(repository, name) !== undefined,
+  );
+
 const overviewFor = (repository: PreviewRepository): WorkspaceGitOverview => {
   const current = currentBranch(repository);
   const changes = repository.changes.map((entry) => ({ ...entry }));
+  const defaultBranch = previewDefaultBranch(repository);
   return {
     workspaceRoot: repository.workspaceRoot,
     repositoryRoot: repository.repositoryRoot,
     branch: repository.branch,
     detached: false,
     ...(current?.upstream ? { upstream: current.upstream } : {}),
+    ...(defaultBranch ? { defaultBranch } : {}),
     ahead: current?.ahead ?? 0,
     behind: current?.behind ?? 0,
     clean: changes.length === 0,
@@ -130,6 +154,43 @@ export const loadPreviewWorkspaceGitOverview = (
   repositoryRoot: string,
 ): WorkspaceGitOverview =>
   overviewFor(repositoryFor(workspaceRoot, repositoryRoot));
+
+export const loadPreviewWorkspaceGitRepositoriesStatus = (
+  workspaceRoot: string,
+): WorkspaceGitRepositoriesStatus => ({
+  workspaceRoot,
+  repositories: discoverPreviewWorkspaceGitRepositories(
+    workspaceRoot,
+  ).repositories.map(({ repositoryRoot, relativePath }) => {
+    const repository = repositoryFor(workspaceRoot, repositoryRoot);
+    const overview = overviewFor(repository);
+    const current = currentBranch(repository);
+    return {
+      repositoryRoot,
+      relativePath,
+      branch: overview.branch,
+      detached: overview.detached,
+      ...(overview.upstream ? { upstream: overview.upstream } : {}),
+      upstreamGone: current?.upstreamGone ?? false,
+      ahead: overview.ahead,
+      behind: overview.behind,
+      ...(overview.defaultBranch
+        ? { defaultBranch: overview.defaultBranch }
+        : {}),
+      ...(current?.parent ? { parentBranch: current.parent } : {}),
+      stagedCount: overview.stagedCount,
+      unstagedCount: overview.unstagedCount,
+      untrackedCount: overview.untrackedCount,
+      conflictedCount: overview.conflictedCount,
+      totalChanges: overview.totalChanges,
+      changes: overview.changes,
+      changesTruncated: overview.changesTruncated,
+      ...(overview.operation ? { operation: overview.operation } : {}),
+    };
+  }),
+  scanLimited: false,
+  issues: [],
+});
 
 export const loadPreviewWorkspaceGitSummary = (
   workspaceRoot: string,
@@ -413,6 +474,37 @@ export const runPreviewWorkspaceGitAction = (
       }
       break;
     }
+    case "reset": {
+      if (repository.operation) {
+        throw new Error(
+          `Finish or abort the ${repository.operation} before resetting.`,
+        );
+      }
+      const target = options.startPoint?.trim() || current?.upstream;
+      if (!target) {
+        throw new Error(
+          "This branch has no upstream. Choose a branch or commit to reset to.",
+        );
+      }
+      if (current) {
+        current.ahead = 0;
+        current.behind = 0;
+      }
+      if (options.resetMode === "discard") {
+        repository.changes = repository.changes.filter(
+          (entry) => entry.untracked,
+        );
+      } else {
+        setStage(
+          repository,
+          repository.changes
+            .filter((entry) => entry.staged)
+            .map((entry) => entry.path),
+          false,
+        );
+      }
+      break;
+    }
     case "restack": {
       const members = stackOf(repository);
       if (members.length === 0)
@@ -580,25 +672,6 @@ export const runPreviewWorkspaceGitAction = (
 export const resetPreviewWorkspaceGit = (): void => {
   repositories.clear();
 };
-
-const PREVIEW_DEFAULT_BRANCHES = ["main", "master"];
-
-const previewRemoteBranch = (
-  repository: PreviewRepository,
-  branchName: string,
-): string | undefined =>
-  repository.remoteBranches.find(
-    (candidate) => candidate.name === `origin/${branchName}`,
-  )?.name;
-
-const previewDefaultBranch = (
-  repository: PreviewRepository,
-): string | undefined =>
-  PREVIEW_DEFAULT_BRANCHES.find(
-    (name) =>
-      repository.localBranches.some((candidate) => candidate.name === name) ||
-      previewRemoteBranch(repository, name) !== undefined,
-  );
 
 const previewRelativePath = (
   workspaceRoot: string,

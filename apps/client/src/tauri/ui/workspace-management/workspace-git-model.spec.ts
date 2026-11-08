@@ -18,6 +18,7 @@ import {
   workspaceGitChangeLabel,
   workspaceGitPathInWorkspace,
   workspaceGitRepositoryLabel,
+  workspaceGitBranchTarget,
   workspaceGitStackMembers,
 } from "./workspace-git-model";
 
@@ -155,7 +156,7 @@ describe("workspace Git presentation", () => {
     expect(groups.unstaged).toEqual([both, untracked]);
   });
 
-  it("orders stacked branches below their parents", () => {
+  it("grows the branch tree from the trunk and marks nested branches", () => {
     const branches = [
       branch("feature/api", { parent: "main" }),
       branch("feature/ui", { parent: "feature/api" }),
@@ -164,18 +165,59 @@ describe("workspace Git presentation", () => {
       branch("orphan", { parent: "deleted" }),
     ];
     expect(
+      createWorkspaceGitBranchTree(branches, "main").map((node) => [
+        node.branch.name,
+        node.depth,
+        node.base,
+        node.nested,
+        node.guides,
+        node.last,
+      ]),
+    ).toEqual([
+      ["main", 0, null, false, [], true],
+      ["feature/api", 1, "main", false, [], false],
+      ["feature/ui", 2, "feature/api", true, [true], true],
+      ["hotfix", 1, "main", false, [], false],
+      ["orphan", 1, "main", false, [], true],
+    ]);
+  });
+
+  it("orders stacked branches below their parents without a trunk", () => {
+    const branches = [
+      branch("feature/api", { parent: "main" }),
+      branch("feature/ui", { parent: "feature/api" }),
+      branch("main"),
+    ];
+    expect(
       createWorkspaceGitBranchTree(branches).map((node) => [
         node.branch.name,
         node.depth,
-        node.stacked,
+        node.nested,
       ]),
     ).toEqual([
-      ["hotfix", 0, false],
-      ["main", 0, true],
+      ["main", 0, false],
       ["feature/api", 1, true],
       ["feature/ui", 2, true],
-      ["orphan", 0, false],
     ]);
+  });
+
+  it("describes which branch a branch targets", () => {
+    expect(workspaceGitBranchTarget("main", undefined, "main")).toEqual({
+      base: null,
+      nested: false,
+    });
+    expect(workspaceGitBranchTarget("feature", undefined, "main")).toEqual({
+      base: "main",
+      nested: false,
+    });
+    expect(workspaceGitBranchTarget("child", "feature", "main")).toEqual({
+      base: "feature",
+      nested: true,
+    });
+    expect(workspaceGitBranchTarget("feature", "main", "main")).toEqual({
+      base: "main",
+      nested: false,
+    });
   });
 
   it("keeps cyclic stack metadata visible exactly once", () => {

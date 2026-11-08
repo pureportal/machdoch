@@ -25,7 +25,7 @@ describe("workspace browser preview Git", () => {
       discoverPreviewWorkspaceGitRepositories(workspaceRoot).repositories.map(
         (repository) => repository.relativePath,
       ),
-    ).toEqual([".", "packages/desktop"]);
+    ).toEqual([".", "packages/cloud", "packages/desktop"]);
     const overview = loadPreviewWorkspaceGitOverview(
       workspaceRoot,
       workspaceRoot,
@@ -298,12 +298,18 @@ describe("workspace browser preview Git", () => {
 
     const [result] = switchPreviewWorkspaceGitBranches(
       workspaceRoot,
-      [{ repositoryRoot: desktopRoot, branchName: "main", create: true }],
+      [
+        {
+          repositoryRoot: desktopRoot,
+          branchName: "feature/desktop-next",
+          create: true,
+        },
+      ],
       true,
     );
     expect(result).toMatchObject({ switched: true, stashed: false });
     const created = loadPreviewWorkspaceGitOverview(workspaceRoot, desktopRoot);
-    expect(created.branch).toBe("main");
+    expect(created.branch).toBe("feature/desktop-next");
     expect(created.totalChanges).toBe(1);
 
     const [stashedResult] = switchPreviewWorkspaceGitBranches(
@@ -321,7 +327,7 @@ describe("workspace browser preview Git", () => {
     const switched = loadPreviewWorkspaceGitOverview(workspaceRoot, desktopRoot);
     expect(switched.totalChanges).toBe(0);
     expect(switched.stashes[0]?.message).toBe(
-      "On main: Before switching to feature/desktop-shell",
+      "On feature/desktop-next: Before switching to feature/desktop-shell",
     );
   });
 });

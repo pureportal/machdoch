@@ -241,12 +241,21 @@ export const seedDesktop = (
   branch: "feature/desktop-shell",
   changes: [change(" M", "src/window.ts")],
   localBranches: [
+    branch("main", "a7c3d21", { upstream: "origin/main" }),
+    branch("feature/desktop-base", "b81f402", {
+      upstream: "origin/feature/desktop-base",
+    }),
     branch("feature/desktop-shell", "c32e910", {
       current: true,
       upstream: "origin/feature/desktop-shell",
+      parent: "feature/desktop-base",
     }),
   ],
-  remoteBranches: [branch("origin/feature/desktop-shell", "c32e910")],
+  remoteBranches: [
+    branch("origin/main", "a7c3d21"),
+    branch("origin/feature/desktop-base", "b81f402"),
+    branch("origin/feature/desktop-shell", "c32e910"),
+  ],
   remotes: [ORIGIN("machdoch-desktop")],
   recentCommits: [
     commit("c32e910", "Scope desktop workspace state", "2026-08-04T08:20:00Z"),
