@@ -196,6 +196,41 @@ fn push(repository: &Path, force: bool) -> Result<(), String> {
     run_required("git", &arguments, repository).map(|_| ())
 }
 
+fn upstream_branch(repository: &Path) -> Result<String, String> {
+    run_optional(
+        "git",
+        &[
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+        ],
+        repository,
+    )
+    .filter(|upstream| !upstream.is_empty())
+    .ok_or_else(|| "This branch has no upstream. Choose a branch or commit to reset to.".to_string())
+}
+
+fn reset(
+    repository: &Path,
+    start_point: Option<&str>,
+    reset_mode: Option<&str>,
+) -> Result<(), String> {
+    let mode = match reset_mode {
+        None | Some("keep") => "--mixed",
+        Some("discard") => "--hard",
+        Some(_) => return Err("Choose whether to keep or discard local changes.".to_string()),
+    };
+    if let Some(operation) = current_operation(repository) {
+        return Err(format!("Finish or abort the {operation} before resetting."));
+    }
+    let target = match start_point.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(revision) => validate_revision(Some(revision), repository)?,
+        None => upstream_branch(repository)?,
+    };
+    run_required("git", &["reset", "--quiet", mode, &target], repository).map(|_| ())
+}
+
 fn control_operation(repository: &Path, control: &str) -> Result<(), String> {
     let operation = current_operation(repository)
         .ok_or_else(|| "No merge, rebase, or cherry-pick is in progress.".to_string())?;
@@ -290,6 +325,11 @@ pub(super) fn execute_workspace_git_action(
             stack::delete_branch(&repository, &branch, force)?;
         }
         "restack" => stack::restack(&repository)?,
+        "reset" => reset(
+            &repository,
+            request.start_point.as_deref(),
+            request.reset_mode.as_deref(),
+        )?,
         "submit-pull-requests" => {
             stack::submit_pull_requests(&repository, request.draft == Some(true))?
         }

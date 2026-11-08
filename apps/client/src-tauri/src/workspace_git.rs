@@ -1,10 +1,10 @@
 use std::{
-    collections::{BTreeMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     fs,
     io::{self, Read},
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
-    sync::OnceLock,
+    sync::{Arc, Mutex, OnceLock, PoisonError},
     thread,
     time::{Duration, Instant},
 };
@@ -19,6 +19,7 @@ use tokio::sync::Semaphore;
 mod action_tests;
 mod actions;
 mod branch_alignment;
+mod repositories_status;
 mod stack;
 mod summary;
 
@@ -58,6 +59,7 @@ const MAX_REPOSITORY_SCAN_DIRECTORIES: usize = 50_000;
 const MAX_DISCOVERED_REPOSITORIES: usize = 256;
 const MAX_CONCURRENT_REPOSITORY_INSPECTIONS: usize = 4;
 const MAX_REPOSITORY_SCAN_ISSUES: usize = 20;
+const REPOSITORY_DISCOVERY_TTL: Duration = Duration::from_secs(20);
 const REPOSITORY_SCAN_IGNORED_DIRECTORIES: &[&str] = &[
     ".cache",
     ".gradle",
@@ -194,6 +196,8 @@ pub struct WorkspaceGitOverview {
     detached: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     upstream: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    default_branch: Option<String>,
     ahead: u64,
     behind: u64,
     clean: bool,
@@ -230,6 +234,7 @@ pub struct WorkspaceGitActionRequest {
     include_untracked: Option<bool>,
     force: Option<bool>,
     draft: Option<bool>,
+    reset_mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -586,19 +591,46 @@ fn inspect_repository_candidate(
     Ok(Some(repository))
 }
 
-fn discover_repositories(workspace_root: &str) -> Result<WorkspaceGitRepositoryDiscovery, String> {
+type DiscoverySlot = Arc<Mutex<Option<(Instant, WorkspaceGitRepositoryDiscovery)>>>;
+
+static REPOSITORY_DISCOVERIES: OnceLock<Mutex<HashMap<PathBuf, DiscoverySlot>>> = OnceLock::new();
+
+fn discovery_slot(workspace: &Path) -> DiscoverySlot {
+    REPOSITORY_DISCOVERIES
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .entry(workspace.to_path_buf())
+        .or_default()
+        .clone()
+}
+
+fn discover_repositories(
+    workspace_root: &str,
+    refresh: bool,
+) -> Result<WorkspaceGitRepositoryDiscovery, String> {
     let workspace = canonical_workspace_root(workspace_root)?;
-    let (candidates, scan_limited, mut issues) = scan_repository_candidates(&workspace);
+    let slot = discovery_slot(&workspace);
+    let mut cached = slot.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some((scanned_at, discovery)) = cached.as_ref() {
+        if !refresh && scanned_at.elapsed() < REPOSITORY_DISCOVERY_TTL {
+            return Ok(discovery.clone());
+        }
+    }
+    let discovery = scan_repositories(&workspace);
+    *cached = Some((Instant::now(), discovery.clone()));
+    Ok(discovery)
+}
+
+fn scan_repositories(workspace: &Path) -> WorkspaceGitRepositoryDiscovery {
+    let (candidates, scan_limited, mut issues) = scan_repository_candidates(workspace);
     let mut roots = HashSet::new();
     let mut repositories = Vec::new();
     for batch in candidates.chunks(MAX_CONCURRENT_REPOSITORY_INSPECTIONS) {
         let inspected = thread::scope(|scope| {
             let workers = batch
                 .iter()
-                .map(|candidate| {
-                    let workspace = &workspace;
-                    scope.spawn(move || inspect_repository_candidate(workspace, candidate))
-                })
+                .map(|candidate| scope.spawn(move || inspect_repository_candidate(workspace, candidate)))
                 .collect::<Vec<_>>();
             workers
                 .into_iter()
@@ -614,7 +646,7 @@ fn discover_repositories(workspace_root: &str) -> Result<WorkspaceGitRepositoryD
                 Ok(Some(repository)) if roots.insert(repository.clone()) => {
                     repositories.push(WorkspaceGitRepository {
                         repository_root: repository.display().to_string(),
-                        relative_path: relative_workspace_path(&workspace, &repository),
+                        relative_path: relative_workspace_path(workspace, &repository),
                     });
                 }
                 Ok(_) => {}
@@ -622,7 +654,7 @@ fn discover_repositories(workspace_root: &str) -> Result<WorkspaceGitRepositoryD
                     &mut issues,
                     format!(
                         "Could not inspect {}: {error}",
-                        relative_workspace_path(&workspace, candidate)
+                        relative_workspace_path(workspace, candidate)
                     ),
                 ),
             }
@@ -636,12 +668,12 @@ fn discover_repositories(workspace_root: &str) -> Result<WorkspaceGitRepositoryD
             (left, right) => left.to_lowercase().cmp(&right.to_lowercase()),
         }
     });
-    Ok(WorkspaceGitRepositoryDiscovery {
+    WorkspaceGitRepositoryDiscovery {
         workspace_root: workspace.display().to_string(),
         repositories,
         scan_limited,
         issues,
-    })
+    }
 }
 
 fn status_is_conflicted(left: char, right: char) -> bool {
@@ -1123,6 +1155,7 @@ fn load_overview(
             )
         });
         let operation_worker = scope.spawn(|| current_operation(&repository));
+        let trunk_worker = scope.spawn(|| branch_alignment::read_trunk_references(&repository));
         let branch_output = branches_worker
             .join()
             .map_err(|_| "Git branch worker stopped unexpectedly.".to_string())??;
@@ -1143,6 +1176,10 @@ fn load_overview(
             .filter(|value| !value.is_empty()),
         };
         let detached = head.is_none();
+        let trunk_references = trunk_worker
+            .join()
+            .map_err(|_| "Git trunk worker stopped unexpectedly.".to_string())?;
+        let default_branch = branch_alignment::default_branch(&trunk_references, head.as_deref());
         let branch = head.unwrap_or_else(|| "Detached HEAD".to_string());
         if !detached
             && !local_branches
@@ -1205,6 +1242,7 @@ fn load_overview(
             branch,
             detached,
             upstream,
+            default_branch,
             ahead,
             behind,
             clean: changes.is_empty(),
@@ -1228,8 +1266,16 @@ fn load_overview(
 #[tauri::command]
 pub async fn discover_workspace_git_repositories(
     workspace_root: String,
+    refresh: Option<bool>,
 ) -> Result<WorkspaceGitRepositoryDiscovery, String> {
-    run_git_read(move || discover_repositories(&workspace_root)).await
+    run_git_read(move || discover_repositories(&workspace_root, refresh == Some(true))).await
+}
+
+#[tauri::command]
+pub async fn get_workspace_git_repositories_status(
+    request: repositories_status::WorkspaceGitRepositoriesStatusRequest,
+) -> Result<repositories_status::WorkspaceGitRepositoriesStatus, String> {
+    run_git_read(move || repositories_status::load_repositories_status(request)).await
 }
 
 #[tauri::command]
@@ -1409,7 +1455,7 @@ mod tests {
         fs::create_dir_all(&nested).expect("nested repository should be created");
         run_required("git", &["init"], &nested).expect("nested git init should succeed");
 
-        let discovery = discover_repositories(root.to_string_lossy().as_ref())
+        let discovery = discover_repositories(root.to_string_lossy().as_ref(), true)
             .expect("repository discovery should succeed");
         assert_eq!(
             discovery
@@ -1493,7 +1539,7 @@ mod tests {
             .expect("dependency git init should succeed");
         fs::write(invalid.join(".git"), "not a gitdir\n").expect("the invalid marker should write");
 
-        let discovery = discover_repositories(root.to_string_lossy().as_ref())
+        let discovery = discover_repositories(root.to_string_lossy().as_ref(), true)
             .expect("repository discovery should preserve valid repositories");
         assert_eq!(
             discovery

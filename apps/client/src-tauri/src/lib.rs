@@ -317,6 +317,7 @@ pub fn run() {
             desktop_task::save_clipboard_image_attachment,
             workspace_git::discover_workspace_git_repositories,
             workspace_git::get_workspace_git_overview,
+            workspace_git::get_workspace_git_repositories_status,
             workspace_git::get_workspace_git_diff,
             workspace_git::get_workspace_git_summary,
             workspace_git::get_workspace_pull_requests,

@@ -4336,5 +4336,231 @@
       }
     },
     "accepted": false
+  },
+  {
+    "name": "discover git with refresh",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "discover_workspace_git_repositories",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "refresh": true
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "discover git rejects refresh text",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "discover_workspace_git_repositories",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "refresh": "yes"
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git repositories status",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_repositories_status",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git repositories status refresh",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_repositories_status",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "refresh": true
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git repositories status unknown field",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_repositories_status",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git reset to upstream",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "reset"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git reset discarding changes",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "reset",
+          "startPoint": "origin/main",
+          "resetMode": "discard"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git reset unknown mode",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "reset",
+          "resetMode": "everything"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git branch status",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_branch_status",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "branchName": "feature/x",
+          "fetch": true
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git branch status without branch",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_branch_status",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git branch status unknown field",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_branch_status",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "force": true
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git switch branches",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "switch_workspace_git_branches",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "targets": [
+            {
+              "repositoryRoot": "/projects/demo",
+              "branchName": "feature/x",
+              "create": true
+            }
+          ],
+          "stashChanges": true
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git switch branches without targets",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "switch_workspace_git_branches",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "targets": [],
+          "stashChanges": false
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git switch branches unknown target field",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "switch_workspace_git_branches",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "targets": [
+            {
+              "repositoryRoot": "/projects/demo",
+              "branchName": "x",
+              "force": true
+            }
+          ],
+          "stashChanges": false
+        }
+      }
+    },
+    "accepted": false
   }
 ]

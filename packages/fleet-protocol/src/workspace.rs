@@ -8,6 +8,33 @@ fn fields<'a>(value: &'a Value, names: &[&str]) -> Option<&'a Map<String, Value>
         .then_some(object)
 }
 
+fn fields_with_optional<'a>(
+    value: &'a Value,
+    required: &[&str],
+    optional: &[&str],
+) -> Option<&'a Map<String, Value>> {
+    let object = value.as_object()?;
+    (required.iter().all(|name| object.contains_key(*name))
+        && object
+            .keys()
+            .all(|key| required.contains(&key.as_str()) || optional.contains(&key.as_str())))
+    .then_some(object)
+}
+
+fn optional_boolean(object: &Map<String, Value>, name: &str) -> bool {
+    object.get(name).is_none_or(Value::is_boolean)
+}
+
+fn branch_switch_target(value: &Value) -> bool {
+    fields_with_optional(value, &["repositoryRoot", "branchName"], &["create"]).is_some_and(
+        |target| {
+            root(&target["repositoryRoot"])
+                && text(&target["branchName"], 240, true)
+                && optional_boolean(target, "create")
+        },
+    )
+}
+
 fn text(value: &Value, maximum: usize, trim: bool) -> bool {
     value.as_str().is_some_and(|value| {
         let value = if trim {
@@ -172,6 +199,7 @@ fn git_action(value: &Value) -> bool {
         "create-branch" => (&["branchName"], &["startPoint"]),
         "delete-branch" => (&["branchName"], &["force"]),
         "stack-branch" => (&["branchName", "parentBranch"], &[]),
+        "reset" => (&[], &["startPoint", "resetMode"]),
         "stage" | "unstage" => (&["paths"], &[]),
         "commit" => (&["message"], &[]),
         "stash-push" => (&[], &["message", "includeUntracked"]),
@@ -210,6 +238,9 @@ fn git_action(value: &Value) -> bool {
             .get("message")
             .is_none_or(|value| text(value, message_limit, true))
         && request.get("stashRef").is_none_or(stash_reference)
+        && request
+            .get("resetMode")
+            .is_none_or(|value| matches!(value.as_str(), Some("keep" | "discard")))
         && ["force", "draft", "includeUntracked"]
             .iter()
             .all(|field| request.get(*field).is_none_or(Value::is_boolean))
@@ -544,11 +575,41 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
                 root(&args["workspaceRoot"]) && reachable_path(&args["relativePath"])
             })
         }
-        "discover_workspace_git_repositories"
-        | "discover_workspace_shells"
-        | "stop_workspace_terminals" => {
+        "discover_workspace_git_repositories" => {
+            fields_with_optional(args, &["workspaceRoot"], &["refresh"])
+                .is_some_and(|args| root(&args["workspaceRoot"]) && optional_boolean(args, "refresh"))
+        }
+        "discover_workspace_shells" | "stop_workspace_terminals" => {
             fields(args, &["workspaceRoot"]).is_some_and(|args| root(&args["workspaceRoot"]))
         }
+        "get_workspace_git_repositories_status" => fields(args, &["request"]).is_some_and(|args| {
+            fields_with_optional(&args["request"], &["workspaceRoot"], &["refresh"]).is_some_and(
+                |request| root(&request["workspaceRoot"]) && optional_boolean(request, "refresh"),
+            )
+        }),
+        "get_workspace_git_branch_status" => fields(args, &["request"]).is_some_and(|args| {
+            fields_with_optional(&args["request"], &["workspaceRoot"], &["branchName", "fetch"])
+                .is_some_and(|request| {
+                    root(&request["workspaceRoot"])
+                        && request
+                            .get("branchName")
+                            .is_none_or(|value| text(value, 240, true))
+                        && optional_boolean(request, "fetch")
+                })
+        }),
+        "switch_workspace_git_branches" => fields(args, &["request"]).is_some_and(|args| {
+            fields(
+                &args["request"],
+                &["workspaceRoot", "targets", "stashChanges"],
+            )
+            .is_some_and(|request| {
+                root(&request["workspaceRoot"])
+                    && request["stashChanges"].is_boolean()
+                    && request["targets"].as_array().is_some_and(|targets| {
+                        (1..=256).contains(&targets.len()) && targets.iter().all(branch_switch_target)
+                    })
+            })
+        }),
         "save_workspace_file" => fields(args, &["request"]).is_some_and(|args| {
             fields(
                 &args["request"],

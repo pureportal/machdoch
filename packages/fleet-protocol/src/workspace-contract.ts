@@ -97,6 +97,35 @@ export interface WorkspaceGitRepositoryDiscovery {
   issues: string[];
 }
 
+export interface WorkspaceGitRepositoryStatus {
+  repositoryRoot: string;
+  relativePath: string;
+  branch: string;
+  detached: boolean;
+  upstream?: string;
+  upstreamGone: boolean;
+  ahead: number;
+  behind: number;
+  defaultBranch?: string;
+  parentBranch?: string;
+  stagedCount: number;
+  unstagedCount: number;
+  untrackedCount: number;
+  conflictedCount: number;
+  totalChanges: number;
+  changes: WorkspaceGitChange[];
+  changesTruncated: boolean;
+  operation?: WorkspaceGitOperation;
+  error?: string;
+}
+
+export interface WorkspaceGitRepositoriesStatus {
+  workspaceRoot: string;
+  repositories: WorkspaceGitRepositoryStatus[];
+  scanLimited: boolean;
+  issues: string[];
+}
+
 export interface WorkspaceGitBranchRepository {
   repositoryRoot: string;
   relativePath: string;
@@ -140,6 +169,7 @@ export interface WorkspaceGitOverview {
   branch: string;
   detached: boolean;
   upstream?: string;
+  defaultBranch?: string;
   ahead: number;
   behind: number;
   clean: boolean;
@@ -170,6 +200,7 @@ export type WorkspaceGitAction =
   | "unstack-branch"
   | "delete-branch"
   | "restack"
+  | "reset"
   | "submit-pull-requests"
   | "merge"
   | "rebase"
@@ -200,7 +231,10 @@ export interface WorkspaceGitActionOptions {
   includeUntracked?: boolean;
   force?: boolean;
   draft?: boolean;
+  resetMode?: WorkspaceGitResetMode;
 }
+
+export type WorkspaceGitResetMode = "keep" | "discard";
 
 export type WorkspaceEntryKind = "file" | "directory";
 

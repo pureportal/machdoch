@@ -197,9 +197,36 @@ pub(crate) async fn invoke(
             .map_err(|error| json!(error))?,
         ),
         "discover_workspace_git_repositories" => serde_json::to_value(
-            crate::workspace_git::discover_workspace_git_repositories(workspace.to_owned())
-                .await
-                .map_err(|error| json!(error))?,
+            crate::workspace_git::discover_workspace_git_repositories(
+                workspace.to_owned(),
+                args["refresh"].as_bool(),
+            )
+            .await
+            .map_err(|error| json!(error))?,
+        ),
+        "get_workspace_git_repositories_status" => serde_json::to_value(
+            crate::workspace_git::get_workspace_git_repositories_status(
+                serde_json::from_value(args["request"].clone())
+                    .map_err(|error| json!(error.to_string()))?,
+            )
+            .await
+            .map_err(|error| json!(error))?,
+        ),
+        "get_workspace_git_branch_status" => serde_json::to_value(
+            crate::workspace_git::get_workspace_git_branch_status(
+                serde_json::from_value(args["request"].clone())
+                    .map_err(|error| json!(error.to_string()))?,
+            )
+            .await
+            .map_err(|error| json!(error))?,
+        ),
+        "switch_workspace_git_branches" => serde_json::to_value(
+            crate::workspace_git::switch_workspace_git_branches(
+                serde_json::from_value(args["request"].clone())
+                    .map_err(|error| json!(error.to_string()))?,
+            )
+            .await
+            .map_err(|error| json!(error))?,
         ),
         "get_workspace_git_summary" => serde_json::to_value(
             crate::workspace_git::get_workspace_git_summary(workspace.to_owned())

@@ -140,6 +140,10 @@ const action = z.discriminatedUnion("action", [
     force: z.boolean().optional(),
   }),
   gitAction("stack-branch", { branchName: gitBranch, parentBranch: gitBranch }),
+  gitAction("reset", {
+    startPoint: gitBranch.optional(),
+    resetMode: z.enum(["keep", "discard"]).optional(),
+  }),
   ...(["stage", "unstage"] as const).map((value) =>
     gitAction(value, { paths: z.array(path).min(1).max(2000) }),
   ),
@@ -573,7 +577,45 @@ export const workspaceRequestSchema = z.union([
     ),
     command(
       "discover_workspace_git_repositories",
-      z.strictObject({ workspaceRoot: root }),
+      z.strictObject({ workspaceRoot: root, refresh: z.boolean().optional() }),
+    ),
+    command(
+      "get_workspace_git_repositories_status",
+      z.strictObject({
+        request: z.strictObject({
+          workspaceRoot: root,
+          refresh: z.boolean().optional(),
+        }),
+      }),
+    ),
+    command(
+      "get_workspace_git_branch_status",
+      z.strictObject({
+        request: z.strictObject({
+          workspaceRoot: root,
+          branchName: gitBranch.optional(),
+          fetch: z.boolean().optional(),
+        }),
+      }),
+    ),
+    command(
+      "switch_workspace_git_branches",
+      z.strictObject({
+        request: z.strictObject({
+          workspaceRoot: root,
+          targets: z
+            .array(
+              z.strictObject({
+                repositoryRoot: root,
+                branchName: gitBranch,
+                create: z.boolean().optional(),
+              }),
+            )
+            .min(1)
+            .max(256),
+          stashChanges: z.boolean(),
+        }),
+      }),
     ),
     command(
       "get_workspace_git_summary",

@@ -86,7 +86,7 @@ pub struct WorkspaceGitBranchSwitchResult {
 }
 
 #[derive(Debug, Default)]
-struct BranchReferences {
+pub(super) struct BranchReferences {
     local: HashSet<String>,
     remote: Vec<String>,
     remote_heads: Vec<(String, String)>,
@@ -160,7 +160,10 @@ fn preferred_remote_branch(references: &BranchReferences, branch: &str) -> Optio
         .map(|(_, remote_branch)| remote_branch.clone())
 }
 
-fn default_branch(references: &BranchReferences, current_branch: Option<&str>) -> Option<String> {
+pub(super) fn default_branch(
+    references: &BranchReferences,
+    current_branch: Option<&str>,
+) -> Option<String> {
     if let Some((_, branch)) = references
         .remote_heads
         .iter()
@@ -176,6 +179,24 @@ fn default_branch(references: &BranchReferences, current_branch: Option<&str>) -
                 || preferred_remote_branch(references, candidate).is_some()
         })
         .map(|candidate| candidate.to_string())
+}
+
+pub(super) fn read_trunk_references(repository: &Path) -> BranchReferences {
+    run_optional(
+        "git",
+        &[
+            "for-each-ref",
+            "--format=%(refname)%09%(symref)%09%(committerdate:unix)",
+            "refs/remotes/*/HEAD",
+            "refs/remotes/*/main",
+            "refs/remotes/*/master",
+            "refs/heads/main",
+            "refs/heads/master",
+        ],
+        repository,
+    )
+    .map(|output| parse_references(&output))
+    .unwrap_or_default()
 }
 
 fn read_repository_facts(repository: &Path) -> Result<RepositoryFacts, String> {
@@ -302,7 +323,7 @@ pub(super) fn load_branch_status(
 ) -> Result<WorkspaceGitBranchStatus, String> {
     let branch_name = normalized_branch_query(request.branch_name.as_deref())?;
     let fetch = request.fetch == Some(true);
-    let discovery = discover_repositories(&request.workspace_root)?;
+    let discovery = discover_repositories(&request.workspace_root, fetch)?;
     let mut issues = discovery.issues;
     let mut repositories = Vec::with_capacity(discovery.repositories.len());
     let mut recent = Vec::new();

@@ -344,3 +344,49 @@ fn overview_tracks_the_current_branch_upstream() {
     assert_eq!(detached.branch, "Detached HEAD");
     assert_eq!(detached.upstream, None);
 }
+
+#[test]
+fn resets_the_current_branch_keeping_or_discarding_changes() {
+    let repository = TestRepository::new("reset");
+    repository.commit_file("feature.txt", "feature\n", "feature");
+    repository.write("readme.md", "local edit\n");
+
+    let kept = repository
+        .action("reset", |request| {
+            request.start_point = Some("HEAD~1".to_string());
+            request.reset_mode = Some("keep".to_string());
+        })
+        .expect("the reset should keep changes");
+    assert_eq!(kept.recent_commits[0].subject, "base");
+    assert_eq!((kept.unstaged_count, kept.untracked_count), (1, 1));
+
+    let discarded = repository
+        .action("reset", |request| {
+            request.start_point = Some("HEAD".to_string());
+            request.reset_mode = Some("discard".to_string());
+        })
+        .expect("the reset should discard changes");
+    assert_eq!((discarded.unstaged_count, discarded.untracked_count), (0, 1));
+
+    let without_upstream = repository
+        .action("reset", |_| {})
+        .expect_err("a reset without a target needs an upstream");
+    assert!(without_upstream.contains("no upstream"));
+    assert!(repository
+        .action("reset", |request| {
+            request.start_point = Some("--hard".to_string())
+        })
+        .is_err());
+    assert!(repository
+        .action("reset", |request| {
+            request.reset_mode = Some("everything".to_string())
+        })
+        .is_err());
+}
+
+#[test]
+fn overview_reports_the_trunk_branch() {
+    let repository = TestRepository::new("trunk");
+    repository.git(&["switch", "-c", "feature"]);
+    assert_eq!(repository.overview().default_branch.as_deref(), Some("main"));
+}
