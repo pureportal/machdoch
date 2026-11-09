@@ -1,16 +1,13 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect, useRef, useState } from "react";
-import {
-  loadShellStateRevision,
-  loadShellStateSnapshot,
-} from "../lib/shell-store";
 import { hasPendingMediaGeneration } from "@machdoch/media-studio/tauri/ui/media/media-generation-service.js";
 import {
   hasPendingLocalChatWork,
   IdleShutdownMonitor,
-  PendingChatWorkInspector,
+  inspectPendingChatWork,
   type ShutdownWhenIdleOptions,
+  type WorkInspection,
 } from "./shutdown-when-idle";
 import { startAutomaticWorkPump } from "./automatic-work-pump";
 
@@ -32,12 +29,6 @@ export const useShutdownWhenIdle = (options: ShutdownWhenIdleOptions) => {
   latest.current = options;
   const mode = useRef<ShutdownMode>({ enabled: false, generation: 0 });
   const monitor = useRef(new IdleShutdownMonitor());
-  const chatWorkInspector = useRef(
-    new PendingChatWorkInspector(
-      loadShellStateRevision,
-      loadShellStateSnapshot,
-    ),
-  );
   const activityPump = useRef<ReturnType<typeof startAutomaticWorkPump> | null>(
     null,
   );
@@ -96,8 +87,9 @@ export const useShutdownWhenIdle = (options: ShutdownWhenIdleOptions) => {
             mode.current.generation !== arm.generation
           )
             return { busy: true, revision: 0 };
-          const work = await chatWorkInspector.current.inspect(
+          const work = await inspectPendingChatWork(
             () => latest.current,
+            () => invoke<WorkInspection>("inspect_persisted_chat_work"),
           );
           if (
             disposed ||

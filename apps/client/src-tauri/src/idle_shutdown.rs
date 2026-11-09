@@ -1,5 +1,6 @@
 use std::{collections::HashSet, sync::Mutex};
 
+use serde::Serialize;
 use tauri::{AppHandle, Emitter as _, Manager as _};
 
 mod chat_work;
@@ -164,17 +165,46 @@ fn has_pending_native_work(app: &AppHandle) -> Result<bool, String> {
 }
 
 #[tauri::command]
-pub(crate) fn has_pending_shutdown_work(app: AppHandle) -> Result<bool, String> {
-    let state = app.state::<IdleShutdownState>();
-    let windows = state
-        .pending_media_windows
-        .lock()
-        .map_err(|_| "Media activity is unavailable.")?;
-    let chats = state
-        .pending_chat_windows
-        .lock()
-        .map_err(|_| "Chat activity is unavailable.")?;
-    Ok(!windows.is_empty() || !chats.is_empty() || has_pending_native_work(&app)?)
+pub(crate) async fn has_pending_shutdown_work(app: AppHandle) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<IdleShutdownState>();
+        let windows = state
+            .pending_media_windows
+            .lock()
+            .map_err(|_| "Media activity is unavailable.")?;
+        let chats = state
+            .pending_chat_windows
+            .lock()
+            .map_err(|_| "Chat activity is unavailable.")?;
+        Ok(!windows.is_empty() || !chats.is_empty() || has_pending_native_work(&app)?)
+    })
+    .await
+    .map_err(|error| format!("Activity check failed: {error}"))?
+}
+
+#[derive(Serialize)]
+pub(crate) struct PersistedChatWork {
+    busy: bool,
+    revision: u64,
+}
+
+#[tauri::command]
+pub(crate) async fn inspect_persisted_chat_work(
+    app: AppHandle,
+) -> Result<PersistedChatWork, String> {
+    let settings = crate::runtime_snapshot::get_user_agent_limits_settings().await?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let (busy, revision) = crate::shell_state::inspect_snapshot(&app, |snapshot| {
+            chat_work::has_pending_chat_work(
+                snapshot,
+                settings.automatic_retries,
+                settings.retry_attempts,
+            )
+        })?;
+        Ok(PersistedChatWork { busy, revision })
+    })
+    .await
+    .map_err(|error| format!("Chat activity check failed: {error}"))?
 }
 
 #[tauri::command]

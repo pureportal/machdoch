@@ -1,6 +1,7 @@
 use super::{
-    commit_state_change_at_paths, load_snapshot_at_path, persist_snapshot_at_paths,
-    with_unchanged_snapshot_file, ShellStateCompareAndSwapResponse, ShellStateSnapshot,
+    commit_state_change_at_paths, inspect_snapshot_file, load_snapshot_at_path,
+    persist_snapshot_at_paths, with_unchanged_snapshot_file, ShellStateCompareAndSwapResponse,
+    ShellStateSnapshot,
 };
 use serde_json::{json, Value};
 use std::{fs, path::PathBuf};
@@ -74,6 +75,27 @@ async fn shutdown_rejects_a_stale_cache_after_another_writer_queues_work() {
     .unwrap();
     assert!(!stopped);
     assert_eq!(shutdown_cache.unwrap().revision, 8);
+}
+
+#[tokio::test]
+async fn activity_inspection_reuses_the_cache_until_another_revision_is_saved() {
+    let storage = Storage::new("activity-inspection-cache");
+    let mut cache = Some(ShellStateSnapshot {
+        state: json!({"cached": true}),
+        revision: 7,
+    });
+    let cached = inspect_snapshot_file(&storage.snapshot, &mut cache, 7, |state| {
+        Ok(state["cached"].clone())
+    })
+    .unwrap();
+    assert_eq!(cached, (json!(true), 7));
+    storage.patch(&mut None, 7, "queued").await.unwrap();
+    let saved = inspect_snapshot_file(&storage.snapshot, &mut cache, 8, |state| {
+        Ok(state["queued"].clone())
+    })
+    .unwrap();
+    assert_eq!(saved, (json!(true), 8));
+    assert_eq!(cache.unwrap().revision, 8);
 }
 
 #[test]

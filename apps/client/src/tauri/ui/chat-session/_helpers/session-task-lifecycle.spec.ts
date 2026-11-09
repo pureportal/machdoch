@@ -3,6 +3,7 @@ import { DEFAULT_USER_AGENT_LIMITS_SETTINGS } from "../../../../core/runtime-con
 import {
   createInitialShellState,
   createSession,
+  getActiveChatOperationIds,
   getSessionOverviewStatus,
   getSessionTaskOutcome,
   type ChatSessionQueuedMessage,
@@ -16,8 +17,8 @@ import {
   processAutomaticChatWork,
   type AutomaticChatWorkOptions,
 } from "./use-automatic-chat-work";
-import { hasPendingChatWork } from "../../app-shell/shutdown-when-idle";
 import { getSessionMessageRunningAction } from "./composer-submission";
+import { getPendingExecutionRetry } from "./execution-retry";
 import { applySmartContextPackSettingsToSession } from "./smart-context-packs";
 import type { SmartContextPack } from "@machdoch/client-ui/context-packs/model";
 import { createSessionMessageSettings } from "./session-message-settings";
@@ -572,9 +573,12 @@ describe("chat execution lifecycle", () => {
       ["First", "Second", "Third"],
     );
     expect(work.state.shellState.queuedSessionMessages).toEqual([]);
-    expect(
-      hasPendingChatWork(work.state.shellState, work.options.settings),
-    ).toBe(false);
+    for (const session of work.state.shellState.sessions) {
+      expect(getActiveChatOperationIds(session)).toEqual([]);
+      expect(
+        getPendingExecutionRetry(session, work.options.settings),
+      ).toBeNull();
+    }
   });
 
   it("passes provider failure context into bounded retries before advancing the queue", async () => {
@@ -588,8 +592,8 @@ describe("chat execution lifecycle", () => {
     work.enqueue("Next objective");
     await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
     expect(
-      hasPendingChatWork(work.state.shellState, work.options.settings),
-    ).toBe(true);
+      getPendingExecutionRetry(work.state.activeSession, work.options.settings),
+    ).not.toBeNull();
     const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 100_000);
     for (let retry = 1; retry <= 2; retry += 1) {
       await Promise.all([

@@ -273,6 +273,7 @@ pub fn run() {
             idle_shutdown::set_window_pending_chat_work,
             idle_shutdown::set_shutdown_when_idle,
             idle_shutdown::has_pending_shutdown_work,
+            idle_shutdown::inspect_persisted_chat_work,
             idle_shutdown::shutdown_if_idle,
             desktop_shell::clear_webview_cache,
             desktop_shell::ensure_assistant_window,

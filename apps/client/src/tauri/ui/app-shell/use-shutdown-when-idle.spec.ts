@@ -6,15 +6,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type Event } from "@tauri-apps/api/event";
 import { createDeferred } from "./__test__/deferred";
 import { DEFAULT_USER_AGENT_LIMITS_SETTINGS as settings } from "../../../core/runtime-contract.generated.js";
-import {
-  createInitialShellState,
-  createSession,
-  type ChatSessionQueuedMessage,
-} from "../chat-session.model";
-import {
-  loadShellStateRevision,
-  loadShellStateSnapshot,
-} from "../lib/shell-store";
+import { createInitialShellState } from "../chat-session.model";
+import type { WorkInspection } from "./shutdown-when-idle";
 import {
   useShutdownWhenIdle,
   type ShutdownWhenIdleOptions,
@@ -24,6 +17,7 @@ const activity = vi.hoisted(() => ({
   media: false,
   native: false,
   chat: false,
+  persisted: { busy: false, revision: 10 },
   mode: { enabled: false, generation: 0 },
 }));
 vi.mock("@tauri-apps/api/core", () => ({
@@ -32,10 +26,6 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async () => vi.fn()),
-}));
-vi.mock("../lib/shell-store", () => ({
-  loadShellStateRevision: vi.fn(),
-  loadShellStateSnapshot: vi.fn(),
 }));
 vi.mock(
   "@machdoch/media-studio/tauri/ui/media/media-generation-service.js",
@@ -49,6 +39,7 @@ beforeEach(() => {
   activity.media = false;
   activity.native = false;
   activity.chat = false;
+  activity.persisted = { busy: false, revision: 10 };
   activity.mode = { enabled: false, generation: 0 };
   vi.mocked(listen).mockClear();
   vi.mocked(invoke)
@@ -73,6 +64,8 @@ beforeEach(() => {
       }
       if (command === "has_pending_shutdown_work")
         return activity.native || activity.chat;
+      if (command === "inspect_persisted_chat_work")
+        return { ...activity.persisted };
       if (command === "shutdown_if_idle") {
         if (
           !activity.mode.enabled ||
@@ -101,10 +94,23 @@ const advance = async (milliseconds = 10_000) => {
   });
 };
 
-const shutdownCalls = () =>
-  vi
-    .mocked(invoke)
-    .mock.calls.filter(([command]) => command === "shutdown_if_idle");
+const commandCalls = (name: string) =>
+  vi.mocked(invoke).mock.calls.filter(([command]) => command === name);
+const shutdownCalls = () => commandCalls("shutdown_if_idle");
+const inspectionCalls = () => commandCalls("inspect_persisted_chat_work");
+
+const interceptInspection = (
+  inspect: () => Promise<WorkInspection>,
+  once = false,
+): void => {
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command !== "inspect_persisted_chat_work")
+      return original(command, args);
+    if (once) vi.mocked(invoke).mockImplementation(original);
+    return inspect();
+  });
+};
 
 const publishMode = (enabled: boolean, generation: number): void => {
   activity.mode = { enabled, generation };
@@ -124,14 +130,6 @@ const setup = async (autoEnable = true) => {
     hasUnsettledWork: () => false,
     flush: vi.fn(async () => undefined),
   };
-  let persisted = options.state;
-  let revision = 10;
-  vi.mocked(loadShellStateRevision)
-    .mockReset()
-    .mockImplementation(async () => revision);
-  vi.mocked(loadShellStateSnapshot)
-    .mockReset()
-    .mockImplementation(async () => ({ state: persisted, revision }));
   const view = renderHook(
     (input: ShutdownWhenIdleOptions) => useShutdownWhenIdle(input),
     { initialProps: options },
@@ -142,21 +140,15 @@ const setup = async (autoEnable = true) => {
       await view.result.current.toggle();
     });
   }
+  const persist = (busy: boolean) => {
+    activity.persisted = { busy, revision: activity.persisted.revision + 1 };
+  };
   const update = (patch: Partial<ShutdownWhenIdleOptions>) => {
     Object.assign(options, patch);
-    persisted = options.state;
-    revision += 1;
+    persist(activity.persisted.busy);
     view.rerender({ ...options });
   };
-  return {
-    ...view,
-    options,
-    update,
-    persist: (state: typeof persisted) => {
-      persisted = state;
-      revision += 1;
-    },
-  };
+  return { ...view, options, update, persist };
 };
 
 describe("shutdown monitoring across chat and image work", () => {
@@ -164,15 +156,14 @@ describe("shutdown monitoring across chat and image work", () => {
     const view = await setup(false);
     const pending = createDeferred<void>();
     view.update({ flush: vi.fn(() => pending.promise) });
-    vi.mocked(loadShellStateRevision).mockRejectedValue(
-      new Error("Storage unavailable"),
-    );
+    interceptInspection(async () => {
+      throw new Error("Storage unavailable");
+    });
 
     await advance(31_000);
 
     expect(view.options.flush).not.toHaveBeenCalled();
-    expect(loadShellStateRevision).not.toHaveBeenCalled();
-    expect(loadShellStateSnapshot).not.toHaveBeenCalled();
+    expect(inspectionCalls()).toEqual([]);
     expect(view.result.current.error).toBeNull();
     expect(view.result.current.enabled).toBe(false);
     expect(shutdownCalls()).toEqual([]);
@@ -190,7 +181,7 @@ describe("shutdown monitoring across chat and image work", () => {
     await advance(1000);
 
     expect(activity.chat).toBe(false);
-    expect(loadShellStateRevision).not.toHaveBeenCalled();
+    expect(inspectionCalls()).toEqual([]);
     expect(view.result.current.error).toBeNull();
   });
 
@@ -205,8 +196,7 @@ describe("shutdown monitoring across chat and image work", () => {
       await advance(31_000);
 
       expect(view.options.flush).not.toHaveBeenCalled();
-      expect(loadShellStateRevision).not.toHaveBeenCalled();
-      expect(loadShellStateSnapshot).not.toHaveBeenCalled();
+      expect(inspectionCalls()).toEqual([]);
       expect(view.result.current.enabled).toBe(true);
       expect(view.result.current.error).toBeNull();
       expect(shutdownCalls()).toEqual([]);
@@ -222,10 +212,8 @@ describe("shutdown monitoring across chat and image work", () => {
 
   it("does not report a timed-out inspection after shutdown is cancelled", async () => {
     const view = await setup();
-    const pending = createDeferred<number>();
-    vi.mocked(loadShellStateRevision).mockImplementationOnce(
-      () => pending.promise,
-    );
+    const pending = createDeferred<WorkInspection>();
+    interceptInspection(() => pending.promise, true);
     await advance(1000);
     await act(async () => {
       await view.result.current.toggle();
@@ -236,66 +224,18 @@ describe("shutdown monitoring across chat and image work", () => {
     expect(view.result.current.enabled).toBe(false);
     expect(view.result.current.error).toBeNull();
     expect(shutdownCalls()).toEqual([]);
-    pending.resolve(10);
+    pending.resolve({ busy: false, revision: 10 });
     await advance(1000);
     expect(shutdownCalls()).toEqual([]);
   });
 
-  it("shuts down only after queued messages, retries, image jobs and settlement have all drained", async () => {
+  it("shuts down only after saved chat work, image jobs and settlement have all drained", async () => {
     const view = await setup();
-    const background = createSession({ id: "background" });
-    const queued = {
-      id: "queued",
-      sessionId: background.id,
-      task: "Work",
-      status: "queued",
-    } as ChatSessionQueuedMessage;
-    view.update({
-      state: {
-        ...view.options.state,
-        sessions: [background],
-        queuedSessionMessages: [queued],
-      },
-    });
-    for (const status of ["queued", "enhancing", "dispatching"] as const) {
-      view.update({
-        state: {
-          ...view.options.state,
-          queuedSessionMessages: [{ ...queued, status }],
-        },
-      });
-      await advance();
-      expect(shutdownCalls()).toEqual([]);
-    }
-    background.messages.push({
-      id: "task",
-      role: "user",
-      content: "Work",
-      executionAttempt: {
-        rootTaskId: "task",
-        task: "Work",
-        retryNumber: 0,
-        retryLimit: 2,
-      },
-    });
-    view.update({
-      state: { ...view.options.state, queuedSessionMessages: [] },
-    });
-    await advance();
-    expect(shutdownCalls()).toEqual([]);
-    background.messages.push({
-      id: "result",
-      taskId: "task",
-      role: "agent",
-      content: "Failed",
-      outcome: { status: "failed" },
-    });
-    view.update({ state: { ...view.options.state } });
+    view.persist(true);
     await advance(60_000);
     expect(shutdownCalls()).toEqual([]);
-    background.messages[0].executionAttempt!.retryNumber = 2;
+    view.persist(false);
     activity.media = true;
-    view.update({ state: { ...view.options.state } });
     await advance();
     expect(shutdownCalls()).toEqual([]);
     activity.media = false;
@@ -312,74 +252,42 @@ describe("shutdown monitoring across chat and image work", () => {
     await advance();
     expect(shutdownCalls()).toHaveLength(1);
     expect(shutdownCalls()[0][1]).toEqual({
-      expectedRevision: await loadShellStateRevision(),
+      expectedRevision: activity.persisted.revision,
       expectedGeneration: 1,
     });
     expect(view.result.current.enabled).toBe(false);
   });
 
-  it("inspects queued work persisted by another window even when the local view is idle", async () => {
+  it("waits for chat work saved by another window even when the local view is idle", async () => {
     const view = await setup();
-    const background = createSession({ id: "background" });
-    view.persist({
-      ...view.options.state,
-      sessions: [background],
-      queuedSessionMessages: [
-        {
-          id: "other-window",
-          sessionId: background.id,
-          task: "Pending",
-          status: "queued",
-        } as ChatSessionQueuedMessage,
-      ],
-    });
+    view.persist(true);
     await advance();
     expect(shutdownCalls()).toEqual([]);
-    view.persist(view.options.state);
+    view.persist(false);
     await advance();
     expect(shutdownCalls()).toHaveLength(1);
   });
 
   it("disarms when work inspection fails", async () => {
     const view = await setup();
-    vi.mocked(loadShellStateRevision).mockRejectedValue(
-      new Error("Storage unavailable"),
-    );
+    interceptInspection(async () => {
+      throw new Error("Storage unavailable");
+    });
     await advance();
     expect(shutdownCalls()).toEqual([]);
     expect(view.result.current.enabled).toBe(false);
+    expect(view.result.current.error).toContain("Storage unavailable");
     expect(invoke).toHaveBeenCalledWith("set_shutdown_when_idle", {
       enabled: false,
       expectedGeneration: 1,
     });
   });
 
-  it("finishes with failed entries retained and orphaned entries hidden from the UI", async () => {
-    const view = await setup();
-    view.persist({
-      ...view.options.state,
-      queuedSessionMessages: [
-        {
-          id: "failed",
-          sessionId: view.options.state.sessions[0].id,
-          status: "failed",
-        },
-        { id: "orphan", sessionId: "deleted-chat", status: "queued" },
-      ] as ChatSessionQueuedMessage[],
-    });
-    await advance();
-    expect(shutdownCalls()).toHaveLength(1);
-    expect(view.result.current.enabled).toBe(false);
-  });
-
   it("finishes despite a new saved revision on every poll", async () => {
-    const view = await setup();
-    vi.mocked(loadShellStateRevision).mockImplementation(
-      async () => 10 + Math.floor(performance.now() / 1000),
-    );
-    vi.mocked(loadShellStateSnapshot).mockImplementation(async () => ({
-      state: view.options.state,
-      revision: await loadShellStateRevision(),
+    await setup();
+    interceptInspection(async () => ({
+      busy: false,
+      revision: 10 + Math.floor(performance.now() / 1000),
     }));
     await advance();
     expect(shutdownCalls()).toHaveLength(1);
@@ -512,22 +420,13 @@ describe("shutdown monitoring across chat and image work", () => {
     },
   );
 
-  it.each(["flush", "revision", "snapshot", "native"] as const)(
+  it.each(["flush", "inspection", "native"] as const)(
     "disarms a hung %s check and prevents it from triggering shutdown after it recovers",
     async (phase) => {
       const view = await setup();
       const pending = createDeferred<never>();
       if (phase === "flush") view.update({ flush: () => pending.promise });
-      if (phase === "revision")
-        vi.mocked(loadShellStateRevision).mockImplementationOnce(
-          () => pending.promise,
-        );
-      if (phase === "snapshot") {
-        view.persist(view.options.state);
-        vi.mocked(loadShellStateSnapshot).mockImplementationOnce(
-          () => pending.promise,
-        );
-      }
+      if (phase === "inspection") interceptInspection(() => pending.promise);
       if (phase === "native") {
         const original = vi.mocked(invoke).getMockImplementation()!;
         vi.mocked(invoke).mockImplementation(async (command, args) =>
@@ -584,22 +483,20 @@ describe("shutdown monitoring across chat and image work", () => {
 
   it("stops before native commit when the component unmounts during inspection", async () => {
     const view = await setup();
-    const pending = createDeferred<number>();
-    vi.mocked(loadShellStateRevision).mockImplementationOnce(
-      () => pending.promise,
-    );
+    const pending = createDeferred<WorkInspection>();
+    interceptInspection(() => pending.promise, true);
     await advance(1000);
     view.unmount();
-    pending.resolve(10);
+    pending.resolve({ busy: false, revision: 10 });
     await advance(31_000);
     expect(shutdownCalls()).toEqual([]);
   });
 
   it("keeps the mode cancellable and reports a failed native disarm", async () => {
     const view = await setup();
-    vi.mocked(loadShellStateRevision).mockRejectedValue(
-      new Error("Storage unavailable"),
-    );
+    interceptInspection(async () => {
+      throw new Error("Storage unavailable");
+    });
     const original = vi.mocked(invoke).getMockImplementation()!;
     vi.mocked(invoke).mockImplementation(async (command, args) => {
       if (
@@ -622,10 +519,8 @@ describe("shutdown monitoring across chat and image work", () => {
 
   it("does not overwrite a newer arm when an old check fails", async () => {
     const view = await setup();
-    const pending = createDeferred<number>();
-    vi.mocked(loadShellStateRevision).mockImplementationOnce(
-      () => pending.promise,
-    );
+    const pending = createDeferred<WorkInspection>();
+    interceptInspection(() => pending.promise, true);
     await advance(1000);
     await act(async () => {
       publishMode(false, 2);

@@ -1,11 +1,13 @@
 import type { UserAgentLimitsSettings } from "../../../core/runtime-contract.generated.js";
 import {
-  getActiveChatOperationIds,
   isTransientChatOperationMessage,
   type ShellPersistedState,
 } from "../chat-session.model";
-import { getPendingExecutionRetry } from "../chat-session/_helpers/execution-retry";
-import type { ShellStateSnapshot } from "../lib/shell-store";
+
+export interface WorkInspection {
+  busy: boolean;
+  revision: number;
+}
 
 export interface ShutdownWhenIdleOptions {
   ready: boolean;
@@ -24,54 +26,24 @@ export const hasPendingLocalChatWork = (
     session.messages.some(isTransientChatOperationMessage),
   );
 
-export const hasPendingChatWork = (
-  state: ShellPersistedState,
-  settings: UserAgentLimitsSettings,
-): boolean =>
-  state.queuedSessionMessages.some(
-    (message) =>
-      message.status !== "failed" &&
-      state.sessions.some((session) => session.id === message.sessionId),
-  ) ||
-  state.sessions.some(
-    (session) =>
-      getActiveChatOperationIds(session).length > 0 ||
-      getPendingExecutionRetry(session, settings) !== null,
-  );
-
-export class PendingChatWorkInspector {
-  private snapshot: ShellStateSnapshot<ShellPersistedState> | undefined;
-
-  constructor(
-    private readonly loadRevision: () => Promise<number>,
-    private readonly loadSnapshot: (
-      state: ShellPersistedState,
-    ) => Promise<ShellStateSnapshot<ShellPersistedState>>,
-  ) {}
-
-  async inspect(
-    read: () => ShutdownWhenIdleOptions,
-  ): Promise<{ busy: boolean; revision: number }> {
-    const options = read();
-    if (hasPendingLocalChatWork(options)) return { busy: true, revision: 0 };
-    await options.flush();
-    const revision = await this.loadRevision();
-    let snapshot = this.snapshot;
-    if (!snapshot || snapshot.revision !== revision) {
-      snapshot = await this.loadSnapshot(options.state);
-      this.snapshot = snapshot;
-    }
-    const current = read();
-    return {
-      busy:
-        hasPendingLocalChatWork(current) ||
-        current.state !== options.state ||
-        current.settings !== options.settings ||
-        hasPendingChatWork(snapshot.state, current.settings),
-      revision: snapshot.revision,
-    };
-  }
-}
+export const inspectPendingChatWork = async (
+  read: () => ShutdownWhenIdleOptions,
+  inspectPersisted: () => Promise<WorkInspection>,
+): Promise<WorkInspection> => {
+  const options = read();
+  if (hasPendingLocalChatWork(options)) return { busy: true, revision: 0 };
+  await options.flush();
+  const persisted = await inspectPersisted();
+  const current = read();
+  return {
+    busy:
+      persisted.busy ||
+      hasPendingLocalChatWork(current) ||
+      current.state !== options.state ||
+      current.settings !== options.settings,
+    revision: persisted.revision,
+  };
+};
 
 export class IdleShutdownMonitor {
   private generation = 0;
@@ -89,7 +61,7 @@ export class IdleShutdownMonitor {
   }
 
   async check(
-    inspect: () => Promise<{ busy: boolean; revision: number }>,
+    inspect: () => Promise<WorkInspection>,
     shutdown: (revision: number) => Promise<boolean>,
     now?: number,
   ): Promise<boolean> {

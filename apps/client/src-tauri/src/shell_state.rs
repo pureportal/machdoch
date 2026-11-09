@@ -79,6 +79,38 @@ fn with_unchanged_snapshot_file(
     })
 }
 
+pub(crate) fn inspect_snapshot<T>(
+    app: &AppHandle,
+    inspect: impl FnOnce(&Value) -> Result<T, String>,
+) -> Result<(T, u64), String> {
+    let state = app.state::<ShellStateStoreLock>();
+    let mut cache = state.0.blocking_lock();
+    let revision = load_snapshot_revision(app)?;
+    let path = snapshot_path(app)?;
+    inspect_snapshot_file(&path, &mut cache, revision, inspect)
+}
+
+fn inspect_snapshot_file<T>(
+    path: &std::path::Path,
+    cache: &mut Option<ShellStateSnapshot>,
+    persisted_revision: u64,
+    inspect: impl FnOnce(&Value) -> Result<T, String>,
+) -> Result<(T, u64), String> {
+    if let Some(snapshot) = cache
+        .as_ref()
+        .filter(|snapshot| snapshot.revision == persisted_revision)
+    {
+        return Ok((inspect(&snapshot.state)?, snapshot.revision));
+    }
+    with_cooperative_file_lock(path, || {
+        let snapshot = load_snapshot_at_path(path, Value::Null)?;
+        let inspected = inspect(&snapshot.state)?;
+        let revision = snapshot.revision;
+        *cache = Some(snapshot);
+        Ok((inspected, revision))
+    })
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShellStateCompareAndSwapRequest {

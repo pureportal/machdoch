@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_USER_AGENT_LIMITS_SETTINGS } from "../../../../core/runtime-contract.generated.js";
 import {
   createInitialShellState,
   createSession,
   normalizeShellState,
 } from "../../chat-session.model";
-import { hasPendingChatWork } from "../../app-shell/shutdown-when-idle";
 import { createQueuedMessageDispatchAttempt } from "./queued-message-lifecycle";
 import {
   CONTINUE_ITERATION_CONTENT,
@@ -223,7 +221,7 @@ describe("request iterations", () => {
     expect(updated[4]).toBe(otherGroup[1]);
   });
 
-  it("keeps shutdown pending until the final continuation drains", () => {
+  it("queues every continuation as dispatchable work for the session", () => {
     const state = createInitialShellState();
     const session = createSession({ id: "session-1" });
     state.sessions.push(session);
@@ -242,14 +240,16 @@ describe("request iterations", () => {
       "continue",
     );
 
-    while (state.queuedSessionMessages.length > 0) {
-      expect(
-        hasPendingChatWork(state, DEFAULT_USER_AGENT_LIMITS_SETTINGS),
-      ).toBe(true);
-      state.queuedSessionMessages.shift();
-    }
-    expect(hasPendingChatWork(state, DEFAULT_USER_AGENT_LIMITS_SETTINGS)).toBe(
-      false,
+    expect(
+      normalized.queuedSessionMessages.map(({ sessionId, status }) => ({
+        sessionId,
+        status,
+      })),
+    ).toEqual(
+      Array.from({ length: 3 }, () => ({
+        sessionId: session.id,
+        status: "queued",
+      })),
     );
   });
 
