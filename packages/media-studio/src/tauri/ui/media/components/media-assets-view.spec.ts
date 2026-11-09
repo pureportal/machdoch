@@ -18,6 +18,7 @@ import type {
   MediaDiscoveredModelArtifact,
 } from "../../../../core/media/contracts.js";
 import { MediaAssetsView } from "./media-assets-view";
+import { appControl } from "../../app-control/app-control-registry";
 import { EMPTY_MEDIA_RUNTIME_SETUP } from "../media-runtime-setup";
 
 vi.mock("./media-visual-preview", () => ({
@@ -627,6 +628,24 @@ describe("MediaAssetsView asset actions", () => {
     ).toBeTruthy();
     fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  it("tells Quick Chat which assets are listed and which one is open", () => {
+    render(createElement(MediaAssetsView, createProps()));
+    expect(appControl.location()).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "Images" }));
+    fireEvent.click(screen.getByRole("button", { name: "View Image 1" }));
+    expect(appControl.location()).toEqual(["Images", "Image 1"]);
+    expect(appControl.snapshot().state["media-assets"]).toMatchObject({
+      open: { name: "Image 1", type: "image", origin: "added" },
+      items: expect.arrayContaining([
+        {
+          name: "Image 1",
+          type: "image",
+          origin: "added",
+          createdAt: asset.createdAt,
+        },
+      ]),
+    });
   });
   it("plans destructive deletion and confirms its dependency impact", async () => {
     const onPlanAssetDeletion = vi.fn(async () => deletionImpact);

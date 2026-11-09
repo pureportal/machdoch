@@ -11,6 +11,7 @@ import {
 import { MediaImportJobs } from "./media-import-jobs";
 import { MediaAssetDetailsDialog } from "./media-asset-details-dialog";
 import { MediaRemoveResourceButton } from "./media-remove-resource-button";
+import { useMediaAssetsAppControl } from "../use-media-assets-app-control";
 import {
   Copy,
   Box,
@@ -557,6 +558,20 @@ export const MediaAssetsView = ({
     visibleAddons.length +
     visibleMedia.length +
     visibleFiles.length;
+  useMediaAssetsAppControl({
+    filterLabel:
+      filter === "all"
+        ? null
+        : (FILTERS.find(({ id }) => id === filter)?.label ?? null),
+    query,
+    activeFilterCount,
+    resources: [...visibleModels, ...visibleAddons],
+    media: visibleMedia,
+    unconfiguredFileCount: visibleFiles.length,
+    openAsset: selectedAsset,
+    openResource:
+      selectedResourceModel ?? selectedResourceAddon ?? editingResource,
+  });
   const formats = [
     ...new Set(
       assets
