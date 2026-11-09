@@ -121,6 +121,40 @@ describe("QuickChatPanel", () => {
   });
 });
 
+describe("QuickChatPanel history", () => {
+  it("shows the view each message was sent from", () => {
+    render(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(QuickChatPanel, {
+          open: true,
+          onOpenChange: vi.fn(),
+          quickTask: quickTask({
+            visibleMessages: [
+              {
+                id: "request",
+                role: "user",
+                content: "Cleanup my assets",
+                viewLocation: ["Media Studio", "Assets"],
+              },
+            ],
+          }),
+          composer: composer(),
+          focusRequest: 0,
+          onClearHistory: vi.fn(),
+          onOpenInChat: vi.fn(),
+          onOpenAttachment: vi.fn(),
+        }),
+      ),
+    );
+
+    expect(
+      screen.getByLabelText("Sent from Media Studio › Assets").textContent,
+    ).toBe("Media Studio › Assets");
+  });
+});
+
 describe("QuickChatPanel focus and session actions", () => {
   it("refocuses the composer on request and opens the session in Chat", () => {
     const onOpenInChat = vi.fn();

@@ -1278,6 +1278,41 @@ describe("normalizeShellState", () => {
     ).toMatchObject({ source: "path" });
   });
 
+  it("preserves the view a user message was sent from", () => {
+    const normalized = normalizeShellState({
+      version: 2,
+      activeSessionId: "view-session",
+      sessions: [
+        {
+          id: "view-session",
+          provider: "openai",
+          model: "gpt-5.5",
+          workspace: null,
+          createdAt: 1,
+          updatedAt: 2,
+          messages: [
+            {
+              id: "request",
+              role: "user",
+              content: "Cleanup my assets",
+              viewLocation: ["Media Studio", "", "Assets", 3],
+            },
+            {
+              id: "reply",
+              role: "agent",
+              content: "Done.",
+              viewLocation: ["Media Studio"],
+            },
+          ],
+        },
+      ],
+    });
+
+    const [request, reply] = normalized.sessions[0]?.messages ?? [];
+    expect(request?.viewLocation).toEqual(["Media Studio", "Assets"]);
+    expect(reply).not.toHaveProperty("viewLocation");
+  });
+
   it("preserves the composer settings used by a sent message", () => {
     const normalized = normalizeShellState({
       version: 2,

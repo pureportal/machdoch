@@ -3,6 +3,7 @@ import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-conte
 import { TaskThinkingPanel } from "@machdoch/client-ui/conversation/task-thinking-panel";
 import { FollowUpSuggestions } from "@machdoch/client-ui/conversation/follow-up-suggestions";
 import { MessageAttachmentsList } from "@machdoch/client-ui/composer/context-attachments";
+import { MessageViewLocation } from "@machdoch/client-ui/conversation/message-view-location";
 import type { ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { ChatSessionMessage } from "../chat-session.model";
@@ -64,6 +65,9 @@ const QuickChatMessage = memo(function QuickChatMessage({
             onOpen={handlers.onOpenAttachment}
             align="end"
           />
+        ) : null}
+        {message.viewLocation ? (
+          <MessageViewLocation location={message.viewLocation} />
         ) : null}
       </li>
     );

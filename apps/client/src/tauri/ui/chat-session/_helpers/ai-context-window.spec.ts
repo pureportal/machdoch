@@ -66,4 +66,26 @@ describe("createAiContextHistory", () => {
       },
     ]);
   });
+
+  it("keeps the view a Quick Chat message was sent from", () => {
+    expect(
+      createAiContextHistory(
+        [
+          {
+            id: "quick-chat-request",
+            role: "user",
+            content: "Cleanup my assets",
+            viewLocation: ["Media Studio", "Assets"],
+          },
+        ],
+        10,
+      ),
+    ).toEqual([
+      {
+        role: "user",
+        content:
+          "Sent from Machdoch view: Media Studio › Assets\nCleanup my assets",
+      },
+    ]);
+  });
 });

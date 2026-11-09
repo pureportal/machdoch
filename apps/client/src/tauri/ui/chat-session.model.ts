@@ -165,6 +165,7 @@ export interface ChatSessionMessage {
   taskAction?: ChatSessionTaskAction;
   iteration?: ChatSessionRequestIteration;
   contextAttachments?: ChatSessionContextAttachment[];
+  viewLocation?: string[];
   promptEnhancement?: ChatSessionMessagePromptEnhancement;
   settings?: ChatSessionMessageSettings;
   source?: ChatSessionMessageSource;
@@ -2501,6 +2502,10 @@ const normalizeSessionMessages = (
       entry.role === "user"
         ? normalizeMessageSettings(entry.settings)
         : undefined;
+    const viewLocation =
+      entry.role === "user"
+        ? normalizeStringArray(entry.viewLocation).filter(Boolean)
+        : [];
     const lifecycle = normalizeMessageLifecycle(
       entry.lifecycle,
       entry.role,
@@ -2535,6 +2540,7 @@ const normalizeSessionMessages = (
       ...(taskAction ? { taskAction } : {}),
       ...(iteration ? { iteration } : {}),
       ...(contextAttachments.length > 0 ? { contextAttachments } : {}),
+      ...(viewLocation.length > 0 ? { viewLocation } : {}),
       ...(promptEnhancement ? { promptEnhancement } : {}),
       ...(settings ? { settings } : {}),
       ...(source ? { source } : {}),

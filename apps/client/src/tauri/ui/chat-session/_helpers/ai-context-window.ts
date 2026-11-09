@@ -33,14 +33,19 @@ const createConversationHistoryEntry = (
   const renderedContent = getRenderedMessageContent(message).trim();
   const contextAttachments =
     message.role === "user" ? (message.contextAttachments ?? []) : [];
-  const content =
+  const attachedContent =
     message.role === "user" && contextAttachments.length > 0
       ? appendContextAttachmentsToTask(renderedContent, contextAttachments)
       : renderedContent;
 
-  if (content.length === 0) {
+  if (attachedContent.length === 0) {
     return undefined;
   }
+
+  const content =
+    message.role === "user" && message.viewLocation?.length
+      ? `Sent from Machdoch view: ${message.viewLocation.join(" › ")}\n${attachedContent}`
+      : attachedContent;
 
   const role: ConversationHistoryEntry["role"] =
     message.role === "agent" ? "assistant" : "user";

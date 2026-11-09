@@ -71,6 +71,7 @@ import {
 import { isRecoveredTaskCrashMessage } from "../_helpers/session-task-continuation";
 import { getMessageWorkspaceRoot } from "../_helpers/message-workspace";
 import { MessageAttachmentsList } from "@machdoch/client-ui/composer/context-attachments";
+import { MessageViewLocation } from "@machdoch/client-ui/conversation/message-view-location";
 import { ExecutionInsightRow } from "@machdoch/client-ui/conversation/execution-insight-row";
 import { FollowUpSuggestions } from "@machdoch/client-ui/conversation/follow-up-suggestions";
 import { AgentLiveRunExtras } from "./agent-live-run-extras";
@@ -561,6 +562,10 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                 onOpen={openAttachment}
                 align={message.role === "user" ? "end" : "start"}
               />
+            ) : null}
+
+            {message.role === "user" && message.viewLocation ? (
+              <MessageViewLocation location={message.viewLocation} />
             ) : null}
 
             {message.role === "user" &&

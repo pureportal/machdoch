@@ -537,6 +537,9 @@ export const useSessionTaskSubmission = (options: {
         ...(userMessageContextAttachments.length > 0
           ? { contextAttachments: userMessageContextAttachments }
           : {}),
+        ...(submitOptions.appView?.location.length
+          ? { viewLocation: [...submitOptions.appView.location] }
+          : {}),
         ...(promptEnhancement ? { promptEnhancement } : {}),
         settings: { ...messageSettings },
       };
