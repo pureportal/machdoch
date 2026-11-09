@@ -349,7 +349,6 @@ export const ChatSession = (): JSX.Element => {
   useAppControlBridge();
   useAppShellControl({
     activeApp,
-    workspaceRoot: controller.composer.activeSession.workspace,
     unsavedChangesMessage,
     settingsSection: controller.catalogOpen
       ? controller.settingsDialog.settingsSection

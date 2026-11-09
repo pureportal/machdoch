@@ -161,7 +161,12 @@ describe("createAppControlPromptSection", () => {
 
   it("describes the view, its state, and compact action signatures", () => {
     const section = createAppControlPromptSection(view, "machdoch");
-    expect(section).toContain("Media Studio › Basic › Image");
+    expect(section).toContain(
+      "The user sent this message from: Media Studio › Basic › Image.",
+    );
+    expect(section).toContain(
+      "never to files or folders that share the name",
+    );
     expect(section).toContain('"name":"SDXL Base"');
     expect(section).toContain("View workspace: C:/art");
     expect(section).toContain(

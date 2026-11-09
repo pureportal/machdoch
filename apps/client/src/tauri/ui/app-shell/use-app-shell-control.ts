@@ -26,7 +26,6 @@ const VIEW_READY_TIMEOUT_MS = 15_000;
 
 export interface AppShellControlOptions {
   activeApp: MainAppId;
-  workspaceRoot: string | null;
   unsavedChangesMessage: string | null;
   settingsSection: SettingsSection | null;
   schedulerOpen: boolean;
@@ -37,7 +36,6 @@ export interface AppShellControlOptions {
 
 export function useAppShellControl({
   activeApp,
-  workspaceRoot,
   unsavedChangesMessage,
   settingsSection,
   schedulerOpen,
@@ -104,7 +102,6 @@ export function useAppShellControl({
 
   useAppControlView("app", APP_CONTROL_LEVEL.app, {
     location: [MAIN_APP_LABELS[activeApp]],
-    workspaceRoot,
     state: () => ({
       activeView: activeApp,
       ...(settingsSection
