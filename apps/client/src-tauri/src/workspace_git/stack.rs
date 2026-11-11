@@ -1,14 +1,13 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     path::Path,
-    thread,
 };
 
 use serde_json::Value;
 
 use super::{
     actions::{current_branch, push_remote},
-    command_output, command_succeeds, current_operation, output_error, run_optional,
+    command_output, command_succeeds, current_operation, output_error, parallel_map, run_optional,
     run_required, WorkspaceGitBranch,
 };
 
@@ -205,21 +204,11 @@ pub(super) fn annotate_branches(
             checks.push((index, parent.clone(), branch.name.clone()));
         }
     }
-    for batch in checks.chunks(MAX_PARALLEL_RESTACK_CHECKS) {
-        let results = thread::scope(|scope| {
-            batch
-                .iter()
-                .map(|(_, parent, name)| {
-                    scope.spawn(move || !is_ancestor(repository, parent, name).unwrap_or(true))
-                })
-                .collect::<Vec<_>>()
-                .into_iter()
-                .map(|worker| worker.join().unwrap_or(false))
-                .collect::<Vec<_>>()
-        });
-        for ((index, _, _), needs_restack) in batch.iter().zip(results) {
-            branches[*index].needs_restack = needs_restack;
-        }
+    let results = parallel_map(&checks, MAX_PARALLEL_RESTACK_CHECKS, |(_, parent, name)| {
+        !is_ancestor(repository, parent, name).unwrap_or(true)
+    });
+    for ((index, _, _), needs_restack) in checks.iter().zip(results) {
+        branches[*index].needs_restack = needs_restack;
     }
 }
 

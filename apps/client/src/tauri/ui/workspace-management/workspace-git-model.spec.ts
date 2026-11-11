@@ -2,14 +2,15 @@ import { describe, expect, it } from "vitest";
 import type {
   WorkspaceGitBranch,
   WorkspaceGitChange,
+  WorkspaceGitOverview,
   WorkspaceGitRepository,
 } from "../runtime";
 import {
   createWorkspaceGitBranchTree,
   filterWorkspaceGitBranches,
   groupWorkspaceGitChanges,
+  optimisticWorkspaceGitStaging,
   selectWorkspaceGitRepository,
-  workspaceDiffLineTone,
   workspaceGitActionChangesFiles,
   workspaceGitActionDoneLabel,
   workspaceGitActionProgressLabel,
@@ -264,13 +265,85 @@ describe("workspace Git presentation", () => {
     ).toBe("Staged");
     expect(workspaceGitChangeLabel(change({}))).toBe("Modified");
   });
+});
 
-  it("classifies unified diff lines without mistaking file headers for edits", () => {
-    expect(workspaceDiffLineTone("+++ b/file.ts")).toBe("header");
-    expect(workspaceDiffLineTone("--- a/file.ts")).toBe("header");
-    expect(workspaceDiffLineTone("@@ -1 +1 @@")).toBe("hunk");
-    expect(workspaceDiffLineTone("+added")).toBe("addition");
-    expect(workspaceDiffLineTone("-removed")).toBe("deletion");
-    expect(workspaceDiffLineTone(" context")).toBe("context");
+describe("optimistic workspace Git staging", () => {
+  const overview = (changes: WorkspaceGitChange[]): WorkspaceGitOverview =>
+    ({
+      changes,
+      stagedCount: 0,
+      unstagedCount: 0,
+      untrackedCount: 0,
+      conflictedCount: 0,
+    }) as unknown as WorkspaceGitOverview;
+
+  it("moves selected files into the staged group", () => {
+    const next = optimisticWorkspaceGitStaging(
+      overview([
+        change({ path: "edited.ts" }),
+        change({ path: "removed.ts", status: " D" }),
+        change({
+          path: "new.ts",
+          status: "??",
+          unstaged: false,
+          untracked: true,
+        }),
+        change({ path: "partial.ts", status: "MM", staged: true }),
+        change({ path: "untouched.ts" }),
+      ]),
+      "stage",
+      ["edited.ts", "removed.ts", "new.ts", "partial.ts"],
+    );
+    expect(next.changes.map((entry) => entry.status)).toEqual([
+      "M ",
+      "D ",
+      "A ",
+      "M ",
+      " M",
+    ]);
+    expect(groupWorkspaceGitChanges(next.changes).staged).toHaveLength(4);
+    expect([next.stagedCount, next.unstagedCount, next.untrackedCount]).toEqual(
+      [4, 1, 0],
+    );
+  });
+
+  it("marks conflicts resolved when staging them", () => {
+    const next = optimisticWorkspaceGitStaging(
+      overview([change({ status: "UU", conflicted: true })]),
+      "stage-all",
+    );
+    expect(next.changes[0]).toMatchObject({
+      status: "M ",
+      staged: true,
+      conflicted: false,
+    });
+    expect(next.conflictedCount).toBe(0);
+  });
+
+  it("returns staged files to the working tree when unstaging", () => {
+    const next = optimisticWorkspaceGitStaging(
+      overview([
+        change({ path: "a.ts", status: "M ", staged: true, unstaged: false }),
+        change({ path: "b.ts", status: "A ", staged: true, unstaged: false }),
+        change({
+          path: "c.ts",
+          status: "R ",
+          staged: true,
+          unstaged: false,
+          originalPath: "old.ts",
+        }),
+        change({ path: "d.ts", status: "MM", staged: true }),
+      ]),
+      "unstage-all",
+    );
+    expect(next.changes.map((entry) => entry.status)).toEqual([
+      " M",
+      "??",
+      "??",
+      " M",
+    ]);
+    expect(next.changes[2]?.originalPath).toBeUndefined();
+    expect(next.stagedCount).toBe(0);
+    expect(next.untrackedCount).toBe(2);
   });
 });

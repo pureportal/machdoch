@@ -1,71 +1,101 @@
 import { CopyContextMenu } from "@machdoch/media-studio/tauri/ui/components/ui/copy-context-menu.js";
 import { ExternalLink, FolderOpen, LoaderCircle } from "lucide-react";
-import { useEffect, useRef, useState, type JSX } from "react";
+import { useEffect, useMemo, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
-import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
-import {
-  loadWorkspaceGitDiff,
-  type WorkspaceGitChange,
-  type WorkspaceGitDiff,
-  type WorkspaceGitPatch,
+import type {
+  WorkspaceGitChange,
+  WorkspaceGitDiff,
+  WorkspaceGitPatch,
 } from "../runtime";
-import { workspaceDiffLineTone } from "./workspace-git-model";
+import { loadCachedWorkspaceGitDiff } from "./workspace-git-diff-cache";
+import {
+  parseWorkspaceGitPatch,
+  workspaceGitPatchStats,
+  type WorkspaceGitDiffLine,
+} from "./workspace-git-diff-model";
+import { WorkspaceGitLineStats } from "./workspace-git-line-stats";
 
 const PATCH_LABELS: Record<WorkspaceGitPatch["kind"], string> = {
   staged: "Staged",
   unstaged: "Working tree",
   untracked: "Untracked",
+  commit: "Commit",
 };
 
-const DiffPatch = ({ patch }: { patch: WorkspaceGitPatch }): JSX.Element => (
-  <section className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70">
-    <header className="flex h-8 items-center gap-2 border-b border-slate-800 px-3">
-      <h5 className="text-[11px] font-medium text-slate-400">
-        {PATCH_LABELS[patch.kind]}
-      </h5>
-      {patch.binary ? (
-        <span className="text-[10px] text-slate-500">Binary</span>
+const LINE_TONES: Record<WorkspaceGitDiffLine["kind"], string> = {
+  addition: "bg-emerald-500/10 text-emerald-200",
+  deletion: "bg-red-500/10 text-rose-200",
+  hunk: "bg-sky-500/10 text-sky-300",
+  note: "text-slate-500 italic",
+  context: "text-slate-400",
+};
+
+export const WorkspaceGitPatchView = ({
+  patch,
+  label = PATCH_LABELS[patch.kind],
+}: {
+  patch: WorkspaceGitPatch;
+  label?: string;
+}): JSX.Element => {
+  const lines = useMemo(
+    () => parseWorkspaceGitPatch(patch.content),
+    [patch.content],
+  );
+  const stats = workspaceGitPatchStats(lines);
+  return (
+    <section className="overflow-hidden rounded-lg border border-slate-800 bg-slate-950/70">
+      <header className="flex h-8 items-center gap-2 border-b border-slate-800 px-3">
+        <h5 className="text-[11px] font-medium text-slate-400">{label}</h5>
+        <WorkspaceGitLineStats
+          additions={stats.additions}
+          deletions={stats.deletions}
+        />
+        {patch.binary ? (
+          <span className="text-[10px] text-slate-500">Binary</span>
+        ) : null}
+      </header>
+      <CopyContextMenu values={[{ label: "Copy diff", value: patch.content }]}>
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label={`${label} diff`}
+          className="max-h-[32rem] overflow-auto py-1 font-mono text-[11px] leading-5 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-sky-500/70"
+        >
+          {lines.length === 0 ? (
+            <p className="px-3 text-slate-500">No textual diff available.</p>
+          ) : (
+            <table className="min-w-full border-collapse">
+              <tbody>
+                {lines.map((line, index) => (
+                  <tr
+                    key={`${index}:${line.text.slice(0, 24)}`}
+                    className={LINE_TONES[line.kind]}
+                  >
+                    <td className="w-10 min-w-10 select-none border-r border-slate-800 pr-2 text-right text-slate-600 tabular-nums">
+                      {line.oldLine ?? ""}
+                    </td>
+                    <td className="w-10 min-w-10 select-none border-r border-slate-800 pr-2 text-right text-slate-600 tabular-nums">
+                      {line.newLine ?? ""}
+                    </td>
+                    <td className="whitespace-pre px-3">{line.text || " "}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </CopyContextMenu>
+      {patch.truncated ? (
+        <p
+          role="status"
+          className="border-t border-slate-800 px-3 py-2 text-xs text-amber-300"
+        >
+          Diff truncated
+        </p>
       ) : null}
-    </header>
-    <CopyContextMenu values={[{ label: "Copy diff", value: patch.content }]}>
-      <pre
-        tabIndex={0}
-        aria-label={`${PATCH_LABELS[patch.kind]} diff`}
-        className="max-h-[32rem] overflow-auto py-2 font-mono text-[11px] leading-5 text-slate-400 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-sky-500/70"
-      >
-        <code>
-          {(patch.content || "No textual diff available.")
-            .split(/\r?\n/u)
-            .map((line, index) => {
-              const tone = workspaceDiffLineTone(line);
-              return (
-                <span
-                  key={`${index}:${line.slice(0, 24)}`}
-                  className={cn(
-                    "block min-w-max px-3",
-                    tone === "addition" && "bg-emerald-950/35 text-emerald-300",
-                    tone === "deletion" && "bg-red-950/35 text-red-300",
-                    tone === "hunk" && "text-sky-300",
-                    tone === "header" && "text-slate-500",
-                  )}
-                >
-                  {line || " "}
-                </span>
-              );
-            })}
-        </code>
-      </pre>
-    </CopyContextMenu>
-    {patch.truncated ? (
-      <p
-        role="status"
-        className="border-t border-slate-800 px-3 py-2 text-xs text-amber-300"
-      >
-        Diff truncated
-      </p>
-    ) : null}
-  </section>
-);
+    </section>
+  );
+};
 
 export const WorkspaceGitDiffView = ({
   workspaceRoot,
@@ -78,41 +108,62 @@ export const WorkspaceGitDiffView = ({
   workspaceRoot: string;
   repositoryRoot: string;
   change: WorkspaceGitChange;
-  revision: unknown;
+  revision: object;
   onOpenFile: () => void;
   onRevealFile: () => void;
 }): JSX.Element => {
-  const [diff, setDiff] = useState<WorkspaceGitDiff | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const requestKey = `${repositoryRoot}\n${change.path}`;
+  const [state, setState] = useState<{
+    requestKey: string;
+    revision: object;
+    diff: WorkspaceGitDiff | null;
+    error: string | null;
+  } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const requestIdRef = useRef(0);
 
   useEffect(() => {
-    const requestId = ++requestIdRef.current;
-    setLoading(true);
-    setError(null);
-    void loadWorkspaceGitDiff(workspaceRoot, repositoryRoot, change.path)
-      .then((nextDiff) => {
-        if (requestId === requestIdRef.current) setDiff(nextDiff);
+    let active = true;
+    loadCachedWorkspaceGitDiff(
+      workspaceRoot,
+      repositoryRoot,
+      change.path,
+      revision,
+    )
+      .then((diff) => {
+        if (active) setState({ requestKey, revision, diff, error: null });
       })
       .catch((failure: unknown) => {
-        if (requestId === requestIdRef.current) {
-          setDiff(null);
-          setError(
-            failure instanceof Error ? failure.message : String(failure),
-          );
+        if (active) {
+          setState({
+            requestKey,
+            revision,
+            diff: null,
+            error: failure instanceof Error ? failure.message : String(failure),
+          });
         }
-      })
-      .finally(() => {
-        if (requestId === requestIdRef.current) setLoading(false);
       });
-  }, [change.path, reloadKey, repositoryRoot, revision, workspaceRoot]);
+    return () => {
+      active = false;
+    };
+  }, [
+    change.path,
+    reloadKey,
+    repositoryRoot,
+    requestKey,
+    revision,
+    workspaceRoot,
+  ]);
+
+  const current = state?.requestKey === requestKey ? state : null;
+  const loading = current?.revision !== revision;
+  const diff = current?.diff ?? null;
+  const error = current?.error ?? null;
 
   return (
     <section
       className="flex min-h-0 min-w-0 flex-col gap-3"
       aria-label={`Diff for ${change.path}`}
+      aria-busy={loading}
     >
       <header className="flex min-h-8 min-w-0 items-center gap-1">
         <div className="min-w-0 flex-1">
@@ -125,6 +176,12 @@ export const WorkspaceGitDiffView = ({
             </p>
           ) : null}
         </div>
+        {loading && diff ? (
+          <LoaderCircle
+            aria-hidden="true"
+            className="size-3.5 animate-spin text-slate-500"
+          />
+        ) : null}
         <Button
           type="button"
           size="icon-sm"
@@ -145,7 +202,7 @@ export const WorkspaceGitDiffView = ({
           <FolderOpen className="size-3.5" />
         </Button>
       </header>
-      {loading && !diff ? (
+      {loading && !diff && !error ? (
         <div
           role="status"
           aria-label="Loading diff"
@@ -166,14 +223,17 @@ export const WorkspaceGitDiffView = ({
             type="button"
             size="sm"
             variant="outline"
-            onClick={() => setReloadKey((current) => current + 1)}
+            onClick={() => {
+              setState(null);
+              setReloadKey((current) => current + 1);
+            }}
           >
             Retry
           </Button>
         </div>
       ) : (
         diff?.patches.map((patch) => (
-          <DiffPatch key={patch.kind} patch={patch} />
+          <WorkspaceGitPatchView key={patch.kind} patch={patch} />
         ))
       )}
     </section>

@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 
 use super::{
     canonical_workspace_root, command_output, current_operation, discover_repositories,
-    output_error, relative_workspace_path, repository_context, run_optional, run_required,
-    summary::read_summary, WorkspaceGitRepository, MAX_CONCURRENT_REPOSITORY_INSPECTIONS,
+    output_error, parallel_map, relative_workspace_path, repository_context, run_git_network,
+    run_git_read, run_optional, run_required, summary::read_summary, WorkspaceGitRepository,
+    FETCH_ARGUMENTS, MAX_CONCURRENT_REPOSITORY_INSPECTIONS,
 };
 
 const MAX_SUGGESTED_BRANCHES: usize = 300;
@@ -103,17 +104,26 @@ struct RepositoryFacts {
 }
 
 fn parse_references(output: &str) -> BranchReferences {
-    let mut references = BranchReferences::default();
-    for line in output.lines() {
+    references_from(output.lines().map(|line| {
         let mut parts = line.split('\t');
-        let Some(name) = parts.next().filter(|name| !name.is_empty()) else {
-            continue;
-        };
+        let name = parts.next().unwrap_or_default();
         let symbolic_target = parts.next().unwrap_or_default();
         let committed_at = parts
             .next()
             .and_then(|value| value.trim().parse::<i64>().ok())
             .unwrap_or_default();
+        (name, symbolic_target, committed_at)
+    }))
+}
+
+pub(super) fn references_from<'a>(
+    entries: impl IntoIterator<Item = (&'a str, &'a str, i64)>,
+) -> BranchReferences {
+    let mut references = BranchReferences::default();
+    for (name, symbolic_target, committed_at) in entries {
+        if name.is_empty() {
+            continue;
+        }
         if let Some(branch) = name.strip_prefix("refs/heads/") {
             references.local.insert(branch.to_string());
             references.recent.push((branch.to_string(), committed_at));
@@ -199,22 +209,32 @@ pub(super) fn read_trunk_references(repository: &Path) -> BranchReferences {
     .unwrap_or_default()
 }
 
+const BRANCH_REFERENCE_ARGUMENTS: [&str; 4] = [
+    "for-each-ref",
+    "--format=%(refname)%09%(symref)%09%(committerdate:unix)",
+    "refs/heads",
+    "refs/remotes",
+];
+
+pub(super) fn read_branch_references(repository: &Path) -> Result<BranchReferences, String> {
+    run_required("git", &BRANCH_REFERENCE_ARGUMENTS, repository)
+        .map(|output| parse_references(&output))
+}
+
+pub(super) fn branch_revision(references: &BranchReferences, branch: &str) -> Option<String> {
+    if references.local.contains(branch) {
+        return Some(format!("refs/heads/{branch}"));
+    }
+    preferred_remote_branch(references, branch)
+        .map(|remote_branch| format!("refs/remotes/{remote_branch}"))
+}
+
 fn read_repository_facts(repository: &Path) -> Result<RepositoryFacts, String> {
     thread::scope(|scope| {
         let summary_worker = scope.spawn(|| read_summary(repository));
-        let references_worker = scope.spawn(|| {
-            run_required(
-                "git",
-                &[
-                    "for-each-ref",
-                    "--format=%(refname)%09%(symref)%09%(committerdate:unix)",
-                    "refs/heads",
-                    "refs/remotes",
-                ],
-                repository,
-            )
-        });
-        let operation_worker = scope.spawn(|| current_operation(repository));
+        let references_worker =
+            scope.spawn(|| run_required("git", &BRANCH_REFERENCE_ARGUMENTS, repository));
+        let operation = current_operation(repository);
         let summary = summary_worker
             .join()
             .map_err(|_| "Git status worker stopped unexpectedly.".to_string())??
@@ -224,9 +244,6 @@ fn read_repository_facts(repository: &Path) -> Result<RepositoryFacts, String> {
                 .join()
                 .map_err(|_| "Git branch worker stopped unexpectedly.".to_string())??,
         );
-        let operation = operation_worker
-            .join()
-            .map_err(|_| "Git operation worker stopped unexpectedly.".to_string())?;
         Ok(RepositoryFacts {
             current_branch: (!summary.detached).then_some(summary.branch),
             changes: summary.changes,
@@ -240,18 +257,8 @@ fn read_repository_facts(repository: &Path) -> Result<RepositoryFacts, String> {
 fn branch_status_repository(
     repository: &WorkspaceGitRepository,
     branch_name: Option<&str>,
-    fetch: bool,
-    issues: &mut Vec<String>,
 ) -> (WorkspaceGitBranchRepository, Vec<(String, i64)>) {
     let root = Path::new(&repository.repository_root);
-    if fetch {
-        if let Err(error) = run_required("git", &["fetch", "--all", "--prune"], root) {
-            issues.push(format!(
-                "Could not fetch {}: {error}",
-                repository.relative_path
-            ));
-        }
-    }
     let mut status = WorkspaceGitBranchRepository {
         repository_root: repository.repository_root.clone(),
         relative_path: repository.relative_path.clone(),
@@ -318,68 +325,57 @@ fn normalized_branch_query(branch_name: Option<&str>) -> Result<Option<String>, 
     Ok(Some(branch.to_string()))
 }
 
-pub(super) fn load_branch_status(
+fn fetch_repositories(workspace_root: &str) -> Result<Vec<String>, String> {
+    let discovery = discover_repositories(workspace_root, false)?;
+    Ok(parallel_map(
+        &discovery.repositories,
+        MAX_CONCURRENT_REPOSITORY_INSPECTIONS,
+        |repository| {
+            run_required(
+                "git",
+                &FETCH_ARGUMENTS,
+                Path::new(&repository.repository_root),
+            )
+            .err()
+            .map(|error| format!("Could not fetch {}: {error}", repository.relative_path))
+        },
+    )
+    .into_iter()
+    .flatten()
+    .collect())
+}
+
+pub(super) async fn load_branch_status(
     request: WorkspaceGitBranchStatusRequest,
 ) -> Result<WorkspaceGitBranchStatus, String> {
     let branch_name = normalized_branch_query(request.branch_name.as_deref())?;
-    let fetch = request.fetch == Some(true);
-    let discovery = discover_repositories(&request.workspace_root, fetch)?;
+    let workspace_root = request.workspace_root;
+    let fetch_issues = if request.fetch == Some(true) {
+        let fetch_root = workspace_root.clone();
+        run_git_network(move || fetch_repositories(&fetch_root)).await?
+    } else {
+        Vec::new()
+    };
+    run_git_read(move || read_branch_status(&workspace_root, branch_name, fetch_issues)).await
+}
+
+fn read_branch_status(
+    workspace_root: &str,
+    branch_name: Option<String>,
+    fetch_issues: Vec<String>,
+) -> Result<WorkspaceGitBranchStatus, String> {
+    let discovery = discover_repositories(workspace_root, false)?;
     let mut issues = discovery.issues;
+    issues.extend(fetch_issues);
     let mut repositories = Vec::with_capacity(discovery.repositories.len());
     let mut recent = Vec::new();
-    for batch in discovery
-        .repositories
-        .chunks(MAX_CONCURRENT_REPOSITORY_INSPECTIONS)
-    {
-        let inspected = thread::scope(|scope| {
-            let workers = batch
-                .iter()
-                .map(|repository| {
-                    let branch_name = branch_name.as_deref();
-                    scope.spawn(move || {
-                        let mut repository_issues = Vec::new();
-                        let (status, branches) = branch_status_repository(
-                            repository,
-                            branch_name,
-                            fetch,
-                            &mut repository_issues,
-                        );
-                        (status, branches, repository_issues)
-                    })
-                })
-                .collect::<Vec<_>>();
-            workers
-                .into_iter()
-                .zip(batch)
-                .map(|(worker, repository)| {
-                    worker.join().unwrap_or_else(|_| {
-                        (
-                            WorkspaceGitBranchRepository {
-                                repository_root: repository.repository_root.clone(),
-                                relative_path: repository.relative_path.clone(),
-                                current_branch: None,
-                                default_branch: None,
-                                branch_local: false,
-                                branch_remote: None,
-                                changes: 0,
-                                conflicts: 0,
-                                operation: None,
-                                error: Some(
-                                    "Git repository inspection stopped unexpectedly.".to_string(),
-                                ),
-                            },
-                            Vec::new(),
-                            Vec::new(),
-                        )
-                    })
-                })
-                .collect::<Vec<_>>()
-        });
-        for (status, branches, repository_issues) in inspected {
-            repositories.push(status);
-            recent.extend(branches);
-            issues.extend(repository_issues);
-        }
+    for (status, branches) in parallel_map(
+        &discovery.repositories,
+        MAX_CONCURRENT_REPOSITORY_INSPECTIONS,
+        |repository| branch_status_repository(repository, branch_name.as_deref()),
+    ) {
+        repositories.push(status);
+        recent.extend(branches);
     }
     Ok(WorkspaceGitBranchStatus {
         workspace_root: discovery.workspace_root,
@@ -445,9 +441,16 @@ fn prepare_switch(
     let (workspace, repository) = repository_context(workspace_root, &target.repository_root)?;
     let relative_path = relative_workspace_path(&workspace, &repository);
     let name = repository_display_name(&workspace, &relative_path);
-    let branch_name = validate_switch_branch(&target.branch_name, &repository)
-        .map_err(|error| format!("{name}: {error}"))?;
-    let facts = read_repository_facts(&repository).map_err(|error| format!("{name}: {error}"))?;
+    let (branch_name, facts) = thread::scope(|scope| {
+        let facts_worker = scope.spawn(|| read_repository_facts(&repository));
+        let branch_name = validate_switch_branch(&target.branch_name, &repository);
+        let facts = facts_worker
+            .join()
+            .unwrap_or_else(|_| Err("Git status worker stopped unexpectedly.".to_string()));
+        (branch_name, facts)
+    });
+    let branch_name = branch_name.map_err(|error| format!("{name}: {error}"))?;
+    let facts = facts.map_err(|error| format!("{name}: {error}"))?;
     let source = if facts.current_branch.as_deref() == Some(branch_name.as_str()) {
         SwitchSource::Current
     } else if let Some(operation) = facts.operation.as_deref() {
@@ -566,44 +569,28 @@ pub(super) fn switch_branches(
     if request.targets.is_empty() || request.targets.len() > MAX_SWITCH_TARGETS {
         return Err("Select between 1 and 256 repositories.".to_string());
     }
-    let mut prepared = Vec::with_capacity(request.targets.len());
+    let prepared = parallel_map(
+        &request.targets,
+        MAX_CONCURRENT_REPOSITORY_INSPECTIONS,
+        |target| prepare_switch(&request.workspace_root, target, request.stash_changes),
+    )
+    .into_iter()
+    .collect::<Result<Vec<_>, _>>()?;
     let mut seen = HashSet::new();
-    for target in &request.targets {
-        let switch = prepare_switch(&request.workspace_root, target, request.stash_changes)?;
-        if !seen.insert(switch.repository.clone()) {
-            return Err(format!(
-                "{} was selected more than once.",
-                repository_display_name(&workspace, &switch.relative_path)
-            ));
-        }
-        prepared.push(switch);
+    if let Some(duplicate) = prepared
+        .iter()
+        .find(|switch| !seen.insert(switch.repository.clone()))
+    {
+        return Err(format!(
+            "{} was selected more than once.",
+            repository_display_name(&workspace, &duplicate.relative_path)
+        ));
     }
-    let mut results = Vec::with_capacity(prepared.len());
-    for batch in prepared.chunks(MAX_CONCURRENT_REPOSITORY_INSPECTIONS) {
-        let executed = thread::scope(|scope| {
-            batch
-                .iter()
-                .map(|switch| scope.spawn(move || execute_switch(switch)))
-                .collect::<Vec<_>>()
-                .into_iter()
-                .zip(batch)
-                .map(|(worker, switch)| {
-                    worker
-                        .join()
-                        .unwrap_or_else(|_| WorkspaceGitBranchSwitchResult {
-                            repository_root: switch.repository.display().to_string(),
-                            relative_path: switch.relative_path.clone(),
-                            branch_name: switch.branch_name.clone(),
-                            switched: false,
-                            stashed: false,
-                            error: Some("The branch switch stopped unexpectedly.".to_string()),
-                        })
-                })
-                .collect::<Vec<_>>()
-        });
-        results.extend(executed);
-    }
-    Ok(results)
+    Ok(parallel_map(
+        &prepared,
+        MAX_CONCURRENT_REPOSITORY_INSPECTIONS,
+        execute_switch,
+    ))
 }
 
 #[cfg(test)]
@@ -686,11 +673,11 @@ mod tests {
         }
 
         fn status(&self, branch_name: Option<&str>) -> WorkspaceGitBranchStatus {
-            load_branch_status(WorkspaceGitBranchStatusRequest {
-                workspace_root: self.root.display().to_string(),
-                branch_name: branch_name.map(str::to_string),
-                fetch: None,
-            })
+            read_branch_status(
+                &self.root.display().to_string(),
+                branch_name.map(str::to_string),
+                Vec::new(),
+            )
             .expect("the branch status should load")
         }
 

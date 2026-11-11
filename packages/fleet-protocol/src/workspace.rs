@@ -170,6 +170,12 @@ fn repository(request: &Map<String, Value>) -> bool {
     root(&request["workspaceRoot"]) && root(&request["repositoryRoot"])
 }
 
+fn commit_id(value: &Value) -> bool {
+    value.as_str().is_some_and(|commit| {
+        (4..=64).contains(&commit.len()) && commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+    })
+}
+
 fn stash_reference(value: &Value) -> bool {
     value.as_str().is_some_and(|value| {
         value
@@ -668,7 +674,7 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
                     && request["recursive"].is_boolean()
             })
         }),
-        "get_workspace_git_summary" => {
+        "get_workspace_git_summary" | "get_workspace_git_fingerprint" => {
             fields(args, &["workspaceRoot"]).is_some_and(|args| root(&args["workspaceRoot"]))
         }
         "get_workspace_git_overview" | "get_workspace_pull_requests" => fields(args, &["request"])
@@ -676,6 +682,32 @@ pub fn valid_workspace_invocation(command: &str, args: &Value) -> bool {
                 fields(&args["request"], &["workspaceRoot", "repositoryRoot"])
                     .is_some_and(repository)
             }),
+        "get_workspace_git_graph" => fields(args, &["request"]).is_some_and(|args| {
+            fields_with_optional(
+                &args["request"],
+                &["workspaceRoot", "repositoryRoot"],
+                &["scope"],
+            )
+            .is_some_and(|request| {
+                repository(request)
+                    && request
+                        .get("scope")
+                        .is_none_or(|scope| matches!(scope.as_str(), Some("current" | "all")))
+            })
+        }),
+        "get_workspace_git_commit" => fields(args, &["request"]).is_some_and(|args| {
+            fields_with_optional(
+                &args["request"],
+                &["workspaceRoot", "repositoryRoot", "commit"],
+                &["base", "relativePath"],
+            )
+            .is_some_and(|request| {
+                repository(request)
+                    && commit_id(&request["commit"])
+                    && request.get("base").is_none_or(commit_id)
+                    && request.get("relativePath").is_none_or(path)
+            })
+        }),
         "get_workspace_git_diff" => fields(args, &["request"]).is_some_and(|args| {
             fields(
                 &args["request"],

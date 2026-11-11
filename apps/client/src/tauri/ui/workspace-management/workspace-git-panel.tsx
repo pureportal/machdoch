@@ -3,8 +3,8 @@ import {
   FileDiff,
   FolderGit2,
   GitBranch,
+  GitGraph,
   GitPullRequest,
-  History,
   LoaderCircle,
   Network,
   RefreshCw,
@@ -27,7 +27,7 @@ import {
   WorkspaceGitChanges,
   type WorkspaceGitPathAction,
 } from "./workspace-git-changes";
-import { WorkspaceGitHistory } from "./workspace-git-history";
+import { WorkspaceGitGraphView } from "./workspace-git-graph";
 import { WorkspaceGitPullRequests } from "./workspace-git-pull-requests";
 import { WorkspaceGitRemotes } from "./workspace-git-remotes";
 import { WorkspaceGitRepositories } from "./workspace-git-repositories";
@@ -185,7 +185,7 @@ const gitTabs = (
     icon: Archive,
     count: overview?.stashes.length,
   },
-  { value: "history", label: "History", icon: History },
+  { value: "history", label: "History", icon: GitGraph },
   {
     value: "pull-requests",
     label: "Pull requests",
@@ -220,7 +220,7 @@ const SectionContent = ({
     case "stashes":
       return <WorkspaceGitStashes controls={controls} overview={overview} />;
     case "history":
-      return <WorkspaceGitHistory controls={controls} overview={overview} />;
+      return <WorkspaceGitGraphView controls={controls} overview={overview} />;
     case "pull-requests":
       return (
         <WorkspaceGitPullRequests controls={controls} overview={overview} />

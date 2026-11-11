@@ -1282,6 +1282,130 @@
     "accepted": false
   },
   {
+    "name": "get_workspace_git_graph",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_graph",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "scope": "all"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "get_workspace_git_graph rejects unknown scopes",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_graph",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "scope": "everything"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "get_workspace_git_commit",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_commit",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "commit": "8889a19dc5d38edacb24fc3ed863e8d413a68976",
+          "relativePath": "src/main.ts"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "get_workspace_git_commit compares against a base",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_commit",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "commit": "8889a19dc5d38edacb24fc3ed863e8d413a68976",
+          "base": "b432bcef"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "get_workspace_git_commit rejects base expressions",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_commit",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "commit": "8889a19dc5d38edacb24fc3ed863e8d413a68976",
+          "base": "main~3"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "get_workspace_git_commit rejects revision expressions",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_commit",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "commit": "--all"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "get_workspace_git_fingerprint",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_fingerprint",
+      "args": {
+        "workspaceRoot": "/projects/demo"
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "get_workspace_git_fingerprint rejects extra fields",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "get_workspace_git_fingerprint",
+      "args": {
+        "workspaceRoot": "/projects/demo",
+        "refresh": true
+      }
+    },
+    "accepted": false
+  },
+  {
     "name": "save UTF8",
     "request": {
       "kind": "invoke",

@@ -1,5 +1,6 @@
 import { createWorkspaceGitBranchStatusStore } from "@machdoch/client-ui/git-branch/branch-status-store";
 import { loadWorkspaceGitBranchStatus } from "../runtime";
+import { workspaceGitChangeMonitor } from "./workspace-git-change-monitor";
 import { createWorkspaceRootKey } from "./workspace-management-model";
 
 export const workspaceGitBranchStatusStore =
@@ -14,3 +15,7 @@ export const workspaceGitBranchStatusStore =
     staleMs: 20_000,
     keyOf: createWorkspaceRootKey,
   });
+
+workspaceGitChangeMonitor.subscribe((workspaceRoot) =>
+  workspaceGitBranchStatusStore.invalidate(workspaceRoot),
+);

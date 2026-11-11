@@ -104,6 +104,7 @@ const mcpArguments = z.union([
   ]),
 ]);
 const gitBranch = z.string().trim().min(1).max(240);
+const commitId = z.string().regex(/^[0-9a-f]{4,64}$/iu);
 const gitAction = <T extends string, S extends z.ZodRawShape>(value: T, shape: S) =>
   z.strictObject({ ...repository, action: z.literal(value), ...shape });
 const action = z.discriminatedUnion("action", [
@@ -622,8 +623,32 @@ export const workspaceRequestSchema = z.union([
       z.strictObject({ workspaceRoot: root }),
     ),
     command(
+      "get_workspace_git_fingerprint",
+      z.strictObject({ workspaceRoot: root }),
+    ),
+    command(
       "get_workspace_git_overview",
       z.strictObject({ request: z.strictObject(repository) }),
+    ),
+    command(
+      "get_workspace_git_graph",
+      z.strictObject({
+        request: z.strictObject({
+          ...repository,
+          scope: z.enum(["current", "all"]).optional(),
+        }),
+      }),
+    ),
+    command(
+      "get_workspace_git_commit",
+      z.strictObject({
+        request: z.strictObject({
+          ...repository,
+          commit: commitId,
+          base: commitId.optional(),
+          relativePath: path.optional(),
+        }),
+      }),
     ),
     command(
       "get_workspace_git_diff",

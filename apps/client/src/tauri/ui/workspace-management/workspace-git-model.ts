@@ -6,13 +6,7 @@ import type {
   WorkspaceGitRepository,
   WorkspaceGitRepositoryStatus,
 } from "../runtime";
-
-export type WorkspaceDiffLineTone =
-  | "addition"
-  | "deletion"
-  | "header"
-  | "hunk"
-  | "context";
+import { createWorkspaceRootKey } from "./workspace-management-model";
 
 const FILE_CHANGING_ACTIONS = new Set<WorkspaceGitAction>([
   "pull",
@@ -125,6 +119,89 @@ export const groupWorkspaceGitChanges = (
   return groups;
 };
 
+export type WorkspaceGitStagingAction =
+  | "stage"
+  | "unstage"
+  | "stage-all"
+  | "unstage-all";
+
+export const isWorkspaceGitStagingAction = (
+  action: WorkspaceGitAction,
+): action is WorkspaceGitStagingAction =>
+  action === "stage" ||
+  action === "unstage" ||
+  action === "stage-all" ||
+  action === "unstage-all";
+
+const stagedChange = (change: WorkspaceGitChange): WorkspaceGitChange => {
+  if (change.untracked) {
+    return {
+      ...change,
+      status: "A ",
+      staged: true,
+      unstaged: false,
+      untracked: false,
+    };
+  }
+  const index = change.status[0] ?? " ";
+  const worktree = change.status[1] ?? " ";
+  const code = change.conflicted || index === " " ? worktree : index;
+  return {
+    ...change,
+    status: `${code === " " || code === "U" ? "M" : code} `,
+    staged: true,
+    unstaged: false,
+    conflicted: false,
+  };
+};
+
+const unstagedChange = (change: WorkspaceGitChange): WorkspaceGitChange => {
+  if (!change.staged || change.conflicted) return change;
+  const index = change.status[0] ?? " ";
+  if (index === "A" || index === "R" || index === "C") {
+    const { originalPath: _originalPath, ...rest } = change;
+    return {
+      ...rest,
+      status: "??",
+      staged: false,
+      unstaged: false,
+      untracked: true,
+    };
+  }
+  const worktree = change.status[1] ?? " ";
+  return {
+    ...change,
+    status: ` ${worktree === " " ? index : worktree}`,
+    staged: false,
+    unstaged: true,
+  };
+};
+
+export const optimisticWorkspaceGitStaging = (
+  overview: WorkspaceGitOverview,
+  action: WorkspaceGitStagingAction,
+  paths: readonly string[] = [],
+): WorkspaceGitOverview => {
+  const selected = new Set(paths);
+  const everything = action === "stage-all" || action === "unstage-all";
+  const stage = action === "stage" || action === "stage-all";
+  const changes = overview.changes.map((change) =>
+    everything || selected.has(change.path)
+      ? stage
+        ? stagedChange(change)
+        : unstagedChange(change)
+      : change,
+  );
+  return {
+    ...overview,
+    changes,
+    stagedCount: changes.filter((change) => change.staged).length,
+    unstagedCount: changes.filter((change) => change.unstaged).length,
+    untrackedCount: changes.filter((change) => change.untracked).length,
+    conflictedCount: changes.filter((change) => change.conflicted).length,
+  };
+};
+
 export const workspaceGitRepositoryLabel = (
   repository: WorkspaceGitRepository,
 ): string =>
@@ -143,8 +220,10 @@ export const selectWorkspaceGitRepository = (
   ...preferredRoots: readonly (string | null | undefined)[]
 ): WorkspaceGitRepository | null => {
   for (const root of preferredRoots) {
+    if (!root) continue;
+    const key = createWorkspaceRootKey(root);
     const match = repositories.find(
-      (repository) => repository.repositoryRoot === root,
+      (repository) => createWorkspaceRootKey(repository.repositoryRoot) === key,
     );
     if (match) return match;
   }
@@ -311,24 +390,4 @@ export const filterWorkspaceGitBranches = (
   return branches.filter((branch) =>
     branch.name.toLocaleLowerCase().includes(normalized),
   );
-};
-
-export const workspaceDiffLineTone = (line: string): WorkspaceDiffLineTone => {
-  if (line.startsWith("@@")) return "hunk";
-  if (line.startsWith("+++ ") || line.startsWith("--- ")) return "header";
-  if (line.startsWith("+")) return "addition";
-  if (line.startsWith("-")) return "deletion";
-  if (
-    line.startsWith("diff ") ||
-    line.startsWith("index ") ||
-    line.startsWith("new file ") ||
-    line.startsWith("deleted file ") ||
-    line.startsWith("similarity index ") ||
-    line.startsWith("rename from ") ||
-    line.startsWith("rename to ") ||
-    line.startsWith("Binary files ")
-  ) {
-    return "header";
-  }
-  return "context";
 };

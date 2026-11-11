@@ -2,10 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { WorkspaceGitOverview, WorkspaceGitSummary } from "../runtime";
 import {
   createWorkspaceGitSummaryStore,
+  nextWorkspaceGitSequence,
   workspaceGitSummaryFromOverview,
 } from "./workspace-git-summary-store";
 
-vi.mock("../runtime", () => ({ loadWorkspaceGitSummary: vi.fn() }));
+vi.mock("../runtime", () => ({
+  loadWorkspaceGitSummary: vi.fn(),
+  loadWorkspaceGitFingerprint: vi.fn(),
+}));
 
 const summary = (branch: string): WorkspaceGitSummary => ({
   branch,
@@ -110,6 +114,44 @@ describe("workspace Git summary store", () => {
     store.request("C:\\a", { force: true });
     await flush();
     expect(load).toHaveBeenCalledTimes(3);
+  });
+
+  it("reloads after a forced request that arrives during a load", async () => {
+    const { store, load, pending, flush } = createHarness();
+    store.request("C:\\a");
+    await flush();
+    store.request("C:\\a", { force: true });
+    await flush();
+    expect(load).toHaveBeenCalledTimes(1);
+
+    pending.get("C:\\a")!.resolve(summary("main"));
+    await flush();
+    await flush();
+    expect(load).toHaveBeenCalledTimes(2);
+    pending.get("C:\\a")!.resolve(summary("feature"));
+    await flush();
+    expect(store.get("C:\\a")?.summary?.branch).toBe("feature");
+  });
+
+  it("keeps newer published branches over loads that started earlier", async () => {
+    const { store, pending, flush } = createHarness();
+    store.request("C:\\a");
+    await flush();
+    store.publish("C:\\a", summary("feature"));
+    pending.get("C:\\a")!.resolve(summary("main"));
+    await flush();
+    expect(store.get("C:\\a")?.summary?.branch).toBe("feature");
+  });
+
+  it("ignores published summaries older than the current entry", async () => {
+    const { store, pending, flush } = createHarness();
+    const staleSequence = nextWorkspaceGitSequence();
+    store.request("C:\\a");
+    await flush();
+    pending.get("C:\\a")!.resolve(summary("feature"));
+    await flush();
+    store.publish("C:\\a", summary("main"), staleSequence);
+    expect(store.get("C:\\a")?.summary?.branch).toBe("feature");
   });
 
   it("accepts summaries published from a loaded overview", () => {

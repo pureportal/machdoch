@@ -1,17 +1,11 @@
-use std::{
-    path::Path,
-    sync::{
-        atomic::{AtomicUsize, Ordering},
-        Mutex, PoisonError,
-    },
-    thread,
-};
+use std::{path::Path, thread};
 
 use serde::{Deserialize, Serialize};
 
 use super::{
     branch_alignment, command_output, current_operation, discover_repositories, output_error,
-    parse_status, parse_upstream_track, stack, WorkspaceGitChange, WorkspaceGitRepository,
+    parallel_map, parse_status, parse_upstream_track, stack, WorkspaceGitChange,
+    WorkspaceGitRepository,
 };
 
 const MAX_REPOSITORY_STATUS_CHANGES: usize = 100;
@@ -131,18 +125,17 @@ fn inspect_repository(repository: &WorkspaceGitRepository) -> WorkspaceGitReposi
         relative_path: repository.relative_path.clone(),
         ..WorkspaceGitRepositoryStatus::default()
     };
-    let (status_output, trunk_references, parents, operation) = thread::scope(|scope| {
+    let operation = current_operation(path);
+    let (status_output, trunk_references, parents) = thread::scope(|scope| {
         let status_worker = scope.spawn(|| read_status_with_branch(path));
         let trunk_worker = scope.spawn(|| branch_alignment::read_trunk_references(path));
-        let parents_worker = scope.spawn(|| stack::read_parents(path));
-        let operation_worker = scope.spawn(|| current_operation(path));
+        let parents = stack::read_parents(path);
         (
             status_worker
                 .join()
                 .unwrap_or_else(|_| Err("Git status stopped unexpectedly.".to_string())),
             trunk_worker.join().unwrap_or_default(),
-            parents_worker.join().unwrap_or_default(),
-            operation_worker.join().unwrap_or_default(),
+            parents,
         )
     });
     let output = match status_output {
@@ -181,45 +174,16 @@ fn inspect_repository(repository: &WorkspaceGitRepository) -> WorkspaceGitReposi
     status
 }
 
-fn inspect_repositories(
-    repositories: &[WorkspaceGitRepository],
-) -> Vec<WorkspaceGitRepositoryStatus> {
-    let next = AtomicUsize::new(0);
-    let results = Mutex::new(vec![None; repositories.len()]);
-    thread::scope(|scope| {
-        for _ in 0..MAX_REPOSITORY_STATUS_WORKERS.min(repositories.len()) {
-            scope.spawn(|| loop {
-                let index = next.fetch_add(1, Ordering::Relaxed);
-                let Some(repository) = repositories.get(index) else {
-                    break;
-                };
-                let status = inspect_repository(repository);
-                results.lock().unwrap_or_else(PoisonError::into_inner)[index] = Some(status);
-            });
-        }
-    });
-    results
-        .into_inner()
-        .unwrap_or_else(PoisonError::into_inner)
-        .into_iter()
-        .zip(repositories)
-        .map(|(status, repository)| {
-            status.unwrap_or_else(|| WorkspaceGitRepositoryStatus {
-                repository_root: repository.repository_root.clone(),
-                relative_path: repository.relative_path.clone(),
-                error: Some("Git repository inspection stopped unexpectedly.".to_string()),
-                ..WorkspaceGitRepositoryStatus::default()
-            })
-        })
-        .collect()
-}
-
 pub(super) fn load_repositories_status(
     request: WorkspaceGitRepositoriesStatusRequest,
 ) -> Result<WorkspaceGitRepositoriesStatus, String> {
     let discovery = discover_repositories(&request.workspace_root, request.refresh == Some(true))?;
     Ok(WorkspaceGitRepositoriesStatus {
-        repositories: inspect_repositories(&discovery.repositories),
+        repositories: parallel_map(
+            &discovery.repositories,
+            MAX_REPOSITORY_STATUS_WORKERS,
+            inspect_repository,
+        ),
         workspace_root: discovery.workspace_root,
         scan_limited: discovery.scan_limited,
         issues: discovery.issues,

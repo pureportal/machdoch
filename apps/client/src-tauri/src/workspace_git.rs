@@ -1,10 +1,14 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     fs,
+    hash::{DefaultHasher, Hash, Hasher},
     io::{self, Read},
     path::{Path, PathBuf},
-    process::{Command, Output, Stdio},
-    sync::{Arc, Mutex, OnceLock, PoisonError},
+    process::{Command, ExitStatus, Output, Stdio},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        mpsc, Mutex, MutexGuard, OnceLock, PoisonError,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -19,6 +23,7 @@ use tokio::sync::Semaphore;
 mod action_tests;
 mod actions;
 mod branch_alignment;
+mod history;
 mod repositories_status;
 mod stack;
 mod summary;
@@ -35,26 +40,98 @@ const MAX_STASH_ENTRIES: usize = 50;
 const MAX_GIT_DIFF_BYTES: usize = 128 * 1024;
 const MAX_GIT_ERROR_BYTES: usize = 32 * 1024;
 const MAX_GIT_COMMAND_BYTES: usize = 32 * 1024 * 1024;
+const GIT_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
+const GIT_EXIT_POLL_INTERVAL: Duration = Duration::from_millis(25);
+const FETCH_ARGUMENTS: [&str; 5] = [
+    "fetch",
+    "--all",
+    "--prune",
+    "--jobs=4",
+    "--no-show-forced-updates",
+];
+const OPERATION_MARKERS: [(&str, &str); 5] = [
+    ("rebase", "rebase-merge"),
+    ("rebase", "rebase-apply"),
+    ("merge", "MERGE_HEAD"),
+    ("cherry-pick", "CHERRY_PICK_HEAD"),
+    ("revert", "REVERT_HEAD"),
+];
 static GIT_READ_PERMITS: OnceLock<Semaphore> = OnceLock::new();
+static GIT_NETWORK_PERMITS: OnceLock<Semaphore> = OnceLock::new();
 
-fn git_read_permits() -> &'static Semaphore {
-    GIT_READ_PERMITS.get_or_init(|| Semaphore::new(4))
+async fn run_with_permit<R: Send + 'static>(
+    permits: &'static Semaphore,
+    label: &str,
+    work: impl FnOnce() -> Result<R, String> + Send + 'static,
+) -> Result<R, String> {
+    let permit = permits
+        .acquire()
+        .await
+        .map_err(|error| format!("The workspace Git {label} is unavailable: {error}"))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let _permit = permit;
+        work()
+    })
+    .await
+    .map_err(|error| format!("The workspace Git {label} stopped unexpectedly: {error}"))?
 }
 
 async fn run_git_read<R: Send + 'static>(
     read: impl FnOnce() -> Result<R, String> + Send + 'static,
 ) -> Result<R, String> {
-    let permit = git_read_permits()
-        .acquire()
-        .await
-        .map_err(|error| format!("The workspace Git reader is unavailable: {error}"))?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let _permit = permit;
-        read()
-    })
+    run_with_permit(
+        GIT_READ_PERMITS.get_or_init(|| Semaphore::new(4)),
+        "reader",
+        read,
+    )
     .await
-    .map_err(|error| format!("The workspace Git reader stopped unexpectedly: {error}"))?
 }
+
+async fn run_git_network<R: Send + 'static>(
+    work: impl FnOnce() -> Result<R, String> + Send + 'static,
+) -> Result<R, String> {
+    run_with_permit(
+        GIT_NETWORK_PERMITS.get_or_init(|| Semaphore::new(4)),
+        "network worker",
+        work,
+    )
+    .await
+}
+
+fn parallel_map<T: Sync, R: Send>(
+    items: &[T],
+    workers: usize,
+    map: impl Fn(&T) -> R + Sync,
+) -> Vec<R> {
+    let next = AtomicUsize::new(0);
+    let mut results = thread::scope(|scope| {
+        let handles = (0..workers.min(items.len()))
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut completed = Vec::new();
+                    loop {
+                        let index = next.fetch_add(1, Ordering::Relaxed);
+                        let Some(item) = items.get(index) else {
+                            return completed;
+                        };
+                        completed.push((index, map(item)));
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        handles
+            .into_iter()
+            .flat_map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            })
+            .collect::<Vec<_>>()
+    });
+    results.sort_unstable_by_key(|(index, _)| *index);
+    results.into_iter().map(|(_, result)| result).collect()
+}
+
 const MAX_REPOSITORY_SCAN_DIRECTORIES: usize = 50_000;
 const MAX_DISCOVERED_REPOSITORIES: usize = 256;
 const MAX_CONCURRENT_REPOSITORY_INSPECTIONS: usize = 4;
@@ -82,6 +159,10 @@ pub struct WorkspaceGitChange {
     unstaged: bool,
     untracked: bool,
     conflicted: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    additions: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    deletions: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -303,7 +384,7 @@ fn command_output_bounded(
     stdout_limit: usize,
 ) -> Result<Output, String> {
     let mut command = configured_command(program, args, cwd);
-    let mut child = SupervisedChild::spawn_with_background_priority(&mut command)
+    let mut child = SupervisedChild::spawn_with_required_isolation(&mut command)
         .map_err(|error| format!("Failed to run {program}: {error}"))?;
     let stdout = child
         .stdout
@@ -313,9 +394,13 @@ fn command_output_bounded(
         .stderr
         .take()
         .ok_or_else(|| format!("Failed to read {program} errors."))?;
+    let (output_open, output_closed) = mpsc::channel::<()>();
     let stdout_worker = thread::Builder::new()
         .name("workspace-git-stdout".to_string())
-        .spawn(move || read_bounded(stdout, stdout_limit))
+        .spawn(move || {
+            let _output_open = output_open;
+            read_bounded(stdout, stdout_limit)
+        })
         .map_err(|error| {
             let _ = child.terminate_and_reap();
             format!("Failed to read {program} output: {error}")
@@ -331,21 +416,7 @@ fn command_output_bounded(
             return Err(format!("Failed to read {program} errors: {error}"));
         }
     };
-    let deadline = Instant::now() + Duration::from_secs(120);
-    let status_result = loop {
-        match child.try_wait() {
-            Ok(Some(status)) => break Ok(status),
-            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(25)),
-            Ok(None) => {
-                let _ = child.terminate_and_reap();
-                break Err(format!("{program} timed out after 120 seconds."));
-            }
-            Err(error) => {
-                let _ = child.terminate_and_reap();
-                break Err(format!("Failed to wait for {program}: {error}"));
-            }
-        }
-    };
+    let status_result = wait_for_exit(&mut child, program, &output_closed);
     // Reap descendants before joining: helpers can inherit pipes and outlive git.
     let stdout_result = stdout_worker.join();
     let stderr_result = stderr_worker.join();
@@ -361,6 +432,47 @@ fn command_output_bounded(
         stdout,
         stderr,
     })
+}
+
+fn wait_for_exit(
+    child: &mut SupervisedChild,
+    program: &str,
+    output_closed: &mpsc::Receiver<()>,
+) -> Result<ExitStatus, String> {
+    let deadline = Instant::now() + GIT_COMMAND_TIMEOUT;
+    let mut closed_poll_interval = None::<Duration>;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => return Ok(status),
+            Ok(None) => {}
+            Err(error) => {
+                let _ = child.terminate_and_reap();
+                return Err(format!("Failed to wait for {program}: {error}"));
+            }
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            let _ = child.terminate_and_reap();
+            return Err(format!(
+                "{program} timed out after {} seconds.",
+                GIT_COMMAND_TIMEOUT.as_secs()
+            ));
+        }
+        match closed_poll_interval {
+            Some(interval) => {
+                thread::sleep(interval.min(remaining));
+                closed_poll_interval = Some((interval * 2).min(GIT_EXIT_POLL_INTERVAL));
+            }
+            None => {
+                if !matches!(
+                    output_closed.recv_timeout(GIT_EXIT_POLL_INTERVAL.min(remaining)),
+                    Err(mpsc::RecvTimeoutError::Timeout)
+                ) {
+                    closed_poll_interval = Some(Duration::from_millis(1));
+                }
+            }
+        }
+    }
 }
 
 fn output_text(output: &Output) -> String {
@@ -426,24 +538,46 @@ fn repository_context(
     if !repository.starts_with(&workspace) {
         return Err("The selected Git repository is outside this workspace.".to_string());
     }
-    let arguments = ["rev-parse", "--show-toplevel"];
-    let output = command_output("git", &arguments, &repository)
-        .map_err(|error| format!("Git is unavailable. {error}"))?;
-    if !output.status.success() {
-        let detail = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
-        if detail.contains("not a git repository") {
-            return Err("The selected folder is not a Git repository.".to_string());
-        }
-        return Err(output_error("git", &arguments, &output));
-    }
-    let repository_text = output_text(&output);
-    let detected_repository = fs::canonicalize(repository_text.trim()).map_err(|error| {
-        format!("The detected Git repository root could not be resolved: {error}")
-    })?;
-    if detected_repository != repository {
-        return Err("The selected folder is not a Git repository root.".to_string());
+    if git_directories(&repository).is_none() {
+        return Err(if enclosing_repository(&repository).is_some() {
+            "The selected folder is not a Git repository root.".to_string()
+        } else {
+            "The selected folder is not a Git repository.".to_string()
+        });
     }
     Ok((workspace, repository))
+}
+
+struct GitDirectories {
+    git_dir: PathBuf,
+    common_dir: PathBuf,
+}
+
+fn git_directories(repository: &Path) -> Option<GitDirectories> {
+    let marker = repository.join(".git");
+    let git_dir = if marker.is_dir() {
+        marker
+    } else {
+        let gitfile = fs::read_to_string(&marker).ok()?;
+        repository.join(gitfile.trim().strip_prefix("gitdir:")?.trim())
+    };
+    let common_dir = match fs::read_to_string(git_dir.join("commondir")) {
+        Ok(common_dir) => git_dir.join(common_dir.trim()),
+        Err(_) => git_dir.clone(),
+    };
+    (git_dir.join("HEAD").is_file()
+        && common_dir.join("objects").is_dir()
+        && common_dir.join("refs").is_dir())
+    .then_some(GitDirectories {
+        git_dir,
+        common_dir,
+    })
+}
+
+fn enclosing_repository(path: &Path) -> Option<PathBuf> {
+    path.ancestors()
+        .find(|candidate| git_directories(candidate).is_some())
+        .map(Path::to_path_buf)
 }
 
 fn relative_workspace_path(workspace: &Path, repository: &Path) -> String {
@@ -574,35 +708,48 @@ fn inspect_repository_candidate(
     workspace: &Path,
     candidate: &Path,
 ) -> Result<Option<PathBuf>, String> {
-    let candidate = fs::canonicalize(candidate)
+    let repository = fs::canonicalize(candidate)
         .map_err(|error| format!("Repository {} is unavailable: {error}", candidate.display()))?;
-    let arguments = ["rev-parse", "--show-toplevel"];
-    let output = command_output("git", &arguments, &candidate)
-        .map_err(|error| format!("Git is unavailable. {error}"))?;
-    if !output.status.success() {
-        return Err(output_error("git", &arguments, &output));
+    if git_directories(&repository).is_none() {
+        return Err("The .git entry does not point to a valid Git repository.".to_string());
     }
-    let repository = fs::canonicalize(output_text(&output)).map_err(|error| {
-        format!("The detected Git repository root could not be resolved: {error}")
-    })?;
-    if repository != candidate || !repository.starts_with(workspace) {
-        return Ok(None);
-    }
-    Ok(Some(repository))
+    Ok(repository.starts_with(workspace).then_some(repository))
 }
 
-type DiscoverySlot = Arc<Mutex<Option<(Instant, WorkspaceGitRepositoryDiscovery)>>>;
+#[derive(Default)]
+struct DiscoveryState {
+    discovery: Option<(Instant, WorkspaceGitRepositoryDiscovery)>,
+    rescanning: bool,
+}
 
-static REPOSITORY_DISCOVERIES: OnceLock<Mutex<HashMap<PathBuf, DiscoverySlot>>> = OnceLock::new();
+static REPOSITORY_DISCOVERIES: OnceLock<Mutex<HashMap<PathBuf, DiscoveryState>>> = OnceLock::new();
 
-fn discovery_slot(workspace: &Path) -> DiscoverySlot {
+fn repository_discoveries() -> MutexGuard<'static, HashMap<PathBuf, DiscoveryState>> {
     REPOSITORY_DISCOVERIES
         .get_or_init(Default::default)
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .entry(workspace.to_path_buf())
-        .or_default()
-        .clone()
+}
+
+fn store_discovery(workspace: &Path, discovery: WorkspaceGitRepositoryDiscovery) {
+    let mut discoveries = repository_discoveries();
+    let state = discoveries.entry(workspace.to_path_buf()).or_default();
+    state.discovery = Some((Instant::now(), discovery));
+    state.rescanning = false;
+}
+
+fn cached_repository_roots(workspace: &Path) -> Vec<PathBuf> {
+    repository_discoveries()
+        .get(workspace)
+        .and_then(|state| state.discovery.as_ref())
+        .map(|(_, discovery)| {
+            discovery
+                .repositories
+                .iter()
+                .map(|repository| PathBuf::from(&repository.repository_root))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn discover_repositories(
@@ -610,15 +757,26 @@ fn discover_repositories(
     refresh: bool,
 ) -> Result<WorkspaceGitRepositoryDiscovery, String> {
     let workspace = canonical_workspace_root(workspace_root)?;
-    let slot = discovery_slot(&workspace);
-    let mut cached = slot.lock().unwrap_or_else(PoisonError::into_inner);
-    if let Some((scanned_at, discovery)) = cached.as_ref() {
-        if !refresh && scanned_at.elapsed() < REPOSITORY_DISCOVERY_TTL {
-            return Ok(discovery.clone());
+    if !refresh {
+        let mut discoveries = repository_discoveries();
+        let state = discoveries.entry(workspace.clone()).or_default();
+        if let Some((scanned_at, discovery)) = state.discovery.as_ref() {
+            let discovery = discovery.clone();
+            if scanned_at.elapsed() >= REPOSITORY_DISCOVERY_TTL && !state.rescanning {
+                let background_workspace = workspace.clone();
+                state.rescanning = thread::Builder::new()
+                    .name("workspace-git-discovery".to_string())
+                    .spawn(move || {
+                        let discovery = scan_repositories(&background_workspace);
+                        store_discovery(&background_workspace, discovery);
+                    })
+                    .is_ok();
+            }
+            return Ok(discovery);
         }
     }
     let discovery = scan_repositories(&workspace);
-    *cached = Some((Instant::now(), discovery.clone()));
+    store_discovery(&workspace, discovery.clone());
     Ok(discovery)
 }
 
@@ -626,38 +784,22 @@ fn scan_repositories(workspace: &Path) -> WorkspaceGitRepositoryDiscovery {
     let (candidates, scan_limited, mut issues) = scan_repository_candidates(workspace);
     let mut roots = HashSet::new();
     let mut repositories = Vec::new();
-    for batch in candidates.chunks(MAX_CONCURRENT_REPOSITORY_INSPECTIONS) {
-        let inspected = thread::scope(|scope| {
-            let workers = batch
-                .iter()
-                .map(|candidate| scope.spawn(move || inspect_repository_candidate(workspace, candidate)))
-                .collect::<Vec<_>>();
-            workers
-                .into_iter()
-                .map(|worker| {
-                    worker.join().unwrap_or_else(|_| {
-                        Err("Git repository inspection stopped unexpectedly.".to_string())
-                    })
-                })
-                .collect::<Vec<_>>()
-        });
-        for (candidate, result) in batch.iter().zip(inspected) {
-            match result {
-                Ok(Some(repository)) if roots.insert(repository.clone()) => {
-                    repositories.push(WorkspaceGitRepository {
-                        repository_root: repository.display().to_string(),
-                        relative_path: relative_workspace_path(workspace, &repository),
-                    });
-                }
-                Ok(_) => {}
-                Err(error) => push_discovery_issue(
-                    &mut issues,
-                    format!(
-                        "Could not inspect {}: {error}",
-                        relative_workspace_path(workspace, candidate)
-                    ),
-                ),
+    for candidate in &candidates {
+        match inspect_repository_candidate(workspace, candidate) {
+            Ok(Some(repository)) if roots.insert(repository.clone()) => {
+                repositories.push(WorkspaceGitRepository {
+                    repository_root: repository.display().to_string(),
+                    relative_path: relative_workspace_path(workspace, &repository),
+                });
             }
+            Ok(_) => {}
+            Err(error) => push_discovery_issue(
+                &mut issues,
+                format!(
+                    "Could not inspect {}: {error}",
+                    relative_workspace_path(workspace, candidate)
+                ),
+            ),
         }
     }
     repositories.sort_by(|left, right| {
@@ -741,6 +883,8 @@ fn parse_status_matching(output: &str, selected_path: Option<&str>) -> StatusSum
                 unstaged: is_unstaged,
                 untracked: is_untracked,
                 conflicted: is_conflicted,
+                additions: None,
+                deletions: None,
             });
         }
     }
@@ -753,6 +897,36 @@ fn parse_status_matching(output: &str, selected_path: Option<&str>) -> StatusSum
         conflicted,
         total,
     )
+}
+
+fn parse_numstat(output: &str) -> HashMap<String, (Option<u64>, Option<u64>)> {
+    output
+        .split_terminator('\0')
+        .filter_map(|record| {
+            let mut parts = record.splitn(3, '\t');
+            let additions = parts.next()?.parse().ok();
+            let deletions = parts.next()?.parse().ok();
+            Some((parts.next()?.to_string(), (additions, deletions)))
+        })
+        .collect()
+}
+
+fn read_line_stats(repository: &Path) -> HashMap<String, (Option<u64>, Option<u64>)> {
+    run_optional(
+        "git",
+        &[
+            "diff",
+            "HEAD",
+            "--numstat",
+            "-z",
+            "--no-renames",
+            "--no-ext-diff",
+            "--no-textconv",
+        ],
+        repository,
+    )
+    .map(|output| parse_numstat(&output))
+    .unwrap_or_default()
 }
 
 fn status_output(repository: &Path) -> Result<String, String> {
@@ -898,26 +1072,25 @@ fn load_diff(request: WorkspaceGitDiffRequest) -> Result<WorkspaceGitDiff, Strin
     })
 }
 
+const BRANCH_REFERENCE_FORMAT: &str = "--format=%(refname)%09%(objectname:short)%09%(upstream:short)%09%(HEAD)%09%(upstream:track,nobracket)%09%(symref)";
+
 fn parse_branches(output: &str, remote: bool) -> Vec<WorkspaceGitBranch> {
+    let namespace = if remote {
+        "refs/remotes/"
+    } else {
+        "refs/heads/"
+    };
     output
         .lines()
         .filter_map(|line| {
             let mut parts = line.split('\t');
-            let mut name = parts.next()?.trim().to_string();
+            let name = parts.next()?.trim().strip_prefix(namespace)?.to_string();
             if remote && name.ends_with("/HEAD") {
                 return None;
-            }
-            if remote {
-                name = name.trim_start_matches("refs/remotes/").to_string();
             }
             let commit = parts.next().unwrap_or_default().trim().to_string();
             let upstream = parts.next().unwrap_or_default().trim();
             let marker = parts.next().unwrap_or_default().trim();
-            if let Some(reference) = parts.next() {
-                if reference.starts_with("refs/remotes/") != remote {
-                    return None;
-                }
-            }
             let (ahead, behind, upstream_gone) =
                 parse_upstream_track(parts.next().unwrap_or_default());
             Some(WorkspaceGitBranch {
@@ -1017,24 +1190,56 @@ fn command_succeeds(program: &str, args: &[&str], cwd: &Path) -> Result<bool, St
     }
 }
 
+fn operation_in(git_dir: &Path) -> Option<&'static str> {
+    OPERATION_MARKERS
+        .iter()
+        .find(|(_, marker)| git_dir.join(marker).exists())
+        .map(|(operation, _)| *operation)
+}
+
 fn current_operation(repository: &Path) -> Option<String> {
-    let markers = [
-        ("rebase", "rebase-merge"),
-        ("rebase", "rebase-apply"),
-        ("merge", "MERGE_HEAD"),
-        ("cherry-pick", "CHERRY_PICK_HEAD"),
-        ("revert", "REVERT_HEAD"),
-    ];
-    let mut arguments = vec!["rev-parse"];
-    for (_, marker) in markers {
-        arguments.extend(["--git-path", marker]);
+    operation_in(&git_directories(repository)?.git_dir).map(str::to_string)
+}
+
+fn modified_at(path: &Path) -> Option<std::time::SystemTime> {
+    fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+}
+
+fn hash_repository_state(repository: &Path, hasher: &mut DefaultHasher) {
+    repository.hash(hasher);
+    let Some(directories) = git_directories(repository) else {
+        return;
+    };
+    let head = fs::read(directories.git_dir.join("HEAD")).unwrap_or_default();
+    head.hash(hasher);
+    if let Some(reference) = head
+        .strip_prefix(b"ref:")
+        .and_then(|reference| std::str::from_utf8(reference).ok())
+    {
+        fs::read(directories.common_dir.join(reference.trim()))
+            .unwrap_or_default()
+            .hash(hasher);
     }
-    let output = run_optional("git", &arguments, repository)?;
-    output
-        .lines()
-        .zip(markers)
-        .find(|(path, _)| repository.join(path.trim()).exists())
-        .map(|(_, (operation, _))| operation.to_string())
+    operation_in(&directories.git_dir).hash(hasher);
+    modified_at(&directories.git_dir.join("FETCH_HEAD")).hash(hasher);
+    modified_at(&directories.common_dir.join("packed-refs")).hash(hasher);
+}
+
+fn workspace_git_fingerprint(workspace_root: &str) -> Result<String, String> {
+    let workspace = canonical_workspace_root(workspace_root)?;
+    let mut repositories = cached_repository_roots(&workspace);
+    if let Some(enclosing) = enclosing_repository(&workspace) {
+        if !repositories.contains(&enclosing) {
+            repositories.push(enclosing);
+        }
+    }
+    let mut hasher = DefaultHasher::new();
+    for repository in &repositories {
+        hash_repository_state(repository, &mut hasher);
+    }
+    Ok(format!("{:016x}", hasher.finish()))
 }
 
 fn pull_request_overview(repository: &Path, has_remote: bool) -> WorkspacePullRequestOverview {
@@ -1122,12 +1327,13 @@ fn load_overview(
     let (workspace, repository) = repository_context(workspace_root, repository_root)?;
     thread::scope(|scope| {
         let status_worker = scope.spawn(|| status_output(&repository));
+        let line_stats_worker = scope.spawn(|| read_line_stats(&repository));
         let branches_worker = scope.spawn(|| {
             run_required(
                 "git",
                 &[
                     "for-each-ref",
-                    "--format=%(refname:short)%09%(objectname:short)%09%(upstream:short)%09%(HEAD)%09%(refname)%09%(upstream:track,nobracket)",
+                    BRANCH_REFERENCE_FORMAT,
                     "refs/heads",
                     "refs/remotes",
                 ],
@@ -1154,8 +1360,7 @@ fn load_overview(
                 &repository,
             )
         });
-        let operation_worker = scope.spawn(|| current_operation(&repository));
-        let trunk_worker = scope.spawn(|| branch_alignment::read_trunk_references(&repository));
+        let operation = current_operation(&repository);
         let branch_output = branches_worker
             .join()
             .map_err(|_| "Git branch worker stopped unexpectedly.".to_string())??;
@@ -1176,9 +1381,12 @@ fn load_overview(
             .filter(|value| !value.is_empty()),
         };
         let detached = head.is_none();
-        let trunk_references = trunk_worker
-            .join()
-            .map_err(|_| "Git trunk worker stopped unexpectedly.".to_string())?;
+        let trunk_references =
+            branch_alignment::references_from(branch_output.lines().map(|line| {
+                let mut columns = line.split('\t');
+                let reference = columns.next().unwrap_or_default();
+                (reference, columns.nth(4).unwrap_or_default(), 0)
+            }));
         let default_branch = branch_alignment::default_branch(&trunk_references, head.as_deref());
         let branch = head.unwrap_or_else(|| "Detached HEAD".to_string());
         if !detached
@@ -1221,14 +1429,11 @@ fn load_overview(
             .map_err(|_| "Git stash worker stopped unexpectedly.".to_string())?
             .map(|value| parse_stashes(&value))
             .unwrap_or_default();
-        let operation = operation_worker
-            .join()
-            .map_err(|_| "Git operation worker stopped unexpectedly.".to_string())?;
         let status_output = status_worker
             .join()
             .map_err(|_| "Git status worker stopped unexpectedly.".to_string())??;
         let (
-            changes,
+            mut changes,
             changes_truncated,
             staged_count,
             unstaged_count,
@@ -1236,6 +1441,15 @@ fn load_overview(
             conflicted_count,
             total_changes,
         ) = parse_status(&status_output);
+        let line_stats = line_stats_worker
+            .join()
+            .map_err(|_| "Git line statistics worker stopped unexpectedly.".to_string())?;
+        for change in &mut changes {
+            if let Some((additions, deletions)) = line_stats.get(&change.path) {
+                change.additions = *additions;
+                change.deletions = *deletions;
+            }
+        }
         Ok(WorkspaceGitOverview {
             workspace_root: workspace.display().to_string(),
             repository_root: repository.display().to_string(),
@@ -1286,10 +1500,31 @@ pub async fn get_workspace_git_summary(
 }
 
 #[tauri::command]
+pub async fn get_workspace_git_fingerprint(workspace_root: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || workspace_git_fingerprint(&workspace_root))
+        .await
+        .map_err(|error| format!("The workspace Git check stopped unexpectedly: {error}"))?
+}
+
+#[tauri::command]
 pub async fn get_workspace_git_overview(
     request: WorkspaceGitRepositoryRequest,
 ) -> Result<WorkspaceGitOverview, String> {
     run_git_read(move || load_overview(&request.workspace_root, &request.repository_root)).await
+}
+
+#[tauri::command]
+pub async fn get_workspace_git_graph(
+    request: history::WorkspaceGitGraphRequest,
+) -> Result<history::WorkspaceGitGraph, String> {
+    run_git_read(move || history::load_graph(request)).await
+}
+
+#[tauri::command]
+pub async fn get_workspace_git_commit(
+    request: history::WorkspaceGitCommitRequest,
+) -> Result<history::WorkspaceGitCommitDetail, String> {
+    run_git_read(move || history::load_commit(request)).await
 }
 
 #[tauri::command]
@@ -1303,7 +1538,7 @@ pub async fn get_workspace_git_diff(
 pub async fn get_workspace_pull_requests(
     request: WorkspaceGitRepositoryRequest,
 ) -> Result<WorkspacePullRequestOverview, String> {
-    run_git_read(move || {
+    run_git_network(move || {
         let (_, repository) =
             repository_context(&request.workspace_root, &request.repository_root)?;
         let has_remote = !run_required("git", &["remote"], &repository)?.is_empty();
@@ -1325,7 +1560,7 @@ pub async fn run_workspace_git_action(
 pub async fn get_workspace_git_branch_status(
     request: branch_alignment::WorkspaceGitBranchStatusRequest,
 ) -> Result<branch_alignment::WorkspaceGitBranchStatus, String> {
-    run_git_read(move || branch_alignment::load_branch_status(request)).await
+    branch_alignment::load_branch_status(request).await
 }
 
 #[tauri::command]
@@ -1344,9 +1579,128 @@ mod tests {
     use super::{
         actions::{execute_workspace_git_action, validate_remote_url},
         command_output, discover_repositories, load_diff, load_overview, parse_branches,
-        parse_remotes, parse_status, repository_context, run_required, WorkspaceGitActionRequest,
-        WorkspaceGitDiffRequest, MAX_GIT_DIFF_BYTES, MAX_GIT_ENTRIES,
+        parse_remotes, parse_status, repository_context, run_required, workspace_git_fingerprint,
+        WorkspaceGitActionRequest, WorkspaceGitDiffRequest, MAX_GIT_DIFF_BYTES, MAX_GIT_ENTRIES,
     };
+
+    fn committed_repository(path: &std::path::Path) {
+        fs::create_dir_all(path).expect("the repository should be created");
+        run_required("git", &["init", "-b", "main"], path).expect("git init should succeed");
+        run_required("git", &["config", "user.email", "state@example.test"], path)
+            .expect("Git email should configure");
+        run_required("git", &["config", "user.name", "State"], path)
+            .expect("Git name should configure");
+        run_required("git", &["config", "commit.gpgsign", "false"], path)
+            .expect("Git signing should configure");
+        fs::write(path.join("tracked.txt"), "base\n").expect("tracked file should write");
+        run_required("git", &["add", "."], path).expect("tracked file should stage");
+        run_required("git", &["commit", "--quiet", "-m", "base"], path)
+            .expect("base commit should succeed");
+    }
+
+    #[test]
+    fn fingerprint_follows_branch_and_commit_changes_in_every_repository() {
+        let unique = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("the clock should be valid")
+            .as_nanos();
+        let root = env::temp_dir().join(format!(
+            "machdoch-workspace-git-fingerprint-{}-{unique}",
+            std::process::id()
+        ));
+        let nested = root.join("packages").join("nested");
+        committed_repository(&root);
+        committed_repository(&nested);
+        let workspace_root = root.display().to_string();
+        let fingerprint =
+            || workspace_git_fingerprint(&workspace_root).expect("the fingerprint should load");
+
+        let initial = fingerprint();
+        fs::write(root.join("tracked.txt"), "edited\n").expect("the edit should write");
+        assert_eq!(fingerprint(), initial);
+
+        run_required("git", &["switch", "--quiet", "-c", "feature"], &root)
+            .expect("the branch should switch");
+        let switched = fingerprint();
+        assert_ne!(switched, initial);
+        run_required("git", &["commit", "--quiet", "-am", "feature"], &root)
+            .expect("the commit should succeed");
+        let committed = fingerprint();
+        assert_ne!(committed, switched);
+
+        run_required("git", &["switch", "--quiet", "-c", "topic"], &nested)
+            .expect("the nested branch should switch");
+        assert_eq!(fingerprint(), committed);
+        discover_repositories(&workspace_root, true).expect("discovery should succeed");
+        let discovered = fingerprint();
+        run_required("git", &["switch", "--quiet", "main"], &nested)
+            .expect("the nested branch should switch back");
+        assert_ne!(fingerprint(), discovered);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn overview_reports_line_counts_for_tracked_changes() {
+        let unique = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("the clock should be valid")
+            .as_nanos();
+        let root = env::temp_dir().join(format!(
+            "machdoch-workspace-git-line-stats-{}-{unique}",
+            std::process::id()
+        ));
+        committed_repository(&root);
+        fs::write(root.join("tracked.txt"), "first\nsecond\n").expect("the edit should write");
+        fs::write(root.join("new.txt"), "new\n").expect("the file should write");
+        let overview = load_overview(
+            root.to_string_lossy().as_ref(),
+            root.to_string_lossy().as_ref(),
+        )
+        .expect("the overview should load");
+        let tracked = overview
+            .changes
+            .iter()
+            .find(|change| change.path == "tracked.txt")
+            .expect("the tracked change should be listed");
+        assert_eq!((tracked.additions, tracked.deletions), (Some(2), Some(1)));
+        let untracked = overview
+            .changes
+            .iter()
+            .find(|change| change.path == "new.txt")
+            .expect("the untracked file should be listed");
+        assert_eq!((untracked.additions, untracked.deletions), (None, None));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn repository_context_rejects_folders_with_an_invalid_git_directory() {
+        let unique = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("the clock should be valid")
+            .as_nanos();
+        let root = env::temp_dir().join(format!(
+            "machdoch-workspace-git-invalid-dir-{}-{unique}",
+            std::process::id()
+        ));
+        committed_repository(&root);
+        let hollow = root.join("hollow");
+        fs::create_dir_all(hollow.join(".git")).expect("the empty marker should be created");
+        assert_eq!(
+            repository_context(
+                root.to_string_lossy().as_ref(),
+                hollow.to_string_lossy().as_ref(),
+            )
+            .expect_err("an empty .git folder must not be a repository root"),
+            "The selected folder is not a Git repository root."
+        );
+        assert!(repository_context(
+            root.to_string_lossy().as_ref(),
+            root.to_string_lossy().as_ref(),
+        )
+        .is_ok());
+        let _ = fs::remove_dir_all(root);
+    }
 
     #[test]
     fn status_parser_counts_real_porcelain_states() {
@@ -1762,11 +2116,16 @@ mod tests {
 
     #[test]
     fn combined_branch_output_keeps_local_and_remote_refs_separate() {
-        let output = "main\tabc\torigin/main\t*\trefs/heads/main\norigin/main\tabc\t\t \trefs/remotes/origin/main\norigin/HEAD\tabc\t\t \trefs/remotes/origin/HEAD\n";
+        let output = "refs/heads/main\tabc\torigin/main\t*\t\t\nrefs/remotes/origin/main\tabc\t\t \t\t\nrefs/remotes/origin/HEAD\tabc\t\t \t\trefs/remotes/origin/main\nrefs/heads/origin/HEAD\tdef\t\t \t\t\n";
         let local = parse_branches(output, false);
         let remote = parse_branches(output, true);
-        assert_eq!(local.len(), 1);
-        assert_eq!(local[0].name, "main");
+        assert_eq!(
+            local
+                .iter()
+                .map(|branch| branch.name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["main", "origin/HEAD"]
+        );
         assert!(local[0].current);
         assert_eq!(remote.len(), 1);
         assert_eq!(remote[0].name, "origin/main");
@@ -1832,7 +2191,7 @@ mod tests {
     #[test]
     fn branch_and_remote_parsers_preserve_repository_data() {
         let branches = parse_branches(
-            "main\tabc123\torigin/main\t*\trefs/heads/main\tahead 2, behind 1\nfeature\tdef456\torigin/feature\t\trefs/heads/feature\tgone\n",
+            "refs/heads/main\tabc123\torigin/main\t*\tahead 2, behind 1\t\nrefs/heads/feature\tdef456\torigin/feature\t\tgone\t\n",
             false,
         );
         assert_eq!(branches.len(), 2);

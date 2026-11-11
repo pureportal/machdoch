@@ -7,7 +7,7 @@ import {
   Minus,
   Plus,
 } from "lucide-react";
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useState, type JSX, type KeyboardEvent } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { EmptyState } from "@machdoch/media-studio/tauri/ui/components/ui/empty-state.js";
 import {
@@ -19,6 +19,8 @@ import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { WorkspaceGitChange, WorkspaceGitOverview } from "../runtime";
 import type { WorkspaceGitControls } from "./use-workspace-git";
 import { WorkspaceGitDiffView } from "./workspace-git-diff";
+import { prefetchWorkspaceGitDiff } from "./workspace-git-diff-cache";
+import { WorkspaceGitLineStats } from "./workspace-git-line-stats";
 import {
   groupWorkspaceGitChanges,
   workspaceGitChangeLabel,
@@ -26,8 +28,10 @@ import {
 
 export type WorkspaceGitPathAction = "open" | "reveal";
 
+const ROW_SELECTOR = "[data-git-change-row]";
+
 const statusTone = (change: WorkspaceGitChange): string => {
-  if (change.conflicted) return "text-red-300";
+  if (change.conflicted) return "text-rose-400";
   if (change.untracked) return "text-emerald-300";
   if (change.status.includes("D")) return "text-rose-300";
   if (change.status.includes("R")) return "text-violet-300";
@@ -48,12 +52,24 @@ const splitPath = (path: string): [string, string] => {
     : [path.slice(separator + 1), path.slice(0, separator)];
 };
 
+const lineTotals = (
+  changes: readonly WorkspaceGitChange[],
+): { additions: number; deletions: number } =>
+  changes.reduce(
+    (totals, change) => ({
+      additions: totals.additions + (change.additions ?? 0),
+      deletions: totals.deletions + (change.deletions ?? 0),
+    }),
+    { additions: 0, deletions: 0 },
+  );
+
 const ChangeRow = ({
   change,
   staged,
   selected,
   busy,
   onSelect,
+  onPrefetch,
   onToggleStage,
   onOpen,
 }: {
@@ -62,15 +78,17 @@ const ChangeRow = ({
   selected: boolean;
   busy: boolean;
   onSelect: () => void;
+  onPrefetch: () => void;
   onToggleStage: () => void;
   onOpen: () => void;
 }): JSX.Element => {
   const [name, directory] = splitPath(change.path);
   return (
     <li
+      onPointerEnter={onPrefetch}
       className={cn(
-        "group flex min-w-0 items-center rounded-md hover:bg-slate-900/70",
-        selected && "bg-sky-950/40 hover:bg-sky-950/50",
+        "group flex min-w-0 items-center rounded-md hover:bg-(--app-hover)",
+        selected && "bg-sky-500/15 hover:bg-sky-500/20",
       )}
     >
       <CopyContextMenu
@@ -84,9 +102,11 @@ const ChangeRow = ({
       >
         <button
           type="button"
+          data-git-change-row=""
           aria-pressed={selected}
           aria-label={`${change.path}, ${workspaceGitChangeLabel(change)}`}
           onClick={onSelect}
+          onFocus={onPrefetch}
           className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left outline-none focus-visible:ring-1 focus-visible:ring-sky-500/70"
         >
           <code
@@ -108,9 +128,14 @@ const ChangeRow = ({
           ) : (
             <span className="flex-1" />
           )}
+          <WorkspaceGitLineStats
+            additions={change.additions}
+            deletions={change.deletions}
+            className="group-hover:hidden group-focus-within:hidden"
+          />
         </button>
       </CopyContextMenu>
-      <div className="flex shrink-0 items-center pr-1 opacity-0 group-focus-within:opacity-100 group-hover:opacity-100">
+      <div className="hidden shrink-0 items-center pr-1 group-focus-within:flex group-hover:flex">
         <Button
           type="button"
           size="icon-xs"
@@ -147,6 +172,7 @@ const ChangeGroup = ({
   actionLabel,
   onAction,
   onSelect,
+  onPrefetch,
   onToggleStage,
   onOpen,
 }: {
@@ -158,10 +184,13 @@ const ChangeGroup = ({
   actionLabel?: string;
   onAction?: () => void;
   onSelect: (path: string) => void;
+  onPrefetch: (path: string) => void;
   onToggleStage: (change: WorkspaceGitChange) => void;
   onOpen: (path: string) => void;
-}): JSX.Element | null =>
-  changes.length === 0 ? null : (
+}): JSX.Element | null => {
+  if (changes.length === 0) return null;
+  const totals = lineTotals(changes);
+  return (
     <section aria-label={title} className="min-w-0">
       <header className="flex h-7 items-center gap-2 px-2">
         <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -170,6 +199,11 @@ const ChangeGroup = ({
         <span className="rounded-full bg-slate-800 px-1.5 text-[10px] text-slate-400">
           {changes.length}
         </span>
+        <WorkspaceGitLineStats
+          additions={totals.additions}
+          deletions={totals.deletions}
+          blocks
+        />
         <span className="flex-1" />
         {actionLabel && onAction ? (
           <Button
@@ -194,6 +228,7 @@ const ChangeGroup = ({
             selected={selectedPath === change.path}
             busy={busy}
             onSelect={() => onSelect(change.path)}
+            onPrefetch={() => onPrefetch(change.path)}
             onToggleStage={() => onToggleStage(change)}
             onOpen={() => onOpen(change.path)}
           />
@@ -201,6 +236,7 @@ const ChangeGroup = ({
       </ul>
     </section>
   );
+};
 
 const CommitBox = ({
   overview,
@@ -252,6 +288,20 @@ const CommitBox = ({
   );
 };
 
+const moveRowFocus = (event: KeyboardEvent<HTMLElement>): void => {
+  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  const rows = Array.from(
+    event.currentTarget.querySelectorAll<HTMLButtonElement>(ROW_SELECTOR),
+  );
+  const index = rows.findIndex((row) => row === document.activeElement);
+  if (index === -1) return;
+  const next = rows[index + (event.key === "ArrowDown" ? 1 : -1)];
+  if (!next) return;
+  event.preventDefault();
+  next.focus();
+  next.click();
+};
+
 export const WorkspaceGitChanges = ({
   controls,
   overview,
@@ -263,21 +313,52 @@ export const WorkspaceGitChanges = ({
 }): JSX.Element => {
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const groups = groupWorkspaceGitChanges(overview.changes);
+  const ordered = [...groups.conflicts, ...groups.staged, ...groups.unstaged];
   const selectedChange =
     overview.changes.find((change) => change.path === selectedPath) ??
-    groups.conflicts[0] ??
-    groups.staged[0] ??
-    groups.unstaged[0] ??
+    ordered[0] ??
     null;
+  const prefetch = (path: string): void =>
+    prefetchWorkspaceGitDiff(
+      overview.workspaceRoot,
+      overview.repositoryRoot,
+      path,
+      overview,
+    );
 
   useEffect(() => {
     setSelectedPath(null);
   }, [overview.repositoryRoot]);
 
+  const selectedIndex = selectedChange
+    ? ordered.findIndex((change) => change.path === selectedChange.path)
+    : -1;
+  const neighbors = [ordered[selectedIndex - 1], ordered[selectedIndex + 1]]
+    .flatMap((change) => (change ? [change.path] : []))
+    .join("\n");
+  useEffect(() => {
+    for (const path of neighbors.split("\n").filter(Boolean)) {
+      prefetchWorkspaceGitDiff(
+        overview.workspaceRoot,
+        overview.repositoryRoot,
+        path,
+        overview,
+      );
+    }
+  }, [neighbors, overview]);
+
   const toggleStage = (change: WorkspaceGitChange, staged: boolean): void => {
     void controls.runAction(staged ? "unstage" : "stage", {
       paths: [change.path],
     });
+  };
+
+  const groupProps = {
+    selectedPath: selectedChange?.path ?? null,
+    busy: controls.busy,
+    onSelect: setSelectedPath,
+    onPrefetch: prefetch,
+    onOpen: (path: string) => onOpenPath(path, "open"),
   };
 
   return (
@@ -291,18 +372,17 @@ export const WorkspaceGitChanges = ({
         {overview.clean ? (
           <EmptyState icon={Check} title="Working tree clean" size="compact" />
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-3" onKeyDown={moveRowFocus}>
             <CommitBox
               key={overview.repositoryRoot}
               overview={overview}
               controls={controls}
             />
             <ChangeGroup
+              {...groupProps}
               title="Conflicts"
               changes={groups.conflicts}
               staged={false}
-              selectedPath={selectedChange?.path ?? null}
-              busy={controls.busy}
               actionLabel={
                 groups.conflicts.length ? "Mark resolved" : undefined
               }
@@ -311,33 +391,25 @@ export const WorkspaceGitChanges = ({
                   paths: groups.conflicts.map((change) => change.path),
                 })
               }
-              onSelect={setSelectedPath}
               onToggleStage={(change) => toggleStage(change, false)}
-              onOpen={(path) => onOpenPath(path, "open")}
             />
             <ChangeGroup
+              {...groupProps}
               title="Staged"
               changes={groups.staged}
               staged
-              selectedPath={selectedChange?.path ?? null}
-              busy={controls.busy}
               actionLabel="Unstage all"
               onAction={() => void controls.runAction("unstage-all")}
-              onSelect={setSelectedPath}
               onToggleStage={(change) => toggleStage(change, true)}
-              onOpen={(path) => onOpenPath(path, "open")}
             />
             <ChangeGroup
+              {...groupProps}
               title="Changes"
               changes={groups.unstaged}
               staged={false}
-              selectedPath={selectedChange?.path ?? null}
-              busy={controls.busy}
               actionLabel="Stage all"
               onAction={() => void controls.runAction("stage-all")}
-              onSelect={setSelectedPath}
               onToggleStage={(change) => toggleStage(change, false)}
-              onOpen={(path) => onOpenPath(path, "open")}
             />
             {overview.changesTruncated ? (
               <p className="px-2 text-xs text-slate-500">

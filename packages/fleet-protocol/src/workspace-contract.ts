@@ -6,9 +6,15 @@ export interface WorkspaceGitChange {
   unstaged: boolean;
   untracked: boolean;
   conflicted: boolean;
+  additions?: number;
+  deletions?: number;
 }
 
-export type WorkspaceGitPatchKind = "staged" | "unstaged" | "untracked";
+export type WorkspaceGitPatchKind =
+  | "staged"
+  | "unstaged"
+  | "untracked"
+  | "commit";
 
 export interface WorkspaceGitPatch {
   kind: WorkspaceGitPatchKind;
@@ -47,6 +53,55 @@ export interface WorkspaceGitCommit {
   subject: string;
   author: string;
   authoredAt: string;
+}
+
+export type WorkspaceGitGraphScope = "current" | "all";
+
+export interface WorkspaceGitGraphRef {
+  name: string;
+  kind: "head" | "local" | "remote" | "tag";
+}
+
+export interface WorkspaceGitGraphCommit {
+  hash: string;
+  shortHash: string;
+  parents: string[];
+  subject: string;
+  author: string;
+  authoredAt: string;
+  refs: WorkspaceGitGraphRef[];
+}
+
+export interface WorkspaceGitGraphBase {
+  branch: string;
+  mergeBase: string;
+  ahead: number;
+  behind: number;
+}
+
+export interface WorkspaceGitGraph {
+  repositoryRoot: string;
+  commits: WorkspaceGitGraphCommit[];
+  truncated: boolean;
+  base?: WorkspaceGitGraphBase;
+}
+
+export interface WorkspaceGitCommitFile {
+  path: string;
+  status: string;
+  additions?: number;
+  deletions?: number;
+}
+
+export interface WorkspaceGitCommitDetail {
+  hash: string;
+  parents: string[];
+  author: string;
+  authoredAt: string;
+  message: string;
+  files: WorkspaceGitCommitFile[];
+  filesTruncated: boolean;
+  patch?: WorkspaceGitPatch;
 }
 
 export interface WorkspaceGitStash {

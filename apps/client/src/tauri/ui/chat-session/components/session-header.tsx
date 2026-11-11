@@ -15,6 +15,7 @@ import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import { SessionGitBranchControl } from "@machdoch/client-ui/git-branch/session-git-branch-control";
 import { switchWorkspaceGitBranches } from "../../runtime";
 import { workspaceGitBranchStatusStore } from "../../workspace-management/workspace-git-branch-status-store";
+import { workspaceGitChangeMonitor } from "../../workspace-management/workspace-git-change-monitor";
 import { workspaceGitSummaryStore } from "../../workspace-management/workspace-git-summary-store";
 import { WorkspaceQuickAccessControl } from "./workspace-quick-access-control";
 import { WorkspaceRunDialogControl } from "./workspace-run-dialog-control";
@@ -122,9 +123,10 @@ export const SessionHeader = ({
           store={workspaceGitBranchStatusStore}
           switchBranches={switchWorkspaceGitBranches}
           onBranchChange={onGitBranchCommit}
-          onSwitched={(root) =>
-            workspaceGitSummaryStore.request(root, { force: true })
-          }
+          onSwitched={(root) => {
+            workspaceGitSummaryStore.request(root, { force: true });
+            workspaceGitChangeMonitor.sync(root);
+          }}
         />
       ) : null}
       <WorkspaceQuickAccessControl

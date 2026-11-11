@@ -3,6 +3,7 @@ use std::path::Path;
 use super::{
     command_output, current_operation, load_overview, output_error, repository_context,
     run_optional, run_required, stack, WorkspaceGitActionRequest, WorkspaceGitOverview,
+    FETCH_ARGUMENTS,
 };
 
 const MAX_ACTION_PATHS: usize = 2_000;
@@ -270,10 +271,14 @@ pub(super) fn execute_workspace_git_action(
     let force = request.force == Some(true);
     match request.action.as_str() {
         "fetch" => {
-            run_required("git", &["fetch", "--all", "--prune"], &repository)?;
+            run_required("git", &FETCH_ARGUMENTS, &repository)?;
         }
         "pull" => {
-            run_required("git", &["pull", "--ff-only"], &repository)?;
+            run_required(
+                "git",
+                &["pull", "--ff-only", "--no-show-forced-updates"],
+                &repository,
+            )?;
         }
         "push" => push(&repository, force)?,
         "checkout" => {

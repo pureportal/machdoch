@@ -4,7 +4,13 @@ import {
   type WorkspaceGitOverview,
   type WorkspaceGitSummary,
 } from "../runtime";
+import { workspaceGitChangeMonitor } from "./workspace-git-change-monitor";
 import { createWorkspaceRootKey } from "./workspace-management-model";
+
+let latestWorkspaceGitSequence = 0;
+
+export const nextWorkspaceGitSequence = (): number =>
+  ++latestWorkspaceGitSequence;
 
 export interface WorkspaceGitSummaryEntry {
   summary: WorkspaceGitSummary | null;
@@ -24,7 +30,11 @@ export interface WorkspaceGitSummaryStore {
   get: (workspaceRoot: string) => WorkspaceGitSummaryEntry | undefined;
   subscribe: (listener: () => void) => () => void;
   request: (workspaceRoot: string, options?: { force?: boolean }) => void;
-  publish: (workspaceRoot: string, summary: WorkspaceGitSummary | null) => void;
+  publish: (
+    workspaceRoot: string,
+    summary: WorkspaceGitSummary | null,
+    sequence?: number,
+  ) => void;
 }
 
 export const createWorkspaceGitSummaryStore = ({
@@ -35,16 +45,24 @@ export const createWorkspaceGitSummaryStore = ({
   staleMs,
 }: WorkspaceGitSummaryStoreOptions): WorkspaceGitSummaryStore => {
   const entries = new Map<string, WorkspaceGitSummaryEntry>();
+  const sequences = new Map<string, number>();
   const listeners = new Set<() => void>();
   const queue = new Map<string, string>();
   const running = new Set<string>();
+  const followUps = new Map<string, string>();
   let pumpScheduled = false;
 
   const notify = (): void => {
     for (const listener of listeners) listener();
   };
 
-  const store = (key: string, entry: WorkspaceGitSummaryEntry): void => {
+  const store = (
+    key: string,
+    sequence: number,
+    entry: WorkspaceGitSummaryEntry,
+  ): void => {
+    if (sequence < (sequences.get(key) ?? 0)) return;
+    sequences.set(key, sequence);
     entries.set(key, entry);
     notify();
   };
@@ -55,12 +73,13 @@ export const createWorkspaceGitSummaryStore = ({
       if (running.size >= maxConcurrent) return;
       queue.delete(key);
       running.add(key);
+      const sequence = nextWorkspaceGitSequence();
       void load(workspaceRoot)
         .then((summary) =>
-          store(key, { summary, error: null, loadedAt: now() }),
+          store(key, sequence, { summary, error: null, loadedAt: now() }),
         )
         .catch((error: unknown) =>
-          store(key, {
+          store(key, sequence, {
             summary: entries.get(key)?.summary ?? null,
             error: error instanceof Error ? error.message : String(error),
             loadedAt: now(),
@@ -68,6 +87,11 @@ export const createWorkspaceGitSummaryStore = ({
         )
         .finally(() => {
           running.delete(key);
+          const followUp = followUps.get(key);
+          if (followUp !== undefined) {
+            followUps.delete(key);
+            queue.set(key, followUp);
+          }
           if (queue.size > 0) schedulePump();
         });
     }
@@ -88,13 +112,21 @@ export const createWorkspaceGitSummaryStore = ({
     request: (workspaceRoot, options = {}) => {
       const key = createWorkspaceRootKey(workspaceRoot);
       const entry = entries.get(key);
-      if (running.has(key) || queue.has(key)) return;
+      if (queue.has(key)) return;
+      if (running.has(key)) {
+        if (options.force) followUps.set(key, workspaceRoot);
+        return;
+      }
       if (!options.force && entry && now() - entry.loadedAt < staleMs) return;
       queue.set(key, workspaceRoot);
       schedulePump();
     },
-    publish: (workspaceRoot, summary) => {
-      store(createWorkspaceRootKey(workspaceRoot), {
+    publish: (
+      workspaceRoot,
+      summary,
+      sequence = nextWorkspaceGitSequence(),
+    ) => {
+      store(createWorkspaceRootKey(workspaceRoot), sequence, {
         summary,
         error: null,
         loadedAt: now(),
@@ -127,6 +159,10 @@ export const workspaceGitSummaryStore = createWorkspaceGitSummaryStore({
   staleMs: SUMMARY_STALE_MS,
 });
 
+workspaceGitChangeMonitor.subscribe((workspaceRoot) =>
+  workspaceGitSummaryStore.request(workspaceRoot, { force: true }),
+);
+
 export const useWorkspaceGitSummary = (
   workspaceRoot: string | null,
 ): WorkspaceGitSummaryEntry | undefined => {
@@ -136,6 +172,7 @@ export const useWorkspaceGitSummary = (
   useEffect(() => {
     if (!workspaceRoot) return;
     workspaceGitSummaryStore.request(workspaceRoot);
+    const unwatch = workspaceGitChangeMonitor.watch(workspaceRoot);
     const refresh = (): void => {
       if (document.visibilityState === "visible") {
         workspaceGitSummaryStore.request(workspaceRoot);
@@ -144,6 +181,7 @@ export const useWorkspaceGitSummary = (
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
+      unwatch();
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };

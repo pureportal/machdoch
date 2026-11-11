@@ -233,8 +233,29 @@ pub(crate) async fn invoke(
                 .await
                 .map_err(|error| json!(error))?,
         ),
+        "get_workspace_git_fingerprint" => serde_json::to_value(
+            crate::workspace_git::get_workspace_git_fingerprint(workspace.to_owned())
+                .await
+                .map_err(|error| json!(error))?,
+        ),
         "get_workspace_git_overview" => serde_json::to_value(
             crate::workspace_git::get_workspace_git_overview(
+                serde_json::from_value(args["request"].clone())
+                    .map_err(|error| json!(error.to_string()))?,
+            )
+            .await
+            .map_err(|error| json!(error))?,
+        ),
+        "get_workspace_git_graph" => serde_json::to_value(
+            crate::workspace_git::get_workspace_git_graph(
+                serde_json::from_value(args["request"].clone())
+                    .map_err(|error| json!(error.to_string()))?,
+            )
+            .await
+            .map_err(|error| json!(error))?,
+        ),
+        "get_workspace_git_commit" => serde_json::to_value(
+            crate::workspace_git::get_workspace_git_commit(
                 serde_json::from_value(args["request"].clone())
                     .map_err(|error| json!(error.to_string()))?,
             )

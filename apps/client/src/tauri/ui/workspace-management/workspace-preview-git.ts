@@ -5,7 +5,10 @@ import type {
   WorkspaceGitBranchStatus,
   WorkspaceGitBranchSwitchResult,
   WorkspaceGitBranchSwitchTarget,
+  WorkspaceGitCommitDetail,
   WorkspaceGitDiff,
+  WorkspaceGitGraph,
+  WorkspaceGitGraphScope,
   WorkspaceGitOverview,
   WorkspaceGitRepositoriesStatus,
   WorkspaceGitRepositoryDiscovery,
@@ -21,6 +24,10 @@ import {
   seedMachdoch,
   type PreviewRepository,
 } from "./workspace-preview-git-fixtures";
+import {
+  previewWorkspaceGitCommit,
+  previewWorkspaceGitGraph,
+} from "./workspace-preview-git-history";
 
 const repositories = new Map<string, PreviewRepository>();
 
@@ -97,9 +104,29 @@ const previewDefaultBranch = (
       previewRemoteBranch(repository, name) !== undefined,
   );
 
+const previewLineStats = (
+  repository: PreviewRepository,
+  path: string,
+): { additions: number; deletions: number } | null => {
+  const diff = repository.diffs.get(path);
+  if (!diff || diff.patches.some((entry) => entry.binary)) return null;
+  const lines = diff.patches.flatMap((entry) => entry.content.split("\n"));
+  return {
+    additions: lines.filter(
+      (line) => line.startsWith("+") && !line.startsWith("+++"),
+    ).length,
+    deletions: lines.filter(
+      (line) => line.startsWith("-") && !line.startsWith("---"),
+    ).length,
+  };
+};
+
 const overviewFor = (repository: PreviewRepository): WorkspaceGitOverview => {
   const current = currentBranch(repository);
-  const changes = repository.changes.map((entry) => ({ ...entry }));
+  const changes = repository.changes.map((entry) => ({
+    ...entry,
+    ...(entry.untracked ? {} : previewLineStats(repository, entry.path)),
+  }));
   const defaultBranch = previewDefaultBranch(repository);
   return {
     workspaceRoot: repository.workspaceRoot,
@@ -209,6 +236,44 @@ export const loadPreviewWorkspaceGitSummary = (
     conflicts: overview.conflictedCount,
   };
 };
+
+export const loadPreviewWorkspaceGitGraph = (
+  workspaceRoot: string,
+  repositoryRoot: string,
+  scope: WorkspaceGitGraphScope,
+): WorkspaceGitGraph => {
+  const repository = repositoryFor(workspaceRoot, repositoryRoot);
+  return previewWorkspaceGitGraph(
+    repository,
+    previewDefaultBranch(repository) ?? repository.branch,
+    scope,
+  );
+};
+
+export const loadPreviewWorkspaceGitCommit = (
+  workspaceRoot: string,
+  repositoryRoot: string,
+  commit: string,
+  options: { base?: string; relativePath?: string },
+): WorkspaceGitCommitDetail => {
+  const repository = repositoryFor(workspaceRoot, repositoryRoot);
+  return previewWorkspaceGitCommit(
+    repository,
+    previewDefaultBranch(repository) ?? repository.branch,
+    commit,
+    options,
+  );
+};
+
+export const loadPreviewWorkspaceGitFingerprint = (
+  workspaceRoot: string,
+): string =>
+  discoverPreviewWorkspaceGitRepositories(workspaceRoot)
+    .repositories.map(({ repositoryRoot }) => {
+      const repository = repositoryFor(workspaceRoot, repositoryRoot);
+      return `${repository.branch}@${currentBranch(repository)?.commit ?? ""}`;
+    })
+    .join("\n");
 
 export const loadPreviewWorkspaceGitDiff = (
   workspaceRoot: string,

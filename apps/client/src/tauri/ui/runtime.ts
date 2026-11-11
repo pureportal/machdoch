@@ -32,7 +32,10 @@ import {
 } from "./workspace-management/workspace-platform";
 import { encodeWorkspaceFileContent } from "@machdoch/fleet-protocol/workspace";
 import type {
+  WorkspaceGitCommitDetail,
   WorkspaceGitDiff,
+  WorkspaceGitGraph,
+  WorkspaceGitGraphScope,
   WorkspacePullRequestOverview,
   WorkspaceGitRepositoryDiscovery,
   WorkspaceGitRepositoriesStatus,
@@ -53,6 +56,13 @@ import type {
 } from "@machdoch/fleet-protocol/workspace-contract";
 export type {
   WorkspaceGitChange,
+  WorkspaceGitCommitDetail,
+  WorkspaceGitCommitFile,
+  WorkspaceGitGraph,
+  WorkspaceGitGraphBase,
+  WorkspaceGitGraphCommit,
+  WorkspaceGitGraphRef,
+  WorkspaceGitGraphScope,
   WorkspaceGitPatchKind,
   WorkspaceGitPatch,
   WorkspaceGitDiff,
@@ -322,7 +332,10 @@ import {
   discoverPreviewWorkspaceGitRepositories,
   loadPreviewWorkspaceGitBranchStatus,
   loadPreviewWorkspaceGitRepositoriesStatus,
+  loadPreviewWorkspaceGitCommit,
   loadPreviewWorkspaceGitDiff,
+  loadPreviewWorkspaceGitFingerprint,
+  loadPreviewWorkspaceGitGraph,
   loadPreviewWorkspaceGitOverview,
   loadPreviewWorkspaceGitSummary,
   loadPreviewWorkspacePullRequests,
@@ -4814,6 +4827,25 @@ export const loadWorkspaceGitSummary = async (
   }
 };
 
+export const loadWorkspaceGitFingerprint = async (
+  workspaceRoot: string,
+): Promise<string> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  if (!normalizedWorkspaceRoot) {
+    throw new Error("Select a workspace before loading Git information.");
+  }
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
+    return loadPreviewWorkspaceGitFingerprint(normalizedWorkspaceRoot);
+  }
+  try {
+    return await invokeWorkspaceTools<string>("get_workspace_git_fingerprint", {
+      workspaceRoot: normalizedWorkspaceRoot,
+    });
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
 export const loadWorkspaceGitOverview = async (
   workspaceRoot: string,
   repositoryRoot: string,
@@ -4873,6 +4905,76 @@ export const loadWorkspaceGitDiff = async (
           workspaceRoot: normalizedWorkspaceRoot,
           repositoryRoot: normalizedRepositoryRoot,
           relativePath: normalizedRelativePath,
+        },
+      },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const loadWorkspaceGitGraph = async (
+  workspaceRoot: string,
+  repositoryRoot: string,
+  scope: WorkspaceGitGraphScope,
+): Promise<WorkspaceGitGraph> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  const normalizedRepositoryRoot = normalizeWorkspaceRoot(repositoryRoot);
+  if (!normalizedWorkspaceRoot || !normalizedRepositoryRoot) {
+    throw new Error("Select a Git repository before loading its history.");
+  }
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
+    return loadPreviewWorkspaceGitGraph(
+      normalizedWorkspaceRoot,
+      normalizedRepositoryRoot,
+      scope,
+    );
+  }
+  try {
+    return await invokeWorkspaceTools<WorkspaceGitGraph>(
+      "get_workspace_git_graph",
+      {
+        request: {
+          workspaceRoot: normalizedWorkspaceRoot,
+          repositoryRoot: normalizedRepositoryRoot,
+          scope,
+        },
+      },
+    );
+  } catch (error) {
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+};
+
+export const loadWorkspaceGitCommit = async (
+  workspaceRoot: string,
+  repositoryRoot: string,
+  commit: string,
+  { base, relativePath }: { base?: string; relativePath?: string } = {},
+): Promise<WorkspaceGitCommitDetail> => {
+  const normalizedWorkspaceRoot = normalizeWorkspaceRoot(workspaceRoot);
+  const normalizedRepositoryRoot = normalizeWorkspaceRoot(repositoryRoot);
+  if (!normalizedWorkspaceRoot || !normalizedRepositoryRoot) {
+    throw new Error("Select a Git repository before loading a commit.");
+  }
+  if (!canInvokeTauriCommands() && !getRemoteWorkspacePlatform()) {
+    return loadPreviewWorkspaceGitCommit(
+      normalizedWorkspaceRoot,
+      normalizedRepositoryRoot,
+      commit,
+      { base, relativePath },
+    );
+  }
+  try {
+    return await invokeWorkspaceTools<WorkspaceGitCommitDetail>(
+      "get_workspace_git_commit",
+      {
+        request: {
+          workspaceRoot: normalizedWorkspaceRoot,
+          repositoryRoot: normalizedRepositoryRoot,
+          commit,
+          ...(base ? { base } : {}),
+          ...(relativePath ? { relativePath } : {}),
         },
       },
     );
