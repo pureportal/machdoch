@@ -11,6 +11,7 @@ import {
   cloudApi,
   cloudBrowserFixture,
 } from "./cloud-browser-fixture.mjs";
+import { passSecondFactor } from "./cloud-two-factor-fixture.mjs";
 
 let dropConfirmation = false;
 let manager;
@@ -270,6 +271,7 @@ try {
   assert.deepEqual(external, []);
   checkingAuthentication = false;
   await recipient.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, recipient);
   await recipient.waitForURL(`${fixture.origin}/cloud/issues`);
   assert.equal(
     (await cloudApi(fixture, recipientContext, "workspace")).actor.name,
@@ -323,6 +325,7 @@ try {
   await owner
     .getByRole("button", { name: "Switch account", exact: true })
     .click();
+  await passSecondFactor(fixture, owner);
   await owner.waitForURL(`${fixture.origin}/cloud/issues`);
   assert.equal((await api("workspace")).actor.role, "member");
   await api("auth/login", "POST", {
@@ -358,6 +361,7 @@ try {
     .getByRole("button", { name: "Sign in", exact: true })
     .waitFor();
   await requester.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, requester);
   await requester.waitForURL(`${fixture.origin}/cloud/issues`);
   assert.equal(
     (
@@ -457,6 +461,7 @@ try {
       await nativePage
         .getByRole("button", { name: "Sign in", exact: true })
         .click();
+      await passSecondFactor(fixture, nativePage);
       await nativePage
         .getByRole("heading", { name: "Connect Machdoch client", exact: true })
         .waitFor();

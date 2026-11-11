@@ -8,6 +8,7 @@ import {
   createPasswordInvitation,
 } from "./cloud-browser-fixture.mjs";
 import { oidcFixture } from "./cloud-oidc-fixture.mjs";
+import { passSecondFactor } from "./cloud-two-factor-fixture.mjs";
 
 let dropCreation = false,
   dropAcceptance = false;
@@ -112,6 +113,7 @@ async function signInSso(context, page, provider, subject) {
   await page.goto(start.url);
   await providerSignIn(page, provider, subject);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, page);
   await page.waitForURL("**/cloud/issues");
 }
 async function showInvitation(page, url, email) {
@@ -252,6 +254,7 @@ try {
   await fixture.restart();
   await local.goto(confirmationUrl);
   await local.getByRole("button", { name: "Continue", exact: true }).click();
+  await passSecondFactor(fixture, local);
   await local.waitForURL("**/cloud/issues");
   assert.equal(
     (await cloudApi(fixture, localContext, "workspace")).actor.id,
@@ -298,6 +301,7 @@ try {
   await local
     .getByRole("button", { name: "Join organization", exact: true })
     .click();
+  await passSecondFactor(fixture, local);
   await local.waitForURL("**/cloud/issues");
   const otherWorkspace = await cloudApi(fixture, localContext, "workspace");
   assert.equal(otherWorkspace.organization.id, otherOrganization);
@@ -361,6 +365,7 @@ try {
   await independentPage
     .getByRole("button", { name: "Join organization", exact: true })
     .click();
+  await passSecondFactor(fixture, independentPage);
   await independentPage.waitForURL("**/cloud/issues");
   await navigation.reload();
   await navigation
@@ -481,6 +486,7 @@ try {
   await target
     .getByRole("button", { name: "Join organization", exact: true })
     .click();
+  await passSecondFactor(fixture, target);
   await target.waitForURL("**/cloud/issues");
   assert.equal(
     (await cloudApi(fixture, targetContext, "workspace")).actor.id,
@@ -561,6 +567,7 @@ try {
   await requiredPage
     .getByRole("button", { name: "Join organization", exact: true })
     .click();
+  await passSecondFactor(fixture, requiredPage);
   await requiredPage.waitForURL("**/cloud/issues");
   assert.equal(
     (await cloudApi(fixture, requiredContext, "workspace")).actor.role,
@@ -604,6 +611,7 @@ try {
   await administrator
     .getByRole("button", { name: "Join organization", exact: true })
     .click();
+  await passSecondFactor(fixture, administrator);
   await administrator.waitForURL("**/cloud/issues");
   await administrator.goto(`${fixture.origin}/cloud/settings`);
   await administrator

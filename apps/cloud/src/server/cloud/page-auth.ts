@@ -8,7 +8,12 @@ export const requireCloudPageSession = cache(async () => {
   const runtime = await getCloudRuntime();
   const token = (await cookies()).get(cloudSessionCookie)?.value ?? "";
   const actor = await runtime.identity.authenticate(token);
-  if (!actor) redirect("/cloud/login");
+  if (!actor)
+    redirect(
+      (await runtime.authentication.twoFactor.challenge(token))
+        ? "/cloud/two-factor"
+        : "/cloud/login",
+    );
   return { runtime, actor };
 });
 

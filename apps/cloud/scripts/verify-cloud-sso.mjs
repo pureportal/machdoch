@@ -8,6 +8,7 @@ import {
   assertEventually,
 } from "./cloud-browser-fixture.mjs";
 import { oidcFixture } from "./cloud-oidc-fixture.mjs";
+import { passSecondFactor } from "./cloud-two-factor-fixture.mjs";
 
 let dropCompletion = false;
 const fixture = await cloudBrowserFixture({
@@ -68,6 +69,7 @@ try {
     .fill("owner@example.test");
   await page.getByLabel("Password", { exact: true }).fill(fixture.password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, page);
   await page.waitForURL("**/cloud/issues");
   await page.goto(`${fixture.origin}/cloud/settings`);
   await page.getByRole("tab", { name: "Authentication", exact: true }).click();
@@ -188,6 +190,7 @@ try {
   assert.equal((await denied.json()).code, "sso_required");
   await ssoLogin(page, fixture.ownerContext);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, page);
   await page.waitForURL("**/cloud/issues");
   passed(
     "Enforces SSO, invalidates pre-policy sessions, denies password bypass and permits mapped SSO sign-in",
@@ -227,6 +230,7 @@ try {
   await memberPage
     .getByRole("button", { name: "Sign in", exact: true })
     .click();
+  await passSecondFactor(fixture, memberPage);
   await memberPage.waitForURL("**/cloud/issues");
   await memberPage.goto(`${fixture.origin}/cloud/account`);
   await memberPage.getByRole("tab", { name: "Security", exact: true }).click();
@@ -283,6 +287,7 @@ try {
       await nativePage
         .getByRole("button", { name: "Sign in", exact: true })
         .click();
+      await passSecondFactor(fixture, nativePage);
       await nativePage
         .getByRole("heading", { name: "Connect Machdoch client", exact: true })
         .waitFor();
@@ -329,6 +334,7 @@ try {
   provider.rotate();
   await ssoLogin(page, fixture.ownerContext);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, page);
   await page.waitForURL("**/cloud/issues");
   passed(
     "Accepts new signing keys at the approved JWKS URI after provider key rotation",
@@ -360,6 +366,7 @@ try {
   await page.getByLabel("Email", { exact: true }).fill("owner@example.test");
   await page.getByLabel("Password", { exact: true }).fill(fixture.password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, page);
   await page.waitForURL("**/cloud/issues");
   await page.goto(`${fixture.origin}/cloud/settings`);
   await page.getByRole("tab", { name: "Authentication", exact: true }).click();
@@ -395,7 +402,11 @@ try {
     "",
   );
   const beforeEdit = (await api("sso-providers")).providers[0];
-  const { id: editingId, verified: _editingVerified, ...savedEdit } = beforeEdit;
+  const {
+    id: editingId,
+    verified: _editingVerified,
+    ...savedEdit
+  } = beforeEdit;
   await api(`sso-providers/${editingId}`, "PATCH", {
     ...savedEdit,
     name: "Updated identity",

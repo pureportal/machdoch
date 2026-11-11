@@ -8,6 +8,7 @@ import {
   cloudBrowserFixture,
   executionProviderFixture,
 } from "./cloud-browser-fixture.mjs";
+import { passSecondFactor } from "./cloud-two-factor-fixture.mjs";
 
 const fixture = await cloudBrowserFixture();
 const certificates = getCACertificates("default");
@@ -55,6 +56,7 @@ try {
         .fill("owner@example.test");
       await page.getByLabel("Password", { exact: true }).fill(fixture.password);
       await page.getByRole("button", { name: "Sign in", exact: true }).click();
+      await passSecondFactor(fixture, page);
       await page
         .getByRole("heading", { name: "Connect Machdoch client" })
         .waitFor();
@@ -427,6 +429,7 @@ try {
   await page.getByLabel("Email", { exact: true }).fill("owner@example.test");
   await page.getByLabel("Password", { exact: true }).fill(fixture.password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, page);
   await page
     .getByRole("heading", { name: "Connect Machdoch client" })
     .waitFor();

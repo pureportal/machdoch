@@ -15,7 +15,7 @@ import {
   cloudSessionCookie,
 } from "./identity";
 import { createCloudRuntime, type CloudRuntime } from "./runtime";
-import { createTestCloudDatabase } from "./test-database";
+import { createTestCloudDatabase, verifyTestSession } from "./test-database";
 
 let database: Awaited<ReturnType<typeof createTestCloudDatabase>>;
 let runtime: CloudRuntime;
@@ -183,6 +183,7 @@ describe("cloud administration", () => {
       `${member.userId}@example.test`,
       password,
     );
+    await verifyTestSession(database, session.sessionToken);
     const adminInvitation = await invite(
       admin,
       "pending@example.test",
@@ -256,6 +257,7 @@ describe("cloud administration", () => {
       `${member.userId}@example.test`,
       password,
     );
+    await verifyTestSession(database, fresh.sessionToken);
     expect(await runtime.identity.authenticate(fresh.sessionToken)).toEqual(
       member,
     );
@@ -363,6 +365,7 @@ describe("cloud administration", () => {
       `${owner.userId}@example.test`,
       password,
     );
+    await verifyTestSession(database, session.sessionToken);
     const cookie = `${cloudSessionCookie}=${session.sessionToken}; ${cloudCsrfCookie}=${session.csrfToken}`;
     const body = JSON.stringify({
       revision: 1,

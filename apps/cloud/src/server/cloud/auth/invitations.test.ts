@@ -4,7 +4,7 @@ import type { CloudActor } from "../../../lib/cloud-contract";
 import type { InvitationInput } from "../../../lib/cloud-invitation-contract";
 import { createSecret, hashOwnerPasswordAsync } from "../../crypto";
 import { SettingsCipher } from "../../settings-crypto";
-import { createTestCloudDatabase } from "../test-database";
+import { createTestCloudDatabase, verifyTestSession } from "../test-database";
 import { createCloudRuntime, type CloudRuntime } from "../runtime";
 import { issueCloudSession } from "../session-issuance";
 
@@ -114,7 +114,7 @@ async function accept(
   ssoBrowser = "",
   input: { name?: string; password?: string; sessionId?: string | null } = {},
 ) {
-  return runtime.authentication.invitationAcceptance.accept(
+  const result = await runtime.authentication.invitationAcceptance.accept(
     {
       confirmationId: value.preview.confirmationId,
       sessionId: value.preview.currentSessionId,
@@ -129,6 +129,8 @@ async function accept(
     session,
     ssoBrowser,
   );
+  await verifyTestSession(database, result.sessionToken);
+  return result;
 }
 async function identity(
   value: Awaited<ReturnType<typeof prepare>>,
@@ -244,6 +246,7 @@ it("requires the existing password or its valid authenticated session without ch
     password,
     outsider.organizationId,
   );
+  await verifyTestSession(database, local.sessionToken);
   const value = await prepare(
     inviteInput("other@example.test"),
     local.sessionToken,
@@ -282,6 +285,7 @@ it("rejects the wrong account password and a changed account after preview", asy
     password,
     owner.organizationId,
   );
+  await verifyTestSession(database, local.sessionToken);
   await expect(accept(value, local.sessionToken)).rejects.toHaveProperty(
     "code",
     "account_changed",
@@ -371,6 +375,7 @@ it("joins an existing SSO-only account by explicit mapping without changing its 
       { id: otherProvider, epoch },
     ),
   );
+  await verifyTestSession(database, otherSession.sessionToken);
   await expect(
     runtime.authentication.invitations.create(
       owner,
@@ -516,6 +521,7 @@ it("does not restore an accepted invitation session after account revocation", a
     password,
     actor.organizationId,
   );
+  await verifyTestSession(database, current.sessionToken);
   const target = (
     await runtime.authentication.sessions.list(
       actor,

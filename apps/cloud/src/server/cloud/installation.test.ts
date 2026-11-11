@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createTestCloudDatabase } from "./test-database";
+import { createTestCloudDatabase, verifyTestSession } from "./test-database";
 import { initializeInstallation } from "./installation-storage";
 import { cloudCredentialsCipher } from "./credential-storage";
 import {
@@ -64,10 +64,12 @@ describe("Cloud installation and remote authentication", () => {
       "legacy-owner",
       owner.password,
     );
+    await verifyTestSession(runtime.database, credentials.sessionToken);
     const otherSession = await runtime.identity.login(
       "legacy-owner",
       owner.password,
     );
+    await verifyTestSession(runtime.database, otherSession.sessionToken);
     const actor = (await runtime.identity.authenticate(
       credentials.sessionToken,
     ))!;
@@ -136,6 +138,7 @@ describe("Cloud installation and remote authentication", () => {
       "updated-owner",
       input.newPassword,
     );
+    await verifyTestSession(runtime.database, renewed.sessionToken);
     expect(await runtime.identity.authenticate(renewed.sessionToken)).toEqual(
       actor,
     );
@@ -163,6 +166,7 @@ describe("Cloud installation and remote authentication", () => {
       (await initializeInstallation(runtime.database)).credentials_key,
     ).toBe(stored.credentials_key);
     const login = await runtime.identity.login(owner.email, owner.password);
+    await verifyTestSession(runtime.database, login.sessionToken);
     expect(
       await runtime.identity.authenticate(login.sessionToken),
     ).not.toBeNull();
@@ -174,6 +178,7 @@ describe("Cloud installation and remote authentication", () => {
       owner.email,
       owner.password,
     );
+    await verifyTestSession(runtime.database, credentials.sessionToken);
     const actor = (await runtime.identity.authenticate(
       credentials.sessionToken,
     ))!;
@@ -210,6 +215,7 @@ describe("Cloud installation and remote authentication", () => {
       owner.password,
       otherOrganization,
     );
+    await verifyTestSession(runtime.database, other.sessionToken);
     await expect(
       authenticateRequest(
         remote,
@@ -234,6 +240,7 @@ describe("Cloud installation and remote authentication", () => {
       owner.password,
       actor.organizationId,
     );
+    await verifyTestSession(runtime.database, member.sessionToken);
     await expect(
       authenticateRequest(
         remote,

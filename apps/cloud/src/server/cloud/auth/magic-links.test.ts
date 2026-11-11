@@ -8,7 +8,7 @@ import type { CloudActor } from "../../../lib/cloud-contract";
 import { hashOwnerPasswordAsync, hashSecret, createSecret } from "../../crypto";
 import { SettingsCipher } from "../../settings-crypto";
 import { createCloudRuntime, type CloudRuntime } from "../runtime";
-import { createTestCloudDatabase } from "../test-database";
+import { createTestCloudDatabase, verifyTestSession } from "../test-database";
 import { CloudMailStore } from "./mail-store";
 
 const password = "A verification password 2026!";
@@ -249,6 +249,11 @@ it("previews without consuming, binds confirmation to the browser and consumes o
     prepared.preview.confirmationId,
     prepared.nonce,
   );
+  expect(await runtime.identity.authenticate(session.sessionToken)).toBeNull();
+  expect(
+    await runtime.authentication.twoFactor.challenge(session.sessionToken),
+  ).toEqual({ userId: member.userId, enrolled: false });
+  await verifyTestSession(database, session.sessionToken);
   expect(
     await runtime.identity.authenticate(
       session.sessionToken,
@@ -291,6 +296,7 @@ it("encrypts short recovery receipts and revokes them on logout without reviving
     prepared.preview.confirmationId,
     prepared.nonce,
   );
+  await verifyTestSession(database, session.sessionToken);
   const stored = (
     await database.engine.query<{ receipt: Uint8Array }>(
       "SELECT receipt FROM cloud_magic_confirmations WHERE id=$1",
@@ -316,11 +322,13 @@ it("does not recover an email-link session after another browser revokes it from
     prepared.preview.confirmationId,
     prepared.nonce,
   );
+  await verifyTestSession(database, completed.sessionToken);
   const current = await runtime.identity.login(
     "member@example.test",
     password,
     member.organizationId,
   );
+  await verifyTestSession(database, current.sessionToken);
   const target = (
     await runtime.authentication.sessions.list(
       member,
@@ -352,6 +360,7 @@ it("does not retain a recovery credential beyond its bounded window", async () =
     prepared.preview.confirmationId,
     prepared.nonce,
   );
+  await verifyTestSession(database, session.sessionToken);
   await database.engine.query(
     "UPDATE cloud_magic_confirmations SET expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",
     [prepared.preview.confirmationId],
@@ -397,6 +406,7 @@ it("supports independent devices and serializes two completions of one link", as
 
 it("keeps a browser's independent preparations usable and identifies account switches", async () => {
   const previous = await runtime.identity.login("owner@example.test", password);
+  await verifyTestSession(database, previous.sessionToken);
   const one = await deliver(),
     two = await deliver("viewer@example.test");
   const first = await runtime.authentication.magicLinks.prepare(
@@ -418,6 +428,7 @@ it("keeps a browser's independent preparations usable and identifies account swi
     first.nonce,
     previous.sessionToken,
   );
+  await verifyTestSession(database, session.sessionToken);
   expect(await runtime.identity.authenticate(previous.sessionToken)).toBeNull();
   expect(await runtime.identity.authenticate(session.sessionToken)).toEqual(
     member,
@@ -461,6 +472,7 @@ it("rejects expired links and expired confirmations without issuing sessions", a
 
 it("does not revive links or sessions after access is suspended and restored", async () => {
   const session = await runtime.identity.login("member@example.test", password);
+  await verifyTestSession(database, session.sessionToken);
   const link = await deliver();
   await database.transaction(async (sql) => {
     await sql.query(
@@ -485,6 +497,7 @@ it("does not revive links or sessions after access is suspended and restored", a
 
 it("discards a queued request if credentials changed before recipient resolution", async () => {
   const session = await runtime.identity.login("member@example.test", password);
+  await verifyTestSession(database, session.sessionToken);
   await runtime.authentication.magicLinks.request({
     email: "member@example.test",
   });

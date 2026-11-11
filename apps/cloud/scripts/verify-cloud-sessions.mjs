@@ -7,6 +7,7 @@ import {
   cloudBrowserFixture,
   assertEventually,
 } from "./cloud-browser-fixture.mjs";
+import { passSecondFactor } from "./cloud-two-factor-fixture.mjs";
 
 let dropRevocation = false;
 const fixture = await cloudBrowserFixture({
@@ -28,6 +29,7 @@ async function signIn(context, email = "owner@example.test") {
   await tab.getByLabel("Username or email", { exact: true }).fill(email);
   await tab.getByLabel("Password", { exact: true }).fill(fixture.password);
   await tab.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, tab);
   await tab.waitForURL("**/cloud/issues");
   return tab;
 }
@@ -48,6 +50,7 @@ try {
     .fill("owner@example.test");
   await page.getByLabel("Password", { exact: true }).fill(fixture.password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, page);
   await page.waitForURL("**/cloud/issues");
   const firefox = await another(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",

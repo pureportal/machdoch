@@ -44,6 +44,7 @@ export interface CloudOrganization {
 export interface ManagedMember extends CloudMember {
   email: string | null;
   active: boolean;
+  twoFactor: boolean;
   revision: number;
 }
 export interface CloudInvitation {

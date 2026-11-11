@@ -20,6 +20,7 @@ import { Select } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { PersonAvatar } from "./person-avatar";
 import { createCommandSender, formText } from "./api-client";
+import { useToast } from "./toast";
 
 export function CloudSettings({
   data,
@@ -29,11 +30,13 @@ export function CloudSettings({
   actor: CloudMember;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const sender = useRef(createCommandSender());
   const [editingBrand, setEditingBrand] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [member, setMember] = useState<ManagedMember | null>(null);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [resetting, setResetting] = useState<ManagedMember | null>(null);
   const [invitationUrl, setInvitationUrl] = useState("");
   const editable = (person: ManagedMember) =>
     actor.role === "owner" || !["owner", "admin"].includes(person.role);
@@ -108,6 +111,20 @@ export function CloudSettings({
                   <span className="capitalize">
                     {person.active ? person.role : "Suspended"}
                   </span>
+                  {editable(person) &&
+                    person.twoFactor &&
+                    person.id !== actor.id && (
+                      <Button
+                        variant="outline"
+                        aria-label={`Reset two-factor for ${person.name}`}
+                        onClick={() => {
+                          resetSender();
+                          setResetting(person);
+                        }}
+                      >
+                        Reset two-factor
+                      </Button>
+                    )}
                   {editable(person) && (
                     <Button
                       variant="outline"
@@ -284,6 +301,29 @@ export function CloudSettings({
         <p>
           Saving ends this member’s current sessions. Suspended members cannot
           sign in.
+        </p>
+      </FormDialog>
+      <FormDialog
+        open={resetting !== null}
+        onOpenChange={(open) => {
+          if (!open) setResetting(null);
+        }}
+        title={
+          resetting
+            ? `Reset two-factor for ${resetting.name}`
+            : "Reset two-factor"
+        }
+        submitLabel="Reset two-factor"
+        onSubmit={async () => {
+          if (!resetting) return;
+          await sender.current(`members/${resetting.id}/two-factor/reset`, {});
+          toast(`Two-factor reset for ${resetting.name}.`);
+          router.refresh();
+        }}
+      >
+        <p>
+          {resetting?.name} sets up two-factor authentication again at the next
+          sign-in. Their sessions and connected apps end now.
         </p>
       </FormDialog>
       <FormDialog

@@ -13,6 +13,7 @@ import {
   revokeRemoteTestSessions,
 } from "../test/remote-fixture";
 import { getCloudRuntime } from "./cloud/runtime";
+import { verifyTestSession } from "./cloud/test-database";
 import { createSecret } from "./crypto";
 import { nowSeconds } from "./database";
 import { openFleetSession } from "./fleet-sessions";
@@ -33,6 +34,10 @@ beforeEach(async () => {
   const credentials = await (
     await getCloudRuntime()
   ).identity.login("owner", "a secure test password");
+  await verifyTestSession(
+    (await getCloudRuntime()).database,
+    credentials.sessionToken,
+  );
   request = new Request("https://fleet.example.test/api/fleet/sessions", {
     method: "POST",
     headers: {

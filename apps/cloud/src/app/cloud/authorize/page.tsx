@@ -23,10 +23,14 @@ export default async function Authorize({
       </AuthFrame>
     );
   const runtime = await getCloudRuntime();
-  const actor = await runtime.identity.authenticate(
-    (await cookies()).get(cloudSessionCookie)?.value ?? "",
-  );
-  if (!actor) redirect(`/cloud/login?authorize=${id.data}`);
+  const token = (await cookies()).get(cloudSessionCookie)?.value ?? "";
+  const actor = await runtime.identity.authenticate(token);
+  if (!actor)
+    redirect(
+      (await runtime.authentication.twoFactor.challenge(token))
+        ? `/cloud/two-factor?authorize=${id.data}`
+        : `/cloud/login?authorize=${id.data}`,
+    );
   try {
     return (
       <CloudAuthorizationForm

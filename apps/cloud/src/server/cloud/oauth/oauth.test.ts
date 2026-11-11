@@ -8,7 +8,7 @@ import {
   issueInputSchema,
 } from "../../../lib/cloud-contract";
 import type { CloudOAuthScope } from "../../../lib/cloud-oauth-contract";
-import { createTestCloudDatabase } from "../test-database";
+import { createTestCloudDatabase, verifyTestSession } from "../test-database";
 import { createCloudRuntime, type CloudRuntime } from "../runtime";
 import { issueCloudSession } from "../session-issuance";
 import { handleCloudApi } from "../api";
@@ -74,11 +74,11 @@ function parameters(selected: CloudOAuthScope[] = scopes) {
   });
 }
 async function session(actor: CloudActor) {
-  return (
-    await database.transaction((sql) =>
-      issueCloudSession(sql, actor.userId, "password", actor.organizationId),
-    )
-  ).sessionToken;
+  const { sessionToken } = await database.transaction((sql) =>
+    issueCloudSession(sql, actor.userId, "password", actor.organizationId),
+  );
+  await verifyTestSession(database, sessionToken);
+  return sessionToken;
 }
 async function authorize(actor = member, selected: CloudOAuthScope[] = scopes) {
   const id = await runtime.authorization.begin(parameters(selected));

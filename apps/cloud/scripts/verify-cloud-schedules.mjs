@@ -12,6 +12,7 @@ import { cloudTemporalFixture } from "./cloud-temporal-fixture.mjs";
 import { startCloudWorkflowWorker } from "./cloud-workflow-worker-fixture.mjs";
 import { PostgresCloudDatabase } from "../src/server/cloud/database.ts";
 import { createCloudRuntime } from "../src/server/cloud/runtime.ts";
+import { passSecondFactor } from "./cloud-two-factor-fixture.mjs";
 
 let dropCreation = false;
 const fixture = await cloudBrowserFixture({
@@ -56,9 +57,12 @@ const ready = () =>
 
 try {
   await page.goto(`${fixture.origin}/cloud/login`);
-  await page.getByLabel("Username or email", { exact: true }).fill("owner@example.test");
+  await page
+    .getByLabel("Username or email", { exact: true })
+    .fill("owner@example.test");
   await page.getByLabel("Password", { exact: true }).fill(fixture.password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, page);
   await page.waitForURL("**/cloud/issues");
   const team = await api("teams", "POST", {
     name: "Schedules",

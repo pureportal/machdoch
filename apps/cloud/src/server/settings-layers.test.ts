@@ -3,7 +3,10 @@ import {
   type FleetManagedSettingsDelivery,
 } from "@machdoch/fleet-protocol";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createRemoteTestRuntime } from "../test/remote-fixture";
+import {
+  createRemoteTestRuntime,
+  verifyRemoteTestLogin,
+} from "../test/remote-fixture";
 import { handleApiRequest } from "./api";
 import { createSecret } from "./crypto";
 import { nowSeconds } from "./database";
@@ -857,6 +860,7 @@ async function login(): Promise<Owner> {
     password: "a secure test password",
   });
   const cookies = response.headers.getSetCookie();
+  await verifyRemoteTestLogin(cookies);
   const csrf = /^__Host-machdoch_cloud_csrf=([^;]+)/mu.exec(
     cookies.join("\n"),
   )?.[1];

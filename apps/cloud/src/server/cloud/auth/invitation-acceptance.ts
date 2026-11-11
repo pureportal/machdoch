@@ -122,7 +122,7 @@ export class CloudInvitationAcceptance {
         const current = await currentInvitationSession(sql, session);
         const restored = (
           await sql.query<{ id: string }>(
-            "SELECT id FROM cloud_sessions s WHERE token_hash=$1 AND cloud_session_active(s) FOR SHARE",
+            "SELECT id FROM cloud_sessions s WHERE token_hash=$1 AND cloud_session_valid(s) FOR SHARE",
             [confirmation.session_hash],
           )
         ).rows[0];

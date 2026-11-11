@@ -40,7 +40,7 @@ export class CloudAdministrationService {
       ).rows[0]!;
       const members = (
         await sql.query<ManagedMember & Record<string, unknown>>(
-          `SELECT u.id,u.name,u.email,m.role,m.active,m.revision FROM cloud_memberships m JOIN cloud_users u ON u.id=m.user_id
+          `SELECT u.id,u.name,u.email,m.role,m.active,m.revision,EXISTS(SELECT 1 FROM cloud_authenticators a WHERE a.user_id=u.id) AS "twoFactor" FROM cloud_memberships m JOIN cloud_users u ON u.id=m.user_id
         WHERE m.organization_id=$1 ORDER BY m.active DESC,u.name,u.id`,
           [actor.organizationId],
         )

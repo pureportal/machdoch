@@ -1,4 +1,7 @@
-import { createTestCloudDatabase } from "../server/cloud/test-database";
+import {
+  createTestCloudDatabase,
+  verifyTestSession,
+} from "../server/cloud/test-database";
 import { initializeInstallation } from "../server/cloud/installation-storage";
 import { cloudCredentialsCipher } from "../server/cloud/credential-storage";
 import {
@@ -63,4 +66,14 @@ export async function revokeRemoteTestSessions(): Promise<void> {
   await cloud.database.transaction(async (sql) => {
     await sql.query("DELETE FROM cloud_sessions");
   });
+}
+
+export async function verifyRemoteTestLogin(
+  setCookies: string[],
+): Promise<void> {
+  const token = /^__Host-machdoch_cloud_session=([^;]+)/mu.exec(
+    setCookies.join("\n"),
+  )?.[1];
+  if (!token) throw new Error("Missing test session cookie.");
+  await verifyTestSession((await getCloudRuntime()).database, token);
 }

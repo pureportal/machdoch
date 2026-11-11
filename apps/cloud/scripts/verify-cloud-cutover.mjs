@@ -12,6 +12,7 @@ import {
   assertEventually,
 } from "./cloud-browser-fixture.mjs";
 import { createMobileDevice } from "./mobile-device-fixture.mjs";
+import { passSecondFactor } from "./cloud-two-factor-fixture.mjs";
 
 const fixture = await cloudBrowserFixture({ initialize: false });
 const page = await fixture.ownerContext.newPage();
@@ -51,6 +52,7 @@ try {
   await page
     .getByRole("button", { name: "Create organization", exact: true })
     .click();
+  await passSecondFactor(fixture, page);
   await page.waitForURL("**/cloud/issues");
   checks.push("First-run browser setup with generated persisted credentials");
   await page

@@ -73,3 +73,27 @@
     padding: 24px;
   }
 }
+.cloud-authenticator {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.cloud-authenticator > svg {
+  justify-self: center;
+  width: 200px;
+  height: 200px;
+  border-radius: 8px;
+}
+.cloud-recovery-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--muted);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 14px;
+  letter-spacing: 0.5px;
+  list-style: none;
+}

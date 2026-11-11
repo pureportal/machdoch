@@ -8,6 +8,7 @@ import { CloudOidcExchange } from "./auth/oidc-exchange";
 import { CloudSigninPolicy } from "./auth/signin-policy";
 import { CloudSessions } from "./auth/sessions";
 import { CloudCredentials } from "./auth/credentials";
+import { CloudTwoFactor } from "./auth/two-factor";
 import { CloudRecurrencePreview } from "./automation/recurrence";
 import { CloudSchedules } from "./automation/schedules";
 import { CloudScheduleDispatcher } from "./automation/schedule-dispatcher";
@@ -67,6 +68,7 @@ export interface CloudRuntime {
   scheduleDispatcher: CloudScheduleDispatcher;
   authentication: {
     credentials: CloudCredentials;
+    twoFactor: CloudTwoFactor;
     ssoProviders: CloudSsoProviders;
     ssoFlows: CloudSsoFlows;
     oidcExchange: CloudOidcExchange;
@@ -202,6 +204,10 @@ export function createCloudRuntime(
     scheduleDispatcher: new CloudScheduleDispatcher(database, recurrence),
     authentication: {
       credentials: new CloudCredentials(database),
+      twoFactor: new CloudTwoFactor(
+        database,
+        options.credentialsCipher ?? null,
+      ),
       ssoProviders: new CloudSsoProviders(
         database,
         options.credentialsCipher ?? null,

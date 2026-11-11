@@ -5,6 +5,7 @@ import axe from "axe-core";
 import { cloudApi, cloudBrowserFixture } from "./cloud-browser-fixture.mjs";
 import { seedCloudDesign } from "./cloud-design-fixture.mjs";
 import { verifyDesignInteractions } from "./cloud-design-interactions.mjs";
+import { passSecondFactor } from "./cloud-two-factor-fixture.mjs";
 
 const fixture = await cloudBrowserFixture({ initialize: false });
 const output = resolve(
@@ -77,6 +78,7 @@ try {
   await page
     .getByRole("button", { name: "Create organization", exact: true })
     .click();
+  await passSecondFactor(fixture, page);
   await page.waitForURL("**/cloud/issues");
   const data = await seedCloudDesign(fixture);
   const { team, cycle, issues, task, chatId } = data;

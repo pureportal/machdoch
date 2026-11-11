@@ -70,6 +70,10 @@ export class CloudIdentity {
     return this.limitAttempts("magic-proof", address, identity, [120, 12, 600]);
   }
 
+  async limitSecondFactor(address: string, userId: string): Promise<void> {
+    return this.limitAttempts("second-factor", address, userId, [30, 5, 300]);
+  }
+
   private async limitAttempts(
     bucket: string,
     address: string,

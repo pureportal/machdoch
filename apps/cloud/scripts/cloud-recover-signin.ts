@@ -42,6 +42,12 @@ try {
       owner.id,
       passwordHash,
     ]);
+    await sql.query("DELETE FROM cloud_authenticators WHERE user_id=$1", [
+      owner.id,
+    ]);
+    await sql.query("DELETE FROM cloud_recovery_codes WHERE user_id=$1", [
+      owner.id,
+    ]);
     await sql.query(
       "INSERT INTO cloud_operator_audit(id,organization_id,action,payload) VALUES($1,$2,'signin.recovered',$3)",
       [
@@ -52,7 +58,7 @@ try {
     );
   });
   process.stdout.write(
-    "Owner sign-in recovered. Required SSO is off and previous organization sessions and app grants are invalid.\n",
+    "Owner sign-in recovered. Required SSO is off, two-factor authentication is set up again at the next sign-in, and previous organization sessions and app grants are invalid.\n",
   );
 } finally {
   await database.close();

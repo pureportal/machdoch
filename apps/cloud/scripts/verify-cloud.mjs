@@ -7,6 +7,7 @@ import {
   cloudApi,
   cloudBrowserFixture,
 } from "./cloud-browser-fixture.mjs";
+import { passSecondFactor } from "./cloud-two-factor-fixture.mjs";
 
 const fixture = await cloudBrowserFixture();
 const checks = [];
@@ -21,6 +22,7 @@ async function signIn(page, email) {
   await page.getByLabel("Username or email", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(fixture.password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, page);
   await page.waitForURL("**/cloud/issues");
   await page.getByRole("heading", { name: "Issues", exact: true }).waitFor();
 }
@@ -60,6 +62,7 @@ try {
   await member.getByLabel("Name", { exact: true }).fill("Member");
   await member.getByLabel("Password", { exact: true }).fill(fixture.password);
   await member.getByRole("button", { name: "Join organization" }).click();
+  await passSecondFactor(fixture, member);
   await member.waitForURL("**/cloud/issues");
   assert.equal(
     await member.getByRole("link", { name: "Settings", exact: true }).count(),

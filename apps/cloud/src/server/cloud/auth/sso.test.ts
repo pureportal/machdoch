@@ -4,7 +4,7 @@ import type { CloudActor } from "../../../lib/cloud-contract";
 import type { OidcSave } from "../../../lib/cloud-sso-contract";
 import { SettingsCipher } from "../../settings-crypto";
 import { hashSecret } from "../../crypto";
-import { createTestCloudDatabase } from "../test-database";
+import { createTestCloudDatabase, verifyTestSession } from "../test-database";
 import { createCloudRuntime, type CloudRuntime } from "../runtime";
 import { issueCloudSession } from "../session-issuance";
 import { nativeCloudClient } from "../oauth/validation";
@@ -80,9 +80,11 @@ beforeEach(async () => {
   );
 });
 async function localSession(actor = owner) {
-  return database.transaction((sql) =>
+  const credentials = await database.transaction((sql) =>
     issueCloudSession(sql, actor.userId, "password", actor.organizationId),
   );
+  await verifyTestSession(database, credentials.sessionToken);
+  return credentials;
 }
 async function verifiedFlow(
   mode: "login" | "link" = "link",
@@ -121,11 +123,13 @@ async function complete(flow: Awaited<ReturnType<typeof verifiedFlow>>) {
     flow.nonce,
     flow.session,
   );
-  return runtime.authentication.ssoFlows.consume(
+  const result = await runtime.authentication.ssoFlows.consume(
     flow.id,
     flow.nonce,
     flow.session,
   );
+  await verifyTestSession(database, result.sessionToken);
+  return result;
 }
 
 it("encrypts credentials, denies non-admin edits, pins identity coordinates and requires a new secret for another destination", async () => {

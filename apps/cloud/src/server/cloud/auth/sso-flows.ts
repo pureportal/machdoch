@@ -186,7 +186,7 @@ export class CloudSsoFlows {
           users.rows.map((row) => row.user_id),
         );
         const alive = await sql.query(
-          "SELECT 1 FROM cloud_sessions s WHERE s.token_hash=$1 AND cloud_session_active(s) FOR SHARE OF s",
+          "SELECT 1 FROM cloud_sessions s WHERE s.token_hash=$1 AND cloud_session_valid(s) FOR SHARE OF s",
           [flow.session_hash],
         );
         if (!alive.rows.length) throw unavailable();

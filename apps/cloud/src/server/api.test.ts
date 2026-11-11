@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createRemoteTestRuntime,
   revokeRemoteTestSessions,
+  verifyRemoteTestLogin,
 } from "../test/remote-fixture";
 import { handleApiRequest } from "./api";
 import { createSecret } from "./crypto";
@@ -136,6 +137,7 @@ describe("machdoch.cloud API", () => {
       password: "a secure test password",
     });
     const cookies = login.headers.getSetCookie();
+    await verifyRemoteTestLogin(cookies);
     const cookie = cookies.map((value) => value.split(";", 1)[0]).join("; ");
     const csrf = /^__Host-machdoch_cloud_csrf=([^;]+)/mu.exec(
       cookies.join("\n"),
@@ -1008,6 +1010,7 @@ describe("machdoch.cloud API", () => {
     });
     expect(login.status).toBe(200);
     const cookies = login.headers.getSetCookie();
+    await verifyRemoteTestLogin(cookies);
     const cookieHeader = cookies
       .map((cookie) => cookie.split(";", 1)[0])
       .join("; ");
@@ -1442,6 +1445,7 @@ async function authenticateTestOwner(): Promise<{
     password: "a secure test password",
   });
   const cookies = response.headers.getSetCookie();
+  await verifyRemoteTestLogin(cookies);
   const cookie = cookies.map((value) => value.split(";", 1)[0]).join("; ");
   const csrf = /^__Host-machdoch_cloud_csrf=([^;]+)/mu.exec(
     cookies.join("\n"),

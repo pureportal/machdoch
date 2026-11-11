@@ -9,6 +9,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { chromium } from "playwright-core";
+import {
+  completeSecondFactor,
+  signInPaths,
+} from "./cloud-two-factor-fixture.mjs";
 
 const managerRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -277,6 +281,10 @@ export async function cloudBrowserFixture({
         },
       );
       assert.equal(initialized.status(), 201, await initialized.text());
+      await completeSecondFactor(
+        { origin, database: scopedDatabase },
+        ownerContext,
+      );
     }
     const installation = (
       await scopedDatabase.query(
@@ -370,7 +378,10 @@ export async function cloudApi(
     response.ok(),
     `${method} ${path}: ${response.status()} ${await response.text()}`,
   );
-  return response.json();
+  const result = await response.json();
+  if (method === "POST" && signInPaths.has(path))
+    await completeSecondFactor(fixture, context);
+  return result;
 }
 
 export async function executionProviderFixture(

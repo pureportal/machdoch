@@ -197,7 +197,7 @@ export async function invitationPreview(
   else if (
     !(
       await sql.query(
-        "SELECT id FROM cloud_sessions s WHERE token_hash=$1 AND cloud_session_active(s)",
+        "SELECT id FROM cloud_sessions s WHERE token_hash=$1 AND cloud_session_valid(s)",
         [confirmation.session_hash],
       )
     ).rows.length

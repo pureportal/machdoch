@@ -17,6 +17,10 @@ import {
   clearProofCookies,
 } from "./auth/proof-cookies";
 import { handleInvitationAccess } from "./auth/invitations-api";
+import {
+  handleAccountTwoFactorApi,
+  handleTwoFactorChallengeApi,
+} from "./auth/two-factor-api";
 import { invitationInputSchema } from "../../lib/cloud-invitation-contract";
 import { recurrencePreviewSchema } from "../../lib/cloud-recurrence-contract";
 import { handleScheduleApi } from "./automation/api";
@@ -276,6 +280,8 @@ async function route(
     return handleSsoApi(runtime, request, address);
   if (path[0] === "auth" && (path[1] === "magic" || path[1] === "methods"))
     return handleMagicLinkApi(runtime, request, address);
+  if (path[0] === "auth" && path[1] === "two-factor")
+    return handleTwoFactorChallengeApi(runtime, request, address);
   if (
     path[0] === "invitations" &&
     path.length === 2 &&
@@ -346,6 +352,8 @@ async function route(
     clearProofCookies(response);
     return response;
   }
+  if (path[0] === "account" && path[1] === "two-factor")
+    return handleAccountTwoFactorApi(runtime, request, actor, address);
   if (path[0] === "schedules")
     return handleScheduleApi(runtime, request, actor);
   if (routeKey === "POST recurrence/preview")
@@ -788,6 +796,20 @@ async function route(
           actor,
           key.data,
           await readBody(request, organizationUpdateSchema),
+        ),
+      );
+    if (
+      method === "POST" &&
+      path[0] === "members" &&
+      path.length === 4 &&
+      path[2] === "two-factor" &&
+      path[3] === "reset"
+    )
+      return Response.json(
+        await runtime.authentication.twoFactor.resetMember(
+          actor,
+          key.data,
+          cloudId.parse(path[1]),
         ),
       );
     if (method === "PATCH" && path[0] === "members" && path.length === 2)

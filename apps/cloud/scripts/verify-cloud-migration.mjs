@@ -21,6 +21,7 @@ import {
   cloudBrowserFixture,
   assertEventually,
 } from "./cloud-browser-fixture.mjs";
+import { passSecondFactor } from "./cloud-two-factor-fixture.mjs";
 
 const managerId = createId("manager");
 const instanceId = createId("instance");
@@ -145,6 +146,7 @@ try {
     .fill("legacy-owner");
   await page.getByLabel("Password", { exact: true }).fill(fixture.password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, page);
   await page.waitForURL("**/cloud/issues");
   await page.goto(`${fixture.origin}/instances`);
   await page
@@ -270,6 +272,7 @@ try {
     .getByLabel("Password", { exact: true })
     .fill(`${fixture.password}-changed`);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, page);
   await page.waitForURL("**/cloud/issues");
   const result = {
     passed: true,

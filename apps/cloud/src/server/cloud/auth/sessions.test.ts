@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, expect, it } from "vitest";
 import type { CloudActor } from "../../../lib/cloud-contract";
 import { hashOwnerPasswordAsync, hashSecret } from "../../crypto";
-import { createTestCloudDatabase } from "../test-database";
+import { createTestCloudDatabase, verifyTestSession } from "../test-database";
 import { createCloudRuntime, type CloudRuntime } from "../runtime";
 import { issueCloudSession } from "../session-issuance";
 import { handleCloudApi } from "../api";
@@ -49,7 +49,7 @@ beforeEach(async () => {
   runtime = createCloudRuntime(database, origin);
 });
 async function session(identity = actor) {
-  return database.transaction((sql) =>
+  const credentials = await database.transaction((sql) =>
     issueCloudSession(
       sql,
       identity.userId,
@@ -60,6 +60,8 @@ async function session(identity = actor) {
       { browser: "Firefox", platform: "Windows", address: "127.0.0.1" },
     ),
   );
+  await verifyTestSession(database, credentials.sessionToken);
+  return credentials;
 }
 async function id(token: string) {
   return (
@@ -254,6 +256,7 @@ it("requires CSRF and account binding at the HTTP boundary, and clears cookies o
     password,
     actor.organizationId,
   );
+  await verifyTestSession(database, current.sessionToken);
   const target = await id(current.sessionToken);
   const headers = {
     "Content-Type": "application/json",

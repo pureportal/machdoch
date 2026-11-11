@@ -24,7 +24,7 @@ import {
 import { hashOwnerPassword, hashSecret } from "../crypto";
 import { SettingsCipher } from "../settings-crypto";
 import { FleetDatabase } from "../database";
-import { createTestCloudDatabase } from "./test-database";
+import { createTestCloudDatabase, verifyTestSession } from "./test-database";
 import { initializeInstallation } from "./installation-storage";
 import { findLegacyConfiguration, openLegacySource } from "./legacy-source";
 import { importLegacySource } from "./legacy-import";
@@ -142,6 +142,7 @@ describe("installation cutover", () => {
     expect(existsSync(path)).toBe(false);
     const identity = new CloudIdentity(database);
     const login = await identity.login("original-owner", password);
+    await verifyTestSession(database, login.sessionToken);
     expect(await identity.authenticate(login.sessionToken)).toEqual({
       organizationId: result.organizationId,
       userId: result.userId,
@@ -354,6 +355,7 @@ describe("installation cutover", () => {
       "owner@example.test",
       password,
     );
+    await verifyTestSession(database, login.sessionToken);
     expect(
       await new CloudIdentity(database).authenticate(login.sessionToken),
     ).not.toBeNull();

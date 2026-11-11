@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 import { cloudMigrations, type CloudDatabase, type CloudSql } from "./database";
 import type { CloudActor, CloudIssue } from "../../lib/cloud-contract";
+import { hashSecret } from "../crypto";
+import { capVerifiedSessions } from "./session-issuance";
 
 export async function testStatusReference(
   database: CloudDatabase,
@@ -38,4 +40,20 @@ export async function createTestCloudDatabase(): Promise<
       engine.transaction(operation),
     close: () => engine.close(),
   };
+}
+
+export async function verifyTestSession(
+  database: CloudDatabase,
+  sessionToken: string,
+): Promise<void> {
+  await database.transaction(async (sql) => {
+    const session = (
+      await sql.query<{ user_id: string; organization_id: string }>(
+        "UPDATE cloud_sessions SET second_factor_at=clock_timestamp(),expires_at=now()+interval '12 hours' WHERE token_hash=$1 RETURNING user_id,organization_id",
+        [hashSecret(sessionToken)],
+      )
+    ).rows[0];
+    if (session)
+      await capVerifiedSessions(sql, session.user_id, session.organization_id);
+  });
 }

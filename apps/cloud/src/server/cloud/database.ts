@@ -36,6 +36,7 @@ export const cloudMigrations = [
   "033-favorites-subscriptions.sql",
   "034-initiatives-milestones.sql",
   "035-triage.sql",
+  "036-two-factor.sql",
 ];
 
 export interface CloudSql {

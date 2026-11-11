@@ -15,6 +15,17 @@ export async function lockUserSessions(
     ]);
 }
 
+export async function capVerifiedSessions(
+  sql: CloudSql,
+  userId: string,
+  organizationId: string,
+): Promise<void> {
+  await sql.query(
+    "DELETE FROM cloud_sessions WHERE token_hash IN (SELECT token_hash FROM cloud_sessions WHERE user_id=$1 AND organization_id=$2 AND second_factor_at IS NOT NULL ORDER BY second_factor_at DESC,token_hash OFFSET 8)",
+    [userId, organizationId],
+  );
+}
+
 export async function issueCloudSession(
   sql: CloudSql,
   userId: string,
@@ -76,11 +87,11 @@ export async function issueCloudSession(
     ...(previous ? [previous.user_id] : []),
   ]);
   await sql.query(
-    "DELETE FROM cloud_sessions s WHERE user_id=$1 AND organization_id=$2 AND NOT cloud_session_active(s)",
+    "DELETE FROM cloud_sessions s WHERE user_id=$1 AND organization_id=$2 AND NOT cloud_session_valid(s)",
     [userId, membership.organization_id],
   );
   await sql.query(
-    "DELETE FROM cloud_sessions WHERE token_hash IN (SELECT token_hash FROM cloud_sessions WHERE user_id=$1 AND organization_id=$2 ORDER BY created_at DESC,token_hash OFFSET 7)",
+    "DELETE FROM cloud_sessions WHERE token_hash IN (SELECT token_hash FROM cloud_sessions WHERE user_id=$1 AND organization_id=$2 AND second_factor_at IS NULL ORDER BY created_at DESC,token_hash OFFSET 4)",
     [userId, membership.organization_id],
   );
   if (previousToken)
@@ -90,7 +101,7 @@ export async function issueCloudSession(
   const sessionToken = createSecret("mch_cloud_session"),
     csrfToken = createSecret("mch_cloud_csrf");
   await sql.query(
-    "INSERT INTO cloud_sessions (token_hash,csrf_hash,user_id,organization_id,expires_at,authentication_epoch,membership_epoch,authentication_method,policy_epoch,provider_id,provider_epoch,browser,platform,address) SELECT $1,$2,u.id,m.organization_id,now()+interval '12 hours',u.authentication_epoch,m.authentication_epoch,$5,$6,$7,$8,$9,$10,$11 FROM cloud_users u JOIN cloud_memberships m ON m.user_id=u.id WHERE u.id=$3 AND m.organization_id=$4 AND m.active AND NOT u.disabled",
+    "INSERT INTO cloud_sessions (token_hash,csrf_hash,user_id,organization_id,expires_at,authentication_epoch,membership_epoch,authentication_method,policy_epoch,provider_id,provider_epoch,browser,platform,address) SELECT $1,$2,u.id,m.organization_id,now()+interval '15 minutes',u.authentication_epoch,m.authentication_epoch,$5,$6,$7,$8,$9,$10,$11 FROM cloud_users u JOIN cloud_memberships m ON m.user_id=u.id WHERE u.id=$3 AND m.organization_id=$4 AND m.active AND NOT u.disabled",
     [
       hashSecret(sessionToken),
       hashSecret(csrfToken),

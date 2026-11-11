@@ -7,6 +7,7 @@ import {
   statusReference,
   cloudBrowserFixture,
 } from "./cloud-browser-fixture.mjs";
+import { passSecondFactor } from "./cloud-two-factor-fixture.mjs";
 
 const fixture = await cloudBrowserFixture();
 const page = await fixture.ownerContext.newPage();
@@ -19,9 +20,12 @@ function passed(name) {
 }
 try {
   await page.goto(`${fixture.origin}/cloud/login`);
-  await page.getByLabel("Username or email", { exact: true }).fill("owner@example.test");
+  await page
+    .getByLabel("Username or email", { exact: true })
+    .fill("owner@example.test");
   await page.getByLabel("Password", { exact: true }).fill(fixture.password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await passSecondFactor(fixture, page);
   await page.waitForURL("**/cloud/issues");
   const team = await api("teams", "POST", {
     name: "Cycle team",

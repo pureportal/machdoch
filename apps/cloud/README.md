@@ -37,6 +37,12 @@ Source account conflicts, unsupported source tables, unavailable encryption keys
 
 When upgrading an installation that already used Cloud credentials, supply its existing `MACHDOCH_CLOUD_ENCRYPTION_KEY` for the first start. It is verified and persisted; it is no longer required on subsequent starts. An existing `MACHDOCH_CLOUD_ORIGIN` is likewise adopted on first initialization.
 
+## Two-factor authentication
+
+Every account needs an authenticator app (TOTP). After password, email-link or SSO sign-in, accounts without one set it up before they can continue and receive ten single-use recovery codes. Account → Security replaces the authenticator or the recovery codes. Owners and administrators can reset a member's two-factor authentication under Settings → Members. If no owner can sign in, run `pnpm --filter @machdoch/cloud cloud:recover-signin` with `MACHDOCH_CLOUD_DATABASE_URL`, `MACHDOCH_CLOUD_RECOVERY_ORGANIZATION_ID`, `MACHDOCH_CLOUD_RECOVERY_LOGIN` and `MACHDOCH_CLOUD_OWNER_PASSWORD`; it also resets that owner's two-factor authentication.
+
+The upgrade that introduces two-factor authentication signs out all browser sessions and disconnects connected apps. Reconnect them after setting up two-factor authentication.
+
 ## Clients
 
 Open **Clients** to inspect devices, enroll or revoke them, open remote workspaces, and manage profiles. The remote workspace retains chat, tasks, scheduler, RALPH, files, Git, terminal, services, previews, speech and media controls. Device-backed features still depend on the connected client's capabilities.
