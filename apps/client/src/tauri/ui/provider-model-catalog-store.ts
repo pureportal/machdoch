@@ -5,7 +5,7 @@ import {
   type RuntimeProviderModelCatalog,
 } from "./model-catalog";
 
-const REFRESH_INTERVAL_MS = 60_000;
+const REFRESH_INTERVAL_MS = 10 * 60_000;
 const FAILURE_TTL_MS = 10_000;
 
 export interface ProviderModelCatalogState {

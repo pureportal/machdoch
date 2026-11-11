@@ -48,7 +48,7 @@ describe("provider model catalog background cache", () => {
     stop();
   });
 
-  it("refreshes every minute with the picker closed and stops polling after the last subscriber", async () => {
+  it("refreshes every ten minutes with the picker closed and stops polling after the last subscriber", async () => {
     vi.useFakeTimers();
     const fetch = vi.fn(async (provider: RuntimeProvider) =>
       snapshot(provider),
@@ -58,11 +58,13 @@ describe("provider model catalog background cache", () => {
     const stopSecond = store.subscribe(vi.fn());
     await store.load();
     stopFirst();
+    await vi.advanceTimersByTimeAsync(9 * 60_000);
+    expect(fetch).toHaveBeenCalledTimes(7);
     await vi.advanceTimersByTimeAsync(60_000);
     expect(fetch).toHaveBeenCalledTimes(14);
     expect(fetch).toHaveBeenLastCalledWith("copilot-cli", true);
     stopSecond();
-    await vi.advanceTimersByTimeAsync(120_000);
+    await vi.advanceTimersByTimeAsync(20 * 60_000);
     expect(fetch).toHaveBeenCalledTimes(14);
   });
 
