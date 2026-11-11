@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveAgentCliProviderBinary } from "./agent-cli-providers.ts";
 
 const temporaryDirectories: string[] = [];
@@ -209,6 +210,41 @@ describe("resolveAgentCliProviderBinary", () => {
       available: true,
       executable: versionedBinaryPath,
       provider: "codex-cli",
+      source: "path",
+    });
+  });
+
+  it("checks the Claude Desktop Claude Code directory for Claude CLI", async () => {
+    if (process.platform !== "win32") {
+      return;
+    }
+
+    const homeDirectory = await createTemporaryDirectory("claude-desktop");
+    const localAppData = join(homeDirectory, "AppData", "Local");
+    const binaryPath = join(
+      localAppData,
+      "Claude-Data",
+      "claude_test",
+      "claude-code",
+      "2.1.321",
+      "d0e23af87588",
+      "claude.exe",
+    );
+
+    await createFile(binaryPath);
+
+    const resolution = resolveAgentCliProviderBinary("claude-cli", {
+      PATH: "",
+      PATHEXT: ".CMD;.EXE",
+      USERPROFILE: homeDirectory,
+      APPDATA: join(homeDirectory, "AppData", "Roaming"),
+      LOCALAPPDATA: localAppData,
+    });
+
+    expect(resolution).toMatchObject({
+      available: true,
+      executable: binaryPath,
+      provider: "claude-cli",
       source: "path",
     });
   });

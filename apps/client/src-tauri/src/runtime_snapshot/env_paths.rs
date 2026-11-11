@@ -25,6 +25,41 @@ fn home_directory_from_env(env: &HashMap<String, String>) -> Option<PathBuf> {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn child_directories(parents: impl IntoIterator<Item = PathBuf>) -> Vec<PathBuf> {
+    parents
+        .into_iter()
+        .filter_map(|parent| fs::read_dir(parent).ok())
+        .flat_map(|entries| entries.flatten().map(|entry| entry.path()))
+        .filter(|path| path.is_dir())
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn existing_files_newest_first(directories: Vec<PathBuf>, file_name: &str) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = directories
+        .into_iter()
+        .map(|directory| directory.join(file_name))
+        .filter(|path| path.is_file())
+        .collect();
+
+    files.sort_by(|left, right| {
+        let left_modified = left
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok();
+        let right_modified = right
+            .metadata()
+            .and_then(|metadata| metadata.modified())
+            .ok();
+
+        right_modified
+            .cmp(&left_modified)
+            .then_with(|| left.cmp(right))
+    });
+    files
+}
+
 pub(super) fn default_agent_cli_path_candidates(
     command: &str,
     env: &HashMap<String, String>,
@@ -75,34 +110,27 @@ pub(super) fn default_agent_cli_path_candidates(
 
             if command == "codex" {
                 let codex_bin = local_app_data.join("OpenAI").join("Codex").join("bin");
-                let mut versioned_binaries = Vec::new();
 
-                if let Ok(entries) = fs::read_dir(&codex_bin) {
-                    for entry in entries.flatten() {
-                        let candidate = entry.path().join("codex.exe");
-
-                        if candidate.is_file() {
-                            versioned_binaries.push(candidate);
-                        }
-                    }
-                }
-
-                versioned_binaries.sort_by(|left, right| {
-                    let left_modified = left
-                        .metadata()
-                        .and_then(|metadata| metadata.modified())
-                        .ok();
-                    let right_modified = right
-                        .metadata()
-                        .and_then(|metadata| metadata.modified())
-                        .ok();
-
-                    right_modified
-                        .cmp(&left_modified)
-                        .then_with(|| left.cmp(right))
-                });
-                candidates.extend(versioned_binaries);
+                candidates.extend(existing_files_newest_first(
+                    child_directories([codex_bin.clone()]),
+                    "codex.exe",
+                ));
                 candidates.push(codex_bin.join("codex.exe"));
+            }
+
+            if command == "claude" {
+                let claude_desktop_installs =
+                    child_directories([local_app_data.join("Claude-Data")]);
+                let claude_code_versions = child_directories(
+                    claude_desktop_installs
+                        .into_iter()
+                        .map(|install| install.join("claude-code")),
+                );
+
+                candidates.extend(existing_files_newest_first(
+                    child_directories(claude_code_versions),
+                    "claude.exe",
+                ));
             }
         }
 

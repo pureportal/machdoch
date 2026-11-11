@@ -352,6 +352,39 @@ mod tests {
     }
 
     #[test]
+    fn claude_cli_resolution_checks_claude_desktop_install_locations() {
+        if !cfg!(target_os = "windows") {
+            return;
+        }
+
+        let home_directory = temp_test_directory("claude-desktop-path");
+        let local_app_data = home_directory.join("AppData").join("Local");
+        let binary_path = local_app_data
+            .join("Claude-Data")
+            .join("claude_test")
+            .join("claude-code")
+            .join("2.1.321")
+            .join("d0e23af87588")
+            .join("claude.exe");
+
+        create_executable_file(&binary_path);
+
+        let env = cli_test_env(
+            String::new(),
+            ".CMD;.EXE",
+            Some(&home_directory),
+            Some(&local_app_data),
+        );
+
+        assert_eq!(
+            resolve_agent_cli_binary("claude-cli", &env),
+            Some(binary_path)
+        );
+
+        let _ = fs::remove_dir_all(home_directory);
+    }
+
+    #[test]
     fn codex_cli_resolution_skips_packaged_app_path_aliases() {
         if !cfg!(target_os = "windows") {
             return;

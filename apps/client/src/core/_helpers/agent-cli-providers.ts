@@ -35,25 +35,30 @@ const WINDOWS_EXECUTABLE_EXTENSIONS = [
 
 const userHomeDirectory = homedir();
 
-const listExistingChildCommandPathCandidates = (
-  directory: string,
-  fileName: string,
-): string[] => {
-  try {
-    return readdirSync(directory, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => join(directory, entry.name, fileName))
-      .filter((candidate) => isExistingFile(candidate))
-      .sort((left, right) => {
-        const modifiedTimeDifference =
-          statSync(right).mtimeMs - statSync(left).mtimeMs;
+const listChildDirectories = (directories: readonly string[]): string[] =>
+  directories.flatMap((directory) => {
+    try {
+      return readdirSync(directory, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => join(directory, entry.name));
+    } catch {
+      return [];
+    }
+  });
 
-        return modifiedTimeDifference || left.localeCompare(right);
-      });
-  } catch {
-    return [];
-  }
-};
+const listExistingFilesNewestFirst = (
+  directories: readonly string[],
+  fileName: string,
+): string[] =>
+  directories
+    .map((directory) => join(directory, fileName))
+    .filter((candidate) => isExistingFile(candidate))
+    .sort((left, right) => {
+      const modifiedTimeDifference =
+        statSync(right).mtimeMs - statSync(left).mtimeMs;
+
+      return modifiedTimeDifference || left.localeCompare(right);
+    });
 
 const createDefaultCommandPathCandidates = (
   command: string,
@@ -96,11 +101,29 @@ const createDefaultCommandPathCandidates = (
       );
 
       candidates.push(
-        ...listExistingChildCommandPathCandidates(
-          codexBinDirectory,
+        ...listExistingFilesNewestFirst(
+          listChildDirectories([codexBinDirectory]),
           "codex.exe",
         ),
         join(codexBinDirectory, "codex.exe"),
+      );
+    }
+
+    if (command === "claude") {
+      const claudeDesktopInstallDirectories = listChildDirectories([
+        join(windowsLocalAppDataDirectory, "Claude-Data"),
+      ]);
+      const claudeCodeVersionDirectories = listChildDirectories(
+        claudeDesktopInstallDirectories.map((directory) =>
+          join(directory, "claude-code"),
+        ),
+      );
+
+      candidates.push(
+        ...listExistingFilesNewestFirst(
+          listChildDirectories(claudeCodeVersionDirectories),
+          "claude.exe",
+        ),
       );
     }
 
