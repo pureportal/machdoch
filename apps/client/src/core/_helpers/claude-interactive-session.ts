@@ -28,8 +28,10 @@ import { isClaudeLoginRefreshBusy } from "./claude-authentication-failure.js";
 import { ClaudeLiveEventReader } from "./claude-live-events.js";
 import {
   ClaudeCliOutputDecoder,
+  UNCHANGED_ANSWER_MARKER,
   addUsage,
   isClaudeResultWithoutTurn,
+  type ClaudeBackgroundTask,
   type ExternalAgentCliOutputUpdate,
 } from "./external-agent-cli-output.js";
 
@@ -52,6 +54,15 @@ const LOGIN_REFRESH_RETRY_DELAY_MS = 60_000;
 const MAX_LOGIN_REFRESH_RETRIES = 2;
 const LOGIN_REFRESH_RETRY_PROMPT =
   "The last request did not reach the model because the Claude sign-in was being renewed. Continue the task from where you stopped.";
+
+const createStopUnneededJobsPrompt = (
+  jobs: readonly (ClaudeBackgroundTask & { id: string })[],
+): string => {
+  const list = jobs
+    .map((job) => (job.description ? `${job.id} (${job.description})` : job.id))
+    .join(", ");
+  return `These background jobs are still running, and the run stays open until they finish: ${list}. Stop each one you no longer need with TaskStop. Then, if your answer still stands, reply with only ${UNCHANGED_ANSWER_MARKER}; otherwise write the complete final answer again.`;
+};
 
 const isLoginRefreshBusyMessage = (event: Record<string, unknown>): boolean =>
   readString(event, "error") === "server_error" &&
@@ -97,6 +108,7 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
   private continuations = 0;
   private loginRefreshRetries = 0;
   private loginRefreshRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly jobsAskedToStop = new Set<string>();
   private carriedModelCalls = 0;
   private carriedUsage: AgentModelStreamUsage | undefined;
   private nextSteer = 1;
@@ -374,9 +386,10 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
     if (type === "user") this.events.toolResults(event);
     mergeOutputUpdate(update, this.output.pushEvent(event));
     if (type === "result") {
-      if (this.awaitsBackgroundJobs(event))
+      if (this.awaitsBackgroundJobs(event)) {
         this.events.result(event, this.getUsage());
-      else this.finishTurn(event);
+        this.askToStopUnneededJobs();
+      } else this.finishTurn(event);
     }
   }
 
@@ -391,6 +404,22 @@ export class ClaudeInteractiveSession implements InteractiveAgentSession {
       readString(event, "subtype") === "success" &&
       this.output.getCompletionGraceMs() !== undefined
     );
+  }
+
+  /**
+   * A job Claude believes it ended, such as a server whose watcher outlived a
+   * killed process, would hold the run open for the whole wait. Only Claude
+   * knows which jobs it still needs, so it is asked once per job.
+   */
+  private askToStopUnneededJobs(): void {
+    const jobs = this.output
+      .getBackgroundTasks()
+      .filter((job): job is ClaudeBackgroundTask & { id: string } =>
+        Boolean(job.id),
+      );
+    if (jobs.every((job) => this.jobsAskedToStop.has(job.id))) return;
+    for (const job of jobs) this.jobsAskedToStop.add(job.id);
+    this.sendUser(createStopUnneededJobsPrompt(jobs));
   }
 
   private handleProviderRequest(event: Record<string, unknown>): void {

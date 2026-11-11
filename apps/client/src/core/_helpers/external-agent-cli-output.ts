@@ -8,7 +8,7 @@ const BACKGROUND_WAIT_STEP_MS = 10 * 60 * 1_000;
 export const DEFAULT_BACKGROUND_WAIT_MS = 60 * 60 * 1_000;
 const BACKGROUND_FOLLOW_UP_GRACE_MS = 2 * 60 * 1_000;
 
-const UNCHANGED_ANSWER_MARKER = "<machdoch-answer-unchanged/>";
+export const UNCHANGED_ANSWER_MARKER = "<machdoch-answer-unchanged/>";
 
 const isUnchangedAnswer = (text: string): boolean =>
   text.trimStart().startsWith(UNCHANGED_ANSWER_MARKER);
@@ -19,7 +19,7 @@ const isUnchangedAnswer = (text: string): boolean =>
  */
 export const CLAUDE_FINAL_ANSWER_INSTRUCTIONS = [
   "Only your last message reaches the user as your answer.",
-  "Before your final answer, stop background tasks and monitors you no longer need; the run stays open until they finish.",
+  "Before your final answer, stop background tasks and monitors you no longer need with TaskStop; the run stays open until they finish, and ending their processes another way can leave them running.",
   `When a background task notification or a stop hook such as the goal check prompts you after your final answer and that answer still stands, reply with only ${UNCHANGED_ANSWER_MARKER}. Otherwise write the complete final answer again with what changed, because it replaces the earlier one.`,
 ].join("\n");
 
@@ -418,6 +418,11 @@ export class CodexCliOutputDecoder
   }
 }
 
+export interface ClaudeBackgroundTask {
+  id: string | undefined;
+  description: string | undefined;
+}
+
 export class ClaudeCliOutputDecoder
   extends JsonLineOutputDecoder
   implements ExternalAgentCliOutputDecoder
@@ -432,7 +437,7 @@ export class ClaudeCliOutputDecoder
   private assistantError: string | undefined;
   private turnLimitReached = false;
   private failureMessage: string | undefined;
-  private backgroundTasks = 0;
+  private backgroundTasks: ClaudeBackgroundTask[] = [];
   private readonly backgroundTaskIds = new Set<string>();
   private readonly unreadJobNoticeRunIds = new Set<string>();
   private waitingForBackgroundTasks = false;
@@ -476,13 +481,17 @@ export class ClaudeCliOutputDecoder
 
   getCompletionGraceMs(): number | undefined {
     if (!this.waitingForBackgroundTasks) return undefined;
-    return this.backgroundTasks > 0
+    return this.backgroundTasks.length > 0
       ? BACKGROUND_WAIT_STEP_MS
       : BACKGROUND_FOLLOW_UP_GRACE_MS;
   }
 
+  getBackgroundTasks(): readonly ClaudeBackgroundTask[] {
+    return this.backgroundTasks;
+  }
+
   takeBackgroundWaitNotice(): string | undefined {
-    if (!this.waitingForBackgroundTasks || this.backgroundTasks === 0)
+    if (!this.waitingForBackgroundTasks || this.backgroundTasks.length === 0)
       return undefined;
     if (this.backgroundWaitSteps >= this.maxBackgroundWaitSteps - 1) {
       this.waitExpired = true;
@@ -497,8 +506,9 @@ export class ClaudeCliOutputDecoder
   }
 
   private describeBackgroundWait(prefix: string): string {
+    const count = this.backgroundTasks.length;
     return formatDisplayText(
-      `${prefix} ${this.backgroundTasks} background job${this.backgroundTasks === 1 ? "" : "s"} to finish.`,
+      `${prefix} ${count} background job${count === 1 ? "" : "s"} to finish.`,
     );
   }
 
@@ -587,14 +597,22 @@ export class ClaudeCliOutputDecoder
 
     if (type === "system" && subtype === "background_tasks_changed") {
       const tasks: unknown[] = Array.isArray(event.tasks) ? event.tasks : [];
-      this.backgroundTasks = tasks.length;
-      for (const task of tasks) {
-        const taskId = isRecord(task)
-          ? (getString(task, "task_id") ?? getString(task, "id"))
-          : undefined;
-        if (taskId) this.backgroundTaskIds.add(taskId);
+      this.backgroundTasks = tasks.map((task) =>
+        isRecord(task)
+          ? {
+              id: getString(task, "task_id") ?? getString(task, "id"),
+              description: getString(task, "description"),
+            }
+          : { id: undefined, description: undefined },
+      );
+      for (const { id } of this.backgroundTasks) {
+        if (id) this.backgroundTaskIds.add(id);
       }
-      if (this.waitForBackgroundTasks && this.terminal && this.backgroundTasks)
+      if (
+        this.waitForBackgroundTasks &&
+        this.terminal &&
+        this.backgroundTasks.length > 0
+      )
         this.waitingForBackgroundTasks = true;
       return;
     }
@@ -698,10 +716,10 @@ export class ClaudeCliOutputDecoder
     }
     if (
       this.waitForBackgroundTasks &&
-      (this.backgroundTasks > 0 || this.unreadJobNoticeRunIds.size > 0)
+      (this.backgroundTasks.length > 0 || this.unreadJobNoticeRunIds.size > 0)
     ) {
       this.waitingForBackgroundTasks = true;
-      if (!this.terminal && this.backgroundTasks > 0)
+      if (!this.terminal && this.backgroundTasks.length > 0)
         update.displayText.push(this.describeBackgroundWait("Waiting for"));
     }
 

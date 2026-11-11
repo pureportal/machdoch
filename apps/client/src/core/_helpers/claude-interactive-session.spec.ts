@@ -664,6 +664,71 @@ describe("ClaudeInteractiveSession", () => {
       expect(harness.session.takeBackgroundWaitNotice()).toBeUndefined();
       expect(harness.session.backgroundWaitExpired()).toBe(true);
     });
+
+    it("asks Claude to stop the jobs it no longer needs and keeps its answer", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      harness.receive({
+        type: "system",
+        subtype: "background_tasks_changed",
+        tasks: [{ task_id: "server", description: "Start the dev server" }],
+      });
+      harness.receive(assistant("message-1", "The feature is done."));
+      harness.receive(success("The feature is done.", 10));
+      expect(harness.isClosed()).toBe(false);
+      expect(harness.sent.at(-1)).toMatchObject({
+        type: "user",
+        message: {
+          content: expect.stringMatching(
+            /server \(Start the dev server\).*TaskStop.*<machdoch-answer-unchanged\/>/u,
+          ),
+        },
+      });
+      const sentBeforeReply = harness.sent.length;
+
+      harness.toolUse("stop-1", "TaskStop", { task_id: "server" });
+      harness.receive({
+        type: "system",
+        subtype: "task_notification",
+        task_id: "server",
+        run_id: "run-1",
+        status: "stopped",
+      });
+      harness.receive(jobs(0));
+      harness.receive(assistant("message-2", "<machdoch-answer-unchanged/>"));
+      const final = harness.receive(
+        success("<machdoch-answer-unchanged/>", 20),
+      );
+      expect(final.resultExitCode).toBe(0);
+      expect(harness.isClosed()).toBe(true);
+      expect(harness.sent).toHaveLength(sentBeforeReply);
+      expect(harness.session.backgroundWaitExpired()).toBe(false);
+      expect(harness.session.getFinalOutput()).toBe("The feature is done.");
+    });
+
+    it("keeps waiting for a job Claude still needs without asking again", () => {
+      const harness = createHarness();
+      sessions.push(harness.session);
+      harness.session.start();
+      harness.receive(jobs(1));
+      harness.receive(success("Tests are still running.", 10));
+      const sentAfterAsking = harness.sent.length;
+
+      harness.receive(assistant("message-2", "<machdoch-answer-unchanged/>"));
+      harness.receive(success("<machdoch-answer-unchanged/>", 10));
+      expect(harness.sent).toHaveLength(sentAfterAsking);
+      expect(harness.isClosed()).toBe(false);
+      expect(harness.session.getFinalOutput()).toBe("Tests are still running.");
+
+      harness.receive(jobs(2));
+      harness.receive(assistant("message-3", "Started the lint job too."));
+      harness.receive(success("Started the lint job too.", 10));
+      expect(harness.sent).toHaveLength(sentAfterAsking + 1);
+      expect(harness.sent.at(-1)).toMatchObject({
+        message: { content: expect.stringContaining("job-0, job-1") },
+      });
+    });
   });
 
   describe("when Claude closes work that never reached the model", () => {
