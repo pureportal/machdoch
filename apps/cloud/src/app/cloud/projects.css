@@ -1,0 +1,448 @@
+.cloud-project-tabs {
+  margin-bottom: 12px;
+}
+.cloud-project-tabs button {
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+.cloud-project-tabs button:hover {
+  color: var(--foreground);
+}
+.cloud-project-tabs button[aria-current="page"] {
+  border-color: var(--border);
+  background: var(--secondary);
+  color: var(--foreground);
+}
+.cloud-project-table {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.cloud-project-row {
+  display: grid;
+  grid-template-columns:
+    minmax(220px, 2.4fr) minmax(130px, 1fr) minmax(110px, 1fr)
+    56px 96px 64px 96px 120px;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.cloud-project-row:hover:not(.cloud-project-head) {
+  background: var(--cloud-hover);
+}
+.cloud-project-head {
+  min-height: 34px;
+  border-top: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-project-group {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: var(--cloud-subtle);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cloud-project-group > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cloud-project-group .cloud-team-key {
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 5px;
+  font-size: 8.5px;
+}
+.cloud-project-name {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.cloud-project-name a {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-project-name a:hover {
+  text-decoration: underline;
+}
+.cloud-project-muted {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.cloud-project-progress-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.cloud-project-actions {
+  display: flex;
+  justify-content: flex-end;
+  opacity: 0;
+}
+.cloud-project-row:hover .cloud-project-actions,
+.cloud-project-actions:focus-within {
+  opacity: 1;
+}
+.cloud-progress-ring {
+  flex-shrink: 0;
+  transform: rotate(-90deg);
+}
+.cloud-progress-ring circle {
+  fill: none;
+  stroke-width: 2.5;
+}
+.cloud-progress-ring .cloud-progress-track {
+  stroke: var(--border);
+}
+.cloud-progress-ring .cloud-progress-value {
+  stroke: var(--primary);
+  stroke-linecap: round;
+}
+.cloud-project-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.cloud-project-health > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+.cloud-project-health[data-health] {
+  color: var(--foreground);
+}
+.cloud-project-health[data-health="on_track"] > span {
+  background: var(--cloud-success);
+}
+.cloud-project-health[data-health="at_risk"] > span {
+  background: var(--cloud-warning);
+}
+.cloud-project-health[data-health="off_track"] > span {
+  background: var(--cloud-danger);
+}
+.cloud-project-health time {
+  color: var(--muted-foreground);
+}
+.cloud-project-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cloud-project-updates {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.cloud-project-updates > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cloud-project-updates h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+.cloud-project-updates ol {
+  display: grid;
+  gap: 8px;
+}
+.cloud-project-updates li {
+  display: grid;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+.cloud-project-update-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.cloud-project-update-heading strong {
+  font-weight: 500;
+}
+.cloud-project-update-heading time {
+  color: var(--muted-foreground);
+}
+.cloud-project-update-form {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--cloud-subtle);
+}
+.cloud-project-update-form textarea {
+  min-height: 90px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  font-size: 13px;
+  resize: vertical;
+}
+.cloud-health-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cloud-health-picker button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+.cloud-health-picker button > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.cloud-health-picker [data-health="on_track"] > span {
+  background: var(--cloud-success);
+}
+.cloud-health-picker [data-health="at_risk"] > span {
+  background: var(--cloud-warning);
+}
+.cloud-health-picker [data-health="off_track"] > span {
+  background: var(--cloud-danger);
+}
+.cloud-health-picker button[aria-checked="true"] {
+  border-color: var(--input);
+  background: var(--secondary);
+  color: var(--foreground);
+}
+@media (max-width: 900px) {
+  .cloud-project-row {
+    grid-template-columns: minmax(0, 1fr) auto 80px;
+  }
+  .cloud-project-row > :nth-child(3),
+  .cloud-project-row > :nth-child(4),
+  .cloud-project-row > :nth-child(5),
+  .cloud-project-row > :nth-child(6),
+  .cloud-project-row > :nth-child(8) {
+    display: none;
+  }
+}
+.cloud-progress-ring {
+  width: 14px;
+  height: 14px;
+}
+.cloud-project-initiatives {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+.cloud-project-initiatives a {
+  max-width: 100%;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-project-initiatives a:hover {
+  background: var(--cloud-hover);
+}
+.cloud-initiative-projects {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 6px 12px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.cloud-initiative-projects legend {
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.cloud-initiative-projects label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+.cloud-milestone-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+.cloud-property-milestone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 16px;
+}
+.cloud-aside-runs {
+  display: grid;
+  gap: 2px;
+}
+.cloud-aside-runs li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+.cloud-aside-runs li:hover {
+  background: var(--cloud-hover);
+}
+.cloud-aside-runs li > svg {
+  flex-shrink: 0;
+  color: var(--cloud-success);
+}
+.cloud-aside-runs li a {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-initiative-table .cloud-project-row {
+  grid-template-columns:
+    minmax(220px, 2.4fr) minmax(120px, 1fr) 56px 72px 110px 96px
+    96px;
+}
+.cloud-initiative-status span {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+}
+.cloud-initiative-status [data-status="active"] {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  color: var(--primary);
+}
+.cloud-initiative-status [data-status="completed"] {
+  color: var(--cloud-success);
+}
+.cloud-pulse {
+  display: grid;
+  gap: 24px;
+  max-width: 820px;
+}
+.cloud-pulse h2 {
+  margin-bottom: 8px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.cloud-pulse ol {
+  display: grid;
+  gap: 8px;
+}
+.cloud-pulse-entry {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+.cloud-pulse-entry > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+.cloud-pulse-entry > header a {
+  font-weight: 600;
+}
+.cloud-pulse-entry > header a:hover {
+  text-decoration: underline;
+}
+.cloud-pulse-entry > header time {
+  margin-left: auto;
+  color: var(--muted-foreground);
+}
+.cloud-pulse-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+}
+.cloud-view-list {
+  display: grid;
+  max-width: 960px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.cloud-view-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 12px 0 14px;
+  border-top: 1px solid var(--border);
+}
+.cloud-view-list li:first-child {
+  border-top: 0;
+}
+.cloud-view-list li:hover {
+  background: var(--cloud-hover);
+}
+.cloud-view-list li > svg {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.cloud-view-list a {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+}
+.cloud-view-filters {
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-view-shared {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}

@@ -1,7 +1,10 @@
 import type { createModelAdapter } from "@machdoch/model-runtime/connections";
 import type {
+  AgentModelAdapter,
+  AgentModelStartParams,
   AgentModelStreamEvent,
-  AgentModelStreamUsage,
+  AgentModelToolCall,
+  AgentModelToolSpec,
 } from "@machdoch/model-runtime/types";
 import {
   createIsolatedModelAdapter,
@@ -11,8 +14,10 @@ import {
 import { CliModelFailure, createCliModelAdapter } from "./cli-model";
 import { isCloudError } from "../access";
 import { maximumInferenceAnswerBytes } from "./inference-records";
-import { CloudInferenceStore } from "./inference-store";
+import { CloudInferenceStore, type ClaimedInference } from "./inference-store";
 import type { CloudAiProviders } from "./providers";
+import type { CloudAgentTools } from "./agent-tools";
+import { runAgent, usageTokens, type AgentProgress } from "./agent-loop";
 
 export type CloudModelAdapterFactory = typeof createModelAdapter;
 class InferenceStopped extends Error {
@@ -22,21 +27,22 @@ class InferenceStopped extends Error {
 }
 const maximumLocalRequests = 16;
 
-function usageTokens(usage: AgentModelStreamUsage | undefined): number | null {
-  if (!usage) return null;
-  const total = usage.totalTokens ?? null;
-  return total !== null &&
-    Number.isSafeInteger(total) &&
-    total >= 0 &&
-    total <= 1_000_000_000
-    ? total
-    : null;
+interface ModelResponse {
+  text: string;
+  toolCalls: AgentModelToolCall[];
+  stopReason: string | undefined;
+  tokens: number | null;
+  progress?: AgentProgress;
 }
 
 class InferenceOutput {
   text = "";
   private finalAnswer = false;
   constructor(private readonly controller: AbortController) {}
+  reset(): void {
+    this.text = "";
+    this.finalAnswer = false;
+  }
   consume(event: AgentModelStreamEvent): void {
     if (this.controller.signal.aborted) return;
     if (event.type === "usage") return;
@@ -74,6 +80,7 @@ export class CloudInferenceWorker {
   constructor(
     private readonly store: CloudInferenceStore,
     private readonly providers: CloudAiProviders,
+    private readonly agentTools: CloudAgentTools,
     private readonly factory: CloudModelAdapterFactory = createIsolatedModelAdapter,
   ) {}
 
@@ -148,6 +155,7 @@ export class CloudInferenceWorker {
     const call = await this.store.claim(organizationId, id);
     if (!call) return;
     const output = new InferenceOutput(controller);
+    let progress: AgentProgress | undefined;
     let finished = false;
     let leaseTimer: ReturnType<typeof setTimeout>;
     let watcher: ReturnType<typeof setTimeout> | undefined;
@@ -168,19 +176,22 @@ export class CloudInferenceWorker {
       Math.max(0, call.deadlineRemainingMs - (performance.now() - claimedAt)),
     );
     deadline.unref();
+    const persist = async () => {
+      const startedAt = performance.now();
+      const renewal = await this.store.guard(
+        organizationId,
+        id,
+        call.executionId,
+        { answer: output.text, progress },
+      );
+      if (finished) return;
+      if (!renewal.allowed) stop();
+      else renew(startedAt, renewal.leaseRemainingMs);
+    };
     const watch = async () => {
       if (finished || controller.signal.aborted) return;
-      const startedAt = performance.now();
       try {
-        const renewal = await this.store.guard(
-          organizationId,
-          id,
-          call.executionId,
-          { answer: output.text },
-        );
-        if (finished) return;
-        if (!renewal.allowed) stop();
-        else renew(startedAt, renewal.leaseRemainingMs);
+        await persist();
       } catch (error) {
         stop();
         console.error(
@@ -209,9 +220,15 @@ export class CloudInferenceWorker {
         throw new InferenceStopped("permission_changed");
       if (resolved.cli && call.runId)
         throw new InferenceStopped("cli_provider_requires_client");
-      const adapter = resolved.cli
-        ? createCliModelAdapter(resolved.cli)
-        : await this.factory(resolved.connection, call.tools);
+      const createAdapter = async (
+        tools: AgentModelToolSpec[],
+      ): Promise<AgentModelAdapter> =>
+        resolved.cli
+          ? createCliModelAdapter(resolved.cli)
+          : this.factory(resolved.connection, tools);
+      const session = call.runId
+        ? undefined
+        : await this.agentTools.open(actor);
       controller.signal.throwIfAborted();
       const startedAt = performance.now();
       const grant = await this.store.guard(
@@ -227,36 +244,47 @@ export class CloudInferenceWorker {
         onAbort = () => reject(controller.signal.reason);
         controller.signal.addEventListener("abort", onAbort, { once: true });
       });
+      const request = {
+        toolChoice: "auto" as const,
+        ...call.modelOptions,
+        model: call.model,
+        systemPrompt: call.systemPrompt,
+        parallelAgentMode: "disabled" as const,
+        maxOutputTokens: call.maxOutputTokens,
+        maxRequestAttempts: 1,
+        storeResponses: false,
+      };
       const response = await Promise.race([
-        adapter.startTurn({
-          toolChoice: "auto",
-          ...call.modelOptions,
-          model: call.model,
-          systemPrompt: call.systemPrompt,
-          userPrompt: call.userPrompt,
-          tools: call.tools,
-          parallelAgentMode: "disabled",
-          maxOutputTokens: call.maxOutputTokens,
-          maxRequestAttempts: 1,
-          storeResponses: false,
-          signal: controller.signal,
-          onStreamEvent: (event) => output.consume(event),
-        }),
+        session
+          ? runAgent({
+              createAdapter,
+              request,
+              conversation: call.userPrompt,
+              session,
+              signal: controller.signal,
+              onStreamEvent: (event) => output.consume(event),
+              onRoundStart: () => output.reset(),
+              onProgress: async (current) => {
+                progress = current;
+                await persist();
+              },
+            }).then((agent): ModelResponse => {
+              progress = agent.progress;
+              return { ...agent, toolCalls: [] };
+            })
+          : this.runTask(
+              call,
+              request,
+              createAdapter,
+              output,
+              controller,
+              (tokens) => {
+                finalTokens = tokens;
+              },
+            ),
         aborted,
       ]);
-      finalTokens = usageTokens(response.usage);
-      if (
-        response.toolCalls.length > 16 ||
-        new Set(response.toolCalls.map((tool) => tool.id)).size !==
-          response.toolCalls.length
-      )
-        throw new InferenceStopped("invalid_tools");
-      for (const tool of response.toolCalls) {
-        const definition = call.tools.find((entry) => entry.name === tool.name);
-        if (!definition) throw new InferenceStopped("unexpected_tools");
-        if (!tool.id || tool.argumentError)
-          throw new InferenceStopped("invalid_tools");
-      }
+      finalTokens = response.tokens;
       if (
         Buffer.byteLength(
           JSON.stringify({
@@ -267,23 +295,14 @@ export class CloudInferenceWorker {
         ) > maximumInferenceAnswerBytes
       )
         throw new InferenceStopped("output_limit");
-      try {
-        if (
-          !(await validateInferenceTools(
-            call.tools,
-            response.toolCalls,
-            controller.signal,
-          ))
-        )
-          throw new InferenceStopped("invalid_tools");
-      } catch (error) {
-        if (error instanceof ModelWorkerFailure)
-          throw new InferenceStopped(`tool_${error.code}`);
-        throw error;
-      }
       output.setText(response.text);
       controller.signal.throwIfAborted();
-      if (!output.text.trim() && !response.toolCalls.length)
+      if (
+        !output.text.trim() &&
+        !response.toolCalls.length &&
+        !progress?.question &&
+        !progress?.actions.length
+      )
         throw new InferenceStopped(
           response.stopReason === "incomplete"
             ? "response_incomplete"
@@ -300,6 +319,7 @@ export class CloudInferenceWorker {
       result = {
         state: "complete",
         answer: output.text,
+        progress,
         response: call.runId
           ? {
               text: output.text,
@@ -325,6 +345,7 @@ export class CloudInferenceWorker {
       result = {
         state: code === "interrupted" ? "unknown" : "failed",
         answer: output.text,
+        progress,
         tokens: finalTokens,
         errorCode: code,
       };
@@ -336,6 +357,58 @@ export class CloudInferenceWorker {
       if (onAbort) controller.signal.removeEventListener("abort", onAbort);
     }
     await this.store.finish(organizationId, id, call.executionId, result);
+  }
+
+  private async runTask(
+    call: ClaimedInference,
+    request: Omit<AgentModelStartParams, "userPrompt" | "tools">,
+    createAdapter: (tools: AgentModelToolSpec[]) => Promise<AgentModelAdapter>,
+    output: InferenceOutput,
+    controller: AbortController,
+    reportTokens: (tokens: number | null) => void,
+  ): Promise<ModelResponse> {
+    const adapter = await createAdapter(call.tools);
+    const response = await adapter.startTurn({
+      ...request,
+      userPrompt: call.userPrompt,
+      tools: call.tools,
+      signal: controller.signal,
+      onStreamEvent: (event) => output.consume(event),
+    });
+    const tokens = usageTokens(response.usage);
+    reportTokens(tokens);
+    if (
+      response.toolCalls.length > 16 ||
+      new Set(response.toolCalls.map((tool) => tool.id)).size !==
+        response.toolCalls.length
+    )
+      throw new InferenceStopped("invalid_tools");
+    for (const tool of response.toolCalls) {
+      const definition = call.tools.find((entry) => entry.name === tool.name);
+      if (!definition) throw new InferenceStopped("unexpected_tools");
+      if (!tool.id || tool.argumentError)
+        throw new InferenceStopped("invalid_tools");
+    }
+    try {
+      if (
+        !(await validateInferenceTools(
+          call.tools,
+          response.toolCalls,
+          controller.signal,
+        ))
+      )
+        throw new InferenceStopped("invalid_tools");
+    } catch (error) {
+      if (error instanceof ModelWorkerFailure)
+        throw new InferenceStopped(`tool_${error.code}`);
+      throw error;
+    }
+    return {
+      text: response.text,
+      toolCalls: response.toolCalls,
+      stopReason: response.stopReason,
+      tokens,
+    };
   }
 
   private errorCode(error: unknown): string {

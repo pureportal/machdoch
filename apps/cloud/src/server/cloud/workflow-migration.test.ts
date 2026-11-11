@@ -120,12 +120,15 @@ it("preserves historical issue, cycle and schedule snapshots while mapping curre
         JSON.stringify(published),
       ],
     );
-    await engine.exec(
-      await readFile(
-        new URL("./migrations/024-team-workflows.sql", import.meta.url),
-        "utf8",
-      ),
-    );
+    for (const migration of cloudMigrations.slice(
+      cloudMigrations.indexOf("024-team-workflows.sql"),
+    ))
+      await engine.exec(
+        await readFile(
+          new URL(`./migrations/${migration}`, import.meta.url),
+          "utf8",
+        ),
+      );
     const runtime = createCloudRuntime(database, "https://cloud.example.test");
     const issue = await runtime.planning.getIssue(actor, issueId);
     expect(issue).toMatchObject({

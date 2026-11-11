@@ -2,7 +2,11 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { CliModelFailure, createCliModelAdapter } from "./cli-model";
+import {
+  CliModelFailure,
+  createCliModelAdapter,
+  parseCliToolCalls,
+} from "./cli-model";
 
 const parameters = {
   model: "fixture",
@@ -118,4 +122,88 @@ describe("cloud CLI model adapter", () => {
     setTimeout(() => controller.abort(new Error("stop")), 500);
     await expect(pending).rejects.toThrow("stop");
   }, 15_000);
+
+  it("describes tools in the instructions and parses a tool call block without streaming it", async () => {
+    const fence = "`".repeat(3);
+    const command = await fixture(
+      "claude-tools.mjs",
+      `import { readFileSync } from "node:fs";
+      const args = process.argv.slice(2);
+      const system = readFileSync(args[args.indexOf("--system-prompt-file") + 1], "utf8");
+      const write = (value) => console.log(JSON.stringify(value));
+      const text = "Checking.\\n${fence}tool_calls\\n" + JSON.stringify([{ name: "search_issues", arguments: { query: "login" } }]) + "\\n${fence}";
+      for (const piece of [text.slice(0, 12), text.slice(12)])
+        write({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: piece } } });
+      write({ type: "result", subtype: "success", is_error: false, result: system.includes("### search_issues") ? text : "missing tools" });`,
+    );
+    const deltas: string[] = [];
+    const turn = await createCliModelAdapter(
+      { provider: "claude-code-cli", model: "sonnet", apiKey: "" },
+      command,
+    ).startTurn({
+      ...parameters,
+      tools: [
+        {
+          name: "search_issues",
+          description: "Search issues.",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
+      onStreamEvent: (event) => {
+        if (event.type === "text-delta") deltas.push(event.delta);
+      },
+    });
+    expect(deltas.join("")).toBe("Checking.\n");
+    expect(turn.text).toBe("Checking.");
+    expect(turn.toolCalls).toEqual([
+      {
+        id: expect.stringMatching(/^cli_/),
+        name: "search_issues",
+        arguments: { query: "login" },
+      },
+    ]);
+  });
+
+  it("treats malformed tool blocks as text", () => {
+    expect(
+      parseCliToolCalls("```tool_calls\nnot json\n```", ["search_issues"]),
+    ).toEqual({
+      text: "```tool_calls\nnot json\n```",
+      toolCalls: [],
+    });
+    expect(parseCliToolCalls("Plain answer", ["search_issues"])).toEqual({
+      text: "Plain answer",
+      toolCalls: [],
+    });
+    expect(
+      parseCliToolCalls("Use search_issues(query) to look it up.", [
+        "search_issues",
+      ]),
+    ).toEqual({
+      text: "Use search_issues(query) to look it up.",
+      toolCalls: [],
+    });
+  });
+
+  it("accepts call-expression tool syntax and drops surrounding markup", () => {
+    const text = [
+      "<parameter_length_error_guard>",
+      "</invoke>",
+      'ask_user({"question":"Which project (exactly)?","options":["Lambda migration (at risk)","Fleet appraisal"]})',
+      "</invoke>",
+    ].join("\n");
+    expect(parseCliToolCalls(text, ["ask_user", "search_issues"])).toEqual({
+      text: "",
+      toolCalls: [
+        {
+          id: expect.stringMatching(/^cli_/),
+          name: "ask_user",
+          arguments: {
+            question: "Which project (exactly)?",
+            options: ["Lambda migration (at risk)", "Fleet appraisal"],
+          },
+        },
+      ],
+    });
+  });
 });

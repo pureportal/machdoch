@@ -7,6 +7,7 @@ export const inboxKinds = [
   "commented",
   "mentioned",
   "task_finished",
+  "status_changed",
 ] as const;
 export type InboxKind = (typeof inboxKinds)[number];
 

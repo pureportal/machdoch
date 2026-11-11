@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Bookmark, CircleDot, Columns3, LayoutList, Search } from "lucide-react";
+import {
+  Bookmark,
+  CircleDot,
+  Columns3,
+  LayoutList,
+  Search,
+} from "lucide-react";
 import type { CloudIssueSummary, CloudWorkspace } from "@/lib/cloud-contract";
 import type { CloudLabel } from "@/lib/cloud-label-contract";
 import {
@@ -20,6 +26,8 @@ import { IssueDisplayMenu, IssueFilters } from "./issue-filters";
 import { CreateIssue } from "./issue-form";
 import { groupIssues, parseGrouping } from "./issue-grouping";
 import { IssueRows } from "./issue-rows";
+import { issueNavigationKey } from "./issue-header";
+import { useAgentPageEntity } from "./agent/agent-shell";
 import { SaveViewDialog } from "./save-view-dialog";
 import { useToast } from "./toast";
 import { useIssueList } from "./use-issue-list";
@@ -61,6 +69,10 @@ export function IssueList({
   const query = search.get("query") ?? "";
   const scope = parseIssueScope(search.get("scope"));
   const teamId = search.get("teamId");
+  const team = workspace.teams.find((entry) => entry.id === teamId);
+  useAgentPageEntity(
+    team ? { kind: "team", id: team.id, label: team.name, title: null } : null,
+  );
   const grouping = parseGrouping(search.get("group"));
   const sort = search.get("sort");
   const groups = useMemo(
@@ -84,6 +96,15 @@ export function IssueList({
   const [loadingMore, setLoadingMore] = useState(false);
   const [exhausted, setExhausted] = useState(false);
   useEffect(() => setSearchText(query), [query]);
+  useEffect(() => {
+    sessionStorage.setItem(
+      issueNavigationKey,
+      JSON.stringify({
+        ids: groups.flatMap((group) => group.issues.map((issue) => issue.id)),
+        href: `${location.pathname}${location.search}`,
+      }),
+    );
+  }, [groups]);
   useEffect(() => setExhausted(false), [search]);
   function setFilter(name: string, value: string) {
     const next = new URLSearchParams(search);
@@ -130,7 +151,11 @@ export function IssueList({
     <>
       <header className="cloud-page-header">
         <div className="cloud-page-heading">
-          <h1>{issueScopes[scope].label === "All issues" ? "Issues" : issueScopes[scope].label}</h1>
+          <h1>
+            {issueScopes[scope].label === "All issues"
+              ? "Issues"
+              : issueScopes[scope].label}
+          </h1>
         </div>
         <CreateIssue
           workspace={workspace}

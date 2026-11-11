@@ -3,7 +3,7 @@ import type {
   CloudComment,
   CommentUpdate,
 } from "../../lib/cloud-comment-contract";
-import type { CloudActor } from "../../lib/cloud-contract";
+import type { CloudActor, CloudIssue } from "../../lib/cloud-contract";
 import {
   checkRevision,
   CloudError,
@@ -46,6 +46,22 @@ async function recordComment(
   await recordEvent(sql, actor, kind, id, comment.revision, {
     issueId: comment.issue_id,
   });
+}
+
+export async function insertComment(
+  sql: CloudSql,
+  actor: CloudActor,
+  issue: CloudIssue,
+  body: string,
+): Promise<{ id: string }> {
+  const id = randomUUID();
+  await sql.query(
+    "INSERT INTO cloud_comments (organization_id,id,issue_id,author_id,body) VALUES ($1,$2,$3,$4,$5)",
+    [actor.organizationId, id, issue.id, actor.userId, body],
+  );
+  await recordComment(sql, actor, id, "comment.created");
+  await notifyComment(sql, actor, issue, body);
+  return { id };
 }
 
 export class CloudComments {
@@ -92,14 +108,7 @@ export class CloudComments {
               "issue_archived",
               "Restore the issue before adding a comment.",
             );
-          const id = randomUUID();
-          await sql.query(
-            "INSERT INTO cloud_comments (organization_id,id,issue_id,author_id,body) VALUES ($1,$2,$3,$4,$5)",
-            [actor.organizationId, id, issueId, actor.userId, body],
-          );
-          await recordComment(sql, actor, id, "comment.created");
-          await notifyComment(sql, actor, issue, body);
-          return { id };
+          return insertComment(sql, actor, issue, body);
         },
       );
     });

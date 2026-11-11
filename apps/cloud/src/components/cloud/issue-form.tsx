@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
+import type { IssueChangeSet } from "@/lib/cloud-issue-changes-contract";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -21,6 +22,8 @@ export function CreateIssue({
   onCreated,
   shortcut = false,
   autoOpen = false,
+  defaults,
+  compactLabel,
 }: {
   workspace: CloudWorkspace;
   teamId?: string;
@@ -30,6 +33,11 @@ export function CreateIssue({
   onCreated?: () => Promise<void>;
   shortcut?: boolean;
   autoOpen?: boolean;
+  defaults?: Pick<
+    IssueChangeSet,
+    "status" | "priority" | "assigneeId" | "projectId" | "cycleId"
+  >;
+  compactLabel?: string;
 }) {
   const [open, setOpen] = useState(autoOpen);
   const sender = useRef(createCommandSender());
@@ -58,14 +66,25 @@ export function CreateIssue({
   if (!available) return null;
   return (
     <>
-      <Button
-        onClick={() => setOpen(true)}
-        aria-keyshortcuts={shortcut ? "C" : undefined}
-        title={shortcut ? "New issue (C)" : undefined}
-      >
-        <Plus />
-        {parent ? "New sub-issue" : "New issue"}
-      </Button>
+      {compactLabel ? (
+        <button
+          type="button"
+          className="cloud-icon-button"
+          aria-label={compactLabel}
+          onClick={() => setOpen(true)}
+        >
+          <Plus size={14} />
+        </button>
+      ) : (
+        <Button
+          onClick={() => setOpen(true)}
+          aria-keyshortcuts={shortcut ? "C" : undefined}
+          title={shortcut ? "New issue (C)" : undefined}
+        >
+          <Plus />
+          {parent ? "New sub-issue" : "New issue"}
+        </Button>
+      )}
       <FormDialog
         open={open}
         onOpenChange={(next) => {
@@ -76,21 +95,38 @@ export function CreateIssue({
         submitLabel="Create issue"
         onSubmit={async (form) => {
           const selectedTeam = formText(form, "teamId");
+          const targetProject = defaults?.projectId ?? projectId;
+          const targetCycle = defaults?.cycleId ?? cycleId;
+          const statusTeam = defaults?.status
+            ? workspace.workflows.find((workflow) =>
+                workflow.statuses.some(
+                  (status) => status.id === defaults.status!.id,
+                ),
+              )?.teamId
+            : undefined;
           const input = {
             teamId: selectedTeam,
             title: formText(form, "title"),
             description: formText(form, "description"),
             projectId: workspace.projects.some(
               (project) =>
-                project.id === projectId && project.teamId === selectedTeam,
+                project.id === targetProject && project.teamId === selectedTeam,
             )
-              ? projectId
+              ? targetProject
               : null,
             cycleId: workspace.cycles.some(
-              (cycle) => cycle.id === cycleId && cycle.teamId === selectedTeam,
+              (cycle) =>
+                cycle.id === targetCycle && cycle.teamId === selectedTeam,
             )
-              ? cycleId
+              ? targetCycle
               : null,
+            ...(defaults?.status && statusTeam === selectedTeam
+              ? { status: defaults.status }
+              : {}),
+            ...(defaults?.priority ? { priority: defaults.priority } : {}),
+            ...(defaults?.assigneeId
+              ? { assigneeId: defaults.assigneeId }
+              : {}),
           };
           const result = await sender.current<{ id: string }>(
             parent ? `issues/${parent.id}/children` : "issues",

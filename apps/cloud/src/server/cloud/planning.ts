@@ -9,7 +9,7 @@ import {
 } from "./planning-queries";
 import { randomUUID } from "node:crypto";
 import { lockExecution } from "./execution/records";
-import { notifyAssignment } from "./notifications";
+import { notifyAssignment, notifyStatusChange } from "./notifications";
 import { readTeamWorkflows, resolveIssueStatus } from "./workflow-records";
 import type {
   CloudActor,
@@ -107,8 +107,8 @@ export async function createIssueInTransaction(
   ).rows[0]!.number;
   const id = randomUUID();
   await sql.query(
-    `INSERT INTO cloud_issues (organization_id,id,team_id,identifier,title,description,acceptance_criteria,state,priority,project_id,cycle_id,assignee_id,estimate,estimate_points,estimate_scale_revision,due_on,status_id)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+    `INSERT INTO cloud_issues (organization_id,id,team_id,identifier,title,description,acceptance_criteria,state,priority,project_id,cycle_id,assignee_id,estimate,estimate_points,estimate_scale_revision,due_on,status_id,milestone_id)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
     [
       actor.organizationId,
       id,
@@ -127,6 +127,7 @@ export async function createIssueInTransaction(
       team.scaleRevision,
       input.dueOn,
       status.id,
+      input.milestoneId,
     ],
   );
   const issue = await readIssue(sql, actor, id);
@@ -398,7 +399,7 @@ export class CloudPlanning {
           const scaleChanged = issue.estimate !== input.estimate;
           await sql.query(
             `UPDATE cloud_issues SET title=$3,description=$4,acceptance_criteria=$5,state=$6,priority=$7,project_id=$8,cycle_id=$9,assignee_id=$10,
-          estimate=$11,estimate_points=$12,estimate_scale_revision=CASE WHEN $13 THEN $14 ELSE estimate_scale_revision END,due_on=$15,archived=$16,status_id=$17,revision=revision+1,updated_at=clock_timestamp()
+          estimate=$11,estimate_points=$12,estimate_scale_revision=CASE WHEN $13 THEN $14 ELSE estimate_scale_revision END,due_on=$15,archived=$16,status_id=$17,milestone_id=$18,revision=revision+1,updated_at=clock_timestamp()
           WHERE organization_id=$1 AND id=$2`,
             [
               actor.organizationId,
@@ -418,11 +419,13 @@ export class CloudPlanning {
               input.dueOn,
               input.archived,
               status.id,
+              input.milestoneId,
             ],
           );
           const updated = await readIssue(sql, actor, id);
           await recordIssue(sql, actor, updated);
           await notifyAssignment(sql, actor, updated, issue.assigneeId);
+          await notifyStatusChange(sql, actor, issue, updated);
           return { id };
         },
       );
@@ -467,6 +470,23 @@ export async function validateIssueLinks(
   input: IssueInput,
   previous?: CloudIssue,
 ): Promise<number | null> {
+  if (
+    input.milestoneId &&
+    !(
+      input.projectId &&
+      (
+        await sql.query(
+          "SELECT id FROM cloud_project_milestones WHERE organization_id=$1 AND project_id=$2 AND id=$3",
+          [actor.organizationId, input.projectId, input.milestoneId],
+        )
+      ).rows.length
+    )
+  )
+    throw new CloudError(
+      422,
+      "invalid_reference",
+      "Milestone is unavailable for this project.",
+    );
   for (const [table, id, label] of [
     ["cloud_projects", input.projectId, "Project"],
     ["cloud_cycles", input.cycleId, "Cycle"],

@@ -1,21 +1,17 @@
 import { notFound } from "next/navigation";
-import { CloudChatView } from "@/components/cloud/chat";
+import { AgentPage } from "@/components/cloud/agent/agent-page";
 import { cloudId } from "@/lib/cloud-contract";
 import { isCloudError } from "@/server/cloud/access";
-import {
-  requireCloudPageSession,
-  requireCloudWorkspace,
-} from "@/server/cloud/page-auth";
-import { readFocusIssue } from "../focus-issue";
+import { requireCloudWorkspace } from "@/server/cloud/page-auth";
 
-export default async function ChatPage({
+export default async function AgentConversationPage({
   params,
 }: {
   params: Promise<{ chatId: string }>;
 }) {
   const id = cloudId.safeParse((await params).chatId);
   if (!id.success) notFound();
-  const { runtime, actor } = await requireCloudPageSession();
+  const { runtime, actor, workspace } = await requireCloudWorkspace();
   let initial;
   try {
     initial = await runtime.chat.store.get(actor, id.data);
@@ -24,17 +20,11 @@ export default async function ChatPage({
     throw error;
   }
   return (
-    <CloudChatView
+    <AgentPage
       key={id.data}
-      workspace={(await requireCloudWorkspace()).workspace}
-      settings={await runtime.aiProviders.list(actor)}
+      workspace={workspace}
       initialChats={await runtime.chat.store.list(actor)}
       initial={initial}
-      focusIssue={
-        initial.chat.issueId
-          ? await readFocusIssue(runtime, actor, initial.chat.issueId)
-          : null
-      }
     />
   );
 }

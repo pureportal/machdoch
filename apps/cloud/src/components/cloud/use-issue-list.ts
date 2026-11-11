@@ -18,8 +18,8 @@ import { useToast } from "./toast";
 const liveRefreshMs = 30_000;
 const maximumChangesPerRequest = 100;
 
-export function useIssueList(
-  initial: CloudIssueSummary[],
+export function useIssueList<Issue extends CloudIssueSummary>(
+  initial: Issue[],
   workspace: CloudWorkspace,
   listKey = "",
 ) {
@@ -52,7 +52,7 @@ export function useIssueList(
     };
   }, [router]);
   const apply = useCallback(
-    (targets: CloudIssueSummary[], changes: IssueChangeSet) => {
+    (targets: Issue[], changes: IssueChangeSet) => {
       const ids = new Set(targets.map((issue) => issue.id));
       const previous = new Map(targets.map((issue) => [issue.id, issue]));
       setIssues((current) =>
@@ -87,8 +87,7 @@ export function useIssueList(
                 changes,
               },
             });
-          if (targets.length > 1)
-            toast(`${targets.length} issues updated`);
+          if (targets.length > 1) toast(`${targets.length} issues updated`);
         } catch (reason) {
           setIssues((current) =>
             current.map((issue) => previous.get(issue.id) ?? issue),
@@ -102,7 +101,7 @@ export function useIssueList(
     },
     [router, toast, workspace],
   );
-  const append = useCallback((more: CloudIssueSummary[]) => {
+  const append = useCallback((more: Issue[]) => {
     for (const issue of more) appended.current.add(issue.id);
     setIssues((current) => {
       const known = new Set(current.map((issue) => issue.id));

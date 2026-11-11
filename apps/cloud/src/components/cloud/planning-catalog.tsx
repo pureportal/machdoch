@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { CalendarRange, FolderKanban, Plus, Search, Users } from "lucide-react";
 import type {
   CloudProjectProgress,
@@ -11,24 +12,34 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { PlanningCreateDialog } from "./planning-create-dialog";
-import {
-  ProjectDirectory,
-  TeamDirectory,
-  CycleDirectory,
-} from "./planning-directory";
+import { TeamDirectory, CycleDirectory } from "./planning-directory";
+import { ProjectTable, projectTabs, type ProjectTab } from "./project-table";
+import type { CloudProjectUpdate } from "@/lib/cloud-project-update-contract";
+import type { CloudInitiative } from "@/lib/cloud-initiative-contract";
 
 export function PlanningCatalog({
   kind,
   workspace,
   progress = [],
+  updates = [],
+  initiatives = [],
 }: {
   kind: "teams" | "projects" | "cycles";
   workspace: CloudWorkspace;
   progress?: CloudProjectProgress[];
+  updates?: CloudProjectUpdate[];
+  initiatives?: CloudInitiative[];
 }) {
+  const search = useSearchParams();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [teamId, setTeamId] = useState("");
+  const [teamId, setTeamId] = useState(() => {
+    const requested = search.get("teamId") ?? "";
+    return workspace.teams.some((team) => team.id === requested)
+      ? requested
+      : "";
+  });
+  const [tab, setTab] = useState<ProjectTab>("all");
   const labels = {
     teams: { title: "Teams", single: "team", icon: Users },
     projects: { title: "Projects", single: "project", icon: FolderKanban },
@@ -38,15 +49,19 @@ export function PlanningCatalog({
   const canCreate =
     writable &&
     (kind !== "teams" || ["owner", "admin"].includes(workspace.actor.role));
-  const search = query.trim().toLowerCase();
+  const term = query.trim().toLowerCase();
+  const statuses = kind === "projects" ? projectTabs[tab].statuses : null;
   const items = workspace[kind].filter(
     (item) =>
       (!teamId || ("teamId" in item && item.teamId === teamId)) &&
+      (!statuses ||
+        ("status" in item &&
+          (statuses as readonly string[]).includes(item.status))) &&
       [
         item.name,
         "description" in item ? item.description : "",
         "key" in item ? item.key : "",
-      ].some((value) => value.toLowerCase().includes(search)),
+      ].some((value) => value.toLowerCase().includes(term)),
   );
   const visibleIds = new Set(items.map((item) => item.id));
   return (
@@ -60,6 +75,23 @@ export function PlanningCatalog({
           </Button>
         )}
       </header>
+      {kind === "projects" && workspace.projects.length > 0 && (
+        <nav
+          className="cloud-scope-tabs cloud-project-tabs"
+          aria-label="Project views"
+        >
+          {(Object.keys(projectTabs) as ProjectTab[]).map((entry) => (
+            <button
+              key={entry}
+              type="button"
+              aria-current={entry === tab ? "page" : undefined}
+              onClick={() => setTab(entry)}
+            >
+              {projectTabs[entry].label}
+            </button>
+          ))}
+        </nav>
+      )}
       {workspace[kind].length > 0 && (
         <div className="cloud-toolbar">
           <div className="cloud-issue-search">
@@ -96,12 +128,13 @@ export function PlanningCatalog({
               ? `No matching ${kind}.`
               : `No ${kind} yet.`}
           </p>
-          {(query || teamId) && (
+          {(query || teamId || tab !== "all") && (
             <Button
               variant="outline"
               onClick={() => {
                 setQuery("");
                 setTeamId("");
+                setTab("all");
               }}
             >
               Clear filters
@@ -114,12 +147,14 @@ export function PlanningCatalog({
           )}
         </div>
       ) : kind === "projects" ? (
-        <ProjectDirectory
+        <ProjectTable
           projects={workspace.projects.filter((item) =>
             visibleIds.has(item.id),
           )}
           workspace={workspace}
           progress={progress}
+          updates={updates}
+          initiatives={initiatives}
           writable={writable}
         />
       ) : kind === "teams" ? (

@@ -3,10 +3,12 @@ import type { CloudActor } from "../../lib/cloud-contract";
 import { CloudError, recordEvent } from "./access";
 import type { CloudSql } from "./database";
 
+export type StoredRelationKind = "parent" | "blocks" | "related" | "duplicate";
+
 export async function insertIssueRelation(
   sql: CloudSql,
   actor: CloudActor,
-  kind: "parent" | "blocks" | "related",
+  kind: StoredRelationKind,
   sourceId: string,
   targetId: string,
 ): Promise<{ id: string }> {

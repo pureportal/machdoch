@@ -32,6 +32,16 @@ export const workflowDefinitionSchema = z
         path: ["statuses"],
         message: "Status names must be unique.",
       });
+    if (
+      input.statuses.filter(
+        (status) => status.category === "triage" && !status.archived,
+      ).length > 1
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["statuses"],
+        message: "Use one Triage status.",
+      });
     const initial = input.statuses.find(
       (status) =>
         status.id.toLowerCase() === input.defaultStatusId.toLowerCase(),

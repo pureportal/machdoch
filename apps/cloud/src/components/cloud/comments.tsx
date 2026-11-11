@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUp, ChevronsUpDown } from "lucide-react";
+import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
 import type { CloudComment } from "@/lib/cloud-comment-contract";
-import { issueChangeEntries, type IssueHistoryEntry } from "./issue-activity";
-import { PersonAvatar } from "./person-avatar";
 import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
+import type { CloudIssueRelation } from "@/lib/cloud-relation-contract";
+import type { IssueSubscription } from "@/lib/cloud-favorite-contract";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
@@ -15,27 +17,26 @@ import {
   createCommandSender,
   formText,
 } from "./api-client";
-
-function relativeTime(value: string): string {
-  const elapsed = Date.now() - new Date(value).getTime();
-  const minutes = Math.round(elapsed / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(value).toLocaleDateString();
-}
+import {
+  collapseActivity,
+  issueChangeEntries,
+  relationChangeEntries,
+  type ActivityEntry,
+  type IssueHistoryEntry,
+} from "./issue-activity";
+import { PersonAvatar } from "./person-avatar";
+import { RelativeTime } from "./relative-time";
 
 export function IssueComments({
   issue,
   workspace,
   history,
+  relations,
 }: {
   issue: CloudIssue;
   workspace: CloudWorkspace;
   history: IssueHistoryEntry[];
+  relations: CloudIssueRelation[];
 }) {
   const [comments, setComments] = useState<CloudComment[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -45,6 +46,10 @@ export function IssueComments({
   const [connectionError, setConnectionError] = useState("");
   const [editing, setEditing] = useState<CloudComment | null>(null);
   const [deleting, setDeleting] = useState<CloudComment | null>(null);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const [subscription, setSubscription] = useState<IssueSubscription | null>(
+    null,
+  );
   const sequence = useRef(0);
   const sender = useRef(createCommandSender());
   const postingSender = useRef(createCommandSender());
@@ -92,9 +97,23 @@ export function IssueComments({
       sequence.current++;
     };
   }, [refresh]);
-  const timeline = useMemo(() => {
-    const changes = cursor ? [] : issueChangeEntries(history, workspace);
-    return [
+  useEffect(() => {
+    const abort = new AbortController();
+    void cloudRequest<IssueSubscription>(`issues/${issue.id}/subscription`, {
+      signal: abort.signal,
+    })
+      .then(setSubscription)
+      .catch(() => undefined);
+    return () => abort.abort();
+  }, [issue.id, comments.length, issue.assigneeId]);
+  const rows = useMemo(() => {
+    const changes = cursor
+      ? []
+      : [
+          ...issueChangeEntries(history, workspace),
+          ...relationChangeEntries(relations),
+        ];
+    const entries: ActivityEntry<CloudComment>[] = [
       ...comments.map((comment) => ({
         kind: "comment" as const,
         at: comment.createdAt,
@@ -105,13 +124,129 @@ export function IssueComments({
         at: change.createdAt,
         change,
       })),
-    ].sort((left, right) => right.at.localeCompare(left.at));
-  }, [comments, history, workspace, cursor]);
+    ].sort((left, right) => left.at.localeCompare(right.at));
+    return collapseActivity(entries, expanded);
+  }, [comments, history, relations, workspace, cursor, expanded]);
   return (
-    <section className="cloud-comments" aria-labelledby="comments-heading">
-      <h2 id="comments-heading" className="sr-only">
-        Comments
-      </h2>
+    <section className="cloud-activity" aria-labelledby="activity-heading">
+      <header className="cloud-activity-header">
+        <h2 id="activity-heading">Activity</h2>
+        {subscription && workspace.actor.role !== "viewer" && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() =>
+              void cloudRequest<IssueSubscription>(
+                `issues/${issue.id}/subscription`,
+                {
+                  method: "POST",
+                  body: { subscribed: !subscription.subscribed },
+                },
+              )
+                .then(setSubscription)
+                .catch((reason: Error) => setError(reason.message))
+            }
+          >
+            {subscription.subscribed ? "Unsubscribe" : "Subscribe"}
+          </Button>
+        )}
+        {subscription && subscription.subscribers.length > 0 && (
+          <span
+            className="cloud-activity-subscribers"
+            title={subscription.subscribers
+              .map((entry) => entry.name)
+              .join(", ")}
+          >
+            {subscription.subscribers.slice(0, 4).map((entry) => (
+              <PersonAvatar
+                key={entry.id}
+                name={entry.name}
+                className="cloud-avatar-small"
+              />
+            ))}
+          </span>
+        )}
+      </header>
+      {comments.length === 50 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={loading}
+          onClick={() => setCursor(comments.at(-1)!.id)}
+        >
+          Older comments
+        </Button>
+      )}
+      {cursor && (
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={loading}
+          onClick={() => setCursor(null)}
+        >
+          Latest activity
+        </Button>
+      )}
+      <ol className="cloud-activity-list">
+        {rows.map((row) =>
+          row.kind === "collapsed" ? (
+            <li key={row.id} className="cloud-activity-change">
+              <ChevronsUpDown size={13} aria-hidden="true" />
+              <button
+                type="button"
+                className="cloud-activity-expand"
+                onClick={() =>
+                  setExpanded((current) => new Set(current).add(row.id))
+                }
+              >
+                Show {row.changes.length} events
+              </button>
+            </li>
+          ) : row.kind === "change" ? (
+            <li key={row.change.id} className="cloud-activity-change">
+              <PersonAvatar
+                name={row.change.actor}
+                className="cloud-avatar-tiny"
+              />
+              <span>
+                <strong>{row.change.actor}</strong> {row.change.description}
+              </span>
+              <RelativeTime value={row.change.createdAt} />
+            </li>
+          ) : (
+            <CommentEntry
+              key={row.comment.id}
+              comment={row.comment}
+              workspace={workspace}
+              writable={writable}
+              administrator={administrator}
+              onEdit={(comment) => {
+                sender.current = createCommandSender();
+                setEditing(comment);
+              }}
+              onDelete={(comment) => {
+                sender.current = createCommandSender();
+                setDeleting(comment);
+              }}
+            />
+          ),
+        )}
+      </ol>
+      {loading && !comments.length && (
+        <p role="status" className="cloud-activity-loading">
+          Loading activity…
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="cloud-error">
+          {error}
+        </p>
+      )}
+      {connectionError && (
+        <p role="alert" className="cloud-error">
+          {connectionError}
+        </p>
+      )}
       {writable && (
         <form
           className="cloud-comment-composer"
@@ -160,75 +295,14 @@ export function IssueComments({
           />
           <Button
             type="submit"
-            size="sm"
+            size="icon"
+            className="cloud-comment-send"
+            aria-label="Post comment"
             disabled={pending || Boolean(connectionError)}
           >
-            {pending ? "Posting…" : "Post comment"}
+            <ArrowUp />
           </Button>
         </form>
-      )}
-      {error && (
-        <p role="alert" className="cloud-error">
-          {error}
-        </p>
-      )}
-      {connectionError && (
-        <p role="alert" className="cloud-error">
-          {connectionError}
-        </p>
-      )}
-      {loading && <p role="status">Loading comments…</p>}
-      <ol className="cloud-comment-list">
-        {timeline.map((entry) =>
-          entry.kind === "change" ? (
-            <li key={entry.change.id} className="cloud-activity-change">
-              <PersonAvatar
-                name={entry.change.actor}
-                className="cloud-avatar-small"
-              />
-              <span>
-                <strong>{entry.change.actor}</strong> {entry.change.description}
-              </span>
-              <time dateTime={entry.change.createdAt}>
-                {relativeTime(entry.change.createdAt)}
-              </time>
-            </li>
-          ) : (
-            <CommentEntry
-              key={entry.comment.id}
-              comment={entry.comment}
-              workspace={workspace}
-              writable={writable}
-              administrator={administrator}
-              onEdit={(comment) => {
-                sender.current = createCommandSender();
-                setEditing(comment);
-              }}
-              onDelete={(comment) => {
-                sender.current = createCommandSender();
-                setDeleting(comment);
-              }}
-            />
-          ),
-        )}
-      </ol>
-      {(cursor || comments.length === 50) && (
-        <div className="cloud-editor-actions">
-          <Button
-            variant="outline"
-            disabled={!cursor || loading}
-            onClick={() => setCursor(null)}
-          >
-            Latest comments
-          </Button>
-          <Button
-            variant="outline"
-            disabled={comments.length < 50 || loading}
-            onClick={() => setCursor(comments.at(-1)!.id)}
-          >
-            Older comments
-          </Button>
-        </div>
       )}
       <FormDialog
         open={editing !== null}
@@ -302,46 +376,41 @@ function CommentEntry({
   onEdit: (comment: CloudComment) => void;
   onDelete: (comment: CloudComment) => void;
 }) {
+  const own = comment.authorId === workspace.actor.id;
   return (
-          <li key={comment.id}>
-            <div className="cloud-comment-heading">
-              <PersonAvatar
-                name={comment.author}
-                className="cloud-avatar-small"
-              />
-              <strong>{comment.author}</strong>
-              <time dateTime={comment.createdAt}>
-                {relativeTime(comment.createdAt)}
-              </time>
-              {comment.revision > 1 && !comment.deleted && <span>Edited</span>}
-            </div>
-            <p
-              className={
-                comment.deleted ? "text-muted-foreground" : "cloud-comment-body"
-              }
-            >
-              {comment.deleted ? "Comment deleted" : comment.body}
-            </p>
-            {!comment.deleted && (
-              <div className="cloud-editor-actions">
-                {writable && comment.authorId === workspace.actor.id && (
-                  <Button variant="ghost" size="sm" onClick={() => onEdit(comment)}>
-                    Edit comment
-                  </Button>
-                )}
-                {((comment.authorId === workspace.actor.id &&
-                  workspace.actor.role !== "viewer") ||
-                  administrator) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => onDelete(comment)}
-                  >
-                    Delete comment
-                  </Button>
-                )}
-              </div>
+    <li className="cloud-activity-comment">
+      <div className="cloud-comment-heading">
+        <PersonAvatar name={comment.author} className="cloud-avatar-small" />
+        <strong>{comment.author}</strong>
+        <RelativeTime value={comment.createdAt} />
+        {comment.revision > 1 && !comment.deleted && <span>Edited</span>}
+        {!comment.deleted && (
+          <span className="cloud-comment-actions">
+            {writable && own && (
+              <Button variant="ghost" size="sm" onClick={() => onEdit(comment)}>
+                Edit
+              </Button>
             )}
-          </li>
+            {((own && workspace.actor.role !== "viewer") || administrator) && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onDelete(comment)}
+              >
+                Delete
+              </Button>
+            )}
+          </span>
+        )}
+      </div>
+      {comment.deleted ? (
+        <p className="text-muted-foreground">Comment deleted</p>
+      ) : (
+        <MarkdownContent
+          className="cloud-comment-body"
+          content={comment.body}
+        />
+      )}
+    </li>
   );
 }

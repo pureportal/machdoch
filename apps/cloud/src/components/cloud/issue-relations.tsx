@@ -2,12 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { X } from "lucide-react";
-import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
-import {
-  relationKinds,
-  type CloudIssueRelation,
-} from "@/lib/cloud-relation-contract";
+import { Plus, X } from "lucide-react";
+import type { CloudIssue } from "@/lib/cloud-contract";
+import type { CloudIssueRelation } from "@/lib/cloud-relation-contract";
 import { Button } from "@/components/ui/button";
 import { FormDialog } from "@/components/form-dialog";
 import {
@@ -15,39 +12,23 @@ import {
   cloudRequest,
   createCommandSender,
 } from "./api-client";
-import { CreateIssue } from "./issue-form";
 import { LinkIssueDialog } from "./link-issue-dialog";
 
-const names = {
-  parent: "Parent",
-  child: "Sub-issues",
-  blocks: "Blocks",
-  blocked_by: "Blocked by",
-  related: "Related",
-};
+export interface IssueRelationsState {
+  relations: CloudIssueRelation[];
+  error: string;
+  refresh: () => Promise<void>;
+}
 
-export function IssueRelations({
-  issue,
-  workspace,
-  writable,
-}: {
-  issue: CloudIssue;
-  workspace: CloudWorkspace;
-  writable: boolean;
-}) {
+export function useIssueRelations(issueId: string): IssueRelationsState {
   const [relations, setRelations] = useState<CloudIssueRelation[]>([]);
   const [error, setError] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [removing, setRemoving] = useState<CloudIssueRelation | null>(null);
-  const [expanded, setExpanded] = useState<string[]>([]);
-  const sender = useRef(createCommandSender());
   const sequence = useRef(0);
-  const heading = useRef<HTMLHeadingElement>(null);
-  const refresh = useCallback(
+  const load = useCallback(
     async (signal?: AbortSignal) => {
       const serial = ++sequence.current;
       const result = await cloudRequest<{ relations: CloudIssueRelation[] }>(
-        `issues/${issue.id}/relations`,
+        `issues/${issueId}/relations`,
         { signal },
       );
       if (serial === sequence.current && !signal?.aborted) {
@@ -55,24 +36,21 @@ export function IssueRelations({
         setError("");
       }
     },
-    [issue.id],
+    [issueId],
   );
   useEffect(() => {
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     async function poll() {
       try {
-        if (!document.hidden) await refresh(abort.signal);
+        if (!document.hidden) await load(abort.signal);
       } catch (reason) {
         if (abort.signal.aborted) return;
         if (
           reason instanceof CloudRequestError &&
           [401, 403, 404].includes(reason.status)
-        ) {
+        )
           setRelations([]);
-          setAdding(false);
-          setRemoving(null);
-        }
         setError((reason as Error).message);
       }
       if (!abort.signal.aborted) timer = setTimeout(() => void poll(), 5000);
@@ -83,108 +61,223 @@ export function IssueRelations({
       clearTimeout(timer);
       sequence.current++;
     };
-  }, [refresh]);
+  }, [load]);
+  return { relations, error, refresh: () => load() };
+}
+
+export function IssueSubIssues({
+  issue,
+  writable,
+  state,
+}: {
+  issue: CloudIssue;
+  writable: boolean;
+  state: IssueRelationsState;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [title, setTitle] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+  const sender = useRef(createCommandSender());
+  const children = state.relations.filter(
+    (relation) => relation.kind === "child",
+  );
+  const completed = children.filter((relation) =>
+    ["complete", "canceled"].includes(relation.issue.state),
+  ).length;
+  if (!children.length && (!writable || issue.archived)) return null;
   return (
-    <section className="cloud-card mt-6" aria-label="Issue relationships">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 ref={heading} tabIndex={-1}>
-          Relationships
-        </h2>
-        {writable && !issue.archived && (
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" onClick={() => setAdding(true)}>
-              Link issue
-            </Button>
-            <CreateIssue
-              workspace={workspace}
-              teamId={issue.teamId}
-              projectId={issue.projectId ?? undefined}
-              parent={issue}
-              onCreated={refresh}
-            />
-          </div>
-        )}
-      </div>
-      {relationKinds.map((kind) => {
-        const group = relations.filter((relation) => relation.kind === kind);
-        if (!group.length) return null;
-        return (
-          <div
-            key={kind}
-            className="mt-4"
-            role="group"
-            aria-label={names[kind]}
+    <section className="cloud-sub-issues" aria-labelledby="sub-issues-heading">
+      {children.length > 0 && (
+        <header>
+          <h2 id="sub-issues-heading">Sub-issues</h2>
+          <span className="cloud-sub-issues-progress">
+            {completed}/{children.length}
+          </span>
+        </header>
+      )}
+      {children.length > 0 && (
+        <ul>
+          {children.map((relation) => (
+            <li key={relation.id}>
+              <span
+                className="cloud-state"
+                data-state={relation.issue.state}
+                aria-label={relation.issue.statusName}
+              />
+              <Link href={`/cloud/issues/${relation.issue.id}`}>
+                <span className="cloud-issue-key">
+                  {relation.issue.identifier}
+                </span>
+                <span>{relation.issue.title}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+      {writable &&
+        !issue.archived &&
+        (adding ? (
+          <form
+            className="cloud-sub-issue-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              const value = title.trim();
+              if (!value || pending) return;
+              setPending(true);
+              setError("");
+              void sender
+                .current(`issues/${issue.id}/children`, {
+                  parentRevision: issue.revision,
+                  issue: {
+                    teamId: issue.teamId,
+                    title: value,
+                    projectId: issue.projectId,
+                    cycleId: issue.cycleId,
+                  },
+                })
+                .then(async () => {
+                  sender.current = createCommandSender();
+                  setTitle("");
+                  await state.refresh();
+                })
+                .catch((reason: Error) => setError(reason.message))
+                .finally(() => setPending(false));
+            }}
           >
-            <h3 className="mb-2 text-sm text-muted-foreground">
-              {names[kind]}
-            </h3>
-            <ul className="grid gap-1">
-              {(expanded.includes(kind) ? group : group.slice(0, 10)).map(
-                (relation) => (
-                  <li
-                    key={relation.id}
-                    className="flex min-w-0 items-center gap-2 rounded-md border px-3 py-2"
-                  >
-                    <Link
-                      className="min-w-0 flex-1 break-words hover:underline"
-                      href={`/cloud/issues/${relation.issue.id}`}
-                    >
-                      <span className="text-muted-foreground">
-                        {relation.issue.identifier}
-                      </span>{" "}
-                      {relation.issue.title}
-                    </Link>
-                    <span className="text-sm text-muted-foreground">
-                      {relation.issue.archived
-                        ? "Archived"
-                        : relation.issue.statusName}
-                    </span>
-                    {writable && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Remove link to ${relation.issue.identifier}`}
-                        onClick={() => {
-                          sender.current = createCommandSender();
-                          setRemoving(relation);
-                        }}
-                      >
-                        <X />
-                      </Button>
-                    )}
-                  </li>
-                ),
-              )}
-            </ul>
-            {group.length > 10 && (
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  setExpanded(
-                    expanded.includes(kind)
-                      ? expanded.filter((entry) => entry !== kind)
-                      : [...expanded, kind],
-                  )
-                }
-              >
-                {expanded.includes(kind)
-                  ? "Show fewer"
-                  : `Show all ${group.length}`}
-              </Button>
-            )}
-          </div>
-        );
-      })}
-      {error && (
+            <input
+              autoFocus
+              aria-label="Sub-issue title"
+              placeholder="Sub-issue title"
+              value={title}
+              maxLength={300}
+              disabled={pending}
+              onChange={(event) => setTitle(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setAdding(false);
+              }}
+            />
+            <Button type="submit" size="sm" disabled={pending || !title.trim()}>
+              Create
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => setAdding(false)}
+            >
+              Cancel
+            </Button>
+          </form>
+        ) : (
+          <button
+            type="button"
+            className="cloud-inline-add"
+            onClick={() => setAdding(true)}
+          >
+            <Plus size={13} aria-hidden="true" />
+            Add sub-issues
+          </button>
+        ))}
+      {(error || state.error) && (
         <p role="alert" className="cloud-error">
-          {error}
+          {error || state.error}
         </p>
       )}
+    </section>
+  );
+}
+
+const sidebarGroups = [
+  ["parent", "Parent"],
+  ["blocked_by", "Blocked by"],
+  ["blocks", "Blocking"],
+  ["related", "Related"],
+  ["duplicate_of", "Duplicate of"],
+  ["duplicated_by", "Duplicates"],
+] as const;
+
+export function IssueRelationSidebar({
+  issue,
+  writable,
+  state,
+}: {
+  issue: CloudIssue;
+  writable: boolean;
+  state: IssueRelationsState;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<CloudIssueRelation | null>(null);
+  const sender = useRef(createCommandSender());
+  const heading = useRef<HTMLHeadingElement>(null);
+  const groups = sidebarGroups
+    .map(([kind, label]) => ({
+      kind,
+      label,
+      relations: state.relations.filter((relation) => relation.kind === kind),
+    }))
+    .filter((group) => group.relations.length);
+  return (
+    <section className="cloud-aside-section" aria-label="Relations">
+      <header>
+        <h2 ref={heading} tabIndex={-1}>
+          Relations
+        </h2>
+        {writable && !issue.archived && (
+          <button
+            type="button"
+            className="cloud-aside-add"
+            aria-label="Link issue"
+            onClick={() => setAdding(true)}
+          >
+            <Plus size={13} />
+          </button>
+        )}
+      </header>
+      {groups.map((group) => (
+        <div
+          key={group.kind}
+          className="cloud-aside-relations"
+          role="group"
+          aria-label={group.label}
+        >
+          <h3>{group.label}</h3>
+          <ul>
+            {group.relations.map((relation) => (
+              <li key={relation.id}>
+                <span
+                  className="cloud-state"
+                  data-state={relation.issue.state}
+                  aria-label={relation.issue.statusName}
+                />
+                <Link href={`/cloud/issues/${relation.issue.id}`}>
+                  <span className="cloud-issue-key">
+                    {relation.issue.identifier}
+                  </span>{" "}
+                  {relation.issue.title}
+                </Link>
+                {writable && (
+                  <button
+                    type="button"
+                    aria-label={`Remove link to ${relation.issue.identifier}`}
+                    onClick={() => {
+                      sender.current = createCommandSender();
+                      setRemoving(relation);
+                    }}
+                  >
+                    <X size={12} />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
       <LinkIssueDialog
         issue={issue}
         open={adding}
         onOpenChange={setAdding}
-        onSaved={refresh}
+        onSaved={state.refresh}
       />
       <FormDialog
         open={removing !== null}
@@ -200,7 +293,7 @@ export function IssueRelations({
             `issues/${issue.id}/relations/${removing.id}/remove`,
             {},
           );
-          await refresh();
+          await state.refresh();
         }}
       >
         <p>

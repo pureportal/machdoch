@@ -50,7 +50,17 @@ import {
   milestoneInputSchema,
   milestoneUpdateSchema,
 } from "../../lib/cloud-milestone-contract";
+import { projectUpdateInputSchema } from "../../lib/cloud-project-update-contract";
+import {
+  favoriteInputSchema,
+  subscriptionInputSchema,
+} from "../../lib/cloud-favorite-contract";
+import {
+  initiativeInputSchema,
+  initiativeUpdateSchema,
+} from "../../lib/cloud-initiative-contract";
 import { savedViewInputSchema } from "../../lib/cloud-view-contract";
+import { triageDecisionSchema } from "../../lib/cloud-triage-contract";
 import {
   commentInputSchema,
   commentUpdateSchema,
@@ -414,8 +424,56 @@ async function route(
   if (routeKey === "GET inbox/unread")
     return Response.json({ unread: await runtime.inbox.unread(actor) });
   if (routeKey === "POST inbox/update") {
-    await runtime.inbox.update(actor, await readBody(request, inboxUpdateSchema));
+    await runtime.inbox.update(
+      actor,
+      await readBody(request, inboxUpdateSchema),
+    );
     return Response.json({ ok: true });
+  }
+  if (routeKey === "GET triage")
+    return Response.json({
+      issues: await runtime.triage.list(
+        actor,
+        cloudId.nullable().parse(url.searchParams.get("teamId")),
+      ),
+    });
+  if (routeKey === "GET triage/counts")
+    return Response.json({ counts: await runtime.triage.counts(actor) });
+  if (routeKey === "GET initiatives")
+    return Response.json({
+      initiatives: await runtime.initiatives.list(actor),
+    });
+  if (method === "GET" && path[0] === "initiatives" && path.length === 2)
+    return Response.json(
+      await runtime.initiatives.get(actor, cloudId.parse(path[1])),
+    );
+  if (routeKey === "GET project-updates")
+    return Response.json({ updates: await runtime.projectUpdates.feed(actor) });
+  if (routeKey === "GET favorites")
+    return Response.json({ favorites: await runtime.favorites.list(actor) });
+  if (routeKey === "POST favorites")
+    return Response.json(
+      await runtime.favorites.set(
+        actor,
+        await readBody(request, favoriteInputSchema),
+      ),
+    );
+  if (
+    path[0] === "issues" &&
+    path.length === 3 &&
+    path[2] === "subscription" &&
+    (method === "GET" || method === "POST")
+  ) {
+    const id = cloudId.parse(path[1]);
+    return Response.json(
+      method === "GET"
+        ? await runtime.subscriptions.get(actor, id)
+        : await runtime.subscriptions.set(
+            actor,
+            id,
+            (await readBody(request, subscriptionInputSchema)).subscribed,
+          ),
+    );
   }
   if (routeKey === "GET views")
     return Response.json({ views: await runtime.views.list(actor) });
@@ -440,6 +498,15 @@ async function route(
   )
     return Response.json({
       milestones: await runtime.milestones.list(actor, cloudId.parse(path[1])),
+    });
+  if (
+    method === "GET" &&
+    path[0] === "projects" &&
+    path.length === 3 &&
+    path[2] === "updates"
+  )
+    return Response.json({
+      updates: await runtime.projectUpdates.list(actor, cloudId.parse(path[1])),
     });
   if (method === "POST" && path[0] === "milestones" && path[2] === "remove") {
     await runtime.milestones.remove(actor, cloudId.parse(path[1]));
@@ -512,7 +579,10 @@ async function route(
       issues: await runtime.planning.listIssueSummaries(
         actor,
         {
-          query: z.string().max(200).parse(url.searchParams.get("query") ?? ""),
+          query: z
+            .string()
+            .max(200)
+            .parse(url.searchParams.get("query") ?? ""),
         },
         12,
       ),
@@ -760,6 +830,24 @@ async function route(
         ),
         { status: 201 },
       );
+    if (routeKey === "POST initiatives")
+      return Response.json(
+        await runtime.initiatives.create(
+          actor,
+          key.data,
+          await readBody(request, initiativeInputSchema),
+        ),
+        { status: 201 },
+      );
+    if (method === "PATCH" && path[0] === "initiatives" && path.length === 2)
+      return Response.json(
+        await runtime.initiatives.update(
+          actor,
+          key.data,
+          cloudId.parse(path[1]),
+          await readBody(request, initiativeUpdateSchema),
+        ),
+      );
     if (routeKey === "POST projects")
       return Response.json(
         await runtime.projects.create(
@@ -808,6 +896,20 @@ async function route(
         { status: 201 },
       );
     }
+    if (
+      method === "POST" &&
+      path[0] === "issues" &&
+      path.length === 3 &&
+      path[2] === "triage"
+    )
+      return Response.json(
+        await runtime.triage.decide(
+          actor,
+          key.data,
+          cloudId.parse(path[1]),
+          await readBody(request, triageDecisionSchema),
+        ),
+      );
     if (routeKey === "POST issues/changes")
       return Response.json(
         await runtime.issueChanges.apply(
@@ -837,6 +939,21 @@ async function route(
           key.data,
           cloudId.parse(path[1]),
           await readBody(request, milestoneInputSchema),
+        ),
+        { status: 201 },
+      );
+    if (
+      method === "POST" &&
+      path[0] === "projects" &&
+      path.length === 3 &&
+      path[2] === "updates"
+    )
+      return Response.json(
+        await runtime.projectUpdates.create(
+          actor,
+          key.data,
+          cloudId.parse(path[1]),
+          await readBody(request, projectUpdateInputSchema),
         ),
         { status: 201 },
       );

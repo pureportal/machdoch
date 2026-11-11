@@ -3,7 +3,14 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { ArrowLeft, CalendarRange, Check, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarRange,
+  Check,
+  Plus,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import type {
   CloudRun,
   ProjectClient,
@@ -15,6 +22,11 @@ import type {
   CloudWorkspace,
 } from "@/lib/cloud-contract";
 import type { CloudMilestone } from "@/lib/cloud-milestone-contract";
+import type { CloudProjectUpdate } from "@/lib/cloud-project-update-contract";
+import { useAgentPageEntity, useAgentShell } from "./agent/agent-shell";
+import { FavoriteButton } from "./favorite-button";
+import { ProgressRing, ProjectHealth } from "./project-table";
+import { ProjectUpdates } from "./project-updates";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
@@ -44,13 +56,29 @@ function formatDate(value: string): string {
   return longDate.format(new Date(`${value}T00:00:00Z`));
 }
 
+function MilestoneProgress({ issues }: { issues: CloudIssueSummary[] }) {
+  if (!issues.length) return null;
+  const done = issues.filter((issue) => issue.state === "complete").length;
+  return (
+    <span
+      className="cloud-milestone-progress"
+      title={`${done} of ${issues.length} issues completed`}
+    >
+      <ProgressRing percent={Math.round((done / issues.length) * 100)} />
+      {done}/{issues.length}
+    </span>
+  );
+}
+
 function Milestones({
   projectId,
   milestones,
+  issues,
   writable,
 }: {
   projectId: string;
   milestones: CloudMilestone[];
+  issues: CloudIssueSummary[];
   writable: boolean;
 }) {
   const router = useRouter();
@@ -77,7 +105,10 @@ function Milestones({
       </header>
       <ul>
         {milestones.map((milestone) => (
-          <li key={milestone.id} data-completed={milestone.completed || undefined}>
+          <li
+            key={milestone.id}
+            data-completed={milestone.completed || undefined}
+          >
             <button
               type="button"
               className="cloud-milestone-check"
@@ -103,7 +134,14 @@ function Milestones({
               {milestone.completed && <Check size={12} />}
             </button>
             <span className="cloud-milestone-name">{milestone.name}</span>
-            {milestone.targetOn && <time>{formatDate(milestone.targetOn)}</time>}
+            <MilestoneProgress
+              issues={issues.filter(
+                (issue) => issue.milestoneId === milestone.id,
+              )}
+            />
+            {milestone.targetOn && (
+              <time>{formatDate(milestone.targetOn)}</time>
+            )}
             {writable && (
               <Button
                 variant="ghost"
@@ -142,7 +180,13 @@ function Milestones({
         }}
       >
         <Field label="Name" htmlFor="milestone-name">
-          <Input id="milestone-name" name="name" required maxLength={120} autoFocus />
+          <Input
+            id="milestone-name"
+            name="name"
+            required
+            maxLength={120}
+            autoFocus
+          />
         </Field>
         <Field label="Target date" htmlFor="milestone-target">
           <Input id="milestone-target" name="targetOn" type="date" />
@@ -201,6 +245,8 @@ export function ProjectDetail({
   milestones,
   runs,
   clients,
+  updates,
+  favorite,
   workspace,
 }: {
   project: CloudProject;
@@ -209,9 +255,18 @@ export function ProjectDetail({
   milestones: CloudMilestone[];
   runs: CloudRun[];
   clients: ProjectClient[];
+  updates: CloudProjectUpdate[];
+  favorite: boolean;
   workspace: CloudWorkspace;
 }) {
   const { issues, apply } = useIssueList(initial, workspace);
+  const agent = useAgentShell();
+  useAgentPageEntity({
+    kind: "project",
+    id: project.id,
+    label: project.name,
+    title: null,
+  });
   const writable = workspace.actor.role !== "viewer";
   const groups = useMemo(
     () => groupIssues(issues, "status", workspace, project.teamId, null, false),
@@ -233,25 +288,43 @@ export function ProjectDetail({
           <Link className="cloud-back-link" href="/cloud/projects">
             <ArrowLeft size={14} aria-hidden="true" /> Projects
           </Link>
-          <h1>{project.name}</h1>
+          <h1 className="cloud-project-title">
+            {project.name}
+            <FavoriteButton kind="project" id={project.id} initial={favorite} />
+          </h1>
         </div>
-        {writable && (
-          <div className="cloud-editor-actions">
-            <ProjectEditor id={project.id} members={workspace.members} />
-            <CreateIssue
-              workspace={workspace}
-              teamId={project.teamId}
-              projectId={project.id}
-              shortcut
-            />
-          </div>
-        )}
+        <div className="cloud-editor-actions">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => agent.openPanel(null)}
+          >
+            <Sparkles />
+            Agent
+          </Button>
+          {writable && (
+            <>
+              <ProjectEditor id={project.id} members={workspace.members} />
+              <CreateIssue
+                workspace={workspace}
+                teamId={project.teamId}
+                projectId={project.id}
+                shortcut
+              />
+            </>
+          )}
+        </div>
       </header>
       <div className="cloud-project-page">
         <div className="cloud-project-main">
           {project.description && (
             <p className="cloud-project-summary">{project.description}</p>
           )}
+          <ProjectUpdates
+            projectId={project.id}
+            updates={updates}
+            writable={writable}
+          />
           {issues.length ? (
             <IssueRows
               groups={groups}
@@ -280,6 +353,12 @@ export function ProjectDetail({
                   >
                     {projectStatusLabels[project.status]}
                   </span>
+                </dd>
+              </div>
+              <div>
+                <dt>Health</dt>
+                <dd>
+                  <ProjectHealth update={updates[0]} />
                 </dd>
               </div>
               <div>
@@ -312,7 +391,10 @@ export function ProjectDetail({
                 <dd className="cloud-assignee">
                   {lead ? (
                     <>
-                      <PersonAvatar name={lead.name} className="cloud-avatar-small" />
+                      <PersonAvatar
+                        name={lead.name}
+                        className="cloud-avatar-small"
+                      />
                       {lead.name}
                     </>
                   ) : (
@@ -339,6 +421,7 @@ export function ProjectDetail({
           <Milestones
             projectId={project.id}
             milestones={milestones}
+            issues={issues}
             writable={writable}
           />
           <ConnectedClients

@@ -3,6 +3,7 @@ import type { AgentModelToolSpec } from "@machdoch/model-runtime/types";
 import type { InferenceModelOptions } from "@machdoch/fleet-protocol/cloud-inference";
 import type { CloudSql } from "../database";
 import { hasRunAuthority, lockExecution, readRun } from "../execution/records";
+import type { AgentProgress } from "./agent-loop";
 
 export const inferenceLeaseSeconds = 30;
 export const maximumInferenceAnswerBytes = 256 * 1024;
@@ -102,13 +103,16 @@ export async function settleInference(
   state: ChatState,
   errorCode: string | null,
   answer?: string,
+  progress?: AgentProgress,
 ): Promise<void> {
   await sql.query(
     "UPDATE cloud_inference_calls SET state=$3,error_code=$4,actual_tokens=CASE WHEN request_started_at IS NULL THEN 0 ELSE actual_tokens END,lease_until=NULL WHERE organization_id=$1 AND id=$2",
     [call.organizationId, call.id, state, errorCode],
   );
   await sql.query(
-    "UPDATE cloud_chat_turns SET state=$4,error_code=$5,answer=COALESCE($6,answer),revision=revision+1 WHERE organization_id=$1 AND id=$2 AND request_id=$3",
+    `UPDATE cloud_chat_turns SET state=$4,error_code=$5,answer=COALESCE($6,answer),steps=COALESCE($7::jsonb,steps),actions=COALESCE($8::jsonb,actions),
+    question=CASE WHEN $7::jsonb IS NULL THEN question ELSE $9::jsonb END,finished_at=clock_timestamp(),revision=revision+1
+    WHERE organization_id=$1 AND id=$2 AND request_id=$3`,
     [
       call.organizationId,
       call.turnId,
@@ -116,6 +120,9 @@ export async function settleInference(
       state,
       errorCode,
       answer ?? null,
+      progress ? JSON.stringify(progress.steps) : null,
+      progress ? JSON.stringify(progress.actions) : null,
+      progress?.question ? JSON.stringify(progress.question) : null,
     ],
   );
 }

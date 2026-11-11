@@ -16,6 +16,7 @@ import type { SavedView } from "@/lib/cloud-view-contract";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cloudRequest } from "./api-client";
 import { clientNavigation, navigationForRole } from "./navigation";
+import { useAgentShell } from "./agent/agent-shell";
 
 const searchDelayMs = 150;
 
@@ -39,6 +40,7 @@ export function QuickNavigation({
   const [query, setQuery] = useState("");
   const [issues, setIssues] = useState<CloudIssueSummary[]>([]);
   const router = useRouter();
+  const agent = useAgentShell();
   const returnFocus = useRef<HTMLElement | null>(null);
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -166,17 +168,16 @@ export function QuickNavigation({
                   </Command.Item>
                 )}
                 <Command.Item
-                  value="Ask a question"
-                  onSelect={() =>
-                    go(
-                      query.trim()
-                        ? `/cloud/chat?prompt=${encodeURIComponent(query.trim())}`
-                        : "/cloud/chat",
-                    )
-                  }
+                  value="Ask Agent"
+                  onSelect={() => {
+                    setOpen(false);
+                    agent.openPanel(undefined, query.trim());
+                    setQuery("");
+                  }}
                 >
                   <Sparkles className="size-4" />
-                  <span className="flex-1">Ask machdoch</span>
+                  <span className="flex-1">Ask Agent</span>
+                  <kbd>⌘J</kbd>
                 </Command.Item>
               </Command.Group>
               {views.length > 0 && (

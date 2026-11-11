@@ -19,6 +19,7 @@ export const issueChangeSetSchema = z
     priority: z.enum(issuePriorities),
     assigneeId: cloudId.nullable(),
     projectId: cloudId.nullable(),
+    milestoneId: cloudId.nullable(),
     cycleId: cloudId.nullable(),
     estimate: z.string().max(16).nullable(),
     dueOn: z.iso.date().nullable(),
@@ -38,7 +39,8 @@ export const issueChangesSchema = z
       .min(1)
       .max(100)
       .refine(
-        (issues) => new Set(issues.map((issue) => issue.id)).size === issues.length,
+        (issues) =>
+          new Set(issues.map((issue) => issue.id)).size === issues.length,
         "Choose each issue once.",
       ),
     changes: issueChangeSetSchema,

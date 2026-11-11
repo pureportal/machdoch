@@ -5,11 +5,19 @@ import {
 } from "@/server/cloud/page-auth";
 export default async function ProjectsPage() {
   const { runtime, actor } = await requireCloudPageSession();
+  const [{ workspace }, progress, updates, initiatives] = await Promise.all([
+    requireCloudWorkspace(),
+    runtime.projects.progress(actor),
+    runtime.projectUpdates.latest(actor),
+    runtime.initiatives.list(actor),
+  ]);
   return (
     <PlanningCatalog
       kind="projects"
-      workspace={(await requireCloudWorkspace()).workspace}
-      progress={await runtime.projects.progress(actor)}
+      workspace={workspace}
+      progress={progress}
+      updates={updates}
+      initiatives={initiatives}
     />
   );
 }

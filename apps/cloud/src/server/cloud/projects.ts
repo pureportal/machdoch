@@ -19,7 +19,7 @@ import {
 import type { CloudDatabase, CloudSql } from "./database";
 import { projectColumns } from "./planning-queries";
 
-async function readProject(
+export async function readProject(
   sql: CloudSql,
   actor: CloudActor,
   id: string,

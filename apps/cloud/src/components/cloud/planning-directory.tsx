@@ -2,125 +2,15 @@ import Link from "next/link";
 import { ArrowUpRight, CalendarRange, LockKeyhole, Users } from "lucide-react";
 import type {
   CloudCycle,
-  CloudProject,
-  CloudProjectProgress,
   CloudTeam,
   CloudWorkspace,
 } from "@/lib/cloud-contract";
-import { PersonAvatar } from "./person-avatar";
-import { projectStatusLabels, projectStatusStates } from "./project-fields";
 import { Button } from "@/components/ui/button";
-import { ProjectEditor } from "./project-editor";
 import { TeamEditor } from "./team-editor";
 import { EstimateScaleEditor } from "./scale-editor";
 import { LabelManager } from "./label-manager";
 import { WorkflowEditor } from "./workflow-editor";
 import { CycleDates } from "./cycle-dates";
-
-const projectDate = new Intl.DateTimeFormat("en", {
-  month: "short",
-  day: "numeric",
-  timeZone: "UTC",
-});
-
-export function ProjectDirectory({
-  projects,
-  workspace,
-  progress,
-  writable,
-}: {
-  projects: CloudProject[];
-  workspace: CloudWorkspace;
-  progress: CloudProjectProgress[];
-  writable: boolean;
-}) {
-  return (
-    <ul className="cloud-project-directory" aria-label="Projects">
-      {projects.map((project) => {
-        const counts = progress.find((entry) => entry.projectId === project.id);
-        const percent =
-          counts && counts.total
-            ? Math.round((counts.completed / counts.total) * 100)
-            : 0;
-        const lead = workspace.members.find(
-          (member) => member.id === project.leadId,
-        );
-        const team = workspace.teams.find(
-          (entry) => entry.id === project.teamId,
-        );
-        return (
-          <li key={project.id} id={`planning-${project.id}`}>
-            <span
-              className="cloud-state cloud-project-status"
-              data-state={projectStatusStates[project.status]}
-              title={projectStatusLabels[project.status]}
-            >
-              <span className="sr-only">
-                {projectStatusLabels[project.status]}
-              </span>
-            </span>
-            <div className="cloud-project-description">
-              <h2>
-                <Link href={`/cloud/projects/${project.id}`} prefetch={false}>
-                  {project.name}
-                  <ArrowUpRight size={14} aria-hidden="true" />
-                </Link>
-              </h2>
-              {project.description && <p>{project.description}</p>}
-            </div>
-            <div
-              className="cloud-project-progress"
-              title={`${counts?.completed ?? 0} of ${counts?.total ?? 0} issues completed`}
-            >
-              <span
-                className="cloud-project-progress-track"
-                role="progressbar"
-                aria-label={`${project.name} progress`}
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={percent}
-              >
-                <span style={{ width: `${percent}%` }} />
-              </span>
-              <span>{percent}%</span>
-            </div>
-            <span
-              className="cloud-project-lead"
-              title={lead?.name ?? "No lead"}
-            >
-              {lead ? (
-                <PersonAvatar name={lead.name} />
-              ) : (
-                <span className="cloud-avatar-empty" />
-              )}
-              <span className="sr-only">{lead?.name ?? "No lead"}</span>
-            </span>
-            <span className="cloud-project-target">
-              {project.targetOn ? (
-                <>
-                  <CalendarRange size={13} aria-hidden="true" />
-                  {projectDate.format(new Date(project.targetOn))}
-                </>
-              ) : null}
-            </span>
-            <Link
-              className="cloud-directory-team"
-              href={`/cloud/issues?teamId=${project.teamId}`}
-            >
-              <Users size={14} aria-hidden="true" />
-              {team?.name}
-            </Link>
-            {writable && (
-              <div className="cloud-directory-actions">
-                <ProjectEditor id={project.id} members={workspace.members} />
-              </div>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
 
 export function TeamDirectory({
   teams,

@@ -13,6 +13,7 @@ import {
   createCommandSender,
 } from "./api-client";
 import { LabelChip } from "./label-chip";
+import { Plus } from "lucide-react";
 
 interface Selection {
   original: CloudIssueLabels;
@@ -86,10 +87,7 @@ export function IssueLabels({
     };
   }, [refresh]);
   return (
-    <section
-      aria-label="Issue labels"
-      className="mt-6 flex flex-wrap items-center gap-2"
-    >
+    <section aria-label="Issue labels" className="cloud-issue-label-list">
       {current.labels.map((label) => (
         <Link
           key={label.id}
@@ -100,7 +98,10 @@ export function IssueLabels({
       ))}
       {writable && !issue.archived && (
         <Button
-          variant="outline"
+          variant="ghost"
+          size="icon"
+          className="cloud-label-add"
+          aria-label="Edit labels"
           aria-disabled={opening}
           aria-busy={opening}
           onClick={() => {
@@ -138,7 +139,7 @@ export function IssueLabels({
               });
           }}
         >
-          {opening ? "Opening…" : "Labels"}
+          <Plus />
         </Button>
       )}
       {error && (

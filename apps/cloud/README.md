@@ -49,11 +49,11 @@ Create an execution profile with the **Linked client** target and choose Codex C
 
 Delegated issues run in a separate checkout of the profile's base commit. Required checks run in another checkout built from the uploaded candidate. A verified result is added to the local repository as a `machdoch/…` branch; the working tree, uncommitted files and existing branches are not changed.
 
-## Ask
+## Agent
 
-**Ask** answers questions about issues, projects and cycles from a snapshot of the workspace the user can access, using a configured AI provider. Ask from an issue to keep that issue in focus. No sandbox is started.
+**Agent** answers questions about issues, projects, initiatives, cycles and teams using a configured AI provider. It looks up workspace data the user can access with read-only tools, asks a clarifying question when a request is ambiguous, and drafts new issues, issue changes, comments, project status updates and triage decisions as proposals that change nothing until the user confirms them. Open it from the sidebar, as a panel on any page with ⌘J (the current issue, project, cycle or team is added to its context), or as a full page. No sandbox is started.
 
-The server image includes the Claude Code and Codex CLIs for Ask providers. Enter an API key on the provider, or leave it empty and sign in on the host: run `claude` or `codex login` inside the container and keep `/home/node` on a volume. `MACHDOCH_CLOUD_CLAUDE_CLI` and `MACHDOCH_CLOUD_CODEX_CLI` override the executables. Cloud sandboxes need an API provider; use a **Linked client** profile to run tasks through a CLI.
+The server image includes the Claude Code and Codex CLIs for Agent providers. Enter an API key on the provider, or leave it empty and sign in on the host: run `claude` or `codex login` inside the container and keep `/home/node` on a volume. `MACHDOCH_CLOUD_CLAUDE_CLI` and `MACHDOCH_CLOUD_CODEX_CLI` override the executables. Cloud sandboxes need an API provider; use a **Linked client** profile to run tasks through a CLI.
 
 ## Source
 

@@ -247,6 +247,7 @@ it("shares admission slots and token budgets with conversational chat", async ()
       providerId,
       model: "test-model",
       prompt: "Question",
+      context: [],
     });
   await expect(
     runtime.chat.store.submit(actor, randomUUID(), {
@@ -255,6 +256,7 @@ it("shares admission slots and token budgets with conversational chat", async ()
       providerId,
       model: "test-model",
       prompt: "Too many",
+      context: [],
     }),
   ).rejects.toMatchObject({ code: "provider_busy" });
   await expect(

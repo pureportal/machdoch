@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { cloudId, revision } from "./cloud-contract";
+import { cloudId, revision, type IssueInput } from "./cloud-contract";
+import type { IssueChangeSet } from "./cloud-issue-changes-contract";
+import type { ProjectHealth } from "./cloud-project-update-contract";
+import type { TriageDecision } from "./cloud-triage-contract";
 
 export const chatStates = [
   "queued",
@@ -16,6 +19,14 @@ export const activeChatStates = [
   "running",
   "cancel_requested",
 ] as const;
+export const chatContextKinds = ["issue", "project", "cycle", "team"] as const;
+export type ChatContextKind = (typeof chatContextKinds)[number];
+export const maximumChatContext = 8;
+export const chatContextReferenceSchema = z.strictObject({
+  kind: z.enum(chatContextKinds),
+  id: cloudId,
+});
+export type ChatContextReference = z.infer<typeof chatContextReferenceSchema>;
 export const chatMessageSchema = z
   .strictObject({
     chatId: cloudId.nullable(),
@@ -23,15 +34,20 @@ export const chatMessageSchema = z
     providerId: cloudId,
     model: z.string().trim().min(1).max(160),
     prompt: z.string().trim().min(1).max(20_000),
-    issueId: cloudId.optional(),
+    context: z
+      .array(chatContextReferenceSchema)
+      .max(maximumChatContext)
+      .default([])
+      .refine(
+        (entries) =>
+          new Set(entries.map((entry) => `${entry.kind}:${entry.id}`)).size ===
+          entries.length,
+        "Add each context item once.",
+      ),
   })
   .refine((input) => (input.chatId === null) === (input.revision === null), {
     path: ["revision"],
     message: "Include the current conversation revision.",
-  })
-  .refine((input) => input.chatId === null || !input.issueId, {
-    path: ["issueId"],
-    message: "Choose the issue when starting a conversation.",
   });
 export const chatRetrySchema = z.strictObject({
   revision,
@@ -39,14 +55,101 @@ export const chatRetrySchema = z.strictObject({
   model: z.string().trim().min(1).max(160),
 });
 export type ChatRetryInput = z.infer<typeof chatRetrySchema>;
-export type ChatMessageInput = z.infer<typeof chatMessageSchema>;
+export const chatUpdateSchema = z
+  .strictObject({
+    revision,
+    title: z.string().trim().min(1).max(120).optional(),
+    archived: z.literal(true).optional(),
+  })
+  .refine((input) => input.title !== undefined || input.archived, {
+    message: "Rename or archive the conversation.",
+  });
+export type ChatUpdate = z.infer<typeof chatUpdateSchema>;
+export type ChatMessageInput = z.input<typeof chatMessageSchema>;
+export type ChatMessage = z.output<typeof chatMessageSchema>;
+export interface ChatContextEntity {
+  kind: ChatContextKind;
+  id: string;
+  label: string;
+  title: string | null;
+  turnSequence: number;
+}
 export interface CloudChat {
   id: string;
   title: string;
   revision: number;
   updatedAt: string;
-  issueId: string | null;
+  context: ChatContextEntity[];
 }
+export interface AgentStep {
+  id: string;
+  tool: string;
+  label: string;
+  failed: boolean;
+}
+export interface AgentQuestion {
+  text: string;
+  options: string[];
+}
+export const agentActionStates = [
+  "pending",
+  "applied",
+  "dismissed",
+  "failed",
+] as const;
+export type AgentActionState = (typeof agentActionStates)[number];
+export interface AgentActionField {
+  label: string;
+  value: string;
+}
+interface AgentActionBase {
+  id: string;
+  state: AgentActionState;
+  title: string;
+  fields: AgentActionField[];
+  error: string | null;
+  result: AgentActionResult | null;
+}
+export interface AgentActionResult {
+  kind: "issue" | "project";
+  id: string;
+  label: string;
+}
+export type AgentAction = AgentActionBase &
+  (
+    | {
+        kind: "create_issue";
+        issue: IssueInput;
+        labelIds: string[];
+        parentId: string | null;
+      }
+    | {
+        kind: "update_issue";
+        issueId: string;
+        identifier: string;
+        revision: number;
+        changes: IssueChangeSet;
+      }
+    | {
+        kind: "comment";
+        issueId: string;
+        identifier: string;
+        body: string;
+      }
+    | {
+        kind: "triage";
+        issueId: string;
+        identifier: string;
+        decision: TriageDecision;
+      }
+    | {
+        kind: "project_update";
+        projectId: string;
+        projectName: string;
+        health: ProjectHealth;
+        body: string;
+      }
+  );
 export interface CloudChatTurn {
   id: string;
   sequence: number;
@@ -59,6 +162,11 @@ export interface CloudChatTurn {
   errorCode: string | null;
   requestId: string;
   createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  steps: AgentStep[];
+  actions: AgentAction[];
+  question: AgentQuestion | null;
 }
 export interface ChatDetail {
   chat: CloudChat;
@@ -105,5 +213,6 @@ export const chatErrorMessages: Record<string, string> = {
     "The CLI is not installed on the cloud host. Ask an administrator to install it.",
   cli_authentication:
     "The CLI is not signed in on the cloud host. Ask an administrator to sign in or add an API key.",
-  cli_failed: "The CLI could not complete the response. Retry when you are ready.",
+  cli_failed:
+    "The CLI could not complete the response. Retry when you are ready.",
 };

@@ -350,3 +350,96 @@
     gap: 20px;
   }
 }
+.cloud-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-bottom: 10px;
+}
+.cloud-sidebar-header .cloud-brand {
+  flex: 1;
+  padding-bottom: 4px;
+}
+.cloud-sidebar-action {
+  width: 28px;
+  height: 28px;
+  color: var(--muted-foreground);
+}
+.cloud-navigation-groups {
+  gap: 10px;
+}
+.cloud-navigation-section {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 5px;
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.cloud-navigation-section:hover {
+  color: var(--foreground);
+}
+.cloud-navigation-section svg,
+.cloud-navigation-team-toggle > svg {
+  transition: transform 120ms ease;
+}
+.cloud-navigation-section[aria-expanded="true"] svg,
+.cloud-navigation-team-toggle[aria-expanded="true"] > svg {
+  transform: rotate(90deg);
+}
+.cloud-navigation-more,
+.cloud-navigation-team-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 28px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: color-mix(in oklab, var(--foreground) 76%, transparent);
+  font-size: 13px;
+  text-align: left;
+}
+.cloud-navigation-more:hover,
+.cloud-navigation-team-toggle:hover {
+  color: var(--foreground);
+  background: var(--cloud-hover);
+}
+.cloud-navigation-team-toggle > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-navigation-team-toggle .cloud-team-key {
+  width: 18px;
+  min-height: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 5px;
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+.cloud-navigation-nested {
+  display: grid;
+  gap: 1px;
+  padding-left: 18px;
+}
+.cloud-navigation-group a > span:not(.cloud-navigation-badge) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-navigation-groups {
+  overflow-x: hidden;
+}
+.cloud-navigation-group > a,
+.cloud-navigation-nested > a,
+.cloud-navigation-view > a {
+  min-width: 0;
+}

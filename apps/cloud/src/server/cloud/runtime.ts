@@ -46,6 +46,12 @@ import { cloudCredentialsCipher } from "./credential-storage";
 import { initializeInstallation } from "./installation-storage";
 import type { SettingsCipher } from "../settings-crypto";
 import { CloudChatStore } from "./ai/chat-store";
+import { CloudAgentTools } from "./ai/agent-tools";
+import { CloudAgentActions } from "./ai/agent-actions";
+import { CloudProjectUpdates } from "./project-updates";
+import { CloudFavorites, CloudIssueSubscriptions } from "./favorites";
+import { CloudInitiatives } from "./initiatives";
+import { CloudTriage } from "./triage";
 import { CloudInferenceStore } from "./ai/inference-store";
 import {
   CloudInferenceWorker,
@@ -81,6 +87,11 @@ export interface CloudRuntime {
   views: CloudSavedViews;
   projects: CloudProjects;
   milestones: CloudProjectMilestones;
+  projectUpdates: CloudProjectUpdates;
+  initiatives: CloudInitiatives;
+  triage: CloudTriage;
+  favorites: CloudFavorites;
+  subscriptions: CloudIssueSubscriptions;
   labels: CloudLabels;
   relations: CloudIssueRelations;
   workflows: CloudWorkflows;
@@ -91,6 +102,7 @@ export interface CloudRuntime {
   aiProviders: CloudAiProviders;
   chat: {
     store: CloudChatStore;
+    actions: CloudAgentActions;
   };
   inference: {
     store: CloudInferenceStore;
@@ -156,6 +168,31 @@ export function createCloudRuntime(
     origin,
   );
   const recurrence = new CloudRecurrencePreview(database);
+  const planning = new CloudPlanning(database);
+  const projects = new CloudProjects(database);
+  const milestones = new CloudProjectMilestones(database);
+  const projectUpdates = new CloudProjectUpdates(database);
+  const initiatives = new CloudInitiatives(database);
+  const triage = new CloudTriage(database);
+  const issueChanges = new CloudIssueChanges(database);
+  const labels = new CloudLabels(database);
+  const relations = new CloudIssueRelations(database);
+  const cycles = new CloudCycles(database);
+  const comments = new CloudComments(database);
+  const runs = new CloudRuns(database);
+  const agentTools = new CloudAgentTools({
+    planning,
+    projects,
+    cycles,
+    relations,
+    comments,
+    labels,
+    milestones,
+    projectUpdates,
+    initiatives,
+    triage,
+    runs,
+  });
   return {
     database,
     origin,
@@ -204,34 +241,50 @@ export function createCloudRuntime(
     },
     authorization: new CloudAuthorization(database, origin),
     oauthTokens: new CloudOAuthTokens(database, origin),
-    planning: new CloudPlanning(database),
-    issueChanges: new CloudIssueChanges(database),
+    planning,
+    issueChanges,
     inbox: new CloudInbox(database),
     views: new CloudSavedViews(database),
-    projects: new CloudProjects(database),
-    milestones: new CloudProjectMilestones(database),
-    labels: new CloudLabels(database),
-    relations: new CloudIssueRelations(database),
+    projects,
+    milestones,
+    projectUpdates,
+    initiatives,
+    triage,
+    favorites: new CloudFavorites(database),
+    subscriptions: new CloudIssueSubscriptions(database),
+    labels,
+    relations,
     workflows: new CloudWorkflows(database),
     poker: new CloudPoker(database),
     administration: new CloudAdministrationService(database),
-    cycles: new CloudCycles(database),
-    comments: new CloudComments(database),
+    cycles,
+    comments,
     aiProviders,
     chat: {
       store: chatStore,
+      actions: new CloudAgentActions({
+        chat: chatStore,
+        planning,
+        relations,
+        labels,
+        issueChanges,
+        comments,
+        projectUpdates,
+        triage,
+      }),
     },
     inference: {
       store: inference,
       worker: new CloudInferenceWorker(
         inference,
         aiProviders,
+        agentTools,
         options.modelAdapterFactory,
       ),
     },
     execution: {
       profiles: new CloudExecutionProfiles(database),
-      runs: new CloudRuns(database),
+      runs,
       workers: new CloudWorkers(database),
       clientWorkspaces: new CloudClientWorkspaces(database),
       leases: new CloudExecutionLeases(database),

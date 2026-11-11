@@ -7,8 +7,16 @@ import type {
 } from "../../lib/cloud-inbox-contract";
 import { requireMembership, teamVisibility } from "./access";
 import type { CloudDatabase, CloudSql } from "./database";
+import { issueSubscribedClause } from "./subscription-records";
 
 const maximumDetailLength = 240;
+const issueAudience = `SELECT u.id,u.name,${issueSubscribedClause} AS subscribed
+  FROM cloud_issues i
+  JOIN cloud_teams t ON t.organization_id=i.organization_id AND t.id=i.team_id
+  JOIN cloud_memberships m ON m.organization_id=i.organization_id AND m.active
+  JOIN cloud_users u ON u.id=m.user_id AND NOT u.disabled
+  WHERE i.organization_id=$1 AND i.id=$2 AND u.id<>$3
+  AND (t.visibility='organization' OR m.role IN ('owner','admin') OR EXISTS (SELECT 1 FROM cloud_team_memberships tm WHERE tm.organization_id=m.organization_id AND tm.team_id=t.id AND tm.user_id=m.user_id))`;
 const pageSize = 100;
 
 function excerpt(text: string): string {
@@ -90,25 +98,15 @@ export async function notifyComment(
   body: string,
 ): Promise<void> {
   const audience = (
-    await sql.query<{ id: string; name: string; participating: boolean }>(
-      `SELECT u.id,u.name,(u.id=$3 OR EXISTS (SELECT 1 FROM cloud_comments c WHERE c.organization_id=$1 AND c.issue_id=$2 AND c.author_id=u.id AND NOT c.deleted)) AS participating
-       FROM cloud_memberships m JOIN cloud_users u ON u.id=m.user_id
-       JOIN cloud_teams t ON t.organization_id=m.organization_id AND t.id=$4
-       WHERE m.organization_id=$1 AND m.active AND NOT u.disabled AND u.id<>$5
-       AND (t.visibility='organization' OR m.role IN ('owner','admin') OR EXISTS (SELECT 1 FROM cloud_team_memberships tm WHERE tm.organization_id=m.organization_id AND tm.team_id=t.id AND tm.user_id=m.user_id))`,
-      [
-        actor.organizationId,
-        issue.id,
-        issue.assigneeId,
-        issue.teamId,
-        actor.userId,
-      ],
+    await sql.query<{ id: string; name: string; subscribed: boolean }>(
+      issueAudience,
+      [actor.organizationId, issue.id, actor.userId],
     )
   ).rows;
   const text = body.toLowerCase();
   for (const member of audience) {
     const mentioned = mentions(text, member.name);
-    if (!mentioned && !member.participating) continue;
+    if (!mentioned && !member.subscribed) continue;
     await insertNotification(sql, {
       organizationId: actor.organizationId,
       userId: member.id,
@@ -118,6 +116,35 @@ export async function notifyComment(
       runId: null,
       actorId: actor.userId,
       detail: body,
+    });
+  }
+}
+
+export async function notifyStatusChange(
+  sql: CloudSql,
+  actor: CloudActor,
+  before: CloudIssue,
+  after: CloudIssue,
+): Promise<void> {
+  if (before.status.id === after.status.id) return;
+  const audience = (
+    await sql.query<{ id: string; subscribed: boolean }>(issueAudience, [
+      actor.organizationId,
+      after.id,
+      actor.userId,
+    ])
+  ).rows;
+  for (const member of audience) {
+    if (!member.subscribed) continue;
+    await insertNotification(sql, {
+      organizationId: actor.organizationId,
+      userId: member.id,
+      teamId: after.teamId,
+      kind: "status_changed",
+      issueId: after.id,
+      runId: null,
+      actorId: actor.userId,
+      detail: after.statusName,
     });
   }
 }

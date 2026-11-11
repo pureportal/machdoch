@@ -2,16 +2,140 @@ import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 import type { CloudCliProvider } from "@machdoch/fleet-protocol/cloud-providers";
 import type {
   AgentModelAdapter,
   AgentModelStartParams,
   AgentModelStreamUsage,
+  AgentModelToolCall,
+  AgentModelToolSpec,
   AgentModelTurn,
 } from "@machdoch/model-runtime/types";
 
 const maximumStreamBytes = 16 * 1024 * 1024;
+const toolCallFence = "```tool_calls";
+
+function toolInstructions(tools: AgentModelToolSpec[]): string {
+  if (!tools.length) return "";
+  const catalog = tools
+    .map(
+      (tool) =>
+        `### ${tool.name}\n${tool.description}\nInput JSON schema: ${JSON.stringify(tool.inputSchema)}`,
+    )
+    .join("\n\n");
+  return [
+    "",
+    "## Tools",
+    `You can call the workspace tools below. To call tools, reply with nothing except one fenced block that starts with ${toolCallFence} and contains a JSON array of calls, for example:`,
+    toolCallFence,
+    '[{"name":"search_issues","arguments":{"query":"login"}}]',
+    "```",
+    "Use only this block format. Do not use XML tags, function-call syntax or any other tool format.",
+    'Tool results arrive as entries with role "tool" in the next message. When you can answer, reply normally without a tool_calls block.',
+    "",
+    catalog,
+  ].join("\n");
+}
+
+function cliToolCall(name: string, args: unknown): AgentModelToolCall {
+  return { id: `cli_${randomUUID()}`, name, arguments: record(args) };
+}
+
+function jsonObjectEnd(text: string, start: number): number {
+  let depth = 0;
+  let quoted = false;
+  for (let index = start; index < text.length; index++) {
+    const character = text[index];
+    if (quoted) {
+      if (character === "\\") index++;
+      else if (character === '"') quoted = false;
+    } else if (character === '"') quoted = true;
+    else if (character === "{") depth++;
+    else if (character === "}" && --depth === 0) return index + 1;
+  }
+  return -1;
+}
+
+function fencedToolCalls(text: string) {
+  const start = text.indexOf(toolCallFence);
+  if (start === -1) return null;
+  const body = text.slice(start + toolCallFence.length);
+  const end = body.indexOf("```");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse((end === -1 ? body : body.slice(0, end)).trim());
+  } catch {
+    return null;
+  }
+  const toolCalls = (Array.isArray(parsed) ? parsed : [parsed]).flatMap(
+    (entry) => {
+      const call = record(entry);
+      return typeof call.name === "string"
+        ? [cliToolCall(call.name, call.arguments)]
+        : [];
+    },
+  );
+  return toolCalls.length
+    ? { text: text.slice(0, start).trim(), toolCalls }
+    : null;
+}
+
+function expressionToolCalls(text: string, toolNames: string[]) {
+  const toolCalls: AgentModelToolCall[] = [];
+  const spans: [number, number][] = [];
+  const pattern = new RegExp(`\\b(${toolNames.join("|")})\\(\\s*\\{`, "g");
+  for (const match of text.matchAll(pattern)) {
+    const objectStart = match.index + match[0].length - 1;
+    const objectEnd = jsonObjectEnd(text, objectStart);
+    if (objectEnd === -1) continue;
+    const close = /^\s*\)/.exec(text.slice(objectEnd));
+    if (!close) continue;
+    try {
+      toolCalls.push(
+        cliToolCall(match[1]!, JSON.parse(text.slice(objectStart, objectEnd))),
+      );
+      spans.push([match.index, objectEnd + close[0].length]);
+    } catch {
+      continue;
+    }
+  }
+  if (!toolCalls.length) return null;
+  let remaining = text;
+  for (const [from, to] of spans.reverse())
+    remaining = remaining.slice(0, from) + remaining.slice(to);
+  return {
+    text: remaining
+      .split("\n")
+      .filter((line) => !/^\s*<\/?[\w:-]+[^>]*>\s*$/.test(line))
+      .join("\n")
+      .trim(),
+    toolCalls,
+  };
+}
+
+export function parseCliToolCalls(
+  text: string,
+  toolNames: string[],
+): { text: string; toolCalls: AgentModelToolCall[] } {
+  return (
+    fencedToolCalls(text) ??
+    expressionToolCalls(text, toolNames) ?? { text, toolCalls: [] }
+  );
+}
+
+function visibleLength(text: string): number {
+  const fence = text.indexOf(toolCallFence);
+  if (fence !== -1) return fence;
+  for (
+    let size = Math.min(toolCallFence.length - 1, text.length);
+    size > 0;
+    size--
+  )
+    if (toolCallFence.startsWith(text.slice(-size))) return text.length - size;
+  return text.length;
+}
 const inheritedEnvironment = [
   "PATH",
   "Path",
@@ -125,7 +249,9 @@ const claudeLines: LineHandler = (event, state, emit) => {
   }
   if (event.type !== "result") return;
   if (event.is_error) {
-    state.failure = String(event.result ?? event.subtype ?? "Claude Code failed");
+    state.failure = String(
+      event.result ?? event.subtype ?? "Claude Code failed",
+    );
     return;
   }
   state.text = String(event.result ?? state.text);
@@ -179,7 +305,11 @@ async function cliInvocation(
 ): Promise<{ args: string[]; input: string }> {
   if (connection.provider === "claude-code-cli") {
     const systemPath = join(directory, "system-prompt.txt");
-    await writeFile(systemPath, parameters.systemPrompt, { mode: 0o600 });
+    await writeFile(
+      systemPath,
+      parameters.systemPrompt + toolInstructions(parameters.tools),
+      { mode: 0o600 },
+    );
     return {
       args: [
         "-p",
@@ -203,7 +333,11 @@ async function cliInvocation(
     };
   }
   const instructionsPath = join(directory, "instructions.md");
-  await writeFile(instructionsPath, parameters.systemPrompt, { mode: 0o600 });
+  await writeFile(
+    instructionsPath,
+    parameters.systemPrompt + toolInstructions(parameters.tools),
+    { mode: 0o600 },
+  );
   return {
     args: [
       "exec",
@@ -246,7 +380,14 @@ export function createCliModelAdapter(
           parameters,
           directory,
         );
-        return await runCli(connection, command, args, input, directory, parameters);
+        return await runCli(
+          connection,
+          command,
+          args,
+          input,
+          directory,
+          parameters,
+        );
       } finally {
         await rm(directory, { recursive: true, force: true, maxRetries: 3 });
       }
@@ -286,6 +427,7 @@ function runCli(
     const decoder = new StringDecoder("utf8");
     let buffered = "";
     let streamed = 0;
+    let emitted = 0;
     let stderr = "";
     let settled = false;
     const finish = (outcome: () => void) => {
@@ -316,7 +458,13 @@ function runCli(
       onLine(record(event), state, (delta) => {
         if (!delta) return;
         state.text += delta;
-        parameters.onStreamEvent?.({ type: "text-delta", delta });
+        const visible = visibleLength(state.text);
+        if (visible <= emitted) return;
+        parameters.onStreamEvent?.({
+          type: "text-delta",
+          delta: state.text.slice(emitted, visible),
+        });
+        emitted = visible;
       });
     };
     child.stdout.on("data", (chunk: Buffer) => {
@@ -324,7 +472,9 @@ function runCli(
       if (streamed > maximumStreamBytes) {
         stopProcessTree(child.pid);
         finish(() =>
-          reject(new CliModelFailure("cli_failed", "CLI output limit exceeded.")),
+          reject(
+            new CliModelFailure("cli_failed", "CLI output limit exceeded."),
+          ),
         );
         return;
       }
@@ -354,7 +504,9 @@ function runCli(
         consume(buffered + decoder.end());
         const failure =
           state.failure ??
-          (exitCode === 0 ? null : stderr.trim() || `CLI exited with ${exitCode}`);
+          (exitCode === 0
+            ? null
+            : stderr.trim() || `CLI exited with ${exitCode}`);
         if (failure) {
           reject(
             new CliModelFailure(
@@ -367,8 +519,12 @@ function runCli(
           return;
         }
         resolve({
-          text: state.text,
-          toolCalls: [],
+          ...(parameters.tools.length
+            ? parseCliToolCalls(
+                state.text,
+                parameters.tools.map((tool) => tool.name),
+              )
+            : { text: state.text, toolCalls: [] }),
           stopReason: state.stopReason,
           usage: state.usage,
         });

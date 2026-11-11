@@ -14,8 +14,25 @@ import {
 } from "./access";
 import type { CloudDatabase } from "./database";
 import { lockExecution } from "./execution/records";
-import { insertIssueRelation, recordIssueRelation } from "./issue-graph";
+import {
+  insertIssueRelation,
+  recordIssueRelation,
+  type StoredRelationKind,
+} from "./issue-graph";
 import { createIssueInTransaction, readIssue } from "./planning";
+
+const storedRelation: Record<
+  RelationInput["kind"],
+  { kind: StoredRelationKind; reversed: boolean }
+> = {
+  parent: { kind: "parent", reversed: true },
+  child: { kind: "parent", reversed: false },
+  blocks: { kind: "blocks", reversed: false },
+  blocked_by: { kind: "blocks", reversed: true },
+  related: { kind: "related", reversed: false },
+  duplicate_of: { kind: "duplicate", reversed: false },
+  duplicated_by: { kind: "duplicate", reversed: true },
+};
 
 export class CloudIssueRelations {
   constructor(private readonly database: CloudDatabase) {}
@@ -26,10 +43,13 @@ export class CloudIssueRelations {
       const rows = (
         await sql.query<CloudIssueRelation & Record<string, unknown>>(
           `SELECT r.id,CASE WHEN r.kind='parent' THEN CASE WHEN r.source_id=$3 THEN 'child' ELSE 'parent' END
-          WHEN r.kind='blocks' THEN CASE WHEN r.source_id=$3 THEN 'blocks' ELSE 'blocked_by' END ELSE 'related' END AS kind,
+          WHEN r.kind='blocks' THEN CASE WHEN r.source_id=$3 THEN 'blocks' ELSE 'blocked_by' END
+          WHEN r.kind='duplicate' THEN CASE WHEN r.source_id=$3 THEN 'duplicate_of' ELSE 'duplicated_by' END ELSE 'related' END AS kind,
+          u.name AS actor,to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
           jsonb_build_object('id',i.id,'identifier',i.identifier,'title',i.title,'state',i.state,'statusName',s.name,'archived',i.archived,'revision',i.revision) AS issue
         FROM cloud_issue_relations r JOIN cloud_issues i ON i.organization_id=r.organization_id AND i.id=CASE WHEN r.source_id=$3 THEN r.target_id ELSE r.source_id END
         JOIN cloud_workflow_statuses s ON s.organization_id=i.organization_id AND s.id=i.status_id
+        JOIN cloud_users u ON u.id=r.actor_id
         JOIN cloud_teams t ON t.organization_id=i.organization_id AND t.id=i.team_id JOIN cloud_memberships m ON m.organization_id=i.organization_id AND m.user_id=$2
         WHERE r.organization_id=$1 AND r.removed_at IS NULL AND (r.source_id=$3 OR r.target_id=$3) AND ${teamVisibility}
         ORDER BY r.created_at,r.id`,
@@ -65,14 +85,7 @@ export class CloudIssueRelations {
               "issue_archived",
               "Restore the issues before adding a link.",
             );
-          const reversed =
-            input.kind === "parent" || input.kind === "blocked_by";
-          const kind =
-            input.kind === "child"
-              ? "parent"
-              : input.kind === "blocked_by"
-                ? "blocks"
-                : input.kind;
+          const { kind, reversed } = storedRelation[input.kind];
           return insertIssueRelation(
             sql,
             actor,

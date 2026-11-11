@@ -13,14 +13,12 @@ import type {
   AgentModelTurn,
 } from "@machdoch/model-runtime/types";
 import { issueInputSchema, type CloudActor } from "../../../lib/cloud-contract";
-import {
-  chatMessageSchema,
-  type ChatMessageInput,
-} from "../../../lib/cloud-chat-contract";
+import type { ChatMessage } from "../../../lib/cloud-chat-contract";
 import { SettingsCipher } from "../../settings-crypto";
 import { createCloudRuntime, type CloudRuntime } from "../runtime";
 import { createTestCloudDatabase } from "../test-database";
 import { maximumInferenceAnswerBytes } from "./inference-records";
+import { agentToolSpecs } from "./agent-tools";
 import { providerUpdateSchema } from "@machdoch/fleet-protocol/cloud-providers";
 
 let database: Awaited<ReturnType<typeof createTestCloudDatabase>>;
@@ -37,12 +35,13 @@ const answer: AgentModelTurn = {
   toolCalls: [],
   usage: { inputTokens: 10, outputTokens: 6, totalTokens: 16 },
 };
-const message = (): ChatMessageInput => ({
+const message = (): ChatMessage => ({
   chatId: null,
   revision: null,
   providerId,
   model: "fixture-model",
   prompt: "How does a cycle work?",
+  context: [],
 });
 
 beforeAll(async () => {
@@ -84,7 +83,7 @@ beforeEach(async () => {
     modelAdapterFactory: async () => ({
       startTurn: start,
       continueTurn: async () => {
-        throw new Error("Chat must not execute tools.");
+        throw new Error("Agent rounds restart with the full transcript.");
       },
     }),
   });
@@ -102,7 +101,7 @@ beforeEach(async () => {
   ).id;
 });
 
-it("admits a request once, charges verified usage and supplies no tools or inherited agents", async () => {
+it("admits a request once, charges verified usage and supplies workspace tools without inherited agents", async () => {
   const commandId = randomUUID();
   const input = message();
   const submission = await runtime.chat.store.submit(member, commandId, input);
@@ -124,10 +123,11 @@ it("admits a request once, charges verified usage and supplies no tools or inher
   ]);
   expect(start).toHaveBeenCalledTimes(1);
   expect(start.mock.calls[0]![0]).toMatchObject({
-    tools: [],
+    tools: agentToolSpecs,
     parallelAgentMode: "disabled",
     maxRequestAttempts: 1,
     maxOutputTokens: 256,
+    storeResponses: false,
   });
   const detail = await runtime.chat.store.get(member, submission.chatId);
   expect(detail.turns).toHaveLength(1);
@@ -194,7 +194,7 @@ it("preserves private conversation history and rejects concurrent stale messages
 
 it("reserves daily budget atomically and does not refund uncertain provider work", async () => {
   await database.engine.query(
-    "UPDATE cloud_ai_providers SET daily_token_budget=3000 WHERE id=$1",
+    "UPDATE cloud_ai_providers SET daily_token_budget=40000 WHERE id=$1",
     [providerId],
   );
   const first = await runtime.chat.store.submit(
@@ -441,20 +441,46 @@ it("stops work when membership or provider grants change", async () => {
   ).toEqual({ answer: "", state: "canceled" });
 });
 
-it.each(["tools", "oversize", "authentication"] as const)(
-  "fails safely on %s without executing tools or leaking provider errors",
+it("refuses unknown tools and lets the model recover", async () => {
+  start
+    .mockResolvedValueOnce({
+      ...answer,
+      toolCalls: [{ id: "call", name: "execute_shell", arguments: {} }],
+    })
+    .mockResolvedValueOnce(answer);
+  const request = await runtime.chat.store.submit(
+    member,
+    randomUUID(),
+    message(),
+  );
+  await runtime.inference.worker.runOne(
+    member.organizationId,
+    request.requestId,
+  );
+  expect(start.mock.calls[1]![0].userPrompt).toContain(
+    "Unknown tool execute_shell.",
+  );
+  const [turn] = (await runtime.chat.store.get(member, request.chatId)).turns;
+  expect(turn).toMatchObject({ state: "complete", answer: answer.text });
+  expect(turn!.steps).toEqual([
+    {
+      id: "call",
+      tool: "execute_shell",
+      label: "Unknown tool execute_shell",
+      failed: true,
+    },
+  ]);
+});
+
+it.each(["oversize", "authentication"] as const)(
+  "fails safely on %s without leaking provider errors",
   async (kind) => {
     start.mockImplementation(async () => {
       if (kind === "authentication")
         throw Object.assign(new Error("private-fixture-key is invalid"), {
           status: 401,
         });
-      return kind === "tools"
-        ? {
-            ...answer,
-            toolCalls: [{ id: "call", name: "execute_shell", arguments: {} }],
-          }
-        : { ...answer, text: "x".repeat(maximumInferenceAnswerBytes + 1) };
+      return { ...answer, text: "x".repeat(maximumInferenceAnswerBytes + 1) };
     });
     const request = await runtime.chat.store.submit(
       member,
@@ -469,11 +495,7 @@ it.each(["tools", "oversize", "authentication"] as const)(
     expect(detail.turns[0]).toMatchObject({
       state: "failed",
       errorCode:
-        kind === "tools"
-          ? "unexpected_tools"
-          : kind === "oversize"
-            ? "output_limit"
-            : "provider_authentication",
+        kind === "oversize" ? "output_limit" : "provider_authentication",
     });
     expect(JSON.stringify(detail)).not.toContain("private-fixture-key");
     expect(start).toHaveBeenCalledTimes(1);
@@ -561,7 +583,7 @@ it("rechecks the budget day before dispatch and expires an unsent request withou
 
 it("checks new-day capacity again at the network boundary", async () => {
   await database.engine.query(
-    "UPDATE cloud_ai_providers SET daily_token_budget=3000 WHERE id=$1",
+    "UPDATE cloud_ai_providers SET daily_token_budget=40000 WHERE id=$1",
     [providerId],
   );
   const old = await runtime.chat.store.submit(member, randomUUID(), message());
@@ -963,10 +985,28 @@ it("grounds answers in the workspace the user can access and keeps a focused iss
       acceptanceCriteria: "",
     }),
   );
+  const hiddenProject = await runtime.projects.create(owner, randomUUID(), {
+    teamId: hidden.id,
+    name: "Treasury",
+    description: "",
+  });
+  const child = await runtime.relations.createChild(
+    owner,
+    randomUUID(),
+    focus.id,
+    {
+      parentRevision: (await runtime.planning.getIssue(owner, focus.id))
+        .revision,
+      issue: issueInputSchema.parse({
+        teamId: visible.id,
+        title: "Persist the basket",
+      }),
+    },
+  );
   const submission = await runtime.chat.store.submit(member, randomUUID(), {
     ...message(),
     prompt: "Which payment issues are open and what blocks PRD-1?",
-    issueId: focus.id,
+    context: [{ kind: "issue", id: focus.id }],
   });
   await runtime.inference.worker.runOne(
     member.organizationId,
@@ -974,33 +1014,552 @@ it("grounds answers in the workspace the user can access and keeps a focused iss
   );
   const systemPrompt = start.mock.calls[0]![0].systemPrompt!;
   expect(systemPrompt).toContain(
-    `[PRD-1](/cloud/issues/${focus.id}) Payment retries lose the basket`,
+    `## Issue [PRD-1](/cloud/issues/${focus.id}): Payment retries lose the basket`,
   );
-  expect(systemPrompt).toContain("## Focused issue");
   expect(systemPrompt).toContain("The basket survives three retries.");
+  expect(systemPrompt).toContain(
+    `- Sub-issue: [PRD-2](/cloud/issues/${child.id}) Persist the basket (Backlog)`,
+  );
   expect(systemPrompt).toContain("Checkout redesign");
   expect(systemPrompt).not.toContain("contract renewal");
   expect(systemPrompt).not.toContain("Finance");
   const detail = await runtime.chat.store.get(member, submission.chatId);
-  expect(detail.chat.issueId).toBe(focus.id);
+  expect(detail.chat.context).toEqual([
+    {
+      kind: "issue",
+      id: focus.id,
+      label: "PRD-1",
+      title: "Payment retries lose the basket",
+      turnSequence: 1,
+    },
+  ]);
+  await expect(
+    runtime.chat.store.submit(member, randomUUID(), {
+      ...message(),
+      chatId: submission.chatId,
+      revision: detail.chat.revision,
+      prompt: "And the treasury?",
+      context: [{ kind: "project", id: hiddenProject.id }],
+    }),
+  ).rejects.toMatchObject({ code: "context_unavailable" });
   const followUp = await runtime.chat.store.submit(member, randomUUID(), {
     ...message(),
     chatId: submission.chatId,
     revision: detail.chat.revision,
-    prompt: "Summarize its acceptance criteria.",
+    prompt: "How is its project going?",
+    context: [{ kind: "project", id: project.id }],
   });
   await runtime.inference.worker.runOne(
     member.organizationId,
     followUp.requestId,
   );
-  expect(start.mock.calls[1]![0].systemPrompt).toContain("## Focused issue");
+  const followUpPrompt = start.mock.calls[1]![0].systemPrompt!;
+  expect(followUpPrompt).toContain(`## Issue [PRD-1]`);
+  expect(followUpPrompt).toContain(
+    `## Project [Checkout redesign](/cloud/projects/${project.id})`,
+  );
   expect(
-    chatMessageSchema.safeParse({
-      ...message(),
-      chatId: submission.chatId,
-      revision: detail.chat.revision + 1,
-      prompt: "Switch focus",
-      issueId: focus.id,
-    }).success,
-  ).toBe(false);
+    (await runtime.chat.store.get(member, submission.chatId)).chat.context.map(
+      (entry) => [entry.kind, entry.turnSequence],
+    ),
+  ).toEqual([
+    ["issue", 1],
+    ["project", 2],
+  ]);
+});
+
+async function agentWorkspace() {
+  const team = await runtime.planning.createTeam(owner, randomUUID(), {
+    name: "Product",
+    key: "PRD",
+    visibility: "organization",
+    estimateScale: [
+      { label: "1", points: 1 },
+      { label: "3", points: 3 },
+    ],
+  });
+  const issue = await runtime.planning.createIssue(
+    owner,
+    randomUUID(),
+    issueInputSchema.parse({
+      teamId: team.id,
+      title: "Checkout loses the basket",
+      description: "Retrying a payment empties the basket.",
+    }),
+  );
+  return { team, issue };
+}
+
+function toolCall(name: string, args: Record<string, unknown>): AgentModelTurn {
+  return {
+    text: "",
+    toolCalls: [{ id: `call-${name}-${randomUUID()}`, name, arguments: args }],
+    usage: { totalTokens: 10 },
+  };
+}
+
+it("runs workspace tools across rounds and records each step", async () => {
+  await agentWorkspace();
+  start
+    .mockResolvedValueOnce(toolCall("search_issues", { query: "basket" }))
+    .mockResolvedValueOnce(toolCall("get_issue", { issue: "prd-1" }))
+    .mockResolvedValueOnce({
+      text: "[PRD-1](/cloud/issues/x) loses the basket.",
+      toolCalls: [],
+      usage: { totalTokens: 12 },
+    });
+  const submission = await runtime.chat.store.submit(
+    member,
+    randomUUID(),
+    message(),
+  );
+  await runtime.inference.worker.runOne(
+    member.organizationId,
+    submission.requestId,
+  );
+  expect(start).toHaveBeenCalledTimes(3);
+  const transcript = JSON.parse(start.mock.calls[2]![0].userPrompt) as {
+    role: string;
+    name?: string;
+    content?: string;
+  }[];
+  expect(transcript.map((entry) => entry.role)).toEqual([
+    "user",
+    "assistant",
+    "tool",
+    "assistant",
+    "tool",
+  ]);
+  expect(transcript[2]!.content).toContain("Checkout loses the basket");
+  expect(transcript[4]!.content).toContain(
+    "Retrying a payment empties the basket.",
+  );
+  const [turn] = (await runtime.chat.store.get(member, submission.chatId))
+    .turns;
+  expect(turn).toMatchObject({
+    state: "complete",
+    answer: "[PRD-1](/cloud/issues/x) loses the basket.",
+    question: null,
+    actions: [],
+  });
+  expect(turn!.steps.map((step) => [step.label, step.failed])).toEqual([
+    ["Found 1 issue for “basket”", false],
+    ["Read PRD-1", false],
+  ]);
+  expect(turn!.startedAt).not.toBeNull();
+  expect(turn!.finishedAt).not.toBeNull();
+  expect(await runtime.chat.store.budget(owner, providerId)).toMatchObject({
+    usedTokens: 32,
+    reservedTokens: 0,
+  });
+});
+
+it("returns lookup failures to the model and stops after a clarifying question", async () => {
+  await agentWorkspace();
+  start
+    .mockResolvedValueOnce(toolCall("get_issue", { issue: "FIN-9" }))
+    .mockResolvedValueOnce(
+      toolCall("ask_user", {
+        question: "Which team do you mean?",
+        options: ["Product", "Finance"],
+      }),
+    );
+  const submission = await runtime.chat.store.submit(
+    member,
+    randomUUID(),
+    message(),
+  );
+  await runtime.inference.worker.runOne(
+    member.organizationId,
+    submission.requestId,
+  );
+  expect(start).toHaveBeenCalledTimes(2);
+  expect(start.mock.calls[1]![0].userPrompt).toContain(
+    "No accessible issue is named FIN-9.",
+  );
+  const detail = await runtime.chat.store.get(member, submission.chatId);
+  expect(detail.turns[0]).toMatchObject({
+    state: "complete",
+    question: {
+      text: "Which team do you mean?",
+      options: ["Product", "Finance"],
+    },
+  });
+  expect(detail.turns[0]!.steps.map((step) => step.failed)).toEqual([
+    true,
+    false,
+  ]);
+  const next = await runtime.chat.store.submit(member, randomUUID(), {
+    ...message(),
+    chatId: submission.chatId,
+    revision: detail.chat.revision,
+    prompt: "Product",
+  });
+  await runtime.inference.worker.runOne(member.organizationId, next.requestId);
+  expect(JSON.parse(start.mock.calls[2]![0].userPrompt)).toEqual([
+    { role: "user", content: message().prompt },
+    {
+      role: "assistant",
+      content: "Which team do you mean?\nOptions: Product | Finance",
+    },
+    { role: "user", content: "Product" },
+  ]);
+});
+
+it("applies confirmed proposals once with the user's permissions", async () => {
+  const { team, issue } = await agentWorkspace();
+  start
+    .mockResolvedValueOnce({
+      text: "",
+      toolCalls: [
+        {
+          id: "propose-issue",
+          name: "propose_issue",
+          arguments: {
+            team: "prd",
+            title: "Persist the basket between retries",
+            priority: "high",
+            assignee: "member",
+            estimate: "3",
+            parent: "PRD-1",
+          },
+        },
+        {
+          id: "propose-update",
+          name: "propose_issue_update",
+          arguments: { issue: "PRD-1", priority: "urgent", status: "active" },
+        },
+        {
+          id: "propose-comment",
+          name: "propose_comment",
+          arguments: { issue: "PRD-1", body: "Split into a sub-issue." },
+        },
+      ],
+      usage: { totalTokens: 10 },
+    })
+    .mockResolvedValueOnce({
+      text: "I proposed three changes.",
+      toolCalls: [],
+      usage: { totalTokens: 10 },
+    });
+  const submission = await runtime.chat.store.submit(
+    member,
+    randomUUID(),
+    message(),
+  );
+  await runtime.inference.worker.runOne(
+    member.organizationId,
+    submission.requestId,
+  );
+  const [turn] = (await runtime.chat.store.get(member, submission.chatId))
+    .turns;
+  expect(turn!.actions.map((action) => [action.kind, action.state])).toEqual([
+    ["create_issue", "pending"],
+    ["update_issue", "pending"],
+    ["comment", "pending"],
+  ]);
+  expect(turn!.actions[0]!.fields).toContainEqual({
+    label: "Parent",
+    value: "PRD-1",
+  });
+  expect(
+    (await runtime.planning.listIssueSummaries(member, { teamId: team.id }))
+      .length,
+  ).toBe(1);
+  const [create, update, comment] = turn!.actions;
+  await expect(
+    runtime.chat.actions.apply(owner, turn!.id, create!.id),
+  ).rejects.toMatchObject({ status: 404 });
+  const created = await runtime.chat.actions.apply(
+    member,
+    turn!.id,
+    create!.id,
+  );
+  expect(created).toMatchObject({
+    state: "applied",
+    result: { kind: "issue", label: "PRD-2" },
+  });
+  expect(
+    await runtime.chat.actions.apply(member, turn!.id, create!.id),
+  ).toEqual(created);
+  const child = await runtime.planning.getIssue(member, created.result!.id);
+  expect(child).toMatchObject({
+    title: "Persist the basket between retries",
+    priority: "high",
+    assigneeId: member.userId,
+    estimate: "3",
+  });
+  expect(
+    (await runtime.relations.list(member, issue.id)).map((relation) => [
+      relation.kind,
+      relation.issue.identifier,
+    ]),
+  ).toEqual([["child", "PRD-2"]]);
+  expect(
+    await runtime.chat.actions.apply(member, turn!.id, update!.id),
+  ).toMatchObject({ state: "applied" });
+  expect(await runtime.planning.getIssue(member, issue.id)).toMatchObject({
+    priority: "urgent",
+    state: "active",
+  });
+  expect(
+    await runtime.chat.actions.dismiss(member, turn!.id, comment!.id),
+  ).toMatchObject({ state: "dismissed" });
+  expect(
+    await runtime.chat.actions.apply(member, turn!.id, comment!.id),
+  ).toMatchObject({ state: "dismissed" });
+  expect(await runtime.comments.list(member, issue.id, null)).toEqual([]);
+});
+
+it("marks a proposal failed when the issue changed after it was drafted", async () => {
+  const { issue } = await agentWorkspace();
+  start
+    .mockResolvedValueOnce(
+      toolCall("propose_issue_update", {
+        issue: "PRD-1",
+        title: "Keep the basket after retries",
+      }),
+    )
+    .mockResolvedValueOnce({
+      text: "Proposed.",
+      toolCalls: [],
+      usage: { totalTokens: 1 },
+    });
+  const submission = await runtime.chat.store.submit(
+    member,
+    randomUUID(),
+    message(),
+  );
+  await runtime.inference.worker.runOne(
+    member.organizationId,
+    submission.requestId,
+  );
+  const current = await runtime.planning.getIssue(member, issue.id);
+  await runtime.issueChanges.apply(owner, randomUUID(), {
+    issues: [{ id: issue.id, revision: current.revision }],
+    changes: { title: "Changed elsewhere" },
+  });
+  const [turn] = (await runtime.chat.store.get(member, submission.chatId))
+    .turns;
+  expect(
+    await runtime.chat.actions.apply(member, turn!.id, turn!.actions[0]!.id),
+  ).toMatchObject({
+    state: "failed",
+    error:
+      "This issue changed after the proposal. Ask Agent to propose the change again.",
+  });
+  expect((await runtime.planning.getIssue(member, issue.id)).title).toBe(
+    "Changed elsewhere",
+  );
+});
+
+it("forces a final answer without tools when the round limit is reached", async () => {
+  await agentWorkspace();
+  start.mockImplementation(async (params) =>
+    params.tools.length
+      ? toolCall("list_cycles", {})
+      : { text: "Final answer", toolCalls: [], usage: { totalTokens: 1 } },
+  );
+  const submission = await runtime.chat.store.submit(
+    member,
+    randomUUID(),
+    message(),
+  );
+  await runtime.inference.worker.runOne(
+    member.organizationId,
+    submission.requestId,
+  );
+  expect(start).toHaveBeenCalledTimes(8);
+  expect(start.mock.calls[7]![0].tools).toEqual([]);
+  expect(start.mock.calls[7]![0].userPrompt).toContain(
+    "The tool limit for this answer is reached.",
+  );
+  const [turn] = (await runtime.chat.store.get(member, submission.chatId))
+    .turns;
+  expect(turn).toMatchObject({ state: "complete", answer: "Final answer" });
+  expect(turn!.steps).toHaveLength(7);
+});
+
+it("renames and archives a private conversation", async () => {
+  const submission = await runtime.chat.store.submit(
+    member,
+    randomUUID(),
+    message(),
+  );
+  const { chat } = await runtime.chat.store.get(member, submission.chatId);
+  await expect(
+    runtime.chat.store.update(owner, randomUUID(), chat.id, {
+      revision: chat.revision,
+      title: "Taken",
+    }),
+  ).rejects.toMatchObject({ status: 404 });
+  const renamed = await runtime.chat.store.update(
+    member,
+    randomUUID(),
+    chat.id,
+    { revision: chat.revision, title: "Cycle questions" },
+  );
+  expect((await runtime.chat.store.list(member))[0]).toMatchObject({
+    id: chat.id,
+    title: "Cycle questions",
+  });
+  await expect(
+    runtime.chat.store.update(member, randomUUID(), chat.id, {
+      revision: chat.revision,
+      archived: true,
+    }),
+  ).rejects.toMatchObject({ code: "revision_conflict" });
+  await runtime.chat.store.update(member, randomUUID(), chat.id, {
+    revision: renamed.revision,
+    archived: true,
+  });
+  expect(await runtime.chat.store.list(member)).toEqual([]);
+  expect((await runtime.chat.store.get(member, chat.id)).chat.title).toBe(
+    "Cycle questions",
+  );
+});
+
+it("posts a confirmed project status update drafted by the agent", async () => {
+  const { team } = await agentWorkspace();
+  const project = await runtime.projects.create(owner, randomUUID(), {
+    teamId: team.id,
+    name: "Checkout",
+    description: "",
+  });
+  start
+    .mockResolvedValueOnce(
+      toolCall("propose_project_update", {
+        project: "checkout",
+        health: "at_risk",
+        body: "Payment retries are still flaky.",
+      }),
+    )
+    .mockResolvedValueOnce({
+      text: "Drafted.",
+      toolCalls: [],
+      usage: { totalTokens: 1 },
+    });
+  const submission = await runtime.chat.store.submit(
+    member,
+    randomUUID(),
+    message(),
+  );
+  await runtime.inference.worker.runOne(
+    member.organizationId,
+    submission.requestId,
+  );
+  const [turn] = (await runtime.chat.store.get(member, submission.chatId))
+    .turns;
+  expect(turn!.actions[0]).toMatchObject({
+    kind: "project_update",
+    projectId: project.id,
+    fields: [
+      { label: "Health", value: "At risk" },
+      { label: "Update", value: "Payment retries are still flaky." },
+    ],
+  });
+  expect(await runtime.projectUpdates.list(member, project.id)).toEqual([]);
+  expect(
+    await runtime.chat.actions.apply(member, turn!.id, turn!.actions[0]!.id),
+  ).toMatchObject({
+    state: "applied",
+    result: { kind: "project", id: project.id, label: "Checkout" },
+  });
+  expect(await runtime.projectUpdates.list(member, project.id)).toMatchObject([
+    {
+      health: "at_risk",
+      author: "member",
+      body: "Payment retries are still flaky.",
+    },
+  ]);
+});
+
+it("settles an issue in triage as a confirmed duplicate", async () => {
+  const { team, issue: original } = await agentWorkspace();
+  const workflow = await runtime.workflows.get(owner, team.id);
+  const triageId = randomUUID();
+  const definition = {
+    revision: workflow.revision,
+    defaultStatusId: workflow.defaultStatusId,
+    statuses: [
+      {
+        id: triageId,
+        name: "Triage",
+        category: "triage" as const,
+        archived: false,
+      },
+      ...workflow.statuses.map(({ revision: _, ...status }) => status),
+    ],
+  };
+  await runtime.workflows.update(owner, randomUUID(), team.id, {
+    definition,
+    impactDigest: (await runtime.workflows.preview(owner, team.id, definition))
+      .digest,
+  });
+  const reported = await runtime.planning.createIssue(
+    member,
+    randomUUID(),
+    issueInputSchema.parse({
+      teamId: team.id,
+      title: "Basket is empty after payment retry",
+      status: { id: triageId, revision: 1 },
+    }),
+  );
+  start
+    .mockResolvedValueOnce(
+      toolCall("propose_triage", { issue: "PRD-1", decision: "accept" }),
+    )
+    .mockResolvedValueOnce(
+      toolCall("propose_triage", {
+        issue: "prd-2",
+        decision: "duplicate",
+        duplicateOf: "PRD-1",
+      }),
+    )
+    .mockResolvedValueOnce({
+      text: "PRD-2 duplicates PRD-1.",
+      toolCalls: [],
+      usage: { totalTokens: 1 },
+    });
+  const submission = await runtime.chat.store.submit(
+    member,
+    randomUUID(),
+    message(),
+  );
+  await runtime.inference.worker.runOne(
+    member.organizationId,
+    submission.requestId,
+  );
+  const [turn] = (await runtime.chat.store.get(member, submission.chatId))
+    .turns;
+  expect(turn!.steps.map((step) => step.failed)).toEqual([true, false]);
+  expect(turn!.actions).toHaveLength(1);
+  expect(turn!.actions[0]).toMatchObject({
+    kind: "triage",
+    issueId: reported.id,
+    fields: [
+      {
+        label: "Duplicate of",
+        value: "PRD-1 Checkout loses the basket",
+      },
+    ],
+    decision: { decision: "duplicate", duplicateOfId: original.id },
+  });
+  expect((await runtime.planning.getIssue(member, reported.id)).state).toBe(
+    "triage",
+  );
+  expect(
+    await runtime.chat.actions.apply(member, turn!.id, turn!.actions[0]!.id),
+  ).toMatchObject({
+    state: "applied",
+    result: { kind: "issue", id: reported.id, label: "PRD-2" },
+  });
+  expect((await runtime.planning.getIssue(member, reported.id)).state).toBe(
+    "canceled",
+  );
+  expect(
+    (await runtime.relations.list(member, reported.id)).map(
+      (relation) => relation.kind,
+    ),
+  ).toEqual(["duplicate_of"]);
 });

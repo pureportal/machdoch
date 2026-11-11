@@ -13,15 +13,25 @@ export default async function ProjectPage({
   if (!id.success) notFound();
   const { runtime, actor, workspace } = await requireCloudWorkspace();
   try {
-    const [project, progress, issues, milestones, runs, clients] =
-      await Promise.all([
-        runtime.projects.get(actor, id.data),
-        runtime.projects.progress(actor),
-        runtime.planning.listIssueSummaries(actor, { projectId: id.data }),
-        runtime.milestones.list(actor, id.data),
-        runtime.execution.runs.listForProject(actor, id.data),
-        runtime.execution.workers.listForProject(actor, id.data),
-      ]);
+    const [
+      project,
+      progress,
+      issues,
+      milestones,
+      runs,
+      clients,
+      updates,
+      favorites,
+    ] = await Promise.all([
+      runtime.projects.get(actor, id.data),
+      runtime.projects.progress(actor),
+      runtime.planning.listIssueSummaries(actor, { projectId: id.data }),
+      runtime.milestones.list(actor, id.data),
+      runtime.execution.runs.listForProject(actor, id.data),
+      runtime.execution.workers.listForProject(actor, id.data),
+      runtime.projectUpdates.list(actor, id.data),
+      runtime.favorites.list(actor),
+    ]);
     return (
       <ProjectDetail
         project={project}
@@ -30,6 +40,10 @@ export default async function ProjectPage({
         milestones={milestones}
         runs={runs}
         clients={clients}
+        updates={updates}
+        favorite={favorites.some(
+          (entry) => entry.kind === "project" && entry.id === id.data,
+        )}
         workspace={workspace}
       />
     );

@@ -8,12 +8,20 @@ export default async function WorkspaceLayout({
   children: React.ReactNode;
 }) {
   const { runtime, actor, workspace } = await requireCloudWorkspace();
-  const [unread, views] = await Promise.all([
+  const [unread, views, favorites, triage] = await Promise.all([
     runtime.inbox.unread(actor),
     runtime.views.list(actor),
+    runtime.favorites.list(actor),
+    runtime.triage.counts(actor),
   ]);
   return (
-    <CloudShell workspace={workspace} unread={unread} views={views}>
+    <CloudShell
+      workspace={workspace}
+      unread={unread}
+      views={views}
+      favorites={favorites}
+      triage={triage}
+    >
       {children}
     </CloudShell>
   );

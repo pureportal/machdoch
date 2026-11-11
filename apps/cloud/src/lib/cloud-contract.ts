@@ -11,6 +11,7 @@ export const issueStatusReferenceSchema = z.strictObject({
 export const cloudRoles = ["owner", "admin", "member", "viewer"] as const;
 export type CloudRole = (typeof cloudRoles)[number];
 export const issueStates = [
+  "triage",
   "backlog",
   "ready",
   "active",
@@ -137,6 +138,7 @@ export const issueInputSchema = z.strictObject({
   status: issueStatusReferenceSchema.nullable().default(null),
   priority: z.enum(issuePriorities).default("none"),
   projectId: cloudId.nullable().default(null),
+  milestoneId: cloudId.nullable().default(null),
   cycleId: cloudId.nullable().default(null),
   assigneeId: cloudId.nullable().default(null),
   estimate: z.string().max(16).nullable().default(null),
@@ -237,6 +239,7 @@ export interface CloudIssueSummary extends Omit<
 > {
   labels: { id: string; name: string; color: string }[];
   activeRun: { id: string; state: string } | null;
+  parent: { id: string; identifier: string; title: string } | null;
   createdAt: string;
 }
 export const issueSorts = ["updated", "created", "priority", "due"] as const;

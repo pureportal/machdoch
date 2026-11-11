@@ -3,6 +3,7 @@ import type { ChatState } from "../../../lib/cloud-chat-contract";
 import type { InferenceResponse } from "@machdoch/fleet-protocol/cloud-inference";
 import { readRun } from "../execution/records";
 import { CloudError } from "../access";
+import type { AgentProgress } from "./agent-loop";
 import type { CloudDatabase } from "../database";
 import {
   readInferenceProvider,
@@ -110,7 +111,7 @@ export class CloudInferenceStore {
         [organizationId, id, executionId, inferenceLeaseSeconds, budgetDay],
       );
       await sql.query(
-        "UPDATE cloud_chat_turns SET state='running',revision=revision+1 WHERE organization_id=$1 AND id=$2 AND request_id=$3",
+        "UPDATE cloud_chat_turns SET state='running',started_at=clock_timestamp(),revision=revision+1 WHERE organization_id=$1 AND id=$2 AND request_id=$3",
         [organizationId, call.turnId, id],
       );
       const timing = (
@@ -138,7 +139,11 @@ export class CloudInferenceStore {
     organizationId: string,
     id: string,
     executionId: string,
-    options: { begin?: boolean; answer?: string } = {},
+    options: {
+      begin?: boolean;
+      answer?: string;
+      progress?: AgentProgress;
+    } = {},
   ): Promise<{ allowed: boolean; leaseRemainingMs: number }> {
     return this.database.transaction(async (sql) => {
       await lockInference(sql, organizationId);
@@ -217,6 +222,21 @@ export class CloudInferenceStore {
           ],
         )
       ).rows[0]!;
+      if (options.progress)
+        await sql.query(
+          `UPDATE cloud_chat_turns SET steps=$4,actions=$5,question=$6,revision=revision+1
+          WHERE organization_id=$1 AND id=$2 AND request_id=$3 AND (steps<>$4::jsonb OR actions<>$5::jsonb OR question IS DISTINCT FROM $6::jsonb)`,
+          [
+            organizationId,
+            call.turnId,
+            id,
+            JSON.stringify(options.progress.steps),
+            JSON.stringify(options.progress.actions),
+            options.progress.question
+              ? JSON.stringify(options.progress.question)
+              : null,
+          ],
+        );
       if (options.answer !== undefined)
         await sql.query(
           "UPDATE cloud_chat_turns SET answer=$4,revision=revision+1 WHERE organization_id=$1 AND id=$2 AND request_id=$3 AND answer<>$4",
@@ -236,6 +256,7 @@ export class CloudInferenceStore {
       tokens: number | null;
       errorCode: string | null;
       response?: InferenceResponse;
+      progress?: AgentProgress;
     },
   ): Promise<void> {
     return this.database.transaction(async (sql) => {
@@ -256,6 +277,7 @@ export class CloudInferenceStore {
       let state: ChatState = result.state;
       let errorCode = result.errorCode;
       let answer = result.answer;
+      let progress = result.progress;
       if (
         call.state === "cancel_requested" ||
         !(await inferenceAllowed(sql, call))
@@ -264,6 +286,7 @@ export class CloudInferenceStore {
         errorCode =
           call.state === "cancel_requested" ? null : "permission_changed";
         answer = undefined;
+        progress = undefined;
       }
       if (state === "unknown" && !call.started) {
         await requeueUnsentInference(sql, call);
@@ -282,7 +305,7 @@ export class CloudInferenceStore {
           errorCode = "task_budget_exceeded";
         }
       }
-      await settleInference(sql, call, state, errorCode, answer);
+      await settleInference(sql, call, state, errorCode, answer, progress);
       if (state === "complete" && result.response)
         await sql.query(
           "UPDATE cloud_inference_calls SET response=$3 WHERE organization_id=$1 AND id=$2",

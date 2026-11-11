@@ -5,13 +5,13 @@ export const cycleColumns = `id,team_id AS "teamId",name,to_char(starts_on,'YYYY
 export const issueColumns = `i.id, i.team_id AS "teamId", i.identifier, i.title, i.description, i.acceptance_criteria AS "acceptanceCriteria",
   (SELECT jsonb_build_object('id',s.id,'revision',s.revision) FROM cloud_workflow_statuses s WHERE s.organization_id=i.organization_id AND s.id=i.status_id) AS status,
   (SELECT s.name FROM cloud_workflow_statuses s WHERE s.organization_id=i.organization_id AND s.id=i.status_id) AS "statusName",
-  i.state, i.priority, i.project_id AS "projectId", i.cycle_id AS "cycleId", i.assignee_id AS "assigneeId",
+  i.state, i.priority, i.project_id AS "projectId", i.milestone_id AS "milestoneId", i.cycle_id AS "cycleId", i.assignee_id AS "assigneeId",
   i.estimate, i.estimate_points AS "estimatePoints", to_char(i.due_on, 'YYYY-MM-DD') AS "dueOn", i.archived, i.revision,
   to_char(i.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"`;
 
 export const issueSummaryColumns = `i.id, i.team_id AS "teamId", i.identifier, i.title,
   jsonb_build_object('id',s.id,'revision',s.revision) AS status, s.name AS "statusName",
-  i.state, i.priority, i.project_id AS "projectId", i.cycle_id AS "cycleId", i.assignee_id AS "assigneeId",
+  i.state, i.priority, i.project_id AS "projectId", i.milestone_id AS "milestoneId", i.cycle_id AS "cycleId", i.assignee_id AS "assigneeId",
   i.estimate, i.estimate_points AS "estimatePoints", to_char(i.due_on, 'YYYY-MM-DD') AS "dueOn", i.archived, i.revision,
   to_char(i.updated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt",
   to_char(i.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
@@ -19,7 +19,12 @@ export const issueSummaryColumns = `i.id, i.team_id AS "teamId", i.identifier, i
     FROM cloud_issue_labels a JOIN cloud_labels l ON l.organization_id=a.organization_id AND l.id=a.label_id
     WHERE a.organization_id=i.organization_id AND a.issue_id=i.id),'[]'::jsonb) AS labels,
   (SELECT jsonb_build_object('id',r.id,'state',r.state) FROM cloud_runs r
-    WHERE r.organization_id=i.organization_id AND r.issue_id=i.id AND r.state NOT IN ('succeeded','failed','canceled','timed_out')) AS "activeRun"`;
+    WHERE r.organization_id=i.organization_id AND r.issue_id=i.id AND r.state NOT IN ('succeeded','failed','canceled','timed_out')) AS "activeRun",
+  (SELECT jsonb_build_object('id',pi.id,'identifier',pi.identifier,'title',pi.title)
+    FROM cloud_issue_relations pr JOIN cloud_issues pi ON pi.organization_id=pr.organization_id AND pi.id=pr.source_id
+    JOIN cloud_teams pt ON pt.organization_id=pi.organization_id AND pt.id=pi.team_id
+    WHERE pr.organization_id=i.organization_id AND pr.kind='parent' AND pr.target_id=i.id AND pr.removed_at IS NULL
+    AND (pt.visibility='organization' OR m.role IN ('owner','admin') OR EXISTS (SELECT 1 FROM cloud_team_memberships ptm WHERE ptm.organization_id=pt.organization_id AND ptm.team_id=pt.id AND ptm.user_id=$2))) AS parent`;
 
 export const issueFilterClause = `i.organization_id=$1 AND i.archived=$3
   AND ($4::uuid IS NULL OR i.team_id=$4) AND ($5::uuid IS NULL OR i.project_id=$5) AND ($6::uuid IS NULL OR i.cycle_id=$6)

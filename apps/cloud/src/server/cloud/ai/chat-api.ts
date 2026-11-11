@@ -3,6 +3,7 @@ import { cloudId, type CloudActor } from "../../../lib/cloud-contract";
 import {
   chatMessageSchema,
   chatRetrySchema,
+  chatUpdateSchema,
 } from "../../../lib/cloud-chat-contract";
 import { CloudError } from "../access";
 import { readBody } from "../request-body";
@@ -56,6 +57,15 @@ export async function handleChatApi(
       "command_key_required",
       "Provide a UUID Idempotency-Key for this change.",
     );
+  if (path[0] === "chats" && path.length === 3 && path[2] === "update")
+    return Response.json(
+      await runtime.chat.store.update(
+        actor,
+        key.data,
+        cloudId.parse(path[1]),
+        await readBody(request, chatUpdateSchema),
+      ),
+    );
   if (path[0] === "chats" && path.length === 1) {
     const result = await runtime.chat.store.submit(
       actor,
@@ -64,6 +74,20 @@ export async function handleChatApi(
     );
     runtime.inference.worker.wake();
     return Response.json(result, { status: 202 });
+  }
+  if (
+    path[0] === "chat-turns" &&
+    path.length === 5 &&
+    path[2] === "actions" &&
+    (path[4] === "apply" || path[4] === "dismiss")
+  ) {
+    const turnId = cloudId.parse(path[1]);
+    const actionId = cloudId.parse(path[3]);
+    return Response.json(
+      path[4] === "apply"
+        ? await runtime.chat.actions.apply(actor, turnId, actionId)
+        : await runtime.chat.actions.dismiss(actor, turnId, actionId),
+    );
   }
   if (path[0] === "chat-turns" && path.length === 3) {
     const id = cloudId.parse(path[1]);

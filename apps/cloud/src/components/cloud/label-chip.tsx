@@ -13,7 +13,7 @@ const colors = {
 
 export function LabelChip({ label }: { label: CloudLabel }) {
   return (
-    <span className="inline-flex max-w-full items-center gap-2 rounded-md border px-2 py-1 text-sm">
+    <span className="cloud-label-chip">
       <span
         aria-hidden="true"
         className="size-2 shrink-0 rounded-full"

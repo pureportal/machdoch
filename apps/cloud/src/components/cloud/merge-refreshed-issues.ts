@@ -1,13 +1,15 @@
 import type { CloudIssueSummary } from "@/lib/cloud-contract";
 
-export function mergeRefreshedIssues(
-  refreshed: CloudIssueSummary[],
-  current: CloudIssueSummary[],
+export function mergeRefreshedIssues<Issue extends CloudIssueSummary>(
+  refreshed: Issue[],
+  current: Issue[],
   appended: ReadonlySet<string>,
-): CloudIssueSummary[] {
+): Issue[] {
   const known = new Set(refreshed.map((issue) => issue.id));
   return [
     ...refreshed,
-    ...current.filter((issue) => appended.has(issue.id) && !known.has(issue.id)),
+    ...current.filter(
+      (issue) => appended.has(issue.id) && !known.has(issue.id),
+    ),
   ];
 }

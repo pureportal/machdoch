@@ -1,0 +1,567 @@
+.cloud-issue-page {
+  max-width: 1280px;
+}
+.cloud-issue-page .cloud-issue-header {
+  margin: -8px 0 22px;
+}
+.cloud-issue-breadcrumb {
+  flex-wrap: nowrap;
+}
+.cloud-issue-breadcrumb > a {
+  flex-shrink: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-issue-breadcrumb-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-icon-button {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+}
+.cloud-icon-button:hover {
+  background: var(--cloud-hover);
+  color: var(--foreground);
+}
+.cloud-icon-button[aria-pressed="true"] {
+  color: var(--cloud-warning);
+}
+.cloud-issue-actions {
+  align-items: center;
+  flex-shrink: 0;
+}
+.cloud-issue-navigation {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 4px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.cloud-issue-navigation > span {
+  margin-right: 4px;
+}
+.cloud-issue-navigation button {
+  width: 26px;
+  height: 26px;
+}
+.cloud-issue-page .cloud-issue-layout {
+  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-rows: none;
+  gap: 0 48px;
+  max-width: none;
+}
+.cloud-issue-page .cloud-issue-document {
+  grid-row: auto;
+  gap: 14px;
+}
+.cloud-issue-page .cloud-issue-title-input {
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  line-height: 1.3;
+  resize: none;
+  field-sizing: content;
+}
+.cloud-markdown-view {
+  position: relative;
+  margin: 0 -10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 14.5px;
+  line-height: 1.7;
+}
+.cloud-markdown-view[data-writable] {
+  cursor: text;
+}
+.cloud-markdown-view[data-writable]:hover {
+  background: var(--cloud-subtle);
+}
+.cloud-markdown-view .app-markdown :where(ul, ol) {
+  padding-left: 1.4em;
+}
+.cloud-markdown-view .app-markdown li.task-list-item {
+  list-style: none;
+  margin-left: -1.4em;
+}
+.cloud-task-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0 8px 0 0;
+  vertical-align: -2px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.cloud-task-checkbox:disabled {
+  cursor: default;
+}
+.cloud-markdown-edit {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  opacity: 0;
+}
+.cloud-markdown-view:hover .cloud-markdown-edit,
+.cloud-markdown-edit:focus-visible {
+  opacity: 1;
+}
+.cloud-markdown-edit:hover {
+  background: var(--cloud-hover);
+  color: var(--foreground);
+}
+.cloud-markdown-placeholder {
+  justify-self: start;
+  padding: 4px 0;
+  color: var(--muted-foreground);
+  font-size: 14.5px;
+}
+.cloud-markdown-placeholder:hover {
+  color: var(--foreground);
+}
+.cloud-markdown-editor {
+  width: 100%;
+  min-height: 120px;
+  margin: 0 -10px;
+  padding: 6px 10px;
+  border: 1px solid var(--input);
+  border-radius: 8px;
+  outline: none;
+  background: var(--cloud-subtle);
+  font-size: 14px;
+  line-height: 1.65;
+  resize: none;
+  box-sizing: content-box;
+}
+.cloud-issue-criteria {
+  display: grid;
+  gap: 4px;
+}
+.cloud-issue-criteria > h2,
+.cloud-sub-issues h2 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.cloud-sub-issues {
+  display: grid;
+  gap: 6px;
+}
+.cloud-sub-issues > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cloud-sub-issues-progress {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.cloud-sub-issues ul {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.cloud-sub-issues li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+}
+.cloud-sub-issues li + li {
+  border-top: 1px solid var(--border);
+}
+.cloud-sub-issues li:hover {
+  background: var(--cloud-hover);
+}
+.cloud-sub-issues li a {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+}
+.cloud-sub-issues li a span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-inline-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  padding: 3px 6px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+.cloud-inline-add:hover {
+  background: var(--cloud-hover);
+  color: var(--foreground);
+}
+.cloud-sub-issue-form {
+  display: flex;
+  gap: 6px;
+}
+.cloud-sub-issue-form input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--input);
+  border-radius: 6px;
+  background: var(--cloud-subtle);
+  font-size: 13px;
+}
+.cloud-issue-disclosure {
+  border-top: 1px solid var(--border);
+}
+.cloud-issue-disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 10px 0;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.cloud-issue-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.cloud-issue-disclosure > summary::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 120ms ease;
+}
+.cloud-issue-disclosure[open] > summary::before {
+  transform: rotate(45deg);
+}
+.cloud-issue-disclosure > summary:hover {
+  color: var(--foreground);
+}
+.cloud-issue-disclosure :where(.cloud-poker, .cloud-issue-tasks) {
+  margin: 0 0 16px;
+  padding: 16px 18px;
+}
+.cloud-activity {
+  display: grid;
+  gap: 8px;
+  margin-top: 6px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.cloud-activity-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cloud-activity-header h2 {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+}
+.cloud-activity-header button {
+  color: var(--muted-foreground);
+}
+.cloud-activity-subscribers {
+  display: flex;
+}
+.cloud-activity-subscribers .cloud-avatar + .cloud-avatar {
+  margin-left: -5px;
+}
+.cloud-activity-list {
+  display: grid;
+  gap: 2px;
+}
+.cloud-activity-change {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding-left: 4px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+.cloud-activity-change > span {
+  min-width: 0;
+}
+.cloud-activity-change strong {
+  color: var(--foreground);
+  font-weight: 500;
+}
+.cloud-activity-change time:not(:empty)::before {
+  content: "· ";
+}
+.cloud-activity-expand:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+.cloud-avatar-tiny {
+  width: 18px;
+  height: 18px;
+  font-size: 7.5px;
+}
+.cloud-activity-comment {
+  margin: 8px 0;
+  padding: 10px 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+.cloud-activity-comment .cloud-comment-heading {
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.cloud-activity-comment .cloud-comment-body {
+  white-space: normal;
+  margin: 0;
+  line-height: 1.65;
+}
+.cloud-comment-actions {
+  display: flex;
+  margin-left: auto;
+  opacity: 0;
+}
+.cloud-activity-comment:hover .cloud-comment-actions,
+.cloud-comment-actions:focus-within {
+  opacity: 1;
+}
+.cloud-comment-actions button {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 11.5px;
+}
+.cloud-activity-loading {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-activity .cloud-comment-composer {
+  position: relative;
+  display: block;
+  margin-top: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--cloud-subtle);
+}
+.cloud-activity .cloud-comment-composer:focus-within {
+  border-color: var(--input);
+}
+.cloud-activity .cloud-comment-composer textarea {
+  min-height: 72px;
+  padding: 12px 48px 12px 14px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  resize: none;
+}
+.cloud-activity .cloud-comment-composer textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.cloud-comment-send {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+}
+.cloud-issue-page .cloud-issue-aside {
+  position: sticky;
+  top: 12px;
+  display: grid;
+  gap: 18px;
+}
+.cloud-aside-section {
+  display: grid;
+  gap: 1px;
+}
+.cloud-aside-section > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 24px;
+  margin-bottom: 2px;
+  padding-left: 7px;
+}
+.cloud-aside-section > header h2 {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+}
+.cloud-aside-add {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  color: var(--muted-foreground);
+}
+.cloud-aside-add:hover {
+  background: var(--cloud-hover);
+  color: var(--foreground);
+}
+.cloud-aside-section .cloud-property {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 28px;
+}
+.cloud-aside-section .cloud-property-value {
+  font-weight: 500;
+}
+.cloud-aside-link {
+  padding: 2px 7px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-aside-link:hover {
+  color: var(--foreground);
+}
+.cloud-aside-relations {
+  display: grid;
+  gap: 2px;
+  margin-top: 4px;
+}
+.cloud-aside-relations h3 {
+  padding-left: 7px;
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+}
+.cloud-aside-relations li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 28px;
+  padding: 0 4px 0 7px;
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+.cloud-aside-relations li:hover {
+  background: var(--cloud-hover);
+}
+.cloud-aside-relations li a {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-aside-relations li button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--muted-foreground);
+  opacity: 0;
+}
+.cloud-aside-relations li:hover button,
+.cloud-aside-relations li button:focus-visible {
+  opacity: 1;
+}
+.cloud-issue-label-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding-left: 4px;
+}
+.cloud-label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 1px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.cloud-label-add {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  color: var(--muted-foreground);
+}
+@media (max-width: 980px) {
+  .cloud-issue-page .cloud-issue-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .cloud-issue-page .cloud-issue-aside {
+    position: static;
+    grid-row: 1;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+@media (max-width: 800px) {
+  .cloud-issue-breadcrumb-title {
+    display: none;
+  }
+}
+.cloud-activity .cloud-activity-change time {
+  margin-left: 0;
+}
+.cloud-markdown-view .app-markdown h1 {
+  font-size: 18px;
+}
+.cloud-markdown-view .app-markdown h2 {
+  font-size: 15px;
+}
+.cloud-markdown-view .app-markdown h3 {
+  font-size: 14px;
+}
+.cloud-markdown-view .app-markdown :where(h1, h2, h3) {
+  margin: 14px 0 4px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.cloud-issue-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cloud-markdown-view .app-markdown li.task-list-item::marker {
+  content: "";
+}
+.cloud-issue-triage {
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in oklab, var(--cloud-warning) 35%, var(--border));
+  border-radius: 10px;
+  background: color-mix(in oklab, var(--cloud-warning) 6%, transparent);
+}

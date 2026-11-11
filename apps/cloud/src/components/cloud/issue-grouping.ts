@@ -41,6 +41,7 @@ const priorityRank: Record<CloudIssue["priority"], number> = {
   none: 4,
 };
 const stateDisplayOrder: CloudIssue["state"][] = [
+  "triage",
   "active",
   "review",
   "blocked",
@@ -106,7 +107,11 @@ export function groupIssues(
     if (workflow) {
       const buckets = bucket(sorted, (issue) => issue.status.id);
       return workflow.statuses
-        .filter((status) => !status.archived || buckets.has(status.id))
+        .filter(
+          (status) =>
+            buckets.has(status.id) ||
+            (!status.archived && status.category !== "triage"),
+        )
         .map((status) => ({
           id: status.id,
           name: status.name,

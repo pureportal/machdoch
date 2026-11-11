@@ -33,6 +33,12 @@ import {
 } from "../../../lib/cloud-label-contract";
 import { runInputSchema } from "@machdoch/fleet-protocol/cloud-execution";
 import type { CloudOAuthScope } from "../../../lib/cloud-oauth-contract";
+import { projectUpdateInputSchema } from "../../../lib/cloud-project-update-contract";
+import {
+  initiativeInputSchema,
+  initiativeUpdateSchema,
+} from "../../../lib/cloud-initiative-contract";
+import { triageDecisionSchema } from "../../../lib/cloud-triage-contract";
 import type { CloudRuntime } from "../runtime";
 import {
   recurrencePreviewSchema,
@@ -251,6 +257,71 @@ export function cloudMcpTools(runtime: CloudRuntime): CloudMcpTool[] {
     "cloud:read",
     id,
     (a, i) => runtime.projects.get(a, i.id),
+  );
+  add(
+    "list_initiatives",
+    "List initiatives with their projects, derived health and issue progress.",
+    "cloud:read",
+    empty,
+    (a) => runtime.initiatives.list(a),
+  );
+  add(
+    "get_initiative",
+    "Read an initiative and its revision.",
+    "cloud:read",
+    id,
+    (a, i) => runtime.initiatives.get(a, i.id),
+  );
+  add(
+    "create_initiative",
+    "Create an initiative grouping accessible projects.",
+    "cloud:write",
+    z.strictObject({ ...command, initiative: initiativeInputSchema }),
+    (a, i) => runtime.initiatives.create(a, i.commandId, i.initiative),
+  );
+  add(
+    "update_initiative",
+    "Replace an initiative's fields and accessible projects using its current revision.",
+    "cloud:write",
+    z.strictObject({
+      ...command,
+      id: cloudId,
+      initiative: initiativeUpdateSchema,
+    }),
+    (a, i) => runtime.initiatives.update(a, i.commandId, i.id, i.initiative),
+  );
+  add(
+    "list_triage",
+    "Read issues waiting in triage, newest first. Omit teamId for every accessible team.",
+    "cloud:read",
+    z.strictObject({ teamId: cloudId.nullable().default(null) }),
+    (a, i) => runtime.triage.list(a, i.teamId),
+  );
+  add(
+    "decide_triage",
+    "Settle an issue in triage at its current revision: accept it into an open status, decline it with an optional reason, or mark it as a duplicate of another issue.",
+    "cloud:write",
+    z.strictObject({ ...command, id: cloudId, decision: triageDecisionSchema }),
+    (a, i) => runtime.triage.decide(a, i.commandId, i.id, i.decision),
+  );
+  add(
+    "list_project_updates",
+    "Read a project's status updates with health, newest first.",
+    "cloud:read",
+    z.strictObject({ projectId: cloudId }),
+    (a, i) => runtime.projectUpdates.list(a, i.projectId),
+  );
+  add(
+    "create_project_update",
+    "Post a project status update with its health: on_track, at_risk or off_track.",
+    "cloud:write",
+    z.strictObject({
+      ...command,
+      projectId: cloudId,
+      update: projectUpdateInputSchema,
+    }),
+    (a, i) =>
+      runtime.projectUpdates.create(a, i.commandId, i.projectId, i.update),
   );
   add(
     "update_project",

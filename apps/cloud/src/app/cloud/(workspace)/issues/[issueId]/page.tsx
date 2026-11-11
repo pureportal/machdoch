@@ -16,16 +16,19 @@ export default async function IssuePage({
   if (!id.success) notFound();
   const { runtime, actor } = await requireCloudPageSession();
   try {
-    const [issue, { workspace }, activeRunId] = await Promise.all([
+    const [issue, { workspace }, favorites] = await Promise.all([
       runtime.planning.getIssue(actor, id.data),
       requireCloudWorkspace(),
-      runtime.execution.runs.activeForIssue(actor, id.data),
+      runtime.favorites.list(actor),
     ]);
     return (
       <IssueEditor
+        key={issue.id}
         initial={issue}
         workspace={workspace}
-        activeRunId={activeRunId}
+        favorite={favorites.some(
+          (entry) => entry.kind === "issue" && entry.id === issue.id,
+        )}
       />
     );
   } catch (error) {

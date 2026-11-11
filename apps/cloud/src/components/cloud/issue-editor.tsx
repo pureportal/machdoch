@@ -1,26 +1,32 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Archive, ArchiveRestore, Bot, ChevronRight, Sparkles } from "lucide-react";
+import { Diamond, FolderKanban, Plus, Users } from "lucide-react";
+import type { CloudMilestone } from "@/lib/cloud-milestone-contract";
+import { IssueRunList } from "./issue-run-list";
 import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
 import type {
   IssueChangeSet,
   IssueChangesResult,
 } from "@/lib/cloud-issue-changes-contract";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { CloudRequestError, cloudRequest } from "./api-client";
 import type { IssueHistoryEntry } from "./issue-activity";
 import { PokerPanel } from "./poker-panel";
 import { IssueComments } from "./comments";
 import { TaskList } from "./task-list";
 import { IssueDelegate } from "./issue-delegate";
+import { IssueHeader } from "./issue-header";
+import { triageChangedEvent } from "./events";
+import { TriageActions } from "./triage-actions";
 import { IssueLabels } from "./issue-labels";
+import { IssueMarkdownField } from "./issue-markdown-field";
 import { IssuePriority } from "./issue-priority";
-import { IssueRelations } from "./issue-relations";
+import {
+  IssueRelationSidebar,
+  IssueSubIssues,
+  useIssueRelations,
+} from "./issue-relations";
 import {
   applyIssueChanges,
   assigneeOptions,
@@ -37,20 +43,28 @@ import {
 import { PersonAvatar } from "./person-avatar";
 import { PropertyMenu, type PropertyOption } from "./property-menu";
 import { useToast } from "./toast";
+import { useAgentPageEntity } from "./agent/agent-shell";
 
 type TextField = "title" | "description" | "acceptanceCriteria";
-type Drafts = Record<TextField, string>;
 
-const textFields: TextField[] = ["title", "description", "acceptanceCriteria"];
-const pollMs = 15_000;
-
-function draftsFrom(issue: CloudIssue): Drafts {
-  return {
-    title: issue.title,
-    description: issue.description,
-    acceptanceCriteria: issue.acceptanceCriteria,
-  };
+function useProjectMilestones(projectId: string | null): CloudMilestone[] {
+  const [milestones, setMilestones] = useState<CloudMilestone[]>([]);
+  useEffect(() => {
+    setMilestones([]);
+    if (!projectId) return;
+    const abort = new AbortController();
+    void cloudRequest<{ milestones: CloudMilestone[] }>(
+      `projects/${projectId}/milestones`,
+      { signal: abort.signal },
+    )
+      .then((result) => setMilestones(result.milestones))
+      .catch(() => undefined);
+    return () => abort.abort();
+  }, [projectId]);
+  return milestones;
 }
+
+const pollMs = 15_000;
 
 function Property({
   label,
@@ -69,7 +83,6 @@ function Property({
 }) {
   return (
     <div className="cloud-property">
-      <span className="cloud-property-label">{label}</span>
       {writable ? (
         <PropertyMenu
           label={label}
@@ -77,12 +90,18 @@ function Property({
           value={value}
           onSelect={onSelect}
         >
-          <button type="button" className="cloud-property-value" aria-label={label}>
+          <button
+            type="button"
+            className="cloud-property-value"
+            aria-label={label}
+          >
             {display}
           </button>
         </PropertyMenu>
       ) : (
-        <span className="cloud-property-value">{display}</span>
+        <span className="cloud-property-value" aria-label={label}>
+          {display}
+        </span>
       )}
     </div>
   );
@@ -91,31 +110,38 @@ function Property({
 export function IssueEditor({
   initial,
   workspace,
-  activeRunId,
+  favorite,
 }: {
   initial: CloudIssue;
   workspace: CloudWorkspace;
-  activeRunId: string | null;
+  favorite: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
   const [issue, setIssue] = useState(initial);
-  const [drafts, setDrafts] = useState(() => draftsFrom(initial));
+  const [title, setTitle] = useState(initial.title);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">(
     "idle",
   );
   const [conflict, setConflict] = useState("");
   const [history, setHistory] = useState<IssueHistoryEntry[]>([]);
-  const [panel, setPanel] = useState("activity");
-  const [visited, setVisited] = useState(() => new Set(["activity"]));
+  const [opened, setOpened] = useState<string[]>([]);
+  const [criteriaOpen, setCriteriaOpen] = useState(false);
   const latest = useRef(initial);
   const queue = useRef(Promise.resolve());
-  const dirtyRef = useRef(false);
+  const editingTitle = useRef(false);
   latest.current = issue;
   const writable = workspace.actor.role !== "viewer";
   const team = workspace.teams.find((entry) => entry.id === issue.teamId)!;
-  const dirty = textFields.some((field) => drafts[field] !== issue[field]);
-  dirtyRef.current = dirty;
+  const relations = useIssueRelations(issue.id);
+  const milestones = useProjectMilestones(issue.projectId);
+  const milestone = milestones.find((entry) => entry.id === issue.milestoneId);
+  useAgentPageEntity({
+    kind: "issue",
+    id: issue.id,
+    label: issue.identifier,
+    title: issue.title,
+  });
   const refreshHistory = useCallback(() => {
     void cloudRequest<{ history: IssueHistoryEntry[] }>(
       `issues/${initial.id}/history`,
@@ -123,23 +149,17 @@ export function IssueEditor({
       .then((value) => setHistory(value.history))
       .catch(() => undefined);
   }, [initial.id]);
-  const reload = useCallback(
-    async (replaceDrafts: boolean) => {
-      const next = await cloudRequest<CloudIssue>(`issues/${initial.id}`);
-      setIssue(next);
-      if (replaceDrafts) {
-        setDrafts(draftsFrom(next));
-        setConflict("");
-      } else if (!dirtyRef.current) setDrafts(draftsFrom(next));
-      refreshHistory();
-      return next;
-    },
-    [initial.id, refreshHistory],
-  );
+  const reload = useCallback(async () => {
+    const next = await cloudRequest<CloudIssue>(`issues/${initial.id}`);
+    setIssue(next);
+    if (!editingTitle.current) setTitle(next.title);
+    refreshHistory();
+    return next;
+  }, [initial.id, refreshHistory]);
   useEffect(() => {
     refreshHistory();
     const timer = setInterval(() => {
-      if (!document.hidden) void reload(false).catch(() => undefined);
+      if (!document.hidden) void reload().catch(() => undefined);
     }, pollMs);
     return () => clearInterval(timer);
   }, [refreshHistory, reload]);
@@ -153,7 +173,7 @@ export function IssueEditor({
           key: crypto.randomUUID(),
           body: { issues: [{ id: previous.id }], changes },
         });
-        await reload(false);
+        await reload();
         router.refresh();
       })
       .catch((reason: Error) => {
@@ -166,14 +186,14 @@ export function IssueEditor({
           router.refresh();
       });
   }
-  function saveText(field: TextField) {
-    const value = field === "title" ? drafts.title.trim() : drafts[field];
+  function saveText(field: TextField, raw: string) {
+    const value = field === "title" ? raw.trim() : raw;
     if (value === latest.current[field] || (field === "title" && !value)) {
-      if (field === "title" && !value)
-        setDrafts((current) => ({ ...current, title: latest.current.title }));
+      if (field === "title") setTitle(latest.current.title);
       return;
     }
     const base = latest.current[field];
+    setIssue({ ...latest.current, [field]: value });
     setSaveState("saving");
     setConflict("");
     const send = (revision: number) =>
@@ -199,15 +219,14 @@ export function IssueEditor({
           if (current[field] !== base) throw reason;
           await send(current.revision);
         }
-        const next = await cloudRequest<CloudIssue>(`issues/${issue.id}`);
-        setIssue(next);
+        await reload();
         setSaveState("saved");
-        refreshHistory();
         router.refresh();
       })
-      .catch((reason: Error) => {
+      .catch(async (reason: Error) => {
         setSaveState("idle");
         setConflict(reason.message);
+        await reload().catch(() => undefined);
       });
   }
   const assignee = workspace.members.find(
@@ -217,73 +236,87 @@ export function IssueEditor({
     (entry) => entry.id === issue.projectId,
   );
   const cycle = workspace.cycles.find((entry) => entry.id === issue.cycleId);
+  const open = (section: string) =>
+    setOpened((current) =>
+      current.includes(section) ? current : [...current, section],
+    );
   return (
-    <>
-      <header className="cloud-issue-header">
-        <nav className="cloud-issue-breadcrumb" aria-label="Issue location">
-          <Link href={`/cloud/issues?teamId=${team.id}`}>{team.name}</Link>
-          <ChevronRight size={13} aria-hidden="true" />
-          <h1 className="cloud-issue-key">{issue.identifier}</h1>
-          {issue.archived && <span className="cloud-issue-flag">Archived</span>}
-          <span role="status" className="cloud-issue-save-state">
-            {saveState === "saving"
-              ? "Saving…"
-              : saveState === "saved" && !dirty
-                ? "Saved"
-                : ""}
-          </span>
-        </nav>
-        <div className="cloud-issue-actions">
-          {writable &&
-            !issue.archived &&
-            !["complete", "canceled"].includes(issue.state) && (
-              <IssueDelegate
-                issue={issue}
-                workspace={workspace}
-                onBeforeStart={async (projectId) => {
-                  const result = await cloudRequest<IssueChangesResult>(
-                    "issues/changes",
-                    {
-                      method: "POST",
-                      key: crypto.randomUUID(),
-                      body: {
-                        issues: [{ id: issue.id }],
-                        changes: { projectId },
-                      },
+    <div className="cloud-issue-page">
+      <IssueHeader
+        issue={issue}
+        workspace={workspace}
+        favorite={favorite}
+        writable={writable}
+        saveState={
+          saveState === "saving"
+            ? "Saving…"
+            : saveState === "saved"
+              ? "Saved"
+              : ""
+        }
+        onArchive={() => changeProperties({ archived: !issue.archived })}
+        delegate={
+          writable &&
+          !issue.archived &&
+          !["triage", "complete", "canceled"].includes(issue.state) && (
+            <IssueDelegate
+              issue={issue}
+              workspace={workspace}
+              onBeforeStart={async (projectId) => {
+                const result = await cloudRequest<IssueChangesResult>(
+                  "issues/changes",
+                  {
+                    method: "POST",
+                    key: crypto.randomUUID(),
+                    body: {
+                      issues: [{ id: issue.id }],
+                      changes: { projectId },
                     },
-                  );
-                  return result.updated[0]!.revision;
-                }}
-              />
-            )}
-          <Button asChild variant="ghost" size="sm">
-            <Link href={`/cloud/chat?issue=${issue.id}`}>
-              <Sparkles />
-              Ask
-            </Link>
-          </Button>
+                  },
+                );
+                return result.updated[0]!.revision;
+              }}
+            />
+          )
+        }
+      />
+      {writable && issue.state === "triage" && !issue.archived && (
+        <div className="cloud-issue-triage">
+          <TriageActions
+            key={issue.revision}
+            issue={issue}
+            workspace={workspace}
+            onDecided={(_, message) => {
+              toast(message);
+              window.dispatchEvent(new Event(triageChangedEvent));
+              router.refresh();
+            }}
+          />
         </div>
-      </header>
+      )}
       <div className="cloud-issue-layout">
         <div className="cloud-issue-document">
           <label className="sr-only" htmlFor="title">
             Title
           </label>
-          <Textarea
+          <textarea
             id="title"
             name="title"
             className="cloud-issue-title-input"
-            value={drafts.title}
+            value={title}
             rows={1}
             disabled={!writable}
             maxLength={300}
+            onFocus={() => {
+              editingTitle.current = true;
+            }}
             onChange={(event) =>
-              setDrafts((current) => ({
-                ...current,
-                title: event.target.value.replace(/[\r\n]+/g, " "),
-              }))
+              setTitle(event.target.value.replace(/[\r\n]+/g, " "))
             }
-            onBlur={() => saveText("title")}
+            onBlur={() => {
+              editingTitle.current = false;
+              saveText("title", title);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 event.preventDefault();
@@ -291,62 +324,94 @@ export function IssueEditor({
               }
             }}
           />
-          <label className="sr-only" htmlFor="description">
-            Description
-          </label>
-          <Textarea
+          <IssueMarkdownField
             id="description"
-            name="description"
-            className="cloud-issue-description-input"
-            placeholder="Add a description…"
-            value={drafts.description}
-            disabled={!writable}
+            label="Description"
+            value={issue.description}
+            placeholder="Add description…"
+            writable={writable}
             maxLength={30000}
-            onChange={(event) =>
-              setDrafts((current) => ({
-                ...current,
-                description: event.target.value,
-              }))
-            }
-            onBlur={() => saveText("description")}
+            className="cloud-issue-description"
+            onSave={(value) => saveText("description", value)}
           />
-          <div className="cloud-issue-section">
-            <label htmlFor="acceptance">Acceptance criteria</label>
-            <Textarea
-              id="acceptance"
-              name="acceptanceCriteria"
-              placeholder="What must be true when this is done?"
-              value={drafts.acceptanceCriteria}
-              disabled={!writable}
-              maxLength={20000}
-              onChange={(event) =>
-                setDrafts((current) => ({
-                  ...current,
-                  acceptanceCriteria: event.target.value,
-                }))
-              }
-              onBlur={() => saveText("acceptanceCriteria")}
-            />
-          </div>
+          {(issue.acceptanceCriteria || criteriaOpen) && (
+            <section className="cloud-issue-criteria">
+              <h2>Acceptance criteria</h2>
+              <IssueMarkdownField
+                id="acceptance"
+                label="Acceptance criteria"
+                value={issue.acceptanceCriteria}
+                placeholder="What must be true when this is done?"
+                writable={writable}
+                maxLength={20000}
+                autoEdit={!issue.acceptanceCriteria}
+                onSave={(value) => saveText("acceptanceCriteria", value)}
+              />
+            </section>
+          )}
+          {writable && !issue.acceptanceCriteria && !criteriaOpen && (
+            <button
+              type="button"
+              className="cloud-inline-add"
+              onClick={() => setCriteriaOpen(true)}
+            >
+              <Plus size={13} aria-hidden="true" />
+              Add acceptance criteria
+            </button>
+          )}
           {conflict && (
             <div role="alert" className="cloud-error">
               <p>{conflict}</p>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() =>
-                  void reload(true).catch((reason: Error) =>
-                    setConflict(reason.message),
-                  )
-                }
-              >
-                Reload issue
-              </Button>
             </div>
           )}
+          <IssueSubIssues issue={issue} writable={writable} state={relations} />
+          <details
+            className="cloud-issue-disclosure"
+            onToggle={(event) => {
+              if (event.currentTarget.open) open("tasks");
+            }}
+          >
+            <summary>AI tasks</summary>
+            {opened.includes("tasks") && (
+              <TaskList issue={issue} workspace={workspace} />
+            )}
+          </details>
+          <details
+            className="cloud-issue-disclosure"
+            onToggle={(event) => {
+              if (event.currentTarget.open) open("poker");
+            }}
+          >
+            <summary>Planning poker</summary>
+            {opened.includes("poker") && (
+              <PokerPanel
+                issue={issue}
+                workspace={workspace}
+                dirty={false}
+                onDecision={async () => {
+                  await reload();
+                }}
+              />
+            )}
+          </details>
+          <IssueComments
+            relations={relations.relations}
+            issue={issue}
+            workspace={workspace}
+            history={history}
+          />
         </div>
         <aside className="cloud-issue-aside" aria-label="Issue properties">
-          <div className="cloud-issue-properties">
+          <section className="cloud-aside-section" aria-label="Properties">
+            <header>
+              <h2>Properties</h2>
+            </header>
+            <div className="cloud-property">
+              <span className="cloud-property-value" aria-label="Team">
+                <Users size={14} aria-hidden="true" />
+                {team.name}
+              </span>
+            </div>
             <Property
               label="Status"
               writable={writable}
@@ -389,7 +454,7 @@ export function IssueEditor({
                     {assignee.name}
                   </>
                 ) : (
-                  <span className="cloud-property-empty">Unassigned</span>
+                  <span className="cloud-property-empty">Assign</span>
                 )
               }
               onSelect={(value) =>
@@ -397,17 +462,19 @@ export function IssueEditor({
               }
             />
             <Property
-              label="Project"
+              label="Estimate"
               writable={writable}
-              options={projectOptions(workspace, issue.teamId)}
-              value={issue.projectId ?? noValue}
+              options={estimateOptions(team, issue.estimate)}
+              value={issue.estimate ?? noValue}
               display={
-                project?.name ?? (
-                  <span className="cloud-property-empty">No project</span>
+                issue.estimate ? (
+                  `${issue.estimate} points`
+                ) : (
+                  <span className="cloud-property-empty">Estimate</span>
                 )
               }
               onSelect={(value) =>
-                changeProperties({ projectId: referenceValue(value) })
+                changeProperties({ estimate: referenceValue(value) })
               }
             />
             <Property
@@ -417,29 +484,15 @@ export function IssueEditor({
               value={issue.cycleId ?? noValue}
               display={
                 cycle?.name ?? (
-                  <span className="cloud-property-empty">No cycle</span>
+                  <span className="cloud-property-empty">Add to cycle</span>
                 )
               }
               onSelect={(value) =>
                 changeProperties({ cycleId: referenceValue(value) })
               }
             />
-            <Property
-              label="Estimate"
-              writable={writable}
-              options={estimateOptions(team, issue.estimate)}
-              value={issue.estimate ?? noValue}
-              display={
-                issue.estimate ?? (
-                  <span className="cloud-property-empty">Not estimated</span>
-                )
-              }
-              onSelect={(value) =>
-                changeProperties({ estimate: referenceValue(value) })
-              }
-            />
             <div className="cloud-property">
-              <label className="cloud-property-label" htmlFor="due">
+              <label className="sr-only" htmlFor="due">
                 Due date
               </label>
               <input
@@ -453,73 +506,74 @@ export function IssueEditor({
                 }
               />
             </div>
-          </div>
-          <IssueLabels issue={issue} writable={writable} />
-          {activeRunId && (
-            <Button asChild variant="outline" size="sm">
-              <Link href={`/cloud/tasks/${activeRunId}`}>
-                <Bot />
-                AI task running
-              </Link>
-            </Button>
-          )}
-          {writable && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => changeProperties({ archived: !issue.archived })}
-            >
-              {issue.archived ? <ArchiveRestore /> : <Archive />}
-              {issue.archived ? "Restore issue" : "Archive issue"}
-            </Button>
-          )}
+          </section>
+          <section className="cloud-aside-section" aria-label="Labels">
+            <header>
+              <h2>Labels</h2>
+            </header>
+            <IssueLabels issue={issue} writable={writable} />
+          </section>
+          <section className="cloud-aside-section" aria-label="Project">
+            <header>
+              <h2>Project</h2>
+            </header>
+            <Property
+              label="Project"
+              writable={writable}
+              options={projectOptions(workspace, issue.teamId)}
+              value={issue.projectId ?? noValue}
+              display={
+                project ? (
+                  <>
+                    <FolderKanban size={14} aria-hidden="true" />
+                    {project.name}
+                  </>
+                ) : (
+                  <span className="cloud-property-empty">Add to project</span>
+                )
+              }
+              onSelect={(value) =>
+                changeProperties({ projectId: referenceValue(value) })
+              }
+            />
+            {project && (
+              <Property
+                label="Milestone"
+                writable={writable}
+                options={[
+                  { value: noValue, label: "No milestone" },
+                  ...milestones.map((entry) => ({
+                    value: entry.id,
+                    label: entry.name,
+                  })),
+                ]}
+                value={issue.milestoneId ?? noValue}
+                display={
+                  milestone ? (
+                    <span className="cloud-property-milestone">
+                      <Diamond size={12} aria-hidden="true" />
+                      {milestone.name}
+                    </span>
+                  ) : (
+                    <span className="cloud-property-empty cloud-property-milestone">
+                      Add milestone
+                    </span>
+                  )
+                }
+                onSelect={(value) =>
+                  changeProperties({ milestoneId: referenceValue(value) })
+                }
+              />
+            )}
+          </section>
+          <IssueRelationSidebar
+            issue={issue}
+            writable={writable}
+            state={relations}
+          />
+          <IssueRunList issueId={issue.id} />
         </aside>
       </div>
-      <Tabs
-        value={panel}
-        onValueChange={(next) => {
-          setPanel(next);
-          setVisited((current) => new Set(current).add(next));
-        }}
-        className="cloud-issue-panels"
-      >
-        <TabsList aria-label="Issue details">
-          <TabsTrigger value="activity">Activity</TabsTrigger>
-          <TabsTrigger value="relationships">Relationships</TabsTrigger>
-          <TabsTrigger value="poker">Planning poker</TabsTrigger>
-          <TabsTrigger value="tasks">AI tasks</TabsTrigger>
-        </TabsList>
-        <TabsContent value="activity" forceMount>
-          <IssueComments issue={issue} workspace={workspace} history={history} />
-        </TabsContent>
-        <TabsContent value="relationships" forceMount>
-          {visited.has("relationships") && (
-            <IssueRelations
-              issue={issue}
-              workspace={workspace}
-              writable={writable}
-            />
-          )}
-        </TabsContent>
-        <TabsContent value="poker" forceMount>
-          {visited.has("poker") && (
-            <PokerPanel
-              issue={issue}
-              workspace={workspace}
-              dirty={dirty}
-              onDecision={async () => {
-                await reload(false);
-              }}
-            />
-          )}
-        </TabsContent>
-        <TabsContent value="tasks" forceMount>
-          {visited.has("tasks") && (
-            <TaskList issue={issue} workspace={workspace} dirty={dirty} />
-          )}
-        </TabsContent>
-      </Tabs>
-    </>
+    </div>
   );
 }

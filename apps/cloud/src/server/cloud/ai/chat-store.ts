@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { CloudActor } from "../../../lib/cloud-contract";
 import type {
+  AgentAction,
+  ChatContextReference,
   ChatDetail,
-  ChatMessageInput,
+  ChatMessage,
   ChatRetryInput,
+  ChatUpdate,
   CloudChat,
   CloudChatTurn,
   ProviderBudget,
@@ -22,17 +25,17 @@ import {
   requireInferenceCapacity,
 } from "./budgets";
 import {
+  addChatContext,
   chatColumns,
   chatDeadlineSeconds,
-  chatSystemPrompt,
   maximumChatInputBytes,
   readChat,
   readTurn,
   turnColumns,
 } from "./chat-records";
 import { lockInference, reapInference } from "./inference-records";
-import { workspaceContext } from "./workspace-context";
-import { readIssue } from "../planning";
+import { agentContext, agentSystemPrompt } from "./agent-context";
+import { agentToolSpecs } from "./agent-tools";
 
 export type ChatSubmission = {
   chatId: string;
@@ -40,14 +43,37 @@ export type ChatSubmission = {
   requestId: string;
 };
 
+const agentToolBytes = Buffer.byteLength(
+  JSON.stringify(agentToolSpecs),
+  "utf8",
+);
+
+function historyAnswer(turn: {
+  answer: string;
+  question: CloudChatTurn["question"];
+}): string {
+  return [
+    turn.answer,
+    turn.question
+      ? `${turn.question.text}\nOptions: ${turn.question.options.join(" | ")}`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 async function reserveMessage(
   sql: CloudSql,
   actor: CloudActor,
-  chat: { id: string; issueId: string | null },
-  input: { providerId: string; model: string; prompt: string },
+  chatId: string,
+  input: {
+    providerId: string;
+    model: string;
+    prompt: string;
+    context: ChatContextReference[];
+  },
   retry?: CloudChatTurn,
 ): Promise<ChatSubmission> {
-  const chatId = chat.id;
   const provider = await readInferenceProvider(
     sql,
     actor.organizationId,
@@ -65,8 +91,9 @@ async function reserveMessage(
       answer: string;
       state: string;
       sequence: number;
+      question: CloudChatTurn["question"];
     }>(
-      "SELECT prompt,answer,state,sequence FROM cloud_chat_turns WHERE organization_id=$1 AND chat_id=$2 AND ($3::uuid IS NULL OR id<>$3) ORDER BY sequence LIMIT 201",
+      "SELECT prompt,answer,state,sequence,question FROM cloud_chat_turns WHERE organization_id=$1 AND chat_id=$2 AND ($3::uuid IS NULL OR id<>$3) ORDER BY sequence LIMIT 201",
       [actor.organizationId, chatId, retry?.id ?? null],
     )
   ).rows;
@@ -86,17 +113,24 @@ async function reserveMessage(
       "conversation_limit",
       "Start a new conversation to continue.",
     );
-  const history = previous.flatMap((turn) => [
-    { role: "user", content: turn.prompt },
-    ...(turn.state === "complete"
-      ? [{ role: "assistant", content: turn.answer }]
-      : []),
-  ]);
+  const sequence = retry?.sequence ?? (previous.at(-1)?.sequence ?? 0) + 1;
+  if (input.context.length)
+    await addChatContext(sql, actor, chatId, sequence, input.context);
+  const history = previous.flatMap((turn) => {
+    const answer = historyAnswer(turn);
+    return [
+      { role: "user", content: turn.prompt },
+      ...(turn.state === "complete" && answer
+        ? [{ role: "assistant", content: answer }]
+        : []),
+    ];
+  });
   const userPrompt = JSON.stringify([
     ...history,
     { role: "user", content: input.prompt },
   ]);
-  const systemPrompt = `${chatSystemPrompt}\n\n${await workspaceContext(sql, actor, input.prompt, chat.issueId)}`;
+  const chat = await readChat(sql, actor, chatId);
+  const systemPrompt = `${agentSystemPrompt}\n\n${await agentContext(sql, actor, chat.context)}`;
   const inputBytes = Buffer.byteLength(userPrompt + systemPrompt, "utf8");
   if (inputBytes > maximumChatInputBytes)
     throw new CloudError(
@@ -104,14 +138,16 @@ async function reserveMessage(
       "conversation_limit",
       "This conversation exceeds the input limit. Start a new conversation or shorten your message.",
     );
-  const reservation = inputBytes + provider.maxOutputTokens + 1024;
+  const reservation =
+    2 * (inputBytes + agentToolBytes) + 2 * provider.maxOutputTokens + 4096;
   const budget = await readProviderBudget(sql, actor.organizationId, provider);
   requireInferenceCapacity(budget, reservation);
   const requestId = randomUUID();
   const turnId = retry?.id ?? randomUUID();
   if (retry)
     await sql.query(
-      "UPDATE cloud_chat_turns SET state='queued',answer='',error_code=NULL,request_id=$3,provider_id=$4,model=$5,revision=revision+1 WHERE organization_id=$1 AND id=$2",
+      `UPDATE cloud_chat_turns SET state='queued',answer='',error_code=NULL,request_id=$3,provider_id=$4,model=$5,
+      steps='[]'::jsonb,actions='[]'::jsonb,question=NULL,started_at=NULL,finished_at=NULL,revision=revision+1 WHERE organization_id=$1 AND id=$2`,
       [actor.organizationId, turnId, requestId, input.providerId, input.model],
     );
   else
@@ -123,7 +159,7 @@ async function reserveMessage(
         chatId,
         input.providerId,
         input.model,
-        (previous.at(-1)?.sequence ?? 0) + 1,
+        sequence,
         input.prompt,
         requestId,
       ],
@@ -168,7 +204,7 @@ export class CloudChatStore {
   submit(
     actor: CloudActor,
     key: string,
-    input: ChatMessageInput,
+    input: ChatMessage,
   ): Promise<ChatSubmission> {
     return this.database.transaction(async (sql) => {
       await lockInference(sql, actor.organizationId);
@@ -185,21 +221,19 @@ export class CloudChatStore {
           await reapInference(sql, actor.organizationId);
           if (chat) {
             checkRevision(chat.revision, input.revision!);
-            return reserveMessage(sql, actor, chat, input);
+            return reserveMessage(sql, actor, chat.id, input);
           }
-          if (input.issueId) await readIssue(sql, actor, input.issueId);
-          const created = { id: randomUUID(), issueId: input.issueId ?? null };
+          const id = randomUUID();
           await sql.query(
-            "INSERT INTO cloud_chats (organization_id,id,user_id,title,issue_id) VALUES ($1,$2,$3,$4,$5)",
+            "INSERT INTO cloud_chats (organization_id,id,user_id,title) VALUES ($1,$2,$3,$4)",
             [
               actor.organizationId,
-              created.id,
+              id,
               actor.userId,
               input.prompt.split("\n", 1)[0]!.slice(0, 120),
-              created.issueId,
             ],
           );
-          return reserveMessage(sql, actor, created, input);
+          return reserveMessage(sql, actor, id, input);
         },
       );
     });
@@ -244,11 +278,12 @@ export class CloudChatStore {
           return reserveMessage(
             sql,
             actor,
-            await readChat(sql, actor, turn.chatId),
+            turn.chatId,
             {
               providerId: input.providerId,
               model: input.model,
               prompt: turn.prompt,
+              context: [],
             },
             turn,
           );
@@ -287,7 +322,7 @@ export class CloudChatStore {
             [actor.organizationId, requestId, state],
           );
           await sql.query(
-            "UPDATE cloud_chat_turns SET state=$3,revision=revision+1 WHERE organization_id=$1 AND id=$2",
+            "UPDATE cloud_chat_turns SET state=$3,finished_at=CASE WHEN $3='canceled' THEN clock_timestamp() ELSE finished_at END,revision=revision+1 WHERE organization_id=$1 AND id=$2",
             [actor.organizationId, turnId, state],
           );
           await recordEvent(
@@ -309,8 +344,9 @@ export class CloudChatStore {
       await requireMembership(sql, actor);
       return (
         await sql.query<CloudChat & Record<string, unknown>>(
-          `SELECT ${chatColumns} FROM cloud_chats
-        WHERE organization_id=$1 AND user_id=$2 AND ($3::uuid IS NULL OR (created_at,id)<(SELECT created_at,id FROM cloud_chats WHERE organization_id=$1 AND user_id=$2 AND id=$3)) ORDER BY created_at DESC,id DESC LIMIT 50`,
+          `SELECT ${chatColumns} FROM cloud_chats ch
+        WHERE ch.organization_id=$1 AND ch.user_id=$2 AND ch.archived_at IS NULL AND ($3::uuid IS NULL OR (ch.updated_at,ch.id)<(SELECT updated_at,id FROM cloud_chats WHERE organization_id=$1 AND user_id=$2 AND id=$3))
+        ORDER BY ch.updated_at DESC,ch.id DESC LIMIT 50`,
           [actor.organizationId, actor.userId, beforeId ?? null],
         )
       ).rows;
@@ -333,6 +369,93 @@ export class CloudChatStore {
         )
       ).rows.reverse();
       return { chat, turns };
+    });
+  }
+
+  update(
+    actor: CloudActor,
+    key: string,
+    id: string,
+    input: ChatUpdate,
+  ): Promise<{ id: string; revision: number }> {
+    return this.database.transaction(async (sql) => {
+      const chat = await readChat(sql, actor, id, true);
+      return command(
+        sql,
+        actor,
+        key,
+        { kind: "chat.update", id, input },
+        async () => {
+          checkRevision(chat.revision, input.revision);
+          await sql.query(
+            "UPDATE cloud_chats SET title=COALESCE($3,title),archived_at=CASE WHEN $4 THEN clock_timestamp() ELSE archived_at END,revision=revision+1 WHERE organization_id=$1 AND id=$2",
+            [
+              actor.organizationId,
+              id,
+              input.title ?? null,
+              input.archived ?? false,
+            ],
+          );
+          await recordEvent(sql, actor, "chat.updated", id, chat.revision + 1, {
+            archived: input.archived ?? false,
+          });
+          return { id, revision: chat.revision + 1 };
+        },
+      );
+    });
+  }
+
+  readAction(
+    actor: CloudActor,
+    turnId: string,
+    actionId: string,
+  ): Promise<AgentAction> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor, "write");
+      const turn = await readTurn(sql, actor, turnId);
+      const action = turn.actions.find((entry) => entry.id === actionId);
+      if (!action)
+        throw new CloudError(404, "not_found", "This proposal is unavailable.");
+      return action;
+    });
+  }
+
+  settleAction(
+    actor: CloudActor,
+    turnId: string,
+    actionId: string,
+    change: Pick<AgentAction, "state" | "error" | "result">,
+  ): Promise<AgentAction> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor, "write");
+      const turn = await readTurn(sql, actor, turnId, true);
+      const action = turn.actions.find((entry) => entry.id === actionId);
+      if (!action)
+        throw new CloudError(404, "not_found", "This proposal is unavailable.");
+      if (action.state === "applied" || action.state === "dismissed")
+        return action;
+      const settled = { ...action, ...change } as AgentAction;
+      await sql.query(
+        "UPDATE cloud_chat_turns SET actions=$3,revision=revision+1 WHERE organization_id=$1 AND id=$2",
+        [
+          actor.organizationId,
+          turnId,
+          JSON.stringify(
+            turn.actions.map((entry) =>
+              entry.id === actionId ? settled : entry,
+            ),
+          ),
+        ],
+      );
+      await recordEvent(
+        sql,
+        actor,
+        `chat.action.${change.state}`,
+        turnId,
+        turn.revision + 1,
+        { actionId },
+      );
+      return settled;
     });
   }
 

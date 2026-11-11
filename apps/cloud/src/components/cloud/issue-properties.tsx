@@ -15,6 +15,7 @@ import { PersonAvatar } from "./person-avatar";
 import type { PropertyOption } from "./property-menu";
 
 export const stateNames: Record<CloudIssue["state"], string> = {
+  triage: "Triage",
   backlog: "Backlog",
   ready: "Ready",
   active: "In progress",
@@ -139,7 +140,8 @@ export function estimateOptions(
   team: CloudTeam | undefined,
   current?: string | null,
 ): PropertyOption[] {
-  const cards = team?.estimateScale.filter((card) => card.points !== null) ?? [];
+  const cards =
+    team?.estimateScale.filter((card) => card.points !== null) ?? [];
   return [
     { value: noValue, label: "Not estimated" },
     ...(current && !cards.some((card) => card.label === current)
@@ -161,7 +163,11 @@ export function applyIssueChanges<T extends CloudIssueSummary | CloudIssue>(
   const next = { ...issue };
   if (changes.priority !== undefined) next.priority = changes.priority;
   if (changes.assigneeId !== undefined) next.assigneeId = changes.assigneeId;
-  if (changes.projectId !== undefined) next.projectId = changes.projectId;
+  if (changes.projectId !== undefined) {
+    if (changes.projectId !== next.projectId) next.milestoneId = null;
+    next.projectId = changes.projectId;
+  }
+  if (changes.milestoneId !== undefined) next.milestoneId = changes.milestoneId;
   if (changes.cycleId !== undefined) next.cycleId = changes.cycleId;
   if (changes.estimate !== undefined) next.estimate = changes.estimate;
   if (changes.dueOn !== undefined) next.dueOn = changes.dueOn;

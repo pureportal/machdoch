@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { ChevronRight, FolderKanban } from "lucide-react";
+import { CreateIssue } from "./issue-form";
 import type { CloudIssueSummary, CloudWorkspace } from "@/lib/cloud-contract";
 import {
   AssigneeCell,
@@ -16,6 +19,11 @@ import { IssuePriority } from "./issue-priority";
 import { PersonAvatar } from "./person-avatar";
 
 const dragType = "application/x-machdoch-issue";
+const createdFormat = new Intl.DateTimeFormat("en", {
+  month: "short",
+  day: "numeric",
+  timeZone: "UTC",
+});
 
 export function IssueBoard({
   groups,
@@ -31,6 +39,26 @@ export function IssueBoard({
   apply: ApplyChange;
 }) {
   const [target, setTarget] = useState<string | null>(null);
+  const router = useRouter();
+  const teamForGroup = (group: IssueGroup) =>
+    group.change?.status
+      ? workspace.workflows.find((workflow) =>
+          workflow.statuses.some(
+            (status) => status.id === group.change!.status!.id,
+          ),
+        )?.teamId
+      : group.change?.projectId
+        ? workspace.projects.find(
+            (project) => project.id === group.change!.projectId,
+          )?.teamId
+        : group.change?.cycleId
+          ? workspace.cycles.find((cycle) => cycle.id === group.change!.cycleId)
+              ?.teamId
+          : undefined;
+  const projectName = (id: string | null) =>
+    id
+      ? (workspace.projects.find((project) => project.id === id)?.name ?? null)
+      : null;
   return (
     <div className="cloud-board">
       {groups.map((group) => (
@@ -78,6 +106,17 @@ export function IssueBoard({
                 {groupPoints(group)} pts
               </span>
             )}
+            {writable && group.change && !group.change.statusCategory && (
+              <span className="cloud-board-column-add">
+                <CreateIssue
+                  workspace={workspace}
+                  teamId={teamForGroup(group)}
+                  defaults={group.change}
+                  compactLabel={`New issue in ${group.name}`}
+                  onCreated={async () => router.refresh()}
+                />
+              </span>
+            )}
           </h2>
           <div className="cloud-board-cards">
             {group.issues.map((issue) => (
@@ -101,6 +140,18 @@ export function IssueBoard({
                     apply={apply}
                   />
                 </div>
+                {issue.parent && (
+                  <Link
+                    className="cloud-board-card-parent"
+                    href={`/cloud/issues/${issue.parent.id}`}
+                    prefetch={false}
+                    draggable={false}
+                  >
+                    <span>{issue.parent.identifier}</span>
+                    <ChevronRight size={11} aria-hidden="true" />
+                    <span>{issue.parent.title}</span>
+                  </Link>
+                )}
                 <Link
                   className="cloud-issue-title"
                   href={`/cloud/issues/${issue.id}`}
@@ -127,7 +178,13 @@ export function IssueBoard({
                     writable={writable}
                     apply={apply}
                   />
-                  {issue.labels.slice(0, 2).map((label) => (
+                  {projectName(issue.projectId) && (
+                    <span className="cloud-board-chip">
+                      <FolderKanban size={11} aria-hidden="true" />
+                      {projectName(issue.projectId)}
+                    </span>
+                  )}
+                  {issue.labels.slice(0, 3).map((label) => (
                     <span
                       key={label.id}
                       className="cloud-issue-label"
@@ -137,6 +194,9 @@ export function IssueBoard({
                     </span>
                   ))}
                 </div>
+                <span className="cloud-board-card-created">
+                  Created {createdFormat.format(new Date(issue.createdAt))}
+                </span>
               </article>
             ))}
           </div>

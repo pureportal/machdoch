@@ -147,6 +147,10 @@
   border: 1.5px solid var(--muted-foreground);
   border-radius: 50%;
 }
+.cloud-state[data-state="triage"]::before {
+  border-color: var(--cloud-warning);
+  border-style: dotted;
+}
 .cloud-state[data-state="backlog"]::before {
   border-style: dashed;
 }
@@ -466,4 +470,45 @@
   .cloud-board-card:hover {
     transform: none;
   }
+}
+.cloud-board-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 160px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-board-card-created {
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.cloud-board-column-add {
+  margin-left: auto;
+}
+.cloud-board-card-parent {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+}
+.cloud-board-card-parent span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-board-card-parent span:first-child {
+  flex-shrink: 0;
+}
+.cloud-board-card-parent:hover {
+  color: var(--foreground);
 }

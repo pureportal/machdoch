@@ -81,6 +81,8 @@ export function LinkIssueDialog({
           <option value="child">Sub-issue</option>
           <option value="blocks">Blocks</option>
           <option value="blocked_by">Blocked by</option>
+          <option value="duplicate_of">Duplicate of</option>
+          <option value="duplicated_by">Duplicated by</option>
         </Select>
       </Field>
       {open && (

@@ -623,31 +623,6 @@ button.cloud-property-value[data-state="open"],
   flex-shrink: 0;
   font-size: 12px;
 }
-.cloud-inbox {
-  margin-inline: -12px;
-}
-.cloud-inbox > li {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-height: 52px;
-  padding: 6px 12px;
-  border-bottom: 1px solid color-mix(in oklab, var(--border) 45%, transparent);
-  position: relative;
-}
-.cloud-inbox > li:hover,
-.cloud-inbox > li:focus-within {
-  background: var(--cloud-hover);
-}
-.cloud-inbox > li[data-unread]::before {
-  position: absolute;
-  left: 2px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--primary);
-  content: "";
-}
 .cloud-inbox-icon {
   width: 26px;
   height: 26px;
@@ -672,20 +647,12 @@ button.cloud-property-value[data-state="open"],
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.cloud-inbox > li:not([data-unread]) .cloud-inbox-title {
-  font-weight: 400;
-}
 .cloud-inbox-detail {
   overflow: hidden;
   color: var(--muted-foreground);
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.cloud-inbox-time {
-  flex-shrink: 0;
-  color: var(--muted-foreground);
-  font-size: 12px;
 }
 .cloud-project-page {
   display: grid;
@@ -1300,8 +1267,7 @@ html[data-theme="light"] .cloud-burnup {
   }
 }
 @media (max-width: 800px) {
-  .cloud-issue-rows,
-  .cloud-inbox {
+  .cloud-issue-rows {
     margin-inline: -4px;
   }
   .cloud-issue-row {
@@ -1319,9 +1285,6 @@ html[data-theme="light"] .cloud-burnup {
   }
   .cloud-issue-toolbar .cloud-issue-search {
     flex: 1 1 100%;
-  }
-  .cloud-inbox-time {
-    display: none;
   }
   .cloud-roadmap-scroll {
     min-width: calc(150px + var(--roadmap-months) * 84px);

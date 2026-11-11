@@ -8,16 +8,14 @@ import { CycleDates } from "./cycle-dates";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
-import type {
-  CycleBurnupPoint,
-  CycleDetail,
-} from "@/lib/cloud-cycle-contract";
+import type { CycleBurnupPoint, CycleDetail } from "@/lib/cloud-cycle-contract";
 import { CycleBurnupChart } from "./cycle-burnup-chart";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { createCommandSender, formReference } from "./api-client";
+import { useAgentPageEntity } from "./agent/agent-shell";
 
 export function CyclePlanning({
   detail,
@@ -29,6 +27,12 @@ export function CyclePlanning({
   workspace: CloudWorkspace;
 }) {
   const { cycle, commitment } = detail;
+  useAgentPageEntity({
+    kind: "cycle",
+    id: cycle.id,
+    label: cycle.name,
+    title: null,
+  });
   const router = useRouter();
   const sender = useRef(createCommandSender());
   const [action, setAction] = useState<"start" | "close" | null>(null);
