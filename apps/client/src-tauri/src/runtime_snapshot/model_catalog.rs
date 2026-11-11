@@ -15,6 +15,7 @@ use provider_api::{
 mod claude_cli;
 mod codex_cli;
 use crate::agent_cli as command;
+use crate::runtime_contract_generated::AGENT_CLI_PROVIDERS;
 #[cfg(test)]
 mod command_tests;
 mod copilot_cli;
@@ -49,10 +50,11 @@ pub(super) async fn fetch_provider_model_catalog(
     provider: &str,
 ) -> ProviderModelCatalogProvider {
     let mut result = fetch_provider_model_catalog_once(client, env, provider).await;
-    if result
-        .error
-        .as_deref()
-        .is_some_and(is_retryable_provider_error)
+    if !AGENT_CLI_PROVIDERS.contains(&provider)
+        && result
+            .error
+            .as_deref()
+            .is_some_and(is_retryable_provider_error)
     {
         tokio::time::sleep(Duration::from_secs(2)).await;
         result = fetch_provider_model_catalog_once(client, env, provider).await;
