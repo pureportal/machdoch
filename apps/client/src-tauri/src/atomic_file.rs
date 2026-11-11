@@ -9,13 +9,13 @@ use std::{
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
 #[cfg(windows)]
-use std::{ffi::OsStr, os::windows::ffi::OsStrExt};
+use std::{thread, time::Duration};
 
 #[cfg(windows)]
-use windows::{
-    core::PCWSTR,
-    Win32::Storage::FileSystem::{MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH},
-};
+use windows::Win32::Foundation::ERROR_SHARING_VIOLATION;
+
+#[cfg(windows)]
+const REPLACE_RETRY_DELAYS_MS: [u64; 9] = [5, 10, 25, 50, 100, 250, 500, 1_000, 2_000];
 
 #[derive(Debug)]
 pub(crate) struct AtomicFileDurabilityError(io::Error);
@@ -145,34 +145,30 @@ fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// `fs::rename` falls back to POSIX semantics when the destination is open,
+/// so readers sharing delete access (such as the Node runtime) cannot block
+/// the replacement. Handles without delete sharing, typically held by
+/// antivirus or indexing scans, are waited out briefly.
 #[cfg(windows)]
 fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
-    fn to_wide(value: &OsStr) -> Vec<u16> {
-        value.encode_wide().chain(std::iter::once(0)).collect()
+    let mut retry_delays = REPLACE_RETRY_DELAYS_MS.iter();
+    loop {
+        let error = match fs::rename(source, destination) {
+            Ok(()) => return Ok(()),
+            Err(error) => error,
+        };
+        let transient = error.kind() == io::ErrorKind::PermissionDenied
+            || error.raw_os_error() == Some(ERROR_SHARING_VIOLATION.0 as i32);
+        match retry_delays.next() {
+            Some(delay) if transient => thread::sleep(Duration::from_millis(*delay)),
+            _ => {
+                return Err(io::Error::new(
+                    error.kind(),
+                    format!("failed to replace destination: {error}"),
+                ))
+            }
+        }
     }
-
-    let parent = destination
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    let parent = fs::canonicalize(parent)?;
-    let source_name = source
-        .file_name()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "source must name a file"))?;
-    let destination_name = destination.file_name().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "destination must name a file")
-    })?;
-    let source = to_wide(parent.join(source_name).as_os_str());
-    let destination = to_wide(parent.join(destination_name).as_os_str());
-
-    unsafe {
-        MoveFileExW(
-            PCWSTR(source.as_ptr()),
-            PCWSTR(destination.as_ptr()),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    }
-    .map_err(|error| io::Error::other(format!("failed to replace destination: {error}")))
 }
 
 fn create_temporary_sibling_file_with_operations(
@@ -573,6 +569,51 @@ mod tests {
     }
 
     #[test]
+    fn atomic_replacement_succeeds_while_a_reader_holds_the_destination_open() {
+        let directory = temp_test_directory("open-destination");
+        let destination = directory.join("snapshot.json");
+        fs::create_dir_all(&directory).expect("test directory should be created");
+        fs::write(&destination, b"previous").expect("initial destination should be written");
+        let reader = File::open(&destination).expect("destination should open for reading");
+
+        write_file_atomic(&destination, b"next", AtomicWriteOptions::default())
+            .expect("an open reader must not block the replacement");
+
+        drop(reader);
+        assert_eq!(fs::read(&destination).unwrap(), b"next");
+        assert!(temporary_artifacts(&directory).is_empty());
+        cleanup(&directory);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn atomic_replacement_waits_for_a_transient_exclusive_destination_handle() {
+        use std::{os::windows::fs::OpenOptionsExt, thread, time::Duration};
+
+        let directory = temp_test_directory("exclusive-destination");
+        let destination = directory.join("snapshot.json");
+        fs::create_dir_all(&directory).expect("test directory should be created");
+        fs::write(&destination, b"previous").expect("initial destination should be written");
+        let exclusive = OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&destination)
+            .expect("destination should open exclusively");
+        let release = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+            drop(exclusive);
+        });
+
+        write_file_atomic(&destination, b"next", AtomicWriteOptions::default())
+            .expect("the replacement should succeed once the handle is released");
+
+        release.join().unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"next");
+        assert!(temporary_artifacts(&directory).is_empty());
+        cleanup(&directory);
+    }
+
+    #[test]
     fn atomic_rename_moves_a_file_within_its_directory() {
         let directory = temp_test_directory("rename");
         let source = directory.join("active.json");
@@ -607,6 +648,8 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn atomic_replacement_supports_long_windows_paths() {
+        use std::os::windows::ffi::OsStrExt;
+
         let directory = temp_test_directory("long-path");
         let parent = directory
             .join("first".repeat(16))
