@@ -64,6 +64,7 @@ describe("getMcpPreset", () => {
         "figma-remote",
         "notion-remote",
         "sentry-remote",
+        "mimorii-remote",
         "supabase-remote",
         "gitlab-remote",
       ]),
@@ -151,6 +152,21 @@ describe("getMcpPreset", () => {
           type: "oauth",
           redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
           scopes: ["org:read", "project:write", "team:write", "event:write"],
+        },
+      },
+    });
+    expect(getMcpPreset("mimorii-remote")).toMatchObject({
+      server: {
+        id: "mimorii",
+        transport: {
+          type: "streamable-http",
+          url: "https://mimorii.app/api/mcp",
+        },
+        auth: {
+          type: "oauth",
+          clientId: "machdoch-client",
+          redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+          scopes: ["mcp:read", "mcp:write"],
         },
       },
     });

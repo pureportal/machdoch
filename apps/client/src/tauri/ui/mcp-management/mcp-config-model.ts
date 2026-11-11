@@ -68,6 +68,7 @@ const MCP_PRESET_CATEGORY_BY_ID: Partial<Record<string, McpPresetCategoryId>> =
     "github-local-docker": "code-ci",
     "gitlab-remote": "code-ci",
     "sentry-remote": "data-observability",
+    "mimorii-remote": "data-observability",
     "supabase-remote": "data-observability",
     "chrome-devtools": "browser-apps",
     "playwright-browser": "browser-apps",

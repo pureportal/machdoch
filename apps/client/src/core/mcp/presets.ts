@@ -266,6 +266,38 @@ export const MCP_PRESETS: readonly McpPresetDefinition[] = [
     },
   },
   {
+    id: "mimorii-remote",
+    title: "Mimorii",
+    description:
+      "Uptime checks, incidents, maintenance, service goals, and application logs from Mimorii.",
+    server: {
+      id: "mimorii",
+      title: "Mimorii",
+      description:
+        "Mimorii monitoring MCP endpoint with OAuth authorization. Replace the URL for a self-hosted Mimorii server.",
+      enabled: false,
+      preset: "mimorii-remote",
+      transport: {
+        type: "streamable-http",
+        url: "https://mimorii.app/api/mcp",
+      },
+      auth: {
+        type: "oauth",
+        clientId: "machdoch-client",
+        redirectUrl: DEFAULT_MCP_OAUTH_REDIRECT_URL,
+        scopes: ["mcp:read", "mcp:write"],
+      },
+      exposure: {
+        mode: "hybrid",
+        directTools: true,
+      },
+      securityProfile: "balanced",
+      timeoutMs: 30_000,
+      maxTotalTimeoutMs: 120_000,
+      maxResponseChars: 80_000,
+    },
+  },
+  {
     id: "supabase-remote",
     title: "Supabase Remote",
     description:
