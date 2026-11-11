@@ -1,6 +1,10 @@
 import process from "node:process";
 import { getHelpText, parseCliArgs } from "./_helpers/cli-args.js";
-import type { CommandName, ParsedCliArgs } from "./_helpers/cli-args.js";
+import type {
+  CommandName,
+  ParsedCliArgs,
+  SchedulerCliAction,
+} from "./_helpers/cli-args.js";
 import { writeStderrLine, writeStdoutLine } from "./_helpers/cli-io.js";
 import { createCliStyle } from "./_helpers/cli-terminal.js";
 import { readTaskFromStdin } from "./_helpers/cli-task-stdin.js";
@@ -16,6 +20,15 @@ const AGENT_RUNTIME_COMMANDS = new Set<CommandName>([
   "ralph",
   "scheduler",
   "fleet",
+]);
+
+const SCHEDULER_EXECUTOR_ACTIONS = new Set<SchedulerCliAction>([
+  "run-due",
+  "run-all-due",
+  "trigger",
+  "retry",
+  "service",
+  "service-all",
 ]);
 
 const AGENT_RUNTIME_SHUTDOWN_GRACE_MS = 5_000;
@@ -75,9 +88,13 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
         args.mcp?.action === "connect"));
   const isLocalRalphCommand =
     args.command === "ralph" && !usesAgentRuntime(args);
+  const isSchedulerManagementCommand =
+    args.command === "scheduler" &&
+    !(args.scheduler && SCHEDULER_EXECUTOR_ACTIONS.has(args.scheduler.action));
   if (
     args.command !== "help" &&
     args.command !== "update" &&
+    args.command !== "instructions" &&
     args.command !== "memory" &&
     args.command !== "knowledge" &&
     args.command !== "research" &&
@@ -88,7 +105,8 @@ const runParsedCliCommand = async (args: ParsedCliArgs): Promise<void> => {
     args.command !== "speech" &&
     args.command !== "cloud" &&
     !isInternalProviderProcess &&
-    !isLocalRalphCommand
+    !isLocalRalphCommand &&
+    !isSchedulerManagementCommand
   ) {
     const { ensureAutomaticProviderSync } =
       await import("./_helpers/cli-provider-sync-commands.js");

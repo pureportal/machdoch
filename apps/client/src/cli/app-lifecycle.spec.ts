@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   runInteractiveChat: vi.fn(),
   loadRalphSnapshot: vi.fn(),
   printRalphSummary: vi.fn(),
+  printSchedulerSummary: vi.fn(),
+  printInstructionSummary: vi.fn(),
   writeStdoutLine: vi.fn(),
   writeStderrLine: vi.fn(),
 }));
@@ -19,6 +21,14 @@ vi.mock("../core/ralph-snapshot.js", () => ({
 
 vi.mock("./_helpers/cli-ralph-commands.js", () => ({
   printRalphSummary: mocks.printRalphSummary,
+}));
+
+vi.mock("./_helpers/cli-scheduler-commands.js", () => ({
+  printSchedulerSummary: mocks.printSchedulerSummary,
+}));
+
+vi.mock("./_helpers/cli-instruction-commands.js", () => ({
+  printInstructionSummary: mocks.printInstructionSummary,
 }));
 
 vi.mock("./_helpers/cli-io.js", async (importOriginal) => ({
@@ -65,6 +75,8 @@ describe("runCli agent resource lifecycle", () => {
     mocks.runInteractiveChat.mockReset().mockResolvedValue(undefined);
     mocks.loadRalphSnapshot.mockReset();
     mocks.printRalphSummary.mockReset().mockResolvedValue(undefined);
+    mocks.printSchedulerSummary.mockReset().mockResolvedValue(undefined);
+    mocks.printInstructionSummary.mockReset().mockResolvedValue(undefined);
     mocks.writeStdoutLine.mockReset();
     mocks.writeStderrLine.mockReset();
   });
@@ -287,6 +299,36 @@ describe("runCli agent resource lifecycle", () => {
       expect(mocks.closeAllBrowserSessions).toHaveBeenCalledOnce();
     },
   );
+
+  it.each([["list"], ["runs"], ["sync-prompts"], ["pause", "job-id"]])(
+    "manages scheduler %s without provider synchronization",
+    async (...arguments_) => {
+      await runCli(["--json", "scheduler", ...arguments_]);
+      expect(mocks.printSchedulerSummary).toHaveBeenCalledOnce();
+      expect(mocks.ensureAutomaticProviderSync).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([["run-due"], ["trigger", "job-id"]])(
+    "retains provider synchronization for scheduler %s",
+    async (...arguments_) => {
+      await runCli(["--json", "scheduler", ...arguments_]);
+      expect(mocks.printSchedulerSummary).toHaveBeenCalledOnce();
+      expect(mocks.ensureAutomaticProviderSync).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("lists instructions without provider synchronization", async () => {
+    await runCli([
+      "--json",
+      "instructions",
+      "registry",
+      "list",
+      "--include-content",
+    ]);
+    expect(mocks.printInstructionSummary).toHaveBeenCalledOnce();
+    expect(mocks.ensureAutomaticProviderSync).not.toHaveBeenCalled();
+  });
 
   it.each(["workspace", "user"])(
     "restricts snapshot reads to the requested %s scope",
