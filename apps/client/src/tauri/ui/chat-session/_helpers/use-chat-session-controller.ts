@@ -7138,11 +7138,10 @@ export const useChatSessionController = (
     hasHydrated: state.hasHydrated,
     shellState: state.shellState,
     activeSession: state.activeSession,
-    // Remote composers cannot steer; a steer preference queues there.
-    runningTaskMessageAction:
-      activeSessionPromptEnhancementBusy || runningTaskMessageAction === "steer"
-        ? "queue"
-        : runningTaskMessageAction,
+    runningTaskMessageAction: activeSessionPromptEnhancementBusy
+      ? "queue"
+      : runningTaskMessageAction,
+    canSteerRunningTask: activeSessionCanSteer,
     imageInputSupported: activeSessionImageInputSupported,
     imageInputDisabledReason: activeSessionImageInputSupported
       ? null

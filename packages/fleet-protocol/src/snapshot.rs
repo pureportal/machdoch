@@ -327,8 +327,9 @@ fn product_shell_shape() -> Shape {
         ),
         optional(
             "runningTaskMessageAction",
-            enumeration(&["queue", "stop-and-send"]),
+            enumeration(&["steer", "queue", "stop-and-send"]),
         ),
+        optional("canSteerRunningTask", Shape::Bool),
         optional("draftRevision", Shape::Integer),
         optional("textTruncated", Shape::Bool),
         optional("imageInputSupported", Shape::Bool),

@@ -12,7 +12,9 @@ import {
 } from "@machdoch/fleet-protocol/task-thinking";
 import {
   composerHistorySelectionSchema,
+  productRunningMessageActionSchema,
   type ComposerHistorySelection,
+  type ProductRunningMessageAction,
 } from "@machdoch/fleet-protocol";
 import {
   isMediaPoseMap,
@@ -629,7 +631,7 @@ export interface FleetControlCommandEvent {
   goalObjective?: string;
   iterationCount?: number;
   iterationMode?: "repeat-prompt" | "continue" | "repeat-prompt-and-continue";
-  runningAction?: "queue" | "stop-and-send";
+  runningAction?: ProductRunningMessageAction;
   direction?: -1 | 1;
   targetIndex?: number;
   variableValues?: Record<string, string>;
@@ -1473,9 +1475,8 @@ const isFleetControlCommandEvent = (
         String(value.iterationMode),
       )) &&
     (value.runningAction === undefined ||
-      ["queue", "stop-and-send"].includes(
-        String(value.runningAction),
-      )) &&
+      productRunningMessageActionSchema.safeParse(value.runningAction)
+        .success) &&
     (value.direction === undefined ||
       value.direction === -1 ||
       value.direction === 1) &&

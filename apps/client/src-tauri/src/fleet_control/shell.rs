@@ -216,6 +216,8 @@ pub(super) struct FleetShellComposer {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) running_task_message_action: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) can_steer_running_task: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) image_input_supported: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) image_input_disabled_reason: Option<String>,

@@ -248,6 +248,12 @@ export function RemoteComposer({
   ];
   const reasoning = REASONING_OPTIONS[composer.reasoning];
   const mode = MODE_OPTION_BY_VALUE[composer.mode];
+  const canSteerRunningTask =
+    composer.isExecuting && composer.canSteerRunningTask === true;
+  const runningAction =
+    composer.runningTaskMessageAction === "steer" && !canSteerRunningTask
+      ? "queue"
+      : composer.runningTaskMessageAction;
 
   return (
     <div className="m-product-composer-wrap">
@@ -287,7 +293,9 @@ export function RemoteComposer({
         draftRevision={drafts.getRevision()}
         textareaLabel="Task composer"
         placeholder={
-          session.runningTaskId ? "Queue a follow-up" : "Message Machdoch"
+          runningAction === "steer"
+            ? "Add guidance for the running task"
+            : "What should machdoch do next?"
         }
         onBrowseMediaAssets={onBrowseMediaAssets}
         onCreateMediaAsset={onCreateMediaAsset}
@@ -607,6 +615,7 @@ export function RemoteComposer({
           goalEnabled ? "Goals continue automatically." : undefined
         }
         runningTaskMessageAction={composer.runningTaskMessageAction ?? "queue"}
+        canSteerRunningTask={canSteerRunningTask}
         queuedMessages={(composer.queuedMessages ?? []).map((message) => ({
           ...message,
           attachments: message.attachments.map(toContextAttachment),
@@ -628,7 +637,7 @@ export function RemoteComposer({
             goalObjective: goalDraft.submissionObjective,
             iterationCount,
             iterationMode,
-            runningAction: composer.runningTaskMessageAction,
+            runningAction,
           });
         }}
         onCancel={() => {
@@ -709,8 +718,6 @@ export function RemoteComposer({
           void onCommand({ kind: "clear-attachments", sessionId: session.id });
         }}
         onRunningTaskMessageActionChange={(runningAction) => {
-          // Remote composers never offer steering, which the fleet cannot relay.
-          if (runningAction === "steer") return;
           void onCommand({
             kind: "set-running-message-action",
             sessionId: session.id,
@@ -801,7 +808,7 @@ export function RemoteComposer({
               goalObjective: goalDraft.submissionObjective,
               iterationCount: inputNeeded.iterationCount,
               iterationMode: inputNeeded.iterationMode,
-              runningAction: composer.runningTaskMessageAction,
+              runningAction,
             });
           }}
         />

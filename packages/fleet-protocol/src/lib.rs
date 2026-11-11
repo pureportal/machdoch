@@ -2329,7 +2329,7 @@ fn valid_iteration_mode(value: &str) -> bool {
 }
 
 fn valid_running_action(value: &str) -> bool {
-    matches!(value, "queue" | "stop-and-send")
+    matches!(value, "steer" | "queue" | "stop-and-send")
 }
 
 fn valid_prompt_enhancement_mode(value: Option<&str>) -> bool {

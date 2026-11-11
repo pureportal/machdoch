@@ -21,6 +21,7 @@ export const productIterationModeSchema = z.enum([
 export type ProductIterationMode = z.infer<typeof productIterationModeSchema>;
 
 export const productRunningMessageActionSchema = z.enum([
+  "steer",
   "queue",
   "stop-and-send",
 ]);
@@ -151,6 +152,7 @@ export type ProductQueuedMessage = z.infer<typeof productQueuedMessageSchema>;
 export const composerSnapshotShape = {
   queuedMessages: z.array(productQueuedMessageSchema).max(512).optional(),
   runningTaskMessageAction: productRunningMessageActionSchema.optional(),
+  canSteerRunningTask: z.boolean().optional(),
   draftRevision: z.number().int().nonnegative().optional(),
   textTruncated: z.boolean().optional(),
   imageInputSupported: z.boolean().optional(),

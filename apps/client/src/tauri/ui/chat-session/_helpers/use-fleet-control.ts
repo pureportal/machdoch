@@ -19,6 +19,7 @@ import {
   createFleetSessionId,
   productSnapshotVersion,
   type ComposerHistorySelection,
+  type ProductRunningMessageAction,
 } from "@machdoch/fleet-protocol";
 import { getOriginalPromptContent } from "@machdoch/product-ui";
 import { useProviderModelCatalog } from "../../use-provider-model-catalog";
@@ -593,7 +594,8 @@ export const useFleetControl = (options: {
   hasHydrated: boolean;
   shellState: ShellPersistedState;
   activeSession: ChatSessionRecord;
-  runningTaskMessageAction: "queue" | "stop-and-send";
+  runningTaskMessageAction: ProductRunningMessageAction;
+  canSteerRunningTask: boolean;
   imageInputSupported: boolean;
   imageInputDisabledReason: string | null;
   visibleMessages: ChatSessionMessage[];
@@ -714,7 +716,7 @@ export const useFleetControl = (options: {
     goalObjective?: string;
     iterationCount?: number;
     iterationMode?: "repeat-prompt" | "continue" | "repeat-prompt-and-continue";
-    runningAction?: "queue" | "stop-and-send";
+    runningAction?: ProductRunningMessageAction;
   }) => boolean;
   onSetSessionMemory: (sessionId: string, enabled: boolean) => void;
   onForgetSessionMemory: (sessionId: string, memoryId: string) => void;
@@ -743,7 +745,7 @@ export const useFleetControl = (options: {
     scope: SmartContextPackScope,
   ) => void;
   onRunningTaskMessageActionChange: (
-    action: "queue" | "stop-and-send",
+    action: ProductRunningMessageAction,
   ) => void;
   onQueuedMessageChange: (messageId: string, content: string) => void;
   onQueuedMessageMove: (messageId: string, direction: -1 | 1) => void;
@@ -1237,6 +1239,7 @@ export const useFleetControl = (options: {
           ? { imageInputDisabledReason: options.imageInputDisabledReason }
           : {}),
         runningTaskMessageAction: options.runningTaskMessageAction,
+        canSteerRunningTask: options.canSteerRunningTask,
       },
       runtime: {
         loading: options.runtimeLoading,
@@ -1356,6 +1359,8 @@ export const useFleetControl = (options: {
     options.runtimeError,
     options.runtimeLoading,
     options.runtimeSnapshot,
+    options.runningTaskMessageAction,
+    options.canSteerRunningTask,
     options.recentWorkspaces,
     options.sendDisabledReason,
     options.shellState.sessions,

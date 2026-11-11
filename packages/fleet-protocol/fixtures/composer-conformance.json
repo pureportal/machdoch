@@ -157,6 +157,18 @@
       "accepted": true
     },
     {
+      "name": "submit with steer",
+      "command": {
+        "kind": "submit-message",
+        "sessionId": "session-1",
+        "prompt": "Also cover the edge case",
+        "promptEnhancementMode": "off",
+        "interviewEnabled": false,
+        "runningAction": "steer"
+      },
+      "accepted": true
+    },
+    {
       "name": "reject submit iteration count 0",
       "command": {
         "kind": "submit-message",
@@ -696,6 +708,15 @@
         "kind": "set-running-message-action",
         "sessionId": "session-1",
         "runningAction": "queue"
+      },
+      "accepted": true
+    },
+    {
+      "name": "accept set-running-message-action steer",
+      "command": {
+        "kind": "set-running-message-action",
+        "sessionId": "session-1",
+        "runningAction": "steer"
       },
       "accepted": true
     },
@@ -1719,6 +1740,28 @@
       "name": "reject composer runningTaskMessageAction \"cancel\"",
       "composer": {
         "runningTaskMessageAction": "cancel"
+      },
+      "accepted": false
+    },
+    {
+      "name": "composer steer action",
+      "composer": {
+        "runningTaskMessageAction": "steer",
+        "canSteerRunningTask": true
+      },
+      "accepted": true
+    },
+    {
+      "name": "reject composer canSteerRunningTask null",
+      "composer": {
+        "canSteerRunningTask": null
+      },
+      "accepted": false
+    },
+    {
+      "name": "reject composer canSteerRunningTask \"yes\"",
+      "composer": {
+        "canSteerRunningTask": "yes"
       },
       "accepted": false
     },
