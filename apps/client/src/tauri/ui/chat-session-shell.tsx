@@ -131,6 +131,11 @@ const InstructionManager = lazy(async () => {
   return { default: module.InstructionManager };
 });
 
+const McpManager = lazy(async () => {
+  const module = await import("./mcp-management/mcp-manager");
+  return { default: module.McpManager };
+});
+
 const WorkspaceManager = lazy(async () => {
   const module = await import("./workspace-management/workspace-manager");
   return { default: module.WorkspaceManager };
@@ -205,6 +210,7 @@ export const ChatSession = (): JSX.Element => {
     string | null
   >(null);
   const [instructionDraftDirty, setInstructionDraftDirty] = useState(false);
+  const [mcpDraftDirty, setMcpDraftDirty] = useState(false);
   const [workspaceDraftDirty, setWorkspaceDraftDirty] = useState(false);
   const sessionSearchInputRef = useRef<HTMLInputElement | null>(null);
   const isMobile = useIsMobile(1101);
@@ -219,9 +225,11 @@ export const ChatSession = (): JSX.Element => {
   const unsavedChangesMessage =
     activeApp === "instructions" && instructionDraftDirty
       ? "Discard unsaved instruction changes?"
-      : activeApp === "workspaces" && workspaceDraftDirty
-        ? "Discard unsaved workspace changes?"
-        : null;
+      : activeApp === "mcp" && mcpDraftDirty
+        ? "Discard unsaved MCP changes?"
+        : activeApp === "workspaces" && workspaceDraftDirty
+          ? "Discard unsaved workspace changes?"
+          : null;
   useUnsavedChangesGuard(unsavedChangesMessage);
   const schedulerWorkspaceSignature = controller.sidebar.sessionProjectFacets
     .flatMap((project) => (project.path ? [project.path] : []))
@@ -331,6 +339,7 @@ export const ChatSession = (): JSX.Element => {
         return false;
       }
       if (activeApp === "instructions") setInstructionDraftDirty(false);
+      if (activeApp === "mcp") setMcpDraftDirty(false);
       if (activeApp === "workspaces") setWorkspaceDraftDirty(false);
       appShellInteractionRevisionRef.current += 1;
       setAppShellState((current) => ({
@@ -545,6 +554,7 @@ export const ChatSession = (): JSX.Element => {
         app: "instructions",
         title: "Open Instructions",
       },
+      { id: "app.view.mcp", app: "mcp", title: "Open MCP servers" },
       {
         id: "app.view.workspaces",
         app: "workspaces",
@@ -1113,7 +1123,6 @@ export const ChatSession = (): JSX.Element => {
                     }
                     providerSetup={controller.settingsDialog.providerSetup}
                     webSearchSetup={controller.settingsDialog.webSearchSetup}
-                    mcpSetup={controller.settingsDialog.mcpSetup}
                     agentLimitsSetup={
                       controller.settingsDialog.agentLimitsSetup
                     }
@@ -1360,6 +1369,21 @@ export const ChatSession = (): JSX.Element => {
             </div>
           ) : null}
 
+          {activeApp === "mcp" ? (
+            <div
+              data-find-scope="MCP servers"
+              className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
+            >
+              <Suspense fallback={appLoadingFallback}>
+                <AppControlViewMarker id="mcp" />
+                <McpManager
+                  workspaceRoot={controller.composer.activeSession.workspace}
+                  onDirtyChange={setMcpDraftDirty}
+                />
+              </Suspense>
+            </div>
+          ) : null}
+
           {activeApp === "workspaces" ? (
             <div
               data-find-scope="Workspace Management"
@@ -1389,7 +1413,6 @@ export const ChatSession = (): JSX.Element => {
               onClose={() => controller.setCatalogOpen(false)}
               providerSetup={controller.settingsDialog.providerSetup}
               webSearchSetup={controller.settingsDialog.webSearchSetup}
-              mcpSetup={controller.settingsDialog.mcpSetup}
               agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}
               appearanceSetup={appearance}
               memorySetup={controller.settingsDialog.memorySetup}

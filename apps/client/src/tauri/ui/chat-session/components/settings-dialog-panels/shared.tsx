@@ -1,5 +1,7 @@
 import { ArrowUpRight, Check, Eye, EyeOff, LoaderCircle } from "lucide-react";
 import {
+  createContext,
+  useContext,
   useEffect,
   useId,
   useRef,
@@ -141,6 +143,11 @@ export const useDebouncedAutoSave = ({
   }, [suppressUnmountFlushRef]);
 };
 
+const SettingsSectionTitleContext = createContext<string | null>(null);
+
+export const SettingsSectionTitleProvider =
+  SettingsSectionTitleContext.Provider;
+
 export interface SettingsCardProps {
   title: string;
   description?: string;
@@ -155,24 +162,39 @@ export const SettingsCard = ({
   className,
 }: SettingsCardProps): JSX.Element => {
   const titleId = useId();
+  const titleRepeatsSection =
+    useContext(SettingsSectionTitleContext) === title;
 
   return (
     <section
       aria-labelledby={titleId}
       className={cn(
-        "@container/settings-card grid min-w-0 content-start rounded-xl border border-slate-800/80 bg-slate-950/40",
+        "@container/settings-card grid min-w-0 content-start gap-2.5",
         className,
       )}
     >
-      <div className="grid gap-1 border-b border-slate-800/70 px-4 py-3 sm:px-5">
-        <h3 id={titleId} className="text-sm font-semibold text-slate-100">
+      <div
+        className={cn(
+          "grid gap-0.5 px-1",
+          titleRepeatsSection && !description && "sr-only",
+        )}
+      >
+        <h3
+          id={titleId}
+          className={cn(
+            "text-sm font-semibold text-slate-200",
+            titleRepeatsSection && "sr-only",
+          )}
+        >
           {title}
         </h3>
         {description ? (
           <p className="text-xs leading-5 text-slate-400">{description}</p>
         ) : null}
       </div>
-      <div className="grid min-w-0 gap-0 px-4 pb-2 sm:px-5">{children}</div>
+      <div className="grid min-w-0 rounded-xl border border-slate-800/80 bg-slate-900/40 px-4 shadow-sm shadow-black/10 sm:px-5 [&>[data-setting-panel]:not(:has(~[data-setting-panel]))]:border-b-0">
+        {children}
+      </div>
     </section>
   );
 };
@@ -197,14 +219,14 @@ export const SettingPanel = ({
       data-setting-panel
       data-setting-label={label}
       className={cn(
-        "grid min-w-0 gap-2.5 border-b border-slate-800/70 py-3.5 last:border-b-0 @min-[36rem]/settings-card:grid-cols-[minmax(11rem,0.8fr)_minmax(0,1.5fr)] @min-[36rem]/settings-card:items-center @min-[36rem]/settings-card:gap-6",
+        "grid min-w-0 gap-2.5 border-b border-slate-800/70 py-4 last:border-b-0 @min-[36rem]/settings-card:grid-cols-[minmax(12rem,0.85fr)_minmax(0,1.5fr)] @min-[36rem]/settings-card:items-center @min-[36rem]/settings-card:gap-8",
         className,
       )}
     >
       <div className="grid gap-1">
-        <p className="text-sm font-medium text-slate-300">{label}</p>
+        <p className="text-sm font-medium text-slate-200">{label}</p>
         {detail ? (
-          <p className="text-xs leading-4 text-slate-400">{detail}</p>
+          <p className="text-xs leading-5 text-slate-400">{detail}</p>
         ) : null}
       </div>
       <div className={cn("min-w-0", contentClassName)}>{children}</div>

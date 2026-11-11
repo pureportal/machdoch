@@ -106,7 +106,7 @@ Machdoch can also:
 - **Build repeatable flows with RALPH.** Connect prompts, decisions, checks, and human input, then save and run the flow again.
 - **Schedule work.** Run a prompt or RALPH flow once, on a repeating schedule, or after a supported event. The computer and scheduler must be running when a job is due.
 - **Create media.** Use **Media Studio** for image and SVG work, visual workflows, an asset library, and supported local video generation. Remote media services need their own credentials; local generation depends on the model, runtime, hardware, and disk space.
-- **Connect more tools.** Add Model Context Protocol (MCP) servers in **Settings > MCP servers**. Review an integration before giving it access to your data or credentials.
+- **Connect more tools.** Add Model Context Protocol (MCP) servers in the **MCP servers** view. Review an integration before giving it access to your data or credentials.
 - **Reuse context.** Keep workspace or global memory, instruction files, and context packs for recurring work.
 - **Use Quick Chat and voice.** Open the small desktop assistant with <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> by default. Set up speech input and spoken replies in **Settings > Voice**.
 - **Reach other computers.** Connect hosts to a self-hosted **machdoch.cloud** for remote access. See the [machdoch.cloud guide](apps/cloud/README.md) for setup.

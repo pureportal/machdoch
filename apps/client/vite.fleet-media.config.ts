@@ -32,6 +32,7 @@ export default defineConfig({
           directory,
           "src/tauri/fleet-media/instructions.html",
         ),
+        mcp: path.resolve(directory, "src/tauri/fleet-media/mcp.html"),
         workspaces: path.resolve(
           directory,
           "src/tauri/fleet-media/workspaces.html",

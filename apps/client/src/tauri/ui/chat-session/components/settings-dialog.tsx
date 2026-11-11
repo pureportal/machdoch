@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from "@machdoch/media-studio/tauri/ui/components/ui/dialog.js";
 import { ScrollArea } from "../../components/ui/scroll-area";
+import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
   SUBMIT_SHORTCUT_ACTION_PROPS,
   SubmitShortcut,
@@ -52,19 +53,21 @@ import { DesktopSettingsPanel } from "./settings-dialog-panels/desktop-settings-
 import { AnswerLanguageSettingsPanel } from "./settings-dialog-panels/answer-language-settings-panel";
 import { SessionDefaultsSettingsPanel } from "./settings-dialog-panels/session-defaults-settings-panel";
 import { MemorySettingsPanel } from "./settings-dialog-panels/memory-settings-panel";
-import { McpSettingsPanel } from "./settings-dialog-panels/mcp-settings-panel";
 import {
   SettingsNavigationGuardProvider,
   type SettingsNavigationGuardState,
 } from "./settings-dialog-panels/navigation-guard";
 import { ProviderSettingsPanel } from "./settings-dialog-panels/provider-settings-panel";
 import { SettingsTransferPanel } from "./settings-dialog-panels/settings-transfer-panel";
+import {
+  SettingsCard,
+  SettingsSectionTitleProvider,
+} from "./settings-dialog-panels/shared";
 import type {
   AgentLimitsSettingsControls,
   AppearanceSettingsControls,
   DesktopSettingsControls,
   MemorySettingsControls,
-  McpSettingsControls,
   ProviderSetupControls,
   VoiceSettingsControls,
   WebSearchSetupControls,
@@ -95,7 +98,6 @@ type PendingNavigation =
 export interface SettingsControlsProps {
   providerSetup: ProviderSetupControls;
   webSearchSetup: WebSearchSetupControls;
-  mcpSetup: McpSettingsControls;
   agentLimitsSetup: AgentLimitsSettingsControls;
   appearanceSetup: AppearanceSettingsControls;
   memorySetup: MemorySettingsControls;
@@ -138,7 +140,6 @@ const renderSettingsPanel = ({
   settingsSection,
   providerSetup,
   webSearchSetup,
-  mcpSetup,
   agentLimitsSetup,
   appearanceSetup,
   memorySetup,
@@ -149,26 +150,38 @@ const renderSettingsPanel = ({
   switch (settingsSection) {
     case "privacy":
       return (
-        <AnalyticsPrivacyControl
-          openPrivacy={() => openExternalUrl(PRIVACY_URL)}
-        />
+        <SettingsCard title="Privacy">
+          <AnalyticsPrivacyControl
+            className="py-4"
+            openPrivacy={() => openExternalUrl(PRIVACY_URL)}
+          />
+        </SettingsCard>
       );
     case "answer-language":
       return <AnswerLanguageSettingsPanel />;
     case "session-defaults":
       return <SessionDefaultsSettingsPanel setup={desktopSetup} />;
     case "asset-storage":
-      return <AssetStorageSettingsPanel />;
+      return (
+        <SettingsCard title="Asset storage">
+          <div className="py-5">
+            <AssetStorageSettingsPanel />
+          </div>
+        </SettingsCard>
+      );
     case "civitai":
-      return <CivitaiSettingsPanel />;
+      return (
+        <SettingsCard title="Civitai">
+          <div className="py-5">
+            <CivitaiSettingsPanel />
+          </div>
+        </SettingsCard>
+      );
     case "providers":
       return <ProviderSettingsPanel setup={providerSetup} />;
 
     case "web-search":
       return <WebSearchSettingsPanel setup={webSearchSetup} />;
-
-    case "mcp":
-      return <McpSettingsPanel setup={mcpSetup} showProviderSync />;
 
     case "agent":
       return <AgentLimitsSettingsPanel setup={agentLimitsSetup} />;
@@ -192,9 +205,11 @@ const renderSettingsPanel = ({
       return canUseDeviceSettings() ? (
         <SettingsTransferPanel />
       ) : (
-        <p role="status" className="text-sm text-slate-400">
-          Open the desktop app to transfer settings.
-        </p>
+        <SettingsCard title="Settings transfer">
+          <p role="status" className="py-4 text-sm text-slate-400">
+            Open the desktop app to transfer settings.
+          </p>
+        </SettingsCard>
       );
   }
 };
@@ -861,135 +876,6 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
           ),
       },
       {
-        id: "settings.mcp.preset.insert",
-        title: "Insert MCP preset",
-        group: "Settings: MCP",
-        scope,
-        availability: () =>
-          active("mcp")
-            ? state().props.mcpSetup.presets.length
-              ? { state: "enabled" }
-              : { state: "disabled", reason: "No MCP presets are available." }
-            : { state: "hidden" },
-        children: () => ({
-          id: "settings.mcp.preset.insert.page",
-          title: "Insert MCP preset",
-          searchPlaceholder: "Search MCP presets",
-          groups: [
-            {
-              id: "presets",
-              items: state().props.mcpSetup.presets.map((preset) => ({
-                id: preset.id,
-                title: preset.title,
-                keywords: [preset.description ?? ""],
-                execute: () => state().props.mcpSetup.onPresetInsert(preset.id),
-              })),
-            },
-          ],
-        }),
-      },
-      {
-        id: "settings.mcp.save",
-        title: "Save MCP configuration",
-        group: "Settings: MCP",
-        scope,
-        availability: () =>
-          !active("mcp")
-            ? { state: "hidden" }
-            : state().props.mcpSetup.loading || state().props.mcpSetup.saving
-              ? { state: "disabled", reason: "MCP settings are busy." }
-              : { state: "enabled" },
-        execute: () => void state().props.mcpSetup.onSave(),
-      },
-      {
-        id: "settings.mcp.discovery.run",
-        title: "Discover MCP capabilities",
-        group: "Settings: MCP",
-        scope,
-        availability: () =>
-          !active("mcp")
-            ? { state: "hidden" }
-            : state().props.mcpSetup.discoveryBusy ||
-                !state().props.mcpSetup.discoveryServerId.trim()
-              ? {
-                  state: "disabled",
-                  reason: "Choose an available MCP server first.",
-                }
-              : { state: "enabled" },
-        execute: () =>
-          void state().props.mcpSetup.onDiscoverServer(
-            state().props.mcpSetup.discoveryServerId,
-          ),
-      },
-      {
-        id: "settings.mcp.discovery-cache.refresh",
-        title: "Refresh MCP discovery cache",
-        group: "Settings: MCP",
-        scope,
-        availability: () =>
-          !active("mcp")
-            ? { state: "hidden" }
-            : state().props.mcpSetup.discoveryBusy
-              ? { state: "disabled", reason: "MCP discovery is busy." }
-              : { state: "enabled" },
-        execute: () =>
-          void state().props.mcpSetup.onRefreshDiscoveryCache(
-            state().props.mcpSetup.discoveryServerId || undefined,
-          ),
-      },
-      {
-        id: "settings.mcp.discovery-cache.list",
-        title: "List MCP discovery cache",
-        group: "Settings: MCP",
-        scope,
-        availability: () =>
-          !active("mcp")
-            ? { state: "hidden" }
-            : state().props.mcpSetup.discoveryBusy
-              ? { state: "disabled", reason: "MCP discovery is busy." }
-              : { state: "enabled" },
-        execute: () => void state().props.mcpSetup.onListDiscoveryCache(),
-      },
-      {
-        id: "settings.mcp.oauth.start",
-        title: "Start MCP OAuth",
-        group: "Settings: MCP",
-        scope,
-        availability: () =>
-          !active("mcp")
-            ? { state: "hidden" }
-            : state().props.mcpSetup.oauthBusy ||
-                !state().props.mcpSetup.oauthServerId.trim()
-              ? {
-                  state: "disabled",
-                  reason: "Choose an OAuth MCP server first.",
-                }
-              : { state: "enabled" },
-        execute: () =>
-          void state().props.mcpSetup.onStartOAuth(
-            state().props.mcpSetup.oauthServerId,
-          ),
-      },
-      {
-        id: "settings.mcp.oauth.finish",
-        title: "Finish MCP OAuth",
-        group: "Settings: MCP",
-        scope,
-        availability: () =>
-          !active("mcp")
-            ? { state: "hidden" }
-            : state().props.mcpSetup.oauthBusy ||
-                !state().props.mcpSetup.oauthServerId.trim() ||
-                !state().props.mcpSetup.oauthCallback.trim()
-              ? { state: "disabled", reason: "Enter the OAuth callback first." }
-              : { state: "enabled" },
-        execute: () =>
-          void state().props.mcpSetup.onFinishOAuth(
-            state().props.mcpSetup.oauthServerId,
-            state().props.mcpSetup.oauthCallback,
-          ),
-      },
-      {
         id: "settings.memory.toggle",
         title: "Toggle global memory",
         group: "Settings: Memory",
@@ -1384,6 +1270,24 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
   }, []);
   useOptionalRegisterCommands(settingsCommands);
 
+  const renderCloseButton = (className: string): JSX.Element => (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label={closeLabel}
+      tooltip={closeLabel}
+      disabled={closeActionRunning || primaryActionRunning}
+      onClick={requestClose}
+      className={cn(
+        "h-9 w-9 shrink-0 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100",
+        className,
+      )}
+    >
+      <X className="size-4" />
+    </Button>
+  );
+
   return (
     <DialogContent
       data-command-owner="settings-dialog"
@@ -1422,82 +1326,76 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
           }
           className="flex min-h-0 flex-1 flex-col overflow-hidden"
         >
-          <DialogHeader className="min-h-14 shrink-0 flex-row items-center justify-between gap-4 border-b border-slate-800/80 px-5 py-2.5 pr-4 text-left">
-            <div className="min-w-0">
-              <DialogTitle className="text-lg font-semibold tracking-tight text-white">
-                {title}
-              </DialogTitle>
-              <DialogDescription className="sr-only">
-                {description}
-              </DialogDescription>
-              {actionError || props.error ? (
-                <p role="alert" className="mt-1 text-xs text-rose-300">
-                  {actionError ?? props.error}
-                </p>
-              ) : null}
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              {navigationGuard ? (
-                <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-200">
-                  Changes pending
-                </span>
-              ) : null}
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label={closeLabel}
-                tooltip={closeLabel}
-                disabled={closeActionRunning || primaryActionRunning}
-                onClick={requestClose}
-                className="h-9 w-9 rounded-lg text-slate-400 hover:bg-slate-900 hover:text-slate-100"
-              >
-                <X className="size-4" />
-              </Button>
-            </div>
-          </DialogHeader>
-
-          <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden md:grid-cols-[14rem_minmax(0,1fr)] md:grid-rows-1">
-            <SettingsNavigation
-              sections={dialogSections}
-              visibleSections={visibleSections}
-              activeSectionId={activeSectionId}
-              introIcon={introSection?.icon}
-              query={searchQuery}
-              onQueryChange={setSearchQuery}
-              onSectionChange={requestSectionChange}
-              onNavigationKeyDown={handleNavigationKeyDown}
-              buttonRefs={navigationButtonRefs}
-              mobileSectionRef={mobileSectionRef}
-            />
+          <div className="grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden md:grid-cols-[15.5rem_minmax(0,1fr)] md:grid-rows-1">
+            <aside className="flex min-h-0 min-w-0 flex-col border-b border-slate-800/80 bg-slate-900/40 md:border-r md:border-b-0">
+              <DialogHeader className="shrink-0 flex-row items-center justify-between gap-2 px-5 pt-4 pb-3 text-left">
+                <DialogTitle className="truncate text-base font-semibold tracking-tight text-white">
+                  {title}
+                </DialogTitle>
+                <DialogDescription className="sr-only">
+                  {description}
+                </DialogDescription>
+                {renderCloseButton("md:hidden")}
+              </DialogHeader>
+              <SettingsNavigation
+                sections={dialogSections}
+                visibleSections={visibleSections}
+                activeSectionId={activeSectionId}
+                introIcon={introSection?.icon}
+                query={searchQuery}
+                onQueryChange={setSearchQuery}
+                onSectionChange={requestSectionChange}
+                onNavigationKeyDown={handleNavigationKeyDown}
+                buttonRefs={navigationButtonRefs}
+                mobileSectionRef={mobileSectionRef}
+              />
+            </aside>
             <div className="flex min-h-0 min-w-0 flex-col">
-              <header className="sr-only md:not-sr-only md:shrink-0 md:border-b md:border-slate-800/70 md:px-6 md:py-4">
+              <header className="sr-only md:not-sr-only md:flex md:min-h-15 md:shrink-0 md:items-center md:justify-between md:gap-4 md:border-b md:border-slate-800/70 md:px-8">
                 <h2
                   id="active-settings-section-title"
                   tabIndex={-1}
-                  className="text-lg font-semibold tracking-tight text-slate-100 outline-none"
+                  className="truncate text-lg font-semibold tracking-tight text-slate-100 outline-none"
                 >
                   {activeSection.label}
                 </h2>
+                <div className="flex shrink-0 items-center gap-2">
+                  {navigationGuard ? (
+                    <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-200">
+                      Changes pending
+                    </span>
+                  ) : null}
+                  {renderCloseButton("hidden md:inline-flex")}
+                </div>
               </header>
+              {actionError || props.error ? (
+                <p
+                  role="alert"
+                  className="shrink-0 border-b border-rose-500/20 bg-rose-500/10 px-5 py-2.5 text-sm text-rose-200 md:px-8"
+                >
+                  {actionError ?? props.error}
+                </p>
+              ) : null}
               <ScrollArea
                 key={activeSectionId}
                 type="auto"
                 role="region"
                 aria-labelledby="active-settings-section-title"
-                className="min-h-0 flex-1 bg-slate-950/40 [&_[data-slot=scroll-area-scrollbar]]:w-3 [&_[data-slot=scroll-area-scrollbar]]:border-l [&_[data-slot=scroll-area-scrollbar]]:border-l-slate-800 [&_[data-slot=scroll-area-scrollbar]]:bg-slate-950/80 [&_[data-slot=scroll-area-thumb]]:bg-slate-600/80 [&_[data-slot=scroll-area-thumb]]:hover:bg-slate-500"
+                className="min-h-0 flex-1 [&_[data-slot=scroll-area-scrollbar]]:w-2.5 [&_[data-slot=scroll-area-thumb]]:bg-slate-700/80 [&_[data-slot=scroll-area-thumb]]:hover:bg-slate-500"
               >
-                <div className="mx-auto grid w-full max-w-5xl min-w-0 content-start gap-5 px-4 py-4 sm:px-6 sm:py-5">
-                  <SettingsNavigationGuardProvider
-                    onGuardChange={setNavigationGuard}
-                  >
-                    {activeSectionId === INTRO_SECTION_ID && introSection
-                      ? introSection.content
-                      : renderSettingsPanel({
-                          ...props,
-                          settingsSection: activeSectionId as SettingsSection,
-                        })}
-                  </SettingsNavigationGuardProvider>
+                <div className="mx-auto grid w-full max-w-4xl min-w-0 content-start gap-7 px-5 py-6 md:px-8 md:py-7">
+                  <SettingsSectionTitleProvider value={activeSection.label}>
+                    <SettingsNavigationGuardProvider
+                      onGuardChange={setNavigationGuard}
+                    >
+                      {activeSectionId === INTRO_SECTION_ID && introSection
+                        ? introSection.content
+                        : renderSettingsPanel({
+                            ...props,
+                            settingsSection: activeSectionId as SettingsSection,
+                          })}
+                    </SettingsNavigationGuardProvider>
+                  </SettingsSectionTitleProvider>
                 </div>
               </ScrollArea>
             </div>

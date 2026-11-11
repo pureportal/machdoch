@@ -29,6 +29,7 @@ export type MainAppId =
   | "media"
   | "tts"
   | "instructions"
+  | "mcp"
   | "workspaces";
 export type RunningTaskMessageAction = "steer" | "stop-and-send" | "queue";
 
@@ -77,6 +78,7 @@ export const DEFAULT_APP_SHELL_STATE = {
     media: 0,
     tts: 0,
     instructions: 0,
+    mcp: 0,
     workspaces: 0,
   },
 } as const satisfies AppShellState;
@@ -152,7 +154,7 @@ const normalizeStringHistory = (value: unknown, limit: number): string[] => {
 const normalizeMainAppId = (value: unknown): MainAppId => {
   return normalizeOneOf(
     value,
-    ["chat", "ralph", "media", "tts", "instructions", "workspaces"],
+    ["chat", "ralph", "media", "tts", "instructions", "mcp", "workspaces"],
     "chat",
   );
 };
@@ -195,6 +197,7 @@ export const normalizeAppShellState = (value: unknown): AppShellState => {
         typeof lastViewedAt.instructions === "number"
           ? lastViewedAt.instructions
           : DEFAULT_APP_SHELL_STATE.lastViewedAt.instructions,
+      mcp: typeof lastViewedAt.mcp === "number" ? lastViewedAt.mcp : 0,
       workspaces:
         typeof lastViewedAt.workspaces === "number"
           ? lastViewedAt.workspaces

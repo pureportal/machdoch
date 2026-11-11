@@ -53,7 +53,6 @@ export type SettingsSection =
   | "civitai"
   | "providers"
   | "web-search"
-  | "mcp"
   | "agent"
   | "appearance"
   | "voice"
@@ -223,13 +222,6 @@ export const SETTINGS_SECTIONS: ReadonlyArray<{
       "audio",
       "read aloud",
     ],
-  },
-  {
-    id: "mcp",
-    label: "MCP servers",
-    group: "Capabilities",
-    description: "Model Context Protocol integrations.",
-    keywords: ["tools", "servers", "oauth", "integrations", "presets"],
   },
   {
     id: "appearance",

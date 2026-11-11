@@ -14,17 +14,11 @@ import {
   DEFAULT_USER_AGENT_LIMITS_SETTINGS,
   DEFAULT_USER_DESKTOP_SETTINGS,
 } from "../../../../core/runtime-contract.generated.js";
-import { isMcpConfigConflictError } from "../../mcp-config-error";
 import type { ConversationMemoryEntry } from "../../../../core/types.js";
 import { DEFAULT_USER_WORKSPACE_RUN_SETTINGS } from "../../../../core/runtime-contract.generated.js";
 import {
   forgetUserGlobalMemoryEntry,
   loadGlobalProviderAvailability,
-  authorizeMcpOAuth,
-  discoverMcpServer,
-  finishMcpOAuth,
-  listMcpCachedCapabilities,
-  loadMcpConfigDocument,
   loadUserProviderApiKeys,
   loadUserAgentLimitsSettings,
   loadUserReviewModelSettings,
@@ -48,22 +42,15 @@ import {
   saveUserWorkspaceRunSettings,
   saveUserGlobalMemoryEnabled,
   saveUserWorkspaceMemoryDefaultEnabled,
-  saveMcpConfigDocument,
-  refreshMcpDiscoveryCache,
   saveUserVoiceActiveProvider,
   saveUserProviderApiKey,
   subscribeToDesktopSettingsChanged,
   subscribeToUserSettingsChanged,
-  createFallbackMcpConfigDocument,
-  createMcpConfigRawWithPreset,
   getUserApiKeyProviderLabel,
-  MCP_PRESET_SUMMARIES,
   USER_API_KEY_PROVIDER_ORDER,
   saveUserWebSearchActiveProvider,
   saveUserWebSearchApiKey,
   USER_WEB_SEARCH_PROVIDER_ORDER,
-  type McpConfigDocument,
-  type McpPresetSummary,
   type RuntimeProviderAvailability,
   type RuntimeSnapshot,
   type UserSpeechToTextSettings,
@@ -132,19 +119,6 @@ export interface ChatSessionRuntimeController {
   userReviewModelSettings: UserReviewModelSettings;
   agentLimitsSetupSaving: boolean;
   agentLimitsSetupMessage: SettingsStatusMessage | null;
-  mcpConfigDocument: McpConfigDocument;
-  mcpConfigDraft: string;
-  mcpConfigPresets: readonly McpPresetSummary[];
-  mcpConfigWorkspaceAvailable: boolean;
-  mcpConfigLoading: boolean;
-  mcpConfigSaving: boolean;
-  mcpDiscoveryServerId: string;
-  mcpDiscoveryBusy: boolean;
-  mcpDiscoveryOutput: string | null;
-  mcpOAuthServerId: string;
-  mcpOAuthCallback: string;
-  mcpOAuthBusy: boolean;
-  mcpConfigMessage: SettingsStatusMessage | null;
   userMemorySettings: UserMemorySettings;
   workspaceMemoryEntries: ConversationMemoryEntry[];
   memorySetupSaving: boolean;
@@ -192,20 +166,6 @@ export interface ChatSessionRuntimeController {
   handleReviewModelSettingsSave: (
     settings: UserReviewModelSettings,
   ) => Promise<boolean>;
-  handleMcpConfigDraftChange: (value: string) => void;
-  handleMcpConfigSave: () => Promise<void>;
-  handleMcpPresetInsert: (presetId: string) => void;
-  handleMcpDiscoveryServerIdChange: (serverId: string) => void;
-  handleMcpDiscoverServer: (serverId?: string) => Promise<void>;
-  handleMcpRefreshDiscoveryCache: (serverId?: string) => Promise<void>;
-  handleMcpListDiscoveryCache: () => Promise<void>;
-  handleMcpOAuthServerIdChange: (serverId: string) => void;
-  handleMcpOAuthCallbackChange: (value: string) => void;
-  handleMcpOAuthStart: (serverId?: string) => Promise<void>;
-  handleMcpOAuthFinish: (
-    serverId?: string,
-    authorizationResponse?: string,
-  ) => Promise<void>;
   handleGlobalMemoryEnabledSave: (enabled: boolean) => Promise<void>;
   handleWorkspaceMemoryDefaultEnabledSave: (enabled: boolean) => Promise<void>;
   handleGlobalMemoryForget: (id: string) => Promise<void>;
@@ -312,42 +272,6 @@ const createRuntimeSnapshotRequestKey = (
   return normalizedWorkspace;
 };
 
-const getFirstMcpServerIdFromRawConfig = (raw: string): string | null => {
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return null;
-    }
-
-    const servers = (parsed as { servers?: unknown }).servers;
-
-    if (Array.isArray(servers)) {
-      for (const server of servers) {
-        if (
-          server &&
-          typeof server === "object" &&
-          !Array.isArray(server) &&
-          typeof (server as { id?: unknown }).id === "string"
-        ) {
-          return (server as { id: string }).id;
-        }
-      }
-
-      return null;
-    }
-
-    if (servers && typeof servers === "object" && !Array.isArray(servers)) {
-      const firstId = Object.keys(servers)[0];
-      return firstId?.trim() || null;
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-};
-
 export const useChatSessionRuntime = (
   options: UseChatSessionRuntimeOptions,
 ): ChatSessionRuntimeController => {
@@ -426,24 +350,6 @@ export const useChatSessionRuntime = (
   const [agentLimitsSetupSaving, setAgentLimitsSetupSaving] = useState(false);
   const [agentLimitsSetupMessage, setAgentLimitsSetupMessage] =
     useState<SettingsStatusMessage | null>(null);
-  const [mcpConfigDocument, setMcpConfigDocument] = useState<McpConfigDocument>(
-    () => createFallbackMcpConfigDocument("user"),
-  );
-  const [mcpConfigDraft, setMcpConfigDraft] = useState(
-    () => createFallbackMcpConfigDocument("user").raw,
-  );
-  const [mcpConfigLoading, setMcpConfigLoading] = useState(false);
-  const [mcpConfigSaving, setMcpConfigSaving] = useState(false);
-  const [mcpDiscoveryServerId, setMcpDiscoveryServerId] = useState("");
-  const [mcpDiscoveryBusy, setMcpDiscoveryBusy] = useState(false);
-  const [mcpDiscoveryOutput, setMcpDiscoveryOutput] = useState<string | null>(
-    null,
-  );
-  const [mcpOAuthServerId, setMcpOAuthServerId] = useState("");
-  const [mcpOAuthCallback, setMcpOAuthCallback] = useState("");
-  const [mcpOAuthBusy, setMcpOAuthBusy] = useState(false);
-  const [mcpConfigMessage, setMcpConfigMessage] =
-    useState<SettingsStatusMessage | null>(null);
   const [userMemorySettings, setUserMemorySettings] =
     useState<UserMemorySettings>(createEmptyUserMemorySettings());
   const [workspaceMemorySnapshot, setWorkspaceMemorySnapshot] = useState<{
@@ -463,11 +369,6 @@ export const useChatSessionRuntime = (
   >(null);
   const runtimeSnapshotRequestIdRef = useRef(0);
   const runtimeSnapshotRequestKeyRef = useRef<string | null>(null);
-  const mcpConfigLoadRequestIdRef = useRef(0);
-  const mcpConfigSaveRequestIdRef = useRef(0);
-  const mcpDiscoveryRequestIdRef = useRef(0);
-  const mcpOAuthRequestIdRef = useRef(0);
-  const mcpConfigDraftRevisionRef = useRef(0);
   const [userSpeechToTextSettingsLoaded, setUserSpeechToTextSettingsLoaded] =
     useState(false);
   const providerSetupOpenRef = useRef(false);
@@ -481,22 +382,15 @@ export const useChatSessionRuntime = (
   const webSearchSetupKeyRef = useRef(webSearchSetupKey);
   const webSearchSetupEditRevisionRef = useRef(0);
   const webSearchSetupSaveRequestIdRef = useRef(0);
-  const mcpConfigDocumentRef = useRef(mcpConfigDocument);
-  const mcpConfigDraftRef = useRef(mcpConfigDraft);
   const activeWorkspaceKeyRef = useRef(activeWorkspaceKey);
   const voiceMutationRevisionRef = useRef(0);
   const speechMutationRevisionRef = useRef(0);
   const settingsEventSequenceRef = useRef(new Map<string, number>());
-  const mcpConfigWorkspaceAvailable = Boolean(
-    options.activeSessionWorkspace?.trim(),
-  );
   activeSessionProviderRef.current = options.activeSessionProvider;
   providerSetupProviderRef.current = providerSetupProvider;
   providerSetupKeyRef.current = providerSetupKey;
   webSearchSetupProviderRef.current = webSearchSetupProvider;
   webSearchSetupKeyRef.current = webSearchSetupKey;
-  mcpConfigDocumentRef.current = mcpConfigDocument;
-  mcpConfigDraftRef.current = mcpConfigDraft;
   activeWorkspaceKeyRef.current = activeWorkspaceKey;
 
   const applyLoadedWebSearchSettings = useCallback(
@@ -638,58 +532,6 @@ export const useChatSessionRuntime = (
     },
     [],
   );
-
-  const refreshMcpConfigDocuments = useCallback(async (): Promise<void> => {
-    const requestId = mcpConfigLoadRequestIdRef.current + 1;
-    const draftRevision = mcpConfigDraftRevisionRef.current;
-    const draftWasClean =
-      mcpConfigDraftRef.current === mcpConfigDocumentRef.current.raw;
-    mcpConfigLoadRequestIdRef.current = requestId;
-    setMcpConfigLoading(true);
-    setMcpConfigMessage(null);
-
-    try {
-      const userDocument = await loadMcpConfigDocument("user");
-
-      if (mcpConfigLoadRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      if (
-        draftWasClean &&
-        mcpConfigDraftRevisionRef.current === draftRevision
-      ) {
-        mcpConfigDocumentRef.current = userDocument;
-        mcpConfigDraftRef.current = userDocument.raw;
-        setMcpConfigDocument(userDocument);
-        setMcpConfigDraft(userDocument.raw);
-      }
-      setMcpDiscoveryServerId((current) => {
-        if (current.trim()) {
-          return current;
-        }
-
-        return getFirstMcpServerIdFromRawConfig(userDocument.raw) ?? "";
-      });
-    } catch (error) {
-      if (mcpConfigLoadRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      console.error("Failed to load MCP config documents", error);
-      setMcpConfigMessage({
-        tone: "error",
-        text:
-          error instanceof Error
-            ? error.message
-            : "MCP configuration could not be loaded.",
-      });
-    } finally {
-      if (mcpConfigLoadRequestIdRef.current === requestId) {
-        setMcpConfigLoading(false);
-      }
-    }
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1025,8 +867,6 @@ export const useChatSessionRuntime = (
             ) {
               applyLoadedUserReviewModelSettings(settings);
             }
-          } else if (kind === "mcp") {
-            await refreshMcpConfigDocuments();
           } else if (
             kind === "provider-enrollment" &&
             options.activeSessionWorkspace?.trim()
@@ -1060,17 +900,8 @@ export const useChatSessionRuntime = (
     applyLoadedUserSpeechToTextSettings,
     applyLoadedUserVoiceSettings,
     options.activeSessionWorkspace,
-    refreshMcpConfigDocuments,
     refreshWorkspaceRuntimeSnapshot,
   ]);
-
-  useEffect(() => {
-    if (!options.catalogOpen) {
-      return;
-    }
-
-    void refreshMcpConfigDocuments();
-  }, [options.catalogOpen, refreshMcpConfigDocuments]);
 
   useEffect(() => {
     if (!options.catalogOpen) {
@@ -2081,456 +1912,6 @@ export const useChatSessionRuntime = (
     ],
   );
 
-  const handleMcpConfigDraftChange = useCallback(
-    (value: string): void => {
-      mcpConfigDraftRevisionRef.current += 1;
-      mcpConfigDraftRef.current = value;
-      setMcpConfigDraft(value);
-
-      if (mcpConfigMessage) {
-        setMcpConfigMessage(null);
-      }
-    },
-    [mcpConfigMessage],
-  );
-
-  const handleMcpConfigSave = useCallback(async (): Promise<void> => {
-    const requestId = mcpConfigSaveRequestIdRef.current + 1;
-    const submittedDraft = mcpConfigDraft;
-    const draftRevision = mcpConfigDraftRevisionRef.current;
-    const expectedRaw = mcpConfigDocumentRef.current.raw;
-
-    mcpConfigSaveRequestIdRef.current = requestId;
-    mcpConfigLoadRequestIdRef.current += 1;
-    setMcpConfigLoading(false);
-    setMcpConfigSaving(true);
-    setMcpConfigMessage(null);
-
-    try {
-      const document = await saveMcpConfigDocument(
-        "user",
-        submittedDraft,
-        undefined,
-        expectedRaw,
-      );
-
-      if (mcpConfigSaveRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      setMcpConfigDocument(document);
-      mcpConfigDocumentRef.current = document;
-      const nextDraft =
-        mcpConfigDraftRevisionRef.current === draftRevision &&
-        mcpConfigDraftRef.current === submittedDraft
-          ? document.raw
-          : mcpConfigDraftRef.current;
-      mcpConfigDraftRef.current = nextDraft;
-      setMcpConfigDraft(nextDraft);
-      mcpDiscoveryRequestIdRef.current += 1;
-      setMcpDiscoveryBusy(false);
-      setMcpDiscoveryOutput(null);
-      setMcpConfigMessage({
-        tone: "success",
-        text: "MCP settings saved. Start a new provider run to use changes.",
-      });
-    } catch (error) {
-      if (mcpConfigSaveRequestIdRef.current !== requestId) {
-        return;
-      }
-
-      if (isMcpConfigConflictError(error)) {
-        try {
-          const latestDocument = await loadMcpConfigDocument("user");
-
-          if (mcpConfigSaveRequestIdRef.current !== requestId) {
-            return;
-          }
-
-          mcpConfigDocumentRef.current = latestDocument;
-          setMcpConfigDocument(latestDocument);
-          setMcpConfigMessage({
-            tone: "error",
-            text: "MCP configuration changed elsewhere. The latest version is now the comparison base and your draft was kept; review it before saving again.",
-          });
-          return;
-        } catch (reloadError) {
-          console.error("Failed to reload conflicting MCP config", reloadError);
-        }
-      }
-
-      setMcpConfigMessage({
-        tone: "error",
-        text:
-          error instanceof Error
-            ? error.message
-            : "MCP configuration could not be saved.",
-      });
-    } finally {
-      if (mcpConfigSaveRequestIdRef.current === requestId) {
-        setMcpConfigSaving(false);
-      }
-    }
-  }, [mcpConfigDraft]);
-
-  const handleMcpPresetInsert = useCallback(
-    (presetId: string): void => {
-      try {
-        const nextDraft = createMcpConfigRawWithPreset(
-          mcpConfigDraft,
-          presetId,
-        );
-        const preset = MCP_PRESET_SUMMARIES.find(
-          (candidate) => candidate.id === presetId,
-        );
-
-        mcpConfigDraftRevisionRef.current += 1;
-        mcpConfigDraftRef.current = nextDraft;
-        setMcpConfigDraft(nextDraft);
-        setMcpConfigMessage({
-          tone: "success",
-          text: `${preset?.title ?? "MCP preset"} added to the draft. Save to write the config.`,
-        });
-      } catch (error) {
-        setMcpConfigMessage({
-          tone: "error",
-          text:
-            error instanceof Error
-              ? error.message
-              : "MCP preset could not be inserted.",
-        });
-      }
-    },
-    [mcpConfigDraft],
-  );
-
-  const handleMcpDiscoveryServerIdChange = useCallback(
-    (serverId: string): void => {
-      setMcpDiscoveryServerId(serverId);
-      setMcpConfigMessage(null);
-    },
-    [],
-  );
-
-  const runMcpDiscoveryAction = useCallback(
-    async (
-      action: "discover" | "refresh" | "cache",
-      requestedServerId?: string,
-    ): Promise<void> => {
-      const workspaceRoot = options.activeSessionWorkspace;
-      if (!workspaceRoot?.trim()) {
-        setMcpConfigMessage({
-          tone: "error",
-          text: "Select a workspace before using MCP discovery.",
-        });
-        return;
-      }
-
-      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
-      const requestId = mcpDiscoveryRequestIdRef.current + 1;
-      mcpDiscoveryRequestIdRef.current = requestId;
-
-      const serverId = (requestedServerId ?? mcpDiscoveryServerId).trim();
-
-      if (action !== "cache" && !serverId) {
-        setMcpConfigMessage({
-          tone: "error",
-          text: "Enter an MCP server id before discovery.",
-        });
-        return;
-      }
-
-      setMcpDiscoveryBusy(true);
-      setMcpConfigMessage(null);
-
-      try {
-        const result =
-          action === "cache"
-            ? await listMcpCachedCapabilities(workspaceRoot)
-            : action === "refresh"
-              ? await refreshMcpDiscoveryCache(workspaceRoot, serverId)
-              : await discoverMcpServer(workspaceRoot, serverId);
-
-        if (
-          mcpDiscoveryRequestIdRef.current !== requestId ||
-          activeWorkspaceKeyRef.current !== workspaceKey
-        ) {
-          return;
-        }
-
-        setMcpDiscoveryOutput(JSON.stringify(result, null, 2));
-        setMcpConfigMessage({
-          tone: "success",
-          text:
-            action === "cache"
-              ? "MCP discovery cache loaded."
-              : action === "refresh"
-                ? "MCP discovery cache refreshed."
-                : "MCP server discovery completed.",
-        });
-      } catch (error) {
-        if (
-          mcpDiscoveryRequestIdRef.current === requestId &&
-          activeWorkspaceKeyRef.current === workspaceKey
-        ) {
-          setMcpConfigMessage({
-            tone: "error",
-            text:
-              error instanceof Error
-                ? error.message
-                : "MCP discovery could not be completed.",
-          });
-        }
-      } finally {
-        if (mcpDiscoveryRequestIdRef.current === requestId) {
-          setMcpDiscoveryBusy(false);
-        }
-      }
-    },
-    [mcpDiscoveryServerId, options.activeSessionWorkspace],
-  );
-
-  const handleMcpDiscoverServer = useCallback(
-    async (serverId?: string): Promise<void> => {
-      await runMcpDiscoveryAction("discover", serverId);
-    },
-    [runMcpDiscoveryAction],
-  );
-
-  const handleMcpRefreshDiscoveryCache = useCallback(
-    async (serverId?: string): Promise<void> => {
-      await runMcpDiscoveryAction("refresh", serverId);
-    },
-    [runMcpDiscoveryAction],
-  );
-
-  const handleMcpListDiscoveryCache = useCallback(async (): Promise<void> => {
-    await runMcpDiscoveryAction("cache");
-  }, [runMcpDiscoveryAction]);
-
-  const refreshUserMcpConfigDocument = useCallback(async (): Promise<void> => {
-    const requestId = mcpConfigLoadRequestIdRef.current + 1;
-    const draftRevision = mcpConfigDraftRevisionRef.current;
-    const draftWasClean =
-      mcpConfigDraftRef.current === mcpConfigDocumentRef.current.raw;
-    mcpConfigLoadRequestIdRef.current = requestId;
-    let document: McpConfigDocument;
-
-    try {
-      document = await loadMcpConfigDocument("user");
-    } finally {
-      if (mcpConfigLoadRequestIdRef.current === requestId) {
-        setMcpConfigLoading(false);
-      }
-    }
-
-    if (mcpConfigLoadRequestIdRef.current !== requestId) {
-      return;
-    }
-
-    const canReplaceDraft =
-      draftWasClean && mcpConfigDraftRevisionRef.current === draftRevision;
-
-    if (!canReplaceDraft) {
-      setMcpConfigMessage({
-        tone: "error",
-        text: "The global MCP configuration changed while this draft was open. Your draft and its original comparison base were kept; saving will require conflict review.",
-      });
-      return;
-    }
-
-    mcpConfigDocumentRef.current = document;
-    mcpConfigDraftRef.current = document.raw;
-    setMcpConfigDocument(document);
-    setMcpConfigDraft(document.raw);
-  }, []);
-
-  const handleMcpOAuthServerIdChange = useCallback((serverId: string): void => {
-    setMcpOAuthServerId(serverId);
-    setMcpConfigMessage(null);
-  }, []);
-
-  const handleMcpOAuthCallbackChange = useCallback((value: string): void => {
-    setMcpOAuthCallback(value);
-    setMcpConfigMessage(null);
-  }, []);
-
-  const handleMcpOAuthStart = useCallback(
-    async (requestedServerId?: string): Promise<void> => {
-      const workspaceRoot = options.activeSessionWorkspace;
-      if (!workspaceRoot?.trim()) {
-        setMcpConfigMessage({
-          tone: "error",
-          text: "Select a workspace before starting MCP OAuth.",
-        });
-        return;
-      }
-
-      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
-      const requestId = mcpOAuthRequestIdRef.current + 1;
-      mcpOAuthRequestIdRef.current = requestId;
-
-      const serverId = (requestedServerId ?? mcpOAuthServerId).trim();
-
-      if (!serverId) {
-        setMcpConfigMessage({
-          tone: "error",
-          text: "Enter an MCP server id before starting OAuth.",
-        });
-        return;
-      }
-
-      setMcpOAuthBusy(true);
-      setMcpConfigMessage(null);
-
-      try {
-        const result = await authorizeMcpOAuth(workspaceRoot, serverId);
-
-        if (
-          mcpOAuthRequestIdRef.current !== requestId ||
-          activeWorkspaceKeyRef.current !== workspaceKey
-        ) {
-          return;
-        }
-
-        setMcpDiscoveryOutput(JSON.stringify(result, null, 2));
-        await refreshUserMcpConfigDocument();
-
-        if (activeWorkspaceKeyRef.current !== workspaceKey) {
-          return;
-        }
-
-        setMcpConfigMessage({
-          tone: "success",
-          text:
-            result.result.status === "authorization-required"
-              ? "MCP OAuth needs manual completion. Paste the callback URL or code here and finish OAuth."
-              : result.result.stateVerified === false
-                ? "MCP OAuth authorized. Callback state was not available to verify."
-                : "MCP OAuth authorized.",
-        });
-      } catch (error) {
-        if (
-          mcpOAuthRequestIdRef.current === requestId &&
-          activeWorkspaceKeyRef.current === workspaceKey
-        ) {
-          setMcpConfigMessage({
-            tone: "error",
-            text:
-              error instanceof Error
-                ? error.message
-                : "MCP OAuth could not be started.",
-          });
-        }
-      } finally {
-        if (mcpOAuthRequestIdRef.current === requestId) {
-          setMcpOAuthBusy(false);
-        }
-      }
-    },
-    [
-      mcpOAuthServerId,
-      options.activeSessionWorkspace,
-      refreshUserMcpConfigDocument,
-    ],
-  );
-
-  const handleMcpOAuthFinish = useCallback(
-    async (
-      requestedServerId?: string,
-      requestedAuthorizationResponse?: string,
-    ): Promise<void> => {
-      const workspaceRoot = options.activeSessionWorkspace;
-      if (!workspaceRoot?.trim()) {
-        setMcpConfigMessage({
-          tone: "error",
-          text: "Select a workspace before finishing MCP OAuth.",
-        });
-        return;
-      }
-
-      const workspaceKey = createRuntimeSnapshotRequestKey(workspaceRoot);
-      const requestId = mcpOAuthRequestIdRef.current + 1;
-      mcpOAuthRequestIdRef.current = requestId;
-
-      const serverId = (requestedServerId ?? mcpOAuthServerId).trim();
-      const authorizationResponse = (
-        requestedAuthorizationResponse ?? mcpOAuthCallback
-      ).trim();
-
-      if (!serverId) {
-        setMcpConfigMessage({
-          tone: "error",
-          text: "Enter an MCP server id before finishing OAuth.",
-        });
-        return;
-      }
-
-      if (!authorizationResponse) {
-        setMcpConfigMessage({
-          tone: "error",
-          text: "Paste the OAuth callback URL or code before finishing OAuth.",
-        });
-        return;
-      }
-
-      setMcpOAuthBusy(true);
-      setMcpConfigMessage(null);
-
-      try {
-        const result = await finishMcpOAuth(
-          workspaceRoot,
-          serverId,
-          authorizationResponse,
-        );
-
-        if (
-          mcpOAuthRequestIdRef.current !== requestId ||
-          activeWorkspaceKeyRef.current !== workspaceKey
-        ) {
-          return;
-        }
-
-        setMcpDiscoveryOutput(JSON.stringify(result, null, 2));
-        setMcpOAuthCallback("");
-        await refreshUserMcpConfigDocument();
-        if (activeWorkspaceKeyRef.current !== workspaceKey) {
-          return;
-        }
-        setMcpConfigMessage({
-          tone: "success",
-          text:
-            result.result.stateVerified === false
-              ? "MCP OAuth finished. Callback state was not available to verify."
-              : "MCP OAuth finished.",
-        });
-      } catch (error) {
-        if (
-          mcpOAuthRequestIdRef.current === requestId &&
-          activeWorkspaceKeyRef.current === workspaceKey
-        ) {
-          setMcpConfigMessage({
-            tone: "error",
-            text:
-              error instanceof Error
-                ? error.message
-                : "MCP OAuth could not be finished.",
-          });
-        }
-      } finally {
-        if (mcpOAuthRequestIdRef.current === requestId) {
-          setMcpOAuthBusy(false);
-        }
-      }
-    },
-    [
-      mcpOAuthCallback,
-      mcpOAuthServerId,
-      options.activeSessionWorkspace,
-      refreshUserMcpConfigDocument,
-    ],
-  );
-
   const handleGlobalMemoryEnabledSave = useCallback(
     async (enabled: boolean): Promise<void> => {
       if (!canUseDeviceSettings()) {
@@ -2685,19 +2066,6 @@ export const useChatSessionRuntime = (
     userReviewModelSettings,
     agentLimitsSetupSaving,
     agentLimitsSetupMessage,
-    mcpConfigDocument,
-    mcpConfigDraft,
-    mcpConfigPresets: MCP_PRESET_SUMMARIES,
-    mcpConfigWorkspaceAvailable,
-    mcpConfigLoading,
-    mcpConfigSaving,
-    mcpDiscoveryServerId,
-    mcpDiscoveryBusy,
-    mcpDiscoveryOutput,
-    mcpOAuthServerId,
-    mcpOAuthCallback,
-    mcpOAuthBusy,
-    mcpConfigMessage,
     userMemorySettings,
     workspaceMemoryEntries,
     memorySetupSaving,
@@ -2722,17 +2090,6 @@ export const useChatSessionRuntime = (
     handleWorkspaceRunSettingsSave,
     handleAgentLimitsSettingsSave,
     handleReviewModelSettingsSave,
-    handleMcpConfigDraftChange,
-    handleMcpConfigSave,
-    handleMcpPresetInsert,
-    handleMcpDiscoveryServerIdChange,
-    handleMcpDiscoverServer,
-    handleMcpRefreshDiscoveryCache,
-    handleMcpListDiscoveryCache,
-    handleMcpOAuthServerIdChange,
-    handleMcpOAuthCallbackChange,
-    handleMcpOAuthStart,
-    handleMcpOAuthFinish,
     handleGlobalMemoryEnabledSave,
     handleWorkspaceMemoryDefaultEnabledSave,
     handleGlobalMemoryForget,

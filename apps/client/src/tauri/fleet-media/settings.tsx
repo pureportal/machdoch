@@ -114,7 +114,6 @@ function DeviceSettings({
           <SettingsDialog
             {...createRuntimeSettingsControls(
               runtime,
-              workspaceRoot,
               snapshot.shell?.sessions.map((candidate) => ({
                 id: candidate.id,
                 title: candidate.title,

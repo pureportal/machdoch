@@ -57,6 +57,7 @@ export function createInstanceRuntime(
     ralphHref: `/media-studio/ralph.html?instance=${encodeURIComponent(instanceId)}`,
     schedulerHref: `/media-studio/scheduler.html?instance=${encodeURIComponent(instanceId)}`,
     instructionsHref: `/media-studio/instructions.html?instance=${encodeURIComponent(instanceId)}`,
+    mcpHref: `/media-studio/mcp.html?instance=${encodeURIComponent(instanceId)}`,
     workspaceHref: `/media-studio/workspaces.html?instance=${encodeURIComponent(instanceId)}`,
     servicesHref: `/instances/${encodeURIComponent(instanceId)}/runs`,
     settingsHref: `/media-studio/settings.html?instance=${encodeURIComponent(instanceId)}`,

@@ -11,6 +11,7 @@ export const DEFAULT_COMMAND_SHORTCUTS = {
   "app.view.tts": "Mod+4",
   "app.view.instructions": "Mod+5",
   "app.view.workspaces": "Mod+6",
+  "app.view.mcp": "Mod+7",
   "chat.composer.focus": "Mod+Shift+M",
   "chat.session.new": "Mod+N",
   "instructions.file.new": "Mod+N",
@@ -56,6 +57,7 @@ export const DEFAULT_COMMAND_SHORTCUTS = {
   "media.flow.run": "Mod+Enter",
   "media.library.import": "Mod+O",
   "instructions.file.save": "Mod+S",
+  "mcp.config.save": "Mod+S",
   "workspaces.settings.save": "Mod+S",
   "workspaces.terminal.toggle": "Mod+J",
 } as const;

@@ -4,7 +4,6 @@ import type { MemorySourceSession } from "../../components/memory-management-ent
 
 export function createRuntimeSettingsControls(
   runtime: ChatSessionRuntimeController,
-  workspaceRoot: string | null,
   memorySourceSessions: MemorySourceSession[],
 ): Omit<SettingsControlsProps, "appearanceSetup" | "voiceSetup"> {
   return {
@@ -32,33 +31,6 @@ export function createRuntimeSettingsControls(
       onProviderChange: runtime.handleWebSearchSetupProviderChange,
       onKeyChange: runtime.handleWebSearchSetupKeyChange,
       onSave: runtime.handleWebSearchSetupSave,
-    },
-    mcpSetup: {
-      workspaceRoot: workspaceRoot,
-      document: runtime.mcpConfigDocument,
-      draft: runtime.mcpConfigDraft,
-      presets: runtime.mcpConfigPresets,
-      commandsAvailable: runtime.mcpConfigWorkspaceAvailable,
-      loading: runtime.mcpConfigLoading,
-      saving: runtime.mcpConfigSaving,
-      discoveryServerId: runtime.mcpDiscoveryServerId,
-      discoveryBusy: runtime.mcpDiscoveryBusy,
-      discoveryOutput: runtime.mcpDiscoveryOutput,
-      oauthServerId: runtime.mcpOAuthServerId,
-      oauthCallback: runtime.mcpOAuthCallback,
-      oauthBusy: runtime.mcpOAuthBusy,
-      message: runtime.mcpConfigMessage,
-      onDraftChange: runtime.handleMcpConfigDraftChange,
-      onSave: runtime.handleMcpConfigSave,
-      onPresetInsert: runtime.handleMcpPresetInsert,
-      onDiscoveryServerIdChange: runtime.handleMcpDiscoveryServerIdChange,
-      onDiscoverServer: runtime.handleMcpDiscoverServer,
-      onRefreshDiscoveryCache: runtime.handleMcpRefreshDiscoveryCache,
-      onListDiscoveryCache: runtime.handleMcpListDiscoveryCache,
-      onOAuthServerIdChange: runtime.handleMcpOAuthServerIdChange,
-      onOAuthCallbackChange: runtime.handleMcpOAuthCallbackChange,
-      onStartOAuth: runtime.handleMcpOAuthStart,
-      onFinishOAuth: runtime.handleMcpOAuthFinish,
     },
     memorySetup: {
       settings: runtime.userMemorySettings,

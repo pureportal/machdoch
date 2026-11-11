@@ -18,6 +18,7 @@ export const MAIN_APP_LABELS: Readonly<Record<MainAppId, string>> = {
   media: "Media Studio",
   tts: "Text to Speech",
   instructions: "Instructions",
+  mcp: "MCP servers",
   workspaces: "Workspace Management",
 };
 
@@ -47,7 +48,7 @@ export function useAppShellControl({
     {
       id: "app.open_view",
       description:
-        "Open a Machdoch view and wait until it is ready: chat, ralph (flows), media (Media Studio), tts (Text to Speech), instructions, workspaces (Workspace Management).",
+        "Open a Machdoch view and wait until it is ready: chat, ralph (flows), media (Media Studio), tts (Text to Speech), instructions, mcp (MCP servers), workspaces (Workspace Management).",
       effect: "write",
       input: {
         type: "object",

@@ -20,21 +20,23 @@ export const AppearanceSettingsPanel = ({
   });
   return (
     <SettingsCard title="Interface">
-      <AppearanceOptions
-        settings={setup.settings}
-        disabled={setup.saving}
-        onChange={(settings) => {
-          setSaveError(null);
-          void Promise.resolve(setup.onSave(settings)).catch(
-            (cause: unknown) => {
-              console.error("Failed to save appearance settings", cause);
-              setSaveError(
-                "Appearance settings could not be saved. Try again.",
-              );
-            },
-          );
-        }}
-      />
+      <div className="py-4">
+        <AppearanceOptions
+          settings={setup.settings}
+          disabled={setup.saving}
+          onChange={(settings) => {
+            setSaveError(null);
+            void Promise.resolve(setup.onSave(settings)).catch(
+              (cause: unknown) => {
+                console.error("Failed to save appearance settings", cause);
+                setSaveError(
+                  "Appearance settings could not be saved. Try again.",
+                );
+              },
+            );
+          }}
+        />
+      </div>
       {setup.saving ? <p role="status">Saving…</p> : null}
       <SettingsStatus
         message={saveError ? { tone: "error", text: saveError } : null}

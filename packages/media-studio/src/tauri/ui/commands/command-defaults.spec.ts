@@ -16,6 +16,7 @@ const INTENTIONAL_SHARED_BINDINGS = [
   ],
   [
     "instructions.file.save",
+    "mcp.config.save",
     "media.flow.save",
     "ralph.flow.save",
     "workspaces.settings.save",

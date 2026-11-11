@@ -6,6 +6,7 @@ import {
   CalendarClock,
   BookOpenText,
   MessageSquareText,
+  Network,
   PanelRight,
   Settings2,
   Workflow,
@@ -21,6 +22,7 @@ export type ProductView =
   | "tts"
   | "scheduler"
   | "instructions"
+  | "mcp"
   | "workspaces"
   | "ralph"
   | "projects";
@@ -34,6 +36,7 @@ export function ProductRail({
   speechAvailable = false,
   schedulerAvailable,
   instructionsAvailable = false,
+  mcpAvailable = false,
   workspaceAvailable = false,
   ralphAvailable,
   projectsAvailable,
@@ -48,6 +51,7 @@ export function ProductRail({
   speechAvailable?: boolean;
   schedulerAvailable: boolean;
   instructionsAvailable?: boolean;
+  mcpAvailable?: boolean;
   workspaceAvailable?: boolean;
   ralphAvailable: boolean;
   projectsAvailable: boolean;
@@ -76,17 +80,18 @@ export function ProductRail({
       available: speechAvailable,
     },
     {
-      id: "scheduler",
-      label: "Smart Scheduler",
-      icon: CalendarClock,
-      available: schedulerAvailable,
-    },
-    {
       id: "instructions",
       label: "Instructions",
       icon: BookOpenText,
       group: "management",
       available: instructionsAvailable,
+    },
+    {
+      id: "mcp",
+      label: "MCP servers",
+      icon: Network,
+      group: "management",
+      available: mcpAvailable,
     },
     {
       id: "workspaces",
@@ -103,15 +108,22 @@ export function ProductRail({
       active: view.id === activeView,
       onSelect: () => onSelectView(view.id),
     }));
-  const actions: ApplicationNavigationItem[] = [
-    {
-      id: "activity",
-      label: "Activity",
-      icon: PanelRight,
-      pressed: inspectorOpen,
-      onSelect: onToggleInspector,
-    },
-  ];
+  const actions: ApplicationNavigationItem[] = [];
+  if (schedulerAvailable)
+    actions.push({
+      id: "scheduler",
+      label: "Smart Scheduler",
+      icon: CalendarClock,
+      active: activeView === "scheduler",
+      onSelect: () => onSelectView("scheduler"),
+    });
+  actions.push({
+    id: "activity",
+    label: "Activity",
+    icon: PanelRight,
+    pressed: inspectorOpen,
+    onSelect: onToggleInspector,
+  });
   if (settingsAvailable)
     actions.push({
       id: "settings",

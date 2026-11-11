@@ -173,6 +173,7 @@ export function RemoteProductApp({
       ralphHref={runtime.ralphHref}
       schedulerHref={runtime.schedulerHref}
       instructionsHref={runtime.instructionsHref}
+      mcpHref={runtime.mcpHref}
       servicesHref={runtime.servicesHref}
       settingsHref={runtime.settingsHref}
       instanceName={instanceName}

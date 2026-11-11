@@ -45,6 +45,7 @@ export function ProductShell({
   ralphHref,
   schedulerHref,
   instructionsHref,
+  mcpHref,
   workspaceHref,
   servicesHref,
   settingsHref,
@@ -71,6 +72,7 @@ export function ProductShell({
   ralphHref?: string | undefined;
   schedulerHref?: string | undefined;
   instructionsHref?: string | undefined;
+  mcpHref?: string | undefined;
   workspaceHref?: string | undefined;
   servicesHref?: string | undefined;
   settingsHref?: string | undefined;
@@ -97,6 +99,7 @@ export function ProductShell({
   const [instructionsOpened, setInstructionsOpened] = useState(
     initialView === "instructions",
   );
+  const [mcpOpened, setMcpOpened] = useState(initialView === "mcp");
   const [requestedView, setRequestedView] = useState<ProductView>(initialView);
   const [workspaceOpened, setWorkspaceOpened] = useState(
     initialView === "workspaces",
@@ -140,6 +143,7 @@ export function ProductShell({
     return () => window.removeEventListener("message", receiveMedia);
   }, [mediaRequest]);
   const instructionsFrameRef = useRef<HTMLIFrameElement>(null);
+  const mcpFrameRef = useRef<HTMLIFrameElement>(null);
   const workspaceFrameRef = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
     const receiveSettings = (event: MessageEvent): void => {
@@ -174,6 +178,7 @@ export function ProductShell({
     if (view === "ralph") setRalphOpened(true);
     if (view === "scheduler") setSchedulerOpened(true);
     if (view === "instructions") setInstructionsOpened(true);
+    if (view === "mcp") setMcpOpened(true);
     if (view === "workspaces") setWorkspaceOpened(true);
     setSessionsOpen(false);
     setInspectorOpen(false);
@@ -192,6 +197,12 @@ export function ProductShell({
   useEffect(() => {
     instructionsFrameRef.current?.contentWindow?.postMessage(
       { type: "machdoch:instruction-workspace", workspace: workspace ?? null },
+      window.location.origin,
+    );
+  }, [workspace]);
+  useEffect(() => {
+    mcpFrameRef.current?.contentWindow?.postMessage(
+      { type: "machdoch:mcp-workspace", workspace: workspace ?? null },
       window.location.origin,
     );
   }, [workspace]);
@@ -217,9 +228,11 @@ export function ProductShell({
             ? "chat"
             : requestedView === "instructions" && !instructionsHref
               ? "chat"
-              : requestedView === "ralph" && !shell?.ralph
+              : requestedView === "mcp" && !mcpHref
                 ? "chat"
-                : requestedView;
+                : requestedView === "ralph" && !shell?.ralph
+                  ? "chat"
+                  : requestedView;
 
   useEffect(() => {
     const receivePoseChat = (event: MessageEvent): void => {
@@ -290,6 +303,7 @@ export function ProductShell({
       speechAvailable={Boolean(speechHref)}
       schedulerAvailable={Boolean(schedulerHref)}
       instructionsAvailable={Boolean(instructionsHref)}
+      mcpAvailable={Boolean(mcpHref)}
       workspaceAvailable={Boolean(workspaceHref)}
       ralphAvailable={shell.ralph !== undefined}
       projectsAvailable={shell.projectLibrary !== undefined}
@@ -673,6 +687,30 @@ export function ProductShell({
                   )
                 }
                 title="Instructions"
+                className="m-product-media-frame"
+                allow="clipboard-read; clipboard-write"
+              />
+            </main>
+          ) : null}
+          {mcpHref && mcpOpened ? (
+            <main
+              className="m-product-feature-main"
+              hidden={activeView !== "mcp"}
+              style={activeView !== "mcp" ? { display: "none" } : undefined}
+            >
+              <iframe
+                ref={mcpFrameRef}
+                src={mcpHref}
+                onLoad={(event) =>
+                  event.currentTarget.contentWindow?.postMessage(
+                    {
+                      type: "machdoch:mcp-workspace",
+                      workspace: workspace ?? null,
+                    },
+                    window.location.origin,
+                  )
+                }
+                title="MCP servers"
                 className="m-product-media-frame"
                 allow="clipboard-read; clipboard-write"
               />

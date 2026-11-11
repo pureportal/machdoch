@@ -7,7 +7,6 @@ import {
   Monitor,
   Languages,
   MessageSquare,
-  Network,
   Palette,
   Search,
   Shield,
@@ -49,7 +48,6 @@ const SECTION_ICONS: Record<SettingsSection, LucideIcon> = {
   civitai: KeyRound,
   "asset-storage": HardDrive,
   "web-search": Search,
-  mcp: Network,
   agent: Gauge,
   appearance: Palette,
   voice: Volume2,
@@ -105,9 +103,9 @@ export const SettingsNavigation = ({
     <SubmitShortcut asChild>
       <nav
         aria-label="Settings sections"
-        className="flex min-h-0 flex-col border-b border-slate-800/80 bg-slate-950/70 md:border-r md:border-b-0"
+        className="flex min-h-0 flex-1 flex-col"
       >
-        <div className="shrink-0 p-3">
+        <div className="shrink-0 px-3 pb-3">
           <SearchField
             ref={searchRef}
             value={query}
@@ -135,7 +133,7 @@ export const SettingsNavigation = ({
                 </button>
               ) : undefined
             }
-            className="h-10 rounded-lg border-slate-800 bg-slate-950 text-sm text-slate-100 placeholder:text-[var(--app-muted)] [&::-webkit-search-cancel-button]:hidden"
+            className="h-9 rounded-lg border-slate-800 bg-slate-950/80 text-sm text-slate-100 placeholder:text-[var(--app-muted)] [&::-webkit-search-cancel-button]:hidden"
           />
           {!searching ? (
             <div className="mt-2 md:hidden">
@@ -168,7 +166,7 @@ export const SettingsNavigation = ({
         </div>
         <div
           className={cn(
-            "min-h-0 overflow-y-auto px-3 pb-3",
+            "min-h-0 overflow-y-auto px-3 pb-4 [scrollbar-width:thin]",
             searching ? "max-h-[30dvh] md:max-h-none" : "hidden md:block",
           )}
         >
@@ -184,8 +182,8 @@ export const SettingsNavigation = ({
                 );
                 if (groupSections.length === 0) return null;
                 return (
-                  <div key={group} className="grid gap-1">
-                    <p className="px-3 pb-1 text-xs font-medium text-slate-400">
+                  <div key={group} className="grid gap-0.5">
+                    <p className="px-3 pb-1.5 text-[11px] font-semibold tracking-[0.08em] text-slate-500 uppercase">
                       {group}
                     </p>
                     {groupSections.map((section) => {
@@ -209,14 +207,17 @@ export const SettingsNavigation = ({
                             onNavigationKeyDown(event, section.id)
                           }
                           className={cn(
-                            "h-9 w-full justify-start rounded-lg border border-transparent px-3 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-100",
+                            "h-8 w-full justify-start gap-2.5 rounded-lg px-3 text-[13px] font-medium text-slate-400 hover:bg-slate-900 hover:text-slate-100",
                             selected &&
-                              "border-sky-500/25 bg-sky-500/10 font-semibold text-sky-100",
+                              "bg-sky-500/10 text-sky-100 hover:bg-sky-500/15 hover:text-sky-100",
                           )}
                         >
                           <Icon
                             aria-hidden="true"
-                            className="size-4 shrink-0"
+                            className={cn(
+                              "size-4 shrink-0 text-slate-500",
+                              selected && "text-sky-300",
+                            )}
                           />
                           <span className="truncate">{section.label}</span>
                         </Button>

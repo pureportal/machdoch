@@ -5,6 +5,7 @@ import {
   FileSliders,
   FolderGit2,
   MessageSquareText,
+  Network,
   Server,
   Workflow,
   AudioLines,
@@ -49,6 +50,7 @@ export function AppRail({
   const mediaShortcut = useCommandShortcut("app.view.media");
   const speechShortcut = useCommandShortcut("app.view.tts");
   const instructionsShortcut = useCommandShortcut("app.view.instructions");
+  const mcpShortcut = useCommandShortcut("app.view.mcp");
   const workspacesShortcut = useCommandShortcut("app.view.workspaces");
   const settingsShortcut = useCommandShortcut("app.settings.open");
   const items: ApplicationNavigationItem[] = [
@@ -95,6 +97,15 @@ export function AppRail({
       shortcut: instructionsShortcut,
       active: activeApp === "instructions",
       onSelect: () => onSelectApp("instructions"),
+    },
+    {
+      id: "mcp",
+      label: "MCP servers",
+      icon: Network,
+      group: "management",
+      shortcut: mcpShortcut,
+      active: activeApp === "mcp",
+      onSelect: () => onSelectApp("mcp"),
     },
     {
       id: "workspaces",

@@ -9201,11 +9201,7 @@ export const useChatSessionController = (
       settingsSection: state.settingsSection,
       onSettingsSectionChange: state.setSettingsSection,
       effectiveWorkspaceMode: defaultRunMode,
-      ...createRuntimeSettingsControls(
-        runtime,
-        state.activeSession.workspace,
-        memorySourceSessions,
-      ),
+      ...createRuntimeSettingsControls(runtime, memorySourceSessions),
       voiceSetup: createRuntimeVoiceSettingsControls(
         runtime,
         createDeviceVoicePreferences(voice, speechInput, speechInputDevices),

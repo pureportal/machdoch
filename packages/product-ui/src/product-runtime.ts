@@ -10,6 +10,7 @@ export interface ProductRuntime {
   ralphHref?: string;
   schedulerHref?: string;
   instructionsHref?: string;
+  mcpHref?: string;
   workspaceHref?: string;
   servicesHref?: string;
   settingsHref?: string;
