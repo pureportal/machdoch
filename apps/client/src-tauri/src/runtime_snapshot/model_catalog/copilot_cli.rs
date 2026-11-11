@@ -1,12 +1,18 @@
-use std::{collections::HashMap, path::Path, time::Duration};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+    time::Duration,
+};
 
-use github_copilot_sdk::{CliProgram, Client, ClientOptions, Model};
+use github_copilot_sdk::{Client, Model};
+use machdoch_process::SupervisedChild;
+use tokio::process::{ChildStdin, ChildStdout};
 
 use super::super::normalize_optional_string;
 use super::{resolve_agent_cli_binary, ProviderRuntimeModel, ProviderRuntimeModelCapabilities};
 
 const COPILOT_SDK_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
-const COPILOT_SDK_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const CANONICAL_REASONING_MODES: [&str; 7] =
     ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
@@ -157,44 +163,61 @@ pub(super) fn create_copilot_cli_runtime_model(model: &Model) -> Option<Provider
     Some(runtime_model)
 }
 
-async fn stop_copilot_sdk_client(client: &Client) {
-    if !matches!(
-        tokio::time::timeout(COPILOT_SDK_SHUTDOWN_TIMEOUT, client.stop()).await,
-        Ok(Ok(()))
-    ) {
-        client.force_stop();
-    }
+async fn list_copilot_cli_models(
+    child: &mut SupervisedChild,
+    working_directory: PathBuf,
+) -> Result<Vec<Model>, String> {
+    let stdin = child
+        .stdin
+        .take()
+        .ok_or("The Copilot CLI did not expose a stdin stream.")?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("The Copilot CLI did not expose a stdout stream.")?;
+    let writer = ChildStdin::from_std(stdin)
+        .map_err(|error| format!("failed to connect to the Copilot CLI stdin: {error}"))?;
+    let reader = ChildStdout::from_std(stdout)
+        .map_err(|error| format!("failed to connect to the Copilot CLI stdout: {error}"))?;
+    let client = Client::from_streams(reader, writer, working_directory)
+        .map_err(|error| format!("failed to start the Copilot SDK runtime: {error}"))?;
+    let discovery = async {
+        client
+            .verify_protocol_version()
+            .await
+            .map_err(|error| format!("Copilot SDK handshake failed: {error}"))?;
+        client
+            .list_models()
+            .await
+            .map_err(|error| format!("Copilot SDK models.list failed: {error}"))
+    };
+    let models = tokio::time::timeout(COPILOT_SDK_DISCOVERY_TIMEOUT, discovery).await;
+    client.force_stop();
+    models.map_err(|_| "Copilot SDK models.list timed out.".to_string())?
 }
 
 async fn fetch_copilot_cli_sdk_model_catalog(
     binary: &Path,
     env: &HashMap<String, String>,
 ) -> Result<Vec<ProviderRuntimeModel>, String> {
-    let mut child_env = env
-        .iter()
-        .map(|(key, value)| (key.clone(), value.clone()))
-        .collect::<Vec<_>>();
-    child_env.push(("NO_COLOR".to_string(), "1".to_string()));
-
-    let options = ClientOptions::new()
-        .with_program(CliProgram::Path(binary.to_path_buf()))
-        .with_env(child_env);
-    let discovery = async {
-        let client = Client::start(options)
-            .await
-            .map_err(|error| format!("failed to start the Copilot SDK runtime: {error}"))?;
-        let models = client
-            .list_models()
-            .await
-            .map_err(|error| format!("Copilot SDK models.list failed: {error}"));
-
-        stop_copilot_sdk_client(&client).await;
-        models
-    };
-    let models = tokio::time::timeout(COPILOT_SDK_DISCOVERY_TIMEOUT, discovery)
+    let working_directory = std::env::temp_dir();
+    let mut command = Command::new(binary);
+    command
+        .args(["--server", "--stdio", "--no-auto-update"])
+        .envs(env)
+        .env("NO_COLOR", "1")
+        .current_dir(&working_directory)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    let mut child = SupervisedChild::spawn_with_required_isolation(&mut command)
+        .map_err(|error| format!("failed to start the Copilot CLI: {error}"))?;
+    let models = list_copilot_cli_models(&mut child, working_directory).await;
+    tokio::task::spawn_blocking(move || child.terminate_and_reap())
         .await
-        .map_err(|_| "Copilot SDK models.list timed out.".to_string())??;
-    let runtime_models = models
+        .map_err(|error| format!("Copilot CLI cleanup worker failed: {error}"))?
+        .map_err(|error| format!("failed to stop the Copilot CLI: {error}"))?;
+    let runtime_models = models?
         .iter()
         .filter_map(create_copilot_cli_runtime_model)
         .collect::<Vec<_>>();
