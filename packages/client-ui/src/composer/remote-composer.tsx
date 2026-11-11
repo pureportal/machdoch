@@ -42,7 +42,11 @@ import type { RequestIterationMode } from "./model";
 import type { RemoteComposerProps } from "@machdoch/product-ui";
 import { toContextAttachment } from "./remote-attachments";
 import type { RemoteAttachmentControls } from "./remote-attachments";
-import { ComposerModelPicker } from "@machdoch/product-ui";
+import {
+  ComposerModelPicker,
+  rememberRecentComposerModel,
+  useRecentComposerModels,
+} from "@machdoch/product-ui";
 import {
   OptionMenu,
   WorkspaceMenu,
@@ -195,6 +199,7 @@ export function RemoteComposer({
     composer.goalMode ?? "machdoch",
   );
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recentModels = useRecentComposerModels();
   const closeSessionMemory = useCallback(() => setSessionMemoryOpen(false), []);
   useEffect(() => {
     setSessionMemoryOpen(false);
@@ -311,20 +316,22 @@ export function RemoteComposer({
               ...(provider.error ? { error: provider.error } : {}),
               models: provider.models,
             }))}
+            recentModels={recentModels}
             activeProvider={composer.provider}
             activeProviderLabel={composer.providerLabel}
             activeModel={composer.model}
             activeModelLabel={composer.modelLabel}
             loading={composer.modelCatalogLoading}
             onRetry={(provider) => void onCommand({ kind: "refresh-provider-models", provider })}
-            onSelect={(provider, modelId) =>
+            onSelect={(provider, modelId) => {
+              rememberRecentComposerModel({ provider, model: modelId });
               void onCommand({
                 kind: "set-session-model",
                 sessionId: session.id,
                 provider,
                 model: modelId,
-              })
-            }
+              });
+            }}
           />
         }
         workspacePicker={

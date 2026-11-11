@@ -1,8 +1,10 @@
 import {
   ComposerModelPicker,
+  rememberRecentComposerModel,
+  useRecentComposerModels,
   type ComposerModelProvider,
 } from "@machdoch/product-ui";
-import { useMemo, type JSX } from "react";
+import { useCallback, useMemo, type JSX } from "react";
 import { useOptionalRegisterCommands } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import type {
   CommandDefinition,
@@ -36,6 +38,14 @@ export const SessionModelPicker = ({
   registerCommand = true,
 }: SessionModelPickerProps): JSX.Element => {
   const { catalog, loadingProviders, refresh } = useProviderModelCatalog();
+  const recentModels = useRecentComposerModels();
+  const selectSessionModel = useCallback(
+    (provider: RuntimeProvider, model: string) => {
+      rememberRecentComposerModel({ provider, model });
+      onSessionModelSelection(provider, model);
+    },
+    [onSessionModelSelection],
+  );
 
   const providers = useMemo<ComposerModelProvider[]>(
     () =>
@@ -93,7 +103,7 @@ export const SessionModelPicker = ({
                     keywords: [model.id, getProviderLabel(provider)],
                     current:
                       activeProvider === provider && activeModel === model.id,
-                    execute: () => onSessionModelSelection(provider, model.id),
+                    execute: () => selectSessionModel(provider, model.id),
                   }),
                 ),
               }),
@@ -133,13 +143,14 @@ export const SessionModelPicker = ({
         },
       },
     ],
-    [activeModel, activeProvider, chooserProviders, onSessionModelSelection],
+    [activeModel, activeProvider, chooserProviders, selectSessionModel],
   );
   useOptionalRegisterCommands(registerCommand ? modelCommands : EMPTY_COMMANDS);
 
   return (
     <ComposerModelPicker
       providers={providers}
+      recentModels={recentModels}
       activeProvider={activeProvider}
       activeProviderLabel={getProviderLabel(activeProvider)}
       activeModel={activeModel}
@@ -151,7 +162,7 @@ export const SessionModelPicker = ({
       loading={loadingProviders.size > 0}
       onRetry={(provider) => void refresh(provider as RuntimeProvider, true)}
       onSelect={(provider, model) =>
-        onSessionModelSelection(provider as RuntimeProvider, model)
+        selectSessionModel(provider as RuntimeProvider, model)
       }
     />
   );

@@ -8,6 +8,7 @@ export default defineConfig({
       "src/flow/*.spec.ts",
       "src/snapshot-refresh-coordinator.spec.ts",
       "src/fleet-operation-transport.spec.ts",
+      "src/recent-composer-models.spec.ts",
     ],
   },
 });

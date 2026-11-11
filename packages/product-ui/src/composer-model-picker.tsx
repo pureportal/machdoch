@@ -16,6 +16,10 @@ import {
 } from "react";
 
 import { Popover } from "radix-ui";
+import {
+  resolveRecentComposerModels,
+  type RecentComposerModel,
+} from "./recent-composer-models";
 
 export interface ComposerModelOption {
   id: string;
@@ -35,6 +39,7 @@ export interface ComposerModelPickerProps {
   label?: string;
   placement?: "top" | "bottom";
   providers: readonly ComposerModelProvider[];
+  recentModels?: readonly RecentComposerModel[];
   activeProvider: string;
   activeProviderLabel: string;
   activeModel: string;
@@ -104,10 +109,44 @@ const scoreSearchCandidate = (
     : score + labelBonus;
 };
 
+function ComposerModelOptionButton({
+  providerLabel,
+  modelLabel,
+  selected,
+  showProviderLabel = false,
+  onSelect,
+}: {
+  providerLabel: string;
+  modelLabel: string;
+  selected: boolean;
+  showProviderLabel?: boolean;
+  onSelect: () => void;
+}): React.ReactElement {
+  return (
+    <button
+      type="button"
+      className="m-composer-model-option"
+      data-active={selected}
+      aria-label={`Choose ${providerLabel} ${modelLabel}`}
+      aria-pressed={selected}
+      onClick={onSelect}
+    >
+      <span className="m-composer-model-check">
+        {selected ? <Check aria-hidden="true" /> : null}
+      </span>
+      <strong>{modelLabel}</strong>
+      {showProviderLabel ? (
+        <span className="m-composer-model-provider">{providerLabel}</span>
+      ) : null}
+    </button>
+  );
+}
+
 export function ComposerModelPicker({
   label = "Session model",
   placement = "top",
   providers,
+  recentModels = [],
   activeProvider,
   activeProviderLabel,
   activeModel,
@@ -125,6 +164,8 @@ export function ComposerModelPicker({
   const searchRef = useRef<HTMLInputElement>(null);
   const focusMovedIntoPickerRef = useRef(false);
   const popoverId = useId();
+  const recentHeadingId = useId();
+  const recentOptions = resolveRecentComposerModels(recentModels, providers);
 
   useEffect(() => {
     setVisibleProviderId(activeProvider);
@@ -268,6 +309,28 @@ export function ComposerModelPicker({
               </strong>
             </div>
             <div className="m-composer-model-content">
+              {recentOptions.length > 0 ? (
+                <div
+                  className="m-composer-model-recent"
+                  role="group"
+                  aria-labelledby={recentHeadingId}
+                >
+                  <span id={recentHeadingId}>Recent</span>
+                  {recentOptions.map(({ provider, model }) => (
+                    <ComposerModelOptionButton
+                      key={`${provider.id}:${model.id}`}
+                      providerLabel={provider.label}
+                      modelLabel={model.label}
+                      selected={
+                        provider.id === activeProvider &&
+                        model.id === activeModel
+                      }
+                      showProviderLabel
+                      onSelect={() => selectModel(provider.id, model.id)}
+                    />
+                  ))}
+                </div>
+              ) : null}
               <div
                 className="m-composer-provider-tabs"
                 role="tablist"
@@ -351,30 +414,22 @@ export function ComposerModelPicker({
                     {emptyState}
                   </div>
                 ) : null}
-                {visibleModels.map((model) => {
-                  const selected =
-                    selectedProvider?.id === activeProvider &&
-                    model.id === activeModel;
-                  return (
-                    <button
-                      key={`${selectedProvider?.id}:${model.id}`}
-                      type="button"
-                      className="m-composer-model-option"
-                      data-active={selected}
-                      aria-label={`Choose ${selectedProvider?.label} ${model.label}`}
-                      aria-pressed={selected}
-                      onClick={() =>
-                        selectedProvider &&
-                        selectModel(selectedProvider.id, model.id)
-                      }
-                    >
-                      <span className="m-composer-model-check">
-                        {selected ? <Check aria-hidden="true" /> : null}
-                      </span>
-                      <strong>{model.label}</strong>
-                    </button>
-                  );
-                })}
+                {selectedProvider
+                  ? visibleModels.map((model) => (
+                      <ComposerModelOptionButton
+                        key={`${selectedProvider.id}:${model.id}`}
+                        providerLabel={selectedProvider.label}
+                        modelLabel={model.label}
+                        selected={
+                          selectedProvider.id === activeProvider &&
+                          model.id === activeModel
+                        }
+                        onSelect={() =>
+                          selectModel(selectedProvider.id, model.id)
+                        }
+                      />
+                    ))
+                  : null}
               </div>
             </div>
           </Popover.Content>

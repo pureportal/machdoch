@@ -119,6 +119,11 @@ export {
   type ComposerModelPickerProps,
   type ComposerModelProvider,
 } from "./composer-model-picker";
+export {
+  rememberRecentComposerModel,
+  useRecentComposerModels,
+  type RecentComposerModel,
+} from "./recent-composer-models";
 export type { RemoteComposerProps } from "./remote-composer-props";
 export type { ProductCommandHandler } from "./product-runtime";
 export type { ProductRuntime } from "./product-runtime";
