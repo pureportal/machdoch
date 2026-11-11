@@ -25,13 +25,14 @@ import {
 } from "./session-shell";
 import {
   compareSessionsBySidebarGroup,
-  ALL_SESSION_PROJECTS_FILTER,
   calculateSessionSearchScore,
   getSessionProjectId,
   normalizeSessionSearchText,
   tokenizeSessionSearchQuery,
+  type SessionProjectFilter,
 } from "@machdoch/product-ui";
 import { getSessionSidebarGroup } from "./session-sidebar-group";
+import { matchesSessionProjectFilter } from "./session-project-filter";
 
 export { ALL_SESSION_PROJECTS_FILTER } from "@machdoch/product-ui";
 const SESSION_EXPORT_KIND = "machdoch.sessions";
@@ -83,7 +84,7 @@ export interface SessionHistoryFilterOptions {
   status: SessionStatusFilter | SessionStatusFilterSelection;
   queuedSessionMessages?: readonly ChatSessionQueuedMessage[];
   searchQuery?: string;
-  projectFilter?: string;
+  projectFilter?: SessionProjectFilter;
   tagFilters?: string[];
 }
 
@@ -304,11 +305,6 @@ export const filterSessionHistoryIndex = (
     ),
   );
   const hasTagFilters = tagFilters.size > 0;
-  const projectFilter =
-    options.projectFilter &&
-    options.projectFilter !== ALL_SESSION_PROJECTS_FILTER
-      ? options.projectFilter
-      : null;
   const entries: SessionHistoryIndexEntry[] = [];
 
   for (const entry of index.entries) {
@@ -325,8 +321,8 @@ export const filterSessionHistoryIndex = (
       options.status,
       options.queuedSessionMessages ?? [],
     );
-    const matchesProject = projectFilter
-      ? entry.projectId === projectFilter
+    const matchesProject = options.projectFilter
+      ? matchesSessionProjectFilter(options.projectFilter, entry.projectId)
       : true;
 
     if (

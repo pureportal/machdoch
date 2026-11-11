@@ -61,6 +61,8 @@ import { ScrollArea } from "../../components/ui/scroll-area";
 import { SearchField } from "@machdoch/media-studio/tauri/ui/components/ui/search-field.js";
 import { SessionSidebarCommands } from "@machdoch/client-ui/sessions/sidebar-commands";
 import type {
+  SessionProjectFilter,
+  SessionProjectFilterMode,
   SessionSidebarAction,
   SessionSidebarCommandState,
 } from "@machdoch/product-ui";
@@ -71,10 +73,10 @@ import {
 } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import {
-  ALL_SESSION_PROJECTS_FILTER,
   type SessionHistoryProjectFacet,
   type SessionHistoryTagFacet,
 } from "../_helpers/session-history-index";
+import { toggleSessionProjectFilterProject } from "../_helpers/session-project-filter";
 import {
   getUnpinnedSessionDividerIndex,
   isSessionPinnedInSidebar,
@@ -94,10 +96,7 @@ import {
 } from "../_helpers/session-shell.ts";
 import { AgentQuestionIcon } from "@machdoch/client-ui/conversation/agent-live-icons";
 import { sessionNeedsInput } from "../_helpers/session-needs-input";
-import {
-  WorkspaceSelect,
-  type WorkspaceSelectOption,
-} from "./workspace-select";
+import { SessionProjectFilterSelect } from "./session-project-filter-select";
 
 interface SessionActionItem {
   id: "reset-time" | "move-to-top" | "pin" | "duplicate" | "archive" | "delete";
@@ -105,12 +104,6 @@ interface SessionActionItem {
   icon: LucideIcon;
   onSelect: () => void;
 }
-
-const createSessionProjectOptionLabel = (
-  project: SessionHistoryProjectFacet,
-): string => {
-  return `${project.label} (${project.count})`;
-};
 
 export const createSessionActionItems = ({
   sessionId,
@@ -213,7 +206,7 @@ export interface SessionsSidebarProps {
   sessionScopeFilter: SessionScopeFilter;
   sessionStatusFilters: SessionStatusFilterSelection;
   sessionSearchQuery: string;
-  sessionProjectFilter: string;
+  sessionProjectFilter: SessionProjectFilter;
   inactiveSessionArchiveDays: number;
   archivedSessionRetentionDays: number;
   sessionProjectFacets: SessionHistoryProjectFacet[];
@@ -222,7 +215,7 @@ export interface SessionsSidebarProps {
   onSessionScopeFilterChange: (filter: SessionScopeFilter) => void;
   onSessionStatusFiltersChange: (filters: SessionStatusFilterSelection) => void;
   onSessionSearchQueryChange: (query: string) => void;
-  onSessionProjectFilterChange: (filter: string) => void;
+  onSessionProjectFilterChange: (filter: SessionProjectFilter) => void;
   onSessionTagFilterToggle: (tag: string) => void;
   onCreateSession: () => void;
   onActivateSession: (sessionId: string) => void;
@@ -294,28 +287,6 @@ export const SessionsSidebar = ({
     sessionStatusFilters,
     sessionTagFilters,
   ]);
-  const sessionProjectCount = sessionProjectFacets.filter(
-    (project) => project.path !== null,
-  ).length;
-  const workspaceFilterOptions = useMemo<WorkspaceSelectOption[]>(
-    () => [
-      {
-        id: ALL_SESSION_PROJECTS_FILTER,
-        label: `All workspaces (${sessionProjectCount})`,
-        path: null,
-      },
-      ...sessionProjectFacets.map((project) => ({
-        id: project.id,
-        label: createSessionProjectOptionLabel(project),
-        path: project.path,
-        icon: project.path === null ? ("not-set" as const) : undefined,
-      })),
-    ],
-    [sessionProjectCount, sessionProjectFacets],
-  );
-  const selectedWorkspaceFilterLabel =
-    workspaceFilterOptions.find((option) => option.id === sessionProjectFilter)
-      ?.label ?? `All workspaces (${sessionProjectCount})`;
   const selectedStatusFilters = useMemo(
     () => normalizeSessionStatusFilterSelection(sessionStatusFilters),
     [sessionStatusFilters],
@@ -388,7 +359,7 @@ export const SessionsSidebar = ({
     scopeOptions: SESSION_SCOPE_FILTERS,
     statuses: selectedStatusFilters,
     statusOptions: SESSION_STATUS_FILTERS,
-    project: sessionProjectFilter,
+    projectFilter: sessionProjectFilter,
     projects: sessionProjectFacets,
     tags: sessionTagFilters,
     availableTags: sessionTagFacets.map((tag) => tag.label),
@@ -396,7 +367,12 @@ export const SessionsSidebar = ({
     exportSessions: onExportSessions,
     onScopeChange: onSessionScopeFilterChange,
     onStatusToggle: toggleSessionStatusFilter,
-    onProjectChange: onSessionProjectFilterChange,
+    onProjectToggle: (projectId: string) =>
+      onSessionProjectFilterChange(
+        toggleSessionProjectFilterProject(sessionProjectFilter, projectId),
+      ),
+    onProjectFilterModeChange: (mode: SessionProjectFilterMode) =>
+      onSessionProjectFilterChange({ ...sessionProjectFilter, mode }),
     onTagToggle: onSessionTagFilterToggle,
     onSessionAction: (action: SessionSidebarAction, sessionId: string) => {
       const actions = {
@@ -501,17 +477,10 @@ export const SessionsSidebar = ({
             />
 
             {showSessionProjectFilter ? (
-              <WorkspaceSelect
-                selectedOptionId={sessionProjectFilter}
-                options={workspaceFilterOptions}
-                buttonLabel={selectedWorkspaceFilterLabel}
-                active={sessionProjectFilter !== ALL_SESSION_PROJECTS_FILTER}
-                buttonAriaLabel="Workspace filter"
-                buttonClassName="app-sessions-workspace-filter h-9 w-full min-w-0 justify-start rounded-xl border-slate-800 bg-slate-950/80 px-3 text-sm font-medium text-slate-200 shadow-none hover:border-slate-700 hover:bg-slate-900 hover:text-slate-100"
-                contentClassName="w-[var(--radix-popover-trigger-width)]"
-                onSelectOption={(option) =>
-                  onSessionProjectFilterChange(option.id)
-                }
+              <SessionProjectFilterSelect
+                filter={sessionProjectFilter}
+                projects={sessionProjectFacets}
+                onFilterChange={onSessionProjectFilterChange}
               />
             ) : null}
 

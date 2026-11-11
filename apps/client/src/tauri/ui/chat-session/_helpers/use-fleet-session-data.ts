@@ -17,6 +17,7 @@ import {
   type ShellPersistedState,
 } from "../../chat-session.model";
 import {
+  ALL_SESSION_PROJECTS_FILTER,
   createSessionExportPayload,
   createSessionHistoryIndex,
   filterSessionHistoryIndex,
@@ -152,7 +153,13 @@ export function useFleetSessionData(options: Options): void {
             status: args.statuses,
             queuedSessionMessages: current.state.queuedSessionMessages,
             searchQuery: args.query,
-            projectFilter: args.project,
+            projectFilter: {
+              mode: "include",
+              projectIds:
+                args.project === ALL_SESSION_PROJECTS_FILTER
+                  ? []
+                  : [args.project],
+            },
             tagFilters: args.tags,
           }).sessions;
           const end = Math.min(filtered.length, args.offset + args.limit);

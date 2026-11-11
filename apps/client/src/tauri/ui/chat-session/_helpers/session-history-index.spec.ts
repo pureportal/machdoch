@@ -10,6 +10,7 @@ import {
   importSessionsIntoShellState,
   type SessionHistoryIndexEntryCache,
 } from "./session-history-index";
+import { getSessionProjectId } from "@machdoch/product-ui";
 
 import { describe, expect, it } from "vitest";
 
@@ -376,7 +377,10 @@ describe("sidebar filtering and ordering", () => {
       scope: "open",
       status: "running",
       searchQuery: "needle",
-      projectFilter: machdochProject?.id,
+      projectFilter: {
+        mode: "include",
+        projectIds: machdochProject ? [machdochProject.id] : [],
+      },
       tagFilters: ["sidebar"],
     }).sessions;
 
@@ -452,7 +456,13 @@ describe("workspace facets", () => {
       expect(projects).toHaveLength(1);
       expect(projects[0]).toMatchObject({ label: "machdoch", count: 3 });
 
-      const filter = { projectFilter: projects[0].id, status: "any" as const };
+      const filter = {
+        projectFilter: {
+          mode: "include" as const,
+          projectIds: [projects[0].id],
+        },
+        status: "any" as const,
+      };
       expectUniqueSessionOrder(
         filterSessionHistoryIndex(index, { ...filter, scope: "open" }).sessions,
         ["quick", "pinned", "plain"],
@@ -518,6 +528,46 @@ describe("workspace facets", () => {
 
     expect(index.projects).toMatchObject([
       { label: "legacy", path: "C:\\Projects\\legacy", count: 1 },
+    ]);
+  });
+
+  it("includes or excludes every selected workspace while keeping Quick Chat visible", () => {
+    const index = createSessionHistoryIndex([
+      createSession({ id: "quick", specialSession: QUICK_VOICE_SESSION_KIND }),
+      createSession({ id: "alpha", workspace: "C:\\Projects\\alpha" }),
+      createSession({ id: "beta", workspace: "C:\\Projects\\beta" }),
+      createSession({ id: "gamma", workspace: "C:\\Projects\\gamma" }),
+      createSession({ id: "not-set", workspace: null }),
+    ]);
+    const projectIds = [
+      getSessionProjectId("C:\\Projects\\alpha"),
+      getSessionProjectId(null),
+    ];
+    const filterIds = (mode: "include" | "exclude", ids: string[]) =>
+      filterSessionHistoryIndex(index, {
+        scope: "all",
+        status: "any",
+        projectFilter: { mode, projectIds: ids },
+      })
+        .sessions.map((session) => session.id)
+        .sort();
+
+    expect(filterIds("include", projectIds)).toEqual([
+      "alpha",
+      "not-set",
+      "quick",
+    ]);
+    expect(filterIds("exclude", projectIds)).toEqual([
+      "beta",
+      "gamma",
+      "quick",
+    ]);
+    expect(filterIds("exclude", [])).toEqual([
+      "alpha",
+      "beta",
+      "gamma",
+      "not-set",
+      "quick",
     ]);
   });
 });

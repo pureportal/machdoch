@@ -1,4 +1,8 @@
 import type { SessionIndexQuery } from "@machdoch/fleet-protocol/session-data";
+import type {
+  SessionProjectFilter,
+  SessionProjectFilterMode,
+} from "./session-sidebar-model";
 
 export type SessionSidebarAction = "pin" | "duplicate" | "archive" | "delete";
 export type SessionSidebarStatus =
@@ -19,7 +23,7 @@ export interface SessionSidebarCommandState {
   scopeOptions: readonly { id: SessionIndexQuery["scope"]; label: string }[];
   statuses: readonly SessionSidebarStatus[];
   statusOptions: readonly { id: SessionSidebarStatus; label: string }[];
-  project: string;
+  projectFilter: SessionProjectFilter;
   projects: readonly {
     id: string;
     label: string;
@@ -31,7 +35,10 @@ export interface SessionSidebarCommandState {
   exportSessions?: (() => void | Promise<void>) | undefined;
   onScopeChange: (scope: SessionIndexQuery["scope"]) => void;
   onStatusToggle: (status: SessionSidebarStatus) => void;
-  onProjectChange: (project: string) => void;
+  onProjectToggle: (project: string) => void;
+  onProjectFilterModeChange?:
+    | ((mode: SessionProjectFilterMode) => void)
+    | undefined;
   onTagToggle: (tag: string) => void;
   onSessionAction: (
     action: SessionSidebarAction,

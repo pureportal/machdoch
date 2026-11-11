@@ -1,6 +1,7 @@
 import { useMemo, useRef } from "react";
 import {
   ALL_SESSION_PROJECTS_FILTER,
+  SESSION_PROJECT_FILTER_MODES,
   type SessionSidebarCommandState,
   type SessionSidebarAction,
 } from "@machdoch/product-ui";
@@ -103,32 +104,51 @@ export function createSessionSidebarCommands(
           state().projects.length > 1,
           "Only one workspace is present",
         ),
-      children: () => ({
-        id: "chat-sessions-workspace-filter",
-        title: "Session workspace",
-        searchPlaceholder: "Choose workspace",
-        groups: [
-          {
-            id: "workspaces",
-            items: [
-              {
-                id: ALL_SESSION_PROJECTS_FILTER,
-                title: "All workspaces",
-                current: state().project === ALL_SESSION_PROJECTS_FILTER,
-                execute: () =>
-                  state().onProjectChange(ALL_SESSION_PROJECTS_FILTER),
-              },
-              ...state().projects.map((project) => ({
-                id: project.id,
-                title: project.label,
-                ...(project.path ? { keywords: [project.path] } : {}),
-                current: state().project === project.id,
-                execute: () => state().onProjectChange(project.id),
-              })),
-            ],
-          },
-        ],
-      }),
+      children: () => {
+        const { projectFilter, projects, onProjectFilterModeChange } = state();
+        return {
+          id: "chat-sessions-workspace-filter",
+          title: "Session workspace",
+          searchPlaceholder: "Choose workspace",
+          groups: [
+            ...(onProjectFilterModeChange
+              ? [
+                  {
+                    id: "modes",
+                    label: "Mode",
+                    items: SESSION_PROJECT_FILTER_MODES.map((mode) => ({
+                      id: mode.id,
+                      title: mode.label,
+                      current: projectFilter.mode === mode.id,
+                      execute: () =>
+                        state().onProjectFilterModeChange?.(mode.id),
+                    })),
+                  },
+                ]
+              : []),
+            {
+              id: "workspaces",
+              label: "Workspaces",
+              items: [
+                {
+                  id: ALL_SESSION_PROJECTS_FILTER,
+                  title: "All workspaces",
+                  current: projectFilter.projectIds.length === 0,
+                  execute: () =>
+                    state().onProjectToggle(ALL_SESSION_PROJECTS_FILTER),
+                },
+                ...projects.map((project) => ({
+                  id: project.id,
+                  title: project.label,
+                  ...(project.path ? { keywords: [project.path] } : {}),
+                  current: projectFilter.projectIds.includes(project.id),
+                  execute: () => state().onProjectToggle(project.id),
+                })),
+              ],
+            },
+          ],
+        };
+      },
     },
     {
       id: "chat.sessions.tag-filter.toggle",

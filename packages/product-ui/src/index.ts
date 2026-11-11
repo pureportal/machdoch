@@ -89,7 +89,10 @@ export {
   getUnpinnedSessionDividerIndex,
   isSessionPinnedInSidebar,
   normalizeSessionSearchText,
+  SESSION_PROJECT_FILTER_MODES,
   tokenizeSessionSearchQuery,
+  type SessionProjectFilter,
+  type SessionProjectFilterMode,
   type SessionSidebarGroup,
   type SessionSearchEntry,
 } from "./session-sidebar-model";

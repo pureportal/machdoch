@@ -56,7 +56,7 @@ function fixture(): SessionSidebarCommandState {
       { id: "any", label: "Any status" },
       { id: "failed", label: "Failed" },
     ],
-    project: "all",
+    projectFilter: { mode: "include", projectIds: [] },
     projects: [{ id: "work", label: "Work", path: "C:\\work" }],
     tags: ["review"],
     availableTags: ["Review"],
@@ -64,7 +64,8 @@ function fixture(): SessionSidebarCommandState {
     exportSessions: vi.fn(),
     onScopeChange: vi.fn(),
     onStatusToggle: vi.fn(),
-    onProjectChange: vi.fn(),
+    onProjectToggle: vi.fn(),
+    onProjectFilterModeChange: vi.fn(),
     onTagToggle: vi.fn(),
     onSessionAction: vi.fn(),
   };
@@ -111,6 +112,47 @@ describe("shared session commands", () => {
     expect(statuses.groups[0]!.items[0]!.current).toBe(true);
     await statuses.groups[0]!.items[1]!.execute(context, signal);
     expect(state.onStatusToggle).toHaveBeenCalledWith("failed");
+  });
+
+  it("toggles selected workspaces and switches the workspace match mode", async () => {
+    let state: SessionSidebarCommandState = {
+      ...fixture(),
+      projectFilter: { mode: "exclude", projectIds: ["work"] },
+      projects: [
+        { id: "work", label: "Work", path: "C:\\work" },
+        { id: "home", label: "Home", path: "C:\\home" },
+      ],
+    };
+    const command = createSessionSidebarCommands(() => state).find(
+      ({ id }) => id === "chat.sessions.workspace-filter.select",
+    )!;
+    const page = await command.children!(context, signal);
+    const [modes, workspaces] = page.groups;
+
+    expect(
+      modes!.items.map(({ id, title, current }) => ({ id, title, current })),
+    ).toEqual([
+      { id: "include", title: "Includes", current: false },
+      { id: "exclude", title: "Not includes", current: true },
+    ]);
+    expect(
+      workspaces!.items.map(({ id, current }) => ({ id, current })),
+    ).toEqual([
+      { id: "__all_projects__", current: false },
+      { id: "work", current: true },
+      { id: "home", current: false },
+    ]);
+
+    await modes!.items[0]!.execute(context, signal);
+    expect(state.onProjectFilterModeChange).toHaveBeenCalledWith("include");
+    await workspaces!.items[2]!.execute(context, signal);
+    expect(state.onProjectToggle).toHaveBeenCalledWith("home");
+    await workspaces!.items[0]!.execute(context, signal);
+    expect(state.onProjectToggle).toHaveBeenLastCalledWith("__all_projects__");
+
+    state = { ...state, onProjectFilterModeChange: undefined };
+    const singleSelectPage = await command.children!(context, signal);
+    expect(singleSelectPage.groups.map(({ id }) => id)).toEqual(["workspaces"]);
   });
 
   it("shares archive actions and prevents unavailable or busy actions", async () => {

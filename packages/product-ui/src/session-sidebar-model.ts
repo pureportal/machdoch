@@ -13,6 +13,21 @@ export interface SessionSearchEntry {
 export const ALL_SESSION_PROJECTS_FILTER = "__all_projects__";
 const NO_WORKSPACE_PROJECT_KEY = "__no_workspace__";
 
+export type SessionProjectFilterMode = "include" | "exclude";
+
+export interface SessionProjectFilter {
+  mode: SessionProjectFilterMode;
+  projectIds: readonly string[];
+}
+
+export const SESSION_PROJECT_FILTER_MODES: readonly {
+  id: SessionProjectFilterMode;
+  label: string;
+}[] = [
+  { id: "include", label: "Includes" },
+  { id: "exclude", label: "Not includes" },
+];
+
 export const isSessionPinnedInSidebar = (group: SessionSidebarGroup): boolean =>
   group.quick || group.pinned;
 

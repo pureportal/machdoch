@@ -34,7 +34,6 @@ import {
   type SettingsSection,
 } from "./session-shell";
 import {
-  ALL_SESSION_PROJECTS_FILTER,
   createSessionHistoryIndex,
   filterSessionHistoryIndex,
   type SessionHistoryIndex,
@@ -42,6 +41,11 @@ import {
   type SessionHistoryProjectFacet,
   type SessionHistoryTagFacet,
 } from "./session-history-index";
+import {
+  DEFAULT_SESSION_PROJECT_FILTER,
+  retainAvailableSessionProjects,
+} from "./session-project-filter";
+import type { SessionProjectFilter } from "@machdoch/product-ui";
 import { useNewestMessageScroll } from "./use-newest-message-scroll";
 import { canUseTauriStore } from "@machdoch/media-studio/tauri/ui/lib/_helpers/shell-store-storage.helper.js";
 
@@ -2362,7 +2366,7 @@ export interface ChatSessionShellStateController {
   sessionScopeFilter: SessionScopeFilter;
   sessionStatusFilters: SessionStatusFilterSelection;
   sessionSearchQuery: string;
-  sessionProjectFilter: string;
+  sessionProjectFilter: SessionProjectFilter;
   sessionTagFilters: string[];
   sessionHistoryIndex: SessionHistoryIndex;
   sessionProjectFacets: SessionHistoryProjectFacet[];
@@ -2387,7 +2391,7 @@ export interface ChatSessionShellStateController {
     SetStateAction<SessionStatusFilterSelection>
   >;
   setSessionSearchQuery: Dispatch<SetStateAction<string>>;
-  setSessionProjectFilter: Dispatch<SetStateAction<string>>;
+  setSessionProjectFilter: Dispatch<SetStateAction<SessionProjectFilter>>;
   setSessionTagFilters: Dispatch<SetStateAction<string[]>>;
   setIsRenamingSession: Dispatch<SetStateAction<boolean>>;
   setRenameValue: Dispatch<SetStateAction<string>>;
@@ -2441,9 +2445,8 @@ export const useChatSessionShellState = (
   const [sessionStatusFilters, setSessionStatusFilters] =
     useState<SessionStatusFilterSelection>(["any"]);
   const [sessionSearchQuery, setSessionSearchQuery] = useState("");
-  const [sessionProjectFilter, setSessionProjectFilter] = useState(
-    ALL_SESSION_PROJECTS_FILTER,
-  );
+  const [sessionProjectFilter, setSessionProjectFilter] =
+    useState<SessionProjectFilter>(DEFAULT_SESSION_PROJECT_FILTER);
   const [sessionTagFilters, setSessionTagFilters] = useState<string[]>([]);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [settingsSection, setSettingsSection] =
@@ -2898,18 +2901,14 @@ export const useChatSessionShellState = (
   }, [sessionHistoryIndex.tags, sessionTagFilters]);
 
   useEffect(() => {
-    if (sessionProjectFilter === ALL_SESSION_PROJECTS_FILTER) {
-      return;
-    }
-
     const availableProjects = new Set(
       sessionHistoryIndex.projects.map((project) => project.id),
     );
 
-    if (!availableProjects.has(sessionProjectFilter)) {
-      setSessionProjectFilter(ALL_SESSION_PROJECTS_FILTER);
-    }
-  }, [sessionHistoryIndex.projects, sessionProjectFilter]);
+    setSessionProjectFilter((current) =>
+      retainAvailableSessionProjects(current, availableProjects),
+    );
+  }, [sessionHistoryIndex.projects]);
 
   useEffect(() => {
     let cancelled = false;

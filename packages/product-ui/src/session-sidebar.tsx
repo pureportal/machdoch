@@ -240,7 +240,10 @@ export function SessionSidebar({
       { id: "any", label: "Any status" },
       ...sessionStatusFilters,
     ],
-    project,
+    projectFilter: {
+      mode: "include",
+      projectIds: project === ALL_SESSION_PROJECTS_FILTER ? [] : [project],
+    },
     projects,
     tags,
     availableTags,
@@ -254,7 +257,10 @@ export function SessionSidebar({
       : {}),
     onScopeChange: setScope,
     onStatusToggle: toggleStatus,
-    onProjectChange: setProject,
+    onProjectToggle: (projectId) =>
+      setProject((current) =>
+        projectId === current ? ALL_SESSION_PROJECTS_FILTER : projectId,
+      ),
     onTagToggle: toggleTag,
     onSessionAction: async (action, sessionId) => {
       await execute({

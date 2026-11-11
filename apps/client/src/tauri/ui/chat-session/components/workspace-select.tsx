@@ -16,6 +16,7 @@ import {
   TooltipTrigger,
 } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
+import { rankWorkspaceOptions } from "../_helpers/workspace-option-search";
 
 export interface WorkspaceSelectOption {
   id: string;
@@ -41,122 +42,12 @@ export interface WorkspaceSelectProps {
   workspaceSwitchBlocked?: boolean;
   buttonAriaLabel?: string;
   buttonClassName?: string;
-  contentClassName?: string;
   description?: string;
   action?: WorkspaceSelectAction;
   selectActionOnTrigger?: boolean;
   onSelectOption: (option: WorkspaceSelectOption) => void;
   onRemoveOption?: (option: WorkspaceSelectOption) => void;
 }
-
-type RankedWorkspaceSelectOption = WorkspaceSelectOption & {
-  order: number;
-  score: number;
-};
-
-const normalizeWorkspaceSearchText = (value: string): string => {
-  return value
-    .trim()
-    .replace(/\\/gu, "/")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .replace(/\s+/gu, " ");
-};
-
-const tokenizeWorkspaceSearchText = (value: string): string[] => {
-  const normalized = normalizeWorkspaceSearchText(value);
-  return normalized ? normalized.split(" ") : [];
-};
-
-const scoreNormalizedWorkspaceCandidate = (
-  normalizedCandidate: string,
-  normalizedQuery: string,
-  tokens: readonly string[],
-  labelBonus: number,
-): number => {
-  if (!normalizedCandidate) {
-    return 0;
-  }
-
-  const words = normalizedCandidate.split(" ");
-  let score = 0;
-
-  for (const token of tokens) {
-    if (normalizedCandidate === token) {
-      score += 500;
-      continue;
-    }
-
-    if (normalizedCandidate.startsWith(token)) {
-      score += 420;
-      continue;
-    }
-
-    if (words.includes(token)) {
-      score += 360;
-      continue;
-    }
-
-    if (words.some((word) => word.startsWith(token))) {
-      score += 300;
-      continue;
-    }
-
-    const tokenIndex = normalizedCandidate.indexOf(token);
-
-    if (tokenIndex < 0) {
-      return 0;
-    }
-
-    score += 160 - Math.min(tokenIndex, 100);
-  }
-
-  if (normalizedCandidate === normalizedQuery) {
-    return score + 800 + labelBonus;
-  }
-
-  if (normalizedCandidate.startsWith(normalizedQuery)) {
-    return score + 620 + labelBonus;
-  }
-
-  const phraseIndex = normalizedCandidate.indexOf(normalizedQuery);
-
-  if (phraseIndex >= 0) {
-    return score + 420 - Math.min(phraseIndex, 100) + labelBonus;
-  }
-
-  return score + labelBonus;
-};
-
-const scoreWorkspaceSelectOption = (
-  option: WorkspaceSelectOption,
-  searchText: string,
-): number => {
-  const normalizedQuery = normalizeWorkspaceSearchText(searchText);
-  const tokens = tokenizeWorkspaceSearchText(searchText);
-
-  if (!normalizedQuery || tokens.length === 0) {
-    return 0;
-  }
-
-  const labelScore = scoreNormalizedWorkspaceCandidate(
-    normalizeWorkspaceSearchText(option.label),
-    normalizedQuery,
-    tokens,
-    120,
-  );
-  const pathScore = option.path
-    ? scoreNormalizedWorkspaceCandidate(
-        normalizeWorkspaceSearchText(option.path),
-        normalizedQuery,
-        tokens,
-        0,
-      )
-    : 0;
-
-  return Math.max(labelScore, pathScore);
-};
 
 const WorkspaceSelectButtonContent = ({
   buttonLabel,
@@ -195,7 +86,6 @@ export const WorkspaceSelect = ({
   workspaceSwitchBlocked = false,
   buttonAriaLabel,
   buttonClassName,
-  contentClassName,
   description,
   action,
   selectActionOnTrigger = false,
@@ -205,33 +95,10 @@ export const WorkspaceSelect = ({
   const [open, setOpen] = useState(false);
   const [workspaceSearchText, setWorkspaceSearchText] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const rankedOptions = useMemo<RankedWorkspaceSelectOption[]>(() => {
-    const orderedOptions = options.map((option, order) => ({
-      ...option,
-      order,
-      score: 0,
-    }));
-
-    if (!workspaceSearchText.trim()) {
-      return orderedOptions;
-    }
-
-    return orderedOptions
-      .map((option) => ({
-        ...option,
-        score: scoreWorkspaceSelectOption(option, workspaceSearchText),
-      }))
-      .filter((option) => option.score > 0)
-      .sort((firstOption, secondOption) => {
-        const scoreDifference = secondOption.score - firstOption.score;
-
-        if (scoreDifference !== 0) {
-          return scoreDifference;
-        }
-
-        return firstOption.order - secondOption.order;
-      });
-  }, [options, workspaceSearchText]);
+  const rankedOptions = useMemo(
+    () => rankWorkspaceOptions(options, workspaceSearchText),
+    [options, workspaceSearchText],
+  );
   const resolvedButtonClassName = cn(
     buttonClassName ??
       (iconOnly
@@ -372,10 +239,7 @@ export const WorkspaceSelect = ({
       </ControlTooltip>
       <PopoverContent
         align="start"
-        className={cn(
-          "w-96 max-w-[calc(100vw-2rem)] rounded-3xl border-slate-800 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-xl",
-          contentClassName,
-        )}
+        className="w-96 max-w-[calc(100vw-2rem)] rounded-3xl border-slate-800 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-xl"
         onOpenAutoFocus={(event) => {
           event.preventDefault();
           searchInputRef.current?.focus();
