@@ -1,9 +1,23 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { createElement } from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ConversationFeed } from "./conversation-feed";
+
+const runtime = vi.hoisted(() => ({
+  resolveWorkspaceFilePreviewSource: vi.fn(),
+}));
+vi.mock("../../runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../runtime")>()),
+  resolveWorkspaceFilePreviewSource: runtime.resolveWorkspaceFilePreviewSource,
+}));
 
 afterEach(cleanup);
 
@@ -85,5 +99,44 @@ it("opens relative chat links with their message workspace and external modifier
     undefined,
     "C:/Project",
     true,
+  );
+});
+
+it("loads workspace-relative images in chat replies from the message workspace", async () => {
+  const workspaceRoot = "\\\\?\\C:\\Development\\lecka";
+  const imagePath = "artifacts/screenshots/guest/01-landing-desktop.png";
+  runtime.resolveWorkspaceFilePreviewSource.mockResolvedValue(
+    "http://asset.localhost/landing.png",
+  );
+  render(
+    createElement(ConversationFeed, {
+      visibleMessages: [
+        {
+          id: "reply",
+          role: "agent",
+          content: `## Guest app\n![Landing page](${imagePath})`,
+        },
+      ],
+      workspaceRoot,
+      bottomRef: { current: null },
+      onRetryTask: vi.fn(),
+      onContinueTask: vi.fn(),
+      onOpenWorkspaceFile: vi.fn(),
+      voicePlayback: {
+        supported: false,
+        speakingMessageId: null,
+        onSpeakMessage: vi.fn(),
+        onStopSpeaking: vi.fn(),
+      },
+    }),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("img", { name: "Landing page" }).getAttribute("src"),
+    ).toBe("http://asset.localhost/landing.png"),
+  );
+  expect(runtime.resolveWorkspaceFilePreviewSource).toHaveBeenCalledWith(
+    workspaceRoot,
+    imagePath,
   );
 });

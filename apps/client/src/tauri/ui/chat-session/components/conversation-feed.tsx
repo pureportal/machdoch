@@ -70,6 +70,10 @@ import {
 } from "@machdoch/client-ui/conversation/message-navigation";
 import { isRecoveredTaskCrashMessage } from "../_helpers/session-task-continuation";
 import { getMessageWorkspaceRoot } from "../_helpers/message-workspace";
+import {
+  resolveMarkdownImageSource,
+  type MarkdownImageSourceResolver,
+} from "../_helpers/markdown-image-source";
 import { MessageAttachmentsList } from "@machdoch/client-ui/composer/context-attachments";
 import { MessageViewLocation } from "@machdoch/client-ui/conversation/message-view-location";
 import { ExecutionInsightRow } from "@machdoch/client-ui/conversation/execution-insight-row";
@@ -183,6 +187,7 @@ interface ConversationMessageRowProps {
     external?: boolean,
   ) => void;
   onOpenLocalFile?: (path: string, line?: number, external?: boolean) => void;
+  resolveImageSource: MarkdownImageSourceResolver;
   onMessageElementChange: (
     messageId: string,
     element: HTMLDivElement | null,
@@ -227,6 +232,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
   onOpenMessageContextMenu,
   onOpenWorkspaceFile,
   onOpenLocalFile,
+  resolveImageSource,
   onMessageElementChange,
   onRetryTask,
   onRetryMessage,
@@ -463,6 +469,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                       workspaceRoot={workspaceRoot}
                       onOpenWorkspaceFile={openWorkspaceFile}
                       onOpenLocalFile={onOpenLocalFile}
+                      resolveImageSource={resolveImageSource}
                       className={
                         message.role === "user"
                           ? "app-user-message-text"
@@ -552,6 +559,7 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                   workspaceRoot={workspaceRoot}
                   onOpenWorkspaceFile={openWorkspaceFile}
                   onOpenLocalFile={onOpenLocalFile}
+                  resolveImageSource={resolveImageSource}
                 />
               </OriginalPromptPanel>
             ) : null}
@@ -746,6 +754,21 @@ export const ConversationFeed = ({
         attachment,
         messageWorkspaceRoot,
       );
+    },
+    [],
+  );
+  const imageSourceResolversRef = useRef(
+    new Map<string, MarkdownImageSourceResolver>(),
+  );
+  const getImageSourceResolver = useCallback(
+    (messageWorkspaceRoot: string | null | undefined) => {
+      const key = messageWorkspaceRoot ?? "";
+      const cachedResolver = imageSourceResolversRef.current.get(key);
+      if (cachedResolver) return cachedResolver;
+      const resolver: MarkdownImageSourceResolver = (href) =>
+        resolveMarkdownImageSource(href, messageWorkspaceRoot);
+      imageSourceResolversRef.current.set(key, resolver);
+      return resolver;
     },
     [],
   );
@@ -1284,6 +1307,7 @@ export const ConversationFeed = ({
             onSaveMessageAsContextPack={onSaveMessageAsContextPack}
             onOpenWorkspaceFile={openWorkspaceFile}
             onOpenLocalFile={onOpenLocalFile ? openLocalFile : undefined}
+            resolveImageSource={getImageSourceResolver(messageWorkspaceRoot)}
             onMessageElementChange={setMessageElement}
             onOpenAttachment={onOpenAttachment ? openAttachment : undefined}
             onSpeakMessage={voicePlayback.onSpeakMessage}
@@ -1357,6 +1381,7 @@ export const ConversationFeed = ({
                     onOpenWorkspaceFile(path, line, workspaceRoot, external)
                   }
                   onOpenLocalFile={onOpenLocalFile}
+                  resolveImageSource={getImageSourceResolver(workspaceRoot)}
                   className="app-user-message-text"
                 />
               </div>
@@ -1377,6 +1402,7 @@ export const ConversationFeed = ({
                       onOpenWorkspaceFile(path, line, workspaceRoot, external)
                     }
                     onOpenLocalFile={onOpenLocalFile}
+                    resolveImageSource={getImageSourceResolver(workspaceRoot)}
                   />
                 </div>
               ) : null}

@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MarkdownFileContext } from "@machdoch/client-ui/conversation/markdown-content";
 import {
-  getLocalMarkdownLinkTarget,
-  getWorkspaceMarkdownLinkTarget,
-} from "@machdoch/client-ui/conversation/workspace-markdown-links";
-import {
   prepareFilePreview,
   type FilePreviewTarget,
 } from "./file-preview-runtime";
+import { resolveMarkdownImageSource } from "./markdown-image-source";
 import {
   readLocalFilePreview,
   resolveLocalFilePreviewSource,
@@ -175,22 +172,8 @@ export const useFilePreview = (): {
         ),
       onOpenLocalFile: (path, line, external) =>
         showPreview({ kind: "local", path, line }, external),
-      resolveImageSource: async (href) => {
-        const workspaceTarget = getWorkspaceMarkdownLinkTarget(
-          href,
-          workspaceRoot,
-          sourcePath,
-        );
-        if (workspaceTarget && workspaceRoot) {
-          return resolveWorkspaceFilePreviewSource(
-            workspaceRoot,
-            workspaceTarget.relativePath,
-          );
-        }
-        const localTarget = getLocalMarkdownLinkTarget(href, sourcePath);
-        if (localTarget) return resolveLocalFilePreviewSource(localTarget.path);
-        throw new Error("Unable to resolve this image path.");
-      },
+      resolveImageSource: (href) =>
+        resolveMarkdownImageSource(href, workspaceRoot, sourcePath),
     };
   }, [target, showPreview]);
 
