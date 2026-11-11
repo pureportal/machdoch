@@ -6,15 +6,15 @@ import {
 import {
   ArrowLeft,
   LoaderCircle,
-  MessageSquare,
   MoreHorizontal,
   PanelLeft,
   PanelRight,
   RefreshCw,
+  Sparkles,
   TerminalSquare,
   WifiOff,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { DropdownMenu } from "radix-ui";
 import type { ComponentType } from "react";
 import type { RemoteComposerProps } from "./remote-composer-props";
@@ -185,13 +185,23 @@ export function ProductShell({
   };
 
   const shell = snapshot?.shell;
+  const listedSessions = useMemo(
+    () =>
+      shell?.sessions.filter(
+        (session) => session.specialKind !== "quick-voice",
+      ) ?? [],
+    [shell?.sessions],
+  );
   const sessionIndex = useSessionSidebarIndex(
     shell ? sessionData : undefined,
-    shell?.sessions ?? [],
+    listedSessions,
   );
   const commandsBlocked = error !== null || pendingCommands > 0;
   const activeSession = shell?.sessions.find(
     (session) => session.id === shell.activeSessionId,
+  );
+  const quickChatSession = shell?.sessions.find(
+    (session) => session.specialKind === "quick-voice",
   );
   const workspace = activeSession?.workspace ?? shell?.composer?.workspace;
   useEffect(() => {
@@ -233,6 +243,12 @@ export function ProductShell({
                 : requestedView === "ralph" && !shell?.ralph
                   ? "chat"
                   : requestedView;
+  const quickChatActive =
+    activeView === "chat" &&
+    quickChatSession !== undefined &&
+    quickChatSession.id === shell?.activeSessionId;
+  const quickChatRunning = shell?.quickTask?.isExecuting === true;
+  const quickChatUnread = !quickChatActive && quickChatSession?.unread === true;
 
   useEffect(() => {
     const receivePoseChat = (event: MessageEvent): void => {
@@ -340,6 +356,34 @@ export function ProductShell({
             </span>
           </div>
           <div className="m-product-topbar-actions">
+            {shell?.quickTask ? (
+              <button
+                type="button"
+                className="m-product-icon-button m-product-quick-chat-button"
+                data-active={quickChatActive}
+                data-unread={quickChatUnread || undefined}
+                aria-label={
+                  quickChatRunning
+                    ? "Quick Chat, working"
+                    : quickChatUnread
+                      ? "Quick Chat, new reply"
+                      : "Quick Chat"
+                }
+                aria-pressed={quickChatActive}
+                disabled={commandsBlocked}
+                onClick={async () => {
+                  if (await onCommand({ kind: "open-quick-chat" }))
+                    selectView("chat");
+                }}
+              >
+                {quickChatRunning ? (
+                  <LoaderCircle className="m-product-spin" aria-hidden="true" />
+                ) : (
+                  <Sparkles aria-hidden="true" />
+                )}
+                <span>Quick Chat</span>
+              </button>
+            ) : null}
             {!compact && servicesHref ? (
               <a
                 href={servicesHref}
@@ -374,20 +418,6 @@ export function ProductShell({
                 onClick={() => setSessionsOpen((current) => !current)}
               >
                 <PanelLeft aria-hidden="true" />
-              </button>
-            ) : null}
-            {!compact && shell?.quickTask ? (
-              <button
-                type="button"
-                className="m-product-icon-button"
-                aria-label="Quick Chat"
-                disabled={commandsBlocked}
-                onClick={async () => {
-                  if (await onCommand({ kind: "open-quick-chat" }))
-                    selectView("chat");
-                }}
-              >
-                <MessageSquare aria-hidden="true" />
               </button>
             ) : null}
             {shell && !navigationInTopbar ? (
@@ -430,21 +460,6 @@ export function ProductShell({
                           <TerminalSquare aria-hidden="true" />
                           Services and previews
                         </a>
-                      </DropdownMenu.Item>
-                    ) : null}
-                    {shell?.quickTask ? (
-                      <DropdownMenu.Item
-                        disabled={commandsBlocked}
-                        onSelect={() => {
-                          void onCommand({ kind: "open-quick-chat" }).then(
-                            (accepted) => {
-                              if (accepted) selectView("chat");
-                            },
-                          );
-                        }}
-                      >
-                        <MessageSquare aria-hidden="true" />
-                        Quick Chat
                       </DropdownMenu.Item>
                     ) : null}
                   </DropdownMenu.Content>
@@ -521,7 +536,7 @@ export function ProductShell({
                     Commands={SidebarCommands}
                     activeSessionId={shell.activeSessionId}
                     dataSource={sessionData}
-                    sessions={shell.sessions}
+                    sessions={listedSessions}
                     workspace={workspace}
                     pending={commandsBlocked}
                     onCommand={async (command) => {
@@ -537,7 +552,7 @@ export function ProductShell({
                   Commands={SidebarCommands}
                   activeSessionId={shell.activeSessionId}
                   dataSource={sessionData}
-                  sessions={shell.sessions}
+                  sessions={listedSessions}
                   workspace={workspace}
                   pending={commandsBlocked}
                   onCommand={async (command) => {
@@ -638,7 +653,7 @@ export function ProductShell({
               <ProjectLibrary
                 servicesHref={servicesHref}
                 library={shell.projectLibrary}
-                sessions={shell.sessions}
+                sessions={listedSessions}
                 pending={commandsBlocked}
                 error={commandError ?? null}
                 onCommand={onCommand}

@@ -143,8 +143,11 @@ export function useFleetSessionData(options: Options): void {
           const args = sessionDataCommands.get_session_index.parse(
             request.args,
           );
+          const sidebarSessions = current.state.sessions.filter(
+            (session) => !isQuickVoiceSession(session),
+          );
           const index = createSessionHistoryIndex(
-            current.state.sessions,
+            sidebarSessions,
             indexCache,
             { includeContent: args.query.trim().length > 0 },
           );
@@ -169,14 +172,12 @@ export function useFleetSessionData(options: Options): void {
               .map(current.projectSession),
             total: filtered.length,
             nextOffset: end < filtered.length ? end : null,
-            sessionIds: filtered
-              .filter((session) => !isQuickVoiceSession(session))
-              .map(({ id }) => id),
+            sessionIds: filtered.map(({ id }) => id),
             projects: index.projects,
             tags: index.tags,
             statuses: [
               ...new Set(
-                current.state.sessions.flatMap((session) => {
+                sidebarSessions.flatMap((session) => {
                   const projected = current.projectSession(session);
                   return projected.unread === undefined
                     ? [projected.status]

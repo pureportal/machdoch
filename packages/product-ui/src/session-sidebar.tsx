@@ -1,25 +1,6 @@
-import type { ProductSession } from "@machdoch/fleet-protocol";
-import {
-  Archive,
-  Ban,
-  Check,
-  CircleDashed,
-  CircleSlash,
-  CircleStop,
-  ClockAlert,
-  Inbox,
-  ListFilter,
-  LoaderCircle,
-  MessageSquare,
-  Pin,
-  Plus,
-  Search,
-  ServerCrash,
-  XCircle,
-  type LucideIcon,
-} from "lucide-react";
+import type { ProductCommand, ProductSession } from "@machdoch/fleet-protocol";
+import { LoaderCircle, Plus, Search } from "lucide-react";
 import { useMemo, useState, type ComponentType } from "react";
-import { formatRelativeTime } from "./format";
 import type { SessionDataSource } from "./session-data";
 import type { useSessionSidebarIndex } from "./use-session-sidebar-index";
 import { SessionArchiveControls } from "./session-archive-controls";
@@ -38,34 +19,25 @@ import {
   normalizeSessionSearchText,
   tokenizeSessionSearchQuery,
 } from "./session-sidebar-model";
+import {
+  SessionFilterMenus,
+  SessionTagFilters,
+  sessionScopeFilters,
+  sessionStatusFilters,
+} from "./session-sidebar-filters";
+import { SessionSidebarRow } from "./session-sidebar-row";
 
 const getSidebarGroup = (session: ProductSession) => ({
   quick: session.specialKind === "quick-voice",
   pinned: session.pinnedAt !== undefined,
 });
 
-const sessionScopeFilters = [
-  { id: "all", label: "All", icon: Inbox },
-  { id: "open", label: "Open", icon: MessageSquare },
-  { id: "archived", label: "Archived", icon: Archive },
-] as const;
-
-const sessionStatusFilters = [
-  { id: "empty", label: "Empty", icon: CircleDashed },
-  { id: "unread", label: "Unread", icon: MessageSquare },
-  { id: "running", label: "Running", icon: LoaderCircle },
-  { id: "done", label: "Done", icon: Check },
-  { id: "failed", label: "Failed", icon: XCircle },
-  { id: "blocked", label: "Blocked", icon: Ban },
-  { id: "cancelled", label: "Cancelled", icon: CircleStop },
-  { id: "timed-out", label: "Timed out", icon: ClockAlert },
-  { id: "unsupported", label: "Unsupported", icon: CircleSlash },
-  { id: "crashed", label: "Crashed", icon: ServerCrash },
-] as const;
-
-const statusIconById = new Map<string, LucideIcon>(
-  sessionStatusFilters.map(({ id, icon }) => [id, icon]),
-);
+const commandFailureMessage = (command: ProductCommand): string =>
+  command.kind === "create-session"
+    ? "Session could not be created. Try again."
+    : command.kind === "activate-session"
+      ? "Session could not be opened. Try again."
+      : "Session could not be updated. Try again.";
 
 export function SessionSidebar({
   Commands,
@@ -105,12 +77,7 @@ export function SessionSidebar({
     if (pending) return false;
     setError(null);
     const accepted = await onCommand(command);
-    if (!accepted)
-      setError(
-        command.kind === "create-session"
-          ? "Session could not be created. Try again."
-          : "Session could not be opened. Try again.",
-      );
+    if (!accepted) setError(commandFailureMessage(command));
     return accepted;
   };
   const availableStatusFilters = useMemo(() => {
@@ -285,24 +252,24 @@ export function SessionSidebar({
     <aside className="m-product-sidebar" aria-label="Sessions">
       {Commands ? <Commands {...commandState} /> : null}
       <div className="m-product-sidebar-header">
-        <div>
-          <p className="m-product-sidebar-title">Sessions</p>
+        <p className="m-product-sidebar-title">Sessions</p>
+        <div className="m-product-sidebar-actions">
+          {dataSource ? <SessionArchiveControls controller={archive} /> : null}
+          <button
+            className="m-product-primary-button"
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              void execute({
+                kind: "create-session",
+                ...(workspace ? { workspace } : {}),
+              })
+            }
+          >
+            <Plus aria-hidden="true" />
+            New
+          </button>
         </div>
-        {dataSource ? <SessionArchiveControls controller={archive} /> : null}
-        <button
-          className="m-product-primary-button"
-          type="button"
-          disabled={pending}
-          onClick={() =>
-            void execute({
-              kind: "create-session",
-              ...(workspace ? { workspace } : {}),
-            })
-          }
-        >
-          <Plus aria-hidden="true" />
-          New
-        </button>
       </div>
       <label className="m-product-search">
         <Search aria-hidden="true" />
@@ -313,12 +280,12 @@ export function SessionSidebar({
           onChange={(event) => setQuery(event.target.value)}
         />
       </label>
-      {error ? (
-        <p className="m-product-inline-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <div className="m-product-session-filter-strip">
+      <div className="m-product-session-filters">
+        {error ? (
+          <p className="m-product-inline-error" role="alert">
+            {error}
+          </p>
+        ) : null}
         {remote.error ? (
           <div className="m-product-inline-error" role="alert">
             {remote.error}
@@ -331,155 +298,50 @@ export function SessionSidebar({
             </button>
           </div>
         ) : null}
-        <div className="m-product-session-filter-group">
-          {sessionScopeFilters.map((filter) => {
-            const Icon = filter.icon;
-            return (
-              <button
-                key={filter.id}
-                type="button"
-                data-active={scope === filter.id}
-                aria-label={`Scope: ${filter.label}`}
-                aria-pressed={scope === filter.id}
-                onClick={() => setScope(filter.id)}
-              >
-                <Icon aria-hidden="true" />
-              </button>
-            );
-          })}
-        </div>
-        <div className="m-product-session-filter-divider" />
-        <div className="m-product-session-filter-group m-product-session-status-filters">
-          <button
-            type="button"
-            data-active={selectedStatuses.length === 0}
-            aria-label="Any status"
-            aria-pressed={selectedStatuses.length === 0}
-            onClick={() => setSelectedStatuses([])}
-          >
-            <ListFilter aria-hidden="true" />
-          </button>
-          {availableStatusFilters.map((filter) => {
-            const Icon = filter.icon;
-            const active = selectedStatuses.includes(filter.id);
-            return (
-              <button
-                key={filter.id}
-                type="button"
-                data-active={active}
-                aria-label={`Status: ${filter.label}`}
-                aria-pressed={active}
-                onClick={() => toggleStatus(filter.id)}
-              >
-                <Icon aria-hidden="true" />
-              </button>
-            );
-          })}
-        </div>
-      </div>
-      {projects.length > 1 || availableTags.length > 0 ? (
-        <div className="m-product-session-facets">
-          {projects.length > 1 ? (
-            <label>
-              <span className="m-product-visually-hidden">
-                Workspace filter
-              </span>
-              <select
-                value={project}
-                onChange={(event) => setProject(event.target.value)}
-              >
-                <option value={ALL_SESSION_PROJECTS_FILTER}>
-                  All workspaces
-                </option>
-                {projects.map(({ id, label }) => (
-                  <option key={id} value={id}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {availableTags.length > 0 ? (
-            <label>
-              <span className="m-product-visually-hidden">Tag filter</span>
-              <select
-                value=""
-                onChange={(event) => {
-                  const tag = event.target.value;
-                  if (tag) toggleTag(tag);
-                }}
-              >
-                <option value="">
-                  Tags{tags.length ? ` (${tags.length})` : ""}
-                </option>
-                {availableTags.map((tag) => (
-                  <option key={tag} value={tag}>
-                    {tags.includes(tag) ? "✓ " : ""}
-                    {tag}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-        </div>
-      ) : null}
-      <div className="m-product-session-list">
-        {filteredSessions.map((session, index) => {
-          const StatusIcon = statusIconById.get(session.status) ?? CircleDashed;
-          const hasUnreadCompletion =
-            session.unread === true &&
-            session.id !== activeSessionId &&
-            session.archivedAt === undefined;
-          return (
-            <button
-              key={session.id}
-              type="button"
-              className="m-product-session-item"
-              data-unpinned-divider={index === dividerIndex || undefined}
-              data-active={session.id === activeSessionId}
-              data-unread={hasUnreadCompletion || undefined}
-              aria-current={session.id === activeSessionId ? "page" : undefined}
-              disabled={pending}
-              onClick={() =>
-                void execute({
-                  kind: "activate-session",
-                  sessionId: session.id,
-                })
-              }
+        {projects.length > 1 ? (
+          <label>
+            <span className="m-product-visually-hidden">Workspace filter</span>
+            <select
+              className="m-product-session-filter-select"
+              data-active={project !== ALL_SESSION_PROJECTS_FILTER}
+              value={project}
+              onChange={(event) => setProject(event.target.value)}
             >
-              <span className="m-product-session-title-row">
-                <span
-                  className="m-product-session-status"
-                  data-state={session.status}
-                  aria-label={`Status: ${session.status}`}
-                >
-                  <StatusIcon aria-hidden="true" />
-                </span>
-                <span className="m-product-session-title">{session.title}</span>
-                {hasUnreadCompletion ? (
-                  <span className="m-product-visually-hidden">
-                    New reply ready
-                  </span>
-                ) : null}
-                {session.pinnedAt !== undefined ? (
-                  <Pin aria-label="Pinned" />
-                ) : null}
-                {session.archivedAt !== undefined ? (
-                  <Archive aria-label="Archived" />
-                ) : null}
-              </span>
-              <span className="m-product-session-meta">
-                <span>
-                  {session.provider || "Provider"} ·{" "}
-                  {session.workspace?.split(/[\\/]/u).filter(Boolean).at(-1) ??
-                    session.workspace ??
-                    "No workspace"}
-                </span>
-                <span>{formatRelativeTime(session.updatedAt)}</span>
-              </span>
-            </button>
-          );
-        })}
+              <option value={ALL_SESSION_PROJECTS_FILTER}>All workspaces</option>
+              {projects.map(({ id, label }) => (
+                <option key={id} value={id}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {availableTags.length > 0 ? (
+          <SessionTagFilters
+            tags={availableTags}
+            selected={tags}
+            onToggle={toggleTag}
+          />
+        ) : null}
+        <SessionFilterMenus
+          scope={scope}
+          statuses={selectedStatuses}
+          availableStatuses={availableStatusFilters}
+          onScopeChange={setScope}
+          onStatusToggle={toggleStatus}
+        />
+      </div>
+      <div className="m-product-session-list">
+        {filteredSessions.map((session, index) => (
+          <SessionSidebarRow
+            key={session.id}
+            session={session}
+            active={session.id === activeSessionId}
+            firstUnpinned={index === dividerIndex}
+            pending={pending}
+            onCommand={(command) => void execute(command)}
+          />
+        ))}
         {remote.loading && !remote.page ? (
           <div role="status" aria-label="Loading sessions">
             <LoaderCircle className="m-product-spin" aria-hidden="true" />

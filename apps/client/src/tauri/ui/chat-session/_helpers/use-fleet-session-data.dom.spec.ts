@@ -202,6 +202,34 @@ it("uses native content search across the full session index", async () => {
   });
 });
 
+it("keeps Quick Chat and its workspace out of the session index", async () => {
+  const { send } = setup([
+    createSession({
+      id: "quick",
+      specialSession: "quick-voice",
+      workspace: "C:/machdoch",
+    }),
+    createSession({ id: "session", workspace: "C:/foxytail" }),
+  ]);
+  const response = await send("get_session_index", {
+    offset: 0,
+    limit: 80,
+    query: "",
+    scope: "all",
+    statuses: [],
+    project: ALL_SESSION_PROJECTS_FILTER,
+    tags: [],
+  });
+  expect(response.error).toBeNull();
+  expect(response.result).toMatchObject({
+    total: 1,
+    nextOffset: null,
+    sessionIds: ["session"],
+    sessions: [{ id: "session" }],
+    projects: [{ path: "C:/foxytail", count: 1 }],
+  });
+});
+
 it("returns complete native drafts, all forty history entries and long queued text", async () => {
   const content = "Grüße 🌿\n".repeat(2_000);
   const session = createSession({
