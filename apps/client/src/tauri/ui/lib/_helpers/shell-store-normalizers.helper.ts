@@ -86,6 +86,11 @@ export const DEFAULT_APP_SHELL_STATE = {
 export const DEFAULT_RUNNING_TASK_MESSAGE_ACTION =
   "queue" as const satisfies RunningTaskMessageAction;
 
+export const DEFAULT_CHAT_ZOOM_PERCENT = 100;
+export const MIN_CHAT_ZOOM_PERCENT = 50;
+export const MAX_CHAT_ZOOM_PERCENT = 200;
+export const CHAT_ZOOM_STEP_PERCENT = 10;
+
 export const DEFAULT_RALPH_SETTINGS = {
   version: 1,
   workspaceRoot: null,
@@ -166,6 +171,19 @@ export const normalizeRunningTaskMessageAction = (
     value,
     ["steer", "stop-and-send", "queue"],
     DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
+  );
+};
+
+export const normalizeChatZoomPercent = (value: unknown): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_CHAT_ZOOM_PERCENT;
+  }
+
+  const steppedPercent =
+    Math.round(value / CHAT_ZOOM_STEP_PERCENT) * CHAT_ZOOM_STEP_PERCENT;
+  return Math.min(
+    MAX_CHAT_ZOOM_PERCENT,
+    Math.max(MIN_CHAT_ZOOM_PERCENT, steppedPercent),
   );
 };
 

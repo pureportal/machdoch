@@ -10,11 +10,13 @@ import type {
 import {
   DEFAULT_APP_SHELL_STATE,
   DEFAULT_APPEARANCE_SETTINGS,
+  DEFAULT_CHAT_ZOOM_PERCENT,
   DEFAULT_RALPH_SETTINGS,
   DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
   DEFAULT_TERMINAL_PROFILE_SETTINGS,
   normalizeAppearanceSettings,
   normalizeAppShellState,
+  normalizeChatZoomPercent,
   normalizeRalphSettings,
   normalizeRunningTaskMessageAction,
   normalizeTerminalProfileSettings,
@@ -34,9 +36,12 @@ import {
 export {
   DEFAULT_APP_SHELL_STATE,
   DEFAULT_APPEARANCE_SETTINGS,
+  DEFAULT_CHAT_ZOOM_PERCENT,
   DEFAULT_RALPH_SETTINGS,
   DEFAULT_RUNNING_TASK_MESSAGE_ACTION,
   DEFAULT_TERMINAL_PROFILE_SETTINGS,
+  MAX_CHAT_ZOOM_PERCENT,
+  MIN_CHAT_ZOOM_PERCENT,
 } from "./_helpers/shell-store-normalizers.helper";
 export type {
   AppearanceAccent,
@@ -82,6 +87,7 @@ const ONBOARDING_STORAGE_KEY = "machdoch.desktop.onboarding-state";
 const APPEARANCE_STORAGE_KEY = "machdoch.desktop.appearance-state";
 const TERMINAL_PROFILE_SETTINGS_STORAGE_KEY =
   "machdoch.desktop.terminal-profile-settings";
+const CHAT_ZOOM_STORAGE_KEY = "machdoch.desktop.chat-zoom-percent";
 
 export interface ShellStateSnapshot<T> {
   state: T;
@@ -460,7 +466,9 @@ export const saveRunningTaskMessageAction = async (
   );
 };
 
-export const loadRalphSettings = async (fallback: RalphSettings = DEFAULT_RALPH_SETTINGS): Promise<RalphSettings> => {
+export const loadRalphSettings = async (
+  fallback: RalphSettings = DEFAULT_RALPH_SETTINGS,
+): Promise<RalphSettings> => {
   return loadStoredValue<RalphSettings>({
     storageKey: RALPH_SETTINGS_STORAGE_KEY,
     fallback,
@@ -493,7 +501,9 @@ export const saveRalphSettings = async (
   const committed = await withStoredValueWriteLock(
     RALPH_SETTINGS_STORAGE_KEY,
     async () => {
-      const latest = await loadRalphSettings(normalizedBase ?? DEFAULT_RALPH_SETTINGS);
+      const latest = await loadRalphSettings(
+        normalizedBase ?? DEFAULT_RALPH_SETTINGS,
+      );
       if (!normalizedBase) {
         await saveRequiredStoredValueUnlocked({
           storageKey: RALPH_SETTINGS_STORAGE_KEY,
@@ -597,7 +607,8 @@ export const saveAppearanceSettings = async (
             ? normalizedSettings.accent
             : latest.accent,
         showChangedFiles:
-          normalizedSettings.showChangedFiles !== normalizedBase.showChangedFiles
+          normalizedSettings.showChangedFiles !==
+          normalizedBase.showChangedFiles
             ? normalizedSettings.showChangedFiles
             : latest.showChangedFiles,
       };
@@ -616,6 +627,27 @@ export const saveAppearanceSettings = async (
 
   await broadcastAppearanceSettingsChanged();
   return committedSettings;
+};
+
+export const loadChatZoomPercent = async (): Promise<number> => {
+  return loadStoredValue<number>({
+    storageKey: CHAT_ZOOM_STORAGE_KEY,
+    fallback: DEFAULT_CHAT_ZOOM_PERCENT,
+    normalize: normalizeChatZoomPercent,
+    tauriErrorMessage: "Failed to load chat zoom from Tauri store",
+    localStorageErrorMessage: "Failed to load chat zoom from localStorage",
+  });
+};
+
+export const saveChatZoomPercent = async (
+  zoomPercent: number,
+): Promise<void> => {
+  await saveRequiredStoredValue({
+    storageKey: CHAT_ZOOM_STORAGE_KEY,
+    value: normalizeChatZoomPercent(zoomPercent),
+    tauriErrorMessage: "Failed to persist chat zoom to Tauri store",
+    localStorageErrorMessage: "Failed to persist chat zoom to localStorage",
+  });
 };
 
 export const loadTerminalProfileSettings =

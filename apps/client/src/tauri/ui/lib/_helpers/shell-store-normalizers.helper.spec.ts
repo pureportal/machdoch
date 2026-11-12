@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_CHAT_ZOOM_PERCENT,
   DEFAULT_RALPH_SETTINGS,
   DEFAULT_TERMINAL_PROFILE_SETTINGS,
   normalizeAppearanceSettings,
+  normalizeChatZoomPercent,
   normalizeRalphSettings,
   normalizeTerminalProfileSettings,
 } from "./shell-store-normalizers.helper";
@@ -131,6 +133,17 @@ describe("Shell store normalizers", () => {
       visibleShellIds: ["pwsh", "windows-powershell"],
       defaultShellId: "windows-powershell",
     });
+  });
+
+  it("snaps persisted chat zoom to supported steps", () => {
+    expect(normalizeChatZoomPercent(120)).toBe(120);
+    expect(normalizeChatZoomPercent(114)).toBe(110);
+    expect(normalizeChatZoomPercent(10)).toBe(50);
+    expect(normalizeChatZoomPercent(500)).toBe(200);
+    expect(normalizeChatZoomPercent("120")).toBe(DEFAULT_CHAT_ZOOM_PERCENT);
+    expect(normalizeChatZoomPercent(Number.NaN)).toBe(
+      DEFAULT_CHAT_ZOOM_PERCENT,
+    );
   });
 
   it("falls back invalid terminal profile settings", () => {

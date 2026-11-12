@@ -49,6 +49,7 @@ import {
 import { AssetStorageSettingsPanel } from "./settings-dialog-panels/asset-storage-settings-panel";
 import { AgentLimitsSettingsPanel } from "./settings-dialog-panels/agent-limits-settings-panel";
 import { AppearanceSettingsPanel } from "./settings-dialog-panels/appearance-settings-panel";
+import type { ChatZoomController } from "../_helpers/use-chat-zoom";
 import { DesktopSettingsPanel } from "./settings-dialog-panels/desktop-settings-panel";
 import { AnswerLanguageSettingsPanel } from "./settings-dialog-panels/answer-language-settings-panel";
 import { SessionDefaultsSettingsPanel } from "./settings-dialog-panels/session-defaults-settings-panel";
@@ -134,6 +135,7 @@ export interface SettingsDialogProps extends SettingsControlsProps {
   closeDiscardLabel?: string;
   introSection?: SettingsDialogIntroSection;
   primaryAction?: SettingsDialogPrimaryAction;
+  chatZoomSetup?: ChatZoomController;
 }
 
 const renderSettingsPanel = ({
@@ -142,6 +144,7 @@ const renderSettingsPanel = ({
   webSearchSetup,
   agentLimitsSetup,
   appearanceSetup,
+  chatZoomSetup,
   memorySetup,
   desktopSetup,
   workspaceRunSetup,
@@ -187,7 +190,12 @@ const renderSettingsPanel = ({
       return <AgentLimitsSettingsPanel setup={agentLimitsSetup} />;
 
     case "appearance":
-      return <AppearanceSettingsPanel setup={appearanceSetup} />;
+      return (
+        <AppearanceSettingsPanel
+          setup={appearanceSetup}
+          chatZoom={chatZoomSetup}
+        />
+      );
 
     case "memory":
       return <MemorySettingsPanel setup={memorySetup} />;
@@ -1157,7 +1165,9 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
                     title:
                       provider === "none"
                         ? "System voices only"
-                        : provider === "fish" ? "Fish Audio · Drama 3" : getProviderLabel(provider),
+                        : provider === "fish"
+                          ? "Fish Audio · Drama 3"
+                          : getProviderLabel(provider),
                     current: state().props.voiceSetup.aiProvider === provider,
                     numericKey: numericKey(index),
                     availability: configured

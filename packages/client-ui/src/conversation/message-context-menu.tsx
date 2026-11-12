@@ -8,6 +8,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type JSX } from "react";
+import { createPortal } from "react-dom";
 import { useCommandOverlay } from "@machdoch/media-studio/tauri/ui/commands/use-command-overlay.js";
 import {
   copyMessageImage,
@@ -192,7 +193,7 @@ export const MessageContextMenu = <Message extends MessageExportSource>({
     }
   };
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       role="menu"
@@ -261,6 +262,8 @@ export const MessageContextMenu = <Message extends MessageExportSource>({
           {error}
         </p>
       ) : null}
-    </div>
+    </div>,
+    target.bubble.closest<HTMLElement>(".app-shell, .machdoch-product") ??
+      document.body,
   );
 };

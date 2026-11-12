@@ -9,6 +9,7 @@ describe("Settings search", () => {
     ["startup delay", "workspace-run"],
     ["health-check threshold", "workspace-run"],
     ["  ACCENT   color ", "appearance"],
+    ["chat zoom", "appearance"],
     ["retention", "desktop"],
     ["quick chat shortcut", "desktop"],
     ["default inactivity timeout", "session-defaults"],

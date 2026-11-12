@@ -20,9 +20,12 @@ import {
   toAppActivityState,
 } from "./app-shell/operation-activity";
 import { useAppearanceSettings } from "./chat-session/_helpers/use-appearance-settings";
+import { useChatZoom } from "./chat-session/_helpers/use-chat-zoom";
+import { stepChatZoomPercent } from "./chat-session/_helpers/chat-zoom";
 import { useChatSessionController } from "./chat-session/_helpers/use-chat-session-controller";
 import { useUnsavedChangesGuard } from "./chat-session/_helpers/use-unsaved-changes-guard";
 import { ConversationFeed } from "./chat-session/components/conversation-feed";
+import { ZoomableChatContent } from "./chat-session/components/zoomable-chat-content";
 import { AttachmentImagePreviewDialog } from "./chat-session/components/attachment-image-preview-dialog";
 import { ChatInterviewDialog } from "./chat-session/components/chat-interview-dialog";
 import { ChatInputNeededDialog } from "@machdoch/client-ui/composer/chat-input-needed-dialog";
@@ -44,6 +47,9 @@ import { ScrollArea } from "./components/ui/scroll-area";
 import { VoiceInputOverlay } from "./components/voice-input-overlay";
 import {
   DEFAULT_APP_SHELL_STATE,
+  DEFAULT_CHAT_ZOOM_PERCENT,
+  MAX_CHAT_ZOOM_PERCENT,
+  MIN_CHAT_ZOOM_PERCENT,
   loadAppShellState,
   loadOnboardingState,
   saveAppShellState,
@@ -71,7 +77,10 @@ import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/comman
 import { getDefaultCommandShortcut } from "@machdoch/media-studio/tauri/ui/commands/command-defaults.js";
 import { FindInView } from "@machdoch/media-studio/tauri/ui/find/find-in-view.js";
 import { useCommandOverlay } from "@machdoch/media-studio/tauri/ui/commands/use-command-overlay.js";
-import type { CommandDefinition } from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
+import type {
+  CommandDefinition,
+  ShortcutSpec,
+} from "@machdoch/media-studio/tauri/ui/commands/command-types.js";
 import {
   CHECK_FOR_UPDATES_EVENT,
   useDesktopUpdate,
@@ -182,6 +191,7 @@ export const ChatSession = (): JSX.Element => {
     settingsSurfaceOpen: onboardingOpen,
   });
   const appearance = useAppearanceSettings();
+  const chatZoom = useChatZoom();
   const [appShellState, setAppShellState] = useState<AppShellState>(
     DEFAULT_APP_SHELL_STATE,
   );
@@ -439,8 +449,13 @@ export const ChatSession = (): JSX.Element => {
     };
   }, []);
 
-  const [pendingSpeechProjectId, setPendingSpeechProjectId] = useState<string | null>(null);
-  const speechProjectOpened = useCallback(() => setPendingSpeechProjectId(null), []);
+  const [pendingSpeechProjectId, setPendingSpeechProjectId] = useState<
+    string | null
+  >(null);
+  const speechProjectOpened = useCallback(
+    () => setPendingSpeechProjectId(null),
+    [],
+  );
   useEffect(() => {
     const open = (event: Event): void => {
       const id = (event as CustomEvent<{ id?: unknown }>).detail?.id;
@@ -448,7 +463,8 @@ export const ChatSession = (): JSX.Element => {
       if (selectApp("tts")) setPendingSpeechProjectId(id);
     };
     window.addEventListener("machdoch:open-speech-project", open);
-    return () => window.removeEventListener("machdoch:open-speech-project", open);
+    return () =>
+      window.removeEventListener("machdoch:open-speech-project", open);
   }, [selectApp]);
   const fileManagerStateRef = useRef({
     controller: controller.fileManager,
@@ -528,12 +544,14 @@ export const ChatSession = (): JSX.Element => {
 
   const shellCommandStateRef = useRef({
     activeApp,
+    chatZoom,
     controller,
     selectApp,
     toggleQuickChatFromShortcut,
   });
   shellCommandStateRef.current = {
     activeApp,
+    chatZoom,
     controller,
     selectApp,
     toggleQuickChatFromShortcut,
@@ -566,6 +584,18 @@ export const ChatSession = (): JSX.Element => {
       reason,
     });
     const enabled = { state: "enabled" as const };
+    const chatZoomShortcut = (
+      id:
+        | "chat.zoom.in"
+        | "chat.zoom.in-alternate"
+        | "chat.zoom.out"
+        | "chat.zoom.reset",
+    ): ShortcutSpec => ({
+      chord: getDefaultCommandShortcut(id),
+      runtimes: ["tauri"],
+      allowRepeat: true,
+      allowIn: ["document", "text-entry", "interactive-control"],
+    });
     return [
       {
         id: "app.settings.open",
@@ -695,6 +725,62 @@ export const ChatSession = (): JSX.Element => {
             });
           });
         },
+      },
+      {
+        id: "chat.zoom.in",
+        title: "Zoom in chat",
+        group: "Chat",
+        keywords: ["larger text", "font size"],
+        scope: { kind: "view", ownerId: "chat" },
+        shortcuts: [
+          chatZoomShortcut("chat.zoom.in"),
+          chatZoomShortcut("chat.zoom.in-alternate"),
+        ],
+        palette: "visible",
+        availability: () =>
+          state().chatZoom.zoomPercent < MAX_CHAT_ZOOM_PERCENT
+            ? enabled
+            : disabled("Chat is at maximum zoom"),
+        execute: () => {
+          const { chatZoom } = state();
+          chatZoom.onZoomPercentChange(
+            stepChatZoomPercent(chatZoom.zoomPercent, 1),
+          );
+        },
+      },
+      {
+        id: "chat.zoom.out",
+        title: "Zoom out chat",
+        group: "Chat",
+        keywords: ["smaller text", "font size"],
+        scope: { kind: "view", ownerId: "chat" },
+        shortcuts: [chatZoomShortcut("chat.zoom.out")],
+        palette: "visible",
+        availability: () =>
+          state().chatZoom.zoomPercent > MIN_CHAT_ZOOM_PERCENT
+            ? enabled
+            : disabled("Chat is at minimum zoom"),
+        execute: () => {
+          const { chatZoom } = state();
+          chatZoom.onZoomPercentChange(
+            stepChatZoomPercent(chatZoom.zoomPercent, -1),
+          );
+        },
+      },
+      {
+        id: "chat.zoom.reset",
+        title: "Reset chat zoom",
+        group: "Chat",
+        keywords: ["actual size", "font size"],
+        scope: { kind: "view", ownerId: "chat" },
+        shortcuts: [chatZoomShortcut("chat.zoom.reset")],
+        palette: "visible",
+        availability: () =>
+          state().chatZoom.zoomPercent !== DEFAULT_CHAT_ZOOM_PERCENT
+            ? enabled
+            : disabled("Chat is already at 100%"),
+        execute: () =>
+          state().chatZoom.onZoomPercentChange(DEFAULT_CHAT_ZOOM_PERCENT),
       },
       {
         id: "chat.session.open",
@@ -1229,33 +1315,40 @@ export const ChatSession = (): JSX.Element => {
                     className="relative min-h-0 min-w-0 flex-1 overflow-hidden"
                   >
                     <ScrollArea className="h-full min-w-0" type="always">
-                      <ConversationFeed
-                        key={controller.composer.activeSession.id}
-                        {...controller.conversation}
-                        showChangedFiles={appearance.settings.showChangedFiles}
-                        hideEmptyState={
-                          controller.composer.activeSession.specialSession ===
-                          "pose"
-                        }
-                        poseScenePreview={
-                          controller.composer.activeSession.specialSession ===
-                          "pose" ? (
-                            <PoseScenePreview
-                              key={controller.composer.activeSession.id}
-                              sessionId={controller.composer.activeSession.id}
-                              initialScene={
-                                controller.composer.activeSession.poseScene
-                              }
-                              onSceneChange={(scene) =>
-                                controller.updatePoseScene(
-                                  controller.composer.activeSession.id,
-                                  scene,
-                                )
-                              }
-                            />
-                          ) : undefined
-                        }
-                      />
+                      <ZoomableChatContent
+                        zoomPercent={chatZoom.zoomPercent}
+                        onZoomPercentChange={chatZoom.onZoomPercentChange}
+                      >
+                        <ConversationFeed
+                          key={controller.composer.activeSession.id}
+                          {...controller.conversation}
+                          showChangedFiles={
+                            appearance.settings.showChangedFiles
+                          }
+                          hideEmptyState={
+                            controller.composer.activeSession.specialSession ===
+                            "pose"
+                          }
+                          poseScenePreview={
+                            controller.composer.activeSession.specialSession ===
+                            "pose" ? (
+                              <PoseScenePreview
+                                key={controller.composer.activeSession.id}
+                                sessionId={controller.composer.activeSession.id}
+                                initialScene={
+                                  controller.composer.activeSession.poseScene
+                                }
+                                onSceneChange={(scene) =>
+                                  controller.updatePoseScene(
+                                    controller.composer.activeSession.id,
+                                    scene,
+                                  )
+                                }
+                              />
+                            ) : undefined
+                          }
+                        />
+                      </ZoomableChatContent>
                     </ScrollArea>
                     <ScrollToTopButton
                       visible={controller.conversation.showScrollToTopButton}
@@ -1348,8 +1441,17 @@ export const ChatSession = (): JSX.Element => {
             >
               <Suspense fallback={appLoadingFallback}>
                 <AppControlViewMarker id="tts" />
-                <TextToSpeechStudio runtime={speechRuntime} assetUrl={speechAssetUrl} openProjectId={pendingSpeechProjectId} onProjectOpened={speechProjectOpened}
-                  onMediaHandoff={handoff => { setPendingMediaAssetId(handoff.assetId);setPendingMediaSection("library");selectApp("media"); }} />
+                <TextToSpeechStudio
+                  runtime={speechRuntime}
+                  assetUrl={speechAssetUrl}
+                  openProjectId={pendingSpeechProjectId}
+                  onProjectOpened={speechProjectOpened}
+                  onMediaHandoff={(handoff) => {
+                    setPendingMediaAssetId(handoff.assetId);
+                    setPendingMediaSection("library");
+                    selectApp("media");
+                  }}
+                />
               </Suspense>
             </div>
           ) : null}
@@ -1415,6 +1517,7 @@ export const ChatSession = (): JSX.Element => {
               webSearchSetup={controller.settingsDialog.webSearchSetup}
               agentLimitsSetup={controller.settingsDialog.agentLimitsSetup}
               appearanceSetup={appearance}
+              chatZoomSetup={chatZoom}
               memorySetup={controller.settingsDialog.memorySetup}
               desktopSetup={controller.settingsDialog.desktopSetup}
               workspaceRunSetup={controller.settingsDialog.workspaceRunSetup}
@@ -1430,7 +1533,9 @@ export const ChatSession = (): JSX.Element => {
         commandOverlayId="cloud"
         commandOverlayAllowGlobalCommands={["app.palette.toggle"]}
       >
-        <CloudPanel workspaceRoot={controller.composer.activeSession.workspace} />
+        <CloudPanel
+          workspaceRoot={controller.composer.activeSession.workspace}
+        />
       </Dialog>
 
       {schedulerOpen ? (
