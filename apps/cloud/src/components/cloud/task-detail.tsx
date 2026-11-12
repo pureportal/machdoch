@@ -14,6 +14,7 @@ import {
   terminalRunStates,
   type RunDetail,
 } from "@machdoch/fleet-protocol/cloud-execution";
+import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
 import { FormDialog } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
 import { TaskFiles } from "./task-files";
@@ -126,6 +127,9 @@ export function TaskDetail({
             Open project <ArrowUpRight size={14} aria-hidden="true" />
           </Link>
         )}
+        <Link href={`/cloud/activity?run=${run.id}`}>
+          AI activity <ArrowUpRight size={14} aria-hidden="true" />
+        </Link>
       </div>
       {run.state === "queued" && (
         <p className="cloud-task-notice">Waiting for an available runner.</p>
@@ -163,7 +167,7 @@ export function TaskDetail({
                 <FileText size={17} aria-hidden="true" />
                 Result
               </h2>
-              <p>{run.summary}</p>
+              <MarkdownContent content={run.summary} />
             </section>
           )}
           <TaskTimeline entries={run.timeline} live={!terminal} />
@@ -174,7 +178,7 @@ export function TaskDetail({
                   <Target size={17} aria-hidden="true" />
                   Objective
                 </h2>
-                <p>{objective}</p>
+                <MarkdownContent content={objective} />
               </div>
             )}
             <div>
@@ -182,7 +186,7 @@ export function TaskDetail({
                 <ListChecks size={17} aria-hidden="true" />
                 Acceptance criteria
               </h2>
-              <p>{run.manifest.acceptanceCriteria}</p>
+              <MarkdownContent content={run.manifest.acceptanceCriteria} />
             </div>
           </section>
           <TaskFiles

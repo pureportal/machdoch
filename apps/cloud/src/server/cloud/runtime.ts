@@ -13,6 +13,10 @@ import { CloudRecurrencePreview } from "./automation/recurrence";
 import { CloudSchedules } from "./automation/schedules";
 import { CloudScheduleDispatcher } from "./automation/schedule-dispatcher";
 import { CloudPeriodicLoop } from "./periodic-loop";
+import { CloudAiActivity } from "./activity/feed";
+import { CloudMimoriiConnections } from "./activity/mimorii-connections";
+import { CloudMimoriiExporter } from "./activity/mimorii-export";
+import { mimoriiBatchSize } from "./activity/mimorii-protocol";
 import { CloudInvitations } from "./auth/invitations";
 import { CloudInvitationAcceptance } from "./auth/invitation-acceptance";
 import { CloudEmailSettingsService } from "./auth/email-settings";
@@ -44,7 +48,6 @@ import { CloudRepositories } from "./execution/repositories";
 import { CloudArtifactUploads } from "./execution/artifact-uploads";
 import { CloudArtifacts } from "./execution/artifacts";
 import { CloudAiProviders } from "./ai/providers";
-import { CloudCliLogins } from "./ai/cli-login";
 import { cloudCredentialsCipher } from "./credential-storage";
 import { initializeInstallation } from "./installation-storage";
 import type { SettingsCipher } from "../settings-crypto";
@@ -55,6 +58,7 @@ import { CloudProjectUpdates } from "./project-updates";
 import { CloudFavorites, CloudIssueSubscriptions } from "./favorites";
 import { CloudInitiatives } from "./initiatives";
 import { CloudTriage } from "./triage";
+import { CloudCliLogins } from "./ai/cli-login";
 import { CloudInferenceStore } from "./ai/inference-store";
 import {
   CloudInferenceWorker,
@@ -69,6 +73,11 @@ export interface CloudRuntime {
   schedules: CloudSchedules;
   scheduleDispatcher: CloudScheduleDispatcher;
   scheduleLoop: CloudPeriodicLoop;
+  activity: {
+    feed: CloudAiActivity;
+    mimorii: CloudMimoriiConnections;
+    exportLoop: CloudPeriodicLoop;
+  };
   authentication: {
     credentials: CloudCredentials;
     twoFactor: CloudTwoFactor;
@@ -187,6 +196,10 @@ export function createCloudRuntime(
   const comments = new CloudComments(database);
   const runs = new CloudRuns(database);
   const scheduleDispatcher = new CloudScheduleDispatcher(database, recurrence);
+  const mimoriiExporter = new CloudMimoriiExporter(
+    database,
+    options.credentialsCipher ?? null,
+  );
   const agentTools = new CloudAgentTools({
     planning,
     projects,
@@ -212,6 +225,18 @@ export function createCloudRuntime(
       () => scheduleDispatcher.tick(),
       5,
     ),
+    activity: {
+      feed: new CloudAiActivity(database),
+      mimorii: new CloudMimoriiConnections(
+        database,
+        options.credentialsCipher ?? null,
+      ),
+      exportLoop: new CloudPeriodicLoop(
+        "Mimorii export",
+        () => mimoriiExporter.tick(),
+        mimoriiBatchSize,
+      ),
+    },
     authentication: {
       credentials: new CloudCredentials(database),
       twoFactor: new CloudTwoFactor(
@@ -320,6 +345,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   if (runtime.origin === origin) return;
   runtime.cliLogins.close();
   await runtime.scheduleLoop.close();
+  await runtime.activity.exportLoop.close();
   await runtime.authentication.mailWorker.close();
   await runtime.inference.worker.close();
   Object.assign(
@@ -331,6 +357,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   runtime.inference.worker.start();
   runtime.authentication.mailWorker.start();
   runtime.scheduleLoop.start();
+  runtime.activity.exportLoop.start();
 }
 
 export function setCloudRuntimeForTests(
@@ -349,6 +376,7 @@ export async function closeCloudRuntime(): Promise<void> {
     const current = await runtime;
     current.cliLogins.close();
     await current.scheduleLoop.close();
+    await current.activity.exportLoop.close();
     await current.authentication.mailWorker.close();
     await current.inference.worker.close();
     await current.database.close();

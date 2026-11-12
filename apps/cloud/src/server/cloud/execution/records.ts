@@ -13,7 +13,7 @@ import {
 } from "../access";
 import type { CloudSql } from "../database";
 import { notifyRunFinished } from "../notifications";
-
+import { recordRunActivity } from "../activity/journal";
 
 export const terminalStates = new Set<RunState>([
   "succeeded",
@@ -104,6 +104,7 @@ export async function recordRun(
     "INSERT INTO cloud_run_events (organization_id,run_id,revision,state,reason) VALUES ($1,$2,$3,$4,$5)",
     [organizationId, id, run.revision, run.state, reason],
   );
+  await recordRunActivity(sql, organizationId, run, reason);
   await recordEvent(
     sql,
     { organizationId, userId: run.actorId },

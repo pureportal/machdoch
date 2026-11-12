@@ -61,6 +61,14 @@ Delegated issues run in a separate checkout of the profile's base commit. Requir
 
 The server image includes the Claude Code and Codex CLIs for Agent providers. Enter an API key on the provider, or leave it empty and sign in on the host: run `claude` or `codex login` inside the container and keep `/home/node` on a volume. `MACHDOCH_CLOUD_CLAUDE_CLI` and `MACHDOCH_CLOUD_CODEX_CLI` override the executables. Cloud sandboxes need an API provider; use a **Linked client** profile to run tasks through a CLI.
 
+## AI activity and Mimorii
+
+**AI activity** lists what the AI did: Agent answers, questions and proposals, task state changes, runner steps and model calls with model, tokens and duration. Members see their own Agent activity and tasks of teams they can access; owners and administrators see everything. Entries are kept for 90 days.
+
+Connected clients are tracked too: about every 30 seconds Cloud reads each connected client's status and records task starts and outcomes with the failure reason and model, scheduled job and RALPH run results, runtime, scheduler, RALPH and instruction errors and their recovery, providers becoming unavailable, and clients disconnecting or reconnecting. Prompts are not recorded. Only owners and administrators see client activity; open it from **AI activity → Clients** or a device's **Activity** button.
+
+To also track this activity in [Mimorii](https://mimorii.app), create a log source in Mimorii and add its token under **Settings → Mimorii**. Cloud sends each entry once as a log line labeled `service="machdoch-cloud"` and `activity` (`agent`, `task`, `step`, `model` or `client`; client entries also carry `device`), retries automatically when Mimorii is unreachable, and sends only activity recorded while the connection is enabled. Use a self-hosted Mimorii by entering its HTTPS address.
+
 ## Source
 
 ```bash

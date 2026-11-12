@@ -4,6 +4,7 @@ import type { InferenceModelOptions } from "@machdoch/fleet-protocol/cloud-infer
 import type { CloudSql } from "../database";
 import { hasRunAuthority, lockExecution, readRun } from "../execution/records";
 import type { AgentProgress } from "./agent-loop";
+import { recordInferenceActivity } from "../activity/journal";
 
 export const inferenceLeaseSeconds = 30;
 export const maximumInferenceAnswerBytes = 256 * 1024;
@@ -125,6 +126,7 @@ export async function settleInference(
       progress?.question ? JSON.stringify(progress.question) : null,
     ],
   );
+  await recordInferenceActivity(sql, call, state, errorCode, progress);
 }
 
 export async function reapInference(

@@ -1,6 +1,6 @@
 "use client";
 
-import { ExternalLink, Trash2 } from "lucide-react";
+import { BrainCircuit, ExternalLink, Trash2 } from "lucide-react";
 import { api } from "@machdoch/product-ui/fleet-api";
 import { ConfirmButton } from "@/components/confirm-button";
 import { CopyField } from "@/components/copy-field";
@@ -87,6 +87,14 @@ export function DeviceDetails({
               }}
             />
           ) : null}
+          <Button variant="outline" asChild>
+            <a
+              href={`/cloud/activity?client=${encodeURIComponent(device.instanceId)}`}
+            >
+              <BrainCircuit />
+              Activity
+            </a>
+          </Button>
           {device.status === "online" ? (
             <Button asChild>
               <a href={`/instances/${encodeURIComponent(device.instanceId)}`}>

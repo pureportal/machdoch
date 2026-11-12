@@ -9,6 +9,7 @@ import {
   childIssueInputSchema,
 } from "../../lib/cloud-relation-contract";
 import { requireCloudOrigin, setCloudCredentials } from "./browser-auth";
+import { handleAiActivityApi } from "./activity/api";
 import { handleMagicLinkApi, handleEmailSettingsApi } from "./auth/api";
 import {
   magicConfirmationCookie,
@@ -392,6 +393,8 @@ async function route(
     return handleSsoSettingsApi(runtime, request, actor);
   if (path[0] === "email-settings")
     return handleEmailSettingsApi(runtime, request, actor);
+  if (path[0] === "ai-activity" || path[0] === "mimorii")
+    return handleAiActivityApi(runtime, request, actor);
   if (routeKey === "GET connections")
     return Response.json({
       connections: await runtime.authorization.connections(actor),

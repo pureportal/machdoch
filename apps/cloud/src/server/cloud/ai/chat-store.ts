@@ -36,6 +36,7 @@ import {
 import { lockInference, reapInference } from "./inference-records";
 import { agentContext, agentSystemPrompt } from "./agent-context";
 import { agentToolSpecs } from "./agent-tools";
+import { actionActivity, recordAiActivity } from "../activity/journal";
 
 export type ChatSubmission = {
   chatId: string;
@@ -455,6 +456,13 @@ export class CloudChatStore {
         turn.revision + 1,
         { actionId },
       );
+      if (change.state !== "pending")
+        await recordAiActivity(sql, {
+          organizationId: actor.organizationId,
+          ...actionActivity(settled, change.state),
+          actorId: actor.userId,
+          chatId: turn.chatId,
+        });
       return settled;
     });
   }

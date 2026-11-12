@@ -23,6 +23,8 @@ import {
 } from "./server/cloud/runtime";
 import { createPersistentCloudRuntime } from "./server/cloud/startup";
 import { validateInstallationOrigin } from "./server/cloud/installation-storage";
+import { CloudClientMonitor } from "./server/cloud/activity/client-monitor";
+import { CloudPeriodicLoop } from "./server/cloud/periodic-loop";
 
 type Command = "dev" | "serve";
 
@@ -60,6 +62,14 @@ async function runServer(
   cloud.inference.worker.start();
   cloud.authentication.mailWorker.start();
   cloud.scheduleLoop.start();
+  cloud.activity.exportLoop.start();
+  const clientMonitor = new CloudClientMonitor(cloud.database, getRuntime());
+  const clientMonitorLoop = new CloudPeriodicLoop(
+    "Client monitor",
+    () => clientMonitor.tick(),
+    Number.POSITIVE_INFINITY,
+  );
+  clientMonitorLoop.start();
   const appDirectory = resolve(fileURLToPath(new URL("..", import.meta.url)));
   const app = next({ dev: development, dir: appDirectory, hostname, port });
   await app.prepare();
@@ -140,7 +150,9 @@ async function runServer(
     getRuntime().gateways.close();
     getRuntime().previews?.close();
     server.close(() => {
-      void closeCloudRuntime()
+      void clientMonitorLoop
+        .close()
+        .then(() => closeCloudRuntime())
         .then(() => {
           clearTimeout(deadline);
           closeRuntime();

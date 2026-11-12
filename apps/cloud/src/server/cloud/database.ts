@@ -39,6 +39,8 @@ export const cloudMigrations = [
   "036-two-factor.sql",
   "040-copilot-cli-provider.sql",
   "041-provider-sign-in.sql",
+  "042-ai-activity.sql",
+  "043-client-activity.sql",
 ];
 
 export interface CloudSql {

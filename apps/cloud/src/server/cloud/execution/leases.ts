@@ -32,6 +32,7 @@ import {
   terminalStates,
 } from "./records";
 import { requireWorker } from "./workers";
+import { recordAiActivity, stepActivity } from "../activity/journal";
 
 const maximumRunActivity = 2000;
 
@@ -360,7 +361,7 @@ export class CloudExecutionLeases {
       );
       if (recorded.rows[0]!.count + input.entries.length > maximumRunActivity)
         return { instruction: "continue" };
-      for (const entry of input.entries)
+      for (const entry of input.entries) {
         await sql.query(
           "INSERT INTO cloud_run_activity (organization_id,id,run_id,title,detail,status) VALUES ($1,$2,$3,$4,$5,$6)",
           [
@@ -372,6 +373,13 @@ export class CloudExecutionLeases {
             entry.status,
           ],
         );
+        await recordAiActivity(sql, {
+          organizationId: worker.organizationId,
+          ...stepActivity(entry.status, entry.title, entry.detail),
+          actorId: run.actorId,
+          runId: run.id,
+        });
+      }
       return { instruction: "continue" };
     });
   }

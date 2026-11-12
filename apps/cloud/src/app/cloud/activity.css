@@ -1,0 +1,148 @@
+.cloud-ai-activity-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 18px;
+}
+.cloud-ai-activity-toolbar .cloud-inbox-tabs {
+  padding: 0;
+  border-bottom: 0;
+}
+.cloud-ai-activity-toolbar > button[aria-pressed] {
+  min-height: 0;
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+.cloud-ai-activity-toolbar > button[aria-pressed="true"] {
+  border-color: var(--border);
+  background: var(--secondary);
+  color: var(--foreground);
+}
+.cloud-ai-activity-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  color: var(--foreground);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-ai-activity-scope:hover {
+  background: var(--cloud-hover);
+}
+.cloud-ai-activity {
+  display: grid;
+  gap: 24px;
+  max-width: 920px;
+}
+.cloud-ai-activity h2 {
+  margin-bottom: 8px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.cloud-ai-activity ol {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  overflow: hidden;
+}
+.cloud-ai-activity > button {
+  justify-self: start;
+}
+.cloud-ai-activity-entry {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 10px 14px;
+  border-top: 1px solid color-mix(in oklab, var(--border) 45%, transparent);
+}
+.cloud-ai-activity-entry:first-child {
+  border-top: 0;
+}
+.cloud-ai-activity-entry > time {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cloud-ai-activity-dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: var(--muted-foreground);
+}
+.cloud-ai-activity-entry[data-status="started"] .cloud-ai-activity-dot {
+  background: var(--primary);
+}
+.cloud-ai-activity-entry[data-status="succeeded"] .cloud-ai-activity-dot {
+  background: var(--cloud-success);
+}
+.cloud-ai-activity-entry[data-status="failed"] .cloud-ai-activity-dot {
+  background: var(--destructive);
+}
+.cloud-ai-activity-entry[data-status="canceled"] .cloud-ai-activity-dot,
+.cloud-ai-activity-entry[data-status="warning"] .cloud-ai-activity-dot {
+  background: var(--cloud-warning);
+}
+.cloud-ai-activity-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.cloud-ai-activity-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.cloud-ai-activity-title a {
+  display: inline-flex;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-weight: 400;
+}
+.cloud-ai-activity-title a span {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.cloud-ai-activity-title a:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+.cloud-ai-activity-detail {
+  color: var(--foreground);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.cloud-ai-activity-meta {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-mimorii-status {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.cloud-mimorii-status dt {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-mimorii-status dd {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
