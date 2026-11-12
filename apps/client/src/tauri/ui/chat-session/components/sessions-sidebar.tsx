@@ -276,7 +276,9 @@ export const SessionsSidebar = ({
     renderedSessions,
     getSessionSidebarGroup,
   );
-  const showSessionProjectFilter = sessionProjectFacets.length > 1;
+  const showSessionProjectFilter =
+    sessionProjectFacets.length > 1 ||
+    sessionProjectFilter.projectIds.length > 0;
 
   useEffect(() => {
     setRenderedSessionLimit(INITIAL_RENDERED_SESSION_LIMIT);

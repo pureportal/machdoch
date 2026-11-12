@@ -41,10 +41,11 @@ import {
   type SessionHistoryProjectFacet,
   type SessionHistoryTagFacet,
 } from "./session-history-index";
+import { retainAvailableSessionProjects } from "./session-project-filter";
 import {
-  DEFAULT_SESSION_PROJECT_FILTER,
-  retainAvailableSessionProjects,
-} from "./session-project-filter";
+  readSessionFilterPreferences,
+  writeSessionFilterPreferences,
+} from "./session-filter-preferences";
 import type { SessionProjectFilter } from "@machdoch/product-ui";
 import { useNewestMessageScroll } from "./use-newest-message-scroll";
 import { canUseTauriStore } from "@machdoch/media-studio/tauri/ui/lib/_helpers/shell-store-storage.helper.js";
@@ -2440,14 +2441,21 @@ export const useChatSessionShellState = (
   const [hasHydrated, setHasHydrated] = useState(false);
   const [hydrationRetrySequence, setHydrationRetrySequence] = useState(0);
   const [persistenceSignal, setPersistenceSignal] = useState(0);
+  const initialSessionFiltersRef = useRef(readSessionFilterPreferences());
   const [sessionScopeFilter, setSessionScopeFilter] =
-    useState<SessionScopeFilter>("open");
+    useState<SessionScopeFilter>(initialSessionFiltersRef.current.scope);
   const [sessionStatusFilters, setSessionStatusFilters] =
-    useState<SessionStatusFilterSelection>(["any"]);
+    useState<SessionStatusFilterSelection>(
+      initialSessionFiltersRef.current.status,
+    );
   const [sessionSearchQuery, setSessionSearchQuery] = useState("");
   const [sessionProjectFilter, setSessionProjectFilter] =
-    useState<SessionProjectFilter>(DEFAULT_SESSION_PROJECT_FILTER);
-  const [sessionTagFilters, setSessionTagFilters] = useState<string[]>([]);
+    useState<SessionProjectFilter>(
+      initialSessionFiltersRef.current.projectFilter,
+    );
+  const [sessionTagFilters, setSessionTagFilters] = useState<string[]>([
+    ...initialSessionFiltersRef.current.tags,
+  ]);
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [settingsSection, setSettingsSection] =
     useState<SettingsSection>("providers");
@@ -2884,7 +2892,21 @@ export const useChatSessionShellState = (
   }, [activeSession, activeSessionId, resolvedActiveSessionId]);
 
   useEffect(() => {
-    if (sessionTagFilters.length === 0) {
+    writeSessionFilterPreferences({
+      scope: sessionScopeFilter,
+      status: sessionStatusFilters,
+      projectFilter: sessionProjectFilter,
+      tags: sessionTagFilters,
+    });
+  }, [
+    sessionProjectFilter,
+    sessionScopeFilter,
+    sessionStatusFilters,
+    sessionTagFilters,
+  ]);
+
+  useEffect(() => {
+    if (!hasHydrated || sessionTagFilters.length === 0) {
       return;
     }
 
@@ -2898,9 +2920,13 @@ export const useChatSessionShellState = (
     if (nextTagFilters.length !== sessionTagFilters.length) {
       setSessionTagFilters(nextTagFilters);
     }
-  }, [sessionHistoryIndex.tags, sessionTagFilters]);
+  }, [hasHydrated, sessionHistoryIndex.tags, sessionTagFilters]);
 
   useEffect(() => {
+    if (!hasHydrated) {
+      return;
+    }
+
     const availableProjects = new Set(
       sessionHistoryIndex.projects.map((project) => project.id),
     );
@@ -2908,7 +2934,7 @@ export const useChatSessionShellState = (
     setSessionProjectFilter((current) =>
       retainAvailableSessionProjects(current, availableProjects),
     );
-  }, [sessionHistoryIndex.projects]);
+  }, [hasHydrated, sessionHistoryIndex.projects]);
 
   useEffect(() => {
     let cancelled = false;
