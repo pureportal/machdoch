@@ -3,6 +3,10 @@ import { z } from "zod";
 const code = z.string().trim().min(1).max(64);
 
 export const twoFactorCodeSchema = z.strictObject({ code });
+export const twoFactorSignInSchema = z.strictObject({
+  code,
+  remember: z.boolean().default(false),
+});
 export const authenticatorReplacementSchema = z.strictObject({
   currentCode: code,
   code,

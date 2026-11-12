@@ -56,7 +56,7 @@ export class CloudMailStore {
         "DELETE FROM cloud_magic_confirmations WHERE expires_at<=clock_timestamp()",
       );
       await sql.query(
-        "DELETE FROM cloud_sessions WHERE token_hash IN (SELECT token_hash FROM cloud_sessions WHERE expires_at<=clock_timestamp() OR touched_at<=clock_timestamp()-interval '30 minutes' ORDER BY token_hash LIMIT 500 FOR UPDATE SKIP LOCKED)",
+        "DELETE FROM cloud_sessions WHERE token_hash IN (SELECT token_hash FROM cloud_sessions s WHERE (s.expires_at<=clock_timestamp() OR s.touched_at<=clock_timestamp()-interval '30 minutes') AND NOT cloud_session_restorable(s) ORDER BY token_hash LIMIT 500 FOR UPDATE SKIP LOCKED)",
       );
     });
   }

@@ -56,7 +56,10 @@ export function TwoFactorChallenge({
           setError("");
           void cloudRequest<TwoFactorVerification>("auth/two-factor/verify", {
             method: "POST",
-            body: { code: formText(form, "code") },
+            body: {
+              code: formText(form, "code"),
+              remember: form.get("remember") === "on",
+            },
           })
             .then((result) => {
               if (result.remainingRecoveryCodes === null)
@@ -83,6 +86,10 @@ export function TwoFactorChallenge({
           autoFocus
           inputRef={input}
         />
+        <label className="flex items-center gap-2">
+          <input type="checkbox" name="remember" disabled={pending} />
+          Remember me
+        </label>
         <Button type="submit" aria-disabled={pending} aria-busy={pending}>
           {pending ? "Verifying…" : "Verify"}
         </Button>

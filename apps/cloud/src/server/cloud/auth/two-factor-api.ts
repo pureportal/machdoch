@@ -2,10 +2,16 @@ import type { CloudActor } from "../../../lib/cloud-contract";
 import {
   authenticatorReplacementSchema,
   twoFactorCodeSchema,
+  twoFactorSignInSchema,
 } from "../../../lib/cloud-two-factor-contract";
 import { cookieValue } from "../../request-auth";
 import { CloudError } from "../access";
-import { requireCloudOrigin, setCloudCredentials } from "../browser-auth";
+import {
+  cloudSessionMaxAge,
+  requireCloudOrigin,
+  setCloudCredentials,
+  setRememberedSession,
+} from "../browser-auth";
 import {
   cloudCsrfCookie,
   cloudCsrfHeader,
@@ -13,8 +19,6 @@ import {
 } from "../identity";
 import { readBody } from "../request-body";
 import type { CloudRuntime } from "../runtime";
-
-const sessionMaxAge = 12 * 60 * 60;
 
 export async function handleTwoFactorChallengeApi(
   runtime: CloudRuntime,
@@ -39,22 +43,23 @@ export async function handleTwoFactorChallengeApi(
   if (!pending)
     throw new CloudError(401, "authentication_required", "Sign in again.");
   await runtime.identity.limitSecondFactor(address, pending.userId);
-  const { code } = await readBody(request, twoFactorCodeSchema);
-  if (path === "setup/confirm") {
-    const result = await service.confirmSetup(token, csrf, code);
-    return setCloudCredentials(
-      Response.json({ recoveryCodes: result.recoveryCodes }),
+  const { code, remember } = await readBody(request, twoFactorSignInSchema);
+  const result =
+    path === "setup/confirm"
+      ? await service.confirmSetup(token, csrf, code, remember)
+      : await service.verify(token, csrf, code, remember);
+  const body =
+    "recoveryCodes" in result
+      ? { recoveryCodes: result.recoveryCodes }
+      : { remainingRecoveryCodes: result.remainingRecoveryCodes };
+  return setRememberedSession(
+    setCloudCredentials(
+      Response.json(body),
       result.sessionToken,
       result.csrfToken,
-      sessionMaxAge,
-    );
-  }
-  const result = await service.verify(token, csrf, code);
-  return setCloudCredentials(
-    Response.json({ remainingRecoveryCodes: result.remainingRecoveryCodes }),
-    result.sessionToken,
-    result.csrfToken,
-    sessionMaxAge,
+      cloudSessionMaxAge,
+    ),
+    result.remember,
   );
 }
 

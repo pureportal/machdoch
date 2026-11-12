@@ -7,6 +7,7 @@ import { CloudSsoFlows } from "./auth/sso-flows";
 import { CloudOidcExchange } from "./auth/oidc-exchange";
 import { CloudSigninPolicy } from "./auth/signin-policy";
 import { CloudSessions } from "./auth/sessions";
+import { CloudRememberedSessions } from "./auth/remembered-sessions";
 import { CloudCredentials } from "./auth/credentials";
 import { CloudTwoFactor } from "./auth/two-factor";
 import { CloudRecurrencePreview } from "./automation/recurrence";
@@ -91,6 +92,7 @@ export interface CloudRuntime {
     oidcExchange: CloudOidcExchange;
     signinPolicy: CloudSigninPolicy;
     sessions: CloudSessions;
+    rememberedSessions: CloudRememberedSessions;
     invitations: CloudInvitations;
     invitationAcceptance: CloudInvitationAcceptance;
     emailSettings: CloudEmailSettingsService;
@@ -288,6 +290,7 @@ export function createCloudRuntime(
       ),
       signinPolicy: new CloudSigninPolicy(database),
       sessions: new CloudSessions(database),
+      rememberedSessions: new CloudRememberedSessions(database),
       invitations: new CloudInvitations(
         database,
         options.credentialsCipher ?? null,

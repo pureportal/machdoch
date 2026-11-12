@@ -79,7 +79,10 @@ export function TwoFactorEnrollment({
             setError("");
             void cloudRequest<RecoveryCodes>("auth/two-factor/setup/confirm", {
               method: "POST",
-              body: { code: formText(form, "code") },
+              body: {
+                code: formText(form, "code"),
+                remember: form.get("remember") === "on",
+              },
             })
               .then((result) => setCodes(result.recoveryCodes))
               .catch((reason: Error) => {
@@ -95,6 +98,10 @@ export function TwoFactorEnrollment({
             disabled={pending}
             inputRef={input}
           />
+          <label className="flex items-center gap-2">
+            <input type="checkbox" name="remember" disabled={pending} />
+            Remember me
+          </label>
           <Button type="submit" aria-disabled={pending} aria-busy={pending}>
             {pending ? "Verifying…" : "Continue"}
           </Button>

@@ -57,9 +57,9 @@ export class CloudSessions {
           `SELECT s.id,s.id=$3 AS current,s.browser,s.platform,s.address,s.authentication_method AS method,p.configuration->>'name' AS provider,
         to_char(s.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
         to_char(s.touched_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "lastActiveAt",
-        to_char(LEAST(s.expires_at,s.touched_at+interval '30 minutes') AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "expiresAt"
+        to_char(CASE WHEN cloud_session_restorable(s) THEN s.remembered_until ELSE LEAST(s.expires_at,s.touched_at+interval '30 minutes') END AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "expiresAt"
         FROM cloud_sessions s LEFT JOIN cloud_sso_providers p ON p.id=s.provider_id
-        WHERE s.organization_id=$1 AND s.user_id=$2 AND cloud_session_active(s) ORDER BY (s.id=$3) DESC,s.touched_at DESC,s.id`,
+        WHERE s.organization_id=$1 AND s.user_id=$2 AND (cloud_session_active(s) OR cloud_session_restorable(s)) ORDER BY (s.id=$3) DESC,s.touched_at DESC,s.id`,
           [actor.organizationId, actor.userId, current.id],
         )
       ).rows;

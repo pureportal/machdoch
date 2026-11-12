@@ -190,8 +190,11 @@ export class CloudIdentity {
     confirmationNonce?: string,
     ssoBrowser?: string,
     invitationBrowser?: string,
+    rememberToken?: string,
   ): Promise<void> {
     const validToken = validateSecret(token, "mch_cloud_session");
+    const validRemember =
+      rememberToken && validateSecret(rememberToken, "mch_cloud_remember");
     const validNonce =
       confirmationNonce &&
       validateSecret(confirmationNonce, "mch_cloud_confirmation");
@@ -199,9 +202,23 @@ export class CloudIdentity {
     const validInvitation =
       invitationBrowser &&
       validateSecret(invitationBrowser, "mch_cloud_invitation");
-    if (!validToken && !validNonce && !validSso && !validInvitation) return;
+    if (
+      !validToken &&
+      !validNonce &&
+      !validSso &&
+      !validInvitation &&
+      !validRemember
+    )
+      return;
     await this.database.transaction(async (sql) => {
       const hashes = validToken ? [hashSecret(token)] : [];
+      if (validRemember) {
+        const remembered = await sql.query<{ token_hash: string }>(
+          "SELECT token_hash FROM cloud_sessions WHERE remember_hash=$1 OR remember_previous_hash=$1",
+          [hashSecret(rememberToken!)],
+        );
+        hashes.push(...remembered.rows.map((row) => row.token_hash));
+      }
       if (validInvitation) {
         const confirmations = await sql.query<{ session_hash: string | null }>(
           "DELETE FROM cloud_invitation_confirmations WHERE id IN (SELECT id FROM cloud_invitation_confirmations WHERE browser_hash=$1 ORDER BY id FOR UPDATE) RETURNING session_hash",

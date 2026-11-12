@@ -134,7 +134,13 @@ export function bearerToken(request: Request): string | null {
 }
 
 export function cookieValue(request: Request, name: string): string | null {
-  const cookie = request.headers.get("cookie");
+  return cookieHeaderValue(request.headers.get("cookie"), name);
+}
+
+export function cookieHeaderValue(
+  cookie: string | null | undefined,
+  name: string,
+): string | null {
   if (!cookie) return null;
   for (const part of cookie.split(";")) {
     const [key, ...value] = part.trim().split("=");

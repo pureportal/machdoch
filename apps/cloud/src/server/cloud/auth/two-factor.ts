@@ -23,6 +23,10 @@ import {
   normalizeRecoveryCode,
 } from "./recovery-codes";
 import {
+  rememberSession,
+  type RememberedCredential,
+} from "./remembered-sessions";
+import {
   createTotpSecret,
   encodeBase32,
   isTotpCode,
@@ -54,6 +58,7 @@ type CodeCheck =
 export interface SessionCredentials {
   sessionToken: string;
   csrfToken: string;
+  remember: RememberedCredential | null;
 }
 
 function authenticatorContext(userId: string): Buffer {
@@ -330,6 +335,7 @@ async function replaceRecoveryCodes(
 async function completeSecondFactor(
   sql: CloudSql,
   session: SetupSession,
+  remember: boolean,
 ): Promise<SessionCredentials> {
   const sessionToken = createSecret("mch_cloud_session"),
     csrfToken = createSecret("mch_cloud_csrf");
@@ -338,7 +344,11 @@ async function completeSecondFactor(
     [session.id, hashSecret(sessionToken), hashSecret(csrfToken)],
   );
   await capVerifiedSessions(sql, session.userId, session.organizationId);
-  return { sessionToken, csrfToken };
+  return {
+    sessionToken,
+    csrfToken,
+    remember: remember ? await rememberSession(sql, session.id) : null,
+  };
 }
 
 export class CloudTwoFactor {
@@ -377,6 +387,7 @@ export class CloudTwoFactor {
     token: string,
     csrf: string,
     code: string,
+    remember = false,
   ): Promise<SessionCredentials & RecoveryCodes> {
     return this.database.transaction(async (sql) => {
       const cipher = await requireCredentialStorage(sql, this.cipher);
@@ -406,7 +417,7 @@ export class CloudTwoFactor {
         {},
       );
       return {
-        ...(await completeSecondFactor(sql, session)),
+        ...(await completeSecondFactor(sql, session, remember)),
         recoveryCodes,
       };
     });
@@ -416,6 +427,7 @@ export class CloudTwoFactor {
     token: string,
     csrf: string,
     code: string,
+    remember = false,
   ): Promise<SessionCredentials & { remainingRecoveryCodes: number | null }> {
     const outcome = await this.database.transaction(async (sql) => {
       const cipher = await requireCredentialStorage(sql, this.cipher);
@@ -433,7 +445,7 @@ export class CloudTwoFactor {
         );
       return {
         ok: true as const,
-        credentials: await completeSecondFactor(sql, session),
+        credentials: await completeSecondFactor(sql, session, remember),
         remainingRecoveryCodes: check.remainingRecoveryCodes,
       };
     });

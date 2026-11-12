@@ -25,6 +25,7 @@ import { createPersistentCloudRuntime } from "./server/cloud/startup";
 import { validateInstallationOrigin } from "./server/cloud/installation-storage";
 import { CloudClientMonitor } from "./server/cloud/activity/client-monitor";
 import { CloudPeriodicLoop } from "./server/cloud/periodic-loop";
+import { restoreRememberedNavigation } from "./server/cloud/auth/remembered-navigation";
 
 type Command = "dev" | "serve";
 
@@ -251,6 +252,11 @@ async function dispatchHttpRequest(
     }
     return;
   }
+  if (
+    (request.method === "GET" || request.method === "HEAD") &&
+    !pathname.startsWith("/_next/")
+  )
+    await restoreRememberedNavigation(cloud, request, response);
   await nextHandler(request, response);
 }
 

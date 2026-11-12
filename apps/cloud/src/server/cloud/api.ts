@@ -8,7 +8,12 @@ import {
   relationInputSchema,
   childIssueInputSchema,
 } from "../../lib/cloud-relation-contract";
-import { requireCloudOrigin, setCloudCredentials } from "./browser-auth";
+import {
+  clearCloudCredentials,
+  requireCloudOrigin,
+  setCloudCredentials,
+} from "./browser-auth";
+import { rememberedSessionCookie } from "./auth/remembered-sessions";
 import { handleMagicLinkApi, handleEmailSettingsApi } from "./auth/api";
 import { handleAiActivityApi } from "./activity/api";
 import { handleGitHubApi, handleGitHubWebhook } from "./github/api";
@@ -335,15 +340,11 @@ async function route(
       cookieValue(request, magicConfirmationCookie) ?? undefined,
       cookieValue(request, ssoBrowserCookie) ?? undefined,
       cookieValue(request, invitationCookie) ?? undefined,
+      cookieValue(request, rememberedSessionCookie) ?? undefined,
     );
-    const response = setCloudCredentials(
-      Response.json({ ok: true }),
-      "",
-      "",
-      0,
+    return clearProofCookies(
+      clearCloudCredentials(Response.json({ ok: true })),
     );
-    clearProofCookies(response);
-    return response;
   }
   const actor = await actorForRequest(runtime, request);
   if (routeKey === "PUT account/credentials") {
@@ -353,14 +354,9 @@ async function route(
       cookieValue(request, cloudSessionCookie) ?? "",
       await readBody(request, credentialsInputSchema),
     );
-    const response = setCloudCredentials(
-      Response.json({ ok: true }),
-      "",
-      "",
-      0,
+    return clearProofCookies(
+      clearCloudCredentials(Response.json({ ok: true })),
     );
-    clearProofCookies(response);
-    return response;
   }
   if (path[0] === "account" && path[1] === "two-factor")
     return handleAccountTwoFactorApi(runtime, request, actor, address);
@@ -394,9 +390,7 @@ async function route(
       await readBody(request, sessionRevocationSchema),
     );
     const response = Response.json(result);
-    return result.signedOut
-      ? setCloudCredentials(response, "", "", 0)
-      : response;
+    return result.signedOut ? clearCloudCredentials(response) : response;
   }
   if (["sso-providers", "sso-policy", "sso-link"].includes(path[0] ?? ""))
     return handleSsoSettingsApi(runtime, request, actor);

@@ -87,7 +87,7 @@ export async function issueCloudSession(
     ...(previous ? [previous.user_id] : []),
   ]);
   await sql.query(
-    "DELETE FROM cloud_sessions s WHERE user_id=$1 AND organization_id=$2 AND NOT cloud_session_valid(s)",
+    "DELETE FROM cloud_sessions s WHERE user_id=$1 AND organization_id=$2 AND NOT cloud_session_valid(s) AND NOT cloud_session_restorable(s)",
     [userId, membership.organization_id],
   );
   await sql.query(
