@@ -5,6 +5,7 @@ import type { ExecutorContinuationRequest } from "./agent-runtime-types.js";
 import type { PreparedConversationPromptContext } from "./conversation-prompt-context.js";
 import { createAnswerLanguageInstruction } from "./answer-language.js";
 import { MACHDOCH_STATE_GUIDANCE } from "./machdoch-state-tool-definitions.js";
+import { MACHDOCH_AGENT_SESSION_GUIDANCE } from "./machdoch-session-tool-definitions.js";
 import { createReleaseStagePromptSection } from "../release-stages.js";
 
 export interface TaskStrategyProfile {
@@ -249,6 +250,9 @@ export const createExecutorSystemPrompt = (
       : undefined,
     tools.some((tool) => tool.name === "get_machdoch_state")
       ? `<machdoch_state_contract>${MACHDOCH_STATE_GUIDANCE}</machdoch_state_contract>`
+      : undefined,
+    tools.some((tool) => tool.name === "start_agent_session")
+      ? `<machdoch_agent_session_contract>${MACHDOCH_AGENT_SESSION_GUIDANCE}</machdoch_agent_session_contract>`
       : undefined,
     "<missing_input_contract>If a one-shot task cannot be completed because required user input is missing and no available tool can determine it, call `submit_final_response` with status `blocked` and put the exact next user action in `blockerReason`. Before blocking, exhaust explicit details in the current task and available read/search/fetch tools. Do not ask for labels or names that can be inferred from URLs, repository names, folders, file paths, or domains already provided. Do not describe a clarification request as completed work.</missing_input_contract>",
     createStrategyProfileSection(strategyProfile),

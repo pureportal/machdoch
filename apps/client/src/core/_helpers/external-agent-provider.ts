@@ -105,6 +105,7 @@ import {
 import { createClaudeAuthenticationRecovery } from "./claude-authentication-failure.js";
 import { getWorkspacePresenceEnrollment } from "./workspace-agent-presence.js";
 import { MACHDOCH_STATE_GUIDANCE } from "./machdoch-state-tool-definitions.js";
+import { MACHDOCH_AGENT_SESSION_GUIDANCE } from "./machdoch-session-tool-definitions.js";
 import { isRunControlAvailable } from "./run-tool-definitions.js";
 import { startLocalMcpHost, type LocalMcpEndpoint } from "../local-mcp/http.js";
 import { upsertMemoryUpdate } from "./agent-runtime-shared.js";
@@ -2669,7 +2670,12 @@ const executeExternalAgentCliTask = async (
       ...(isRunControlAvailable() &&
       params.scopedWorkerToolDefinitions === undefined &&
       !poseChat
-        ? [MACHDOCH_STATE_GUIDANCE]
+        ? [
+            MACHDOCH_STATE_GUIDANCE,
+            ...(params.config.mode === "ask"
+              ? []
+              : [MACHDOCH_AGENT_SESSION_GUIDANCE]),
+          ]
         : []),
       ...(params.nativeGoal && provider === "claude-cli"
         ? [

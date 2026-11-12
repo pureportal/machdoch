@@ -9,6 +9,7 @@ import { useProviderModelCatalog } from "../../use-provider-model-catalog";
 import { expandReviewChangesCommand } from "./review-changes";
 import { stopDesktopTask } from "./graceful-stop";
 import { answerQuestionWithMessage, findPendingAgentQuestion } from "./session-needs-input";
+import { useAgentSessionControl } from "../../app-shell/use-agent-session-control";
 import {
   getAgentControlEndpoint,
   sendAgentControl,
@@ -758,6 +759,8 @@ export const useChatSessionController = (
       iterationCount?: number;
       iterationMode?: RequestIterationMode;
       runningAction?: RunningTaskMessageAction;
+      contextAttachments?: ChatSessionContextAttachment[];
+      preserveDraft?: boolean;
     }) => boolean
   >(() => false);
   const inactiveDesktopTaskObservationsRef = useRef<
@@ -7357,6 +7360,40 @@ export const useChatSessionController = (
     },
   });
 
+  useAgentSessionControl({
+    enabled: state.hasHydrated,
+    shellState: state.shellState,
+    providerChooserState,
+    onStartSession: (session, prompt) => {
+      let startedTaskId: string | null = null;
+      const submitted = taskSubmission.submitTaskToSession({
+        sessionSnapshot: session,
+        task: prompt,
+        contextAttachments: [],
+        clearDraft: false,
+        createSessionIfMissing: true,
+        activateSession: false,
+        onTaskStarted: (taskId) => {
+          startedTaskId = taskId;
+        },
+      });
+      return submitted ? startedTaskId : null;
+    },
+    onSendMessage: ({ sessionId, prompt, runningAction }) =>
+      remoteSessionMessageSubmitRef.current({
+        sessionId,
+        prompt,
+        promptEnhancementMode: "off",
+        interviewEnabled: false,
+        runningAction,
+        contextAttachments: [],
+        preserveDraft: true,
+      }),
+    onCancelSession: requestTaskCancellation,
+    onRenameSession: handleRemoteRenameSession,
+    onArchiveSession: lifecycleActions.archiveSession,
+  });
+
   const submitQuickVoiceCommand = useCallback(
     (
       transcript: string,
@@ -8491,6 +8528,8 @@ export const useChatSessionController = (
       iterationCount?: number;
       iterationMode?: RequestIterationMode;
       runningAction?: RunningTaskMessageAction;
+      contextAttachments?: ChatSessionContextAttachment[];
+      preserveDraft?: boolean;
     }): boolean => {
       const prompt = input.prompt.trim();
       const session = state.getSessionById(input.sessionId);
@@ -8503,14 +8542,18 @@ export const useChatSessionController = (
           kind: "active-session",
           sessionSnapshot: session,
           task: prompt,
-          contextAttachments: session.draftContextAttachments,
+          contextAttachments:
+            input.contextAttachments ?? session.draftContextAttachments,
           runningAction: getSessionMessageRunningAction({
             session,
             activeTaskId,
             unsettledTaskId: getUnsettledDesktopTaskIdForSession(session.id),
             runningAction: input.runningAction ?? runningTaskMessageAction,
           }),
-          composerClearGuard: { ...createComposerClearGuard(session), preserve: prompt !== session.draft.trim() },
+          composerClearGuard: {
+            ...createComposerClearGuard(session),
+            preserve: input.preserveDraft === true || prompt !== session.draft.trim(),
+          },
           messageSettings: createSessionMessageSettings(
             session,
             input.promptEnhancementMode,

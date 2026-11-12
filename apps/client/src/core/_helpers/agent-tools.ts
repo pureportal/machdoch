@@ -19,6 +19,7 @@ import {
 } from "./macro-recorder-tool-definitions.js";
 import { createPackageToolDefinitions } from "./package-tool-definitions.js";
 import { createMachdochStateToolDefinitions } from "./machdoch-state-tool-definitions.js";
+import { createMachdochSessionToolDefinitions } from "./machdoch-session-tool-definitions.js";
 import { createAppControlToolDefinitions } from "./app-control-tool-definitions.js";
 import { createRunToolDefinitions } from "./run-tool-definitions.js";
 import { createSchedulerToolDefinitions } from "./scheduler-tool-definitions.js";
@@ -104,6 +105,7 @@ export const createToolDefinitions = (
     ...createPackageToolDefinitions(),
     ...createRunToolDefinitions(),
     ...createMachdochStateToolDefinitions(),
+    ...createMachdochSessionToolDefinitions(),
     ...createAppControlToolDefinitions(memory),
     createWorkspaceAgentPresenceToolDefinition(),
     ...createUtilityToolDefinitions(),

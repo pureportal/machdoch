@@ -82,18 +82,21 @@ interface NewSessionDefaults extends Pick<
   reasoning?: NonNullable<ChatSessionRecord["reasoning"]>;
 }
 
-const createNewSessionDefaults = (
+export const createNewSessionDefaults = (
   state: ShellPersistedState,
   providerChooserState: ProviderChooserState,
   workspace: string | null | undefined,
+  selection?: { provider: ChatSessionRecord["provider"]; model?: string },
 ): NewSessionDefaults => {
   const provider =
+    selection?.provider ??
     providerChooserState.chooserProviders.find(
       (entry) => entry === state.lastSelectedProvider,
     ) ??
     providerChooserState.chooserProviders[0] ??
     state.lastSelectedProvider;
   const model =
+    selection?.model ??
     state.lastSelectedModelByProvider[provider] ??
     getDefaultModelForProvider(provider);
   const reasoning = normalizeSessionReasoningOverride(
