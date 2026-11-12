@@ -188,7 +188,8 @@ it("lets only CLI providers clear their key and fall back to the CLI's own sign-
     randomUUID(),
     configuration,
   );
-  const apiMetadata = (await runtime.aiProviders.list(owner, true)).providers[0]!;
+  const apiMetadata = (await runtime.aiProviders.list(owner, true))
+    .providers[0]!;
   await expect(
     runtime.aiProviders.update(owner, randomUUID(), api.id, {
       ...providerUpdateSchema.strip().parse(apiMetadata),
@@ -204,16 +205,18 @@ it("lets only CLI providers clear their key and fall back to the CLI's own sign-
   expect(
     (await runtime.aiProviders.resolve(member, cli.id, "sonnet")).cli?.apiKey,
   ).toBe(secret);
-  const cliMetadata = (await runtime.aiProviders.list(owner, true)).providers.find(
-    (provider) => provider.id === cli.id,
-  )!;
+  const cliMetadata = (
+    await runtime.aiProviders.list(owner, true)
+  ).providers.find((provider) => provider.id === cli.id)!;
+  expect([apiMetadata.signIn, cliMetadata.signIn]).toEqual([false, false]);
   await runtime.aiProviders.update(owner, randomUUID(), cli.id, {
     ...providerUpdateSchema.strip().parse(cliMetadata),
     apiKey: "",
   });
-  expect(
-    (await runtime.aiProviders.resolve(member, cli.id, "sonnet")).cli?.apiKey,
-  ).toBe("");
+  const resolved = await runtime.aiProviders.resolve(member, cli.id, "sonnet");
+  expect(resolved.cli?.apiKey).toBe("");
+  expect(resolved.cli?.home).toContain(cli.id);
+  expect(resolved.configuration.signIn).toBe(true);
 });
 
 it("rejects missing or changed storage keys and ciphertext swapped between connections", async () => {

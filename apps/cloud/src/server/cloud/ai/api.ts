@@ -1,5 +1,6 @@
 import { cloudId, type CloudActor } from "../../../lib/cloud-contract";
 import {
+  cliLoginCodeSchema,
   providerInputSchema,
   providerUpdateSchema,
 } from "@machdoch/fleet-protocol/cloud-providers";
@@ -21,6 +22,23 @@ export async function handleAiProviderApi(
         url.searchParams.get("view") === "manage",
       ),
     );
+  if (path[2] === "login") {
+    const id = cloudId.parse(path[1]);
+    if (request.method === "GET" && path.length === 3)
+      return Response.json(await runtime.cliLogins.get(actor, id));
+    if (request.method === "POST" && path.length === 3)
+      return Response.json(await runtime.cliLogins.start(actor, id));
+    if (request.method === "POST" && path.length === 4 && path[3] === "code")
+      return Response.json(
+        await runtime.cliLogins.submitCode(
+          actor,
+          id,
+          (await readBody(request, cliLoginCodeSchema)).code,
+        ),
+      );
+    if (request.method === "POST" && path.length === 4 && path[3] === "cancel")
+      return Response.json(await runtime.cliLogins.cancel(actor, id));
+  }
   const key = cloudId.safeParse(request.headers.get("idempotency-key"));
   if (!key.success)
     throw new CloudError(

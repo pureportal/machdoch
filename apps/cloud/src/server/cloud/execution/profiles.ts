@@ -15,13 +15,7 @@ import {
   teamVisibility,
 } from "../access";
 import type { CloudDatabase } from "../database";
-import {
-  fenceRun,
-  lockExecution,
-  readProfile,
-  readRun,
-  requireSandboxProvider,
-} from "./records";
+import { fenceRun, lockExecution, readProfile, readRun } from "./records";
 import { readInferenceProvider } from "../ai/budgets";
 
 export class CloudExecutionProfiles {
@@ -85,7 +79,6 @@ export class CloudExecutionProfiles {
               actor.organizationId,
               input.providerId,
             );
-            requireSandboxProvider(provider);
             if (!provider.models.includes(input.model))
               throw new CloudError(
                 422,
@@ -136,7 +129,6 @@ export class CloudExecutionProfiles {
               input.providerId,
               !input.enabled,
             );
-            requireSandboxProvider(provider);
             if (input.enabled && !provider.models.includes(input.model))
               throw new CloudError(
                 422,

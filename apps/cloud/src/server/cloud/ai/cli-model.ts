@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,10 +9,19 @@ import type {
   AgentModelAdapter,
   AgentModelStartParams,
   AgentModelStreamUsage,
+  AgentModelStructuredOutput,
   AgentModelToolCall,
   AgentModelToolSpec,
   AgentModelTurn,
 } from "@machdoch/model-runtime/types";
+import {
+  cliEnvironment,
+  codexFileCredentials,
+  defaultCliCommand,
+  prepareCliHome,
+  stopProcessTree,
+  type CliCommand,
+} from "./cli-process";
 
 const maximumStreamBytes = 16 * 1024 * 1024;
 const toolCallFence = "```tool_calls";
@@ -37,6 +46,31 @@ function toolInstructions(tools: AgentModelToolSpec[]): string {
     "",
     catalog,
   ].join("\n");
+}
+
+function responseFormatInstructions(
+  structuredOutput: AgentModelStructuredOutput | undefined,
+): string {
+  if (!structuredOutput) return "";
+  return [
+    "",
+    "## Response format",
+    "Your final answer must be only one JSON value that conforms to the JSON schema below, without Markdown fences or any other text.",
+    JSON.stringify(structuredOutput.schema),
+  ].join("\n");
+}
+
+function instructions(parameters: AgentModelStartParams): string {
+  return (
+    parameters.systemPrompt +
+    toolInstructions(parameters.tools) +
+    responseFormatInstructions(parameters.structuredOutput)
+  );
+}
+
+function structuredAnswer(text: string): string {
+  const fenced = /^```(?:json)?\s*\n([\s\S]*?)\n?```$/.exec(text.trim());
+  return (fenced?.[1] ?? text).trim();
 }
 
 function cliToolCall(name: string, args: unknown): AgentModelToolCall {
@@ -82,6 +116,26 @@ function fencedToolCalls(text: string) {
     : null;
 }
 
+function bareToolCalls(text: string, toolNames: string[]) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(structuredAnswer(text));
+  } catch {
+    return null;
+  }
+  const entries = (Array.isArray(parsed) ? parsed : [parsed]).map(record);
+  const known = entries.every(
+    (entry) => typeof entry.name === "string" && toolNames.includes(entry.name),
+  );
+  if (!entries.length || !known) return null;
+  return {
+    text: "",
+    toolCalls: entries.map((entry) =>
+      cliToolCall(String(entry.name), entry.arguments),
+    ),
+  };
+}
+
 function expressionToolCalls(text: string, toolNames: string[]) {
   const toolCalls: AgentModelToolCall[] = [];
   const spans: [number, number][] = [];
@@ -121,6 +175,7 @@ export function parseCliToolCalls(
 ): { text: string; toolCalls: AgentModelToolCall[] } {
   return (
     fencedToolCalls(text) ??
+    bareToolCalls(text, toolNames) ??
     expressionToolCalls(text, toolNames) ?? { text, toolCalls: [] }
   );
 }
@@ -136,31 +191,11 @@ function visibleLength(text: string): number {
     if (toolCallFence.startsWith(text.slice(-size))) return text.length - size;
   return text.length;
 }
-const inheritedEnvironment = [
-  "PATH",
-  "Path",
-  "HOME",
-  "USERPROFILE",
-  "APPDATA",
-  "LOCALAPPDATA",
-  "SystemRoot",
-  "ComSpec",
-  "PATHEXT",
-  "TEMP",
-  "TMP",
-  "CLAUDE_CONFIG_DIR",
-  "CODEX_HOME",
-];
-
 export interface CliModelConnection {
   provider: CloudCliProvider;
   model: string;
   apiKey: string;
-}
-
-export interface CliCommand {
-  file: string;
-  prefixArgs: string[];
+  home: string;
 }
 
 export class CliModelFailure extends Error {
@@ -169,44 +204,6 @@ export class CliModelFailure extends Error {
     message: string,
   ) {
     super(message);
-  }
-}
-
-export function defaultCliCommand(provider: CloudCliProvider): CliCommand {
-  return {
-    file:
-      provider === "claude-code-cli"
-        ? (process.env.MACHDOCH_CLOUD_CLAUDE_CLI ?? "claude")
-        : (process.env.MACHDOCH_CLOUD_CODEX_CLI ?? "codex"),
-    prefixArgs: [],
-  };
-}
-
-function cliEnvironment(connection: CliModelConnection): NodeJS.ProcessEnv {
-  const environment: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV };
-  for (const name of inheritedEnvironment)
-    if (process.env[name] !== undefined) environment[name] = process.env[name];
-  if (connection.apiKey) {
-    if (connection.provider === "claude-code-cli")
-      environment.ANTHROPIC_API_KEY = connection.apiKey;
-    else environment.CODEX_API_KEY = connection.apiKey;
-  }
-  return environment;
-}
-
-function stopProcessTree(pid: number | undefined): void {
-  if (pid === undefined) return;
-  if (process.platform === "win32")
-    spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], {
-      stdio: "ignore",
-      windowsHide: true,
-    });
-  else {
-    try {
-      process.kill(-pid, "SIGKILL");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-    }
   }
 }
 
@@ -231,6 +228,7 @@ interface StreamState {
   failure: string | null;
   usage: AgentModelStreamUsage | undefined;
   stopReason: string | undefined;
+  chunks: Map<string, string[]>;
 }
 
 type LineHandler = (
@@ -298,6 +296,72 @@ const codexLines: LineHandler = (event, state, emit) => {
     state.failure = String(event.message ?? "Codex failed");
 };
 
+function copilotMessage(
+  data: Record<string, unknown>,
+  state: StreamState,
+): string | null {
+  if (typeof data.content !== "string") return null;
+  const count = Number(data.chunkCount);
+  const index = Number(data.chunkIndex);
+  if (
+    typeof data.messageId !== "string" ||
+    !Number.isInteger(count) ||
+    count < 2 ||
+    !Number.isInteger(index) ||
+    index < 0 ||
+    index >= count
+  )
+    return data.content;
+  const parts = state.chunks.get(data.messageId) ?? Array<string>(count);
+  parts[index] = data.content;
+  state.chunks.set(data.messageId, parts);
+  if (parts.filter((part) => part !== undefined).length < count) return null;
+  state.chunks.delete(data.messageId);
+  return parts.join("");
+}
+
+const copilotLines: LineHandler = (event, state, emit) => {
+  const data = record(event.data);
+  if (event.type === "assistant.message" && event.agentId === undefined) {
+    const content = copilotMessage(data, state);
+    const toolRequests = Array.isArray(data.toolRequests)
+      ? data.toolRequests.length
+      : 0;
+    if (content?.trim() && !toolRequests)
+      emit(state.text ? `\n\n${content}` : content);
+    return;
+  }
+  if (event.type === "session.usage_checkpoint") {
+    const snapshot = record(data.accountingSnapshot);
+    const input = tokens(snapshot.lastCallInputTokens);
+    const output = tokens(snapshot.lastCallOutputTokens);
+    if (input || output)
+      state.usage = {
+        inputTokens: input,
+        outputTokens: output,
+        totalTokens: input + output,
+      };
+    return;
+  }
+  if (event.type === "result") {
+    if (event.exitCode === 0) state.stopReason = "end_turn";
+    else state.failure ??= `Copilot exited with ${String(event.exitCode)}`;
+    return;
+  }
+  if (event.type === "error" || String(event.type).endsWith(".error"))
+    state.failure = String(
+      typeof event.data === "string"
+        ? event.data
+        : (data.message ?? data.error ?? "Copilot failed"),
+    );
+};
+
+const lineHandlers: Record<CloudCliProvider, LineHandler> = {
+  "claude-code-cli": claudeLines,
+  "codex-cli": codexLines,
+  "copilot-cli": copilotLines,
+};
+
 async function cliInvocation(
   connection: CliModelConnection,
   parameters: AgentModelStartParams,
@@ -305,11 +369,7 @@ async function cliInvocation(
 ): Promise<{ args: string[]; input: string }> {
   if (connection.provider === "claude-code-cli") {
     const systemPath = join(directory, "system-prompt.txt");
-    await writeFile(
-      systemPath,
-      parameters.systemPrompt + toolInstructions(parameters.tools),
-      { mode: 0o600 },
-    );
+    await writeFile(systemPath, instructions(parameters), { mode: 0o600 });
     return {
       args: [
         "-p",
@@ -332,12 +392,29 @@ async function cliInvocation(
       input: parameters.userPrompt,
     };
   }
+  if (connection.provider === "copilot-cli")
+    return {
+      args: [
+        "-s",
+        "--stream=off",
+        "--output-format=json",
+        "--no-ask-user",
+        "--no-auto-update",
+        "--no-custom-instructions",
+        "--disable-builtin-mcps",
+        "--disable-client-telemetry",
+        "--available-tools=",
+        `--model=${connection.model}`,
+      ],
+      input: [
+        "Follow these system instructions:",
+        instructions(parameters),
+        "User request:",
+        parameters.userPrompt,
+      ].join("\n\n"),
+    };
   const instructionsPath = join(directory, "instructions.md");
-  await writeFile(
-    instructionsPath,
-    parameters.systemPrompt + toolInstructions(parameters.tools),
-    { mode: 0o600 },
-  );
+  await writeFile(instructionsPath, instructions(parameters), { mode: 0o600 });
   return {
     args: [
       "exec",
@@ -360,6 +437,7 @@ async function cliInvocation(
       "features.shell_tool=false",
       "--config",
       "features.apply_patch_freeform=false",
+      ...codexFileCredentials,
       "-",
     ],
     input: parameters.userPrompt,
@@ -373,6 +451,7 @@ export function createCliModelAdapter(
   return {
     async startTurn(parameters): Promise<AgentModelTurn> {
       parameters.signal?.throwIfAborted();
+      await prepareCliHome(connection.home);
       const directory = await mkdtemp(join(tmpdir(), "machdoch-cloud-cli-"));
       try {
         const { args, input } = await cliInvocation(
@@ -408,12 +487,15 @@ function runCli(
   directory: string,
   parameters: AgentModelStartParams,
 ): Promise<AgentModelTurn> {
-  const onLine =
-    connection.provider === "claude-code-cli" ? claudeLines : codexLines;
+  const onLine = lineHandlers[connection.provider];
   return new Promise<AgentModelTurn>((resolve, reject) => {
     const child = spawn(command.file, [...command.prefixArgs, ...args], {
       cwd: directory,
-      env: cliEnvironment(connection),
+      env: cliEnvironment(
+        connection.provider,
+        connection.home,
+        connection.apiKey,
+      ),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
       detached: process.platform !== "win32",
@@ -423,6 +505,7 @@ function runCli(
       failure: null,
       usage: undefined,
       stopReason: undefined,
+      chunks: new Map(),
     };
     const decoder = new StringDecoder("utf8");
     let buffered = "";
@@ -518,13 +601,18 @@ function runCli(
           );
           return;
         }
+        const turn = parameters.tools.length
+          ? parseCliToolCalls(
+              state.text,
+              parameters.tools.map((tool) => tool.name),
+            )
+          : { text: state.text, toolCalls: [] };
         resolve({
-          ...(parameters.tools.length
-            ? parseCliToolCalls(
-                state.text,
-                parameters.tools.map((tool) => tool.name),
-              )
-            : { text: state.text, toolCalls: [] }),
+          text:
+            parameters.structuredOutput && !turn.toolCalls.length
+              ? structuredAnswer(turn.text)
+              : turn.text,
+          toolCalls: turn.toolCalls,
           stopReason: state.stopReason,
           usage: state.usage,
         });

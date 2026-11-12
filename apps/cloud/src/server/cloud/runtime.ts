@@ -44,6 +44,7 @@ import { CloudRepositories } from "./execution/repositories";
 import { CloudArtifactUploads } from "./execution/artifact-uploads";
 import { CloudArtifacts } from "./execution/artifacts";
 import { CloudAiProviders } from "./ai/providers";
+import { CloudCliLogins } from "./ai/cli-login";
 import { cloudCredentialsCipher } from "./credential-storage";
 import { initializeInstallation } from "./installation-storage";
 import type { SettingsCipher } from "../settings-crypto";
@@ -104,6 +105,7 @@ export interface CloudRuntime {
   cycles: CloudCycles;
   comments: CloudComments;
   aiProviders: CloudAiProviders;
+  cliLogins: CloudCliLogins;
   chat: {
     store: CloudChatStore;
     actions: CloudAgentActions;
@@ -274,6 +276,7 @@ export function createCloudRuntime(
     cycles,
     comments,
     aiProviders,
+    cliLogins: new CloudCliLogins(aiProviders),
     chat: {
       store: chatStore,
       actions: new CloudAgentActions({
@@ -315,6 +318,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   const installation = await initializeInstallation(runtime.database);
   const origin = installation.origin ?? "";
   if (runtime.origin === origin) return;
+  runtime.cliLogins.close();
   await runtime.scheduleLoop.close();
   await runtime.authentication.mailWorker.close();
   await runtime.inference.worker.close();
@@ -343,6 +347,7 @@ export async function closeCloudRuntime(): Promise<void> {
   delete globalRuntime[runtimeSymbol];
   if (runtime) {
     const current = await runtime;
+    current.cliLogins.close();
     await current.scheduleLoop.close();
     await current.authentication.mailWorker.close();
     await current.inference.worker.close();

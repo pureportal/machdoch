@@ -7,7 +7,11 @@ export const cloudApiProviders = [
   "google",
   "langdock",
 ] as const;
-export const cloudCliProviders = ["claude-code-cli", "codex-cli"] as const;
+export const cloudCliProviders = [
+  "claude-code-cli",
+  "codex-cli",
+  "copilot-cli",
+] as const;
 export const cloudProviderKinds = [
   ...cloudApiProviders,
   ...cloudCliProviders,
@@ -19,6 +23,17 @@ export function isCloudCliProvider(
   provider: CloudProviderKind,
 ): provider is CloudCliProvider {
   return (cloudCliProviders as readonly string[]).includes(provider);
+}
+export function brokeredModelProvider(
+  provider: CloudProviderKind,
+  model: string,
+): CloudApiProvider {
+  if (provider === "claude-code-cli") return "anthropic";
+  if (provider === "codex-cli") return "openai";
+  if (provider !== "copilot-cli") return provider;
+  if (/^claude/i.test(model)) return "anthropic";
+  if (/^gemini/i.test(model)) return "google";
+  return "openai";
 }
 const modelId = z
   .string()
@@ -73,8 +88,26 @@ export interface CloudAiProvider extends z.infer<typeof providerConfiguration> {
   revision: number;
   inferenceRevision: number;
   enabled: boolean;
+  signIn: boolean;
 }
 export interface CloudProviderSettings {
   providers: CloudAiProvider[];
   credentialStorageAvailable: boolean;
 }
+export const cliLoginStates = [
+  "signed-out",
+  "waiting",
+  "signed-in",
+  "failed",
+] as const;
+export interface CloudCliLogin {
+  state: (typeof cliLoginStates)[number];
+  account: string | null;
+  url: string | null;
+  code: string | null;
+  acceptsCode: boolean;
+  message: string | null;
+}
+export const cliLoginCodeSchema = z.strictObject({
+  code: z.string().trim().min(1).max(4096),
+});

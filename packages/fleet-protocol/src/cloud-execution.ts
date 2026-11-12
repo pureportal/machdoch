@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { githubRepositorySchema } from "@machdoch/fleet-protocol/cloud-repository";
 import type { TaskArtifact } from "@machdoch/fleet-protocol/cloud-artifacts";
-import { cloudApiProviders } from "./cloud-providers.ts";
+import { cloudProviderKinds } from "./cloud-providers.ts";
 const cloudId = z.uuid();
 const revision = z.number().int().min(1).max(2_147_483_646);
 
@@ -323,7 +323,7 @@ export const runManifestSchema = z
       .strictObject({
         id: cloudId,
         name: z.string().max(120),
-        provider: z.enum(cloudApiProviders),
+        provider: z.enum(cloudProviderKinds),
         inferenceRevision: revision,
         maxOutputTokens: z.number().int().min(64).max(65536),
       })

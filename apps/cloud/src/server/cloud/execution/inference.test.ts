@@ -24,12 +24,31 @@ import { SettingsCipher } from "../../settings-crypto";
 import { createCloudRuntime, type CloudRuntime } from "../runtime";
 import { createTestCloudDatabase } from "../test-database";
 
+const cli = vi.hoisted(() => ({
+  connections: [] as unknown[],
+  start: vi.fn<(params: AgentModelStartParams) => Promise<AgentModelTurn>>(),
+}));
+vi.mock("../ai/cli-model", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../ai/cli-model")>()),
+  createCliModelAdapter: (connection: unknown) => {
+    cli.connections.push(connection);
+    return {
+      startTurn: cli.start,
+      continueTurn: async () => {
+        throw new Error("Unexpected continuation");
+      },
+    };
+  },
+}));
+
 let database: Awaited<ReturnType<typeof createTestCloudDatabase>>;
 let runtime: CloudRuntime;
 let actor: CloudActor;
 let worker: { id: string; token: string };
 let providerId: string;
 let profileId: string;
+let teamId: string;
+let projectId: string;
 let input: TaskInferenceInput;
 let start: ReturnType<
   typeof vi.fn<(params: AgentModelStartParams) => Promise<AgentModelTurn>>
@@ -96,6 +115,8 @@ beforeEach(async () => {
     name: "Project",
     description: "",
   });
+  teamId = team.id;
+  projectId = project.id;
   providerId = (
     await runtime.aiProviders.create(actor, randomUUID(), {
       name: "Provider",
@@ -691,6 +712,103 @@ it("rechecks a reduced daily budget on the same day before dispatch", async () =
     state: "failed",
     chargedTokens: 0,
     errorCode: "budget_exceeded",
+  });
+});
+
+it("answers sandbox task inference with the cloud's signed-in CLI provider", async () => {
+  const cliProviderId = (
+    await runtime.aiProviders.create(actor, randomUUID(), {
+      name: "Claude Code",
+      provider: "claude-code-cli",
+      region: null,
+      models: ["sonnet"],
+      apiKey: "",
+      maxOutputTokens: 256,
+      dailyTokenBudget: 200000,
+      maxConcurrentRequests: 4,
+    })
+  ).id;
+  const cliProfileId = (
+    await runtime.execution.profiles.create(actor, randomUUID(), {
+      projectId,
+      name: "Claude sandbox",
+      target: "cloud",
+      repository: "https://github.com/example/project",
+      baseCommit: commit,
+      providerId: cliProviderId,
+      model: "sonnet",
+      maxDurationSeconds: 3600,
+      maxTokens: 10000,
+      requiredChecks: [
+        { name: "unit", command: "node --test", timeoutSeconds: 60 },
+      ],
+    })
+  ).id;
+  const issue = await runtime.planning.createIssue(
+    actor,
+    randomUUID(),
+    issueInputSchema.parse({
+      teamId,
+      projectId,
+      title: "Add retry",
+      acceptanceCriteria: "Retries once",
+    }),
+  );
+  await runtime.execution.runs.create(actor, randomUUID(), {
+    profileId: cliProfileId,
+    subject: { kind: "issue", id: issue.id, revision: 1 },
+  });
+  const runner = await runtime.execution.workers.register(
+    actor,
+    cliProfileId,
+    "Claude runner",
+  );
+  const { claim } = await runtime.execution.leases.claim(
+    runner.token,
+    randomUUID(),
+  );
+  expect(claim!.manifest.provider).toMatchObject({
+    id: cliProviderId,
+    provider: "claude-code-cli",
+  });
+  await runtime.execution.leases.accept(runner.token, {
+    runId: claim!.runId,
+    attemptId: claim!.attemptId,
+    epoch: claim!.epoch,
+    environmentId: randomUUID(),
+    baseCommit: commit,
+    isolation: "microvm",
+  });
+  const request = {
+    ...input,
+    runId: claim!.runId,
+    attemptId: claim!.attemptId,
+    epoch: claim!.epoch,
+    requestId: randomUUID(),
+  };
+  cli.start.mockResolvedValueOnce(output);
+  await runtime.execution.inference.submit(runner.token, request);
+  await runtime.inference.worker.runOne(
+    actor.organizationId,
+    request.requestId,
+  );
+  expect(start).not.toHaveBeenCalled();
+  expect(cli.connections.at(-1)).toMatchObject({
+    provider: "claude-code-cli",
+    model: "sonnet",
+  });
+  const sent = cli.start.mock.calls.at(-1)![0];
+  expect(sent.userPrompt).toContain("Retries once");
+  expect(sent.tools.map((tool) => tool.name)).toEqual(
+    taskAgentTools.map((tool) => tool.name),
+  );
+  const { context: _, ...identity } = request;
+  expect(
+    await runtime.execution.inference.get(runner.token, identity),
+  ).toMatchObject({
+    state: "complete",
+    response: { text: "", toolCalls: output.toolCalls },
+    chargedTokens: 32,
   });
 });
 

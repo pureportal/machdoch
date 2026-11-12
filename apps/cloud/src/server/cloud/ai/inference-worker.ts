@@ -218,8 +218,6 @@ export class CloudInferenceWorker {
       );
       if (resolved.configuration.inferenceRevision !== call.providerRevision)
         throw new InferenceStopped("permission_changed");
-      if (resolved.cli && call.runId)
-        throw new InferenceStopped("cli_provider_requires_client");
       const createAdapter = async (
         tools: AgentModelToolSpec[],
       ): Promise<AgentModelAdapter> =>

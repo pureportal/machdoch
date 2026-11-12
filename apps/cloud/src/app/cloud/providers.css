@@ -1,0 +1,139 @@
+.cloud-provider-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+.cloud-provider-status::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+  opacity: 0.6;
+}
+.cloud-provider-status[data-state="signed-in"]::before {
+  background: var(--cloud-success);
+  opacity: 1;
+}
+.cloud-provider-status[data-state="waiting"]::before {
+  background: var(--cloud-warning);
+  opacity: 1;
+}
+.cloud-provider-kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 6px;
+}
+.cloud-provider-kinds button,
+.cloud-provider-authentication button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.cloud-provider-kinds button:hover,
+.cloud-provider-authentication button:hover {
+  background: var(--cloud-hover);
+}
+.cloud-provider-kinds button[aria-checked="true"],
+.cloud-provider-authentication button[aria-checked="true"] {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--foreground);
+}
+.cloud-provider-authentication {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.cloud-provider-authentication button {
+  text-align: center;
+}
+.cloud-provider-model-field {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.cloud-provider-model-field legend {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.cloud-provider-model-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 2px 16px;
+}
+.cloud-provider-model-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 30px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cloud-provider-model-options input {
+  accent-color: var(--primary);
+}
+.cloud-provider-model-options span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-provider-model-options code {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+}
+.cloud-provider-limits summary {
+  color: var(--muted-foreground);
+  font-size: 13px;
+  cursor: pointer;
+}
+.cloud-provider-limits[open] summary {
+  margin-bottom: 12px;
+}
+.cloud-sign-in {
+  display: grid;
+  gap: 16px;
+  padding-block: 8px;
+}
+.cloud-sign-in > a {
+  justify-self: start;
+}
+.cloud-sign-in-pending,
+.cloud-sign-in-done {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.cloud-sign-in-pending svg {
+  width: 15px;
+  height: 15px;
+}
+.cloud-sign-in-done {
+  color: var(--foreground);
+  font-size: 14px;
+}
+.cloud-sign-in-done svg {
+  color: var(--cloud-success);
+}
+.cloud-sign-in-code {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.cloud-sign-in-code > div {
+  width: 100%;
+}

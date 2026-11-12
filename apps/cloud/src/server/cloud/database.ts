@@ -37,6 +37,8 @@ export const cloudMigrations = [
   "034-initiatives-milestones.sql",
   "035-triage.sql",
   "036-two-factor.sql",
+  "040-copilot-cli-provider.sql",
+  "041-provider-sign-in.sql",
 ];
 
 export interface CloudSql {

@@ -202,3 +202,41 @@ await test("passes the immutable task to the shared agent and requires process-t
     ),
   );
 });
+await test("starts the shared agent with the model family of the cloud's CLI provider", async () => {
+  const connection = new RunnerConnection(
+    "https://cloud.example.test",
+    token,
+    async () => Response.json({ instruction: "continue" }),
+  );
+  const started: { provider: string; model: string }[] = [];
+  const call: VirtualMachineSandbox["call"] = async (_tool, args) => {
+    started.push(JSON.parse(String(args.start)));
+    return {
+      id: randomUUID(),
+      ok: true,
+      result: { status: "executed", summary: "Done", processTreeStopped: true },
+    };
+  };
+  for (const [provider, model, family] of [
+    ["claude-code-cli", "sonnet", "anthropic"],
+    ["codex-cli", "gpt-5.5", "openai"],
+    ["copilot-cli", "claude-sonnet-4.5", "anthropic"],
+    ["copilot-cli", "gemini-3-pro", "google"],
+    ["copilot-cli", "gpt-5.5", "openai"],
+    ["langdock", "gpt-5.5", "langdock"],
+  ] as const) {
+    const claim = claimFixture();
+    claim.manifest.provider!.provider = provider;
+    claim.manifest.profile.model = model;
+    await runAgent(
+      connection,
+      claim,
+      { ...environment, sandbox: { call } as unknown as VirtualMachineSandbox },
+      { tokens: 0, requests: 0 },
+    );
+    assert.deepEqual(
+      { provider: started.at(-1)?.provider, model: started.at(-1)?.model },
+      { provider: family, model },
+    );
+  }
+});

@@ -6,6 +6,7 @@ import {
   type CloudAgentReply,
 } from "@machdoch/fleet-protocol/cloud-agent";
 import { taskInferenceReceiptSchema } from "@machdoch/fleet-protocol/cloud-inference";
+import { brokeredModelProvider } from "@machdoch/fleet-protocol/cloud-providers";
 import {
   sharedAgentTask,
   taskInferencePayload,
@@ -45,6 +46,14 @@ const inferenceErrors = new Map([
     "provider_rate_limited",
     "The provider rate limit was reached. Wait before starting another task.",
   ],
+  [
+    "cli_unavailable",
+    "The provider CLI is not installed on the cloud server. Install it or choose another provider.",
+  ],
+  [
+    "cli_authentication",
+    "The provider CLI is not signed in. Sign it in under AI providers before retrying.",
+  ],
 ]);
 const resultSchema = z.strictObject({
   status: z.enum(["executed", "failed"]),
@@ -53,9 +62,10 @@ const resultSchema = z.strictObject({
 });
 
 function brokeredProvider(claim: WorkerClaim) {
-  const provider = claim.manifest.provider;
-  if (!provider) throw new Error("This task requires a cloud model provider.");
-  return provider;
+  const { provider, profile } = claim.manifest;
+  if (!provider || profile.target === "client")
+    throw new Error("This task requires a cloud model provider.");
+  return { ...provider, model: profile.model };
 }
 
 export async function authorize(
@@ -205,11 +215,12 @@ export async function runAgent(
   correction = "",
 ) {
   await authorize(connection, claim, environment, "running");
+  const granted = brokeredProvider(claim);
   const start = cloudAgentStartSchema.parse({
     kind: "start",
     task: sharedAgentTask(claim.manifest, correction),
-    provider: brokeredProvider(claim).provider,
-    model: claim.manifest.profile.model,
+    provider: brokeredModelProvider(granted.provider, granted.model),
+    model: granted.model,
     contextLimitBytes: claim.manifest.contextLimitBytes,
     durationMs: Math.max(
       1,

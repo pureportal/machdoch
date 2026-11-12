@@ -4,11 +4,14 @@ import type { CloudActor } from "../../../lib/cloud-contract";
 import {
   isCloudCliProvider,
   type CloudAiProvider,
+  type CloudCliProvider,
+  type CloudProviderKind,
   type CloudProviderSettings,
   type ProviderInput,
   type ProviderUpdate,
 } from "@machdoch/fleet-protocol/cloud-providers";
 import type { CliModelConnection } from "./cli-model";
+import { cliProviderHome } from "./cli-process";
 import type { ModelConnection } from "@machdoch/model-runtime/connections";
 import type { SettingsCipher } from "../../settings-crypto";
 import {
@@ -27,7 +30,7 @@ export type ResolvedProvider = { configuration: CloudAiProvider } & (
   | { cli: CliModelConnection; connection?: undefined }
 );
 
-export const providerColumns =`id,name,provider,region,models,max_output_tokens AS "maxOutputTokens",daily_token_budget AS "dailyTokenBudget",max_concurrent_requests AS "maxConcurrentRequests",revision,inference_revision AS "inferenceRevision",enabled`;
+export const providerColumns = `id,name,provider,region,models,max_output_tokens AS "maxOutputTokens",daily_token_budget AS "dailyTokenBudget",max_concurrent_requests AS "maxConcurrentRequests",revision,inference_revision AS "inferenceRevision",enabled,sign_in AS "signIn"`;
 
 export class CloudAiProviders {
   constructor(
@@ -80,7 +83,7 @@ export class CloudAiProviders {
             providerSecretContext(actor.organizationId, id, input.provider),
           );
           await sql.query(
-            "INSERT INTO cloud_ai_providers (organization_id,id,name,provider,region,models,max_output_tokens,daily_token_budget,max_concurrent_requests,secret) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
+            "INSERT INTO cloud_ai_providers (organization_id,id,name,provider,region,models,max_output_tokens,daily_token_budget,max_concurrent_requests,secret,sign_in) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)",
             [
               actor.organizationId,
               id,
@@ -92,6 +95,7 @@ export class CloudAiProviders {
               input.dailyTokenBudget,
               input.maxConcurrentRequests,
               secret,
+              isCloudCliProvider(input.provider) && input.apiKey === "",
             ],
           );
           await recordEvent(sql, actor, "ai_provider.created", id, 1, {
@@ -163,7 +167,7 @@ export class CloudAiProviders {
                   ),
                 );
           await sql.query(
-            "UPDATE cloud_ai_providers SET name=$3,region=$4,models=$5,max_output_tokens=$6,daily_token_budget=$7,max_concurrent_requests=$8,secret=COALESCE($9,secret),enabled=$10,revision=revision+1,inference_revision=inference_revision+CASE WHEN $9::bytea IS NOT NULL OR region IS DISTINCT FROM $4 OR enabled IS DISTINCT FROM $10 OR NOT (models <@ $5::jsonb) THEN 1 ELSE 0 END WHERE organization_id=$1 AND id=$2",
+            "UPDATE cloud_ai_providers SET name=$3,region=$4,models=$5,max_output_tokens=$6,daily_token_budget=$7,max_concurrent_requests=$8,secret=COALESCE($9,secret),enabled=$10,sign_in=COALESCE($11,sign_in),revision=revision+1,inference_revision=inference_revision+CASE WHEN $9::bytea IS NOT NULL OR region IS DISTINCT FROM $4 OR enabled IS DISTINCT FROM $10 OR NOT (models <@ $5::jsonb) THEN 1 ELSE 0 END WHERE organization_id=$1 AND id=$2",
             [
               actor.organizationId,
               id,
@@ -175,6 +179,9 @@ export class CloudAiProviders {
               input.maxConcurrentRequests,
               secret,
               input.enabled,
+              input.apiKey === undefined
+                ? null
+                : isCloudCliProvider(current.provider) && input.apiKey === "",
             ],
           );
           await recordEvent(
@@ -211,7 +218,32 @@ export class CloudAiProviders {
     });
   }
 
-  resolve(actor: CloudActor, id: string, model: string): Promise<ResolvedProvider> {
+  cliProvider(
+    actor: CloudActor,
+    id: string,
+  ): Promise<{ provider: CloudCliProvider; home: string }> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor, "admin");
+      const row = (
+        await sql.query<{ provider: CloudProviderKind }>(
+          "SELECT provider FROM cloud_ai_providers WHERE organization_id=$1 AND id=$2",
+          [actor.organizationId, id],
+        )
+      ).rows[0];
+      if (!row || !isCloudCliProvider(row.provider))
+        throw new CloudError(404, "not_found", "CLI provider is unavailable.");
+      return {
+        provider: row.provider,
+        home: cliProviderHome(actor.organizationId, id),
+      };
+    });
+  }
+
+  resolve(
+    actor: CloudActor,
+    id: string,
+    model: string,
+  ): Promise<ResolvedProvider> {
     return this.database.transaction(async (sql) => {
       await requireMembership(sql, actor, "write");
       const cipher = await requireCredentialStorage(sql, this.cipher);
@@ -250,7 +282,12 @@ export class CloudAiProviders {
       if (isCloudCliProvider(row.provider))
         return {
           configuration,
-          cli: { provider: row.provider, model, apiKey },
+          cli: {
+            provider: row.provider,
+            model,
+            apiKey,
+            home: cliProviderHome(actor.organizationId, id),
+          },
         };
       return {
         configuration,

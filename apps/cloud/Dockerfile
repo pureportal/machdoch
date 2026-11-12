@@ -117,7 +117,7 @@ FROM application AS server
 
 USER root
 
-RUN npm install --global @anthropic-ai/claude-code@2.1.316 @openai/codex@0.166.0
+RUN npm install --global @anthropic-ai/claude-code@2.1.316 @openai/codex@0.166.0 @github/copilot@1.0.109
 
 USER node
 
