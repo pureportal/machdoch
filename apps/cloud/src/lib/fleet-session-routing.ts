@@ -40,6 +40,16 @@ export type FleetSessionTarget = z.infer<typeof fleetSessionTargetSchema>;
 export type FleetSessionRequest = z.infer<typeof fleetSessionRequestSchema>;
 export type FleetSessionRoute = z.infer<typeof fleetSessionRouteSchema>;
 
+export function canOpenSessions(device: FleetDeviceStatus): boolean {
+  return (
+    device.online &&
+    device.error === null &&
+    device.canCreateSession &&
+    device.versionStatus !== "incompatible" &&
+    device.workspaces.length > 0
+  );
+}
+
 export function selectFleetSessionTarget(
   devices: FleetDeviceStatus[],
   targets: FleetSessionTarget[],
@@ -49,10 +59,8 @@ export function selectFleetSessionTarget(
       (entry) => entry.instanceId === target.instanceId,
     );
     if (
-      !device?.online ||
-      device.error !== null ||
-      !device.canCreateSession ||
-      device.versionStatus === "incompatible" ||
+      !device ||
+      !canOpenSessions(device) ||
       !device.workspaces.some(
         (workspace) => workspace.root === target.workspace,
       )

@@ -67,7 +67,11 @@ describe("fleet status collection", () => {
         getInstance: (id: string) =>
           instances.find((instance) => instance.instanceId === id),
       },
-      gateways: { isOnline: (id: string) => id !== "device-10", relay },
+      gateways: {
+        isOnline: (id: string) => id !== "device-10",
+        supportsCapability: () => true,
+        relay,
+      },
     } as unknown as FleetRuntime;
     const result = await collectFleetStatus(
       runtime,
@@ -100,7 +104,7 @@ describe("fleet status collection", () => {
         listInstances: () => [instance],
         getInstance: () => instance,
       },
-      gateways: { isOnline: () => true, relay },
+      gateways: { isOnline: () => true, supportsCapability: () => true, relay },
     } as unknown as FleetRuntime;
     await expect(
       collectFleetStatus(runtime, controller.signal),

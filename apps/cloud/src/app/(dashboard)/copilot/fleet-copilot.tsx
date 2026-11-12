@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/page-header";
 import {
+  canOpenSessions,
   fleetSessionRouteSchema,
   type FleetSessionRequest,
   type FleetSessionTarget,
@@ -23,14 +24,7 @@ export function FleetCopilot(): React.ReactElement {
   const request = useRef<FleetSessionRequest | null>(null);
   const inFlight = useRef<AbortController | null>(null);
   useEffect(() => () => inFlight.current?.abort(), []);
-  const devices = (status?.devices ?? []).filter(
-    (device) =>
-      device.online &&
-      device.error === null &&
-      device.canCreateSession &&
-      device.versionStatus !== "incompatible" &&
-      device.workspaces.length > 0,
-  );
+  const devices = (status?.devices ?? []).filter(canOpenSessions);
 
   const openSession = async (): Promise<void> => {
     if (inFlight.current || !targets.length) return;

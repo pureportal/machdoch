@@ -5,6 +5,7 @@ import {
   type FleetDeviceStatus,
 } from "./fleet-status";
 import {
+  canOpenSessions,
   fleetSessionRequestSchema,
   selectFleetSessionTarget,
 } from "./fleet-session-routing";
@@ -18,6 +19,7 @@ function device(): FleetDeviceStatus {
     productVersion: "29.0.0",
     versionStatus: "current",
     error: null,
+    workspaceTools: true,
     ...summarizeProductSnapshot(productFixture()),
   };
 }
@@ -36,6 +38,16 @@ describe("fleet session placement", () => {
     expect(summarizeProductSnapshot(snapshot).canCreateSession).toBe(true);
     snapshot.enabled = false;
     expect(summarizeProductSnapshot(snapshot).canCreateSession).toBe(false);
+  });
+
+  it("offers only online, compatible devices with workspaces for new sessions", () => {
+    expect(canOpenSessions(device())).toBe(true);
+    expect(canOpenSessions({ ...device(), online: false })).toBe(false);
+    expect(canOpenSessions({ ...device(), error: "Unavailable" })).toBe(false);
+    expect(
+      canOpenSessions({ ...device(), versionStatus: "incompatible" }),
+    ).toBe(false);
+    expect(canOpenSessions({ ...device(), workspaces: [] })).toBe(false);
   });
 
   it("chooses the least busy device only among the selected workspaces", () => {

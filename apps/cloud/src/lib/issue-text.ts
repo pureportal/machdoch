@@ -37,3 +37,30 @@ export function issueBranchName(identifier: string, title: string): string {
     .replace(/-+$/g, "");
   return [identifier.toLowerCase(), slug].filter(Boolean).join("-");
 }
+
+const sessionTitleLength = 240;
+
+export function issueSessionTitle(identifier: string, title: string): string {
+  return `${identifier} ${title}`.slice(0, sessionTitleLength).trim();
+}
+
+export function issueClientPrompt(
+  issue: {
+    identifier: string;
+    title: string;
+    description: string;
+    acceptanceCriteria: string;
+  },
+  url: string,
+): string {
+  const description = issue.description.trim();
+  const criteria = issue.acceptanceCriteria.trim();
+  return [
+    `${issue.identifier}: ${issue.title}`,
+    description,
+    criteria && `Acceptance criteria:\n${criteria}`,
+    url,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}

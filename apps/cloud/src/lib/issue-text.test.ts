@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { productCommandSchema } from "@machdoch/fleet-protocol";
 import {
   issueBranchName,
+  issueClientPrompt,
+  issueSessionTitle,
   taskListProgress,
   toggleTaskListItem,
 } from "./issue-text";
@@ -43,6 +46,49 @@ describe("task lists", () => {
   it("counts completed tasks", () => {
     expect(taskListProgress(description)).toEqual({ completed: 1, total: 3 });
     expect(taskListProgress("No tasks")).toEqual({ completed: 0, total: 0 });
+  });
+});
+
+describe("issueClientPrompt", () => {
+  it("drafts the issue for a client session without empty sections", () => {
+    expect(
+      issueClientPrompt(
+        {
+          identifier: "PLAT-4",
+          title: "Retry fleet handoff",
+          description: "  Sessions fail when the device sleeps.\n",
+          acceptanceCriteria: "",
+        },
+        "https://cloud.example.test/cloud/issues/1",
+      ),
+    ).toBe(
+      "PLAT-4: Retry fleet handoff\n\nSessions fail when the device sleeps.\n\nhttps://cloud.example.test/cloud/issues/1",
+    );
+    expect(
+      issueClientPrompt(
+        {
+          identifier: "PLAT-5",
+          title: "Document enrollment",
+          description: "",
+          acceptanceCriteria: "- Covers SSO",
+        },
+        "https://cloud.example.test/cloud/issues/2",
+      ),
+    ).toBe(
+      "PLAT-5: Document enrollment\n\nAcceptance criteria:\n- Covers SSO\n\nhttps://cloud.example.test/cloud/issues/2",
+    );
+  });
+
+  it("keeps session titles within the client protocol limit", () => {
+    const title = issueSessionTitle("PLAT-6", "x".repeat(300));
+    expect(title.startsWith("PLAT-6 x")).toBe(true);
+    expect(
+      productCommandSchema.safeParse({
+        kind: "rename-session",
+        sessionId: "session-1",
+        title,
+      }).success,
+    ).toBe(true);
   });
 });
 

@@ -12,13 +12,19 @@ import {
   Ellipsis,
   GitBranch,
   Hash,
+  Laptop,
   Link2,
   Sparkles,
 } from "lucide-react";
 import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
-import { issueBranchName } from "@/lib/issue-text";
+import {
+  issueBranchName,
+  issueClientPrompt,
+  issueSessionTitle,
+} from "@/lib/issue-text";
 import { Button } from "@/components/ui/button";
 import { FavoriteButton } from "./favorite-button";
+import { ClientLaunch } from "./client-launch";
 import { PropertyMenu } from "./property-menu";
 import { useToast } from "./toast";
 import { useAgentShell } from "./agent/agent-shell";
@@ -216,6 +222,20 @@ export function IssueHeader({
           </span>
         )}
         {delegate}
+        {["owner", "admin"].includes(workspace.actor.role) && (
+          <ClientLaunch
+            label="Open in client"
+            icon={<Laptop />}
+            branch={issueBranchName(issue.identifier, issue.title)}
+            draft={() => ({
+              title: issueSessionTitle(issue.identifier, issue.title),
+              prompt: issueClientPrompt(
+                issue,
+                `${location.origin}/cloud/issues/${issue.id}`,
+              ),
+            })}
+          />
+        )}
         <Button variant="ghost" size="sm" onClick={() => agent.openPanel(null)}>
           <Sparkles />
           Agent

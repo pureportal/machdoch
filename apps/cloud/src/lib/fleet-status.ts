@@ -10,6 +10,7 @@ export interface FleetDeviceStatus {
   capturedAt: number | null;
   error: string | null;
   canCreateSession: boolean;
+  workspaceTools: boolean;
   telemetry?: HostTelemetry;
   sessions: Array<
     Pick<
@@ -81,7 +82,8 @@ export function summarizeProductSnapshot(
       });
   }
   return {
-    canCreateSession: snapshot.enabled && shell?.sessionRoutingAvailable === true,
+    canCreateSession:
+      snapshot.enabled && shell?.sessionRoutingAvailable === true,
     capturedAt: snapshot.serverTime,
     ...(snapshot.telemetry ? { telemetry: snapshot.telemetry } : {}),
     sessions: (shell?.sessions ?? [])

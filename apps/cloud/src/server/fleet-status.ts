@@ -2,6 +2,7 @@ import {
   gatewayProtocolVersion,
   productSnapshotSchema,
 } from "@machdoch/fleet-protocol";
+import { workspaceToolsCapability } from "@machdoch/fleet-protocol/workspace";
 import packageJson from "../../package.json";
 import {
   summarizeProductSnapshot,
@@ -37,6 +38,10 @@ export async function collectFleetStatus(
     capturedAt: null,
     error: null,
     canCreateSession: false,
+    workspaceTools: runtime.gateways.supportsCapability(
+      instance.instanceId,
+      workspaceToolsCapability,
+    ),
     sessions: [],
     workspaces: [],
     tasks: [],

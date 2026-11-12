@@ -28,6 +28,7 @@ beforeEach(async () => {
   runtime.gateways.close();
   runtime.gateways = {
     isOnline: vi.fn(() => true),
+    supportsCapability: vi.fn(() => true),
     relay: vi.fn(),
     close: vi.fn(),
   } as unknown as FleetRuntime["gateways"];
