@@ -542,6 +542,15 @@ export const WorkspaceManager = ({
     ).catch((error: unknown) => setWorkspaceActionError(errorMessage(error)));
   };
 
+  const openWorktree = (worktreePath: string): void => {
+    const key = createWorkspaceRootKey(worktreePath);
+    if (workspaces.some((workspace) => workspace.key === key)) {
+      selectWorkspace(key);
+      return;
+    }
+    void addWorkspace(worktreePath).then(() => selectWorkspace(key));
+  };
+
   const commandState: WorkspaceCommandState = {
     setup,
     workspaceSetup,
@@ -649,6 +658,7 @@ export const WorkspaceManager = ({
                       section={gitSection}
                       onSectionChange={selectGitSection}
                       onOpenPath={openPath}
+                      onOpenWorktree={openWorktree}
                       className="min-h-0 flex-1"
                     />
                   </SectionFrame>

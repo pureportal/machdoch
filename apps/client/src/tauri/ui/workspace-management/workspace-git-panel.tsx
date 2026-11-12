@@ -33,6 +33,7 @@ import { WorkspaceGitRemotes } from "./workspace-git-remotes";
 import { WorkspaceGitRepositories } from "./workspace-git-repositories";
 import { WorkspaceGitStashes } from "./workspace-git-stashes";
 import { WorkspaceGitToolbar } from "./workspace-git-toolbar";
+import { WorkspaceGitWorktrees } from "./workspace-git-worktrees";
 import { workspaceGitPathInWorkspace } from "./workspace-git-model";
 import {
   WorkspaceTabList,
@@ -185,6 +186,12 @@ const gitTabs = (
     icon: Archive,
     count: overview?.stashes.length,
   },
+  {
+    value: "worktrees",
+    label: "Worktrees",
+    icon: FolderGit2,
+    count: overview ? overview.worktrees.length - 1 : undefined,
+  },
   { value: "history", label: "History", icon: GitGraph },
   {
     value: "pull-requests",
@@ -200,11 +207,13 @@ const SectionContent = ({
   controls,
   overview,
   onOpenPath,
+  onOpenWorktree,
 }: {
   section: WorkspaceGitSection;
   controls: WorkspaceGitControls;
   overview: WorkspaceGitOverview;
   onOpenPath: (path: string, action: WorkspaceGitPathAction) => void;
+  onOpenWorktree?: (path: string) => void;
 }): JSX.Element => {
   switch (section) {
     case "changes":
@@ -219,6 +228,14 @@ const SectionContent = ({
       return <WorkspaceGitBranches controls={controls} overview={overview} />;
     case "stashes":
       return <WorkspaceGitStashes controls={controls} overview={overview} />;
+    case "worktrees":
+      return (
+        <WorkspaceGitWorktrees
+          controls={controls}
+          overview={overview}
+          onOpenWorktree={onOpenWorktree}
+        />
+      );
     case "history":
       return <WorkspaceGitGraphView controls={controls} overview={overview} />;
     case "pull-requests":
@@ -290,6 +307,7 @@ export const WorkspaceGitPanel = ({
   section,
   onSectionChange,
   onOpenPath,
+  onOpenWorktree,
   className,
 }: {
   controls: WorkspaceGitControls;
@@ -299,6 +317,7 @@ export const WorkspaceGitPanel = ({
     workspaceRelativePath: string,
     action: WorkspaceGitPathAction,
   ) => void;
+  onOpenWorktree?: (path: string) => void;
   className?: string;
 }): JSX.Element => {
   const { overview } = controls;
@@ -341,6 +360,7 @@ export const WorkspaceGitPanel = ({
           section={section}
           onSectionChange={onSectionChange}
           onOpenPath={openRepositoryPath}
+          onOpenWorktree={onOpenWorktree}
         />
       )}
     </section>
@@ -352,11 +372,13 @@ const RepositoryContent = ({
   section,
   onSectionChange,
   onOpenPath,
+  onOpenWorktree,
 }: {
   controls: WorkspaceGitControls;
   section: WorkspaceGitSection;
   onSectionChange: (section: WorkspaceGitSection) => void;
   onOpenPath: (path: string, action: WorkspaceGitPathAction) => void;
+  onOpenWorktree?: (path: string) => void;
 }): JSX.Element => {
   const { overview } = controls;
   return (
@@ -386,6 +408,7 @@ const RepositoryContent = ({
             controls={controls}
             overview={overview}
             onOpenPath={onOpenPath}
+            onOpenWorktree={onOpenWorktree}
           />
         ) : (
           <PanelState controls={controls} />

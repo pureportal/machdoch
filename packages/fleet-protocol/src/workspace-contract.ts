@@ -110,7 +110,24 @@ export interface WorkspaceGitStash {
   createdAt: string;
 }
 
-export type WorkspaceGitOperation = "merge" | "rebase" | "cherry-pick" | "revert";
+export interface WorkspaceGitWorktree {
+  path: string;
+  branch?: string;
+  head: string;
+  main: boolean;
+  current: boolean;
+  detached: boolean;
+  locked: boolean;
+  lockReason?: string;
+  prunable: boolean;
+  changes?: number;
+}
+
+export type WorkspaceGitOperation =
+  | "merge"
+  | "rebase"
+  | "cherry-pick"
+  | "revert";
 
 export interface WorkspaceGitSummary {
   branch: string;
@@ -240,6 +257,7 @@ export interface WorkspaceGitOverview {
   remotes: WorkspaceGitRemote[];
   recentCommits: WorkspaceGitCommit[];
   stashes: WorkspaceGitStash[];
+  worktrees: WorkspaceGitWorktree[];
   operation?: WorkspaceGitOperation;
 }
 
@@ -272,9 +290,15 @@ export type WorkspaceGitAction =
   | "stash-pop"
   | "stash-drop"
   | "add-remote"
-  | "remove-remote";
+  | "remove-remote"
+  | "add-worktree"
+  | "remove-worktree"
+  | "lock-worktree"
+  | "unlock-worktree"
+  | "prune-worktrees";
 
 export interface WorkspaceGitActionOptions {
+  worktreePath?: string;
   branchName?: string;
   startPoint?: string;
   parentBranch?: string;

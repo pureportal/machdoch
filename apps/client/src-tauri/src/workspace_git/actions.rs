@@ -2,8 +2,8 @@ use std::path::Path;
 
 use super::{
     command_output, current_operation, load_overview, output_error, repository_context,
-    run_optional, run_required, stack, WorkspaceGitActionRequest, WorkspaceGitOverview,
-    FETCH_ARGUMENTS,
+    run_optional, run_required, stack, worktrees, WorkspaceGitActionRequest,
+    WorkspaceGitOverview, FETCH_ARGUMENTS,
 };
 
 const MAX_ACTION_PATHS: usize = 2_000;
@@ -408,6 +408,26 @@ pub(super) fn execute_workspace_git_action(
         "remove-remote" => {
             let name = validate_remote_name(request.remote_name.as_deref())?;
             run_required("git", &["remote", "remove", &name], &repository)?;
+        }
+        "add-worktree" => {
+            let branch = validate_branch_name(request.branch_name.as_deref(), &repository)?;
+            let start_point = request
+                .start_point
+                .as_deref()
+                .map(|revision| validate_revision(Some(revision), &repository))
+                .transpose()?;
+            worktrees::add_worktree(&repository, &branch, start_point.as_deref())?;
+        }
+        "remove-worktree" | "lock-worktree" | "unlock-worktree" => {
+            let path = request
+                .worktree_path
+                .as_deref()
+                .filter(|path| !path.trim().is_empty())
+                .ok_or_else(|| "Select a worktree.".to_string())?;
+            worktrees::change_worktree(&repository, &request.action, path, force)?;
+        }
+        "prune-worktrees" => {
+            run_required("git", &["worktree", "prune"], &repository)?;
         }
         _ => return Err("Unsupported workspace Git action.".to_string()),
     }

@@ -4,6 +4,7 @@ import type {
   WorkspaceGitChange,
   WorkspaceGitOverview,
   WorkspaceGitRepository,
+  WorkspaceGitWorktree,
 } from "../runtime";
 import {
   createWorkspaceGitBranchTree,
@@ -18,6 +19,9 @@ import {
   workspaceGitChangeLabel,
   workspaceGitPathInWorkspace,
   workspaceGitRepositoryLabel,
+  workspaceGitBranchWorktree,
+  workspaceGitWorktreeBranches,
+  workspaceGitWorktreeLabel,
   workspaceGitBranchTarget,
   workspaceGitStackMembers,
 } from "./workspace-git-model";
@@ -345,5 +349,51 @@ describe("optimistic workspace Git staging", () => {
     expect(next.changes[2]?.originalPath).toBeUndefined();
     expect(next.stagedCount).toBe(0);
     expect(next.untrackedCount).toBe(2);
+  });
+});
+
+describe("worktree helpers", () => {
+  const worktree = (
+    branch: string | undefined,
+    extra: Partial<WorkspaceGitWorktree> = {},
+  ): WorkspaceGitWorktree => ({
+    path: `/repo.worktrees/${branch ?? "detached"}`,
+    ...(branch ? { branch } : {}),
+    head: "a91d5e8c0ffee",
+    main: false,
+    current: false,
+    detached: !branch,
+    locked: false,
+    prunable: false,
+    ...extra,
+  });
+  const overview = {
+    branch: "main",
+    localBranches: ["main", "feature/a", "feature/b", "release"].map(
+      (name) => ({ name }),
+    ),
+    worktrees: [
+      worktree("main", { main: true, current: true }),
+      worktree("feature/a"),
+      worktree(undefined),
+    ],
+  } as unknown as WorkspaceGitOverview;
+
+  it("offers only branches that no worktree has checked out", () => {
+    expect(workspaceGitWorktreeBranches(overview)).toEqual([
+      "feature/b",
+      "release",
+    ]);
+  });
+
+  it("finds a branch's worktree and labels detached ones by commit", () => {
+    expect(workspaceGitBranchWorktree(overview, "feature/a")?.path).toBe(
+      "/repo.worktrees/feature/a",
+    );
+    expect(workspaceGitBranchWorktree(overview, "release")).toBeUndefined();
+    expect(workspaceGitWorktreeLabel(worktree(undefined))).toBe(
+      "Detached at a91d5e8",
+    );
+    expect(workspaceGitWorktreeLabel(worktree("feature/a"))).toBe("feature/a");
   });
 });

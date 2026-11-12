@@ -14,6 +14,7 @@ export const WORKSPACE_GIT_SECTIONS = [
   "changes",
   "branches",
   "stashes",
+  "worktrees",
   "history",
   "pull-requests",
   "remotes",

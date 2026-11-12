@@ -5,6 +5,7 @@ import type {
   WorkspaceGitOverview,
   WorkspaceGitRepository,
   WorkspaceGitRepositoryStatus,
+  WorkspaceGitWorktree,
 } from "../runtime";
 import { createWorkspaceRootKey } from "./workspace-management-model";
 
@@ -75,6 +76,34 @@ const ACTION_LABELS: Record<WorkspaceGitAction, [string, string]> = {
   "stash-drop": ["Dropping stash", "Dropped stash"],
   "add-remote": ["Adding remote", "Added remote"],
   "remove-remote": ["Removing remote", "Removed remote"],
+  "add-worktree": ["Creating worktree", "Created worktree"],
+  "remove-worktree": ["Removing worktree", "Removed worktree"],
+  "lock-worktree": ["Locking worktree", "Locked worktree"],
+  "unlock-worktree": ["Unlocking worktree", "Unlocked worktree"],
+  "prune-worktrees": ["Pruning worktrees", "Pruned worktrees"],
+};
+
+export const workspaceGitWorktreeLabel = (
+  worktree: WorkspaceGitWorktree,
+): string => worktree.branch ?? `Detached at ${worktree.head.slice(0, 7)}`;
+
+export const workspaceGitBranchWorktree = (
+  overview: WorkspaceGitOverview,
+  branchName: string,
+): WorkspaceGitWorktree | undefined =>
+  overview.worktrees.find((worktree) => worktree.branch === branchName);
+
+export const workspaceGitWorktreeBranches = (
+  overview: WorkspaceGitOverview,
+): string[] => {
+  const used = new Set(
+    overview.worktrees.flatMap((worktree) =>
+      worktree.branch ? [worktree.branch] : [],
+    ),
+  );
+  return overview.localBranches
+    .map((branch) => branch.name)
+    .filter((name) => !used.has(name));
 };
 
 export const workspaceGitActionProgressLabel = (

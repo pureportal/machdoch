@@ -6,6 +6,7 @@ import type {
   WorkspaceGitOperation,
   WorkspaceGitRemote,
   WorkspaceGitStash,
+  WorkspaceGitWorktree,
   WorkspacePullRequest,
 } from "@machdoch/fleet-protocol/workspace-contract";
 
@@ -23,6 +24,7 @@ export interface PreviewRepository {
   remotes: WorkspaceGitRemote[];
   recentCommits: WorkspaceGitCommit[];
   stashes: PreviewStash[];
+  worktrees: WorkspaceGitWorktree[];
   operation?: WorkspaceGitOperation;
   pullRequests: WorkspacePullRequest[];
   diffs: Map<string, WorkspaceGitDiff>;
@@ -170,6 +172,19 @@ export const seedMachdoch = (
   workspaceRoot,
   repositoryRoot,
   branch: "main",
+  worktrees: [
+    {
+      path: `${repositoryRoot}.worktrees\\feature-workspace`,
+      branch: "feature/workspace",
+      head: "a91d5e8",
+      main: false,
+      current: false,
+      detached: false,
+      locked: false,
+      prunable: false,
+      changes: 2,
+    },
+  ],
   changes: [
     change(" M", "src/tauri/ui/runtime.ts"),
     change("M ", "package.json"),
@@ -261,6 +276,7 @@ export const seedDesktop = (
     commit("c32e910", "Scope desktop workspace state", "2026-08-04T08:20:00Z"),
   ],
   stashes: [],
+  worktrees: [],
   pullRequests: [
     {
       number: 42,
@@ -314,6 +330,7 @@ export const seedClean = (
     commit("9a8b7c6", "Sync runtime configuration", "2026-08-05T10:00:00Z"),
   ],
   stashes: [],
+  worktrees: [],
   pullRequests: [],
   diffs: new Map(),
   nextCommit: 1,

@@ -4,6 +4,7 @@ import {
   ChevronRight,
   CornerDownRight,
   ExternalLink,
+  FolderPlus,
   GitBranch,
   GitMerge,
   GitPullRequest,
@@ -45,6 +46,7 @@ import {
   createWorkspaceGitBranchTree,
   filterWorkspaceGitBranches,
   workspaceGitBranchTarget,
+  workspaceGitBranchWorktree,
   workspaceGitStackMembers,
   type WorkspaceGitBranchNode,
 } from "./workspace-git-model";
@@ -232,11 +234,13 @@ const StackActions = ({
 const BranchMenu = ({
   branch,
   current,
+  hasWorktree,
   controls,
   onReset,
 }: {
   branch: WorkspaceGitBranch;
   current: string;
+  hasWorktree: boolean;
   controls: WorkspaceGitControls;
   onReset: (target: WorkspaceGitResetTarget) => void;
 }): JSX.Element | null => {
@@ -262,6 +266,21 @@ const BranchMenu = ({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-56">
+        {!isCurrent && !hasWorktree ? (
+          <>
+            <DropdownMenuItem
+              onSelect={() =>
+                void controls.runAction("add-worktree", {
+                  branchName: branch.name,
+                })
+              }
+            >
+              <FolderPlus className="size-3.5" />
+              Create worktree
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
         {!isCurrent && current ? (
           <>
             <DropdownMenuItem
@@ -360,6 +379,7 @@ const BranchRow = ({
   trunk,
   dirty,
   pullRequest,
+  hasWorktree,
   controls,
   onReset,
 }: {
@@ -368,6 +388,7 @@ const BranchRow = ({
   trunk: string | undefined;
   dirty: boolean;
   pullRequest: WorkspacePullRequest | undefined;
+  hasWorktree: boolean;
   controls: WorkspaceGitControls;
   onReset: (target: WorkspaceGitResetTarget) => void;
 }): JSX.Element => {
@@ -454,6 +475,7 @@ const BranchRow = ({
       <BranchMenu
         branch={branch}
         current={current}
+        hasWorktree={hasWorktree}
         controls={controls}
         onReset={onReset}
       />
@@ -543,6 +565,9 @@ export const WorkspaceGitBranches = ({
               trunk={trunk}
               dirty={!overview.clean}
               pullRequest={pullRequestFor(node.branch.name)}
+              hasWorktree={Boolean(
+                workspaceGitBranchWorktree(overview, node.branch.name),
+              )}
               controls={controls}
               onReset={setResetTarget}
             />

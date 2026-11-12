@@ -157,6 +157,20 @@ const overviewFor = (repository: PreviewRepository): WorkspaceGitOverview => {
     stashes: repository.stashes.map(({ changes: _changes, ...stash }) => ({
       ...stash,
     })),
+    worktrees: [
+      {
+        path: repository.repositoryRoot,
+        branch: repository.branch,
+        head: current?.commit ?? "0000000",
+        main: true,
+        current: true,
+        detached: false,
+        locked: false,
+        prunable: false,
+        changes: changes.length,
+      },
+      ...repository.worktrees.map((entry) => ({ ...entry })),
+    ],
     ...(repository.operation ? { operation: repository.operation } : {}),
   };
 };
@@ -383,6 +397,66 @@ const createBranch = (
     }),
   );
   switchTo(repository, branchName);
+};
+
+const requireWorktree = (
+  repository: PreviewRepository,
+  path: string | undefined,
+): PreviewRepository["worktrees"][number] => {
+  const worktree = repository.worktrees.find(
+    (entry) => repositoryKey(entry.path) === repositoryKey(path ?? ""),
+  );
+  if (!worktree) {
+    throw new Error(
+      repositoryKey(path ?? "") === repositoryKey(repository.repositoryRoot)
+        ? "The main worktree cannot be changed here."
+        : "Select a worktree of this repository.",
+    );
+  }
+  return worktree;
+};
+
+const addWorktree = (
+  repository: PreviewRepository,
+  options: WorkspaceGitActionOptions,
+): void => {
+  const branchName = requireText(
+    options.branchName,
+    "Enter a valid branch name.",
+  );
+  if (
+    branchName === repository.branch ||
+    repository.worktrees.some((entry) => entry.branch === branchName)
+  ) {
+    throw new Error(`'${branchName}' is already checked out in a worktree.`);
+  }
+  const existing = repository.localBranches.find(
+    (candidate) => candidate.name === branchName,
+  );
+  const start = options.startPoint
+    ? requireLocalBranch(repository, options.startPoint)
+    : currentBranch(repository);
+  if (!existing) {
+    repository.localBranches.push(
+      branch(branchName, start?.commit ?? "0000000"),
+    );
+  }
+  const slug =
+    branchName
+      .toLowerCase()
+      .replace(/[^a-z0-9_.]+/gu, "-")
+      .replace(/^[-.]+|[-.]+$/gu, "") || "worktree";
+  repository.worktrees.push({
+    path: `${repository.repositoryRoot}.worktrees\\${slug}`,
+    branch: branchName,
+    head: existing?.commit ?? start?.commit ?? "0000000",
+    main: false,
+    current: false,
+    detached: false,
+    locked: false,
+    prunable: false,
+    changes: 0,
+  });
 };
 
 const stackOf = (repository: PreviewRepository): WorkspaceGitBranch[] => {
@@ -730,6 +804,34 @@ export const runPreviewWorkspaceGitAction = (
         (remote) => remote.name !== options.remoteName,
       );
       break;
+    case "add-worktree":
+      addWorktree(repository, options);
+      break;
+    case "remove-worktree": {
+      const worktree = requireWorktree(repository, options.worktreePath);
+      if (worktree.locked) {
+        throw new Error("Unlock this worktree before removing it.");
+      }
+      if ((worktree.changes ?? 0) > 0 && !options.force) {
+        throw new Error(
+          "This worktree has local changes. Remove it anyway to discard them.",
+        );
+      }
+      repository.worktrees = repository.worktrees.filter(
+        (entry) => entry !== worktree,
+      );
+      break;
+    }
+    case "lock-worktree":
+    case "unlock-worktree":
+      requireWorktree(repository, options.worktreePath).locked =
+        action === "lock-worktree";
+      break;
+    case "prune-worktrees":
+      repository.worktrees = repository.worktrees.filter(
+        (entry) => !entry.prunable,
+      );
+      break;
   }
   return overviewFor(repository);
 };
@@ -822,7 +924,9 @@ export const switchPreviewWorkspaceGitBranches = (
     } else if (repository.changes.some((entry) => entry.conflicted)) {
       throw new Error(`Resolve the conflicts in ${name} first.`);
     } else if (
-      repository.localBranches.some((candidate) => candidate.name === branchName)
+      repository.localBranches.some(
+        (candidate) => candidate.name === branchName,
+      )
     ) {
       source = "local";
     } else if (previewRemoteBranch(repository, branchName)) {

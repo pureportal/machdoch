@@ -105,8 +105,10 @@ const mcpArguments = z.union([
 ]);
 const gitBranch = z.string().trim().min(1).max(240);
 const commitId = z.string().regex(/^[0-9a-f]{4,64}$/iu);
-const gitAction = <T extends string, S extends z.ZodRawShape>(value: T, shape: S) =>
-  z.strictObject({ ...repository, action: z.literal(value), ...shape });
+const gitAction = <T extends string, S extends z.ZodRawShape>(
+  value: T,
+  shape: S,
+) => z.strictObject({ ...repository, action: z.literal(value), ...shape });
 const action = z.discriminatedUnion("action", [
   gitAction("push", { force: z.boolean().optional() }),
   gitAction("submit-pull-requests", { draft: z.boolean().optional() }),
@@ -161,6 +163,18 @@ const action = z.discriminatedUnion("action", [
     remoteUrl: z.string().trim().min(1).max(2048),
   }),
   gitAction("remove-remote", { remoteName: gitBranch }),
+  gitAction("add-worktree", {
+    branchName: gitBranch,
+    startPoint: gitBranch.optional(),
+  }),
+  gitAction("remove-worktree", {
+    worktreePath: root,
+    force: z.boolean().optional(),
+  }),
+  ...(["lock-worktree", "unlock-worktree"] as const).map((value) =>
+    gitAction(value, { worktreePath: root }),
+  ),
+  gitAction("prune-worktrees", {}),
 ]);
 const command = <T extends string, S extends z.ZodType>(value: T, args: S) =>
   z.strictObject({
@@ -174,7 +188,10 @@ export const workspaceRequestSchema = z.union([
   operationReadSchema,
   operationReleaseSchema,
   z.discriminatedUnion("command", [
-    command("run_live_voice_command", z.strictObject({ workspaceRoot: root, input: liveVoiceRequestSchema })),
+    command(
+      "run_live_voice_command",
+      z.strictObject({ workspaceRoot: root, input: liveVoiceRequestSchema }),
+    ),
     command(
       "get_session_file_change_files",
       sessionDataCommands.get_session_file_change_files,
@@ -219,10 +236,7 @@ export const workspaceRequestSchema = z.union([
           ),
       }),
     ),
-    command(
-      "read_context_attachment_preview",
-      z.strictObject({ path: root }),
-    ),
+    command("read_context_attachment_preview", z.strictObject({ path: root })),
     command(
       "list_context_attachment_directory",
       z.strictObject({
@@ -231,8 +245,23 @@ export const workspaceRequestSchema = z.union([
       }),
     ),
     command("get_runtime_snapshot", z.strictObject({ workspaceRoot: root })),
-    command("run_workspace_library_command", z.strictObject({ workspaceRoot: root, input: workspaceLibraryRequestSchema })),
-    command("run_mcp_app_command", z.strictObject({ workspaceRoot: z.string().max(2048).refine((value) => !value.includes("\0")), input: mcpAppRequestSchema })),
+    command(
+      "run_workspace_library_command",
+      z.strictObject({
+        workspaceRoot: root,
+        input: workspaceLibraryRequestSchema,
+      }),
+    ),
+    command(
+      "run_mcp_app_command",
+      z.strictObject({
+        workspaceRoot: z
+          .string()
+          .max(2048)
+          .refine((value) => !value.includes("\0")),
+        input: mcpAppRequestSchema,
+      }),
+    ),
     command(
       "stop_all_workspace_terminals",
       z.strictObject({ workspaceRoot: root }),

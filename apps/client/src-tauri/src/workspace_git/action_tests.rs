@@ -390,3 +390,130 @@ fn overview_reports_the_trunk_branch() {
     repository.git(&["switch", "-c", "feature"]);
     assert_eq!(repository.overview().default_branch.as_deref(), Some("main"));
 }
+
+struct RemoveOnDrop(PathBuf);
+
+impl Drop for RemoveOnDrop {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn worktree_entries(overview: &WorkspaceGitOverview) -> Vec<serde_json::Value> {
+    serde_json::to_value(overview).expect("the overview should serialize")["worktrees"]
+        .as_array()
+        .expect("worktrees should be listed")
+        .clone()
+}
+
+fn worktree_for(overview: &WorkspaceGitOverview, branch: &str) -> serde_json::Value {
+    worktree_entries(overview)
+        .into_iter()
+        .find(|entry| entry["branch"] == branch)
+        .unwrap_or_else(|| panic!("no worktree for {branch}"))
+}
+
+fn ui_path(path: &Path) -> String {
+    crate::desktop_task::format_path_for_ui(
+        &fs::canonicalize(path).expect("the worktree should exist"),
+    )
+}
+
+#[test]
+fn worktrees_open_beside_the_repository_and_can_be_cleaned_up() {
+    let repository = TestRepository::new("worktrees");
+    let name = repository
+        .root
+        .file_name()
+        .expect("the repository should have a name")
+        .to_string_lossy()
+        .to_string();
+    let base = repository
+        .root
+        .parent()
+        .expect("the repository should have a parent")
+        .join(format!("{name}.worktrees"));
+    let _cleanup = RemoveOnDrop(base.clone());
+    repository.git(&["branch", "feature/existing"]);
+
+    let created = repository
+        .action("add-worktree", branch("feature/plat-12"))
+        .expect("a worktree should open on a new branch");
+    let entries = worktree_entries(&created);
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["main"], true);
+    assert_eq!(entries[0]["current"], true);
+    let feature = base.join("feature-plat-12");
+    let plat = worktree_for(&created, "feature/plat-12");
+    assert_eq!(plat["path"], ui_path(&feature));
+    assert_eq!(plat["main"], false);
+    assert_eq!(plat["changes"], 0);
+    assert!(created
+        .local_branches
+        .iter()
+        .any(|candidate| candidate.name == "feature/plat-12"));
+
+    let existing = repository
+        .action("add-worktree", branch("feature/existing"))
+        .expect("a worktree should open on an existing branch");
+    assert_eq!(worktree_entries(&existing).len(), 3);
+    assert!(repository
+        .action("add-worktree", branch("feature/existing"))
+        .expect_err("a branch cannot be checked out twice")
+        .contains("feature/existing"));
+
+    fs::write(feature.join("notes.md"), "draft\n").expect("the file should write");
+    let path = feature.display().to_string();
+    let target = |request: &mut WorkspaceGitActionRequest| {
+        request.worktree_path = Some(path.clone());
+    };
+    assert_eq!(
+        worktree_for(&repository.overview(), "feature/plat-12")["changes"],
+        1
+    );
+    let locked = repository
+        .action("lock-worktree", target)
+        .expect("the worktree should lock");
+    assert_eq!(worktree_for(&locked, "feature/plat-12")["locked"], true);
+    assert!(repository
+        .action("remove-worktree", |request| {
+            target(request);
+            request.force = Some(true);
+        })
+        .is_err());
+    repository
+        .action("unlock-worktree", target)
+        .expect("the worktree should unlock");
+    assert!(repository.action("remove-worktree", target).is_err());
+    let removed = repository
+        .action("remove-worktree", |request| {
+            target(request);
+            request.force = Some(true);
+        })
+        .expect("a forced removal should discard local changes");
+    assert_eq!(worktree_entries(&removed).len(), 2);
+    assert!(!feature.exists());
+
+    assert!(repository
+        .action("remove-worktree", |request| {
+            request.worktree_path = Some(repository.root.display().to_string())
+        })
+        .expect_err("the main worktree stays")
+        .contains("main worktree"));
+    assert!(repository
+        .action("remove-worktree", |request| {
+            request.worktree_path = Some(env::temp_dir().display().to_string())
+        })
+        .expect_err("only listed worktrees can be removed")
+        .contains("Select a worktree"));
+
+    fs::remove_dir_all(base.join("feature-existing")).expect("the folder should delete");
+    assert_eq!(
+        worktree_for(&repository.overview(), "feature/existing")["prunable"],
+        true
+    );
+    let pruned = repository
+        .action("prune-worktrees", |_| {})
+        .expect("stale worktrees should prune");
+    assert_eq!(worktree_entries(&pruned).len(), 1);
+}

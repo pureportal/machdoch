@@ -248,7 +248,13 @@ describe("workspace browser preview Git", () => {
     expect(() =>
       switchPreviewWorkspaceGitBranches(
         cleanRoot,
-        [{ repositoryRoot: apiRoot, branchName: "feature/ticket", create: false }],
+        [
+          {
+            repositoryRoot: apiRoot,
+            branchName: "feature/ticket",
+            create: false,
+          },
+        ],
         true,
       ),
     ).toThrow("Branch `feature/ticket` does not exist in api.");
@@ -257,11 +263,17 @@ describe("workspace browser preview Git", () => {
       cleanRoot,
       [
         { repositoryRoot: apiRoot, branchName: "main", create: false },
-        { repositoryRoot: appRoot, branchName: "feature/ticket", create: false },
+        {
+          repositoryRoot: appRoot,
+          branchName: "feature/ticket",
+          create: false,
+        },
       ],
       true,
     );
-    expect(results.map((result) => [result.relativePath, result.switched])).toEqual([
+    expect(
+      results.map((result) => [result.relativePath, result.switched]),
+    ).toEqual([
       ["api", true],
       ["app", true],
     ]);
@@ -324,10 +336,70 @@ describe("workspace browser preview Git", () => {
       true,
     );
     expect(stashedResult).toMatchObject({ switched: true, stashed: true });
-    const switched = loadPreviewWorkspaceGitOverview(workspaceRoot, desktopRoot);
+    const switched = loadPreviewWorkspaceGitOverview(
+      workspaceRoot,
+      desktopRoot,
+    );
     expect(switched.totalChanges).toBe(0);
     expect(switched.stashes[0]?.message).toBe(
       "On feature/desktop-next: Before switching to feature/desktop-shell",
     );
+  });
+
+  it("opens, locks, and removes worktrees beside the repository", () => {
+    const run = (
+      action: Parameters<typeof runPreviewWorkspaceGitAction>[2],
+      options: Parameters<typeof runPreviewWorkspaceGitAction>[3] = {},
+    ) =>
+      runPreviewWorkspaceGitAction(
+        workspaceRoot,
+        workspaceRoot,
+        action,
+        options,
+      );
+    const initial = loadPreviewWorkspaceGitOverview(
+      workspaceRoot,
+      workspaceRoot,
+    );
+    expect(
+      initial.worktrees.map((entry) => [entry.branch, entry.main]),
+    ).toEqual([
+      ["main", true],
+      ["feature/workspace", false],
+    ]);
+    const created = run("add-worktree", { branchName: "feature/PLAT-12" });
+    const worktree = created.worktrees.find(
+      (entry) => entry.branch === "feature/PLAT-12",
+    );
+    expect(worktree?.path).toBe(`${workspaceRoot}.worktrees\\feature-plat-12`);
+    expect(created.branch).toBe("main");
+    expect(
+      created.localBranches.some((entry) => entry.name === "feature/PLAT-12"),
+    ).toBe(true);
+    expect(() =>
+      run("add-worktree", { branchName: "feature/workspace" }),
+    ).toThrow("already checked out");
+    const path = worktree?.path ?? "";
+    expect(
+      run("lock-worktree", { worktreePath: path }).worktrees.find(
+        (entry) => entry.path === path,
+      )?.locked,
+    ).toBe(true);
+    expect(() => run("remove-worktree", { worktreePath: path })).toThrow(
+      "Unlock",
+    );
+    run("unlock-worktree", { worktreePath: path });
+    expect(
+      run("remove-worktree", { worktreePath: path }).worktrees.some(
+        (entry) => entry.path === path,
+      ),
+    ).toBe(false);
+    const dirty = initial.worktrees[1]?.path ?? "";
+    expect(() => run("remove-worktree", { worktreePath: dirty })).toThrow(
+      "local changes",
+    );
+    expect(() =>
+      run("remove-worktree", { worktreePath: workspaceRoot }),
+    ).toThrow("main worktree");
   });
 });

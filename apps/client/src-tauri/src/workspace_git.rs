@@ -27,6 +27,7 @@ mod history;
 mod repositories_status;
 mod stack;
 mod summary;
+mod worktrees;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -294,6 +295,7 @@ pub struct WorkspaceGitOverview {
     remotes: Vec<WorkspaceGitRemote>,
     recent_commits: Vec<WorkspaceGitCommit>,
     stashes: Vec<WorkspaceGitStash>,
+    worktrees: Vec<worktrees::WorkspaceGitWorktree>,
     #[serde(skip_serializing_if = "Option::is_none")]
     operation: Option<String>,
 }
@@ -304,6 +306,7 @@ pub struct WorkspaceGitActionRequest {
     workspace_root: String,
     repository_root: String,
     action: String,
+    worktree_path: Option<String>,
     branch_name: Option<String>,
     remote_name: Option<String>,
     remote_url: Option<String>,
@@ -1360,6 +1363,7 @@ fn load_overview(
                 &repository,
             )
         });
+        let worktrees_worker = scope.spawn(|| worktrees::read_worktrees(&repository));
         let operation = current_operation(&repository);
         let branch_output = branches_worker
             .join()
@@ -1429,6 +1433,9 @@ fn load_overview(
             .map_err(|_| "Git stash worker stopped unexpectedly.".to_string())?
             .map(|value| parse_stashes(&value))
             .unwrap_or_default();
+        let worktrees = worktrees_worker
+            .join()
+            .map_err(|_| "Git worktree worker stopped unexpectedly.".to_string())?;
         let status_output = status_worker
             .join()
             .map_err(|_| "Git status worker stopped unexpectedly.".to_string())??;
@@ -1472,6 +1479,7 @@ fn load_overview(
             remotes,
             recent_commits,
             stashes,
+            worktrees,
             operation,
         })
     })

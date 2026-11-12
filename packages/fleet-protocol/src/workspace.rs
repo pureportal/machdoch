@@ -212,6 +212,10 @@ fn git_action(value: &Value) -> bool {
         "stash-apply" | "stash-pop" | "stash-drop" => (&["stashRef"], &[]),
         "add-remote" => (&["remoteName", "remoteUrl"], &[]),
         "remove-remote" => (&["remoteName"], &[]),
+        "add-worktree" => (&["branchName"], &["startPoint"]),
+        "remove-worktree" => (&["worktreePath"], &["force"]),
+        "lock-worktree" | "unlock-worktree" => (&["worktreePath"], &[]),
+        "prune-worktrees" => (&[], &[]),
         _ => return false,
     };
     let base = ["workspaceRoot", "repositoryRoot", "action"];
@@ -240,6 +244,7 @@ fn git_action(value: &Value) -> bool {
         && request
             .get("remoteUrl")
             .is_none_or(|value| text(value, 2048, true))
+        && request.get("worktreePath").is_none_or(root)
         && request
             .get("message")
             .is_none_or(|value| text(value, message_limit, true))

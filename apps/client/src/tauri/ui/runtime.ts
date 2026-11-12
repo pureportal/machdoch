@@ -72,6 +72,7 @@ export type {
   WorkspaceGitRemote,
   WorkspaceGitCommit,
   WorkspaceGitStash,
+  WorkspaceGitWorktree,
   WorkspaceGitOperation,
   WorkspaceGitSummary,
   WorkspacePullRequest,
@@ -204,7 +205,17 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { AgentModelImageMediaType } from "@machdoch/model-runtime/types";
-import type { ConversationMemoryEntry, TaskConversationContext, TaskDeterministicAction, TaskActionOutput, TaskExecutionProgress, TaskExecutionChangedLineRange, TaskExecutionFileChange, TaskExecutionResult, TaskRunPreview } from "../../core/types.js";
+import type {
+  ConversationMemoryEntry,
+  TaskConversationContext,
+  TaskDeterministicAction,
+  TaskActionOutput,
+  TaskExecutionProgress,
+  TaskExecutionChangedLineRange,
+  TaskExecutionFileChange,
+  TaskExecutionResult,
+  TaskRunPreview,
+} from "../../core/types.js";
 import type { ReasoningLesson } from "../../core/reasoning-bank.js";
 import { validateTaskDeterministicAction } from "../../core/_helpers/deterministic-action-validation.js";
 import {
@@ -5019,6 +5030,7 @@ const createWorkspaceGitActionFields = (
 ): WorkspaceGitActionOptions => {
   const fields: WorkspaceGitActionOptions = {};
   for (const key of [
+    "worktreePath",
     "branchName",
     "startPoint",
     "parentBranch",

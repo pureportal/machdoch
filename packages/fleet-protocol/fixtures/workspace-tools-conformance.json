@@ -903,10 +903,7 @@
           "workspaceRoot": "/projects/demo",
           "repositoryRoot": "/projects/demo",
           "action": "stage",
-          "paths": [
-            "src/a.ts",
-            "docs/read me.md"
-          ]
+          "paths": ["src/a.ts", "docs/read me.md"]
         }
       }
     },
@@ -940,9 +937,7 @@
           "workspaceRoot": "/projects/demo",
           "repositoryRoot": "/projects/demo",
           "action": "unstage",
-          "paths": [
-            "../secret"
-          ]
+          "paths": ["../secret"]
         }
       }
     },
@@ -4682,6 +4677,177 @@
             }
           ],
           "stashChanges": false
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git add worktree",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "add-worktree",
+          "branchName": "feature/plat-12",
+          "startPoint": "main"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git add worktree without branch",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "add-worktree"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git add worktree with caller path",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "add-worktree",
+          "branchName": "feature/plat-12",
+          "worktreePath": "/tmp/elsewhere"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git remove worktree",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "remove-worktree",
+          "worktreePath": "/projects/demo.worktrees/feature-plat-12",
+          "force": true
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git remove worktree without path",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "remove-worktree"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git remove worktree with NUL path",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "remove-worktree",
+          "worktreePath": "/projects/demo\u0000"
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git lock worktree",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "lock-worktree",
+          "worktreePath": "/projects/demo.worktrees/feature-plat-12"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git unlock worktree with force",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "unlock-worktree",
+          "worktreePath": "/projects/demo.worktrees/feature-plat-12",
+          "force": true
+        }
+      }
+    },
+    "accepted": false
+  },
+  {
+    "name": "git prune worktrees",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "prune-worktrees"
+        }
+      }
+    },
+    "accepted": true
+  },
+  {
+    "name": "git prune worktrees with branch",
+    "request": {
+      "kind": "invoke",
+      "id": "bc856a02-3b42-4c1e-8aa3-b28a97873092",
+      "command": "run_workspace_git_action",
+      "args": {
+        "request": {
+          "workspaceRoot": "/projects/demo",
+          "repositoryRoot": "/projects/demo",
+          "action": "prune-worktrees",
+          "branchName": "main"
         }
       }
     },
