@@ -1,14 +1,7 @@
 import { createHash } from "node:crypto";
 import { skillRequestSchema } from "@machdoch/fleet-protocol/skills";
-import {
-  lstat,
-  mkdir,
-  readdir,
-  realpath,
-  rename,
-  unlink,
-} from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { lstat, mkdir, readdir, rename, unlink } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { getUserConfigPath } from "./env.js";
 import { parseMarkdownDocument } from "./frontmatter.js";
 import { readStableRegularFile } from "./_helpers/read-stable-regular-file.helper.js";
@@ -99,6 +92,13 @@ const readMetadata = async (path: string) => {
   }
 };
 
+const isLinked = async (path: string): Promise<boolean> => {
+  for (let current = path; ; current = dirname(current)) {
+    if ((await lstat(current)).isSymbolicLink()) return true;
+    if (dirname(current) === current) return false;
+  }
+};
+
 const ensureDirectory = async (
   path: string,
   create: boolean,
@@ -119,11 +119,7 @@ const ensureDirectory = async (
     current = parent;
     metadata = await readMetadata(current);
   }
-  if (
-    metadata.isSymbolicLink() ||
-    !metadata.isDirectory() ||
-    relative(current, await realpath(current)) !== ""
-  )
+  if (!metadata.isDirectory() || (await isLinked(current)))
     throw new Error(
       "Skill directories must be real directories, without symbolic links.",
     );
@@ -135,12 +131,7 @@ const ensureDirectory = async (
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
     }
     metadata = await readMetadata(directory);
-    if (
-      !metadata ||
-      metadata.isSymbolicLink() ||
-      !metadata.isDirectory() ||
-      relative(directory, await realpath(directory)) !== ""
-    )
+    if (!metadata || metadata.isSymbolicLink() || !metadata.isDirectory())
       throw new Error(
         "Skill directories must be real directories, without symbolic links.",
       );
