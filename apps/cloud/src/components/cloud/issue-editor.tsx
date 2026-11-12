@@ -17,12 +17,15 @@ import { PokerPanel } from "./poker-panel";
 import { IssueComments } from "./comments";
 import { TaskList } from "./task-list";
 import { IssueDelegate } from "./issue-delegate";
+import { IssueAutomations } from "./issue-automations";
 import { IssueHeader } from "./issue-header";
 import { triageChangedEvent } from "./events";
 import { TriageActions } from "./triage-actions";
 import { IssueLabels } from "./issue-labels";
 import { DueDateField } from "./due-date-field";
 import { IssueMarkdownField } from "./issue-markdown-field";
+import { IssueAttachments } from "./issue-attachments";
+import { uploadAttachment } from "./attachment-upload";
 import { IssuePriority } from "./issue-priority";
 import {
   IssueRelationSidebar,
@@ -259,26 +262,30 @@ export function IssueEditor({
         onArchive={() => changeProperties({ archived: !issue.archived })}
         delegate={
           writable &&
-          !issue.archived &&
-          !["triage", "complete", "canceled"].includes(issue.state) && (
-            <IssueDelegate
-              issue={issue}
-              workspace={workspace}
-              onBeforeStart={async (projectId) => {
-                const result = await cloudRequest<IssueChangesResult>(
-                  "issues/changes",
-                  {
-                    method: "POST",
-                    key: crypto.randomUUID(),
-                    body: {
-                      issues: [{ id: issue.id }],
-                      changes: { projectId },
-                    },
-                  },
-                );
-                return result.updated[0]!.revision;
-              }}
-            />
+          !issue.archived && (
+            <>
+              <IssueAutomations issueId={issue.id} />
+              {!["triage", "complete", "canceled"].includes(issue.state) && (
+                <IssueDelegate
+                  issue={issue}
+                  workspace={workspace}
+                  onBeforeStart={async (projectId) => {
+                    const result = await cloudRequest<IssueChangesResult>(
+                      "issues/changes",
+                      {
+                        method: "POST",
+                        key: crypto.randomUUID(),
+                        body: {
+                          issues: [{ id: issue.id }],
+                          changes: { projectId },
+                        },
+                      },
+                    );
+                    return result.updated[0]!.revision;
+                  }}
+                />
+              )}
+            </>
           )
         }
       />
@@ -334,6 +341,7 @@ export function IssueEditor({
             writable={writable}
             maxLength={30000}
             className="cloud-issue-description"
+            uploadFile={(file) => uploadAttachment(file, issue.id)}
             onSave={(value) => saveText("description", value)}
           />
           {(issue.acceptanceCriteria || criteriaOpen) && (
@@ -347,6 +355,7 @@ export function IssueEditor({
                 writable={writable}
                 maxLength={20000}
                 autoEdit={!issue.acceptanceCriteria}
+                uploadFile={(file) => uploadAttachment(file, issue.id)}
                 onSave={(value) => saveText("acceptanceCriteria", value)}
               />
             </section>
@@ -366,6 +375,7 @@ export function IssueEditor({
               <p>{conflict}</p>
             </div>
           )}
+          <IssueAttachments issueId={issue.id} writable={writable} />
           <IssueSubIssues issue={issue} writable={writable} state={relations} />
           <details
             className="cloud-issue-disclosure"

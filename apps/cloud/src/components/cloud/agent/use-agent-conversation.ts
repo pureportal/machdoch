@@ -52,7 +52,11 @@ export interface AgentConversation {
   error: string;
   olderAvailable: boolean;
   loadOlder: () => Promise<void>;
-  send: (prompt: string, context: ChatContextReference[]) => Promise<boolean>;
+  send: (
+    prompt: string,
+    context: ChatContextReference[],
+    attachmentIds: string[],
+  ) => Promise<boolean>;
   cancel: (turn: CloudChatTurn) => Promise<void>;
   retry: (turn: CloudChatTurn) => Promise<void>;
   settleAction: (
@@ -218,7 +222,7 @@ export function useAgentConversation(
           : current,
       );
     },
-    async send(prompt, context) {
+    async send(prompt, context, attachmentIds) {
       const result = await run(() =>
         sender.current<{ chatId: string }>("chats", {
           chatId: chatId ?? null,
@@ -227,6 +231,7 @@ export function useAgentConversation(
           model: selection.model,
           prompt,
           context,
+          attachmentIds,
         }),
       );
       if (!result) return false;

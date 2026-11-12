@@ -10,7 +10,7 @@ import {
 } from "react";
 import { Pencil } from "lucide-react";
 import { CloudMarkdown } from "./cloud-markdown";
-import { MarkdownTextarea } from "./markdown-textarea";
+import { MarkdownTextarea, type UploadFile } from "./markdown-textarea";
 import { toggleTaskListItem } from "@/lib/issue-text";
 
 interface TaskToggle {
@@ -84,6 +84,7 @@ export function IssueMarkdownField({
   maxLength,
   className,
   autoEdit = false,
+  uploadFile,
   onSave,
 }: {
   id: string;
@@ -94,6 +95,7 @@ export function IssueMarkdownField({
   maxLength: number;
   className?: string;
   autoEdit?: boolean;
+  uploadFile?: UploadFile;
   onSave: (value: string) => void;
 }) {
   const [editing, setEditing] = useState(autoEdit);
@@ -120,12 +122,14 @@ export function IssueMarkdownField({
           value={draft}
           maxLength={maxLength}
           placeholder={placeholder}
+          uploadFile={uploadFile}
           onChange={(event) => {
             setDraft(event.target.value);
             event.target.style.height = "auto";
             event.target.style.height = `${event.target.scrollHeight}px`;
           }}
           onBlur={() => {
+            if (!document.hasFocus()) return;
             setEditing(false);
             if (draft !== value) onSave(draft);
           }}

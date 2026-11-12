@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   continueList,
+  insertBlock,
   insertLink,
   pasteLink,
+  replaceText,
   toggleInline,
   toggleLines,
+  uploadPlaceholder,
   type TextEdit,
 } from "./markdown-editing";
 
@@ -147,5 +150,42 @@ describe("list continuation", () => {
     expect(continueList("plain", { start: 5, end: 5 })).toBeNull();
     expect(continueList("- one", { start: 1, end: 1 })).toBeNull();
     expect(continueList("- one", { start: 0, end: 5 })).toBeNull();
+  });
+});
+
+describe("file uploads", () => {
+  it("inserts upload placeholders on their own lines", () => {
+    const placeholder = uploadPlaceholder("shot [1].png", "abc");
+    expect(placeholder).toBe("![Uploading shot 1.png…](#upload-abc)");
+    expect(
+      apply(
+        "Before after",
+        insertBlock("Before after", { start: 7, end: 7 }, placeholder),
+      ),
+    ).toMatchObject({
+      text: `Before \n${placeholder}\nafter`,
+      caret: 8 + placeholder.length + 1,
+    });
+    expect(
+      apply("", insertBlock("", { start: 0, end: 0 }, placeholder)).text,
+    ).toBe(placeholder);
+  });
+
+  it("replaces a placeholder and keeps the caret on the same text", () => {
+    const placeholder = uploadPlaceholder("a.png", "x1");
+    const text = `Intro\n${placeholder}\nEnd`;
+    const caret = text.length;
+    const result = apply(
+      text,
+      replaceText(text, placeholder, "![a.png](/api/v1/attachments/1)", {
+        start: caret,
+        end: caret,
+      })!,
+    );
+    expect(result.text).toBe("Intro\n![a.png](/api/v1/attachments/1)\nEnd");
+    expect(result.caret).toBe(result.text.length);
+    expect(
+      replaceText("No placeholder", placeholder, "x", { start: 0, end: 0 }),
+    ).toBeNull();
   });
 });

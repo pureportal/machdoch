@@ -6,6 +6,7 @@ import {
   FolderKanban,
   Gauge,
   GitPullRequest,
+  History,
   Signal,
   Tag,
   Timer,
@@ -171,6 +172,16 @@ export function filterFieldDefinitions(
       field: "created",
       label: "Created",
       icon: CalendarPlus,
+      options: [
+        { value: "day", label: "Past day" },
+        { value: "week", label: "Past week" },
+        { value: "month", label: "Past month" },
+      ],
+    },
+    {
+      field: "updated",
+      label: "Updated",
+      icon: History,
       options: [
         { value: "day", label: "Past day" },
         { value: "week", label: "Past week" },

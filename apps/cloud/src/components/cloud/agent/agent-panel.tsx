@@ -125,6 +125,7 @@ export function AgentDock({ workspace }: { workspace: CloudWorkspace }) {
             canConfigure={role === "owner" || role === "admin"}
             variant="panel"
             initialPrompt={shell.draft}
+            sendInitialPrompt={shell.sendDraft}
             onPromptUsed={shell.clearDraft}
             onCreated={(id, title) => shell.selectChat(id, title)}
           />

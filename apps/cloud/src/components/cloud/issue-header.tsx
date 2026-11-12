@@ -14,8 +14,13 @@ import {
   Hash,
   Laptop,
   Link2,
+  MessageSquare,
   Sparkles,
 } from "lucide-react";
+import {
+  availableIssueAgentActions,
+  issueAgentActions,
+} from "@/lib/agent-quick-actions";
 import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
 import {
   issueBranchName,
@@ -30,6 +35,7 @@ import { useToast } from "./toast";
 import { useAgentShell } from "./agent/agent-shell";
 
 export const issueNavigationKey = "machdoch.cloud.issue-navigation";
+const openChat = "chat";
 
 function useIssueNavigation(issueId: string) {
   const [list, setList] = useState<{ ids: string[]; href: string } | null>(
@@ -236,10 +242,39 @@ export function IssueHeader({
             })}
           />
         )}
-        <Button variant="ghost" size="sm" onClick={() => agent.openPanel(null)}>
-          <Sparkles />
-          Agent
-        </Button>
+        <PropertyMenu
+          label="Ask Agent"
+          align="end"
+          options={[
+            ...(writable
+              ? availableIssueAgentActions(workspace.actor.role).map(
+                  (action) => ({
+                    value: action.id,
+                    label: action.label,
+                    icon: <Sparkles size={14} aria-hidden="true" />,
+                  }),
+                )
+              : []),
+            {
+              value: openChat,
+              label: "Open chat",
+              icon: <MessageSquare size={14} aria-hidden="true" />,
+            },
+          ]}
+          onSelect={(value) => {
+            const action = issueAgentActions.find(
+              (entry) => entry.id === value,
+            );
+            if (action)
+              agent.openPanel(null, action.prompt(issue.identifier), true);
+            else agent.openPanel(null);
+          }}
+        >
+          <Button variant="ghost" size="sm">
+            <Sparkles />
+            Agent
+          </Button>
+        </PropertyMenu>
       </div>
     </header>
   );

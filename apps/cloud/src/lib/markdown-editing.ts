@@ -199,3 +199,43 @@ export function continueList(
     selection: { start: caret + insert.length, end: caret + insert.length },
   };
 }
+
+export function uploadPlaceholder(name: string, token: string): string {
+  return `![Uploading ${name.replace(/[[\]\\]/g, "")}…](#upload-${token})`;
+}
+
+export function insertBlock(
+  text: string,
+  selection: TextSelection,
+  block: string,
+): TextEdit {
+  const before = selection.start > 0 && text[selection.start - 1] !== "\n";
+  const after = selection.end < text.length && text[selection.end] !== "\n";
+  const insert = `${before ? "\n" : ""}${block}${after ? "\n" : ""}`;
+  const caret = selection.start + insert.length;
+  return {
+    from: selection.start,
+    to: selection.end,
+    insert,
+    selection: { start: caret, end: caret },
+  };
+}
+
+export function replaceText(
+  text: string,
+  search: string,
+  replacement: string,
+  selection: TextSelection,
+): TextEdit | null {
+  const from = text.indexOf(search);
+  if (from === -1) return null;
+  const to = from + search.length;
+  const shift = (offset: number) =>
+    offset >= to ? offset + replacement.length - search.length : offset;
+  return {
+    from,
+    to,
+    insert: replacement,
+    selection: { start: shift(selection.start), end: shift(selection.end) },
+  };
+}

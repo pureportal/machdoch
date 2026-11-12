@@ -8,6 +8,15 @@ export class CloudRequestError extends Error {
   }
 }
 
+export function csrfToken(): string {
+  return (
+    document.cookie
+      .split("; ")
+      .find((cookie) => cookie.startsWith("__Host-machdoch_cloud_csrf="))
+      ?.split("=")[1] ?? ""
+  );
+}
+
 export async function cloudRequest<T>(
   path: string,
   options: {
@@ -21,11 +30,7 @@ export async function cloudRequest<T>(
   const headers: Record<string, string> = {};
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   if (method !== "GET") {
-    headers["x-machdoch-cloud-csrf"] =
-      document.cookie
-        .split("; ")
-        .find((cookie) => cookie.startsWith("__Host-machdoch_cloud_csrf="))
-        ?.split("=")[1] ?? "";
+    headers["x-machdoch-cloud-csrf"] = csrfToken();
     if (options.key) headers["Idempotency-Key"] = options.key;
   }
   const body =
@@ -86,6 +91,28 @@ export async function cloudRequest<T>(
   } finally {
     clearTimeout(timer);
   }
+}
+
+export async function cloudUpload<T>(path: string, file: Blob): Promise<T> {
+  const response = await fetch(`/api/v1/${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": file.type || "application/octet-stream",
+      "x-machdoch-cloud-csrf": csrfToken(),
+    },
+    body: file,
+    cache: "no-store",
+  });
+  const value = (await response.json().catch(() => null)) as
+    | (T & { error?: string; code?: string })
+    | null;
+  if (!response.ok)
+    throw new CloudRequestError(
+      value?.error ?? "The upload failed. Try again.",
+      response.status,
+      value?.code ?? "unknown",
+    );
+  return value as T;
 }
 
 export function formText(form: FormData, name: string): string {

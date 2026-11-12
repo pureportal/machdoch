@@ -2,7 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, Sparkles, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  FileText,
+  Paperclip,
+  Sparkles,
+  X,
+} from "lucide-react";
+import { maximumChatAttachments } from "@/lib/cloud-attachment-contract";
 import {
   maximumChatContext,
   type ChatContextKind,
@@ -15,6 +24,14 @@ import { AgentTurn, contextIcons } from "./agent-turn";
 import { AgentContextPicker, contextKey } from "./agent-context-picker";
 import type { AgentPageEntity } from "./agent-shell";
 import { useAgentConversation } from "./use-agent-conversation";
+import { uploadAttachment } from "../attachment-upload";
+
+interface ComposerFile {
+  key: string;
+  name: string;
+  preview: string | null;
+  id: string | null;
+}
 
 const suggestions: Record<ChatContextKind | "workspace", string[]> = {
   workspace: [
@@ -53,6 +70,7 @@ export function AgentConversation({
   canConfigure,
   variant,
   initialPrompt = "",
+  sendInitialPrompt = false,
   onPromptUsed,
   onCreated,
 }: {
@@ -64,6 +82,7 @@ export function AgentConversation({
   canConfigure: boolean;
   variant: "panel" | "page";
   initialPrompt?: string;
+  sendInitialPrompt?: boolean;
   onPromptUsed?: () => void;
   onCreated: (chatId: string, title: string) => void;
 }) {
@@ -73,6 +92,11 @@ export function AgentConversation({
   const [excluded, setExcluded] = useState<string | null>(null);
   const [attached, setAttached] = useState<AgentPageEntity[]>([]);
   const [unseen, setUnseen] = useState(false);
+  const [files, setFiles] = useState<ComposerFile[]>([]);
+  const [dragging, setDragging] = useState(false);
+  const [uploadError, setUploadError] = useState("");
+  const picker = useRef<HTMLInputElement>(null);
+  const initialSent = useRef(false);
   const transcript = useRef<HTMLDivElement>(null);
   const following = useRef(true);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -94,13 +118,15 @@ export function AgentConversation({
   const provider = settings?.providers.find((entry) => entry.id === providerId);
   const available =
     !!settings?.credentialStorageAvailable && !!settings.providers.length;
-  const canSend =
+  const uploading = files.some((file) => !file.id);
+  const ready =
     writable &&
     available &&
     !pending &&
     !active &&
-    !!provider?.models.includes(model) &&
-    !!prompt.trim();
+    !uploading &&
+    !!provider?.models.includes(model);
+  const canSend = ready && !!prompt.trim();
   const turns = detail?.turns ?? [];
   const lastTurn = turns.at(-1);
 
@@ -116,22 +142,73 @@ export function AgentConversation({
   }, [chatId]);
 
   useEffect(() => {
-    if (!initialPrompt) return;
+    if (!initialPrompt || sendInitialPrompt) return;
     setPrompt(initialPrompt);
     onPromptUsed?.();
-  }, [initialPrompt, onPromptUsed]);
+  }, [initialPrompt, sendInitialPrompt, onPromptUsed]);
+
+  useEffect(() => {
+    if (!initialPrompt || !sendInitialPrompt || !ready || initialSent.current)
+      return;
+    initialSent.current = true;
+    onPromptUsed?.();
+    void submit(initialPrompt);
+  });
+
+  function attach(selected: File[]) {
+    const room = maximumChatAttachments - files.length;
+    if (selected.length > room)
+      setUploadError(
+        `Attach up to ${maximumChatAttachments} files per message.`,
+      );
+    for (const file of selected.slice(0, Math.max(0, room))) {
+      const key = crypto.randomUUID();
+      const preview = file.type.startsWith("image/")
+        ? URL.createObjectURL(file)
+        : null;
+      setFiles((current) => [
+        ...current,
+        { key, name: file.name || "file", preview, id: null },
+      ]);
+      void uploadAttachment(file, null)
+        .then((attachment) =>
+          setFiles((current) =>
+            current.map((entry) =>
+              entry.key === key ? { ...entry, id: attachment.id } : entry,
+            ),
+          ),
+        )
+        .catch((reason: Error) => {
+          setUploadError(reason.message);
+          setFiles((current) => current.filter((entry) => entry.key !== key));
+        });
+    }
+  }
+
+  function removeFile(key: string) {
+    setFiles((current) => {
+      const removed = current.find((entry) => entry.key === key);
+      if (removed?.preview) URL.revokeObjectURL(removed.preview);
+      return current.filter((entry) => entry.key !== key);
+    });
+  }
 
   async function submit(text: string) {
     const value = text.trim();
-    if (!value || !writable || !available || pending || active) return;
+    if (!value || !ready) return;
     following.current = true;
+    setUploadError("");
     const sent = await conversation.send(
       value,
       pendingContext.map(({ kind, id }) => ({ kind, id })),
+      files.flatMap((file) => (file.id ? [file.id] : [])),
     );
     if (!sent) return;
     setPrompt("");
     setAttached([]);
+    for (const file of files)
+      if (file.preview) URL.revokeObjectURL(file.preview);
+    setFiles([]);
   }
 
   const modelOptions =
@@ -240,9 +317,9 @@ export function AgentConversation({
           </button>
         )}
       </div>
-      {conversation.error && (
+      {(conversation.error || uploadError) && (
         <p role="alert" className="cloud-error cloud-agent-error">
-          {conversation.error}
+          {conversation.error || uploadError}
         </p>
       )}
       {settings && !available && (
@@ -260,11 +337,49 @@ export function AgentConversation({
       )}
       <form
         className="cloud-agent-composer"
+        data-dragging={dragging || undefined}
         onSubmit={(event) => {
           event.preventDefault();
           if (canSend) void submit(prompt);
         }}
+        onDragOver={(event) => {
+          if (!writable || !event.dataTransfer.types.includes("Files")) return;
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => {
+          if (!writable || !event.dataTransfer.files.length) return;
+          event.preventDefault();
+          setDragging(false);
+          attach([...event.dataTransfer.files]);
+        }}
       >
+        {files.length > 0 && (
+          <ul className="cloud-agent-attachments" aria-label="Attached files">
+            {files.map((file) => (
+              <li
+                key={file.key}
+                className="cloud-agent-attachment"
+                data-pending={!file.id || undefined}
+              >
+                {file.preview ? (
+                  <img src={file.preview} alt="" />
+                ) : (
+                  <FileText size={18} aria-hidden="true" />
+                )}
+                <span title={file.name}>{file.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${file.name}`}
+                  onClick={() => removeFile(file.key)}
+                >
+                  <X size={12} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         {pendingContext.length > 0 && (
           <div className="cloud-agent-context-chips">
             {pendingContext.map((entity) => {
@@ -309,6 +424,11 @@ export function AgentConversation({
           maxLength={20000}
           disabled={!writable}
           onChange={(event) => setPrompt(event.target.value)}
+          onPaste={(event) => {
+            if (!event.clipboardData.files.length) return;
+            event.preventDefault();
+            attach([...event.clipboardData.files]);
+          }}
           onKeyDown={(event) => {
             if (
               event.key === "Enter" &&
@@ -340,6 +460,32 @@ export function AgentConversation({
                 <ChevronDown size={12} aria-hidden="true" />
               </button>
             </PropertyMenu>
+          )}
+          {writable && (
+            <>
+              <button
+                type="button"
+                className="cloud-agent-attach"
+                aria-label="Attach files"
+                title="Attach files"
+                disabled={
+                  pending || active || files.length >= maximumChatAttachments
+                }
+                onClick={() => picker.current?.click()}
+              >
+                <Paperclip size={14} />
+              </button>
+              <input
+                ref={picker}
+                type="file"
+                multiple
+                hidden
+                onChange={(event) => {
+                  attach([...(event.target.files ?? [])]);
+                  event.target.value = "";
+                }}
+              />
+            </>
           )}
           {writable && (
             <AgentContextPicker

@@ -24,7 +24,8 @@ interface AgentShellState {
   chatTitle: string | null;
   pageEntity: AgentPageEntity | null;
   draft: string;
-  openPanel: (chatId?: string | null, draft?: string) => void;
+  sendDraft: boolean;
+  openPanel: (chatId?: string | null, draft?: string, send?: boolean) => void;
   clearDraft: () => void;
   closePanel: () => void;
   minimizePanel: () => void;
@@ -46,6 +47,7 @@ export function AgentShellProvider({
   );
   const [pageEntity, setPageEntity] = useState<AgentPageEntity | null>(null);
   const [draft, setDraft] = useState("");
+  const [sendDraft, setSendDraft] = useState(false);
   useEffect(() => {
     const stored = sessionStorage.getItem(storageKey);
     if (!stored) return;
@@ -71,12 +73,19 @@ export function AgentShellProvider({
       chatTitle: chat.title,
       pageEntity,
       draft,
-      openPanel: (chatId, nextDraft) => {
+      sendDraft,
+      openPanel: (chatId, nextDraft, send = false) => {
         if (chatId !== undefined) selectChat(chatId);
-        if (nextDraft) setDraft(nextDraft);
+        if (nextDraft) {
+          setDraft(nextDraft);
+          setSendDraft(send);
+        }
         setOpen(true);
       },
-      clearDraft: () => setDraft(""),
+      clearDraft: () => {
+        setDraft("");
+        setSendDraft(false);
+      },
       closePanel: () => {
         setOpen(false);
         selectChat(null);
@@ -85,7 +94,7 @@ export function AgentShellProvider({
       selectChat,
       setPageEntity,
     }),
-    [open, chat, pageEntity, draft, selectChat],
+    [open, chat, pageEntity, draft, sendDraft, selectChat],
   );
   return (
     <AgentShellContext.Provider value={value}>

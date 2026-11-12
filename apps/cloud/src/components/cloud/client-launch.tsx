@@ -1,7 +1,13 @@
 "use client";
 
 import { Command } from "cmdk";
-import { FolderGit2, GitBranchPlus, LoaderCircle } from "lucide-react";
+import {
+  FolderGit2,
+  GitBranchPlus,
+  LoaderCircle,
+  Play,
+  Target,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Popover } from "radix-ui";
 import { useEffect, useState, type ReactNode } from "react";
@@ -35,6 +41,7 @@ export interface ClientSessionDraft {
 async function openSession(
   target: FleetSessionTarget,
   draft: ClientSessionDraft,
+  mode: { start: boolean; goal: boolean },
 ): Promise<string> {
   const route = fleetSessionRouteSchema.parse(
     await api("/api/fleet/sessions", {
@@ -48,11 +55,22 @@ async function openSession(
     sessionId: route.sessionId,
     title: draft.title,
   });
-  await client.execute({
-    kind: "update-draft",
-    sessionId: route.sessionId,
-    prompt: draft.prompt,
-  });
+  await client.execute(
+    mode.start
+      ? {
+          kind: "submit-message",
+          sessionId: route.sessionId,
+          prompt: draft.prompt,
+          promptEnhancementMode: "off",
+          interviewEnabled: false,
+          ...(mode.goal ? { goalObjective: draft.prompt.slice(0, 4_000) } : {}),
+        }
+      : {
+          kind: "update-draft",
+          sessionId: route.sessionId,
+          prompt: draft.prompt,
+        },
+  );
   return `/instances/${encodeURIComponent(route.instanceId)}?session=${encodeURIComponent(route.sessionId)}`;
 }
 
@@ -127,6 +145,7 @@ export function ClientLaunch({
   variant = "ghost",
   branch,
   worktreeByDefault = false,
+  startByDefault = false,
   draft,
 }: {
   label: string;
@@ -134,6 +153,7 @@ export function ClientLaunch({
   variant?: "ghost" | "outline";
   branch: string;
   worktreeByDefault?: boolean;
+  startByDefault?: boolean;
   draft: () => ClientSessionDraft;
 }) {
   const router = useRouter();
@@ -143,6 +163,8 @@ export function ClientLaunch({
   const [failure, setFailure] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [worktree, setWorktree] = useState(worktreeByDefault);
+  const [startNow, setStartNow] = useState(startByDefault);
+  const [goal, setGoal] = useState(false);
   const worktreeAvailable = devices?.some((device) => device.workspaceTools);
   const listed =
     worktree && devices
@@ -169,7 +191,12 @@ export function ClientLaunch({
             await prepareWorktree(branch, target.instanceId, target.workspace),
           )
         : target.workspace;
-      router.push(await openSession({ ...target, workspace }, draft()));
+      router.push(
+        await openSession({ ...target, workspace }, draft(), {
+          start: startNow,
+          goal: startNow && goal,
+        }),
+      );
     } catch (reason) {
       toast((reason as Error).message, "error");
       setStarting(false);
@@ -202,6 +229,26 @@ export function ClientLaunch({
               <code title={branch}>{branch}</code>
             </label>
           ) : null}
+          <label className="cloud-menu-check">
+            <input
+              type="checkbox"
+              checked={startNow}
+              onChange={(event) => setStartNow(event.target.checked)}
+            />
+            <Play size={14} aria-hidden="true" />
+            <span>Start now</span>
+          </label>
+          {startNow && (
+            <label className="cloud-menu-check">
+              <input
+                type="checkbox"
+                checked={goal}
+                onChange={(event) => setGoal(event.target.checked)}
+              />
+              <Target size={14} aria-hidden="true" />
+              <span>Goal mode</span>
+            </label>
+          )}
           <Command label={label} loop>
             <Command.List className="cloud-menu-list">
               {failure ? (

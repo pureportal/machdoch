@@ -8,6 +8,7 @@ import {
   ChevronRight,
   CircleDot,
   Copy,
+  FileText,
   FolderKanban,
   LoaderCircle,
   Users,
@@ -39,7 +40,19 @@ const entityRoutes: [RegExp, ChatContextKind][] = [
 ];
 
 const answerComponents = {
-  img: ({ alt }: { alt?: string }) => <span>{alt}</span>,
+  img: ({ src, alt }: { src?: string | Blob; alt?: string }) =>
+    typeof src === "string" && src.startsWith("/api/v1/attachments/") ? (
+      <a href={src} target="_blank" rel="noopener">
+        <img
+          className="app-markdown-image"
+          src={src}
+          alt={alt ?? ""}
+          loading="lazy"
+        />
+      </a>
+    ) : (
+      <span>{alt}</span>
+    ),
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => {
     const kind = href
       ? entityRoutes.find(([pattern]) => pattern.test(href))?.[1]
@@ -155,6 +168,12 @@ function actionVerb(action: AgentAction): string {
   if (action.kind === "comment") return "Post comment";
   if (action.kind === "project_update") return "Post update";
   if (action.kind === "triage") return "Apply decision";
+  if (action.kind === "release_notes") return "Use notes";
+  if (action.kind === "release_post") return "Use post";
+  if (action.kind === "release_visual") return "Create visual";
+  if (action.kind === "automation")
+    return action.automationId ? "Save automation" : "Create automation";
+  if (action.kind === "client_session") return "Start session";
   if (action.kind === "link")
     return action.relationId ? "Remove link" : "Add link";
   if (action.kind === "update_issues" && action.changes.archived === true)
@@ -169,6 +188,12 @@ function appliedLabel(action: AgentAction): string {
   if (action.kind === "comment") return "Commented on";
   if (action.kind === "project_update") return "Posted to";
   if (action.kind === "triage") return "Triaged";
+  if (action.kind === "release_visual") return "Added a visual to";
+  if (action.kind === "automation")
+    return action.automationId ? "Saved" : "Created";
+  if (action.kind === "client_session") return "Started on";
+  if (action.kind === "release_notes" || action.kind === "release_post")
+    return "Drafted";
   if (action.kind === "link") return action.relationId ? "Unlinked" : "Linked";
   if (action.kind === "update_issues" && action.changes.archived === true)
     return "Archived";
@@ -197,7 +222,12 @@ function ActionResult({ action }: { action: AgentAction }) {
     <Link
       className="cloud-entity-chip"
       data-kind={result.kind}
-      href={`/cloud/${result.kind === "issue" ? "issues" : "projects"}/${result.id}`}
+      href={
+        result.href ??
+        (result.kind === "automation"
+          ? `/cloud/automations?automation=${result.id}`
+          : `/cloud/${result.kind === "issue" ? "issues" : result.kind === "release" ? "releases" : "projects"}/${result.id}`)
+      }
     >
       {content}
     </Link>
@@ -322,6 +352,28 @@ export function AgentTurn({
     <li className="cloud-agent-turn">
       <div className="cloud-agent-prompt">
         <p>{turn.prompt}</p>
+        {turn.attachments.length > 0 && (
+          <ul className="cloud-agent-attachments" aria-label="Attached files">
+            {turn.attachments.map((attachment) => (
+              <li key={attachment.id}>
+                <a
+                  className="cloud-agent-attachment"
+                  href={attachment.url}
+                  target="_blank"
+                  rel="noopener"
+                  title={attachment.name}
+                >
+                  {attachment.kind === "image" ? (
+                    <img src={attachment.url} alt="" loading="lazy" />
+                  ) : (
+                    <FileText size={18} aria-hidden="true" />
+                  )}
+                  <span>{attachment.name}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
         {added.length > 0 && (
           <ul className="cloud-agent-added" aria-label="Added to context">
             {added.map((entry) => {

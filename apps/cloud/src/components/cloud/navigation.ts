@@ -14,6 +14,7 @@ import {
   KeyRound,
   Layers,
   Layers2,
+  Megaphone,
   Map,
   Monitor,
   Plug,
@@ -25,6 +26,7 @@ import {
   Target,
   Users,
   Workflow,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
@@ -54,6 +56,8 @@ export const sidebarIcons: Record<SidebarItemId, LucideIcon> = {
   projects: FolderKanban,
   views: Layers2,
   cycles: CalendarRange,
+  releases: Megaphone,
+  automations: Zap,
   clients: Monitor,
   roadmap: Map,
   tasks: Bot,

@@ -9,6 +9,7 @@ import {
   List,
   ListOrdered,
   ListTodo,
+  Paperclip,
   Quote,
   Strikethrough,
   type LucideIcon,
@@ -16,13 +17,21 @@ import {
 import { useCallback, useRef } from "react";
 import {
   continueList,
+  insertBlock,
   insertLink,
   pasteLink,
+  replaceText,
   toggleInline,
   toggleLines,
+  uploadPlaceholder,
   type TextEdit,
   type TextSelection,
 } from "@/lib/markdown-editing";
+import {
+  attachmentMarkdown,
+  type CloudAttachment,
+} from "@/lib/cloud-attachment-contract";
+import { useToast } from "./toast";
 
 interface FormatAction {
   label: string;
@@ -110,14 +119,56 @@ function applyEdit(textarea: HTMLTextAreaElement, edit: TextEdit) {
   textarea.setSelectionRange(edit.selection.start, edit.selection.end);
 }
 
+export type UploadFile = (file: File) => Promise<CloudAttachment>;
+
 export function MarkdownTextarea({
   ref,
   className,
   onKeyDown,
   onPaste,
+  uploadFile,
   ...props
-}: React.ComponentProps<"textarea">) {
+}: React.ComponentProps<"textarea"> & { uploadFile?: UploadFile }) {
   const input = useRef<HTMLTextAreaElement | null>(null);
+  const picker = useRef<HTMLInputElement | null>(null);
+  const toast = useToast();
+  const attach = (files: File[]) => {
+    const textarea = input.current;
+    if (!uploadFile || !textarea || !files.length) return;
+    const uploads = files.map((file) => ({
+      file,
+      placeholder: uploadPlaceholder(
+        file.name,
+        crypto.randomUUID().slice(0, 8),
+      ),
+    }));
+    applyEdit(
+      textarea,
+      insertBlock(
+        textarea.value,
+        selectionOf(textarea),
+        uploads.map((upload) => upload.placeholder).join("\n"),
+      ),
+    );
+    for (const upload of uploads)
+      void uploadFile(upload.file)
+        .then((attachment) => attachmentMarkdown(attachment))
+        .catch((reason: Error) => {
+          toast(reason.message, "error");
+          return "";
+        })
+        .then((markdown) => {
+          const current = input.current;
+          if (!current) return;
+          const edit = replaceText(
+            current.value,
+            upload.placeholder,
+            markdown,
+            selectionOf(current),
+          );
+          if (edit) applyEdit(current, edit);
+        });
+  };
   const setInput = useCallback(
     (node: HTMLTextAreaElement | null) => {
       input.current = node;
@@ -162,6 +213,32 @@ export function MarkdownTextarea({
             ))}
           </div>
         ))}
+        {uploadFile && (
+          <div role="group">
+            <button
+              type="button"
+              tabIndex={-1}
+              aria-label="Attach files"
+              title="Attach files"
+              disabled={props.disabled}
+              onPointerDown={(event) => event.preventDefault()}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => picker.current?.click()}
+            >
+              <Paperclip size={15} aria-hidden="true" />
+            </button>
+            <input
+              ref={picker}
+              type="file"
+              multiple
+              hidden
+              onChange={(event) => {
+                attach([...(event.target.files ?? [])]);
+                event.target.value = "";
+              }}
+            />
+          </div>
+        )}
       </div>
       <textarea
         ref={setInput}
@@ -197,9 +274,23 @@ export function MarkdownTextarea({
           event.preventDefault();
           applyEdit(textarea, edit);
         }}
+        onDragOver={(event) => {
+          if (uploadFile && event.dataTransfer.types.includes("Files"))
+            event.preventDefault();
+        }}
+        onDrop={(event) => {
+          if (!uploadFile || !event.dataTransfer.files.length) return;
+          event.preventDefault();
+          attach([...event.dataTransfer.files]);
+        }}
         onPaste={(event) => {
           onPaste?.(event);
           if (event.defaultPrevented) return;
+          if (uploadFile && event.clipboardData.files.length) {
+            event.preventDefault();
+            attach([...event.clipboardData.files]);
+            return;
+          }
           const textarea = event.currentTarget;
           const edit = pasteLink(
             textarea.value,

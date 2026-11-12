@@ -85,6 +85,20 @@ export const sidebarItems = [
     placement: "show",
   },
   {
+    id: "releases",
+    label: "Releases",
+    href: "/cloud/releases",
+    group: "workspace",
+    placement: "show",
+  },
+  {
+    id: "automations",
+    label: "Automations",
+    href: "/cloud/automations",
+    group: "workspace",
+    placement: "show",
+  },
+  {
     id: "clients",
     label: "Clients",
     href: "/instances",

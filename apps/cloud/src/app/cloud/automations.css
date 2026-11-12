@@ -1,0 +1,370 @@
+.cloud-automation-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
+  gap: 20px;
+  align-items: start;
+}
+.cloud-automation-list {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+}
+.cloud-automation-list > li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.cloud-automation-list > li:last-child {
+  border-bottom: 0;
+}
+.cloud-automation-list > li[aria-current] {
+  background: var(--cloud-hover);
+}
+.cloud-automation-row-button {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  text-align: left;
+}
+.cloud-automation-row-button:hover {
+  background: var(--cloud-hover);
+}
+.cloud-automation-row-button .cloud-icon-tile {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+.cloud-automation-row-text {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.cloud-automation-row-text strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.cloud-automation-row-text span {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-automation-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 32px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--input);
+  transition: background 0.15s;
+}
+.cloud-automation-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--card);
+  transition: transform 0.15s;
+}
+.cloud-automation-switch[aria-checked="true"] {
+  background: var(--primary);
+}
+.cloud-automation-switch[aria-checked="true"]::after {
+  transform: translateX(14px);
+}
+.cloud-automation-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.cloud-automation-switch:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.cloud-automation-detail {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  min-width: 0;
+}
+.cloud-automation-detail > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cloud-automation-detail h2 {
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.cloud-automation-detail h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+.cloud-automation-detail [role="alert"] {
+  color: var(--cloud-danger);
+  font-size: 12px;
+}
+.cloud-automation-facts {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 8px 12px;
+  font-size: 12px;
+}
+.cloud-automation-facts dt {
+  color: var(--muted-foreground);
+}
+.cloud-automation-facts ol {
+  display: grid;
+  gap: 4px;
+  list-style: decimal;
+  padding-left: 16px;
+}
+.cloud-automation-runs {
+  display: grid;
+  gap: 10px;
+}
+.cloud-automation-runs > li {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--cloud-subtle);
+  font-size: 12px;
+}
+.cloud-automation-run-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted-foreground);
+}
+.cloud-automation-run-heading strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.cloud-automation-run-heading a,
+.cloud-automation-run-steps a,
+.cloud-automation-run-link {
+  color: var(--primary);
+}
+.cloud-automation-run-steps {
+  display: grid;
+  gap: 4px;
+}
+.cloud-automation-run-steps li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.cloud-automation-run-steps li > .cloud-automation-muted {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-automation-run-steps li[data-state="succeeded"] > svg {
+  color: var(--cloud-success);
+}
+.cloud-automation-run-steps li[data-state="failed"] > svg {
+  color: var(--cloud-danger);
+}
+.cloud-automation-run-steps li[data-state="skipped"] > svg {
+  color: var(--muted-foreground);
+}
+.cloud-automation-muted {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-automation-spacer {
+  flex: 1;
+}
+.cloud-automation-gallery {
+  display: grid;
+  gap: 20px;
+}
+.cloud-automation-gallery h3 {
+  margin-bottom: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+.cloud-automation-gallery-team {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cloud-automation-templates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  gap: 10px;
+}
+.cloud-automation-template-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 10px;
+  min-height: 56px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  text-align: left;
+  font-size: 13px;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.cloud-automation-template-card > svg {
+  color: var(--primary);
+}
+.cloud-automation-template-card:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  background: var(--cloud-hover);
+}
+.cloud-automation-template-card:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.cloud-automation-template-card small {
+  grid-column: 2;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.cloud-automation-editor {
+  display: grid;
+  gap: 18px;
+  max-height: min(68vh, 760px);
+  overflow-y: auto;
+  padding: 2px;
+}
+.cloud-automation-section {
+  display: grid;
+  gap: 10px;
+}
+.cloud-automation-section > h3 {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.cloud-automation-section > button {
+  justify-self: start;
+}
+.cloud-automation-fields {
+  display: grid;
+  gap: 10px;
+}
+.cloud-automation-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.cloud-automation-row > * {
+  flex: 1 1 140px;
+}
+.cloud-automation-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cloud-automation-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  font-size: 12px;
+}
+.cloud-automation-chip[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--primary) 60%, var(--border));
+  background: color-mix(in srgb, var(--primary) 14%, var(--card));
+  color: var(--foreground);
+}
+.cloud-automation-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cloud-automation-action {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--cloud-subtle);
+}
+.cloud-automation-action > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cloud-automation-action h4 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.cloud-automation-action > header .cloud-automation-step {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--primary) 16%, var(--card));
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.cloud-automation-action > header button {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+.cloud-automation-template {
+  display: grid;
+  gap: 6px;
+}
+.cloud-automation-template-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.cloud-automation-limit {
+  max-width: 140px;
+}
+.cloud-automation-section .cloud-filter-bar {
+  margin: 0;
+}
+@media (max-width: 960px) {
+  .cloud-automation-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cloud-automation-detail {
+    position: static;
+  }
+}

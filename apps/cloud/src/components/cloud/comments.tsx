@@ -11,6 +11,7 @@ import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
 import { MarkdownTextarea } from "./markdown-textarea";
+import { uploadAttachment } from "./attachment-upload";
 import {
   CloudRequestError,
   cloudRequest,
@@ -292,6 +293,7 @@ export function IssueComments({
             required
             maxLength={20000}
             disabled={pending}
+            uploadFile={(file) => uploadAttachment(file, issue.id)}
           />
           <Button
             type="submit"
@@ -332,6 +334,7 @@ export function IssueComments({
             defaultValue={editing?.body}
             required
             maxLength={20000}
+            uploadFile={(file) => uploadAttachment(file, issue.id)}
           />
         </Field>
       </FormDialog>

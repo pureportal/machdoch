@@ -29,6 +29,8 @@ describe("sidebar preferences", () => {
       "projects",
       "views",
       "cycles",
+      "releases",
+      "automations",
       "clients",
     ]);
     expect(ids(admin.more)).toContain("settings");
@@ -93,6 +95,8 @@ describe("sidebar preferences", () => {
       "initiatives",
       "views",
       "cycles",
+      "releases",
+      "automations",
     ]);
     expect(ids(sidebar.more)[0]).toBe("projects");
     expect(sidebar.sections.favorites).toBe(false);
@@ -106,6 +110,8 @@ describe("sidebar preferences", () => {
       "initiatives",
       "views",
       "cycles",
+      "releases",
+      "automations",
     ]);
   });
 

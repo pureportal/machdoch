@@ -112,6 +112,7 @@ export function PullRequestActions({
           variant="outline"
           branch={pullRequest.headRef}
           worktreeByDefault
+          startByDefault
           draft={() => ({
             title: pullRequestSessionTitle(entry.task, pullRequest, issues()),
             prompt: entry.prompt(),
