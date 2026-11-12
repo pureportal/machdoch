@@ -91,7 +91,7 @@ export function IssueLabels({
       {current.labels.map((label) => (
         <Link
           key={label.id}
-          href={`/cloud/issues?teamId=${issue.teamId}&labelId=${label.id}`}
+          href={`/cloud/issues?teamId=${issue.teamId}&label=${label.id}`}
         >
           <LabelChip label={label} />
         </Link>

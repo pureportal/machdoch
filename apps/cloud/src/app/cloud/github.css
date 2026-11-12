@@ -1,0 +1,567 @@
+.cloud-pull-request-icon {
+  flex-shrink: 0;
+  color: var(--cloud-success);
+}
+.cloud-pull-request-icon[data-stage="attention"] {
+  color: var(--cloud-danger);
+}
+.cloud-pull-request-icon[data-stage="review"] {
+  color: var(--primary);
+}
+.cloud-pull-request-icon[data-stage="draft"] {
+  color: var(--muted-foreground);
+}
+.cloud-pull-request-icon[data-stage="merged"] {
+  color: #8b5cf6;
+}
+.cloud-pull-request-icon[data-stage="closed"] {
+  color: var(--muted-foreground);
+}
+.cloud-tab-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  line-height: 1;
+}
+.cloud-pull-request-indicator {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cloud-aside-pull-requests {
+  display: grid;
+  gap: 2px;
+}
+.cloud-aside-pull-requests button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.cloud-aside-pull-requests button:hover {
+  background: var(--cloud-hover);
+}
+.cloud-aside-pull-requests button:focus-visible,
+.cloud-pull-request-row-main button:focus-visible,
+.cloud-pull-request-copy:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+.cloud-aside-pull-request-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-aside-pull-request-number {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.cloud-aside-pull-request-stage {
+  flex-shrink: 0;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.cloud-aside-pull-request-stage[data-stage="attention"],
+.cloud-pull-request-reason {
+  color: var(--cloud-danger);
+}
+.cloud-aside-pull-request-stage[data-stage="ready"] {
+  color: var(--cloud-success);
+}
+
+.cloud-pull-request-dialog {
+  gap: 16px;
+}
+.cloud-pull-request-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+  margin-top: -8px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+.cloud-pull-request-stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--foreground);
+  font-weight: 500;
+}
+.cloud-pull-request-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+}
+.cloud-pull-request-meta code,
+.cloud-pull-request-row-meta code {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-pull-request-copy {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.cloud-pull-request-copy:hover {
+  background: var(--cloud-hover);
+  color: var(--foreground);
+}
+.cloud-pull-request-meta a {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--foreground);
+  font-weight: 500;
+}
+.cloud-pull-request-meta a:hover {
+  text-decoration: underline;
+}
+.cloud-diff-added {
+  color: var(--cloud-success);
+}
+.cloud-diff-removed {
+  color: var(--cloud-danger);
+}
+.cloud-pull-request-loading {
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.cloud-pull-request-tabs [role="tabpanel"] {
+  padding-top: 16px;
+}
+.cloud-pull-request-tabs [role="tab"] {
+  display: inline-flex;
+  align-items: center;
+}
+.cloud-pull-request-overview {
+  display: grid;
+  gap: 18px;
+}
+.cloud-pull-request-status {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+.cloud-pull-request-status dt {
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-pull-request-status dd {
+  font-size: 13px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.cloud-pull-request-status dd[data-tone="danger"],
+.cloud-pull-request-signals [data-tone="danger"] {
+  color: var(--cloud-danger);
+}
+.cloud-pull-request-status dd[data-tone="success"],
+.cloud-pull-request-signals [data-tone="success"] {
+  color: var(--cloud-success);
+}
+.cloud-pull-request-heading {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cloud-pull-request-checks,
+.cloud-pull-request-issues {
+  display: grid;
+  gap: 2px;
+}
+.cloud-pull-request-checks li,
+.cloud-pull-request-issues li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.cloud-pull-request-checks li:hover,
+.cloud-pull-request-issues li:hover {
+  background: var(--cloud-hover);
+}
+.cloud-pull-request-checks li > svg {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+.cloud-pull-request-checks li[data-state="success"] > svg {
+  color: var(--cloud-success);
+}
+.cloud-pull-request-checks li[data-state="failure"] > svg {
+  color: var(--cloud-danger);
+}
+.cloud-pull-request-checks li[data-state="pending"] > svg {
+  color: var(--cloud-warning);
+}
+.cloud-pull-request-checks a,
+.cloud-pull-request-checks span,
+.cloud-pull-request-issues a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-pull-request-checks a:hover,
+.cloud-pull-request-issues a:hover span:last-child {
+  text-decoration: underline;
+}
+.cloud-pull-request-issues a {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+}
+.cloud-pull-request-muted {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-review-comments,
+.cloud-pull-request-files {
+  display: grid;
+  gap: 12px;
+}
+.cloud-review-comments li {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+}
+.cloud-review-comments header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-review-comments header a {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--foreground);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-review-comments header a:hover {
+  text-decoration: underline;
+}
+.cloud-diff-hunk {
+  max-width: 100%;
+  margin: 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  border-radius: 6px;
+  background: var(--cloud-subtle);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.cloud-diff-hunk [data-kind="added"] {
+  color: var(--cloud-success);
+}
+.cloud-diff-hunk [data-kind="removed"] {
+  color: var(--cloud-danger);
+}
+.cloud-diff-hunk [data-kind="hunk"] {
+  color: var(--muted-foreground);
+}
+.cloud-pull-request-files li {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.cloud-pull-request-files summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cloud-pull-request-files summary code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-file-status {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--secondary);
+  color: var(--cloud-warning);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.cloud-file-status[data-status="added"] {
+  color: var(--cloud-success);
+}
+.cloud-file-status[data-status="removed"] {
+  color: var(--cloud-danger);
+}
+.cloud-file-patch {
+  max-height: 420px;
+  margin: 0 8px 8px;
+  max-width: calc(100% - 16px);
+}
+.cloud-file-external {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 12px 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.cloud-pull-request-actions {
+  align-items: center;
+}
+.cloud-pull-request-merge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.cloud-pull-request-merge select {
+  width: auto;
+  height: 32px;
+}
+
+.cloud-pull-request-repository {
+  width: auto;
+  max-width: 100%;
+}
+.cloud-pull-request-group + .cloud-pull-request-group {
+  margin-top: 20px;
+}
+.cloud-pull-request-group h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 0 10px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.cloud-pull-request-group h2 .cloud-tab-count {
+  margin-left: 0;
+}
+.cloud-pull-request-group ul {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+.cloud-pull-request-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  min-height: 52px;
+  padding: 8px 12px;
+}
+.cloud-pull-request-row + .cloud-pull-request-row {
+  border-top: 1px solid var(--border);
+}
+.cloud-pull-request-row:hover {
+  background: var(--cloud-hover);
+}
+.cloud-pull-request-row-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.cloud-pull-request-row-main button {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 4px;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cloud-pull-request-row-main button:hover {
+  text-decoration: underline;
+}
+.cloud-pull-request-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cloud-pull-request-row-side {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 12px;
+  min-width: 0;
+}
+.cloud-pull-request-row-issues {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.cloud-pull-request-row-issues a {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.cloud-pull-request-row-issues a:hover {
+  border-color: var(--primary);
+  color: var(--foreground);
+}
+.cloud-pull-request-signals {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 16px;
+  color: var(--muted-foreground);
+}
+.cloud-pull-request-reason {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.cloud-github-repositories {
+  display: grid;
+  gap: 2px;
+}
+.cloud-github-repositories li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 4px 0 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.cloud-github-repositories li:hover {
+  background: var(--cloud-hover);
+}
+.cloud-github-repositories li > span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cloud-github-automations {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+.cloud-github-automations fieldset {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.cloud-github-automations legend {
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.cloud-github-automations label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-github-webhook {
+  display: grid;
+  gap: 12px;
+  font-size: 13px;
+}
+.cloud-github-webhook summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+@media (max-width: 800px) {
+  .cloud-github-automations fieldset {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .cloud-pull-request-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .cloud-pull-request-row-side {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+  .cloud-pull-request-signals {
+    flex-wrap: wrap;
+  }
+}

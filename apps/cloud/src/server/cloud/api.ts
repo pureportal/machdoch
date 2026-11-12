@@ -9,8 +9,9 @@ import {
   childIssueInputSchema,
 } from "../../lib/cloud-relation-contract";
 import { requireCloudOrigin, setCloudCredentials } from "./browser-auth";
-import { handleAiActivityApi } from "./activity/api";
 import { handleMagicLinkApi, handleEmailSettingsApi } from "./auth/api";
+import { handleAiActivityApi } from "./activity/api";
+import { handleGitHubApi, handleGitHubWebhook } from "./github/api";
 import {
   magicConfirmationCookie,
   ssoBrowserCookie,
@@ -66,6 +67,7 @@ import {
 } from "../../lib/cloud-initiative-contract";
 import { savedViewInputSchema } from "../../lib/cloud-view-contract";
 import { triageDecisionSchema } from "../../lib/cloud-triage-contract";
+import { sidebarPreferencesSchema } from "../../lib/cloud-sidebar-contract";
 import {
   commentInputSchema,
   commentUpdateSchema,
@@ -308,6 +310,13 @@ async function route(
     );
   }
   if (path[0] === "runner") return handleRunnerApi(runtime, request);
+  if (
+    path[0] === "integrations" &&
+    path[1] === "github" &&
+    path[2] === "webhooks" &&
+    path.length === 4
+  )
+    return handleGitHubWebhook(runtime, request, path[3] ?? "");
   if (routeKey === "POST auth/logout") {
     requireCloudOrigin(runtime, request);
     if (
@@ -395,6 +404,12 @@ async function route(
     return handleEmailSettingsApi(runtime, request, actor);
   if (path[0] === "ai-activity" || path[0] === "mimorii")
     return handleAiActivityApi(runtime, request, actor);
+  if (
+    path[0] === "github" ||
+    path[0] === "pull-requests" ||
+    (path[0] === "issues" && path[2] === "pull-requests" && path.length === 3)
+  )
+    return handleGitHubApi(runtime, request, actor);
   if (routeKey === "GET connections")
     return Response.json({
       connections: await runtime.authorization.connections(actor),
@@ -441,6 +456,8 @@ async function route(
     );
     return Response.json({ ok: true });
   }
+  if (routeKey === "GET sidebar")
+    return Response.json({ preferences: await runtime.sidebar.get(actor) });
   if (routeKey === "GET triage")
     return Response.json({
       issues: await runtime.triage.list(
@@ -921,6 +938,14 @@ async function route(
         { status: 201 },
       );
     }
+    if (routeKey === "PATCH sidebar")
+      return Response.json({
+        preferences: await runtime.sidebar.update(
+          actor,
+          key.data,
+          await readBody(request, sidebarPreferencesSchema),
+        ),
+      });
     if (
       method === "POST" &&
       path[0] === "issues" &&

@@ -1084,7 +1084,8 @@ async function agentWorkspace() {
     issueInputSchema.parse({
       teamId: team.id,
       title: "Checkout loses the basket",
-      description: "Retrying a payment empties the basket.",
+      description:
+        "Retrying a payment empties the basket.\n\n1. Add an item\n2. Retry",
     }),
   );
   return { team, issue };
@@ -1132,7 +1133,9 @@ it("runs workspace tools across rounds and records each step", async () => {
   ]);
   expect(transcript[2]!.content).toContain("Checkout loses the basket");
   expect(transcript[4]!.content).toContain(
-    "Retrying a payment empties the basket.",
+    JSON.stringify(
+      "Retrying a payment empties the basket.\n\n1. Add an item\n2. Retry",
+    ),
   );
   const [turn] = (await runtime.chat.store.get(member, submission.chatId))
     .turns;
@@ -1227,7 +1230,12 @@ it("applies confirmed proposals once with the user's permissions", async () => {
         {
           id: "propose-update",
           name: "propose_issue_update",
-          arguments: { issue: "PRD-1", priority: "urgent", status: "active" },
+          arguments: {
+            issue: "PRD-1",
+            priority: "urgent",
+            status: "active",
+            acceptanceCriteria: "- [ ] Basket survives a retry",
+          },
         },
         {
           id: "propose-comment",
@@ -1301,6 +1309,7 @@ it("applies confirmed proposals once with the user's permissions", async () => {
   expect(await runtime.planning.getIssue(member, issue.id)).toMatchObject({
     priority: "urgent",
     state: "active",
+    acceptanceCriteria: "- [ ] Basket survives a retry",
   });
   expect(
     await runtime.chat.actions.dismiss(member, turn!.id, comment!.id),
@@ -1309,6 +1318,30 @@ it("applies confirmed proposals once with the user's permissions", async () => {
     await runtime.chat.actions.apply(member, turn!.id, comment!.id),
   ).toMatchObject({ state: "dismissed" });
   expect(await runtime.comments.list(member, issue.id, null)).toEqual([]);
+  start.mockResolvedValueOnce({
+    text: "Noted.",
+    toolCalls: [],
+    usage: { totalTokens: 1 },
+  });
+  const next = await runtime.chat.store.submit(member, randomUUID(), {
+    ...message(),
+    chatId: submission.chatId,
+    revision: (await runtime.chat.store.get(member, submission.chatId)).chat
+      .revision,
+    prompt: "What is still open?",
+  });
+  await runtime.inference.worker.runOne(member.organizationId, next.requestId);
+  const history = JSON.parse(start.mock.lastCall![0].userPrompt) as {
+    role: string;
+    content: string;
+  }[];
+  expect(history[1]!.content).toContain(
+    "I proposed three changes.\n\nProposal outcomes:\n",
+  );
+  expect(history[1]!.content).toContain("confirmed by the user and applied");
+  expect(history[1]!.content).toMatch(
+    /Comment on PRD-1.*: dismissed by the user/,
+  );
 });
 
 it("marks a proposal failed when the issue changed after it was drafted", async () => {

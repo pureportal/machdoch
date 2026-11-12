@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 import {
   ArrowLeft,
@@ -21,7 +21,9 @@ import type {
   CloudProjectProgress,
   CloudWorkspace,
 } from "@/lib/cloud-contract";
+import type { CloudLabel } from "@/lib/cloud-label-contract";
 import type { CloudMilestone } from "@/lib/cloud-milestone-contract";
+import { issueFilterKeys } from "@/lib/issue-filter-model";
 import type { CloudProjectUpdate } from "@/lib/cloud-project-update-contract";
 import { useAgentPageEntity, useAgentShell } from "./agent/agent-shell";
 import { FavoriteButton } from "./favorite-button";
@@ -34,27 +36,26 @@ import { Input } from "@/components/ui/input";
 import { cloudRequest, formReference, formText } from "./api-client";
 import { profileAgentLabel } from "./execution-labels";
 import { IssueBulkBar } from "./issue-bulk-bar";
+import { IssueDisplayMenu } from "./issue-display-menu";
+import { filterFieldDefinitions } from "./issue-filter-fields";
+import {
+  IssueFilterButton,
+  IssueFilterChips,
+  useIssueFilterState,
+} from "./issue-filters";
 import { CreateIssue } from "./issue-form";
-import { groupIssues } from "./issue-grouping";
+import { parseIssueSort } from "@/lib/issue-scopes";
+import { groupIssues, parseGrouping } from "./issue-grouping";
 import { IssueRows } from "./issue-rows";
 import { PersonAvatar } from "./person-avatar";
 import { ProjectEditor } from "./project-editor";
+import { CloudMarkdown } from "./cloud-markdown";
+import { formatProjectDate, ProjectOverview } from "./project-overview";
 import { projectStatusLabels, projectStatusStates } from "./project-fields";
 import { TaskState } from "./task-state";
 import { useToast } from "./toast";
 import { useIssueList } from "./use-issue-list";
 import { useIssueSelection } from "./use-issue-selection";
-
-const longDate = new Intl.DateTimeFormat("en", {
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-  timeZone: "UTC",
-});
-
-function formatDate(value: string): string {
-  return longDate.format(new Date(`${value}T00:00:00Z`));
-}
 
 function MilestoneProgress({ issues }: { issues: CloudIssueSummary[] }) {
   if (!issues.length) return null;
@@ -140,7 +141,7 @@ function Milestones({
               )}
             />
             {milestone.targetOn && (
-              <time>{formatDate(milestone.targetOn)}</time>
+              <time>{formatProjectDate(milestone.targetOn)}</time>
             )}
             {writable && (
               <Button
@@ -242,6 +243,8 @@ export function ProjectDetail({
   project,
   progress,
   issues: initial,
+  projectIssues,
+  labels,
   milestones,
   runs,
   clients,
@@ -252,6 +255,8 @@ export function ProjectDetail({
   project: CloudProject;
   progress?: CloudProjectProgress;
   issues: CloudIssueSummary[];
+  projectIssues: CloudIssueSummary[];
+  labels: CloudLabel[];
   milestones: CloudMilestone[];
   runs: CloudRun[];
   clients: ProjectClient[];
@@ -259,7 +264,9 @@ export function ProjectDetail({
   favorite: boolean;
   workspace: CloudWorkspace;
 }) {
-  const { issues, apply } = useIssueList(initial, workspace);
+  const router = useRouter();
+  const search = useSearchParams();
+  const { issues, apply } = useIssueList(initial, workspace, search.toString());
   const agent = useAgentShell();
   useAgentPageEntity({
     kind: "project",
@@ -268,9 +275,49 @@ export function ProjectDetail({
     title: null,
   });
   const writable = workspace.actor.role !== "viewer";
+  const definitions = useMemo(
+    () =>
+      filterFieldDefinitions(workspace, labels, project.teamId).filter(
+        (definition) => definition.field !== "project",
+      ),
+    [workspace, labels, project.teamId],
+  );
+  const navigate = (next: URLSearchParams) => {
+    const encoded = next.toString();
+    router.push(
+      `/cloud/projects/${project.id}${encoded ? `?${encoded}` : ""}`,
+      {
+        scroll: false,
+      },
+    );
+  };
+  const setDisplay = (name: string, value: string) => {
+    const next = new URLSearchParams(search);
+    if (value) next.set(name, value);
+    else next.delete(name);
+    navigate(next);
+  };
+  const filters = useIssueFilterState(
+    new URLSearchParams(search),
+    definitions,
+    [],
+    navigate,
+  );
+  const grouping = parseGrouping(search.get("group"));
+  const sort = parseIssueSort(search.get("sort"));
+  const reversed = search.get("order") === "reverse";
   const groups = useMemo(
-    () => groupIssues(issues, "status", workspace, project.teamId, null, false),
-    [issues, workspace, project.teamId],
+    () =>
+      groupIssues(
+        issues,
+        grouping,
+        workspace,
+        project.teamId,
+        sort,
+        reversed,
+        false,
+      ),
+    [issues, grouping, workspace, project.teamId, sort, reversed],
   );
   const { selected, selectedIssues, toggle, clear } = useIssueSelection(
     issues,
@@ -278,9 +325,6 @@ export function ProjectDetail({
   );
   const lead = workspace.members.find((member) => member.id === project.leadId);
   const team = workspace.teams.find((entry) => entry.id === project.teamId);
-  const percent = progress?.total
-    ? Math.round((progress.completed / progress.total) * 100)
-    : 0;
   return (
     <>
       <header className="cloud-page-header">
@@ -292,6 +336,15 @@ export function ProjectDetail({
             {project.name}
             <FavoriteButton kind="project" id={project.id} initial={favorite} />
           </h1>
+          <div className="cloud-project-chips">
+            <span
+              className="cloud-state"
+              data-state={projectStatusStates[project.status]}
+            >
+              {projectStatusLabels[project.status]}
+            </span>
+            <ProjectHealth update={updates[0]} />
+          </div>
         </div>
         <div className="cloud-editor-actions">
           <Button
@@ -318,13 +371,45 @@ export function ProjectDetail({
       <div className="cloud-project-page">
         <div className="cloud-project-main">
           {project.description && (
-            <p className="cloud-project-summary">{project.description}</p>
+            <CloudMarkdown
+              className="cloud-project-summary"
+              content={project.description}
+            />
           )}
+          <ProjectOverview
+            project={project}
+            progress={progress}
+            issues={projectIssues}
+          />
           <ProjectUpdates
             projectId={project.id}
             updates={updates}
             writable={writable}
           />
+          <div className="cloud-project-issues-toolbar">
+            <h2>Issues</h2>
+            <IssueFilterButton
+              fields={filters.fields}
+              selected={filters.selected}
+              onToggle={filters.toggle}
+            />
+            <IssueDisplayMenu
+              search={new URLSearchParams(search)}
+              setFilter={setDisplay}
+            />
+          </div>
+          {filters.conditions.length > 0 && (
+            <IssueFilterChips
+              state={filters}
+              definitions={definitions}
+              workspace={workspace}
+              onClear={() => {
+                const kept = new URLSearchParams(search);
+                for (const name of issueFilterKeys) kept.delete(name);
+                navigate(kept);
+              }}
+            />
+          )}
           {issues.length ? (
             <IssueRows
               groups={groups}
@@ -337,55 +422,17 @@ export function ProjectDetail({
             />
           ) : (
             <div className="cloud-empty">
-              <p>No issues yet.</p>
+              <p>
+                {filters.conditions.length
+                  ? "No matching issues."
+                  : "No issues yet."}
+              </p>
             </div>
           )}
         </div>
         <aside className="cloud-project-side" aria-label="Project details">
           <section className="cloud-card">
             <dl className="cloud-task-properties">
-              <div>
-                <dt>Status</dt>
-                <dd>
-                  <span
-                    className="cloud-state"
-                    data-state={projectStatusStates[project.status]}
-                  >
-                    {projectStatusLabels[project.status]}
-                  </span>
-                </dd>
-              </div>
-              <div>
-                <dt>Health</dt>
-                <dd>
-                  <ProjectHealth update={updates[0]} />
-                </dd>
-              </div>
-              <div>
-                <dt>Progress</dt>
-                <dd className="cloud-project-progress">
-                  <span
-                    className="cloud-project-progress-track"
-                    role="progressbar"
-                    aria-label={`${project.name} progress`}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={percent}
-                  >
-                    <span style={{ width: `${percent}%` }} />
-                  </span>
-                  <span>{percent}%</span>
-                </dd>
-              </div>
-              <div>
-                <dt>Scope</dt>
-                <dd>
-                  {progress?.completed ?? 0} of {progress?.total ?? 0} issues
-                  {progress?.points
-                    ? ` · ${progress.completedPoints} of ${progress.points} points`
-                    : ""}
-                </dd>
-              </div>
               <div>
                 <dt>Lead</dt>
                 <dd className="cloud-assignee">
@@ -406,13 +453,12 @@ export function ProjectDetail({
                 <dt>Team</dt>
                 <dd>{team?.name}</dd>
               </div>
-              {(project.startsOn || project.targetOn) && (
+              {project.startsOn && (
                 <div>
-                  <dt>Dates</dt>
+                  <dt>Start</dt>
                   <dd className="cloud-assignee">
                     <CalendarRange size={13} aria-hidden="true" />
-                    {project.startsOn ? formatDate(project.startsOn) : "—"} →{" "}
-                    {project.targetOn ? formatDate(project.targetOn) : "—"}
+                    {formatProjectDate(project.startsOn)}
                   </dd>
                 </div>
               )}
@@ -421,7 +467,7 @@ export function ProjectDetail({
           <Milestones
             projectId={project.id}
             milestones={milestones}
-            issues={issues}
+            issues={projectIssues}
             writable={writable}
           />
           <ConnectedClients

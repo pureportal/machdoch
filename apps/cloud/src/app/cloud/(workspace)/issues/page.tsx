@@ -11,10 +11,9 @@ export default async function IssuesPage({
   const filters = issueFiltersFromParameters(await searchParams);
   const [issues, labels] = await Promise.all([
     runtime.planning.listIssueSummaries(actor, filters),
-    filters.teamId &&
-    workspace.teams.some((team) => team.id === filters.teamId)
+    filters.teamId && workspace.teams.some((team) => team.id === filters.teamId)
       ? runtime.labels.list(actor, filters.teamId)
-      : [],
+      : runtime.labels.listVisible(actor),
   ]);
   return <IssueList workspace={workspace} issues={issues} labels={labels} />;
 }

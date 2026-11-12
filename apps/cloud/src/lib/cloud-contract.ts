@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { CloudOrganization } from "./cloud-administration-contract";
 import type { CloudTeamWorkflow } from "./cloud-workflow-contract";
+import type { PullRequestStage } from "./github-automation";
+import type { IssueFilterCondition } from "./issue-filter-model";
 
 export const cloudId = z.uuid();
 export const revision = z.number().int().min(1).max(2_147_483_646);
@@ -240,27 +242,34 @@ export interface CloudIssueSummary extends Omit<
   labels: { id: string; name: string; color: string }[];
   activeRun: { id: string; state: string } | null;
   parent: { id: string; identifier: string; title: string } | null;
+  pullRequest: {
+    stage: PullRequestStage;
+    reference: string;
+    count: number;
+  } | null;
   createdAt: string;
 }
-export const issueSorts = ["updated", "created", "priority", "due"] as const;
+export const issueSorts = [
+  "priority",
+  "updated",
+  "created",
+  "due",
+  "estimate",
+  "status",
+  "title",
+  "identifier",
+] as const;
 export type IssueSort = (typeof issueSorts)[number];
 export interface IssueFilters {
   teamId?: string;
-  projectId?: string;
-  cycleId?: string;
-  labelId?: string;
-  statusId?: string;
   query?: string;
   archived?: boolean;
   offset?: number;
   states?: CloudIssue["state"][];
   assignedToActor?: boolean;
-  assigneeId?: string;
-  unassigned?: boolean;
-  priority?: CloudIssue["priority"];
-  unestimated?: boolean;
-  noCycle?: boolean;
+  conditions?: IssueFilterCondition[];
   sort?: IssueSort;
+  reversed?: boolean;
 }
 export interface CloudMember {
   id: string;
@@ -275,6 +284,7 @@ export interface CloudWorkspace {
   projects: CloudProject[];
   cycles: CloudCycle[];
   workflows: CloudTeamWorkflow[];
+  github: boolean;
 }
 export interface PokerRound {
   id: string;

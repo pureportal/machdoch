@@ -5,6 +5,8 @@ import {
   type CloudWorkspace,
 } from "@/lib/cloud-contract";
 import type { IssueChangeSet } from "@/lib/cloud-issue-changes-contract";
+import type { IssueSort } from "@/lib/cloud-contract";
+import { sortIssues } from "@/lib/issue-sorting";
 import { priorityNames, stateNames } from "./issue-properties";
 
 export const issueGroupings = {
@@ -13,6 +15,8 @@ export const issueGroupings = {
   priority: "Priority",
   project: "Project",
   cycle: "Cycle",
+  label: "Label",
+  team: "Team",
   none: "No grouping",
 } as const;
 export type IssueGrouping = keyof typeof issueGroupings;
@@ -26,20 +30,21 @@ export function parseGrouping(value: string | null): IssueGrouping {
 export interface IssueGroup {
   id: string;
   name: string;
-  kind: "state" | "priority" | "assignee" | "project" | "cycle" | "none";
+  kind:
+    | "state"
+    | "priority"
+    | "assignee"
+    | "project"
+    | "cycle"
+    | "label"
+    | "team"
+    | "none";
   category?: CloudIssue["state"];
   priority?: CloudIssue["priority"];
   change?: IssueChangeSet;
   issues: CloudIssueSummary[];
 }
 
-const priorityRank: Record<CloudIssue["priority"], number> = {
-  urgent: 0,
-  high: 1,
-  normal: 2,
-  low: 3,
-  none: 4,
-};
 const stateDisplayOrder: CloudIssue["state"][] = [
   "triage",
   "active",
@@ -50,28 +55,6 @@ const stateDisplayOrder: CloudIssue["state"][] = [
   "complete",
   "canceled",
 ];
-
-export function sortIssues(
-  issues: CloudIssueSummary[],
-  sort: string | null,
-): CloudIssueSummary[] {
-  const byUpdated = (left: CloudIssueSummary, right: CloudIssueSummary) =>
-    right.updatedAt.localeCompare(left.updatedAt);
-  const compare =
-    sort === "updated"
-      ? byUpdated
-      : sort === "created"
-        ? (left: CloudIssueSummary, right: CloudIssueSummary) =>
-            right.createdAt.localeCompare(left.createdAt)
-        : sort === "due"
-          ? (left: CloudIssueSummary, right: CloudIssueSummary) =>
-              (left.dueOn ?? "9999").localeCompare(right.dueOn ?? "9999") ||
-              byUpdated(left, right)
-          : (left: CloudIssueSummary, right: CloudIssueSummary) =>
-              priorityRank[left.priority] - priorityRank[right.priority] ||
-              byUpdated(left, right);
-  return [...issues].sort(compare);
-}
 
 function bucket<T extends string>(
   issues: CloudIssueSummary[],
@@ -94,10 +77,11 @@ export function groupIssues(
   grouping: IssueGrouping,
   workspace: CloudWorkspace,
   teamId: string | null,
-  sort: string | null,
+  sort: IssueSort,
+  reversed: boolean,
   includeEmpty: boolean,
 ): IssueGroup[] {
-  const sorted = sortIssues(issues, sort);
+  const sorted = sortIssues(issues, sort, reversed);
   if (grouping === "none")
     return [{ id: "all", name: "All issues", kind: "none", issues: sorted }];
   if (grouping === "status") {
@@ -181,6 +165,43 @@ export function groupIssues(
         kind: "project" as const,
         change: { projectId: null },
         issues: buckets.get(unset) ?? [],
+      },
+    ];
+  }
+  if (grouping === "team") {
+    const buckets = bucket(sorted, (issue) => issue.teamId);
+    return workspace.teams
+      .filter((team) => buckets.has(team.id) || includeEmpty)
+      .map((team) => ({
+        id: team.id,
+        name: team.name,
+        kind: "team" as const,
+        issues: buckets.get(team.id) ?? [],
+      }));
+  }
+  if (grouping === "label") {
+    const labels = new Map<
+      string,
+      { name: string; issues: CloudIssueSummary[] }
+    >();
+    const unlabeled: CloudIssueSummary[] = [];
+    for (const issue of sorted) {
+      if (!issue.labels.length) unlabeled.push(issue);
+      for (const label of issue.labels) {
+        const entry = labels.get(label.id);
+        if (entry) entry.issues.push(issue);
+        else labels.set(label.id, { name: label.name, issues: [issue] });
+      }
+    }
+    return [
+      ...[...labels]
+        .sort(([, left], [, right]) => left.name.localeCompare(right.name))
+        .map(([id, entry]) => ({ id, kind: "label" as const, ...entry })),
+      {
+        id: unset,
+        name: "No label",
+        kind: "label" as const,
+        issues: unlabeled,
       },
     ];
   }

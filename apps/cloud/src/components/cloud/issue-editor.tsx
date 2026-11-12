@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Diamond, FolderKanban, Plus, Users } from "lucide-react";
 import type { CloudMilestone } from "@/lib/cloud-milestone-contract";
 import { IssueRunList } from "./issue-run-list";
+import { IssuePullRequests } from "./issue-pull-requests";
 import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
 import type {
   IssueChangeSet,
@@ -20,6 +21,7 @@ import { IssueHeader } from "./issue-header";
 import { triageChangedEvent } from "./events";
 import { TriageActions } from "./triage-actions";
 import { IssueLabels } from "./issue-labels";
+import { DueDateField } from "./due-date-field";
 import { IssueMarkdownField } from "./issue-markdown-field";
 import { IssuePriority } from "./issue-priority";
 import {
@@ -402,7 +404,10 @@ export function IssueEditor({
           />
         </div>
         <aside className="cloud-issue-aside" aria-label="Issue properties">
-          <section className="cloud-aside-section" aria-label="Properties">
+          <section
+            className="cloud-aside-section cloud-aside-properties"
+            aria-label="Properties"
+          >
             <header>
               <h2>Properties</h2>
             </header>
@@ -492,18 +497,11 @@ export function IssueEditor({
               }
             />
             <div className="cloud-property">
-              <label className="sr-only" htmlFor="due">
-                Due date
-              </label>
-              <input
-                className="cloud-property-value cloud-property-date"
-                type="date"
+              <DueDateField
                 id="due"
-                disabled={!writable}
-                value={issue.dueOn ?? ""}
-                onChange={(event) =>
-                  changeProperties({ dueOn: event.target.value || null })
-                }
+                value={issue.dueOn}
+                writable={writable}
+                onChange={(dueOn) => changeProperties({ dueOn })}
               />
             </div>
           </section>
@@ -570,6 +568,10 @@ export function IssueEditor({
             issue={issue}
             writable={writable}
             state={relations}
+          />
+          <IssuePullRequests
+            issueId={issue.id}
+            launch={["owner", "admin"].includes(workspace.actor.role)}
           />
           <IssueRunList issueId={issue.id} />
         </aside>

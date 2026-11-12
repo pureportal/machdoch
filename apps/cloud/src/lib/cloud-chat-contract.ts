@@ -3,6 +3,7 @@ import { cloudId, revision, type IssueInput } from "./cloud-contract";
 import type { IssueChangeSet } from "./cloud-issue-changes-contract";
 import type { ProjectHealth } from "./cloud-project-update-contract";
 import type { TriageDecision } from "./cloud-triage-contract";
+import type { RelationKind } from "./cloud-relation-contract";
 
 export const chatStates = [
   "queued",
@@ -101,6 +102,7 @@ export type AgentActionState = (typeof agentActionStates)[number];
 export interface AgentActionField {
   label: string;
   value: string;
+  markdown?: true;
 }
 interface AgentActionBase {
   id: string;
@@ -111,7 +113,7 @@ interface AgentActionBase {
   result: AgentActionResult | null;
 }
 export interface AgentActionResult {
-  kind: "issue" | "project";
+  kind: "issue" | "issues" | "project";
   id: string;
   label: string;
 }
@@ -129,6 +131,22 @@ export type AgentAction = AgentActionBase &
         identifier: string;
         revision: number;
         changes: IssueChangeSet;
+        labelIds?: string[];
+      }
+    | {
+        kind: "update_issues";
+        issueIds: string[];
+        identifiers: string[];
+        changes: IssueChangeSet;
+      }
+    | {
+        kind: "link";
+        issueId: string;
+        identifier: string;
+        targetId: string;
+        targetIdentifier: string;
+        relation: RelationKind;
+        relationId: string | null;
       }
     | {
         kind: "comment";
@@ -212,7 +230,7 @@ export const chatErrorMessages: Record<string, string> = {
   cli_unavailable:
     "The CLI is not installed on the cloud host. Ask an administrator to install it.",
   cli_authentication:
-    "The CLI is not signed in on the cloud host. Ask an administrator to sign in or add an API key.",
+    "The CLI is not signed in. Ask an administrator to sign in under AI providers.",
   cli_failed:
     "The CLI could not complete the response. Retry when you are ready.",
 };

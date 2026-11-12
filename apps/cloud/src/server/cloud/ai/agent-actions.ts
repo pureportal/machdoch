@@ -1,7 +1,7 @@
-import { createHash } from "node:crypto";
 import type { CloudActor } from "../../../lib/cloud-contract";
 import type { AgentAction } from "../../../lib/cloud-chat-contract";
 import { CloudError, isCloudError } from "../access";
+import { derivedCommandId } from "../command-ids";
 import type { CloudPlanning } from "../planning";
 import type { CloudIssueRelations } from "../relations";
 import type { CloudLabels } from "../labels";
@@ -20,13 +20,6 @@ interface AgentActionServices {
   comments: CloudComments;
   projectUpdates: CloudProjectUpdates;
   triage: CloudTriage;
-}
-
-function derivedCommandId(actionId: string, purpose: string): string {
-  const hex = createHash("sha256")
-    .update(`${actionId}:${purpose}`)
-    .digest("hex");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${((parseInt(hex[16]!, 16) & 3) | 8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
 const textChanges = ["title", "description", "acceptanceCriteria"] as const;
@@ -125,14 +118,65 @@ export class CloudAgentActions {
       const editsText = textChanges.some(
         (field) => action.changes[field] !== undefined,
       );
+      if (Object.keys(action.changes).length)
+        await issueChanges.apply(actor, derivedCommandId(action.id, "update"), {
+          issues: [
+            editsText
+              ? { id: action.issueId, revision: action.revision }
+              : { id: action.issueId },
+          ],
+          changes: action.changes,
+        });
+      if (action.labelIds) {
+        const current = await labels.getIssue(actor, action.issueId);
+        await labels.setIssue(
+          actor,
+          derivedCommandId(action.id, "labels"),
+          action.issueId,
+          { revision: current.revision, labelIds: action.labelIds },
+        );
+      }
+      return { kind: "issue", id: action.issueId, label: action.identifier };
+    }
+    if (action.kind === "update_issues") {
       await issueChanges.apply(actor, derivedCommandId(action.id, "update"), {
-        issues: [
-          editsText
-            ? { id: action.issueId, revision: action.revision }
-            : { id: action.issueId },
-        ],
+        issues: action.issueIds.map((id) => ({ id })),
         changes: action.changes,
       });
+      return {
+        kind: action.issueIds.length === 1 ? "issue" : "issues",
+        id: action.issueIds[0]!,
+        label:
+          action.identifiers.length > 3
+            ? `${action.identifiers.length} issues`
+            : action.identifiers.join(", "),
+      };
+    }
+    if (action.kind === "link") {
+      if (action.relationId)
+        await relations.remove(
+          actor,
+          derivedCommandId(action.id, "link"),
+          action.issueId,
+          action.relationId,
+        );
+      else {
+        const [source, target] = await Promise.all([
+          planning.getIssue(actor, action.issueId),
+          planning.getIssue(actor, action.targetId),
+        ]);
+        await relations.add(
+          actor,
+          derivedCommandId(action.id, "link"),
+          action.issueId,
+          {
+            kind: action.relation,
+            targetId: action.targetId,
+            sourceRevision: source.revision,
+            targetRevision: target.revision,
+          },
+        );
+      }
       return { kind: "issue", id: action.issueId, label: action.identifier };
     }
     if (action.kind === "triage") {

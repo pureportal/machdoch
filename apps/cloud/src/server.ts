@@ -63,6 +63,7 @@ async function runServer(
   cloud.authentication.mailWorker.start();
   cloud.scheduleLoop.start();
   cloud.activity.exportLoop.start();
+  cloud.github.syncLoop.start();
   const clientMonitor = new CloudClientMonitor(cloud.database, getRuntime());
   const clientMonitorLoop = new CloudPeriodicLoop(
     "Client monitor",

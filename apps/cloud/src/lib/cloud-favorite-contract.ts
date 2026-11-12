@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { cloudId } from "./cloud-contract";
 
-export const favoriteKinds = ["issue", "project", "cycle"] as const;
+export const favoriteKinds = ["issue", "project", "cycle", "view"] as const;
 export type FavoriteKind = (typeof favoriteKinds)[number];
 export const favoriteInputSchema = z.strictObject({
   kind: z.enum(favoriteKinds),
@@ -22,8 +22,15 @@ export interface IssueSubscription {
   subscribed: boolean;
   subscribers: { id: string; name: string }[];
 }
+const favoritePaths: Record<FavoriteKind, string> = {
+  issue: "issues",
+  project: "projects",
+  cycle: "cycles",
+  view: "views",
+};
+
 export function favoriteHref(
   favorite: Pick<CloudFavorite, "kind" | "id">,
 ): string {
-  return `/cloud/${favorite.kind === "issue" ? "issues" : favorite.kind === "project" ? "projects" : "cycles"}/${favorite.id}`;
+  return `/cloud/${favoritePaths[favorite.kind]}/${favorite.id}`;
 }

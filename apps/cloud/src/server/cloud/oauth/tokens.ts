@@ -105,9 +105,11 @@ export class CloudOAuthTokens {
     return result;
   }
 
-  async authenticate(
-    token: string,
-  ): Promise<{ actor: CloudActor; scopes: CloudOAuthScope[] } | null> {
+  async authenticate(token: string): Promise<{
+    grantId: string;
+    actor: CloudActor;
+    scopes: CloudOAuthScope[];
+  } | null> {
     if (!token || token.length > 200) return null;
     const hash = hashSecret(token);
     return this.database.transaction(async (sql) => {
@@ -131,7 +133,7 @@ export class CloudOAuthTokens {
         if (isCloudError(error)) return null;
         throw error;
       }
-      return { actor, scopes: row.scopes };
+      return { grantId: row.id, actor, scopes: row.scopes };
     });
   }
 

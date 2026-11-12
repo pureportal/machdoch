@@ -49,14 +49,30 @@ const agentToolBytes = Buffer.byteLength(
   "utf8",
 );
 
+const actionOutcomes: Record<AgentAction["state"], string> = {
+  pending: "awaiting the user's confirmation",
+  applied: "confirmed by the user and applied",
+  dismissed: "dismissed by the user",
+  failed: "failed",
+};
+
 function historyAnswer(turn: {
   answer: string;
   question: CloudChatTurn["question"];
+  actions: AgentAction[];
 }): string {
   return [
     turn.answer,
     turn.question
       ? `${turn.question.text}\nOptions: ${turn.question.options.join(" | ")}`
+      : "",
+    turn.actions.length
+      ? `Proposal outcomes:\n${turn.actions
+          .map(
+            (action) =>
+              `- ${action.title}: ${actionOutcomes[action.state]}${action.error ? ` (${action.error})` : ""}`,
+          )
+          .join("\n")}`
       : "",
   ]
     .filter(Boolean)
@@ -93,8 +109,9 @@ async function reserveMessage(
       state: string;
       sequence: number;
       question: CloudChatTurn["question"];
+      actions: AgentAction[];
     }>(
-      "SELECT prompt,answer,state,sequence,question FROM cloud_chat_turns WHERE organization_id=$1 AND chat_id=$2 AND ($3::uuid IS NULL OR id<>$3) ORDER BY sequence LIMIT 201",
+      "SELECT prompt,answer,state,sequence,question,actions FROM cloud_chat_turns WHERE organization_id=$1 AND chat_id=$2 AND ($3::uuid IS NULL OR id<>$3) ORDER BY sequence LIMIT 201",
       [actor.organizationId, chatId, retry?.id ?? null],
     )
   ).rows;

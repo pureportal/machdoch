@@ -8,7 +8,7 @@ import {
 } from "@/lib/cloud-contract";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { MarkdownTextarea } from "./markdown-textarea";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { createCommandSender, formText } from "./api-client";
@@ -119,7 +119,7 @@ export function PlanningCreateDialog({
       {kind === "projects" && (
         <>
           <Field label="Description" htmlFor="catalog-description">
-            <Textarea
+            <MarkdownTextarea
               id="catalog-description"
               name="description"
               maxLength={20000}

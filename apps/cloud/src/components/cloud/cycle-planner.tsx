@@ -10,7 +10,7 @@ import type {
 } from "@/lib/cloud-contract";
 import { Button } from "@/components/ui/button";
 import { EstimateCell, PriorityCell, StatusCell } from "./issue-cells";
-import { sortIssues } from "./issue-grouping";
+import { sortIssues } from "@/lib/issue-sorting";
 import { useIssueList } from "./use-issue-list";
 
 const dragType = "application/x-machdoch-issue";
@@ -134,11 +134,11 @@ export function CyclePlanner({
   const writable = workspace.actor.role !== "viewer";
   const inCycle = sortIssues(
     issues.filter((issue) => issue.cycleId === cycle.id),
-    null,
+    "priority",
   );
   const unplanned = sortIssues(
     issues.filter((issue) => issue.cycleId !== cycle.id),
-    null,
+    "priority",
   );
   const points = inCycle.reduce(
     (total, issue) => total + (issue.estimatePoints ?? 0),
@@ -185,9 +185,12 @@ export function CyclePlanner({
           onMove={(issue) => move(issue.id, null)}
           onDropIssue={(id) => move(id, cycle.id)}
           meter={
-            <div className="cloud-plan-meter" data-over={
-              capacity !== null && points > capacity ? true : undefined
-            }>
+            <div
+              className="cloud-plan-meter"
+              data-over={
+                capacity !== null && points > capacity ? true : undefined
+              }
+            >
               <span>
                 {points}
                 {capacity !== null ? ` / ${capacity}` : ""} points

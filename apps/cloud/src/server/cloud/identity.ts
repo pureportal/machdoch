@@ -8,6 +8,7 @@ import {
   verifySecret,
 } from "../crypto";
 import { CloudError } from "./access";
+import { countAttempts } from "./attempt-limits";
 import type { CloudDatabase } from "./database";
 import { issueCloudSession, lockUserSessions } from "./session-issuance";
 import type { CloudSessionContext } from "./auth/session-context";
@@ -89,15 +90,7 @@ export class CloudIdentity {
         [`${bucket}:address:${address}`, limits[0]],
         [`${bucket}:identity:${identity}`, limits[1]],
       ] as const) {
-        const row = (
-          await sql.query<{ attempts: number }>(
-            `INSERT INTO cloud_login_limits (key,attempts,expires_at) VALUES ($1,1,now()+interval '1 minute')
-          ON CONFLICT (key) DO UPDATE SET attempts=CASE WHEN cloud_login_limits.expires_at<=now() THEN 1 ELSE cloud_login_limits.attempts+1 END,
-          expires_at=CASE WHEN cloud_login_limits.expires_at<=now() THEN now()+interval '1 minute' ELSE cloud_login_limits.expires_at END RETURNING attempts`,
-            [hashSecret(key)],
-          )
-        ).rows[0]!;
-        if (row.attempts > limit) return false;
+        if ((await countAttempts(sql, key)) > limit) return false;
       }
       return true;
     });

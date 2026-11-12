@@ -142,6 +142,57 @@ it("keeps favorites private and hides items that became inaccessible", async () 
   ).toEqual(["project"]);
 });
 
+it("pins own and shared views, and drops favorites of removed views", async () => {
+  const own = await runtime.views.create(member, randomUUID(), {
+    name: "My bugs",
+    filters: { assignee: "me" },
+    shared: false,
+  });
+  const shared = await runtime.views.create(owner, randomUUID(), {
+    name: "Team board",
+    filters: { view: "board" },
+    shared: true,
+  });
+  const secret = await runtime.views.create(owner, randomUUID(), {
+    name: "Owner only",
+    filters: {},
+    shared: false,
+  });
+  await runtime.favorites.set(member, {
+    kind: "view",
+    id: own.id,
+    favorite: true,
+  });
+  await runtime.favorites.set(member, {
+    kind: "view",
+    id: shared.id,
+    favorite: true,
+  });
+  await expect(
+    runtime.favorites.set(member, {
+      kind: "view",
+      id: secret.id,
+      favorite: true,
+    }),
+  ).rejects.toMatchObject({ status: 404 });
+  expect(await runtime.favorites.list(member)).toEqual([
+    { kind: "view", id: own.id, label: "My bugs", state: null },
+    { kind: "view", id: shared.id, label: "Team board", state: null },
+  ]);
+  await runtime.views.remove(owner, shared.id);
+  expect(await runtime.favorites.list(member)).toEqual([
+    { kind: "view", id: own.id, label: "My bugs", state: null },
+  ]);
+  expect(
+    (
+      await database.engine.query(
+        "SELECT 1 FROM cloud_favorites WHERE entity_id=$1",
+        [shared.id],
+      )
+    ).rows,
+  ).toEqual([]);
+});
+
 it("subscribes creators, assignees and commenters, and honors explicit choices", async () => {
   expect(await runtime.subscriptions.get(member, issueId)).toMatchObject({
     subscribed: false,

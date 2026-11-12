@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { Bot } from "lucide-react";
-import type {
-  CloudIssueSummary,
-  CloudWorkspace,
-} from "@/lib/cloud-contract";
+import type { CloudIssueSummary, CloudWorkspace } from "@/lib/cloud-contract";
 import type { IssueChangeSet } from "@/lib/cloud-issue-changes-contract";
 import { IssuePriority } from "./issue-priority";
+import {
+  PullRequestStageIcon,
+  pullRequestStageLabels,
+} from "./pull-request-state";
 import {
   assigneeOptions,
   estimateOptions,
@@ -193,6 +194,18 @@ export function RunIndicator({ issue }: { issue: CloudIssueSummary }) {
     >
       <Bot size={13} aria-hidden="true" />
     </Link>
+  );
+}
+
+export function PullRequestIndicator({ issue }: { issue: CloudIssueSummary }) {
+  if (!issue.pullRequest) return null;
+  const { stage, reference, count } = issue.pullRequest;
+  const label = `${reference}: ${pullRequestStageLabels[stage]}${count > 1 ? ` (${count} pull requests)` : ""}`;
+  return (
+    <span className="cloud-pull-request-indicator" title={label}>
+      <PullRequestStageIcon stage={stage} size={13} label={label} />
+      {count > 1 && <span aria-hidden="true">{count}</span>}
+    </span>
   );
 }
 

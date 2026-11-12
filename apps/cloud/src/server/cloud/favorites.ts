@@ -12,6 +12,8 @@ import { issueSubscribedClause } from "./subscription-records";
 const favoriteEntities = `SELECT i.id,'issue' AS kind,i.identifier||' '||i.title AS label,i.state,i.team_id FROM cloud_issues i WHERE i.organization_id=$1 AND NOT i.archived
   UNION ALL SELECT p.id,'project',p.name,p.status,p.team_id FROM cloud_projects p WHERE p.organization_id=$1
   UNION ALL SELECT c.id,'cycle',c.name,c.status,c.team_id FROM cloud_cycles c WHERE c.organization_id=$1`;
+const visibleView =
+  "SELECT v.id,v.name FROM cloud_saved_views v WHERE v.organization_id=$1 AND (v.user_id=$2 OR v.shared)";
 
 export class CloudFavorites {
   constructor(private readonly database: CloudDatabase) {}
@@ -21,12 +23,17 @@ export class CloudFavorites {
       await requireMembership(sql, actor);
       return (
         await sql.query<CloudFavorite & Record<string, unknown>>(
-          `SELECT f.kind,f.entity_id AS id,e.label,e.state FROM cloud_favorites f
-          JOIN (${favoriteEntities}) e ON e.id=f.entity_id AND e.kind=f.kind
-          JOIN cloud_teams t ON t.organization_id=f.organization_id AND t.id=e.team_id
-          JOIN cloud_memberships m ON m.organization_id=f.organization_id AND m.user_id=$2
-          WHERE f.organization_id=$1 AND f.user_id=$2 AND ${teamVisibility}
-          ORDER BY f.created_at,f.entity_id LIMIT 50`,
+          `SELECT kind,id,label,state FROM (
+            SELECT f.kind,f.entity_id AS id,e.label,e.state,f.created_at FROM cloud_favorites f
+            JOIN (${favoriteEntities}) e ON e.id=f.entity_id AND e.kind=f.kind
+            JOIN cloud_teams t ON t.organization_id=f.organization_id AND t.id=e.team_id
+            JOIN cloud_memberships m ON m.organization_id=f.organization_id AND m.user_id=$2
+            WHERE f.organization_id=$1 AND f.user_id=$2 AND ${teamVisibility}
+            UNION ALL
+            SELECT f.kind,f.entity_id,v.name,NULL,f.created_at FROM cloud_favorites f
+            JOIN (${visibleView}) v ON v.id=f.entity_id
+            WHERE f.organization_id=$1 AND f.user_id=$2 AND f.kind='view'
+          ) favorites ORDER BY created_at,id LIMIT 50`,
           [actor.organizationId, actor.userId],
         )
       ).rows;
@@ -43,11 +50,18 @@ export class CloudFavorites {
         );
         return { favorite: false };
       }
-      const visible = await sql.query(
-        `SELECT 1 FROM (${favoriteEntities}) e JOIN cloud_teams t ON t.organization_id=$1 AND t.id=e.team_id
+      const visible =
+        input.kind === "view"
+          ? await sql.query(`SELECT 1 FROM (${visibleView}) v WHERE v.id=$3`, [
+              actor.organizationId,
+              actor.userId,
+              input.id,
+            ])
+          : await sql.query(
+              `SELECT 1 FROM (${favoriteEntities}) e JOIN cloud_teams t ON t.organization_id=$1 AND t.id=e.team_id
         JOIN cloud_memberships m ON m.organization_id=$1 AND m.user_id=$2 WHERE e.id=$3 AND e.kind=$4 AND ${teamVisibility}`,
-        [actor.organizationId, actor.userId, input.id, input.kind],
-      );
+              [actor.organizationId, actor.userId, input.id, input.kind],
+            );
       if (!visible.rows.length)
         throw new CloudError(404, "not_found", "This item is unavailable.");
       await sql.query(

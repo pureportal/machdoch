@@ -1,229 +1,234 @@
 "use client";
 
-import { ListFilter, SlidersHorizontal, X } from "lucide-react";
+import { ListFilter, Users, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import type { CloudWorkspace } from "@/lib/cloud-contract";
-import type { CloudLabel } from "@/lib/cloud-label-contract";
-import { unassignedFilter, unestimatedFilter } from "@/lib/issue-scopes";
-import { issueGroupings } from "./issue-grouping";
+import type { CloudTeam, CloudWorkspace } from "@/lib/cloud-contract";
 import {
-  assigneeOptions,
-  cycleOptions,
-  priorityOptions,
-  projectOptions,
-  statusOptions,
-} from "./issue-properties";
-import { PropertyMenu, type PropertyOption } from "./property-menu";
+  parseIssueFilterConditions,
+  withIssueFilterCondition,
+  type IssueFilterCondition,
+  type IssueFilterField,
+} from "@/lib/issue-filter-model";
+import { FilterMenu, type FilterMenuField } from "./filter-menu";
+import {
+  conditionOperator,
+  conditionValues,
+  type FilterFieldDefinition,
+} from "./issue-filter-fields";
 
-interface FilterDefinition {
-  key: string;
-  label: string;
-  options: PropertyOption[];
-}
+const teamKey = "teamId";
 
-function filterDefinitions(
-  workspace: CloudWorkspace,
-  labels: CloudLabel[],
-  teamId: string | null,
-): FilterDefinition[] {
-  const scopedTeam = teamId ?? undefined;
-  const statusChoices = teamId
-    ? statusOptions(workspace, [teamId]).map((option) => ({
-        ...option,
-        value: (JSON.parse(option.value) as { id: string }).id,
-      }))
-    : [];
-  return [
-    {
-      key: "teamId",
-      label: "Team",
-      options: workspace.teams.map((team) => ({
-        value: team.id,
-        label: team.name,
-      })),
-    },
-    ...(statusChoices.length
-      ? [{ key: "statusId", label: "Status", options: statusChoices }]
-      : []),
-    {
-      key: "assigneeId",
-      label: "Assignee",
-      options: assigneeOptions(workspace).map((option) => ({
-        ...option,
-        value: option.value === "none" ? unassignedFilter : option.value,
-      })),
-    },
-    { key: "priority", label: "Priority", options: priorityOptions },
-    {
-      key: "projectId",
-      label: "Project",
-      options: projectOptions(workspace, scopedTeam).slice(1),
-    },
-    {
-      key: "cycleId",
-      label: "Cycle",
-      options: cycleOptions(workspace, scopedTeam).slice(1),
-    },
-    ...(labels.length
+export function useIssueFilterState(
+  search: URLSearchParams,
+  definitions: FilterFieldDefinition[],
+  teams: CloudTeam[],
+  navigate: (next: URLSearchParams) => void,
+) {
+  const conditions = parseIssueFilterConditions(Object.fromEntries(search));
+  const teamId = search.get(teamKey);
+  const condition = (field: IssueFilterField) =>
+    conditions.find((entry) => entry.field === field) ?? null;
+  const setCondition = (
+    field: IssueFilterField,
+    next: { negated: boolean; values: string[] } | null,
+  ) => navigate(withIssueFilterCondition(search, field, next));
+  const fields: FilterMenuField[] = [
+    ...(teams.length > 1
       ? [
           {
-            key: "labelId",
-            label: "Label",
-            options: labels.map((label) => ({
-              value: label.id,
-              label: label.archived ? `${label.name} (archived)` : label.name,
+            key: teamKey,
+            label: "Team",
+            icon: Users,
+            multiple: false,
+            options: teams.map((team) => ({
+              value: team.id,
+              label: team.name,
             })),
           },
         ]
       : []),
-    {
-      key: "estimate",
-      label: "Estimate",
-      options: [{ value: unestimatedFilter, label: "Not estimated" }],
-    },
-    {
-      key: "archived",
-      label: "Visibility",
-      options: [{ value: "true", label: "Archived issues" }],
-    },
+    ...definitions.map((definition) => ({
+      key: definition.field,
+      label: definition.label,
+      icon: definition.icon,
+      options: definition.options,
+      multiple: true,
+    })),
   ];
+  const selected = (key: string) =>
+    key === teamKey
+      ? teamId
+        ? [teamId]
+        : []
+      : (condition(key as IssueFilterField)?.values ?? []);
+  const toggle = (key: string, value: string) => {
+    if (key === teamKey) {
+      let next = new URLSearchParams(search);
+      for (const field of ["status", "label", "project", "cycle"] as const)
+        next = withIssueFilterCondition(next, field, null);
+      if (value === teamId) next.delete(teamKey);
+      else next.set(teamKey, value);
+      navigate(next);
+      return;
+    }
+    const field = key as IssueFilterField;
+    const current = condition(field);
+    const values = current?.values ?? [];
+    const nextValues = values.includes(value)
+      ? values.filter((entry) => entry !== value)
+      : [...values, value];
+    setCondition(
+      field,
+      nextValues.length
+        ? { negated: current?.negated ?? false, values: nextValues }
+        : null,
+    );
+  };
+  return { conditions, teamId, fields, selected, toggle, setCondition };
 }
 
-export function IssueFilters({
+export function IssueFilterButton({
+  fields,
+  selected,
+  onToggle,
+}: {
+  fields: FilterMenuField[];
+  selected: (key: string) => string[];
+  onToggle: (key: string, value: string) => void;
+}) {
+  return (
+    <FilterMenu
+      fields={fields}
+      selected={selected}
+      onToggle={onToggle}
+      shortcut
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        className="cloud-filter-button"
+        aria-keyshortcuts="F"
+      >
+        <ListFilter />
+        Filter
+      </Button>
+    </FilterMenu>
+  );
+}
+
+function FilterChip({
+  condition,
+  definition,
+  menuField,
+  selected,
+  onToggle,
+  onChange,
+}: {
+  condition: IssueFilterCondition;
+  definition: FilterFieldDefinition | undefined;
+  menuField: FilterMenuField | undefined;
+  selected: (key: string) => string[];
+  onToggle: (key: string, value: string) => void;
+  onChange: (next: { negated: boolean; values: string[] } | null) => void;
+}) {
+  const Icon = definition?.icon;
+  return (
+    <span className="cloud-filter-chip">
+      <span className="cloud-filter-chip-field">
+        {Icon && <Icon size={12} aria-hidden="true" />}
+        {definition?.label ?? condition.field}
+      </span>
+      <button
+        type="button"
+        className="cloud-filter-chip-operator"
+        aria-label={`${definition?.label ?? condition.field}: ${conditionOperator(condition)}. Switch operator`}
+        onClick={() =>
+          onChange({ negated: !condition.negated, values: condition.values })
+        }
+      >
+        {conditionOperator(condition)}
+      </button>
+      {menuField ? (
+        <FilterMenu
+          fields={[menuField]}
+          selected={selected}
+          onToggle={onToggle}
+          initialKey={menuField.key}
+        >
+          <button type="button" className="cloud-filter-chip-value">
+            {conditionValues(condition, definition)}
+          </button>
+        </FilterMenu>
+      ) : (
+        <span className="cloud-filter-chip-value">
+          {conditionValues(condition, definition)}
+        </span>
+      )}
+      <button
+        type="button"
+        aria-label={`Remove ${(definition?.label ?? condition.field).toLowerCase()} filter`}
+        onClick={() => onChange(null)}
+      >
+        <X size={12} />
+      </button>
+    </span>
+  );
+}
+
+export function IssueFilterChips({
+  state,
+  definitions,
   workspace,
-  labels,
-  search,
-  setFilter,
-  clearable,
   onClear,
   children,
 }: {
+  state: ReturnType<typeof useIssueFilterState>;
+  definitions: FilterFieldDefinition[];
   workspace: CloudWorkspace;
-  labels: CloudLabel[];
-  search: URLSearchParams;
-  setFilter: (name: string, value: string) => void;
-  clearable: boolean;
   onClear: () => void;
   children?: ReactNode;
 }) {
-  const definitions = filterDefinitions(
-    workspace,
-    labels,
-    search.get("teamId"),
-  );
-  const active = definitions.filter((definition) =>
-    search.has(definition.key),
-  );
-  const available = definitions.filter(
-    (definition) => !search.has(definition.key),
-  );
+  const team = workspace.teams.find((entry) => entry.id === state.teamId);
   return (
     <div className="cloud-filter-bar">
-      <PropertyMenu
-        label="Add filter"
-        options={available.flatMap((definition) =>
-          definition.options.map((option) => ({
-            ...option,
-            group: definition.label,
-            value: `${definition.key}=${option.value}`,
-          })),
-        )}
-        onSelect={(value) => {
-          const separator = value.indexOf("=");
-          setFilter(value.slice(0, separator), value.slice(separator + 1));
-        }}
-      >
-        <Button variant="ghost" size="sm" className="cloud-filter-button">
-          <ListFilter />
-          Filter
-        </Button>
-      </PropertyMenu>
-      {active.map((definition) => {
-        const value = search.get(definition.key) ?? "";
-        const option = definition.options.find(
-          (entry) => entry.value === value,
-        );
-        return (
-          <span className="cloud-filter-chip" key={definition.key}>
-            <PropertyMenu
-              label={`Filter by ${definition.label.toLowerCase()}`}
-              options={definition.options}
-              value={value}
-              onSelect={(next) => setFilter(definition.key, next)}
-            >
-              <button type="button" className="cloud-filter-chip-value">
-                <span>{definition.label}</span>
-                {option?.label ?? "Unavailable"}
-              </button>
-            </PropertyMenu>
-            <button
-              type="button"
-              aria-label={`Remove ${definition.label.toLowerCase()} filter`}
-              onClick={() => setFilter(definition.key, "")}
-            >
-              <X size={12} />
-            </button>
+      {team && workspace.teams.length > 1 && (
+        <span className="cloud-filter-chip">
+          <span className="cloud-filter-chip-field">
+            <Users size={12} aria-hidden="true" />
+            Team
           </span>
-        );
-      })}
-      {clearable && (
-        <Button variant="ghost" size="sm" onClick={onClear}>
-          Clear filters
-        </Button>
+          <span className="cloud-filter-chip-operator">is</span>
+          <span className="cloud-filter-chip-value">{team.name}</span>
+          <button
+            type="button"
+            aria-label="Remove team filter"
+            onClick={() => state.toggle(teamKey, team.id)}
+          >
+            <X size={12} />
+          </button>
+        </span>
       )}
+      {state.conditions.map((condition) => (
+        <FilterChip
+          key={`${condition.field}:${condition.negated}`}
+          condition={condition}
+          definition={definitions.find(
+            (entry) => entry.field === condition.field,
+          )}
+          menuField={state.fields.find(
+            (entry) => entry.key === condition.field,
+          )}
+          selected={state.selected}
+          onToggle={state.toggle}
+          onChange={(next) => state.setCondition(condition.field, next)}
+        />
+      ))}
+      <Button variant="ghost" size="sm" onClick={onClear}>
+        Clear
+      </Button>
       <span className="cloud-filter-spacer" />
       {children}
     </div>
-  );
-}
-
-export function IssueDisplayMenu({
-  search,
-  setFilter,
-}: {
-  search: URLSearchParams;
-  setFilter: (name: string, value: string) => void;
-}) {
-  const group = search.get("group") ?? "status";
-  const sort = search.get("sort") ?? "default";
-  return (
-    <PropertyMenu
-      label="Display options"
-      align="end"
-      value={undefined}
-      options={[
-        ...Object.entries(issueGroupings).map(([value, label]) => ({
-          value: `group=${value}`,
-          label: value === group ? `${label} ✓` : label,
-          group: "Group by",
-        })),
-        ...[
-          ["default", "Priority"],
-          ["updated", "Last updated"],
-          ["created", "Created"],
-          ["due", "Due date"],
-        ].map(([value, label]) => ({
-          value: `sort=${value}`,
-          label: value === sort ? `${label} ✓` : label!,
-          group: "Order by",
-        })),
-      ]}
-      onSelect={(selection) => {
-        const [name, value] = selection.split("=") as [string, string];
-        setFilter(
-          name,
-          (name === "group" && value === "status") ||
-            (name === "sort" && value === "default")
-            ? ""
-            : value,
-        );
-      }}
-    >
-      <Button variant="ghost" size="sm" className="cloud-filter-button">
-        <SlidersHorizontal />
-        Display
-      </Button>
-    </PropertyMenu>
   );
 }

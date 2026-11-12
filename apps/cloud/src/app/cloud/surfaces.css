@@ -38,6 +38,32 @@
   color: var(--muted-foreground);
   text-align: center;
 }
+.cloud-menu-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cloud-menu-check input {
+  accent-color: var(--primary);
+}
+.cloud-menu-check span {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.cloud-menu-check code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted-foreground);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .cloud-menu [cmdk-group-heading] {
   padding: 8px 8px 4px;
   color: var(--muted-foreground);
@@ -113,8 +139,15 @@
   margin: 0;
 }
 .cloud-issue-toolbar .cloud-issue-search {
-  flex: 0 1 280px;
-  margin: 0;
+  flex: 0 1 200px;
+  min-width: 140px;
+  margin: 0 0 0 auto;
+}
+.cloud-issue-toolbar-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
 }
 .cloud-issue-toolbar .cloud-issue-search > svg {
   top: 10px;
@@ -154,13 +187,82 @@
   color: var(--muted-foreground);
   cursor: pointer;
 }
-.cloud-filter-chip .cloud-filter-chip-value {
+.cloud-filter-chip-field {
+  display: inline-flex;
+  align-items: center;
   gap: 5px;
-  padding-left: 8px;
+  height: 100%;
+  padding: 0 6px 0 8px;
+  color: var(--muted-foreground);
+}
+.cloud-filter-chip .cloud-filter-chip-operator {
+  padding: 0 4px;
+  border-inline: 1px solid var(--border);
+}
+.cloud-filter-chip button:hover {
+  background: var(--cloud-hover);
   color: var(--foreground);
 }
-.cloud-filter-chip-value > span {
+.cloud-filter-chip .cloud-filter-chip-value {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 6px;
+  color: var(--foreground);
+}
+.cloud-filter-menu {
+  min-width: 250px;
+}
+.cloud-filter-menu-head {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.cloud-filter-menu-head .cloud-menu-search {
+  border-bottom: 0;
+}
+.cloud-filter-menu-head > button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-left: 6px;
+  border-radius: 6px;
   color: var(--muted-foreground);
+}
+.cloud-filter-menu-head > button:hover {
+  background: var(--cloud-hover);
+  color: var(--foreground);
+}
+.cloud-filter-check {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--muted-foreground);
+  border-radius: 4px;
+}
+.cloud-filter-check[data-checked] {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.cloud-filter-count {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  text-align: center;
+}
+.cloud-filter-label-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-inline: 3px;
+  border-radius: 50%;
 }
 .cloud-filter-spacer {
   flex: 1;
@@ -252,6 +354,14 @@
   color: var(--muted-foreground);
   font-family: var(--font-geist-mono), ui-monospace, monospace;
   font-size: 11.5px;
+}
+.cloud-issue-cell-priority,
+.cloud-issue-cell-status,
+.cloud-issue-cell-estimate,
+.cloud-issue-cell-assignee {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
 }
 .cloud-issue-cell-title {
   flex: 1 1 0;
@@ -357,7 +467,7 @@
   border-radius: 50%;
   vertical-align: middle;
 }
-.cloud-issue-cell-updated {
+.cloud-issue-cell-date {
   flex-shrink: 0;
   width: 46px;
   color: var(--muted-foreground);
@@ -526,7 +636,7 @@ button.cloud-property-value {
 }
 button.cloud-property-value:hover,
 button.cloud-property-value[data-state="open"],
-.cloud-property-date:hover:not(:disabled) {
+.cloud-due-date > label:has(input:enabled):hover {
   background: var(--cloud-hover);
 }
 .cloud-property-empty {
@@ -664,7 +774,6 @@ button.cloud-property-value[data-state="open"],
   margin-bottom: 18px;
   color: color-mix(in oklab, var(--foreground) 85%, transparent);
   font-size: 14px;
-  white-space: pre-wrap;
 }
 .cloud-project-side {
   position: sticky;
@@ -1271,17 +1380,56 @@ html[data-theme="light"] .cloud-burnup {
     margin-inline: -4px;
   }
   .cloud-issue-row {
-    gap: 6px;
-    padding: 0 6px;
-    height: 44px;
-    contain-intrinsic-size: auto 44px;
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 3px 6px;
+    height: auto;
+    min-height: 54px;
+    padding: 7px 6px;
+    contain-intrinsic-size: auto 58px;
   }
   .cloud-issue-check,
   .cloud-issue-cell-key,
-  .cloud-issue-cell-meta,
-  .cloud-issue-cell-updated,
-  .cloud-issue-row .cloud-issue-estimate {
+  .cloud-issue-cell-date {
     display: none;
+  }
+  .cloud-issue-row > .cloud-issue-cell-priority {
+    grid-area: 1 / 1;
+  }
+  .cloud-issue-row > .cloud-issue-cell-status {
+    grid-area: 1 / 2;
+  }
+  .cloud-issue-row > .cloud-issue-cell-title {
+    display: -webkit-box;
+    grid-area: 1 / 3;
+    min-width: 0;
+    font-size: 14px;
+    line-height: 1.35;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .cloud-issue-row > .cloud-run-indicator {
+    grid-area: 1 / 4;
+  }
+  .cloud-issue-row > .cloud-issue-cell-assignee {
+    grid-area: 1 / 5;
+  }
+  .cloud-issue-row > .cloud-issue-cell-meta {
+    grid-area: 2 / 3 / 3 / 5;
+    justify-content: flex-start;
+  }
+  .cloud-issue-cell-meta[data-key]::before {
+    flex-shrink: 0;
+    color: var(--muted-foreground);
+    content: attr(data-key);
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    font-size: 11px;
+  }
+  .cloud-issue-row > .cloud-issue-cell-estimate {
+    grid-area: 2 / 5;
+    justify-self: end;
   }
   .cloud-issue-toolbar .cloud-issue-search {
     flex: 1 1 100%;

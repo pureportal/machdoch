@@ -1,12 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
-import { ChevronRight, Command, LogOut, Menu, SquarePen } from "lucide-react";
-import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  ChevronDown,
+  ChevronRight,
+  Command,
+  LogOut,
+  Menu,
+  Settings2,
+  SlidersHorizontal,
+  SquarePen,
+  UserRound,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import type { SavedView } from "@/lib/cloud-view-contract";
 import type { CloudFavorite } from "@/lib/cloud-favorite-contract";
+import type { SidebarPreferences } from "@/lib/cloud-sidebar-contract";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -19,10 +30,13 @@ import { inboxChangedEvent } from "./inbox";
 import {
   clientNavigation,
   isNavigationActive,
-  navigationForRole,
+  navigationFor,
+  sidebarAccess,
   pageNavigation,
 } from "./navigation";
 import { PersonAvatar } from "./person-avatar";
+import { PropertyMenu } from "./property-menu";
+import { SidebarCustomizeDialog } from "./sidebar-customize-dialog";
 import { QuickNavigation } from "./quick-navigation";
 import { Sidebar } from "./sidebar";
 import { ToastProvider } from "./toast";
@@ -94,6 +108,7 @@ export function CloudShell({
   views,
   favorites: initialFavorites,
   triage: initialTriage,
+  sidebar: initialSidebar,
   children,
 }: {
   workspace: CloudWorkspace;
@@ -101,9 +116,19 @@ export function CloudShell({
   views: SavedView[];
   favorites: CloudFavorite[];
   triage: Record<string, number>;
+  sidebar: SidebarPreferences;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [sidebar, setSidebar] = useState(initialSidebar);
+  const [customizing, setCustomizing] = useState(false);
+  const teamKeys = useMemo(
+    () => workspace.teams.map((team) => team.key),
+    [workspace.teams],
+  );
+  const admin =
+    workspace.actor.role === "owner" || workspace.actor.role === "admin";
   const search = useSearchParams();
   const managingClients = clientNavigation.some(
     ({ href }) => pathname === href || pathname.startsWith(`${href}/`),
@@ -116,7 +141,7 @@ export function CloudShell({
   const triage = useTriageCounts(initialTriage);
   const writable = workspace.actor.role !== "viewer";
   const items = [
-    ...navigationForRole(workspace.actor.role).flatMap((group) => group.items),
+    ...navigationFor(sidebarAccess(workspace)),
     ...clientNavigation,
     ...pageNavigation,
   ];
@@ -140,18 +165,45 @@ export function CloudShell({
   const navigation = (
     <>
       <div className="cloud-sidebar-header">
-        <Link
-          className="cloud-brand"
-          href="/cloud/issues"
-          onClick={() => setOpen(false)}
+        <PropertyMenu
+          label="Workspace"
+          options={[
+            {
+              value: "customize",
+              label: "Customize sidebar",
+              icon: <SlidersHorizontal size={14} />,
+            },
+            ...(admin
+              ? [
+                  {
+                    value: "/cloud/settings",
+                    label: "Settings",
+                    icon: <Settings2 size={14} />,
+                  },
+                ]
+              : []),
+            {
+              value: "/cloud/account",
+              label: "Account",
+              icon: <UserRound size={14} />,
+            },
+          ]}
+          onSelect={(value) => {
+            setOpen(false);
+            if (value === "customize") setCustomizing(true);
+            else router.push(value);
+          }}
         >
-          <span className="cloud-brand-mark">
-            <Command size={14} strokeWidth={2.4} />
-          </span>
-          <span className="cloud-brand-text">
-            <span>{workspace.organization.name}</span>
-          </span>
-        </Link>
+          <button type="button" className="cloud-brand">
+            <span className="cloud-brand-mark">
+              <Command size={14} strokeWidth={2.4} />
+            </span>
+            <span className="cloud-brand-text">
+              <span>{workspace.organization.name}</span>
+            </span>
+            <ChevronDown size={13} aria-hidden="true" />
+          </button>
+        </PropertyMenu>
         {writable && workspace.teams.length > 0 && (
           <Button
             asChild
@@ -174,7 +226,12 @@ export function CloudShell({
         unread={unread}
         favorites={favorites}
         triage={triage}
+        preferences={sidebar}
         onNavigate={() => setOpen(false)}
+        onCustomize={() => {
+          setOpen(false);
+          setCustomizing(true);
+        }}
       />
       <div className="cloud-sidebar-footer">
         <Link
@@ -216,7 +273,7 @@ export function CloudShell({
   );
   return (
     <ToastProvider>
-      <TeamKeysProvider keys={workspace.teams.map((team) => team.key)}>
+      <TeamKeysProvider keys={teamKeys}>
         <AgentShellProvider>
           <div
             className="cloud-shell"
@@ -252,10 +309,19 @@ export function CloudShell({
                   <span>{current?.label ?? "Account"}</span>
                 </div>
                 <QuickNavigation
-                  role={workspace.actor.role}
+                  access={sidebarAccess(workspace)}
                   views={views}
                   canCreate={writable && workspace.teams.length > 0}
                 />
+                {writable && workspace.teams.length > 0 && (
+                  <Link
+                    className="cloud-mobile-create"
+                    href="/cloud/issues?new=1"
+                    aria-label="New issue"
+                  >
+                    <SquarePen size={16} />
+                  </Link>
+                )}
               </header>
               <main id="cloud-content" tabIndex={-1} className="cloud-content">
                 {managingClients && (
@@ -276,6 +342,14 @@ export function CloudShell({
               </main>
             </div>
             <AgentDock workspace={workspace} />
+            {customizing && (
+              <SidebarCustomizeDialog
+                onOpenChange={setCustomizing}
+                workspace={workspace}
+                preferences={sidebar}
+                onSaved={setSidebar}
+              />
+            )}
           </div>
         </AgentShellProvider>
       </TeamKeysProvider>

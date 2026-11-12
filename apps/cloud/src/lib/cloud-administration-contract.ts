@@ -61,3 +61,13 @@ export interface CloudAdministration {
 export type OrganizationUpdate = z.infer<typeof organizationUpdateSchema>;
 export type MemberUpdate = z.infer<typeof memberUpdateSchema>;
 export type TeamUpdate = z.infer<typeof teamUpdateSchema>;
+
+export const settingsTabs = [
+  "organization",
+  "members",
+  "authentication",
+  "email",
+  "github",
+  "mimorii",
+] as const;
+export type SettingsTab = (typeof settingsTabs)[number];

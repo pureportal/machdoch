@@ -12,8 +12,10 @@
 @import "./remote.css";
 @import "./surfaces.css";
 @import "./issue-page.css";
+@import "./markdown-editor.css";
 @import "./projects.css";
 @import "./inbox.css";
+@import "./sidebar.css";
 @import "./providers.css";
 @import "./activity.css";
-@import "./markdown-editor.css";
+@import "./github.css";

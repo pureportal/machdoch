@@ -142,9 +142,11 @@ it("fences label assignments independently of issue and poker revisions", async 
   expect(await runtime.planning.getIssue(owner, issueId)).toEqual(issue);
   expect((await runtime.poker.get(owner, round.id)).stale).toBe(false);
   expect(
-    (await runtime.planning.listIssues(owner, { labelId: label.id })).map(
-      (entry) => entry.id,
-    ),
+    (
+      await runtime.planning.listIssues(owner, {
+        conditions: [{ field: "label", negated: false, values: [label.id] }],
+      })
+    ).map((entry) => entry.id),
   ).toEqual([issueId]);
   await runtime.labels.setIssue(member, randomUUID(), issueId, {
     revision: 2,

@@ -1,9 +1,5 @@
 import { z } from "zod";
-import {
-  issuePriorities,
-  type CloudTeam,
-  type IssueInput,
-} from "../../../lib/cloud-contract";
+import { issuePriorities, type IssueInput } from "../../../lib/cloud-contract";
 import type { IssueChangeSet } from "../../../lib/cloud-issue-changes-contract";
 import type { AgentActionField } from "../../../lib/cloud-chat-contract";
 import {
@@ -12,79 +8,19 @@ import {
 } from "../../../lib/cloud-project-update-contract";
 import { AgentLookupError } from "./agent-workspace";
 import { agentTool, type AgentTool } from "./agent-tool";
-import type { CloudAgentSession } from "./agent-tools";
-
-const reference = z.string().trim().min(1).max(120);
-const issueReference = z
-  .string()
-  .trim()
-  .min(1)
-  .max(60)
-  .describe("Issue identifier such as ENG-42, or the issue ID.");
-const none = "none";
-const optionalReference = (description: string) =>
-  reference.optional().describe(`${description} Use "none" to clear it.`);
-const pendingOutput = {
-  proposed: true,
-  note: "Recorded as a proposal. The user must confirm it before anything changes.",
-};
-
-function estimateFor(team: CloudTeam, estimate: string): string {
-  const card = team.estimateScale.find(
-    (entry) => entry.label.toLowerCase() === estimate.toLowerCase(),
-  );
-  if (!card)
-    throw new AgentLookupError(
-      `Estimate "${estimate}" is not on the ${team.key} scale: ${team.estimateScale.map((entry) => entry.label).join(", ")}.`,
-    );
-  return card.label;
-}
-
-async function labelIdsFor(
-  session: CloudAgentSession,
-  team: CloudTeam,
-  names: string[],
-) {
-  const labels = (
-    await session.services.labels.list(session.actor, team.id)
-  ).filter((label) => !label.archived);
-  return names.map((name) => {
-    const label = labels.find(
-      (entry) => entry.name.toLowerCase() === name.toLowerCase(),
-    );
-    if (!label)
-      throw new AgentLookupError(
-        `No label "${name}" in ${team.key}. Labels: ${labels.map((entry) => entry.name).join(", ") || "none"}.`,
-      );
-    return label;
-  });
-}
-
-async function milestoneFor(
-  session: CloudAgentSession,
-  projectId: string | null,
-  name: string,
-) {
-  if (!projectId)
-    throw new AgentLookupError("Choose a project before choosing a milestone.");
-  const milestones = await session.services.milestones.list(
-    session.actor,
-    projectId,
-  );
-  const milestone = milestones.find(
-    (entry) =>
-      entry.id === name || entry.name.toLowerCase() === name.toLowerCase(),
-  );
-  if (!milestone)
-    throw new AgentLookupError(
-      `No milestone "${name}" in this project. Milestones: ${milestones.map((entry) => entry.name).join(", ") || "none"}.`,
-    );
-  return milestone;
-}
-
-function field(label: string, value: string | null | undefined) {
-  return value ? [{ label, value }] : [];
-}
+import {
+  estimateFor,
+  field,
+  issueReference,
+  labelsFor,
+  markdownField,
+  milestoneFor,
+  none,
+  optionalReference,
+  pendingOutput,
+  reference,
+} from "./agent-proposal-helpers";
+import { issueBatchProposalTools } from "./agent-batch-proposals";
 
 export const proposalTools: AgentTool[] = [
   agentTool({
@@ -95,6 +31,11 @@ export const proposalTools: AgentTool[] = [
       team: reference.describe("Team key or name."),
       title: z.string().trim().min(1).max(300),
       description: z.string().max(30_000).optional(),
+      acceptanceCriteria: z
+        .string()
+        .max(20_000)
+        .optional()
+        .describe("Markdown checklist of conditions for done."),
       status: reference.optional().describe("Status name or category."),
       priority: z.enum(issuePriorities).optional(),
       assignee: reference.optional().describe('Member name or "me".'),
@@ -131,7 +72,7 @@ export const proposalTools: AgentTool[] = [
       const estimate = input.estimate
         ? estimateFor(team, input.estimate)
         : null;
-      const labels = await labelIdsFor(session, team, input.labels ?? []);
+      const labels = await labelsFor(session, team, input.labels ?? []);
       const parent = input.parent
         ? await session.resolveIssue(input.parent)
         : undefined;
@@ -143,7 +84,7 @@ export const proposalTools: AgentTool[] = [
         teamId: team.id,
         title: input.title,
         description: input.description ?? "",
-        acceptanceCriteria: "",
+        acceptanceCriteria: input.acceptanceCriteria ?? "",
         status: status ? { id: status.id, revision: status.revision } : null,
         priority: input.priority ?? "none",
         projectId: project?.id ?? null,
@@ -165,6 +106,8 @@ export const proposalTools: AgentTool[] = [
         ...field("Due", input.dueOn),
         ...field("Labels", labels.map((label) => label.name).join(", ")),
         ...field("Parent", parent?.identifier),
+        ...markdownField("Description", input.description),
+        ...markdownField("Acceptance criteria", input.acceptanceCriteria),
       ];
       return {
         output: pendingOutput,
@@ -183,11 +126,18 @@ export const proposalTools: AgentTool[] = [
   agentTool({
     name: "propose_issue_update",
     description:
-      "Propose changes to an existing issue. Read the issue first. Nothing changes until the user confirms the proposal.",
+      "Propose changes to one existing issue: text, status, priority, assignee, project, milestone, cycle, estimate, due date and labels. Read the issue first. Nothing changes until the user confirms the proposal.",
     schema: z.strictObject({
       issue: issueReference,
       title: z.string().trim().min(1).max(300).optional(),
       description: z.string().max(30_000).optional(),
+      acceptanceCriteria: z
+        .string()
+        .max(20_000)
+        .optional()
+        .describe(
+          "Markdown checklist of conditions for done; replaces the current criteria.",
+        ),
       status: reference.optional().describe("Status name or category."),
       priority: z.enum(issuePriorities).optional(),
       assignee: optionalReference('Member name or "me".'),
@@ -199,6 +149,15 @@ export const proposalTools: AgentTool[] = [
         .union([z.iso.date(), z.literal(none)])
         .optional()
         .describe('Due date, or "none" to clear it.'),
+      labels: z
+        .array(reference)
+        .max(20)
+        .optional()
+        .describe(
+          "Replace all labels with these label names; [] removes every label.",
+        ),
+      addLabels: z.array(reference).max(10).optional(),
+      removeLabels: z.array(reference).max(10).optional(),
     }),
     async run(session, input) {
       const { workspace } = session;
@@ -214,7 +173,19 @@ export const proposalTools: AgentTool[] = [
       }
       if (input.description !== undefined) {
         changes.description = input.description;
-        fields.push({ label: "Description", value: "Updated" });
+        fields.push({
+          label: "Description",
+          value: input.description.trim() || "Cleared",
+          markdown: true,
+        });
+      }
+      if (input.acceptanceCriteria !== undefined) {
+        changes.acceptanceCriteria = input.acceptanceCriteria;
+        fields.push({
+          label: "Acceptance criteria",
+          value: input.acceptanceCriteria.trim() || "Cleared",
+          markdown: true,
+        });
       }
       if (input.status) {
         const status = workspace.status(team.id, input.status);
@@ -274,6 +245,33 @@ export const proposalTools: AgentTool[] = [
         changes.dueOn = input.dueOn === none ? null : input.dueOn;
         fields.push({ label: "Due", value: changes.dueOn ?? "No due date" });
       }
+      let labelIds: string[] | undefined;
+      if (input.labels || input.addLabels || input.removeLabels) {
+        const current = await session.services.labels.getIssue(
+          session.actor,
+          issue.id,
+        );
+        let target = input.labels
+          ? await labelsFor(session, team, input.labels)
+          : current.labels;
+        const added = await labelsFor(session, team, input.addLabels ?? []);
+        const removed = new Set(
+          (await labelsFor(session, team, input.removeLabels ?? [])).map(
+            (label) => label.id,
+          ),
+        );
+        target = [
+          ...target,
+          ...added.filter(
+            (label) => !target.some((entry) => entry.id === label.id),
+          ),
+        ].filter((label) => !removed.has(label.id));
+        labelIds = target.map((label) => label.id);
+        fields.push({
+          label: "Labels",
+          value: target.map((label) => label.name).join(", ") || "No labels",
+        });
+      }
       if (!fields.length)
         throw new AgentLookupError("Propose at least one change.");
       return {
@@ -287,6 +285,7 @@ export const proposalTools: AgentTool[] = [
           identifier: issue.identifier,
           revision: issue.revision,
           changes,
+          ...(labelIds ? { labelIds } : {}),
         },
       };
     },
@@ -307,7 +306,7 @@ export const proposalTools: AgentTool[] = [
         proposal: {
           kind: "comment",
           title: `Comment on ${issue.identifier} · ${issue.title}`,
-          fields: [{ label: "Comment", value: input.body }],
+          fields: markdownField("Comment", input.body),
           issueId: issue.id,
           identifier: issue.identifier,
           body: input.body,
@@ -384,7 +383,7 @@ export const proposalTools: AgentTool[] = [
             ...proposal,
             fields: [
               { label: "Decision", value: "Decline" },
-              ...field("Reason", input.reason),
+              ...markdownField("Reason", input.reason),
             ],
             decision: {
               decision: "decline",
@@ -437,7 +436,7 @@ export const proposalTools: AgentTool[] = [
           title: `Update for ${project.name}`,
           fields: [
             { label: "Health", value: projectHealthLabels[input.health] },
-            { label: "Update", value: input.body },
+            ...markdownField("Update", input.body),
           ],
           projectId: project.id,
           projectName: project.name,
@@ -447,4 +446,5 @@ export const proposalTools: AgentTool[] = [
       };
     },
   }),
+  ...issueBatchProposalTools,
 ];

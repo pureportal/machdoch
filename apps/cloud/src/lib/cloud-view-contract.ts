@@ -1,18 +1,14 @@
 import { z } from "zod";
+import { issueFilterKeys } from "./issue-filter-model";
 
 export const viewFilterKeys = [
   "scope",
   "view",
   "group",
   "sort",
+  "order",
   "teamId",
-  "projectId",
-  "cycleId",
-  "labelId",
-  "statusId",
-  "assigneeId",
-  "priority",
-  "estimate",
+  ...issueFilterKeys,
   "planning",
   "query",
   "archived",
@@ -20,7 +16,7 @@ export const viewFilterKeys = [
 
 export const savedViewInputSchema = z.strictObject({
   name: z.string().trim().min(1).max(80),
-  filters: z.partialRecord(z.enum(viewFilterKeys), z.string().max(200)),
+  filters: z.partialRecord(z.enum(viewFilterKeys), z.string().max(2000)),
   shared: z.boolean(),
 });
 export type SavedViewInput = z.infer<typeof savedViewInputSchema>;
@@ -31,4 +27,11 @@ export interface SavedView {
   filters: SavedViewInput["filters"];
   shared: boolean;
   owned: boolean;
+}
+
+export function savedViewHref(view: Pick<SavedView, "filters">): string {
+  const query = new URLSearchParams(
+    view.filters as Record<string, string>,
+  ).toString();
+  return `/cloud/issues${query ? `?${query}` : ""}`;
 }

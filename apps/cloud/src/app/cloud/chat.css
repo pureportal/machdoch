@@ -545,11 +545,28 @@
   }
   .cloud-agent-dock {
     right: 10px;
-    bottom: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
   }
 }
 .cloud-agent-action dl > div {
   display: contents;
+}
+.cloud-agent-action dl > div[data-markdown] dt,
+.cloud-agent-action dl > div[data-markdown] dd {
+  grid-column: 1 / -1;
+}
+.cloud-agent-action dl > div[data-markdown] dt {
+  margin-top: 6px;
+}
+.cloud-agent-action dl > div[data-markdown] dd {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--background);
+  font-size: 12.5px;
+  white-space: normal;
 }
 .cloud-agent-answer table {
   display: block;

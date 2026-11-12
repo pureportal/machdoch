@@ -13,7 +13,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
+import { CloudMarkdown } from "../cloud-markdown";
 import {
   chatErrorMessages,
   type AgentAction,
@@ -32,6 +32,7 @@ export const contextIcons: Record<ChatContextKind, typeof CircleDot> = {
 
 const entityRoutes: [RegExp, ChatContextKind][] = [
   [/^\/cloud\/issues\/[0-9a-f-]{36}$/i, "issue"],
+  [/^\/cloud\/issues\/[A-Z][A-Z0-9]{1,9}-\d+$/, "issue"],
   [/^\/cloud\/projects\/[0-9a-f-]{36}$/i, "project"],
   [/^\/cloud\/cycles\/[0-9a-f-]{36}$/i, "cycle"],
   [/^\/cloud\/initiatives\/[0-9a-f-]{36}$/i, "project"],
@@ -149,20 +150,59 @@ function AgentProgress({
   );
 }
 
-const actionVerbs: Record<AgentAction["kind"], string> = {
-  create_issue: "Create issue",
-  update_issue: "Apply changes",
-  comment: "Post comment",
-  project_update: "Post update",
-  triage: "Apply decision",
-};
-const appliedLabels: Record<AgentAction["kind"], string> = {
-  create_issue: "Created",
-  update_issue: "Updated",
-  comment: "Commented on",
-  project_update: "Posted to",
-  triage: "Triaged",
-};
+function actionVerb(action: AgentAction): string {
+  if (action.kind === "create_issue") return "Create issue";
+  if (action.kind === "comment") return "Post comment";
+  if (action.kind === "project_update") return "Post update";
+  if (action.kind === "triage") return "Apply decision";
+  if (action.kind === "link")
+    return action.relationId ? "Remove link" : "Add link";
+  if (action.kind === "update_issues" && action.changes.archived === true)
+    return "Archive";
+  if (action.kind === "update_issues" && action.changes.archived === false)
+    return "Restore";
+  return "Apply changes";
+}
+
+function appliedLabel(action: AgentAction): string {
+  if (action.kind === "create_issue") return "Created";
+  if (action.kind === "comment") return "Commented on";
+  if (action.kind === "project_update") return "Posted to";
+  if (action.kind === "triage") return "Triaged";
+  if (action.kind === "link") return action.relationId ? "Unlinked" : "Linked";
+  if (action.kind === "update_issues" && action.changes.archived === true)
+    return "Archived";
+  if (action.kind === "update_issues" && action.changes.archived === false)
+    return "Restored";
+  return "Updated";
+}
+
+function ActionResult({ action }: { action: AgentAction }) {
+  const result = action.result!;
+  const content = (
+    <>
+      <Check size={12} aria-hidden="true" />
+      <span>
+        {appliedLabel(action)} {result.label}
+      </span>
+    </>
+  );
+  if (result.kind === "issues")
+    return (
+      <span className="cloud-entity-chip" data-kind="issue">
+        {content}
+      </span>
+    );
+  return (
+    <Link
+      className="cloud-entity-chip"
+      data-kind={result.kind}
+      href={`/cloud/${result.kind === "issue" ? "issues" : "projects"}/${result.id}`}
+    >
+      {content}
+    </Link>
+  );
+}
 
 function CopyAnswer({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -194,16 +234,25 @@ function ActionCard({
   disabled: boolean;
   onDecide: (decision: "apply" | "dismiss") => void;
 }) {
-  const verb = actionVerbs[action.kind];
+  const verb = actionVerb(action);
   return (
     <section className="cloud-agent-action" data-state={action.state}>
       <h3>{action.title}</h3>
       {action.fields.length > 0 && (
         <dl>
           {action.fields.map((field) => (
-            <div key={`${field.label}:${field.value}`}>
+            <div
+              key={`${field.label}:${field.value}`}
+              data-markdown={field.markdown || undefined}
+            >
               <dt>{field.label}</dt>
-              <dd>{field.value}</dd>
+              <dd>
+                {field.markdown ? (
+                  <CloudMarkdown content={field.value} />
+                ) : (
+                  field.value
+                )}
+              </dd>
             </div>
           ))}
         </dl>
@@ -215,16 +264,7 @@ function ActionCard({
       )}
       <footer>
         {action.state === "applied" && action.result ? (
-          <Link
-            className="cloud-entity-chip"
-            data-kind={action.result.kind}
-            href={`/cloud/${action.result.kind === "issue" ? "issues" : "projects"}/${action.result.id}`}
-          >
-            <Check size={12} aria-hidden="true" />
-            <span>
-              {appliedLabels[action.kind]} {action.result.label}
-            </span>
-          </Link>
+          <ActionResult action={action} />
         ) : action.state === "dismissed" ? (
           <span className="cloud-agent-action-state">Dismissed</span>
         ) : (
@@ -299,10 +339,7 @@ export function AgentTurn({
       <article className="cloud-agent-answer" aria-busy={active}>
         <AgentProgress turn={turn} active={active} />
         {turn.answer && (
-          <MarkdownContent
-            content={turn.answer}
-            components={answerComponents}
-          />
+          <CloudMarkdown content={turn.answer} components={answerComponents} />
         )}
         {turn.answer && turn.state === "complete" && (
           <CopyAnswer text={turn.answer} />

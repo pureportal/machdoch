@@ -15,6 +15,7 @@ export const relationKinds = [
   "duplicate_of",
   "duplicated_by",
 ] as const;
+export type RelationKind = (typeof relationKinds)[number];
 export const relationInputSchema = z.strictObject({
   kind: z.enum(relationKinds),
   targetId: cloudId,
@@ -29,7 +30,7 @@ export type RelationInput = z.infer<typeof relationInputSchema>;
 export type ChildIssueInput = z.infer<typeof childIssueInputSchema>;
 export interface CloudIssueRelation {
   id: string;
-  kind: (typeof relationKinds)[number];
+  kind: RelationKind;
   actor: string;
   createdAt: string;
   issue: Pick<

@@ -4,33 +4,39 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Bookmark, Layers, X } from "lucide-react";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
-import type { SavedView } from "@/lib/cloud-view-contract";
+import { savedViewHref, type SavedView } from "@/lib/cloud-view-contract";
+import type { CloudLabel } from "@/lib/cloud-label-contract";
+import { parseIssueFilterConditions } from "@/lib/issue-filter-model";
 import { Button } from "@/components/ui/button";
 import { cloudRequest } from "./api-client";
+import { favoritesChangedEvent } from "./events";
+import { FavoriteButton } from "./favorite-button";
+import {
+  conditionOperator,
+  conditionValues,
+  filterFieldDefinitions,
+} from "./issue-filter-fields";
 import { useToast } from "./toast";
 
-function viewHref(view: SavedView): string {
-  const query = new URLSearchParams(
-    view.filters as Record<string, string>,
-  ).toString();
-  return `/cloud/issues${query ? `?${query}` : ""}`;
-}
-
-function describeFilters(view: SavedView, workspace: CloudWorkspace): string {
+function describeFilters(
+  view: SavedView,
+  workspace: CloudWorkspace,
+  labels: CloudLabel[],
+): string {
   const filters = view.filters;
-  const named = <T extends { id: string; name: string }>(
-    entries: T[],
-    id: string | undefined,
-  ) => (id ? entries.find((entry) => entry.id === id)?.name : undefined);
+  const teamId = filters.teamId ?? null;
+  const definitions = filterFieldDefinitions(workspace, labels, teamId);
   return [
     filters.view === "board" ? "Board" : "List",
-    named(workspace.teams, filters.teamId),
-    named(workspace.projects, filters.projectId),
-    named(workspace.cycles, filters.cycleId),
-    named(workspace.members, filters.assigneeId),
-    filters.priority && `${filters.priority} priority`,
-    filters.query && `“${filters.query}”`,
+    workspace.teams.find((team) => team.id === teamId)?.name,
     filters.scope === "mine" && "My issues",
+    ...parseIssueFilterConditions(filters).map((condition) => {
+      const definition = definitions.find(
+        (entry) => entry.field === condition.field,
+      );
+      return `${definition?.label ?? condition.field} ${conditionOperator(condition)} ${conditionValues(condition, definition)}`;
+    }),
+    filters.query && `“${filters.query}”`,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -38,9 +44,13 @@ function describeFilters(view: SavedView, workspace: CloudWorkspace): string {
 
 export function SavedViewList({
   views,
+  labels,
+  favorites,
   workspace,
 }: {
   views: SavedView[];
+  labels: CloudLabel[];
+  favorites: ReadonlySet<string>;
   workspace: CloudWorkspace;
 }) {
   const router = useRouter();
@@ -63,13 +73,18 @@ export function SavedViewList({
           {views.map((view) => (
             <li key={view.id}>
               <Bookmark size={15} aria-hidden="true" />
-              <Link href={viewHref(view)}>
+              <Link href={savedViewHref(view)}>
                 <span>{view.name}</span>
                 <span className="cloud-view-filters">
-                  {describeFilters(view, workspace)}
+                  {describeFilters(view, workspace, labels)}
                 </span>
               </Link>
               {view.shared && <span className="cloud-view-shared">Shared</span>}
+              <FavoriteButton
+                kind="view"
+                id={view.id}
+                initial={favorites.has(view.id)}
+              />
               {view.owned && (
                 <Button
                   variant="ghost"
@@ -80,7 +95,10 @@ export function SavedViewList({
                       method: "POST",
                       body: {},
                     })
-                      .then(() => router.refresh())
+                      .then(() => {
+                        window.dispatchEvent(new Event(favoritesChangedEvent));
+                        router.refresh();
+                      })
                       .catch((reason: Error) => toast(reason.message, "error"))
                   }
                 >

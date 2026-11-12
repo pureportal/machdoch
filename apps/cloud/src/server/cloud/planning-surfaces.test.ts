@@ -17,6 +17,7 @@ import { CloudProjectMilestones } from "./project-milestones";
 import { CloudProjects } from "./projects";
 import { CloudSavedViews } from "./saved-views";
 import { createTestCloudDatabase } from "./test-database";
+import type { IssueFilterCondition } from "../../lib/issue-filter-model";
 
 let database: Awaited<ReturnType<typeof createTestCloudDatabase>>;
 let planning: CloudPlanning;
@@ -212,11 +213,128 @@ describe("issue summaries", () => {
       (await planning.listIssueSummaries(owner, filters)).map(
         (issue) => issue.title,
       );
-    expect(await titles({ assigneeId: member.userId })).toEqual(["Assigned"]);
-    expect(await titles({ unassigned: true })).toEqual(["Open"]);
-    expect(await titles({ priority: "high" })).toEqual(["Assigned"]);
-    expect(await titles({ unestimated: true })).toEqual(["Open"]);
+    const is = (field: IssueFilterCondition["field"], ...values: string[]) => ({
+      conditions: [{ field, negated: false, values }],
+    });
+    expect(await titles(is("assignee", member.userId))).toEqual(["Assigned"]);
+    expect(await titles(is("assignee", "none"))).toEqual(["Open"]);
+    expect(await titles(is("priority", "high"))).toEqual(["Assigned"]);
+    expect(await titles(is("estimate", "none"))).toEqual(["Open"]);
     expect(await titles({ sort: "priority" })).toEqual(["Assigned", "Open"]);
+  });
+
+  it("pages issues in the same orders the list offers", async () => {
+    await createIssue("beta", { estimate: "8", dueOn: "2030-01-02" });
+    await createIssue("Alpha", { priority: "urgent", estimate: "1" });
+    await createIssue("gamma", { dueOn: "2030-01-01" });
+    const titles = async (filters: Parameters<typeof planning.listIssues>[1]) =>
+      (await planning.listIssueSummaries(owner, filters)).map(
+        (issue) => issue.title,
+      );
+    expect(await titles({ sort: "title" })).toEqual(["Alpha", "beta", "gamma"]);
+    expect(await titles({ sort: "title", reversed: true })).toEqual([
+      "gamma",
+      "beta",
+      "Alpha",
+    ]);
+    expect(await titles({ sort: "estimate" })).toEqual([
+      "beta",
+      "Alpha",
+      "gamma",
+    ]);
+    expect(await titles({ sort: "due", reversed: true })).toEqual([
+      "beta",
+      "gamma",
+      "Alpha",
+    ]);
+    expect(await titles({ sort: "identifier" })).toEqual([
+      "beta",
+      "Alpha",
+      "gamma",
+    ]);
+    expect(await titles({ sort: "priority", reversed: true })).toEqual([
+      "Alpha",
+      "gamma",
+      "beta",
+    ]);
+  });
+
+  it("combines multi-value, negated, personal and date conditions", async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const overdue = await createIssue("Overdue", {
+      priority: "urgent",
+      dueOn: "2020-01-01",
+    });
+    await createIssue("Due today", { priority: "low", dueOn: today });
+    await planning.createIssue(
+      member,
+      randomUUID(),
+      issueInputSchema.parse({
+        teamId,
+        title: "Reported by member",
+        priority: "high",
+        assigneeId: member.userId,
+      }),
+    );
+    const titles = async (...conditions: IssueFilterCondition[]) =>
+      (
+        await planning.listIssueSummaries(member, {
+          conditions,
+          sort: "created",
+        })
+      )
+        .map((issue) => issue.title)
+        .sort();
+    const condition = (
+      field: IssueFilterCondition["field"],
+      values: string[],
+      negated = false,
+    ): IssueFilterCondition => ({ field, negated, values });
+    expect(await titles(condition("priority", ["urgent", "high"]))).toEqual([
+      "Overdue",
+      "Reported by member",
+    ]);
+    expect(await titles(condition("priority", ["urgent"], true))).toEqual([
+      "Due today",
+      "Reported by member",
+    ]);
+    expect(await titles(condition("assignee", ["me"]))).toEqual([
+      "Reported by member",
+    ]);
+    expect(await titles(condition("assignee", ["me", "none"]))).toEqual([
+      "Due today",
+      "Overdue",
+      "Reported by member",
+    ]);
+    expect(await titles(condition("creator", ["me"]))).toEqual([
+      "Reported by member",
+    ]);
+    expect(await titles(condition("creator", [owner.userId], true))).toEqual([
+      "Reported by member",
+    ]);
+    expect(await titles(condition("due", ["overdue"]))).toEqual(["Overdue"]);
+    expect(await titles(condition("due", ["week"]))).toEqual(["Due today"]);
+    expect(await titles(condition("due", ["none"]))).toEqual([
+      "Reported by member",
+    ]);
+    expect(await titles(condition("due", ["overdue", "none"], true))).toEqual([
+      "Due today",
+    ]);
+    expect(await titles(condition("label", ["none"]))).toHaveLength(3);
+    expect(await titles(condition("created", ["day"], true))).toEqual([]);
+    expect(
+      await titles(
+        condition("priority", ["urgent", "low"]),
+        condition("due", ["overdue"], true),
+      ),
+    ).toEqual(["Due today"]);
+    expect(
+      (
+        await planning.listIssueSummaries(member, {
+          conditions: [condition("project", ["none"], true)],
+        })
+      ).map((issue) => issue.id),
+    ).not.toContain(overdue);
   });
 });
 

@@ -143,9 +143,11 @@ it("seeds ordered team workflows and keeps defaults, custom states, reordering a
     updated,
   ]);
   expect(
-    (await runtime.planning.listIssues(member, { statusId: customId })).map(
-      (issue) => issue.id,
-    ),
+    (
+      await runtime.planning.listIssues(member, {
+        conditions: [{ field: "status", negated: false, values: [customId] }],
+      })
+    ).map((issue) => issue.id),
   ).toEqual([created.id]);
   await apply(definition(updated));
   expect((await runtime.workflows.get(owner, teamId)).revision).toBe(2);

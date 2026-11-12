@@ -11,28 +11,23 @@ import {
   Sparkles,
   UserRound,
 } from "lucide-react";
-import type { CloudIssueSummary, CloudRole } from "@/lib/cloud-contract";
-import type { SavedView } from "@/lib/cloud-view-contract";
+import type { CloudIssueSummary } from "@/lib/cloud-contract";
+import type { SidebarAccess } from "@/lib/cloud-sidebar-contract";
+import { savedViewHref, type SavedView } from "@/lib/cloud-view-contract";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cloudRequest } from "./api-client";
-import { clientNavigation, navigationForRole } from "./navigation";
+import { navigationFor } from "./navigation";
+import { useClientDevices } from "./use-client-devices";
 import { useAgentShell } from "./agent/agent-shell";
 
 const searchDelayMs = 150;
 
-function viewHref(view: SavedView): string {
-  const query = new URLSearchParams(
-    view.filters as Record<string, string>,
-  ).toString();
-  return `/cloud/issues${query ? `?${query}` : ""}`;
-}
-
 export function QuickNavigation({
-  role,
+  access,
   views,
   canCreate,
 }: {
-  role: CloudRole;
+  access: SidebarAccess;
   views: SavedView[];
   canCreate: boolean;
 }) {
@@ -72,11 +67,11 @@ export function QuickNavigation({
       clearTimeout(timer);
     };
   }, [query, open]);
+  const devices = useClientDevices(
+    open && ["owner", "admin"].includes(access.role),
+  );
   const groups = [
-    ...navigationForRole(role),
-    ...(["owner", "admin"].includes(role)
-      ? [{ label: "Client management", items: clientNavigation.slice(1) }]
-      : []),
+    { label: "Go to", items: navigationFor(access) },
     {
       label: "Personal",
       items: [{ href: "/cloud/account", label: "Account", icon: UserRound }],
@@ -180,13 +175,40 @@ export function QuickNavigation({
                   <kbd>⌘J</kbd>
                 </Command.Item>
               </Command.Group>
+              {devices.length > 0 && (
+                <Command.Group heading="Clients">
+                  {devices.map((device) => (
+                    <Command.Item
+                      key={device.instanceId}
+                      value={`client ${device.displayName} ${device.instanceId}`}
+                      onSelect={() =>
+                        go(
+                          `/instances/${encodeURIComponent(device.instanceId)}`,
+                        )
+                      }
+                    >
+                      <span
+                        className="cloud-device-status"
+                        data-status={device.status}
+                        aria-hidden="true"
+                      />
+                      <span className="flex-1 truncate">
+                        {device.displayName}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {device.status === "online" ? "Online" : "Offline"}
+                      </span>
+                    </Command.Item>
+                  ))}
+                </Command.Group>
+              )}
               {views.length > 0 && (
                 <Command.Group heading="Views">
                   {views.map((view) => (
                     <Command.Item
                       key={view.id}
                       value={`view ${view.name}`}
-                      onSelect={() => go(viewHref(view))}
+                      onSelect={() => go(savedViewHref(view))}
                     >
                       <Bookmark className="size-4" />
                       <span className="flex-1">{view.name}</span>

@@ -1,107 +1,101 @@
 import {
   Activity,
   Bot,
+  BrainCircuit,
   CalendarClock,
   CalendarRange,
   CircleDot,
   CircleDotDashed,
   CircleUserRound,
   FolderKanban,
+  FolderTree,
+  GitPullRequest,
   Inbox,
+  KeyRound,
   Layers,
-  Map,
-  Sparkles,
-  Target,
   Layers2,
+  Map,
   Monitor,
   Plug,
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
+  Sparkles,
+  SquareTerminal,
+  Target,
   Users,
   Workflow,
+  type LucideIcon,
 } from "lucide-react";
-import type { CloudRole } from "@/lib/cloud-contract";
+import type { CloudWorkspace } from "@/lib/cloud-contract";
+import {
+  canSeeSidebarItem,
+  sidebarItems,
+  type SidebarAccess,
+  type SidebarItem,
+  type SidebarItemId,
+} from "@/lib/cloud-sidebar-contract";
 
 export interface NavigationItem {
   href: string;
   label: string;
-  icon: typeof Inbox;
-  admin?: boolean;
+  icon: LucideIcon;
 }
 
-export const primaryNavigation: NavigationItem[] = [
-  { href: "/cloud/inbox", label: "Inbox", icon: Inbox },
-  { href: "/cloud/pulse", label: "Pulse", icon: Activity },
-  {
-    href: "/cloud/issues?scope=mine",
-    label: "My issues",
-    icon: CircleUserRound,
-  },
-  { href: "/cloud/chat", label: "Agent", icon: Sparkles },
-];
+export const sidebarIcons: Record<SidebarItemId, LucideIcon> = {
+  inbox: Inbox,
+  "my-issues": CircleUserRound,
+  pulse: Activity,
+  agent: Sparkles,
+  activity: BrainCircuit,
+  issues: CircleDot,
+  "pull-requests": GitPullRequest,
+  initiatives: Target,
+  projects: FolderKanban,
+  views: Layers2,
+  cycles: CalendarRange,
+  clients: Monitor,
+  roadmap: Map,
+  tasks: Bot,
+  schedules: CalendarClock,
+  teams: Users,
+  connections: Plug,
+  workspaces: FolderTree,
+  copilot: SquareTerminal,
+  enrollment: KeyRound,
+  profiles: SlidersHorizontal,
+  privacy: ShieldCheck,
+  providers: Layers,
+  execution: Workflow,
+  settings: Settings2,
+};
 
-export const workspaceNavigation: NavigationItem[] = [
-  { href: "/cloud/issues", label: "Issues", icon: CircleDot },
-  { href: "/cloud/initiatives", label: "Initiatives", icon: Target },
-  { href: "/cloud/projects", label: "Projects", icon: FolderKanban },
-  { href: "/cloud/views", label: "Views", icon: Layers2 },
-  { href: "/cloud/roadmap", label: "Roadmap", icon: Map },
-  { href: "/cloud/cycles", label: "Cycles", icon: CalendarRange },
-  { href: "/cloud/tasks", label: "AI tasks", icon: Bot },
-  { href: "/cloud/schedules", label: "Schedules", icon: CalendarClock },
-];
+export function navigationItem(item: SidebarItem): NavigationItem {
+  return { href: item.href, label: item.label, icon: sidebarIcons[item.id] };
+}
+
+export function sidebarAccess(workspace: CloudWorkspace): SidebarAccess {
+  return { role: workspace.actor.role, github: workspace.github };
+}
+
+export function navigationFor(access: SidebarAccess): NavigationItem[] {
+  return sidebarItems
+    .filter((item) => canSeeSidebarItem(item, access))
+    .map(navigationItem);
+}
 
 export const pageNavigation: NavigationItem[] = [
   { href: "/cloud/triage", label: "Triage", icon: CircleDotDashed },
 ];
 
-export const organizationNavigation: NavigationItem[] = [
-  { href: "/cloud/teams", label: "Teams", icon: Users },
-  { href: "/instances", label: "Clients", icon: Monitor, admin: true },
-  { href: "/cloud/connections", label: "Connected apps", icon: Plug },
-  {
-    href: "/cloud/providers",
-    label: "AI providers",
-    icon: Layers,
-    admin: true,
-  },
-  {
-    href: "/cloud/execution",
-    label: "AI execution",
-    icon: Workflow,
-    admin: true,
-  },
-  { href: "/cloud/settings", label: "Settings", icon: Settings2, admin: true },
-];
-
-export const clientNavigation = [
+export const clientNavigation: NavigationItem[] = [
   { href: "/instances", label: "Clients", icon: Monitor },
-  { href: "/workspaces", label: "Workspaces", icon: FolderKanban },
-  { href: "/copilot", label: "Copilot", icon: Bot },
-  { href: "/enrollment", label: "Enrollment", icon: Plug },
+  { href: "/workspaces", label: "Workspaces", icon: FolderTree },
+  { href: "/copilot", label: "Copilot", icon: SquareTerminal },
+  { href: "/enrollment", label: "Enrollment", icon: KeyRound },
   { href: "/settings", label: "Profiles", icon: SlidersHorizontal },
   { href: "/privacy", label: "Privacy", icon: ShieldCheck },
 ];
-
-export function visibleForRole(items: NavigationItem[], role: CloudRole) {
-  return items.filter(
-    (item) => !item.admin || role === "owner" || role === "admin",
-  );
-}
-
-export function navigationForRole(role: CloudRole) {
-  return [
-    {
-      label: "Workspace",
-      items: [...primaryNavigation, ...workspaceNavigation],
-    },
-    {
-      label: "Organization",
-      items: visibleForRole(organizationNavigation, role),
-    },
-  ];
-}
 
 export function isNavigationActive(
   href: string,

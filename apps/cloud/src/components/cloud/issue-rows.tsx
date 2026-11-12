@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { KeyboardEvent, MouseEvent } from "react";
 import type { CloudIssueSummary, CloudWorkspace } from "@/lib/cloud-contract";
+import type { IssueDisplayProperty } from "@/lib/issue-display";
 import {
   AssigneeCell,
   EstimateCell,
   PriorityCell,
+  PullRequestIndicator,
   RunIndicator,
   StatusCell,
   type ApplyChange,
@@ -15,6 +17,7 @@ import {
 import { groupPoints, type IssueGroup } from "./issue-grouping";
 import { IssuePriority } from "./issue-priority";
 import { PersonAvatar } from "./person-avatar";
+import { useIssueDisplay } from "./use-issue-display";
 
 const shortDate = new Intl.DateTimeFormat("en", {
   month: "short",
@@ -62,6 +65,7 @@ export function IssueRows({
   showProject?: boolean;
 }) {
   const router = useRouter();
+  const { shows } = useIssueDisplay();
   const open = (event: MouseEvent<HTMLElement>, id: string) => {
     if (
       (event.target as HTMLElement).closest(
@@ -128,7 +132,9 @@ export function IssueRows({
                   checked={selected.has(issue.id)}
                   onToggle={onToggle}
                   onOpen={open}
-                  showProject={showProject}
+                  shows={(property) =>
+                    shows(property) && (property !== "project" || showProject)
+                  }
                 />
               ))}
             </ul>
@@ -146,7 +152,7 @@ function IssueRow({
   checked,
   onToggle,
   onOpen,
-  showProject,
+  shows,
 }: {
   issue: CloudIssueSummary;
   workspace: CloudWorkspace;
@@ -155,12 +161,14 @@ function IssueRow({
   checked: boolean;
   onToggle: (id: string, range: boolean) => void;
   onOpen: (event: MouseEvent<HTMLElement>, id: string) => void;
-  showProject: boolean;
+  shows: (property: IssueDisplayProperty) => boolean;
 }) {
-  const project = showProject
+  const project = shows("project")
     ? workspace.projects.find((entry) => entry.id === issue.projectId)
     : undefined;
-  const cycle = workspace.cycles.find((entry) => entry.id === issue.cycleId);
+  const cycle = shows("cycle")
+    ? workspace.cycles.find((entry) => entry.id === issue.cycleId)
+    : undefined;
   return (
     <li
       className="cloud-issue-row"
@@ -185,14 +193,20 @@ function IssueRow({
           />
         </label>
       )}
-      <PriorityCell issue={issue} writable={writable} apply={apply} />
-      <span className="cloud-issue-cell-key">{issue.identifier}</span>
-      <StatusCell
-        issue={issue}
-        workspace={workspace}
-        writable={writable}
-        apply={apply}
-      />
+      <span className="cloud-issue-cell-priority">
+        <PriorityCell issue={issue} writable={writable} apply={apply} />
+      </span>
+      {shows("id") && (
+        <span className="cloud-issue-cell-key">{issue.identifier}</span>
+      )}
+      <span className="cloud-issue-cell-status">
+        <StatusCell
+          issue={issue}
+          workspace={workspace}
+          writable={writable}
+          apply={apply}
+        />
+      </span>
       <Link
         className="cloud-issue-cell-title"
         data-issue-link={issue.id}
@@ -202,43 +216,71 @@ function IssueRow({
         {issue.title}
       </Link>
       <RunIndicator issue={issue} />
-      <span className="cloud-issue-cell-meta">
-        {issue.labels.map((label) => (
-          <span
-            key={label.id}
-            className="cloud-issue-label"
-            data-label-color={label.color}
-          >
-            {label.name}
-          </span>
-        ))}
+      {shows("pullRequest") && <PullRequestIndicator issue={issue} />}
+      <span
+        className="cloud-issue-cell-meta"
+        data-key={shows("id") ? issue.identifier : undefined}
+      >
+        {shows("labels") &&
+          issue.labels.map((label) => (
+            <span
+              key={label.id}
+              className="cloud-issue-label"
+              data-label-color={label.color}
+            >
+              {label.name}
+            </span>
+          ))}
         {project && <span className="cloud-issue-chip">{project.name}</span>}
         {cycle && (
           <span className="cloud-issue-chip cloud-issue-chip-cycle">
             {cycle.name}
           </span>
         )}
-        {issue.dueOn && (
+        {shows("due") && issue.dueOn && (
           <span className="cloud-issue-chip">
             Due {shortDate.format(new Date(issue.dueOn))}
           </span>
         )}
       </span>
-      <EstimateCell
-        issue={issue}
-        workspace={workspace}
-        writable={writable}
-        apply={apply}
-      />
-      <AssigneeCell
-        issue={issue}
-        workspace={workspace}
-        writable={writable}
-        apply={apply}
-      />
-      <time className="cloud-issue-cell-updated" dateTime={issue.updatedAt}>
-        {shortDate.format(new Date(issue.updatedAt))}
-      </time>
+      {shows("estimate") && (
+        <span className="cloud-issue-cell-estimate">
+          <EstimateCell
+            issue={issue}
+            workspace={workspace}
+            writable={writable}
+            apply={apply}
+          />
+        </span>
+      )}
+      {shows("assignee") && (
+        <span className="cloud-issue-cell-assignee">
+          <AssigneeCell
+            issue={issue}
+            workspace={workspace}
+            writable={writable}
+            apply={apply}
+          />
+        </span>
+      )}
+      {shows("created") && (
+        <time
+          className="cloud-issue-cell-date"
+          dateTime={issue.createdAt}
+          title="Created"
+        >
+          {shortDate.format(new Date(issue.createdAt))}
+        </time>
+      )}
+      {shows("updated") && (
+        <time
+          className="cloud-issue-cell-date"
+          dateTime={issue.updatedAt}
+          title="Updated"
+        >
+          {shortDate.format(new Date(issue.updatedAt))}
+        </time>
+      )}
     </li>
   );
 }

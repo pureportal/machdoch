@@ -1,11 +1,11 @@
 import {
   cloudId,
-  issuePriorities,
   issueSorts,
   type CloudIssue,
   type IssueFilters,
   type IssueSort,
 } from "./cloud-contract";
+import { parseIssueFilterConditions } from "./issue-filter-model";
 
 type ScopeDefinition = {
   label: string;
@@ -36,11 +36,8 @@ export function parseIssueScope(value: unknown): IssueScope {
     : "all";
 }
 
-export const unassignedFilter = "none";
-export const unestimatedFilter = "none";
-
 export function parseIssueSort(value: unknown): IssueSort {
-  return issueSorts.find((sort) => sort === value) ?? "updated";
+  return issueSorts.find((sort) => sort === value) ?? "priority";
 }
 
 export function issueFiltersFromParameters(
@@ -51,18 +48,12 @@ export function issueFiltersFromParameters(
     states: scope.states,
     assignedToActor: scope.assignedToActor,
     teamId: cloudId.safeParse(params.teamId).data,
-    projectId: cloudId.safeParse(params.projectId).data,
-    cycleId: cloudId.safeParse(params.cycleId).data,
-    labelId: cloudId.safeParse(params.labelId).data,
-    statusId: cloudId.safeParse(params.statusId).data,
-    assigneeId: cloudId.safeParse(params.assigneeId).data,
-    unassigned: params.assigneeId === unassignedFilter,
-    priority: issuePriorities.find((priority) => priority === params.priority),
-    unestimated: params.estimate === unestimatedFilter,
+    conditions: parseIssueFilterConditions(params),
     query:
       typeof params.query === "string" ? params.query.slice(0, 200) : undefined,
     archived: params.archived === "true",
     sort: parseIssueSort(params.sort),
+    reversed: params.order === "reverse",
     offset: Math.min(
       1_000_000,
       Math.max(0, Number.parseInt(String(params.offset ?? "0"), 10) || 0),

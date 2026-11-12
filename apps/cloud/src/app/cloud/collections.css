@@ -38,28 +38,91 @@
 .cloud-issue-search button {
   flex-shrink: 0;
 }
-.cloud-view-toggle {
-  display: flex;
-  align-items: center;
-  gap: 2px;
+.cloud-display-menu {
+  display: grid;
+  gap: 4px;
+  width: 300px;
+  padding: 8px;
+}
+.cloud-display-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 4px;
   padding: 3px;
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: 8px;
   background: var(--cloud-subtle);
 }
-.cloud-view-toggle button {
-  min-height: 28px;
-  width: 32px;
-  padding: 0;
-  border: 0;
-  box-shadow: none;
-  background: transparent;
+.cloud-display-layout button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 30px;
+  border-radius: 6px;
   color: var(--muted-foreground);
+  cursor: pointer;
 }
-.cloud-view-toggle button[aria-pressed="true"] {
-  color: var(--foreground);
+.cloud-display-layout button[aria-pressed="true"] {
   background: var(--card);
   box-shadow: 0 0 0 1px var(--border);
+  color: var(--foreground);
+}
+.cloud-display-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 0 4px;
+  color: var(--muted-foreground);
+}
+.cloud-display-row select {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--cloud-subtle);
+  color: var(--foreground);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cloud-display-row input[role="switch"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.cloud-display-properties {
+  margin-top: 4px;
+  padding: 10px 4px 2px;
+  border-top: 1px solid var(--border);
+}
+.cloud-display-properties h3 {
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.cloud-display-properties div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding-top: 8px;
+}
+.cloud-display-properties button {
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  cursor: pointer;
+}
+.cloud-display-properties button[aria-pressed="true"] {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--foreground);
 }
 .cloud-table-wrap {
   overflow: auto;

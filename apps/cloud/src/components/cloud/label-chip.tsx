@@ -1,6 +1,6 @@
 import type { CloudLabel } from "@/lib/cloud-label-contract";
 
-const colors = {
+export const labelColors = {
   gray: "#94a3b8",
   blue: "#60a5fa",
   green: "#4ade80",
@@ -17,7 +17,7 @@ export function LabelChip({ label }: { label: CloudLabel }) {
       <span
         aria-hidden="true"
         className="size-2 shrink-0 rounded-full"
-        style={{ backgroundColor: colors[label.color] }}
+        style={{ backgroundColor: labelColors[label.color] }}
       />
       <span className="break-words">{label.name}</span>
       {label.archived && (

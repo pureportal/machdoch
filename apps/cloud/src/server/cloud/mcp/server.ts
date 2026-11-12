@@ -6,10 +6,13 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { bearerToken } from "../../request-auth";
-import { isCloudError } from "../access";
+import { CloudError, isCloudError } from "../access";
+import { countAttempts } from "../attempt-limits";
 import { readBody } from "../request-body";
 import type { CloudRuntime } from "../runtime";
 import { cloudMcpTools } from "./tools";
+
+const mcpMessagesPerMinute = 600;
 
 export async function handleCloudMcp(
   runtime: CloudRuntime,
@@ -36,6 +39,16 @@ export async function handleCloudMcp(
   if (request.method !== "POST")
     return new Response(null, { status: 405, headers: { Allow: "POST" } });
   const parsedBody = await readBody(request, z.unknown());
+  const messages = Array.isArray(parsedBody) ? parsedBody.length : 1;
+  const used = await runtime.database.transaction((sql) =>
+    countAttempts(sql, `mcp:grant:${credentials.grantId}`, messages),
+  );
+  if (used > mcpMessagesPerMinute)
+    throw new CloudError(
+      429,
+      "rate_limited",
+      "Too many requests from this app. Try again in a minute.",
+    );
   const tools = cloudMcpTools(runtime).filter((tool) =>
     credentials.scopes.includes(tool.scope),
   );

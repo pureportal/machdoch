@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { cloudOAuthScopes } from "../../../lib/cloud-oauth-contract";
-import { hashSecret } from "../../crypto";
 import { CloudError } from "../access";
+import { countAttempts } from "../attempt-limits";
 import type { CloudRuntime } from "../runtime";
 import {
   nativeCloudClient,
@@ -24,7 +24,7 @@ export async function handleOAuthApi(
       return Response.json({
         resource: `${runtime.origin}/api/v1/mcp`,
         authorization_servers: [runtime.origin],
-        scopes_supported: ["cloud:read"],
+        scopes_supported: cloudOAuthScopes,
         bearer_methods_supported: ["header"],
       });
     if (
@@ -141,15 +141,8 @@ async function limitOAuth(runtime: CloudRuntime, address: string) {
     for (const [key, limit] of [
       [`oauth:address:${address}`, 60],
       ["oauth:global", 1000],
-    ] as const) {
-      const result = await sql.query<{ attempts: number }>(
-        `INSERT INTO cloud_login_limits (key,attempts,expires_at) VALUES ($1,1,now()+interval '1 minute')
-        ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN cloud_login_limits.expires_at<=now() THEN 1 ELSE cloud_login_limits.attempts+1 END,
-        expires_at=CASE WHEN cloud_login_limits.expires_at<=now() THEN now()+interval '1 minute' ELSE cloud_login_limits.expires_at END RETURNING attempts`,
-        [hashSecret(key)],
-      );
-      if (result.rows[0]!.attempts > limit) permitted = false;
-    }
+    ] as const)
+      if ((await countAttempts(sql, key)) > limit) permitted = false;
     return permitted;
   });
   if (!allowed)

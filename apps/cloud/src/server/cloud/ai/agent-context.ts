@@ -8,14 +8,28 @@ const maximumContextCharacters = 24_000;
 
 export const agentSystemPrompt = `You are Agent, the assistant built into machdoch.cloud, a planning workspace for teams, issues, projects and cycles.
 
+You act for the signed-in user with exactly their permissions. You only see what they can see, and every change runs under their name after they confirm it. When something cannot be found, it may be outside their access; say so instead of guessing.
+
 Work like a careful teammate:
-- Look up current workspace data with the tools before answering questions about it. Use precise filters, and read an issue before describing it in detail.
+- Look up current workspace data with the tools before answering questions about it. Use precise filters, and read an issue before describing or changing it. get_issue includes the newest comments; use list_comments for the full discussion.
 - Never invent issues, people, dates or numbers. When the data does not contain the answer, say what is missing.
 - When a request is ambiguous in a way that changes the answer, call ask_user with 2–6 short options instead of guessing.
-- You cannot change data yourself. To create an issue, change an issue, post a comment, post a project update or settle an issue in triage, call the matching propose_* tool. The user confirms each proposal; mention proposals briefly in your answer.
+- You cannot change data yourself. Propose every change with a propose_* tool; the user confirms each proposal:
+  - propose_issue creates an issue, or a sub-issue with parent.
+  - propose_issue_update changes one issue: title, description, acceptance criteria, status, priority, assignee, project, milestone, cycle, estimate, due date and labels.
+  - propose_bulk_update applies one change to several issues, such as moving them to a status, cycle or project.
+  - propose_archive_issues removes issues by archiving them, or restores them.
+  - propose_link adds or removes sub-issue, blocking, related and duplicate links.
+  - propose_comment, propose_project_update and propose_triage post comments, project status updates and triage decisions.
+  Mention proposals briefly in your answer without repeating their fields.
+- Use the exact team keys, status names, labels and estimate scales from the context. Estimates must come from the scale of the issue's team.
 - Issues in the triage status category are new requests waiting for review. To triage one, search for likely duplicates, suggest priority, assignee or labels with propose_issue_update when they are clear, and settle it with propose_triage.
-- Lead with the answer. Be concise and use Markdown lists or tables when they help.
-- Link issues as [IDENTIFIER](/cloud/issues/ID), projects as [Name](/cloud/projects/ID), initiatives as [Name](/cloud/initiatives/ID) and cycles as [Name](/cloud/cycles/ID), using the links from tool results and the context below.
+- Moving an issue to another team is not available; say so when asked.
+
+Formatting:
+- Lead with the answer. Be concise. Use Markdown: short paragraphs, lists, tables for comparisons, task lists (- [ ]) for steps and acceptance criteria, and fenced code blocks with a language for code.
+- Write proposed descriptions, comments and updates as well-structured Markdown.
+- Refer to issues by identifier, such as PRD-12; identifiers become links. Link projects as [Name](/cloud/projects/ID), initiatives as [Name](/cloud/initiatives/ID) and cycles as [Name](/cloud/cycles/ID) with the links from tool results and the context below.
 - Reply in the language of the user's latest message.
 
 The JSON user message contains the conversation; work on its latest user entry. Entries with role "tool" contain results of tools you called earlier in this turn.`;
@@ -210,15 +224,50 @@ export async function agentContext(
 ): Promise<string> {
   const scope = [actor.organizationId, actor.userId];
   const identity = (
-    await sql.query<{ organization: string; person: string; today: string }>(
-      "SELECT o.name AS organization,u.name AS person,to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD') AS today FROM cloud_organizations o,cloud_users u WHERE o.id=$1 AND u.id=$2",
+    await sql.query<{
+      organization: string;
+      person: string;
+      role: string;
+      today: string;
+    }>(
+      "SELECT o.name AS organization,u.name AS person,m.role,to_char(clock_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD') AS today FROM cloud_organizations o JOIN cloud_memberships m ON m.organization_id=o.id AND m.user_id=$2 JOIN cloud_users u ON u.id=m.user_id WHERE o.id=$1",
       scope,
     )
   ).rows[0]!;
   const teams = (
-    await sql.query<{ key: string; name: string }>(
-      `SELECT t.key,t.name FROM cloud_teams t JOIN cloud_memberships m ON m.organization_id=t.organization_id AND m.user_id=$2
+    await sql.query<{
+      key: string;
+      name: string;
+      member: boolean;
+      statuses: string | null;
+      scale: string | null;
+      labels: string | null;
+    }>(
+      `SELECT t.key,t.name,
+        EXISTS (SELECT 1 FROM cloud_team_memberships tm WHERE tm.organization_id=t.organization_id AND tm.team_id=t.id AND tm.user_id=$2) AS member,
+        (SELECT string_agg(s.name||' ('||s.category||')',', ' ORDER BY s.position) FROM cloud_workflow_statuses s WHERE s.organization_id=t.organization_id AND s.team_id=t.id AND NOT s.archived) AS statuses,
+        (SELECT string_agg(card.value->>'label',', ' ORDER BY card.position) FROM jsonb_array_elements(t.estimate_scale) WITH ORDINALITY AS card(value,position)) AS scale,
+        (SELECT string_agg(l.name,', ' ORDER BY lower(l.name)) FROM (SELECT x.name FROM cloud_labels x WHERE x.organization_id=t.organization_id AND x.team_id=t.id AND NOT x.archived ORDER BY lower(x.name) LIMIT 30) l) AS labels
+      FROM cloud_teams t JOIN cloud_memberships m ON m.organization_id=t.organization_id AND m.user_id=$2
       WHERE t.organization_id=$1 AND ${teamVisibility} ORDER BY t.name LIMIT 30`,
+      scope,
+    )
+  ).rows;
+  const assigned = (
+    await sql.query<{
+      identifier: string;
+      title: string;
+      status: string;
+      priority: string;
+      estimate: string | null;
+      total: number;
+    }>(
+      `SELECT i.identifier,i.title,s.name AS status,i.priority,i.estimate,count(*) OVER ()::integer AS total
+      FROM cloud_issues i JOIN cloud_workflow_statuses s ON s.organization_id=i.organization_id AND s.id=i.status_id
+      JOIN cloud_teams t ON t.organization_id=i.organization_id AND t.id=i.team_id
+      JOIN cloud_memberships m ON m.organization_id=i.organization_id AND m.user_id=$2
+      WHERE i.organization_id=$1 AND i.assignee_id=$2 AND NOT i.archived AND i.state NOT IN ('complete','canceled') AND ${teamVisibility}
+      ORDER BY CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,i.updated_at DESC,i.id LIMIT 10`,
       scope,
     )
   ).rows;
@@ -257,13 +306,16 @@ export async function agentContext(
   for (const entry of context)
     focus.push(await sectionBuilders[entry.kind](sql, actor, entry.id));
   const sections = [
-    `# Workspace\nOrganization: ${identity.organization}. User: ${identity.person}. Today: ${identity.today} (UTC).`,
+    `# Workspace\nOrganization: ${identity.organization}. User: ${identity.person}, role ${identity.role}. Today: ${identity.today} (UTC).`,
     ...(focus.some(Boolean)
       ? [`# Context the user added\n${focus.filter(Boolean).join("\n\n")}`]
       : []),
     teams.length
-      ? `## Teams\n${teams.map((team) => `- ${team.name} (${team.key})`).join("\n")}`
+      ? `## Teams\n${teams.map((team) => `- ${team.name} (${team.key})${team.member ? ", you are a member" : ""}. Statuses: ${team.statuses ?? "none"}. Estimates: ${team.scale ?? "none"}. Labels: ${team.labels ?? "none"}.`).join("\n")}`
       : "## Teams\nNo accessible teams.",
+    assigned.length
+      ? `## Assigned to you (${assigned[0]!.total} open)\n${assigned.map((issue) => `- ${issue.identifier} ${issue.title} — ${issue.status}, priority ${issue.priority}${issue.estimate ? `, estimate ${issue.estimate}` : ""}`).join("\n")}`
+      : "",
     projects.length
       ? `## Open projects\n${projects.map((project) => `- [${project.name}](/cloud/projects/${project.id}) — ${project.team}, ${project.status}${project.targetOn ? `, target ${project.targetOn}` : ""}`).join("\n")}`
       : "",

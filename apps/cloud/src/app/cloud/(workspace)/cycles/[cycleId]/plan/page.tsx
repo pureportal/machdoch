@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { noneFilterValue } from "@/lib/issue-filter-model";
 import { CyclePlanner } from "@/components/cloud/cycle-planner";
 import { cloudId } from "@/lib/cloud-contract";
 import { isCloudError } from "@/server/cloud/access";
@@ -20,11 +21,13 @@ export default async function CyclePlanPage({
     const [scheduled, backlog] = await Promise.all([
       runtime.planning.listIssueSummaries(actor, {
         teamId: cycle.teamId,
-        cycleId: cycle.id,
+        conditions: [{ field: "cycle", negated: false, values: [cycle.id] }],
       }),
       runtime.planning.listIssueSummaries(actor, {
         teamId: cycle.teamId,
-        noCycle: true,
+        conditions: [
+          { field: "cycle", negated: false, values: [noneFilterValue] },
+        ],
         states: [...openStates],
       }),
     ]);

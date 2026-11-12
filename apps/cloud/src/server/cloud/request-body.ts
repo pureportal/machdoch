@@ -1,15 +1,10 @@
 import { z } from "zod";
 import { CloudError } from "./access";
 
-export async function readBody<T>(
+export async function readRawBody(
   request: Request,
-  schema: z.ZodType<T>,
-  maxBytes = 64 * 1024,
-): Promise<T> {
-  if (
-    request.headers.get("content-type")?.split(";", 1)[0] !== "application/json"
-  )
-    throw new CloudError(415, "json_required", "Send this request as JSON.");
+  maxBytes: number,
+): Promise<Buffer> {
   const reader = request.body?.getReader();
   if (!reader)
     throw new CloudError(400, "invalid_json", "Request body is missing.");
@@ -29,9 +24,22 @@ export async function readBody<T>(
   } finally {
     reader.releaseLock();
   }
+  return Buffer.concat(chunks);
+}
+
+export async function readBody<T>(
+  request: Request,
+  schema: z.ZodType<T>,
+  maxBytes = 64 * 1024,
+): Promise<T> {
+  if (
+    request.headers.get("content-type")?.split(";", 1)[0] !== "application/json"
+  )
+    throw new CloudError(415, "json_required", "Send this request as JSON.");
+  const body = await readRawBody(request, maxBytes);
   let input: unknown;
   try {
-    input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    input = JSON.parse(body.toString("utf8"));
   } catch {
     throw new CloudError(
       400,

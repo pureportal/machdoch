@@ -2,8 +2,7 @@ import type { CloudOrganization } from "../../lib/cloud-administration-contract"
 import {
   cycleColumns,
   issueColumns,
-  issueFilterClause,
-  issueFilterParameters,
+  issueFilterSql,
   issueSummaryColumns,
   projectColumns,
 } from "./planning-queries";
@@ -41,13 +40,47 @@ import {
 } from "./access";
 
 export const issueSummaryPageSize = 200;
-const issueSummaryOrder: Record<IssueSort, string> = {
-  updated: "i.updated_at DESC,i.id",
-  created: "i.created_at DESC,i.id",
-  priority:
-    "CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 ELSE 4 END,i.updated_at DESC,i.id",
-  due: "i.due_on ASC NULLS LAST,i.updated_at DESC,i.id",
+const issueSummaryOrder: Record<
+  IssueSort,
+  { expressions: string[]; descending: boolean }
+> = {
+  priority: {
+    expressions: [
+      "CASE i.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 END",
+    ],
+    descending: false,
+  },
+  updated: { expressions: ["i.updated_at"], descending: true },
+  created: { expressions: ["i.created_at"], descending: true },
+  due: { expressions: ["i.due_on"], descending: false },
+  estimate: { expressions: ["i.estimate_points"], descending: true },
+  status: {
+    expressions: [
+      "CASE i.state WHEN 'triage' THEN 0 WHEN 'backlog' THEN 1 WHEN 'ready' THEN 2 WHEN 'active' THEN 3 WHEN 'review' THEN 4 WHEN 'blocked' THEN 5 WHEN 'complete' THEN 6 ELSE 7 END",
+    ],
+    descending: false,
+  },
+  title: { expressions: ["lower(i.title)"], descending: false },
+  identifier: {
+    expressions: [
+      "split_part(i.identifier,'-',1)",
+      "split_part(i.identifier,'-',2)::integer",
+    ],
+    descending: false,
+  },
 };
+
+function issueSummaryOrderBy(sort: IssueSort, reversed: boolean): string {
+  const rule = issueSummaryOrder[sort];
+  const direction = rule.descending !== reversed ? "DESC" : "ASC";
+  return [
+    ...rule.expressions.map(
+      (expression) => `${expression} ${direction} NULLS LAST`,
+    ),
+    "i.updated_at DESC",
+    "i.id",
+  ].join(",");
+}
 
 export async function readIssue(
   sql: CloudSql,
@@ -185,6 +218,14 @@ export class CloudPlanning {
         projects,
         cycles,
         workflows: await readTeamWorkflows(sql, actor.organizationId, teamIds),
+        github: Boolean(
+          (
+            await sql.query(
+              "SELECT 1 FROM cloud_github_connections WHERE organization_id=$1",
+              [actor.organizationId],
+            )
+          ).rows.length,
+        ),
       };
     });
   }
@@ -310,14 +351,15 @@ export class CloudPlanning {
   ): Promise<CloudIssue[]> {
     return this.database.transaction(async (sql) => {
       await requireMembership(sql, actor);
+      const { where, parameters } = issueFilterSql(actor, filters);
       return (
         await sql.query<CloudIssue & Record<string, unknown>>(
           `SELECT ${issueColumns} FROM cloud_issues i
         JOIN cloud_teams t ON t.organization_id=i.organization_id AND t.id=i.team_id
         JOIN cloud_memberships m ON m.organization_id=i.organization_id AND m.user_id=$2
-        WHERE ${issueFilterClause} AND ${teamVisibility}
-        ORDER BY i.updated_at DESC,i.id LIMIT 100 OFFSET $8`,
-          issueFilterParameters(actor, filters),
+        WHERE ${where} AND ${teamVisibility}
+        ORDER BY i.updated_at DESC,i.id LIMIT 100 OFFSET $${parameters.length + 1}`,
+          [...parameters, filters.offset ?? 0],
         )
       ).rows;
     });
@@ -330,15 +372,16 @@ export class CloudPlanning {
   ): Promise<CloudIssueSummary[]> {
     return this.database.transaction(async (sql) => {
       await requireMembership(sql, actor);
+      const { where, parameters } = issueFilterSql(actor, filters);
       return (
         await sql.query<CloudIssueSummary & Record<string, unknown>>(
           `SELECT ${issueSummaryColumns} FROM cloud_issues i
         JOIN cloud_workflow_statuses s ON s.organization_id=i.organization_id AND s.id=i.status_id
         JOIN cloud_teams t ON t.organization_id=i.organization_id AND t.id=i.team_id
         JOIN cloud_memberships m ON m.organization_id=i.organization_id AND m.user_id=$2
-        WHERE ${issueFilterClause} AND ${teamVisibility}
-        ORDER BY ${issueSummaryOrder[filters.sort ?? "updated"]} LIMIT $18 OFFSET $8`,
-          [...issueFilterParameters(actor, filters), limit],
+        WHERE ${where} AND ${teamVisibility}
+        ORDER BY ${issueSummaryOrderBy(filters.sort ?? "updated", filters.reversed ?? false)} LIMIT $${parameters.length + 1} OFFSET $${parameters.length + 2}`,
+          [...parameters, limit, filters.offset ?? 0],
         )
       ).rows;
     });
@@ -346,6 +389,21 @@ export class CloudPlanning {
 
   getIssue(actor: CloudActor, id: string): Promise<CloudIssue> {
     return this.database.transaction((sql) => readIssue(sql, actor, id));
+  }
+
+  findIssue(actor: CloudActor, identifier: string): Promise<CloudIssue | null> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor);
+      const match = (
+        await sql.query<{ id: string }>(
+          `SELECT i.id FROM cloud_issues i JOIN cloud_teams t ON t.organization_id=i.organization_id AND t.id=i.team_id
+          JOIN cloud_memberships m ON m.organization_id=i.organization_id AND m.user_id=$2
+          WHERE i.organization_id=$1 AND i.identifier=$3 AND ${teamVisibility}`,
+          [actor.organizationId, actor.userId, identifier.trim().toUpperCase()],
+        )
+      ).rows[0];
+      return match ? readIssue(sql, actor, match.id) : null;
+    });
   }
 
   createIssue(

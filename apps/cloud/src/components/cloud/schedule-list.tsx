@@ -8,7 +8,7 @@ import {
   RefreshCw,
   Users,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
 import type { CloudSchedule } from "@/lib/cloud-schedule-contract";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,8 @@ import {
   ScheduleStateDialog,
   type ScheduleTransition,
 } from "./schedule-state-dialog";
+
+const schedulePollMs = 15_000;
 
 export function ScheduleList({
   workspace: initialWorkspace,
@@ -64,6 +66,17 @@ export function ScheduleList({
     setWorkerAvailable(status.available);
     setWorkspace(currentWorkspace);
   }
+  const latestRefresh = useRef(refresh);
+  latestRefresh.current = refresh;
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.hidden || busy.current) return;
+      latestRefresh
+        .current()
+        .catch((reason: Error) => setError(reason.message));
+    }, schedulePollMs);
+    return () => clearInterval(timer);
+  }, []);
   async function load(action: () => Promise<void>) {
     if (busy.current) return;
     busy.current = true;

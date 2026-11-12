@@ -91,6 +91,21 @@ describe("machdoch.cloud request limits", () => {
     ).toBe(64 * 1024);
   });
 
+  it("accepts GitHub webhook deliveries up to one mebibyte", () => {
+    expect(
+      maximumRequestBodyBytes(
+        "/api/v1/integrations/github/webhooks/hook_one",
+        config,
+      ),
+    ).toBe(1024 * 1024);
+    expect(
+      maximumRequestBodyBytes(
+        "/api/v1/integrations/github/webhooks/hook_one/other",
+        config,
+      ),
+    ).toBe(64 * 1024);
+  });
+
   it("accounts for the larger configured settings input", () => {
     expect(
       maximumRequestBodyBytes("/api/settings/profiles/profile_one", config),

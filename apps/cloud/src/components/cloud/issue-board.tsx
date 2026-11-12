@@ -10,6 +10,7 @@ import {
   AssigneeCell,
   EstimateCell,
   PriorityCell,
+  PullRequestIndicator,
   RunIndicator,
   StatusCell,
   type ApplyChange,
@@ -17,9 +18,10 @@ import {
 import { groupPoints, type IssueGroup } from "./issue-grouping";
 import { IssuePriority } from "./issue-priority";
 import { PersonAvatar } from "./person-avatar";
+import { useIssueDisplay } from "./use-issue-display";
 
 const dragType = "application/x-machdoch-issue";
-const createdFormat = new Intl.DateTimeFormat("en", {
+const dateFormat = new Intl.DateTimeFormat("en", {
   month: "short",
   day: "numeric",
   timeZone: "UTC",
@@ -40,6 +42,7 @@ export function IssueBoard({
 }) {
   const [target, setTarget] = useState<string | null>(null);
   const router = useRouter();
+  const { shows } = useIssueDisplay();
   const teamForGroup = (group: IssueGroup) =>
     group.change?.status
       ? workspace.workflows.find((workflow) =>
@@ -131,14 +134,21 @@ export function IssueBoard({
                 }}
               >
                 <div className="cloud-board-card-heading">
-                  <span className="cloud-issue-key">{issue.identifier}</span>
+                  {shows("id") && (
+                    <span className="cloud-issue-key">{issue.identifier}</span>
+                  )}
                   <RunIndicator issue={issue} />
-                  <AssigneeCell
-                    issue={issue}
-                    workspace={workspace}
-                    writable={writable}
-                    apply={apply}
-                  />
+                  {shows("pullRequest") && (
+                    <PullRequestIndicator issue={issue} />
+                  )}
+                  {shows("assignee") && (
+                    <AssigneeCell
+                      issue={issue}
+                      workspace={workspace}
+                      writable={writable}
+                      apply={apply}
+                    />
+                  )}
                 </div>
                 {issue.parent && (
                   <Link
@@ -172,31 +182,46 @@ export function IssueBoard({
                     writable={writable}
                     apply={apply}
                   />
-                  <EstimateCell
-                    issue={issue}
-                    workspace={workspace}
-                    writable={writable}
-                    apply={apply}
-                  />
-                  {projectName(issue.projectId) && (
+                  {shows("estimate") && (
+                    <EstimateCell
+                      issue={issue}
+                      workspace={workspace}
+                      writable={writable}
+                      apply={apply}
+                    />
+                  )}
+                  {shows("project") && projectName(issue.projectId) && (
                     <span className="cloud-board-chip">
                       <FolderKanban size={11} aria-hidden="true" />
                       {projectName(issue.projectId)}
                     </span>
                   )}
-                  {issue.labels.slice(0, 3).map((label) => (
-                    <span
-                      key={label.id}
-                      className="cloud-issue-label"
-                      data-label-color={label.color}
-                    >
-                      {label.name}
+                  {shows("labels") &&
+                    issue.labels.slice(0, 3).map((label) => (
+                      <span
+                        key={label.id}
+                        className="cloud-issue-label"
+                        data-label-color={label.color}
+                      >
+                        {label.name}
+                      </span>
+                    ))}
+                  {shows("due") && issue.dueOn && (
+                    <span className="cloud-board-chip">
+                      Due {dateFormat.format(new Date(issue.dueOn))}
                     </span>
-                  ))}
+                  )}
                 </div>
-                <span className="cloud-board-card-created">
-                  Created {createdFormat.format(new Date(issue.createdAt))}
-                </span>
+                {shows("created") && (
+                  <span className="cloud-board-card-created">
+                    Created {dateFormat.format(new Date(issue.createdAt))}
+                  </span>
+                )}
+                {shows("updated") && (
+                  <span className="cloud-board-card-created">
+                    Updated {dateFormat.format(new Date(issue.updatedAt))}
+                  </span>
+                )}
               </article>
             ))}
           </div>

@@ -14,6 +14,7 @@ import type { CloudProjectUpdates } from "../project-updates";
 import type { CloudInitiatives } from "../initiatives";
 import type { CloudTriage } from "../triage";
 import type { CloudRuns } from "../execution/runs";
+import type { CloudGitHubPullRequests } from "../github/pull-requests";
 import type { CloudAgentSession } from "./agent-tools";
 
 export interface AgentServices {
@@ -28,6 +29,7 @@ export interface AgentServices {
   initiatives: CloudInitiatives;
   triage: CloudTriage;
   runs: CloudRuns;
+  pullRequests: CloudGitHubPullRequests;
 }
 
 export type AgentProposal = Omit<

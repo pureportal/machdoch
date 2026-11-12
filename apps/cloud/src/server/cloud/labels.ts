@@ -12,7 +12,9 @@ import {
   CloudError,
   command,
   recordEvent,
+  requireMembership,
   requireTeam,
+  teamVisibility,
 } from "./access";
 import type { CloudDatabase, CloudSql } from "./database";
 import { readIssue } from "./planning";
@@ -49,6 +51,21 @@ export class CloudLabels {
         await sql.query<CloudLabel & Record<string, unknown>>(
           `SELECT ${columns} FROM cloud_labels l WHERE organization_id=$1 AND team_id=$2 ORDER BY lower(name),id`,
           [actor.organizationId, teamId],
+        )
+      ).rows;
+    });
+  }
+
+  listVisible(actor: CloudActor): Promise<CloudLabel[]> {
+    return this.database.transaction(async (sql) => {
+      await requireMembership(sql, actor);
+      return (
+        await sql.query<CloudLabel & Record<string, unknown>>(
+          `SELECT ${columns} FROM cloud_labels l
+          JOIN cloud_teams t ON t.organization_id=l.organization_id AND t.id=l.team_id
+          JOIN cloud_memberships m ON m.organization_id=l.organization_id AND m.user_id=$2
+          WHERE l.organization_id=$1 AND ${teamVisibility} ORDER BY lower(l.name),l.id`,
+          [actor.organizationId, actor.userId],
         )
       ).rows;
     });

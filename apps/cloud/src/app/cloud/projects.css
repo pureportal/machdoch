@@ -149,6 +149,110 @@
   align-items: center;
   gap: 6px;
 }
+.cloud-project-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.cloud-project-chips > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.cloud-project-overview {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 22px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.cloud-project-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 40px;
+}
+.cloud-project-figures dt {
+  color: var(--muted-foreground);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.cloud-project-figures dd {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+}
+.cloud-project-figures dd > span {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  font-weight: 500;
+}
+.cloud-project-figures dd > small {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.cloud-project-figures [data-overdue] dd > small {
+  color: var(--cloud-danger);
+}
+.cloud-project-bar {
+  display: flex;
+  gap: 2px;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--cloud-subtle);
+}
+.cloud-project-bar > span {
+  min-width: 4px;
+  background: var(--muted-foreground);
+}
+.cloud-project-bar > [data-state="complete"] {
+  background: var(--cloud-success);
+}
+.cloud-project-bar > [data-state="review"] {
+  background: var(--primary);
+}
+.cloud-project-bar > [data-state="active"] {
+  background: var(--cloud-warning);
+}
+.cloud-project-bar > [data-state="blocked"] {
+  background: var(--cloud-danger);
+}
+.cloud-project-bar > [data-state="backlog"] {
+  background: color-mix(in oklab, var(--muted-foreground) 40%, transparent);
+}
+.cloud-project-bar > [data-state="triage"] {
+  background: color-mix(in oklab, var(--cloud-warning) 45%, transparent);
+}
+.cloud-project-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+}
+.cloud-project-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cloud-project-legend strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
 .cloud-project-updates {
   display: grid;
   gap: 10px;
@@ -439,6 +543,17 @@
 .cloud-view-shared {
   color: var(--muted-foreground);
   font-size: 12px;
+}
+.cloud-project-issues-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 24px 0 8px;
+}
+.cloud-project-issues-toolbar h2 {
+  margin-right: auto;
+  font-size: 13px;
+  font-weight: 600;
 }
 .cloud-project-updates-more {
   justify-self: start;

@@ -1,6 +1,8 @@
 "use client";
 
 import { EmailSettings } from "./email-settings";
+import { GitHubSettings } from "./github-settings";
+import { MimoriiSettings } from "./mimorii-settings";
 import { SsoSettings } from "./sso-settings";
 import { InvitationEditor } from "./invitation-editor";
 
@@ -10,6 +12,7 @@ import {
   brandAccents,
   type CloudAdministration,
   type ManagedMember,
+  type SettingsTab,
 } from "@/lib/cloud-administration-contract";
 import { cloudRoles, type CloudMember } from "@/lib/cloud-contract";
 import { Field } from "@/components/field";
@@ -25,9 +28,11 @@ import { useToast } from "./toast";
 export function CloudSettings({
   data,
   actor,
+  tab,
 }: {
   data: CloudAdministration;
   actor: CloudMember;
+  tab: SettingsTab;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -48,12 +53,14 @@ export function CloudSettings({
       <header className="cloud-page-header">
         <h1>Settings</h1>
       </header>
-      <Tabs defaultValue="organization">
+      <Tabs defaultValue={tab}>
         <TabsList aria-label="Organization settings">
           <TabsTrigger value="organization">Organization</TabsTrigger>
           <TabsTrigger value="members">Members</TabsTrigger>
           <TabsTrigger value="authentication">Authentication</TabsTrigger>
           <TabsTrigger value="email">Email</TabsTrigger>
+          <TabsTrigger value="github">GitHub</TabsTrigger>
+          <TabsTrigger value="mimorii">Mimorii</TabsTrigger>
         </TabsList>
         <TabsContent value="organization" className="cloud-settings">
           <section
@@ -198,6 +205,12 @@ export function CloudSettings({
         </TabsContent>
         <TabsContent value="email" className="cloud-settings">
           <EmailSettings owner={actor.role === "owner"} />
+        </TabsContent>
+        <TabsContent value="github" className="cloud-settings">
+          <GitHubSettings />
+        </TabsContent>
+        <TabsContent value="mimorii" className="cloud-settings">
+          <MimoriiSettings />
         </TabsContent>
       </Tabs>
       <FormDialog

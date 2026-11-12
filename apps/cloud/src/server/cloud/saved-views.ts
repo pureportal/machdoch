@@ -1,9 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { CloudActor } from "../../lib/cloud-contract";
-import type {
-  SavedView,
-  SavedViewInput,
-} from "../../lib/cloud-view-contract";
+import type { SavedView, SavedViewInput } from "../../lib/cloud-view-contract";
 import { CloudError, command, requireMembership } from "./access";
 import type { CloudDatabase } from "./database";
 
@@ -85,6 +82,10 @@ export class CloudSavedViews {
         );
       await sql.query(
         "DELETE FROM cloud_saved_views WHERE organization_id=$1 AND id=$2",
+        [actor.organizationId, id],
+      );
+      await sql.query(
+        "DELETE FROM cloud_favorites WHERE organization_id=$1 AND kind='view' AND entity_id=$2",
         [actor.organizationId, id],
       );
     });

@@ -3,13 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  Bookmark,
-  CircleDot,
-  Columns3,
-  LayoutList,
-  Search,
-} from "lucide-react";
+import { Bookmark, CircleDot, Search } from "lucide-react";
 import type { CloudIssueSummary, CloudWorkspace } from "@/lib/cloud-contract";
 import type { CloudLabel } from "@/lib/cloud-label-contract";
 import {
@@ -17,13 +11,25 @@ import {
   parseIssueScope,
   type IssueScope,
 } from "@/lib/issue-scopes";
+import {
+  issueFilterKeys,
+  meFilterValue,
+  noneFilterValue,
+} from "@/lib/issue-filter-model";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cloudRequest } from "./api-client";
 import { IssueBoard } from "./issue-board";
 import { IssueBulkBar } from "./issue-bulk-bar";
-import { IssueDisplayMenu, IssueFilters } from "./issue-filters";
+import {
+  IssueFilterButton,
+  IssueFilterChips,
+  useIssueFilterState,
+} from "./issue-filters";
+import { IssueDisplayMenu } from "./issue-display-menu";
+import { filterFieldDefinitions } from "./issue-filter-fields";
 import { CreateIssue } from "./issue-form";
+import { parseIssueSort } from "@/lib/issue-scopes";
 import { groupIssues, parseGrouping } from "./issue-grouping";
 import { IssueRows } from "./issue-rows";
 import { issueNavigationKey } from "./issue-header";
@@ -34,18 +40,7 @@ import { useIssueList } from "./use-issue-list";
 import { useIssueSelection } from "./use-issue-selection";
 
 const pageSize = 200;
-const filterParameters = [
-  "teamId",
-  "projectId",
-  "cycleId",
-  "labelId",
-  "statusId",
-  "assigneeId",
-  "priority",
-  "estimate",
-  "query",
-  "archived",
-];
+const filterParameters = [...issueFilterKeys, "teamId", "query", "archived"];
 
 export function IssueList({
   workspace,
@@ -73,8 +68,28 @@ export function IssueList({
   useAgentPageEntity(
     team ? { kind: "team", id: team.id, label: team.name, title: null } : null,
   );
+  const definitions = useMemo(
+    () => filterFieldDefinitions(workspace, labels, teamId),
+    [workspace, labels, teamId],
+  );
+  const filters = useIssueFilterState(
+    new URLSearchParams(search),
+    definitions,
+    workspace.teams,
+    navigate,
+  );
+  const singleValue = (field: "project" | "cycle") => {
+    const condition = filters.conditions.find(
+      (entry) => entry.field === field && !entry.negated,
+    );
+    const value = condition?.values.length === 1 ? condition.values[0] : null;
+    return value && value !== noneFilterValue && value !== meFilterValue
+      ? value
+      : undefined;
+  };
   const grouping = parseGrouping(search.get("group"));
-  const sort = search.get("sort");
+  const sort = parseIssueSort(search.get("sort"));
+  const reversed = search.get("order") === "reverse";
   const groups = useMemo(
     () =>
       groupIssues(
@@ -83,9 +98,10 @@ export function IssueList({
         workspace,
         teamId,
         sort,
+        reversed,
         board,
       ),
-    [issues, board, grouping, workspace, teamId, sort],
+    [issues, board, grouping, workspace, teamId, sort, reversed],
   );
   const [searchText, setSearchText] = useState(query);
   const { selected, selectedIssues, toggle, clear } = useIssueSelection(
@@ -106,18 +122,15 @@ export function IssueList({
     );
   }, [groups]);
   useEffect(() => setExhausted(false), [search]);
+  function navigate(next: URLSearchParams) {
+    const encoded = next.toString();
+    router.push(`/cloud/issues${encoded ? `?${encoded}` : ""}`);
+  }
   function setFilter(name: string, value: string) {
     const next = new URLSearchParams(search);
     if (value) next.set(name, value);
     else next.delete(name);
-    if (name === "teamId") {
-      next.delete("projectId");
-      next.delete("cycleId");
-      next.delete("labelId");
-      next.delete("statusId");
-    }
-    const encoded = next.toString();
-    router.push(`/cloud/issues${encoded ? `?${encoded}` : ""}`);
+    navigate(next);
   }
   function scopeHref(entry: IssueScope) {
     const parameters = new URLSearchParams(search);
@@ -149,24 +162,6 @@ export function IssueList({
   const clearable = filterParameters.some((name) => search.has(name));
   return (
     <>
-      <header className="cloud-page-header">
-        <div className="cloud-page-heading">
-          <h1>
-            {issueScopes[scope].label === "All issues"
-              ? "Issues"
-              : issueScopes[scope].label}
-          </h1>
-        </div>
-        <CreateIssue
-          workspace={workspace}
-          teamId={teamId ?? undefined}
-          projectId={search.get("projectId") ?? undefined}
-          cycleId={search.get("cycleId") ?? undefined}
-          shortcut
-          key={search.has("new") ? "new" : "default"}
-          autoOpen={search.has("new")}
-        />
-      </header>
       <div className="cloud-issue-toolbar">
         <nav className="cloud-scope-tabs" aria-label="Issue views">
           {(Object.keys(issueScopes) as IssueScope[]).map((entry) => (
@@ -188,58 +183,59 @@ export function IssueList({
           <Input
             name="query"
             aria-label="Search issues"
-            placeholder="Search issues…"
+            placeholder="Search…"
             value={searchText}
             onChange={(event) => setSearchText(event.target.value)}
             maxLength={200}
           />
         </form>
-      </div>
-      <IssueFilters
-        workspace={workspace}
-        labels={labels}
-        search={new URLSearchParams(search)}
-        setFilter={setFilter}
-        clearable={clearable}
-        onClear={() => {
-          const kept = new URLSearchParams(search);
-          for (const name of filterParameters) kept.delete(name);
-          const encoded = kept.toString();
-          router.push(`/cloud/issues${encoded ? `?${encoded}` : ""}`);
-        }}
-      >
-        <Button
-          variant="ghost"
-          size="sm"
-          className="cloud-filter-button"
-          onClick={() => setSavingView(true)}
-        >
-          <Bookmark />
-          Save view
-        </Button>
-        <IssueDisplayMenu
-          search={new URLSearchParams(search)}
-          setFilter={setFilter}
-        />
-        <div className="cloud-view-toggle" role="group" aria-label="Issue view">
-          <Button
-            variant="outline"
-            aria-label="List view"
-            aria-pressed={!board}
-            onClick={() => setFilter("view", "")}
-          >
-            <LayoutList />
-          </Button>
-          <Button
-            variant="outline"
-            aria-label="Board view"
-            aria-pressed={board}
-            onClick={() => setFilter("view", "board")}
-          >
-            <Columns3 />
-          </Button>
+        <div className="cloud-issue-toolbar-actions">
+          <IssueFilterButton
+            fields={filters.fields}
+            selected={filters.selected}
+            onToggle={filters.toggle}
+          />
+          <IssueDisplayMenu
+            search={new URLSearchParams(search)}
+            setFilter={setFilter}
+            layout
+            archived
+          />
+          <CreateIssue
+            workspace={workspace}
+            teamId={teamId ?? undefined}
+            projectId={singleValue("project")}
+            cycleId={singleValue("cycle")}
+            compactLabel="New issue"
+            shortcut
+            key={search.has("new") ? "new" : "default"}
+            autoOpen={search.has("new")}
+          />
         </div>
-      </IssueFilters>
+      </div>
+      {(filters.conditions.length > 0 ||
+        (!!team && workspace.teams.length > 1)) && (
+        <IssueFilterChips
+          state={filters}
+          definitions={definitions}
+          workspace={workspace}
+          onClear={() => {
+            const kept = new URLSearchParams(search);
+            for (const name of filterParameters) kept.delete(name);
+            navigate(kept);
+          }}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            className="cloud-filter-button"
+            onClick={() => setSavingView(true)}
+          >
+            <Bookmark />
+            Save view
+          </Button>
+        </IssueFilterChips>
+      )}
       {!issues.length ? (
         <div className="cloud-empty">
           <CircleDot aria-hidden="true" />

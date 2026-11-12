@@ -16,6 +16,10 @@ import type {
   AgentStep,
 } from "../../../lib/cloud-chat-contract";
 import {
+  noneFilterValue,
+  type IssueFilterCondition,
+} from "../../../lib/issue-filter-model";
+import {
   AgentLookupError,
   AgentWorkspace,
   agentFailureMessage,
@@ -33,6 +37,9 @@ export interface AgentToolResult {
 }
 
 const maximumToolOutputCharacters = 12_000;
+const recentCommentCount = 12;
+const commentPageCharacters = 9_000;
+const commentListLimit = 50;
 const reference = z.string().trim().min(1).max(120);
 const issueReference = z
   .string()
@@ -86,16 +93,24 @@ const readTools: AgentTool[] = [
     async run(session, input) {
       const workspace = session.workspace;
       const team = input.team ? workspace.team(input.team) : undefined;
+      const conditions: IssueFilterCondition[] = [];
+      const condition = (field: IssueFilterCondition["field"], value: string) =>
+        conditions.push({ field, negated: false, values: [value] });
+      if (input.project)
+        condition("project", workspace.project(input.project, team?.id).id);
+      if (input.cycle)
+        condition("cycle", workspace.cycle(input.cycle, team?.id).id);
+      if (input.priority) condition("priority", input.priority);
+      if (input.assignee)
+        condition(
+          "assignee",
+          input.assignee.toLowerCase() === "unassigned"
+            ? noneFilterValue
+            : workspace.member(input.assignee).id,
+        );
       const filters: IssueFilters = {
         query: input.query,
         teamId: team?.id,
-        projectId: input.project
-          ? workspace.project(input.project, team?.id).id
-          : undefined,
-        cycleId: input.cycle
-          ? workspace.cycle(input.cycle, team?.id).id
-          : undefined,
-        priority: input.priority,
         states: input.statusCategories ?? [
           "triage",
           "backlog",
@@ -104,12 +119,9 @@ const readTools: AgentTool[] = [
           "blocked",
           "review",
         ],
+        conditions,
         sort: input.sort,
       };
-      if (input.assignee?.toLowerCase() === "unassigned")
-        filters.unassigned = true;
-      else if (input.assignee)
-        filters.assigneeId = workspace.member(input.assignee).id;
       if (input.label) {
         if (!team)
           return {
@@ -130,7 +142,7 @@ const readTools: AgentTool[] = [
             },
             label: "Searched issues",
           };
-        filters.labelId = label.id;
+        condition("label", label.id);
       }
       const limit = input.limit ?? 25;
       const issues = await session.services.planning.listIssueSummaries(
@@ -152,22 +164,31 @@ const readTools: AgentTool[] = [
   agentTool({
     name: "get_issue",
     description:
-      "Read an issue with its description, acceptance criteria, labels, parent, sub-issues, dependencies, recent comments, change history and AI tasks.",
+      "Read an issue with its description, acceptance criteria, labels, parent, sub-issues, dependencies, linked GitHub pull requests, its 12 newest comments, change history and AI tasks. When olderComments is true, read the rest with list_comments.",
     schema: z.strictObject({ issue: issueReference }),
     async run(session, input) {
       const { actor, services, workspace } = session;
       const issue = await session.resolveIssue(input.issue);
-      const [labels, relations, comments, history, runs, milestones] =
-        await Promise.all([
-          services.labels.getIssue(actor, issue.id),
-          services.relations.list(actor, issue.id),
-          services.comments.list(actor, issue.id, null),
-          services.planning.history(actor, issue.id),
-          services.runs.list(actor, issue.id),
-          issue.projectId
-            ? services.milestones.list(actor, issue.projectId)
-            : Promise.resolve([]),
-        ]);
+      const [
+        labels,
+        relations,
+        comments,
+        history,
+        runs,
+        milestones,
+        pullRequests,
+      ] = await Promise.all([
+        services.labels.getIssue(actor, issue.id),
+        services.relations.list(actor, issue.id),
+        services.comments.list(actor, issue.id, null),
+        services.planning.history(actor, issue.id),
+        services.runs.list(actor, issue.id),
+        issue.projectId
+          ? services.milestones.list(actor, issue.projectId)
+          : Promise.resolve([]),
+        services.pullRequests.forIssue(actor, issue.id),
+      ]);
+      const visibleComments = comments.filter((comment) => !comment.deleted);
       const related = (kind: string) =>
         relations
           .filter((relation) => relation.kind === kind)
@@ -183,8 +204,8 @@ const readTools: AgentTool[] = [
           link: `/cloud/issues/${issue.id}`,
           team: workspace.teamById(issue.teamId)?.key ?? null,
           title: issue.title,
-          description: excerpt(issue.description, 4000),
-          acceptanceCriteria: excerpt(issue.acceptanceCriteria, 2000),
+          description: issue.description,
+          acceptanceCriteria: issue.acceptanceCriteria,
           status: issue.statusName,
           statusCategory: issue.state,
           priority: issue.priority,
@@ -205,20 +226,33 @@ const readTools: AgentTool[] = [
           related: related("related"),
           duplicateOf: related("duplicate_of")[0] ?? null,
           duplicates: related("duplicated_by"),
-          comments: comments
-            .filter((comment) => !comment.deleted)
-            .slice(-12)
+          comments: visibleComments
+            .slice(0, recentCommentCount)
+            .reverse()
             .map((comment) => ({
               author: comment.author,
-              createdAt: comment.createdAt.slice(0, 10),
-              body: excerpt(comment.body, 600),
+              createdAt: comment.createdAt.slice(0, 16),
+              body: excerpt(comment.body, 1200),
             })),
+          olderComments: visibleComments.length > recentCommentCount,
           recentChanges: history.slice(0, 10).map((entry) => ({
             actor: entry.actor,
             at: entry.createdAt.slice(0, 16),
             status: entry.statusName,
             assignee: workspace.memberName(entry.snapshot.assigneeId),
             priority: entry.snapshot.priority,
+          })),
+          pullRequests: pullRequests.map((pullRequest) => ({
+            reference: `${pullRequest.repository}#${pullRequest.number}`,
+            title: pullRequest.title,
+            stage: pullRequest.stage,
+            checks: pullRequest.checks,
+            review: pullRequest.review,
+            branch: pullRequest.headRef,
+            base: pullRequest.baseRef,
+            mergeableState: pullRequest.mergeableState,
+            closesIssue: pullRequest.closes,
+            url: pullRequest.url,
           })),
           aiTasks: runs.slice(0, 3).map((run) => ({
             title: run.title,
@@ -228,6 +262,52 @@ const readTools: AgentTool[] = [
           })),
         },
         label: `Read ${issue.identifier}`,
+      };
+    },
+  }),
+  agentTool({
+    name: "list_comments",
+    description:
+      "Read an issue's comments with their full Markdown text, newest first. Pass `before` with the `older` value of a previous result to read further back.",
+    schema: z.strictObject({
+      issue: issueReference,
+      before: z.uuid().optional().describe("Comment ID to read before."),
+    }),
+    async run(session, input) {
+      const issue = await session.resolveIssue(input.issue);
+      const listed = await session.services.comments.list(
+        session.actor,
+        issue.id,
+        input.before ?? null,
+      );
+      const comments = listed.filter((comment) => !comment.deleted);
+      const page: typeof comments = [];
+      let characters = 0;
+      for (const comment of comments) {
+        if (
+          page.length &&
+          characters + comment.body.length > commentPageCharacters
+        )
+          break;
+        page.push(comment);
+        characters += comment.body.length;
+      }
+      return {
+        output: {
+          issue: issue.identifier,
+          comments: page.map((comment) => ({
+            id: comment.id,
+            author: comment.author,
+            createdAt: comment.createdAt.slice(0, 16),
+            edited: comment.updatedAt !== comment.createdAt,
+            body: comment.body.slice(0, commentPageCharacters),
+          })),
+          older:
+            page.length < comments.length || listed.length === commentListLimit
+              ? (page.at(-1)?.id ?? null)
+              : null,
+        },
+        label: `Read ${page.length} comment${page.length === 1 ? "" : "s"} on ${issue.identifier}`,
       };
     },
   }),
@@ -300,7 +380,12 @@ const readTools: AgentTool[] = [
         services.projectUpdates.list(actor, project.id),
         services.planning.listIssueSummaries(
           actor,
-          { projectId: project.id, sort: "priority" },
+          {
+            conditions: [
+              { field: "project", negated: false, values: [project.id] },
+            ],
+            sort: "priority",
+          },
           40,
         ),
       ]);
@@ -517,27 +602,12 @@ export class CloudAgentSession {
     const value = referenceValue.trim();
     if (z.uuid().safeParse(value).success)
       return this.services.planning.getIssue(this.actor, value);
-    const identifier = value.toUpperCase();
-    const [match] = (
-      await this.services.planning.listIssueSummaries(
-        this.actor,
-        { query: identifier },
-        20,
-      )
-    ).filter((issue) => issue.identifier === identifier);
-    const archived = match
-      ? undefined
-      : (
-          await this.services.planning.listIssueSummaries(
-            this.actor,
-            { query: identifier, archived: true },
-            20,
-          )
-        ).find((issue) => issue.identifier === identifier);
-    const found = match ?? archived;
-    if (!found)
-      throw new AgentLookupError(`No accessible issue is named ${identifier}.`);
-    return this.services.planning.getIssue(this.actor, found.id);
+    const issue = await this.services.planning.findIssue(this.actor, value);
+    if (!issue)
+      throw new AgentLookupError(
+        `No accessible issue is named ${value.toUpperCase()}.`,
+      );
+    return issue;
   }
 
   async execute(call: AgentModelToolCall): Promise<AgentToolResult> {

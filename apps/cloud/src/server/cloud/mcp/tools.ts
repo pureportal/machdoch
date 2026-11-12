@@ -39,6 +39,15 @@ import {
   initiativeUpdateSchema,
 } from "../../../lib/cloud-initiative-contract";
 import { triageDecisionSchema } from "../../../lib/cloud-triage-contract";
+import { issueChangesSchema } from "../../../lib/cloud-issue-changes-contract";
+import {
+  githubMergeInputSchema,
+  githubUpdateBranchInputSchema,
+  pullRequestListQuerySchema,
+} from "../../../lib/cloud-github-contract";
+import { issueFilterConditionSchema } from "../../../lib/issue-filter-model";
+import { issueIdentifierFormat } from "../../../lib/issue-links";
+import { CloudError } from "../access";
 import type { CloudRuntime } from "../runtime";
 import {
   recurrencePreviewSchema,
@@ -80,6 +89,10 @@ export function cloudMcpTools(runtime: CloudRuntime): CloudMcpTool[] {
   }
   const empty = z.strictObject({});
   const id = z.strictObject({ id: cloudId });
+  const issueIdentifier = z
+    .string()
+    .trim()
+    .regex(issueIdentifierFormat, "Use an identifier such as PLAT-12.");
   const command = {
     commandId: cloudId.describe(
       "Generate one UUID for this action; reuse it only when retrying identical arguments.",
@@ -163,14 +176,11 @@ export function cloudMcpTools(runtime: CloudRuntime): CloudMcpTool[] {
   );
   add(
     "list_issues",
-    "Search accessible issues. Returns up to 100; use offset for subsequent pages.",
+    'Search accessible issues. Each condition matches any of its values; negated conditions exclude them. Values are IDs, priorities, "me", "none", estimate none/set, due overdue/week/month/none or created day/week/month. Returns up to 100; use offset for subsequent pages.',
     "cloud:read",
     z.strictObject({
       teamId: cloudId.optional(),
-      projectId: cloudId.optional(),
-      cycleId: cloudId.optional(),
-      labelId: cloudId.optional(),
-      statusId: cloudId.optional(),
+      conditions: z.array(issueFilterConditionSchema).max(20).optional(),
       query: z.string().max(200).optional(),
       archived: z.boolean().optional(),
       offset: z.number().int().min(0).max(1_000_000).optional(),
@@ -183,6 +193,72 @@ export function cloudMcpTools(runtime: CloudRuntime): CloudMcpTool[] {
     "cloud:read",
     id,
     (a, i) => runtime.planning.getIssue(a, i.id),
+  );
+  add(
+    "get_issue_pull_requests",
+    "List the GitHub pull requests linked to an issue by branch name, title or closing words.",
+    "cloud:read",
+    id,
+    (a, i) => runtime.github.pullRequests.forIssue(a, i.id),
+  );
+  add(
+    "list_pull_requests",
+    "List open and recently closed pull requests linked to accessible issues, optionally for one stage: attention (conflicts, failing checks or requested changes), ready, review, draft, merged or closed.",
+    "cloud:read",
+    pullRequestListQuerySchema,
+    (a, i) => runtime.github.pullRequests.list(a, i.stage),
+  );
+  add(
+    "get_pull_request",
+    "Read a linked pull request from GitHub with its mergeability, check runs, reviews, code review comments and linked issues.",
+    "cloud:read",
+    id,
+    (a, i) => runtime.github.pullRequests.details(a, i.id),
+  );
+  add(
+    "get_pull_request_files",
+    "Read the changed files of a linked pull request with their patches.",
+    "cloud:read",
+    id,
+    (a, i) => runtime.github.pullRequests.files(a, i.id),
+  );
+  add(
+    "update_pull_request_branch",
+    "Merge the base branch into an open linked pull request on GitHub. Pass headSha from get_pull_request.",
+    "cloud:write",
+    githubUpdateBranchInputSchema.safeExtend({ id: cloudId }),
+    async (a, i) => {
+      await runtime.github.pullRequests.updateBranch(a, i.id, i.headSha);
+      return { ok: true };
+    },
+  );
+  add(
+    "merge_pull_request",
+    "Merge an open linked pull request on GitHub. Pass headSha from get_pull_request so newer commits are never merged unseen.",
+    "cloud:write",
+    githubMergeInputSchema.safeExtend({ id: cloudId }),
+    (a, { id: pullRequestId, ...input }) =>
+      runtime.github.pullRequests.merge(a, pullRequestId, input),
+  );
+  add(
+    "find_issue",
+    "Read an accessible issue by its identifier, such as PLAT-12.",
+    "cloud:read",
+    z.strictObject({ identifier: issueIdentifier }),
+    async (a, i) => {
+      const issue = await runtime.planning.findIssue(a, i.identifier);
+      if (!issue)
+        throw new CloudError(404, "not_found", "Issue is unavailable.");
+      return issue;
+    },
+  );
+  add(
+    "change_issues",
+    "Change up to 100 accessible issues at once: status or statusCategory, priority, assignee, project, milestone, cycle, estimate from the team scale, due date, or archived to archive and restore. Omitted fields stay unchanged and null clears a field. Title, description and acceptance criteria apply to one issue at its current revision.",
+    "cloud:write",
+    issueChangesSchema.safeExtend(command),
+    (a, { commandId, ...input }) =>
+      runtime.issueChanges.apply(a, commandId, input),
   );
   add(
     "list_labels",
@@ -303,6 +379,13 @@ export function cloudMcpTools(runtime: CloudRuntime): CloudMcpTool[] {
     "cloud:write",
     z.strictObject({ ...command, id: cloudId, decision: triageDecisionSchema }),
     (a, i) => runtime.triage.decide(a, i.commandId, i.id, i.decision),
+  );
+  add(
+    "list_milestones",
+    "Read a project's milestones with their target dates.",
+    "cloud:read",
+    z.strictObject({ projectId: cloudId }),
+    (a, i) => runtime.milestones.list(a, i.projectId),
   );
   add(
     "list_project_updates",
