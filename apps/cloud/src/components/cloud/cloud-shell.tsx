@@ -26,6 +26,7 @@ import { PersonAvatar } from "./person-avatar";
 import { QuickNavigation } from "./quick-navigation";
 import { Sidebar } from "./sidebar";
 import { ToastProvider } from "./toast";
+import { TeamKeysProvider } from "./cloud-markdown";
 import { AgentShellProvider } from "./agent/agent-shell";
 import { AgentDock } from "./agent/agent-panel";
 import { favoritesChangedEvent, triageChangedEvent } from "./events";
@@ -215,67 +216,69 @@ export function CloudShell({
   );
   return (
     <ToastProvider>
-      <AgentShellProvider>
-        <div
-          className="cloud-shell"
-          data-cloud-accent={workspace.organization.accent}
-        >
-          <a className="fleet-skip-link" href="#cloud-content">
-            Skip to content
-          </a>
-          <aside className="cloud-sidebar">{navigation}</aside>
-          <div className="cloud-workspace">
-            <header className="cloud-topbar">
-              <Sheet open={open} onOpenChange={setOpen}>
-                <SheetTrigger asChild>
-                  <Button
-                    className="cloud-menu-trigger"
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Open navigation"
-                  >
-                    <Menu />
-                  </Button>
-                </SheetTrigger>
-                <SheetContent aria-describedby={undefined}>
-                  <SheetTitle className="sr-only">Navigation</SheetTitle>
-                  <div className="cloud-sidebar cloud-sidebar-mobile">
-                    {navigation}
-                  </div>
-                </SheetContent>
-              </Sheet>
-              <div className="cloud-breadcrumb" aria-label="Current location">
-                <span>{workspace.organization.name}</span>
-                <ChevronRight size={13} />
-                <span>{current?.label ?? "Account"}</span>
-              </div>
-              <QuickNavigation
-                role={workspace.actor.role}
-                views={views}
-                canCreate={writable && workspace.teams.length > 0}
-              />
-            </header>
-            <main id="cloud-content" tabIndex={-1} className="cloud-content">
-              {managingClients && (
-                <nav aria-label="Clients" className="cloud-client-navigation">
-                  {clientNavigation.map(({ href, label, icon: Icon }) => (
-                    <Link
-                      key={href}
-                      href={href}
-                      aria-current={pathname === href ? "page" : undefined}
+      <TeamKeysProvider keys={workspace.teams.map((team) => team.key)}>
+        <AgentShellProvider>
+          <div
+            className="cloud-shell"
+            data-cloud-accent={workspace.organization.accent}
+          >
+            <a className="fleet-skip-link" href="#cloud-content">
+              Skip to content
+            </a>
+            <aside className="cloud-sidebar">{navigation}</aside>
+            <div className="cloud-workspace">
+              <header className="cloud-topbar">
+                <Sheet open={open} onOpenChange={setOpen}>
+                  <SheetTrigger asChild>
+                    <Button
+                      className="cloud-menu-trigger"
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Open navigation"
                     >
-                      <Icon size={15} />
-                      {label}
-                    </Link>
-                  ))}
-                </nav>
-              )}
-              {children}
-            </main>
+                      <Menu />
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent aria-describedby={undefined}>
+                    <SheetTitle className="sr-only">Navigation</SheetTitle>
+                    <div className="cloud-sidebar cloud-sidebar-mobile">
+                      {navigation}
+                    </div>
+                  </SheetContent>
+                </Sheet>
+                <div className="cloud-breadcrumb" aria-label="Current location">
+                  <span>{workspace.organization.name}</span>
+                  <ChevronRight size={13} />
+                  <span>{current?.label ?? "Account"}</span>
+                </div>
+                <QuickNavigation
+                  role={workspace.actor.role}
+                  views={views}
+                  canCreate={writable && workspace.teams.length > 0}
+                />
+              </header>
+              <main id="cloud-content" tabIndex={-1} className="cloud-content">
+                {managingClients && (
+                  <nav aria-label="Clients" className="cloud-client-navigation">
+                    {clientNavigation.map(({ href, label, icon: Icon }) => (
+                      <Link
+                        key={href}
+                        href={href}
+                        aria-current={pathname === href ? "page" : undefined}
+                      >
+                        <Icon size={15} />
+                        {label}
+                      </Link>
+                    ))}
+                  </nav>
+                )}
+                {children}
+              </main>
+            </div>
+            <AgentDock workspace={workspace} />
           </div>
-          <AgentDock workspace={workspace} />
-        </div>
-      </AgentShellProvider>
+        </AgentShellProvider>
+      </TeamKeysProvider>
     </ToastProvider>
   );
 }

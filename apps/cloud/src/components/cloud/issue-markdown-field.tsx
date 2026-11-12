@@ -9,7 +9,8 @@ import {
   type ComponentPropsWithoutRef,
 } from "react";
 import { Pencil } from "lucide-react";
-import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
+import { CloudMarkdown } from "./cloud-markdown";
+import { MarkdownTextarea } from "./markdown-textarea";
 import { toggleTaskListItem } from "@/lib/issue-text";
 
 interface TaskToggle {
@@ -113,10 +114,9 @@ export function IssueMarkdownField({
         <label className="sr-only" htmlFor={id}>
           {label}
         </label>
-        <textarea
+        <MarkdownTextarea
           ref={input}
           id={id}
-          className="cloud-markdown-editor"
           value={draft}
           maxLength={maxLength}
           placeholder={placeholder}
@@ -168,7 +168,7 @@ export function IssueMarkdownField({
           setEditing(true);
         }}
       >
-        <MarkdownContent content={value} components={markdownComponents} />
+        <CloudMarkdown content={value} components={markdownComponents} />
         {writable && (
           <button
             type="button"

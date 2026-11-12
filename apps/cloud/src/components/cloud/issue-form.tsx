@@ -8,7 +8,7 @@ import type { IssueChangeSet } from "@/lib/cloud-issue-changes-contract";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { MarkdownTextarea } from "./markdown-textarea";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { createCommandSender, formText } from "./api-client";
@@ -163,7 +163,7 @@ export function CreateIssue({
           />
         </Field>
         <Field label="Description" htmlFor="issue-description">
-          <Textarea
+          <MarkdownTextarea
             id="issue-description"
             name="description"
             maxLength={30000}

@@ -47,6 +47,7 @@ export interface MarkdownContentProps extends MarkdownFileContext {
   content: string;
   className?: string;
   components?: Components;
+  remarkPlugins?: NonNullable<ReactMarkdownOptions["remarkPlugins"]>;
 }
 
 const getReactNodeText = (node: ReactNode): string => {
@@ -381,6 +382,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   onOpenLocalFile,
   resolveImageSource,
   components: componentOverrides,
+  remarkPlugins: extraRemarkPlugins,
 }: MarkdownContentProps): JSX.Element {
   const markdownInstanceId = useId().replace(/[^A-Za-z0-9_-]/gu, "");
   const openWorkspaceFileRef = useRef(onOpenWorkspaceFile);
@@ -408,11 +410,14 @@ export const MarkdownContent = memo(function MarkdownContent({
   const remarkPlugins = useMemo<
     NonNullable<ReactMarkdownOptions["remarkPlugins"]>
   >(
-    () =>
-      autoLinkWorkspacePaths
-        ? [remarkGfm, createWorkspacePathLinkRemarkPlugin(workspaceRoot)]
-        : [remarkGfm],
-    [autoLinkWorkspacePaths, workspaceRoot],
+    () => [
+      remarkGfm,
+      ...(autoLinkWorkspacePaths
+        ? [createWorkspacePathLinkRemarkPlugin(workspaceRoot)]
+        : []),
+      ...(extraRemarkPlugins ?? []),
+    ],
+    [autoLinkWorkspacePaths, workspaceRoot, extraRemarkPlugins],
   );
   const urlTransform = useMemo<UrlTransform>(
     () =>

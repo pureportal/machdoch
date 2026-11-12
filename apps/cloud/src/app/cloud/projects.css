@@ -163,11 +163,11 @@
   font-size: 14px;
   font-weight: 600;
 }
-.cloud-project-updates ol {
+.cloud-project-updates > ol {
   display: grid;
   gap: 8px;
 }
-.cloud-project-updates li {
+.cloud-project-updates > ol > li {
   display: grid;
   gap: 6px;
   padding: 10px 14px;
@@ -195,14 +195,8 @@
   border-radius: 10px;
   background: var(--cloud-subtle);
 }
-.cloud-project-update-form textarea {
-  min-height: 90px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--background);
-  font-size: 13px;
-  resize: vertical;
+.cloud-project-update-form .cloud-markdown-input > textarea {
+  min-height: 96px;
 }
 .cloud-health-picker {
   display: flex;
@@ -445,4 +439,7 @@
 .cloud-view-shared {
   color: var(--muted-foreground);
   font-size: 12px;
+}
+.cloud-project-updates-more {
+  justify-self: start;
 }

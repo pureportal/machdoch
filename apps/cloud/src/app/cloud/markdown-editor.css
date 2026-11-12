@@ -1,0 +1,95 @@
+.cloud-markdown-input {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--input);
+  border-radius: 10px;
+  background: var(--card);
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+.cloud-markdown-input:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--ring) 15%, transparent);
+}
+.cloud-markdown-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
+}
+.cloud-markdown-toolbar::-webkit-scrollbar {
+  display: none;
+}
+.cloud-markdown-toolbar > [role="group"] {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+.cloud-markdown-toolbar > [role="group"] + [role="group"] {
+  margin-left: 3px;
+  padding-left: 5px;
+  border-left: 1px solid var(--border);
+}
+.cloud-markdown-toolbar button {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+}
+.cloud-markdown-toolbar button:hover:enabled {
+  background: var(--cloud-hover);
+  color: var(--foreground);
+}
+.cloud-markdown-toolbar button:disabled {
+  opacity: 0.45;
+}
+.cloud-markdown-input > textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 112px;
+  padding: 10px 12px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+}
+.cloud-markdown-input > textarea::placeholder {
+  color: var(--muted-foreground);
+}
+.cloud-markdown-input > textarea:disabled {
+  opacity: 0.6;
+}
+.cloud-comment-composer .cloud-markdown-input {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.cloud-comment-composer .cloud-markdown-toolbar {
+  display: none;
+}
+.cloud-comment-composer:focus-within .cloud-markdown-toolbar {
+  display: flex;
+}
+@media (pointer: coarse) {
+  .cloud-markdown-toolbar button {
+    width: 36px;
+    height: 36px;
+  }
+}
+@media (max-width: 800px) {
+  .cloud-markdown-input > textarea {
+    font-size: 16px;
+  }
+}

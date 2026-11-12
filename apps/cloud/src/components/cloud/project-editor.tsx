@@ -7,7 +7,7 @@ import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { MarkdownTextarea } from "./markdown-textarea";
 import {
   CloudRequestError,
   cloudRequest,
@@ -147,7 +147,7 @@ export function ProjectEditor({
               />
             </Field>
             <Field label="Description" htmlFor={`project-description-${id}`}>
-              <Textarea
+              <MarkdownTextarea
                 id={`project-description-${id}`}
                 name="description"
                 maxLength={20000}

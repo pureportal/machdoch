@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUp, ChevronsUpDown } from "lucide-react";
-import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
+import { CloudMarkdown } from "./cloud-markdown";
 import type { CloudComment } from "@/lib/cloud-comment-contract";
 import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
 import type { CloudIssueRelation } from "@/lib/cloud-relation-contract";
@@ -10,7 +10,7 @@ import type { IssueSubscription } from "@/lib/cloud-favorite-contract";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import { MarkdownTextarea } from "./markdown-textarea";
 import {
   CloudRequestError,
   cloudRequest,
@@ -284,7 +284,7 @@ export function IssueComments({
           <label className="sr-only" htmlFor="new-comment">
             Comment
           </label>
-          <Textarea
+          <MarkdownTextarea
             ref={draft}
             id="new-comment"
             name="body"
@@ -326,7 +326,7 @@ export function IssueComments({
         }}
       >
         <Field label="Comment" htmlFor="edit-comment">
-          <Textarea
+          <MarkdownTextarea
             id="edit-comment"
             name="body"
             defaultValue={editing?.body}
@@ -406,10 +406,7 @@ function CommentEntry({
       {comment.deleted ? (
         <p className="text-muted-foreground">Comment deleted</p>
       ) : (
-        <MarkdownContent
-          className="cloud-comment-body"
-          content={comment.body}
-        />
+        <CloudMarkdown className="cloud-comment-body" content={comment.body} />
       )}
     </li>
   );

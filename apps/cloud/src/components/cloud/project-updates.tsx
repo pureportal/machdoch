@@ -2,7 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
-import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
+import { CloudMarkdown } from "./cloud-markdown";
+import { MarkdownTextarea } from "./markdown-textarea";
 import {
   projectHealthLabels,
   projectHealths,
@@ -32,7 +33,10 @@ export function ProjectUpdates({
   );
   const [body, setBody] = useState("");
   const [pending, setPending] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const sender = useRef(createCommandSender());
+  const shown = updates.slice(0, expanded ? 10 : 1);
+  const earlier = Math.min(updates.length, 10) - shown.length;
   return (
     <section
       className="cloud-project-updates"
@@ -87,7 +91,7 @@ export function ProjectUpdates({
               </button>
             ))}
           </div>
-          <textarea
+          <MarkdownTextarea
             aria-label="Update"
             placeholder="What changed since the last update?"
             value={body}
@@ -113,7 +117,7 @@ export function ProjectUpdates({
       )}
       {updates.length > 0 && (
         <ol>
-          {updates.slice(0, 10).map((update) => (
+          {shown.map((update) => (
             <li key={update.id}>
               <div className="cloud-project-update-heading">
                 <span
@@ -130,10 +134,20 @@ export function ProjectUpdates({
                 <strong>{update.author}</strong>
                 <RelativeTime value={update.createdAt} />
               </div>
-              {update.body && <MarkdownContent content={update.body} />}
+              {update.body && <CloudMarkdown content={update.body} />}
             </li>
           ))}
         </ol>
+      )}
+      {earlier > 0 && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="cloud-project-updates-more"
+          onClick={() => setExpanded(true)}
+        >
+          Earlier updates ({earlier})
+        </Button>
       )}
     </section>
   );

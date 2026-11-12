@@ -12,7 +12,7 @@ import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { MarkdownTextarea } from "./markdown-textarea";
 import { createCommandSender, formReference, formText } from "./api-client";
 
 export function InitiativeDialog({
@@ -69,7 +69,7 @@ export function InitiativeDialog({
         />
       </Field>
       <Field label="Description" htmlFor="initiative-description">
-        <Textarea
+        <MarkdownTextarea
           id="initiative-description"
           name="description"
           defaultValue={initiative?.description}
