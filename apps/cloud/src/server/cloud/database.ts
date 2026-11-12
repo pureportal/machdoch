@@ -46,6 +46,9 @@ export const cloudMigrations = [
   "043-client-activity.sql",
   "044-github.sql",
   "045-remembered-sessions.sql",
+  "046-automations.sql",
+  "047-releases.sql",
+  "048-attachments.sql",
 ];
 
 export interface CloudSql {

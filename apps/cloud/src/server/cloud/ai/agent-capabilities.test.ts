@@ -150,6 +150,7 @@ async function ask(
     model: "fixture-model",
     prompt: "Help me with the board.",
     context: [],
+    attachmentIds: [],
   });
   await runtime.inference.worker.runOne(
     actor.organizationId,

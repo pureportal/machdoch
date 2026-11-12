@@ -63,6 +63,8 @@ async function runServer(
   cloud.inference.worker.start();
   cloud.authentication.mailWorker.start();
   cloud.scheduleLoop.start();
+  cloud.automations.loop.start();
+  cloud.releases.loop.start();
   cloud.activity.exportLoop.start();
   cloud.github.syncLoop.start();
   const clientMonitor = new CloudClientMonitor(cloud.database, getRuntime());

@@ -18,6 +18,7 @@ import {
 } from "./access";
 import type { CloudDatabase, CloudSql } from "./database";
 import { readIssue } from "./planning";
+import { queueAutomationEvents } from "./automation/automation-events";
 
 const columns =
   'l.id,l.team_id AS "teamId",l.name,l.color,l.archived,l.revision';
@@ -255,6 +256,16 @@ export class CloudLabels {
             set.revision + 1,
             { labelIds: input.labelIds },
           );
+          const added = input.labelIds.filter((id) => !previous.includes(id));
+          await queueAutomationEvents(sql, {
+            organizationId: actor.organizationId,
+            teamId: issue.teamId,
+            issueId,
+            actorId: actor.userId,
+            events: added.length
+              ? [{ kind: "label_added", labelIds: added }]
+              : [],
+          });
           return { id: issueId };
         },
       );

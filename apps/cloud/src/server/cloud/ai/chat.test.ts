@@ -42,6 +42,7 @@ const message = (): ChatMessage => ({
   model: "fixture-model",
   prompt: "How does a cycle work?",
   context: [],
+  attachmentIds: [],
 });
 
 beforeAll(async () => {
@@ -194,7 +195,7 @@ it("preserves private conversation history and rejects concurrent stale messages
 
 it("reserves daily budget atomically and does not refund uncertain provider work", async () => {
   await database.engine.query(
-    "UPDATE cloud_ai_providers SET daily_token_budget=40000 WHERE id=$1",
+    "UPDATE cloud_ai_providers SET daily_token_budget=100000 WHERE id=$1",
     [providerId],
   );
   const first = await runtime.chat.store.submit(
@@ -583,7 +584,7 @@ it("rechecks the budget day before dispatch and expires an unsent request withou
 
 it("checks new-day capacity again at the network boundary", async () => {
   await database.engine.query(
-    "UPDATE cloud_ai_providers SET daily_token_budget=40000 WHERE id=$1",
+    "UPDATE cloud_ai_providers SET daily_token_budget=100000 WHERE id=$1",
     [providerId],
   );
   const old = await runtime.chat.store.submit(member, randomUUID(), message());
@@ -1379,7 +1380,7 @@ it("marks a proposal failed when the issue changed after it was drafted", async 
   ).toMatchObject({
     state: "failed",
     error:
-      "This issue changed after the proposal. Ask Agent to propose the change again.",
+      "This item changed after the proposal. Ask Agent to propose the change again.",
   });
   expect((await runtime.planning.getIssue(member, issue.id)).title).toBe(
     "Changed elsewhere",

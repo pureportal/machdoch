@@ -106,6 +106,7 @@ async function askAgent(actor: CloudActor) {
     model: "fixture-model",
     prompt: "How does a cycle work?",
     context: [],
+    attachmentIds: [],
   });
   await runtime.inference.worker.runOne(
     actor.organizationId,

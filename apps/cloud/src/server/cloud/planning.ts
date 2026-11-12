@@ -8,6 +8,7 @@ import {
 } from "./planning-queries";
 import { randomUUID } from "node:crypto";
 import { lockExecution } from "./execution/records";
+import { queueIssueChangeEvents } from "./automation/automation-events";
 import { notifyAssignment, notifyStatusChange } from "./notifications";
 import { readTeamWorkflows, resolveIssueStatus } from "./workflow-records";
 import type {
@@ -122,6 +123,7 @@ export async function recordIssue(
     state: issue.state,
     cycleId: issue.cycleId,
   });
+  await queueIssueChangeEvents(sql, actor, issue);
 }
 
 export async function createIssueInTransaction(

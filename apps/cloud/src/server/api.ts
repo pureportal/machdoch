@@ -87,6 +87,7 @@ import {
   bearerToken,
   cookieValue,
   sessionCookieName,
+  requestAccess,
   requireMutation,
   requireOwner,
 } from "./request-auth";
@@ -362,9 +363,12 @@ async function routeApi(
       "Session request is invalid.",
       maximumFleetSessionRequestBodyBytes,
     );
-    return Response.json(await openFleetSession(runtime, request, input), {
-      status: 201,
-    });
+    return Response.json(
+      await openFleetSession(runtime, requestAccess(runtime, request), input),
+      {
+        status: 201,
+      },
+    );
   }
   if (method === "DELETE" && path[0] === "instances" && path.length === 2) {
     return await revokeInstance(runtime, request, path[1] ?? "");

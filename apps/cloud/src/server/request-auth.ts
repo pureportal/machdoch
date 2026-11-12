@@ -157,3 +157,15 @@ function constantTimeTextEqual(left: string, right: string): boolean {
     timingSafeEqual(leftBuffer, rightBuffer)
   );
 }
+
+export function requestAccess(
+  runtime: FleetRuntime,
+  request: Request,
+): { authorize: () => Promise<void>; signal: AbortSignal } {
+  return {
+    authorize: async () => {
+      await requireMutation(runtime, request);
+    },
+    signal: request.signal,
+  };
+}

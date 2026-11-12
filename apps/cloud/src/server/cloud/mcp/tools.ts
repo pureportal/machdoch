@@ -40,6 +40,15 @@ import {
 } from "../../../lib/cloud-initiative-contract";
 import { triageDecisionSchema } from "../../../lib/cloud-triage-contract";
 import { issueChangesSchema } from "../../../lib/cloud-issue-changes-contract";
+import { chatMessageSchema } from "../../../lib/cloud-chat-contract";
+import {
+  postStateSchema,
+  postUpdateSchema,
+  releaseInputSchema,
+  releaseLaunchSchema,
+  releaseWriteSchema,
+} from "../../../lib/cloud-release-contract";
+import { visualInputSchema } from "../../../lib/cloud-release-media-contract";
 import {
   githubMergeInputSchema,
   githubUpdateBranchInputSchema,
@@ -539,6 +548,135 @@ export function cloudMcpTools(runtime: CloudRuntime): CloudMcpTool[] {
     "cloud:execute",
     z.strictObject({ ...command, id: cloudId, revision }),
     (a, i) => runtime.execution.runs.cancel(a, i.commandId, i.id, i.revision),
+  );
+  add(
+    "list_automations",
+    "List accessible automations with their triggers, conditions, actions, state and recent usage.",
+    "cloud:read",
+    z.strictObject({ teamId: cloudId.optional() }),
+    (a, i) => runtime.automations.service.list(a, i),
+  );
+  add(
+    "list_automation_runs",
+    "Read the 50 newest runs of an automation or an issue, including each step's outcome.",
+    "cloud:read",
+    z.strictObject({
+      automationId: cloudId.optional(),
+      issueId: cloudId.optional(),
+    }),
+    (a, i) => runtime.automations.service.runs(a, i),
+  );
+  add(
+    "run_automation",
+    "Run a manual automation, optionally on an issue of its team, or run a scheduled automation now. Its actions run with the automation owner's permissions and may consume provider budget.",
+    "cloud:execute",
+    z.strictObject({
+      ...command,
+      id: cloudId,
+      issueId: cloudId.nullable().default(null),
+    }),
+    (a, i) =>
+      runtime.automations.service.run(a, i.commandId, i.id, {
+        issueId: i.issueId,
+      }),
+  );
+  add(
+    "list_agent_models",
+    "List the AI providers and models available to Agent.",
+    "cloud:read",
+    empty,
+    async (a) =>
+      (await runtime.aiProviders.list(a)).providers.map((provider) => ({
+        id: provider.id,
+        name: provider.name,
+        models: provider.models,
+      })),
+  );
+  add(
+    "ask_agent",
+    "Send a message to Agent, the workspace assistant, with your permissions. Start a conversation with chatId and revision null, or continue one with its current revision. The answer is produced in the background; read it with get_agent_conversation. Consumes provider budget.",
+    "cloud:execute",
+    z.strictObject({ ...command, message: chatMessageSchema }),
+    (a, i) => runtime.chat.store.submit(a, i.commandId, i.message),
+  );
+  add(
+    "get_agent_conversation",
+    "Read an Agent conversation: its revision, context and newest turns with state, answer, lookups, question and proposals.",
+    "cloud:read",
+    id,
+    (a, i) => runtime.chat.store.get(a, i.id),
+  );
+  add(
+    "apply_agent_proposal",
+    "Apply a pending Agent proposal from a conversation turn as yourself. Fails without changes when your access no longer allows it or the subject changed.",
+    "cloud:write",
+    z.strictObject({ turnId: cloudId, actionId: cloudId }),
+    (a, i) => runtime.chat.actions.apply(a, i.turnId, i.actionId),
+  );
+  add(
+    "list_products",
+    "List products with their brand kit, voice rules and channel counts.",
+    "cloud:read",
+    empty,
+    (a) => runtime.releases.products.list(a),
+  );
+  add(
+    "list_releases",
+    "List releases with their status, channels and next scheduled publication.",
+    "cloud:read",
+    z.strictObject({ productId: cloudId.optional() }),
+    (a, i) => runtime.releases.releases.list(a, i),
+  );
+  add(
+    "get_release",
+    "Read a release: notes, highlights, shipped issues, channel posts with their delivery state, and background jobs.",
+    "cloud:read",
+    id,
+    (a, i) => runtime.releases.releases.get(a, i.id),
+  );
+  add(
+    "create_release",
+    "Create a release for a product. Completed issues of the product's teams since the previous release are collected, and a draft post is added for every enabled channel.",
+    "cloud:write",
+    z.strictObject({ ...command, release: releaseInputSchema }),
+    (a, i) => runtime.releases.releases.create(a, i.commandId, i.release),
+  );
+  add(
+    "update_release_post",
+    "Edit a channel post of a release using its current revision. Editing returns it to draft for approval.",
+    "cloud:write",
+    z.strictObject({ ...command, id: cloudId, post: postUpdateSchema }),
+    (a, i) =>
+      runtime.releases.releases.updatePost(a, i.commandId, i.id, i.post),
+  );
+  add(
+    "change_release_post",
+    "Approve, reopen, schedule, publish now or retry a channel post. Scheduling and publishing require publishing permission for the product.",
+    "cloud:write",
+    z.strictObject({ ...command, id: cloudId, change: postStateSchema }),
+    (a, i) =>
+      runtime.releases.releases.changePost(a, i.commandId, i.id, i.change),
+  );
+  add(
+    "launch_release",
+    "Schedule or publish every ready post of a release at once: approved posts, and drafts of channels that skip approval. Requires publishing permission for the product.",
+    "cloud:write",
+    z.strictObject({ ...command, id: cloudId, launch: releaseLaunchSchema }),
+    (a, i) => runtime.releases.releases.launch(a, i.commandId, i.id, i.launch),
+  );
+  add(
+    "create_release_visual",
+    "Render a branded visual for a release from the product's brand kit and add it to the release media.",
+    "cloud:write",
+    z.strictObject({ id: cloudId, visual: visualInputSchema }),
+    (a, i) => runtime.releases.studio.createVisual(a, i.id, i.visual),
+  );
+  add(
+    "write_release_content",
+    "Let Agent write the release notes, one native post per channel and branded visuals in the background. Read the outcome with get_release. Consumes provider budget.",
+    "cloud:execute",
+    z.strictObject({ ...command, id: cloudId, input: releaseWriteSchema }),
+    (a, i) => runtime.releases.studio.startWrite(a, i.commandId, i.id, i.input),
   );
   return tools;
 }

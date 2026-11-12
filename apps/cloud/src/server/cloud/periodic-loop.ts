@@ -25,6 +25,12 @@ export class CloudPeriodicLoop {
     this.wait(0);
   }
 
+  wake(): void {
+    if (!this.started || this.closed || this.ticking) return;
+    clearTimeout(this.timer);
+    this.wait(0);
+  }
+
   async close(): Promise<void> {
     this.closed = true;
     clearTimeout(this.timer);

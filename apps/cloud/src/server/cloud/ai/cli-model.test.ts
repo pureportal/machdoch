@@ -77,6 +77,58 @@ describe("cloud CLI model adapter", () => {
     expect(turn.toolCalls).toEqual([]);
   });
 
+  it("sends images to Claude Code as stream-json content and to Codex as files", async () => {
+    const imageInputs = [
+      {
+        path: "screen.png (attachment 1)",
+        mediaType: "image/png" as const,
+        data: Buffer.from("png-bytes").toString("base64"),
+      },
+    ];
+    const claude = await fixture(
+      "claude-images.mjs",
+      `import { readFileSync } from "node:fs";
+      const args = process.argv.slice(2);
+      const input = readFileSync(0, "utf8");
+      console.log(JSON.stringify({ type: "result", is_error: false, stop_reason: "end_turn",
+        result: JSON.stringify({ format: args[args.indexOf("--input-format") + 1], message: JSON.parse(input).message }) }));`,
+    );
+    const claudeTurn = await createCliModelAdapter(
+      { provider: "claude-code-cli", model: "sonnet", apiKey: "", home },
+      claude,
+    ).startTurn({ ...parameters, imageInputs });
+    expect(JSON.parse(claudeTurn.text)).toEqual({
+      format: "stream-json",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: "image/png",
+              data: imageInputs[0]!.data,
+            },
+          },
+          { type: "text", text: "What is planned?" },
+        ],
+      },
+    });
+    const codex = await fixture(
+      "codex-images.mjs",
+      `import { readFileSync } from "node:fs";
+      const args = process.argv.slice(2);
+      const image = args[args.indexOf("--image") + 1];
+      console.log(JSON.stringify({ type: "item.completed", item: { type: "agent_message", text: readFileSync(image, "utf8") } }));
+      console.log(JSON.stringify({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } }));`,
+    );
+    const codexTurn = await createCliModelAdapter(
+      { provider: "codex-cli", model: "gpt", apiKey: "", home },
+      codex,
+    ).startTurn({ ...parameters, imageInputs });
+    expect(codexTurn.text).toBe("png-bytes");
+  });
+
   it("collects Codex messages and token usage", async () => {
     const command = await fixture(
       "codex.mjs",
@@ -268,6 +320,19 @@ describe("cloud CLI model adapter", () => {
       text: "Use search_issues(query) to look it up.",
       toolCalls: [],
     });
+  });
+
+  it("accepts tool call arrays with a stray or partial code fence", () => {
+    for (const text of [
+      '[{"name":"list_clients","arguments":{}}]\n```',
+      '```\n[{"name":"list_clients","arguments":{}}]',
+      '```json\n[{"name":"list_clients","arguments":{}}]\n```',
+    ])
+      expect(
+        parseCliToolCalls(text, ["list_clients"]).toolCalls.map(
+          (call) => call.name,
+        ),
+      ).toEqual(["list_clients"]);
   });
 
   it("accepts unfenced tool call arrays but keeps other JSON as text", () => {

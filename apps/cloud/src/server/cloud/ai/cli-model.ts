@@ -116,10 +116,18 @@ function fencedToolCalls(text: string) {
     : null;
 }
 
+function withoutFences(text: string): string {
+  return text
+    .trim()
+    .replace(/^```[\w-]*[ \t]*\n?/, "")
+    .replace(/\n?```$/, "")
+    .trim();
+}
+
 function bareToolCalls(text: string, toolNames: string[]) {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(structuredAnswer(text));
+    parsed = JSON.parse(withoutFences(text));
   } catch {
     return null;
   }
@@ -362,11 +370,55 @@ const lineHandlers: Record<CloudCliProvider, LineHandler> = {
   "copilot-cli": copilotLines,
 };
 
+const imageExtensions: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+  "image/gif": "gif",
+};
+
+export function claudeStreamInput(parameters: AgentModelStartParams): string {
+  return `${JSON.stringify({
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        ...(parameters.imageInputs ?? []).map((image) => ({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: image.mediaType,
+            data: image.data,
+          },
+        })),
+        { type: "text", text: parameters.userPrompt },
+      ],
+    },
+  })}\n`;
+}
+
+async function writeImages(
+  parameters: AgentModelStartParams,
+  directory: string,
+): Promise<string[]> {
+  const paths = [];
+  for (const [index, image] of (parameters.imageInputs ?? []).entries()) {
+    const path = join(
+      directory,
+      `image-${index + 1}.${imageExtensions[image.mediaType] ?? "png"}`,
+    );
+    await writeFile(path, Buffer.from(image.data, "base64"), { mode: 0o600 });
+    paths.push(path);
+  }
+  return paths;
+}
+
 async function cliInvocation(
   connection: CliModelConnection,
   parameters: AgentModelStartParams,
   directory: string,
 ): Promise<{ args: string[]; input: string }> {
+  const images = parameters.imageInputs?.length ?? 0;
   if (connection.provider === "claude-code-cli") {
     const systemPath = join(directory, "system-prompt.txt");
     await writeFile(systemPath, instructions(parameters), { mode: 0o600 });
@@ -388,8 +440,9 @@ async function cliInvocation(
         systemPath,
         "--model",
         connection.model,
+        ...(images ? ["--input-format", "stream-json"] : []),
       ],
-      input: parameters.userPrompt,
+      input: images ? claudeStreamInput(parameters) : parameters.userPrompt,
     };
   }
   if (connection.provider === "copilot-cli")
@@ -411,6 +464,11 @@ async function cliInvocation(
         instructions(parameters),
         "User request:",
         parameters.userPrompt,
+        ...(images
+          ? [
+              "The attached images cannot be shown to this model. Say so if the request depends on them.",
+            ]
+          : []),
       ].join("\n\n"),
     };
   const instructionsPath = join(directory, "instructions.md");
@@ -438,6 +496,10 @@ async function cliInvocation(
       "--config",
       "features.apply_patch_freeform=false",
       ...codexFileCredentials,
+      ...(await writeImages(parameters, directory)).flatMap((path) => [
+        "--image",
+        path,
+      ]),
       "-",
     ],
     input: parameters.userPrompt,

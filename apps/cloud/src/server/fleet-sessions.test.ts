@@ -17,6 +17,7 @@ import { verifyTestSession } from "./cloud/test-database";
 import { createSecret } from "./crypto";
 import { nowSeconds } from "./database";
 import { openFleetSession } from "./fleet-sessions";
+import { requestAccess } from "./request-auth";
 import type { FleetRuntime } from "./runtime";
 
 let runtime: FleetRuntime;
@@ -136,17 +137,21 @@ describe("durable fleet session routing", () => {
     ];
     const input = sessionRequest([busy, idle]);
     const [first, second] = await Promise.all([
-      openFleetSession(runtime, request, input),
-      openFleetSession(runtime, request, input),
+      openFleetSession(runtime, requestAccess(runtime, request), input),
+      openFleetSession(runtime, requestAccess(runtime, request), input),
     ]);
     expect(first).toEqual(second);
     expect(first.instanceId).toBe(idle);
     expect(commandCalls()).toHaveLength(1);
     snapshots.get(idle)!.commands = [];
     const restartedRuntime = { ...runtime };
-    expect(await openFleetSession(restartedRuntime, request, input)).toEqual(
-      first,
-    );
+    expect(
+      await openFleetSession(
+        restartedRuntime,
+        requestAccess(restartedRuntime, request),
+        input,
+      ),
+    ).toEqual(first);
     expect(commandCalls()).toHaveLength(1);
   });
 
@@ -161,10 +166,14 @@ describe("durable fleet session routing", () => {
         throw new Error("Connection lost after creation");
       return response;
     });
-    await expect(openFleetSession(runtime, request, input)).rejects.toThrow(
-      "Connection lost",
+    await expect(
+      openFleetSession(runtime, requestAccess(runtime, request), input),
+    ).rejects.toThrow("Connection lost");
+    const route = await openFleetSession(
+      runtime,
+      requestAccess(runtime, request),
+      input,
     );
-    const route = await openFleetSession(runtime, request, input);
     expect(route.instanceId).toBe(instanceId);
     expect(commandCalls()).toHaveLength(1);
   });
@@ -186,9 +195,9 @@ describe("durable fleet session routing", () => {
       return response;
     });
     for (let attempt = 0; attempt < 2; attempt++) {
-      await expect(openFleetSession(runtime, request, input)).rejects.toThrow(
-        "could not be confirmed",
-      );
+      await expect(
+        openFleetSession(runtime, requestAccess(runtime, request), input),
+      ).rejects.toThrow("could not be confirmed");
     }
     expect(commandCalls()).toHaveLength(2);
     expect(commandCalls().map(([id, payload]) => [id, payload])).toEqual([
@@ -230,11 +239,15 @@ describe("durable fleet session routing", () => {
       }
       return handle(id, payload, signal);
     });
-    await expect(openFleetSession(runtime, request, input)).rejects.toThrow(
-      "before dispatch",
-    );
+    await expect(
+      openFleetSession(runtime, requestAccess(runtime, request), input),
+    ).rejects.toThrow("before dispatch");
     const restartedRuntime = { ...runtime };
-    const route = await openFleetSession(restartedRuntime, request, input);
+    const route = await openFleetSession(
+      restartedRuntime,
+      requestAccess(restartedRuntime, request),
+      input,
+    );
     expect(route.sessionId).toBe(await createFleetSessionId(input.commandId));
     expect(route.instanceId).toBe(instanceId);
     expect(commandCalls()).toHaveLength(2);
@@ -269,7 +282,11 @@ describe("durable fleet session routing", () => {
       }
       return response;
     });
-    const route = await openFleetSession(runtime, request, input);
+    const route = await openFleetSession(
+      runtime,
+      requestAccess(runtime, request),
+      input,
+    );
     expect(route.sessionId).toBe(await createFleetSessionId(input.commandId));
     expect(commandCalls()).toHaveLength(1);
     expect(snapshots.get(instanceId)!.commands).toEqual([]);
@@ -279,9 +296,9 @@ describe("durable fleet session routing", () => {
     const first = await enrollDevice();
     const second = await enrollDevice();
     const input = sessionRequest([first]);
-    await openFleetSession(runtime, request, input);
+    await openFleetSession(runtime, requestAccess(runtime, request), input);
     await expect(
-      openFleetSession(runtime, request, {
+      openFleetSession(runtime, requestAccess(runtime, request), {
         ...input,
         targets: sessionRequest([second]).targets,
       }),
@@ -293,9 +310,9 @@ describe("durable fleet session routing", () => {
     const instanceId = await enrollDevice();
     const input = sessionRequest([instanceId]);
     input.targets[0]!.workspace = "/private/unlisted";
-    await expect(openFleetSession(runtime, request, input)).rejects.toThrow(
-      "No selected workspace",
-    );
+    await expect(
+      openFleetSession(runtime, requestAccess(runtime, request), input),
+    ).rejects.toThrow("No selected workspace");
     expect(commandCalls()).toHaveLength(0);
   });
 
@@ -306,7 +323,11 @@ describe("durable fleet session routing", () => {
       return { type: "productSnapshot", snapshot: productFixture() };
     });
     await expect(
-      openFleetSession(runtime, request, sessionRequest([instanceId])),
+      openFleetSession(
+        runtime,
+        requestAccess(runtime, request),
+        sessionRequest([instanceId]),
+      ),
     ).rejects.toMatchObject({ status: 401 });
     expect(commandCalls()).toHaveLength(0);
     expect(
@@ -332,7 +353,11 @@ describe("durable fleet session routing", () => {
         },
       );
       await expect(
-        openFleetSession(runtime, request, sessionRequest([instanceId])),
+        openFleetSession(
+          runtime,
+          requestAccess(runtime, request),
+          sessionRequest([instanceId]),
+        ),
       ).rejects.toMatchObject({ status: revoked === "owner" ? 401 : 404 });
       expect(relay.mock.calls).toHaveLength(2);
     },
@@ -344,21 +369,24 @@ describe("durable fleet session routing", () => {
     await expect(
       openFleetSession(
         runtime,
-        new Request(request.url, { method: "POST" }),
+        requestAccess(runtime, new Request(request.url, { method: "POST" })),
         input,
       ),
     ).rejects.toMatchObject({ status: 401 });
     const forged = new Request(request);
     forged.headers.set("Origin", "https://attacker.example");
     await expect(
-      openFleetSession(runtime, forged, input),
+      openFleetSession(runtime, requestAccess(runtime, forged), input),
     ).rejects.toMatchObject({ status: 403 });
     const controller = new AbortController();
     controller.abort();
     await expect(
       openFleetSession(
         runtime,
-        new Request(request, { signal: controller.signal }),
+        requestAccess(
+          runtime,
+          new Request(request, { signal: controller.signal }),
+        ),
         input,
       ),
     ).rejects.toThrow();

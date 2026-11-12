@@ -1,6 +1,8 @@
 import type { createModelAdapter } from "@machdoch/model-runtime/connections";
 import type {
   AgentModelAdapter,
+  AgentModelImageInput,
+  AgentModelImageMediaType,
   AgentModelStartParams,
   AgentModelStreamEvent,
   AgentModelToolCall,
@@ -18,6 +20,11 @@ import { CloudInferenceStore, type ClaimedInference } from "./inference-store";
 import type { CloudAiProviders } from "./providers";
 import type { CloudAgentTools } from "./agent-tools";
 import { runAgent, usageTokens, type AgentProgress } from "./agent-loop";
+import type { CloudAttachments } from "../attachments/attachments";
+import {
+  maximumModelImageBytes,
+  maximumModelImages,
+} from "../../../lib/cloud-attachment-contract";
 
 export type CloudModelAdapterFactory = typeof createModelAdapter;
 class InferenceStopped extends Error {
@@ -81,6 +88,7 @@ export class CloudInferenceWorker {
     private readonly store: CloudInferenceStore,
     private readonly providers: CloudAiProviders,
     private readonly agentTools: CloudAgentTools,
+    private readonly files: CloudAttachments,
     private readonly factory: CloudModelAdapterFactory = createIsolatedModelAdapter,
   ) {}
 
@@ -226,7 +234,25 @@ export class CloudInferenceWorker {
           : this.factory(resolved.connection, tools);
       const session = call.runId
         ? undefined
-        : await this.agentTools.open(actor);
+        : await this.agentTools.open(actor, {
+            providerId: call.providerId,
+            model: call.model,
+          });
+      const images: AgentModelImageInput[] =
+        session && call.turnId
+          ? (
+              await this.files.chatImages(
+                organizationId,
+                call.turnId,
+                maximumModelImages,
+                maximumModelImageBytes,
+              )
+            ).map(({ attachment, bytes }) => ({
+              path: `${attachment.name} (attachment ${attachment.id})`,
+              mediaType: attachment.mime as AgentModelImageMediaType,
+              data: bytes.toString("base64"),
+            }))
+          : [];
       controller.signal.throwIfAborted();
       const startedAt = performance.now();
       const grant = await this.store.guard(
@@ -258,6 +284,7 @@ export class CloudInferenceWorker {
               createAdapter,
               request,
               conversation: call.userPrompt,
+              images,
               session,
               signal: controller.signal,
               onStreamEvent: (event) => output.consume(event),

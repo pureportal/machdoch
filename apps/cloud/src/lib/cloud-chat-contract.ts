@@ -1,9 +1,16 @@
+import type { ReleaseHighlight } from "./cloud-release-contract";
+import type { VisualInput } from "./cloud-release-media-contract";
 import { z } from "zod";
 import { cloudId, revision, type IssueInput } from "./cloud-contract";
 import type { IssueChangeSet } from "./cloud-issue-changes-contract";
 import type { ProjectHealth } from "./cloud-project-update-contract";
 import type { TriageDecision } from "./cloud-triage-contract";
 import type { RelationKind } from "./cloud-relation-contract";
+import type { AutomationInput } from "./cloud-automation-contract";
+import {
+  maximumChatAttachments,
+  type AttachmentKind,
+} from "./cloud-attachment-contract";
 
 export const chatStates = [
   "queued",
@@ -44,6 +51,14 @@ export const chatMessageSchema = z
           new Set(entries.map((entry) => `${entry.kind}:${entry.id}`)).size ===
           entries.length,
         "Add each context item once.",
+      ),
+    attachmentIds: z
+      .array(cloudId)
+      .max(maximumChatAttachments)
+      .default([])
+      .refine(
+        (ids) => new Set(ids).size === ids.length,
+        "Attach each file once.",
       ),
   })
   .refine((input) => (input.chatId === null) === (input.revision === null), {
@@ -113,9 +128,16 @@ interface AgentActionBase {
   result: AgentActionResult | null;
 }
 export interface AgentActionResult {
-  kind: "issue" | "issues" | "project";
+  kind:
+    | "issue"
+    | "issues"
+    | "project"
+    | "release"
+    | "automation"
+    | "client_session";
   id: string;
   label: string;
+  href?: string;
 }
 export type AgentAction = AgentActionBase &
   (
@@ -124,6 +146,7 @@ export type AgentAction = AgentActionBase &
         issue: IssueInput;
         labelIds: string[];
         parentId: string | null;
+        attachmentIds?: string[];
       }
     | {
         kind: "update_issue";
@@ -132,6 +155,7 @@ export type AgentAction = AgentActionBase &
         revision: number;
         changes: IssueChangeSet;
         labelIds?: string[];
+        attachmentIds?: string[];
       }
     | {
         kind: "update_issues";
@@ -153,6 +177,7 @@ export type AgentAction = AgentActionBase &
         issueId: string;
         identifier: string;
         body: string;
+        attachmentIds?: string[];
       }
     | {
         kind: "triage";
@@ -167,7 +192,63 @@ export type AgentAction = AgentActionBase &
         health: ProjectHealth;
         body: string;
       }
+    | {
+        kind: "release_notes";
+        releaseId: string;
+        releaseLabel: string;
+        revision: number;
+        summary: string;
+        notes: string;
+        highlights: ReleaseHighlight[];
+      }
+    | {
+        kind: "release_post";
+        releaseId: string;
+        releaseLabel: string;
+        postId: string;
+        channelName: string;
+        revision: number;
+        postTitle: string;
+        body: string;
+        mediaIds: string[];
+        link: string | null;
+      }
+    | {
+        kind: "release_visual";
+        releaseId: string;
+        releaseLabel: string;
+        visual: VisualInput;
+        attachPostIds: string[];
+      }
+    | {
+        kind: "client_session";
+        instanceId: string;
+        deviceName: string;
+        workspace: string;
+        sessionTitle: string;
+        prompt: string;
+        goal: boolean;
+        issueId: string | null;
+        identifier: string | null;
+      }
+    | {
+        kind: "automation";
+        automationId: string | null;
+        revision: number | null;
+        automation: AutomationInput;
+        enabled: boolean;
+      }
   );
+export interface ChatTurnAttachment {
+  id: string;
+  name: string;
+  mime: string;
+  kind: AttachmentKind;
+  byteLength: number;
+  width: number | null;
+  height: number | null;
+  url: string;
+}
 export interface CloudChatTurn {
   id: string;
   sequence: number;
@@ -185,6 +266,7 @@ export interface CloudChatTurn {
   steps: AgentStep[];
   actions: AgentAction[];
   question: AgentQuestion | null;
+  attachments: ChatTurnAttachment[];
 }
 export interface ChatDetail {
   chat: CloudChat;

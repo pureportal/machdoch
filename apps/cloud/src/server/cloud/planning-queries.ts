@@ -50,6 +50,11 @@ const createdPredicates: Record<string, string> = {
   week: "i.created_at>=clock_timestamp()-interval '7 days'",
   month: "i.created_at>=clock_timestamp()-interval '30 days'",
 };
+const updatedPredicates: Record<string, string> = {
+  day: "i.updated_at>=clock_timestamp()-interval '1 day'",
+  week: "i.updated_at>=clock_timestamp()-interval '7 days'",
+  month: "i.updated_at>=clock_timestamp()-interval '30 days'",
+};
 const estimatePredicates: Record<string, string> = {
   none: "i.estimate IS NULL",
   set: "i.estimate IS NOT NULL",
@@ -101,6 +106,8 @@ function conditionPredicate(
       return mapped(duePredicates);
     case "created":
       return mapped(createdPredicates);
+    case "updated":
+      return mapped(updatedPredicates);
     case "pullRequest": {
       const stages = condition.values.filter(
         (value) => value !== noneFilterValue,

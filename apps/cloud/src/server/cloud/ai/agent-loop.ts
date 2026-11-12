@@ -1,5 +1,6 @@
 import type {
   AgentModelAdapter,
+  AgentModelImageInput,
   AgentModelStartParams,
   AgentModelStreamUsage,
   AgentModelToolSpec,
@@ -63,13 +64,24 @@ export async function runAgent(options: {
     "userPrompt" | "tools" | "signal" | "onStreamEvent"
   >;
   conversation: string;
+  images: AgentModelImageInput[];
   session: CloudAgentSession;
   signal: AbortSignal;
   onStreamEvent: NonNullable<AgentModelStartParams["onStreamEvent"]>;
   onRoundStart: () => void;
   onProgress: (progress: AgentProgress) => Promise<void>;
 }): Promise<AgentRunResult> {
-  const conversation = JSON.parse(options.conversation) as unknown[];
+  const conversation = [
+    ...(JSON.parse(options.conversation) as unknown[]),
+    ...(options.images.length
+      ? [
+          {
+            role: "note",
+            content: `Images included with this request, in order: ${options.images.map((image, index) => `${index + 1}. ${image.path}`).join("; ")}`,
+          },
+        ]
+      : []),
+  ];
   const exchanges: Exchange[] = [];
   const progress: AgentProgress = { steps: [], actions: [], question: null };
   let tokens: number | null = 0;
@@ -98,6 +110,7 @@ export async function runAgent(options: {
           : []),
       ]),
       tools,
+      imageInputs: [...options.images, ...options.session.viewedImages],
       signal: options.signal,
       onStreamEvent: options.onStreamEvent,
     });

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type {
+  AgentModelImageInput,
   AgentModelToolCall,
   AgentModelToolSpec,
 } from "@machdoch/model-runtime/types";
@@ -25,6 +26,10 @@ import {
   agentFailureMessage,
 } from "./agent-workspace";
 import { proposalTools } from "./agent-proposals";
+import { releaseTools } from "./agent-release-tools";
+import { automationTools } from "./agent-automation-tools";
+import { attachmentTools } from "./agent-attachment-tools";
+import { clientTools } from "./agent-client-tools";
 import { agentTool, type AgentServices, type AgentTool } from "./agent-tool";
 
 export interface AgentToolResult {
@@ -164,7 +169,7 @@ const readTools: AgentTool[] = [
   agentTool({
     name: "get_issue",
     description:
-      "Read an issue with its description, acceptance criteria, labels, parent, sub-issues, dependencies, linked GitHub pull requests, its 12 newest comments, change history and AI tasks. When olderComments is true, read the rest with list_comments.",
+      "Read an issue with its description, acceptance criteria, labels, parent, sub-issues, dependencies, linked GitHub pull requests, attachments, its 12 newest comments, change history and AI tasks. When olderComments is true, read the rest with list_comments. Open an attachment with view_attachment.",
     schema: z.strictObject({ issue: issueReference }),
     async run(session, input) {
       const { actor, services, workspace } = session;
@@ -177,6 +182,7 @@ const readTools: AgentTool[] = [
         runs,
         milestones,
         pullRequests,
+        attachments,
       ] = await Promise.all([
         services.labels.getIssue(actor, issue.id),
         services.relations.list(actor, issue.id),
@@ -187,6 +193,7 @@ const readTools: AgentTool[] = [
           ? services.milestones.list(actor, issue.projectId)
           : Promise.resolve([]),
         services.pullRequests.forIssue(actor, issue.id),
+        services.attachments.list(actor, issue.id),
       ]);
       const visibleComments = comments.filter((comment) => !comment.deleted);
       const related = (kind: string) =>
@@ -253,6 +260,12 @@ const readTools: AgentTool[] = [
             mergeableState: pullRequest.mergeableState,
             closesIssue: pullRequest.closes,
             url: pullRequest.url,
+          })),
+          attachments: attachments.map((attachment) => ({
+            attachment: attachment.id,
+            name: attachment.name,
+            kind: attachment.kind,
+            url: attachment.url,
           })),
           aiTasks: runs.slice(0, 3).map((run) => ({
             title: run.title,
@@ -576,11 +589,21 @@ const readTools: AgentTool[] = [
   }),
 ];
 
-const tools = [...readTools, ...proposalTools];
+const tools = [
+  ...readTools,
+  ...proposalTools,
+  ...releaseTools,
+  ...automationTools,
+  ...attachmentTools,
+  ...clientTools,
+];
 
 function schemaDocument(schema: z.ZodType): Record<string, unknown> {
   const { $schema: _, ...document } = z.toJSONSchema(schema, {
     io: "input",
+    override: ({ jsonSchema }) => {
+      if (jsonSchema.format === "uuid") delete jsonSchema.pattern;
+    },
   }) as Record<string, unknown>;
   return document;
 }
@@ -591,11 +614,19 @@ export const agentToolSpecs: AgentModelToolSpec[] = tools.map((tool) => ({
   inputSchema: schemaDocument(tool.schema),
 }));
 
+export interface AgentConversationModel {
+  providerId: string;
+  model: string;
+}
+
 export class CloudAgentSession {
+  readonly viewedImages: AgentModelImageInput[] = [];
+
   constructor(
     readonly services: AgentServices,
     readonly actor: CloudActor,
     readonly workspace: AgentWorkspace,
+    readonly model: AgentConversationModel,
   ) {}
 
   async resolveIssue(referenceValue: string) {
@@ -675,11 +706,15 @@ export class CloudAgentSession {
 export class CloudAgentTools {
   constructor(private readonly services: AgentServices) {}
 
-  async open(actor: CloudActor): Promise<CloudAgentSession> {
+  async open(
+    actor: CloudActor,
+    model: AgentConversationModel,
+  ): Promise<CloudAgentSession> {
     return new CloudAgentSession(
       this.services,
       actor,
       new AgentWorkspace(actor, await this.services.planning.workspace(actor)),
+      model,
     );
   }
 }

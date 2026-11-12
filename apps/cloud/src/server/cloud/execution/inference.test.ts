@@ -125,7 +125,7 @@ beforeEach(async () => {
       models: ["test-model"],
       apiKey: "server-only-credential",
       maxOutputTokens: 256,
-      dailyTokenBudget: 200000,
+      dailyTokenBudget: 300000,
       maxConcurrentRequests: 4,
     })
   ).id;
@@ -269,6 +269,7 @@ it("shares admission slots and token budgets with conversational chat", async ()
       model: "test-model",
       prompt: "Question",
       context: [],
+      attachmentIds: [],
     });
   await expect(
     runtime.chat.store.submit(actor, randomUUID(), {
@@ -278,6 +279,7 @@ it("shares admission slots and token budgets with conversational chat", async ()
       model: "test-model",
       prompt: "Too many",
       context: [],
+      attachmentIds: [],
     }),
   ).rejects.toMatchObject({ code: "provider_busy" });
   await expect(

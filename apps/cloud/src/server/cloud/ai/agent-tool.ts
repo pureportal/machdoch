@@ -15,7 +15,15 @@ import type { CloudInitiatives } from "../initiatives";
 import type { CloudTriage } from "../triage";
 import type { CloudRuns } from "../execution/runs";
 import type { CloudGitHubPullRequests } from "../github/pull-requests";
+import type { CloudReleases } from "../releases/releases";
+import type { CloudProducts } from "../releases/products";
+import type { CloudReleaseMedia } from "../releases/release-media";
+import type { CloudAutomations } from "../automation/automations";
+import type { CloudExecutionProfiles } from "../execution/profiles";
+import type { CloudAiProviders } from "./providers";
 import type { CloudAgentSession } from "./agent-tools";
+import type { CloudAttachments } from "../attachments/attachments";
+import type { CloudClients } from "../clients/clients";
 
 export interface AgentServices {
   planning: CloudPlanning;
@@ -30,6 +38,14 @@ export interface AgentServices {
   triage: CloudTriage;
   runs: CloudRuns;
   pullRequests: CloudGitHubPullRequests;
+  releases: CloudReleases;
+  products: CloudProducts;
+  releaseMedia: CloudReleaseMedia;
+  automations: CloudAutomations;
+  providers: CloudAiProviders;
+  profiles: CloudExecutionProfiles;
+  attachments: CloudAttachments;
+  clients: CloudClients;
 }
 
 export type AgentProposal = Omit<

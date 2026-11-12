@@ -13,7 +13,20 @@ import { CloudTwoFactor } from "./auth/two-factor";
 import { CloudRecurrencePreview } from "./automation/recurrence";
 import { CloudSchedules } from "./automation/schedules";
 import { CloudScheduleDispatcher } from "./automation/schedule-dispatcher";
+import { CloudAutomations } from "./automation/automations";
+import { CloudAutomationExecutor } from "./automation/automation-executor";
+import { CloudAutomationDispatcher } from "./automation/automation-dispatcher";
+import { CloudProducts } from "./releases/products";
+import { CloudSocial } from "./releases/social-accounts";
+import { CloudReleases } from "./releases/releases";
+import { CloudReleaseMedia } from "./releases/release-media";
+import { CloudReleaseStudio } from "./releases/release-studio";
+import { CloudReleasePublisher } from "./releases/release-publisher";
+import { CloudReleaseDispatcher } from "./releases/release-dispatcher";
+import { CloudVideoComposer } from "./releases/video-composer";
 import { CloudPeriodicLoop } from "./periodic-loop";
+import { CloudAttachments } from "./attachments/attachments";
+import { CloudClients } from "./clients/clients";
 import { CloudAiActivity } from "./activity/feed";
 import { CloudMimoriiConnections } from "./activity/mimorii-connections";
 import { CloudMimoriiExporter } from "./activity/mimorii-export";
@@ -74,11 +87,26 @@ import {
 export interface CloudRuntime {
   origin: string;
   database: CloudDatabase;
+  attachments: CloudAttachments;
   identity: CloudIdentity;
   recurrence: CloudRecurrencePreview;
   schedules: CloudSchedules;
   scheduleDispatcher: CloudScheduleDispatcher;
   scheduleLoop: CloudPeriodicLoop;
+  releases: {
+    products: CloudProducts;
+    social: CloudSocial;
+    releases: CloudReleases;
+    media: CloudReleaseMedia;
+    studio: CloudReleaseStudio;
+    dispatcher: CloudReleaseDispatcher;
+    loop: CloudPeriodicLoop;
+  };
+  automations: {
+    service: CloudAutomations;
+    dispatcher: CloudAutomationDispatcher;
+    loop: CloudPeriodicLoop;
+  };
   activity: {
     feed: CloudAiActivity;
     mimorii: CloudMimoriiConnections;
@@ -184,6 +212,9 @@ export function createCloudRuntime(
     modelAdapterFactory?: CloudModelAdapterFactory;
     repositoryFetch?: typeof fetch;
     githubFetch?: typeof fetch;
+    automationFetch?: typeof fetch;
+    socialFetch?: typeof fetch;
+    videoComposer?: CloudVideoComposer;
     mailSender?: MailSender;
   } = {},
 ): CloudRuntime {
@@ -191,7 +222,9 @@ export function createCloudRuntime(
     database,
     options.credentialsCipher ?? null,
   );
-  const chatStore = new CloudChatStore(database);
+  const attachments = new CloudAttachments(database);
+  const clients = new CloudClients(database);
+  const chatStore = new CloudChatStore(database, attachments);
   const inference = new CloudInferenceStore(database);
   const mailStore = new CloudMailStore(
     database,
@@ -229,6 +262,95 @@ export function createCloudRuntime(
     githubSync,
     githubFetch,
   );
+  const socialFetch = options.socialFetch ?? fetch;
+  const products = new CloudProducts(
+    database,
+    options.credentialsCipher ?? null,
+  );
+  const social = new CloudSocial(
+    database,
+    options.credentialsCipher ?? null,
+    origin,
+    socialFetch,
+  );
+  const releaseMedia = new CloudReleaseMedia(database);
+  let wakeReleases = () => {};
+  const releases = new CloudReleases(database, () => wakeReleases());
+  const studio = new CloudReleaseStudio(
+    database,
+    releaseMedia,
+    options.videoComposer ?? new CloudVideoComposer(),
+    chatStore,
+    origin,
+    () => wakeReleases(),
+  );
+  let wakeAutomations = () => {};
+  const automations = new CloudAutomations(database, origin, () =>
+    wakeAutomations(),
+  );
+  const executionProfiles = new CloudExecutionProfiles(database);
+  const agentActions = new CloudAgentActions({
+    origin,
+    attachments,
+    clients,
+    automations,
+    chat: chatStore,
+    planning,
+    relations,
+    labels,
+    issueChanges,
+    comments,
+    projectUpdates,
+    triage,
+    releases,
+    studio,
+  });
+  const releaseDispatcher = new CloudReleaseDispatcher(
+    database,
+    new CloudReleasePublisher(
+      database,
+      social,
+      releaseMedia,
+      options.credentialsCipher ?? null,
+      origin,
+      socialFetch,
+    ),
+    studio,
+    releaseMedia,
+    agentActions,
+  );
+  const releaseLoop = new CloudPeriodicLoop(
+    "Release publishing",
+    () => releaseDispatcher.tick(),
+    1,
+  );
+  wakeReleases = () => releaseLoop.wake();
+  const automationDispatcher = new CloudAutomationDispatcher(
+    database,
+    new CloudAutomationExecutor({
+      database,
+      origin,
+      planning,
+      issueChanges,
+      labels,
+      comments,
+      relations,
+      runs,
+      chat: chatStore,
+      agentActions,
+      releases,
+      studio,
+      attachments,
+      clients,
+      fetch: options.automationFetch ?? fetch,
+    }),
+  );
+  const automationLoop = new CloudPeriodicLoop(
+    "Automation dispatch",
+    () => automationDispatcher.tick(),
+    1,
+  );
+  wakeAutomations = () => automationLoop.wake();
   const agentTools = new CloudAgentTools({
     planning,
     projects,
@@ -242,10 +364,28 @@ export function createCloudRuntime(
     triage,
     runs,
     pullRequests,
+    releases,
+    products,
+    releaseMedia,
+    automations,
+    providers: aiProviders,
+    profiles: executionProfiles,
+    attachments,
+    clients,
   });
   return {
+    releases: {
+      products,
+      social,
+      releases,
+      media: releaseMedia,
+      studio,
+      dispatcher: releaseDispatcher,
+      loop: releaseLoop,
+    },
     database,
     origin,
+    attachments,
     identity: new CloudIdentity(database),
     recurrence,
     schedules: new CloudSchedules(database, recurrence),
@@ -255,6 +395,11 @@ export function createCloudRuntime(
       () => scheduleDispatcher.tick(),
       5,
     ),
+    automations: {
+      service: automations,
+      dispatcher: automationDispatcher,
+      loop: automationLoop,
+    },
     activity: {
       feed: new CloudAiActivity(database),
       mimorii: new CloudMimoriiConnections(
@@ -336,16 +481,7 @@ export function createCloudRuntime(
     cliLogins: new CloudCliLogins(aiProviders),
     chat: {
       store: chatStore,
-      actions: new CloudAgentActions({
-        chat: chatStore,
-        planning,
-        relations,
-        labels,
-        issueChanges,
-        comments,
-        projectUpdates,
-        triage,
-      }),
+      actions: agentActions,
     },
     inference: {
       store: inference,
@@ -353,6 +489,7 @@ export function createCloudRuntime(
         inference,
         aiProviders,
         agentTools,
+        attachments,
         options.modelAdapterFactory,
       ),
     },
@@ -373,7 +510,7 @@ export function createCloudRuntime(
       ),
     },
     execution: {
-      profiles: new CloudExecutionProfiles(database),
+      profiles: executionProfiles,
       runs,
       workers: new CloudWorkers(database),
       clientWorkspaces: new CloudClientWorkspaces(database),
@@ -393,6 +530,8 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   if (runtime.origin === origin) return;
   runtime.cliLogins.close();
   await runtime.scheduleLoop.close();
+  await runtime.automations.loop.close();
+  await runtime.releases.loop.close();
   await runtime.activity.exportLoop.close();
   await runtime.github.syncLoop.close();
   await runtime.authentication.mailWorker.close();
@@ -406,6 +545,8 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   runtime.inference.worker.start();
   runtime.authentication.mailWorker.start();
   runtime.scheduleLoop.start();
+  runtime.automations.loop.start();
+  runtime.releases.loop.start();
   runtime.activity.exportLoop.start();
   runtime.github.syncLoop.start();
 }
@@ -426,6 +567,8 @@ export async function closeCloudRuntime(): Promise<void> {
     const current = await runtime;
     current.cliLogins.close();
     await current.scheduleLoop.close();
+    await current.automations.loop.close();
+    await current.releases.loop.close();
     await current.activity.exportLoop.close();
     await current.github.syncLoop.close();
     await current.authentication.mailWorker.close();

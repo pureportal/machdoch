@@ -14,6 +14,7 @@ import {
 import type { CloudDatabase, CloudSql } from "./database";
 import { notifyComment } from "./notifications";
 import { readIssue } from "./planning";
+import { queueAutomationEvents } from "./automation/automation-events";
 
 async function recordComment(
   sql: CloudSql,
@@ -61,6 +62,13 @@ export async function insertComment(
   );
   await recordComment(sql, actor, id, "comment.created");
   await notifyComment(sql, actor, issue, body);
+  await queueAutomationEvents(sql, {
+    organizationId: actor.organizationId,
+    teamId: issue.teamId,
+    issueId: issue.id,
+    actorId: actor.userId,
+    events: [{ kind: "comment_created", commentId: id, body }],
+  });
   return { id };
 }
 

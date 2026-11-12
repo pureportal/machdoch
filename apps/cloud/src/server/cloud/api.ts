@@ -31,6 +31,16 @@ import {
 import { invitationInputSchema } from "../../lib/cloud-invitation-contract";
 import { recurrencePreviewSchema } from "../../lib/cloud-recurrence-contract";
 import { handleScheduleApi } from "./automation/api";
+import {
+  handlePublicReleaseApi,
+  handleReleaseApi,
+  isPublicReleaseRoute,
+  releaseRoutePrefixes,
+} from "./releases/release-api";
+import {
+  handleAutomationApi,
+  handleAutomationWebhook,
+} from "./automation/automation-api";
 import { browserSessionContext } from "./auth/session-context";
 import {
   sessionAccountSchema,
@@ -48,6 +58,12 @@ import { cloudConsentSchema } from "../../lib/cloud-oauth-contract";
 import { handleExecutionApi, handleRunnerApi } from "./execution/api";
 import { handleAiProviderApi } from "./ai/api";
 import { handleChatApi } from "./ai/chat-api";
+import {
+  handleAttachmentApi,
+  handlePublicAttachmentApi,
+  isAttachmentRoute,
+  isPublicAttachmentRoute,
+} from "./attachments/attachment-api";
 import { z } from "zod";
 import {
   memberUpdateSchema,
@@ -322,6 +338,12 @@ async function route(
     path.length === 4
   )
     return handleGitHubWebhook(runtime, request, path[3] ?? "");
+  if (path[0] === "automations" && path[1] === "hooks" && path.length === 3)
+    return handleAutomationWebhook(runtime, request, path[2] ?? "");
+  if (isPublicReleaseRoute(path))
+    return handlePublicReleaseApi(runtime, request, path);
+  if (isPublicAttachmentRoute(path))
+    return handlePublicAttachmentApi(runtime, request, path);
   if (routeKey === "POST auth/logout") {
     requireCloudOrigin(runtime, request);
     if (
@@ -362,6 +384,12 @@ async function route(
     return handleAccountTwoFactorApi(runtime, request, actor, address);
   if (path[0] === "schedules")
     return handleScheduleApi(runtime, request, actor);
+  if (path[0] === "automations")
+    return handleAutomationApi(runtime, request, actor);
+  if (releaseRoutePrefixes.has(path[0] ?? ""))
+    return handleReleaseApi(runtime, request, actor);
+  if (isAttachmentRoute(path))
+    return handleAttachmentApi(runtime, request, actor, path);
   if (routeKey === "POST recurrence/preview")
     return Response.json(
       await runtime.recurrence.preview(

@@ -13,6 +13,7 @@ export const issueFilterFields = [
   "estimate",
   "due",
   "created",
+  "updated",
   "pullRequest",
 ] as const;
 export type IssueFilterField = (typeof issueFilterFields)[number];
@@ -36,6 +37,7 @@ const valueSchemas: Record<IssueFilterField, z.ZodType<string>> = {
   estimate: z.enum(estimateFilterValues),
   due: z.enum(dueFilterValues),
   created: z.enum(createdFilterValues),
+  updated: z.enum(createdFilterValues),
   pullRequest: z.enum([...pullRequestStages, noneFilterValue]),
 };
 

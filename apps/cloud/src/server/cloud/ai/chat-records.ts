@@ -25,9 +25,12 @@ const chatContextColumn = `COALESCE((SELECT jsonb_agg(jsonb_build_object('kind',
 
 export const chatColumns = `ch.id,ch.title,ch.revision,${timestamp("ch.updated_at")} AS "updatedAt",${chatContextColumn} AS context`;
 export const chatDeadlineSeconds = 300;
-export const maximumChatInputBytes = 96 * 1024;
+export const maximumChatInputBytes = 256 * 1024;
 export const turnColumns = `id,sequence,provider_id AS "providerId",model,prompt,answer,state,revision,error_code AS "errorCode",request_id AS "requestId",
-  ${timestamp("created_at")} AS "createdAt",${timestamp("started_at")} AS "startedAt",${timestamp("finished_at")} AS "finishedAt",steps,actions,question`;
+  ${timestamp("created_at")} AS "createdAt",${timestamp("started_at")} AS "startedAt",${timestamp("finished_at")} AS "finishedAt",steps,actions,question,
+  COALESCE((SELECT jsonb_agg(jsonb_build_object('id',a.id,'name',a.name,'mime',a.mime,'kind',a.kind,'byteLength',a.byte_length,'width',a.width,'height',a.height,
+  'url','/api/v1/attachments/'||a.id) ORDER BY a.created_at,a.id) FROM cloud_attachments a
+  WHERE a.organization_id=cloud_chat_turns.organization_id AND a.turn_id=cloud_chat_turns.id AND a.state='ready'),'[]'::jsonb) AS attachments`;
 
 export async function readChat(
   sql: CloudSql,

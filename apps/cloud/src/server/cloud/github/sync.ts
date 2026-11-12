@@ -8,6 +8,7 @@ import {
   type GitHubAutomationEvent,
   type GitHubChecksState,
   type GitHubReviewDecision,
+  type PullRequestStage,
   type PullRequestState,
 } from "../../../lib/github-automation";
 import { pullRequestReferences } from "../../../lib/github-links";
@@ -16,6 +17,7 @@ import { CloudError, isCloudError } from "../access";
 import { derivedCommandId } from "../command-ids";
 import type { CloudDatabase, CloudSql } from "../database";
 import type { CloudIssueChanges } from "../issue-changes";
+import { queueAutomationEvents } from "../automation/automation-events";
 import {
   GitHubClient,
   githubPullRequestSchema,
@@ -54,6 +56,7 @@ type StoredPullRequest = {
   mergeable_state: string | null;
   checks: GitHubChecksState | null;
   review: GitHubReviewDecision | null;
+  stage: PullRequestStage;
   updated_at: Date;
   signals_synced_at: Date | null;
 };
@@ -161,7 +164,7 @@ export class CloudGitHubSync {
       const organizationId = connection.organizationId;
       const previous = (
         await sql.query<StoredPullRequest>(
-          `SELECT id,state,draft,head_sha,mergeable_state,checks,review,updated_at,signals_synced_at
+          `SELECT id,state,draft,head_sha,mergeable_state,checks,review,stage,updated_at,signals_synced_at
           FROM cloud_github_pull_requests WHERE organization_id=$1 AND repository_id=$2 AND number=$3 FOR UPDATE`,
           [organizationId, repositoryId, pullRequest.number],
         )
@@ -262,6 +265,23 @@ export class CloudGitHubSync {
           "INSERT INTO cloud_github_pull_request_issues (organization_id,pull_request_id,issue_id,closes) VALUES ($1,$2,$3,$4)",
           [organizationId, id, issue.id, issue.closes],
         );
+      if (previous?.stage !== stage)
+        for (const issue of issues)
+          await queueAutomationEvents(sql, {
+            organizationId,
+            teamId: issue.team_id,
+            issueId: issue.id,
+            actorId: null,
+            events: [
+              {
+                kind: "pull_request_changed",
+                pullRequestId: id,
+                stage,
+                title: pullRequest.title.slice(0, 300),
+                url: pullRequest.html_url.slice(0, 500),
+              },
+            ],
+          });
       const event = pullRequestAutomationEvent({ state, draft, review }, true);
       const previousEvent =
         previous && pullRequestAutomationEvent(previous, true);

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { CloudTeam } from "../../../lib/cloud-contract";
 import type { CloudLabel } from "../../../lib/cloud-label-contract";
 import type { AgentActionField } from "../../../lib/cloud-chat-contract";
+import { maximumChatAttachments } from "../../../lib/cloud-attachment-contract";
 import { AgentLookupError } from "./agent-workspace";
 import type { CloudAgentSession } from "./agent-tools";
 
@@ -15,6 +16,13 @@ export const issueReference = z
 export const none = "none";
 export const optionalReference = (description: string) =>
   reference.optional().describe(`${description} Use "none" to clear it.`);
+export const attachmentsInput = z
+  .array(z.uuid())
+  .max(maximumChatAttachments)
+  .optional()
+  .describe(
+    "Attachment IDs from this conversation or another issue to attach to the issue.",
+  );
 export const pendingOutput = {
   proposed: true,
   note: "Recorded as a proposal. The user must confirm it before anything changes.",
@@ -71,6 +79,27 @@ export async function milestoneFor(
       `No milestone "${name}" in this project. Milestones: ${milestones.map((entry) => entry.name).join(", ") || "none"}.`,
     );
   return milestone;
+}
+
+export async function attachmentsFor(
+  session: CloudAgentSession,
+  ids: string[] | undefined,
+): Promise<{ attachmentIds?: string[]; fields: AgentActionField[] }> {
+  if (!ids?.length) return { fields: [] };
+  const attachments = await Promise.all(
+    [...new Set(ids)].map((id) =>
+      session.services.attachments.get(session.actor, id),
+    ),
+  );
+  return {
+    attachmentIds: attachments.map((attachment) => attachment.id),
+    fields: [
+      {
+        label: "Attachments",
+        value: attachments.map((attachment) => attachment.name).join(", "),
+      },
+    ],
+  };
 }
 
 export function field(

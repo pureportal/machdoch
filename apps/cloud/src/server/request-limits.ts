@@ -1,3 +1,5 @@
+import { maximumMediaBytes } from "../lib/cloud-release-media-contract";
+import { maximumAttachmentBytes } from "../lib/cloud-attachment-contract";
 import {
   maximumGatewayMessageBytes,
   maximumDeviceSettingsRequestBodyBytes,
@@ -47,6 +49,10 @@ export function maximumRequestBodyBytes(
   ) {
     return maximumMediaRequestBodyBytes;
   }
+  if (/^\/api\/v1\/(release-media|release-capture\/[^/]+)$/u.test(pathname))
+    return maximumMediaBytes;
+  if (/^\/api\/v1\/(attachments|attachment-uploads\/[^/]+)$/u.test(pathname))
+    return maximumAttachmentBytes;
   if (/^\/api\/v1\/integrations\/github\/webhooks\/[^/]+$/u.test(pathname))
     return maximumGitHubWebhookBytes;
   if (/^\/api\/instances\/[^/]+\/runs$/u.test(pathname))

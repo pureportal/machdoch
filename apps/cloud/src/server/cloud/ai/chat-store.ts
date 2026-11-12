@@ -37,6 +37,11 @@ import { lockInference, reapInference } from "./inference-records";
 import { agentContext, agentSystemPrompt } from "./agent-context";
 import { agentToolSpecs } from "./agent-tools";
 import { actionActivity, recordAiActivity } from "../activity/journal";
+import type {
+  ChatAttachment,
+  CloudAttachments,
+} from "../attachments/attachments";
+import { maximumModelImages } from "../../../lib/cloud-attachment-contract";
 
 export type ChatSubmission = {
   chatId: string;
@@ -48,6 +53,47 @@ const agentToolBytes = Buffer.byteLength(
   JSON.stringify(agentToolSpecs),
   "utf8",
 );
+
+const documentCharacters = 48_000;
+const imageReservationTokens = 3_000;
+
+function attachmentLabel(attachment: ChatAttachment): string {
+  const size =
+    attachment.width && attachment.height
+      ? ` ${attachment.width}×${attachment.height}`
+      : "";
+  return `${attachment.name} (${attachment.kind}${size}, attachment ${attachment.id})`;
+}
+
+function attachmentNote(attachments: ChatAttachment[]): string {
+  return attachments.length
+    ? `\n\nAttached files: ${attachments.map(attachmentLabel).join("; ")}`
+    : "";
+}
+
+async function messageContent(
+  sql: CloudSql,
+  organizationId: string,
+  prompt: string,
+  attachments: ChatAttachment[],
+  files: CloudAttachments,
+): Promise<string> {
+  const documents: string[] = [];
+  for (const attachment of attachments.filter(
+    (entry) => entry.kind === "document",
+  )) {
+    const { text, truncated } = await files.text(
+      sql,
+      organizationId,
+      attachment.id,
+      documentCharacters,
+    );
+    documents.push(
+      `<document name="${attachment.name.replaceAll('"', "")}" attachment="${attachment.id}"${truncated ? ' truncated="true"' : ""}>\n${text}\n</document>`,
+    );
+  }
+  return [prompt + attachmentNote(attachments), ...documents].join("\n\n");
+}
 
 const actionOutcomes: Record<AgentAction["state"], string> = {
   pending: "awaiting the user's confirmation",
@@ -88,7 +134,9 @@ async function reserveMessage(
     model: string;
     prompt: string;
     context: ChatContextReference[];
+    attachmentIds: string[];
   },
+  files: CloudAttachments,
   retry?: CloudChatTurn,
 ): Promise<ChatSubmission> {
   const provider = await readInferenceProvider(
@@ -104,6 +152,7 @@ async function reserveMessage(
     );
   const previous = (
     await sql.query<{
+      id: string;
       prompt: string;
       answer: string;
       state: string;
@@ -111,7 +160,7 @@ async function reserveMessage(
       question: CloudChatTurn["question"];
       actions: AgentAction[];
     }>(
-      "SELECT prompt,answer,state,sequence,question,actions FROM cloud_chat_turns WHERE organization_id=$1 AND chat_id=$2 AND ($3::uuid IS NULL OR id<>$3) ORDER BY sequence LIMIT 201",
+      "SELECT id,prompt,answer,state,sequence,question,actions FROM cloud_chat_turns WHERE organization_id=$1 AND chat_id=$2 AND ($3::uuid IS NULL OR id<>$3) ORDER BY sequence LIMIT 201",
       [actor.organizationId, chatId, retry?.id ?? null],
     )
   ).rows;
@@ -134,10 +183,21 @@ async function reserveMessage(
   const sequence = retry?.sequence ?? (previous.at(-1)?.sequence ?? 0) + 1;
   if (input.context.length)
     await addChatContext(sql, actor, chatId, sequence, input.context);
+  const chatFiles = await files.forChat(sql, actor.organizationId, chatId);
+  const attachments = retry
+    ? chatFiles.filter((attachment) => attachment.turnId === retry.id)
+    : await files.pending(sql, actor, input.attachmentIds);
   const history = previous.flatMap((turn) => {
     const answer = historyAnswer(turn);
     return [
-      { role: "user", content: turn.prompt },
+      {
+        role: "user",
+        content:
+          turn.prompt +
+          attachmentNote(
+            chatFiles.filter((attachment) => attachment.turnId === turn.id),
+          ),
+      },
       ...(turn.state === "complete" && answer
         ? [{ role: "assistant", content: answer }]
         : []),
@@ -145,7 +205,16 @@ async function reserveMessage(
   });
   const userPrompt = JSON.stringify([
     ...history,
-    { role: "user", content: input.prompt },
+    {
+      role: "user",
+      content: await messageContent(
+        sql,
+        actor.organizationId,
+        input.prompt,
+        attachments,
+        files,
+      ),
+    },
   ]);
   const chat = await readChat(sql, actor, chatId);
   const systemPrompt = `${agentSystemPrompt}\n\n${await agentContext(sql, actor, chat.context)}`;
@@ -156,8 +225,14 @@ async function reserveMessage(
       "conversation_limit",
       "This conversation exceeds the input limit. Start a new conversation or shorten your message.",
     );
+  const images = [...chatFiles, ...attachments].filter(
+    (attachment) => attachment.kind === "image",
+  ).length;
   const reservation =
-    2 * (inputBytes + agentToolBytes) + 2 * provider.maxOutputTokens + 4096;
+    2 * (inputBytes + agentToolBytes) +
+    2 * provider.maxOutputTokens +
+    Math.min(images, maximumModelImages) * imageReservationTokens +
+    4096;
   const budget = await readProviderBudget(sql, actor.organizationId, provider);
   requireInferenceCapacity(budget, reservation);
   const requestId = randomUUID();
@@ -181,6 +256,14 @@ async function reserveMessage(
         input.prompt,
         requestId,
       ],
+    );
+  if (!retry)
+    await files.attachToTurn(
+      sql,
+      actor,
+      attachments.map((attachment) => attachment.id),
+      chatId,
+      turnId,
     );
   await sql.query(
     `INSERT INTO cloud_inference_calls (organization_id,id,turn_id,actor_id,provider_id,provider_revision,model,user_prompt,reserved_tokens,max_output_tokens,budget_day,state,deadline_at,system_prompt)
@@ -217,7 +300,10 @@ async function reserveMessage(
 }
 
 export class CloudChatStore {
-  constructor(private readonly database: CloudDatabase) {}
+  constructor(
+    private readonly database: CloudDatabase,
+    private readonly files: CloudAttachments,
+  ) {}
 
   submit(
     actor: CloudActor,
@@ -239,7 +325,7 @@ export class CloudChatStore {
           await reapInference(sql, actor.organizationId);
           if (chat) {
             checkRevision(chat.revision, input.revision!);
-            return reserveMessage(sql, actor, chat.id, input);
+            return reserveMessage(sql, actor, chat.id, input, this.files);
           }
           const id = randomUUID();
           await sql.query(
@@ -251,7 +337,52 @@ export class CloudChatStore {
               input.prompt.split("\n", 1)[0]!.slice(0, 120),
             ],
           );
-          return reserveMessage(sql, actor, id, input);
+          return reserveMessage(sql, actor, id, input, this.files);
+        },
+      );
+    });
+  }
+
+  startHiddenChat(
+    actor: CloudActor,
+    key: string,
+    input: {
+      owner: { automationId: string } | { releaseId: string };
+      providerId: string;
+      model: string;
+      prompt: string;
+      context: ChatContextReference[];
+    },
+  ): Promise<ChatSubmission> {
+    return this.database.transaction(async (sql) => {
+      await lockInference(sql, actor.organizationId);
+      await requireMembership(sql, actor, "write");
+      return command(
+        sql,
+        actor,
+        key,
+        { kind: "chat.hidden", input },
+        async () => {
+          await reapInference(sql, actor.organizationId);
+          const id = randomUUID();
+          await sql.query(
+            "INSERT INTO cloud_chats (organization_id,id,user_id,title,automation_id,release_id) VALUES ($1,$2,$3,$4,$5,$6)",
+            [
+              actor.organizationId,
+              id,
+              actor.userId,
+              input.prompt.split("\n", 1)[0]!.slice(0, 120),
+              "automationId" in input.owner ? input.owner.automationId : null,
+              "releaseId" in input.owner ? input.owner.releaseId : null,
+            ],
+          );
+          return reserveMessage(
+            sql,
+            actor,
+            id,
+            { ...input, attachmentIds: [] },
+            this.files,
+          );
         },
       );
     });
@@ -302,7 +433,9 @@ export class CloudChatStore {
               model: input.model,
               prompt: turn.prompt,
               context: [],
+              attachmentIds: [],
             },
+            this.files,
             turn,
           );
         },
@@ -363,7 +496,7 @@ export class CloudChatStore {
       return (
         await sql.query<CloudChat & Record<string, unknown>>(
           `SELECT ${chatColumns} FROM cloud_chats ch
-        WHERE ch.organization_id=$1 AND ch.user_id=$2 AND ch.archived_at IS NULL AND ($3::uuid IS NULL OR (ch.updated_at,ch.id)<(SELECT updated_at,id FROM cloud_chats WHERE organization_id=$1 AND user_id=$2 AND id=$3))
+        WHERE ch.organization_id=$1 AND ch.user_id=$2 AND ch.archived_at IS NULL AND ch.automation_id IS NULL AND ch.release_id IS NULL AND ($3::uuid IS NULL OR (ch.updated_at,ch.id)<(SELECT updated_at,id FROM cloud_chats WHERE organization_id=$1 AND user_id=$2 AND id=$3))
         ORDER BY ch.updated_at DESC,ch.id DESC LIMIT 50`,
           [actor.organizationId, actor.userId, beforeId ?? null],
         )

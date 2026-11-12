@@ -9,6 +9,8 @@ import {
 import { AgentLookupError } from "./agent-workspace";
 import { agentTool, type AgentTool } from "./agent-tool";
 import {
+  attachmentsFor,
+  attachmentsInput,
   estimateFor,
   field,
   issueReference,
@@ -50,6 +52,7 @@ export const proposalTools: AgentTool[] = [
       dueOn: z.iso.date().optional(),
       labels: z.array(reference).max(10).optional(),
       parent: issueReference.optional().describe("Parent issue."),
+      attachments: attachmentsInput,
     }),
     async run(session, input) {
       const { workspace } = session;
@@ -76,6 +79,7 @@ export const proposalTools: AgentTool[] = [
       const parent = input.parent
         ? await session.resolveIssue(input.parent)
         : undefined;
+      const attached = await attachmentsFor(session, input.attachments);
       if (parent && parent.teamId !== team.id)
         throw new AgentLookupError(
           `${parent.identifier} belongs to another team; a sub-issue must use the parent's team.`,
@@ -108,6 +112,7 @@ export const proposalTools: AgentTool[] = [
         ...field("Parent", parent?.identifier),
         ...markdownField("Description", input.description),
         ...markdownField("Acceptance criteria", input.acceptanceCriteria),
+        ...attached.fields,
       ];
       return {
         output: pendingOutput,
@@ -119,6 +124,9 @@ export const proposalTools: AgentTool[] = [
           issue,
           labelIds: labels.map((label) => label.id),
           parentId: parent?.id ?? null,
+          ...(attached.attachmentIds
+            ? { attachmentIds: attached.attachmentIds }
+            : {}),
         },
       };
     },
@@ -158,6 +166,7 @@ export const proposalTools: AgentTool[] = [
         ),
       addLabels: z.array(reference).max(10).optional(),
       removeLabels: z.array(reference).max(10).optional(),
+      attachments: attachmentsInput,
     }),
     async run(session, input) {
       const { workspace } = session;
@@ -272,6 +281,8 @@ export const proposalTools: AgentTool[] = [
           value: target.map((label) => label.name).join(", ") || "No labels",
         });
       }
+      const attached = await attachmentsFor(session, input.attachments);
+      fields.push(...attached.fields);
       if (!fields.length)
         throw new AgentLookupError("Propose at least one change.");
       return {
@@ -286,6 +297,9 @@ export const proposalTools: AgentTool[] = [
           revision: issue.revision,
           changes,
           ...(labelIds ? { labelIds } : {}),
+          ...(attached.attachmentIds
+            ? { attachmentIds: attached.attachmentIds }
+            : {}),
         },
       };
     },
@@ -297,19 +311,24 @@ export const proposalTools: AgentTool[] = [
     schema: z.strictObject({
       issue: issueReference,
       body: z.string().trim().min(1).max(20_000),
+      attachments: attachmentsInput,
     }),
     async run(session, input) {
       const issue = await session.resolveIssue(input.issue);
+      const attached = await attachmentsFor(session, input.attachments);
       return {
         output: pendingOutput,
         label: `Drafted a comment on ${issue.identifier}`,
         proposal: {
           kind: "comment",
           title: `Comment on ${issue.identifier} · ${issue.title}`,
-          fields: markdownField("Comment", input.body),
+          fields: [...markdownField("Comment", input.body), ...attached.fields],
           issueId: issue.id,
           identifier: issue.identifier,
           body: input.body,
+          ...(attached.attachmentIds
+            ? { attachmentIds: attached.attachmentIds }
+            : {}),
         },
       };
     },

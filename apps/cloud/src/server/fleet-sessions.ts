@@ -16,7 +16,6 @@ import {
   requireManagedInstance,
   throwHostError,
 } from "./instance-relay";
-import { requireMutation } from "./request-auth";
 import type { FleetRuntime } from "./runtime";
 
 const activeRequests = new WeakMap<
@@ -24,12 +23,17 @@ const activeRequests = new WeakMap<
   Map<string, Promise<FleetSessionRoute>>
 >();
 
+export interface FleetSessionAccess {
+  authorize: () => Promise<void>;
+  signal: AbortSignal;
+}
+
 export async function openFleetSession(
   runtime: FleetRuntime,
-  request: Request,
+  access: FleetSessionAccess,
   input: FleetSessionRequest,
 ): Promise<FleetSessionRoute> {
-  await requireMutation(runtime, request);
+  await access.authorize();
   let pending = activeRequests.get(runtime);
   if (!pending) {
     pending = new Map();
@@ -42,12 +46,12 @@ export async function openFleetSession(
   const existing = pending.get(key);
   if (existing) {
     const route = await existing;
-    await requireMutation(runtime, request);
+    await access.authorize();
     await requireManagedInstance(runtime, route.instanceId);
-    request.signal.throwIfAborted();
+    access.signal.throwIfAborted();
     return route;
   }
-  const operation = dispatchFleetSession(runtime, request, input, digest);
+  const operation = dispatchFleetSession(runtime, access, input, digest);
   pending.set(key, operation);
   try {
     return await operation;
@@ -58,11 +62,11 @@ export async function openFleetSession(
 
 async function dispatchFleetSession(
   runtime: FleetRuntime,
-  request: Request,
+  access: FleetSessionAccess,
   input: FleetSessionRequest,
   digest: string,
 ): Promise<FleetSessionRoute> {
-  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(30_000)]);
+  const signal = AbortSignal.any([access.signal, AbortSignal.timeout(30_000)]);
   const readRoute = async () =>
     await runtime.database.get(
       "SELECT * FROM fleet_session_routes WHERE command_id = $1",
@@ -76,7 +80,7 @@ async function dispatchFleetSession(
       signal,
       new Set(input.targets.map((target) => target.instanceId)),
     );
-    await requireMutation(runtime, request);
+    await access.authorize();
     signal.throwIfAborted();
     const target = selectFleetSessionTarget(status.devices, input.targets);
     if (!target)
@@ -103,7 +107,7 @@ async function dispatchFleetSession(
     );
   const instanceId = requiredString(row, "instance_id");
   const workspace = requiredString(row, "workspace");
-  await requireMutation(runtime, request);
+  await access.authorize();
   await requireManagedInstance(runtime, instanceId);
   signal.throwIfAborted();
   const requestCreation = async (): Promise<void> => {
@@ -120,7 +124,7 @@ async function dispatchFleetSession(
       },
       signal,
     );
-    await requireMutation(runtime, request);
+    await access.authorize();
     await requireManagedInstance(runtime, instanceId);
     signal.throwIfAborted();
     if (response.type === "error") throwHostError(response);
@@ -138,7 +142,7 @@ async function dispatchFleetSession(
   const confirmationDeadline = Date.now() + 8_000;
   let creationRequested = claimed;
   do {
-    await requireMutation(runtime, request);
+    await access.authorize();
     await requireManagedInstance(runtime, instanceId);
     signal.throwIfAborted();
     const response = await relayInstanceRequest(
@@ -147,7 +151,7 @@ async function dispatchFleetSession(
       { type: "getProductSnapshot" },
       signal,
     );
-    await requireMutation(runtime, request);
+    await access.authorize();
     await requireManagedInstance(runtime, instanceId);
     signal.throwIfAborted();
     if (response.type === "error") throwHostError(response);
