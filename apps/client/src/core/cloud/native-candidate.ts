@@ -26,7 +26,8 @@ export async function snapshotNativeCandidate(
   const git = (args: string[]) =>
     workspaceGit(checkoutRoot, args, signal, gitTimeoutMs);
   await mkdir(artifactsDirectory, { recursive: true, mode: 0o700 });
-  await git(["add", "-A"]);
+  await git(["add", "-A", "--", ".", ":(exclude).machdoch"]);
+  await git(["add", "--update"]);
   const tree = (await git(["write-tree"])).trim();
   const candidateCommit = (
     await git([

@@ -34,17 +34,26 @@ export class RunnerConnection {
     origin: string,
     private readonly token: string,
     private readonly transport: typeof fetch = fetch,
+    options: { allowLoopbackHttp?: boolean } = {},
   ) {
     const parsed = new URL(origin);
+    const loopback =
+      options.allowLoopbackHttp === true &&
+      ["localhost", "127.0.0.1", "[::1]"].includes(parsed.hostname);
     if (
-      parsed.protocol !== "https:" ||
+      (parsed.protocol !== "https:" &&
+        !(loopback && parsed.protocol === "http:")) ||
       parsed.username ||
       parsed.password ||
       parsed.pathname !== "/" ||
       parsed.search ||
       parsed.hash
     )
-      throw new Error("Runner connections require an HTTPS origin");
+      throw new Error(
+        options.allowLoopbackHttp
+          ? "Runner connections require an HTTPS origin or a loopback HTTP origin"
+          : "Runner connections require an HTTPS origin",
+      );
     this.origin = parsed.origin;
     if (!token.startsWith("mch_cloud_worker_"))
       throw new Error("Configure an enrolled cloud runner token");

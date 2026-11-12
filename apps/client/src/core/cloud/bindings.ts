@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { lstat, mkdir, readFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { z } from "zod";
-import { RunnerConnection } from "@machdoch/cloud-client";
 import {
   clientWorkspaceBindingSchema,
   workerRegistrationSchema,
@@ -11,6 +10,7 @@ import { getUserConfigPath } from "../env.js";
 import { withCooperativeFileLock } from "../_helpers/with-cooperative-file-lock.helper.js";
 import { writeJsonAtomically } from "../_helpers/write-file-atomically.helper.js";
 import { inspectClientRepository } from "./repository.js";
+import { connectRunner } from "./connect-runner.js";
 
 const localConnectionSchema = z.strictObject({
   id: z.string().uuid(),
@@ -109,7 +109,7 @@ export class ClientCloudBindings {
     name?: string,
     expectedWorkerId?: string,
   ) {
-    const remote = new RunnerConnection(origin, token);
+    const remote = connectRunner(origin, token);
     const registration = await remote.registration();
     if (expectedWorkerId && registration.workerId !== expectedWorkerId)
       throw new Error(
@@ -228,7 +228,7 @@ export class ClientCloudBindings {
       const current = connections.find((entry) => entry.id === id)!;
       if (current.status !== "disconnected") current.status = "disconnecting";
     });
-    const remote = new RunnerConnection(
+    const remote = connectRunner(
       connection.origin,
       replacementToken ?? connection.token,
     );

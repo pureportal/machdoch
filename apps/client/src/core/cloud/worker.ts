@@ -1,13 +1,13 @@
 import { open, mkdir, realpath } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { z } from "zod/v4";
-import { RunnerConnection } from "@machdoch/cloud-client";
 import {
   CloudRunner,
   RunnerJournal,
   sandboxConfigurationSchema,
 } from "@machdoch/cloud-client/worker";
 import { ClientCloudBindings } from "./bindings.js";
+import { connectRunner } from "./connect-runner.js";
 import {
   exportClientSourcePack,
   sourcePackRuntimeSchema,
@@ -58,7 +58,7 @@ export async function createClientCloudWorker(
       "Keep client connection storage separate from the linked repository.",
     );
   const directory = join(storage, "workers", initial.id);
-  const connection = new RunnerConnection(initial.origin, initial.token);
+  const connection = connectRunner(initial.origin, initial.token);
   if (initial.registration.profile.target === "client") {
     const journal = new RunnerJournal(directory, initial.origin);
     return {

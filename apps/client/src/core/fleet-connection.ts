@@ -90,7 +90,7 @@ const isLoopbackHost = (url: URL): boolean => {
   );
 };
 
-const sourceCliAllowsLoopbackHttp = (): boolean => {
+export const sourceCliAllowsLoopbackHttp = (): boolean => {
   return /\.[cm]?ts$/iu.test(process.argv[1] ?? "");
 };
 

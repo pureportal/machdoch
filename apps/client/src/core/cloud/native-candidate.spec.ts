@@ -68,6 +68,24 @@ afterEach(async () => {
   }
 });
 
+it("leaves workspace storage created during the run out of the result", async () => {
+  const fixture = await repository();
+  await writeFile(join(fixture.checkout, "README.md"), "agent change\n");
+  await mkdir(join(fixture.checkout, ".machdoch"));
+  await writeFile(
+    join(fixture.checkout, ".machdoch", ".gitignore"),
+    "/local/\n",
+  );
+  const candidate = await snapshotNativeCandidate(
+    fixture.checkout,
+    fixture.baseCommit,
+    join(fixture.root, "artifacts"),
+    signal,
+  );
+  expect(candidate.patch.toString()).toContain("agent change");
+  expect(candidate.patch.toString()).not.toContain(".machdoch");
+});
+
 it("verifies agent changes in an independent checkout and publishes only a new branch", async () => {
   const fixture = await repository();
   await writeFile(

@@ -1,5 +1,4 @@
 import {
-  RunnerConnection,
   RunnerRequestError,
   isTransientRunnerError,
 } from "@machdoch/cloud-client";
@@ -11,6 +10,7 @@ import {
   type CloudWorkspaceView,
 } from "@machdoch/fleet-protocol/cloud-workspaces";
 import { ClientCloudBindings } from "./bindings.js";
+import { connectRunner } from "./connect-runner.js";
 
 export async function cloudWorkspaceViews(
   bindings: ClientCloudBindings,
@@ -42,7 +42,7 @@ export async function cloudWorkspaceViews(
       }
       try {
         const connection = await bindings.get(view.id);
-        const registration = await new RunnerConnection(
+        const registration = await connectRunner(
           connection.origin,
           connection.token,
         ).registration(deadline);

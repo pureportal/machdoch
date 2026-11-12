@@ -45,7 +45,12 @@ export function openWindowsSocket(executable: string, directory: string) {
     stream,
     async close() {
       stream.destroy();
-      if (child.exitCode === null && child.signalCode === null) child.kill();
+      if (child.exitCode === null && child.signalCode === null)
+        try {
+          child.kill();
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "EINVAL") throw error;
+        }
       await exited;
     },
   };
