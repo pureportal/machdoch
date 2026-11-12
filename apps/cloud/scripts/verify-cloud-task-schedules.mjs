@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -10,8 +9,6 @@ import {
   createPasswordInvitation,
   acceptPasswordInvitation,
 } from "./cloud-browser-fixture.mjs";
-import { cloudTemporalFixture } from "./cloud-temporal-fixture.mjs";
-import { startCloudWorkflowWorker } from "./cloud-workflow-worker-fixture.mjs";
 import { startRunnerProcess, runnerHistory } from "./cloud-runner-process.mjs";
 import { PostgresCloudDatabase } from "../src/server/cloud/database.ts";
 import { createCloudRuntime } from "../src/server/cloud/runtime.ts";
@@ -36,25 +33,13 @@ const passed = (name) => {
   checks.push(name);
   process.stdout.write(`PASS ${name}\n`);
 };
-let temporal, workflowWorker, runner, database;
-const installationId = randomUUID();
-const stopWorkflow = async () => {
-  if (workflowWorker?.exitCode === null) workflowWorker.kill();
-  await workflowWorker?.finished;
-  workflowWorker = undefined;
-};
-const startWorkflow = async () => {
-  workflowWorker = startCloudWorkflowWorker(fixture, temporal, installationId);
-  await assertEventually(
-    async () => {
-      if (workflowWorker.exitCode !== null)
-        throw new Error(workflowWorker.logs());
-      return (await api("schedules/status")).available;
-    },
-    () => `Workflow did not start. ${workflowWorker.logs()}`,
+let runner, database;
+const scheduleDispatchReady = () =>
+  assertEventually(
+    async () => (await api("schedules/status")).available,
+    () => `Schedule dispatch did not become available. ${fixture.logs()}`,
     30000,
   );
-};
 try {
   await api("auth/login", "POST", {
     email: "owner@example.test",
@@ -101,8 +86,7 @@ try {
     name: "Scheduled cloud worker",
     profileId: profile.id,
   });
-  temporal = await cloudTemporalFixture(join(fixture.directory, "temporal"));
-  await startWorkflow();
+  await scheduleDispatchReady();
   database = new PostgresCloudDatabase(
     fixture.environment.MACHDOCH_CLOUD_DATABASE_URL,
   );
@@ -231,7 +215,7 @@ try {
       history = await api(`schedules/${schedule.id}/history`);
       return history.some((entry) => entry.runId);
     },
-    () => `Task was not admitted. ${workflowWorker.logs()}`,
+    () => `Task was not admitted. ${fixture.logs()}`,
     35000,
   );
   const runId = history.find((entry) => entry.runId).runId;
@@ -247,7 +231,7 @@ try {
   assert.equal(queued.manifest.profile.maxTokens, 100000);
   assert.equal((await api("execution-profiles")).profiles[0].maxTokens, 200000);
   passed(
-    "Timed Temporal admission and a lost activation response produce one task and one token allocation",
+    "Timed admission and a lost activation response produce one task and one token allocation",
   );
 
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
@@ -333,7 +317,6 @@ try {
     revision: 1,
     enabled: true,
   });
-  await stopWorkflow();
   const state = await api(`schedules/${concurrent.id}`);
   await fixture.database.query(
     "UPDATE cloud_schedules SET next_at=$2 WHERE id=$1",
@@ -354,8 +337,7 @@ try {
   );
   const currentRun = concurrentHistory.find((entry) => entry.runId).runId;
   await fixture.restart();
-  await temporal.restart();
-  await startWorkflow();
+  await scheduleDispatchReady();
   assert.equal(
     (await api(`schedules/${concurrent.id}`)).reservedTokens,
     200000,
@@ -485,7 +467,7 @@ try {
       {
         message: String(error),
         checks,
-        workflowLogs: workflowWorker?.logs(),
+        serverLogs: fixture.logs(),
         runnerLogs: runner?.logs(),
         pageText: await page
           .locator("body")
@@ -500,8 +482,6 @@ try {
 } finally {
   if (runner?.exitCode === null) runner.kill();
   await runner?.finished;
-  await stopWorkflow();
-  await temporal?.close();
   await database?.close();
   await fixture.close();
 }

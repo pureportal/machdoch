@@ -8,16 +8,16 @@ An `Automation` has an organization, accountable human owner, execution principa
 
 Distinguish these records:
 
-| Record | Purpose and identity |
-| --- | --- |
-| AutomationRevision | Immutable trigger, action graph, configuration, permission ceiling, and evaluator version |
-| Schedule | Recurrence and lifecycle owned by exactly one scheduler authority |
-| Occurrence | One nominal schedule time, even if skipped, coalesced, late, or rejected |
-| EventReceipt | One authenticated source event, independent of delivery attempts |
-| TriggerDecision | The revision evaluated, match result, suppression reason, and selected occurrence/event |
-| AutomationExecution | One admitted action graph; contains step executions and links to any agent runs |
-| StepExecution | Stable action slot and iteration identity, input/output manifests, retries and side-effect receipts |
-| Run | Agent work with an issue, project, maintenance or test-campaign subject; an implementation run always has a canonical issue |
+| Record              | Purpose and identity                                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| AutomationRevision  | Immutable trigger, action graph, configuration, permission ceiling, and evaluator version                                   |
+| Schedule            | Recurrence and lifecycle owned by exactly one scheduler authority                                                           |
+| Occurrence          | One nominal schedule time, even if skipped, coalesced, late, or rejected                                                    |
+| EventReceipt        | One authenticated source event, independent of delivery attempts                                                            |
+| TriggerDecision     | The revision evaluated, match result, suppression reason, and selected occurrence/event                                     |
+| AutomationExecution | One admitted action graph; contains step executions and links to any agent runs                                             |
+| StepExecution       | Stable action slot and iteration identity, input/output manifests, retries and side-effect receipts                         |
+| Run                 | Agent work with an issue, project, maintenance or test-campaign subject; an implementation run always has a canonical issue |
 
 Recurring issue creation, recurring agent execution, and a long-lived goal are different operations. Creating an issue does not authorize running it. Rechecking a project does not reopen its old implementation run. A continuing goal creates bounded executions with checkpoints, explicit completion/stop predicates, and an overall budget/deadline; it does not keep a model process alive indefinitely.
 
@@ -31,7 +31,7 @@ Promotion of a local schedule to cloud ownership is a transfer, not a copy: reco
 
 Reuse current scheduler editors, trigger vocabulary, RALPH definitions, and tested recurrence semantics after normalization. Extract a shared recurrence/condition module and execution contracts; keep storage and authority local for private jobs and in PostgreSQL for cloud jobs. Do not run the current workspace polling service as a second cloud scheduler.
 
-**Cloud choice:** a Temporal schedule-coordinator workflow uses durable timers to wake the canonical recurrence evaluator. The evaluator transactionally advances a PostgreSQL cursor and materializes bounded pages of occurrences. Temporal supplies durability; it does not independently reinterpret raw cron or own business overlap policy. Do not also create native Temporal Schedules or host cron jobs for the same definition. This deliberately avoids conflicting cron semantics and supports one recurrence model in client and cloud. Compare the alternatives in the research supplement.
+**Cloud choice:** every cloud server runs a schedule loop that wakes the canonical recurrence evaluator every five seconds (every second while a full batch is due) and retries failures with a backoff of two seconds doubling to one minute. The evaluator transactionally advances a PostgreSQL cursor and materializes bounded pages of occurrences; PostgreSQL holds all durable state, so concurrent servers and restarts dispatch each occurrence once. Do not also create host cron jobs or external schedulers for the same definition. This deliberately avoids conflicting cron semantics and supports one recurrence model in client and cloud. Compare the alternatives in the research supplement.
 
 ## AU-03 — Recurrence contract
 
@@ -54,14 +54,14 @@ Preview and coordinator must use the same evaluator and timezone data. The propo
 
 Missed-time policy and active-work overlap are separate settings:
 
-| Dimension | Required options and behavior |
-| --- | --- |
-| Missed occurrence | `skip`, `latest`, or `bounded-all`; finite lookback, execution count, queue age, and spend limit |
-| Active execution overlap | `skip`, `buffer-first`, `coalesce-latest`, `bounded-queue`, or `parallel` within declared distinct resource keys |
-| Replacement | `cancel-and-replace` requests cancellation, waits for the old writer/effects to reconcile, then admits the new work |
-| Existing issue run | Skip, record a bounded follow-up for after completion, or attach an observation; never create a competing writer or inject an unreviewed instruction |
-| Stale input | Recheck current subject state before side effects; obsolete CI failures or resolved incidents become recorded no-ops |
-| Failure storm | Pause-on-failure threshold/circuit breaker, operator-visible reason and controlled probe/re-enable |
+| Dimension                | Required options and behavior                                                                                                                        |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Missed occurrence        | `skip`, `latest`, or `bounded-all`; finite lookback, execution count, queue age, and spend limit                                                     |
+| Active execution overlap | `skip`, `buffer-first`, `coalesce-latest`, `bounded-queue`, or `parallel` within declared distinct resource keys                                     |
+| Replacement              | `cancel-and-replace` requests cancellation, waits for the old writer/effects to reconcile, then admits the new work                                  |
+| Existing issue run       | Skip, record a bounded follow-up for after completion, or attach an observation; never create a competing writer or inject an unreviewed instruction |
+| Stale input              | Recheck current subject state before side effects; obsolete CI failures or resolved incidents become recorded no-ops                                 |
+| Failure storm            | Pause-on-failure threshold/circuit breaker, operator-visible reason and controlled probe/re-enable                                                   |
 
 Default overlap is `skip`; projects can select coalescing for continuously arriving alerts. `parallel` cannot override issue/ref/hardware reservations. Hard termination of a workflow is not proof its external activity stopped and is not an overlap mode.
 
@@ -73,16 +73,16 @@ Publishing a revision establishes a serialized effective boundary. At first auth
 
 Use a CloudEvents 1.0 envelope with a pinned released schema, plus Machdoch metadata. Required data: immutable event ID, authenticated source/installation, type/schema revision, organization, subject identity and revision, occurred/received times, origin actor, correlation/root-cause/parent IDs, trace context, data classification, and bounded payload or artifact reference. The receiver derives organization/source authority from credentials; payload fields cannot assert it. CloudEvents defines formatting, not delivery, ordering, trust, or exactly-once execution. [Released specification](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md).
 
-| Event family | Required examples and authority |
-| --- | --- |
-| Planning | Issue created/changed/ready/blocked, assignment, dependency unblocked, cycle boundary, project milestone/health, approval decision; domain outbox |
-| Source control | Push, PR head/review/check/merge/close, merge-queue candidate, release, deployment; authenticated repository installation |
-| Execution | Run/step/checkpoint/question/timeout/budget/cleanup state; accepted ledger transitions, not arbitrary runner messages |
-| Device | Online/offline, capacity, health, workspace binding, model/tool availability, drain/update result; device identity plus server observation |
-| Workspace | Selected file/Git/build/service changes; scoped local observer with binding identity and scan cursor |
-| External | Signed webhook, poll result, incident/error alert, customer request, permitted message/email/calendar change; configured connector |
-| Time and absence | Schedule due, SLA exceeded, no heartbeat, missing expected result; durable timer plus recheck of current state |
-| Manual | Authenticated Run now, API/MCP command, approved backfill/replay; attributable actor and request key |
+| Event family     | Required examples and authority                                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Planning         | Issue created/changed/ready/blocked, assignment, dependency unblocked, cycle boundary, project milestone/health, approval decision; domain outbox |
+| Source control   | Push, PR head/review/check/merge/close, merge-queue candidate, release, deployment; authenticated repository installation                         |
+| Execution        | Run/step/checkpoint/question/timeout/budget/cleanup state; accepted ledger transitions, not arbitrary runner messages                             |
+| Device           | Online/offline, capacity, health, workspace binding, model/tool availability, drain/update result; device identity plus server observation        |
+| Workspace        | Selected file/Git/build/service changes; scoped local observer with binding identity and scan cursor                                              |
+| External         | Signed webhook, poll result, incident/error alert, customer request, permitted message/email/calendar change; configured connector                |
+| Time and absence | Schedule due, SLA exceeded, no heartbeat, missing expected result; durable timer plus recheck of current state                                    |
+| Manual           | Authenticated Run now, API/MCP command, approved backfill/replay; attributable actor and request key                                              |
 
 Clipboard and raw desktop/activity monitoring stay device-local unless explicitly configured with consent and data scope. No automatic upload of local file bodies, chats, environment variables, or secrets. A trigger type string is not proof that an authenticated producer exists.
 
@@ -92,13 +92,13 @@ Domain mutation and its outbox event commit together. External webhook ingress v
 
 Maintain these independent uniqueness boundaries:
 
-| Boundary | Canonical key |
-| --- | --- |
-| Ingress delivery | Organization + authenticated source installation + source event ID; compare payload digest on reuse |
-| Scheduled occurrence | Organization + schedule ID + schedule revision + nominal occurrence ordinal/UTC instant and fold identity |
-| Event trigger decision | Organization + stable automation ID + stable trigger slot + event ID; evaluated automation revision is stored data, not a way to bypass prior consumption |
-| External action | Semantic operation + target + expected target revision + originating execution/action slot; retry keeps the same receipt |
-| CI repair or incident repair | Repository + head SHA + failing check identity, or incident + incident revision, plus the canonical issue writer constraint |
+| Boundary                     | Canonical key                                                                                                                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ingress delivery             | Organization + authenticated source installation + source event ID; compare payload digest on reuse                                                       |
+| Scheduled occurrence         | Organization + schedule ID + schedule revision + nominal occurrence ordinal/UTC instant and fold identity                                                 |
+| Event trigger decision       | Organization + stable automation ID + stable trigger slot + event ID; evaluated automation revision is stored data, not a way to bypass prior consumption |
+| External action              | Semantic operation + target + expected target revision + originating execution/action slot; retry keeps the same receipt                                  |
+| CI repair or incident repair | Repository + head SHA + failing check identity, or incident + incident revision, plus the canonical issue writer constraint                               |
 
 An ingress duplicate cannot start again after an automation edit. Separate automations can both match an event; semantic action receipts and issue admission still prevent competing repairs. A new automation with a copied definition is a distinct actor and must pass normal enablement/admission.
 
@@ -152,32 +152,32 @@ The automation screen needs definition, trigger, owner, status, next run, recent
 
 Ship configurable templates with declared inputs, scopes, output contracts and bounded execution. Templates start disabled; connection setup and scope selection are installation data. The table is a capability catalog, not preinstalled schedules for this workspace.
 
-| Template family | Trigger → result | Required constraint |
-| --- | --- | --- |
-| Recurring work | Calendar → recurring issue, research report, or scheduled agent task | Separate issue creation from execution; explicit overlap |
-| Continuous goals | Checkpoint/timer → next bounded goal iteration | Completion predicate, total budget, stop condition |
-| Intake and triage | Report/message → deduplicated issue, proposed classification/owner | Provenance, private-source ACL, no fabricated requirements |
-| Readiness and delegation | Ready issue/dependency resolved → admitted implementation | Acceptance criteria and eligible target |
-| Cycle preparation | Cycle boundary → capacity/poker agenda and planning suggestions | Human estimates remain private until reveal |
-| Cycle follow-through | Aging/blocker/SLA timer → escalation or bounded investigation | No automatic scope/estimate history rewrite |
-| Project coordination | Milestone/dependency changes → bounded task graph | No cyclic dependencies or unlimited child generation |
-| CI repair | Current failed check → reproduction/test/patch PR | One repair key per relevant head/check; obsolete events no-op |
-| Review follow-through | Review comment → scoped fix and revalidation | Current PR head, authority and unresolved-thread identity |
-| Repository gardening | Scheduled scan → dependency/security/docs/test improvement PR | Change limits, lockfiles, ownership and review capacity |
-| Research and specification | Source/periodic change → cited findings and draft spec/issues | Retrieval dates, source provenance, reviewed durable facts |
-| Drift detection | API/schema/docs/environment change → impact report or fix | Compare recorded versions; no silent environment mutation |
-| Remote regression | PR/nightly/release → matrix campaign on cloud and clients | Required platforms/shards, reproducible data, complete evidence |
-| Preview review | Candidate ready → private preview and acceptance checks | Isolated origin, expiring grant, cleanup ownership |
-| Incident response | Alert → sanitized reproduction, regression test, fix proposal | Read-only production diagnosis unless separately granted |
-| Release verification | Merge/deployment → smoke/canary checks and linked outcome | Separate release grant; rollback only when preauthorized |
-| Customer follow-up | Delivered issue → draft or authorized source-channel reply | Current recipient/channel permissions and deduplication |
-| Digests and meetings | Schedule → project update, change summary, agenda | Authorized sources/destination; no empty notification spam |
-| Knowledge maintenance | Accepted change → proposed facts/skill improvement | Provenance, revision review, no unreviewed self-modification |
-| Provider maintenance | Retirement/entitlement event → affected-run report and proposed route change | No silent model/data-destination switch |
-| Fleet operations | Health/capacity/update event → diagnose, drain, approved update or recovery | Device ownership, working hours, canary verification |
-| Environment operations | Setup failure/image change → rebuild or diagnosed fix | Separate image build authority, clean provenance |
-| Resource stewardship | Budget/storage/idle threshold → drain/reap/report | Keep evidence and user files; fenced ownership checks |
-| Recovery rehearsal | Approved schedule → isolated restore and synthetic fault campaign | Never target production by inferred URL or credentials |
+| Template family            | Trigger → result                                                             | Required constraint                                             |
+| -------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Recurring work             | Calendar → recurring issue, research report, or scheduled agent task         | Separate issue creation from execution; explicit overlap        |
+| Continuous goals           | Checkpoint/timer → next bounded goal iteration                               | Completion predicate, total budget, stop condition              |
+| Intake and triage          | Report/message → deduplicated issue, proposed classification/owner           | Provenance, private-source ACL, no fabricated requirements      |
+| Readiness and delegation   | Ready issue/dependency resolved → admitted implementation                    | Acceptance criteria and eligible target                         |
+| Cycle preparation          | Cycle boundary → capacity/poker agenda and planning suggestions              | Human estimates remain private until reveal                     |
+| Cycle follow-through       | Aging/blocker/SLA timer → escalation or bounded investigation                | No automatic scope/estimate history rewrite                     |
+| Project coordination       | Milestone/dependency changes → bounded task graph                            | No cyclic dependencies or unlimited child generation            |
+| CI repair                  | Current failed check → reproduction/test/patch PR                            | One repair key per relevant head/check; obsolete events no-op   |
+| Review follow-through      | Review comment → scoped fix and revalidation                                 | Current PR head, authority and unresolved-thread identity       |
+| Repository gardening       | Scheduled scan → dependency/security/docs/test improvement PR                | Change limits, lockfiles, ownership and review capacity         |
+| Research and specification | Source/periodic change → cited findings and draft spec/issues                | Retrieval dates, source provenance, reviewed durable facts      |
+| Drift detection            | API/schema/docs/environment change → impact report or fix                    | Compare recorded versions; no silent environment mutation       |
+| Remote regression          | PR/nightly/release → matrix campaign on cloud and clients                    | Required platforms/shards, reproducible data, complete evidence |
+| Preview review             | Candidate ready → private preview and acceptance checks                      | Isolated origin, expiring grant, cleanup ownership              |
+| Incident response          | Alert → sanitized reproduction, regression test, fix proposal                | Read-only production diagnosis unless separately granted        |
+| Release verification       | Merge/deployment → smoke/canary checks and linked outcome                    | Separate release grant; rollback only when preauthorized        |
+| Customer follow-up         | Delivered issue → draft or authorized source-channel reply                   | Current recipient/channel permissions and deduplication         |
+| Digests and meetings       | Schedule → project update, change summary, agenda                            | Authorized sources/destination; no empty notification spam      |
+| Knowledge maintenance      | Accepted change → proposed facts/skill improvement                           | Provenance, revision review, no unreviewed self-modification    |
+| Provider maintenance       | Retirement/entitlement event → affected-run report and proposed route change | No silent model/data-destination switch                         |
+| Fleet operations           | Health/capacity/update event → diagnose, drain, approved update or recovery  | Device ownership, working hours, canary verification            |
+| Environment operations     | Setup failure/image change → rebuild or diagnosed fix                        | Separate image build authority, clean provenance                |
+| Resource stewardship       | Budget/storage/idle threshold → drain/reap/report                            | Keep evidence and user files; fenced ownership checks           |
+| Recovery rehearsal         | Approved schedule → isolated restore and synthetic fault campaign            | Never target production by inferred URL or credentials          |
 
 The same building blocks support document/artifact processing, media generation, and non-code workflows on capable Machdoch runtimes. Connector availability and hardware determine placement; a template must not advertise an unavailable producer or tool as a working integration.
 

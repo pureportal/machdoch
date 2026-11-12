@@ -59,6 +59,7 @@ async function runServer(
   const cloud = await getCloudRuntime();
   cloud.inference.worker.start();
   cloud.authentication.mailWorker.start();
+  cloud.scheduleLoop.start();
   const appDirectory = resolve(fileURLToPath(new URL("..", import.meta.url)));
   const app = next({ dev: development, dir: appDirectory, hostname, port });
   await app.prepare();

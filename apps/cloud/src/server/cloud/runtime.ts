@@ -12,6 +12,7 @@ import { CloudTwoFactor } from "./auth/two-factor";
 import { CloudRecurrencePreview } from "./automation/recurrence";
 import { CloudSchedules } from "./automation/schedules";
 import { CloudScheduleDispatcher } from "./automation/schedule-dispatcher";
+import { CloudPeriodicLoop } from "./periodic-loop";
 import { CloudInvitations } from "./auth/invitations";
 import { CloudInvitationAcceptance } from "./auth/invitation-acceptance";
 import { CloudEmailSettingsService } from "./auth/email-settings";
@@ -66,6 +67,7 @@ export interface CloudRuntime {
   recurrence: CloudRecurrencePreview;
   schedules: CloudSchedules;
   scheduleDispatcher: CloudScheduleDispatcher;
+  scheduleLoop: CloudPeriodicLoop;
   authentication: {
     credentials: CloudCredentials;
     twoFactor: CloudTwoFactor;
@@ -182,6 +184,7 @@ export function createCloudRuntime(
   const cycles = new CloudCycles(database);
   const comments = new CloudComments(database);
   const runs = new CloudRuns(database);
+  const scheduleDispatcher = new CloudScheduleDispatcher(database, recurrence);
   const agentTools = new CloudAgentTools({
     planning,
     projects,
@@ -201,7 +204,12 @@ export function createCloudRuntime(
     identity: new CloudIdentity(database),
     recurrence,
     schedules: new CloudSchedules(database, recurrence),
-    scheduleDispatcher: new CloudScheduleDispatcher(database, recurrence),
+    scheduleDispatcher,
+    scheduleLoop: new CloudPeriodicLoop(
+      "Schedule dispatch",
+      () => scheduleDispatcher.tick(),
+      5,
+    ),
     authentication: {
       credentials: new CloudCredentials(database),
       twoFactor: new CloudTwoFactor(
@@ -307,6 +315,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   const installation = await initializeInstallation(runtime.database);
   const origin = installation.origin ?? "";
   if (runtime.origin === origin) return;
+  await runtime.scheduleLoop.close();
   await runtime.authentication.mailWorker.close();
   await runtime.inference.worker.close();
   Object.assign(
@@ -317,6 +326,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   );
   runtime.inference.worker.start();
   runtime.authentication.mailWorker.start();
+  runtime.scheduleLoop.start();
 }
 
 export function setCloudRuntimeForTests(
@@ -333,6 +343,7 @@ export async function closeCloudRuntime(): Promise<void> {
   delete globalRuntime[runtimeSymbol];
   if (runtime) {
     const current = await runtime;
+    await current.scheduleLoop.close();
     await current.authentication.mailWorker.close();
     await current.inference.worker.close();
     await current.database.close();

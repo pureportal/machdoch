@@ -1,15 +1,11 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { Client, Connection } from "@temporalio/client";
 import {
   cloudBrowserFixture,
   cloudApi,
   assertEventually,
 } from "./cloud-browser-fixture.mjs";
-import { cloudTemporalFixture } from "./cloud-temporal-fixture.mjs";
-import { startCloudWorkflowWorker } from "./cloud-workflow-worker-fixture.mjs";
 import { PostgresCloudDatabase } from "../src/server/cloud/database.ts";
 import { createCloudRuntime } from "../src/server/cloud/runtime.ts";
 import { passSecondFactor } from "./cloud-two-factor-fixture.mjs";
@@ -23,9 +19,7 @@ const fixture = await cloudBrowserFixture({
     return false;
   },
 });
-let temporal, worker, connection, database;
-let stoppedWorkerLogs = "";
-const workerLogs = () => worker?.logs() ?? stoppedWorkerLogs;
+let database;
 const checks = [];
 const passed = (name) => {
   checks.push(name);
@@ -34,24 +28,10 @@ const passed = (name) => {
 const api = (path, method, body, key) =>
   cloudApi(fixture, fixture.ownerContext, path, method, body, key);
 const page = await fixture.ownerContext.newPage();
-const installationId = randomUUID();
-const startWorker = () => {
-  worker = startCloudWorkflowWorker(fixture, temporal, installationId);
-};
-const stopWorker = async () => {
-  if (worker?.exitCode === null) worker.kill();
-  await worker?.finished;
-  stoppedWorkerLogs = worker?.logs() ?? stoppedWorkerLogs;
-  worker = undefined;
-};
 const ready = () =>
   assertEventually(
-    async () => {
-      if (worker?.exitCode !== null)
-        throw new Error(`Workflow worker exited. ${workerLogs()}`);
-      return (await api("schedules/status")).available;
-    },
-    () => `Workflow worker did not become ready. ${workerLogs()}`,
+    async () => (await api("schedules/status")).available,
+    () => `Schedule dispatch did not become available. ${fixture.logs()}`,
     30000,
   );
 
@@ -77,18 +57,7 @@ try {
     fixture.environment.MACHDOCH_CLOUD_DATABASE_URL,
   );
   const runtime = createCloudRuntime(database, fixture.origin);
-  temporal = await cloudTemporalFixture(join(fixture.directory, "temporal"));
-  startWorker();
   await ready();
-  connection = await Connection.connect({ address: temporal.address });
-  const temporalClient = new Client({
-    connection,
-    namespace: temporal.namespace,
-  });
-  const workflow = temporalClient.workflow.getHandle(
-    `machdoch-cloud-${installationId}-schedules`,
-  );
-  const runId = (await workflow.describe()).runId;
 
   await page.goto(`${fixture.origin}/cloud/schedules`);
   await page.getByRole("button", { name: "New schedule", exact: true }).click();
@@ -237,7 +206,7 @@ try {
       (await api(`schedules/${once.id}/history`)).some(
         (entry) => entry.outcome === "created",
       ),
-    () => `Temporal did not dispatch the schedule. ${workerLogs()}`,
+    () => `The server did not dispatch the schedule. ${fixture.logs()}`,
     35000,
   );
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
@@ -255,7 +224,7 @@ try {
     1,
   );
   passed(
-    "The production Temporal worker creates one scheduled issue, with a browser history link",
+    "The production server's schedule loop creates one scheduled issue, with a browser history link",
   );
 
   const recurring = await api("schedules", "POST", {
@@ -278,7 +247,6 @@ try {
     revision: 1,
     enabled: true,
   });
-  await stopWorker();
   const nextAt = (await api(`schedules/${recurring.id}`)).nextAt - 20 * 60000;
   await fixture.database.query(
     "UPDATE cloud_schedules SET next_at=$2 WHERE id=$1",
@@ -314,27 +282,13 @@ try {
     enabled: true,
   });
   await fixture.restart();
-  await connection.close();
-  connection = undefined;
-  await temporal.restart();
-  startWorker();
   await ready();
-  connection = await Connection.connect({ address: temporal.address });
-  const resumed = new Client({ connection, namespace: temporal.namespace });
-  assert.equal(
-    (
-      await resumed.workflow
-        .getHandle(`machdoch-cloud-${installationId}-schedules`)
-        .describe()
-    ).runId,
-    runId,
-  );
   await assertEventually(
     async () =>
       (await api(`schedules/${recovery.id}/history`)).filter(
         (entry) => entry.outcome === "created",
       ).length === 1,
-    () => `Restarted worker did not resume dispatch. ${workerLogs()}`,
+    () => `The restarted server did not resume dispatch. ${fixture.logs()}`,
     30000,
   );
   assert.equal(
@@ -344,15 +298,20 @@ try {
     3,
   );
   passed(
-    "Concurrent PostgreSQL dispatch is duplicate-safe; server and Temporal restart retain the workflow and receipts",
+    "Concurrent PostgreSQL dispatch is duplicate-safe; a server restart resumes dispatch and retains receipts",
   );
 
-  await stopWorker();
   const stopped = await api(`schedules/${recurring.id}`);
   await api(`schedules/${recurring.id}/state`, "POST", {
     revision: stopped.revision,
     enabled: false,
   });
+  await fixture.database.query(
+    "CREATE FUNCTION verify_failing_schedule_dispatch() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Schedule dispatch is failing'; END $$",
+  );
+  await fixture.database.query(
+    "CREATE TRIGGER verify_failing_schedule_dispatch BEFORE UPDATE ON cloud_schedule_worker FOR EACH ROW WHEN (NEW.touched_at > OLD.touched_at) EXECUTE FUNCTION verify_failing_schedule_dispatch()",
+  );
   await fixture.database.query(
     "UPDATE cloud_schedule_worker SET touched_at=clock_timestamp()-interval '1 minute'",
   );
@@ -374,8 +333,11 @@ try {
     .getByRole("dialog")
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
+  await fixture.database.query(
+    "DROP FUNCTION verify_failing_schedule_dispatch() CASCADE",
+  );
   passed(
-    "An unavailable worker leaves the schedule paused and explains how to retry",
+    "Failing schedule dispatch leaves the schedule paused and explains how to retry",
   );
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -433,9 +395,7 @@ try {
     JSON.stringify(
       {
         checks,
-        temporal: "1.32.1 production binary, isolated SQLite persistence",
         database: "PostgreSQL isolated schema",
-        workflowRunId: runId,
         pageErrors: fixture.pageErrors,
       },
       null,
@@ -447,16 +407,13 @@ try {
   await writeFile(
     join(fixture.directory, "schedule-failure.json"),
     JSON.stringify(
-      { message: String(error), checks, workerLogs: workerLogs() },
+      { message: String(error), checks, serverLogs: fixture.logs() },
       null,
       2,
     ),
   );
   throw error;
 } finally {
-  await stopWorker();
-  await connection?.close();
-  await temporal?.close();
   await database?.close();
   await fixture.close();
 }

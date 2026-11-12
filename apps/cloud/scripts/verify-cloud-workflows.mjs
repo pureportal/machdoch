@@ -10,8 +10,6 @@ import {
   executionProviderFixture,
   assertEventually,
 } from "./cloud-browser-fixture.mjs";
-import { cloudTemporalFixture } from "./cloud-temporal-fixture.mjs";
-import { startCloudWorkflowWorker } from "./cloud-workflow-worker-fixture.mjs";
 
 let dropPath = "";
 const fixture = await cloudBrowserFixture({
@@ -28,7 +26,6 @@ const passed = (name) => {
   checks.push(name);
   console.log(`PASS ${name}`);
 };
-let temporal, worker;
 async function raw(path, method, data) {
   const csrf = (await fixture.ownerContext.cookies()).find(
     (cookie) => cookie.name === "__Host-machdoch_cloud_csrf",
@@ -253,14 +250,9 @@ try {
     "Concurrent workflow editors preserve the draft and require an explicit reload after a revision conflict",
   );
 
-  temporal = await cloudTemporalFixture(join(fixture.directory, "temporal"));
-  worker = startCloudWorkflowWorker(fixture, temporal, randomUUID());
   await assertEventually(
-    async () => {
-      if (worker.exitCode !== null) throw new Error(worker.logs());
-      return (await api("schedules/status")).available;
-    },
-    () => `Workflow worker unavailable: ${worker.logs()}`,
+    async () => (await api("schedules/status")).available,
+    () => `Schedule dispatch unavailable: ${fixture.logs()}`,
     30000,
   );
   const project = await api("projects", "POST", {
@@ -560,7 +552,7 @@ try {
       (await api(`schedules/${scheduled.id}/history`)).some(
         (entry) => entry.outcome === "created",
       ),
-    () => `Reviewed schedule did not execute: ${worker.logs()}`,
+    () => `Reviewed schedule did not execute: ${fixture.logs()}`,
     30000,
   );
   const occurrence = (await api(`schedules/${scheduled.id}/history`)).find(
@@ -619,11 +611,8 @@ try {
     fullPage: true,
   });
   console.error(`Workflow evidence: ${fixture.directory}`);
-  if (worker) console.error(worker.logs().slice(-3000));
+  console.error(fixture.logs().slice(-3000));
   throw error;
 } finally {
-  if (worker?.exitCode === null) worker.kill();
-  await worker?.finished;
-  await temporal?.close();
   await fixture.close();
 }

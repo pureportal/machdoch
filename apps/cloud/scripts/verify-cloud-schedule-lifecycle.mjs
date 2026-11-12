@@ -10,8 +10,6 @@ import {
   assertEventually,
   executionProviderFixture,
 } from "./cloud-browser-fixture.mjs";
-import { cloudTemporalFixture } from "./cloud-temporal-fixture.mjs";
-import { startCloudWorkflowWorker } from "./cloud-workflow-worker-fixture.mjs";
 import { PostgresCloudDatabase } from "../src/server/cloud/database.ts";
 import { createCloudRuntime } from "../src/server/cloud/runtime.ts";
 
@@ -29,22 +27,11 @@ const passed = (name) => {
   checks.push(name);
   process.stdout.write(`PASS ${name}\n`);
 };
-let temporal, workflowWorker, database;
-const installationId = randomUUID();
-async function stopWorkflow() {
-  if (workflowWorker?.exitCode === null) workflowWorker.kill();
-  await workflowWorker?.finished;
-  workflowWorker = undefined;
-}
-async function startWorkflow() {
-  workflowWorker = startCloudWorkflowWorker(fixture, temporal, installationId);
+let database;
+async function scheduleDispatchReady() {
   await assertEventually(
-    async () => {
-      if (workflowWorker.exitCode !== null)
-        throw new Error(workflowWorker.logs());
-      return (await api("schedules/status")).available;
-    },
-    () => `Workflow worker did not become ready. ${workflowWorker.logs()}`,
+    async () => (await api("schedules/status")).available,
+    () => `Schedule dispatch did not become available. ${fixture.logs()}`,
     30000,
   );
 }
@@ -95,8 +82,7 @@ try {
     profileId: profile.id,
   });
   const connection = new RunnerConnection(fixture.origin, worker.token);
-  temporal = await cloudTemporalFixture(join(fixture.directory, "temporal"));
-  await startWorkflow();
+  await scheduleDispatchReady();
   database = new PostgresCloudDatabase(
     fixture.environment.MACHDOCH_CLOUD_DATABASE_URL,
   );
@@ -244,10 +230,8 @@ try {
   );
 
   await connection.heartbeat(claim);
-  await stopWorkflow();
   await fixture.restart();
-  await temporal.restart();
-  await startWorkflow();
+  await scheduleDispatchReady();
   assert.equal(
     (await api(`schedules/${primary.id}`)).waitingRunId,
     claim.runId,
@@ -547,7 +531,7 @@ try {
           .locator("body")
           .innerText()
           .catch(() => "Page unavailable"),
-        workerLogs: workflowWorker?.logs(),
+        serverLogs: fixture.logs(),
       },
       null,
       2,
@@ -555,8 +539,6 @@ try {
   );
   throw error;
 } finally {
-  await stopWorkflow();
-  await temporal?.close();
   await database?.close();
   setDefaultCACertificates(certificates);
   await fixture.close();

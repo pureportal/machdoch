@@ -78,8 +78,6 @@ COPY --from=build --chown=node:node /workspace/apps/cloud/dist/cloud-model-worke
 COPY --from=build --chown=node:node /workspace/apps/cloud/dist/cloud-smtp-worker.mjs apps/cloud/dist/cloud-smtp-worker.mjs
 COPY --from=build --chown=node:node /workspace/apps/cloud/dist/cloud-oidc-worker.mjs apps/cloud/dist/cloud-oidc-worker.mjs
 COPY --from=build --chown=node:node /workspace/apps/cloud/dist/cloud-recurrence-worker.mjs apps/cloud/dist/cloud-recurrence-worker.mjs
-COPY --from=build --chown=node:node /workspace/apps/cloud/dist/cloud-workflows.cjs apps/cloud/dist/cloud-workflows.cjs
-COPY --from=build --chown=node:node /workspace/apps/cloud/scripts/cloud-workflows.ts apps/cloud/scripts/cloud-workflows.ts
 COPY --from=build --chown=node:node /workspace/apps/cloud/next.config.ts apps/cloud/next.config.ts
 COPY --from=build --chown=node:node /workspace/apps/cloud/tsconfig.json apps/cloud/tsconfig.json
 COPY --from=build --chown=node:node /workspace/packages/client-ui/src packages/client-ui/src
@@ -101,7 +99,6 @@ RUN test -f .next/BUILD_ID \
     && test -f dist/cloud-smtp-worker.mjs \
     && test -f dist/cloud-oidc-worker.mjs \
     && test -f dist/cloud-recurrence-worker.mjs \
-    && test -f dist/cloud-workflows.cjs \
     && test -f public/media-studio/index.html \
     && test -L node_modules/@machdoch/client-ui \
     && test -L node_modules/@machdoch/fleet-protocol \
@@ -115,11 +112,6 @@ RUN test -f .next/BUILD_ID \
 USER node
 
 EXPOSE 43188
-
-FROM application AS cloud-workflows
-
-ENTRYPOINT ["node", "--enable-source-maps", "--import", "@oxc-node/core/register", "scripts/cloud-workflows.ts"]
-CMD []
 
 FROM application AS server
 
