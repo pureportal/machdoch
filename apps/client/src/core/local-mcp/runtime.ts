@@ -46,6 +46,7 @@ export const createLocalToolRuntime = (options: LocalToolRuntimeOptions) => {
       name: string,
       args: Record<string, unknown>,
       signal?: AbortSignal,
+      onOutput?: TaskActionOutputHandler,
     ): Promise<AgentToolExecutionResult> {
       const execution = (async () => {
         const signals = [options.signal, signal].filter(
@@ -56,16 +57,22 @@ export const createLocalToolRuntime = (options: LocalToolRuntimeOptions) => {
         const call = { id: randomUUID(), name, arguments: args };
         options.onToolCall?.(call);
         combinedSignal.throwIfAborted();
+        const outputHandlers = [options.onActionOutput, onOutput].filter(
+          (handler): handler is TaskActionOutputHandler =>
+            handler !== undefined,
+        );
         const { result } = await executeToolCall(
           options.config,
           options.memory,
           options.uiControl,
           tools,
           call,
-          options.onActionOutput
-            ? (output) => {
-                if (!combinedSignal.aborted)
-                  return options.onActionOutput?.(output);
+          outputHandlers.length > 0
+            ? async (output) => {
+                for (const handler of outputHandlers) {
+                  if (combinedSignal.aborted) return;
+                  await handler(output);
+                }
               }
             : undefined,
           options.runId,

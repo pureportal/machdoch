@@ -18,6 +18,8 @@ import { projectMcpForProvider } from "../provider-enrollment/mcp-projector.js";
 import { startLocalMcpHost } from "./http.js";
 import { saveWorkspaceMemoryOverride } from "../config.js";
 import { saveUserWorkspaceMemoryDefaultEnabled } from "../env.js";
+import { saveManagedSkill } from "../managed-skills.js";
+import type { Progress } from "@modelcontextprotocol/sdk/types.js";
 
 let root: string;
 const cleanup: Array<() => Promise<void>> = [];
@@ -163,6 +165,100 @@ describe("Machdoch source CLI MCP", () => {
     expect(await closed).toEqual([0, null]);
     lines.close();
   });
+
+  it("forwards progress, resources, prompts, and completions through the stdio bridge", async () => {
+    await saveManagedSkill({
+      name: "bridge-check",
+      description: "Check the bridge.",
+      content: "# Bridge check",
+      enabled: true,
+    });
+    const host = await startLocalMcpHost({
+      config: { ...runtimeConfig, workspaceRoot: root, mode: "machdoch" },
+      memory: {
+        sessionEnabled: false,
+        sessionEntries: [],
+        globalEnabled: false,
+        globalEntries: [],
+      },
+      additionalToolDefinitions: [
+        {
+          spec: {
+            name: "fixture_stream",
+            description: "Stream output.",
+            inputSchema: { type: "object", additionalProperties: false },
+          },
+          backingTool: "utilities",
+          effect: "read",
+          riskLevel: "low",
+          async execute(_args, context) {
+            await context.onOutput?.({ stream: "stdout", chunk: "step 1" });
+            await context.onOutput?.({ stream: "stdout", chunk: "step 2" });
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            return {
+              toolResult: { callId: "", name: "fixture_stream", output: "Done" },
+              sections: [],
+              traceLines: [],
+            };
+          },
+        },
+      ],
+    });
+    cleanup.push(host.close);
+    const descriptor = launch();
+    const client = await connect(
+      descriptor.command,
+      [...descriptor.args, "mcp", "connect"],
+      {
+        ...descriptor.environment,
+        MACHDOCH_LOCAL_MCP_URL: host.endpoint.url,
+        MACHDOCH_LOCAL_MCP_TOKEN: host.endpoint.token,
+      },
+    );
+    expect(client.getServerCapabilities()).toMatchObject({
+      tools: {},
+      resources: {},
+      prompts: {},
+      completions: {},
+    });
+    const progress: Progress[] = [];
+    const result = await client.callTool(
+      { name: "fixture_stream", arguments: {} },
+      undefined,
+      { onprogress: (entry) => progress.push(entry) },
+    );
+    expect(result.content).toEqual([{ type: "text", text: "Done" }]);
+    expect(progress).toEqual([
+      { progress: 1, message: "step 1" },
+      { progress: 2, message: "step 2" },
+    ]);
+    expect(
+      (await client.listResources()).resources.map((entry) => entry.uri),
+    ).toContain("machdoch://skills/bridge-check");
+    expect(
+      await client.readResource({ uri: "machdoch://skills/bridge-check" }),
+    ).toEqual({
+      contents: [
+        {
+          uri: "machdoch://skills/bridge-check",
+          mimeType: "text/markdown",
+          text: "# Bridge check",
+        },
+      ],
+    });
+    expect(
+      (await client.listResourceTemplates()).resourceTemplates.length,
+    ).toBeGreaterThan(0);
+    expect((await client.listPrompts()).prompts).toEqual([]);
+    expect(
+      (
+        await client.complete({
+          ref: { type: "ref/resource", uri: "machdoch://skills/{name}" },
+          argument: { name: "name", value: "bridge" },
+        })
+      ).completion.values,
+    ).toEqual(["bridge-check"]);
+  }, 60_000);
 
   it("launches the actual oxc import-only preload from an unrelated working directory", async () => {
     const descriptor = launch();

@@ -7,7 +7,14 @@ import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
   CallToolRequestSchema,
   CallToolResultSchema,
+  CompleteRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
+  ListResourceTemplatesRequestSchema,
   ListToolsRequestSchema,
+  ProgressNotificationSchema,
+  ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import type { RunMode } from "../runtime-contract.generated.js";
 import { resolveWorkspaceMemoryEnabled } from "../memory.js";
@@ -117,15 +124,25 @@ export const runLocalMcpStdioConnection = async (): Promise<void> => {
       }) as unknown as Transport,
     );
     const instructions = client.getInstructions();
+    const { resources, prompts, completions } =
+      client.getServerCapabilities() ?? {};
     const server = new Server(
       { name: "machdoch", version: "1.0.0" },
       {
-        capabilities: { tools: {} },
+        capabilities: {
+          tools: {},
+          ...(resources ? { resources } : {}),
+          ...(prompts ? { prompts } : {}),
+          ...(completions ? { completions } : {}),
+        },
         ...(instructions ? { instructions } : {}),
       },
     );
     server.setRequestHandler(ListToolsRequestSchema, async (request, extra) =>
       client.listTools(request.params, { signal: extra.signal }),
+    );
+    client.setNotificationHandler(ProgressNotificationSchema, (notification) =>
+      server.notification(notification),
     );
     server.setRequestHandler(CallToolRequestSchema, async (request, extra) =>
       client.callTool(request.params, CallToolResultSchema, {
@@ -133,6 +150,40 @@ export const runLocalMcpStdioConnection = async (): Promise<void> => {
         timeout: 3_600_000,
       }),
     );
+    if (resources) {
+      server.setRequestHandler(
+        ListResourcesRequestSchema,
+        async (request, extra) =>
+          client.listResources(request.params, { signal: extra.signal }),
+      );
+      server.setRequestHandler(
+        ListResourceTemplatesRequestSchema,
+        async (request, extra) =>
+          client.listResourceTemplates(request.params, {
+            signal: extra.signal,
+          }),
+      );
+      server.setRequestHandler(
+        ReadResourceRequestSchema,
+        async (request, extra) =>
+          client.readResource(request.params, { signal: extra.signal }),
+      );
+    }
+    if (prompts) {
+      server.setRequestHandler(
+        ListPromptsRequestSchema,
+        async (request, extra) =>
+          client.listPrompts(request.params, { signal: extra.signal }),
+      );
+      server.setRequestHandler(GetPromptRequestSchema, async (request, extra) =>
+        client.getPrompt(request.params, { signal: extra.signal }),
+      );
+    }
+    if (completions) {
+      server.setRequestHandler(CompleteRequestSchema, async (request, extra) =>
+        client.complete(request.params, { signal: extra.signal }),
+      );
+    }
     await connectStdio(server, () => client.close());
   } catch (error) {
     await client.close();

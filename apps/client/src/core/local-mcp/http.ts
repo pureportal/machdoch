@@ -69,7 +69,6 @@ export const startLocalMcpHost = async (
     const server = createLocalMcpServer(runtime);
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: randomUUID,
-      enableJsonResponse: true,
       onsessioninitialized: (id) => {
         sessions.set(id, transport);
       },
