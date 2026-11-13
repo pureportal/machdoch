@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingState } from "@machdoch/product-ui";
 import { Settings2 } from "lucide-react";
 import { useCallback, useReducer, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -92,7 +93,12 @@ export function SettingsManager({
         disabled={pending || state.loading}
         onProfile={state.receiveProfile}
       />
-      <div className="grid min-w-0 items-start gap-5 xl:grid-cols-[200px_minmax(0,1fr)]">
+      <div
+        className={cn(
+          "grid min-w-0 items-start gap-5",
+          state.profiles.length > 0 && "xl:grid-cols-[200px_minmax(0,1fr)]",
+        )}
+      >
         {state.profiles.length ? (
           <Select
             className="xl:hidden"
@@ -114,7 +120,12 @@ export function SettingsManager({
             state.profiles.length && "hidden xl:block",
           )}
         >
-          <div className="grid gap-3 px-2 pb-3 pt-2">
+          <div
+            className={cn(
+              "grid gap-3 px-2 pb-3 pt-2",
+              !state.profiles.length && "sr-only",
+            )}
+          >
             <h2 className="text-sm font-semibold">Profiles</h2>
             {state.profiles.length > 5 ? (
               <Input
@@ -155,9 +166,11 @@ export function SettingsManager({
               </button>
             ))}
             {!state.loading && !state.error && !state.profiles.length ? (
-              <div className="grid justify-items-center gap-3 px-3 py-8 text-center text-sm text-muted-foreground">
-                <Settings2 className="size-5" />
-                No profiles.
+              <div className="grid min-h-60 content-center justify-items-center gap-4 px-3 py-8 text-center">
+                <span className="grid size-12 place-items-center rounded-2xl bg-primary/10 text-primary">
+                  <Settings2 aria-hidden="true" />
+                </span>
+                <p className="font-medium">No profiles yet</p>
               </div>
             ) : null}
             {state.profiles.length > 0 && profiles.length === 0 ? (
@@ -167,11 +180,7 @@ export function SettingsManager({
             ) : null}
           </div>
         </Card>
-        {state.loading ? (
-          <p role="status" className="p-5 text-sm text-muted-foreground">
-            Loading settings…
-          </p>
-        ) : null}
+        {state.loading ? <LoadingState label="Loading settings…" /> : null}
         {state.profile && state.catalog && generalDraft ? (
           <ProfileEditor
             key={state.profile.profileId}

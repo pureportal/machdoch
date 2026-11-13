@@ -3,6 +3,7 @@
 @import "@machdoch/client-ui/menu.css";
 @import "@machdoch/client-ui/file-preview.css";
 @import "@machdoch/client-ui/conversation.css";
+@import "@machdoch/client-ui/markdown.css";
 @source "../../../../packages/client-ui/src";
 @source "../../../../packages/media-studio/src/tauri/ui/components/ui";
 @custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));

@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingState } from "@machdoch/product-ui";
 import { RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
@@ -44,11 +45,7 @@ export function HistoryEditor({
   return (
     <div className="grid gap-4">
       <h3 className="font-medium">History</h3>
-      {loading ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading history…
-        </p>
-      ) : null}
+      {loading ? <LoadingState label="Loading history…" /> : null}
       {error ? (
         <div className="grid justify-items-start gap-3">
           <p role="alert" className="break-words text-sm text-destructive">

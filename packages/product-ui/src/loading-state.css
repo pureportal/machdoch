@@ -56,6 +56,26 @@
   overflow-wrap: anywhere;
 }
 
+.m-loading-state-compact {
+  min-height: 6rem;
+  gap: 0.625rem;
+  padding: 1rem;
+}
+
+.m-loading-state-compact .m-loading-state-indicator {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.m-loading-state-compact .m-loading-state-indicator svg {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.m-loading-state-compact .m-loading-state-label {
+  font-size: 0.8125rem;
+}
+
 @keyframes m-loading-state-spin {
   from {
     transform: rotate(-90deg);

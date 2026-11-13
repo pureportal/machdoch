@@ -11,7 +11,7 @@ import { MediaStudio } from "@machdoch/media-studio/tauri/ui/media/media-studio.
 import { TooltipProvider } from "@machdoch/media-studio/tauri/ui/components/ui/tooltip.js";
 import { CommandProvider } from "@machdoch/media-studio/tauri/ui/commands/command-context.js";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
-import { useBrowserAppearance } from "@machdoch/product-ui";
+import { LoadingState, useBrowserAppearance } from "@machdoch/product-ui";
 import "../ui/styles.css";
 import "./styles.css";
 
@@ -141,9 +141,7 @@ function FleetMediaStudio(): React.ReactElement {
             }}
           />
         ) : (
-          <div role="status" className="p-4">
-            Loading Media Studio…
-          </div>
+          <LoadingState label="Loading Media Studio…" />
         )}
       </CommandProvider>
     </TooltipProvider>

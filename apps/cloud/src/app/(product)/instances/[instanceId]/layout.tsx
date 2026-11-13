@@ -1,3 +1,4 @@
+import { BrandStyle } from "@/components/cloud/brand-theme";
 import { requireCloudWorkspace } from "@/server/cloud/page-auth";
 
 export default async function RemoteClientLayout({
@@ -7,10 +8,11 @@ export default async function RemoteClientLayout({
 }) {
   const { organization } = (await requireCloudWorkspace()).workspace;
   return (
-    <div
-      className="cloud-remote-surface"
-      data-cloud-accent={organization.accent}
-    >
+    <div className="cloud-remote-surface" data-cloud-brand="">
+      <BrandStyle
+        identity={organization}
+        scope=".cloud-remote-surface[data-cloud-brand]"
+      />
       {children}
     </div>
   );

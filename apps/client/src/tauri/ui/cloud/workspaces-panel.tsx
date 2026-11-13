@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type JSX } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { RefreshCw } from "lucide-react";
+import { LoadingState } from "@machdoch/product-ui";
 import type { CloudWorkspaceView } from "@machdoch/fleet-protocol/cloud-workspaces";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { Input } from "@machdoch/media-studio/tauri/ui/components/ui/input.js";
@@ -295,9 +296,7 @@ export function CloudWorkspacesPanel({
         />
       )}
       {loading && connections.length === 0 ? (
-        <p role="status" className="text-sm text-slate-400">
-          Loading connections…
-        </p>
+        <LoadingState label="Loading connections…" compact />
       ) : connections.length === 0 && !editing && !error ? (
         <p className="text-sm text-slate-400">No workspaces linked.</p>
       ) : null}

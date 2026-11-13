@@ -11,6 +11,7 @@ import {
 } from "@machdoch/fleet-protocol";
 import {
   createFleetOperationTransport,
+  LoadingState,
   useBrowserAppearance,
 } from "@machdoch/product-ui";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
@@ -89,9 +90,7 @@ function FleetScheduler(): React.ReactElement {
             commandScope={commandScope}
           />
         ) : (
-          <div role="status" className="p-4">
-            Loading Scheduler…
-          </div>
+          <LoadingState label="Loading Scheduler…" />
         )}
       </CommandProvider>
     </TooltipProvider>

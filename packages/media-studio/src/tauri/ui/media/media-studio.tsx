@@ -1,3 +1,4 @@
+import { LoadingState } from "@machdoch/product-ui";
 import { MediaUpscaleView } from "./components/media-upscale-view";
 import {
   OPEN_MEDIA_MODEL_PROFILES,
@@ -5114,9 +5115,7 @@ export const MediaStudio = ({
         {!runInspectorOpen ? runtimeErrorNotice : null}
         <div className="min-h-0 min-w-0 flex-1">
           {!loaded ? (
-            <div role="status" className="p-6 text-sm text-slate-400">
-              Loading Media Studio…
-            </div>
+            <LoadingState label="Loading Media Studio…" className="h-full" />
           ) : null}
           {loaded ? (
             <div hidden={state.activeSection !== "upscale"} className="h-full">
@@ -5318,9 +5317,7 @@ export const MediaStudio = ({
           {loaded && state.activeSection === "flow" ? (
             <Suspense
               fallback={
-                <div role="status" className="p-6 text-sm text-slate-400">
-                  Loading Flow…
-                </div>
+                <LoadingState label="Loading Flow…" className="h-full" />
               }
             >
               <MediaFlowView

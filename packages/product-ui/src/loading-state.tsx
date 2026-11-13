@@ -6,10 +6,12 @@ export interface LoadingStateProps extends Omit<
   "children"
 > {
   label: string;
+  compact?: boolean;
 }
 
 export function LoadingState({
   label,
+  compact = false,
   className,
   ...props
 }: LoadingStateProps): ReactElement {
@@ -19,7 +21,13 @@ export function LoadingState({
       aria-live="polite"
       aria-atomic="true"
       {...props}
-      className={["m-loading-state", className].filter(Boolean).join(" ")}
+      className={[
+        "m-loading-state",
+        compact && "m-loading-state-compact",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
     >
       <span className="m-loading-state-indicator" aria-hidden="true">
         <svg viewBox="0 0 40 40" fill="none">

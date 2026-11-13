@@ -12,6 +12,7 @@ import {
 } from "@machdoch/fleet-protocol";
 import {
   createFleetOperationTransport,
+  LoadingState,
   useBrowserAppearance,
 } from "@machdoch/product-ui";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
@@ -356,9 +357,7 @@ function FleetWorkspaces(): React.ReactElement {
             onSelectedWorkspaceChange={selectWorkspace}
           />
         ) : !error ? (
-          <div role="status" className="p-4">
-            Loading workspaces…
-          </div>
+          <LoadingState label="Loading workspaces…" />
         ) : null}
         {picker.dialog}
       </CommandProvider>

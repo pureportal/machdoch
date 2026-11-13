@@ -1,5 +1,5 @@
 import { RefreshCw } from "lucide-react";
-import { MemoryApplicabilityDetails } from "@machdoch/product-ui";
+import { LoadingState, MemoryApplicabilityDetails } from "@machdoch/product-ui";
 import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import type { ReasoningLesson } from "../../../core/reasoning-bank.js";
@@ -70,9 +70,7 @@ export const WorkspaceReasoningBankPanel = ({
         </p>
       ) : null}
       {loading && lessons.length === 0 ? (
-        <p role="status" className="text-sm text-slate-400">
-          Loading…
-        </p>
+        <LoadingState label="Loading lessons…" compact />
       ) : lessons.length === 0 && !error ? (
         <p className="text-sm text-slate-400">No lessons saved.</p>
       ) : (

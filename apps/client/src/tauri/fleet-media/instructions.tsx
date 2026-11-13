@@ -11,6 +11,7 @@ import {
 } from "@machdoch/fleet-protocol";
 import {
   createFleetOperationTransport,
+  LoadingState,
   useBrowserAppearance,
 } from "@machdoch/product-ui";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
@@ -134,9 +135,7 @@ function FleetInstructions(): React.ReactElement {
             onDirtyChange={setDirty}
           />
         ) : (
-          <div role="status" className="p-4">
-            Loading instructions…
-          </div>
+          <LoadingState label="Loading instructions…" />
         )}
       </CommandProvider>
     </TooltipProvider>

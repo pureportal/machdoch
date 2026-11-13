@@ -11,6 +11,7 @@ import {
 } from "@machdoch/fleet-protocol";
 import {
   createFleetOperationTransport,
+  LoadingState,
   useBrowserAppearance,
 } from "@machdoch/product-ui";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
@@ -154,9 +155,7 @@ function DeviceSettings({
           />
         </Dialog>
       ) : (
-        <div role="status" className="p-4">
-          Loading settings…
-        </div>
+        <LoadingState label="Loading settings…" />
       )}
     </>
   );
@@ -190,9 +189,7 @@ function FleetSettings(): React.ReactElement {
         ) : snapshot ? (
           snapshot.shell?.workspaceToolsMode === "library" ? <div className="p-4"><McpAppsSettings invoke={(workspaceRoot, input) => invokeWorkspaceTools("run_mcp_app_command", { workspaceRoot, input })} /></div> : <DeviceSettings snapshot={snapshot} />
         ) : (
-          <div role="status" className="p-4">
-            Loading settings…
-          </div>
+          <LoadingState label="Loading settings…" />
         )}
       </CommandProvider>
     </TooltipProvider>

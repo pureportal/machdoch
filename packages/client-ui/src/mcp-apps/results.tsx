@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type JSX } from "react";
 import type { McpAppView } from "@machdoch/fleet-protocol/mcp-apps";
+import { LoadingState } from "@machdoch/product-ui";
 import type { TaskThinkingTrace } from "@machdoch/fleet-protocol/task-thinking";
 import { connectMcpApp, type McpAppInvoke } from "./host";
 import { sandboxProxyUrl } from "./sandbox";
@@ -134,9 +135,7 @@ function McpAppResult({
       ) : view ? (
         <>
           {!initialized && (
-            <p role="status" className="p-3 text-sm">
-              Loading interactive result…
-            </p>
+            <LoadingState label="Loading interactive result…" compact />
           )}
           <iframe
             ref={frame}
@@ -149,9 +148,7 @@ function McpAppResult({
           />
         </>
       ) : (
-        <p role="status" className="p-3 text-sm">
-          Loading interactive result…
-        </p>
+        <LoadingState label="Loading interactive result…" compact />
       )}
     </section>
   );

@@ -9,6 +9,7 @@ import {
 } from "@machdoch/fleet-protocol";
 import {
   createFleetOperationTransport,
+  LoadingState,
   useBrowserAppearance,
 } from "@machdoch/product-ui";
 import { api, jsonBody } from "@machdoch/product-ui/fleet-api";
@@ -150,9 +151,7 @@ function FleetMcp(): React.ReactElement {
         ) : ready ? (
           <McpManager workspaceRoot={workspace} onDirtyChange={setDirty} />
         ) : (
-          <div role="status" className="p-4">
-            Loading MCP servers…
-          </div>
+          <LoadingState label="Loading MCP servers…" />
         )}
       </CommandProvider>
     </TooltipProvider>

@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { LoadingState } from "./loading-state";
 import "./skills-management.css";
 
 export interface ManagedSkill {
@@ -330,7 +331,7 @@ export function SkillsManagement({
         </div>
       </header>
       {loadError || error ? <p role="alert">{loadError ?? error}</p> : null}
-      {loading ? <p role="status">Loading skills…</p> : null}
+      {loading ? <LoadingState label="Loading skills…" compact /> : null}
       <div
         style={{
           display: "grid",

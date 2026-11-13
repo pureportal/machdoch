@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingState } from "@machdoch/product-ui";
 import { ArrowDown, ArrowUp, Camera, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConfirmButton } from "@/components/confirm-button";
@@ -105,11 +106,7 @@ export function AssignmentsEditor({
           Devices on older Machdoch versions only receive the first profile.
         </p>
       </div>
-      {loading ? (
-        <p role="status" className="text-sm text-muted-foreground">
-          Loading devices…
-        </p>
-      ) : null}
+      {loading ? <LoadingState label="Loading devices…" /> : null}
       {error ? (
         <div className="grid justify-items-start gap-3">
           <p role="alert" className="break-words text-sm text-destructive">

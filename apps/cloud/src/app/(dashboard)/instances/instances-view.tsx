@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingState } from "@machdoch/product-ui";
 import { Monitor, RefreshCw, Search, X } from "lucide-react";
 import { useRef, useState } from "react";
 import { EnrollDevice } from "@/components/enrollment/enroll-device";
@@ -172,12 +173,14 @@ export function InstancesView(): React.ReactElement {
             </ShowMore>
           </div>
         ) : null}
-        {instances === null ? (
+        {instances === null && loading ? (
+          <LoadingState label="Loading devices…" />
+        ) : instances === null ? (
           <div
             role="status"
             className="grid min-h-60 place-items-center p-6 text-sm text-muted-foreground"
           >
-            {loading ? "Loading devices…" : "Devices could not be loaded."}
+            Devices could not be loaded.
           </div>
         ) : instances.length === 0 ? (
           <div className="grid min-h-64 justify-items-center content-center gap-4 p-6 text-center">

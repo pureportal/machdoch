@@ -8,6 +8,7 @@ import {
 } from "@machdoch/fleet-protocol";
 import {
   createFleetOperationTransport,
+  LoadingState,
   useBrowserAppearance,
 } from "@machdoch/product-ui";
 import { createFleetMediaTransport } from "@machdoch/media-studio/fleet-transport.js";
@@ -143,9 +144,7 @@ function FleetRalph(): React.ReactElement {
             ]}
           />
         ) : !error ? (
-          <div role="status" className="p-4">
-            Loading RALPH…
-          </div>
+          <LoadingState label="Loading RALPH…" />
         ) : null}
       </CommandProvider>
     </TooltipProvider>
