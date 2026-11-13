@@ -35,6 +35,7 @@ import {
 import { invitationInputSchema } from "../../lib/cloud-invitation-contract";
 import { recurrencePreviewSchema } from "../../lib/cloud-recurrence-contract";
 import { handleScheduleApi } from "./automation/api";
+import { handlePulseApi } from "./pulse/api";
 import {
   handlePublicReleaseApi,
   handleReleaseApi,
@@ -396,6 +397,7 @@ async function route(
     return handleScheduleApi(runtime, request, actor);
   if (path[0] === "automations")
     return handleAutomationApi(runtime, request, actor);
+  if (path[0] === "pulse") return handlePulseApi(runtime, request, actor);
   if (releaseRoutePrefixes.has(path[0] ?? ""))
     return handleReleaseApi(runtime, request, actor);
   if (isAttachmentRoute(path))

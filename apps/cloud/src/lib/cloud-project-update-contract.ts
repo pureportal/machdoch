@@ -7,16 +7,20 @@ export const projectHealthLabels: Record<ProjectHealth, string> = {
   at_risk: "At risk",
   off_track: "Off track",
 };
+export const maximumUpdateSummaryLength = 300;
 export const projectUpdateInputSchema = z.strictObject({
   health: z.enum(projectHealths),
+  summary: z.string().trim().max(maximumUpdateSummaryLength).default(""),
   body: z.string().trim().max(20_000),
 });
-export type ProjectUpdateInput = z.infer<typeof projectUpdateInputSchema>;
+export type ProjectUpdateInput = z.input<typeof projectUpdateInputSchema>;
 export interface CloudProjectUpdate {
   id: string;
   projectId: string;
   health: ProjectHealth;
+  summary: string;
   body: string;
+  generated: boolean;
   authorId: string;
   author: string;
   createdAt: string;

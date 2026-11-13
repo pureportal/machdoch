@@ -3,6 +3,7 @@ import { issuePriorities, type IssueInput } from "../../../lib/cloud-contract";
 import type { IssueChangeSet } from "../../../lib/cloud-issue-changes-contract";
 import type { AgentActionField } from "../../../lib/cloud-chat-contract";
 import {
+  maximumUpdateSummaryLength,
   projectHealthLabels,
   projectHealths,
 } from "../../../lib/cloud-project-update-contract";
@@ -439,10 +440,16 @@ export const proposalTools: AgentTool[] = [
   agentTool({
     name: "propose_project_update",
     description:
-      "Draft a project status update with its health. It is posted under the user's name only after the user confirms it. Read the project first.",
+      "Draft a project status update with its health, a one-sentence TL;DR and a Markdown body. It is posted only after the user confirms it. Read the project first.",
     schema: z.strictObject({
       project: reference.describe("Project name or ID."),
       health: z.enum(projectHealths),
+      summary: z
+        .string()
+        .trim()
+        .min(1)
+        .max(maximumUpdateSummaryLength)
+        .describe("TL;DR: the single most important point, one sentence."),
       body: z.string().trim().min(1).max(20_000),
     }),
     async run(session, input) {
@@ -455,11 +462,13 @@ export const proposalTools: AgentTool[] = [
           title: `Update for ${project.name}`,
           fields: [
             { label: "Health", value: projectHealthLabels[input.health] },
+            { label: "TL;DR", value: input.summary },
             ...markdownField("Update", input.body),
           ],
           projectId: project.id,
           projectName: project.name,
           health: input.health,
+          summary: input.summary,
           body: input.body,
         },
       };

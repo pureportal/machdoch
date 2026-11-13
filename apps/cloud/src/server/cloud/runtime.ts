@@ -79,6 +79,7 @@ import { CloudChatStore } from "./ai/chat-store";
 import { CloudAgentTools } from "./ai/agent-tools";
 import { CloudAgentActions } from "./ai/agent-actions";
 import { CloudProjectUpdates } from "./project-updates";
+import { CloudPulse } from "./pulse/pulse";
 import { CloudFavorites, CloudIssueSubscriptions } from "./favorites";
 import { CloudInitiatives } from "./initiatives";
 import { CloudTriage } from "./triage";
@@ -111,6 +112,10 @@ export interface CloudRuntime {
   automations: {
     service: CloudAutomations;
     dispatcher: CloudAutomationDispatcher;
+    loop: CloudPeriodicLoop;
+  };
+  pulse: {
+    writer: CloudPulse;
     loop: CloudPeriodicLoop;
   };
   activity: {
@@ -332,6 +337,16 @@ export function createCloudRuntime(
     studio,
     pullRequests,
   });
+  let wakePulse = () => {};
+  const pulse = new CloudPulse(database, chatStore, agentActions, () =>
+    wakePulse(),
+  );
+  const pulseLoop = new CloudPeriodicLoop(
+    "Pulse writing",
+    () => pulse.tick(),
+    5,
+  );
+  wakePulse = () => pulseLoop.wake();
   const releaseDispatcher = new CloudReleaseDispatcher(
     database,
     new CloudReleasePublisher(
@@ -370,6 +385,8 @@ export function createCloudRuntime(
       attachments,
       clients,
       pullRequests,
+      automations,
+      pulse,
       fetch: options.automationFetch ?? fetch,
     }),
   );
@@ -428,6 +445,7 @@ export function createCloudRuntime(
       dispatcher: automationDispatcher,
       loop: automationLoop,
     },
+    pulse: { writer: pulse, loop: pulseLoop },
     activity: {
       feed: new CloudAiActivity(database),
       mimorii: new CloudMimoriiConnections(
@@ -573,6 +591,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   await runtime.scheduleLoop.close();
   await runtime.automations.loop.close();
   await runtime.releases.loop.close();
+  await runtime.pulse.loop.close();
   await runtime.activity.exportLoop.close();
   await runtime.git.syncLoop.close();
   await runtime.authentication.mailWorker.close();
@@ -588,6 +607,7 @@ export async function refreshCloudOrigin(runtime: CloudRuntime): Promise<void> {
   runtime.scheduleLoop.start();
   runtime.automations.loop.start();
   runtime.releases.loop.start();
+  runtime.pulse.loop.start();
   runtime.activity.exportLoop.start();
   runtime.git.syncLoop.start();
 }
@@ -610,6 +630,7 @@ export async function closeCloudRuntime(): Promise<void> {
     await current.scheduleLoop.close();
     await current.automations.loop.close();
     await current.releases.loop.close();
+    await current.pulse.loop.close();
     await current.activity.exportLoop.close();
     await current.git.syncLoop.close();
     await current.authentication.mailWorker.close();

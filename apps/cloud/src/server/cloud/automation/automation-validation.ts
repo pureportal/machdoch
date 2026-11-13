@@ -4,6 +4,7 @@ import { CloudError, requireMembership } from "../access";
 import type { CloudSql } from "../database";
 import { readProfile } from "../execution/records";
 import { readInferenceProvider } from "../ai/budgets";
+import { readAutomation } from "./automation-records";
 
 async function requireStatuses(
   sql: CloudSql,
@@ -115,6 +116,43 @@ async function requireRepositories(
     );
 }
 
+async function requireAutomations(
+  sql: CloudSql,
+  actor: CloudActor,
+  ids: string[],
+  teamId: string | null,
+): Promise<void> {
+  if (!ids.length) return;
+  for (const id of new Set(ids)) {
+    const automation = await readAutomation(sql, actor, id);
+    if (teamId && automation.teamId !== teamId)
+      throw new CloudError(
+        422,
+        "automation_unavailable",
+        "Choose automations of this team.",
+      );
+  }
+}
+
+async function requireProjects(
+  sql: CloudSql,
+  actor: CloudActor,
+  teamId: string,
+  ids: string[],
+): Promise<void> {
+  if (!ids.length) return;
+  const found = await sql.query(
+    "SELECT 1 FROM cloud_projects WHERE organization_id=$1 AND team_id=$2 AND id=ANY($3::uuid[])",
+    [actor.organizationId, teamId, ids],
+  );
+  if (found.rows.length !== new Set(ids).size)
+    throw new CloudError(
+      422,
+      "project_unavailable",
+      "Choose projects of this team.",
+    );
+}
+
 export async function validateAutomation(
   sql: CloudSql,
   actor: CloudActor,
@@ -130,6 +168,8 @@ export async function validateAutomation(
     await requireProducts(sql, actor, trigger.productIds);
   if (trigger.kind === "git_event")
     await requireRepositories(sql, actor, trigger.repositoryIds);
+  if (trigger.kind === "automation_finished")
+    await requireAutomations(sql, actor, trigger.automationIds, team.id);
   for (const action of input.actions) {
     switch (action.kind) {
       case "set_status":
@@ -168,6 +208,15 @@ export async function validateAutomation(
         await requireProducts(sql, actor, [action.productId]);
         if (action.providerId)
           await requireModel(sql, actor, action.providerId, action.model);
+        break;
+      case "write_project_updates":
+        await requireMembership(sql, actor, "ai.chat");
+        await requireModel(sql, actor, action.providerId, action.model);
+        await requireProjects(sql, actor, team.id, action.projectIds);
+        break;
+      case "run_automation":
+      case "set_automation_enabled":
+        await requireAutomations(sql, actor, [action.automationId], null);
         break;
       case "send_webhook":
         await requireMembership(sql, actor, "settings.manage");

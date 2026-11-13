@@ -9,6 +9,10 @@ import {
 } from "./git-events";
 import { gitMergeMethods, gitReviewDecisionInputs } from "./cloud-git-contract";
 import { issueFilterConditionSchema } from "./issue-filter-model";
+import { maximumPulseProjects } from "./cloud-pulse-contract";
+
+export const automationOutcomes = ["succeeded", "failed", "skipped"] as const;
+export type AutomationOutcome = (typeof automationOutcomes)[number];
 
 export const scheduleFrequencies = [
   "hourly",
@@ -73,6 +77,15 @@ export const automationTriggerSchema = z.discriminatedUnion("kind", [
     contains: z.string().trim().max(200).default(""),
   }),
   z.strictObject({ kind: z.literal("release_created"), productIds: idList }),
+  z.strictObject({
+    kind: z.literal("automation_finished"),
+    automationIds: idList,
+    outcomes: z
+      .array(z.enum(automationOutcomes))
+      .min(1, "Choose at least one outcome.")
+      .max(automationOutcomes.length)
+      .default(["failed"]),
+  }),
   z.strictObject({ kind: z.literal("webhook") }),
   z.strictObject({ kind: z.literal("manual") }),
 ]);
@@ -194,6 +207,18 @@ export const automationActionSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({ kind: z.literal("git_retarget"), identity: gitIdentity }),
   z.strictObject({
+    kind: z.literal("write_project_updates"),
+    projectIds: z.array(cloudId).max(maximumPulseProjects).default([]),
+    providerId: cloudId,
+    model: z.string().trim().min(1).max(200),
+  }),
+  z.strictObject({ kind: z.literal("run_automation"), automationId: cloudId }),
+  z.strictObject({
+    kind: z.literal("set_automation_enabled"),
+    automationId: cloudId,
+    enabled: z.boolean(),
+  }),
+  z.strictObject({
     kind: z.literal("send_webhook"),
     url: z.url({ protocol: /^https$/, hostname: z.regexes.domain }).max(2_000),
     body: template(20_000).default(""),
@@ -240,7 +265,9 @@ export function triggerHasPullRequest(trigger: AutomationTrigger): boolean {
 
 export function triggerHasIssue(trigger: AutomationTrigger): boolean {
   if (trigger.kind === "schedule") return trigger.forEachIssue;
-  return trigger.kind !== "release_created";
+  return (
+    trigger.kind !== "release_created" && trigger.kind !== "automation_finished"
+  );
 }
 
 export function actionNeedsIssue(action: AutomationAction): boolean {
@@ -277,12 +304,16 @@ export const automationInputSchema = z
   })
   .superRefine((input, context) => {
     const hasIssue = triggerHasIssue(input.trigger);
-    if (!hasIssue && input.trigger.kind === "release_created")
+    if (
+      !hasIssue &&
+      (input.trigger.kind === "release_created" ||
+        input.trigger.kind === "automation_finished")
+    )
       input.conditions.forEach((_, index) =>
         context.addIssue({
           code: "custom",
           path: ["conditions", index],
-          message: "Release automations have no issue to filter.",
+          message: "This trigger has no issue to filter.",
         }),
       );
     const hasPullRequest = triggerHasPullRequest(input.trigger);

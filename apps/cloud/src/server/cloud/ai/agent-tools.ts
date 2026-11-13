@@ -426,6 +426,7 @@ const readTools: AgentTool[] = [
             health: update.health,
             author: update.author,
             createdAt: update.createdAt.slice(0, 10),
+            summary: update.summary,
             body: excerpt(update.body, 600),
           })),
           issues: issues.map((issue) => workspace.issueSummary(issue)),

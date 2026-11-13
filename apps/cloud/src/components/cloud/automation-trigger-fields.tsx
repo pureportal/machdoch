@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import {
+  automationOutcomes,
   scheduleFrequencies,
   type AutomationTrigger,
 } from "@/lib/cloud-automation-contract";
@@ -15,7 +16,11 @@ import { pullRequestStages } from "@/lib/git-automation";
 import { GitTriggerFields } from "./automation-git-trigger-fields";
 import { ChipToggle } from "./automation-chips";
 import { priorityOptions } from "./issue-properties";
-import { triggerKinds, weekdays } from "./automation-display";
+import {
+  automationOutcomeLabels,
+  triggerKinds,
+  weekdays,
+} from "./automation-display";
 import { pullRequestStageLabels } from "./pull-request-state";
 
 const frequencyLabels = {
@@ -51,6 +56,8 @@ export function defaultTrigger(
       };
     case "release_created":
       return { kind, productIds: [] };
+    case "automation_finished":
+      return { kind, automationIds: [], outcomes: ["failed"] };
     case "schedule":
       return {
         kind,
@@ -71,9 +78,11 @@ export function TriggerFields({
   labels,
   products,
   repositories,
+  automations,
   onChange,
 }: {
   trigger: AutomationTrigger;
+  automations: { id: string; name: string }[];
   statuses: CloudWorkflowStatus[];
   labels: CloudLabel[];
   products: CloudProduct[];
@@ -102,8 +111,10 @@ export function TriggerFields({
                     (entry.kind === "pull_request_changed" ||
                     entry.kind === "git_event"
                       ? repositories.length > 0
-                      : entry.kind !== "release_created" ||
-                        products.length > 0)),
+                      : entry.kind === "automation_finished"
+                        ? automations.length > 0
+                        : entry.kind !== "release_created" ||
+                          products.length > 0)),
               )
               .map((entry) => (
                 <option key={entry.kind} value={entry.kind}>
@@ -189,6 +200,35 @@ export function TriggerFields({
           selected={trigger.productIds}
           onChange={(productIds) => onChange({ ...trigger, productIds })}
         />
+      )}
+      {trigger.kind === "automation_finished" && (
+        <>
+          <ChipToggle
+            label="Automations"
+            options={automations.map((automation) => ({
+              value: automation.id,
+              label: automation.name,
+            }))}
+            selected={trigger.automationIds}
+            onChange={(automationIds) =>
+              onChange({ ...trigger, automationIds })
+            }
+          />
+          <ChipToggle
+            label="When it"
+            options={automationOutcomes.map((outcome) => ({
+              value: outcome,
+              label: automationOutcomeLabels[outcome],
+            }))}
+            selected={trigger.outcomes}
+            onChange={(outcomes) =>
+              onChange({
+                ...trigger,
+                outcomes: outcomes as typeof trigger.outcomes,
+              })
+            }
+          />
+        </>
       )}
       {trigger.kind === "schedule" && (
         <>

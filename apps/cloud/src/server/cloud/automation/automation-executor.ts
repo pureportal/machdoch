@@ -2,6 +2,7 @@ import type { CloudActor } from "../../../lib/cloud-contract";
 import { issueInputSchema } from "../../../lib/cloud-contract";
 import type {
   AutomationAction,
+  AutomationOutcome,
   AutomationStep,
 } from "../../../lib/cloud-automation-contract";
 import type { AgentAction } from "../../../lib/cloud-chat-contract";
@@ -28,8 +29,11 @@ import { clientSessionHref, type CloudClients } from "../clients/clients";
 import { releaseTitle } from "../../../lib/release-posts";
 import { gitEventKinds } from "../../../lib/git-events";
 import type { CloudGitPullRequests } from "../git/pull-requests";
+import type { CloudPulse } from "../pulse/pulse";
+import type { CloudAutomations } from "./automations";
 import { executeGitAction } from "./automation-git-actions";
-import { automationScope } from "./automation-events";
+import { automationScope, queueFinishedEvent } from "./automation-events";
+import { automationChainActions } from "./automation-chain-actions";
 import { changesSinceLastPost } from "./release-automations";
 import {
   storedAutomationColumns,
@@ -52,6 +56,8 @@ export interface AutomationServices {
   attachments: CloudAttachments;
   clients: CloudClients;
   pullRequests: CloudGitPullRequests;
+  automations: CloudAutomations;
+  pulse: CloudPulse;
   fetch: typeof fetch;
 }
 
@@ -99,13 +105,18 @@ const defaultPullRequestInstructions =
 const defaultPullRequestCriteria =
   "The checks pass and every review comment is addressed.";
 
-type StepOutcome = (Omit<AutomationStep, "kind"> & { halt?: true }) | "waiting";
+export type StepOutcome =
+  | (Omit<AutomationStep, "kind"> & { halt?: true })
+  | "waiting";
 
-function succeeded(detail: string, link: string | null = null): StepOutcome {
+export function succeeded(
+  detail: string,
+  link: string | null = null,
+): StepOutcome {
   return { state: "succeeded", detail, link };
 }
 
-function skipped(detail: string): StepOutcome {
+export function skipped(detail: string): StepOutcome {
   return { state: "skipped", detail, link: null };
 }
 
@@ -392,6 +403,16 @@ export class CloudAutomationExecutor {
         );
       case "send_webhook":
         return this.sendWebhook(owner, automation, action, variables);
+      case "run_automation":
+      case "set_automation_enabled":
+      case "write_project_updates":
+        return automationChainActions(this.services, {
+          run,
+          automation,
+          owner,
+          action,
+          key,
+        });
       case "start_client_session":
         return this.startClientSession(run, owner, action, variables, key);
       case "write_release_posts":
@@ -832,11 +853,11 @@ export class CloudAutomationExecutor {
 
   private async finish(
     run: ActiveRun,
-    state: "succeeded" | "failed" | "skipped",
+    state: AutomationOutcome,
     error: string | null,
   ): Promise<void> {
-    await this.services.database.transaction((sql) =>
-      sql.query(
+    await this.services.database.transaction(async (sql) => {
+      await sql.query(
         `UPDATE cloud_automation_runs SET state=$3,steps=$4,error=$5,turn_id=NULL,updated_at=clock_timestamp(),finished_at=clock_timestamp()
         WHERE organization_id=$1 AND id=$2`,
         [
@@ -846,8 +867,9 @@ export class CloudAutomationExecutor {
           JSON.stringify(run.steps),
           error?.slice(0, 500) ?? null,
         ],
-      ),
-    );
+      );
+      await queueFinishedEvent(sql, run, state, error);
+    });
   }
 
   private async disable(run: ActiveRun, error: string): Promise<void> {

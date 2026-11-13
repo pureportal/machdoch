@@ -47,6 +47,14 @@ function eventVariables(event: AutomationEvent): Record<string, unknown> {
       },
     };
   if (event.kind === "git_event") return gitEventVariables(event.git);
+  if (event.kind === "automation_finished")
+    return {
+      run: {
+        automation: event.automationName,
+        outcome: event.outcome,
+        error: event.error ?? "",
+      },
+    };
   return {};
 }
 
@@ -56,6 +64,7 @@ async function runIssue(
   automation: StoredAutomation,
   queued: QueuedEvent,
 ): Promise<{ issueId: string | null } | null> {
+  if (queued.event.kind === "automation_finished") return { issueId: null };
   if (queued.event.kind !== "git_event")
     return queued.issueId &&
       (await issueMatchesConditions(sql, owner, automation, queued.issueId))

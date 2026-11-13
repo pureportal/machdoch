@@ -1,0 +1,118 @@
+.cloud-pulse-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.cloud-pulse-toolbar select {
+  width: auto;
+  min-width: 140px;
+  height: 30px;
+  font-size: 12.5px;
+}
+.cloud-pulse-health {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-right: auto;
+}
+.cloud-pulse-health button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+.cloud-pulse-health button:hover {
+  background: var(--cloud-hover);
+  color: var(--foreground);
+}
+.cloud-pulse-health button > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.cloud-pulse-health button > strong {
+  color: var(--foreground);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.cloud-pulse-health [data-health="on_track"] > span {
+  background: var(--cloud-success);
+}
+.cloud-pulse-health [data-health="at_risk"] > span {
+  background: var(--cloud-warning);
+}
+.cloud-pulse-health [data-health="off_track"] > span {
+  background: var(--cloud-danger);
+}
+.cloud-pulse-health button[aria-pressed="true"] {
+  border-color: var(--input);
+  background: var(--secondary);
+  color: var(--foreground);
+}
+.cloud-update-summary {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.cloud-update-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+}
+.cloud-update-author strong {
+  color: var(--foreground);
+  font-weight: 500;
+}
+.cloud-update-agent {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+  color: var(--primary);
+}
+.cloud-pulse-details > summary {
+  width: fit-content;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.cloud-pulse-details > summary:hover {
+  color: var(--foreground);
+}
+.cloud-pulse-details[open] > summary {
+  margin-bottom: 6px;
+}
+.cloud-pulse-writing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+.cloud-pulse-writing > svg {
+  animation: cloud-spin 1s linear infinite;
+}
+.cloud-pulse-instructions textarea {
+  min-height: 360px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+}
+.cloud-empty-inline {
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.cloud-field-note {
+  color: var(--muted-foreground);
+  font-size: 13px;
+}

@@ -1465,6 +1465,7 @@ it("posts a confirmed project status update drafted by the agent", async () => {
       toolCall("propose_project_update", {
         project: "checkout",
         health: "at_risk",
+        summary: "Checkout slips a week.",
         body: "Payment retries are still flaky.",
       }),
     )
@@ -1489,6 +1490,7 @@ it("posts a confirmed project status update drafted by the agent", async () => {
     projectId: project.id,
     fields: [
       { label: "Health", value: "At risk" },
+      { label: "TL;DR", value: "Checkout slips a week." },
       { label: "Update", value: "Payment retries are still flaky." },
     ],
   });
@@ -1503,7 +1505,9 @@ it("posts a confirmed project status update drafted by the agent", async () => {
     {
       health: "at_risk",
       author: "member",
+      summary: "Checkout slips a week.",
       body: "Payment retries are still flaky.",
+      generated: true,
     },
   ]);
 });

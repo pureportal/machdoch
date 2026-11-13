@@ -75,6 +75,7 @@ export function AutomationList({
     workspace,
     labels: options.labels,
     products: options.products,
+    automations,
   };
   const canWrite = holderCan(workspace.actor, "automations.edit");
   const admin = holderCan(workspace.actor, "teams.manage");

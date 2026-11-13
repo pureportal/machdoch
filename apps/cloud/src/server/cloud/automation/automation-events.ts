@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import type { CloudActor, CloudIssue } from "../../../lib/cloud-contract";
+import type { AutomationOutcome } from "../../../lib/cloud-automation-contract";
 import {
   issueChangeEvents,
   type AutomationEvent,
@@ -89,5 +90,51 @@ export async function queueIssueChangeEvents(
       events: issueChangeEvents(previous, issue),
     },
     kinds,
+  );
+}
+
+export async function queueFinishedEvent(
+  sql: CloudSql,
+  run: {
+    organizationId: string;
+    id: string;
+    automationId: string;
+    issueId: string | null;
+    actorId: string | null;
+    depth: number;
+  },
+  outcome: AutomationOutcome,
+  error: string | null,
+): Promise<void> {
+  if (run.depth + 1 >= maximumAutomationDepth) return;
+  const automation = (
+    await sql.query<{ team_id: string; name: string }>(
+      `SELECT a.team_id,a.name FROM cloud_automations a WHERE a.organization_id=$1 AND a.id=$2
+      AND EXISTS (SELECT 1 FROM cloud_automations l WHERE l.organization_id=a.organization_id AND l.team_id=a.team_id
+        AND l.enabled AND l.trigger_kind='automation_finished' AND l.id<>a.id)`,
+      [run.organizationId, run.automationId],
+    )
+  ).rows[0];
+  if (!automation) return;
+  const event: AutomationEvent = {
+    kind: "automation_finished",
+    automationId: run.automationId,
+    automationName: automation.name,
+    runId: run.id,
+    outcome,
+    error,
+  };
+  await sql.query(
+    "INSERT INTO cloud_automation_events (organization_id,id,team_id,issue_id,actor_id,event,depth,origin_automation_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+    [
+      run.organizationId,
+      randomUUID(),
+      automation.team_id,
+      run.issueId,
+      run.actorId,
+      JSON.stringify(event),
+      run.depth + 1,
+      run.automationId,
+    ],
   );
 }

@@ -18,7 +18,11 @@ export interface AutomationTemplateContext {
   timeZone: string;
 }
 
-export type AutomationTemplateCategory = "agent" | "workflow" | "integration";
+export type AutomationTemplateCategory =
+  | "agent"
+  | "workflow"
+  | "chains"
+  | "integration";
 
 export interface AutomationTemplate {
   id: string;
@@ -319,11 +323,12 @@ export const automationTemplates: AutomationTemplate[] = [
         "Weekly project updates",
         schedule(context, "weekly", "16:00", false, 5),
         [
-          askAgent(
-            context,
-            "Post a project status update for every active project of this team. Base the health on progress, overdue issues and blockers, and keep each update under 120 words.",
-            { postAnswer: false, applyProposals: true },
-          ),
+          {
+            kind: "write_project_updates",
+            projectIds: [],
+            providerId: context.agent?.providerId ?? "",
+            model: context.agent?.model ?? "",
+          },
         ],
       ),
   },
@@ -504,6 +509,59 @@ export const automationTemplates: AutomationTemplate[] = [
         [
           ...statusCondition(context, "backlog"),
           { field: "updated", negated: true, values: ["month"] },
+        ],
+      ),
+  },
+  {
+    id: "automation-failed",
+    name: "Track failed automations",
+    category: "chains",
+    trigger: "automation_finished",
+    requires: [],
+    build: (context) =>
+      automation(
+        context,
+        "Track failed automations",
+        {
+          kind: "automation_finished",
+          automationIds: [],
+          outcomes: ["failed"],
+        },
+        [
+          {
+            kind: "create_issue",
+            title: "Automation failed: {{run.automation}}",
+            description: "{{run.error}}",
+            statusId: statusIds(context, "triage", "backlog")[0] ?? null,
+            priority: "high",
+            assigneeId: null,
+            labelIds: [],
+            subIssue: false,
+          },
+        ],
+      ),
+  },
+  {
+    id: "automation-diagnose",
+    name: "Ask Agent why an automation failed",
+    category: "chains",
+    trigger: "automation_finished",
+    requires: ["agent"],
+    build: (context) =>
+      automation(
+        context,
+        "Diagnose failed automations",
+        {
+          kind: "automation_finished",
+          automationIds: [],
+          outcomes: ["failed"],
+        },
+        [
+          askAgent(
+            context,
+            'The automation "{{run.automation}}" failed with: {{run.error}}\n\nRead it with get_automation, find the cause and propose a fix with propose_automation.',
+            { postAnswer: false, applyProposals: false },
+          ),
         ],
       ),
   },

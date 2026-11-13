@@ -1,6 +1,11 @@
 import type { SidebarPageHref } from "./cloud-sidebar-contract";
 
 const help: Partial<Record<SidebarPageHref, string>> = {
+  "/cloud/pulse": `
+**Write with Agent** posts an update for each chosen project. Agent reads the project's issues and earlier updates and follows the Pulse **Instructions**, which set the TL;DR, health and structure.
+
+To post updates on a timetable, add an [automation](/cloud/automations) with the action **Write project updates**.
+`,
   "/cloud/reviews": `
 Reviews match pull requests to the GitHub and GitLab accounts linked on your account page. Pull requests you opened appear by what they need next; requests for your review appear until you submit one.
 `,

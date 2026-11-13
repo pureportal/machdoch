@@ -26,6 +26,8 @@ interface AutomationNames {
   labels: Map<string, string>;
   members: Map<string, string>;
   products: Map<string, string>;
+  automations: Map<string, string>;
+  projects: Map<string, string>;
 }
 
 async function automationNames(
@@ -33,9 +35,10 @@ async function automationNames(
   teamId: string,
 ): Promise<AutomationNames> {
   const { actor, services, workspace } = session;
-  const [labels, products] = await Promise.all([
+  const [labels, products, automations] = await Promise.all([
     services.labels.list(actor, teamId),
     services.products.list(actor),
+    services.automations.list(actor),
   ]);
   return {
     statuses: new Map(
@@ -46,6 +49,12 @@ async function automationNames(
       workspace.snapshot.members.map((member) => [member.id, member.name]),
     ),
     products: new Map(products.map((product) => [product.id, product.name])),
+    automations: new Map(
+      automations.map((automation) => [automation.id, automation.name]),
+    ),
+    projects: new Map(
+      workspace.snapshot.projects.map((project) => [project.id, project.name]),
+    ),
   };
 }
 
@@ -111,6 +120,8 @@ function describeTrigger(
       return trigger.productIds.length
         ? `A ${names(lookup.products, trigger.productIds)} release is created`
         : "A release is created";
+    case "automation_finished":
+      return `${trigger.automationIds.length ? names(lookup.automations, trigger.automationIds) : "Another automation of the team"} finishes as ${trigger.outcomes.join(" or ")}`;
     case "webhook":
       return "Its webhook is called";
     case "manual":
@@ -159,6 +170,12 @@ function describeAction(
     }
     case "send_webhook":
       return `Send a webhook to ${new URL(action.url).hostname}`;
+    case "write_project_updates":
+      return `Agent writes Pulse updates for ${action.projectIds.length ? names(lookup.projects, action.projectIds) : "the team's active projects"}`;
+    case "run_automation":
+      return `Run ${names(lookup.automations, [action.automationId])}`;
+    case "set_automation_enabled":
+      return `${action.enabled ? "Turn on" : "Pause"} ${names(lookup.automations, [action.automationId])}`;
     case "start_client_session":
       return `Start "${action.title}" on a client${action.goal ? " in goal mode" : ""}`;
     case "git_comment":
@@ -286,17 +303,19 @@ export const automationTools: AgentTool[] = [
   agentTool({
     name: "get_automation_options",
     description:
-      "Read the IDs needed to build an automation for a team: statuses, labels, members, execution profiles, AI models, products with their channels and template variables. For start_client_session, take the client ID and workspace root from list_clients.",
+      "Read the IDs needed to build an automation for a team: statuses, labels, members, projects, other automations (to chain, run, pause or watch them), execution profiles, AI models, products with their channels and template variables. For start_client_session, take the client ID and workspace root from list_clients.",
     schema: z.strictObject({ team: reference.describe("Team key or name.") }),
     async run(session, input) {
       const { actor, services, workspace } = session;
       const team = workspace.team(input.team);
-      const [labels, providers, profiles, products] = await Promise.all([
-        services.labels.list(actor, team.id),
-        services.providers.list(actor),
-        services.profiles.list(actor),
-        services.products.list(actor),
-      ]);
+      const [labels, providers, profiles, products, automations] =
+        await Promise.all([
+          services.labels.list(actor, team.id),
+          services.providers.list(actor),
+          services.profiles.list(actor),
+          services.products.list(actor),
+          services.automations.list(actor),
+        ]);
       const channels = await Promise.all(
         products.map((product) => services.products.get(actor, product.id)),
       );
@@ -314,6 +333,19 @@ export const automationTools: AgentTool[] = [
           members: workspace.snapshot.members.map((member) => ({
             id: member.id,
             name: member.name,
+          })),
+          projects: workspace.snapshot.projects
+            .filter((project) => project.teamId === team.id)
+            .map((project) => ({
+              id: project.id,
+              name: project.name,
+              status: project.status,
+            })),
+          automations: automations.map((automation) => ({
+            id: automation.id,
+            name: automation.name,
+            team: workspace.teamById(automation.teamId)?.key ?? null,
+            enabled: automation.enabled,
           })),
           models: providers.providers.flatMap((provider) =>
             provider.models.map((model) => ({

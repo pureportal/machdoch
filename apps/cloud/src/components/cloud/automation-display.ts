@@ -1,5 +1,9 @@
 import {
+  Activity,
   ArrowRightLeft,
+  Play,
+  Power,
+  Workflow,
   Bot,
   CalendarClock,
   CirclePlus,
@@ -31,6 +35,7 @@ import {
 import type {
   AutomationAction,
   AutomationActionKind,
+  AutomationOutcome,
   AutomationTrigger,
   AutomationTriggerKind,
 } from "@/lib/cloud-automation-contract";
@@ -98,6 +103,12 @@ export const triggerKinds: {
     label: "Release is created",
     icon: Rocket,
     group: "Releases",
+  },
+  {
+    kind: "automation_finished",
+    label: "Another automation finishes",
+    icon: Workflow,
+    group: "Automations",
   },
   {
     kind: "schedule",
@@ -241,6 +252,27 @@ export const actionKinds: {
     issue: false,
   },
   {
+    kind: "write_project_updates",
+    label: "Write project updates",
+    icon: Activity,
+    group: "AI",
+    issue: false,
+  },
+  {
+    kind: "run_automation",
+    label: "Run automation",
+    icon: Play,
+    group: "Automations",
+    issue: false,
+  },
+  {
+    kind: "set_automation_enabled",
+    label: "Turn automation on or off",
+    icon: Power,
+    group: "Automations",
+    issue: false,
+  },
+  {
     kind: "send_webhook",
     label: "Send webhook",
     icon: Send,
@@ -248,6 +280,12 @@ export const actionKinds: {
     issue: false,
   },
 ];
+
+export const automationOutcomeLabels: Record<AutomationOutcome, string> = {
+  succeeded: "Succeeds",
+  failed: "Fails",
+  skipped: "Is skipped",
+};
 
 export const gitEventLabels: Record<GitEventKind, string> = {
   push: "Commits pushed",
@@ -272,6 +310,7 @@ export const gitEventLabels: Record<GitEventKind, string> = {
 };
 
 export function triggerLabel(trigger: string): string {
+  if (trigger === "automation") return "Another automation";
   return (
     gitEventLabels[trigger as GitEventKind] ??
     triggerKinds.find((entry) => entry.kind === trigger)?.label ??
@@ -293,6 +332,15 @@ export interface AutomationNames {
   workspace: CloudWorkspace;
   labels: CloudLabel[];
   products: CloudProduct[];
+  automations: { id: string; name: string }[];
+}
+
+function automationNames(names: AutomationNames, ids: string[]): string[] {
+  return ids.map(
+    (id) =>
+      names.automations.find((automation) => automation.id === id)?.name ??
+      "Unavailable",
+  );
 }
 
 function list(names: string[], fallback: string): string {
@@ -377,6 +425,15 @@ export function describeTrigger(
             "",
           )} release is created`
         : "Release is created";
+    case "automation_finished": {
+      const outcome = list(
+        trigger.outcomes.map((entry) =>
+          automationOutcomeLabels[entry].toLowerCase(),
+        ),
+        "",
+      );
+      return `${list(automationNames(names, trigger.automationIds), "Another automation")} ${outcome}`;
+    }
     case "schedule": {
       const when =
         trigger.frequency === "hourly"
@@ -438,6 +495,21 @@ export function describeAction(
       return "Retarget stacked pull request";
     case "send_webhook":
       return `Send webhook to ${new URL(action.url).hostname}`;
+    case "write_project_updates":
+      return action.projectIds.length
+        ? `Write updates for ${list(
+            action.projectIds.map(
+              (id) =>
+                names.workspace.projects.find((project) => project.id === id)
+                  ?.name ?? "Unavailable",
+            ),
+            "",
+          )}`
+        : "Write project updates";
+    case "run_automation":
+      return `Run ${automationNames(names, [action.automationId])[0]}`;
+    case "set_automation_enabled":
+      return `${action.enabled ? "Turn on" : "Pause"} ${automationNames(names, [action.automationId])[0]}`;
     case "start_client_session":
       return action.goal ? "Start goal on client" : "Start on client";
     case "prepare_release":

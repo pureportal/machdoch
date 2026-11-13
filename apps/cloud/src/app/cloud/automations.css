@@ -226,26 +226,30 @@
 }
 .cloud-automation-templates {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
   gap: 10px;
 }
 .cloud-automation-template-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 4px 10px;
-  min-height: 56px;
+  align-content: start;
+  gap: 6px 10px;
+  min-height: 64px;
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--card);
   text-align: left;
   font-size: 13px;
+  font-weight: 500;
   transition:
     border-color 0.15s,
     background 0.15s;
 }
 .cloud-automation-template-card > svg {
+  align-self: start;
+  margin-top: 2px;
   color: var(--primary);
 }
 .cloud-automation-template-card:hover:not(:disabled) {
@@ -259,7 +263,14 @@
 .cloud-automation-template-card small {
   grid-column: 2;
   color: var(--muted-foreground);
-  font-size: 11px;
+  font-size: 11.5px;
+  font-weight: 400;
+}
+.cloud-automation-template-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
 }
 .cloud-automation-editor {
   display: grid;

@@ -192,6 +192,7 @@ export type AgentAction = AgentActionBase &
         projectId: string;
         projectName: string;
         health: ProjectHealth;
+        summary: string;
         body: string;
       }
     | {

@@ -1,7 +1,7 @@
 "use client";
 
 import { holderCan } from "@/lib/cloud-permissions";
-import { Plus } from "lucide-react";
+import { ArrowRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   automationTemplates,
@@ -10,13 +10,15 @@ import {
 } from "@/lib/automation-templates";
 import type { AutomationInput } from "@/lib/cloud-automation-contract";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
-import { triggerKinds } from "./automation-display";
+import { actionKinds, triggerKinds } from "./automation-display";
+import { AutomationDescribe } from "./automation-describe";
 import { defaultTrigger } from "./automation-trigger-fields";
 import type { AutomationOptions } from "./use-automation-options";
 
 const categoryLabels: Record<AutomationTemplateCategory, string> = {
   agent: "Agent",
   workflow: "Workflow",
+  chains: "Automations",
   integration: "Integrations",
 };
 
@@ -114,6 +116,9 @@ export function AutomationGallery({
           Start from scratch
         </Button>
       </div>
+      {options.models.length > 0 && holderCan(workspace.actor, "ai.chat") && (
+        <AutomationDescribe teamId={teamId} models={options.models} />
+      )}
       {(Object.keys(categoryLabels) as AutomationTemplateCategory[]).map(
         (category) => (
           <section key={category} aria-label={categoryLabels[category]}>
@@ -123,10 +128,14 @@ export function AutomationGallery({
                 .filter((template) => template.category === category)
                 .map((template) => {
                   const reason = missing(template);
-                  const Icon =
-                    triggerKinds.find(
-                      (entry) => entry.kind === template.trigger,
-                    )?.icon ?? Plus;
+                  const trigger = triggerKinds.find(
+                    (entry) => entry.kind === template.trigger,
+                  );
+                  const Icon = trigger?.icon ?? Plus;
+                  const actions = build(template).actions;
+                  const action = actionKinds.find(
+                    (entry) => entry.kind === actions[0]?.kind,
+                  );
                   return (
                     <button
                       key={template.id}
@@ -137,7 +146,19 @@ export function AutomationGallery({
                     >
                       <Icon size={16} aria-hidden="true" />
                       <span>{template.name}</span>
-                      {reason && <small>{reason}</small>}
+                      {reason ? (
+                        <small>{reason}</small>
+                      ) : (
+                        trigger &&
+                        action && (
+                          <small className="cloud-automation-template-flow">
+                            {trigger.label}
+                            <ArrowRight size={11} aria-hidden="true" />
+                            {action.label}
+                            {actions.length > 1 && ` +${actions.length - 1}`}
+                          </small>
+                        )
+                      )}
                     </button>
                   );
                 })}

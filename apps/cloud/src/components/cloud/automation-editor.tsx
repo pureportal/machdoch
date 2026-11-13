@@ -87,6 +87,7 @@ function availableVariables(
     if (name === "payload") return kind === "webhook";
     if (name.startsWith("release.")) return actionHasRelease(input, index);
     if (name === "agent.answer") return agentBefore;
+    if (name.startsWith("run.")) return kind === "automation_finished";
     if (name === "actor.name")
       return ![
         "schedule",
@@ -178,6 +179,9 @@ export function AutomationEditor({
   );
   const hasIssue = triggerHasIssue(input.trigger);
   const hasPullRequest = triggerHasPullRequest(input.trigger);
+  const otherAutomations = options.automations.filter(
+    (entry) => entry.id !== automation?.id,
+  );
   const addable = actionKinds.filter(
     (entry) =>
       (hasIssue || !entry.issue) &&
@@ -188,6 +192,11 @@ export function AutomationEditor({
       (entry.kind !== "start_client_session" ||
         holderCan(workspace.actor, "clients.manage")) &&
       (entry.kind !== "ask_agent" || options.models.length > 0) &&
+      (entry.kind !== "write_project_updates" ||
+        (options.models.length > 0 && holderCan(workspace.actor, "ai.chat"))) &&
+      ((entry.kind !== "run_automation" &&
+        entry.kind !== "set_automation_enabled") ||
+        otherAutomations.length > 0) &&
       (entry.kind !== "delegate" ||
         (delegateHasTarget(input.trigger) &&
           options.profiles.some(
@@ -279,10 +288,15 @@ export function AutomationEditor({
             labels={labels}
             products={options.products}
             repositories={options.repositories}
+            automations={options.automations.filter(
+              (entry) =>
+                entry.teamId === input.teamId && entry.id !== automation?.id,
+            )}
             onChange={(trigger) =>
               update({
                 trigger,
-                ...(trigger.kind === "release_created"
+                ...(trigger.kind === "release_created" ||
+                trigger.kind === "automation_finished"
                   ? { conditions: [] }
                   : {}),
               })
@@ -328,6 +342,7 @@ export function AutomationEditor({
               options={options}
               teamId={input.teamId}
               variables={availableVariables(input, index, hasIssue)}
+              automations={otherAutomations}
               hasIssue={hasIssue}
               hasPullRequest={hasPullRequest}
               onChange={(next) => setAction(index, next)}

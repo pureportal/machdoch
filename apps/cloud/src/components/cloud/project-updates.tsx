@@ -12,19 +12,23 @@ import {
 } from "@/lib/cloud-project-update-contract";
 import { Button } from "@/components/ui/button";
 import { createCommandSender } from "./api-client";
-import { PersonAvatar } from "./person-avatar";
+import { PulseWriter } from "./pulse-writer";
+import { UpdateAuthor } from "./update-author";
 import { RelativeTime } from "./relative-time";
 import { useToast } from "./toast";
 
 export function ProjectUpdates({
-  projectId,
+  project,
   updates,
   writable,
+  agent,
 }: {
-  projectId: string;
+  project: { id: string; name: string };
   updates: CloudProjectUpdate[];
   writable: boolean;
+  agent: boolean;
 }) {
+  const projectId = project.id;
   const router = useRouter();
   const toast = useToast();
   const [writing, setWriting] = useState(false);
@@ -45,9 +49,12 @@ export function ProjectUpdates({
       <header>
         <h2 id="updates-heading">Updates</h2>
         {writable && !writing && (
-          <Button variant="ghost" size="sm" onClick={() => setWriting(true)}>
-            Write update
-          </Button>
+          <div className="cloud-editor-actions">
+            {agent && <PulseWriter projects={[project]} />}
+            <Button variant="ghost" size="sm" onClick={() => setWriting(true)}>
+              Write update
+            </Button>
+          </div>
         )}
       </header>
       {writing && (
@@ -127,13 +134,12 @@ export function ProjectUpdates({
                   <span aria-hidden="true" />
                   {projectHealthLabels[update.health]}
                 </span>
-                <PersonAvatar
-                  name={update.author}
-                  className="cloud-avatar-tiny"
-                />
-                <strong>{update.author}</strong>
+                <UpdateAuthor update={update} />
                 <RelativeTime value={update.createdAt} />
               </div>
+              {update.summary && (
+                <p className="cloud-update-summary">{update.summary}</p>
+              )}
               {update.body && <CloudMarkdown content={update.body} />}
             </li>
           ))}

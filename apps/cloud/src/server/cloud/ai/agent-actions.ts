@@ -468,7 +468,8 @@ ${automationMarker}`
         actor,
         derivedCommandId(action.id, "project-update"),
         action.projectId,
-        { health: action.health, body: action.body },
+        { health: action.health, summary: action.summary, body: action.body },
+        true,
       );
       return {
         kind: "project",

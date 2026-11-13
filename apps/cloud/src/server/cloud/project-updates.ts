@@ -14,7 +14,7 @@ import {
 import type { CloudDatabase } from "./database";
 import { readProject } from "./projects";
 
-const updateColumns = `u.id,u.project_id AS "projectId",u.health,u.body,u.author_id AS "authorId",a.name AS author,
+const updateColumns = `u.id,u.project_id AS "projectId",u.health,u.summary,u.body,u.generated,u.author_id AS "authorId",a.name AS author,
   to_char(u.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt"`;
 
 export class CloudProjectUpdates {
@@ -74,6 +74,7 @@ export class CloudProjectUpdates {
     key: string,
     projectId: string,
     input: ProjectUpdateInput,
+    generated = false,
   ): Promise<{ id: string }> {
     return this.database.transaction(async (sql) => {
       await readProject(sql, actor, projectId, true);
@@ -81,18 +82,20 @@ export class CloudProjectUpdates {
         sql,
         actor,
         key,
-        { kind: "project.update.create", projectId, input },
+        { kind: "project.update.create", projectId, input, generated },
         async () => {
           const id = randomUUID();
           await sql.query(
-            "INSERT INTO cloud_project_updates (organization_id,id,project_id,author_id,health,body) VALUES ($1,$2,$3,$4,$5,$6)",
+            "INSERT INTO cloud_project_updates (organization_id,id,project_id,author_id,health,summary,body,generated) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
             [
               actor.organizationId,
               id,
               projectId,
               actor.userId,
               input.health,
+              input.summary ?? "",
               input.body,
+              generated,
             ],
           );
           await recordEvent(sql, actor, "project.update.created", id, 1, {

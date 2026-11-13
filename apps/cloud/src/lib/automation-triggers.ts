@@ -1,5 +1,8 @@
 import type { CloudIssue } from "./cloud-contract";
-import type { AutomationTrigger } from "./cloud-automation-contract";
+import type {
+  AutomationOutcome,
+  AutomationTrigger,
+} from "./cloud-automation-contract";
 import type { PullRequestStage } from "./git-automation";
 import { gitEventMatches, type GitEvent } from "./git-events";
 
@@ -25,7 +28,15 @@ export type AutomationEvent =
       title: string;
       url: string;
     }
-  | { kind: "git_event"; git: GitEvent };
+  | { kind: "git_event"; git: GitEvent }
+  | {
+      kind: "automation_finished";
+      automationId: string;
+      automationName: string;
+      runId: string;
+      outcome: AutomationOutcome;
+      error: string | null;
+    };
 
 type IssueSnapshot = Pick<
   CloudIssue,
@@ -100,6 +111,13 @@ export function triggerMatchesEvent(
     case "git_event":
       return (
         trigger.kind === "git_event" && gitEventMatches(trigger, event.git)
+      );
+    case "automation_finished":
+      return (
+        trigger.kind === "automation_finished" &&
+        trigger.outcomes.includes(event.outcome) &&
+        (!trigger.automationIds.length ||
+          trigger.automationIds.includes(event.automationId))
       );
   }
 }

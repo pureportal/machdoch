@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { ExecutionProfile } from "@machdoch/fleet-protocol/cloud-execution";
 import type { CloudProviderSettings } from "@machdoch/fleet-protocol/cloud-providers";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
+import type { CloudAutomation } from "@/lib/cloud-automation-contract";
 import type { GitRepositoryOption } from "@/lib/cloud-git-contract";
 import type { CloudLabel } from "@/lib/cloud-label-contract";
 import type { CloudProduct } from "@/lib/cloud-release-contract";
@@ -26,6 +27,7 @@ export interface ClientTarget {
 }
 
 export interface AutomationOptions {
+  automations: { id: string; name: string; teamId: string }[];
   clients: ClientTarget[];
   labels: CloudLabel[];
   models: AgentModelOption[];
@@ -40,6 +42,7 @@ export function useAutomationOptions(
   workspace: CloudWorkspace,
 ): AutomationOptions {
   const [options, setOptions] = useState<AutomationOptions>({
+    automations: [],
     clients: [],
     labels: [],
     models: [],
@@ -80,34 +83,49 @@ export function useAutomationOptions(
       git
         ? cloudRequest<GitRepositoryOption[]>("git/repositories", { signal })
         : Promise.resolve([]),
+      cloudRequest<CloudAutomation[]>("automations", { signal }),
     ])
-      .then(([labels, providers, profiles, products, fleet, repositories]) =>
-        setOptions({
-          clients: (fleet?.devices ?? [])
-            .filter(canOpenSessions)
-            .flatMap((device) =>
-              device.workspaces.map((entry) => ({
-                instanceId: device.instanceId,
-                workspace: entry.root,
-                label: `${device.displayName} · ${entry.label}`,
-              })),
-            ),
-          labels: labels.flat().filter((label) => !label.archived),
-          models: providers.providers
-            .filter((provider) => provider.enabled)
-            .flatMap((provider) =>
-              provider.models.map((model) => ({
-                providerId: provider.id,
-                model,
-                label: `${provider.name} · ${model}`,
-              })),
-            ),
-          profiles: profiles.profiles.filter((profile) => profile.enabled),
+      .then(
+        ([
+          labels,
+          providers,
+          profiles,
           products,
+          fleet,
           repositories,
-          loaded: true,
-          error: "",
-        }),
+          automations,
+        ]) =>
+          setOptions({
+            automations: automations.map(({ id, name, teamId }) => ({
+              id,
+              name,
+              teamId,
+            })),
+            clients: (fleet?.devices ?? [])
+              .filter(canOpenSessions)
+              .flatMap((device) =>
+                device.workspaces.map((entry) => ({
+                  instanceId: device.instanceId,
+                  workspace: entry.root,
+                  label: `${device.displayName} · ${entry.label}`,
+                })),
+              ),
+            labels: labels.flat().filter((label) => !label.archived),
+            models: providers.providers
+              .filter((provider) => provider.enabled)
+              .flatMap((provider) =>
+                provider.models.map((model) => ({
+                  providerId: provider.id,
+                  model,
+                  label: `${provider.name} · ${model}`,
+                })),
+              ),
+            profiles: profiles.profiles.filter((profile) => profile.enabled),
+            products,
+            repositories,
+            loaded: true,
+            error: "",
+          }),
       )
       .catch((reason: Error) => {
         if (signal.aborted) return;

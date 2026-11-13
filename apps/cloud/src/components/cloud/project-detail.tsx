@@ -373,9 +373,10 @@ export function ProjectDetail({
             issues={projectIssues}
           />
           <ProjectUpdates
-            projectId={project.id}
+            project={project}
             updates={updates}
             writable={writable}
+            agent={holderCan(workspace.actor, "ai.chat")}
           />
           <div className="cloud-project-issues-toolbar">
             <h2>Issues</h2>

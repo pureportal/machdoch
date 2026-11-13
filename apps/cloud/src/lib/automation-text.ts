@@ -37,6 +37,9 @@ export const automationVariableNames = [
   "release.url",
   "payload",
   "agent.answer",
+  "run.automation",
+  "run.outcome",
+  "run.error",
   "automation.name",
   "date",
 ] as const;

@@ -49,7 +49,7 @@ export const sidebarItems = [
     group: "top",
     placement: "show",
     description:
-      "Status updates posted on projects, newest first, so you can follow progress without opening each project.",
+      "Project updates from your team and Agent, newest first, each with a TL;DR so you can follow progress without opening each project.",
   },
   {
     id: "agent",

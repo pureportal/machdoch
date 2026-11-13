@@ -113,6 +113,17 @@ export function defaultAction(
         model: model?.model ?? "",
         instructions: "",
       };
+    case "write_project_updates":
+      return {
+        kind,
+        projectIds: [],
+        providerId: model?.providerId ?? "",
+        model: model?.model ?? "",
+      };
+    case "run_automation":
+      return { kind, automationId: "" };
+    case "set_automation_enabled":
+      return { kind, automationId: "", enabled: false };
   }
 }
 
@@ -163,6 +174,7 @@ export function ActionCard({
   options,
   teamId,
   variables,
+  automations,
   hasIssue,
   hasPullRequest,
   onChange,
@@ -178,6 +190,7 @@ export function ActionCard({
   options: AutomationOptions;
   teamId: string;
   variables: string[];
+  automations: { id: string; name: string }[];
   hasIssue: boolean;
   hasPullRequest: boolean;
   onChange: (action: AutomationAction) => void;
@@ -653,6 +666,64 @@ export function ActionCard({
           onChange={onChange}
         />
       )}
+      {action.kind === "write_project_updates" && (
+        <>
+          <ChipToggle
+            label="Projects"
+            options={workspace.projects
+              .filter(
+                (project) =>
+                  project.teamId === teamId &&
+                  !["completed", "canceled"].includes(project.status),
+              )
+              .map((project) => ({ value: project.id, label: project.name }))}
+            selected={action.projectIds}
+            onChange={(projectIds) => onChange({ ...action, projectIds })}
+          />
+          <ModelSelect
+            label="Writer"
+            options={options}
+            providerId={action.providerId}
+            model={action.model}
+            onChange={(providerId, model) =>
+              onChange({ ...action, providerId, model })
+            }
+          />
+        </>
+      )}
+      {(action.kind === "run_automation" ||
+        action.kind === "set_automation_enabled") && (
+        <div className="cloud-automation-row">
+          {action.kind === "set_automation_enabled" && (
+            <Select
+              aria-label="Change"
+              value={action.enabled ? "on" : "off"}
+              onChange={(event) =>
+                onChange({ ...action, enabled: event.target.value === "on" })
+              }
+            >
+              <option value="off">Pause</option>
+              <option value="on">Turn on</option>
+            </Select>
+          )}
+          <Select
+            aria-label="Automation"
+            value={action.automationId}
+            onChange={(event) =>
+              onChange({ ...action, automationId: event.target.value })
+            }
+          >
+            {!action.automationId && (
+              <option value="">Choose automation</option>
+            )}
+            {automations.map((automation) => (
+              <option key={automation.id} value={automation.id}>
+                {automation.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
       {action.kind === "send_webhook" && (
         <>
           <Input
@@ -696,7 +767,11 @@ export function actionIncomplete(action: AutomationAction): boolean {
     case "ask_agent":
       return !action.prompt.trim() || !action.providerId || !action.model;
     case "write_release_posts":
+    case "write_project_updates":
       return !action.providerId || !action.model;
+    case "run_automation":
+    case "set_automation_enabled":
+      return !action.automationId;
     case "delegate":
       return !action.profileId;
     case "send_webhook":
