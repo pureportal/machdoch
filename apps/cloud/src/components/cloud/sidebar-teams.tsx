@@ -6,6 +6,7 @@ import {
   CircleDotDashed,
   ChevronRight,
   FolderKanban,
+  House,
 } from "lucide-react";
 import type { CloudTeam, CloudWorkspace } from "@/lib/cloud-contract";
 import { SidebarLink, type CollapsedSections } from "./sidebar-parts";
@@ -55,6 +56,14 @@ export function SidebarTeams({
         </button>
         {open && (
           <div className="cloud-navigation-nested">
+            <SidebarLink
+              item={{
+                href: `/cloud/teams/${team.id}`,
+                label: "Overview",
+                icon: House,
+              }}
+              onNavigate={onNavigate}
+            />
             {(triageEnabled || !!triage[team.id]) && (
               <SidebarLink
                 item={{

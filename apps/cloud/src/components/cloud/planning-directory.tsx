@@ -35,7 +35,7 @@ export function TeamDirectory({
             </span>
             <div>
               <h2>
-                <Link href={`/cloud/issues?teamId=${team.id}`}>
+                <Link href={`/cloud/teams/${team.id}`}>
                   {team.name}
                   <ArrowUpRight size={14} aria-hidden="true" />
                 </Link>

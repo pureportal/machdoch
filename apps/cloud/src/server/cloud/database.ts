@@ -57,6 +57,7 @@ export const cloudMigrations = [
   "054-organization-theme-logos.sql",
   "055-pulse.sql",
   "056-pull-request-reviewers.sql",
+  "057-team-resources.sql",
 ];
 
 export interface CloudSql {

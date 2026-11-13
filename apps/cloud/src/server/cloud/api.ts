@@ -36,6 +36,7 @@ import { invitationInputSchema } from "../../lib/cloud-invitation-contract";
 import { recurrencePreviewSchema } from "../../lib/cloud-recurrence-contract";
 import { handleScheduleApi } from "./automation/api";
 import { handlePulseApi } from "./pulse/api";
+import { teamResourceInputSchema } from "../../lib/cloud-team-contract";
 import {
   handlePublicReleaseApi,
   handleReleaseApi,
@@ -705,6 +706,27 @@ async function route(
         "command_key_required",
         "Provide a UUID Idempotency-Key for this change.",
       );
+    if (method === "POST" && path[0] === "teams" && path[2] === "resources") {
+      const teamId = cloudId.parse(path[1]);
+      if (path.length === 3)
+        return Response.json(
+          await runtime.teamHomes.addResource(
+            actor,
+            key.data,
+            teamId,
+            await readBody(request, teamResourceInputSchema),
+          ),
+          { status: 201 },
+        );
+      if (path.length === 5 && path[4] === "remove") {
+        await runtime.teamHomes.removeResource(
+          actor,
+          teamId,
+          cloudId.parse(path[3]),
+        );
+        return Response.json({ ok: true });
+      }
+    }
     if (
       method === "POST" &&
       path[0] === "teams" &&

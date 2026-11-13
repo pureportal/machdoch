@@ -80,6 +80,7 @@ import { CloudAgentTools } from "./ai/agent-tools";
 import { CloudAgentActions } from "./ai/agent-actions";
 import { CloudProjectUpdates } from "./project-updates";
 import { CloudPulse } from "./pulse/pulse";
+import { CloudTeamHomes } from "./team-homes";
 import { CloudFavorites, CloudIssueSubscriptions } from "./favorites";
 import { CloudInitiatives } from "./initiatives";
 import { CloudTriage } from "./triage";
@@ -148,6 +149,7 @@ export interface CloudRuntime {
   projects: CloudProjects;
   milestones: CloudProjectMilestones;
   projectUpdates: CloudProjectUpdates;
+  teamHomes: CloudTeamHomes;
   initiatives: CloudInitiatives;
   triage: CloudTriage;
   sidebar: CloudSidebar;
@@ -511,6 +513,7 @@ export function createCloudRuntime(
     projects,
     milestones,
     projectUpdates,
+    teamHomes: new CloudTeamHomes(database),
     initiatives,
     triage,
     sidebar: new CloudSidebar(database),
