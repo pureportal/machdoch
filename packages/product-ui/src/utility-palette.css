@@ -56,12 +56,29 @@
   --color-amber-400: var(--app-amber-400);
   --color-amber-500: var(--app-amber-500);
 
+  --color-rose-50: var(--app-rose-50);
   --color-rose-100: var(--app-rose-100);
   --color-rose-200: var(--app-rose-200);
   --color-rose-300: var(--app-rose-300);
   --color-rose-400: var(--app-rose-400);
   --color-rose-500: var(--app-rose-500);
-  --color-red-500: var(--app-red-500);
+  --color-rose-600: var(--app-rose-600);
+  --color-rose-700: var(--app-rose-700);
+  --color-rose-800: var(--app-rose-800);
+  --color-rose-900: var(--app-rose-900);
+  --color-rose-950: var(--app-rose-950);
+
+  --color-red-50: var(--app-rose-50);
+  --color-red-100: var(--app-rose-100);
+  --color-red-200: var(--app-rose-200);
+  --color-red-300: var(--app-rose-300);
+  --color-red-400: var(--app-rose-400);
+  --color-red-500: var(--app-rose-500);
+  --color-red-600: var(--app-rose-600);
+  --color-red-700: var(--app-rose-700);
+  --color-red-800: var(--app-rose-800);
+  --color-red-900: var(--app-rose-900);
+  --color-red-950: var(--app-rose-950);
 }
 
 :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dialog)[class~="bg-slate-950"],
@@ -399,7 +416,7 @@
 :root[data-theme="light"]
   :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dialog)
   [class~="text-emerald-300"] {
-  color: hsl(173 42% 25%) !important;
+  color: var(--app-success) !important;
 }
 
 :root[data-theme="light"]
@@ -422,7 +439,7 @@
 :root[data-theme="light"]
   :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dialog)
   [class~="text-amber-300"] {
-  color: hsl(36 82% 31%) !important;
+  color: var(--app-warning) !important;
 }
 
 :root[data-theme="light"]
@@ -444,8 +461,28 @@
   :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dialog)[class~="text-rose-400"],
 :root[data-theme="light"]
   :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dialog)
-  [class~="text-rose-400"] {
-  color: hsl(348 68% 36%) !important;
+  [class~="text-rose-400"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dialog)[class~="text-red-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dialog)
+  [class~="text-red-100"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dialog)[class~="text-red-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dialog)
+  [class~="text-red-200"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dialog)[class~="text-red-300"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dialog)
+  [class~="text-red-300"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dialog)[class~="text-red-400"],
+:root[data-theme="light"]
+  :where(.app-shell, .app-settings-dialog, .machdoch-product, .fleet-dialog)
+  [class~="text-red-400"] {
+  color: var(--app-error) !important;
 }
 
 :root[data-theme="light"]

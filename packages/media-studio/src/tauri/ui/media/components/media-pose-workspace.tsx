@@ -825,7 +825,7 @@ export function MediaPoseWorkspace({
                   setOpen(false);
                 })
               }
-              className="rounded-md bg-sky-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-sky-400 disabled:opacity-40"
+              className="rounded-md bg-sky-600 px-4 py-2 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-40"
             >
               Use pose map
             </button>

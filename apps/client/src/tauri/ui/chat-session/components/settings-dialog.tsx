@@ -1432,7 +1432,7 @@ export const SettingsDialog = (props: SettingsDialogProps): JSX.Element => {
                   aria-busy={primaryActionRunning}
                   onClick={requestPrimaryAction}
                   {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                  className="h-9 rounded-lg bg-sky-400 px-4 text-slate-950 hover:bg-sky-300"
+                  className="h-9 rounded-lg bg-sky-600 px-4 text-white hover:bg-sky-700"
                 >
                   {primaryActionRunning ? (
                     <LoaderCircle className="size-4 animate-spin" />

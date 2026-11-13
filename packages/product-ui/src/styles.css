@@ -16,11 +16,11 @@
   --m-text: var(--app-text);
   --m-text-muted: var(--app-text-muted);
   --m-text-faint: var(--app-text-faint);
-  --m-accent: var(--app-sky-600);
+  --m-accent: var(--app-primary);
   --m-accent-strong: var(--app-sky-300);
   --m-accent-soft: color-mix(in srgb, var(--app-sky-500) 10%, transparent);
-  --m-danger: var(--app-rose-300);
-  --m-success: var(--app-emerald-400);
+  --m-danger: var(--app-error);
+  --m-success: var(--app-success);
   display: flex;
   height: min(100dvh, var(--m-viewport-height, 100dvh));
   flex-direction: column;
@@ -28,13 +28,7 @@
   background: var(--m-bg);
   color: var(--m-text);
   color-scheme: inherit;
-  font-family: var(
-    --font-geist-sans,
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    sans-serif
-  );
+  font-family: var(--app-font-sans);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -357,7 +351,7 @@
 }
 
 .m-product-primary-button:hover {
-  background: var(--app-sky-500);
+  background: var(--app-primary-hover);
 }
 
 @media (pointer: fine) {
@@ -3527,7 +3521,6 @@
 :root[data-theme="light"] .machdoch-product {
   --m-accent-strong: var(--app-sky-700);
   --m-control-border: var(--app-border-strong);
-  --m-danger: var(--app-red-500);
 }
 :root[data-theme="light"] .m-product-session-heading h1,
 :root[data-theme="light"] .m-product-session-title-input,

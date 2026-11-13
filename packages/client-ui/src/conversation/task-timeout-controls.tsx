@@ -104,7 +104,7 @@ export const TaskTimeoutControls = ({
               type="submit"
               size="sm"
               disabled={saving || !valid}
-              className="bg-sky-500 text-white hover:bg-sky-600 focus-visible:ring-sky-500/35"
+              className="bg-sky-600 text-white hover:bg-sky-700 focus-visible:ring-sky-500/35"
             >
               Apply and reset
             </Button>

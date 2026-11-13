@@ -94,7 +94,7 @@ export function SchedulerJobForm({
                   (!ralphReadiness.ready || ralphReadiness.loading))
               }
               {...SUBMIT_SHORTCUT_ACTION_PROPS}
-              className="h-8 rounded-lg bg-sky-500 px-3 text-xs text-white hover:bg-sky-400"
+              className="h-8 rounded-lg bg-sky-600 px-3 text-xs text-white hover:bg-sky-700"
             >
               {busyAction === "create" ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

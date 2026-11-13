@@ -453,7 +453,7 @@ export const SessionsSidebar = ({
             type="button"
             size="sm"
             onClick={onCreateSession}
-            className="app-sessions-new-button h-7 rounded-lg bg-sky-600 px-2 text-[11px] text-white hover:bg-sky-500"
+            className="app-sessions-new-button h-7 rounded-lg bg-sky-600 px-2 text-[11px] text-white hover:bg-sky-700"
           >
             <Plus className="size-3.5" />
             New

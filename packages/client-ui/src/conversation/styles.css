@@ -72,49 +72,49 @@
 :root[data-theme="light"] .app-thinking-card {
   background: linear-gradient(
     180deg,
-    hsl(204 68% 97%),
-    hsl(213 44% 96%)
+    var(--app-primary-soft),
+    var(--app-surface)
   ) !important;
-  border-color: hsl(202 42% 78%) !important;
+  border-color: var(--app-sky-200) !important;
   color: var(--app-text) !important;
 }
 
 :root[data-theme="light"] .app-thinking-card[class~="shadow-xl"] {
-  box-shadow: 0 14px 30px hsl(214 28% 38% / 0.16) !important;
+  box-shadow: 0 14px 30px hsl(206 43% 16% / 0.1) !important;
 }
 
 :root[data-theme="light"] .app-thinking-main-icon {
-  background: hsl(197 76% 93%) !important;
-  border-color: hsl(197 52% 74%) !important;
+  background: var(--app-sky-100) !important;
+  border-color: var(--app-sky-200) !important;
   color: var(--app-sky-700) !important;
 }
 
 :root[data-theme="light"] .app-thinking-main-icon[data-tone="success"] {
-  background: hsl(164 44% 94%) !important;
-  border-color: hsl(165 34% 76%) !important;
-  color: hsl(173 42% 25%) !important;
+  background: var(--app-secondary) !important;
+  border-color: var(--app-emerald-200) !important;
+  color: var(--app-success) !important;
 }
 
 :root[data-theme="light"] .app-thinking-main-icon[data-tone="warning"] {
-  background: hsl(42 92% 94%) !important;
-  border-color: hsl(40 72% 72%) !important;
-  color: hsl(36 82% 31%) !important;
+  background: var(--app-amber-100) !important;
+  border-color: var(--app-amber-200) !important;
+  color: var(--app-warning) !important;
 }
 
 :root[data-theme="light"] .app-thinking-main-icon[data-tone="danger"] {
-  background: hsl(352 88% 95%) !important;
-  border-color: hsl(352 64% 78%) !important;
-  color: hsl(348 68% 36%) !important;
+  background: var(--app-rose-50) !important;
+  border-color: var(--app-rose-200) !important;
+  color: var(--app-error) !important;
 }
 
 :root[data-theme="light"] .app-thinking-toggle {
-  background: white !important;
-  border-color: hsl(212 28% 84%) !important;
+  background: var(--app-surface) !important;
+  border-color: var(--app-border) !important;
   color: var(--app-text-soft) !important;
 }
 
 :root[data-theme="light"] .app-thinking-code {
-  background: hsl(215 40% 96%) !important;
+  background: var(--app-surface-muted) !important;
   color: var(--app-text-soft) !important;
 }
 

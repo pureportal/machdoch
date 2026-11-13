@@ -58,7 +58,7 @@ export function MessageEditor({
             size="sm"
             disabled={pending || !value.trim()}
             {...SUBMIT_SHORTCUT_ACTION_PROPS}
-            className="rounded-full bg-sky-600 text-xs text-white hover:bg-sky-500"
+            className="rounded-full bg-sky-600 text-xs text-white hover:bg-sky-700"
           >
             <Check className="mr-1.5 h-3.5 w-3.5" /> Save and submit
           </Button>

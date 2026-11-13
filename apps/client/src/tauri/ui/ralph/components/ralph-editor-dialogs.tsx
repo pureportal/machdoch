@@ -332,7 +332,7 @@ export const RalphExpandedEditorDialog = ({
                 type="button"
                 onClick={onApply}
                 {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                className="h-8 rounded-lg bg-cyan-600 px-3 text-xs text-white hover:bg-cyan-500"
+                className="h-8 rounded-lg bg-sky-600 px-3 text-xs text-white hover:bg-sky-700"
               >
                 Apply
               </Button>

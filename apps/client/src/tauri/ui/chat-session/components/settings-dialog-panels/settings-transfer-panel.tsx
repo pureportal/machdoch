@@ -1101,7 +1101,7 @@ const EncryptedSettingsFilePanel = ({
               }
               onClick={() => void (exporting ? exportFile() : inspectFile())}
               {...SUBMIT_SHORTCUT_ACTION_PROPS}
-              className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+              className="bg-sky-600 text-white hover:bg-sky-700"
             >
               {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
               {busy
@@ -1908,7 +1908,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
                   displayName.trim().length === 0
                 }
                 {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+                className="bg-sky-600 text-white hover:bg-sky-700"
               >
                 {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
                 {configurationMode === "send"
@@ -2163,7 +2163,7 @@ export const SettingsTransferPanel = (): JSX.Element => {
                   "justify-self-end",
                   activeMode === "receive"
                     ? "bg-rose-500 text-white hover:bg-rose-400"
-                    : "bg-sky-500 text-slate-950 hover:bg-sky-400",
+                    : "bg-sky-600 text-white hover:bg-sky-700",
                 )}
               >
                 {pendingPhaseAction === "review"

@@ -523,7 +523,7 @@ export function ProposeToOrganization({
             <Button
               type="submit"
               disabled={busy || !choice}
-              className="h-9 rounded-lg bg-sky-500 px-3 text-xs text-white hover:bg-sky-400"
+              className="h-9 rounded-lg bg-sky-600 px-3 text-xs text-white hover:bg-sky-700"
             >
               {busy ? "Sending…" : "Send proposal"}
             </Button>

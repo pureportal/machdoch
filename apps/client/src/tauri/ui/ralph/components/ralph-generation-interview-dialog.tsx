@@ -169,8 +169,8 @@ export const RalphGenerationInterviewDialog = ({
         <DialogHeader className="border-b border-slate-800 bg-slate-950 px-5 py-4 pr-12">
           <div className="flex min-w-0 items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-3">
-              <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-cyan-400/25 bg-cyan-400/10">
-                <Sparkles className="h-4 w-4 text-cyan-200" />
+              <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-sky-400/25 bg-sky-400/10">
+                <Sparkles className="h-4 w-4 text-sky-200" />
               </div>
               <DialogTitle className="min-w-0 truncate text-base font-semibold text-white">
                 Generation Interview
@@ -184,7 +184,7 @@ export const RalphGenerationInterviewDialog = ({
               <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
                 <Badge
                   variant="outline"
-                  className="border-cyan-400/30 bg-cyan-400/10 text-cyan-100"
+                  className="border-sky-400/30 bg-sky-400/10 text-sky-100"
                 >
                   {getInterviewTargetLabel(state)}
                 </Badge>
@@ -201,7 +201,7 @@ export const RalphGenerationInterviewDialog = ({
                   {state.status === "loading" ? (
                     <div className="grid min-h-80 place-items-center">
                       <div className="grid justify-items-center gap-4">
-                        <LoaderCircle className="h-7 w-7 animate-spin text-cyan-300" />
+                        <LoaderCircle className="h-7 w-7 animate-spin text-sky-300" />
                         <div className="text-sm font-semibold text-slate-100">
                           {getInterviewStatusTitle(state)}
                         </div>
@@ -279,7 +279,7 @@ export const RalphGenerationInterviewDialog = ({
                                   className={cn(
                                     "h-7 w-7 rounded-md hover:bg-slate-800 hover:text-slate-100",
                                     hasComment || commentOpen
-                                      ? "text-cyan-200"
+                                      ? "text-sky-200"
                                       : "text-slate-500",
                                   )}
                                 >
@@ -288,7 +288,7 @@ export const RalphGenerationInterviewDialog = ({
                               </span>
                             </span>
                             {field.help ? (
-                              <p className="rounded-md border border-cyan-400/20 bg-cyan-400/10 px-3 py-2 text-xs font-medium leading-5 text-cyan-50">
+                              <p className="rounded-md border border-sky-400/20 bg-sky-400/10 px-3 py-2 text-xs font-medium leading-5 text-sky-50">
                                 {field.help}
                               </p>
                             ) : null}
@@ -371,7 +371,7 @@ export const RalphGenerationInterviewDialog = ({
                     disabled={busy || state.status !== "ready"}
                     onClick={onSubmitAnswers}
                     {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                    className="bg-cyan-600 text-white hover:bg-cyan-500"
+                    className="bg-sky-600 text-white hover:bg-sky-700"
                   >
                     {state.status === "loading" ? (
                       <LoaderCircle className="h-3.5 w-3.5 animate-spin" />

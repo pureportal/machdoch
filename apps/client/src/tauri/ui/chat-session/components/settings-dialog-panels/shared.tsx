@@ -663,7 +663,7 @@ export const SettingsCredentialForm = ({
                     void persistDraftKey();
                   }}
                   {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                  className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+                  className="bg-sky-600 text-white hover:bg-sky-700"
                 >
                   Save key
                 </Button>

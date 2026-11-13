@@ -1757,7 +1757,7 @@ export const MediaGenerateView = ({
                 disabled={!canGenerate}
                 onClick={onGenerate}
                 {...SUBMIT_SHORTCUT_ACTION_PROPS}
-                className="h-12 w-full bg-sky-500 text-base font-semibold text-slate-950 hover:bg-sky-400 disabled:bg-slate-800 disabled:text-slate-500"
+                className="h-12 w-full bg-sky-600 text-base font-semibold text-white hover:bg-sky-700 disabled:bg-slate-800 disabled:text-slate-500"
               >
                 {generationPending ? (
                   <LoaderCircle className="h-5 w-5 animate-spin" />

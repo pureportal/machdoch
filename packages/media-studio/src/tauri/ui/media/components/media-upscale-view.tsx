@@ -252,7 +252,7 @@ export function MediaUpscaleView({
               </AppNotification>
             ) : null}
             <Button
-              className="h-12 w-full bg-sky-500 text-base font-semibold text-slate-950 hover:bg-sky-400 disabled:bg-slate-800 disabled:text-slate-500"
+              className="h-12 w-full bg-sky-600 text-base font-semibold text-white hover:bg-sky-700 disabled:bg-slate-800 disabled:text-slate-500"
               disabled={!ready || !canPrepare}
               onClick={() => void prepare(false)}
             >

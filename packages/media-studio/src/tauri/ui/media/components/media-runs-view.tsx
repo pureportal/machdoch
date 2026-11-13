@@ -135,7 +135,7 @@ export const MediaRunsView = (props: MediaRunsViewProps): JSX.Element => {
             </Button>
             <Button
               onClick={onCreate}
-              className="bg-sky-400 text-slate-950 hover:bg-sky-300"
+              className="bg-sky-600 text-white hover:bg-sky-700"
             >
               <Plus className="size-4" />
               New recipe

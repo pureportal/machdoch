@@ -22,7 +22,7 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-destructive: var(--destructive);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--app-font-sans);
   --font-mono: var(--font-geist-mono);
 }
 

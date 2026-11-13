@@ -545,7 +545,7 @@ export const SchedulerPanel = ({
                   size="sm"
                   disabled={Boolean(busyAction) || !activeWorkspace}
                   onClick={() => void runDue()}
-                  className="h-9 rounded-lg bg-sky-500 px-3 text-xs text-white hover:bg-sky-400"
+                  className="h-9 rounded-lg bg-sky-600 px-3 text-xs text-white hover:bg-sky-700"
                 >
                   {actionButtonBusy("run-due") ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />

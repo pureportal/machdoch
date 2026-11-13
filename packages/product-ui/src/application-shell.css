@@ -11,13 +11,7 @@
   overflow: hidden;
   background: var(--app-bg);
   color: var(--app-text);
-  font-family: var(
-    --font-geist-sans,
-    Inter,
-    ui-sans-serif,
-    system-ui,
-    sans-serif
-  );
+  font-family: var(--app-font-sans);
 }
 
 .m-application-body {
@@ -185,7 +179,7 @@
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  background: hsl(196 72% 36%);
+  background: var(--app-brand-primary);
 }
 .m-appearance-options [data-accent="emerald"] {
   background: var(--app-emerald-500);

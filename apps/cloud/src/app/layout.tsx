@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono } from "next/font/google";
 import { FleetAppearance } from "@/components/fleet-appearance";
 import { FleetAnalytics } from "@/components/fleet-analytics";
 import { initialThemeScript } from "@/lib/initial-theme";
@@ -9,7 +9,6 @@ import "@machdoch/product-ui/styles.css";
 import "./fleet-shell.css";
 import "./cloud/cloud.css";
 
-const geist = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
@@ -39,9 +38,7 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: initialThemeScript }} />
       </head>
-      <body
-        className={`${geist.variable} ${geistMono.variable} font-sans antialiased`}
-      >
+      <body className={`${geistMono.variable} font-sans antialiased`}>
         <FleetAppearance />
         <FleetAnalytics version={packageManifest.version} />
         {children}
