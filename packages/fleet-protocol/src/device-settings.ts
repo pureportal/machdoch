@@ -73,6 +73,7 @@ const desktopSettings = z.strictObject({
 const agentLimits = z.strictObject({
   automaticRetries: z.boolean(),
   retryAttempts: integer,
+  stopQueueOnFailure: z.boolean(),
   infinite: z.boolean(),
   executorTurns: integer,
   autopilotExecutorIterations: integer,

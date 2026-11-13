@@ -61,6 +61,29 @@ await test("device settings requests match Rust conformance", () => {
   }
 });
 
+await test("agent limits require an explicit queue failure policy", () => {
+  const settings = {
+    automaticRetries: true,
+    retryAttempts: 2,
+    infinite: false,
+    executorTurns: 64,
+    autopilotExecutorIterations: 16,
+  };
+  const invoke = (value: unknown) =>
+    deviceSettingsRequestSchema.safeParse({
+      kind: "invoke",
+      id: "c6f1f070-2b65-4d17-a64d-b05e6c54ecbe",
+      command: "save_user_agent_limits_settings",
+      args: { settings: value },
+    }).success;
+
+  for (const stopQueueOnFailure of [true, false])
+    assert.equal(invoke({ ...settings, stopQueueOnFailure }), true);
+  assert.equal(invoke(settings), false);
+  for (const stopQueueOnFailure of [null, "true", 1])
+    assert.equal(invoke({ ...settings, stopQueueOnFailure }), false);
+});
+
 await test("device settings bound documents, credentials and UTF-8 passphrases", () => {
   const invoke = (command: string, args: unknown) =>
     deviceSettingsRequestSchema.safeParse({

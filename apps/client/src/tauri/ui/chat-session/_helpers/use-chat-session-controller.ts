@@ -196,7 +196,9 @@ import {
   createConflictedQueuedMessageRecovery,
   createQueuedMessageDispatchAttempt,
   createQueuedMessageRetry,
+  findQueuedHead,
   isQueuedPromptEnhancementInputCurrent,
+  setSessionQueuePaused,
 } from "./queued-message-lifecycle";
 import {
   applyEnhancedPromptToQueuedRequestIterations,
@@ -5841,12 +5843,11 @@ export const useChatSessionController = (
 
   const dispatchNextQueuedMessageForSession = useCallback(
     (session: ChatSessionRecord): void => {
-      const nextQueuedMessage = queuedSessionMessages.find(
-        (message) =>
-          message.sessionId === session.id &&
-          message.status !== "failed" &&
-          !getBlockingRequestIteration(message, queuedSessionMessages) &&
-          message.task.trim().length > 0,
+      const stopQueueOnFailure = retrySettingsRef.current.stopQueueOnFailure;
+      const nextQueuedMessage = findQueuedHead(
+        queuedSessionMessages,
+        session.id,
+        stopQueueOnFailure,
       );
 
       if (
@@ -5878,15 +5879,10 @@ export const useChatSessionController = (
               );
             let latestSession = state.getSessionById(session.id);
             const queuedHeadAtDispatch =
-              shellStateRef.current.queuedSessionMessages.find(
-                (message) =>
-                  message.sessionId === session.id &&
-                  message.status !== "failed" &&
-                  !getBlockingRequestIteration(
-                    message,
-                    shellStateRef.current.queuedSessionMessages,
-                  ) &&
-                  message.task.trim().length > 0,
+              findQueuedHead(
+                shellStateRef.current.queuedSessionMessages,
+                session.id,
+                stopQueueOnFailure,
               );
 
             if (
@@ -5980,15 +5976,10 @@ export const useChatSessionController = (
               );
             const refreshedSession = state.getSessionById(session.id);
             const refreshedQueuedHead =
-              shellStateRef.current.queuedSessionMessages.find(
-                (message) =>
-                  message.sessionId === session.id &&
-                  message.status !== "failed" &&
-                  !getBlockingRequestIteration(
-                    message,
-                    shellStateRef.current.queuedSessionMessages,
-                  ) &&
-                  message.task.trim().length > 0,
+              findQueuedHead(
+                shellStateRef.current.queuedSessionMessages,
+                session.id,
+                stopQueueOnFailure,
               );
 
             if (
@@ -6172,12 +6163,22 @@ export const useChatSessionController = (
     ],
   );
 
+  const handleQueuePausedChange = useCallback(
+    (sessionId: string, paused: boolean): void => {
+      state.updateSessionById(sessionId, (session) =>
+        setSessionQueuePaused(session, paused, Date.now()),
+      );
+    },
+    [state.updateSessionById],
+  );
+
   useAutomaticChatWork({
     ready: state.hasHydrated && runtime.userAgentLimitsSettingsLoaded,
     state,
     settings: runtime.userAgentLimitsSettings,
     getUnsettledTaskId: getUnsettledDesktopTaskIdForSession,
     dispatchQueued: dispatchNextQueuedMessageForSession,
+    pauseQueue: (sessionId) => handleQueuePausedChange(sessionId, true),
     submit: taskSubmission.submitTaskToSession,
   });
 
@@ -6321,28 +6322,6 @@ export const useChatSessionController = (
       );
     },
     [updateQueuedSessionMessages],
-  );
-
-  const handleQueuePausedChange = useCallback(
-    (sessionId: string, paused: boolean): void => {
-      state.updateSessionById(sessionId, (session) => {
-        if ((session.queuePausedAt !== undefined) === paused) {
-          return session;
-        }
-
-        const timestamp = Date.now();
-        const nextSession = { ...session, updatedAt: timestamp };
-
-        if (paused) {
-          nextSession.queuePausedAt = timestamp;
-        } else {
-          delete nextSession.queuePausedAt;
-        }
-
-        return nextSession;
-      });
-    },
-    [state.updateSessionById],
   );
 
   const handleAttachQueuedMessagePaths = useCallback(

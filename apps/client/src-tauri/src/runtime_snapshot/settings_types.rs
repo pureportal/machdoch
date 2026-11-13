@@ -69,6 +69,7 @@ pub struct UserInternalTaskModelSettings {
 pub struct UserAgentLimitsSettings {
     pub(crate) automatic_retries: bool,
     pub(crate) retry_attempts: u32,
+    pub(crate) stop_queue_on_failure: bool,
     pub(super) infinite: bool,
     pub(super) executor_turns: u32,
     pub(super) autopilot_executor_iterations: u32,
@@ -223,6 +224,7 @@ pub(super) struct UserDesktopConfigFile {
 pub(super) struct UserAgentLimitsConfigFile {
     pub(super) automatic_retries: Option<bool>,
     pub(super) retry_attempts: Option<u32>,
+    pub(super) stop_queue_on_failure: Option<bool>,
     pub(super) infinite: Option<bool>,
     pub(super) executor_turns: Option<u32>,
     pub(super) autopilot_executor_iterations: Option<u32>,

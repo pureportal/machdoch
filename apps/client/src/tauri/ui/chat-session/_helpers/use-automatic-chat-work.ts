@@ -15,6 +15,7 @@ import {
   createExecutionRetryPrompt,
   getPendingExecutionRetry,
 } from "./execution-retry";
+import { shouldStopQueueAfterFailure } from "./queued-message-lifecycle";
 import type { ChatSessionShellStateController } from "./use-chat-session-shell-state";
 import type { SubmitTaskToSessionOptions } from "./use-session-task-submission";
 
@@ -27,6 +28,7 @@ export interface AutomaticChatWorkOptions {
   settings: UserAgentLimitsSettings;
   getUnsettledTaskId: (sessionId: string) => string | null;
   dispatchQueued: (session: ChatSessionRecord) => void;
+  pauseQueue: (sessionId: string) => void;
   submit: (options: SubmitTaskToSessionOptions) => boolean;
 }
 
@@ -59,6 +61,13 @@ export const processAutomaticChatWork = async (
       continue;
     const retry = getPendingExecutionRetry(session, options.settings);
     if (!retry) {
+      if (
+        options.settings.stopQueueOnFailure &&
+        shouldStopQueueAfterFailure(session)
+      ) {
+        options.pauseQueue(session.id);
+        continue;
+      }
       options.dispatchQueued(session);
       continue;
     }

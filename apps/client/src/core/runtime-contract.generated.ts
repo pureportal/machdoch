@@ -91,6 +91,7 @@ export const WEB_SEARCH_ENV_KEY_BY_PROVIDER = {
 export const DEFAULT_USER_AGENT_LIMITS_SETTINGS = {
   "automaticRetries": true,
   "retryAttempts": 2,
+  "stopQueueOnFailure": true,
   "infinite": false,
   "executorTurns": 64,
   "autopilotExecutorIterations": 16,
@@ -276,6 +277,7 @@ export interface WorkspaceCompatibilityConfig {
 export interface RuntimeAgentLimitOverrides {
   automaticRetries?: boolean;
   retryAttempts?: number;
+  stopQueueOnFailure?: boolean;
   infinite?: boolean;
   executorTurns?: number;
   autopilotExecutorIterations?: number;
@@ -505,6 +507,7 @@ export interface UserConfigFile {
 export interface UserAgentLimitsSettings {
   automaticRetries: boolean;
   retryAttempts: number;
+  stopQueueOnFailure: boolean;
   infinite: boolean;
   executorTurns: number;
   autopilotExecutorIterations: number;

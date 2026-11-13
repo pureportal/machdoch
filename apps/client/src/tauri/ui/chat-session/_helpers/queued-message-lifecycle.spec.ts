@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   createSession,
+  type ChatSessionMessage,
   type ChatSessionQueuedMessage,
+  type ChatSessionRecord,
+  type ChatSessionTaskOutcomeStatus,
 } from "../../chat-session.model";
 import {
   canDispatchQueuedMessage,
@@ -9,6 +12,9 @@ import {
   createConflictedQueuedMessageRecovery,
   createQueuedMessageDispatchAttempt,
   createQueuedMessageRetry,
+  findQueuedHead,
+  setSessionQueuePaused,
+  shouldStopQueueAfterFailure,
 } from "./queued-message-lifecycle";
 import { reconcileQueuedMessagesForTaskSubmission } from "./use-session-task-submission";
 
@@ -30,6 +36,119 @@ const createQueuedMessage = (
   createdAt: 10,
   updatedAt: 10,
   ...overrides,
+});
+
+const createTaskMessages = (
+  taskId: string,
+  status: ChatSessionTaskOutcomeStatus,
+  createdAt: number,
+): ChatSessionMessage[] => [
+  { id: `${taskId}-user`, taskId, role: "user", content: taskId, createdAt },
+  {
+    id: `${taskId}-agent`,
+    taskId,
+    role: "agent",
+    content: status,
+    createdAt: createdAt + 1,
+    outcome: { status },
+  },
+];
+
+const appendTask = (
+  session: ChatSessionRecord,
+  taskId: string,
+  status: ChatSessionTaskOutcomeStatus,
+  createdAt: number,
+): ChatSessionRecord => ({
+  ...session,
+  messages: [
+    ...session.messages,
+    ...createTaskMessages(taskId, status, createdAt),
+  ],
+});
+
+describe("queue stop after failure", () => {
+  it.each(["failed", "blocked", "timed-out", "unsupported", "crashed"] as const)(
+    "stops the queue after a %s task",
+    (status) => {
+      const session = appendTask(createSession({ id: "session-1" }), "task-1", status, 10);
+
+      expect(shouldStopQueueAfterFailure(session)).toBe(true);
+    },
+  );
+
+  it.each(["succeeded", "cancelled"] as const)(
+    "keeps the queue running after a %s task",
+    (status) => {
+      const session = appendTask(createSession({ id: "session-1" }), "task-1", status, 10);
+
+      expect(shouldStopQueueAfterFailure(session)).toBe(false);
+    },
+  );
+
+  it("does not stop an empty session", () => {
+    expect(shouldStopQueueAfterFailure(createSession({ id: "session-1" }))).toBe(false);
+  });
+
+  it("stops once per failure and again after a later failure", () => {
+    const failed = appendTask(createSession({ id: "session-1" }), "task-1", "failed", 10);
+    const paused = setSessionQueuePaused(failed, true, 20);
+
+    expect(paused.queuePausedAt).toBe(20);
+    expect(shouldStopQueueAfterFailure(paused)).toBe(false);
+
+    const resumed = setSessionQueuePaused(paused, false, 30);
+
+    expect(resumed.queuePausedAt).toBeUndefined();
+    expect(resumed.queueResumedAfterTaskId).toBe("task-1");
+    expect(shouldStopQueueAfterFailure(resumed)).toBe(false);
+    expect(
+      shouldStopQueueAfterFailure(appendTask(resumed, "task-2", "succeeded", 40)),
+    ).toBe(false);
+    expect(
+      shouldStopQueueAfterFailure(appendTask(resumed, "task-2", "failed", 40)),
+    ).toBe(true);
+  });
+
+  it("does not acknowledge a running task when the queue is resumed", () => {
+    const running: ChatSessionRecord = {
+      ...createSession({ id: "session-1" }),
+      messages: [
+        { id: "task-1-user", taskId: "task-1", role: "user", content: "Run", createdAt: 10 },
+      ],
+    };
+    const resumed = setSessionQueuePaused(
+      setSessionQueuePaused(running, true, 20),
+      false,
+      30,
+    );
+
+    expect(resumed.queueResumedAfterTaskId).toBeUndefined();
+    expect(
+      shouldStopQueueAfterFailure({
+        ...resumed,
+        messages: createTaskMessages("task-1", "failed", 10),
+      }),
+    ).toBe(true);
+  });
+
+  it("holds later prompts behind a failed queued prompt only when stopping is enabled", () => {
+    const failed = createQueuedMessage({ id: "queued-1", status: "failed" });
+    const next = createQueuedMessage({ id: "queued-2", orderRank: 1 });
+    const otherSession = createQueuedMessage({ id: "queued-3", sessionId: "session-2" });
+    const messages = [failed, otherSession, next];
+
+    expect(findQueuedHead(messages, "session-1", true)?.id).toBe("queued-1");
+    expect(findQueuedHead(messages, "session-1", false)?.id).toBe("queued-2");
+    expect(findQueuedHead(messages, "session-2", true)?.id).toBe("queued-3");
+  });
+
+  it("does not let an emptied queued prompt hold the queue", () => {
+    const emptied = createQueuedMessage({ id: "queued-1", task: " ", status: "failed" });
+    const next = createQueuedMessage({ id: "queued-2", orderRank: 1 });
+
+    expect(findQueuedHead([emptied, next], "session-1", true)?.id).toBe("queued-2");
+  });
 });
 
 describe("queued message lifecycle", () => {

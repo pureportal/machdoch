@@ -199,6 +199,7 @@ pub(crate) async fn inspect_persisted_chat_work(
                 snapshot,
                 settings.automatic_retries,
                 settings.retry_attempts,
+                settings.stop_queue_on_failure,
             )
         })?;
         Ok(PersistedChatWork { busy, revision })
@@ -243,6 +244,7 @@ pub(crate) async fn shutdown_if_idle(
                             snapshot,
                             settings.automatic_retries,
                             settings.retry_attempts,
+                            settings.stop_queue_on_failure,
                         )?
                     {
                         return Ok(false);

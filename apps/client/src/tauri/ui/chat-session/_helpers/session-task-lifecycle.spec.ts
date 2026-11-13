@@ -22,6 +22,7 @@ import { getPendingExecutionRetry } from "./execution-retry";
 import { applySmartContextPackSettingsToSession } from "./smart-context-packs";
 import type { SmartContextPack } from "@machdoch/client-ui/context-packs/model";
 import { createSessionMessageSettings } from "./session-message-settings";
+import { findQueuedHead, setSessionQueuePaused } from "./queued-message-lifecycle";
 
 vi.mock("react", async (original) => ({
   ...(await original<typeof import("react")>()),
@@ -128,12 +129,17 @@ const setup = () => {
     getUnsettledTaskId: (id) =>
       [...unsettled.current].find(([, session]) => id === session)?.[0] ?? null,
     submit: submission.submitTaskToSession,
+    pauseQueue: (id) =>
+      state.updateSessionById(id, (current) =>
+        setSessionQueuePaused(current, true, Date.now()),
+      ),
     dispatchQueued: (session) => {
-      const head = shell.queuedSessionMessages.find(
-        (message) =>
-          message.sessionId === session.id && message.status !== "failed",
+      const head = findQueuedHead(
+        shell.queuedSessionMessages,
+        session.id,
+        options.settings.stopQueueOnFailure,
       );
-      if (head)
+      if (head && head.status !== "failed" && session.queuePausedAt === undefined)
         submission.submitTaskToSession({
           sessionSnapshot: session,
           taskId: `queued-${head.id}`,
@@ -583,6 +589,10 @@ describe("chat execution lifecycle", () => {
 
   it("passes provider failure context into bounded retries before advancing the queue", async () => {
     const work = setup();
+    work.options.settings = {
+      ...work.options.settings,
+      stopQueueOnFailure: false,
+    };
     const failure = new DesktopTaskRunProtocolError({
       kind: "runtime",
       message: "Provider HTTP 503; request abc",
@@ -648,6 +658,7 @@ describe("chat execution lifecycle", () => {
     work.options.settings = {
       ...work.options.settings,
       automaticRetries: false,
+      stopQueueOnFailure: false,
     };
     vi.mocked(runDesktopTask)
       .mockRejectedValueOnce(new Error("Provider failed"))
@@ -675,5 +686,70 @@ describe("chat execution lifecycle", () => {
     };
     await processAutomaticChatWork(() => work.options);
     expect(runDesktopTask).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a failed task, then stops the queue until it is resumed", async () => {
+    const work = setup();
+    const sessionId = work.state.activeSession.id;
+    vi.mocked(runDesktopTask).mockRejectedValue(new Error("Provider failed"));
+    work.submit("Original objective");
+    work.enqueue("Next objective");
+    await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now() + 100_000);
+    for (let retry = 1; retry <= 2; retry += 1) {
+      await processAutomaticChatWork(() => work.options);
+      await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+      clock.mockReturnValue(Date.now() + 100_000);
+    }
+    expect(runDesktopTask).toHaveBeenCalledTimes(3);
+    await processAutomaticChatWork(() => work.options);
+    await processAutomaticChatWork(() => work.options);
+    expect(runDesktopTask).toHaveBeenCalledTimes(3);
+    expect(work.state.activeSession.queuePausedAt).toBeDefined();
+    expect(
+      work.state.shellState.queuedSessionMessages.map((message) => message.task),
+    ).toEqual(["Next objective"]);
+
+    vi.mocked(runDesktopTask).mockResolvedValue(success("Next objective"));
+    work.state.updateSessionById(sessionId, (session) =>
+      setSessionQueuePaused(session, false, Date.now()),
+    );
+    await processAutomaticChatWork(() => work.options);
+    await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+    expect(runDesktopTask).toHaveBeenCalledTimes(4);
+    expect(vi.mocked(runDesktopTask).mock.calls[3][1]).toBe("Next objective");
+    expect(work.state.shellState.queuedSessionMessages).toEqual([]);
+  });
+
+  it("stops the queue after a blocked task without retrying it", async () => {
+    const work = setup();
+    const blocked = success("Blocked");
+    blocked.execution.status = "blocked";
+    vi.mocked(runDesktopTask)
+      .mockResolvedValueOnce(blocked)
+      .mockResolvedValue(success("Next"));
+    work.submit("Blocked");
+    work.enqueue("Next");
+    await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+    await processAutomaticChatWork(() => work.options);
+    await processAutomaticChatWork(() => work.options);
+    expect(runDesktopTask).toHaveBeenCalledTimes(1);
+    expect(work.state.activeSession.queuePausedAt).toBeDefined();
+  });
+
+  it("advances the queue after a cancelled task", async () => {
+    const work = setup();
+    vi.mocked(runDesktopTask)
+      .mockRejectedValueOnce(
+        new DesktopTaskRunProtocolError({ kind: "cancelled", message: "Stopped" }),
+      )
+      .mockResolvedValue(success("Next"));
+    work.submit("Cancel");
+    work.enqueue("Next");
+    await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+    await processAutomaticChatWork(() => work.options);
+    await vi.waitFor(() => expect(work.unsettled.current.size).toBe(0));
+    expect(runDesktopTask).toHaveBeenCalledTimes(2);
+    expect(work.state.activeSession.queuePausedAt).toBeUndefined();
   });
 });

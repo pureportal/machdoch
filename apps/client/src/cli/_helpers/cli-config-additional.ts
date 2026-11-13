@@ -139,6 +139,14 @@ export const ADDITIONAL_CONFIG_SETTINGS: readonly AdditionalSetting[] = [
     acceptedValues: "0..20",
   },
   booleanSetting(
+    "agent-limits.stop-queue-on-failure",
+    "Stop queue on failure",
+    "Agent",
+    "user",
+    ["agentLimits", "stopQueueOnFailure"],
+    DEFAULT_USER_AGENT_LIMITS_SETTINGS.stopQueueOnFailure,
+  ),
+  booleanSetting(
     "memory.workspace-default",
     "Workspace memory",
     "Memory",

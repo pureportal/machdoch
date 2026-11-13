@@ -160,6 +160,7 @@
       "properties": {
         "automaticRetries": { "type": "boolean" },
         "retryAttempts": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "stopQueueOnFailure": { "type": "boolean" },
         "infinite": {
           "type": "boolean",
           "default": false
@@ -640,6 +641,7 @@
         "autopilotExecutorIterations",
         "automaticRetries",
         "retryAttempts",
+        "stopQueueOnFailure",
         "goalPasses",
         "goalStalledPasses",
         "goalVerificationMinutes",
@@ -656,6 +658,10 @@
           "minimum": 0,
           "maximum": 20,
           "default": 2
+        },
+        "stopQueueOnFailure": {
+          "type": "boolean",
+          "default": true
         },
         "infinite": {
           "type": "boolean",

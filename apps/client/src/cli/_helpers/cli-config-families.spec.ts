@@ -193,6 +193,7 @@ it("preserves the complete catalogue order", () => {
     "agent.adaptive",
     "agent-limits.automatic-retries",
     "agent-limits.retry-attempts",
+    "agent-limits.stop-queue-on-failure",
     "memory.workspace-default",
     "workspace.memory",
     "workspace.adaptive",

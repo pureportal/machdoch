@@ -4,8 +4,10 @@ pub(super) fn has_pending_chat_work(
     state: &Value,
     automatic_retries: bool,
     retry_attempts: u32,
+    stop_queue_on_failure: bool,
 ) -> Result<bool, String> {
     let sessions = array_field(state, "sessions")?;
+    let mut stopped_session_ids = Vec::new();
     for queued in array_field(state, "queuedSessionMessages")? {
         let status = queued["status"]
             .as_str()
@@ -14,12 +16,24 @@ pub(super) fn has_pending_chat_work(
             return Err("Chat queue state is unavailable.".to_string());
         }
         if status == "failed" {
+            if stop_queue_on_failure
+                && !queued["task"].as_str().unwrap_or_default().trim().is_empty()
+            {
+                if let Some(session_id) = queued["sessionId"].as_str() {
+                    stopped_session_ids.push(session_id);
+                }
+            }
             continue;
         }
         let session_id = queued["sessionId"]
             .as_str()
             .ok_or("Queued chat identity is unavailable.")?;
-        if sessions.iter().any(|session| session["id"] == session_id) {
+        let Some(session) = sessions.iter().find(|session| session["id"] == session_id) else {
+            continue;
+        };
+        if status != "queued"
+            || !(session["queuePausedAt"].is_number() || stopped_session_ids.contains(&session_id))
+        {
             return Ok(true);
         }
     }

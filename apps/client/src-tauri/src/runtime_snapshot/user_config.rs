@@ -213,6 +213,7 @@ fn merge_typed_user_config(original: Value, typed: &UserConfigFile) -> Result<Va
         &[
             "automaticRetries",
             "retryAttempts",
+            "stopQueueOnFailure",
             "infinite",
             "executorTurns",
             "autopilotExecutorIterations",

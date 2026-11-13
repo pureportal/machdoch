@@ -86,6 +86,7 @@ export const normalizeAgentLimitsDraft = (
       AGENT_LIMIT_BOUNDS.retryAttempts.max,
       DEFAULT_USER_AGENT_LIMITS_SETTINGS.retryAttempts,
     ),
+    stopQueueOnFailure: settings.stopQueueOnFailure,
     infinite: settings.infinite,
     executorTurns: clampIntegerSetting(
       settings.executorTurns,
@@ -140,6 +141,7 @@ export const hasAgentLimitsDraftChanges = (
     left.infinite !== right.infinite ||
     left.automaticRetries !== right.automaticRetries ||
     left.retryAttempts !== right.retryAttempts ||
+    left.stopQueueOnFailure !== right.stopQueueOnFailure ||
     left.executorTurns !== right.executorTurns ||
     left.autopilotExecutorIterations !== right.autopilotExecutorIterations ||
     left.goalPasses !== right.goalPasses ||
@@ -557,6 +559,20 @@ export const AgentLimitsSettingsPanel = ({
             />
           </SettingPanel>
         ) : null}
+        <SettingPanel label="Stop queue on failure">
+          <ChoiceButtons
+            label="Stop queue on failure"
+            value={draft.stopQueueOnFailure ? "on" : "off"}
+            options={[
+              { value: "on", label: "On" },
+              { value: "off", label: "Off" },
+            ]}
+            disabled={setup.saving}
+            onChange={(value) =>
+              setDraft({ ...draft, stopQueueOnFailure: value === "on" })
+            }
+          />
+        </SettingPanel>
         <SettingPanel
           label="Limit mode"
           detail="The inactivity safety timeout still applies."

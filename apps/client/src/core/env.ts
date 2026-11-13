@@ -138,6 +138,9 @@ const normalizeUserAgentLimitsSettings = (
       DEFAULT_USER_AGENT_LIMITS_SETTINGS.retryAttempts,
       AGENT_LIMIT_BOUNDS.retryAttempts,
     ),
+    stopQueueOnFailure:
+      settings?.stopQueueOnFailure ??
+      DEFAULT_USER_AGENT_LIMITS_SETTINGS.stopQueueOnFailure,
     infinite: settings?.infinite === true,
     executorTurns: normalizePositiveIntegerSetting(
       settings?.executorTurns,

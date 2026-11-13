@@ -259,6 +259,7 @@ export interface ChatSessionRecord {
   archivedAt?: number;
   pinnedAt?: number;
   queuePausedAt?: number;
+  queueResumedAfterTaskId?: string;
   timeResetAt?: number;
   movedToTopAt?: number;
   specialSession?: ChatSessionSpecialKind;
@@ -1442,6 +1443,9 @@ export const createSession = (
       : {}),
     ...(typeof overrides.queuePausedAt === "number"
       ? { queuePausedAt: overrides.queuePausedAt }
+      : {}),
+    ...(typeof overrides.queueResumedAfterTaskId === "string"
+      ? { queueResumedAfterTaskId: overrides.queueResumedAfterTaskId }
       : {}),
     ...(typeof overrides.timeResetAt === "number"
       ? { timeResetAt: overrides.timeResetAt }
@@ -2674,6 +2678,10 @@ const normalizeSessionRecord = (
       typeof session.queuePausedAt === "number"
         ? session.queuePausedAt
         : undefined,
+    queueResumedAfterTaskId:
+      typeof session.queueResumedAfterTaskId === "string"
+        ? session.queueResumedAfterTaskId
+        : undefined,
     timeResetAt:
       typeof session.timeResetAt === "number" ? session.timeResetAt : undefined,
     movedToTopAt:
@@ -3081,7 +3089,9 @@ const getMessageTimestamp = (
   return typeof message.createdAt === "number" ? message.createdAt : fallback;
 };
 
-const getLatestUserTaskId = (messages: ChatSessionMessage[]): string | null => {
+export const getLatestUserTaskId = (
+  messages: ChatSessionMessage[],
+): string | null => {
   let latestTask: { taskId: string; timestamp: number } | null = null;
 
   for (const [index, message] of messages.entries()) {

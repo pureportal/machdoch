@@ -100,6 +100,9 @@ pub(super) fn normalize_user_agent_limits_settings(
             .retry_attempts
             .unwrap_or(crate::runtime_contract_generated::DEFAULT_RETRY_ATTEMPTS)
             .min(crate::runtime_contract_generated::MAX_RETRY_ATTEMPTS),
+        stop_queue_on_failure: settings
+            .stop_queue_on_failure
+            .unwrap_or(crate::runtime_contract_generated::DEFAULT_STOP_QUEUE_ON_FAILURE),
         infinite: settings
             .infinite
             .unwrap_or(DEFAULT_USER_AGENT_LIMITS_INFINITE),
@@ -122,6 +125,7 @@ pub(super) fn normalize_user_agent_limits_settings_input(
         retry_attempts: settings
             .retry_attempts
             .min(crate::runtime_contract_generated::MAX_RETRY_ATTEMPTS),
+        stop_queue_on_failure: settings.stop_queue_on_failure,
         infinite: settings.infinite,
         executor_turns: clamp_executor_turn_limit(settings.executor_turns),
         autopilot_executor_iterations: clamp_autopilot_iteration_limit(
@@ -138,13 +142,16 @@ mod retry_settings_tests {
     fn retry_settings_use_global_defaults_and_bound_retry_count() {
         let defaults = normalize_user_agent_limits_settings(&UserAgentLimitsConfigFile::default());
         assert!(defaults.automatic_retries);
+        assert!(defaults.stop_queue_on_failure);
         assert_eq!(defaults.retry_attempts, 2);
         let disabled = normalize_user_agent_limits_settings(&UserAgentLimitsConfigFile {
             automatic_retries: Some(false),
             retry_attempts: Some(0),
+            stop_queue_on_failure: Some(false),
             ..Default::default()
         });
         assert!(!disabled.automatic_retries);
+        assert!(!disabled.stop_queue_on_failure);
         assert_eq!(disabled.retry_attempts, 0);
         let bounded = normalize_user_agent_limits_settings(&UserAgentLimitsConfigFile {
             retry_attempts: Some(u32::MAX),

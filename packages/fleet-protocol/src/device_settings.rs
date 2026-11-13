@@ -182,7 +182,7 @@ pub fn valid_device_settings_invocation(command: &str, args: &Value) -> bool {
             fields(args, &["settings"], &[]).is_some()
                 && settings(
                     &args["settings"],
-                    &["automaticRetries", "infinite"],
+                    &["automaticRetries", "stopQueueOnFailure", "infinite"],
                     &[
                         "retryAttempts",
                         "executorTurns",
@@ -248,6 +248,32 @@ pub fn deserialize_device_settings_request<'de, D: Deserializer<'de>>(
 mod tests{
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn agent_limits_require_an_explicit_queue_failure_policy() {
+        let settings = json!({
+            "automaticRetries": true,
+            "retryAttempts": 2,
+            "infinite": false,
+            "executorTurns": 64,
+            "autopilotExecutorIterations": 16
+        });
+        let invoke = |value| valid_device_settings_invocation(
+            "save_user_agent_limits_settings", &json!({"settings": value}),
+        );
+        for stop_queue_on_failure in [true, false] {
+            let mut value = settings.clone();
+            value["stopQueueOnFailure"] = json!(stop_queue_on_failure);
+            assert!(invoke(value));
+        }
+        assert!(!invoke(settings.clone()));
+        for stop_queue_on_failure in [Value::Null, json!("true"), json!(1)] {
+            let mut value = settings.clone();
+            value["stopQueueOnFailure"] = stop_queue_on_failure;
+            assert!(!invoke(value));
+        }
+    }
+
     #[test]
     fn voice_preferences_validate_explicit_answer_modes_and_reject_unknown_fields(){
         let base=json!({"preferredVoiceURI":null,"rate":1.0,"autoSpeakResponses":false});

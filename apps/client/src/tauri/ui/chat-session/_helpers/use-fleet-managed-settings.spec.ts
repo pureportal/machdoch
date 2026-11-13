@@ -196,6 +196,7 @@ const limits = {
   autopilotExecutorIterations: 7,
   automaticRetries: true,
   retryAttempts: 3,
+  stopQueueOnFailure: true,
   goalPasses: 10,
   goalStalledPasses: 3,
   goalVerificationMinutes: 30,

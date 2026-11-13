@@ -1,10 +1,75 @@
-import { getActiveChatOperationIds, getSessionOverviewStatus, type ChatSessionQueuedMessage, type ChatSessionRecord } from "../../chat-session.model";
+import { getActiveChatOperationIds, getLatestUserTaskId, getSessionOverviewStatus, getSessionTaskOutcome, type ChatSessionQueuedMessage, type ChatSessionRecord, type ChatSessionTaskOutcomeStatus } from "../../chat-session.model";
 import { type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/model";
 import {
   createQueuedMessageDispatchPrompt,
   type QueuedMessageDispatchPrompt,
 } from "./prompt-enhancement";
+import { getBlockingRequestIteration } from "./request-iterations";
 import { areContextAttachmentRecordsEqual } from "./session-context-attachments";
+
+const QUEUE_STOPPING_TASK_OUTCOMES: ReadonlySet<ChatSessionTaskOutcomeStatus> =
+  new Set(["failed", "blocked", "timed-out", "unsupported", "crashed"]);
+
+const getLatestFailedTaskId = (session: ChatSessionRecord): string | null => {
+  const taskId = getLatestUserTaskId(session.messages);
+  const outcome = taskId ? getSessionTaskOutcome(session, taskId) : null;
+
+  return outcome && QUEUE_STOPPING_TASK_OUTCOMES.has(outcome.status)
+    ? taskId
+    : null;
+};
+
+export const shouldStopQueueAfterFailure = (
+  session: ChatSessionRecord,
+): boolean => {
+  const failedTaskId = getLatestFailedTaskId(session);
+
+  return (
+    session.queuePausedAt === undefined &&
+    failedTaskId !== null &&
+    failedTaskId !== session.queueResumedAfterTaskId
+  );
+};
+
+export const setSessionQueuePaused = (
+  session: ChatSessionRecord,
+  paused: boolean,
+  timestamp: number,
+): ChatSessionRecord => {
+  if ((session.queuePausedAt !== undefined) === paused) {
+    return session;
+  }
+
+  const nextSession = { ...session, updatedAt: timestamp };
+
+  if (paused) {
+    nextSession.queuePausedAt = timestamp;
+    return nextSession;
+  }
+
+  delete nextSession.queuePausedAt;
+  const failedTaskId = getLatestFailedTaskId(session);
+
+  if (failedTaskId) {
+    nextSession.queueResumedAfterTaskId = failedTaskId;
+  }
+
+  return nextSession;
+};
+
+export const findQueuedHead = (
+  messages: readonly ChatSessionQueuedMessage[],
+  sessionId: string,
+  stopQueueOnFailure: boolean,
+): ChatSessionQueuedMessage | undefined => {
+  return messages.find(
+    (message) =>
+      message.sessionId === sessionId &&
+      (stopQueueOnFailure || message.status !== "failed") &&
+      !getBlockingRequestIteration(message, messages) &&
+      message.task.trim().length > 0,
+  );
+};
 
 const areQueuedMessageAttachmentsEqual = (
   left: readonly ChatSessionContextAttachment[],
