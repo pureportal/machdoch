@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  ClipboardType,
   Ellipsis,
   GitBranch,
   Hash,
@@ -25,7 +26,7 @@ import {
 import type { CloudIssue, CloudWorkspace } from "@/lib/cloud-contract";
 import {
   issueBranchName,
-  issueClientPrompt,
+  issuePrompt,
   issueSessionTitle,
 } from "@/lib/issue-text";
 import { Button } from "@/components/ui/button";
@@ -173,6 +174,7 @@ export function IssueHeader({
           type="button"
           className="cloud-icon-button"
           aria-label="Copy issue link"
+          title="Copy issue link"
           onClick={() => copy(location.href, "Link")}
         >
           <Link2 size={14} />
@@ -181,6 +183,7 @@ export function IssueHeader({
           type="button"
           className="cloud-icon-button"
           aria-label="Copy issue ID"
+          title="Copy issue ID"
           onClick={() => copy(issue.identifier, "ID")}
         >
           <Hash size={14} />
@@ -189,11 +192,26 @@ export function IssueHeader({
           type="button"
           className="cloud-icon-button"
           aria-label="Copy branch name"
+          title="Copy branch name"
           onClick={() =>
             copy(issueBranchName(issue.identifier, issue.title), "Branch name")
           }
         >
           <GitBranch size={14} />
+        </button>
+        <button
+          type="button"
+          className="cloud-icon-button"
+          aria-label="Copy as prompt"
+          title="Copy as prompt"
+          onClick={() =>
+            copy(
+              issuePrompt(issue, `${location.origin}/cloud/issues/${issue.id}`),
+              "Prompt",
+            )
+          }
+        >
+          <ClipboardType size={14} />
         </button>
         {navigation && (
           <span className="cloud-issue-navigation">
@@ -236,7 +254,7 @@ export function IssueHeader({
             branch={issueBranchName(issue.identifier, issue.title)}
             draft={() => ({
               title: issueSessionTitle(issue.identifier, issue.title),
-              prompt: issueClientPrompt(
+              prompt: issuePrompt(
                 issue,
                 `${location.origin}/cloud/issues/${issue.id}`,
               ),

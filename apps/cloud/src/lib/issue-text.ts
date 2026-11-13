@@ -44,7 +44,7 @@ export function issueSessionTitle(identifier: string, title: string): string {
   return `${identifier} ${title}`.slice(0, sessionTitleLength).trim();
 }
 
-export function issueClientPrompt(
+export function issuePrompt(
   issue: {
     identifier: string;
     title: string;

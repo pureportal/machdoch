@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { productCommandSchema } from "@machdoch/fleet-protocol";
 import {
   issueBranchName,
-  issueClientPrompt,
+  issuePrompt,
   issueSessionTitle,
   taskListProgress,
   toggleTaskListItem,
@@ -49,10 +49,10 @@ describe("task lists", () => {
   });
 });
 
-describe("issueClientPrompt", () => {
+describe("issuePrompt", () => {
   it("drafts the issue for a client session without empty sections", () => {
     expect(
-      issueClientPrompt(
+      issuePrompt(
         {
           identifier: "PLAT-4",
           title: "Retry fleet handoff",
@@ -65,7 +65,7 @@ describe("issueClientPrompt", () => {
       "PLAT-4: Retry fleet handoff\n\nSessions fail when the device sleeps.\n\nhttps://cloud.example.test/cloud/issues/1",
     );
     expect(
-      issueClientPrompt(
+      issuePrompt(
         {
           identifier: "PLAT-5",
           title: "Document enrollment",
