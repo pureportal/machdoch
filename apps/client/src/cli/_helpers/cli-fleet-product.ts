@@ -441,7 +441,9 @@ export class FleetCliProductRuntime {
     return runtime;
   }
 
-  async handleRequest(request: HostRequest): Promise<HostResponse> {
+  async handleRequest(
+    request: Exclude<HostRequest, { type: "installUpdate" }>,
+  ): Promise<HostResponse> {
     if (this.stopping)
       return {
         type: "error",

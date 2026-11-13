@@ -71,6 +71,7 @@ pub(crate) fn handle_fleet_request(
             tunnel_id,
             token,
         } => preview_request(app_handle, target, Some((tunnel_id, token))),
+        HostRequest::InstallUpdate => crate::app_update::remote::request_remote_update(app_handle),
         HostRequest::GetWorkspaceRuns { .. } | HostRequest::ExecuteWorkspaceRun { .. } => {
             HostResponse::Error {
                 code: HostErrorCode::Unavailable,

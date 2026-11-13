@@ -16,6 +16,7 @@ import {
   deviceSettingsCapability,
   maximumDeviceSettingsRequestBodyBytes,
   hostRequestSchema,
+  appUpdateCapability,
 } from "@machdoch/fleet-protocol";
 import {
   createFleetManagedSettingsEtag,
@@ -372,6 +373,15 @@ async function routeApi(
   }
   if (method === "DELETE" && path[0] === "instances" && path.length === 2) {
     return await revokeInstance(runtime, request, path[1] ?? "");
+  }
+  if (
+    method === "POST" &&
+    path[0] === "instances" &&
+    path[1] &&
+    path[2] === "update" &&
+    path.length === 3
+  ) {
+    return await updateInstance(runtime, request, path[1]);
   }
   if (
     method === "GET" &&
@@ -793,6 +803,10 @@ async function listInstances(
             : runtime.gateways.isOnline(instance.instanceId)
               ? "online"
               : "offline",
+        remoteUpdate: runtime.gateways.supportsCapability(
+          instance.instanceId,
+          appUpdateCapability,
+        ),
       }),
     ),
   });
@@ -809,6 +823,33 @@ async function revokeInstance(
   }
   runtime.gateways.disconnect(instanceId, "Instance was revoked.");
   return Response.json({ ok: true });
+}
+
+async function updateInstance(
+  runtime: FleetRuntime,
+  request: Request,
+  instanceId: string,
+): Promise<Response> {
+  await requireMutation(runtime, request);
+  await requireManagedInstance(runtime, instanceId);
+  if (
+    runtime.gateways.isOnline(instanceId) &&
+    !runtime.gateways.supportsCapability(instanceId, appUpdateCapability)
+  )
+    throw new HttpError(409, "Update this device manually.");
+  const response = await relay(
+    runtime,
+    instanceId,
+    { type: "installUpdate" },
+    request.signal,
+  );
+  if (response.type === "error") throwHostError(response);
+  if (response.type !== "appUpdate")
+    throw new HttpError(502, "Instance returned an invalid update response.");
+  return Response.json(
+    { status: response.status, version: response.version },
+    { status: response.status === "installing" ? 202 : 200 },
+  );
 }
 
 async function instanceProductSnapshot(

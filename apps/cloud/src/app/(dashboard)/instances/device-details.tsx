@@ -1,6 +1,7 @@
 "use client";
 
-import { BrainCircuit, ExternalLink, Trash2 } from "lucide-react";
+import { BrainCircuit, Download, ExternalLink, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { api } from "@machdoch/product-ui/fleet-api";
 import { ConfirmButton } from "@/components/confirm-button";
 import { CopyField } from "@/components/copy-field";
@@ -29,6 +30,10 @@ export function DeviceDetails({
   onCloseAutoFocus: (event: Event) => void;
 }): React.ReactElement {
   const warning = versionWarning(device.versionStatus, device.managerVersion);
+  const [update, setUpdate] = useState<{
+    status: "current" | "installing";
+    version: string;
+  } | null>(null);
   return (
     <Dialog
       open
@@ -58,7 +63,13 @@ export function DeviceDetails({
                 : formatTime(device.lastSeenAt)}
           </dd>
         </dl>
-        {warning ? (
+        {update ? (
+          <p role="status" className="text-sm text-muted-foreground">
+            {update.status === "installing"
+              ? `Updating to v${update.version}.`
+              : `v${update.version} is the latest version.`}
+          </p>
+        ) : warning ? (
           <p role="status" className="text-sm text-destructive">
             {warning}
           </p>
@@ -84,6 +95,34 @@ export function DeviceDetails({
                   { method: "DELETE" },
                 );
                 await onRevoked();
+              }}
+            />
+          ) : null}
+          {device.status === "online" && device.remoteUpdate ? (
+            <ConfirmButton
+              trigger={
+                <Button
+                  variant="outline"
+                  disabled={update?.status === "installing"}
+                >
+                  <Download />
+                  Update
+                </Button>
+              }
+              title={`Update ${device.displayName}?`}
+              description="Machdoch restarts on this device to finish the update."
+              actionLabel="Update"
+              destructive={false}
+              onConfirm={async () => {
+                setUpdate(
+                  await api<{
+                    status: "current" | "installing";
+                    version: string;
+                  }>(
+                    `/api/instances/${encodeURIComponent(device.instanceId)}/update`,
+                    { method: "POST" },
+                  ),
+                );
               }}
             />
           ) : null}

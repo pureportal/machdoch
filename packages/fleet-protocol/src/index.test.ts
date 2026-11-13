@@ -5,6 +5,7 @@ import {
   projectNameSchema,
   fleetManagedSettingsDeliverySchema,
   hostMessageSchema,
+  managerMessageSchema,
   maximumGatewayMessageBytes,
   maximumManagedSettingsCollectionEntries,
   maximumManagedSettingsDeliveryBytes,
@@ -51,6 +52,29 @@ void test("project commands constrain folder names and reject arbitrary paths or
       projectId: "project-1",
     }).success,
     true,
+  );
+});
+
+void test("update requests and responses carry only the update status and version", () => {
+  const request = { type: "request", requestId: "request-1", request: { type: "installUpdate" } };
+  assert.equal(managerMessageSchema.safeParse(request).success, true);
+  assert.equal(
+    managerMessageSchema.safeParse({ ...request, request: { type: "installUpdate", version: "42.2.0" } }).success,
+    false,
+  );
+  const response = {
+    type: "response",
+    requestId: "request-1",
+    response: { type: "appUpdate", status: "installing", version: "42.2.0" },
+  };
+  assert.equal(hostMessageSchema.safeParse(response).success, true);
+  assert.equal(
+    hostMessageSchema.safeParse({ ...response, response: { ...response.response, status: "installed" } }).success,
+    false,
+  );
+  assert.equal(
+    hostMessageSchema.safeParse({ ...response, response: { ...response.response, version: "" } }).success,
+    false,
   );
 });
 

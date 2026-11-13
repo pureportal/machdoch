@@ -17,6 +17,7 @@ import {
 } from "./update-notifications";
 
 export const CHECK_FOR_UPDATES_EVENT = "machdoch:check-for-updates";
+export const INSTALL_LATEST_UPDATE_EVENT = "machdoch:install-latest-update";
 type UpdatePhase =
   | "idle"
   | "checking"
@@ -49,6 +50,8 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
   dialogOpen.current = open;
   const latest = useRef(options);
   latest.current = options;
+  const installSelected = useRef(install);
+  installSelected.current = install;
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -137,6 +140,17 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
       }
       void checkForUpdate(true);
     };
+    const installLatest = async () => {
+      if (installing.current || installed.current) {
+        setOpen(true);
+        return;
+      }
+      await checkForUpdate(true);
+      if (!disposed && update.current) await installSelected.current();
+    };
+    const requestInstall = () => {
+      void installLatest();
+    };
     const resumeCheck = () => {
       if (document.visibilityState === "visible") refreshPending();
     };
@@ -149,6 +163,7 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
         });
         store.current = notificationStore;
         window.addEventListener(CHECK_FOR_UPDATES_EVENT, manualCheck);
+        window.addEventListener(INSTALL_LATEST_UPDATE_EVENT, requestInstall);
         preference.current = normalizeUpdateNotificationPreference(
           await notificationStore.get("notification"),
         );
@@ -172,6 +187,7 @@ export function useDesktopUpdate(options: { flush: () => Promise<void> }) {
       clearInterval(timer);
       clearInterval(reminder);
       window.removeEventListener(CHECK_FOR_UPDATES_EVENT, manualCheck);
+      window.removeEventListener(INSTALL_LATEST_UPDATE_EVENT, requestInstall);
       document.removeEventListener("visibilitychange", resumeCheck);
       if (download.current) {
         download.current.canceled = true;

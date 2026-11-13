@@ -7,7 +7,7 @@ use std::{
 use futures_util::{SinkExt, StreamExt};
 use machdoch_fleet_protocol::{
     serialize_host_message, HostErrorCode, HostMessage, HostResponse, ManagerMessage,
-    GATEWAY_PROTOCOL_VERSION, MAX_GATEWAY_MESSAGE_BYTES, PRODUCT_CAPABILITY,
+    APP_UPDATE_CAPABILITY, GATEWAY_PROTOCOL_VERSION, MAX_GATEWAY_MESSAGE_BYTES, PRODUCT_CAPABILITY,
 };
 use tokio_tungstenite::{
     connect_async_with_config,
@@ -144,20 +144,24 @@ async fn connect_once(
         }
     };
     let (mut sender, mut receiver) = socket.split();
+    let mut capabilities = vec![
+        "speech.v1".to_string(),
+        PRODUCT_CAPABILITY.to_string(),
+        "ralph-editor.v1".to_string(),
+        "scheduler-editor.v1".to_string(),
+        "instruction-editor.v1".to_string(),
+        "workspace-tools.v1".to_string(),
+        "workspace-previews.v1".to_string(),
+        "device-settings.v1".to_string(),
+    ];
+    if crate::app_update::app_update_available() {
+        capabilities.push(APP_UPDATE_CAPABILITY.to_string());
+    }
     let hello = HostMessage::Hello {
         instance_id: config.instance_id.clone(),
         protocol_version: GATEWAY_PROTOCOL_VERSION,
         product_version: app_handle.package_info().version.to_string(),
-        capabilities: vec![
-            "speech.v1".to_string(),
-            PRODUCT_CAPABILITY.to_string(),
-            "ralph-editor.v1".to_string(),
-            "scheduler-editor.v1".to_string(),
-            "instruction-editor.v1".to_string(),
-            "workspace-tools.v1".to_string(),
-            "workspace-previews.v1".to_string(),
-            "device-settings.v1".to_string(),
-        ],
+        capabilities,
     };
     if send_host_message(&mut sender, &hello).await.is_err() {
         return ConnectionResult::Reconnect(

@@ -8,6 +8,7 @@ export interface FleetInstance {
   enrolledAt: number;
   lastSeenAt: number | null;
   status: "online" | "offline" | "revoked";
+  remoteUpdate: boolean;
   versionStatus?: VersionStatus;
   managerVersion?: string;
 }

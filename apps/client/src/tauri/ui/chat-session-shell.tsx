@@ -1,4 +1,4 @@
-import { ApplicationShell } from "@machdoch/product-ui";
+import { ApplicationShell, LoadingState } from "@machdoch/product-ui";
 import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import {
@@ -86,6 +86,7 @@ import {
   useDesktopUpdate,
 } from "./update/use-desktop-update";
 import { UpdateDialog } from "./update/update-dialog";
+import { useRemoteUpdateRequests } from "./update/use-remote-update-requests";
 import { UpdateStatus } from "./update/update-status";
 import { speechRuntime, speechAssetUrl } from "./speech-runtime";
 import { useAppControlBridge } from "./app-control/use-app-control-bridge";
@@ -151,12 +152,7 @@ const WorkspaceManager = lazy(async () => {
 });
 
 const appLoadingFallback = (
-  <div
-    role="status"
-    className="grid h-full min-h-0 flex-1 place-items-center bg-slate-950 text-sm text-slate-500"
-  >
-    Loading...
-  </div>
+  <LoadingState label="Loading…" className="h-full bg-slate-950" />
 );
 
 const retryAppShellStorageOperation = async <T,>(
@@ -273,6 +269,7 @@ export const ChatSession = (): JSX.Element => {
   const updater = useDesktopUpdate({
     flush: controller.flushPersistence,
   });
+  useRemoteUpdateRequests();
 
   useEffect(() => {
     const closeSettings = () => controller.setCatalogOpen(false);

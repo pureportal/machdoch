@@ -68,6 +68,7 @@ export {
 
 export const workspaceRunsCapability = "workspace-runs.v1";
 export const workspacePreviewsCapability = "workspace-previews.v1";
+export const appUpdateCapability = "app-update.v1";
 export const redactedRunValue = "__MACHDOCH_REDACTED__";
 const id = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/);
 const port = z.number().int().min(1024).max(65535);
@@ -2046,6 +2047,7 @@ export const hostRequestSchema = z.discriminatedUnion("type", [
     type: z.literal("executeProductCommand"),
     command: productCommandSchema,
   }),
+  z.strictObject({ type: z.literal("installUpdate") }),
 ]);
 
 export type HostRequest = z.infer<typeof hostRequestSchema>;
@@ -2083,6 +2085,11 @@ export const hostResponseSchema = z.discriminatedUnion("type", [
   z.strictObject({
     type: z.literal("commandAccepted"),
     receipt: commandReceiptSchema,
+  }),
+  z.strictObject({
+    type: z.literal("appUpdate"),
+    status: z.enum(["current", "installing"]),
+    version: z.string().trim().min(1).max(40),
   }),
   z.strictObject({
     type: z.literal("error"),

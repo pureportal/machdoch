@@ -8,6 +8,7 @@ use tauri::{
 use tokio_util::sync::CancellationToken;
 
 pub(crate) mod download;
+pub(crate) mod remote;
 
 struct AppUpdateSession {
     _lock: CooperativeFileLock,

@@ -10,6 +10,7 @@ import {
   instructionEditorCapability,
   workspaceRunsCapability,
   workspacePreviewsCapability,
+  appUpdateCapability,
   type HostMessage,
   type HostRequest,
   type HostResponse,
@@ -47,6 +48,7 @@ export interface FleetGatewayServiceResult {
 export interface FleetGatewayServiceOptions {
   signal: AbortSignal;
   productVersion: string;
+  remoteUpdates?: boolean;
   handleRequest: (request: HostRequest) => Promise<HostResponse>;
   onStatus?: (event: FleetGatewayStatusEvent) => void;
   loadConfig?: () => Promise<FleetConnectionConfig | null>;
@@ -167,6 +169,7 @@ export const runFleetGatewayConnection = async (options: {
   config: FleetConnectionConfig;
   signal: AbortSignal;
   productVersion: string;
+  remoteUpdates?: boolean;
   handleRequest: (request: HostRequest) => Promise<HostResponse>;
   onConnected?: () => void;
 }): Promise<FleetGatewayConnectionResult> => {
@@ -250,6 +253,7 @@ export const runFleetGatewayConnection = async (options: {
           workspaceLibraryCapability,
           workspaceRunsCapability,
           workspacePreviewsCapability,
+          ...(options.remoteUpdates ? [appUpdateCapability] : []),
         ],
       })
         .then(() => {
@@ -492,6 +496,7 @@ export const runFleetGatewayService = async (
       config,
       signal: connectionSignal,
       productVersion: options.productVersion,
+      remoteUpdates: options.remoteUpdates ?? false,
       handleRequest,
       onConnected: () => {
         connectedAt = performance.now();

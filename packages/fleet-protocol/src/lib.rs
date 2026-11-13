@@ -20,6 +20,7 @@ pub const MAX_COMPOSER_TEXT_CHARACTERS: usize = 1_000_000;
 
 pub const GATEWAY_PROTOCOL_VERSION: u32 = 4;
 pub const PRODUCT_CAPABILITY: &str = "product.v4";
+pub const APP_UPDATE_CAPABILITY: &str = "app-update.v1";
 pub const PRODUCT_SNAPSHOT_VERSION: u32 = 5;
 pub const MAX_GATEWAY_MESSAGE_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_MANAGED_SETTINGS_DELIVERY_BYTES: usize = 18 * 1024 * 1024;
@@ -1040,6 +1041,7 @@ pub enum HostRequest {
         tunnel_id: String,
         token: String,
     },
+    InstallUpdate,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1093,10 +1095,21 @@ pub enum HostResponse {
     CommandAccepted {
         receipt: CommandReceipt,
     },
+    AppUpdate {
+        status: AppUpdateStatus,
+        version: String,
+    },
     Error {
         code: HostErrorCode,
         message: String,
     },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum AppUpdateStatus {
+    Current,
+    Installing,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -2861,6 +2874,31 @@ mod tests {
         assert!(encoded.contains("\"type\":\"executeProductCommand\""));
         assert!(encoded.contains("\"kind\":\"cancel\""));
         assert!(!encoded.contains("request_id"));
+    }
+
+    #[test]
+    fn app_update_messages_use_the_gateway_wire_format() {
+        let request = serde_json::from_str::<ManagerMessage>(
+            r#"{"type":"request","requestId":"request-1","request":{"type":"installUpdate"}}"#,
+        )
+        .expect("update request should decode");
+        assert_eq!(
+            request,
+            ManagerMessage::Request {
+                request_id: "request-1".to_string(),
+                request: HostRequest::InstallUpdate,
+            }
+        );
+
+        let response = serde_json::to_value(HostResponse::AppUpdate {
+            status: AppUpdateStatus::Installing,
+            version: "42.2.0".to_string(),
+        })
+        .expect("update response should encode");
+        assert_eq!(
+            response,
+            serde_json::json!({ "type": "appUpdate", "status": "installing", "version": "42.2.0" })
+        );
     }
 
     #[test]

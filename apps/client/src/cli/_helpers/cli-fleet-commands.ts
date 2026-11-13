@@ -12,6 +12,8 @@ import { withCooperativeFileLock } from "../../core/_helpers/with-cooperative-fi
 import type { FleetCliOptions, ParsedCliArgs } from "./cli-args.js";
 import { runFleetGatewayService } from "./cli-fleet-gateway.js";
 import { FleetCliProductRuntime } from "./cli-fleet-product.js";
+import { FleetCliUpdater } from "./cli-fleet-update.js";
+import { detectUpdateInstallation } from "../../update/installation.js";
 import { writeStdoutLine } from "./cli-io.js";
 import { CliConfigurationError } from "./cli-error.js";
 import { manageFleetService } from "../../core/fleet-service.js";
@@ -24,6 +26,8 @@ import {
   collectFleetLocalSettings,
   exportFleetLocalSettings,
 } from "../../core/fleet-settings-export.js";
+
+const fleetServiceRestartExitCode = 75;
 
 const fail = (message: string): never => {
   throw new Error(message);
@@ -96,6 +100,7 @@ const runService = async (args: ParsedCliArgs): Promise<void> => {
   }
 
   const controller = new AbortController();
+  let restartAfterUpdate = false;
   let shutdownDeadline: NodeJS.Timeout | undefined;
   const stop = (): void => {
     if (controller.signal.aborted) return;
@@ -151,6 +156,42 @@ const runService = async (args: ParsedCliArgs): Promise<void> => {
             `Fleet service could not initialize: ${error instanceof Error ? error.message : "Check the host configuration and project library."}`,
           );
         }
+        const updater = new FleetCliUpdater({
+          onInstalled: (version) => {
+            if (args.json)
+              writeStdoutLine(
+                JSON.stringify({
+                  type: "fleetUpdate",
+                  status: "installed",
+                  version,
+                }),
+              );
+            else
+              writeStdoutLine(
+                `fleet service: updated to ${version}, restarting`,
+              );
+            restartAfterUpdate = true;
+            stop();
+          },
+          onFailed: (error) => {
+            const message =
+              error instanceof Error ? error.message : "The update failed.";
+            if (args.json)
+              writeStdoutLine(
+                JSON.stringify({
+                  type: "fleetUpdate",
+                  status: "failed",
+                  message,
+                }),
+              );
+            else
+              process.stderr.write(`Fleet update: ${message}\n`);
+          },
+        });
+        const remoteUpdates = await detectUpdateInstallation().then(
+          () => true,
+          () => false,
+        );
         let result: Awaited<ReturnType<typeof runFleetGatewayService>>;
         const settingsService = runFleetSettingsService({
           signal: controller.signal,
@@ -161,7 +202,11 @@ const runService = async (args: ParsedCliArgs): Promise<void> => {
           result = await runFleetGatewayService({
             signal: controller.signal,
             productVersion: resolveProductVersion(),
-            handleRequest: (request) => fleetRuntime.handleRequest(request),
+            remoteUpdates,
+            handleRequest: (request) =>
+              request.type === "installUpdate"
+                ? updater.request()
+                : fleetRuntime.handleRequest(request),
             onStatus: (event) => {
               if (args.json) {
                 writeStdoutLine(
@@ -196,6 +241,7 @@ const runService = async (args: ParsedCliArgs): Promise<void> => {
     process.removeListener("SIGTERM", stop);
     if (shutdownDeadline) clearTimeout(shutdownDeadline);
   }
+  if (restartAfterUpdate) process.exitCode = fleetServiceRestartExitCode;
 };
 
 export const printFleetSummary = async (args: ParsedCliArgs): Promise<void> => {

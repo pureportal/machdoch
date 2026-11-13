@@ -820,6 +820,73 @@ describe("machdoch.cloud API", () => {
         .status,
     ).toBe(200);
   });
+  it("starts remote updates only for authenticated owners and update-capable devices", async () => {
+    runtime = await testRuntime();
+    setRuntimeForTests(runtime);
+    const { cookie, csrf } = await authenticateTestOwner();
+    const instance = await enrollTestInstance(runtime);
+    const path = `/api/instances/${instance.instanceId}/update`;
+    const relay = vi.spyOn(runtime.gateways, "relay").mockResolvedValue({
+      type: "appUpdate",
+      status: "installing",
+      version: "42.2.0",
+    });
+    expect((await apiRequest(path, "POST")).status).toBe(401);
+    expect((await apiRequest(path, "POST", undefined, cookie)).status).toBe(
+      403,
+    );
+    expect(
+      (
+        await apiRequest(
+          "/api/instances/instance_unknown/update",
+          "POST",
+          undefined,
+          cookie,
+          csrf,
+        )
+      ).status,
+    ).toBe(404);
+    vi.spyOn(runtime.gateways, "isOnline").mockReturnValue(true);
+    const supportsCapability = vi
+      .spyOn(runtime.gateways, "supportsCapability")
+      .mockReturnValue(false);
+    expect(
+      (await apiRequest(path, "POST", undefined, cookie, csrf)).status,
+    ).toBe(409);
+    expect(relay).not.toHaveBeenCalled();
+    supportsCapability.mockReturnValue(true);
+    const started = await apiRequest(path, "POST", undefined, cookie, csrf);
+    expect(started.status).toBe(202);
+    await expect(started.json()).resolves.toEqual({
+      status: "installing",
+      version: "42.2.0",
+    });
+    expect(relay).toHaveBeenCalledWith(
+      instance.instanceId,
+      { type: "installUpdate" },
+      expect.any(AbortSignal),
+    );
+    relay.mockResolvedValue({
+      type: "appUpdate",
+      status: "current",
+      version: "42.2.0",
+    });
+    const current = await apiRequest(path, "POST", undefined, cookie, csrf);
+    expect(current.status).toBe(200);
+    await expect(current.json()).resolves.toEqual({
+      status: "current",
+      version: "42.2.0",
+    });
+    relay.mockResolvedValue({
+      type: "error",
+      code: "conflict",
+      message: "An update is already in progress.",
+    });
+    expect(
+      (await apiRequest(path, "POST", undefined, cookie, csrf)).status,
+    ).toBe(409);
+  });
+
   it("protects enrollment-key inventory and revocation with owner authentication and CSRF", async () => {
     runtime = await testRuntime();
     setRuntimeForTests(runtime);

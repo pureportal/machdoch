@@ -56,6 +56,7 @@ const responseTypes = {
   scheduler: "scheduler",
   instructions: "instructions",
   workspace: "workspace",
+  installUpdate: "appUpdate",
 } satisfies Record<HostRequest["type"], HostResponse["type"]>;
 
 interface PendingRequest {
