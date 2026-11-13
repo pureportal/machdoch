@@ -89,6 +89,7 @@
   letter-spacing: -0.5px;
   line-height: 1.3;
   resize: none;
+  overflow: hidden;
   field-sizing: content;
 }
 .cloud-markdown-view {

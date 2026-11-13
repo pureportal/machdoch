@@ -25,14 +25,23 @@
 .cloud-project-row {
   display: grid;
   grid-template-columns:
-    minmax(220px, 2.4fr) minmax(130px, 1fr) minmax(110px, 1fr)
-    56px 96px 64px 96px 120px;
+    minmax(160px, 2.4fr) minmax(130px, 1fr) minmax(110px, 1fr)
+    40px 88px 52px 72px 64px;
   align-items: center;
   gap: 12px;
   min-height: 40px;
   padding: 0 14px;
   border-top: 1px solid var(--border);
   font-size: 13px;
+}
+.cloud-project-table[data-kind="projects"] {
+  container-type: inline-size;
+}
+.cloud-project-table[data-kind="projects"]:not([data-initiatives])
+  .cloud-project-row {
+  grid-template-columns:
+    minmax(160px, 2.4fr) minmax(130px, 1fr) 40px 88px 52px 72px
+    64px;
 }
 .cloud-project-row:hover:not(.cloud-project-head) {
   background: var(--cloud-hover);
@@ -336,15 +345,41 @@
   background: var(--secondary);
   color: var(--foreground);
 }
+@container (max-width: 880px) {
+  .cloud-project-table[data-kind="projects"] .cloud-project-row {
+    grid-template-columns:
+      minmax(160px, 2.4fr) minmax(130px, 1fr) 40px 88px 52px 72px
+      64px;
+  }
+  .cloud-project-table[data-kind="projects"] .cloud-project-col-initiatives {
+    display: none;
+  }
+}
+@container (max-width: 720px) {
+  .cloud-project-table[data-kind="projects"] .cloud-project-row,
+  .cloud-project-table[data-kind="projects"]:not([data-initiatives])
+    .cloud-project-row {
+    grid-template-columns: minmax(0, 1fr) auto 72px;
+  }
+  .cloud-project-table[data-kind="projects"]
+    .cloud-project-row
+    > :is(
+      .cloud-project-col-lead,
+      .cloud-project-col-target,
+      .cloud-project-col-issues,
+      .cloud-project-actions
+    ) {
+    display: none;
+  }
+}
 @media (max-width: 900px) {
-  .cloud-project-row {
+  .cloud-initiative-table .cloud-project-row {
     grid-template-columns: minmax(0, 1fr) auto 80px;
   }
-  .cloud-project-row > :nth-child(3),
-  .cloud-project-row > :nth-child(4),
-  .cloud-project-row > :nth-child(5),
-  .cloud-project-row > :nth-child(6),
-  .cloud-project-row > :nth-child(8) {
+  .cloud-initiative-table .cloud-project-row > :nth-child(3),
+  .cloud-initiative-table .cloud-project-row > :nth-child(4),
+  .cloud-initiative-table .cloud-project-row > :nth-child(5),
+  .cloud-initiative-table .cloud-project-row > :nth-child(6) {
     display: none;
   }
 }
@@ -411,12 +446,14 @@
 }
 .cloud-aside-runs {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
 }
 .cloud-aside-runs li {
   display: flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
   min-height: 28px;
   padding: 0 7px;
   border-radius: 6px;
@@ -425,8 +462,10 @@
 .cloud-aside-runs li:hover {
   background: var(--cloud-hover);
 }
-.cloud-aside-runs li > svg {
+.cloud-aside-runs li > :is(svg, .cloud-task-state) {
   flex-shrink: 0;
+}
+.cloud-aside-runs li > svg {
   color: var(--cloud-success);
 }
 .cloud-aside-runs li a {

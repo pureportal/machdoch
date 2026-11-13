@@ -1425,7 +1425,14 @@ body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface) .m-loading-state {
   }
   .cloud-issue-row > .cloud-issue-cell-meta {
     grid-area: 2 / 3 / 3 / 5;
+    flex-wrap: wrap;
     justify-content: flex-start;
+    row-gap: 4px;
+  }
+  .cloud-issue-row
+    > .cloud-issue-cell-meta
+    > :is(.cloud-issue-chip, .cloud-issue-label) {
+    flex-shrink: 0;
   }
   .cloud-issue-cell-meta[data-key]::before {
     flex-shrink: 0;

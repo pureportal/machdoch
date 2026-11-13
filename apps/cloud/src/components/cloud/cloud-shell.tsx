@@ -153,7 +153,7 @@ export function CloudShell({
   const favorites = useFavorites(initialFavorites);
   const triage = useTriageCounts(initialTriage);
   const writable = holderCan(workspace.actor, "issues.edit");
-  const items = [...navigationFor(access), ...pageNavigation];
+  const items = [...navigationFor({ ...access, git: true }), ...pageNavigation];
   const current =
     items.find((item) =>
       isNavigationActive(item.href, pathname, new URLSearchParams(search)),
@@ -320,8 +320,12 @@ export function CloudShell({
                 </Sheet>
                 <div className="cloud-breadcrumb" aria-label="Current location">
                   <span>{workspace.organization.name}</span>
-                  <ChevronRight size={13} />
-                  <span>{current?.label ?? "Account"}</span>
+                  {current && (
+                    <>
+                      <ChevronRight size={13} />
+                      <span>{current.label}</span>
+                    </>
+                  )}
                 </div>
                 {section && help && (
                   <PageHelp

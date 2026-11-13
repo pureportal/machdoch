@@ -151,6 +151,26 @@
 .cloud-team-card .cloud-card-actions > :last-child {
   margin-left: 0;
 }
+.cloud-label-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.cloud-label-list > button {
+  border-radius: 999px;
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+.cloud-label-list > button:hover {
+  opacity: 0.8;
+}
+.cloud-label-list > button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.cloud-label-list > [data-archived] {
+  opacity: 0.5;
+}
 @media (max-width: 1100px) {
   .cloud-project-directory > li {
     grid-template-columns: auto minmax(0, 1fr) minmax(110px, 150px) 28px auto;

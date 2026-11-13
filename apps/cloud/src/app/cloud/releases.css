@@ -827,9 +827,9 @@
 .cloud-product-logo {
   display: grid;
   place-items: center;
-  width: 58px;
-  height: 58px;
-  border-radius: 14px;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
   color: #ffffff;
   overflow: hidden;
 }

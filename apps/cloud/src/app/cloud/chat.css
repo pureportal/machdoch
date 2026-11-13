@@ -477,7 +477,7 @@
 .cloud-agent-page {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
-  height: calc(100dvh - 57px);
+  height: calc(100dvh - 59px);
   min-height: 480px;
   margin: -20px calc(-1 * clamp(16px, 2.2vw, 32px)) -40px;
 }
@@ -541,6 +541,30 @@
   width: min(760px, calc(100% - 40px));
   margin-inline: auto;
   margin-bottom: 20px;
+}
+.cloud-agent-conversation[data-variant="page"]:has(.cloud-agent-welcome) {
+  justify-content: center;
+  padding-bottom: 12vh;
+}
+.cloud-agent-conversation[data-variant="page"]:has(.cloud-agent-welcome)
+  .cloud-agent-transcript {
+  flex: 0 0 auto;
+  overflow: visible;
+  padding-bottom: 20px;
+}
+.cloud-agent-conversation[data-variant="page"]
+  .cloud-agent-welcome
+  .cloud-agent-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: auto;
+}
+.cloud-agent-conversation[data-variant="page"]
+  .cloud-agent-welcome
+  .cloud-agent-suggestions
+  button {
+  border-radius: 999px;
 }
 @media (max-width: 800px) {
   .cloud-agent-page {

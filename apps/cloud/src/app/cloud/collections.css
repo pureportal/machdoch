@@ -366,15 +366,16 @@
 .cloud-card-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   margin-top: 4px;
   padding-top: 16px;
   border-top: 1px solid var(--border);
 }
 .cloud-card-actions > button {
-  font-size: 11px;
-  padding-inline: 10px;
-  min-height: 32px;
+  height: 32px;
+  padding-inline: 12px;
+  font-size: 12px;
 }
 .cloud-card-actions > :last-child:nth-child(n + 3) {
   margin-left: auto;

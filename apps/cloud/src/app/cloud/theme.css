@@ -108,9 +108,6 @@ body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface)
   gap: 16px;
   min-height: 260px;
   padding: 48px 24px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--cloud-subtle);
   color: var(--muted-foreground);
   text-align: center;
 }

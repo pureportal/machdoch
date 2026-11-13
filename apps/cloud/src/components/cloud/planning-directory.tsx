@@ -94,6 +94,7 @@ export function TeamDirectory({
             {admin && <EstimateScaleEditor team={team} />}
             <LabelManager
               teamId={team.id}
+              teamName={team.name}
               writable={holderCan(workspace.actor, "planning.edit")}
             />
             {admin && <WorkflowEditor teamId={team.id} />}

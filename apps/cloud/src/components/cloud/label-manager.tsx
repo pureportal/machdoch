@@ -3,9 +3,11 @@
 import { LoadingState } from "@machdoch/product-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { labelColors, type CloudLabel } from "@/lib/cloud-label-contract";
+import { Plus } from "lucide-react";
 import { Field } from "@/components/field";
 import { FormDialog } from "@/components/form-dialog";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
@@ -18,12 +20,14 @@ import { LabelChip } from "./label-chip";
 
 export function LabelManager({
   teamId,
+  teamName,
   writable,
 }: {
   teamId: string;
+  teamName: string;
   writable: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false);
   const [labels, setLabels] = useState<CloudLabel[]>([]);
   const [editing, setEditing] = useState<{ label: CloudLabel | null } | null>(
     null,
@@ -47,7 +51,7 @@ export function LabelManager({
     [teamId],
   );
   useEffect(() => {
-    if (!expanded) return;
+    if (!open) return;
     const controller = new AbortController();
     setLoading(true);
     void refresh(controller.signal)
@@ -61,46 +65,61 @@ export function LabelManager({
       controller.abort();
       sequence.current++;
     };
-  }, [expanded, refresh]);
+  }, [open, refresh]);
   return (
-    <details onToggle={(event) => setExpanded(event.currentTarget.open)}>
-      <summary className="cursor-pointer py-2">Labels</summary>
-      {loading && <LoadingState label="Loading labels…" compact />}
-      {error && (
-        <p role="alert" className="cloud-error">
-          {error}
-        </p>
-      )}
-      <div className="my-3 flex flex-wrap gap-2">
-        {labels.map((label) =>
-          writable ? (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}>
+        Labels
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent aria-describedby={undefined}>
+          <DialogTitle>{teamName} labels</DialogTitle>
+          {loading && <LoadingState label="Loading labels…" compact />}
+          {error && (
+            <p role="alert" className="cloud-error">
+              {error}
+            </p>
+          )}
+          {!loading && !error && (
+            <div className="cloud-label-list">
+              {labels.length === 0 && (
+                <p className="text-sm text-muted-foreground">No labels yet.</p>
+              )}
+              {labels.map((label) =>
+                writable ? (
+                  <button
+                    key={label.id}
+                    type="button"
+                    aria-label={`Edit label ${label.name}`}
+                    data-archived={label.archived ? "" : undefined}
+                    onClick={() => {
+                      sender.current = createCommandSender();
+                      setEditing({ label });
+                    }}
+                  >
+                    <LabelChip label={label} />
+                  </button>
+                ) : (
+                  <LabelChip key={label.id} label={label} />
+                ),
+              )}
+            </div>
+          )}
+          {writable && (
             <Button
-              key={label.id}
-              variant="ghost"
-              aria-label={`Edit label ${label.name}`}
+              variant="outline"
+              className="justify-self-start"
               onClick={() => {
                 sender.current = createCommandSender();
-                setEditing({ label });
+                setEditing({ label: null });
               }}
             >
-              <LabelChip label={label} />
+              <Plus />
+              New label
             </Button>
-          ) : (
-            <LabelChip key={label.id} label={label} />
-          ),
-        )}
-      </div>
-      {writable && (
-        <Button
-          variant="outline"
-          onClick={() => {
-            sender.current = createCommandSender();
-            setEditing({ label: null });
-          }}
-        >
-          New label
-        </Button>
-      )}
+          )}
+        </DialogContent>
+      </Dialog>
       <FormDialog
         open={editing !== null}
         onOpenChange={(open) => {
@@ -174,6 +193,6 @@ export function LabelManager({
           </label>
         )}
       </FormDialog>
-    </details>
+    </>
   );
 }

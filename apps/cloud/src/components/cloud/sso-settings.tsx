@@ -105,78 +105,80 @@ export function SsoSettings({
           </div>
         </dl>
       )}
-      <ul className="cloud-member-list">
-        {data?.providers.map((provider) => (
-          <li key={provider.id}>
-            <div>
-              <strong>{provider.name}</strong>
-              <span className="break-all">{provider.metadata.issuer}</span>
-              <span>
-                {provider.enabled
-                  ? provider.verified
-                    ? "Enabled"
-                    : "Sign-in not tested"
-                  : "Disabled"}
-              </span>
-            </div>
-            <div className="cloud-editor-actions flex-wrap">
-              {owner && (
-                <Button
-                  variant="outline"
-                  onClick={() => setEditing(provider)}
-                  aria-label={`Edit ${provider.name}`}
-                >
-                  Edit
-                </Button>
-              )}
-              {!!grantableRoles.length && (
-                <Button
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() => {
-                    setPending(true);
-                    setError("");
-                    sender.current = createCommandSender();
-                    setNewMember(false);
-                    void cloudRequest<typeof identities>(
-                      `sso-providers/${provider.id}/mappings`,
-                    )
-                      .then((rows) => {
-                        setIdentities(rows);
-                        setMapping(provider);
-                      })
-                      .catch((reason: Error) => setError(reason.message))
-                      .finally(() => setPending(false));
-                  }}
-                  aria-label={`Identities for ${provider.name}`}
-                >
-                  Identities
-                </Button>
-              )}
-              {provider.enabled && (
-                <>
-                  {!data?.linkedProviderIds.includes(provider.id) && (
-                    <Button
-                      variant="outline"
-                      disabled={pending}
-                      onClick={() => void begin(provider.id, true)}
-                    >
-                      Link my identity
-                    </Button>
-                  )}
+      {!!data?.providers.length && (
+        <ul className="cloud-member-list">
+          {data.providers.map((provider) => (
+            <li key={provider.id}>
+              <div>
+                <strong>{provider.name}</strong>
+                <span className="break-all">{provider.metadata.issuer}</span>
+                <span>
+                  {provider.enabled
+                    ? provider.verified
+                      ? "Enabled"
+                      : "Sign-in not tested"
+                    : "Disabled"}
+                </span>
+              </div>
+              <div className="cloud-editor-actions flex-wrap">
+                {owner && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditing(provider)}
+                    aria-label={`Edit ${provider.name}`}
+                  >
+                    Edit
+                  </Button>
+                )}
+                {!!grantableRoles.length && (
                   <Button
                     variant="outline"
                     disabled={pending}
-                    onClick={() => void begin(provider.id, false)}
+                    onClick={() => {
+                      setPending(true);
+                      setError("");
+                      sender.current = createCommandSender();
+                      setNewMember(false);
+                      void cloudRequest<typeof identities>(
+                        `sso-providers/${provider.id}/mappings`,
+                      )
+                        .then((rows) => {
+                          setIdentities(rows);
+                          setMapping(provider);
+                        })
+                        .catch((reason: Error) => setError(reason.message))
+                        .finally(() => setPending(false));
+                    }}
+                    aria-label={`Identities for ${provider.name}`}
                   >
-                    Sign in
+                    Identities
                   </Button>
-                </>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
+                )}
+                {provider.enabled && (
+                  <>
+                    {!data?.linkedProviderIds.includes(provider.id) && (
+                      <Button
+                        variant="outline"
+                        disabled={pending}
+                        onClick={() => void begin(provider.id, true)}
+                      >
+                        Link my identity
+                      </Button>
+                    )}
+                    <Button
+                      variant="outline"
+                      disabled={pending}
+                      onClick={() => void begin(provider.id, false)}
+                    >
+                      Sign in
+                    </Button>
+                  </>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
       {policy && owner && (
         <Button
           variant="outline"

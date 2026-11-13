@@ -13,7 +13,7 @@ export function ProviderUsage({ providerId }: { providerId: string }) {
   return (
     <>
       <Button
-        variant="ghost"
+        variant="outline"
         disabled={pending}
         onClick={() => {
           setPending(true);

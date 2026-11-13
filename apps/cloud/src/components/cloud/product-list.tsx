@@ -144,12 +144,12 @@ function ProductForm({
     <div className="cloud-product-form">
       <section className="cloud-release-panel" aria-label="Brand kit">
         <h3>Brand kit</h3>
-        <div className="grid gap-3 sm:grid-cols-[auto_1fr_1fr]">
-          <div className="grid gap-2">
-            <span className="text-xs font-medium">Logo</span>
+        <div className="grid items-end gap-3 sm:grid-cols-[auto_1fr_1fr]">
+          <div>
             <button
               type="button"
               className="cloud-product-logo"
+              aria-label="Logo"
               style={{
                 backgroundImage: `linear-gradient(135deg, ${input.brand.primary}, ${input.brand.accent})`,
               }}

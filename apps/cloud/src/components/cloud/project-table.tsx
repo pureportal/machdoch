@@ -91,6 +91,7 @@ export function ProjectTable({
   updates,
   initiatives,
   writable,
+  showInitiatives = true,
 }: {
   projects: CloudProject[];
   workspace: CloudWorkspace;
@@ -98,21 +99,38 @@ export function ProjectTable({
   updates: CloudProjectUpdate[];
   initiatives: CloudInitiative[];
   writable: boolean;
+  showInitiatives?: boolean;
 }) {
   const teams = workspace.teams.filter((team) =>
     projects.some((project) => project.teamId === team.id),
   );
   return (
-    <div className="cloud-project-table" role="table" aria-label="Projects">
+    <div
+      className="cloud-project-table"
+      data-kind="projects"
+      data-initiatives={showInitiatives ? "" : undefined}
+      role="table"
+      aria-label="Projects"
+    >
       <div className="cloud-project-row cloud-project-head" role="row">
         <span role="columnheader">Name</span>
         <span role="columnheader">Health</span>
-        <span role="columnheader">Initiatives</span>
-        <span role="columnheader">Lead</span>
-        <span role="columnheader">Target date</span>
-        <span role="columnheader">Issues</span>
-        <span role="columnheader">Status</span>
-        <span role="columnheader" className="sr-only">
+        {showInitiatives && (
+          <span role="columnheader" className="cloud-project-col-initiatives">
+            Initiatives
+          </span>
+        )}
+        <span role="columnheader" className="cloud-project-col-lead">
+          Lead
+        </span>
+        <span role="columnheader" className="cloud-project-col-target">
+          Target date
+        </span>
+        <span role="columnheader" className="cloud-project-col-issues">
+          Issues
+        </span>
+        <span role="columnheader">Progress</span>
+        <span role="columnheader" className="cloud-project-actions sr-only">
           Actions
         </span>
       </div>
@@ -169,22 +187,27 @@ export function ProjectTable({
                       )}
                     />
                   </span>
-                  <span role="cell" className="cloud-project-initiatives">
-                    {initiatives
-                      .filter((initiative) =>
-                        initiative.projectIds.includes(project.id),
-                      )
-                      .map((initiative) => (
-                        <Link
-                          key={initiative.id}
-                          href={`/cloud/initiatives/${initiative.id}`}
-                          prefetch={false}
-                        >
-                          {initiative.name}
-                        </Link>
-                      ))}
-                  </span>
-                  <span role="cell">
+                  {showInitiatives && (
+                    <span
+                      role="cell"
+                      className="cloud-project-initiatives cloud-project-col-initiatives"
+                    >
+                      {initiatives
+                        .filter((initiative) =>
+                          initiative.projectIds.includes(project.id),
+                        )
+                        .map((initiative) => (
+                          <Link
+                            key={initiative.id}
+                            href={`/cloud/initiatives/${initiative.id}`}
+                            prefetch={false}
+                          >
+                            {initiative.name}
+                          </Link>
+                        ))}
+                    </span>
+                  )}
+                  <span role="cell" className="cloud-project-col-lead">
                     {lead ? (
                       <span title={lead.name}>
                         <PersonAvatar
@@ -200,12 +223,18 @@ export function ProjectTable({
                       />
                     )}
                   </span>
-                  <span role="cell" className="cloud-project-muted">
+                  <span
+                    role="cell"
+                    className="cloud-project-muted cloud-project-col-target"
+                  >
                     {project.targetOn
                       ? targetFormat.format(new Date(project.targetOn))
                       : ""}
                   </span>
-                  <span role="cell" className="cloud-project-muted">
+                  <span
+                    role="cell"
+                    className="cloud-project-muted cloud-project-col-issues"
+                  >
                     {counts?.total ?? 0}
                   </span>
                   <span

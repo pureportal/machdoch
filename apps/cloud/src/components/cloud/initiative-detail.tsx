@@ -80,6 +80,7 @@ export function InitiativeDetail({
               updates={updates}
               initiatives={initiatives}
               writable={writable}
+              showInitiatives={false}
             />
           ) : (
             <div className="cloud-empty">

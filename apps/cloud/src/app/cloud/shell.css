@@ -287,6 +287,9 @@ body:has(.cloud-shell[data-cloud-tint]) .cloud-sidebar {
   border-bottom: 1px solid var(--border);
   margin: -10px 0 28px;
 }
+.cloud-tabs-list {
+  scrollbar-width: none;
+}
 .cloud-section-navigation a {
   display: flex;
   align-items: center;
