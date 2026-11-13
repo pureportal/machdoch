@@ -209,6 +209,16 @@
   font-weight: 600;
   color: var(--muted-foreground);
 }
+.cloud-automation-gallery-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.cloud-automation-gallery-header > button:only-child {
+  margin-left: auto;
+}
 .cloud-automation-gallery-team {
   display: flex;
   flex-wrap: wrap;
@@ -367,4 +377,9 @@
   .cloud-automation-detail {
     position: static;
   }
+}
+.cloud-automation-hint {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 12px;
 }

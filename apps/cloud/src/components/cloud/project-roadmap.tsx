@@ -6,7 +6,7 @@ import type {
   CloudWorkspace,
 } from "@/lib/cloud-contract";
 import type { CloudMilestone } from "@/lib/cloud-milestone-contract";
-import { projectStatusLabels, projectStatusStates } from "./project-fields";
+import { projectStatusLabels, projectStatusStates } from "@/lib/project-status";
 
 const dayMs = 86_400_000;
 const monthsVisible = 9;
@@ -75,12 +75,14 @@ export function ProjectRoadmap({
         <div className="cloud-empty">
           <MapIcon aria-hidden="true" />
           <p>No projects yet.</p>
-          <Link className="underline" href="/cloud/projects">
-            Create a project
-          </Link>
+          <Link href="/cloud/projects">Create a project</Link>
         </div>
       ) : (
-        <div className="cloud-roadmap" role="region" aria-label="Project roadmap">
+        <div
+          className="cloud-roadmap"
+          role="region"
+          aria-label="Project roadmap"
+        >
           <div
             className="cloud-roadmap-scroll"
             style={{ "--roadmap-months": months.length } as React.CSSProperties}

@@ -8,6 +8,7 @@ const clock = new Intl.DateTimeFormat(undefined, {
   hour: "2-digit",
   minute: "2-digit",
   second: "2-digit",
+  hourCycle: "h23",
 });
 
 function StatusIcon({
@@ -20,7 +21,9 @@ function StatusIcon({
   if (entry.status === "failed") return <X size={13} aria-hidden="true" />;
   if (entry.status === "passed") return <Check size={13} aria-hidden="true" />;
   if (entry.status === "started" && live)
-    return <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />;
+    return (
+      <LoaderCircle size={13} className="animate-spin" aria-hidden="true" />
+    );
   if (entry.kind === "model") return <Terminal size={13} aria-hidden="true" />;
   return <CircleDot size={13} aria-hidden="true" />;
 }
@@ -52,18 +55,24 @@ export function TaskTimeline({
         onScroll={(event) => {
           const element = event.currentTarget;
           following.current =
-            element.scrollHeight - element.scrollTop - element.clientHeight < 32;
+            element.scrollHeight - element.scrollTop - element.clientHeight <
+            32;
         }}
       >
         {entries.map((entry, index) => (
           <li key={entry.id} data-status={entry.status} data-kind={entry.kind}>
             <span className="cloud-timeline-icon">
-              <StatusIcon entry={entry} live={live && index === entries.length - 1} />
+              <StatusIcon
+                entry={entry}
+                live={live && index === entries.length - 1}
+              />
             </span>
             <div>
               <div className="cloud-timeline-heading">
                 <span>{entry.title}</span>
-                <time dateTime={entry.at}>{clock.format(new Date(entry.at))}</time>
+                <time dateTime={entry.at}>
+                  {clock.format(new Date(entry.at))}
+                </time>
               </div>
               {entry.detail && <pre>{entry.detail}</pre>}
             </div>

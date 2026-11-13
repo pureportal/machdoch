@@ -640,6 +640,9 @@ button.cloud-property-value[data-state="open"],
   background: var(--cloud-hover);
 }
 .cloud-property-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   color: var(--muted-foreground);
 }
 .cloud-issue-layout {
@@ -1268,6 +1271,10 @@ html[data-theme="light"] .cloud-burnup {
   align-items: center;
   gap: 8px;
   font-size: 13px;
+}
+body:has(.cloud-shell, .cloud-auth, .cloud-remote-surface) .m-loading-state {
+  --app-sky-400: var(--primary);
+  --app-text-soft: var(--muted-foreground);
 }
 .cloud-skeleton {
   display: grid;

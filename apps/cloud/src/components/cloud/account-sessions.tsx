@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingState } from "@machdoch/product-ui";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
@@ -15,6 +16,7 @@ import {
   cloudRequest,
   createCommandSender,
 } from "./api-client";
+import { Timestamp } from "./timestamp";
 
 const methods = {
   password: "Password",
@@ -99,7 +101,9 @@ export function AccountSessions({ account }: { account: SessionAccount }) {
           Refresh sessions
         </Button>
       </header>
-      {!sessions && loading && <p role="status">Loading sessions…</p>}
+      {!sessions && loading && (
+        <LoadingState label="Loading sessions…" compact />
+      )}
       <ul className="grid gap-3">
         {sessions?.map((session) => (
           <li
@@ -130,17 +134,13 @@ export function AccountSessions({ account }: { account: SessionAccount }) {
               <div>
                 <dt>Signed in</dt>
                 <dd>
-                  <time dateTime={session.createdAt}>
-                    {new Date(session.createdAt).toLocaleString()}
-                  </time>
+                  <Timestamp value={session.createdAt} />
                 </dd>
               </div>
               <div>
                 <dt>Last active</dt>
                 <dd>
-                  <time dateTime={session.lastActiveAt}>
-                    {new Date(session.lastActiveAt).toLocaleString()}
-                  </time>
+                  <Timestamp value={session.lastActiveAt} />
                 </dd>
               </div>
               <div>
@@ -224,8 +224,7 @@ export function AccountSessions({ account }: { account: SessionAccount }) {
         </p>
         {target && (
           <p>
-            {sessionLabel(target)} ·{" "}
-            {new Date(target.createdAt).toLocaleString()}
+            {sessionLabel(target)} · <Timestamp value={target.createdAt} />
           </p>
         )}
       </FormDialog>

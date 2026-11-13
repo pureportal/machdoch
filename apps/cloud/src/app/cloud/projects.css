@@ -100,18 +100,18 @@
 .cloud-project-actions:focus-within {
   opacity: 1;
 }
-.cloud-progress-ring {
+.cloud-project-progress-ring {
   flex-shrink: 0;
   transform: rotate(-90deg);
 }
-.cloud-progress-ring circle {
+.cloud-project-progress-ring circle {
   fill: none;
   stroke-width: 2.5;
 }
-.cloud-progress-ring .cloud-progress-track {
+.cloud-project-progress-ring .cloud-progress-track {
   stroke: var(--border);
 }
-.cloud-progress-ring .cloud-progress-value {
+.cloud-project-progress-ring .cloud-progress-value {
   stroke: var(--primary);
   stroke-linecap: round;
 }
@@ -348,7 +348,7 @@
     display: none;
   }
 }
-.cloud-progress-ring {
+.cloud-project-progress-ring {
   width: 14px;
   height: 14px;
 }

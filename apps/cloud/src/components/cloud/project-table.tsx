@@ -15,7 +15,7 @@ import type { CloudInitiative } from "@/lib/cloud-initiative-contract";
 import { PersonAvatar } from "./person-avatar";
 import { RelativeTime } from "./relative-time";
 import { ProjectEditor } from "./project-editor";
-import { projectStatusLabels, projectStatusStates } from "./project-fields";
+import { projectStatusLabels, projectStatusStates } from "@/lib/project-status";
 
 const targetFormat = new Intl.DateTimeFormat("en", {
   month: "short",
@@ -38,7 +38,7 @@ export function ProgressRing({ percent }: { percent: number }) {
   const circumference = 2 * Math.PI * 6;
   return (
     <svg
-      className="cloud-progress-ring"
+      className="cloud-project-progress-ring"
       viewBox="0 0 16 16"
       width="14"
       height="14"

@@ -333,10 +333,10 @@
 }
 .cloud-cycle-issue-list li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 130px 90px;
+  grid-template-columns: minmax(0, 1fr) 130px 70px;
   align-items: center;
   gap: 16px;
-  padding: 16px 20px;
+  padding: 11px 18px;
 }
 .cloud-cycle-issue-list li + li {
   border-top: 1px solid var(--border);
@@ -347,8 +347,17 @@
 .cloud-cycle-issue-list li > a {
   display: flex;
   align-items: baseline;
-  gap: 18px;
-  font-size: 12px;
+  gap: 14px;
+  min-width: 0;
+  font-size: 13px;
+}
+.cloud-cycle-issue-list li > a .cloud-issue-key {
+  flex: 0 0 60px;
+}
+.cloud-cycle-issue-list li > a .cloud-issue-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .cloud-cycle-issue-points {
   color: var(--muted-foreground);
@@ -461,6 +470,7 @@
   }
   .cloud-cycle-issue-list .cloud-issue-title {
     font-size: 14px;
+    white-space: normal;
   }
   .cloud-cycle-issue-list .cloud-state {
     overflow-wrap: anywhere;

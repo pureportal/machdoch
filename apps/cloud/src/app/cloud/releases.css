@@ -6,27 +6,6 @@
 .cloud-spin {
   animation: cloud-spin 0.9s linear infinite;
 }
-.cloud-release-sections {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 18px;
-  border-bottom: 1px solid var(--border);
-}
-.cloud-release-sections a {
-  padding: 8px 12px;
-  margin-bottom: -1px;
-  border-bottom: 2px solid transparent;
-  color: var(--muted-foreground);
-  font-size: 13px;
-  font-weight: 500;
-}
-.cloud-release-sections a:hover {
-  color: var(--foreground);
-}
-.cloud-release-sections a[aria-current="page"] {
-  border-color: var(--primary);
-  color: var(--foreground);
-}
 .cloud-release-filter {
   display: flex;
   flex-wrap: wrap;

@@ -321,9 +321,22 @@
 .cloud-agent-welcome {
   display: grid;
   justify-items: center;
-  gap: 14px;
+  gap: 10px;
   margin: auto 0;
   text-align: center;
+}
+.cloud-agent-welcome h2 {
+  margin-top: 6px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.cloud-agent-welcome > p {
+  max-width: 380px;
+  margin-bottom: 8px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.5;
 }
 .cloud-agent-suggestions {
   display: grid;
@@ -464,7 +477,7 @@
 .cloud-agent-page {
   display: grid;
   grid-template-columns: 240px minmax(0, 1fr);
-  height: calc(100dvh - 116px);
+  height: calc(100dvh - 57px);
   min-height: 480px;
   margin: -20px calc(-1 * clamp(16px, 2.2vw, 32px)) -40px;
 }
@@ -532,8 +545,8 @@
 @media (max-width: 800px) {
   .cloud-agent-page {
     grid-template-columns: minmax(0, 1fr);
-    margin: -24px -16px -36px;
-    height: calc(100dvh - 60px);
+    margin: -24px -16px -76px;
+    height: calc(100dvh - 56px);
   }
   .cloud-agent-history {
     display: none;

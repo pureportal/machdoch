@@ -353,7 +353,7 @@
 }
 .cloud-card-metadata {
   display: grid;
-  gap: 12px;
+  gap: 9px;
   color: var(--muted-foreground);
   font-size: 12px;
 }
