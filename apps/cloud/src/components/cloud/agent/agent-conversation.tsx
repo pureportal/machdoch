@@ -18,6 +18,7 @@ import {
   type ChatDetail,
 } from "@/lib/cloud-chat-contract";
 import type { CloudWorkspace } from "@/lib/cloud-contract";
+import { sidebarItems } from "@/lib/cloud-sidebar-contract";
 import { Button } from "@/components/ui/button";
 import { PropertyMenu } from "../property-menu";
 import { AgentTurn, contextIcons } from "./agent-turn";
@@ -33,6 +34,9 @@ interface ComposerFile {
   id: string | null;
 }
 
+const agentDescription = sidebarItems.find(
+  (item) => item.id === "agent",
+)!.description;
 const suggestions: Record<ChatContextKind | "workspace", string[]> = {
   workspace: [
     "What should I work on next?",
@@ -251,6 +255,8 @@ export function AgentConversation({
             <span className="cloud-icon-tile">
               <Sparkles size={20} strokeWidth={1.5} />
             </span>
+            <h2>Ask Agent</h2>
+            <p>{agentDescription}</p>
             {writable && available && (
               <div className="cloud-agent-suggestions">
                 {suggestions[pageEntity?.kind ?? "workspace"].map(

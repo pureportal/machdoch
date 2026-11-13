@@ -174,6 +174,13 @@ function actionVerb(action: AgentAction): string {
   if (action.kind === "automation")
     return action.automationId ? "Save automation" : "Create automation";
   if (action.kind === "client_session") return "Start session";
+  if (action.kind === "pull_request_comment") return "Post comment";
+  if (action.kind === "pull_request_review")
+    return action.decision === "approve"
+      ? "Approve"
+      : action.decision === "request_changes"
+        ? "Request changes"
+        : "Submit review";
   if (action.kind === "link")
     return action.relationId ? "Remove link" : "Add link";
   if (action.kind === "update_issues" && action.changes.archived === true)
@@ -192,6 +199,8 @@ function appliedLabel(action: AgentAction): string {
   if (action.kind === "automation")
     return action.automationId ? "Saved" : "Created";
   if (action.kind === "client_session") return "Started on";
+  if (action.kind === "pull_request_comment") return "Commented on";
+  if (action.kind === "pull_request_review") return "Reviewed";
   if (action.kind === "release_notes" || action.kind === "release_post")
     return "Drafted";
   if (action.kind === "link") return action.relationId ? "Unlinked" : "Linked";

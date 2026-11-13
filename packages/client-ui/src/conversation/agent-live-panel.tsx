@@ -14,12 +14,6 @@ import {
 } from "./agent-live-details";
 import { ContextGauge, FastTierIcon, PlanStepIcon } from "./agent-live-icons";
 
-const PROVIDER_NAMES: Record<AgentLiveState["provider"], string> = {
-  "claude-cli": "Claude",
-  "codex-cli": "Codex",
-  "copilot-cli": "Copilot",
-};
-
 const RunningTasksIndicator = ({ count }: { count: number }): JSX.Element => (
   <span className="inline-flex shrink-0 items-center gap-1 text-sky-200">
     <span className="relative flex h-1.5 w-1.5">
@@ -103,146 +97,141 @@ export const AgentRunStatusButton = ({
   );
 };
 
-export interface AgentLivePanelProps {
-  live: AgentLiveState;
-  running: boolean;
-  /** Present when the run accepts stop requests for its background tasks. */
-  onStopTask?: (taskId: string) => Promise<void>;
-  /** Sends a steering message the agent never read as a new message. */
-  onResendSteer?: (text: string) => void;
-  now?: number;
-}
-
 /**
- * Shows what the provider CLI reported live for a run in one line: context,
- * plan limits and the current plan step. The rest opens in a dialog; only
- * problems that need attention stay visible below the line.
+ * What the provider CLI reported live for a run, in one line: context, tokens,
+ * plan limits and the current plan step.
  */
-export const AgentLivePanel = ({
+export const AgentLiveSummary = ({
   live,
   running,
-  onStopTask,
-  onResendSteer,
-  now = Date.now(),
-}: AgentLivePanelProps): JSX.Element | null => {
-  const [detailsOpen, setDetailsOpen] = useState(false);
+  now,
+}: {
+  live: AgentLiveState;
+  running: boolean;
+  now: number;
+}): JSX.Element | null => {
   const usage = live.usage;
   const contextRatio = getContextRatio(usage);
-  const tasks = live.tasks ?? [];
-  const runningTasks = tasks.filter((task) => task.status === "running");
+  const runningTasks = (live.tasks ?? []).filter((task) => task.status === "running");
   const plan = live.plan ?? [];
   const files = live.fileChanges ?? [];
-  const steering = live.steering ?? [];
-  const notices = live.notices ?? [];
   const limits = live.limits ?? [];
-  const hasDetails =
-    plan.length > 0 || files.length > 0 || tasks.length > 0 || steering.length > 0 || notices.length > 0;
-  const hasSummary = Boolean(usage) || limits.length > 0 || live.fastMode === true;
+  const hasTokens =
+    usage && (usage.inputTokens !== undefined || usage.outputTokens !== undefined);
 
-  if (!hasSummary && !hasDetails) return null;
-
-  const failedSteering = steering.filter((entry) => entry.status === "failed");
-  const latestAlert = notices
-    .filter((notice) => notice.tone === "danger" || notice.tone === "warning")
-    .at(-1);
+  if (
+    contextRatio === undefined &&
+    !hasTokens &&
+    limits.length === 0 &&
+    !live.fastMode &&
+    !(running && runningTasks.length > 0) &&
+    plan.length === 0 &&
+    files.length === 0
+  ) {
+    return null;
+  }
 
   return (
-    <section
-      aria-label={`${PROVIDER_NAMES[live.provider]} live run details`}
-      className="app-agent-live @container w-full min-w-0 rounded-xl border border-slate-800/70 bg-slate-950/40 px-3 py-1 text-xs text-slate-300"
+    <div className="app-agent-live @container flex min-w-0 flex-1 flex-nowrap items-center gap-3 text-xs text-slate-300"
     >
-      <div className="flex h-7 min-w-0 flex-nowrap items-center gap-3">
-        {contextRatio !== undefined ? (
-          <div
-            className="flex shrink-0 items-center gap-1"
-            title={`Context window: ${formatTokens(usage?.contextUsedTokens)} / ${formatTokens(usage?.contextWindowTokens)}`}
-          >
-            <ContextGauge
-              ratio={contextRatio}
-              size={15}
-              label={`Context ${Math.round(contextRatio * 100)}% full`}
-            />
-            <span className="font-medium tabular-nums text-slate-200">
-              {Math.round(contextRatio * 100)}%
-            </span>
-          </div>
-        ) : null}
-
-        {usage && (usage.inputTokens !== undefined || usage.outputTokens !== undefined) ? (
-          <div
-            className="flex shrink-0 items-baseline gap-1 tabular-nums @max-[36rem]:hidden"
-            title={usage.cachedInputTokens ? `${formatTokens(usage.cachedInputTokens)} cached` : "Tokens used by this run"}
-          >
-            <span className="text-slate-200">{formatTokens(usage.inputTokens)}</span>
-            <span className="text-slate-500">in</span>
-            <span className="text-slate-200">{formatTokens(usage.outputTokens)}</span>
-            <span className="text-slate-500">out</span>
-          </div>
-        ) : null}
-
-        {limits.map((limit) => {
-          const reset = formatLimitReset(limit.resetsAt, now);
-          return (
-            <div
-              key={limit.id}
-              className="flex shrink-0 items-center gap-1 @max-[48rem]:hidden"
-              title={`${limit.label}: ${Math.round(limit.usedPercent)}% used${reset ? `, ${reset}` : ""}`}
-            >
-              <span className="h-1 w-6 overflow-hidden rounded-full bg-slate-800">
-                <span
-                  className={cn("block h-full rounded-full", limitTone(limit))}
-                  style={{ width: `${Math.min(100, Math.max(2, limit.usedPercent))}%` }}
-                />
-              </span>
-              <span className="tabular-nums text-slate-400">{Math.round(limit.usedPercent)}%</span>
-            </div>
-          );
-        })}
-
-        {live.fastMode ? (
-          <span
-            className="inline-flex shrink-0 items-center gap-0.5 font-semibold text-amber-200 @max-[28rem]:hidden"
-            title="Fast tier"
-          >
-            <FastTierIcon className="h-3 w-3" />
-            Fast
-          </span>
-        ) : null}
-
-        {running && runningTasks.length > 0 ? (
-          <RunningTasksIndicator count={runningTasks.length} />
-        ) : null}
-
-        <div className="min-w-0 flex-1">
-          {plan.length > 0 ? <AgentPlanSummary plan={plan} /> : null}
-        </div>
-
-        {files.length > 0 ? (
-          <span className="shrink-0 text-slate-500 @max-[28rem]:hidden">
-            {files.length} {files.length === 1 ? "file" : "files"}
-          </span>
-        ) : null}
-
-        <button
-          type="button"
-          aria-haspopup="dialog"
-          onClick={() => setDetailsOpen(true)}
-          className="shrink-0 rounded-md px-2 text-[11px] leading-6 font-medium text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60"
+      {contextRatio !== undefined ? (
+        <div
+          className="flex shrink-0 items-center gap-1"
+          title={`Context window: ${formatTokens(usage?.contextUsedTokens)} / ${formatTokens(usage?.contextWindowTokens)}`}
         >
-          Details
-        </button>
-      </div>
-
-      {failedSteering.length > 0 ? (
-        <div className="py-1">
-          <AgentSteeringList steering={failedSteering} onResend={onResendSteer} />
+          <ContextGauge
+            ratio={contextRatio}
+            size={15}
+            label={`Context ${Math.round(contextRatio * 100)}% full`}
+          />
+          <span className="font-medium tabular-nums text-slate-200">
+            {Math.round(contextRatio * 100)}%
+          </span>
         </div>
       ) : null}
 
+      {hasTokens ? (
+        <div
+          className="flex shrink-0 items-baseline gap-1 tabular-nums @max-[30rem]:hidden"
+          title={usage.cachedInputTokens ? `${formatTokens(usage.cachedInputTokens)} cached` : "Tokens used by this run"}
+        >
+          <span className="text-slate-200">{formatTokens(usage.inputTokens)}</span>
+          <span className="text-slate-500">in</span>
+          <span className="text-slate-200">{formatTokens(usage.outputTokens)}</span>
+          <span className="text-slate-500">out</span>
+        </div>
+      ) : null}
+
+      {limits.map((limit) => {
+        const reset = formatLimitReset(limit.resetsAt, now);
+        return (
+          <div
+            key={limit.id}
+            className="flex shrink-0 items-center gap-1 @max-[42rem]:hidden"
+            title={`${limit.label}: ${Math.round(limit.usedPercent)}% used${reset ? `, ${reset}` : ""}`}
+          >
+            <span className="h-1 w-6 overflow-hidden rounded-full bg-slate-800">
+              <span
+                className={cn("block h-full rounded-full", limitTone(limit))}
+                style={{ width: `${Math.min(100, Math.max(2, limit.usedPercent))}%` }}
+              />
+            </span>
+            <span className="tabular-nums text-slate-400">{Math.round(limit.usedPercent)}%</span>
+          </div>
+        );
+      })}
+
+      {live.fastMode ? (
+        <span
+          className="inline-flex shrink-0 items-center gap-0.5 font-semibold text-amber-200 @max-[24rem]:hidden"
+          title="Fast tier"
+        >
+          <FastTierIcon className="h-3 w-3" />
+          Fast
+        </span>
+      ) : null}
+
+      {running && runningTasks.length > 0 ? (
+        <RunningTasksIndicator count={runningTasks.length} />
+      ) : null}
+
+      <div className="min-w-0 flex-1">
+        {plan.length > 0 ? <AgentPlanSummary plan={plan} /> : null}
+      </div>
+
+      {files.length > 0 ? (
+        <span className="shrink-0 text-slate-500 @max-[24rem]:hidden">
+          {files.length} {files.length === 1 ? "file" : "files"}
+        </span>
+      ) : null}
+    </div>
+  );
+};
+
+/** Live run problems that stay visible while the run's details are closed. */
+export const AgentLiveAlerts = ({
+  live,
+  onResendSteer,
+}: {
+  live: AgentLiveState;
+  onResendSteer?: ((text: string) => void) | undefined;
+}): JSX.Element | null => {
+  const failedSteering = (live.steering ?? []).filter((entry) => entry.status === "failed");
+  const latestAlert = (live.notices ?? [])
+    .filter((notice) => notice.tone === "danger" || notice.tone === "warning")
+    .at(-1);
+
+  if (failedSteering.length === 0 && !latestAlert) return null;
+
+  return (
+    <div className="grid gap-1 px-3 pb-2 text-xs">
+      {failedSteering.length > 0 ? (
+        <AgentSteeringList steering={failedSteering} onResend={onResendSteer} />
+      ) : null}
       {latestAlert ? (
         <p
           className={cn(
-            "m-0 truncate pb-0.5",
+            "m-0 truncate",
             latestAlert.tone === "danger" ? "text-rose-300" : "text-amber-200",
           )}
           title={latestAlert.text}
@@ -250,16 +239,6 @@ export const AgentLivePanel = ({
           {latestAlert.text}
         </p>
       ) : null}
-
-      <AgentLiveDetailsDialog
-        open={detailsOpen}
-        onOpenChange={setDetailsOpen}
-        live={live}
-        running={running}
-        onStopTask={onStopTask}
-        onResendSteer={onResendSteer}
-        now={now}
-      />
-    </section>
+    </div>
   );
 };

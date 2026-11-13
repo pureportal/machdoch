@@ -25,6 +25,8 @@ import {
   type ReactNode,
 } from "react";
 import { createTaskTimeoutIndicator } from "./task-timeout-indicator";
+import { AgentLiveDetails } from "./agent-live-details";
+import { AgentLiveAlerts, AgentLiveSummary } from "./agent-live-panel";
 import { Card, CardContent, CardHeader, CardTitle } from "../common/card";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
 import type { TaskPanelTone } from "@machdoch/fleet-protocol/task-thinking";
@@ -404,15 +406,22 @@ const getLiveActivityLabel = (stream: VisibleModelStream): string => {
 export interface TaskThinkingPanelProps {
   thinking: TaskThinkingTrace;
   timeoutControls?: ReactNode;
+  /** Present when the run accepts stop requests for its background tasks. */
+  onStopAgentTask?: (taskId: string) => Promise<void>;
+  /** Sends a steering message the agent never read as a new message. */
+  onResendSteer?: (text: string) => void;
 }
 
 export const TaskThinkingPanel = ({
   thinking,
   timeoutControls,
+  onStopAgentTask,
+  onResendSteer,
 }: TaskThinkingPanelProps): JSX.Element => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const shouldFollowLatestRef = useRef(true);
   const isRunning = thinking.status === "running";
+  const live = thinking.agentLive;
   const assistantText = isRunning ? thinking.assistantText?.trim() : undefined;
   const storyItems = useMemo(
     () => createTaskExecutionStory(thinking),
@@ -584,7 +593,7 @@ export const TaskThinkingPanel = ({
               <div className="flex items-center justify-between gap-x-3">
                 <div
                   className={cn(
-                    "min-w-0",
+                    "shrink-0",
                     !isCollapsed && "flex items-center gap-2.5",
                   )}
                 >
@@ -612,6 +621,13 @@ export const TaskThinkingPanel = ({
                     </div>
                   )}
                 </div>
+                {isCollapsed && live ? (
+                  <AgentLiveSummary
+                    live={live}
+                    running={isRunning}
+                    now={currentTimeMs}
+                  />
+                ) : null}
                 <div className="flex shrink-0 items-center gap-1">
                   {isRunning ? timeoutControls : null}
                   <button
@@ -643,8 +659,23 @@ export const TaskThinkingPanel = ({
           </div>
         </CardHeader>
 
+        {isCollapsed && live ? (
+          <AgentLiveAlerts live={live} onResendSteer={onResendSteer} />
+        ) : null}
+
         {!isCollapsed ? (
           <CardContent className="px-0 py-0">
+            {live ? (
+              <div className="app-thinking-live max-h-64 overflow-y-auto border-b border-slate-800/90 px-5 py-3">
+                <AgentLiveDetails
+                  live={live}
+                  running={isRunning}
+                  onStopTask={onStopAgentTask}
+                  onResendSteer={onResendSteer}
+                  now={currentTimeMs}
+                />
+              </div>
+            ) : null}
             <div
               ref={scrollContainerRef}
               onScroll={(event) => {

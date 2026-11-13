@@ -305,6 +305,9 @@ export function RemoteConversationHost({
             <McpAppResults thinking={thinking} appIds={message.mcpAppIds} workspaceRoot={message.workspace ?? session.workspace} invoke={(root, input) => workspaceTransport.invoke("run_mcp_app_command", { workspaceRoot: root, input })} />
             {thinking && <TaskThinkingPanel
               thinking={thinking}
+              onResendSteer={(text) => {
+                void sendMessage(text);
+              }}
               timeoutControls={
                 message.taskId && thinking.timeout?.idleTimeoutMs ? (
                   <TaskTimeoutControls
@@ -335,9 +338,6 @@ export function RemoteConversationHost({
                 onAnswer={async (_questionId, answers) => {
                   const question = thinking.agentLive?.question;
                   if (question) await sendMessage(formatQuestionAnswers(question, answers));
-                }}
-                onSendMessage={(text) => {
-                  void sendMessage(text);
                 }}
               />
             ) : null}

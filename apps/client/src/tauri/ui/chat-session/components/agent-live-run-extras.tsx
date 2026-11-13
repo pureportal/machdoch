@@ -1,7 +1,8 @@
-import type { JSX } from "react";
+import type { JSX, ReactNode } from "react";
 import type { AgentLiveState } from "@machdoch/fleet-protocol/task-thinking";
 import { AgentRunStatusButton } from "@machdoch/client-ui/conversation/agent-live-panel";
 import { AgentLiveRunDetails } from "@machdoch/client-ui/conversation/agent-live-run-details";
+import { TaskThinkingPanel } from "@machdoch/client-ui/conversation/task-thinking-panel";
 import type { ChatSessionRecord } from "../../chat-session.model";
 import type { TaskThinkingTrace } from "../../task-thinking.model";
 import {
@@ -20,21 +21,41 @@ const useStopTaskControl = (
     : undefined;
 };
 
-/** Live provider details for one desktop run, wired to its local control endpoint. */
+/** One desktop run's execution card, wired to its local control endpoint. */
+export const RunExecutionPanel = ({
+  trace,
+  taskId,
+  timeoutControls,
+  onSendMessage,
+}: {
+  trace: TaskThinkingTrace;
+  taskId: string | undefined;
+  timeoutControls: ReactNode;
+  onSendMessage?: ((text: string) => void) | undefined;
+}): JSX.Element => {
+  const stopTask = useStopTaskControl(taskId, trace.status === "running");
+  return (
+    <TaskThinkingPanel
+      thinking={trace}
+      timeoutControls={timeoutControls}
+      {...(stopTask ? { onStopAgentTask: stopTask } : {})}
+      {...(onSendMessage ? { onResendSteer: onSendMessage } : {})}
+    />
+  );
+};
+
+/** A desktop run's question from the agent, wired to its local control endpoint. */
 export const AgentLiveRunExtras = ({
   trace,
   live,
   taskId,
-  onSendMessage,
 }: {
   trace: TaskThinkingTrace;
   live: AgentLiveState;
   taskId: string | undefined;
-  onSendMessage?: (text: string) => void;
-}): JSX.Element => {
+}): JSX.Element | null => {
   const running = trace.status === "running";
   const endpoint = useAgentControlEndpoint(running ? taskId : undefined);
-  const stopTask = useStopTaskControl(taskId, running);
   return (
     <AgentLiveRunDetails
       live={live}
@@ -45,8 +66,6 @@ export const AgentLiveRunExtras = ({
               sendAgentControl(taskId, { type: "answer", questionId, answers }),
           }
         : {})}
-      {...(stopTask ? { onStopTask: stopTask } : {})}
-      {...(onSendMessage ? { onSendMessage } : {})}
     />
   );
 };

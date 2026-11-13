@@ -1,5 +1,6 @@
 "use client";
 
+import { LoadingState } from "@machdoch/product-ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, RefreshCw } from "lucide-react";
@@ -575,13 +576,13 @@ export function RunsView({
               onClearError={() => setError(null)}
             />
           </>
-        ) : !visibleError ? (
+        ) : visibleError ? null : !workspaceLoading && !workspace ? (
           <p role="status" className="text-sm text-muted-foreground">
-            {!workspaceLoading && !workspace
-              ? "No projects."
-              : "Loading services…"}
+            No projects.
           </p>
-        ) : null}
+        ) : (
+          <LoadingState label="Loading services…" />
+        )}
       </div>
     </main>
   );

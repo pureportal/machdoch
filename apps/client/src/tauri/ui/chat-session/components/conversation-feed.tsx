@@ -45,7 +45,6 @@ import { type ChatSessionContextAttachment } from "@machdoch/client-ui/composer/
 import { Avatar } from "../../components/ui/avatar";
 import { Button } from "@machdoch/media-studio/tauri/ui/components/ui/button.js";
 import { cn } from "@machdoch/media-studio/tauri/ui/lib/utils.js";
-import { TaskThinkingPanel } from "@machdoch/client-ui/conversation/task-thinking-panel";
 import { TaskTimeoutControls } from "@machdoch/client-ui/conversation/task-timeout-controls";
 import { resetDesktopTaskTimeout } from "../../runtime";
 import { DESKTOP_SETTING_BOUNDS } from "../../../../core/runtime-contract.generated.js";
@@ -78,7 +77,10 @@ import { MessageAttachmentsList } from "@machdoch/client-ui/composer/context-att
 import { MessageViewLocation } from "@machdoch/client-ui/conversation/message-view-location";
 import { ExecutionInsightRow } from "@machdoch/client-ui/conversation/execution-insight-row";
 import { FollowUpSuggestions } from "@machdoch/client-ui/conversation/follow-up-suggestions";
-import { AgentLiveRunExtras } from "./agent-live-run-extras";
+import {
+  AgentLiveRunExtras,
+  RunExecutionPanel,
+} from "./agent-live-run-extras";
 import { getTaskFileChangeFiles, getTaskFileChangeHunks } from "../../runtime";
 import { MarkdownContent } from "@machdoch/client-ui/conversation/markdown-content";
 import { PromptEnhancementPending } from "./prompt-enhancement-pending";
@@ -379,8 +381,10 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
           >
             {thinkingTrace ? (
               <div className="app-thinking-wrapper w-full min-w-0 max-w-full pt-1 lg:max-w-4xl">
-                <TaskThinkingPanel
-                  thinking={thinkingTrace}
+                <RunExecutionPanel
+                  trace={thinkingTrace}
+                  taskId={message.taskId}
+                  onSendMessage={onSendSuggestion}
                   timeoutControls={
                     isTauri() &&
                     message.taskId &&
@@ -403,7 +407,6 @@ const ConversationMessageRow = memo(function ConversationMessageRow({
                 trace={thinkingTrace}
                 live={thinkingTrace.agentLive}
                 taskId={message.taskId}
-                {...(onSendSuggestion ? { onSendMessage: onSendSuggestion } : {})}
               />
             ) : null}
 
