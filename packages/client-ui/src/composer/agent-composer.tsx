@@ -4,7 +4,7 @@ import {
   ComposerSurface,
   type ComposerIconProps,
 } from "@machdoch/product-ui";
-import { ListOrdered, Repeat2, SendHorizonal, X } from "lucide-react";
+import { ListOrdered, Pause, Play, Repeat2, SendHorizonal, X } from "lucide-react";
 import type {
   ClipboardEvent,
   ComponentType,
@@ -126,6 +126,7 @@ export interface AgentComposerProps {
   /** The running task accepts messages into its current turn. */
   canSteerRunningTask?: boolean;
   queuedMessages?: AgentComposerQueuedMessage[];
+  queuePaused?: boolean;
   iterationsEnabled?: boolean;
   iterationsDisabledReason?: string | undefined;
   onSelectContextFiles: () => Promise<void>;
@@ -148,6 +149,7 @@ export interface AgentComposerProps {
   onQueuedMessageReorder?: (messageId: string, targetIndex: number) => void;
   onQueuedMessageRemove?: (messageId: string) => void;
   onQueuedMessageRetry?: (messageId: string) => void;
+  onQueuePausedChange?: (paused: boolean) => void;
   onQueuedMessageSelectContextAttachments?: (
     messageId: string,
     selectionKind: AttachmentSelectionKind,
@@ -442,6 +444,7 @@ export const AgentComposer = ({
   runningTaskMessageAction,
   canSteerRunningTask = false,
   queuedMessages = [],
+  queuePaused = false,
   iterationsEnabled = false,
   iterationsDisabledReason,
   onSelectContextFiles,
@@ -461,6 +464,7 @@ export const AgentComposer = ({
   onQueuedMessageReorder,
   onQueuedMessageRemove,
   onQueuedMessageRetry,
+  onQueuePausedChange,
   onQueuedMessageSelectContextAttachments,
   onQueuedMessagePasteContextImages,
   onQueuedMessageRemoveContextAttachment,
@@ -534,6 +538,10 @@ export const AgentComposer = ({
         ? "Send"
         : "Send message");
   const queuePanelVisible = variant === "session" && queuedMessages.length > 0;
+  const queuePauseVisible =
+    variant === "session" &&
+    onQueuePausedChange !== undefined &&
+    (isExecuting || queuePanelVisible || queuePaused);
 
   const submit = useCallback((): void => {
     const currentDraft = bufferedDraft.getValue();
@@ -656,7 +664,8 @@ export const AgentComposer = ({
     ),
   );
   const statusBar =
-    variant === "session" && (isExecuting || queuePanelVisible) ? (
+    variant === "session" &&
+    (isExecuting || queuePanelVisible || queuePauseVisible) ? (
       <div className="m-composer-status-bar">
         {isExecuting ? (
           <>
@@ -691,6 +700,19 @@ export const AgentComposer = ({
         ) : null}
         <div className="m-composer-status-details">
           {isExecuting ? runStatus : null}
+          {queuePauseVisible ? (
+            <button
+              type="button"
+              aria-label={queuePaused ? "Continue queue" : "Pause queue"}
+              aria-pressed={queuePaused}
+              title={queuePaused ? "Continue queue" : "Pause queue"}
+              onClick={() => onQueuePausedChange?.(!queuePaused)}
+              className="m-composer-queue-pause"
+            >
+              {queuePaused ? <Play /> : <Pause />}
+              <span>{queuePaused ? "Continue" : "Pause"}</span>
+            </button>
+          ) : null}
           {queuePanelVisible ? (
             <QueueStatusButton
               messages={queuedMessages}
@@ -1128,6 +1150,15 @@ export const AgentComposer = ({
                   `Queued message ${index + 1}`;
                 return [
                   {
+                    id: `${message.id}:top`,
+                    title: `Move to top: ${title}`,
+                    availability:
+                      index > 0 && onQueuedMessageReorder
+                        ? ({ state: "enabled" } as const)
+                        : ({ state: "hidden" } as const),
+                    execute: () => onQueuedMessageReorder?.(message.id, 0),
+                  },
+                  {
                     id: `${message.id}:up`,
                     title: `Move up: ${title}`,
                     availability:
@@ -1144,6 +1175,19 @@ export const AgentComposer = ({
                         ? ({ state: "enabled" } as const)
                         : ({ state: "hidden" } as const),
                     execute: () => onQueuedMessageMove?.(message.id, 1),
+                  },
+                  {
+                    id: `${message.id}:bottom`,
+                    title: `Move to bottom: ${title}`,
+                    availability:
+                      index < queuedMessages.length - 1 && onQueuedMessageReorder
+                        ? ({ state: "enabled" } as const)
+                        : ({ state: "hidden" } as const),
+                    execute: () =>
+                      onQueuedMessageReorder?.(
+                        message.id,
+                        queuedMessages.length - 1,
+                      ),
                   },
                 ];
               }),
@@ -1283,6 +1327,7 @@ export const AgentComposer = ({
     onOpenContextAttachment,
     onQueuedMessageRemove,
     onQueuedMessageMove,
+    onQueuedMessageReorder,
     onQueuedMessageSelectContextAttachments,
     onQueuedMessageClearContextAttachments,
     onRemoveContextAttachment,

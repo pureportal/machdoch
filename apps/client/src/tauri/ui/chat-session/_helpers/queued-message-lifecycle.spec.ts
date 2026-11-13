@@ -4,6 +4,7 @@ import {
   type ChatSessionQueuedMessage,
 } from "../../chat-session.model";
 import {
+  canDispatchQueuedMessage,
   canStartQueuedMessageDispatch,
   createConflictedQueuedMessageRecovery,
   createQueuedMessageDispatchAttempt,
@@ -156,6 +157,19 @@ describe("queued message lifecycle", () => {
 
     expect(attempt.prompt.task).toBe("Enhanced request");
     expect(submitted?.queuedSessionMessages).toEqual([]);
+  });
+
+  it("holds queued messages while the session queue is paused", () => {
+    const message = createQueuedMessage();
+    const pausedSession = createSession({ id: "session-1", queuePausedAt: 20 });
+    const resumedSession = { ...pausedSession };
+    delete resumedSession.queuePausedAt;
+
+    expect(canDispatchQueuedMessage(message, pausedSession, null)).toBe(false);
+    expect(
+      canStartQueuedMessageDispatch(message, message.id, pausedSession, null),
+    ).toBe(false);
+    expect(canDispatchQueuedMessage(message, resumedSession, null)).toBe(true);
   });
 
   it("returns execution conflicts to the automatic queue", () => {

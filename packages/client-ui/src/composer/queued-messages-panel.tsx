@@ -1,12 +1,20 @@
 import {
   ArrowDown,
+  ArrowDownToLine,
   ArrowUp,
+  ArrowUpToLine,
   GripVertical,
   LoaderCircle,
   RotateCcw,
   Trash2,
 } from "lucide-react";
-import { useState, type ClipboardEvent, type DragEvent, type JSX } from "react";
+import {
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type JSX,
+  type PointerEvent,
+} from "react";
 import type {
   ChatSessionContextAttachment,
   ChatSessionRequestIteration,
@@ -21,13 +29,15 @@ import type { AttachmentSelectionKind } from "./model";
 import {
   findQueuedMessageBlockIndex,
   getQueuedMessageBlocks,
+  getQueuedMessageDropTargetIndex,
 } from "./queued-message-blocks";
 import {
   ContextAttachmentMenuButton,
   ContextAttachmentsList,
 } from "./context-attachments";
 
-const QUEUED_MESSAGE_DRAG_TYPE = "application/x-machdoch-queued-message";
+const QUEUE_AUTO_SCROLL_EDGE_PX = 48;
+const QUEUE_AUTO_SCROLL_STEP_PX = 16;
 const QUEUE_ICON_BUTTON_CLASS_NAME =
   "h-7 w-7 rounded-md border-transparent bg-transparent text-slate-400 shadow-none hover:bg-slate-800 hover:text-slate-100 disabled:bg-transparent disabled:text-slate-700";
 
@@ -99,14 +109,68 @@ const getQueueStateClassName = (
     : "bg-slate-800/70 text-slate-400";
 };
 
-const getDragMessageId = (
-  event: DragEvent,
-  draggingMessageId: string | null,
-): string => {
-  const droppedId = event.dataTransfer.getData(QUEUED_MESSAGE_DRAG_TYPE);
-  const fallbackId = event.dataTransfer.getData("text/plain");
+interface QueueDragState {
+  messageId: string;
+  dropSlot: number | null;
+}
 
-  return droppedId || draggingMessageId || fallbackId;
+const getQueueDropSlot = (list: HTMLElement, clientY: number): number => {
+  const blockBounds = new Map<string, { top: number; bottom: number }>();
+
+  for (const item of list.querySelectorAll<HTMLElement>("[data-queue-block]")) {
+    const blockKey = item.dataset.queueBlock ?? "";
+    const rect = item.getBoundingClientRect();
+    const current = blockBounds.get(blockKey);
+
+    blockBounds.set(
+      blockKey,
+      current
+        ? {
+            top: Math.min(current.top, rect.top),
+            bottom: Math.max(current.bottom, rect.bottom),
+          }
+        : { top: rect.top, bottom: rect.bottom },
+    );
+  }
+
+  return [...blockBounds.values()].filter(
+    ({ top, bottom }) => (top + bottom) / 2 < clientY,
+  ).length;
+};
+
+const findScrollContainer = (element: HTMLElement): HTMLElement | null => {
+  for (
+    let current = element.parentElement;
+    current;
+    current = current.parentElement
+  ) {
+    const { overflowY } = getComputedStyle(current);
+
+    if (
+      (overflowY === "auto" || overflowY === "scroll") &&
+      current.scrollHeight > current.clientHeight
+    ) {
+      return current;
+    }
+  }
+
+  return null;
+};
+
+const scrollQueueNearEdge = (list: HTMLElement, clientY: number): void => {
+  const container = findScrollContainer(list);
+
+  if (!container) {
+    return;
+  }
+
+  const { top, bottom } = container.getBoundingClientRect();
+
+  if (clientY < top + QUEUE_AUTO_SCROLL_EDGE_PX) {
+    container.scrollBy({ top: -QUEUE_AUTO_SCROLL_STEP_PX });
+  } else if (clientY > bottom - QUEUE_AUTO_SCROLL_EDGE_PX) {
+    container.scrollBy({ top: QUEUE_AUTO_SCROLL_STEP_PX });
+  }
 };
 
 export const QueuedMessagesPanel = ({
@@ -124,12 +188,9 @@ export const QueuedMessagesPanel = ({
   onMessageRemoveAttachment,
   onMessageClearAttachments,
 }: QueuedMessagesPanelProps): JSX.Element | null => {
-  const [draggingMessageId, setDraggingMessageId] = useState<string | null>(
-    null,
-  );
-  const [dragOverBlockIndex, setDragOverBlockIndex] = useState<number | null>(
-    null,
-  );
+  const listRef = useRef<HTMLOListElement | null>(null);
+  const dragRef = useRef<QueueDragState | null>(null);
+  const [drag, setDrag] = useState<QueueDragState | null>(null);
 
   if (messages.length === 0) {
     return null;
@@ -170,19 +231,87 @@ export const QueuedMessagesPanel = ({
   const canReorder = showReorderControls && !hasMessageInProgress;
   const draggingBlockIndex = findQueuedMessageBlockIndex(
     blocks,
-    draggingMessageId,
+    drag?.messageId ?? null,
   );
+  const visibleDropSlot =
+    drag && drag.dropSlot !== null &&
+    getQueuedMessageDropTargetIndex(messages, drag.messageId, drag.dropSlot) !==
+      null
+      ? drag.dropSlot
+      : null;
+  const lastMessageIndex = messages.length - 1;
+
+  const updateDrag = (next: QueueDragState | null): void => {
+    dragRef.current = next;
+    setDrag(next);
+  };
+
+  const handleDragStart = (
+    event: PointerEvent<HTMLButtonElement>,
+    messageId: string,
+  ): void => {
+    if (!canReorder || event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updateDrag({ messageId, dropSlot: null });
+  };
+
+  const handleDragMove = (event: PointerEvent<HTMLButtonElement>): void => {
+    const current = dragRef.current;
+    const list = listRef.current;
+
+    if (!current || !list) {
+      return;
+    }
+
+    scrollQueueNearEdge(list, event.clientY);
+    const dropSlot = getQueueDropSlot(list, event.clientY);
+
+    if (dropSlot !== current.dropSlot) {
+      updateDrag({ ...current, dropSlot });
+    }
+  };
+
+  const handleDragEnd = (): void => {
+    const current = dragRef.current;
+
+    if (!current) {
+      return;
+    }
+
+    updateDrag(null);
+
+    const targetIndex =
+      current.dropSlot === null
+        ? null
+        : getQueuedMessageDropTargetIndex(
+            messages,
+            current.messageId,
+            current.dropSlot,
+          );
+
+    if (targetIndex !== null) {
+      onMessageReorder?.(current.messageId, targetIndex);
+    }
+  };
 
   return (
     <section
       aria-label="Queued messages"
       className="app-composer-queued-messages min-w-0"
     >
-      <ol className="m-0 grid list-none gap-2 p-0">
+      <ol ref={listRef} className="m-0 grid list-none gap-2 p-0">
         {messages.map((message, index) => {
           const blockIndex = findQueuedMessageBlockIndex(blocks, message.id);
-          const isDragging = draggingBlockIndex === blockIndex;
-          const isDragTarget = dragOverBlockIndex === blockIndex && !isDragging;
+          const isDragging = drag !== null && draggingBlockIndex === blockIndex;
+          const showDropLineBefore =
+            visibleDropSlot === blockIndex &&
+            blocks[blockIndex]?.[0]?.id === message.id;
+          const showDropLineAfter =
+            visibleDropSlot === blocks.length && index === lastMessageIndex;
           const isInProgress =
             message.status === "enhancing" || message.status === "dispatching";
           const stateLabel = message.waitingForIteration
@@ -193,76 +322,44 @@ export const QueuedMessagesPanel = ({
             <SubmitShortcut key={message.id} asChild>
               <li
                 aria-label={`Queued message ${index + 1} of ${messages.length}`}
-                onDragEnter={() => {
-                  if (draggingMessageId) {
-                    setDragOverBlockIndex(isDragging ? null : blockIndex);
-                  }
-                }}
-                onDragOver={(event) => {
-                  if (!draggingMessageId || isDragging) {
-                    return;
-                  }
-
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                  setDragOverBlockIndex(blockIndex);
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  const droppedMessageId = getDragMessageId(
-                    event,
-                    draggingMessageId,
-                  );
-                  setDragOverBlockIndex(null);
-                  setDraggingMessageId(null);
-
-                  if (!droppedMessageId || droppedMessageId === message.id) {
-                    return;
-                  }
-
-                  onMessageReorder?.(droppedMessageId, index);
-                }}
+                data-queue-block={blockIndex}
                 className={cn(
-                  "min-w-0 rounded-xl border border-slate-800/80 bg-slate-950/40 transition-colors",
+                  "relative min-w-0 rounded-xl border border-slate-800/80 bg-slate-950/40 transition-colors",
                   isDragging && "border-sky-400/40 bg-sky-400/10 opacity-70",
-                  isDragTarget && "border-sky-300/60 bg-sky-400/10",
                   message.status === "failed" &&
                     "border-rose-400/30 bg-rose-400/5",
                   isInProgress && "border-cyan-400/30 bg-cyan-400/5",
                 )}
               >
+                {showDropLineBefore ? (
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute -top-[5px] right-2 left-2 h-0.5 rounded-full bg-sky-400"
+                  />
+                ) : null}
+                {showDropLineAfter ? (
+                  <span
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-2 -bottom-[5px] left-2 h-0.5 rounded-full bg-sky-400"
+                  />
+                ) : null}
                 <div className="flex min-h-9 min-w-0 items-center gap-2 py-1 pr-1 pl-2">
                   <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
                     {showReorderControls ? (
                       <ControlTooltip content="Drag to reorder">
                         <button
                           type="button"
-                          draggable={canReorder}
                           disabled={!canReorder}
                           aria-label={`Drag queued message ${index + 1} to reorder`}
-                          onDragStart={(event) => {
-                            if (!canReorder) {
-                              event.preventDefault();
-                              return;
-                            }
-
-                            setDraggingMessageId(message.id);
-                            event.dataTransfer.effectAllowed = "move";
-                            event.dataTransfer.setData(
-                              QUEUED_MESSAGE_DRAG_TYPE,
-                              message.id,
-                            );
-                            event.dataTransfer.setData(
-                              "text/plain",
-                              message.id,
-                            );
-                          }}
-                          onDragEnd={() => {
-                            setDraggingMessageId(null);
-                            setDragOverBlockIndex(null);
-                          }}
+                          onPointerDown={(event) =>
+                            handleDragStart(event, message.id)
+                          }
+                          onPointerMove={handleDragMove}
+                          onPointerUp={handleDragEnd}
+                          onPointerCancel={() => updateDrag(null)}
+                          onLostPointerCapture={handleDragEnd}
                           className={cn(
-                            "inline-flex h-6 w-4 shrink-0 items-center justify-center rounded text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
+                            "inline-flex h-6 w-4 shrink-0 touch-none items-center justify-center rounded text-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40",
                             canReorder
                               ? "cursor-grab hover:text-slate-100 active:cursor-grabbing"
                               : "cursor-not-allowed opacity-40",
@@ -345,6 +442,18 @@ export const QueuedMessagesPanel = ({
                           type="button"
                           variant="outline"
                           size="icon-xs"
+                          aria-label={`Move queued message ${index + 1} to top`}
+                          tooltip="Move to top"
+                          disabled={!canReorder || blockIndex === 0}
+                          onClick={() => onMessageReorder?.(message.id, 0)}
+                          className={QUEUE_ICON_BUTTON_CLASS_NAME}
+                        >
+                          <ArrowUpToLine className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon-xs"
                           aria-label={`Move queued message ${index + 1} up`}
                           tooltip="Move up"
                           disabled={!canReorder || blockIndex === 0}
@@ -366,6 +475,22 @@ export const QueuedMessagesPanel = ({
                           className={QUEUE_ICON_BUTTON_CLASS_NAME}
                         >
                           <ArrowDown className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon-xs"
+                          aria-label={`Move queued message ${index + 1} to bottom`}
+                          tooltip="Move to bottom"
+                          disabled={
+                            !canReorder || blockIndex === blocks.length - 1
+                          }
+                          onClick={() =>
+                            onMessageReorder?.(message.id, lastMessageIndex)
+                          }
+                          className={QUEUE_ICON_BUTTON_CLASS_NAME}
+                        >
+                          <ArrowDownToLine className="h-3.5 w-3.5" />
                         </Button>
                       </>
                     ) : null}

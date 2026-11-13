@@ -432,6 +432,44 @@
   gap: 8px;
 }
 
+.m-composer-queue-pause {
+  display: inline-flex;
+  height: 1.5rem;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  border-radius: 6px;
+  padding-inline: 6px;
+  color: var(--app-text-muted);
+  white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.m-composer-queue-pause:hover {
+  background: var(--app-hover);
+  color: var(--app-text);
+}
+
+.m-composer-queue-pause:focus-visible {
+  outline: 2px solid var(--app-sky-500);
+  outline-offset: 1px;
+}
+
+.m-composer-queue-pause[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--app-amber-500) 16%, transparent);
+  color: var(--app-amber-200);
+}
+
+:root[data-theme="light"] .m-composer-queue-pause[aria-pressed="true"] {
+  color: color-mix(in srgb, var(--app-amber-500) 55%, var(--app-text));
+}
+
+.m-composer-queue-pause svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+}
+
 @container composer (max-width: 800px) {
   .m-composer-options-toggle {
     display: inline-flex;
@@ -571,7 +609,8 @@
     padding-inline: 6px;
   }
 
-  .m-composer-status-actions button[aria-pressed="false"] > span {
+  .m-composer-status-actions button[aria-pressed="false"] > span,
+  .m-composer-queue-pause[aria-pressed="false"] > span {
     display: none;
   }
 }
@@ -584,7 +623,8 @@
       "attach actions";
   }
 
-  .m-composer-status-actions button > span {
+  .m-composer-status-actions button > span,
+  .m-composer-queue-pause > span {
     display: none;
   }
 }

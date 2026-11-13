@@ -6323,6 +6323,28 @@ export const useChatSessionController = (
     [updateQueuedSessionMessages],
   );
 
+  const handleQueuePausedChange = useCallback(
+    (sessionId: string, paused: boolean): void => {
+      state.updateSessionById(sessionId, (session) => {
+        if ((session.queuePausedAt !== undefined) === paused) {
+          return session;
+        }
+
+        const timestamp = Date.now();
+        const nextSession = { ...session, updatedAt: timestamp };
+
+        if (paused) {
+          nextSession.queuePausedAt = timestamp;
+        } else {
+          delete nextSession.queuePausedAt;
+        }
+
+        return nextSession;
+      });
+    },
+    [state.updateSessionById],
+  );
+
   const handleAttachQueuedMessagePaths = useCallback(
     async (
       messageId: string,
@@ -9147,6 +9169,8 @@ export const useChatSessionController = (
       onQueuedMessageReorder: handleQueuedMessageReorder,
       onQueuedMessageRemove: handleQueuedMessageRemove,
       onQueuedMessageRetry: handleQueuedMessageRetry,
+      onQueuePausedChange: (paused: boolean) =>
+        handleQueuePausedChange(state.activeSession.id, paused),
       onQueuedMessageSelectContextAttachments:
         handleSelectQueuedMessageAttachments,
       onQueuedMessagePasteContextImages: handlePasteQueuedMessageImages,

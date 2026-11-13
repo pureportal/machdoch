@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   getQueuedMessageBlocks,
+  getQueuedMessageDropTargetIndex,
   getQueuedMessageStepTargetIndex,
   moveQueuedMessageBlock,
 } from "./queued-message-blocks";
@@ -74,5 +75,45 @@ describe("queued message blocks", () => {
   it("does not step past the queue edges", () => {
     expect(getQueuedMessageStepTargetIndex(queue, "a", -1)).toBe(0);
     expect(getQueuedMessageStepTargetIndex(queue, "b", 1)).toBe(3);
+  });
+
+  it.each([
+    ["a", 2, ["first", "second", "a", "b"]],
+    ["a", 3, ["first", "second", "b", "a"]],
+    ["b", 0, ["b", "a", "first", "second"]],
+    ["b", 1, ["a", "b", "first", "second"]],
+    ["second", 0, ["first", "second", "a", "b"]],
+    ["first", 3, ["a", "b", "first", "second"]],
+  ])("drops %s into slot %i", (messageId, dropSlot, expected) => {
+    const targetIndex = getQueuedMessageDropTargetIndex(
+      queue,
+      messageId,
+      dropSlot,
+    );
+
+    expect(targetIndex).not.toBeNull();
+    expect(
+      ids(moveQueuedMessageBlock(queue, messageId, targetIndex ?? -1)),
+    ).toEqual(expected);
+  });
+
+  it("ignores drops beside the dragged block or outside the queue", () => {
+    expect(getQueuedMessageDropTargetIndex(queue, "first", 1)).toBeNull();
+    expect(getQueuedMessageDropTargetIndex(queue, "first", 2)).toBeNull();
+    expect(getQueuedMessageDropTargetIndex(queue, "b", 3)).toBeNull();
+    expect(getQueuedMessageDropTargetIndex(queue, "a", 4)).toBeNull();
+    expect(getQueuedMessageDropTargetIndex(queue, "unknown", 0)).toBeNull();
+  });
+
+  it("moves a whole block to either edge", () => {
+    expect(ids(moveQueuedMessageBlock(queue, "b", 0))).toEqual([
+      "b",
+      "a",
+      "first",
+      "second",
+    ]);
+    expect(
+      ids(moveQueuedMessageBlock(queue, "first", queue.length - 1)),
+    ).toEqual(["a", "b", "first", "second"]);
   });
 });

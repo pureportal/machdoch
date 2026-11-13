@@ -27,7 +27,7 @@ export const canDispatchQueuedMessage = (
   session: ChatSessionRecord,
   unsettledDesktopTaskId: string | null,
 ): boolean => {
-  if (unsettledDesktopTaskId) {
+  if (unsettledDesktopTaskId || session.queuePausedAt !== undefined) {
     return false;
   }
 

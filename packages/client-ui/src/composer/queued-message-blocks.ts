@@ -69,3 +69,29 @@ export const getQueuedMessageStepTargetIndex = <
 
   return messages.findIndex((message) => message.id === targetMessageId);
 };
+
+export const getQueuedMessageDropTargetIndex = <
+  Message extends QueuedMessageBlockMember,
+>(
+  messages: readonly Message[],
+  messageId: string,
+  dropSlot: number,
+): number | null => {
+  const blocks = getQueuedMessageBlocks(messages);
+  const sourceBlockIndex = findQueuedMessageBlockIndex(blocks, messageId);
+
+  if (
+    sourceBlockIndex < 0 ||
+    dropSlot === sourceBlockIndex ||
+    dropSlot === sourceBlockIndex + 1
+  ) {
+    return null;
+  }
+
+  const targetMessageId =
+    blocks[dropSlot < sourceBlockIndex ? dropSlot : dropSlot - 1]?.[0]?.id;
+
+  return targetMessageId === undefined
+    ? null
+    : messages.findIndex((message) => message.id === targetMessageId);
+};

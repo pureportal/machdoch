@@ -1141,6 +1141,12 @@ const mergeSessionConcurrentFields = (
       baseSession.pinnedAt,
       latestSession.pinnedAt,
     ),
+    queuePausedAt: mergeSessionFieldForPersistence(
+      primarySession.queuePausedAt,
+      localSession.queuePausedAt,
+      baseSession.queuePausedAt,
+      latestSession.queuePausedAt,
+    ),
     timeResetAt: mergeSessionFieldForPersistence(
       primarySession.timeResetAt,
       localSession.timeResetAt,
@@ -1626,6 +1632,7 @@ const createSessionMutationComparable = (
     historyClearedAt: session.historyClearedAt,
     archivedAt: session.archivedAt,
     pinnedAt: session.pinnedAt,
+    queuePausedAt: session.queuePausedAt,
     timeResetAt: session.timeResetAt,
     movedToTopAt: session.movedToTopAt,
     specialSession: session.specialSession,

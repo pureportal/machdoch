@@ -449,6 +449,7 @@ export const duplicateSessionRecord = (
 
   delete nextSession.archivedAt;
   delete nextSession.pinnedAt;
+  delete nextSession.queuePausedAt;
   delete nextSession.timeResetAt;
   delete nextSession.movedToTopAt;
   delete nextSession.goal;
@@ -549,6 +550,7 @@ export const importSessionsIntoShellState = (
       });
 
       delete nextSession.pinnedAt;
+      delete nextSession.queuePausedAt;
       delete nextSession.timeResetAt;
       delete nextSession.movedToTopAt;
       delete nextSession.goal;

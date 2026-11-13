@@ -225,6 +225,7 @@ export interface SessionComposerProps {
   onQueuedMessageReorder: (messageId: string, targetIndex: number) => void;
   onQueuedMessageRemove: (messageId: string) => void;
   onQueuedMessageRetry: (messageId: string) => void;
+  onQueuePausedChange?: (paused: boolean) => void;
   onQueuedMessageSelectContextAttachments: (
     messageId: string,
     selectionKind: AttachmentSelectionKind,
@@ -339,6 +340,7 @@ export const SessionComposer = ({
   onQueuedMessageReorder,
   onQueuedMessageRemove,
   onQueuedMessageRetry,
+  onQueuePausedChange,
   onQueuedMessageSelectContextAttachments,
   onQueuedMessagePasteContextImages,
   onQueuedMessageRemoveContextAttachment,
@@ -947,6 +949,9 @@ export const SessionComposer = ({
         runningTaskMessageAction={runningTaskMessageAction}
         canSteerRunningTask={canSteerRunningTask}
         queuedMessages={editingMessageId ? [] : queuedMessages}
+        queuePaused={
+          !editingMessageId && activeSession.queuePausedAt !== undefined
+        }
         iterationsEnabled={
           !editingMessageId &&
           !interviewEnabled &&
@@ -972,6 +977,7 @@ export const SessionComposer = ({
         onQueuedMessageReorder={onQueuedMessageReorder}
         onQueuedMessageRemove={onQueuedMessageRemove}
         onQueuedMessageRetry={onQueuedMessageRetry}
+        onQueuePausedChange={editingMessageId ? undefined : onQueuePausedChange}
         onQueuedMessageSelectContextAttachments={
           onQueuedMessageSelectContextAttachments
         }

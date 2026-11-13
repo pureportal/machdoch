@@ -258,6 +258,7 @@ export interface ChatSessionRecord {
   lastReadAt?: number;
   archivedAt?: number;
   pinnedAt?: number;
+  queuePausedAt?: number;
   timeResetAt?: number;
   movedToTopAt?: number;
   specialSession?: ChatSessionSpecialKind;
@@ -1438,6 +1439,9 @@ export const createSession = (
       : {}),
     ...(typeof overrides.pinnedAt === "number"
       ? { pinnedAt: overrides.pinnedAt }
+      : {}),
+    ...(typeof overrides.queuePausedAt === "number"
+      ? { queuePausedAt: overrides.queuePausedAt }
       : {}),
     ...(typeof overrides.timeResetAt === "number"
       ? { timeResetAt: overrides.timeResetAt }
@@ -2666,6 +2670,10 @@ const normalizeSessionRecord = (
       typeof session.archivedAt === "number" ? session.archivedAt : undefined,
     pinnedAt:
       typeof session.pinnedAt === "number" ? session.pinnedAt : undefined,
+    queuePausedAt:
+      typeof session.queuePausedAt === "number"
+        ? session.queuePausedAt
+        : undefined,
     timeResetAt:
       typeof session.timeResetAt === "number" ? session.timeResetAt : undefined,
     movedToTopAt:
