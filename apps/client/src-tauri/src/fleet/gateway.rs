@@ -364,8 +364,7 @@ where
 }
 
 fn permanent_upgrade_status(status: u16) -> bool {
-    // A previous half-open connection can temporarily cause 409 after a network change.
-    matches!(status, 401 | 403 | 404)
+    status == 401
 }
 
 fn reconnect_backoff(previous: Duration, connected_for: Duration) -> Duration {
@@ -465,12 +464,10 @@ mod tests {
 
     #[test]
     fn temporary_upgrade_failures_allow_reconnects() {
-        for status in [409, 429, 500, 502, 503, 504] {
+        for status in [403, 404, 409, 429, 500, 502, 503, 504] {
             assert!(!permanent_upgrade_status(status));
         }
-        for status in [401, 403, 404] {
-            assert!(permanent_upgrade_status(status));
-        }
+        assert!(permanent_upgrade_status(401));
     }
 
     #[test]
@@ -482,6 +479,19 @@ mod tests {
             })),
             ConnectionResult::Reconnect(_)
         ));
+    }
+
+    #[test]
+    fn timeout_and_rate_limit_closes_allow_reconnects() {
+        for code in [CloseCode::Away, CloseCode::Again] {
+            assert!(matches!(
+                connection_result_from_close(Some(CloseFrame {
+                    code,
+                    reason: "Retry later.".into(),
+                })),
+                ConnectionResult::Reconnect(_)
+            ));
+        }
     }
 
     #[test]

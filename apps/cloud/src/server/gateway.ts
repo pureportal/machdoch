@@ -541,7 +541,7 @@ export class GatewayHub {
       this.closeConnection(
         instanceId,
         generation,
-        1008,
+        1013,
         "Gateway message rate exceeded.",
       );
     }
@@ -581,7 +581,7 @@ export class GatewayHub {
         this.closeConnection(
           instanceId,
           connection.generation,
-          connection.active ? 1001 : 1008,
+          1001,
           connection.active ? "Heartbeat timeout." : "Hello message required.",
         );
         continue;

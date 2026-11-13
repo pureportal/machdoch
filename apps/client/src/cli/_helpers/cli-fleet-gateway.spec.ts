@@ -59,7 +59,7 @@ describe("Fleet CLI gateway", () => {
             productVersion: "test",
             handleRequest: vi.fn(),
           }),
-        ).toMatchObject({ reconnect: status === 409 || status === 503 });
+        ).toMatchObject({ reconnect: status !== 401 });
         if (status === 401) {
           await expect(
             runFleetGatewayService({

@@ -102,6 +102,17 @@ describe("gateway failure recovery and resource limits", () => {
     });
     expect(hub!.isOnline(fixture.instanceId)).toBe(true);
   });
+  it("allows reconnecting after the message rate limit closes a connection", async () => {
+    const fixture = await gatewayFixture();
+    const closed = onClose(fixture.socket);
+    for (let index = 0; index < 260; index += 1)
+      fixture.socket.send(
+        JSON.stringify({ type: "heartbeat", sentAt: Date.now() }),
+      );
+    expect((await closed).code).toBe(1013);
+    await fixture.connect();
+    expect(hub!.isOnline(fixture.instanceId)).toBe(true);
+  });
   it("terminates peers that never complete the close handshake", async () => {
     const fixture = await gatewayFixture();
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
@@ -286,7 +297,25 @@ describe("gateway failure recovery and resource limits", () => {
     const closed = onClose(fixture.socket);
     monotonic.mockReturnValue(initial + 11_000);
     checkConnections();
+    expect((await closed).code).toBe(1001);
+    await fixture.connect(true);
+    expect(hub!.isOnline(fixture.instanceId)).toBe(true);
+  });
+
+  it("still rejects an invalid hello as a permanent protocol failure", async () => {
+    const fixture = await gatewayFixture(false);
+    const closed = onClose(fixture.socket);
+    fixture.socket.send(
+      JSON.stringify({
+        type: "hello",
+        instanceId: fixture.instanceId,
+        protocolVersion: gatewayProtocolVersion + 1,
+        productVersion: "test",
+        capabilities: [productCapability],
+      }),
+    );
     expect((await closed).code).toBe(1008);
+    expect(hub!.isOnline(fixture.instanceId)).toBe(false);
   });
 
   it("uses WebSocket pings for bidirectional liveness", async () => {
@@ -374,7 +403,7 @@ async function gatewayFixture(hello = true, runs = false) {
   const address = server.address();
   if (!address || typeof address === "string")
     throw new Error("Invalid test server address.");
-  const connect = async () => {
+  const connect = async (sendHello = hello) => {
     const socket = new WebSocket(
       `ws://127.0.0.1:${address.port}/api/gateway/connect/${instanceId}`,
       { headers: { Authorization: `Bearer ${instanceSecret}` } },
@@ -384,7 +413,7 @@ async function gatewayFixture(hello = true, runs = false) {
       socket.once("open", resolve);
       socket.once("error", reject);
     });
-    if (hello) {
+    if (sendHello) {
       socket.send(
         JSON.stringify({
           type: "hello",
@@ -517,7 +546,7 @@ describe("outbound gateway relay", () => {
     const closeCode = await new Promise<number>((resolve) => {
       socket.once("close", resolve);
     });
-    expect(closeCode).toBe(1008);
+    expect(closeCode).toBe(1013);
     expect(updatePresence).toHaveBeenCalledTimes(1);
     await waitUntil(() => hub?.isOnline(instance.instanceId) === false);
     await new Promise<void>((resolve) => server.close(() => resolve()));

@@ -231,10 +231,10 @@ export const runFleetGatewayConnection = async (options: {
       const message =
         status === 409
           ? "machdoch.cloud rejected a duplicate instance connection."
-          : [401, 403, 404].includes(status)
+          : status === 401
             ? "machdoch.cloud rejected the instance credentials."
             : `machdoch.cloud rejected the gateway connection (${status}).`;
-      finish({ reconnect: ![401, 403, 404].includes(status), message });
+      finish({ reconnect: status !== 401, message });
     });
 
     socket.once("open", () => {
