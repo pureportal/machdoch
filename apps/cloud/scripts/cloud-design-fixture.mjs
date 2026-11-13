@@ -240,3 +240,172 @@ export async function seedCloudDesign(fixture) {
   }
   return { team, project, cycle, issues, task, chatId };
 }
+
+export async function seedCloudCollaboration(fixture, seeded, { gitApiUrl }) {
+  const api = (path, method, data) =>
+    cloudApi(fixture, fixture.ownerContext, path, method, data);
+  const workspace = await api("workspace");
+  const project = (name) =>
+    workspace.projects.find((entry) => entry.name === name);
+  const developerExperience = project("Developer experience");
+  const connectivity = project("Client connectivity");
+  const provider = (await api("ai-providers")).providers[0];
+  await api(`projects/${seeded.project.id}/updates`, "POST", {
+    health: "on_track",
+    body: "Reconnect handling is in review. Next we harden the handoff context.",
+  });
+  const sql = await fixture.database.connect();
+  try {
+    const updates = [
+      [
+        seeded.project.id,
+        "at_risk",
+        "Reconnects ship this week, but the patch review flow slips because the diff viewer needs a rewrite.",
+        "**Progress**\n- ENG-1 reconnect with backoff is in review\n- ENG-4 filters persist across views\n\n**Next**\n- ENG-3 review changes before applying a patch\n\n**Risks**\n- Diff viewer rewrite may push ENG-3 by a week",
+        1,
+      ],
+      [
+        developerExperience.id,
+        "on_track",
+        "Faster feedback loops are on schedule; the CI cache cut build times by 40%.",
+        "**Progress**\n- CI cache enabled for all branches\n\n**Next**\n- Local preview environments",
+        2,
+      ],
+      [
+        connectivity.id,
+        "off_track",
+        "Paused until the relay redesign lands; the target date will be missed.",
+        "**Risks**\n- Relay redesign has no owner yet",
+        3,
+      ],
+    ];
+    for (const [projectId, health, summary, body, days] of updates)
+      await sql.query(
+        `INSERT INTO cloud_project_updates (organization_id,id,project_id,author_id,health,summary,body,generated,created_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,true,clock_timestamp()-$8*interval '1 day')`,
+        [
+          workspace.organization.id,
+          randomUUID(),
+          projectId,
+          workspace.actor.id,
+          health,
+          summary,
+          body,
+          days,
+        ],
+      );
+  } finally {
+    sql.release();
+  }
+  for (const [title, url] of [
+    ["Engineering handbook", "https://handbook.example.com/engineering"],
+    ["On-call runbook", "https://docs.example.com/runbooks/cloud"],
+  ])
+    await api(`teams/${seeded.team.id}/resources`, "POST", { title, url });
+  await api("views", "POST", {
+    name: "Engineering board",
+    shared: true,
+    filters: {
+      teamId: seeded.team.id,
+      view: "board",
+      density: "compact",
+      completed: "week",
+      hide: "created,updated",
+    },
+  });
+  await api("views", "POST", {
+    name: "Urgent and high",
+    shared: false,
+    filters: { priority: "urgent,high", group: "assignee" },
+  });
+  const nightly = await api("automations", "POST", {
+    name: "Nightly sync",
+    teamId: seeded.team.id,
+    trigger: { kind: "manual" },
+    actions: [
+      {
+        kind: "create_issue",
+        title: "Sync report {{date}}",
+        description: "",
+        statusId: null,
+        priority: "none",
+        assigneeId: null,
+        labelIds: [],
+        subIssue: false,
+      },
+    ],
+  });
+  await api("automations", "POST", {
+    name: "Track failed automations",
+    teamId: seeded.team.id,
+    trigger: {
+      kind: "automation_finished",
+      automationIds: [],
+      outcomes: ["failed"],
+    },
+    actions: [
+      {
+        kind: "create_issue",
+        title: "Automation failed: {{run.automation}}",
+        description: "{{run.error}}",
+        statusId: null,
+        priority: "high",
+        assigneeId: null,
+        labelIds: [],
+        subIssue: false,
+      },
+    ],
+  });
+  await api("automations", "POST", {
+    name: "After the nightly sync",
+    teamId: seeded.team.id,
+    trigger: {
+      kind: "automation_finished",
+      automationIds: [nightly.id],
+      outcomes: ["succeeded"],
+    },
+    actions: [
+      {
+        kind: "set_automation_enabled",
+        automationId: nightly.id,
+        enabled: false,
+      },
+    ],
+  });
+  if (provider)
+    await api("automations", "POST", {
+      name: "Weekly project updates",
+      teamId: seeded.team.id,
+      trigger: {
+        kind: "schedule",
+        frequency: "weekly",
+        time: "16:00",
+        weekday: 5,
+        timeZone: "Europe/Berlin",
+        forEachIssue: false,
+      },
+      actions: [
+        {
+          kind: "write_project_updates",
+          projectIds: [],
+          providerId: provider.id,
+          model: provider.models[0],
+        },
+      ],
+    });
+  await api("git/github", "PUT", {
+    revision: 0,
+    apiUrl: gitApiUrl,
+    token: "ghp_organization_fixture_token_0000",
+    automate: false,
+  });
+  await api("git/github/repositories", "POST", {
+    fullName: "northstar/cloud-workspace",
+  });
+  await api("git/github/sync", "POST", {});
+  await api("git/accounts/github", "PUT", {
+    revision: 0,
+    apiUrl: gitApiUrl,
+    token: "ghp_owner_fixture_token_00000000000",
+  });
+}
